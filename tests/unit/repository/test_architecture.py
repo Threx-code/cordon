@@ -181,6 +181,16 @@ class Rules:
     #: Where a word on the ecosystem list means something else, and why.
     NOT_AN_ECOSYSTEM: ClassVar[dict[str, str]] = {
         "cordon_scanner.judge.calls:ValueViews.of": "'hex' is an encoding there, not Elixir's registry",
+        "cordon_scanner.analysis.javascript.evaluation.expressions:_BuiltinCalls._builtin": (
+            "'hex' is Buffer.from's encoding there"
+        ),
+        "cordon_scanner.analysis.javascript.evaluation.expressions:_BuiltinCalls._method": (
+            "'hex' is an encoding there"
+        ),
+        "cordon_scanner.detect.binary.rule_engine.scan:Search.__init__": "'hex' is a hex-string kind",
+        "cordon_scanner.detect.binary.rule_engine.syntax:Grammar._modifiers_fit": (
+            "'hex' is a hex-string kind"
+        ),
         "cordon_scanner.engine.pipeline.hooks:Hooks.extension_entries": (
             "'vscode' there is the engines key of a VS Code extension's package.json"
         ),

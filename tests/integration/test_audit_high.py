@@ -260,11 +260,13 @@ class TestH4bTheBudgetBindsWhileMatchingInParallel:
     scanned for 26 s, every member examined, and nothing said the budget was passed. The pool now
     stops handing out batches at the deadline, and what it never started is reported unexamined.
 
-    Asserted by what the scan reports, not by seconds: a budget that does not bind while matching
-    examines every file and names no time limit, however fast the machine. Which stage reports it
-    is left open, because that is decided by the clock: on a loaded machine the budget can run out
-    in the walk or the expansion before the pool starts. The pool's own stop is tested without a
-    clock, in tests/unit/engine/test_parallel.py's TestThePoolStopsAtTheDeadline."""
+    Asserted by what the scan reports, not by seconds, and independent of the machine's load: the
+    scan's budget is generous, so reading the archive or walking the tree cannot spend it, and the
+    pool is handed a deadline already reached (`_matching_out_of_time`). So it is always the
+    matching that runs out, and the pool's own report that says so. On a loaded machine a 2 s
+    budget used to run out in the expansion instead, and the scan said the archive was refused.
+    The pool's parts are tested without a clock in tests/unit/engine/test_parallel.py's
+    TestThePoolStopsAtTheDeadline."""
 
     FUNCTION = (
         "function f{i}(a, b) {{ const x = require('fs').readFileSync(a, 'utf8');"
@@ -279,22 +281,42 @@ class TestH4bTheBudgetBindsWhileMatchingInParallel:
 
     @staticmethod
     def config() -> Config:
-        # Four workers, so the pool runs: the serial loop already checked the budget per file.
+        # Four workers, so the pool runs: the serial loop already checked the budget per file. A
+        # budget no read or walk can spend: the matching is what runs out (`_matching_out_of_time`).
         return Config.default().with_overrides(
             use_cache=False,
-            limits=Config.default().limits.merged(total_timeout=2.0, max_workers=4),
+            limits=Config.default().limits.merged(total_timeout=300.0, max_workers=4),
         )
 
     @staticmethod
-    def timed_out(result: Any) -> list[str]:
-        """Every time-limit finding naming the scan's 2 s budget, whichever stage it came from."""
+    def _matching_out_of_time(monkeypatch: pytest.MonkeyPatch) -> None:
+        """The pool starts with its deadline reached: what it is handed is the scan's own context
+        with the deadline set to now, which crosses into the workers as an argument."""
+        from dataclasses import replace
+
+        from cordon_scanner.engine.pipeline.detection import Detection
+
+        original = Detection.parallel
+
+        def at_its_deadline(
+            self: Any, units: Any, root: Any, ctx: Any, *args: Any, **kwargs: Any
+        ) -> Any:
+            return original(
+                self, units, root, replace(ctx, deadline=time.monotonic()), *args, **kwargs
+            )
+
+        monkeypatch.setattr(Detection, "parallel", at_its_deadline)
+
+    @staticmethod
+    def unexamined(result: Any) -> list[str]:
+        """The pool's own report of the files it never reached."""
         return [
             f.message
             for f in result.findings
-            if f.rule_id == "OPERATIONAL.SCAN.TIMEOUT" and "2s budget" in f.message
+            if f.rule_id == "OPERATIONAL.SCAN.TIMEOUT" and "still unexamined" in f.message
         ]
 
-    def test_in_an_archive(self, tmp_path: Path) -> None:
+    def test_in_an_archive(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         import io
         import tarfile
 
@@ -305,19 +327,21 @@ class TestH4bTheBudgetBindsWhileMatchingInParallel:
                 info = tarfile.TarInfo(f"pkg/lib/m{index}.js")
                 info.size = len(data)
                 out.addfile(info, io.BytesIO(data))
+        self._matching_out_of_time(monkeypatch)
         result = Scanner(self.config()).scan(archive)
 
-        assert self.timed_out(result), [f.message for f in result.findings]
+        assert self.unexamined(result), [f.message for f in result.findings]
         assert not result.complete, "a truncated scan reported complete"
 
-    def test_in_a_directory(self, tmp_path: Path) -> None:
+    def test_in_a_directory(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         tree = tmp_path / "pkg" / "lib"
         tree.mkdir(parents=True)
         for index in range(self.COUNT):
             (tree / f"m{index}.js").write_bytes(self.body(index))
+        self._matching_out_of_time(monkeypatch)
         result = Scanner(self.config()).scan(tmp_path / "pkg")
 
-        assert self.timed_out(result), [f.message for f in result.findings]
+        assert self.unexamined(result), [f.message for f in result.findings]
         assert not result.complete, "a truncated scan reported complete"
 
 

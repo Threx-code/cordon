@@ -13,12 +13,14 @@ from __future__ import annotations
 import ast
 import re
 import tomllib
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
+    InstallTool,
     Manifest,
     ReleaseFile,
 )
@@ -662,6 +664,64 @@ class PypiEcosystem(PypiLockfiles, BaseEcosystem):
                 name="python", spec=spec.strip(), scope=Scope.PLATFORM, field_name=field_name
             )
         return None
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A project pinning these releases, as its own lockfile: `{path: content}`."""
+        return {"requirements.txt": "".join(f"{name}=={version}\n" for name, version in pins)}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A project naming these packages with no version: `{path: content}`."""
+        return {"requirements.txt": "".join(f"{name}\n" for name in names)}
+
+    def install_tool(self) -> Sequence[InstallTool]:
+        """pip and the Python tools that install from PyPI; each one's own subcommands."""
+        return (
+            InstallTool(
+                frozenset({"pip", "pip3", "pipx", "uv", "poetry", "pdm", "rye", "uvx", "pipenv"}),
+                "python",
+            ),
+        )
+
+    # -- the release a published archive is (EcosystemReleaseIdentity) -------------
+
+    def identity_in_metadata(self) -> bool:
+        """The release names itself in the metadata every published archive's checks read."""
+        return True
+
+    # -- what a published archive of it runs at install (EcosystemArchiveTraits) ---------
+
+    def compiled_is_inert(self) -> bool:
+        """A compiled file in its archive does not run at install."""
+        return True
+
+    def install_manifests(self) -> frozenset[str]:
+        """The files its installer runs or reads to build: an author-time file elsewhere."""
+        return frozenset({"setup.py", "pyproject.toml"})
+
+    # -- what runs when a published archive is used (EcosystemPackageEntries) ------
+
+    def library_entries(
+        self, members: Mapping[str, str], manifest: Mapping[str, Any], with_bin: bool
+    ) -> set[str]:
+        """A wheel's or sdist's top-level `__init__.py`: the package itself, not a subpackage."""
+        found: set[str] = set()
+        for member, path in members.items():
+            parts = member.split("/")
+            if parts[-1] != "__init__.py" or any(
+                part in ("tests", "test", "docs", "examples") for part in parts
+            ):
+                continue
+            # A wheel's `pkg/__init__.py`, an sdist's `name-1.0/pkg/__init__.py` or
+            # `name-1.0/src/pkg/__init__.py`: the package itself, not a subpackage.
+            if (
+                len(parts) == 2
+                or (len(parts) == 3 and "-" in parts[0])
+                or (len(parts) == 4 and parts[1] == "src")
+            ):
+                found.add(path)
+        return found
 
     # -- Lockfiles -------------------------------------------------------
 

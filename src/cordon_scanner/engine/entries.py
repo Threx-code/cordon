@@ -6,8 +6,9 @@ them as `import_entry_paths`, and, without the command targets, as `library_entr
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from cordon_scanner.ecosystems.registry import RegistryFacts
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 
 if TYPE_CHECKING:
@@ -26,60 +27,30 @@ class PackageEntries:
             _, sep, member = unit.path.partition("!")
             if sep and "!" not in member:
                 members[member] = unit.path
-        found: set[str] = set()
-        if distribution == "npm":
-            manifest = next((u for u in units if u.path.endswith("!package/package.json")), None)
-            try:
-                document = ScannedJson.loads(manifest.content.text) if manifest is not None else {}
-            except (ValueError, RecursionError):
-                document = {}
-            if not isinstance(document, dict):
-                document = {}
-            targets: list[str] = [document.get("main") or "index.js"]
-
-            if with_bin:
-                targets.extend(ScannedJson.strings(document.get("bin")))
-            targets.extend(ScannedJson.strings(document.get("exports")))
-            for target in targets:
-                if not isinstance(target, str) or "*" in target:
-                    continue
-                base = "package/" + target.strip().removeprefix("./").rstrip("/")
-                for candidate in (base, f"{base}.js", f"{base}/index.js"):
-                    if candidate in members:
-                        found.add(members[candidate])
-                        break
-        elif distribution == "pypi":
-            for member, path in members.items():
-                parts = member.split("/")
-                if parts[-1] != "__init__.py" or any(
-                    part in ("tests", "test", "docs", "examples") for part in parts
-                ):
-                    continue
-                # A wheel's `pkg/__init__.py`, an sdist's `name-1.0/pkg/__init__.py` or
-                # `name-1.0/src/pkg/__init__.py`: the package itself, not a subpackage.
-                if (
-                    len(parts) == 2
-                    or (len(parts) == 3 and "-" in parts[0])
-                    or (len(parts) == 4 and parts[1] == "src")
-                ):
-                    found.add(path)
-        return frozenset(found)
+        manifest = PackageEntries.manifest(units, distribution)
+        return frozenset(RegistryFacts.library_entries(distribution, members, manifest, with_bin))
 
     @staticmethod
-    def repository(units: list[FileUnit], distribution: str) -> str:
-        """The published npm package's own `repository` URL, or "": a string, or an object's
-        `url`, as `package.json` declares it (review 98, FP-2)."""
-        if distribution != "npm":
-            return ""
-        manifest = next((u for u in units if u.path.endswith("!package/package.json")), None)
+    def manifest(units: list[FileUnit], distribution: str) -> dict[str, Any]:
+        """The published archive's own manifest where its ecosystem fixes the place
+        (`archive_manifest`), as a JSON object; {} where there is none or it does not read."""
+        place = RegistryFacts.archive_manifest(distribution)
+        if place is None:
+            return {}
+        manifest = next((u for u in units if u.path.endswith(f"!{place}")), None)
         try:
             document = ScannedJson.loads(manifest.content.text) if manifest is not None else {}
         except (ValueError, RecursionError):
-            return ""
-        repository = document.get("repository") if isinstance(document, dict) else None
-        if isinstance(repository, dict):
-            repository = repository.get("url")
-        return repository.strip() if isinstance(repository, str) else ""
+            return {}
+        return document if isinstance(document, dict) else {}
+
+    @staticmethod
+    def repository(units: list[FileUnit], distribution: str) -> str:
+        """The published package's own `repository` URL, or "": a string, or an object's `url`, as
+        its manifest declares it (review 98, FP-2)."""
+        return RegistryFacts.published_repository(
+            distribution, PackageEntries.manifest(units, distribution)
+        )
 
 
 __all__ = ["PackageEntries"]

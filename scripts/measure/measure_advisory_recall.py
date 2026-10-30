@@ -18,7 +18,7 @@ import subprocess
 import sys
 import tempfile
 
-from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
+from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
 
 SAMPLE = 120  # per ecosystem, capped so the run stays bounded
 
@@ -122,7 +122,7 @@ class AdvisoryRecall:
         return None
 
 
-db = AdvisoryDatabase.bundled()
+db = ShippedAdvisories.database()
 db._load_all()
 by_eco: dict[str, list[tuple[str, str]]] = collections.defaultdict(list)
 for (eco, _), advs in db._by_key.items():

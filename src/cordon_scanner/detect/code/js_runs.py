@@ -16,6 +16,7 @@ from cordon_scanner.detect.code.capability.build_output import BuildOutput
 from cordon_scanner.detect.code.capability.hits import CapabilityHit
 from cordon_scanner.detect.code.capability.load_path import LoadPath
 from cordon_scanner.foundation.capabilities import Capability
+from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
 
 if TYPE_CHECKING:
     from cordon_scanner.detect.base import ScanContext
@@ -229,7 +230,7 @@ class JsRuns:
 
         return (
             ctx is not None
-            and ctx.distribution == "npm"
+            and EcosystemFactsProvider.published().hooks_run_javascript(ctx.distribution)
             and ctx.in_install_hook(content.path)
             and not LoadPath.agent_run(content, ctx)
         )

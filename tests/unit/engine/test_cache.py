@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.engine.cache import CacheKey, ScanCache
+from cordon_scanner.engine.cache import CacheKey, CacheSignature, ScanCache
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import (
     Category,
@@ -121,9 +121,9 @@ class TestDetectorSignature:
             def __init__(self, i, v):
                 self.id, self.version = i, v
 
-        assert ScanCache.detector_signature([D("a", "1.0")]) != ScanCache.detector_signature(
-            [D("a", "1.1")]
-        )
+        assert CacheSignature.detector_signature(
+            [D("a", "1.0")]
+        ) != CacheSignature.detector_signature([D("a", "1.1")])
 
     def test_order_does_not_matter(self) -> None:
         class D:
@@ -131,7 +131,9 @@ class TestDetectorSignature:
                 self.id, self.version = i, v
 
         a, b = D("a", "1"), D("b", "1")
-        assert ScanCache.detector_signature([a, b]) == ScanCache.detector_signature([b, a])
+        assert CacheSignature.detector_signature([a, b]) == CacheSignature.detector_signature(
+            [b, a]
+        )
 
     def test_changing_the_code_invalidates_without_touching_the_version(self) -> None:
         """The declared version used to be the whole identity, which made cache
@@ -164,15 +166,15 @@ class TestDetectorSignature:
             with unittest.mock.patch(
                 "cordon_scanner.engine.cache.inspect.getsource", return_value="PATTERN = 'a'"
             ):
-                ScanCache._module_hash.cache_clear()
-                before = ScanCache.detector_signature([D()])
+                CacheSignature._module_hash.cache_clear()
+                before = CacheSignature.detector_signature([D()])
             with unittest.mock.patch(
                 "cordon_scanner.engine.cache.inspect.getsource", return_value="PATTERN = 'b'"
             ):
-                ScanCache._module_hash.cache_clear()
-                after = ScanCache.detector_signature([D()])
+                CacheSignature._module_hash.cache_clear()
+                after = CacheSignature.detector_signature([D()])
         finally:
-            ScanCache._module_hash.cache_clear()
+            CacheSignature._module_hash.cache_clear()
             del sys.modules["cordon_fake_detector"]
 
         assert before != after, "a changed detector must not serve cached findings"
@@ -197,15 +199,15 @@ class TestDetectorSignature:
 
         def signature(source: str) -> str:
             flow.write_text(source, encoding="utf-8")
-            ScanCache._package_hash.cache_clear()
-            return ScanCache.detector_signature([D()])
+            CacheSignature._package_hash.cache_clear()
+            return CacheSignature.detector_signature([D()])
 
-        monkeypatch.setattr(ScanCache, "_wheel_record", staticmethod(lambda root: None))
+        monkeypatch.setattr(CacheSignature, "_wheel_record", staticmethod(lambda root: None))
         try:
             before = signature("SINKS = ('eval',)\n")
             after = signature("SINKS = ('eval', 'exec')\n")
         finally:
-            ScanCache._package_hash.cache_clear()
+            CacheSignature._package_hash.cache_clear()
         assert before != after, "changed analysis must not serve cached findings"
 
     def test_an_installed_wheel_is_known_by_its_record_on_every_machine(
@@ -219,23 +221,23 @@ class TestDetectorSignature:
         (tmp_path / "engine" / "cache.py").write_text("x = 1\n", encoding="utf-8")
         monkeypatch.setattr(PackagePaths, "root", staticmethod(lambda: tmp_path))
         record = b"cordon_scanner/engine/cache.py,sha256=abc,6\n"
-        monkeypatch.setattr(ScanCache, "_wheel_record", staticmethod(lambda root: record))
+        monkeypatch.setattr(CacheSignature, "_wheel_record", staticmethod(lambda root: record))
         try:
-            ScanCache._package_hash.cache_clear()
-            first = ScanCache._package_hash()
+            CacheSignature._package_hash.cache_clear()
+            first = CacheSignature._package_hash()
             import os
 
             os.utime(tmp_path / "engine" / "cache.py", ns=(5, 5))
-            ScanCache._package_hash.cache_clear()
-            assert ScanCache._package_hash() == first
+            CacheSignature._package_hash.cache_clear()
+            assert CacheSignature._package_hash() == first
         finally:
-            ScanCache._package_hash.cache_clear()
+            CacheSignature._package_hash.cache_clear()
         assert first.startswith("wheel-")
 
     def test_a_real_detector_contributes_a_code_hash(self) -> None:
         from cordon_scanner.detect.secrets.detector import SecretDetector
 
-        identity = ScanCache._detector_identity(SecretDetector())
+        identity = CacheSignature._detector_identity(SecretDetector())
         name, version, code = identity.split("@")
         assert (name, version) == ("secrets", SecretDetector.version)
         assert len(code) == 16 and code != "nosource"
@@ -248,27 +250,27 @@ class TestDetectorSignature:
         import unittest.mock
 
         def hash_of(source: str) -> str:
-            ScanCache._module_hash.cache_clear()
+            CacheSignature._module_hash.cache_clear()
             with unittest.mock.patch(
                 "cordon_scanner.engine.cache.inspect.getsource", return_value=source
             ):
-                return ScanCache._module_hash("cordon_scanner.detect.secrets.secrets")
+                return CacheSignature._module_hash("cordon_scanner.detect.secrets.secrets")
 
         try:
             assert hash_of("a = 1\nb = 2\n") == hash_of("a = 1\r\nb = 2\r\n")
         finally:
-            ScanCache._module_hash.cache_clear()
+            CacheSignature._module_hash.cache_clear()
 
     def test_a_module_with_no_source_falls_back_rather_than_failing(self) -> None:
         """A frozen or zipped build has no source to read. Refusing to scan would
         be a worse answer than reverting to the declared version, which is what
         shipped before this; `nosource` is named in the signature rather than
         substituted silently, so two builds of one release do not collide."""
-        ScanCache._module_hash.cache_clear()
+        CacheSignature._module_hash.cache_clear()
         try:
-            assert ScanCache._module_hash("cordon_scanner.no.such.module") == "nosource"
+            assert CacheSignature._module_hash("cordon_scanner.no.such.module") == "nosource"
         finally:
-            ScanCache._module_hash.cache_clear()
+            CacheSignature._module_hash.cache_clear()
 
 
 class TestRoundTrip:
@@ -470,7 +472,7 @@ class TestEverythingAFileDependsOnIsInTheKey:
         config = Config.default()
 
         def signature(**facts) -> str:
-            return ScanCache.scan_signature([], self.context(**facts), config)
+            return CacheSignature.scan_signature([], self.context(**facts), config)
 
         plain = signature(repository=Repository(root="/tmp/unpacked-1"))
         assert signature(repository=Repository(root="/tmp/unpacked-2")) == plain
@@ -498,10 +500,10 @@ class TestEverythingAFileDependsOnIsInTheKey:
         overlay.write_text("{}", encoding="utf-8")
         os.utime(overlay, ns=(1, 1))
         ctx, config = self.context(), Config.default()
-        before = ScanCache.scan_signature([], ctx, config)
+        before = CacheSignature.scan_signature([], ctx, config)
         overlay.write_text('{"condemned": ["x"]}', encoding="utf-8")
         os.utime(overlay, ns=(2, 2))
-        assert ScanCache.scan_signature([], ctx, config) != before
+        assert CacheSignature.scan_signature([], ctx, config) != before
 
     def test_the_rule_files_contents_are_in_the_signature(self, tmp_path) -> None:
         """The configuration says only whether a rule file is set."""
@@ -509,9 +511,9 @@ class TestEverythingAFileDependsOnIsInTheKey:
         rules.write_text("rule a { condition: true }\n", encoding="utf-8")
         config = Config.default().with_overrides(rule_file=str(rules))
         ctx = self.context()
-        before = ScanCache.scan_signature([], ctx, config)
+        before = CacheSignature.scan_signature([], ctx, config)
         rules.write_text("rule b { condition: false }\n", encoding="utf-8")
-        assert ScanCache.scan_signature([], ctx, config) != before
+        assert CacheSignature.scan_signature([], ctx, config) != before
 
     def test_a_result_that_says_it_is_incomplete_is_not_cached(self, tmp_path) -> None:
         """A detector failure from one bad moment (memory, load) was served for that content

@@ -19,6 +19,7 @@ import dataclasses
 import json
 import posixpath
 import re
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.ecosystems.base import (
@@ -366,6 +367,37 @@ class PubEcosystem(BaseEcosystem):
         if content.basename == "package_config.json":
             return PackageConfig.parse(content, self.id)
         return PubLock.parse(content, self.id)
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A project pinning these releases, as its own lockfile: `{path: content}`."""
+        body = "".join(
+            f'  {name}:\n    dependency: "direct main"\n    description:\n      name: {name}\n'
+            f'      url: "https://pub.dev"\n    source: hosted\n    version: "{version}"\n'
+            for name, version in pins
+        )
+        return {"pubspec.lock": f'packages:\n{body}sdks:\n  dart: ">=3.0.0 <4.0.0"\n'}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A project naming these packages with no version: `{path: content}`."""
+        deps = "".join(f"  {name}: any\n" for name in names)
+        return {
+            "pubspec.yaml": f"name: cordon_check\nenvironment:\n  sdk: '>=3.0.0 <4.0.0'\ndependencies:\n{deps}"
+        }
+
+    # -- the release a published archive is (EcosystemReleaseIdentity) -------------
+
+    def release_manifest(self) -> re.Pattern[str] | None:
+        """A pub package's `pubspec.yaml`."""
+        return re.compile(r"(?:^|!)[^/!]*/?pubspec\.yaml$")
+
+    def release_identity(
+        self, path: str, text: str, found: re.Match[str]
+    ) -> tuple[str, str] | None:
+        named = re.search(r"(?m)^name:\s*['\"]?([\w-]+)", text)
+        said = re.search(r"(?m)^version:\s*['\"]?([\w.+-]+)", text)
+        return (named.group(1), said.group(1)) if named and said else None
 
 
 __all__ = ["PackageConfig", "PubEcosystem", "PubLock", "PubManifest", "PubSpec"]

@@ -101,9 +101,9 @@ class RemovedNames:
         """Names the scanner itself treats as malicious in every version: the records as
         `AdvisoryDatabase` materialises them, the same test `AdvisoryDetector._admitted_malware`
         applies. The raw file can hold an all-versions form beside an exact list for one record."""
-        from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
+        from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
 
-        database = AdvisoryDatabase.bundled()
+        database = ShippedAdvisories.database()
         raw = json.loads(gzip.decompress((DATA / f"advisories-{ecosystem}.json.gz").read_bytes()))
         names = sorted({str(r["name"]) for r in raw if isinstance(r, dict) and r.get("malicious")})
         return [

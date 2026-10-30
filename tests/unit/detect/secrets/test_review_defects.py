@@ -257,7 +257,7 @@ class TestAClassStatementAssignsNothing:
         assert "SECRET.GENERIC.ASSIGNMENT.001" in ReviewDefectsHelpers.flagged(tmp_path)
 
     def test_the_detector_version_moved_with_the_behaviour(self) -> None:
-        """`ScanCache.detector_signature` is `id@version`, and it is the only
+        """`CacheSignature.detector_signature` is `id@version`, and it is the only
         input that invalidates a cached result when a detector's behaviour
         changes -- file content, rulepack hash and config are all unchanged by a
         fix like this one. Left alone, everyone who upgrades keeps being served

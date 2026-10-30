@@ -18,12 +18,14 @@ answer (a version computed in Ruby) is unresolved, with that reason.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
+    InstallTool,
     LockEntry,
     LockGraph,
     Manifest,
@@ -803,6 +805,55 @@ class RubyGemsEcosystem(BaseEcosystem):
 
     def parse_lockfile(self, content: FileContent) -> LockGraph:
         return BundlerLock.parse(content, self.id)
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A project pinning these releases, as its own lockfile: `{path: content}`."""
+        specs_text = "".join(f"    {name} ({version})\n" for name, version in pins)
+        deps = "".join(f"  {name}\n" for name, _version in pins)
+        return {
+            "Gemfile.lock": f"GEM\n  remote: https://rubygems.org/\n  specs:\n{specs_text}\n"
+            f"PLATFORMS\n  ruby\n\nDEPENDENCIES\n{deps}"
+        }
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A project naming these packages with no version: `{path: content}`."""
+        return {
+            "Gemfile": "source 'https://rubygems.org'\n"
+            + "".join(f"gem '{name}'\n" for name in names)
+        }
+
+    def install_tool(self) -> Sequence[InstallTool]:
+        """`gem install` and `bundle add`, with `-v`."""
+        versions = frozenset({"-v", "--version"})
+        return (
+            InstallTool(
+                frozenset({"gem"}),
+                "generic",
+                subcommands=frozenset({"install"}),
+                version_flags=versions,
+            ),
+            InstallTool(
+                frozenset({"bundle"}),
+                "generic",
+                subcommands=frozenset({"add"}),
+                version_flags=versions,
+            ),
+        )
+
+    # -- the release a published archive is (EcosystemReleaseIdentity) -------------
+
+    def release_manifest(self) -> re.Pattern[str] | None:
+        """A gem's `metadata`, or its gzipped `metadata.gz`: the gemspec as YAML."""
+        return re.compile(r"(?:^|!)metadata(?:\.gz)?$")
+
+    def release_identity(
+        self, path: str, text: str, found: re.Match[str]
+    ) -> tuple[str, str] | None:
+        named = re.search(r"(?m)^name:\s*(\S+)", text)
+        said = re.search(r"(?m)^\s+version:\s*['\"]?([\w.+-]+)", text)
+        return (named.group(1), said.group(1)) if named and said else None
 
 
 __all__ = ["BundlerLock", "Gemfile", "Gemspec", "RubyGemsEcosystem", "RubySource"]

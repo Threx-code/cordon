@@ -9,9 +9,10 @@ question is being asked.
 from __future__ import annotations
 
 import importlib
+import re
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.ecosystems.base import BaseEcosystem, Ecosystem, ReleaseFile
 from cordon_scanner.ecosystems.infra.infra import INFRA_ECOSYSTEMS
@@ -43,7 +44,7 @@ if TYPE_CHECKING:
 
     from cordon_scanner.ecosystems.base import ImageReferences
     from cordon_scanner.ecosystems.infra import image as _ecosystems_infra_image
-    from cordon_scanner.foundation.dependencies import InstalledEcosystemFacts
+    from cordon_scanner.foundation.dependencies import InstalledEcosystemFacts, InstallTool
 
     ImageReference: ImageReferences = _ecosystems_infra_image.ImageReference
 
@@ -302,7 +303,90 @@ class VsCodeExtensionNames(BaseEcosystem):
         return name.split(".", 1)[0] if "." in name else None
 
 
-class RegistryFacts:
+class RegistryPublishing:
+    """The publishing and install facts RegistryFacts answers, by asking the ecosystem: projects,
+    releases, archives, entry points and the code it ships."""
+
+    @staticmethod
+    def pinned_project(ecosystem: str, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        return RegistryFacts._of(ecosystem).pinned_project(pins)
+
+    @staticmethod
+    def loose_project(ecosystem: str, names: Sequence[str]) -> dict[str, str] | None:
+        return RegistryFacts._of(ecosystem).loose_project(names)
+
+    @staticmethod
+    def install_tool(ecosystem: str) -> Sequence[InstallTool]:
+        return RegistryFacts._of(ecosystem).install_tool()
+
+    @staticmethod
+    def normalised_version(ecosystem: str, version: str) -> str:
+        return RegistryFacts._of(ecosystem).normalised_version(version)
+
+    @staticmethod
+    def library_entries(
+        ecosystem: str, members: Mapping[str, str], manifest: Mapping[str, Any], with_bin: bool
+    ) -> set[str]:
+        return RegistryFacts._of(ecosystem).library_entries(members, manifest, with_bin)
+
+    @staticmethod
+    def published_repository(ecosystem: str, manifest: Mapping[str, Any]) -> str:
+        return RegistryFacts._of(ecosystem).published_repository(manifest)
+
+    @staticmethod
+    def ships_built_code(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).ships_built_code()
+
+    @staticmethod
+    def hooks_run_javascript(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).hooks_run_javascript()
+
+    @staticmethod
+    def completes_from_checksums(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).completes_from_checksums()
+
+    @staticmethod
+    def bracket_ranges(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).bracket_ranges()
+
+    @staticmethod
+    def archive_manifest(ecosystem: str) -> str | None:
+        return RegistryFacts._of(ecosystem).archive_manifest()
+
+    @staticmethod
+    def compiled_is_inert(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).compiled_is_inert()
+
+    @staticmethod
+    def install_manifests(ecosystem: str) -> frozenset[str]:
+        return RegistryFacts._of(ecosystem).install_manifests()
+
+    @staticmethod
+    def foreign_install_manifests(ecosystem: str) -> frozenset[str]:
+        every = frozenset().union(
+            *(
+                RegistryFacts._of(e.id).install_manifests()
+                for e in EcosystemRegistry.all_ecosystems()
+            )
+        )
+        return every - RegistryFacts._of(ecosystem).install_manifests()
+
+    @staticmethod
+    def identity_in_metadata(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).identity_in_metadata()
+
+    @staticmethod
+    def release_manifest(ecosystem: str) -> re.Pattern[str] | None:
+        return RegistryFacts._of(ecosystem).release_manifest()
+
+    @staticmethod
+    def release_identity(
+        ecosystem: str, path: str, text: str, found: re.Match[str]
+    ) -> tuple[str, str] | None:
+        return RegistryFacts._of(ecosystem).release_identity(path, text, found)
+
+
+class RegistryFacts(RegistryPublishing):
     """`foundation.dependencies`' ecosystem ports, answered by each ecosystem's own declarations
     (an unknown ecosystem has the defaults: `BaseEcosystem`); installed through the
     `cordon_scanner.ecosystem_facts` entry point."""

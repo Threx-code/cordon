@@ -30,6 +30,7 @@ from typing import IO, TYPE_CHECKING, Any, ClassVar, Final
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.images import langpkgs
 from cordon_scanner.images import packages as pkgdb
+from cordon_scanner.images.members import ImageArchive
 
 if TYPE_CHECKING:
     from cordon_scanner.images.identity import ImageInventory
@@ -130,10 +131,6 @@ class ImageLayers:
     """An OCI or Docker image tarball, squashed to the files that matter."""
 
     @staticmethod
-    def _normalise(name: str) -> str:
-        return posixpath.normpath("/" + name).lstrip("/")
-
-    @staticmethod
     def _wanted(path: str) -> bool:
         if path in _WANTED_EXACT:
             return True
@@ -162,7 +159,7 @@ class ImageLayers:
         try:
             with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as archive:
                 for member in archive:
-                    if ImageLayers.LAYER_MEMBER.match(ImageLayers._normalise(member.name)):
+                    if ImageLayers.LAYER_MEMBER.match(ImageArchive.normalise(member.name)):
                         seen += 1
                 return False
         except (tarfile.TarError, OSError, ValueError, EOFError):
@@ -170,22 +167,8 @@ class ImageLayers:
 
     @staticmethod
     def is_image(archive: tarfile.TarFile) -> bool:
-        names = {ImageLayers._normalise(m.name) for m in archive.getmembers()[:4096]}
+        names = {ImageArchive.normalise(m.name) for m in archive.getmembers()[:4096]}
         return "manifest.json" in names or ("oci-layout" in names and "index.json" in names)
-
-    @staticmethod
-    def _read_member(archive: tarfile.TarFile, name: str, limit: int = 16 << 20) -> bytes:
-        member = archive.getmember(name)
-        if not member.isfile() or member.size > limit:
-            raise ValueError(f"{name} is not a readable file within limits")
-        handle = archive.extractfile(member)
-        if handle is None:
-            raise ValueError(f"{name} could not be opened")
-        return handle.read()
-
-    @staticmethod
-    def _members_by_path(archive: tarfile.TarFile) -> dict[str, str]:
-        return {ImageLayers._normalise(m.name): m.name for m in archive.getmembers()}
 
     @staticmethod
     def _real_platforms(manifests: list[Any]) -> list[tuple[int, str]]:
@@ -209,11 +192,11 @@ class ImageLayers:
         """The platforms of a multi-platform image, as `(manifest index, label)`; [] for one."""
         try:
             with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as archive:
-                by_path = ImageLayers._members_by_path(archive)
+                by_path = ImageArchive.members_by_path(archive)
                 if "index.json" not in by_path:
                     return []
                 document = ScannedJson.loads(
-                    ImageLayers._read_member(archive, by_path["index.json"])
+                    ImageArchive.read_member(archive, by_path["index.json"])
                 )
                 for _ in range(4):
                     manifests = document.get("manifests") or []
@@ -227,7 +210,7 @@ class ImageLayers:
                     member = by_path.get(f"blobs/{algorithm}/{hexdigest}")
                     if member is None:
                         return []
-                    document = ScannedJson.loads(ImageLayers._read_member(archive, member))
+                    document = ScannedJson.loads(ImageArchive.read_member(archive, member))
                     if "layers" in document:
                         return []
         except (tarfile.TarError, OSError, ValueError, KeyError):
@@ -240,10 +223,10 @@ class ImageLayers:
     ) -> list[str]:
         """The image's layer members, bottom first. The first image when a tarball holds several;
         for a multi-platform image, the manifest `platform` names, else the first real platform."""
-        by_path = ImageLayers._members_by_path(archive)
+        by_path = ImageArchive.members_by_path(archive)
         if "manifest.json" in by_path:
             manifest = ScannedJson.loads(
-                ImageLayers._read_member(archive, by_path["manifest.json"])
+                ImageArchive.read_member(archive, by_path["manifest.json"])
             )
             if isinstance(manifest, list) and manifest:
                 if len(manifest) > 1:
@@ -252,15 +235,15 @@ class ImageLayers:
                     )
                 layers = manifest[0].get("Layers") or []
                 return [
-                    by_path.get(ImageLayers._normalise(str(layer)), str(layer)) for layer in layers
+                    by_path.get(ImageArchive.normalise(str(layer)), str(layer)) for layer in layers
                 ]
-        index = ScannedJson.loads(ImageLayers._read_member(archive, by_path["index.json"]))
+        index = ScannedJson.loads(ImageArchive.read_member(archive, by_path["index.json"]))
         descriptor: Any = (index.get("manifests") or [{}])[0]
         for _ in range(4):  # an index may point at another index (a multi-platform image)
             digest = str(descriptor.get("digest", ""))
             algorithm, _, hexdigest = digest.partition(":")
             document = ScannedJson.loads(
-                ImageLayers._read_member(archive, by_path[f"blobs/{algorithm}/{hexdigest}"])
+                ImageArchive.read_member(archive, by_path[f"blobs/{algorithm}/{hexdigest}"])
             )
             if "layers" in document:
                 return [
@@ -355,7 +338,7 @@ class ImageLayers:
         for count, member in enumerate(layer):
             if count >= MAX_MEMBERS_PER_LAYER:
                 raise ValueError("a layer has more members than the reader walks")
-            path = ImageLayers._normalise(member.name)
+            path = ImageArchive.normalise(member.name)
             directory, base = posixpath.split(path)
             if base == ".wh..wh..opq":
                 prefix = directory + "/" if directory else ""
@@ -859,21 +842,21 @@ class ImageConfig:
     @staticmethod
     def _document(data: bytes) -> dict[str, Any] | None:
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as archive:
-            by_path = ImageLayers._members_by_path(archive)
+            by_path = ImageArchive.members_by_path(archive)
             name: str | None = None
             if "manifest.json" in by_path:
                 manifest = ScannedJson.loads(
-                    ImageLayers._read_member(archive, by_path["manifest.json"])
+                    ImageArchive.read_member(archive, by_path["manifest.json"])
                 )
                 if isinstance(manifest, list) and manifest and manifest[0].get("Config"):
-                    name = by_path.get(ImageLayers._normalise(str(manifest[0]["Config"])))
+                    name = by_path.get(ImageArchive.normalise(str(manifest[0]["Config"])))
             elif "index.json" in by_path:
-                index = ScannedJson.loads(ImageLayers._read_member(archive, by_path["index.json"]))
+                index = ScannedJson.loads(ImageArchive.read_member(archive, by_path["index.json"]))
                 descriptor: Any = (index.get("manifests") or [{}])[0]
                 for _ in range(4):
                     algorithm, _, hexdigest = str(descriptor.get("digest", "")).partition(":")
                     document = ScannedJson.loads(
-                        ImageLayers._read_member(archive, by_path[f"blobs/{algorithm}/{hexdigest}"])
+                        ImageArchive.read_member(archive, by_path[f"blobs/{algorithm}/{hexdigest}"])
                     )
                     if "config" in document:
                         algorithm, _, hexdigest = str(
@@ -887,7 +870,7 @@ class ImageConfig:
                     descriptor = manifests[0]
             if name is None:
                 return None
-            config = ScannedJson.loads(ImageLayers._read_member(archive, name))
+            config = ScannedJson.loads(ImageArchive.read_member(archive, name))
         return config if isinstance(config, dict) else None
 
     @staticmethod

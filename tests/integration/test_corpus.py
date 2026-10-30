@@ -228,9 +228,20 @@ class TestBenignCorpus(CorpusFixtures):
 @pytest.mark.corpus
 @requires_malicious_corpus
 class TestScanGuarantees(CorpusFixtures):
-    def test_scans_are_deterministic(self, scanner: Scanner) -> None:
+    def test_scans_are_deterministic(self) -> None:
         """Constraint C5. Baselines, caching and reproducible gates all depend
-        on identical inputs producing identical output."""
+        on identical inputs producing identical output.
+
+        With the wall-clock budgets off: this tests determinism, not budgets, and on
+        a loaded machine a per-file budget that tripped in one of the two scans gave
+        it a finding the other lacked (a skipped detector reported as such)."""
+        config = Config.default()
+        scanner = Scanner(
+            config.with_overrides(
+                use_cache=False,
+                limits=config.limits.merged(per_file_timeout=0.0, total_timeout=0.0),
+            )
+        )
         first = scanner.scan(MALICIOUS)
         second = scanner.scan(MALICIOUS)
 

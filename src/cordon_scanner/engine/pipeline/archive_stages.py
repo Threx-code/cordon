@@ -280,9 +280,9 @@ class ArchiveStages:
             self.config.limits.max_workers, len(units), sum(len(u.content.raw) for u in units)
         )
         if workers > 1:
-            from cordon_scanner.engine.cache import ScanCache
+            from cordon_scanner.engine.cache import CacheSignature
 
-            signature = ScanCache.scan_signature(content_detectors, ctx, self.config)
+            signature = CacheSignature.scan_signature(content_detectors, ctx, self.config)
             for start in range(0, len(units), ARCHIVE_SLICE):
                 if self.config.limits.total_timeout > 0 and time.monotonic() > deadline:
                     acc.complete = False

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import posixpath
 import re
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar
+from xml.sax.saxutils import escape
 
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
@@ -637,6 +639,80 @@ class MavenEcosystem(BaseEcosystem):
                 "output, and commit trusted checksums under .mvn/checksums/"
             ),
         )
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A project pinning these releases, as its own lockfile: `{path: content}`."""
+
+        def xml(value: str) -> str:
+            return escape(value, {'"': "&quot;"})
+
+        deps = "".join(
+            f"<dependency><groupId>{xml(name.split(':')[0])}</groupId>"
+            f"<artifactId>{xml(name.split(':')[1])}</artifactId>"
+            f"<version>{xml(version or '')}</version></dependency>"
+            for name, version in pins
+        )
+        return {
+            "pom.xml": '<?xml version="1.0"?><project xmlns="http://maven.apache.org/POM/4.0.0">'
+            "<modelVersion>4.0.0</modelVersion><groupId>cordon.check</groupId>"
+            "<artifactId>check</artifactId><version>1</version>"
+            f"<dependencies>{deps}</dependencies></project>"
+        }
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A project naming these packages with no version: `{path: content}`."""
+
+        def xml(value: str) -> str:
+            return escape(value, {'"': "&quot;"})
+
+        deps = "".join(
+            f"<dependency><groupId>{xml(name.split(':')[0])}</groupId>"
+            f"<artifactId>{xml(name.split(':')[1])}</artifactId></dependency>"
+            for name in names
+        )
+        return {
+            "pom.xml": '<?xml version="1.0"?><project xmlns="http://maven.apache.org/POM/4.0.0">'
+            "<modelVersion>4.0.0</modelVersion><groupId>cordon.check</groupId>"
+            "<artifactId>check</artifactId><version>1</version>"
+            f"<dependencies>{deps}</dependencies></project>"
+        }
+
+    # -- the release a published archive is (EcosystemReleaseIdentity) -------------
+
+    def release_manifest(self) -> re.Pattern[str] | None:
+        """`<group>/<artifact>/pom.properties` inside a jar: the coordinates Maven resolved."""
+        return MavenEcosystem.POM_PROPERTIES
+
+    def release_identity(
+        self, path: str, text: str, found: re.Match[str]
+    ) -> tuple[str, str] | None:
+        return MavenEcosystem.pom_identity(path, text)
+
+    POM_PROPERTIES: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?:^|!)META-INF/maven/[^/!]+/[^/!]+/pom\.properties$"
+    )
+
+    @staticmethod
+    def pom_identity(path: str, text: str) -> tuple[str, str] | None:
+        """`group:artifact` and version from a jar's `pom.properties`."""
+        group = re.search(r"(?m)^groupId=(\S+)", text)
+        artifact = re.search(r"(?m)^artifactId=(\S+)", text)
+        said = re.search(r"(?m)^version=(\S+)", text)
+        if group and artifact and said:
+            # A shaded jar carries the poms of what it bundles, and may not carry its
+            # own: only a pom whose artifact the jar was published as names it.
+            archive = path.split("!", 1)[0]
+            if f"{artifact.group(1)}-{said.group(1)}" in archive:
+                return f"{group.group(1)}:{artifact.group(1)}", said.group(1)
+        return None
+
+    # -- how its graph is resolved (EcosystemResolution) ---------------------------
+
+    def bracket_ranges(self) -> bool:
+        """A declared version may be a Maven range: `[1.0,2.0)`."""
+        return True
 
 
 __all__ = [

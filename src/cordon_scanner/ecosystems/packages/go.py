@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
+    InstallTool,
     LockEntry,
     LockGraph,
     Manifest,
@@ -360,6 +362,55 @@ class GoEcosystem(BaseEcosystem):
         return LockGraph(
             path=content.path, ecosystem=self.id, entries=tuple(entries), companion=True
         )
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A project pinning these releases, as its own lockfile: `{path: content}`."""
+
+        def go_version(version: str | None) -> str:
+            v = version or ""
+            return v if v.startswith("v") else f"v{v}"
+
+        lines = "".join(f"\t{name} {go_version(version)}\n" for name, version in pins)
+        return {"go.mod": f"module cordon.invalid/check\n\ngo 1.22\n\nrequire (\n{lines})\n"}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A project naming these packages with no version: `{path: content}`."""
+        raise ValueError("a Go module needs a version: Go records none without one")
+
+    def normalised_version(self, version: str) -> str:
+        """A Go version keeps its `v`: `v1.2.3` is the module's own tag."""
+        return version.strip()
+
+    def install_tool(self) -> Sequence[InstallTool]:
+        """`go get` and `go install` with `module@version`; a query word is no version."""
+        return (
+            InstallTool(
+                frozenset({"go"}),
+                "generic",
+                subcommands=frozenset({"get", "install"}),
+                at_version=True,
+                version_queries=frozenset({"latest", "upgrade", "patch", "none"}),
+            ),
+        )
+
+    # -- the release a published archive is (EcosystemReleaseIdentity) -------------
+
+    def release_manifest(self) -> re.Pattern[str] | None:
+        """A Go module zip's own go.mod, at `<module>@<version>/go.mod`."""
+        return re.compile(r"(?:^|!)([^!]+)@(v[^/!]+)/go\.mod$")
+
+    def release_identity(
+        self, path: str, text: str, found: re.Match[str]
+    ) -> tuple[str, str] | None:
+        return found.group(1).rpartition("!")[2], found.group(2).lstrip("v")
+
+    # -- how its graph is resolved (EcosystemResolution) ---------------------------
+
+    def completes_from_checksums(self) -> bool:
+        """go.sum records the build's modules: it completes the graph where go.mod leaves some out."""
+        return True
 
 
 class GoWork:

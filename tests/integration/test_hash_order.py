@@ -40,7 +40,10 @@ from cordon_scanner.intel.advisories.advisories import Advisory, AdvisoryDatabas
 from cordon_scanner.detect.supply.advisories.detector import AdvisoryDetector
 
 target, kind = Path(sys.argv[1]), sys.argv[2]
-config = Config.default().with_overrides(use_cache=False)
+# Both wall-clock budgets off: this compares two seeds, and a budget that trips in one of the two
+# scans on a loaded machine (235 findings against 234) is the machine, not the seed.
+limits = Config.default().limits.merged(per_file_timeout=0.0, total_timeout=0.0)
+config = Config.default().with_overrides(use_cache=False, limits=limits)
 if kind == "not-installed":
     # Info shown: a not-installed record's findings are its rules' info twins.
     from cordon_scanner.foundation.models import Severity

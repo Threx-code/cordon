@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.ecosystems.base import (
@@ -372,6 +373,32 @@ class SwiftEcosystem(BaseEcosystem):
 
     def parse_lockfile(self, content: FileContent) -> LockGraph:
         return SwiftResolved.parse(content, self.id)
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A project pinning these releases, as its own lockfile: `{path: content}`."""
+
+        def location(name: str) -> str:
+            if name.startswith(("https://", "http://")):
+                return name
+            first = name.split("/", 1)[0]
+            return f"https://{name}.git" if "." in first else f"https://github.com/{name}.git"
+
+        resolved = [
+            {
+                "identity": name.rstrip("/").rsplit("/", 1)[-1].removesuffix(".git").lower(),
+                "kind": "remoteSourceControl",
+                "location": location(name),
+                "state": {"version": version, "revision": "0" * 40},
+            }
+            for name, version in pins
+        ]
+        return {"Package.resolved": json.dumps({"pins": resolved, "version": 2})}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A project naming these packages with no version: `{path: content}`."""
+        raise ValueError("a Swift package needs a version to be checked")
 
 
 __all__ = ["SwiftEcosystem", "SwiftIdentity", "SwiftManifest", "SwiftResolved"]

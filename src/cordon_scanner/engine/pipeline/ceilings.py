@@ -16,6 +16,7 @@ from cordon_scanner.detect.base import (
     FileUnit,
     ScanContext,
 )
+from cordon_scanner.ecosystems.registry import RegistryFacts
 from cordon_scanner.engine.pipeline.constants import (
     AUTHOR_TIME_FILENAMES,
     AUTHOR_TIME_PREFIXES,
@@ -508,15 +509,15 @@ class Ceilings:
         blocked by a dropper alone, against 0 of 44 malware samples). A conda link script runs at
         install and keeps its grade.
         """
-        compiled_is_inert = distribution in ("pypi", "npm")
+        compiled_is_inert = RegistryFacts.compiled_is_inert(distribution)
+        # Another ecosystem's install manifest is author-time here: npm's package.json in a wheel.
+        foreign_manifests = RegistryFacts.foreign_install_manifests(distribution)
         make_is_inert = distribution not in MAKE_AT_INSTALL
 
         def author_time(member: str) -> bool:
             name = ContainerPaths.basename(member)
             lower = name.lower()
-            other_ecosystem = (name == "package.json" and distribution != "npm") or (
-                name in ("setup.py", "pyproject.toml") and distribution != "pypi"
-            )
+            other_ecosystem = name in foreign_manifests
             makefile = name in MAKEFILES or name.endswith(".mk")
             return (
                 other_ecosystem

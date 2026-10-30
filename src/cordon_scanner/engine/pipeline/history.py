@@ -10,12 +10,13 @@ import io
 import re
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 from cordon_scanner.detect.base import (
     FileUnit,
     ScanContext,
 )
+from cordon_scanner.ecosystems.registry import RegistryFacts
 from cordon_scanner.engine.package_format import PackageFormat
 from cordon_scanner.engine.pipeline.constants import YOUNG_DEPENDENCY_RULE
 from cordon_scanner.engine.pipeline.releases import ReleaseChecks
@@ -55,24 +56,13 @@ class History:
         record = RegistryRecord.load(*identity, root=root)
         return record.facts() if record is not None else {}
 
-    _HISTORY_MANIFESTS: ClassVar[dict[str, re.Pattern[str]]] = {
-        # `<group>/<artifact>/pom.properties` inside a jar: the coordinates Maven resolved.
-        "maven": re.compile(r"(?:^|!)META-INF/maven/[^/!]+/[^/!]+/pom\.properties$"),
-        "gradle": re.compile(r"(?:^|!)META-INF/maven/[^/!]+/[^/!]+/pom\.properties$"),
-        # A Go module zip's own go.mod, at `<module>@<version>/go.mod`.
-        "gomod": re.compile(r"(?:^|!)([^!]+)@(v[^/!]+)/go\.mod$"),
-        "hex": re.compile(r"(?:^|!)metadata\.config$"),
-        "pub": re.compile(r"(?:^|!)[^/!]*/?pubspec\.yaml$"),
-        "rubygems": re.compile(r"(?:^|!)metadata(?:\.gz)?$"),
-    }
-
     @staticmethod
     def history_identity(
         units: Sequence[FileUnit], distribution: str
     ) -> tuple[str, str, str] | None:
         """(ecosystem, name, version) of the release a published archive is, for
         `ReleaseHistory`: the manifest its format names, read the way that format writes it."""
-        if distribution in ("npm", "pypi", "cargo", "nuget"):
+        if RegistryFacts.identity_in_metadata(distribution):
             identities, _ = ReleaseChecks.release_identities(units)
             for ecosystem, name, version, _ in identities:
                 if ecosystem == distribution:
@@ -97,7 +87,7 @@ class History:
                 # As published: the API redirects any other spelling to this one.
                 return "openvsx", f"{publisher}.{extension}", str(release)
             return None
-        pattern = History._HISTORY_MANIFESTS.get(distribution)
+        pattern = RegistryFacts.release_manifest(distribution)
         if pattern is None:
             return None
         for unit in units:
@@ -115,37 +105,9 @@ class History:
                         text = stream.read(20000).decode("utf-8", "replace")
                 except (OSError, EOFError, zlib.error):
                     continue
-            if distribution == "gomod":
-                return "gomod", found.group(1).rpartition("!")[2], found.group(2).lstrip("v")
-            if distribution in ("maven", "gradle"):
-                group = re.search(r"(?m)^groupId=(\S+)", text)
-                artifact = re.search(r"(?m)^artifactId=(\S+)", text)
-                said = re.search(r"(?m)^version=(\S+)", text)
-                if group and artifact and said:
-                    # A shaded jar carries the poms of what it bundles, and may not carry its
-                    # own: only a pom whose artifact the jar was published as names it.
-                    archive = unit.path.split("!", 1)[0]
-                    if f"{artifact.group(1)}-{said.group(1)}" in archive:
-                        return (
-                            distribution,
-                            f"{group.group(1)}:{artifact.group(1)}",
-                            said.group(1),
-                        )
-            elif distribution == "hex":
-                named = re.search(r'\{<<"name">>,\s*<<"([^"]+)">>\}', text)
-                said = re.search(r'\{<<"version">>,\s*<<"([^"]+)">>\}', text)
-                if named and said:
-                    return "hex", named.group(1), said.group(1)
-            elif distribution == "pub":
-                named = re.search(r"(?m)^name:\s*['\"]?([\w-]+)", text)
-                said = re.search(r"(?m)^version:\s*['\"]?([\w.+-]+)", text)
-                if named and said:
-                    return "pub", named.group(1), said.group(1)
-            elif distribution == "rubygems":
-                named = re.search(r"(?m)^name:\s*(\S+)", text)
-                said = re.search(r"(?m)^\s+version:\s*['\"]?([\w.+-]+)", text)
-                if named and said:
-                    return "rubygems", named.group(1), said.group(1)
+            identity = RegistryFacts.release_identity(distribution, unit.path, text, found)
+            if identity is not None:
+                return distribution, *identity
         return None
 
     @staticmethod

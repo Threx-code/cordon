@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Final
 
+from cordon_scanner.ecosystems.registry import RegistryFacts
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 
 if TYPE_CHECKING:
@@ -94,10 +95,8 @@ class PackageFormat:
         project with a package.json at its root has the same shape (GitHub's codeload tarballs:
         23 gradle, nix, opam and swift repositories in the #18 A/B), so it is read both ways
         (`union`)."""
-        return (
-            PackageFormat.of(units) == "npm"
-            and "package/package.json" not in (PackageFormat._levels(units)[0])
-        )
+        manifest = RegistryFacts.archive_manifest(PackageFormat.of(units))
+        return manifest is not None and manifest not in (PackageFormat._levels(units)[0])
 
     @staticmethod
     def union(package: list[Finding], repository: list[Finding]) -> list[Finding]:

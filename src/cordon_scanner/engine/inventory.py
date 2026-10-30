@@ -11,6 +11,7 @@ import re
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.ecosystems.registry import RegistryFacts
 from cordon_scanner.foundation.models import Category, Scope
 from cordon_scanner.foundation.results import Dependency
 
@@ -169,8 +170,8 @@ class DependencyRecords:
             return "not_applicable"
         if dependency.integrity in INSTALLED_MARKERS:
             return "not_applicable"
-        if dependency.ecosystem == "gomod" and dependency.name == "stdlib":
-            return "not_applicable"  # arrives with the Go toolchain, not from the module proxy
+        if RegistryFacts.is_builtin(dependency.ecosystem, dependency.name):
+            return "not_applicable"  # arrives with the toolchain (Go's stdlib), not from a registry
         from cordon_scanner.ecosystems.registry import EcosystemRegistry
 
         implementation = EcosystemRegistry.get(dependency.ecosystem)

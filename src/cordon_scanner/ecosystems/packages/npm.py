@@ -12,16 +12,20 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
+    InstallTool,
     LockEntry,
     LockGraph,
     Manifest,
     ReleaseFile,
 )
+from cordon_scanner.ecosystems.packages.javascript.conditions import NpmConditions
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
@@ -37,7 +41,127 @@ SCOPE_FIELDS = {
 }
 
 
-class NpmEcosystem(BaseEcosystem):
+class NpmProjects:
+    """npm's project files, install tools, release identity and archive traits."""
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A project pinning these releases, as its own lockfile: `{path: content}`."""
+        packages: dict[str, object] = {"": {"name": "cordon-check", "dependencies": dict(pins)}}
+        for name, version in pins:
+            packages[f"node_modules/{name}"] = {"version": version}
+        return {
+            "package-lock.json": json.dumps(
+                {
+                    "name": "cordon-check",
+                    "lockfileVersion": 3,
+                    "requires": True,
+                    "packages": packages,
+                }
+            )
+        }
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A project naming these packages with no version: `{path: content}`."""
+        return {
+            "package.json": json.dumps(
+                {
+                    "name": "cordon-check",
+                    "version": "0.0.0",
+                    "dependencies": dict.fromkeys(names, "*"),
+                }
+            )
+        }
+
+    def install_tool(self) -> Sequence[InstallTool]:
+        """npm and the clients that read its registry: install words npm itself accepts (its
+        misspellings included), the other clients' one-off runners, and npx's three spellings."""
+        install = frozenset(
+            {
+                "install",
+                "i",
+                "add",
+                "isntall",
+                "in",
+                "ins",
+                "inst",
+                "insta",
+                "instal",
+                "isnt",
+                "isnta",
+                "isntal",
+            }
+        )
+        runners = frozenset({"dlx", "x", "exec"})
+        return (
+            InstallTool(frozenset({"npm"}), "npm", subcommands=install),
+            InstallTool(
+                frozenset({"cnpm"}), "npm", subcommands=install, runners=runners, flags_as="npm"
+            ),
+            InstallTool(
+                frozenset({"pnpm", "yarn", "bun"}), "npm", subcommands=install, runners=runners
+            ),
+            InstallTool(frozenset({"npx"}), "npx"),
+            InstallTool(frozenset({"bunx"}), "npx", flags_as="bun"),
+            InstallTool(frozenset({"pnpx"}), "npx", flags_as="pnpm"),
+        )
+
+    def identity_in_metadata(self) -> bool:
+        """The release names itself in the metadata every published archive's checks read."""
+        return True
+
+    def compiled_is_inert(self) -> bool:
+        """A compiled file in its archive does not run at install."""
+        return True
+
+    def install_manifests(self) -> frozenset[str]:
+        """The files its installer runs or reads to build: an author-time file elsewhere."""
+        return frozenset({"package.json"})
+
+
+class NpmPackageCode:
+    """npm's published manifest, entry points, repository and the code its packages ship."""
+
+    def archive_manifest(self) -> str | None:
+        """Where a published tarball keeps its manifest: under `package/`."""
+        return "package/package.json"
+
+    def library_entries(
+        self, members: Mapping[str, str], manifest: Mapping[str, Any], with_bin: bool
+    ) -> set[str]:
+        """`main` (or `index.js`), `bin` and `exports` targets of a published tarball."""
+        found: set[str] = set()
+        targets: list[str] = [manifest.get("main") or "index.js"]
+
+        if with_bin:
+            targets.extend(ScannedJson.strings(manifest.get("bin")))
+        targets.extend(ScannedJson.strings(manifest.get("exports")))
+        for target in targets:
+            if not isinstance(target, str) or "*" in target:
+                continue
+            base = "package/" + target.strip().removeprefix("./").rstrip("/")
+            for candidate in (base, f"{base}.js", f"{base}/index.js"):
+                if candidate in members:
+                    found.add(members[candidate])
+                    break
+        return found
+
+    def published_repository(self, manifest: Mapping[str, Any]) -> str:
+        """`repository`: a string, or an object's `url`."""
+        repository = manifest.get("repository")
+        if isinstance(repository, dict):
+            repository = repository.get("url")
+        return repository.strip() if isinstance(repository, str) else ""
+
+    def ships_built_code(self) -> bool:
+        """`dist/` and the minified bundle of a published tarball are the code `main` runs."""
+        return True
+
+    def hooks_run_javascript(self) -> bool:
+        """Its install scripts and entry points are JavaScript."""
+        return True
+
+
+class NpmEcosystem(NpmProjects, NpmPackageCode, BaseEcosystem):
     @staticmethod
     def _name_from_location(location: str) -> str:
         """Recover a package name from a node_modules path."""
@@ -395,7 +519,7 @@ class NpmEcosystem(BaseEcosystem):
                     local=NpmEcosystem._is_local_package(location, meta, resolved),
                     bundled=NpmEcosystem._is_bundled(location, meta, resolved, hashed),
                     license=NpmEcosystem._str_or_none(meta.get("license")),
-                    platform=NpmEcosystem._platform(meta),
+                    platform=NpmConditions.platform(meta),
                     alias=directory if "node_modules/" in location and directory != name else None,
                 )
             )
@@ -439,23 +563,6 @@ class NpmEcosystem(BaseEcosystem):
         if meta.get("peer") is True:
             return Scope.PEER
         return Scope.RUNTIME
-
-    @staticmethod
-    def _platform(meta: dict[str, Any]) -> tuple[str, ...]:
-        """`os`, `cpu` and `libc` as conditions: `os: darwin`, `cpu: !arm`."""
-        out: list[str] = []
-        for field in ("os", "cpu", "libc"):
-            values = meta.get(field)
-            if isinstance(values, str):
-                values = [values]
-            if isinstance(values, list):
-                listed = [str(v) for v in values if isinstance(v, (str, int))]
-                if listed:
-                    out.append(f"{field}: {', '.join(listed)}")
-        engines = meta.get("engines")
-        if isinstance(engines, dict) and isinstance(engines.get("node"), str):
-            out.append(f"node: {engines['node']}")
-        return tuple(out)
 
     @staticmethod
     def _is_local_package(location: str, meta: dict[str, Any], resolved: str | None) -> bool:
@@ -558,43 +665,7 @@ class NpmEcosystem(BaseEcosystem):
                 out.extend(self._walk_v1(nested, depth + 1))
         return out
 
-    @staticmethod
-    def _pnpm_split_key(key: str) -> tuple[str, str] | None:
-        """A pnpm package key as `(name, version)`, across the formats in use.
-
-        pnpm has written the key three ways. Lockfile 5 separates with a slash
-        and leads with one (`/lodash/4.17.21`, `/@babel/core/7.21.0`); 6 and 9
-        separate with `@` (`/@babel/core@7.21.0`, `lodash@4.17.21`). Splitting on
-        the last `@` alone reads every version-5 key as nameless and dropped the
-        whole file, silently, because an empty graph and a project with no
-        dependencies looked the same.
-
-        A peer-suffixed key (`foo@1.0.0(bar@2.0.0)`) keeps only its own version:
-        the suffix names the peer the entry was resolved against, not part of
-        what this entry is.
-        """
-        text = key.strip().strip("'\"")
-        if not text:
-            return None
-
-        head = text.split("(", 1)[0]
-        scoped = head.startswith(("/@", "@"))
-        body = head[1:] if head.startswith("/") else head
-
-        at = body.rfind("@")
-        if at > 0:
-            name, version = body[:at], body[at + 1 :]
-            if name and version and "/" not in version:
-                return (name, version)
-
-        # Lockfile 5: the version is the last slash-separated segment, and a
-        # scoped name keeps the slash that belongs to its scope.
-        cut = body.rfind("/")
-        if cut > 0:
-            name, version = body[:cut], body[cut + 1 :]
-            if name and version and (not scoped or "/" in name):
-                return (name, version)
-        return None
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
 
 
 __all__ = ["NpmEcosystem"]

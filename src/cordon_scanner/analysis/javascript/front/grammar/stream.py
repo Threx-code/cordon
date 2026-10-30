@@ -249,140 +249,26 @@ class TokenStream:
         self.restore(state)
         return yes
 
-    def _type_annotation(self) -> None:
-        if self.typescript and self.eat(":"):
-            self.skip_type()
-
-    def _type_parameters(self) -> None:
-        if self.typescript and self.at("<"):
-            self._skip_balanced("<", ">")
-
-    def _type_arguments_maybe(self) -> bool:
-        """`f<T>(...)`, `new C<T>()`, `a<T>` before a template: type arguments when a balanced
-        `<...>` of at most `LOOKAHEAD` tokens is followed by `(` or a template; otherwise `<` is
-        less-than and nothing is consumed."""
-        state = self.snapshot()
-        try:
-            self._skip_balanced("<", ">", limit=TokenStream.LOOKAHEAD)
-        except ParseError:
-            self.restore(state)
-            return False
-        if (
-            self.at("(")
-            or self.tok.kind in ("template", "template_head")
-            or self.at(")")
-            or self.at(",")
-            or self.at(";")
-        ):
-            return True
-        self.restore(state)
-        return False
-
-    def skip_type(self, *, arrow_ends: bool = False) -> None:
-        """One type, passed over: tokens to the first `,`, `)`, `]`, `}`, `;`, `=`, `{` or `=>`
-        outside every bracket -- extended past `=>` for a function type, past `extends ? :` for a
-        conditional type, past `|`, `&`, `.`, `[]`, `<...>` and `keyof`/`typeof` operators."""
-        level = 0
-        moved = False
-        while self.tok.kind != "eof":
-            t = self.tok
-            v = t.value if t.kind in ("punct", "name") else None
-            if level == 0 and moved:
-                if v in (",", ")", "]", "}", ";", "=") or (v == ">" and not self._type_continues()):
-                    return
-                if v == "{" and not self._type_object_allowed():
-                    return
-                if t.newline and v not in ("|", "&", "?", ":", "=>", "extends", "."):
-                    return
-                if v == "=>":
-                    if arrow_ends:  # an arrow's return type ends where its body begins
-                        return
-                    self.advance()
-                    moved = False
-                    continue
-                if v in ("as", "satisfies") and t.kind == "name":
-                    return
-            if v in ("(", "[", "{", "<"):
-                level += 1
-            elif v in (")", "]", "}", ">"):
-                level -= 1
-                if level < 0:
-                    return
-            elif v == ">>" and level >= 2:
-                level -= 2
-            elif v == ">>>" and level >= 3:
-                level -= 3
-            self.advance()
-            moved = True
-            if (
-                level == 0
-                and self.at("{")
-                and self.prev.value
-                in ("|", "&", ":", "=>", "<", ",", "(", "keyof", "typeof", "extends", "?")
-            ):
-                continue
-
-    def _type_continues(self) -> bool:
-        return False
-
-    def _type_object_allowed(self) -> bool:
-        return self.prev.value in (
-            "|",
-            "&",
-            ":",
-            "=>",
-            "<",
-            ",",
-            "(",
-            "extends",
-            "?",
-            "keyof",
-            "typeof",
-            "readonly",
-            "as",
-            "satisfies",
-            "=",
-            "is",
-            "asserts",
-        )
-
-    def _skip_type_list(self) -> None:
-        self.skip_type()
-        while self.eat(","):
-            self.skip_type()
-
-    def _skip_balanced(
-        self, open_: str, close: str, *, consumed_open: bool = False, limit: int | None = None
-    ) -> None:
-        if not consumed_open:
-            self.expect(open_)
-        level, steps, braces = 1, 0, 0
-        while level > 0:
-            if self.tok.kind == "eof":
-                raise ParseError(f"unclosed {open_!r}")
-            steps += 1
-            if limit is not None and steps > limit:
-                raise ParseError("past the lookahead")
-            v = self.tok.value if self.tok.kind == "punct" else None
-            if open_ == "<" and v in ("{", "}"):
-                braces += 1 if v == "{" else -1
-            if v == open_:
-                level += 1
-            elif v == close:
-                level -= 1
-            elif open_ == "<" and v == ">>":
-                level -= 2
-            elif open_ == "<" and v == ">>>":
-                level -= 3
-            elif open_ == "<" and v == ";" and braces <= 0 and limit is not None:
-                raise ParseError("not type arguments")
-            self.advance()
-
     if TYPE_CHECKING:
         # The grammar is one mutually recursive component: statements, declarations, expressions,
         # JSX and TypeScript all read each other. These declare, once, what each area calls in the
         # others; the one real definition of each is in its area's class, and mypy checks it
         # against this signature. Nothing here exists at run time.
+
+        # TypeScript's type syntax, skipped (`Dialects`):
+        def _type_annotation(self) -> None: ...
+
+        def _type_parameters(self) -> None: ...
+
+        def _type_arguments_maybe(self) -> bool: ...
+
+        def skip_type(self, *, arrow_ends: bool = False) -> None: ...
+
+        def _skip_type_list(self) -> None: ...
+
+        def _skip_balanced(
+            self, open_: str, close: str, *, consumed_open: bool = False, limit: int | None = None
+        ) -> None: ...
 
         def assignment(self, *, no_in: bool = False) -> Node: ...
 

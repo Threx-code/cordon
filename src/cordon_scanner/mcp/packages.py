@@ -14,11 +14,15 @@ source, a local path, a custom index.
 
 from __future__ import annotations
 
-import json
+import functools
 import re
 import shlex
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import ClassVar, Final
+
+from cordon_scanner.ecosystems.registry import EcosystemRegistry, RegistryFacts
+from cordon_scanner.foundation.dependencies import InstallTool
 
 #: The ecosystems a package check accepts, by the name the advisory database uses.
 ECOSYSTEMS: Final[tuple[str, ...]] = (
@@ -75,6 +79,9 @@ ALIASES: Final[dict[str, str]] = {
     "gradle": "maven",
 }
 
+#: A tool's reader: (ecosystem, tool, its declaration, the words after it, the result) -> read.
+Reader = Callable[[str, str, InstallTool, list[str], "ParsedCommand"], bool]
+
 _NAME: Final = re.compile(r"^[A-Za-z0-9@][A-Za-z0-9@._~+:/-]{0,213}$")
 _VERSION: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+~!-]{0,127}$")
 
@@ -109,10 +116,13 @@ class PackageSpec:
         name = name.strip()
         if not _NAME.match(name) or ".." in name or "\\" in name:
             raise PackageError(f"not a valid {eco} package name: {name[:80]!r}")
-        if eco == "maven" and name.count(":") != 1:
-            raise PackageError(f"a Maven package is named group:artifact, not {name!r}")
+        separator = RegistryFacts.coordinate_separator(eco)
+        if separator is not None and name.count(separator) != 1:
+            raise PackageError(
+                f"a {eco.capitalize()} package is named group{separator}artifact, not {name!r}"
+            )
         if version is not None:
-            version = version.strip().removeprefix("v") if eco != "gomod" else version.strip()
+            version = RegistryFacts.normalised_version(eco, version)
             if not version:
                 version = None
             elif not _VERSION.match(version):
@@ -128,19 +138,13 @@ class PackageSpec:
         kind = FETCHABLE.get(self.ecosystem)
         if kind is None:
             return None
-        name = self.name.replace(":", "/") if self.ecosystem == "maven" else self.name
+        separator = RegistryFacts.coordinate_separator(self.ecosystem)
+        name = self.name.replace(separator, "/") if separator else self.name
         return f"pkg:{kind}/{name}" + (f"@{self.version}" if self.version else "")
 
 
 class Lockfiles:
     """The files a project depending on these packages would hold."""
-
-    JSON_LOCKFILES: ClassVar[frozenset[str]] = frozenset(
-        {"npm", "nuget", "composer", "cran", "swift"}
-    )
-    TEXT_LOCKFILES: ClassVar[frozenset[str]] = frozenset(
-        {"pypi", "cargo", "gomod", "maven", "rubygems", "pub", "hex"}
-    )
 
     @staticmethod
     def write(specs: list[PackageSpec]) -> dict[str, str]:
@@ -163,220 +167,23 @@ class Lockfiles:
 
     @staticmethod
     def _pinned(eco: str, specs: list[PackageSpec]) -> dict[str, str]:
-        if eco in Lockfiles.JSON_LOCKFILES:
-            return Lockfiles._pinned_json(eco, specs)
-        if eco in Lockfiles.TEXT_LOCKFILES:
-            return Lockfiles._pinned_text(eco, specs)
-        raise PackageError(f"unsupported ecosystem {eco!r}")
-
-    @staticmethod
-    def _pinned_json(eco: str, specs: list[PackageSpec]) -> dict[str, str]:
-        """The lockfiles written as JSON."""
-        if eco == "npm":
-            packages: dict[str, object] = {
-                "": {"name": "cordon-check", "dependencies": {s.name: s.version for s in specs}}
-            }
-            for s in specs:
-                packages[f"node_modules/{s.name}"] = {"version": s.version}
-            return {
-                "package-lock.json": json.dumps(
-                    {
-                        "name": "cordon-check",
-                        "lockfileVersion": 3,
-                        "requires": True,
-                        "packages": packages,
-                    }
-                )
-            }
-        if eco == "nuget":
-            locked = {
-                s.name: {"type": "Direct", "requested": f"[{s.version}, )", "resolved": s.version}
-                for s in specs
-            }
-            return {
-                "packages.lock.json": json.dumps({"version": 1, "dependencies": {"net8.0": locked}})
-            }
-        if eco == "composer":
-            return {
-                "composer.lock": json.dumps(
-                    {
-                        "packages": [{"name": s.name, "version": s.version} for s in specs],
-                        "packages-dev": [],
-                    }
-                )
-            }
-        if eco == "cran":
-            packages_r = {
-                s.name: {
-                    "Package": s.name,
-                    "Version": s.version,
-                    "Source": "Repository",
-                    "Repository": "CRAN",
-                }
-                for s in specs
-            }
-            return {"renv.lock": json.dumps({"R": {"Version": "4.3.0"}, "Packages": packages_r})}
-        if eco == "swift":
-            pins = [
-                {
-                    "identity": s.name.rstrip("/").rsplit("/", 1)[-1].removesuffix(".git").lower(),
-                    "kind": "remoteSourceControl",
-                    "location": Lockfiles._swift_location(s.name),
-                    "state": {"version": s.version, "revision": "0" * 40},
-                }
-                for s in specs
-            ]
-            return {"Package.resolved": json.dumps({"pins": pins, "version": 2})}
-        raise PackageError(f"unsupported ecosystem {eco!r}")
-
-    @staticmethod
-    def _pinned_text(eco: str, specs: list[PackageSpec]) -> dict[str, str]:
-        """The lockfiles written as text: requirements, TOML, go.mod, XML, YAML and Elixir terms."""
-        if eco == "pypi":
-            return {"requirements.txt": "".join(f"{s.name}=={s.version}\n" for s in specs)}
-        if eco == "cargo":
-            return {
-                "Cargo.lock": "version = 3\n"
-                + "".join(
-                    f'\n[[package]]\nname = "{s.name}"\nversion = "{s.version}"\n'
-                    'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
-                    for s in specs
-                )
-            }
-        if eco == "gomod":
-            lines = "".join(f"\t{s.name} {Lockfiles._go_version(s.version)}\n" for s in specs)
-            return {"go.mod": f"module cordon.invalid/check\n\ngo 1.22\n\nrequire (\n{lines})\n"}
-        if eco == "maven":
-            deps = "".join(
-                f"<dependency><groupId>{Lockfiles._xml(s.name.split(':')[0])}</groupId>"
-                f"<artifactId>{Lockfiles._xml(s.name.split(':')[1])}</artifactId>"
-                f"<version>{Lockfiles._xml(s.version or '')}</version></dependency>"
-                for s in specs
-            )
-            return {
-                "pom.xml": '<?xml version="1.0"?><project xmlns="http://maven.apache.org/POM/4.0.0">'
-                "<modelVersion>4.0.0</modelVersion><groupId>cordon.check</groupId>"
-                "<artifactId>check</artifactId><version>1</version>"
-                f"<dependencies>{deps}</dependencies></project>"
-            }
-        if eco == "rubygems":
-            specs_text = "".join(f"    {s.name} ({s.version})\n" for s in specs)
-            deps = "".join(f"  {s.name}\n" for s in specs)
-            return {
-                "Gemfile.lock": f"GEM\n  remote: https://rubygems.org/\n  specs:\n{specs_text}\n"
-                f"PLATFORMS\n  ruby\n\nDEPENDENCIES\n{deps}"
-            }
-        if eco == "pub":
-            body = "".join(
-                f'  {s.name}:\n    dependency: "direct main"\n    description:\n      name: {s.name}\n'
-                f'      url: "https://pub.dev"\n    source: hosted\n    version: "{s.version}"\n'
-                for s in specs
-            )
-            return {"pubspec.lock": f'packages:\n{body}sdks:\n  dart: ">=3.0.0 <4.0.0"\n'}
-        if eco == "hex":
-            zeros = "0" * 64
-            body = "".join(
-                f'  "{s.name}": {{:hex, :{s.name}, "{s.version}", "{zeros}", [:mix], [], "hexpm", "{zeros}"}},\n'
-                for s in specs
-            )
-            return {"mix.lock": "%{\n" + body + "}\n"}
-        raise PackageError(f"unsupported ecosystem {eco!r}")
+        """The ecosystem's own lockfile pinning these releases (EcosystemProjects)."""
+        files = RegistryFacts.pinned_project(eco, [(s.name, s.version or "") for s in specs])
+        if files is None:
+            raise PackageError(f"unsupported ecosystem {eco!r}")
+        return dict(files)
 
     @staticmethod
     def _loose(eco: str, specs: list[PackageSpec]) -> dict[str, str]:
         """Names without a version: what the name alone can answer -- typosquat, documented
         hallucination, a name that only ever carried malware. No version is invented."""
-        if eco == "npm":
-            return {
-                "package.json": json.dumps(
-                    {
-                        "name": "cordon-check",
-                        "version": "0.0.0",
-                        "dependencies": {s.name: "*" for s in specs},
-                    }
-                )
-            }
-        if eco == "pypi":
-            return {"requirements.txt": "".join(f"{s.name}\n" for s in specs)}
-        if eco == "cargo":
-            deps = "".join(f'"{s.name}" = "*"\n' for s in specs)
-            return {
-                "Cargo.toml": f'[package]\nname = "cordon-check"\nversion = "0.0.0"\n\n[dependencies]\n{deps}'
-            }
-        if eco == "rubygems":
-            return {
-                "Gemfile": "source 'https://rubygems.org'\n"
-                + "".join(f"gem '{s.name}'\n" for s in specs)
-            }
-        if eco == "composer":
-            return {
-                "composer.json": json.dumps(
-                    {"name": "cordon/check", "require": {s.name: "*" for s in specs}}
-                )
-            }
-        if eco == "pub":
-            deps = "".join(f"  {s.name}: any\n" for s in specs)
-            return {
-                "pubspec.yaml": f"name: cordon_check\nenvironment:\n  sdk: '>=3.0.0 <4.0.0'\ndependencies:\n{deps}"
-            }
-        if eco == "nuget":
-            refs = "".join(
-                f'<PackageReference Include="{Lockfiles._xml(s.name)}" />' for s in specs
-            )
-            return {
-                "check.csproj": f'<Project Sdk="Microsoft.NET.Sdk"><ItemGroup>{refs}</ItemGroup></Project>'
-            }
-        if eco == "maven":
-            deps = "".join(
-                f"<dependency><groupId>{Lockfiles._xml(s.name.split(':')[0])}</groupId>"
-                f"<artifactId>{Lockfiles._xml(s.name.split(':')[1])}</artifactId></dependency>"
-                for s in specs
-            )
-            return {
-                "pom.xml": '<?xml version="1.0"?><project xmlns="http://maven.apache.org/POM/4.0.0">'
-                "<modelVersion>4.0.0</modelVersion><groupId>cordon.check</groupId>"
-                "<artifactId>check</artifactId><version>1</version>"
-                f"<dependencies>{deps}</dependencies></project>"
-            }
-        if eco == "hex":
-            deps = ", ".join(f'{{:{s.name}, ">= 0.0.0"}}' for s in specs)
-            return {
-                "mix.exs": "defmodule CordonCheck.MixProject do\n  use Mix.Project\n"
-                '  def project, do: [app: :cordon_check, version: "0.0.0", deps: deps()]\n'
-                f"  defp deps, do: [{deps}]\nend\n"
-            }
-        if eco == "cran":
-            return {
-                "DESCRIPTION": "Package: cordoncheck\nVersion: 0.0.0\nImports: "
-                + ", ".join(s.name for s in specs)
-                + "\n"
-            }
-        if eco == "gomod":
-            raise PackageError("a Go module needs a version: Go records none without one")
-        if eco == "swift":
-            raise PackageError("a Swift package needs a version to be checked")
-        raise PackageError(f"unsupported ecosystem {eco!r}")
-
-    @staticmethod
-    def _go_version(version: str | None) -> str:
-        v = version or ""
-        return v if v.startswith("v") else f"v{v}"
-
-    @staticmethod
-    def _swift_location(name: str) -> str:
-        if name.startswith(("https://", "http://")):
-            return name
-        first = name.split("/", 1)[0]
-        return f"https://{name}.git" if "." in first else f"https://github.com/{name}.git"
-
-    @staticmethod
-    def _xml(value: str) -> str:
-        return (
-            value.replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace('"', "&quot;")
-        )
+        try:
+            files = RegistryFacts.loose_project(eco, [s.name for s in specs])
+        except ValueError as exc:  # an ecosystem that records nothing without a version
+            raise PackageError(str(exc)) from exc
+        if files is None:
+            raise PackageError(f"unsupported ecosystem {eco!r}")
+        return dict(files)
 
 
 @dataclass(slots=True)
@@ -572,84 +379,100 @@ class InstallCommand:
             and rest[1] in {"pip", "pip3"}
         ):
             tool, rest = "pip", rest[2:]
-        if tool in {"npm", "pnpm", "yarn", "bun", "cnpm"}:
-            sub = rest[0] if rest else ""
-            if tool == "yarn" and sub == "global":
-                rest, sub = rest[1:], (rest[1] if len(rest) > 1 else "")
-            if sub in {"dlx", "x", "exec"} and tool != "npm":
-                cls._npm_args(rest[1:], out, first_only=True, tool=tool)
-                return True
-            if sub not in {
-                "install",
-                "i",
-                "add",
-                "isntall",
-                "in",
-                "ins",
-                "inst",
-                "insta",
-                "instal",
-                "isnt",
-                "isnta",
-                "isntal",
-            }:
-                return False
-            cls._npm_args(rest[1:], out, tool="npm" if tool == "cnpm" else tool)
-            return True
-        if tool in {"npx", "bunx", "pnpx"}:
-            cls._npm_args(
-                rest, out, first_only=True, tool={"bunx": "bun", "pnpx": "pnpm"}.get(tool, "npx")
-            )
-            return True
-        if tool in {
-            "pip",
-            "pip3",
-            "pipx",
-            "uv",
-            "poetry",
-            "pdm",
-            "rye",
-            "uvx",
-            "pipenv",
-            "conda",
-            "mamba",
-        }:
-            return cls._python(tool, rest, out)
-        if tool == "cargo" and rest and rest[0] in {"add", "install"}:
-            cls._generic(
-                "cargo", rest[1:], out, version_flags={"--version", "--vers"}, at_version=True
-            )
-            return True
-        if tool in {"gem"} and rest and rest[0] == "install":
-            cls._generic("rubygems", rest[1:], out, version_flags={"-v", "--version"})
-            return True
-        if tool == "bundle" and rest and rest[0] == "add":
-            cls._generic("rubygems", rest[1:], out, version_flags={"-v", "--version"})
-            return True
-        if tool == "go" and rest and rest[0] in {"get", "install"}:
-            cls._generic("gomod", rest[1:], out, version_flags=set(), at_version=True, keep_v=True)
-            return True
-        if tool == "dotnet" and "package" in rest and rest[: rest.index("package")][:1] == ["add"]:
-            cls._generic(
-                "nuget",
-                rest[rest.index("package") + 1 :],
-                out,
-                version_flags={"-v", "--version"},
-                single=True,
-            )
-            return True
-        if tool in {"nuget", "nuget.exe"} and rest and rest[0].lower() == "install":
-            cls._generic(
-                "nuget", rest[1:], out, version_flags={"-Version", "-version"}, single=True
-            )
-            return True
-        if tool == "composer" and rest and rest[0] in {"require", "req"}:
-            cls._composer(rest[1:], out)
-            return True
+        declared = cls._tools().get(tool)
+        if declared is not None:
+            eco, spec = declared
+            return cls._readers()[spec.reader](eco, tool, spec, rest, out)
         if tool in {"brew", "apt", "apt-get", "yum", "dnf", "apk", "choco", "winget", "port"}:
             out.unchecked.append(f"{tool}: system packages are not checked by name here")
             return True
         return False
+
+    @staticmethod
+    @functools.cache
+    def _tools() -> dict[str, tuple[str, InstallTool]]:
+        """Every package tool the ecosystems declare (EcosystemProjects.install_tool), by name."""
+        table: dict[str, tuple[str, InstallTool]] = {}
+        for ecosystem in EcosystemRegistry.all_ecosystems():
+            for spec in RegistryFacts.install_tool(ecosystem.id):
+                for name in spec.names:
+                    if name in table:
+                        raise RuntimeError(
+                            f"{name!r} is declared by {table[name][0]} and {ecosystem.id}"
+                        )
+                    table[name] = (ecosystem.id, spec)
+        return table
+
+    @classmethod
+    def _readers(cls) -> dict[str, Reader]:
+        return {
+            "generic": cls._read_generic,
+            "npm": cls._read_npm,
+            "npx": cls._read_npx,
+            "python": cls._python,
+            "composer": cls._read_composer,
+            "dotnet": cls._read_dotnet,
+            "unchecked": cls._read_unchecked,
+        }
+
+    @classmethod
+    def _read_npm(
+        cls, eco: str, tool: str, spec: InstallTool, rest: list[str], out: ParsedCommand
+    ) -> bool:
+        sub = rest[0] if rest else ""
+        if tool == "yarn" and sub == "global":
+            rest, sub = rest[1:], (rest[1] if len(rest) > 1 else "")
+        if sub in spec.runners:
+            cls._npm_args(rest[1:], out, first_only=True, tool=tool)
+            return True
+        if sub not in spec.subcommands:
+            return False
+        cls._npm_args(rest[1:], out, tool=spec.flags_as or tool)
+        return True
+
+    @classmethod
+    def _read_npx(
+        cls, eco: str, tool: str, spec: InstallTool, rest: list[str], out: ParsedCommand
+    ) -> bool:
+        cls._npm_args(rest, out, first_only=True, tool=spec.flags_as or tool)
+        return True
+
+    @classmethod
+    def _read_generic(
+        cls, eco: str, tool: str, spec: InstallTool, rest: list[str], out: ParsedCommand
+    ) -> bool:
+        if not rest or (rest[0].lower() if spec.any_case else rest[0]) not in spec.subcommands:
+            return False
+        cls._generic(eco, rest[1:], out, spec)
+        return True
+
+    @classmethod
+    def _read_dotnet(
+        cls, eco: str, tool: str, spec: InstallTool, rest: list[str], out: ParsedCommand
+    ) -> bool:
+        """`dotnet add [project] package NAME`."""
+        if "package" not in rest or rest[: rest.index("package")][:1] != ["add"]:
+            return False
+        cls._generic(eco, rest[rest.index("package") + 1 :], out, spec)
+        return True
+
+    @classmethod
+    def _read_composer(
+        cls, eco: str, tool: str, spec: InstallTool, rest: list[str], out: ParsedCommand
+    ) -> bool:
+        if not rest or rest[0] not in spec.subcommands:
+            return False
+        cls._composer(eco, rest[1:], out)
+        return True
+
+    @staticmethod
+    def _read_unchecked(
+        eco: str, tool: str, spec: InstallTool, rest: list[str], out: ParsedCommand
+    ) -> bool:
+        if not rest or rest[0] not in spec.subcommands:
+            return False
+        out.unchecked.append(f"{tool}: {spec.note}")
+        return True
 
     @classmethod
     def _flags(cls, eco: str, args: list[str], out: ParsedCommand, tool: str = "") -> list[str]:
@@ -736,14 +559,9 @@ class InstallCommand:
         cls._add(out, "npm", name, version)
 
     @classmethod
-    def _python(cls, tool: str, rest: list[str], out: ParsedCommand) -> bool:
-        if tool in {"conda", "mamba"}:
-            if rest[:1] == ["install"]:
-                out.unchecked.append(
-                    f"{tool}: conda packages are checked by scanning an environment file"
-                )
-                return True
-            return False
+    def _python(
+        cls, eco: str, tool: str, declared: InstallTool, rest: list[str], out: ParsedCommand
+    ) -> bool:
         if tool == "uvx":
             args = rest
         elif tool == "uv":
@@ -773,7 +591,7 @@ class InstallCommand:
             if rest[:1] not in (["install"], ["download"]):
                 return False
             args = rest[1:]
-        for word in cls._flags("pypi", args, out):
+        for word in cls._flags(eco, args, out):
             if cls._source(word) or " @ " in word or word.startswith("@"):
                 out.unchecked.append(f"{word}: not a registry package")
                 continue
@@ -786,52 +604,40 @@ class InstallCommand:
             if spec and not exact:
                 cls._add(
                     out,
-                    "pypi",
+                    eco,
                     name,
                     None,
                     note=f"range {spec}: the version is chosen at install time",
                 )
             else:
-                cls._add(out, "pypi", name, exact.group(1) if exact else None)
+                cls._add(out, eco, name, exact.group(1) if exact else None)
             if (tool in {"uvx", "pipx"} and rest[:1] == ["run"]) or tool == "uvx":
                 break
         return True
 
     @classmethod
-    def _generic(
-        cls,
-        eco: str,
-        args: list[str],
-        out: ParsedCommand,
-        *,
-        version_flags: set[str],
-        at_version: bool = False,
-        keep_v: bool = False,
-        single: bool = False,
-    ) -> None:
+    def _generic(cls, eco: str, args: list[str], out: ParsedCommand, spec: InstallTool) -> None:
         version_flag_value: str | None = None
         for i, word in enumerate(args):
             flag, _, inline = word.partition("=")
-            if flag in version_flags:
+            if flag in spec.version_flags:
                 version_flag_value = inline or (args[i + 1] if i + 1 < len(args) else None)
         for word in cls._flags(eco, args, out):
             if cls._source(word):
                 out.unchecked.append(f"{word}: not a registry package")
                 continue
             name, version = word, version_flag_value
-            if at_version and "@" in word:
+            if spec.at_version and "@" in word:
                 name, version = word.split("@", 1)
-                if eco == "gomod" and version in {"latest", "upgrade", "patch", "none"}:
+                if version in spec.version_queries:
                     version = None
-            if eco == "gomod" and version and not keep_v:
-                version = version.removeprefix("v")
             cls._add(out, eco, name, version)
-            if single:
+            if spec.single:
                 break
 
     @classmethod
-    def _composer(cls, args: list[str], out: ParsedCommand) -> None:
-        for word in cls._flags("composer", args, out):
+    def _composer(cls, eco: str, args: list[str], out: ParsedCommand) -> None:
+        for word in cls._flags(eco, args, out):
             name, _, constraint = word.partition(":")
             exact = (
                 constraint
@@ -843,7 +649,7 @@ class InstallCommand:
                 if constraint and not exact
                 else ""
             )
-            cls._add(out, "composer", name, exact, note=note)
+            cls._add(out, eco, name, exact, note=note)
 
     @staticmethod
     def _add(out: ParsedCommand, eco: str, name: str, version: str | None, note: str = "") -> None:

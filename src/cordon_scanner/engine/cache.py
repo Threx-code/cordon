@@ -264,30 +264,11 @@ class CacheKey:
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-class ScanCache:
-    """A content-addressed store of per-file findings.
-
-    Deliberately a plain directory of JSON files rather than a database. There
-    is no schema to migrate, no lock to contend on, corruption is confined to a
-    single entry, and the whole thing can be deleted with `rm -rf` by anyone
-    debugging it. A cache that is hard to inspect is a cache people stop
-    trusting, and an untrusted cache gets disabled.
-    """
-
-    @staticmethod
-    def default_cache_dir() -> Path:
-        """Where cache entries live (`StatePaths.default_cache_dir`)."""
-        return StatePaths.default_cache_dir()
-
-    @staticmethod
-    def key_dir() -> Path:
-        """Where the authentication key lives, which no variable moves (`StatePaths.key_dir`)."""
-        return StatePaths.key_dir()
-
-    @staticmethod
-    def _home() -> Path:
-        """The running user's home directory, from the account store (`StatePaths._home`)."""
-        return StatePaths._home()
+class CacheSignature:
+    """What a cached result depends on, so that a change to any of it misses the cache: the
+    detectors and their source, the installed package, the scan's context, the intelligence
+    state and the rule file. Pure functions of those; the store that keys by them is
+    `ScanCache`."""
 
     @staticmethod
     def detector_signature(detectors: Sequence[Any]) -> str:
@@ -316,12 +297,12 @@ class ScanCache:
         not have produced is a wrong answer, and in this tool a wrong answer is
         usually a missed payload.
         """
-        parts = sorted(ScanCache._detector_identity(d) for d in detectors)
+        parts = sorted(CacheSignature._detector_identity(d) for d in detectors)
         # The package's own code as well: a detector's module is a small part of what decides its
         # findings, and the analysis it calls (the JavaScript and Python flow, the rule engine, the
         # decoders) lives elsewhere. Keyed on its own module alone, a release that fixed detection
         # there kept serving every warm cache the old findings, and the cache is on by default.
-        parts.append(f"package@{ScanCache._package_hash()}")
+        parts.append(f"package@{CacheSignature._package_hash()}")
         return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:16]
 
     @staticmethod
@@ -342,7 +323,7 @@ class ScanCache:
         from cordon_scanner.version import __version__
 
         root = PackagePaths.root()
-        record = ScanCache._wheel_record(root)
+        record = CacheSignature._wheel_record(root)
         if record is not None:
             return "wheel-" + hashlib.sha256(record).hexdigest()[:16]
         entries: list[str] = []
@@ -397,10 +378,10 @@ class ScanCache:
         """
         digest = hashlib.sha256()
         for part in (
-            ScanCache.detector_signature(detectors),
-            ScanCache.context_digest(ctx),
-            ScanCache._intel_state(),
-            ScanCache._rule_file_digest(config),
+            CacheSignature.detector_signature(detectors),
+            CacheSignature.context_digest(ctx),
+            CacheSignature._intel_state(),
+            CacheSignature._rule_file_digest(config),
             sys.version,
         ):
             digest.update(part.encode("utf-8") + b"\0")
@@ -449,23 +430,10 @@ class ScanCache:
             return "unreadable"
 
     @staticmethod
-    @contextlib.contextmanager
-    def watch(root: str | None, own: str) -> Iterator[Watch]:
-        """Note anything inspecting one file reaches past its own bytes (`Watch`)."""
-        Watch.install()
-        watch = Watch(root, own)
-        previous = getattr(Watch.current, "watch", None)
-        Watch.current.watch = watch
-        try:
-            yield watch
-        finally:
-            Watch.current.watch = previous
-
-    @staticmethod
     def _detector_identity(detector: Any) -> str:
         """One detector's contribution to the signature: `id@version@code`."""
         version = getattr(detector, "version", "0")
-        return f"{detector.id}@{version}@{ScanCache._module_hash(type(detector).__module__)}"
+        return f"{detector.id}@{version}@{CacheSignature._module_hash(type(detector).__module__)}"
 
     @staticmethod
     @functools.cache
@@ -499,6 +467,45 @@ class ScanCache:
             return "nosource"
         normalised = source.replace("\r\n", "\n").replace("\r", "\n")
         return hashlib.sha256(normalised.encode("utf-8")).hexdigest()[:16]
+
+
+class ScanCache:
+    """A content-addressed store of per-file findings.
+
+    Deliberately a plain directory of JSON files rather than a database. There
+    is no schema to migrate, no lock to contend on, corruption is confined to a
+    single entry, and the whole thing can be deleted with `rm -rf` by anyone
+    debugging it. A cache that is hard to inspect is a cache people stop
+    trusting, and an untrusted cache gets disabled.
+    """
+
+    @staticmethod
+    def default_cache_dir() -> Path:
+        """Where cache entries live (`StatePaths.default_cache_dir`)."""
+        return StatePaths.default_cache_dir()
+
+    @staticmethod
+    def key_dir() -> Path:
+        """Where the authentication key lives, which no variable moves (`StatePaths.key_dir`)."""
+        return StatePaths.key_dir()
+
+    @staticmethod
+    def _home() -> Path:
+        """The running user's home directory, from the account store (`StatePaths._home`)."""
+        return StatePaths._home()
+
+    @staticmethod
+    @contextlib.contextmanager
+    def watch(root: str | None, own: str) -> Iterator[Watch]:
+        """Note anything inspecting one file reaches past its own bytes (`Watch`)."""
+        Watch.install()
+        watch = Watch(root, own)
+        previous = getattr(Watch.current, "watch", None)
+        Watch.current.watch = watch
+        try:
+            yield watch
+        finally:
+            Watch.current.watch = previous
 
     @staticmethod
     def finding_from_dict(data: dict[str, Any]) -> Finding:

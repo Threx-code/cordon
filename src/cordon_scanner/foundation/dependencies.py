@@ -35,8 +35,10 @@ from __future__ import annotations
 import functools
 import re
 import threading
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from importlib.metadata import entry_points
-from typing import TYPE_CHECKING, Final, Protocol
+from typing import TYPE_CHECKING, Any, Final, Protocol
 
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -210,8 +212,137 @@ class EcosystemTraits(Protocol):
     def squat_comparisons(self, ecosystem: str) -> tuple[str, ...]: ...
 
 
+@dataclass(frozen=True, slots=True)
+class InstallTool:
+    """One package tool's install command, as a package check reads it from a shell command."""
+
+    names: frozenset[str]
+    """The executable's names."""
+    reader: str
+    """How its arguments are read: `generic`, `npm`, `npx`, `python`, `composer`, `dotnet` or
+    `unchecked` (recognised, but not checked by name)."""
+    subcommands: frozenset[str] = frozenset()
+    """The first words that install; empty where the reader knows the tool's own."""
+    runners: frozenset[str] = frozenset()
+    """Subcommands that fetch and run one package once (`pnpm dlx`)."""
+    flags_as: str = ""
+    """Whose flag table its flags follow, where not its own name's."""
+    version_flags: frozenset[str] = frozenset()
+    """Flags whose value is the version (`--vers 1.0`)."""
+    at_version: bool = False
+    """`name@version` names the version."""
+    version_queries: frozenset[str] = frozenset()
+    """Words in the version's place that ask for one instead (`@latest`): no version."""
+    single: bool = False
+    """One package per command."""
+    any_case: bool = False
+    """The subcommand is matched in any case."""
+    note: str = ""
+    """What an `unchecked` tool's install is told."""
+
+
+class EcosystemProjects(Protocol):
+    """The projects a package check writes for an ecosystem, and the tools whose install commands
+    name its packages."""
+
+    def pinned_project(
+        self, ecosystem: str, pins: Sequence[tuple[str, str]]
+    ) -> dict[str, str] | None:
+        """A project pinning these releases, as the ecosystem's lockfile: `{path: content}`."""
+        ...
+
+    def loose_project(self, ecosystem: str, names: Sequence[str]) -> dict[str, str] | None:
+        """A project naming these packages with no version; raises ValueError where the ecosystem
+        records none without one."""
+        ...
+
+    def install_tool(self, ecosystem: str) -> Sequence[InstallTool]: ...
+
+
+class EcosystemVersionSyntax(Protocol):
+    """How an ecosystem writes a version."""
+
+    def normalised_version(self, ecosystem: str, version: str) -> str:
+        """A version as given, in the form the ecosystem's records keep (Go keeps its `v`)."""
+        ...
+
+
+class EcosystemReleaseIdentity(Protocol):
+    """Which release a published archive of the ecosystem is, read from the manifest it ships."""
+
+    def identity_in_metadata(self, ecosystem: str) -> bool: ...
+
+    def release_manifest(self, ecosystem: str) -> re.Pattern[str] | None: ...
+
+    def release_identity(
+        self, ecosystem: str, path: str, text: str, found: re.Match[str]
+    ) -> tuple[str, str] | None: ...
+
+
+class EcosystemArchiveTraits(Protocol):
+    """What a published archive of the ecosystem runs at install."""
+
+    def compiled_is_inert(self, ecosystem: str) -> bool: ...
+
+    def install_manifests(self, ecosystem: str) -> frozenset[str]: ...
+
+    def foreign_install_manifests(self, ecosystem: str) -> frozenset[str]:
+        """Every other ecosystem's install manifests: author-time files in this one's archive."""
+        ...
+
+
+class EcosystemResolution(Protocol):
+    """How the ecosystem's dependency graph is read: a checksum file that completes it, ranges
+    written in brackets, the fixed place of a published archive's manifest."""
+
+    def completes_from_checksums(self, ecosystem: str) -> bool: ...
+
+    def bracket_ranges(self, ecosystem: str) -> bool: ...
+
+    def archive_manifest(self, ecosystem: str) -> str | None: ...
+
+
+class EcosystemPackageEntries(Protocol):
+    """What of a published archive runs when it is used rather than installed, and where its
+    manifest says its source lives."""
+
+    def library_entries(
+        self,
+        ecosystem: str,
+        members: Mapping[str, str],
+        manifest: Mapping[str, Any],
+        with_bin: bool,
+    ) -> set[str]: ...
+
+    def published_repository(self, ecosystem: str, manifest: Mapping[str, Any]) -> str: ...
+
+
+class EcosystemPublishedCode(Protocol):
+    """What a published package of the ecosystem runs: its built output, and its hooks' language."""
+
+    def ships_built_code(self, ecosystem: str) -> bool:
+        """Whether a published archive's `dist/` and bundles are the code that runs, not build
+        output beside it (npm)."""
+        ...
+
+    def hooks_run_javascript(self, ecosystem: str) -> bool:
+        """Whether its install hooks and entry points run JavaScript (npm)."""
+        ...
+
+
 class InstalledEcosystemFacts(
-    EcosystemFacts, EcosystemNaming, EcosystemVersions, EcosystemTraits, Protocol
+    EcosystemFacts,
+    EcosystemNaming,
+    EcosystemVersions,
+    EcosystemTraits,
+    EcosystemProjects,
+    EcosystemVersionSyntax,
+    EcosystemReleaseIdentity,
+    EcosystemArchiveTraits,
+    EcosystemResolution,
+    EcosystemPackageEntries,
+    EcosystemPublishedCode,
+    Protocol,
 ):
     """The installed facts object as the provider holds it; each reader asks for the one port it
     uses (`naming`, `versions`, `traits`)."""
@@ -244,6 +375,10 @@ class EcosystemFactsProvider:
 
     @staticmethod
     def traits() -> EcosystemTraits:
+        return EcosystemFactsProvider.facts()
+
+    @staticmethod
+    def published() -> EcosystemPublishedCode:
         return EcosystemFactsProvider.facts()
 
 

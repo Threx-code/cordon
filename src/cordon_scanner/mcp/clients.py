@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections.abc import Callable
 from typing import Final
 
 #: client -> (where it goes, how the workspace is named in that file, or "" when it has no variable)
@@ -45,6 +46,10 @@ CLIENTS: Final[dict[str, tuple[str, str]]] = {
 }
 
 
+#: A client's configuration body: (the command, its arguments, the server entry) -> text.
+Body = Callable[[str, list[str], dict[str, object]], str]
+
+
 class Clients:
     @staticmethod
     def command() -> str:
@@ -61,32 +66,8 @@ class Clients:
             + (["--root", workspace] if workspace else [])
             + (["--allow-online"] if allow_online else [])
         )
-        entry = {"command": command, "args": args}
-        if client == "claude-code":
-            body = (
-                f"claude mcp add --scope project cordon -- {command} {' '.join(args)}\n\nor .mcp.json:\n"
-                + json.dumps({"mcpServers": {"cordon": entry}}, indent=2)
-            )
-        elif client == "vscode":
-            body = json.dumps({"servers": {"cordon": {"type": "stdio", **entry}}}, indent=2)
-        elif client == "gemini":
-            body = (
-                f"gemini mcp add --scope project cordon {command} {' '.join(args)}\n\nor settings.json:\n"
-                + json.dumps({"mcpServers": {"cordon": entry}}, indent=2)
-            )
-        elif client == "codex":
-            toml_args = ", ".join(json.dumps(a) for a in args)
-            body = f"codex mcp add cordon -- {command} {' '.join(args)}\n\nor config.toml:\n[mcp_servers.cordon]\ncommand = {json.dumps(command)}\nargs = [{toml_args}]"
-        elif client == "zed":
-            body = json.dumps({"context_servers": {"cordon": {**entry, "env": {}}}}, indent=2)
-        elif client == "continue":
-            lines = "\n".join(f"      - {json.dumps(a)}" for a in args)
-            body = (
-                "name: Cordon\nversion: 0.0.1\nschema: v1\nmcpServers:\n"
-                f"  - name: cordon\n    type: stdio\n    command: {json.dumps(command)}\n    args:\n{lines}"
-            )
-        else:
-            body = json.dumps({"mcpServers": {"cordon": entry}}, indent=2)
+        entry: dict[str, object] = {"command": command, "args": args}
+        body = cls._bodies().get(client, cls._mcp_servers)(command, args, entry)
         notes = [f"# {client}: {where}"]
         if not workspace:
             notes.append(
@@ -94,3 +75,54 @@ class Clients:
                 "# add  --root /path/to/project  to args so the tools may read the project."
             )
         return "\n".join(notes) + "\n" + body
+
+    @classmethod
+    def _bodies(cls) -> dict[str, Body]:
+        """The clients whose configuration differs from the common `mcpServers` JSON."""
+        return {
+            "claude-code": cls._claude_code,
+            "vscode": cls._vscode,
+            "gemini": cls._gemini,
+            "codex": cls._codex,
+            "zed": cls._zed,
+            "continue": cls._continue,
+        }
+
+    @staticmethod
+    def _mcp_servers(command: str, args: list[str], entry: dict[str, object]) -> str:
+        return json.dumps({"mcpServers": {"cordon": entry}}, indent=2)
+
+    @staticmethod
+    def _claude_code(command: str, args: list[str], entry: dict[str, object]) -> str:
+        return (
+            f"claude mcp add --scope project cordon -- {command} {' '.join(args)}\n\nor .mcp.json:\n"
+            + json.dumps({"mcpServers": {"cordon": entry}}, indent=2)
+        )
+
+    @staticmethod
+    def _vscode(command: str, args: list[str], entry: dict[str, object]) -> str:
+        return json.dumps({"servers": {"cordon": {"type": "stdio", **entry}}}, indent=2)
+
+    @staticmethod
+    def _gemini(command: str, args: list[str], entry: dict[str, object]) -> str:
+        return (
+            f"gemini mcp add --scope project cordon {command} {' '.join(args)}\n\nor settings.json:\n"
+            + json.dumps({"mcpServers": {"cordon": entry}}, indent=2)
+        )
+
+    @staticmethod
+    def _codex(command: str, args: list[str], entry: dict[str, object]) -> str:
+        toml_args = ", ".join(json.dumps(a) for a in args)
+        return f"codex mcp add cordon -- {command} {' '.join(args)}\n\nor config.toml:\n[mcp_servers.cordon]\ncommand = {json.dumps(command)}\nargs = [{toml_args}]"
+
+    @staticmethod
+    def _zed(command: str, args: list[str], entry: dict[str, object]) -> str:
+        return json.dumps({"context_servers": {"cordon": {**entry, "env": {}}}}, indent=2)
+
+    @staticmethod
+    def _continue(command: str, args: list[str], entry: dict[str, object]) -> str:
+        lines = "\n".join(f"      - {json.dumps(a)}" for a in args)
+        return (
+            "name: Cordon\nversion: 0.0.1\nschema: v1\nmcpServers:\n"
+            f"  - name: cordon\n    type: stdio\n    command: {json.dumps(command)}\n    args:\n{lines}"
+        )

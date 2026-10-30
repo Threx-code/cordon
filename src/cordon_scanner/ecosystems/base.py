@@ -22,9 +22,11 @@ positives.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from cordon_scanner.foundation.dependencies import InstallTool
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Hook, Scope
 from cordon_scanner.foundation.results import Dependency
@@ -586,7 +588,112 @@ class TraitDefaults:
         return ("npm", "cargo")
 
 
-class BaseEcosystem(NamingDefaults, VersionDefaults, TraitDefaults):
+class ProjectDefaults:
+    """How an ecosystem's projects pin and install (EcosystemProjects): the defaults."""
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A project pinning these releases, as this ecosystem's own lockfile: `{path: content}`;
+        None where the ecosystem has no project to write."""
+        return None
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A project naming these packages with no version: `{path: content}`; None where the
+        ecosystem has no project to write. Raises ValueError where it needs a version."""
+        return None
+
+    def install_tool(self) -> Sequence[InstallTool]:
+        """The package tools whose install commands name this ecosystem's packages."""
+        return ()
+
+
+class VersionSyntaxDefaults:
+    """An ecosystem's version spelling (EcosystemVersionSyntax): the default."""
+
+    def normalised_version(self, version: str) -> str:
+        """A version as given, in the form its records keep: a leading `v` dropped."""
+        return version.strip().removeprefix("v")
+
+
+class ReleaseIdentityDefaults:
+    """Where a release names itself (EcosystemReleaseIdentity): the defaults."""
+
+    def identity_in_metadata(self) -> bool:
+        """Whether a published archive names its release in the metadata its checks read."""
+        return False
+
+    def release_manifest(self) -> re.Pattern[str] | None:
+        """The member of a published archive that names the release, as a path pattern."""
+        return None
+
+    def release_identity(
+        self, path: str, text: str, found: re.Match[str]
+    ) -> tuple[str, str] | None:
+        """(name, version) from that member: its path, its text, and the pattern's match."""
+        return None
+
+
+class ArchiveTraitDefaults:
+    """What an ecosystem's archives hold (EcosystemArchiveTraits): the defaults."""
+
+    def compiled_is_inert(self) -> bool:
+        """Whether a compiled file in its archive does not run at install."""
+        return False
+
+    def install_manifests(self) -> frozenset[str]:
+        """The files its installer runs or reads to build; none by default."""
+        return frozenset()
+
+    def completes_from_checksums(self) -> bool:
+        """Whether a checksum file of its builds completes the dependency graph."""
+        return False
+
+    def bracket_ranges(self) -> bool:
+        """Whether a declared version may be a bracketed range."""
+        return False
+
+
+class PackageEntryDefaults:
+    """A published package's manifest, entry points and repository (EcosystemPackageEntries): the defaults."""
+
+    def archive_manifest(self) -> str | None:
+        """Where a published archive keeps its manifest, where that is fixed."""
+        return None
+
+    def library_entries(
+        self, members: Mapping[str, str], manifest: Mapping[str, Any], with_bin: bool
+    ) -> set[str]:
+        """The members of a published archive that run on import or as its command: `members` is
+        member path -> full path, `manifest` the archive's own manifest ({} if none)."""
+        return set()
+
+    def published_repository(self, manifest: Mapping[str, Any]) -> str:
+        """The source repository a published archive's manifest names, or ""."""
+        return ""
+
+
+class PublishedCodeDefaults:
+    """What a published package's code does at install (EcosystemPublishedCode): the defaults."""
+
+    def ships_built_code(self) -> bool:
+        """Whether a published archive's built output is the code that runs."""
+        return False
+
+    def hooks_run_javascript(self) -> bool:
+        """Whether its install hooks and entry points run JavaScript."""
+        return False
+
+
+class BaseEcosystem(
+    NamingDefaults,
+    VersionDefaults,
+    TraitDefaults,
+    ProjectDefaults,
+    VersionSyntaxDefaults,
+    ReleaseIdentityDefaults,
+    ArchiveTraitDefaults,
+    PackageEntryDefaults,
+    PublishedCodeDefaults,
+):
     """Shared behaviour. Implementing the protocol directly is equally valid."""
 
     def declared_dependencies(self, files: Sequence[ReleaseFile]) -> frozenset[str]:
@@ -845,6 +952,8 @@ class BaseEcosystem(NamingDefaults, VersionDefaults, TraitDefaults):
                     ecosystem=self.id,
                 )
 
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------------------
+
 
 # Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine
 # each implementation typed by one of these, and the type checker proves the implementation
@@ -876,6 +985,7 @@ __all__ = [
     "Ecosystem",
     "ImageName",
     "ImageReferences",
+    "InstallTool",
     "LockEntry",
     "LockGraph",
     "Manifest",

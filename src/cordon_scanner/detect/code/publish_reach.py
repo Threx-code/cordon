@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
+
 if TYPE_CHECKING:
     from cordon_scanner.detect.base import ScanContext
 
@@ -30,7 +32,7 @@ class PublishReach:
         if (
             rule_id != PublishReach.RULE
             or not ctx.package_distribution
-            or ctx.distribution != "npm"
+            or not EcosystemFactsProvider.published().hooks_run_javascript(ctx.distribution)
         ):
             return False
         return not (
