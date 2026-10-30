@@ -165,6 +165,12 @@ class TestJudgePatternsLinear:
         r"ignore_\w+|bypass_\w+|safety_disabled|allow_all_commands|use_victim_session|"
         r"skip_\w*(?:confirm|review|check|auth)\w*|god_?mode|developer_?mode|do_anything_now)$"
     )
+    OLD_SQLI = re.compile(
+        r"(?i)['\"]\s*(?:or|and)\s+['\"\d(]\S{0,20}\s*(?:=|like)\s*['\"\d(]|\bor\s+1\s*=\s*1\b"
+        r"|\bunion\s+(?:all\s+)?select\b|;\s*(?:drop|truncate|delete|alter|insert|update|exec)\s+"
+        r"|\b(?:extractvalue|updatexml|benchmark|pg_sleep|sleep|waitfor\s+delay|load_file)\s*\("
+        r"|\bxp_cmdshell\b|\binformation_schema\b|['\"]\s*;?\s*--(?:\s|$)|/\*!?\d*\s*\*/"
+    )
     OLD_XXE = re.compile(r"(?i)<!ENTITY\s+%?\s*\w+\s+(?:SYSTEM|PUBLIC)\b|<!DOCTYPE\s+\w+\s*\[")
     OLD_HOST = re.compile(r"(?i)(?:https?://)?((?:[a-z0-9-]+\.)+[a-z]{2,24})\b")
 
@@ -239,6 +245,31 @@ class TestJudgePatternsLinear:
                 self.OLD_SAFETY_OFF.match(text)
             ), text
 
+    def test_sqli_as_before(self) -> None:
+        pieces = (
+            "'",
+            '"',
+            " ",
+            "\n",
+            ";",
+            "--",
+            "-",
+            "or",
+            "and",
+            "1",
+            "=",
+            "like",
+            "(",
+            "x",
+            "union",
+            "select",
+            "drop",
+            "/*",
+            "*/",
+        )
+        for text in self.texts("sqli", pieces, 12):
+            assert bool(calls._SQLI.search(text)) == bool(self.OLD_SQLI.search(text)), text
+
     def test_xxe_as_before(self) -> None:
         pieces = ("<!ENTITY", "<!DOCTYPE", " ", "\n", "%", "x", "SYSTEM", "public", "[", ">")
         for text in self.texts("xxe", pieces, 10):
@@ -272,5 +303,6 @@ class TestJudgePatternsLinear:
         ToolCallGuard._safety_config_off("auth" + "a" * 2_000_000 + "!")
         calls._SAFETY_OFF.match("_" * 2_000_000 + "!")
         calls._XXE.search("<!ENTITY" + " " * 2_000_000)
+        calls._SQLI.search('"' + " " * 2_000_000)
         list(calls._HOST.finditer("a" * 2_000_000))
         assert time.perf_counter() - start < 3

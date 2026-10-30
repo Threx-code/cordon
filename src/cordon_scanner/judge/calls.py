@@ -117,11 +117,13 @@ _SSRF: Final = re.compile(
     r"|\bhttps?://(?:10\.\d{1,3}|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}(?::\d+)?/"
     r"(?:admin|internal|actuator|debug|config|console|cgi-bin|manager)"
 )
+#: Blank runs possessive and `\s*;?\s*` as `\s*+(?:;\s*+)?`, so a quote before a long blank run is
+#: not split every way: the same answers, linear (2026-10-30).
 _SQLI: Final = re.compile(
-    r"(?i)['\"]\s*(?:or|and)\s+['\"\d(]\S{0,20}\s*(?:=|like)\s*['\"\d(]|\bor\s+1\s*=\s*1\b"
+    r"(?i)['\"]\s*+(?:or|and)\s+['\"\d(]\S{0,20}\s*(?:=|like)\s*['\"\d(]|\bor\s+1\s*=\s*1\b"
     r"|\bunion\s+(?:all\s+)?select\b|;\s*(?:drop|truncate|delete|alter|insert|update|exec)\s+"
     r"|\b(?:extractvalue|updatexml|benchmark|pg_sleep|sleep|waitfor\s+delay|load_file)\s*\("
-    r"|\bxp_cmdshell\b|\binformation_schema\b|['\"]\s*;?\s*--(?:\s|$)|/\*!?\d*\s*\*/"
+    r"|\bxp_cmdshell\b|\binformation_schema\b|['\"]\s*+(?:;\s*+)?--(?:\s|$)|/\*!?\d*\s*\*/"
 )
 _TEMPLATE: Final = re.compile(
     r"\{\{[^}]{0,200}(?:constructor\s*\.\s*constructor|__class__|__globals__|__import__|"
