@@ -271,9 +271,11 @@ class TestScale:
     The bound is on growth, not seconds: four times the packages may cost at most eight times as
     long. A linear read costs under four times (each scan's start-up is paid once), a quadratic
     one about sixteen. Measured in CPU time, which load does not stretch as it stretches wall
-    time; the small scan runs before and after the large one and the two are averaged. A fixed
-    ceiling failed at six to seven times the idle time under a loaded suite, and a wall-clock
-    ratio on a single load spike during one scan."""
+    time, after a throwaway scan that pays the process's one-off loads. The small size starts at
+    500 packages and doubles until its scan takes `MIN_SECONDS`, the large one is four times it,
+    and the small scan runs before and after the large one and the two are averaged. A fixed
+    ceiling failed at six to seven times the idle time under a loaded suite, a wall-clock ratio
+    on a single load spike during one scan, and a 0.1 s small scan on one interruption."""
 
     @staticmethod
     def packages(profile: EcosystemProfile, count: int) -> list[Pkg]:
@@ -299,22 +301,35 @@ class TestScale:
         report = Universal.scan(Universal.project(where, profile, pkgs), profile.id)
         return report, time.process_time() - started
 
+    #: The small scan's CPU time is grown to at least this, doubling its size, so a scheduling
+    #: interruption of a few milliseconds cannot swing the ratio: at 0.1 s it swung it tenfold.
+    MIN_SECONDS = 0.5
+    MAX_SMALL = 32_000
+
     @pytest.mark.parametrize("profile", ALL, ids=ids(ALL))
     def test_two_thousand_packages(self, profile, tmp_path) -> None:
-        pkgs, few = TestScale.packages(profile, 2000), TestScale.packages(profile, 500)
-        _, before = TestScale.timed(profile, few, tmp_path / "500-before")
-        report, large = TestScale.timed(profile, pkgs, tmp_path / "2000")
-        _, after = TestScale.timed(profile, few, tmp_path / "500-after")
+        # A throwaway scan first: the first scan of a process pays one-off loads, which counted as
+        # the small size's work and hid real growth (nix measured 3.1-3.8 s cold, 0.5 s warm).
+        TestScale.timed(profile, TestScale.packages(profile, 50), tmp_path / "warm")
+        count = 500
+        _, before = TestScale.timed(profile, TestScale.packages(profile, count), tmp_path / "a500")
+        while before < TestScale.MIN_SECONDS and count < TestScale.MAX_SMALL:
+            count *= 2
+            few = TestScale.packages(profile, count)
+            _, before = TestScale.timed(profile, few, tmp_path / f"a{count}")
+        pkgs = TestScale.packages(profile, 4 * count)
+        report, large = TestScale.timed(profile, pkgs, tmp_path / f"b{4 * count}")
+        _, after = TestScale.timed(profile, TestScale.packages(profile, count), tmp_path / "c")
         small = (before + after) / 2
         # The packages written; not what the format records about its own tooling (Bundler's
         # `BUNDLED WITH`), the runtime, or Go's standard library.
         written = {p.name.lower() for p in pkgs}
         packages = [d for d in report["dependencies"] if d["name"].lower() in written]
-        assert len(packages) == 2000, len(packages)
-        assert len({d["purl"] for d in packages}) == 2000, "duplicated"
+        assert len(packages) == len(pkgs), len(packages)
+        assert len({d["purl"] for d in packages}) == len(pkgs), "duplicated"
         assert large < small * 8, (
-            f"2,000 packages {large:.1f}s against 500 in {before:.1f}s and {after:.1f}s:"
-            f" {large / small:.1f} times"
+            f"{len(pkgs):,} packages {large:.2f}s against {count:,} in {before:.2f}s and"
+            f" {after:.2f}s: {large / small:.1f} times"
         )
 
 
