@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 ROLES: dict[str, tuple[str, str]] = {
     "AdvisoryBundle": ("cordon_scanner.intel.store.dbsync", "AdvisoryBundle"),
     "AdvisoryDatabase": ("cordon_scanner.intel.advisories.advisories", "AdvisoryDatabase"),
+    "AdvisoryFiles": ("cordon_scanner.intel.advisories.advisories", "AdvisoryFiles"),
     "ECOSYSTEMS": ("cordon_scanner.intel.registries.registry_record", "ECOSYSTEMS"),
     "Ed25519": ("cordon_scanner.intel.provenance._ed25519", "Ed25519"),
     "FeedClient": ("cordon_scanner.intel.malware.feed", "FeedClient"),
@@ -41,6 +42,7 @@ if TYPE_CHECKING:
     from cordon_scanner.intel.advisories import versions as _intel_advisories_versions
     from cordon_scanner.intel.base import (
         AdvisoryDatabases,
+        AdvisoryFileChecks,
         BundleKeys,
         FeedStatus,
         LicenseClassification,
@@ -66,6 +68,7 @@ if TYPE_CHECKING:
     # implementation conforms) or, for a plain value, by the value's type.
     AdvisoryBundle: BundleKeys = _intel_store_dbsync.AdvisoryBundle
     AdvisoryDatabase: AdvisoryDatabases = _intel_advisories_advisories.AdvisoryDatabase
+    AdvisoryFiles: AdvisoryFileChecks = _intel_advisories_advisories.AdvisoryFiles
     ECOSYSTEMS: frozenset[str] = _intel_registries_registry_record.ECOSYSTEMS
     Ed25519: SignatureCheck = _intel_provenance__ed25519.Ed25519
     FeedClient: FeedStatus = _intel_malware_feed.FeedClient
@@ -100,6 +103,7 @@ __all__ = [
     "YOUNG_DEPENDENCY_DAYS",
     "AdvisoryBundle",
     "AdvisoryDatabase",
+    "AdvisoryFiles",
     "BuiltinPackageNames",
     "Ed25519",
     "FeedClient",
