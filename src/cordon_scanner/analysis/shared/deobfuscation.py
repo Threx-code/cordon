@@ -402,9 +402,14 @@ class ObfuscatorIo:
         r"(?P<var>[\w$]{1,60})\s{0,4}=\s{0,4}(?P<again>[\w$]{1,60})\s{0,4}-\s{0,4}"
         r"(?P<offset>\(?[-+*/\s0-9a-fA-Fx]{1,200}?\)?)\s{0,4}[;,]"
     )
+    #: Each run of space is read once. Where the next part may start with space the run gives back
+    #: only what the earlier form's backtracking could match with: after `=`, the last space before
+    #: `;` is the expression; after the array's `,`, the last space before `)` is the target. Both
+    #: are lookahead branches. Given back one space at a time, the tail's runs took 37 s on 8,000
+    #: characters, and the `=` run 8,000 steps per space.
     _ROTATION: ClassVar[re.Pattern[str]] = re.compile(
-        r"while\s*\(\s*!!\[\]\s*\)\s*\{\s*try\s*\{\s*(?:const|var|let)\s+[\w$]+\s*=\s*(?P<expr>[^;]{1,8000});"
-        r"\s*if\s*\(\s*[\w$]+\s*===\s*[\w$]+\s*\)\s*break[\s\S]{0,400}?\}\s*\}\s*\}?\s*\(\s*(?P<array>[\w$]+)\s*,\s*(?P<target>[-+*/()\s0-9a-fA-Fx.]{1,400}?)\s*\)\s*\)?\s*[;,]"
+        r"while\s*+\(\s*+!!\[\]\s*+\)\s*+\{\s*+try\s*+\{\s*+(?:const|var|let)\s++[\w$]+\s*+=(?:\s*(?=\s;)|\s*+)(?P<expr>[^;]{1,8000});"
+        r"\s*+if\s*+\(\s*+[\w$]+\s*+===\s*+[\w$]+\s*+\)\s*+break[\s\S]{0,400}?\}\s*+\}\s*+(?:\}\s*+)?\(\s*+(?P<array>[\w$]+)\s*+,(?:\s*+|\s*(?=\s\)))(?P<target>[-+*/()\s0-9a-fA-Fx.]{1,400}?)\s*+\)\s*+(?:\)\s*+)?[;,]"
     )
     _WRAPPER: ClassVar[re.Pattern[str]] = re.compile(
         r"(?:function\s+(?P<fname>[\w$]+)|(?:const|var|let)\s+(?P<vname>[\w$]+)\s*=\s*function)\s*"
