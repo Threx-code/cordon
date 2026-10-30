@@ -175,6 +175,10 @@ class Rules:
         }
     )
     MAX_METHODS: ClassVar[int] = 25
+    #: Where a word on the ecosystem list means something else, and why.
+    NOT_AN_ECOSYSTEM: ClassVar[dict[str, str]] = {
+        "cordon_scanner.judge.calls:ValueViews.of": "'hex' is an encoding there, not Elixir's registry",
+    }
 
     @staticmethod
     def adapter_order() -> dict[str, int]:
@@ -270,8 +274,9 @@ class Rules:
                         for e in elements
                         if isinstance(e, ast.Constant) and isinstance(e.value, str)
                     }
-                if values & Rules.ECOSYSTEM_NAMES:
-                    out[f"{module}:{owner.get(id(node), '<module>')}"] += 1
+                site = f"{module}:{owner.get(id(node), '<module>')}"
+                if values & Rules.ECOSYSTEM_NAMES and site not in Rules.NOT_AN_ECOSYSTEM:
+                    out[site] += 1
         return dict(out)
 
     @staticmethod

@@ -530,7 +530,7 @@ class SecretDetector(BaseDetector):
         )
         # The history pass and the opt-in liveness check emit under this detector too: they are
         # findings about the same credentials, read from history or confirmed by their issuer.
-        from cordon_scanner.detect.secrets.history import SecretHistoryRules
+        from cordon_scanner.detect.secrets.secrets import SecretHistoryRules
 
         declared.extend(SecretHistoryRules.declared())
         # Deduplicated: several provider shapes share a rule id on purpose,

@@ -4,7 +4,7 @@ protocols, unencrypted endpoints -- by resource type.
 
 from __future__ import annotations
 
-from cordon_scanner.detect.infra.iac import IacPolicy
+from cordon_scanner.detect.infra.iac_model import IacPolicy
 from cordon_scanner.detect.infra.policy_terms import HIGH, LOW, MEDIUM
 from cordon_scanner.foundation.models import Category, Confidence
 

@@ -22,6 +22,10 @@ class CloudError(Exception):
     """A cloud operation failed. The message is safe to show and never contains a token."""
 
 
+class JobRefused(CloudError):
+    """The job asked for something this runner will not do. Reported to the cloud as failed."""
+
+
 class CloudEndpoint:
     """Where the cloud API is: explicit, then CORDON_CLOUD_URL, then the default."""
 
@@ -41,4 +45,4 @@ class CloudEndpoint:
         return url
 
 
-__all__ = ["DEFAULT_URL", "CloudEndpoint", "CloudError"]
+__all__ = ["DEFAULT_URL", "CloudEndpoint", "CloudError", "JobRefused"]
