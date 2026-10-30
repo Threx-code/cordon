@@ -134,6 +134,13 @@ class OsvDelta:
         value = OsvDelta._load("_status").get("checked_at", 0.0)
         return float(value) if isinstance(value, (int, float)) else 0.0
 
+    @staticmethod
+    def last_error() -> str:
+        """What the last check could not do, or "" when it did all of it: the state every scan
+        reports until the next check, not only the scan that made it."""
+        value = OsvDelta._load("_status").get("error", "")
+        return value if isinstance(value, str) else ""
+
     # -- Fetching ------------------------------------------------------------------------
 
     @staticmethod
@@ -279,13 +286,13 @@ class OsvDelta:
                 if error:
                     failures.append(f"{ecosystem}: {error}")
         through = now if complete and not failures else 0.0
-        status = {"checked_at": now, "through": through or OsvDelta.through()}
-        OsvDelta._write("_status", status)
         error = ""
         if failures:
             error = f"{len(failures)} ecosystem(s) could not be refreshed ({failures[0]})"
         elif not complete:
             error = f"more than {MAX_CHANGES} changes in an ecosystem; run `cordon-scanner advisories sync`"
+        status = {"checked_at": now, "through": through or OsvDelta.through(), "error": error}
+        OsvDelta._write("_status", status)
         return DeltaResult(through=through, records=total, error=error)
 
 
