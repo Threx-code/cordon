@@ -43,12 +43,14 @@ from __future__ import annotations
 import base64
 import binascii
 import json
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.intel.base import AttestationOutcome as Outcome
 from cordon_scanner.intel.base import AttestationResult as Result
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from cordon_scanner.intel.provenance.sigstore_bundle import Verified
 
 #: OIDC issuer for GitHub Actions, the workload identity that signs a
@@ -263,22 +265,34 @@ class AttestationDocuments:
         """
         if not payload:
             return ()
-        if ecosystem == "npm":
-            return AttestationDocuments._npm_bundles(payload)
-        if ecosystem == "pypi":
-            return AttestationDocuments._pypi_bundles(payload)
-        if ecosystem in ("maven", "gradle"):
-            bundle = payload.get("bundle")
-            return (json.dumps(bundle),) if isinstance(bundle, dict) and bundle else ()
-        if ecosystem in ("rubygems", "image"):
-            # RubyGems.org's attestations; an image's referrers, one bundle each.
-            bundles = payload.get("bundles")
-            return (
-                tuple(json.dumps(b) for b in bundles if isinstance(b, dict))
-                if isinstance(bundles, list)
-                else ()
-            )
-        return ()
+        reader = AttestationDocuments.READERS.get(ecosystem)
+        return getattr(AttestationDocuments, reader)(payload) if reader else ()
+
+    #: How each ecosystem's attestation payload holds its bundles: the reader for it, by name.
+    READERS: ClassVar[Mapping[str, str]] = {
+        "npm": "_npm_bundles",
+        "pypi": "_pypi_bundles",
+        "maven": "_one_bundle",
+        "gradle": "_one_bundle",
+        "rubygems": "_listed_bundles",
+        "image": "_listed_bundles",
+    }
+
+    @staticmethod
+    def _one_bundle(payload: dict[str, Any]) -> tuple[str, ...]:
+        """Maven Central's `.sigstore.json` beside the artefact: one bundle."""
+        bundle = payload.get("bundle")
+        return (json.dumps(bundle),) if isinstance(bundle, dict) and bundle else ()
+
+    @staticmethod
+    def _listed_bundles(payload: dict[str, Any]) -> tuple[str, ...]:
+        """RubyGems.org's attestations; an image's referrers, one bundle each."""
+        bundles = payload.get("bundles")
+        return (
+            tuple(json.dumps(b) for b in bundles if isinstance(b, dict))
+            if isinstance(bundles, list)
+            else ()
+        )
 
     @staticmethod
     def _npm_bundles(payload: dict[str, Any]) -> tuple[str, ...]:

@@ -38,7 +38,7 @@ import zipfile
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.redirects import NoRedirects
@@ -119,6 +119,13 @@ class OsvImportError(RuntimeError):
 
 class OsvImport:
     """Building the advisory database from OSV's bulk export."""
+
+    RUBYSEC_SUPPLEMENTED: ClassVar[frozenset[str]] = frozenset({"rubygems"})
+    """Ecosystems whose OSV export is supplemented by rubysec's advisories."""
+    DATADOG_SUPPLEMENTED: ClassVar[frozenset[str]] = frozenset({"npm", "pypi", "vscode"})
+    """Ecosystems whose OSV export is supplemented by DataDog's malicious-package dataset."""
+    NAMED_BY_URL: ClassVar[frozenset[str]] = frozenset({"swift"})
+    """Ecosystems whose OSV package name is a repository URL, keyed here as `owner/name`."""
 
     @staticmethod
     def _download(url: str, dest: Path, limit: int = MAX_DOWNLOAD_BYTES) -> None:
@@ -501,7 +508,7 @@ class OsvImport:
 
         records = list(OsvImport.share_symbols(records, links))
 
-        if ecosystem == "rubygems":
+        if ecosystem in OsvImport.RUBYSEC_SUPPLEMENTED:
             # rubysec carries advisories OSV's RubyGems export does not; see `intel.rubysec`.
             from cordon_scanner.intel.advisories import rubysec
 
@@ -510,7 +517,7 @@ class OsvImport:
             except rubysec.RubysecError as exc:
                 raise OsvImportError(f"rubygems: {exc}") from exc
 
-        if ecosystem in ("npm", "pypi", "vscode"):
+        if ecosystem in OsvImport.DATADOG_SUPPLEMENTED:
             # DataDog's dataset names malicious packages OSV has not recorded yet; see
             # `intel.datadog_malware`.
             from cordon_scanner.intel.malware import datadog_malware
@@ -644,7 +651,7 @@ class OsvImport:
         below `ecosystems` in the layering; `tests/unit/intel/advisories/test_osv_import.py` asserts
         the two agree on real URLs so the duplication cannot drift.
         """
-        if ecosystem != "swift":
+        if ecosystem not in OsvImport.NAMED_BY_URL:
             return osv_name
         parts = [part for part in osv_name.strip().removesuffix(".git").split("/") if part]
         return "/".join(parts[-2:]).lower() if len(parts) >= 2 else osv_name.lower()

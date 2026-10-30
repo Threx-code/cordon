@@ -44,11 +44,16 @@ _NOT_NAMES: Final = frozenset(
 class AdvisoryTextSymbols:
     """`text:`-prefixed vulnerable function names read from an advisory's prose."""
 
+    APPLIES_TO: Final = frozenset({"pypi", "npm"})
+    """The ecosystems whose advisory prose is read for function names."""
+    NAMED_AS_PUBLISHED: Final = frozenset({"npm"})
+    """Ecosystems whose code imports a package by its published name (no import-name table)."""
+
     @staticmethod
     def import_names(ecosystem: str, package: str) -> tuple[str, list[str]]:
         """The canonical import name for a package, and every head a reference to it may use."""
         lowered = package.lower()
-        if ecosystem == "npm":
+        if ecosystem in AdvisoryTextSymbols.NAMED_AS_PUBLISHED:
             heads = [package]
             if lowered in ("lodash", "lodash-es", "underscore"):
                 heads.append("_")
@@ -62,7 +67,7 @@ class AdvisoryTextSymbols:
 
     @classmethod
     def extract(cls, ecosystem: str, package: str, text: str) -> tuple[str, ...]:
-        if ecosystem not in ("pypi", "npm") or not text:
+        if ecosystem not in cls.APPLIES_TO or not text:
             return ()
         canonical, heads = cls.import_names(ecosystem, package)
         found: list[str] = []

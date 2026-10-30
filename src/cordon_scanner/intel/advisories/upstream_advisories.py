@@ -92,6 +92,10 @@ class UpstreamResult:
 class Upstreams:
     """What each ecosystem says a package was built from."""
 
+    COCOAPODS_GEM = "cocoapods"
+    """The package name of CocoaPods itself: a RubyGem, which a Podfile.lock pins on its COCOAPODS
+    line (a package name here, not the ecosystem)."""
+
     @staticmethod
     def bazel(dependency: Dependency) -> Upstream | Unnamed:
         name, version = dependency.name, dependency.version or ""
@@ -211,7 +215,7 @@ class Upstreams:
         from cordon_scanner.intel.registries.package_registries import PackageRegistries
         from cordon_scanner.intel.registries.registry_hosts import HOSTS
 
-        if dependency.scope == Scope.TOOL and dependency.name == "cocoapods":
+        if dependency.scope == Scope.TOOL and dependency.name == Upstreams.COCOAPODS_GEM:
             # Podfile.lock's COCOAPODS line: the version of CocoaPods itself, a RubyGem.
             return Upstream(
                 {
