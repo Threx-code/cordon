@@ -21,9 +21,6 @@ ABANDONED_RULE = "POLICY.DEPENDENCY.ABANDONED.001"
 DETECTOR: Final = "dependency"
 
 POLICY_SOURCE_RULE: Final = "POLICY.DEPENDENCY.SOURCE.001"
-POLICY_SOURCE_BUNDLED_RULE: Final = "POLICY.DEPENDENCY.SOURCE.BUNDLED.001"
-"""POLICY.DEPENDENCY.SOURCE.001 from a manifest whose records installing the package does not
-install: info, never gating."""
 
 TYPOSQUAT_BUNDLED_RULE: Final = "SUSPECT.DEPENDENCY.TYPOSQUAT.BUNDLED.001"
 """A record installing the package does not install whose name is one plausible slip from a popular
@@ -162,21 +159,6 @@ DECLARED_RULES: tuple[DeclaredRule, ...] = (
         ),
         references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
         remediation="Prefer registry releases, which are immutable and auditable.",
-    ),
-    DeclaredRule(
-        id=POLICY_SOURCE_BUNDLED_RULE,
-        title="A manifest the package bundles but does not install declares a non-registry source",
-        severity=Severity.INFO,
-        confidence=Confidence.HIGH,
-        category=Category.POLICY,
-        detector=DETECTOR,
-        message=(
-            "A nested or vendored manifest in this package declares a dependency as a URL, a git "
-            "reference or a local path. Installing the package does not read that manifest; "
-            "building the subdirectory that holds it does."
-        ),
-        references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
-        remediation="If that subdirectory is built, prefer registry releases there too.",
     ),
 )
 

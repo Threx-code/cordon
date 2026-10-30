@@ -58,7 +58,7 @@ class Accumulator:
 
     not_installed_findings: list[Finding] = field(default_factory=list)
     """Findings a member detector made about a file outside the inventory's scope, held out of the
-    verdict at their info twins (`DependencyDetector.not_installed_manifests`) and added after it."""
+    verdict at their info twins (`ManifestDetector.not_installed_manifests`) and added after it."""
 
     def append(self, finding: Finding) -> bool:
         """Retain one finding if the cap allows it.

@@ -132,6 +132,7 @@ rather than a document.
 | `MALWARE.DEPENDENCY.KNOWN.001` | critical | `advisory` | malicious_code |
 | `MALWARE.DEPENDENCY.PAYLOAD.001` | critical | `manifest` | malicious_code |
 | `MALWARE.DEPENDENCY.REMOTE_TARBALL.001` | critical | `manifest` | malicious_code |
+| `MALWARE.DEPENDENCY.REMOTE_TARBALL.BUNDLED.001` | high | `manifest` | malicious_code |
 | `MALWARE.PACKAGE.KNOWN.001` | critical | `advisory` | malicious_code |
 | `MALWARE.RECIPE.KNOWN.001` | critical | `recipe-digest` | malicious_code |
 | `POLICY.DEPENDENCY.ABANDONED.001` | medium | `dependency` | policy |
@@ -140,6 +141,7 @@ rather than a document.
 | `POLICY.DEPENDENCY.DOWNGRADE.001` | low | `registry` | policy |
 | `POLICY.DEPENDENCY.INTEGRITY.001` | medium | `dependency` | policy |
 | `POLICY.DEPENDENCY.MUTABLE_REF.001` | medium | `manifest` | policy |
+| `POLICY.DEPENDENCY.MUTABLE_REF.BUNDLED.001` | info | `manifest` | policy |
 | `POLICY.DEPENDENCY.SECURITY_PLACEHOLDER.001` | medium | `advisory` | policy |
 | `POLICY.DEPENDENCY.SOURCE.001` | low | `dependency` | policy |
 | `POLICY.DEPENDENCY.SOURCE.BUNDLED.001` | info | `dependency` | policy |
@@ -156,10 +158,12 @@ rather than a document.
 | `SUSPECT.DEPENDENCY.CONFUSION.001` | high | `dependency` | dependency_confusion |
 | `SUSPECT.DEPENDENCY.DEPRECATED_SECURITY.001` | high | `registry` | policy |
 | `SUSPECT.DEPENDENCY.FOREIGN_COMMIT.001` | high | `manifest` | policy |
+| `SUSPECT.DEPENDENCY.FOREIGN_COMMIT.BUNDLED.001` | info | `manifest` | policy |
 | `SUSPECT.DEPENDENCY.HALLUCINATED.001` | high | `slopsquat` | typosquat |
 | `SUSPECT.DEPENDENCY.HALLUCINATED.BUNDLED.001` | info | `slopsquat` | typosquat |
 | `SUSPECT.DEPENDENCY.PROVISIONAL.001` | high | `advisory` | policy |
 | `SUSPECT.DEPENDENCY.REMOTE_TARBALL.001` | high | `manifest` | policy |
+| `SUSPECT.DEPENDENCY.REMOTE_TARBALL.BUNDLED.001` | info | `manifest` | policy |
 | `SUSPECT.DEPENDENCY.REMOVED_NAME.001` | medium | `advisory` | policy |
 | `SUSPECT.DEPENDENCY.SOURCE.001` | medium | `dependency` | policy |
 | `SUSPECT.DEPENDENCY.SOURCE.BUNDLED.001` | info | `dependency` | policy |
@@ -454,6 +458,7 @@ rather than a document.
 | `SUSPECT.DOCKERFILE.ADD_REMOTE.001` | medium | `iac` | misconfiguration |
 | `SUSPECT.DOCKERFILE.SECRET_ARG.001` | high | `iac` | misconfiguration |
 | `SUSPECT.HELM.UNTRUSTED_REPOSITORY.001` | medium | `manifest` | misconfiguration |
+| `SUSPECT.HELM.UNTRUSTED_REPOSITORY.BUNDLED.001` | info | `manifest` | misconfiguration |
 | `SUSPECT.K8S.CAPABILITIES.001` | high | `config` | misconfiguration |
 | `SUSPECT.K8S.DANGEROUS_CAPABILITY.001` | high | `iac` | misconfiguration |
 | `SUSPECT.K8S.HOST_IPC.001` | medium | `iac` | misconfiguration |

@@ -29,9 +29,13 @@ check reads them. The rule for which checks still look at them is by what the ch
   the record, so each has a not-installed twin, reported after the verdict and never gating:
   VULNERABLE.DEPENDENCY.BUNDLED (info) and MALWARE.DEPENDENCY.BUNDLED (high) from the advisory
   detector; SUSPECT.DEPENDENCY.SOURCE.BUNDLED and SUSPECT.DEPENDENCY.TYPOSQUAT.BUNDLED (info) here;
-  SUSPECT.DEPENDENCY.HALLUCINATED.BUNDLED (info) from the slopsquat detector; and
-  POLICY.DEPENDENCY.SOURCE.BUNDLED (info) for a not-installed manifest's own declaration of a
-  source outside the registry.
+  SUSPECT.DEPENDENCY.HALLUCINATED.BUNDLED (info) from the slopsquat detector; and, for what a
+  not-installed manifest's own declaration of one dependency says, every rule in
+  `manifests.rule_ids.NOT_INSTALLED_TWINS` (`ManifestDetector.not_installed_manifests`): a source
+  outside the registry, a reference that can move, an archive from a URL (at high from a drop-point
+  host), a foreign commit, an untrusted chart repository. Rules about a manifest as a whole (its
+  install scripts, its own name and fields, where it says to look for packages) are the
+  manifest's, whoever installs it, and are unchanged.
 - About installing it -- registry existence, provenance, an abandoned package, a missing integrity
   hash, dependency confusion against a private registry -- the question only arises for what is
   installed, so there is no twin. Nor is there one for an organisation's denylist
@@ -40,7 +44,6 @@ check reads them. The rule for which checks still look at them is by what the ch
 
 from __future__ import annotations
 
-import posixpath
 from collections import Counter
 from dataclasses import replace
 from typing import TYPE_CHECKING, ClassVar
@@ -51,8 +54,6 @@ from cordon_scanner.detect.supply.dependency_rules import (
     ABANDONED_RULE,
     DECLARED_RULES,
     DETECTOR,
-    POLICY_SOURCE_BUNDLED_RULE,
-    POLICY_SOURCE_RULE,
     SOURCE_BUNDLED_RULE,
     TYPOSQUAT_BUNDLED_RULE,
 )
@@ -374,44 +375,6 @@ class DependencyDetector(BaseDetector):
         for dependency in unit.dependencies:
             findings.extend(self._check(dependency, unit, ctx, mirrors))
         return findings
-
-    @staticmethod
-    def not_installed_manifests(
-        findings: list[Finding],
-        installed: Iterable[Dependency],
-        not_installed: Iterable[Dependency],
-        ctx: ScanContext,
-    ) -> tuple[list[Finding], list[Finding]]:
-        """The manifest detector's POLICY.DEPENDENCY.SOURCE.001 split by the inventory: a manifest
-        whose directory's records are all not installed (their `installed` flag, so the finding
-        and the record cannot disagree) gives POLICY.DEPENDENCY.SOURCE.BUNDLED at info instead.
-        Returns the findings kept and the twins, which the engine adds after the verdict."""
-        inside = {posixpath.dirname(d.declared_in) for d in installed if d.declared_in}
-        outside = {
-            posixpath.dirname(d.declared_in) for d in not_installed if d.declared_in
-        } - inside
-        kept: list[Finding] = []
-        held: list[Finding] = []
-        for finding in findings:
-            if (
-                finding.rule_id != POLICY_SOURCE_RULE
-                or posixpath.dirname(finding.location.path) not in outside
-            ):
-                kept.append(finding)
-                continue
-            held.append(
-                replace(
-                    finding,
-                    rule_id=POLICY_SOURCE_BUNDLED_RULE,
-                    severity=Severity.INFO,
-                    message=f"Not installed with this package. {finding.message}",
-                    explanation=replace(
-                        finding.explanation, matched_rule=POLICY_SOURCE_BUNDLED_RULE
-                    ),
-                    risk=ctx.scorer.score(Severity.INFO, finding.confidence),
-                )
-            )
-        return kept, held
 
     def not_installed(self, dependencies: Iterable[Dependency], ctx: ScanContext) -> list[Finding]:
         """Records installing the target does not install (`installed=False`) that resolve from

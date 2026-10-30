@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,481 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,486 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -495,7 +495,7 @@ rule's own samples.
 
 ## Dependencies
 
-33 rules.
+37 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -503,23 +503,27 @@ rule's own samples.
 | `MALWARE.DEPENDENCY.KNOWN.001` | critical | Dependency is a known-malicious release |
 | `MALWARE.DEPENDENCY.PAYLOAD.001` | critical | A declared dependency is malicious by its own content |
 | `MALWARE.DEPENDENCY.REMOTE_TARBALL.001` | critical | A published package installs a dependency from a drop-point host |
+| `MALWARE.DEPENDENCY.REMOTE_TARBALL.BUNDLED.001` | high | A published package installs a dependency from a drop-point host, in a manifest installing the package does not read |
 | `POLICY.DEPENDENCY.ABANDONED.001` | medium | Dependency is abandoned by its maintainer |
 | `POLICY.DEPENDENCY.CLEARTEXT_SOURCE.001` | medium | Package source over plain HTTP |
 | `POLICY.DEPENDENCY.DEPRECATED.001` | medium | Dependency pins a version its publisher deprecated |
 | `POLICY.DEPENDENCY.DOWNGRADE.001` | low | Dependency pins a version far behind the current release |
 | `POLICY.DEPENDENCY.INTEGRITY.001` | medium | Dependency has no integrity hash |
 | `POLICY.DEPENDENCY.MUTABLE_REF.001` | medium | Git dependency on a reference that can move |
+| `POLICY.DEPENDENCY.MUTABLE_REF.BUNDLED.001` | info | Git dependency on a reference that can move, in a manifest installing the package does not read |
 | `POLICY.DEPENDENCY.SECURITY_PLACEHOLDER.001` | medium | Dependency pins npm's security placeholder |
 | `POLICY.DEPENDENCY.SOURCE.001` | low | Dependency declared from a non-registry source |
-| `POLICY.DEPENDENCY.SOURCE.BUNDLED.001` | info | A manifest the package bundles but does not install declares a non-registry source |
+| `POLICY.DEPENDENCY.SOURCE.BUNDLED.001` | info | Dependency declared from a non-registry source, in a manifest installing the package does not read |
 | `POLICY.DEPENDENCY.UNMAINTAINED.001` | low | Dependency has had no release in five years |
 | `SUSPECT.DEPENDENCY.CONFUSION.001` | high | Internal package name resolved from a public registry |
 | `SUSPECT.DEPENDENCY.DEPRECATED_SECURITY.001` | high | Dependency pins a version its publisher deprecated for a security reason |
 | `SUSPECT.DEPENDENCY.FOREIGN_COMMIT.001` | high | A published package installs a dependency from another project's commit |
+| `SUSPECT.DEPENDENCY.FOREIGN_COMMIT.BUNDLED.001` | info | A published package installs a dependency from another project's commit, in a manifest installing the package does not read |
 | `SUSPECT.DEPENDENCY.HALLUCINATED.001` | high | A dependency's name is a documented AI hallucination |
 | `SUSPECT.DEPENDENCY.HALLUCINATED.BUNDLED.001` | info | A dependency the package bundles but does not install is a documented AI hallucination |
 | `SUSPECT.DEPENDENCY.PROVISIONAL.001` | high | Dependency version is held for review |
 | `SUSPECT.DEPENDENCY.REMOTE_TARBALL.001` | high | A published package installs a dependency from an arbitrary URL |
+| `SUSPECT.DEPENDENCY.REMOTE_TARBALL.BUNDLED.001` | info | A published package installs a dependency from an arbitrary URL, in a manifest installing the package does not read |
 | `SUSPECT.DEPENDENCY.REMOVED_NAME.001` | medium | Dependency names a removed malicious package |
 | `SUSPECT.DEPENDENCY.SOURCE.001` | medium | Dependency resolved from outside the registry |
 | `SUSPECT.DEPENDENCY.SOURCE.BUNDLED.001` | info | A dependency the package bundles but does not install resolves from outside the registry |
@@ -657,11 +661,12 @@ rule's own samples.
 
 ## Helm
 
-1 rules.
+2 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `SUSPECT.HELM.UNTRUSTED_REPOSITORY.001` | medium | Chart depends on a chart from an unpinned or plain-HTTP repository |
+| `SUSPECT.HELM.UNTRUSTED_REPOSITORY.BUNDLED.001` | info | Chart depends on a chart from an unpinned or plain-HTTP repository, in a manifest installing the package does not read |
 
 ## Image
 

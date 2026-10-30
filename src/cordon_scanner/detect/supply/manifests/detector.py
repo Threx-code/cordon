@@ -21,6 +21,8 @@ The finding says the safety net is absent, not that something is wrong.
 
 from __future__ import annotations
 
+import posixpath
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
@@ -29,17 +31,20 @@ from cordon_scanner.detect.supply.manifests.findings import ManifestFinding
 from cordon_scanner.detect.supply.manifests.identity_findings import IdentityFindings
 from cordon_scanner.detect.supply.manifests.lifecycle_findings import LifecycleFindings
 from cordon_scanner.detect.supply.manifests.rule_declarations import DECLARED_RULES
+from cordon_scanner.detect.supply.manifests.rule_ids import NOT_INSTALLED_TWINS
 from cordon_scanner.detect.supply.manifests.source_findings import SourceFindings
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.foundation.models import (
     Category,
     Finding,
+    Severity,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from cordon_scanner.detect.base import Unit
+    from cordon_scanner.foundation.results import Dependency
 
 
 class ManifestDetector(BaseDetector):
@@ -58,6 +63,42 @@ class ManifestDetector(BaseDetector):
 
     def applicable(self, ctx: ScanContext) -> bool:
         return True
+
+    @staticmethod
+    def not_installed_manifests(
+        findings: list[Finding],
+        installed: Iterable[Dependency],
+        not_installed: Iterable[Dependency],
+        ctx: ScanContext,
+    ) -> tuple[list[Finding], list[Finding]]:
+        """The findings about one dependency's declaration (`NOT_INSTALLED_TWINS`) split by the
+        inventory: a manifest whose directory's records are all not installed (their `installed`
+        flag, so the finding and the record cannot disagree) gives the rule's twin instead, at info
+        or, from a drop-point host, high. Returns the findings kept and the twins, which the engine
+        adds after the verdict."""
+        inside = {posixpath.dirname(d.declared_in) for d in installed if d.declared_in}
+        outside = {
+            posixpath.dirname(d.declared_in) for d in not_installed if d.declared_in
+        } - inside
+        kept: list[Finding] = []
+        held: list[Finding] = []
+        for finding in findings:
+            twin = NOT_INSTALLED_TWINS.get(finding.rule_id)
+            if twin is None or posixpath.dirname(finding.location.path) not in outside:
+                kept.append(finding)
+                continue
+            severity = Severity.HIGH if finding.category is Category.MALICIOUS else Severity.INFO
+            held.append(
+                replace(
+                    finding,
+                    rule_id=twin,
+                    severity=severity,
+                    message=f"Not installed with this package. {finding.message}",
+                    explanation=replace(finding.explanation, matched_rule=twin),
+                    risk=ctx.scorer.score(severity, finding.confidence),
+                )
+            )
+        return kept, held
 
     def inspect(self, unit: Unit, ctx: ScanContext) -> Iterable[Finding]:
         if not isinstance(unit, FileUnit):

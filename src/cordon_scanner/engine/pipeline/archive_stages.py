@@ -449,7 +449,7 @@ class ArchiveStages:
         out of the verdict and kept at their info twins for after it."""
         if not acc.not_installed:
             return
-        detector = next((d for d in self.detectors if d.id == "dependency"), None)
+        detector = next((d for d in self.detectors if d.id == "manifest"), None)
         split = getattr(detector, "not_installed_manifests", None)
         if callable(split):
             acc.findings[:], held = split(acc.findings, dependencies, acc.not_installed, ctx)

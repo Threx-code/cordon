@@ -23,12 +23,12 @@ from cordon_scanner.detect.supply.advisories.findings import (
 )
 from cordon_scanner.detect.supply.dependency import DependencyDetector
 from cordon_scanner.detect.supply.dependency_rules import (
-    POLICY_SOURCE_BUNDLED_RULE,
     POLICY_SOURCE_RULE,
     SOURCE_BUNDLED_RULE,
     TYPOSQUAT_BUNDLED_RULE,
 )
 from cordon_scanner.detect.supply.manifests.detector import ManifestDetector
+from cordon_scanner.detect.supply.manifests.rule_ids import MUTABLE_REF_RULE, NOT_INSTALLED_TWINS
 from cordon_scanner.detect.supply.slopsquat import BUNDLED_RULE as HALLUCINATED_BUNDLED_RULE
 from cordon_scanner.detect.supply.slopsquat import SlopsquatDetector
 from cordon_scanner.foundation.config.settings import Config
@@ -253,7 +253,25 @@ class TestNotInstalledSources:
         rules = {
             (f.rule_id, f.severity) for f in result.findings if "POLICY.DEPENDENCY" in f.rule_id
         }
-        assert rules == {(POLICY_SOURCE_BUNDLED_RULE, Severity.INFO)}
+        assert rules == {(NOT_INSTALLED_TWINS[POLICY_SOURCE_RULE], Severity.INFO)}
+
+    def test_a_nested_manifests_moving_reference_is_the_info_twin(self, tmp_path: Path) -> None:
+        nested = {"name": "ui", "version": "1.0.0", "dependencies": {"left": "github:o/left"}}
+        result = TestNotInstalledSources.scan(
+            tmp_path, Tarball.lock(left="1.0.0"), **{"ui/package.json": json.dumps(nested)}
+        )
+        rules = {
+            (f.rule_id, f.severity) for f in result.findings if "POLICY.DEPENDENCY" in f.rule_id
+        }
+        assert rules == {(NOT_INSTALLED_TWINS[MUTABLE_REF_RULE], Severity.INFO)}
+
+    def test_every_twin_is_declared_beside_its_rule(self) -> None:
+        from cordon_scanner.detect.supply.manifests.rule_declarations import DECLARED_RULES
+
+        declared = {rule.id: rule for rule in DECLARED_RULES}
+        for twin in NOT_INSTALLED_TWINS.values():
+            want = Severity.HIGH if twin.startswith("MALWARE.") else Severity.INFO
+            assert declared[twin].severity is want, twin
 
     def test_the_root_manifests_git_source_stays_the_policy_rule(self, tmp_path: Path) -> None:
         root = {
