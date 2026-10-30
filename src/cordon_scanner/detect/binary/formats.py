@@ -344,6 +344,20 @@ class FormatDetector(BaseDetector):
         report = self._pickle_report(unit)
         if report is None:
             raise FormatError("not a readable pickle")
+        # The reader stopped keeping what it read (the memo's names past their bound): the file
+        # was read in part, and the scan says so beside whatever the part it kept shows.
+        in_part = (
+            [
+                self._finding(
+                    "OPERATIONAL.FORMAT.UNREADABLE",
+                    unit,
+                    ctx,
+                    detail=f"Read in part: {report.refusal}.",
+                )
+            ]
+            if report.refusal
+            else []
+        )
         always = sorted({i.dotted for i in report.imports if i.always})
         dual = sorted({i.dotted for i in report.imports if i.dual})
         if always:
@@ -351,9 +365,10 @@ class FormatDetector(BaseDetector):
             # reconstruction primitives. List both so the evidence is complete.
             listed = ", ".join((always + dual)[:MAX_IMPORTS_LISTED])
             return [
+                *in_part,
                 self._finding(
                     "MALWARE.MODEL.PICKLE_EXEC.001", unit, ctx, detail=f"It imports {listed}."
-                )
+                ),
             ]
         unknown = sorted(
             {
@@ -369,11 +384,12 @@ class FormatDetector(BaseDetector):
         if reported:
             listed = ", ".join(sorted(reported)[:MAX_IMPORTS_LISTED])
             return [
+                *in_part,
                 self._finding(
                     "SUSPECT.MODEL.PICKLE_IMPORT.001", unit, ctx, detail=f"It imports {listed}."
-                )
+                ),
             ]
-        return []
+        return in_part
 
     @staticmethod
     def _pickle_report(unit: FileUnit) -> pickles.PickleReport | None:

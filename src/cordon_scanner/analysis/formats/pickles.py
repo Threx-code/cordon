@@ -13,6 +13,7 @@ header.
 
 from __future__ import annotations
 
+import array
 import io
 import pickletools
 import struct
@@ -23,7 +24,14 @@ from typing import Final
 
 from cordon_scanner.analysis.formats import FormatBounds, FormatError
 
-MAX_OPCODES: Final = 2_000_000
+MAX_MEMO_BYTES: Final = 64 * 1024 * 1024
+"""The most the walk's memo holds: 8 bytes an entry, the byte offset of the memoised string's
+opcode (-1 for any other value), so an import through a `GET` is read back from the pickle's own
+bytes, exactly, whatever the string -- `__import__("evil-mod")` imports evil-mod.py, so no shape
+rule can say which strings name a module. A pickle is read to its end whatever its size (review 98,
+D: a 6.2 MB dictionary cache of 3.2 million opcodes was refused at a 2,000,000-opcode cap, and the
+scan with it incomplete); its 938,293 memo entries cost 7.5 MB here, not the 99 MB of the strings.
+Past this bound, nothing more is memoised and the read is reported as partial, never silently cut."""
 MAX_PICKLES: Final = 16
 """`.pt` archives can hold several pickles; more than this is refused rather than walked."""
 
@@ -256,6 +264,11 @@ class PickleImport:
 class PickleReport:
     imports: list[PickleImport] = field(default_factory=list)
     partial: bool = False
+    refusal: str | None = None
+    """Why the read is partial, where the reader itself stopped keeping what it read: the memo
+    past `MAX_MEMO_BYTES`. Reported as the file read in part."""
+    memo_bytes: int = 0
+    """What the memo holds, in bytes: 8 an entry."""
     """Only part of the stream could be read (the file was read in part, or ended early)."""
     pickles: int = 0
 
@@ -329,21 +342,28 @@ class PickleReader:
 
         Reads one stream from the current position to its STOP. Returns the opcode count and whether
         it ended cleanly at a STOP; a count of zero means the position did not begin a pickle."""
-        stack: list[object] = []
-        memo: dict[int, object] = {}
+        stack: list[object] = []  # a string as the offset of its opcode (int); else None or _MARK
+        memo = array.array("q")
+        memo_count = 0
         count = 0
+        again: io.BytesIO | None = None  # a second view of the bytes, to read a string back
         try:
             for opcode, argument, position in pickletools.genops(stream):
                 count += 1
-                if count > MAX_OPCODES:
-                    raise FormatError(f"the pickle has more than {MAX_OPCODES} opcodes")
                 name = opcode.name
                 if name in ("GLOBAL", "INST"):
                     module, _, attribute = str(argument).partition(" ")
                     report.imports.append(PickleImport(module, attribute, position or 0, member))
                 elif name == "STACK_GLOBAL":
+                    if again is None:
+                        again = io.BytesIO(stream.getbuffer())
                     module_value, name_value = (
-                        (stack[-2], stack[-1]) if len(stack) >= 2 else (None, None)
+                        (
+                            PickleReader._string_at(again, stack[-2]),
+                            PickleReader._string_at(again, stack[-1]),
+                        )
+                        if len(stack) >= 2
+                        else (None, None)
                     )
                     if isinstance(module_value, str) and isinstance(name_value, str):
                         report.imports.append(
@@ -354,10 +374,11 @@ class PickleReader:
                             PickleImport("<unresolved>", "<unresolved>", position or 0, member)
                         )
                 if name == "MEMOIZE":
-                    memo[len(memo)] = stack[-1] if stack else None
+                    PickleReader._memoise(memo, memo_count, stack, report)
+                    memo_count += 1
                     continue
                 if name in ("PUT", "BINPUT", "LONG_BINPUT"):
-                    memo[int(str(argument))] = stack[-1] if stack else None
+                    PickleReader._memoise(memo, int(str(argument)), stack, report)
                     continue
                 before = opcode.stack_before
                 if pickletools.markobject in before:
@@ -367,11 +388,11 @@ class PickleReader:
                 elif before:
                     del stack[max(len(stack) - len(before), 0) :]
                 if name in _STRING_OPS:
-                    stack.append(
-                        argument.decode("latin-1") if isinstance(argument, bytes) else str(argument)
-                    )
+                    stack.append(position)  # the string, as where to read it back from
                 elif name in ("GET", "BINGET", "LONG_BINGET"):
-                    stack.append(memo.get(int(str(argument))))
+                    key = int(str(argument))
+                    found = memo[key] if 0 <= key < len(memo) else -1
+                    stack.append(found if found >= 0 else None)
                 else:
                     stack.extend(
                         _MARK if item is pickletools.markobject else None
@@ -387,6 +408,42 @@ class PickleReader:
                 report.partial = True
             return count, False
         return count, True
+
+    @staticmethod
+    def _memoise(
+        memo: array.array[int], key: int, stack: list[object], report: PickleReport
+    ) -> None:
+        """Record what a later `GET` of `key` gives: the offset of the string on top of the stack,
+        or -1 for any other value (a `GET` of it gives None, what the value gave). The memo is an
+        array of offsets, 8 bytes an entry, so it holds the pickle's data at no cost but the
+        count; past `MAX_MEMO_BYTES` nothing more is kept and the read is reported as partial."""
+        top = stack[-1] if stack else None
+        offset = top if isinstance(top, int) else -1
+        if key >= len(memo):
+            if (key + 1) * memo.itemsize > MAX_MEMO_BYTES:
+                report.partial = True
+                report.refusal = report.refusal or (
+                    f"its memo exceeds {MAX_MEMO_BYTES} bytes: imports through the memo past "
+                    "that point are unresolved"
+                )
+                return
+            memo.extend([-1] * (key + 1 - len(memo)))
+            report.memo_bytes = len(memo) * memo.itemsize
+        memo[key] = offset
+
+    @staticmethod
+    def _string_at(again: io.BytesIO, value: object) -> str | None:
+        """The string a stack entry stands for, read back from its opcode; None for any other."""
+        if not isinstance(value, int):
+            return None
+        again.seek(value)
+        try:
+            opcode, argument, _position = next(pickletools.genops(again))
+        except (ValueError, EOFError, StopIteration):
+            return None
+        if opcode.name not in _STRING_OPS:
+            return None
+        return argument.decode("latin-1") if isinstance(argument, bytes) else str(argument)
 
     @staticmethod
     def _zip_pickles(raw: bytes, *, truncated: bool) -> list[tuple[str, bytes, bool]]:

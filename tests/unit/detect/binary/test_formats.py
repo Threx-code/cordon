@@ -114,10 +114,74 @@ class TestPickles:
         with pytest.raises(FormatError):
             pickles.PickleReader.read(b"\xff\xfe not a pickle")
 
-    def test_the_opcode_budget_holds(self, monkeypatch) -> None:
-        monkeypatch.setattr(pickles, "MAX_OPCODES", 10)
-        with pytest.raises(FormatError, match="opcodes"):
-            pickles.PickleReader.read(pickle.dumps(list(range(100)), protocol=2))
+    def test_a_pickle_of_any_opcode_count_is_read_whole(self) -> None:
+        # 100,000 memoised strings: well past any per-count cap, read to the end, with the memo
+        # holding 8 bytes an entry (the string's offset), none of the text.
+        data = pickle.dumps([f"word {n} pronounced" for n in range(100_000)], protocol=4)
+        report = pickles.PickleReader.read(data)
+        assert report.pickles == 1 and not report.partial and report.refusal is None
+        assert 0 < report.memo_bytes <= 8 * 100_002
+
+    @staticmethod
+    def stack_global(module: str, attribute: str) -> bytes:
+        """A protocol-4 pickle that memoises `module` and `attribute`, pops them, and imports
+        through GETs of the memo: the import resolves only if the memo kept both names."""
+
+        def unicode(value: str) -> bytes:
+            raw = value.encode("utf-8")
+            return b"X" + struct.pack("<I", len(raw)) + raw
+
+        return (
+            b"\x80\x04"
+            + unicode(module)
+            + b"\x94"
+            + unicode(attribute)
+            + b"\x94"  # MEMOIZE both
+            + b"00"  # POP, POP
+            + b"h\x00"
+            + b"h\x01"  # BINGET 0, BINGET 1
+            + b"\x93"  # STACK_GLOBAL
+            + b"."
+        )
+
+    def test_a_long_named_module_imported_through_the_memo_still_resolves(self) -> None:
+        module = "vendor_" + "x" * 2_000 + ".loader"
+        report = pickles.PickleReader.read(self.stack_global(module, "run"))
+        assert [i.dotted for i in report.imports] == [module + ".run"]
+        assert not report.partial
+
+    def test_a_module_named_as_no_identifier_resolves_through_the_memo(self, tmp_path) -> None:
+        # `__import__("evil-mod")` imports evil-mod.py, so the name must come back exactly, and
+        # the import must be graded as the one made directly: same rule, same severity.
+        through_memo = self.stack_global("evil-mod", "run")
+        direct = b"\x80\x02cevil-mod\nrun\n."  # protocol 2, GLOBAL
+        assert [i.dotted for i in pickles.PickleReader.read(through_memo).imports] == [
+            "evil-mod.run"
+        ]
+        (tmp_path / "memo.pkl").write_bytes(through_memo)
+        (tmp_path / "direct.pkl").write_bytes(direct)
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        graded = {
+            f.location.path: (f.rule_id, f.severity)
+            for f in result.findings
+            if f.rule_id.endswith("PICKLE_IMPORT.001") or f.rule_id.endswith("PICKLE_EXEC.001")
+        }
+        assert set(graded) == {"memo.pkl", "direct.pkl"}, graded
+        assert graded["memo.pkl"] == graded["direct.pkl"], graded
+
+    def test_names_past_the_memo_bound_are_reported_not_dropped_silently(self, monkeypatch) -> None:
+        monkeypatch.setattr(pickles, "MAX_MEMO_BYTES", 8)  # one entry: the second memoise overflows
+        report = pickles.PickleReader.read(self.stack_global("a_module_of_some_length", "attr"))
+        assert report.partial and report.refusal and "memo exceeds" in report.refusal
+        assert report.imports and report.imports[0].module == "<unresolved>"
+
+    def test_the_memo_overflow_is_an_operational_finding(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setattr(pickles, "MAX_MEMO_BYTES", 8)
+        (tmp_path / "model.pkl").write_bytes(self.stack_global("a_module_of_some_length", "attr"))
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        rules = {f.rule_id for f in result.findings}
+        assert "OPERATIONAL.FORMAT.UNREADABLE" in rules, sorted(rules)
+        assert not result.content_complete
 
     def test_a_command_module_reached_through_an_attribute_chain_is_dangerous(self) -> None:
         # `torch.serialization` does `import os`, so a pickle GETs `os` off it and calls `system`:
