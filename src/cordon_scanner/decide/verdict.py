@@ -659,6 +659,13 @@ class Verdict:
             ),
             package,
         )
+        # Every scored input is in the record, so a score can be reproduced from what is printed:
+        # `rules` gives each rule's strongest severity only, and the model also reads how many
+        # times each rule, family, place and category fired (a count that fell from 4 to 1 moved a
+        # score while `rules` stayed the same). The package facts are in `package`.
+        summary["evidence"] = {
+            key: value for key, value in sorted(features.items()) if not key.startswith("pkg:")
+        }
         # `reviewed` holds only with a registry section; said again so the type is known here.
         if reviewed and registry is not None:
             summary.update(
