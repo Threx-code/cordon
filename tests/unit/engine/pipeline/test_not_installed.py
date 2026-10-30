@@ -22,7 +22,10 @@ from cordon_scanner.detect.supply.advisories.findings import (
     VULNERABLE_RULE,
 )
 from cordon_scanner.detect.supply.dependency import DependencyDetector
-from cordon_scanner.detect.supply.dependency_rules import SOURCE_BUNDLED_RULE
+from cordon_scanner.detect.supply.dependency_rules import (
+    SOURCE_BUNDLED_RULE,
+    TYPOSQUAT_BUNDLED_RULE,
+)
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Severity
 from cordon_scanner.intel.advisories.advisories import Advisory, AdvisoryDatabase
@@ -179,8 +182,8 @@ class TestBundledDependencies:
 
 
 class TestNotInstalledSources:
-    """A not-installed record's own risks stay visible at info: a source outside the registry, and
-    an ecosystem no bundled database covers."""
+    """A not-installed record's own risks stay visible at info: a source outside the registry, a
+    lookalike name, and an ecosystem no bundled database covers."""
 
     @staticmethod
     def scan(where: Path, nested_lock: str):
@@ -214,6 +217,26 @@ class TestNotInstalledSources:
         result = TestNotInstalledSources.scan(tmp_path, json.dumps(lock))
         rules = {(f.rule_id, f.severity) for f in result.findings if "SOURCE" in f.rule_id}
         assert rules == {(SOURCE_BUNDLED_RULE, Severity.INFO)}
+
+    def test_a_lookalike_name_is_its_own_info_rule(self, tmp_path: Path) -> None:
+        result = TestNotInstalledSources.scan(tmp_path, Tarball.lock(lodahs="1.0.0"))
+        rules = {(f.rule_id, f.severity) for f in result.findings if "TYPOSQUAT" in f.rule_id}
+        assert rules == {(TYPOSQUAT_BUNDLED_RULE, Severity.INFO)}
+
+    def test_the_same_lookalike_installed_is_the_install_set_rule(self, tmp_path: Path) -> None:
+        path = Tarball.write(
+            tmp_path,
+            {
+                "package.json": json.dumps(
+                    {"name": "x", "version": "1.0.0", "dependencies": {"lodahs": "1.0.0"}}
+                ),
+                "package-lock.json": Tarball.lock(lodahs="1.0.0"),
+            },
+        )
+        config = Config.default().with_overrides(use_cache=False, severity_threshold=Severity.INFO)
+        result = Scanner(config, detectors=(DependencyDetector(),)).scan(path)
+        rules = {f.rule_id for f in result.findings if "TYPOSQUAT" in f.rule_id}
+        assert rules == {"SUSPECT.DEPENDENCY.TYPOSQUAT.001"}
 
     def test_an_uncovered_ecosystem_is_named_at_info_and_coverage_stays_complete(
         self, tmp_path: Path

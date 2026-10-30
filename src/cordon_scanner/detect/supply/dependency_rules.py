@@ -20,6 +20,10 @@ ABANDONED_RULE = "POLICY.DEPENDENCY.ABANDONED.001"
 #: The id every dependency finding carries.
 DETECTOR: Final = "dependency"
 
+TYPOSQUAT_BUNDLED_RULE: Final = "SUSPECT.DEPENDENCY.TYPOSQUAT.BUNDLED.001"
+"""A record installing the package does not install whose name is one plausible slip from a popular
+package's: info, never gating; a developer who builds that subdirectory installs it."""
+
 SOURCE_BUNDLED_RULE: Final = "SUSPECT.DEPENDENCY.SOURCE.BUNDLED.001"
 """A record installing the package does not install (`Dependency.installed`) resolved from outside its
 registry: info, never gating, never feeding the verdict -- the record itself carries the risk, so it
@@ -59,6 +63,21 @@ DECLARED_RULES: tuple[DeclaredRule, ...] = (
         ),
         references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
         remediation="Pin the dependency to the registry, or vendor it deliberately.",
+    ),
+    DeclaredRule(
+        id=TYPOSQUAT_BUNDLED_RULE,
+        title="A dependency the package bundles but does not install has a lookalike name",
+        severity=Severity.INFO,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        detector=DETECTOR,
+        message=(
+            "Only a nested or vendored file in this package records the dependency, and its name "
+            "is one plausible slip from a popular package's. Installing the package does not "
+            "install it; building the subdirectory that records it does."
+        ),
+        references=(references.DEPENDENCY_CONFUSION,),
+        remediation="If that subdirectory is built, check the name against the package it imitates.",
     ),
     DeclaredRule(
         id=SOURCE_BUNDLED_RULE,

@@ -19,6 +19,19 @@ conditions must all hold before a name is flagged:
 Requiring all three costs some recall. That trade is made knowingly: a
 typosquat check that fires on legitimate packages gets the whole detector
 disabled, at which point recall is zero.
+
+Records installing the target does not install (`Dependency.installed` False: a published package's
+nested lockfiles, test and vendored manifests) are not part of the install set, so no install-set
+check reads them. The rule for which checks still look at them is by what the check is about:
+
+- About what the record itself says -- a vulnerable version, a known-malicious name, a source outside
+  the registry, a lookalike name -- the risk travels with the record, so each has a not-installed
+  twin, reported after the verdict and never gating: VULNERABLE.DEPENDENCY.BUNDLED (info) and
+  MALWARE.DEPENDENCY.BUNDLED (high) from the advisory detector; SUSPECT.DEPENDENCY.SOURCE.BUNDLED and
+  SUSPECT.DEPENDENCY.TYPOSQUAT.BUNDLED (info) here.
+- About installing it -- registry existence, provenance, an abandoned package, a missing integrity
+  hash, dependency confusion against a private registry -- the question only arises for what is
+  installed, so there is no twin.
 """
 
 from __future__ import annotations
@@ -34,6 +47,7 @@ from cordon_scanner.detect.supply.dependency_rules import (
     DECLARED_RULES,
     DETECTOR,
     SOURCE_BUNDLED_RULE,
+    TYPOSQUAT_BUNDLED_RULE,
 )
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.foundation.models import (
@@ -364,17 +378,29 @@ class DependencyDetector(BaseDetector):
             ecosystem = EcosystemRegistry.get(dependency.ecosystem)
             if ecosystem is None:
                 continue
-            for finding in self._outside_registry_finding(ctx, dependency, ecosystem, mirrors):
+            normalized = ecosystem.normalize_name(dependency.name)
+            lookalikes = (
+                ()
+                if PackageIntel.is_known_package(dependency.ecosystem, normalized)
+                else self._lookalike(dependency, normalized, ctx)
+            )
+            for twin, finding in (
+                *((TYPOSQUAT_BUNDLED_RULE, f) for f in lookalikes),
+                *(
+                    (SOURCE_BUNDLED_RULE, f)
+                    for f in self._outside_registry_finding(ctx, dependency, ecosystem, mirrors)
+                ),
+            ):
                 findings.append(
                     replace(
                         finding,
-                        rule_id=SOURCE_BUNDLED_RULE,
+                        rule_id=twin,
                         severity=Severity.INFO,
                         message=(
                             f"Not installed with this package: only {dependency.declared_in} "
                             f"records it. {finding.message}"
                         ),
-                        explanation=replace(finding.explanation, matched_rule=SOURCE_BUNDLED_RULE),
+                        explanation=replace(finding.explanation, matched_rule=twin),
                         risk=ctx.scorer.score(Severity.INFO, finding.confidence),
                     )
                 )
@@ -447,7 +473,12 @@ class DependencyDetector(BaseDetector):
             return
 
         yield from self._confusion_finding(dep, ecosystem, ctx)
+        yield from self._lookalike(dep, normalized, ctx)
+        yield from self._lock_findings(ctx, dep, ecosystem, mirrors, unit)
 
+    def _lookalike(self, dep: Dependency, normalized: str, ctx: ScanContext) -> Iterator[Finding]:
+        """A name one plausible slip from a popular package's (the caller has ruled out a known
+        package of that name)."""
         target = self._typosquat_target(dep.ecosystem, normalized)
         confusable = not dep.name.isascii()
         # The three slip kinds a keyboard does not produce by accident. Graded
@@ -459,8 +490,6 @@ class DependencyDetector(BaseDetector):
             and self._slip_kind(normalized, target) in {"transposition", "doubled", "homoglyph"}
         )
         yield from self._typosquat_findings(confusable, ctx, deliberate, dep, target)
-
-        yield from self._lock_findings(ctx, dep, ecosystem, mirrors, unit)
 
     def _typosquat_findings(
         self,

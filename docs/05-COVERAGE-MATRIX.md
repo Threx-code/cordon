@@ -163,6 +163,7 @@ rather than a document.
 | `SUSPECT.DEPENDENCY.SOURCE.BUNDLED.001` | info | `dependency` | policy |
 | `SUSPECT.DEPENDENCY.SOURCE_PRIORITY.001` | medium | `manifest` | policy |
 | `SUSPECT.DEPENDENCY.TYPOSQUAT.001` | high | `dependency` | policy |
+| `SUSPECT.DEPENDENCY.TYPOSQUAT.BUNDLED.001` | info | `dependency` | policy |
 | `SUSPECT.DEPENDENCY.UNREGISTERED.001` | high | `registry` | dependency_confusion |
 | `SUSPECT.DEPENDENCY.UNVETTED.001` | medium | `registry` | typosquat |
 | `SUSPECT.DEPENDENCY.YANKED.001` | high | `registry` | policy |

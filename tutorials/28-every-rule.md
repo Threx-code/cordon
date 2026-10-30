@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,478 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,479 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -495,7 +495,7 @@ rule's own samples.
 
 ## Dependencies
 
-30 rules.
+31 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -523,6 +523,7 @@ rule's own samples.
 | `SUSPECT.DEPENDENCY.SOURCE.BUNDLED.001` | info | A dependency the package bundles but does not install resolves from outside the registry |
 | `SUSPECT.DEPENDENCY.SOURCE_PRIORITY.001` | medium | A private package index merged with a public one |
 | `SUSPECT.DEPENDENCY.TYPOSQUAT.001` | high | Dependency name is one edit from a popular package |
+| `SUSPECT.DEPENDENCY.TYPOSQUAT.BUNDLED.001` | info | A dependency the package bundles but does not install has a lookalike name |
 | `SUSPECT.DEPENDENCY.UNREGISTERED.001` | high | A dependency does not exist on its public registry |
 | `SUSPECT.DEPENDENCY.UNVETTED.001` | medium | A dependency is new, sourceless and unknown: the shape of a slopsquatted package |
 | `SUSPECT.DEPENDENCY.YANKED.001` | high | Dependency pins a version its publisher withdrew |
