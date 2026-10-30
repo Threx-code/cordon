@@ -34,6 +34,9 @@ if TYPE_CHECKING:
 class IdentityFindings:
     """The manifest findings about a published package's name and version."""
 
+    OWN_NAME_MEASURED_ON: ClassVar[frozenset[str]] = frozenset({"pypi", "npm"})
+    """The published formats a package's own-name finding was measured on (review 98)."""
+
     @classmethod
     def name_risk_findings(cls, unit: FileUnit, ctx: ScanContext) -> Iterable[Finding]:
         """A published package with nothing in it but a name worth suspecting (`detect.name_risk`).
@@ -123,7 +126,7 @@ class IdentityFindings:
         # plyr, tsibble, pyaml, pytest, istio and the homebrew-core and vcpkg Go snapshots (17 of
         # 34,500 real packages, review 98): there the matched manifest is often not the package's.
         published = (
-            ctx.distribution in ("pypi", "npm")
+            ctx.distribution in IdentityFindings.OWN_NAME_MEASURED_ON
             or sdist_root is not None
             or unit.path.rpartition("!")[2] == "package/package.json"
         )

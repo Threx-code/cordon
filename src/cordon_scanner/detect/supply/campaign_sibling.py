@@ -18,7 +18,7 @@ reference set. The release itself, by name and version, is not its own sibling.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, Unit
 from cordon_scanner.detect.catalogue import DeclaredRule
@@ -46,6 +46,9 @@ MAX_MANIFEST = 1 << 20
 
 class CampaignSiblingDetector(BaseDetector):
     """Reports a published npm package whose campaign fingerprint matches a condemned release's."""
+
+    APPLIES_TO: ClassVar[frozenset[str]] = frozenset({"npm"})
+    """The distributions whose campaigns the shipped index holds."""
 
     id = "campaign-sibling"
     version = "0.1.0"
@@ -77,7 +80,7 @@ class CampaignSiblingDetector(BaseDetector):
         )
 
     def inspect(self, unit: Unit, ctx: ScanContext) -> Iterable[Finding]:
-        if not isinstance(unit, FileUnit) or ctx.distribution != "npm":
+        if not isinstance(unit, FileUnit) or ctx.distribution not in self.APPLIES_TO:
             return ()
         content = unit.content
         archive, bang, member = content.path.rpartition("!")

@@ -106,6 +106,10 @@ _SEVERITY_MAP = {
 class AdvisoryFinding:
     """Building the advisory detector's findings."""
 
+    MINIMUM_SELECTED: ClassVar[frozenset[str]] = frozenset({"gomod"})
+    """Distributions whose installer selects the lowest version a requirement admits (Go's minimal
+    version selection), so a published module's floor is not what its users run."""
+
     #: The id every advisory finding carries, wherever in the package it is built.
     DETECTOR: ClassVar[str] = "advisory"
 
@@ -295,7 +299,9 @@ class AdvisoryFinding:
         # 7,000 real modules, and keeping exploited ones blocking still blocked 26% (old
         # `golang.org/x/net` floors below the HTTP/2 rapid-reset fix) (review 98).
         go_minimum = (
-            not malicious and ctx.distribution == "gomod" and dependency.scope is Scope.RUNTIME
+            not malicious
+            and ctx.distribution in AdvisoryFinding.MINIMUM_SELECTED
+            and dependency.scope is Scope.RUNTIME
         )
         if go_minimum:
             severity = min(severity, Severity.MEDIUM)

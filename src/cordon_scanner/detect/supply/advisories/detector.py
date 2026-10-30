@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, GraphUnit
@@ -86,6 +86,16 @@ only *shipped* at release time, so a few weeks old is normal, not stale."""
 
 class AdvisoryDetector(BaseDetector):
     """Reports dependencies that are known to be malicious or vulnerable."""
+
+    DIGEST_IN_VERSIONS: ClassVar[frozenset[str]] = frozenset({"image"})
+    """Ecosystems whose advisory records list a release's digest among its versions."""
+    REPOSITORY_SCOPED: ClassVar[frozenset[str]] = frozenset({"helm"})
+    """Ecosystems whose advisory records may hold only for a package from named repositories."""
+    NAMED_BY_REPOSITORY: ClassVar[dict[str, str]] = {
+        "actions": "github.com/{name}",
+        "gomod": "{name}",
+    }
+    """Ecosystems whose package name is a repository address, and how it is spelled as one."""
 
     id = AdvisoryFinding.DETECTOR
     version = "0.1.0"
@@ -352,7 +362,7 @@ class AdvisoryDetector(BaseDetector):
         found = self._database.matching(dependency.ecosystem, dependency.name, dependency.version)
         pin = dependency.integrity or ""
         if (
-            dependency.ecosystem == "image"
+            dependency.ecosystem in AdvisoryDetector.DIGEST_IN_VERSIONS
             and pin.startswith("sha256:")
             and pin != dependency.version
         ):
@@ -360,11 +370,11 @@ class AdvisoryDetector(BaseDetector):
                 *found,
                 *(
                     a
-                    for a in self._database.matching("image", dependency.name, pin)
+                    for a in self._database.matching(dependency.ecosystem, dependency.name, pin)
                     if a not in found
                 ),
             )
-        if dependency.ecosystem == "helm":
+        if dependency.ecosystem in AdvisoryDetector.REPOSITORY_SCOPED:
             source = AdvisoryDetector._repository_key(
                 dependency.resolved_from or dependency.source[1] or ""
             )
@@ -399,10 +409,9 @@ class AdvisoryDetector(BaseDetector):
         here by `host/owner/repo`, every commit of it.
         """
         candidates: list[str] = []
-        if dependency.ecosystem == "actions":
-            candidates.append(f"github.com/{dependency.name}")
-        elif dependency.ecosystem == "gomod":
-            candidates.append(dependency.name)
+        named = AdvisoryDetector.NAMED_BY_REPOSITORY.get(dependency.ecosystem)
+        if named is not None:
+            candidates.append(named.format(name=dependency.name))
         for text in (dependency.resolved_from, dependency.declared_spec):
             if text and (
                 text.startswith(

@@ -158,6 +158,14 @@ class Assessment:
 class PackageIdentities:
     """Reading a published package's own metadata into a `PackageIdentity`."""
 
+    READERS: ClassVar[dict[str, str]] = {
+        "npm": "_npm",
+        "pypi": "_pypi",
+        "nuget": "_nuget",
+        "rubygems": "_rubygems",
+    }
+    """The reader of each ecosystem's own package metadata, by name."""
+
     #: A Python sdist's root directory, `<name>-<version>`, the convention `Engine` also keys on.
     _VERSIONED_DIRECTORY: ClassVar[re.Pattern[str]] = re.compile(r"-\d")
 
@@ -225,15 +233,9 @@ class PackageIdentities:
     @classmethod
     def read(cls, unit: FileUnit, ctx: ScanContext) -> PackageIdentity | None:
         kind = cls.own_metadata(unit, ctx)
-        if kind == "npm":
-            return cls._npm(unit, ctx)
-        if kind == "pypi":
-            return cls._pypi(unit, ctx)
-        if kind == "nuget":
-            return cls._nuget(unit, ctx)
-        if kind == "rubygems":
-            return cls._rubygems(unit, ctx)
-        return None
+        reader = cls.READERS.get(kind or "")
+        identity: PackageIdentity | None = getattr(cls, reader)(unit, ctx) if reader else None
+        return identity
 
     @staticmethod
     def _xml_text(text: str, tag: str) -> str:
