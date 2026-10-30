@@ -14,11 +14,13 @@ differently under them, and every field of every finding must agree.
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import shutil
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -39,6 +41,10 @@ from cordon_scanner.detect.supply.advisories.detector import AdvisoryDetector
 
 target, kind = Path(sys.argv[1]), sys.argv[2]
 config = Config.default().with_overrides(use_cache=False)
+if kind == "not-installed":
+    # Info shown: a not-installed record's findings are its rules' info twins.
+    from cordon_scanner.foundation.models import Severity
+    config = config.with_overrides(severity_threshold=Severity.INFO)
 if kind == "two-spellings":
     records = [
         Advisory(ecosystem="maven", name="org.example:lib", versions=("1.2", "1.3"), summary="s",
@@ -94,6 +100,49 @@ class HashOrderKit:
         ][:10]
 
     @staticmethod
+    def nested(root: Path) -> Path:
+        """A package tarball whose nested manifest, lockfile and requirements file are not installed
+        with it, recording what each not-installed twin reports."""
+
+        def entry(**fields: str) -> dict[str, str]:
+            return {"version": "1.0.0", **fields}
+
+        entries = {
+            "left": entry(resolved="https://code.example/left-1.0.0.tgz"),
+            "right": entry(resolved="https://other.example/right-1.0.0.tgz"),
+            "lodahs": entry(),
+            "aa": entry(integrity="sha1-zz"),
+            "bb": entry(),
+        }
+        packages: dict[str, object] = {
+            "": {"name": "ui", "version": "1.0.0", "dependencies": dict.fromkeys(entries, "1.0.0")}
+        }
+        packages.update({f"node_modules/{name}": e for name, e in entries.items()})
+        manifest = {
+            "name": "ui",
+            "version": "1.0.0",
+            "dependencies": {"left": "github:o/left", "zed": "https://code.example/zed-1.0.0.tgz"},
+        }
+        members = {
+            "package.json": json.dumps({"name": "x", "version": "1.0.0"}),
+            "index.js": "1;\n",
+            "ui/package.json": json.dumps(manifest),
+            "ui/package-lock.json": json.dumps(
+                {"name": "ui", "version": "1.0.0", "lockfileVersion": 3, "packages": packages}
+            ),
+            "tools/requirements.txt": "Huggingface_CLI==0.1.1\n",
+        }
+        root.mkdir()
+        path = root / "x-1.0.0.tgz"
+        with tarfile.open(path, "w:gz") as archive:
+            for name, text in members.items():
+                data = text.encode()
+                info = tarfile.TarInfo(f"package/{name}")
+                info.size = len(data)
+                archive.addfile(info, io.BytesIO(data))
+        return path
+
+    @staticmethod
     def pom(root: Path) -> Path:
         root.mkdir()
         (root / "pom.xml").write_text(
@@ -111,6 +160,15 @@ class TestTheHashSeedChangesNothing:
         runs = [HashOrderKit.scan(project, "two-spellings", seed, tmp_path) for seed in SEEDS]
         found = json.loads(runs[0])
         assert any("Upgrade past 1.3" in str(f.get("remediation")) for f in found), found
+        assert not HashOrderKit.differences(*runs), HashOrderKit.differences(*runs)
+
+    def test_a_packages_not_installed_twins(self, tmp_path: Path) -> None:
+        package = HashOrderKit.nested(tmp_path / "package")
+        runs = [HashOrderKit.scan(package, "not-installed", seed, tmp_path) for seed in SEEDS]
+        twins = {
+            f.get("rule_id") for f in json.loads(runs[0]) if ".BUNDLED." in str(f.get("rule_id"))
+        }
+        assert len(twins) >= 5, twins
         assert not HashOrderKit.differences(*runs), HashOrderKit.differences(*runs)
 
     @pytest.mark.parametrize("part", ["benign", "malicious"])
