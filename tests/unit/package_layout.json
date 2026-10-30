@@ -947,6 +947,7 @@
   "test_signature.py": "detect/binary/modules",
   "test_tables.py": "detect/binary/modules",
   "test_tlsh.py": "detect/binary/modules",
+  "test_damaged_nested_archive.py": "sources",
   "test_zip_views_agree.py": "sources",
   "test_zstd.py": "intel/store",
   "test_build_backend.py": "repository/release"
