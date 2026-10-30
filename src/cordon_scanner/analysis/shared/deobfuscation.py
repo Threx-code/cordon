@@ -28,6 +28,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, ClassVar, Final, cast
 
+from cordon_scanner.foundation.text.delimited import Delimited
+
 MAX_TEXT: Final = 4 << 20
 MAX_ARRAY: Final = 200_000
 OBFUSCATOR_IO_ALPHABET: Final = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/="
@@ -508,7 +510,9 @@ class ObfuscatorIo:
             name = match.group("fname") or match.group("vname")
             opening = match.end() - 1
             close = Checksum.closing(text, opening)
-            if close is None or not re.match(r"\s*;?\s*\}", text[close + 1 :]):
+            # One run of space, or space either side of the semicolon: `\s*;?\s*` split a long run
+            # of space between its two halves every way it could (quadratic on hostile input).
+            if close is None or not re.match(r"\s*(?:;\s*)?\}", text[close + 1 :]):
                 continue
             params = [p.strip() for p in match.group("params").split(",") if p.strip()]
             found[name] = (
@@ -763,7 +767,7 @@ class Layers:
                         "fromCharCode",
                         "".join(
                             chr(IntegerLiteral.value(n))
-                            for n in re.split(r"\s*,\s*", match.group("n"))
+                            for n in Delimited.split(match.group("n"), ",")
                         ),
                     )
                 )

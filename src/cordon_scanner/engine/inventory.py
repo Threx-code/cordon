@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, ClassVar
 from cordon_scanner.ecosystems.registry import RegistryFacts
 from cordon_scanner.foundation.models import Category, Scope
 from cordon_scanner.foundation.results import Dependency
+from cordon_scanner.foundation.text.delimited import Delimited
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -208,7 +209,7 @@ class DependencyRecords:
             return "unknown"
         from cordon_scanner.intel.registry import LICENSE_UNKNOWN, LicenseClassifier
 
-        declared = [p for p in re.split(r"\s*;\s*", dependency.license) if p]
+        declared = [p for p in Delimited.split(dependency.license, ";") if p]
         categories = {LicenseClassifier.classify(p) for p in declared}
         if LICENSE_UNKNOWN in categories:
             return "unknown"

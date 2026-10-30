@@ -20,6 +20,7 @@ from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import (
     Severity,
 )
+from cordon_scanner.foundation.text.delimited import Delimited
 
 RAW_IP_HOST = re.compile(r"\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]{2,45}\]")
 
@@ -370,7 +371,7 @@ class ManifestScripts:
             names = [
                 name.split(" ")[0]
                 for single, listed in _INLINE_PY_IMPORT.findall(source)
-                for name in ([single] if single else re.split(r"\s*,\s*", listed.strip()))
+                for name in ([single] if single else Delimited.split(listed.strip(), ","))
                 if name
             ]
             return all(name.split(".")[0] in _PYTHON_INERT_MODULES for name in names)

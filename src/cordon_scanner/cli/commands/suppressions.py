@@ -118,7 +118,8 @@ class SuppressionRules:
 class SuppressionFile:
     """A repository config file and the suppressions in it, edited as text."""
 
-    _HEADER = re.compile(r"^suppressions:[ \t]*(?:\[\s*\])?[ \t]*(?:#.*)?$")
+    # The space after `[]` belongs to it: two runs of space side by side split a long run every way.
+    _HEADER = re.compile(r"^suppressions:[ \t]*(?:\[\s*\][ \t]*)?(?:#.*)?$")
     _ITEM = re.compile(r"^([ \t]*)-[ \t]")
 
     def __init__(self, path: Path) -> None:
