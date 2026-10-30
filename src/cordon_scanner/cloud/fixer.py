@@ -135,6 +135,12 @@ class FixSpec:
 class DependencyFixer:
     """Apply a `FixSpec` to a checked-out repository. Returns the files changed, relative to it."""
 
+    #: A `--hash=sha256:...` continuation line of a pinned requirement: one possessive blank run either
+    #: side of the trailing backslash, not two that split a long blank run (quadratic).
+    HASH_LINE: ClassVar[re.Pattern[str]] = re.compile(
+        r"^\s*--hash=sha256:[0-9a-f]{64}\s*+(?:\\\s*+)?$"
+    )
+
     #: Each fixable ecosystem's writer, by method name.
     WRITERS: ClassVar[dict[str, str]] = {"npm": "npm", "pypi": "pypi"}
 
@@ -276,7 +282,6 @@ class DependencyFixer:
         pin = re.compile(
             r"^(?P<indent>\s*)(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)(?P<extras>\[[^\]]*\])?\s*==\s*(?P<version>[^\s;\\#]+)(?P<rest>.*)$"
         )
-        hash_line = re.compile(r"^\s*--hash=sha256:[0-9a-f]{64}\s*\\?\s*$")
         changed: list[Path] = []
         files = DependencyFixer._files(
             repo, (), re.compile(r"^requirements.*\.(txt|in)$|^constraints.*\.txt$")
@@ -309,7 +314,7 @@ class DependencyFixer:
                     out.append(head + ending)
                     continue
                 indent = "    "
-                while i < len(lines) and hash_line.match(lines[i].rstrip("\r\n")):
+                while i < len(lines) and DependencyFixer.HASH_LINE.match(lines[i].rstrip("\r\n")):
                     leading = re.match(r"^\s*", lines[i])
                     indent = (leading.group(0) if leading else "") or indent
                     i += 1

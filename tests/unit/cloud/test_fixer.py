@@ -5,8 +5,11 @@ forced. End to end against a real local git repository."""
 from __future__ import annotations
 
 import json
+import random
+import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
@@ -532,3 +535,22 @@ class TestLease:
 
         assert runner.CloudRunner.lease(config, transport=answering("fix")).kind == "fix"
         assert runner.CloudRunner.lease(config, transport=answering("weird")).kind == "scan"
+
+
+class TestHashLineLinear:
+    """A requirement's `--hash` line is recognised as before, in linear time (2026-10-30)."""
+
+    OLD = re.compile(r"^\s*--hash=sha256:[0-9a-f]{64}\s*\\?\s*$")
+    HASH = "--hash=sha256:" + "2" * 64
+
+    def test_the_same_lines_as_the_old_pattern(self) -> None:
+        rng = random.Random("hash-line|2026-10-30")  # noqa: S311 -- a fixture, not key material
+        pieces = (self.HASH, " ", "\t", "\\", "\n", "x", "2", "--hash=sha256:")
+        for _ in range(20_000):
+            text = "".join(rng.choice(pieces) for _ in range(rng.randint(0, 6)))
+            assert bool(DependencyFixer.HASH_LINE.match(text)) == bool(self.OLD.match(text)), text
+
+    def test_a_long_blank_tail_is_linear(self) -> None:
+        start = time.perf_counter()
+        DependencyFixer.HASH_LINE.match(self.HASH + " " * 2_000_000 + "x")
+        assert time.perf_counter() - start < 3
