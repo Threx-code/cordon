@@ -35,10 +35,10 @@ from __future__ import annotations
 import functools
 import re
 import threading
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from importlib.metadata import entry_points
-from typing import Final, Protocol
+from typing import Any, Final, Protocol
 
 from cordon_scanner.foundation.models import Scope
 from cordon_scanner.foundation.results import Dependency
@@ -299,6 +299,21 @@ class EcosystemResolution(Protocol):
     def archive_manifest(self, ecosystem: str) -> str | None: ...
 
 
+class EcosystemPackageEntries(Protocol):
+    """What of a published archive runs when it is used rather than installed, and where its
+    manifest says its source lives."""
+
+    def library_entries(
+        self,
+        ecosystem: str,
+        members: Mapping[str, str],
+        manifest: Mapping[str, Any],
+        with_bin: bool,
+    ) -> set[str]: ...
+
+    def published_repository(self, ecosystem: str, manifest: Mapping[str, Any]) -> str: ...
+
+
 class InstalledEcosystemFacts(
     EcosystemFacts,
     EcosystemNaming,
@@ -309,6 +324,7 @@ class InstalledEcosystemFacts(
     EcosystemReleaseIdentity,
     EcosystemArchiveTraits,
     EcosystemResolution,
+    EcosystemPackageEntries,
     Protocol,
 ):
     """The installed facts object as the provider holds it; each reader asks for the one port it

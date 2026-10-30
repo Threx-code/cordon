@@ -892,6 +892,19 @@ class BaseEcosystem:
         """Where a published archive keeps its manifest, where that is fixed."""
         return None
 
+    # -- what runs when a published archive is used (EcosystemPackageEntries) ----------------
+
+    def library_entries(
+        self, members: Mapping[str, str], manifest: Mapping[str, Any], with_bin: bool
+    ) -> set[str]:
+        """The members of a published archive that run on import or as its command: `members` is
+        member path -> full path, `manifest` the archive's own manifest ({} if none)."""
+        return set()
+
+    def published_repository(self, manifest: Mapping[str, Any]) -> str:
+        """The source repository a published archive's manifest names, or ""."""
+        return ""
+
 
 # Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine
 # each implementation typed by one of these, and the type checker proves the implementation

@@ -12,7 +12,7 @@ import importlib
 import re
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.ecosystems.base import BaseEcosystem, Ecosystem, ReleaseFile
 from cordon_scanner.ecosystems.infra.infra import INFRA_ECOSYSTEMS
@@ -392,6 +392,16 @@ class RegistryFacts:
     @staticmethod
     def normalised_version(ecosystem: str, version: str) -> str:
         return RegistryFacts._of(ecosystem).normalised_version(version)
+
+    @staticmethod
+    def library_entries(
+        ecosystem: str, members: Mapping[str, str], manifest: Mapping[str, Any], with_bin: bool
+    ) -> set[str]:
+        return RegistryFacts._of(ecosystem).library_entries(members, manifest, with_bin)
+
+    @staticmethod
+    def published_repository(ecosystem: str, manifest: Mapping[str, Any]) -> str:
+        return RegistryFacts._of(ecosystem).published_repository(manifest)
 
     @staticmethod
     def completes_from_checksums(ecosystem: str) -> bool:

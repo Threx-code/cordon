@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.ecosystems.base import (
@@ -620,6 +620,45 @@ class NpmEcosystem(BaseEcosystem):
     def archive_manifest(self) -> str | None:
         """Where a published tarball keeps its manifest: under `package/`."""
         return "package/package.json"
+
+    # -- what runs when a published archive is used (EcosystemPackageEntries) ------
+
+    def library_entries(
+        self, members: Mapping[str, str], manifest: Mapping[str, Any], with_bin: bool
+    ) -> set[str]:
+        """`main` (or `index.js`), `bin` and `exports` targets of a published tarball."""
+        found: set[str] = set()
+        targets: list[str] = [manifest.get("main") or "index.js"]
+
+        def strings(value: object) -> None:
+            if isinstance(value, str):
+                targets.append(value)
+            elif isinstance(value, dict):
+                for nested in value.values():
+                    strings(nested)
+            elif isinstance(value, list):
+                for nested in value:
+                    strings(nested)
+
+        if with_bin:
+            strings(manifest.get("bin"))
+        strings(manifest.get("exports"))
+        for target in targets:
+            if not isinstance(target, str) or "*" in target:
+                continue
+            base = "package/" + target.strip().removeprefix("./").rstrip("/")
+            for candidate in (base, f"{base}.js", f"{base}/index.js"):
+                if candidate in members:
+                    found.add(members[candidate])
+                    break
+        return found
+
+    def published_repository(self, manifest: Mapping[str, Any]) -> str:
+        """`repository`: a string, or an object's `url`."""
+        repository = manifest.get("repository")
+        if isinstance(repository, dict):
+            repository = repository.get("url")
+        return repository.strip() if isinstance(repository, str) else ""
 
 
 __all__ = ["NpmEcosystem"]

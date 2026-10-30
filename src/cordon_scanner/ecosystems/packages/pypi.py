@@ -13,7 +13,7 @@ from __future__ import annotations
 import ast
 import re
 import tomllib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
@@ -699,6 +699,29 @@ class PypiEcosystem(PypiLockfiles, BaseEcosystem):
     def install_manifests(self) -> frozenset[str]:
         """The files its installer runs or reads to build: an author-time file elsewhere."""
         return frozenset({"setup.py", "pyproject.toml"})
+
+    # -- what runs when a published archive is used (EcosystemPackageEntries) ------
+
+    def library_entries(
+        self, members: Mapping[str, str], manifest: Mapping[str, Any], with_bin: bool
+    ) -> set[str]:
+        """A wheel's or sdist's top-level `__init__.py`: the package itself, not a subpackage."""
+        found: set[str] = set()
+        for member, path in members.items():
+            parts = member.split("/")
+            if parts[-1] != "__init__.py" or any(
+                part in ("tests", "test", "docs", "examples") for part in parts
+            ):
+                continue
+            # A wheel's `pkg/__init__.py`, an sdist's `name-1.0/pkg/__init__.py` or
+            # `name-1.0/src/pkg/__init__.py`: the package itself, not a subpackage.
+            if (
+                len(parts) == 2
+                or (len(parts) == 3 and "-" in parts[0])
+                or (len(parts) == 4 and parts[1] == "src")
+            ):
+                found.add(path)
+        return found
 
     # -- Lockfiles -------------------------------------------------------
 
