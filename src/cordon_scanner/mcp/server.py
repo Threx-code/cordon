@@ -24,7 +24,7 @@ import time
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Final, TextIO
+from typing import Any, ClassVar, Final, TextIO
 
 from cordon_scanner.engine.parallel import ParallelScanner
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
@@ -87,6 +87,11 @@ class RateLimiter:
 
 
 class Server:
+    #: The command line's front-end contract (`cli.parser.CommandParser.front_ends`): the command's
+    #: name and help, `configure(parser)` and `main(argv)`.
+    NAME: ClassVar[str] = "mcp"
+    HELP: ClassVar[str] = "serve Cordon to AI agents over the Model Context Protocol (stdio)"
+
     def __init__(
         self,
         settings: Settings,

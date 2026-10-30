@@ -8,7 +8,7 @@ from typing import Any
 from cordon_scanner.mcp.packages import (
     ECOSYSTEMS,
 )
-from cordon_scanner.mcp.runner import CancelToken, TimedOut
+from cordon_scanner.mcp.runner import CancelToken
 from cordon_scanner.mcp.tools.base import (
     SEVERITY_ENUM,
     Args,
@@ -106,28 +106,3 @@ class KnowledgeTools:
     def intel_status(settings: Settings, args: dict[str, Any], token: CancelToken) -> Outcome:
         document, _ = Scans.run_json(settings, ["intel", "status", "--json"], token, ok=(0, 1))
         return Scans.data(Scans.document(document, "intel"), "Threat-intel source, serial and age")
-
-    @staticmethod
-    def server_status(settings: Settings, args: dict[str, Any], token: CancelToken) -> Outcome:
-        # Imported here: the catalogue imports this module, to list these tools.
-        from cordon_scanner.mcp.tools.catalogue import Catalogue
-
-        try:
-            run = settings.runner.run(["whoami"], timeout=30, token=token)
-            # Signed in or not, never who: the identity would go to the model and its provider.
-            cloud = "signed in" if run.exit_code == 0 else "not signed in"
-        except TimedOut:
-            cloud = "unknown (timed out)"
-        structured = {
-            "server": "cordon-scanner",
-            "version": settings.version,
-            "workspace_roots": settings.workspace.describe(),
-            "online_allowed": settings.allow_online,
-            "machine_reads_allowed": settings.allow_machine,
-            "private_network_allowed": settings.allow_private_network,
-            "scan_timeout_seconds": settings.timeout,
-            "cordon_cloud": cloud,
-            "ecosystems": list(ECOSYSTEMS),
-            "tools": [t.name for t in Catalogue.available(settings)],
-        }
-        return Scans.data(structured, "Cordon MCP server status")
