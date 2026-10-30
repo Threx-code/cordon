@@ -191,6 +191,7 @@ class Engine:
                     if detector.requires.dependencies and self.detection.enabled(detector, ctx):
                         acc.add(self.detection.run(detector, graph_unit, ctx, acc))
         dependencies = self.detection.annotated(dependencies, acc.findings, ctx, [])
+        acc.explain_incomplete()
         result = ScanResult(
             findings=tuple(acc.findings),
             dependencies=dependencies,
@@ -251,6 +252,7 @@ class Engine:
 
         self.stages.after_detection(dependencies, acc, units, ctx, inventory)
 
+        acc.explain_incomplete()
         findings, verdict, dependencies = self.stages.fold_and_judge(acc, units, ctx, dependencies)
         result = ScanResult(
             findings=findings,
@@ -411,6 +413,7 @@ class Engine:
         dependencies, target_kind, ctx = self.archive_stages.dependencies(units, acc, image, ctx)
         dependencies, verdict = self.archive_stages.verdict(acc, ctx, image, units, dependencies)
         self.archive_stages.not_installed(acc, ctx)
+        acc.explain_incomplete()
         result = ScanResult(
             findings=tuple(acc.findings),
             verdict=verdict,

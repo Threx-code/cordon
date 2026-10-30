@@ -346,19 +346,9 @@ class ArchiveReader:
                         "installs it, a directory-reading one never sees it",
                     )
                 )
-                body = bytes(data[start : start + compressed])
-                payload: bytes | None = None
-                try:
-                    if method == 0:
-                        payload = body[: ArchiveReader.member_limit(limits)]
-                    elif method == 8:
-                        inflater = zlib.decompressobj(-15)
-                        payload = inflater.decompress(
-                            body,
-                            min(ArchiveReader.member_limit(limits), limits.max_uncompressed_bytes),
-                        )
-                except zlib.error:
-                    payload = None
+                payload = ArchiveReader._hidden_payload(
+                    data[start : start + compressed], method, name, limits, result
+                )
                 if payload is not None and not ArchiveReader._would_exceed(
                     result, compressed, len(payload), limits, safe
                 ):
@@ -371,6 +361,43 @@ class ArchiveReader:
                         )
                     )
             offset = start + compressed
+
+    @staticmethod
+    def _hidden_payload(
+        body: bytes, method: int, name: str, limits: Limits, result: ExtractionResult
+    ) -> bytes | None:
+        """A hidden member's bytes, read from its local header within the member limit. Each way
+        one goes unread is a refusal of its own, so the scan says so: the hidden refusal alone
+        means it was read (as `zip-local/`), as a link's means nothing was there to read."""
+        limit = min(ArchiveReader.member_limit(limits), limits.max_uncompressed_bytes)
+        payload: bytes | None = None
+        cut = False
+        try:
+            if method == 0:
+                payload, cut = bytes(body[:limit]), len(body) > limit
+            elif method == 8:
+                inflater = zlib.decompressobj(-15)
+                payload = inflater.decompress(bytes(body), limit)
+                cut = bool(inflater.unconsumed_tail)
+        except zlib.error:
+            payload = None
+        if payload is None:
+            result.rejected.append(
+                RejectedMember(
+                    name,
+                    Rejection.UNREADABLE,
+                    f"a hidden member (method {method}) could not be read",
+                )
+            )
+        elif cut:
+            result.rejected.append(
+                RejectedMember(
+                    name,
+                    Rejection.SIZE,
+                    f"a hidden member past the {limit}-byte limit: read in part",
+                )
+            )
+        return payload
 
     @staticmethod
     def _extract_zip(
