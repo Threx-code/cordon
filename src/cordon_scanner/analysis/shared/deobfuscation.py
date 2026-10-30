@@ -632,7 +632,7 @@ class ObfuscatorIo:
         names = resolver.names()
         head = re.compile(
             r"(?<![\w$.])("
-            + "|".join(re.escape(n) for n in sorted(names, key=len, reverse=True))
+            + "|".join(re.escape(n) for n in sorted(names, key=lambda n: (-len(n), n)))
             + r")\s*\("
         )
         out: list[str] = []
