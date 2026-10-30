@@ -708,6 +708,12 @@ class MavenEcosystem(BaseEcosystem):
                 return f"{group.group(1)}:{artifact.group(1)}", said.group(1)
         return None
 
+    # -- how its graph is resolved (EcosystemResolution) ---------------------------
+
+    def bracket_ranges(self) -> bool:
+        """A declared version may be a Maven range: `[1.0,2.0)`."""
+        return True
+
 
 __all__ = [
     "MavenBuild",

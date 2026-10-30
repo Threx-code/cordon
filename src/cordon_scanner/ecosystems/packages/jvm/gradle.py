@@ -491,5 +491,11 @@ class GradleEcosystem(BaseEcosystem):
     ) -> tuple[str, str] | None:
         return MavenEcosystem.pom_identity(path, text)
 
+    # -- how its graph is resolved (EcosystemResolution) ---------------------------
+
+    def bracket_ranges(self) -> bool:
+        """A declared version may be a Maven range: `[1.0,2.0)`."""
+        return True
+
 
 __all__ = ["GradleEcosystem", "GradleLock", "GradleVerification"]

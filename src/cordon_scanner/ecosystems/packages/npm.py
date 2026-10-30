@@ -615,6 +615,12 @@ class NpmEcosystem(BaseEcosystem):
         """The files its installer runs or reads to build: an author-time file elsewhere."""
         return frozenset({"package.json"})
 
+    # -- how its graph is resolved (EcosystemResolution) ---------------------------
+
+    def archive_manifest(self) -> str | None:
+        """Where a published tarball keeps its manifest: under `package/`."""
+        return "package/package.json"
+
 
 __all__ = ["NpmEcosystem"]
 

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.detect.base import FileUnit
 from cordon_scanner.ecosystems.base import WORKSPACE_INHERITED, Coordinate, LockEntry, LockGraph
-from cordon_scanner.ecosystems.registry import EcosystemRegistry
+from cordon_scanner.ecosystems.registry import EcosystemRegistry, RegistryFacts
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.foundation.models import Scope, Severity
 from cordon_scanner.foundation.results import Dependency, OperationalFinding
@@ -81,7 +81,9 @@ class Graph:
         for owner, ecosystem_id, ecosystem, graph in companions:
             # Go only: other ecosystems' companions (Maven checksums, Gradle verification
             # metadata) record hashes of what something else resolved, never a build of their own.
-            if ecosystem_id != "gomod" or graph.path.endswith("modules.txt"):
+            if not RegistryFacts.completes_from_checksums(ecosystem_id) or graph.path.endswith(
+                "modules.txt"
+            ):
                 continue
             # Completed where the resolving file leaves indirect modules out (a pre-1.17 go.mod),
             # and where there is no resolving file at all: a go.sum on its own is then the only
@@ -425,7 +427,7 @@ class Graph:
         for dependency in dependencies:
             spec = (dependency.declared_spec or "").strip()
             if (
-                dependency.ecosystem not in ("maven", "gradle")
+                not RegistryFacts.bracket_ranges(dependency.ecosystem)
                 or dependency.version
                 or spec[:1] not in ("[", "(")
                 or ":" not in dependency.name

@@ -878,6 +878,20 @@ class BaseEcosystem:
         """The files its installer runs or reads to build; none by default."""
         return frozenset()
 
+    # -- how its graph is resolved (EcosystemResolution) -------------------------------------
+
+    def completes_from_checksums(self) -> bool:
+        """Whether a checksum file of its builds completes the dependency graph."""
+        return False
+
+    def bracket_ranges(self) -> bool:
+        """Whether a declared version may be a bracketed range."""
+        return False
+
+    def archive_manifest(self) -> str | None:
+        """Where a published archive keeps its manifest, where that is fixed."""
+        return None
+
 
 # Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine
 # each implementation typed by one of these, and the type checker proves the implementation

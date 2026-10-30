@@ -288,6 +288,17 @@ class EcosystemArchiveTraits(Protocol):
         ...
 
 
+class EcosystemResolution(Protocol):
+    """How the ecosystem's dependency graph is read: a checksum file that completes it, ranges
+    written in brackets, the fixed place of a published archive's manifest."""
+
+    def completes_from_checksums(self, ecosystem: str) -> bool: ...
+
+    def bracket_ranges(self, ecosystem: str) -> bool: ...
+
+    def archive_manifest(self, ecosystem: str) -> str | None: ...
+
+
 class InstalledEcosystemFacts(
     EcosystemFacts,
     EcosystemNaming,
@@ -297,6 +308,7 @@ class InstalledEcosystemFacts(
     EcosystemVersionSyntax,
     EcosystemReleaseIdentity,
     EcosystemArchiveTraits,
+    EcosystemResolution,
     Protocol,
 ):
     """The installed facts object as the provider holds it; each reader asks for the one port it

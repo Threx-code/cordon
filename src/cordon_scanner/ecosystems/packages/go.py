@@ -406,6 +406,12 @@ class GoEcosystem(BaseEcosystem):
     ) -> tuple[str, str] | None:
         return found.group(1).rpartition("!")[2], found.group(2).lstrip("v")
 
+    # -- how its graph is resolved (EcosystemResolution) ---------------------------
+
+    def completes_from_checksums(self) -> bool:
+        """go.sum records the build's modules: it completes the graph where go.mod leaves some out."""
+        return True
+
 
 class GoWork:
     """`go.work`: the modules a workspace builds together (`use`), its Go version, and

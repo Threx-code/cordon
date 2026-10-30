@@ -394,6 +394,18 @@ class RegistryFacts:
         return RegistryFacts._of(ecosystem).normalised_version(version)
 
     @staticmethod
+    def completes_from_checksums(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).completes_from_checksums()
+
+    @staticmethod
+    def bracket_ranges(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).bracket_ranges()
+
+    @staticmethod
+    def archive_manifest(ecosystem: str) -> str | None:
+        return RegistryFacts._of(ecosystem).archive_manifest()
+
+    @staticmethod
     def compiled_is_inert(ecosystem: str) -> bool:
         return RegistryFacts._of(ecosystem).compiled_is_inert()
 
