@@ -442,17 +442,21 @@ class ArchiveStages:
         return dependencies, target_kind, ctx
 
     def not_installed(self, acc: Accumulator, ctx: ScanContext) -> None:
-        """Advisories about what only a file outside the install set records (`acc.not_installed`),
-        added once the verdict is reached: at their own rules and severities, they never feed the
-        verdict, are never graded by it or by the package's ceilings, and never gate."""
-        advisory = next((d for d in self.detectors if d.id == "advisory"), None)
-        if (
-            acc.not_installed
-            and advisory is not None
-            and self.engine.detection.enabled(advisory, ctx)
-        ):
+        """What only a file outside the install set records (`acc.not_installed`), from the two
+        detectors whose finding is about the record itself -- a known advisory (`advisory`), a
+        source outside the registry (`dependency`) -- added once the verdict is reached: at their
+        own info and high rules, they never feed the verdict, are never graded by it or by the
+        package's ceilings, and never gate."""
+        if not acc.not_installed:
+            return
+        for name in ("advisory", "dependency"):
+            detector = next((d for d in self.detectors if d.id == name), None)
+            # Switched on by the configuration, whatever the install set holds: the detectors'
+            # own `applicable` asks about installed dependencies, which a package may have none of.
+            if detector is None or not self.config.detector_enabled(detector.id):
+                continue
             # Through the registry's detector, as the engine reaches every adapter.
-            report = getattr(advisory, "not_installed", None)
+            report = getattr(detector, "not_installed", None)
             if callable(report):
                 acc.add(report(acc.not_installed, ctx))
 

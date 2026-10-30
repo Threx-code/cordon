@@ -21,6 +21,8 @@ from cordon_scanner.detect.supply.advisories.findings import (
     BUNDLED_RULE,
     VULNERABLE_RULE,
 )
+from cordon_scanner.detect.supply.dependency import DependencyDetector
+from cordon_scanner.detect.supply.dependency_rules import SOURCE_BUNDLED_RULE
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Severity
 from cordon_scanner.intel.advisories.advisories import Advisory, AdvisoryDatabase
@@ -174,3 +176,50 @@ class TestBundledDependencies:
         assert [(f.rule_id, f.severity) for f in malware] == [
             ("MALWARE.DEPENDENCY.KNOWN.001", Severity.CRITICAL)
         ]
+
+
+class TestNotInstalledSources:
+    """A not-installed record's own risks stay visible at info: a source outside the registry, and
+    an ecosystem no bundled database covers."""
+
+    @staticmethod
+    def scan(where: Path, nested_lock: str):
+        manifest = {"name": "x", "version": "1.0.0"}
+        path = Tarball.write(
+            where,
+            {
+                "package.json": json.dumps(manifest),
+                "index.js": "1;\n",
+                "ui/package-lock.json": nested_lock,
+            },
+        )
+        config = Config.default().with_overrides(use_cache=False, severity_threshold=Severity.INFO)
+        return Scanner(
+            config, detectors=(AdvisoryDetector(AdvisoryDatabase(())), DependencyDetector())
+        ).scan(path)
+
+    def test_a_source_outside_the_registry_is_its_own_info_rule(self, tmp_path: Path) -> None:
+        lock = {
+            "name": "ui",
+            "version": "1.0.0",
+            "lockfileVersion": 3,
+            "packages": {
+                "": {"name": "ui", "version": "1.0.0", "dependencies": {"left": "1.0.0"}},
+                "node_modules/left": {
+                    "version": "1.0.0",
+                    "resolved": "https://code.example/left-1.0.0.tgz",
+                },
+            },
+        }
+        result = TestNotInstalledSources.scan(tmp_path, json.dumps(lock))
+        rules = {(f.rule_id, f.severity) for f in result.findings if "SOURCE" in f.rule_id}
+        assert rules == {(SOURCE_BUNDLED_RULE, Severity.INFO)}
+
+    def test_an_uncovered_ecosystem_is_named_at_info_and_coverage_stays_complete(
+        self, tmp_path: Path
+    ) -> None:
+        result = TestNotInstalledSources.scan(tmp_path, Tarball.lock(minimist="1.2.0"))
+        notes = [f for f in result.findings if f.rule_id == "OPERATIONAL.ADVISORY.NO_FEED.001"]
+        assert len(notes) == 1
+        assert notes[0].message.startswith("Not installed with this package")
+        assert result.advisory_complete is True

@@ -20,6 +20,11 @@ ABANDONED_RULE = "POLICY.DEPENDENCY.ABANDONED.001"
 #: The id every dependency finding carries.
 DETECTOR: Final = "dependency"
 
+SOURCE_BUNDLED_RULE: Final = "SUSPECT.DEPENDENCY.SOURCE.BUNDLED.001"
+"""A record installing the package does not install (`Dependency.installed`) resolved from outside its
+registry: info, never gating, never feeding the verdict -- the record itself carries the risk, so it
+stays visible, while the install-set rule (SUSPECT.DEPENDENCY.SOURCE.001) reads installed records only."""
+
 DECLARED_RULES: tuple[DeclaredRule, ...] = (
     DeclaredRule(
         id="SUSPECT.DEPENDENCY.TYPOSQUAT.001",
@@ -54,6 +59,21 @@ DECLARED_RULES: tuple[DeclaredRule, ...] = (
         ),
         references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
         remediation="Pin the dependency to the registry, or vendor it deliberately.",
+    ),
+    DeclaredRule(
+        id=SOURCE_BUNDLED_RULE,
+        title="A dependency the package bundles but does not install resolves from outside the registry",
+        severity=Severity.INFO,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        detector=DETECTOR,
+        message=(
+            "Only a nested or vendored file in this package records the dependency -- a lockfile of "
+            "its maintainers' environment, a bundled UI's own lockfile -- and it resolves from a "
+            "host that is not its ecosystem's registry. Installing the package does not resolve it."
+        ),
+        references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
+        remediation="If the bundled files are built or served, check where that source comes from.",
     ),
     DeclaredRule(
         id=ABANDONED_RULE,

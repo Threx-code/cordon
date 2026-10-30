@@ -24,11 +24,17 @@ disabled, at which point recall is zero.
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import replace
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, GraphUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
-from cordon_scanner.detect.supply.dependency_rules import ABANDONED_RULE, DECLARED_RULES, DETECTOR
+from cordon_scanner.detect.supply.dependency_rules import (
+    ABANDONED_RULE,
+    DECLARED_RULES,
+    DETECTOR,
+    SOURCE_BUNDLED_RULE,
+)
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.foundation.models import (
     Category,
@@ -346,6 +352,32 @@ class DependencyDetector(BaseDetector):
         findings: list[Finding] = []
         for dependency in unit.dependencies:
             findings.extend(self._check(dependency, unit, ctx, mirrors))
+        return findings
+
+    def not_installed(self, dependencies: Iterable[Dependency], ctx: ScanContext) -> list[Finding]:
+        """Records installing the target does not install (`installed=False`) that resolve from
+        outside their registry: SUSPECT.DEPENDENCY.SOURCE.BUNDLED, at info, naming the file."""
+        records = tuple(d for d in dependencies if not d.installed)
+        mirrors = self._configured_mirrors(records)
+        findings: list[Finding] = []
+        for dependency in records:
+            ecosystem = EcosystemRegistry.get(dependency.ecosystem)
+            if ecosystem is None:
+                continue
+            for finding in self._outside_registry_finding(ctx, dependency, ecosystem, mirrors):
+                findings.append(
+                    replace(
+                        finding,
+                        rule_id=SOURCE_BUNDLED_RULE,
+                        severity=Severity.INFO,
+                        message=(
+                            f"Not installed with this package: only {dependency.declared_in} "
+                            f"records it. {finding.message}"
+                        ),
+                        explanation=replace(finding.explanation, matched_rule=SOURCE_BUNDLED_RULE),
+                        risk=ctx.scorer.score(Severity.INFO, finding.confidence),
+                    )
+                )
         return findings
 
     @staticmethod

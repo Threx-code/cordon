@@ -294,7 +294,41 @@ class AdvisoryDetector(BaseDetector):
                         risk=ctx.scorer.score(severity, finding.confidence),
                     )
                 )
+        note = self._not_installed_no_feed(dependencies)
+        if note is not None:
+            findings.append(note)
         return findings
+
+    def _not_installed_no_feed(self, dependencies: Iterable[Dependency]) -> Finding | None:
+        """The no-feed note for records installing the target does not install: what is still
+        true of them is that the bundled database is all they are matched against, so an
+        ecosystem it does not cover is named -- at info, and never as lost coverage."""
+        unchecked = [
+            d
+            for d in dependencies
+            if not d.installed
+            and not d.local
+            and not d.bundled
+            and d.ecosystem
+            and d.ecosystem not in OS_ECOSYSTEMS
+            and d.ecosystem not in ("image", RUNTIME_ECOSYSTEM)
+            and not self._database.covers(d.ecosystem)
+        ]
+        if not unchecked:
+            return None
+        ecosystems = sorted({str(d.ecosystem) for d in unchecked})
+        return self.operational(
+            path=".",
+            message=(
+                f"Not installed with this package: {len(unchecked)} {', '.join(ecosystems)} "
+                f"dependency(ies) that only nested or vendored files record were not checked for "
+                f"known vulnerabilities or known-malicious releases: the bundled database is what "
+                f"such records are matched against, and it does not cover them."
+            ),
+            detail="advisories",
+            rule_id=NO_FEED_RULE,
+            degrades_coverage=False,
+        )
 
     def _own_records(self, dependency: Dependency) -> tuple[Advisory, ...]:
         """The records about this dependency by its own name: by version, and for an image pinned by
