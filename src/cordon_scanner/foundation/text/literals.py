@@ -30,6 +30,8 @@ from __future__ import annotations
 from collections import Counter
 from typing import ClassVar
 
+from cordon_scanner.foundation.collector import ScanCaches
+
 
 class LiteralGate:
     """`any(literal in data for literal in literals)`, answered with fewer scans."""
@@ -41,7 +43,8 @@ class LiteralGate:
 
     def __init__(self, literals: tuple[bytes, ...] | list[bytes] | set[bytes]) -> None:
         minimal: list[bytes] = []
-        for literal in sorted(set(literals), key=len):
+        # Length, then the bytes: equal lengths otherwise kept the set's hash-seeded order.
+        for literal in sorted(set(literals), key=lambda b: (len(b), b)):
             if not any(kept in literal for kept in minimal):
                 minimal.append(literal)
         self.literals: tuple[bytes, ...] = tuple(minimal)
@@ -71,7 +74,7 @@ class LiteralGate:
             chosen.append(best)
             uncovered = {literal for literal in uncovered if best not in literal}
         core: list[bytes] = []
-        for piece in sorted(set(chosen), key=len):
+        for piece in sorted(set(chosen), key=lambda b: (len(b), b)):
             if not any(kept in piece for kept in core):
                 core.append(piece)
         if len(core) * 2 > len(minimal):
@@ -95,13 +98,14 @@ class LiteralGate:
 
     @staticmethod
     def _found(data: bytes) -> dict[bytes, bool]:
-        held = LiteralGate._recent.get(id(data))
+        key = ScanCaches.identity(data)
+        held = LiteralGate._recent.get(key)
         if held is not None and held[0] is data:
             return held[1]
         if len(LiteralGate._recent) >= LiteralGate.RECENT:
             LiteralGate._recent.pop(next(iter(LiteralGate._recent)))
         found: dict[bytes, bool] = {}
-        LiteralGate._recent[id(data)] = (data, found)
+        LiteralGate._recent[key] = (data, found)
         return found
 
     @staticmethod
@@ -111,5 +115,8 @@ class LiteralGate:
             hit = found[literal] = literal in data
         return hit
 
+
+# The last files' bytes, emptied after each scan with the other caches that hold a scan's files.
+ScanCaches.register(LiteralGate._recent)
 
 __all__ = ["LiteralGate"]

@@ -25,6 +25,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.foundation.collector import ScanCaches
 from cordon_scanner.foundation.files.windows import WindowSourceChanged
 
 if TYPE_CHECKING:
@@ -276,9 +277,10 @@ class WholeFileCalls:
     @staticmethod
     def _located(provider: Any, source: WindowSource) -> list[tuple[int, AstCall]]:
         cache = WholeFileCalls._cache
-        held = cache.get(id(source))
+        key = ScanCaches.identity(source)
+        held = cache.get(key)
         if held is not None and held[0] is source:
-            cache.move_to_end(id(source))
+            cache.move_to_end(key)
             return held[1]
         with source.reader() as read:
             parts = (
@@ -286,10 +288,13 @@ class WholeFileCalls:
                 for segment in Segments.of(read, source.size)
             )
             located = sorted(provider.resolve_parts(parts), key=lambda item: item[0])
-        cache[id(source)] = (source, located)
+        cache[key] = (source, located)
         while len(cache) > WholeFileCalls.KEPT:
             cache.popitem(last=False)
         return located
 
+
+# Each source's calls, emptied after each scan with the other caches that hold a scan's files.
+ScanCaches.register(WholeFileCalls._cache)
 
 __all__ = ["Segment", "SegmentView", "Segments", "WholeFileCalls"]

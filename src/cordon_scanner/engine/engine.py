@@ -49,7 +49,7 @@ from cordon_scanner.engine.pipeline.images import Images
 from cordon_scanner.engine.pipeline.stages import ScanStages
 from cordon_scanner.engine.pipeline.units import Units
 from cordon_scanner.engine.progress import NullProgress, Progress
-from cordon_scanner.foundation.collector import Collector
+from cordon_scanner.foundation.collector import Collector, ScanCaches
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent, Skipped
 from cordon_scanner.foundation.errors import SourceError
@@ -143,6 +143,9 @@ class Engine:
             # In a `finally`: the progress line is a partial line with no newline, so leaving it
             # puts a traceback or an error message on the same row as a half-drawn progress bar.
             self.progress.finish()
+            # And the caches that hold this scan's files, emptied whether it returned or raised:
+            # kept, they held the last files of every scan in a long-running process.
+            ScanCaches.after_scan()
 
     def scan_host(self, root: str | Path, home: str | Path | None = None) -> ScanResult:
         """What an installed system holds (advanced gap M7): its distribution's packages and the
