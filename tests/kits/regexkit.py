@@ -798,7 +798,6 @@ class Listed:
 
     #: Superlinear today and being rewritten, with who owns the fix; each fix removes its own line.
     OPEN: ClassVar[dict[str, str]] = {
-        "judge.calls:_HOST": "modelling team: a start after a dot inside a dotted run",
         "rule:CAP.SH.PERSIST.001": "data-and-measurement team: line-monotone starts in rules/anchored (after the benchmark start)",
         "decide.verdict_features:VerdictFeatures._FRONT_FIELD": (
             "modelling team, after the P8 fits: VerdictFeatures is hashed by FeatureSchema, so its fix moves the version"
