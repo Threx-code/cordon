@@ -366,9 +366,11 @@ class TestObfuscatedSinceAnEstablishedRelease:
                 info = tarfile.TarInfo(member)
                 info.size = len(data)
                 archive.addfile(info, io.BytesIO(data))
-        assert ReleaseHistory.obfuscated(buffer.getvalue(), "tool-1.4.0.tgz", "1.4.0") == (
-            "package/lib.js",
-        )
+        from cordon_scanner.cli.commands.intel import IntelCommand
+
+        assert ReleaseHistory.obfuscated(
+            buffer.getvalue(), "tool-1.4.0.tgz", "1.4.0", members=IntelCommand.members
+        ) == ("package/lib.js",)
 
 
 class TestOpenVsx:

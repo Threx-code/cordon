@@ -32,6 +32,7 @@ import hashlib
 import json
 import re
 import urllib.parse
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -55,6 +56,12 @@ YOUNG_DEPENDENCY_DAYS: Final = 30
 """A dependency a release introduces that was itself first published this recently before the
 release is the shape of a dependency injection: the compromised release of an established package
 pulls in a name created for the attack (review 98: `@mastra/*` 2026-06-17)."""
+
+
+#: An archive's members, `(path, bytes)`, from its bytes and file name. Handed in by the caller
+#: (the CLI hands `sources.archive`'s reader): intelligence sits below the sources layer and does
+#: not import it.
+Members = Callable[[bytes, str], Iterable[tuple[str, bytes]]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,26 +196,27 @@ class ReleaseHistory:
         return re.sub(rf"(?<![\w.])(v?){re.escape(version)}(?!\w)", r"\1{version}", member)
 
     @classmethod
-    def fingerprint(cls, data: bytes, filename: str, version: str) -> dict[str, str]:
+    def fingerprint(
+        cls, data: bytes, filename: str, version: str, *, members: Members
+    ) -> dict[str, str]:
         """Every file of a published archive, keyed by `key`, hashed. Read in memory."""
-        from cordon_scanner.sources.archive import ArchiveReader
-
         out: dict[str, str] = {}
-        for member_path, member in ArchiveReader.walk_archive(data, path=filename):
+        for member_path, member in members(data, filename):
             out[cls.key(member_path, version)] = hashlib.sha256(member).hexdigest()
         return out
 
     @classmethod
-    def obfuscated(cls, data: bytes, filename: str, version: str) -> tuple[str, ...]:
+    def obfuscated(
+        cls, data: bytes, filename: str, version: str, *, members: Members
+    ) -> tuple[str, ...]:
         """The archive's files with an obfuscator's output shape, keyed by `key`. Matched, never
         decoded: the same signatures `SUSPECT.OBFUSCATION.PACKED.001` reports."""
         from cordon_scanner.analysis.shared.languages import LanguageRegistry
         from cordon_scanner.detect.code.obfuscation.packing import PackingFindings
         from cordon_scanner.foundation.content import FileContent
-        from cordon_scanner.sources.archive import ArchiveReader
 
         out: list[str] = []
-        for member_path, member in ArchiveReader.walk_archive(data, path=filename):
+        for member_path, member in members(data, filename):
             content = FileContent.from_bytes(member_path, member)
             if content.is_binary:
                 continue
@@ -218,16 +226,15 @@ class ReleaseHistory:
         return tuple(sorted(out))
 
     @staticmethod
-    def declared(data: bytes, filename: str, ecosystem: str) -> frozenset[str]:
+    def declared(data: bytes, filename: str, ecosystem: str, *, members: Members) -> frozenset[str]:
         """The runtime dependencies a published archive declares, read the way the scan reads
         them (`declared_dependencies`)."""
         from cordon_scanner.detect.base import FileUnit
         from cordon_scanner.foundation.content import FileContent
-        from cordon_scanner.sources.archive import ArchiveReader
 
         units = [
             FileUnit(content=FileContent.from_bytes(member, payload))
-            for member, payload in ArchiveReader.walk_archive(data, path=filename)
+            for member, payload in members(data, filename)
         ]
         return ReleaseHistory.declared_dependencies(units, ecosystem)
 
@@ -486,6 +493,8 @@ class ReleaseHistory:
         version: str,
         root: Path | None = None,
         current_dependencies: tuple[str, ...] = (),
+        *,
+        members: Members,
     ) -> Baseline:
         """Fetch, hash and store the established release behind `name@version`. Network.
 
@@ -505,7 +514,7 @@ class ReleaseHistory:
                 archive = OpenVsx.archive(name, release)
             else:
                 archive = RegistryClient.package_archive(eco, name, release)
-            established = cls.declared(archive.data, archive.filename, ecosystem)
+            established = cls.declared(archive.data, archive.filename, ecosystem, members=members)
             introduced = {
                 dependency: cls.first_published(eco, dependency)
                 for dependency in sorted(set(current_dependencies) - set(established))[:40]
@@ -517,10 +526,14 @@ class ReleaseHistory:
                 baseline_version=archive.version,
                 baseline_published=when.isoformat(),
                 published=current.isoformat(),
-                files=cls.fingerprint(archive.data, archive.filename, archive.version),
+                files=cls.fingerprint(
+                    archive.data, archive.filename, archive.version, members=members
+                ),
                 dependencies=tuple(sorted(established)),
                 introduced=introduced,
-                obfuscated=cls.obfuscated(archive.data, archive.filename, archive.version),
+                obfuscated=cls.obfuscated(
+                    archive.data, archive.filename, archive.version, members=members
+                ),
             )
         cls.save(baseline, root)
         return baseline

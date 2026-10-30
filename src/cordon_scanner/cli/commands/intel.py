@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 
 from cordon_scanner.foundation.errors import ConfigError, ExitCode
@@ -88,6 +89,14 @@ class IntelCommand:
             return int(ExitCode.SCANNER_ERROR)
         return int(ExitCode.CLEAN)
 
+    @staticmethod
+    def members(data: bytes, filename: str) -> Iterable[tuple[str, bytes]]:
+        """A published archive's members, read by the sources layer for the intelligence one
+        (`intel.registries.release_history.Members`), which does not import it."""
+        from cordon_scanner.sources.archive import ArchiveReader
+
+        return ArchiveReader.walk_archive(data, path=filename)
+
     @classmethod
     def acquire(cls, args: argparse.Namespace) -> int:
         """`intel acquire`: for each published archive, store its established predecessor.
@@ -144,6 +153,7 @@ class IntelCommand:
                     current_dependencies=tuple(
                         sorted(ReleaseHistory.declared_dependencies(units, distribution))
                     ),
+                    members=IntelCommand.members,
                 )
             except RegistryError as exc:
                 results.append(
