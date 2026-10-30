@@ -298,6 +298,7 @@ class ParallelScanner:
 
     @staticmethod
     def _initialise(
+        engine_type: Callable[[Config], Any],
         config_payload: dict[str, Any],
         root: str,
         detector_ids: tuple[str, ...],
@@ -306,6 +307,10 @@ class ParallelScanner:
         facts: dict[str, Any] | None = None,
     ) -> None:
         """Build one worker's engine.
+
+        `engine_type` is the parent's engine class, handed over rather than imported: the engine
+        runs the pipeline that runs this pool, so naming it here closed an import cycle. A class
+        crosses to the worker by its qualified name.
 
         Runs once per process. Everything expensive -- loading rule packs,
         compiling patterns, discovering detectors -- happens here rather than per
@@ -349,7 +354,6 @@ class ParallelScanner:
 
         Collector.relax()  # a worker only scans: its collector stays relaxed
 
-        from cordon_scanner.engine.engine import Engine
         from cordon_scanner.foundation.config.settings import Config as _Config
 
         config = _Config.from_dict(config_payload, source="<worker>")
@@ -363,7 +367,7 @@ class ParallelScanner:
             from dataclasses import replace as _replace_operator
 
             config = _replace_operator(config, **operator)
-        engine = Engine(config)
+        engine = engine_type(config)
         if inventory is None:
             # Only when the parent could not supply one. Each worker used to run
             # a complete inventory walk of the repository, so a 200,000-file
@@ -600,6 +604,7 @@ class ParallelScanner:
         files: Sequence[WorkItem],
         workers: int,
         detector_ids: Sequence[str],
+        engine_type: Callable[[Config], Any],
         inventory: Any = None,
         facts: dict[str, Any] | None = None,
         on_batch: Callable[[Sequence[int]], None] | None = None,
@@ -651,6 +656,7 @@ class ParallelScanner:
                 mp_context=ParallelScanner.start_context(),
                 initializer=ParallelScanner._initialise,
                 initargs=(
+                    engine_type,
                     payload,
                     root,
                     tuple(detector_ids),

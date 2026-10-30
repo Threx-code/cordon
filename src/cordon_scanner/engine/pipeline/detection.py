@@ -237,6 +237,7 @@ class Detection:
         unstarted: list[int] = []
         produced = ParallelScanner.run(
             config=self.config,
+            engine_type=type(self.engine),
             root=str(root),
             files=pending,
             workers=ParallelScanner.worker_count(
