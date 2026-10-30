@@ -48,6 +48,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from cordon_scanner.decide.feature_schema import FeatureFold, FeatureRecord, FeatureScope
 from cordon_scanner.decide.verdict import Verdict, VerdictFeatures, VerdictModel
 from cordon_scanner.foundation.config import Config
 from cordon_scanner.foundation.models import Category, Confidence, Severity
@@ -192,21 +193,17 @@ class VerdictTrain:
         )
 
     @staticmethod
-    def evidence(row: dict) -> dict[str, float]:
-        package = (row.get("verdict") or {}).get("package") or {}
-        return VerdictFeatures.evidence(
-            (
-                (
-                    f[0],
-                    int(Severity[f[1].upper()]),
-                    int(Confidence[f[2].upper()]),
-                    f[3],
-                    f[4] or "",
-                )
-                for f in row["findings"]
-            ),
-            package,
-        )
+    def evidence(row: dict, record: bool = False) -> dict[str, float]:
+        """The features a fit reads, through the scanner's one reader (`FeatureRecord.read`), so
+        folded as scoring folds them: with `record`, the row's own scan-time record where it has one
+        (what the scan scored, a finding graded away after it included); otherwise, and for a row
+        written before the record existed, rebuilt from its findings and `verdict.package`."""
+        if not record:
+            row = {
+                **row,
+                "verdict": {k: v for k, v in (row.get("verdict") or {}).items() if k != "features"},
+            }
+        return FeatureRecord.read(row)[1]
 
     @classmethod
     def load(cls, a: argparse.Namespace) -> tuple[list[dict], dict[str, collections.Counter]]:
@@ -271,6 +268,9 @@ class VerdictTrain:
             half: str | None = None,
         ) -> None:
             row = newer_scan.get(row["file"], row)
+            # A row whose package facts are replaced below is rebuilt from them; any other keeps
+            # the record its own scan scored.
+            overridden = bool(a.registry) or row["file"] in fresh
             if a.registry:
                 facts = registry.get(row["file"])
                 if facts is None or eco not in ("npm", "pypi"):
@@ -301,7 +301,7 @@ class VerdictTrain:
             # (LATER_RULES / SUSPECT.INTENT.UNEXPLAINED_EFFECT) is kept: a separate serve-time stage
             # computed by the same build, so it is legitimate evidence (data-and-measurement team, 2026-10-26).
             row["findings"] = [f for f in row["findings"] if f[0] != VerdictFeatures.OWN_RULE]
-            features = cls.evidence(row)
+            features = cls.evidence(row, record=not overridden)
             rules = {k[2:]: v for k, v in features.items() if k.startswith("r:") and "#" not in k}
             data.append(
                 {
@@ -765,6 +765,11 @@ class VerdictTrain:
             # of millions of entries) and are function-scoped, so they would stay resident through the
             # fit. Drop them now that `names` is fixed -- they are the bulk of the load-time footprint.
             del fam_support, pkg_support, all_code, kept_code, noncode
+        # Only what a user's scan computes (FeatureScope): the code and binary features are computed
+        # under CORDON_MEASURE_FEATURES=1 alone, so a model reading one would read zero on every scan.
+        unread = [k for k in names if not FeatureScope.computed(k)]
+        names = [k for k in names if FeatureScope.computed(k)]
+        print(f"features a user's scan never computes, left out: {len(unread)}")
         index = {k: i for i, k in enumerate(names)}
         # Free the pre-prune feature dicts too: the full code token space held across every row is the
         # real memory cost, not the bounded dense matrix. Every downstream read -- the matrix build and
@@ -1042,7 +1047,8 @@ class VerdictTrain:
                 (
                     abs(
                         VerdictModel.score(
-                            exported.get("by_area", {}).get(r["area"], exported), r["f"]
+                            exported.get("by_area", {}).get(r["area"], exported),
+                            VerdictModel.inputs(exported, r["f"]),
                         )
                         - r["score"]
                     )
@@ -1176,6 +1182,8 @@ class VerdictTrain:
                 "add_only": sorted(add_only_areas),
                 "lift_areas": sorted(lift_areas),
                 "keep": sorted(rare_rules | NAME_PROVENANCE_RULES),
+                # Format 3: fitted on folded features; loaded only at this tree's fold.
+                **FeatureFold.stamp(),
             }
             if a.scope:
                 body["scope"] = sorted(a.scope)

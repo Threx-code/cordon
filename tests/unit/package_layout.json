@@ -629,6 +629,7 @@
   "test_bench_as_published.py": "bench",
   "test_bench_budgets.py": "bench",
   "test_area_fit.py": "bench",
+  "test_verdict_train_fold.py": "bench",
   "test_bench_content.py": "bench",
   "test_bench_imports.py": "bench",
   "test_bench_levels.py": "bench",
