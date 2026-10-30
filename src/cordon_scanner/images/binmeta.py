@@ -525,7 +525,7 @@ class KnownGroups:
 
         groups: dict[str, set[str]] = {}
         try:
-            names = ShippedAdvisories._shipped_raw("maven")
+            names = ShippedAdvisories.records("maven")
         except (OSError, ValueError, KeyError):
             return {}
         for name in names:

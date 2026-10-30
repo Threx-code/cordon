@@ -180,12 +180,12 @@ class WarmHelper:
         """Everything a scan would otherwise rebuild per process."""
         from cordon_scanner.cli.main import CommandLine  # noqa: F401 - imported to be inherited
         from cordon_scanner.engine.registry import Registry
-        from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
+        from cordon_scanner.intel.registry import BundledAdvisories
         from cordon_scanner.rules.loader import RuleLoader
 
         RuleLoader.load_builtin()
         Registry.default_detectors()
-        AdvisoryDatabase.bundled()._load_all()
+        BundledAdvisories.database()._load_all()
 
     @staticmethod
     def child(request: dict[str, Any]) -> int:

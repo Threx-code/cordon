@@ -8,6 +8,7 @@ import re
 import urllib.parse
 from typing import ClassVar
 
+from cordon_scanner.foundation.collector import ScanCaches
 from cordon_scanner.intel.advisories.upstream.base import (
     Archive,
     RepositoryArchive,
@@ -168,6 +169,12 @@ class ConanCenter:
             (name,),
             f"the repository Conan Center's current {name} recipe names",
         )
+
+
+# Network answers, kept for one scan: a long-running process (the MCP server) asks again
+# rather than keeping every answer it was ever given.
+ScanCaches.register(ConanCenter._index)
+ScanCaches.register(ConanCenter._homepages)
 
 
 __all__ = ["ConanCenter"]

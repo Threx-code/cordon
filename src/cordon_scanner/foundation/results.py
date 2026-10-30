@@ -273,6 +273,13 @@ class Dependency:
     """It arrives inside another package's archive and is verified by that archive's hash. See
     `LockEntry.bundled`."""
 
+    installed: bool = True
+    """Whether installing the scan target installs it: a dependency its root manifest, lockfile or a
+    declared workspace member names. False for one only a nested or vendored file in a published
+    package records (a lockfile of its maintainers' environment, a manifest under its tests or its
+    bundled `node_modules`, `DependencyScope`): kept and reported, but no install-set check reads it,
+    and an advisory about it is VULNERABLE.DEPENDENCY.BUNDLED, at info."""
+
     signatures: tuple[str, ...] = ()
     """Detached signatures recorded with the installed package, over `signed`. See
     `LockEntry.signatures`. Not in any report: the provenance detector verifies them."""
@@ -312,12 +319,10 @@ class Dependency:
 
     @property
     def namespace(self) -> str | None:
-        from cordon_scanner.foundation.dependencies import DependencyIdentity
+        from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
 
-        # A Homebrew formula from a named tap is recorded by its own name, its tap the namespace
-        # its full name (`user/repo/name`, kept as the alias) carries.
-        name = self.alias if self.ecosystem == "homebrew" and self.alias else self.name
-        return DependencyIdentity.namespace(self.ecosystem, name)
+        # Each ecosystem declares its own: a Homebrew tap's comes from the full name, the alias.
+        return EcosystemFactsProvider.naming().namespace(self.ecosystem, self.name, self.alias)
 
     @property
     def source(self) -> tuple[str, str | None]:
@@ -376,6 +381,7 @@ class Dependency:
             "direct": self.direct,
             "dependency_path": list(self.dependency_path or (self.name,)),
             "dependency_type": str(self.scope),
+            "installed": self.installed,
             "platform_constraints": list(self.platform),
             "manifest_location": (
                 {"path": self.manifest_path, "line": self.manifest_line}

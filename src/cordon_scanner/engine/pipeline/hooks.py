@@ -39,6 +39,7 @@ from cordon_scanner.engine.pipeline.constants import (
     PRINTING_COMMANDS,
     PROJECT_BUILD_FILENAMES,
 )
+from cordon_scanner.foundation.dependencies import HookKinds
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import AUTHOR_TIME_HOOKS, Finding, Hook, Severity
 from cordon_scanner.foundation.paths import ContainerPaths
@@ -708,7 +709,7 @@ class Hooks:
             # The MANIFEST still counts whenever it declares any of them, because
             # `SUSPECT.INSTALL.SCRIPT.001` is about the declaration and grades itself by
             # which kind it is.
-            if any(not hook.action_step for hook in manifest.hooks):
+            if any(not HookKinds.action_step(hook) for hook in manifest.hooks):
                 paths.add(unit.path)
             ci_scripts, paths, consumer = Hooks.hook_reach(
                 manifest, ci_scripts, unit, known, paths, consumer
@@ -755,7 +756,7 @@ class Hooks:
             # A published action's composite steps run on its consumers' runners as CI code:
             # what they name is read in CI context, not install context (review 98: as
             # install code, 305 of 2,978 benign actions blocked).
-            steps = [hook for hook in manifest.hooks if hook.action_step]
+            steps = [hook for hook in manifest.hooks if HookKinds.action_step(hook)]
             if steps:
                 ci_scripts |= Hooks.hook_script_paths(unit.path, steps, known)
             reaching = [

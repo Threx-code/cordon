@@ -34,7 +34,8 @@ from cordon_scanner.foundation.models import (
     RedactionMode,
     Severity,
 )
-from cordon_scanner.intel.store.licenses import LicenseCategory, LicenseClassifier
+from cordon_scanner.intel.base import LicenseCategory
+from cordon_scanner.intel.registry import LicenseClassifier
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

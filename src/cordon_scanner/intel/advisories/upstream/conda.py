@@ -10,6 +10,7 @@ import tarfile
 import time
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.foundation.collector import ScanCaches
 from cordon_scanner.foundation.network.downloads import BUDGET_SECONDS, Download
 from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.intel.advisories.upstream.base import (
@@ -299,6 +300,11 @@ class CondaSiblings:
                     )
                 ] = out[i]
         return out
+
+
+# Network answers, kept for one scan: a long-running process (the MCP server) asks again
+# rather than keeping every answer it was ever given.
+ScanCaches.register(CondaSiblings._built)
 
 
 __all__ = ["CondaPackage", "CondaSiblings"]

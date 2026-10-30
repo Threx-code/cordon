@@ -284,48 +284,19 @@ class RuleDef:
     width: int = 0
 
 
-class Grammar:
-    """Tokens read into rules.
+class _TokenStream:
+    """The token stream a rule file is read from, and the parser's state (`Grammar`)."""
 
-    Conditions are read by precedence: each binary operator has a strength, and an operand is
-    read with everything stronger. `LEVELS` gives the strengths, weakest first; `not` and
-    `defined` take an operand of comparison strength, `-` and `~` one of their own. `OPERANDS`
-    says which layer an operator's operands must be in.
-    """
-
-    COMPARE: ClassVar[tuple[str, ...]] = (
-        "==", "!=", "<", ">", "<=", ">=", "contains", "icontains", "startswith", "istartswith",
-        "endswith", "iendswith", "iequals", "matches",
-    )  # fmt: skip
-    LEVELS: ClassVar[dict[str, int]] = {
-        "or": 1, "and": 2, **dict.fromkeys(COMPARE, 4), "|": 5, "^": 6, "&": 7, "<<": 8,
-        ">>": 8, "+": 9, "-": 9, "*": 10, "\\": 10, "%": 10,
-    }  # fmt: skip
-    PREFIX_LEVEL: ClassVar[int] = 3
-    UNARY_LEVEL: ClassVar[int] = 11
-    TEXT_MODIFIERS: ClassVar[frozenset[str]] = frozenset(
-        {"nocase", "wide", "ascii", "fullword", "private", "xor", "base64", "base64wide"}
-    )
-    READS: ClassVar[dict[str, tuple[int, bool, bool]]] = {
-        f"{'' if signed else 'u'}int{bits}{'be' if big else ''}": (bits // 8, signed, big)
-        for signed in (True, False)
-        for bits in (8, 16, 32)
-        for big in (False, True)
-    }
-
-    def __init__(self, text: str, externals: dict[str, Any], modules: frozenset[str]) -> None:
-        self.toks = Tokens(text).all()
-        self.i = 0
-        self.modules, self.externals = modules, externals
-        self.imports: set[str] = set()
-        self.rules: list[RuleDef] = []
-        #: The rule being read: its name, its strings, and the strings its condition names.
-        self.current = ""
-        self.strings: list[StringDef] = []
-        self.used: set[str] = set()
-        #: Prefixes (`a*`) rule sets have named: a rule defined after, whose name has one, is
-        #: refused -- the set was decided without it.
-        self.prefixes: list[str] = []
+    toks: list[Token]
+    i: int
+    modules: frozenset[str]
+    externals: dict[str, Any]
+    imports: set[str]
+    rules: list[RuleDef]
+    current: str
+    strings: list[StringDef]
+    used: set[str]
+    prefixes: list[str]
 
     # -- reading tokens --
 
@@ -360,149 +331,9 @@ class Grammar:
     def fail(self, what: str) -> RuleError:
         return RuleError(f"line {self.tok.line}: {what}")
 
-    # -- rules --
 
-    def read(self) -> list[RuleDef]:
-        while self.tok.kind != "end":
-            if self.take("import"):
-                if self.tok.kind != "text":
-                    raise self.fail("import needs a module name")
-                name = self.tok.value.decode()
-                self.i += 1
-                if name not in self.modules:
-                    raise RuleError(f"the {name!r} module is not one cordon-rule provides")
-                self.imports.add(name)
-            elif self.sees("include"):
-                raise self.fail("include is not allowed")
-            else:
-                self.rules.append(self._rule())
-        names = [r.name for r in self.rules]
-        if len(set(names)) != len(names):
-            raise RuleError("a rule name defined twice")
-        return self.rules
-
-    def _rule(self) -> RuleDef:
-        private = is_global = False
-        while self.sees("private") or self.sees("global"):
-            private |= self.take("private")
-            is_global |= self.take("global")
-        self.need("rule")
-        name = self.current = self.word()
-        if any(name.startswith(p) for p in self.prefixes):
-            raise RuleError(f"rule {name} matches a rule set an earlier rule already used")
-        tags: list[str] = []
-        if self.take(":"):
-            while self.tok.kind == "word" and not self.sees("{"):
-                tag = self.word()
-                if tag in tags:
-                    raise RuleError(f"rule {name}: the tag {tag} twice")
-                tags.append(tag)
-        self.need("{")
-        meta = self._meta() if self.take("meta") else {}
-        strings = self._strings(name) if self.take("strings") else []
-        self.strings, self.used = strings, set()
-        self.need("condition")
-        self.need(":")
-        condition = self.condition()
-        self.need("}")
-        for s in strings:
-            if s.name not in self.used:
-                raise RuleError(f"rule {name}: the string {s.name} is never used")
-        return RuleDef(name, tags, meta, strings, condition, private, is_global)
-
-    def _meta(self) -> dict[str, Any]:
-        self.need(":")
-        meta: dict[str, Any] = {}
-        while self.tok.kind == "word" and self.peek().value == "=":
-            key = self.word()
-            self.need("=")
-            tok = self.tok
-            if tok.kind == "text":
-                value: Any = tok.value.decode("utf-8", "replace")
-            elif self.sees("-"):
-                self.i += 1
-                tok = self.tok
-                value = -int(tok.value) if tok.kind == "int" else 0
-                if tok.kind != "int":
-                    self.i -= 1
-            elif tok.kind == "int":
-                value = tok.value
-            elif self.sees("true") or self.sees("false"):
-                value = tok.value == "true"
-            else:
-                raise self.fail("a meta value must be a string, number or boolean")
-            self.i += 1
-            meta[key] = value
-        return meta
-
-    def _strings(self, rule: str) -> list[StringDef]:
-        self.need(":")
-        out: list[StringDef] = []
-        unnamed = 0
-        while self.tok.kind == "sigil" and self.tok.value.startswith("$"):
-            name = self.tok.value
-            if name == "$":
-                unnamed += 1
-                name = f"$#anonymous{unnamed}"
-            self.i += 1
-            self.need("=")
-            out.append(self._string(name))
-        if len({s.name for s in out}) != len(out):
-            raise RuleError(f"rule {rule}: a string defined twice")
-        return out
-
-    def _string(self, name: str) -> StringDef:
-        tok = self.tok
-        kinds = {"text": "text", "hex": "hex", "regex": "regex"}
-        if tok.kind not in kinds:
-            raise self.fail("a string definition must be text, hex or a regex")
-        self.i += 1
-        mods: dict[str, Any] = {}
-        while self.tok.kind == "word" and self.tok.value in Grammar.TEXT_MODIFIERS:
-            mod = self.word()
-            if mod in mods:
-                raise RuleError(f"string {name}: the modifier {mod} twice")
-            mods[mod] = self._modifier(name, mod)
-        alphabets = [mods[m] for m in ("base64", "base64wide") if m in mods]
-        if len(alphabets) == 2 and alphabets[0] != alphabets[1]:
-            raise RuleError(f"string {name}: base64 and base64wide with different alphabets")
-        Grammar._modifiers_fit(name, kinds[tok.kind], mods)
-        return StringDef(name, kinds[tok.kind], tok.value, mods)
-
-    def _modifier(self, name: str, mod: str) -> Any:
-        if mod == "xor":
-            if not self.take("("):
-                return (0, 255)
-            lo = hi = int(self.tok.value)
-            self.i += 1
-            if self.take("-"):
-                hi = int(self.tok.value)
-                self.i += 1
-            self.need(")")
-            if not 0 <= lo <= hi <= 255:
-                raise RuleError(f"string {name}: an xor range out of 0-255")
-            return (lo, hi)
-        if mod in ("base64", "base64wide") and self.take("("):
-            alphabet = self.tok.value
-            self.i += 1
-            self.need(")")
-            if not isinstance(alphabet, bytes) or len(alphabet) != 64:
-                raise RuleError(f"string {name}: a base64 alphabet must be 64 bytes")
-            return alphabet
-        return True
-
-    @staticmethod
-    def _modifiers_fit(name: str, kind: str, mods: dict[str, Any]) -> None:
-        given = set(mods)
-        refusals = (
-            (kind == "hex" and bool(given - {"private"}), "a hex string takes no modifier but private"),
-            (kind == "regex" and bool(given & {"xor", "base64", "base64wide"}), "a regular expression takes no xor or base64"),
-            (bool(given & {"base64", "base64wide"}) and bool(given & {"nocase", "xor", "fullword"}), "base64 cannot be combined with nocase, xor or fullword"),
-            ("xor" in given and "nocase" in given, "xor and nocase together"),
-        )  # fmt: skip
-        for refused, why in refusals:
-            if refused:
-                raise RuleError(f"string {name}: {why}")
+class _ConditionGrammar(_TokenStream):
+    """Conditions, read by precedence (`Grammar`'s strengths and layers)."""
 
     # -- conditions --
 
@@ -828,6 +659,194 @@ class Grammar:
                 raise RuleError("a for list holds integers, or strings, not both")
             domain = Listed(items)
         return Loop(quantity, names, domain, self._body())
+
+
+class Grammar(_ConditionGrammar):
+    """Tokens read into rules.
+
+    Conditions are read by precedence: each binary operator has a strength, and an operand is
+    read with everything stronger. `LEVELS` gives the strengths, weakest first; `not` and
+    `defined` take an operand of comparison strength, `-` and `~` one of their own. `OPERANDS`
+    says which layer an operator's operands must be in.
+    """
+
+    COMPARE: ClassVar[tuple[str, ...]] = (
+        "==", "!=", "<", ">", "<=", ">=", "contains", "icontains", "startswith", "istartswith",
+        "endswith", "iendswith", "iequals", "matches",
+    )  # fmt: skip
+    LEVELS: ClassVar[dict[str, int]] = {
+        "or": 1, "and": 2, **dict.fromkeys(COMPARE, 4), "|": 5, "^": 6, "&": 7, "<<": 8,
+        ">>": 8, "+": 9, "-": 9, "*": 10, "\\": 10, "%": 10,
+    }  # fmt: skip
+    PREFIX_LEVEL: ClassVar[int] = 3
+    UNARY_LEVEL: ClassVar[int] = 11
+    TEXT_MODIFIERS: ClassVar[frozenset[str]] = frozenset(
+        {"nocase", "wide", "ascii", "fullword", "private", "xor", "base64", "base64wide"}
+    )
+    READS: ClassVar[dict[str, tuple[int, bool, bool]]] = {
+        f"{'' if signed else 'u'}int{bits}{'be' if big else ''}": (bits // 8, signed, big)
+        for signed in (True, False)
+        for bits in (8, 16, 32)
+        for big in (False, True)
+    }
+
+    def __init__(self, text: str, externals: dict[str, Any], modules: frozenset[str]) -> None:
+        self.toks = Tokens(text).all()
+        self.i = 0
+        self.modules, self.externals = modules, externals
+        self.imports: set[str] = set()
+        self.rules: list[RuleDef] = []
+        #: The rule being read: its name, its strings, and the strings its condition names.
+        self.current = ""
+        self.strings: list[StringDef] = []
+        self.used: set[str] = set()
+        #: Prefixes (`a*`) rule sets have named: a rule defined after, whose name has one, is
+        #: refused -- the set was decided without it.
+        self.prefixes: list[str] = []
+
+    # -- rules --
+
+    def read(self) -> list[RuleDef]:
+        while self.tok.kind != "end":
+            if self.take("import"):
+                if self.tok.kind != "text":
+                    raise self.fail("import needs a module name")
+                name = self.tok.value.decode()
+                self.i += 1
+                if name not in self.modules:
+                    raise RuleError(f"the {name!r} module is not one cordon-rule provides")
+                self.imports.add(name)
+            elif self.sees("include"):
+                raise self.fail("include is not allowed")
+            else:
+                self.rules.append(self._rule())
+        names = [r.name for r in self.rules]
+        if len(set(names)) != len(names):
+            raise RuleError("a rule name defined twice")
+        return self.rules
+
+    def _rule(self) -> RuleDef:
+        private = is_global = False
+        while self.sees("private") or self.sees("global"):
+            private |= self.take("private")
+            is_global |= self.take("global")
+        self.need("rule")
+        name = self.current = self.word()
+        if any(name.startswith(p) for p in self.prefixes):
+            raise RuleError(f"rule {name} matches a rule set an earlier rule already used")
+        tags: list[str] = []
+        if self.take(":"):
+            while self.tok.kind == "word" and not self.sees("{"):
+                tag = self.word()
+                if tag in tags:
+                    raise RuleError(f"rule {name}: the tag {tag} twice")
+                tags.append(tag)
+        self.need("{")
+        meta = self._meta() if self.take("meta") else {}
+        strings = self._strings(name) if self.take("strings") else []
+        self.strings, self.used = strings, set()
+        self.need("condition")
+        self.need(":")
+        condition = self.condition()
+        self.need("}")
+        for s in strings:
+            if s.name not in self.used:
+                raise RuleError(f"rule {name}: the string {s.name} is never used")
+        return RuleDef(name, tags, meta, strings, condition, private, is_global)
+
+    def _meta(self) -> dict[str, Any]:
+        self.need(":")
+        meta: dict[str, Any] = {}
+        while self.tok.kind == "word" and self.peek().value == "=":
+            key = self.word()
+            self.need("=")
+            tok = self.tok
+            if tok.kind == "text":
+                value: Any = tok.value.decode("utf-8", "replace")
+            elif self.sees("-"):
+                self.i += 1
+                tok = self.tok
+                value = -int(tok.value) if tok.kind == "int" else 0
+                if tok.kind != "int":
+                    self.i -= 1
+            elif tok.kind == "int":
+                value = tok.value
+            elif self.sees("true") or self.sees("false"):
+                value = tok.value == "true"
+            else:
+                raise self.fail("a meta value must be a string, number or boolean")
+            self.i += 1
+            meta[key] = value
+        return meta
+
+    def _strings(self, rule: str) -> list[StringDef]:
+        self.need(":")
+        out: list[StringDef] = []
+        unnamed = 0
+        while self.tok.kind == "sigil" and self.tok.value.startswith("$"):
+            name = self.tok.value
+            if name == "$":
+                unnamed += 1
+                name = f"$#anonymous{unnamed}"
+            self.i += 1
+            self.need("=")
+            out.append(self._string(name))
+        if len({s.name for s in out}) != len(out):
+            raise RuleError(f"rule {rule}: a string defined twice")
+        return out
+
+    def _string(self, name: str) -> StringDef:
+        tok = self.tok
+        kinds = {"text": "text", "hex": "hex", "regex": "regex"}
+        if tok.kind not in kinds:
+            raise self.fail("a string definition must be text, hex or a regex")
+        self.i += 1
+        mods: dict[str, Any] = {}
+        while self.tok.kind == "word" and self.tok.value in Grammar.TEXT_MODIFIERS:
+            mod = self.word()
+            if mod in mods:
+                raise RuleError(f"string {name}: the modifier {mod} twice")
+            mods[mod] = self._modifier(name, mod)
+        alphabets = [mods[m] for m in ("base64", "base64wide") if m in mods]
+        if len(alphabets) == 2 and alphabets[0] != alphabets[1]:
+            raise RuleError(f"string {name}: base64 and base64wide with different alphabets")
+        Grammar._modifiers_fit(name, kinds[tok.kind], mods)
+        return StringDef(name, kinds[tok.kind], tok.value, mods)
+
+    def _modifier(self, name: str, mod: str) -> Any:
+        if mod == "xor":
+            if not self.take("("):
+                return (0, 255)
+            lo = hi = int(self.tok.value)
+            self.i += 1
+            if self.take("-"):
+                hi = int(self.tok.value)
+                self.i += 1
+            self.need(")")
+            if not 0 <= lo <= hi <= 255:
+                raise RuleError(f"string {name}: an xor range out of 0-255")
+            return (lo, hi)
+        if mod in ("base64", "base64wide") and self.take("("):
+            alphabet = self.tok.value
+            self.i += 1
+            self.need(")")
+            if not isinstance(alphabet, bytes) or len(alphabet) != 64:
+                raise RuleError(f"string {name}: a base64 alphabet must be 64 bytes")
+            return alphabet
+        return True
+
+    @staticmethod
+    def _modifiers_fit(name: str, kind: str, mods: dict[str, Any]) -> None:
+        given = set(mods)
+        refusals = (
+            (kind == "hex" and bool(given - {"private"}), "a hex string takes no modifier but private"),
+            (kind == "regex" and bool(given & {"xor", "base64", "base64wide"}), "a regular expression takes no xor or base64"),
+            (bool(given & {"base64", "base64wide"}) and bool(given & {"nocase", "xor", "fullword"}), "base64 cannot be combined with nocase, xor or fullword"),
+            ("xor" in given and "nocase" in given, "xor and nocase together"),
+        )  # fmt: skip
+        for refused, why in refusals:
+            if refused:
+                raise RuleError(f"string {name}: {why}")
 
 
 __all__ = [

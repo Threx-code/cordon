@@ -827,6 +827,13 @@ class HomebrewEcosystem(BaseEcosystem):
         return NotRunAtInstall.spans(text) if path.endswith(".rb") else []
 
     id = "homebrew"
+
+    def namespace(self, name: str, alias: str | None = None) -> str | None:
+        # A formula from a named tap is recorded by its own name; its tap is the namespace its
+        # full name (`user/repo/name`, kept as the alias) carries.
+        full = alias or name
+        return full.rsplit("/", 1)[0] if full.count("/") >= 2 else None
+
     purl_type = "brew"
     manifest_globs: tuple[str, ...] = (
         "**/Brewfile",

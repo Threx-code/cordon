@@ -29,7 +29,9 @@ from cordon_scanner.detect.supply.manifests.findings import ManifestFinding
 from cordon_scanner.detect.supply.manifests.identity_findings import IdentityFindings
 from cordon_scanner.detect.supply.manifests.lifecycle_findings import LifecycleFindings
 from cordon_scanner.detect.supply.manifests.rule_declarations import DECLARED_RULES
+from cordon_scanner.detect.supply.manifests.rule_ids import NOT_INSTALLED_TWINS
 from cordon_scanner.detect.supply.manifests.source_findings import SourceFindings
+from cordon_scanner.detect.supply.not_installed_files import NotInstalledFiles
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.foundation.models import (
     Category,
@@ -40,6 +42,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from cordon_scanner.detect.base import Unit
+    from cordon_scanner.foundation.results import Dependency
 
 
 class ManifestDetector(BaseDetector):
@@ -58,6 +61,17 @@ class ManifestDetector(BaseDetector):
 
     def applicable(self, ctx: ScanContext) -> bool:
         return True
+
+    @staticmethod
+    def not_installed_files(
+        findings: list[Finding],
+        installed: Iterable[Dependency],
+        not_installed: Iterable[Dependency],
+        ctx: ScanContext,
+    ) -> tuple[list[Finding], list[Finding]]:
+        """The findings about one dependency's declaration (`NOT_INSTALLED_TWINS`) split by the
+        inventory's install scope (`NotInstalledFiles`)."""
+        return NotInstalledFiles.split(findings, NOT_INSTALLED_TWINS, installed, not_installed, ctx)
 
     def inspect(self, unit: Unit, ctx: ScanContext) -> Iterable[Finding]:
         if not isinstance(unit, FileUnit):

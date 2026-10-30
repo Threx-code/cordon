@@ -242,10 +242,10 @@ class PackageTools:
     def get_package_advisories(
         settings: Settings, args: dict[str, Any], token: CancelToken
     ) -> Outcome:
-        from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
+        from cordon_scanner.intel.registry import BundledAdvisories
 
         spec = PackageTools.spec(args)
-        database = AdvisoryDatabase.bundled()
+        database = BundledAdvisories.database()
         records = database.for_package(spec.ecosystem, spec.name)
         entries = [
             {

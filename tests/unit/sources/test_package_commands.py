@@ -31,7 +31,7 @@ from cordon_scanner.cli.parser import CommandParser
 from cordon_scanner.foundation.config.policy import OrgConstraints
 from cordon_scanner.foundation.errors import ConfigError, ExitCode
 from cordon_scanner.foundation.models import Category, Suppression
-from cordon_scanner.intel.registries import more_registries, registry_client
+from cordon_scanner.intel.registries import registry_client, registry_request
 from cordon_scanner.intel.registries.more_registries import MoreRegistries
 from cordon_scanner.intel.registries.registry_client import (
     PackageArchive,
@@ -39,6 +39,7 @@ from cordon_scanner.intel.registries.registry_client import (
     RegistryClient,
     RegistryError,
 )
+from cordon_scanner.intel.registries.registry_request import RegistryRequest
 from cordon_scanner.sources.package import PackageTarget, PackageTargetError
 
 TODAY = date(2026, 10, 3)
@@ -201,7 +202,7 @@ class TestVerifiedArchivesForMoreRegistries:
                 fetched.append(url)
                 return body
 
-            monkeypatch.setattr(registry_client.RegistryClient, "_fetch_bytes", staticmethod(fetch))
+            monkeypatch.setattr(RegistryRequest, "fetch_bytes", staticmethod(fetch))
             return fetched
 
         return install
@@ -282,7 +283,7 @@ class TestLargeRegistryDocuments:
         # `next` is about 30 MB uncompressed; the old 4 MB ceiling refused it, and with it most of
         # the packages people install most.
         assert registry_client.MAX_RESPONSE_BYTES >= 40 << 20
-        assert more_registries.base.MAX_RESPONSE_BYTES == registry_client.MAX_RESPONSE_BYTES
+        assert registry_request.MAX_RESPONSE_BYTES == registry_client.MAX_RESPONSE_BYTES
 
     def test_a_pinned_npm_archive_reads_only_the_version_document(self, monkeypatch) -> None:
         body = b"tarball"

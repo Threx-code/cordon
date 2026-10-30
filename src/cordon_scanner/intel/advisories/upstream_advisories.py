@@ -35,6 +35,7 @@ import urllib.parse
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
+from cordon_scanner.foundation.collector import ScanCaches
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.intel.advisories.advisories import Advisory
 from cordon_scanner.intel.advisories.upstream.base import (
@@ -55,7 +56,7 @@ from cordon_scanner.intel.advisories.upstream.tags import TagInference
 from cordon_scanner.intel.advisories.upstream.vcpkg import VcpkgPorts, VcpkgVersions
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
 
     from cordon_scanner.foundation.results import Dependency
 
@@ -91,6 +92,10 @@ class UpstreamResult:
 
 class Upstreams:
     """What each ecosystem says a package was built from."""
+
+    COCOAPODS_GEM = "cocoapods"
+    """The package name of CocoaPods itself: a RubyGem, which a Podfile.lock pins on its COCOAPODS
+    line (a package name here, not the ecosystem)."""
 
     @staticmethod
     def bazel(dependency: Dependency) -> Upstream | Unnamed:
@@ -211,7 +216,7 @@ class Upstreams:
         from cordon_scanner.intel.registries.package_registries import PackageRegistries
         from cordon_scanner.intel.registries.registry_hosts import HOSTS
 
-        if dependency.scope == Scope.TOOL and dependency.name == "cocoapods":
+        if dependency.scope == Scope.TOOL and dependency.name == Upstreams.COCOAPODS_GEM:
             # Podfile.lock's COCOAPODS line: the version of CocoaPods itself, a RubyGem.
             return Upstream(
                 {
@@ -781,6 +786,61 @@ class UpstreamAdvisories:
         return cached
 
     @staticmethod
+    def for_graph(
+        dependencies: Iterable[Dependency], covers: Callable[[str], bool], *, offline: bool
+    ) -> UpstreamResult | None:
+        """What the advisory detector asks for a graph's packages no advisory source covers
+        (`covers`): OSV through each package's upstream, when the scan may use the network, then
+        NVD (`intel/nvd`), offline too since its data is bundled, for what no upstream route
+        checked. The two answers are merged into one result; None when nothing was asked."""
+        from cordon_scanner.intel.advisories.nvd import ECOSYSTEMS as NVD_ECOSYSTEMS
+        from cordon_scanner.intel.advisories.nvd import NvdAdvisories
+
+        graph = list(dependencies)
+        upstream: UpstreamResult | None = None
+        if not offline:
+            candidates = [
+                d
+                for d in graph
+                if not d.local
+                and not d.bundled
+                and d.ecosystem in SUPPORTED
+                and not covers(d.ecosystem)
+            ]
+            if candidates:
+                upstream = UpstreamAdvisories.check(candidates)
+        nvd = [
+            d
+            for d in graph
+            if not d.local
+            and not d.bundled
+            and d.ecosystem in NVD_ECOSYSTEMS
+            and not covers(d.ecosystem)
+            and not (upstream is not None and d.purl in upstream.checked)
+        ]
+        if not nvd:
+            return upstream
+        found = NvdAdvisories.check(
+            nvd,
+            upstream.homes if upstream is not None else {},
+            upstream.versions if upstream is not None else {},
+        )
+        merged = upstream if upstream is not None else UpstreamResult()
+        merged.checked |= found.checked
+        merged.advisories.update(found.advisories)
+        for dependency in nvd:
+            if dependency.purl in found.checked:
+                merged.unchecked.pop(dependency.purl, None)
+            elif dependency.purl in found.unchecked:
+                before = merged.unchecked.get(dependency.purl)
+                merged.unchecked[dependency.purl] = (
+                    f"{before}; and NVD: {found.unchecked[dependency.purl]}"
+                    if before
+                    else f"NVD: {found.unchecked[dependency.purl]}"
+                )
+        return merged
+
+    @staticmethod
     def check(dependencies: Iterable[Dependency]) -> UpstreamResult:
         from concurrent.futures import ThreadPoolExecutor
 
@@ -867,6 +927,11 @@ class UpstreamAdvisories:
             else:
                 result.advisories[dependency.purl] = tuple(advisories)
         return result
+
+
+# Network answers, kept for one scan: a long-running process (the MCP server) asks again
+# rather than keeping every answer it was ever given.
+ScanCaches.register(UpstreamAdvisories._records)
 
 
 __all__ = ["UpstreamAdvisories", "UpstreamResult", "Upstreams"]

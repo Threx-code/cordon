@@ -30,7 +30,7 @@ range match is therefore one small inferential step (does this version fall
 between these two?) rather than a bare identity check, so it is reported at
 `HIGH` confidence rather than `CONFIRMED` -- see `Advisory.is_range`.
 
-Two sources, merged by `AdvisoryDatabase.bundled()`:
+Two sources, merged by `ShippedAdvisories.database()`:
 
 - `BUNDLED` below: a small, hand-verified set of well-known supply-chain
   incidents, each checked against the OSV API and written with a real summary
@@ -53,11 +53,12 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+import re
 import threading
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ClassVar, Final
+from typing import Any, ClassVar, Final, Protocol
 
 from cordon_scanner.foundation.files.seal import SEAL_KEY, LocalSeal
 from cordon_scanner.foundation.paths import PackagePaths
@@ -535,6 +536,15 @@ happens on first use of an ecosystem, which is well after the database object
 was built, so the result has to be readable afterwards rather than returned."""
 
 
+class DeferredRecords(Protocol):
+    """Where a database's deferred ecosystems come from: each one's generated records by
+    lowercased name, and how one record becomes an `Advisory`. Handed in by whoever builds the
+    database (`ShippedAdvisories.database`), so this type depends on no source of records."""
+
+    def records(self, ecosystem: str) -> Mapping[str, tuple[dict[str, object], ...]]: ...
+    def advisory(self, ecosystem: str, raw: dict[str, object]) -> Advisory: ...
+
+
 class AdvisoryDatabase:
     """The advisories this installation knows about.
 
@@ -546,7 +556,7 @@ class AdvisoryDatabase:
     """
 
     shared: ClassVar[AdvisoryDatabase | None] = None
-    """The one bundled instance in this process (`bundled`); `None` until first asked, and again
+    """The one bundled instance in this process (`ShippedAdvisories.database`); `None` until first asked, and again
     after a feed update (`ShippedAdvisories.reset_caches`)."""
     SHARED_LOCK: ClassVar[threading.Lock] = threading.Lock()
 
@@ -556,6 +566,7 @@ class AdvisoryDatabase:
         *,
         meta: DatabaseMeta | None = None,
         deferred: tuple[str, ...] = (),
+        source: DeferredRecords | None = None,
     ) -> None:
         self._by_key: dict[tuple[str, str], list[Advisory]] = {}
         #: How many records exist per ecosystem, counted as they are read rather
@@ -566,12 +577,13 @@ class AdvisoryDatabase:
             self._add(advisory)
             self._counts[advisory.ecosystem] = self._counts.get(advisory.ecosystem, 0) + 1
         #: Each loaded ecosystem's generated records by lowercased name -- an on-disk index or
-        #: an in-memory grouping (`ShippedAdvisories._shipped_raw`) -- read for a name, and built
+        #: an in-memory grouping (`DeferredRecords.records`) -- read for a name, and built
         #: into `Advisory` objects, by the first question about that name.
         self._sources: dict[str, Mapping[str, tuple[dict[str, object], ...]]] = {}
         self._built: set[tuple[str, str]] = set()
         self.meta = meta or DatabaseMeta()
-        self._deferred = set(deferred)
+        self._deferred = set(deferred) if source is not None else set()
+        self._source = source
         #: The curated records, by the identity a generated record would collide
         #: on. Only these suppress a shipped record -- see `_load`.
         self._curated = {
@@ -597,17 +609,15 @@ class AdvisoryDatabase:
         disjoint version windows. Keyed on the identifier alone, each of those
         siblings looks like a duplicate of the first and is dropped.
         """
-        from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
-
-        if ecosystem not in self._deferred:
+        if ecosystem not in self._deferred or self._source is None:
             return
         # Under the lock, and marked loaded only once merged: the instance is shared by every
-        # caller in the process (`bundled`), and a thread that saw the mark before the merge ended
+        # caller in the process (`ShippedAdvisories.database`), and a thread that saw the mark before the merge ended
         # would answer from half a database.
         with self._lock:
             if ecosystem not in self._deferred:
                 return
-            source = ShippedAdvisories._shipped_raw(ecosystem)
+            source = self._source.records(ecosystem)
             self._sources[ecosystem] = source
             count = (
                 source.record_count
@@ -621,10 +631,8 @@ class AdvisoryDatabase:
         """Build the `Advisory` objects for one package name, once. Wholly under the lock: a
         thread that returned while another was still adding this name's records would read
         none of them."""
-        from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
-
         with self._lock:
-            if key in self._built:
+            if key in self._built or self._source is None:
                 return
             self._built.add(key)
             ecosystem, name = key
@@ -634,7 +642,7 @@ class AdvisoryDatabase:
                 return
             for raw in raws:
                 try:
-                    advisory = ShippedAdvisories._advisory_from_dict(ecosystem, raw)
+                    advisory = self._source.advisory(ecosystem, raw)
                 except (KeyError, TypeError, ValueError):
                     continue
                 if (ecosystem, name, advisory.identifier) in self._curated:
@@ -684,27 +692,6 @@ class AdvisoryDatabase:
         """
         self._load(ecosystem)
         return self._counts.get(ecosystem, 0) > 0
-
-    @classmethod
-    def bundled(cls) -> AdvisoryDatabase:
-        """The set that ships with this release: `BUNDLED` plus, when present,
-        the generated OSV-derived sets in `intel/data/`.
-
-        The generated sets are deferred, not loaded: constructing this object is
-        a stat per ecosystem, and the first `matching()` for an ecosystem is
-        what reads that ecosystem's file.
-
-        One per process, shared: each instance merges an ecosystem's records the first time it is
-        asked about it, and a new instance per caller re-merged npm's quarter of a million names
-        on every scan -- 38 merges and 0.7 s of a 0.9 s warm scan of a 4 KB package. A feed
-        update clears it with the other caches (`ShippedAdvisories.reset_caches`).
-        """
-        from cordon_scanner.intel.advisories.shipped import BUNDLED
-
-        with cls.SHARED_LOCK:
-            if cls.shared is None:
-                cls.shared = cls(BUNDLED, meta=AdvisoryFiles._meta(), deferred=ADVISORY_ECOSYSTEMS)
-            return cls.shared
 
     @classmethod
     def from_file(cls, path: str | Path) -> AdvisoryDatabase:
@@ -844,16 +831,18 @@ class AdvisoryDatabase:
         (`amino.fix`, `whatsfly_labfox`) missed the record under the normalised key: three
         known-malicious PyPI releases went unreported in the identity benchmark for exactly that.
         """
-        import re
-
         lowered = name.strip().lower()
-        forms = [lowered]
-        if ecosystem == "pypi":
-            forms.append(re.sub(r"[-_.]+", "-", lowered))
-        elif ecosystem == "cargo":
-            forms.extend((lowered.replace("_", "-"), lowered.replace("-", "_")))
+        fold = NAME_FOLDS.get(ecosystem)
+        forms = [lowered, *(fold(lowered) if fold else ())]
         return tuple(dict.fromkeys(forms))
 
+
+#: The other spellings a registry treats as the same name: PyPI folds runs of `-`, `_` and `.`
+#: to one `-` (PEP 503); crates.io treats `-` and `_` as one.
+NAME_FOLDS: Final[Mapping[str, Callable[[str], tuple[str, ...]]]] = {
+    "pypi": lambda name: (re.sub(r"[-_.]+", "-", name),),
+    "cargo": lambda name: (name.replace("_", "-"), name.replace("-", "_")),
+}
 
 NOT_MALWARE: Final = {
     "MAL-2023-462": (

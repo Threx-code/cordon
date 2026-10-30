@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from cordon_scanner.engine.pipeline.constants import INCOMPLETE_WHEN_REPORTED
 from cordon_scanner.foundation.models import Finding
+from cordon_scanner.foundation.results import Dependency
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -50,6 +51,14 @@ class Accumulator:
     """
 
     capped: bool = False
+
+    not_installed: list[Dependency] = field(default_factory=list)
+    """Dependency records only a file outside the inventory's scope declares (`DependencyScope`):
+    reported with `installed=False`, never read by an install-set check or the verdict."""
+
+    not_installed_findings: list[Finding] = field(default_factory=list)
+    """Findings a member detector made about a file outside the inventory's scope, held out of the
+    verdict at their info twins (`NotInstalledFiles`) and added after it."""
 
     def append(self, finding: Finding) -> bool:
         """Retain one finding if the cap allows it.

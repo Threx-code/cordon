@@ -24,7 +24,8 @@ from __future__ import annotations
 import bisect
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING
+from types import MappingProxyType
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.detect.base import (
     BaseDetector,
@@ -36,6 +37,7 @@ from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.supply.registries.evidence import RegistryEvidence
 from cordon_scanner.detect.supply.registries.findings import NETWORK_CAVEAT
 from cordon_scanner.foundation import references
+from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -49,15 +51,15 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 from cordon_scanner.foundation.scoring import ScoringContext
-from cordon_scanner.intel.provenance import attest
+from cordon_scanner.intel.base import AttestationOutcome
+from cordon_scanner.intel.registry import AttestationDocuments, SigstoreVerification
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator
+    from collections.abc import Callable, Iterable, Iterator, Mapping
 
     from cordon_scanner.detect.base import Unit
     from cordon_scanner.foundation.results import Dependency
-    from cordon_scanner.intel.provenance.openpgp import Keyring
-    from cordon_scanner.intel.registries.registry_client import PackageFacts
+    from cordon_scanner.intel.base import AttestationResult, Keyring, PackageFacts
 
 INVALID_RULE = "VULNERABLE.PROVENANCE.INVALID.001"
 UNVERIFIED_RULE = "POLICY.PROVENANCE.UNVERIFIED.001"
@@ -82,6 +84,57 @@ _REPOSITORY_NAME = re.compile(r"[^/#?]+")
 
 class ProvenanceDetector(BaseDetector):
     """Verifies, rather than merely observes, a dependency's attestation."""
+
+    @staticmethod
+    def _versioned(d: Dependency) -> bool:
+        return bool(d.version)
+
+    @staticmethod
+    def _image_askable(d: Dependency) -> bool:
+        from cordon_scanner.ecosystems.infra.image import ImageEcosystem
+
+        return bool(d.version or d.integrity) and ImageEcosystem.is_reference(
+            d.name, d.declared_spec
+        )
+
+    #: Which dependencies of an ecosystem have a provenance to ask about, where it is not every
+    #: one with a version: each ecosystem's own rule, declared here rather than chained.
+    _ASKABLE: ClassVar[Mapping[str, Callable[[Dependency], bool]]] = MappingProxyType(
+        {
+            # An image pinned by digest alone is asked about by that digest; what a Dockerfile
+            # `ADD`s from a URL is no registry's.
+            "image": lambda d: ProvenanceDetector._image_askable(d),
+            # A Brewfile names a formula without a version: its bottles are the current version's.
+            "homebrew": lambda d: True,
+            # Maven signs each file: a classifier jar or a WAR has its own bundle, and the
+            # registry's is the plain jar's. Comparing the plain jar's signature with a
+            # classified artefact's checksum would call an honest signature a forgery.
+            "maven": lambda d: bool(d.version) and "?" not in d.purl,
+            "gradle": lambda d: bool(d.version) and "?" not in d.purl,
+            # A Bazel module is attested in the Bazel Central Registry: one from another registry,
+            # or a Maven artefact a Bazel extension installs, is not asked there.
+            "bazel": lambda d: (
+                bool(d.version) and not (d.resolved_from or d.local or ":" in d.name)
+            ),
+            # A Helm chart is asked of the repository it came from: over HTTPS or OCI, not one
+            # named only (`@name`) or the project's own (`file://`).
+            "helm": lambda d: (
+                bool(d.version) and (d.resolved_from or "").startswith(("https://", "oci://"))
+            ),
+        }
+    )
+    #: The ecosystems whose provenance is not the registry's attestation, by their verifier.
+    _VERIFIERS: ClassVar[Mapping[str, str]] = MappingProxyType(
+        {
+            "homebrew": "_verify_homebrew",
+            "bazel": "_verify_bazel",
+            "helm": "_verify_helm",
+            "ansible": "_verify_ansible",
+        }
+    )
+    #: Where a publisher signs every artefact or none, so an unsigned one the project runs is the
+    #: gap itself, with no siblings to compare (images).
+    _SIGNS_ALL_OR_NONE: ClassVar[frozenset[str]] = frozenset({"image"})
 
     id = "provenance"
     version = "0.1.0"
@@ -183,7 +236,6 @@ class ProvenanceDetector(BaseDetector):
         # dependencies first, so a truncated pass spends the budget where
         # provenance is most likely to be claimed.
         from cordon_scanner.detect.supply.registries.detector import MAX_QUERIES, RegistryDetector
-        from cordon_scanner.ecosystems.infra.image import ImageEcosystem
 
         candidates = [
             d
@@ -191,24 +243,7 @@ class ProvenanceDetector(BaseDetector):
             if d.ecosystem in SUPPORTED_ECOSYSTEMS
             # The project's own code has no registry and no attestation to ask about.
             and not d.local
-            # An image pinned by digest alone is asked about by that digest; what a Dockerfile
-            # `ADD`s from a URL is no registry's.
-            # A Brewfile names a formula without a version: its bottles are the current version's.
-            and (d.version or (d.ecosystem == "image" and d.integrity) or d.ecosystem == "homebrew")
-            and (d.ecosystem != "image" or ImageEcosystem.is_reference(d.name, d.declared_spec))
-            # Maven signs each file: a classifier jar or a WAR has its own bundle, and the
-            # registry's is the plain jar's. Comparing the plain jar's signature with a
-            # classified artefact's checksum would call an honest signature a forgery.
-            and not (d.ecosystem in ("maven", "gradle") and "?" in d.purl)
-            # A Bazel module is attested in the Bazel Central Registry: one from another registry,
-            # or a Maven artefact a Bazel extension installs, is not asked there.
-            and not (d.ecosystem == "bazel" and (d.resolved_from or d.local or ":" in d.name))
-            # A Helm chart is asked of the repository it came from: over HTTPS or OCI, not one
-            # named only (`@name`) or the project's own (`file://`).
-            and not (
-                d.ecosystem == "helm"
-                and not (d.resolved_from or "").startswith(("https://", "oci://"))
-            )
+            and ProvenanceDetector._ASKABLE.get(d.ecosystem, ProvenanceDetector._versioned)(d)
         ]
         findings: list[Finding] = []
         for index, dependency in enumerate(candidates[:MAX_QUERIES]):
@@ -250,23 +285,14 @@ class ProvenanceDetector(BaseDetector):
         )
 
     def _verify(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
-        if dependency.ecosystem == "homebrew":
-            yield from self._verify_homebrew(dependency, ctx)
+        verifier = ProvenanceDetector._VERIFIERS.get(dependency.ecosystem)
+        if verifier is not None:
+            yield from getattr(self, verifier)(dependency, ctx)
             return
-        if dependency.ecosystem == "bazel":
-            yield from self._verify_bazel(dependency, ctx)
-            return
-        if dependency.ecosystem == "helm":
-            yield from self._verify_helm(dependency, ctx)
-            return
-        if dependency.ecosystem == "ansible":
-            yield from self._verify_ansible(dependency, ctx)
-            return
-        from cordon_scanner.intel.registries.registry_client import RegistryClient, RegistryError
+        from cordon_scanner.intel.registry import RegistryArtifacts, RegistryClient, RegistryError
 
-        asked = dependency.version or (
-            dependency.integrity if dependency.ecosystem == "image" else None
-        )
+        by_digest = EcosystemFactsProvider.versions().pinned_by_digest(dependency.ecosystem)
+        asked = dependency.version or (dependency.integrity if by_digest else None)
         try:
             observed = RegistryClient.facts(dependency.ecosystem, dependency.name, asked)
         except RegistryError:
@@ -280,7 +306,10 @@ class ProvenanceDetector(BaseDetector):
             # An image is different: a publisher signs every image or none, so there are no
             # siblings to compare with, and an image the project RUNS with nothing tying it to a
             # build is the M4 gap itself. A build stage's image never ships, and is left alone.
-            if dependency.ecosystem == "image" and dependency.scope is Scope.RUNTIME:
+            if (
+                dependency.ecosystem in ProvenanceDetector._SIGNS_ALL_OR_NONE
+                and dependency.scope is Scope.RUNTIME
+            ):
                 yield self._finding(
                     UNSIGNED_IMAGE_RULE,
                     ctx,
@@ -294,7 +323,7 @@ class ProvenanceDetector(BaseDetector):
                 )
             return
 
-        digest = attest.AttestationDocuments.parse_integrity(dependency.integrity)
+        digest = AttestationDocuments.parse_integrity(dependency.integrity)
         if digest is None:
             # Two different situations, and telling a reader the wrong one sends
             # them to fix the wrong thing: a lockfile with no hash at all needs
@@ -317,13 +346,13 @@ class ProvenanceDetector(BaseDetector):
             return
 
         # The file the project pinned: a release attests each of its files on its own (PyPI).
-        payload = RegistryClient.attestation_payload(
+        payload = RegistryArtifacts.attestation_payload(
             dependency.ecosystem,
             dependency.name,
             asked,
             digest[1] if digest[0] == "sha256" else None,
         )
-        bundles = attest.AttestationDocuments.extract_bundles(dependency.ecosystem, payload)
+        bundles = AttestationDocuments.extract_bundles(dependency.ecosystem, payload)
         if not bundles:
             reason = "the registry served no verifiable attestation bundle"
             yield self._finding(
@@ -358,7 +387,7 @@ class ProvenanceDetector(BaseDetector):
         # Stopping at the first failure let an unreadable bundle decide the
         # verdict for a package whose next bundle verified.
         results = [
-            attest.SigstoreVerification.verify(
+            SigstoreVerification.verify(
                 bundle,
                 digest_hex=digest_hex,
                 algorithm=algorithm,
@@ -372,7 +401,7 @@ class ProvenanceDetector(BaseDetector):
             # The declared repository was renamed: verified against the name GitHub gives the
             # same repository now (`intel/github_repository`).
             results = [
-                attest.SigstoreVerification.verify(
+                SigstoreVerification.verify(
                     bundle,
                     digest_hex=digest_hex,
                     algorithm=algorithm,
@@ -381,7 +410,7 @@ class ProvenanceDetector(BaseDetector):
                 )
                 for bundle in bundles
             ]
-        if any(r.outcome is attest.Outcome.VERIFIED for r in results):
+        if any(r.outcome is AttestationOutcome.VERIFIED for r in results):
             # The clean case: no finding, and the record says so.
             ctx.checks.record(dependency.purl, "provenance", "verified")
             return
@@ -390,11 +419,11 @@ class ProvenanceDetector(BaseDetector):
         # cryptographically and then failed on identity or subject is the
         # actionable fact, whatever the others could not answer.
         last = next(
-            (r for r in results if r.outcome is attest.Outcome.INVALID),
+            (r for r in results if r.outcome is AttestationOutcome.INVALID),
             results[-1] if results else None,
         )
 
-        if last is not None and last.outcome is attest.Outcome.INVALID:
+        if last is not None and last.outcome is AttestationOutcome.INVALID:
             ctx.checks.record(dependency.purl, "provenance", "invalid")
             yield self._finding(
                 INVALID_RULE,
@@ -418,7 +447,7 @@ class ProvenanceDetector(BaseDetector):
 
     def _verify_homebrew(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
         """Each bottle against its own GitHub build attestation (`intel/homebrew_provenance`)."""
-        from cordon_scanner.intel.provenance.homebrew_provenance import HomebrewProvenance
+        from cordon_scanner.intel.registry import HomebrewProvenance
 
         check = HomebrewProvenance.check(dependency.name, dependency.version)
         label = f"{dependency.name}" + (f"@{check.version}" if check.version else "")
@@ -445,7 +474,7 @@ class ProvenanceDetector(BaseDetector):
     def _keyring_for(self, ctx: ScanContext) -> Keyring:
         """The operator's OpenPGP keyring (`--keyring`), read once per scan rather than once per
         package, and again when a file changes: a detector outlives one scan in a server."""
-        from cordon_scanner.intel.provenance.openpgp import OpenPgp
+        from cordon_scanner.intel.registry import OpenPgp
 
         paths = ctx.config.keyrings
         stamp = tuple((p, self._modified(p)) for p in paths)
@@ -459,10 +488,8 @@ class ProvenanceDetector(BaseDetector):
         """A collection's signatures, as `ansible-galaxy` checks them (`intel/ansible_signatures`):
         those its install recorded, over the MANIFEST.json in the tree; else Galaxy's and the
         requirement's own, over the artifact Galaxy serves."""
-        from cordon_scanner.intel.provenance.ansible_signatures import (
-            AnsibleSignatures,
-            CollectionCheck,
-        )
+        from cordon_scanner.intel.base import CollectionCheck
+        from cordon_scanner.intel.registry import AnsibleSignatures
 
         if dependency.signatures and dependency.signed is not None:
             check = AnsibleSignatures.installed(
@@ -510,7 +537,7 @@ class ProvenanceDetector(BaseDetector):
 
     def _verify_helm(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
         """A chart's provenance file against the operator's keyring (`intel/helm_provenance`)."""
-        from cordon_scanner.intel.provenance.helm_provenance import HelmProvenance
+        from cordon_scanner.intel.registry import HelmProvenance
 
         check = HelmProvenance.check(
             dependency.name,
@@ -549,7 +576,7 @@ class ProvenanceDetector(BaseDetector):
 
     def _verify_bazel(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
         """A BCR module's attestations against what the lock pinned (`intel/bazel_provenance`)."""
-        from cordon_scanner.intel.provenance.bazel_provenance import BazelProvenance
+        from cordon_scanner.intel.registry import BazelProvenance
 
         label = f"{dependency.name}@{dependency.version}"
         check = BazelProvenance.check(
@@ -582,20 +609,20 @@ class ProvenanceDetector(BaseDetector):
 
     @staticmethod
     def _renamed(
-        source: tuple[str, str, str] | None, results: list[attest.Result]
+        source: tuple[str, str, str] | None, results: list[AttestationResult]
     ) -> tuple[str, str, str] | None:
         """The declared GitHub repository under its current name, where a bundle was refused only
         because the certificate names the repository differently and GitHub resolves the declared
         one to another name (filelock declares `tox-dev/py-filelock`, renamed `tox-dev/filelock`)."""
         if source is None or source[0] != "github.com":
             return None
-        if any(r.outcome is attest.Outcome.VERIFIED for r in results) or not any(
-            r.outcome is attest.Outcome.INVALID
+        if any(r.outcome is AttestationOutcome.VERIFIED for r in results) or not any(
+            r.outcome is AttestationOutcome.INVALID
             and "GitHubWorkflowRepository does not match" in r.detail
             for r in results
         ):
             return None
-        from cordon_scanner.intel.provenance.github_repository import GitHubRepository
+        from cordon_scanner.intel.registry import GitHubRepository
 
         current = GitHubRepository.current(source[1], source[2])
         if current is None or f"{current[0]}/{current[1]}".lower() == (

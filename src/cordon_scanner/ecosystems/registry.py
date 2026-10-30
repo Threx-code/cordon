@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import TYPE_CHECKING, ClassVar
 
-from cordon_scanner.ecosystems.base import Ecosystem
+from cordon_scanner.ecosystems.base import BaseEcosystem, Ecosystem, ReleaseFile
 from cordon_scanner.ecosystems.infra.infra import INFRA_ECOSYSTEMS
 from cordon_scanner.ecosystems.others import (
     BazelEcosystem,
@@ -42,6 +43,7 @@ if TYPE_CHECKING:
 
     from cordon_scanner.ecosystems.base import ImageReferences
     from cordon_scanner.ecosystems.infra import image as _ecosystems_infra_image
+    from cordon_scanner.foundation.dependencies import InstalledEcosystemFacts
 
     ImageReference: ImageReferences = _ecosystems_infra_image.ImageReference
 
@@ -280,10 +282,44 @@ class EcosystemRegistry:
     def all_ecosystems(cls) -> Sequence[Ecosystem]:
         return cls.ECOSYSTEMS
 
+    @classmethod
+    def declared_dependencies(cls, files: Sequence[ReleaseFile], ecosystem: str) -> frozenset[str]:
+        """The runtime dependencies a published release declares, as its ecosystem reads them;
+        none for an ecosystem that does not declare a way to read them."""
+        implementation = cls.get(ecosystem)
+        if isinstance(implementation, BaseEcosystem):
+            return implementation.declared_dependencies(files)
+        return frozenset()
+
+
+class VsCodeExtensionNames(BaseEcosystem):
+    """What an editor extension's name declares (`publisher.name`): its facts only. Extensions are
+    not a registered package ecosystem, but their names have a namespace."""
+
+    id = "vscode"
+
+    def namespace(self, name: str, alias: str | None = None) -> str | None:
+        return name.split(".", 1)[0] if "." in name else None
+
 
 class RegistryFacts:
-    """`foundation.dependencies.EcosystemFacts`, answered by the registered ecosystems; installed
-    through the `cordon_scanner.ecosystem_facts` entry point."""
+    """`foundation.dependencies`' ecosystem ports, answered by each ecosystem's own declarations
+    (an unknown ecosystem has the defaults: `BaseEcosystem`); installed through the
+    `cordon_scanner.ecosystem_facts` entry point."""
+
+    _DECLARED_ONLY: ClassVar[Mapping[str, BaseEcosystem]] = MappingProxyType(
+        {"vscode": VsCodeExtensionNames()}
+    )
+    _UNKNOWN: ClassVar[BaseEcosystem] = BaseEcosystem()
+
+    @staticmethod
+    def _of(ecosystem: str) -> BaseEcosystem:
+        """The ecosystem's declarations: registered, declared-only, or the defaults (an ecosystem
+        implementing the protocol directly, not through `BaseEcosystem`, has the defaults)."""
+        registered = EcosystemRegistry.get(ecosystem)
+        if isinstance(registered, BaseEcosystem):
+            return registered
+        return RegistryFacts._DECLARED_ONLY.get(ecosystem, RegistryFacts._UNKNOWN)
 
     @staticmethod
     def is_registry_host(ecosystem: str, url: str) -> bool:
@@ -293,6 +329,52 @@ class RegistryFacts:
     @staticmethod
     def lockfile_ecosystem(path: str) -> str | None:
         return EcosystemRegistry.lockfile_ecosystem(path)
+
+    @staticmethod
+    def namespace(ecosystem: str, name: str, alias: str | None = None) -> str | None:
+        if not name and not alias:
+            return None
+        return RegistryFacts._of(ecosystem).namespace(name, alias)
+
+    @staticmethod
+    def is_builtin(ecosystem: str, name: str) -> bool:
+        return RegistryFacts._of(ecosystem).is_builtin(name)
+
+    @staticmethod
+    def coordinate_separator(ecosystem: str) -> str | None:
+        return RegistryFacts._of(ecosystem).coordinate_separator()
+
+    @staticmethod
+    def pinned_by_digest(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).pinned_by_digest()
+
+    @staticmethod
+    def is_mutable_version(ecosystem: str, version: str) -> bool:
+        return RegistryFacts._of(ecosystem).is_mutable_version(version)
+
+    @staticmethod
+    def admits_lowest(ecosystem: str, declared_spec: str) -> bool:
+        return RegistryFacts._of(ecosystem).admits_lowest(declared_spec)
+
+    @staticmethod
+    def is_held_version(ecosystem: str, version: str) -> bool:
+        return RegistryFacts._of(ecosystem).is_held_version(version)
+
+    @staticmethod
+    def has_install_scripts(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).has_install_scripts()
+
+    @staticmethod
+    def has_scoped_names(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).has_scoped_names()
+
+    @staticmethod
+    def is_ci_step(ecosystem: str, name: str) -> bool:
+        return RegistryFacts._of(ecosystem).is_ci_step(name)
+
+    @staticmethod
+    def squat_comparisons(ecosystem: str) -> tuple[str, ...]:
+        return RegistryFacts._of(ecosystem).squat_comparisons()
 
 
 #: What the engine uses of this layer by name, and the module that provides each: the one place
@@ -321,3 +403,7 @@ __all__ = [
     "ImageReference",
     "RegistryFacts",
 ]
+
+if TYPE_CHECKING:
+    # The installed facts conform to every port the domain asks them through (`foundation`).
+    _CONFORMS: InstalledEcosystemFacts = RegistryFacts()

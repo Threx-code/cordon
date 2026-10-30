@@ -20,12 +20,13 @@ from cordon_scanner.foundation.models import (
     Finding,
     Severity,
 )
-from cordon_scanner.intel.malware import atr
+from cordon_scanner.intel.registry import ATR_INSTRUCTION_TOLERANCE, AtrEngine, RuleLinks
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from cordon_scanner.detect.base import ScanContext
+    from cordon_scanner.intel.base import AtrMatchFacts
 
 _MEDIUM_INTENTS: Final = frozenset({"markdown-exfil", "persist"})
 
@@ -129,8 +130,8 @@ class AgentTextFindings:
         `within` is the file's text when `text` is a piece of it -- a hook's command, a tool's
         description -- so the finding points at the piece; otherwise `text` is the file itself.
         """
-        matches = atr.AtrEngine.evaluate(text, kinds)
-        by_category: dict[str, list[atr.AtrMatch]] = {}
+        matches = AtrEngine.evaluate(text, kinds)
+        by_category: dict[str, list[AtrMatchFacts]] = {}
         for match in matches:
             by_category.setdefault(match.rule.category, []).append(match)
         defensive = DefensiveDoc.is_defensive(documentation, within or text)
@@ -157,7 +158,7 @@ class AgentTextFindings:
         corroborated_code: bool,
         ctx: ScanContext,
         defensive: bool,
-        found: list[atr.AtrMatch],
+        found: list[AtrMatchFacts],
         instruction_file: bool,
         local: bool,
         text: str,
@@ -173,16 +174,16 @@ class AgentTextFindings:
         # blocks; any other production-grade rule warns; a rule above ATR's production line is
         # only ever an observation, never alone the reason a repository is flagged. An
         # instruction file is prose written to the agent, and ATR's 815 rules were written for
-        # traffic, so there a rule counts only if it matched at most `atr.INSTRUCTION_TOLERANCE`
+        # traffic, so there a rule counts only if it matched at most `ATR_INSTRUCTION_TOLERANCE`
         # of its calibration instruction files. Whether a counted stable match then blocks is
         # `DefensiveDoc.stable_blocks`.
-        def counts(m: atr.AtrMatch) -> bool:
+        def counts(m: AtrMatchFacts) -> bool:
             if m.rule.grade != "production" or m.rule.severity in ("low", "info"):
                 return False
             return (
                 not instruction_file
                 or m.rule.instruction_hits is None
-                or m.rule.instruction_hits <= atr.INSTRUCTION_TOLERANCE
+                or m.rule.instruction_hits <= ATR_INSTRUCTION_TOLERANCE
             )
 
         counted = [m for m in found if counts(m)]
@@ -220,12 +221,12 @@ class AgentTextFindings:
     @staticmethod
     def _placed_finding(
         confidence: Confidence | None,
-        counted: list[atr.AtrMatch],
+        counted: list[AtrMatchFacts],
         ctx: ScanContext,
-        found: list[atr.AtrMatch],
+        found: list[AtrMatchFacts],
         rule_id: str,
         severity: Severity,
-        stable: list[atr.AtrMatch],
+        stable: list[AtrMatchFacts],
         text: str,
         unit: FileUnit,
         within: str | None,
@@ -238,7 +239,7 @@ class AgentTextFindings:
             RULES[rule_id].message
             + f" Matched: {named}"
             + (f", and {more} more" if more > 0 else "")
-            + f". Rules: {atr.RuleLinks.url(found[0].rule.rule_id)}"
+            + f". Rules: {RuleLinks.url(found[0].rule.rule_id)}"
         )
         first = found[0]
         if within is None:

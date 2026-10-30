@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import posixpath
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.detect.base import FileUnit, ScanContext
@@ -33,6 +33,9 @@ if TYPE_CHECKING:
 
 class IdentityFindings:
     """The manifest findings about a published package's name and version."""
+
+    OWN_NAME_MEASURED_ON: ClassVar[frozenset[str]] = frozenset({"pypi", "npm"})
+    """The published formats a package's own-name finding was measured on (review 98)."""
 
     @classmethod
     def name_risk_findings(cls, unit: FileUnit, ctx: ScanContext) -> Iterable[Finding]:
@@ -99,7 +102,7 @@ class IdentityFindings:
         whole of the evidence.
         """
         from cordon_scanner.detect.supply.dependency import DependencyDetector
-        from cordon_scanner.intel.registries.popular import PackageIntel
+        from cordon_scanner.intel.registry import PopularPackageNames
 
         if not manifest.name or "node_modules/" in f"/{unit.path}" or "site-packages/" in unit.path:
             return
@@ -107,7 +110,7 @@ class IdentityFindings:
         if ecosystem is None:
             return
         name = ecosystem.normalize_name(manifest.name)
-        if PackageIntel.is_known_package(ecosystem_id, name):
+        if PopularPackageNames.is_known(ecosystem_id, name):
             return
         target = DependencyDetector._typosquat_target(ecosystem_id, name)
         if target is None:
@@ -123,7 +126,7 @@ class IdentityFindings:
         # plyr, tsibble, pyaml, pytest, istio and the homebrew-core and vcpkg Go snapshots (17 of
         # 34,500 real packages, review 98): there the matched manifest is often not the package's.
         published = (
-            ctx.distribution in ("pypi", "npm")
+            ctx.distribution in IdentityFindings.OWN_NAME_MEASURED_ON
             or sdist_root is not None
             or unit.path.rpartition("!")[2] == "package/package.json"
         )
@@ -148,6 +151,8 @@ class IdentityFindings:
 
     #: A version that wins semver resolution over any real release: major 99 or above, or every
     #: component all nines (`9.9.9`, `99.99.99`). What winning resolution is for is the attack.
+    #: Where the dependency-confusion foothold's shape was measured (review 98: npm only).
+    CONFUSION_SHAPE_MEASURED_ON: ClassVar[frozenset[str]] = frozenset({"npm"})
     _WINNING_VERSION = re.compile(r"^(?:(?:\d{3,}|99)\.|9+(?:\.9+){1,3}(?:[-+].*)?$)")
 
     _CODE_SUFFIXES = (".js", ".cjs", ".mjs", ".ts")
@@ -164,7 +169,9 @@ class IdentityFindings:
         (review 98): the shape is 246 of 1,923 malicious units, 3 of them caught by nothing else, and
         0 of 11,255 benign npm units across the random, popular and ecosystem corpora."""
         version = (manifest.version or "").strip()
-        if manifest.ecosystem != "npm" or not cls._WINNING_VERSION.match(version):
+        if manifest.ecosystem not in cls.CONFUSION_SHAPE_MEASURED_ON or not (
+            cls._WINNING_VERSION.match(version)
+        ):
             return
         if SourcePaths.is_editor_extension(unit.path):
             return

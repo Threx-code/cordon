@@ -10,22 +10,21 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 
-from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
 from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
 
 
 class TestAdvisorySharing:
     def test_bundled_is_one_instance_until_a_feed_update(self) -> None:
-        first = AdvisoryDatabase.bundled()
-        assert AdvisoryDatabase.bundled() is first
+        first = ShippedAdvisories.database()
+        assert ShippedAdvisories.database() is first
         ShippedAdvisories.reset_caches()
-        assert AdvisoryDatabase.bundled() is not first
+        assert ShippedAdvisories.database() is not first
 
     def test_threads_asking_at_once_all_see_the_whole_answer(self) -> None:
         ShippedAdvisories.reset_caches()
-        expected = len(AdvisoryDatabase.bundled().matching("npm", "event-stream", "3.3.6"))
+        expected = len(ShippedAdvisories.database().matching("npm", "event-stream", "3.3.6"))
         ShippedAdvisories.reset_caches()
-        database = AdvisoryDatabase.bundled()
+        database = ShippedAdvisories.database()
         with ThreadPoolExecutor(8) as pool:
             counts = list(
                 pool.map(

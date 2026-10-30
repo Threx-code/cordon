@@ -27,6 +27,7 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
+from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
 from cordon_scanner.intel.registries.popular import PackageIntel
 from cordon_scanner.intel.registries.real import DATA_DIR, REAL_PACKAGES, RealPackages
 from support import ROOT as REPO
@@ -510,10 +511,9 @@ class TestEachRemovedNameListIsWellFormed:
         assert len(entries) == len(set(entries)), f"{path.name} has duplicates"
 
     def test_every_name_is_recorded_malicious_in_every_version(self, path: Path) -> None:
-        from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
 
         ecosystem = path.name.removesuffix(".removed.txt")
-        database = AdvisoryDatabase.bundled()
+        database = ShippedAdvisories.database()
         for name in PackageIntelHelpers.names(path)[:200]:
             records = database.for_package(ecosystem, name)
             assert any(r.malicious and not r.versions for r in records), name

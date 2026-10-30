@@ -22,6 +22,7 @@ from cordon_scanner.detect.supply.registries.detector import REGISTRY_ECOSYSTEMS
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
 from cordon_scanner.intel.advisories.nvd import ECOSYSTEMS as NVD_ECOSYSTEMS
+from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
 from cordon_scanner.intel.advisories.upstream_advisories import SUPPORTED as UPSTREAM_ECOSYSTEMS
 from cordon_scanner.intel.registries.popular import PackageIntel
 from cordon_scanner.intel.registries.real import RealPackages
@@ -97,7 +98,7 @@ class EcosystemsPage:
     @staticmethod
     def rows() -> list[tuple[str, ...]]:
         """One row per registered ecosystem, in the order the registry holds them."""
-        database = AdvisoryDatabase.bundled()
+        database = ShippedAdvisories.database()
         collected: list[tuple[str, ...]] = []
         for ecosystem_id in sorted(EcosystemRegistry.BY_ID):
             ecosystem = EcosystemRegistry.get(ecosystem_id)

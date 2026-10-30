@@ -24,6 +24,7 @@ from cordon_scanner.analysis.shared.languages import LanguageRegistry
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.images.binmeta import StreamedBinary
+from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
 from kits.conformancebuilders import Pkg, Writers
 from kits.imagekit import ImageKit
 
@@ -111,10 +112,9 @@ class TestKnownMaliciousRecordsAtFullLength:
         ],
     )
     def test_the_record_is_matched_as_published(self, tmp_path, name, version) -> None:
-        from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
 
         if not [
-            a for a in AdvisoryDatabase.bundled().matching("npm", name, version) if a.malicious
+            a for a in ShippedAdvisories.database().matching("npm", name, version) if a.malicious
         ]:
             pytest.skip("the bundled data no longer carries this record")
         Writers.npm(tmp_path, [Pkg(name, version)])

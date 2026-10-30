@@ -32,11 +32,11 @@ import tarfile
 import urllib.error
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.intel.base import CollectionCheck
 from cordon_scanner.intel.provenance import openpgp
 
 GALAXY: Final = "https://galaxy.ansible.com"
@@ -58,13 +58,6 @@ class _HttpsRedirects(urllib.request.HTTPRedirectHandler):
         if urllib.parse.urlsplit(newurl).scheme != "https":
             return None
         return super().redirect_request(req, fp, code, msg, headers, newurl)
-
-
-@dataclass(frozen=True)
-class CollectionCheck:
-    outcome: str
-    """`verified`, `invalid`, `unverifiable`, `unconfigured` (signed; no keyring) or `absent`."""
-    detail: str
 
 
 class AnsibleSignatures:

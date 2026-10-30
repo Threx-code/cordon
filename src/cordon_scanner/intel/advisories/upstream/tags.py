@@ -13,6 +13,7 @@ import threading
 import urllib.parse
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.foundation.collector import ScanCaches
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.intel.advisories.upstream.base import (
     Archive,
@@ -816,6 +817,13 @@ class ContentProof:
             shared >= ContentProof.MIN_SMALL
             and (shared >= ContentProof.MIN_SHARE * tagged or tagged - shared <= 1)
         )
+
+
+# Network answers, kept for one scan: a long-running process (the MCP server) asks again
+# rather than keeping every answer it was ever given.
+ScanCaches.register(TagInference._refs)
+ScanCaches.register(TagInference._tips)
+ScanCaches.register(ContentProof._results)
 
 
 __all__ = ["ContentProof", "Conventions", "TagInference"]

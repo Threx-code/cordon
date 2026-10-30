@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextlib
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, ClassVar, Final
 
 from cordon_scanner.detect.agents.findings import AgentFinding
 from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
@@ -51,6 +51,9 @@ class McpPackageDetector(BaseDetector):
     Whatever it reads gets every rule, plus a tool-poisoning pass: hidden characters or
     agent-directed instructions in the tool descriptions the server will hand to the agent.
     """
+
+    #: Ecosystems whose packages install into the project's own `node_modules`.
+    INSTALLED_UNDER_NODE_MODULES: ClassVar[frozenset[str]] = frozenset({"npm"})
 
     id = "mcp-packages"
     version = "0.2.0"
@@ -125,7 +128,7 @@ class McpPackageDetector(BaseDetector):
             return []
         resolved_root = root.resolve()
         config_dir = (root / config_path).parent
-        if ecosystem == "npm":
+        if ecosystem in McpPackageDetector.INSTALLED_UNDER_NODE_MODULES:
             for base in dict.fromkeys((config_dir, root)):
                 candidate = base / "node_modules" / name
                 if (candidate / "package.json").is_file() and candidate.resolve().is_relative_to(

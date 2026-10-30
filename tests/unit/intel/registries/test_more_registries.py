@@ -29,7 +29,7 @@ from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import Scope
 from cordon_scanner.foundation.results import Dependency
-from cordon_scanner.intel.registries import more_registries, registry_http
+from cordon_scanner.intel.registries import more_registries, registry_http, registry_request
 from cordon_scanner.intel.registries.image_registries import ImageRegistries
 from cordon_scanner.intel.registries.infra_registries import InfraRegistries
 from cordon_scanner.intel.registries.more_registries import MoreRegistries
@@ -149,7 +149,7 @@ class TestTransport:
             RegistryHttp.get("https://api.nuget.org/x")
 
     def test_an_oversized_body_is_refused(self, opener, monkeypatch) -> None:
-        monkeypatch.setattr(more_registries.base, "MAX_RESPONSE_BYTES", 8)
+        monkeypatch.setattr(registry_request, "MAX_RESPONSE_BYTES", 8)
         opener(self._Response(b"0123456789"))
         with pytest.raises(RegistryError, match="exceeded"):
             RegistryHttp.get("https://crates.io/x")

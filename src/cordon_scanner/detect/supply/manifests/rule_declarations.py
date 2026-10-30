@@ -7,6 +7,7 @@ other detectors that report from manifests (the registry review, advisories, bin
 from __future__ import annotations
 
 from cordon_scanner.detect.catalogue import DeclaredRule
+from cordon_scanner.detect.supply.dependency_rules import DECLARED_RULES as DEPENDENCY_RULES
 from cordon_scanner.detect.supply.manifests.findings import ManifestFinding
 from cordon_scanner.detect.supply.manifests.rule_ids import (
     CLEARTEXT_SOURCE_RULE,
@@ -14,10 +15,12 @@ from cordon_scanner.detect.supply.manifests.rule_ids import (
     FOREIGN_COMMIT_RULE,
     MALICIOUS_REMOTE_TARBALL_RULE,
     MUTABLE_REF_RULE,
+    NOT_INSTALLED_TWINS,
     REMOTE_TARBALL_RULE,
     SOURCE_PRIORITY_RULE,
     WRAPPER_RULE,
 )
+from cordon_scanner.detect.supply.not_installed_files import NotInstalledFiles
 from cordon_scanner.foundation import references
 from cordon_scanner.foundation.models import (
     Category,
@@ -25,7 +28,7 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 
-DECLARED_RULES: tuple[DeclaredRule, ...] = (
+_DECLARED: tuple[DeclaredRule, ...] = (
     DeclaredRule(
         id=FOREIGN_COMMIT_RULE,
         title="A published package installs a dependency from another project's commit",
@@ -564,6 +567,13 @@ DECLARED_RULES: tuple[DeclaredRule, ...] = (
             "so the private package can never be resolved from the public one."
         ),
     ),
+)
+
+
+DECLARED_RULES: tuple[DeclaredRule, ...] = _DECLARED + tuple(
+    NotInstalledFiles.declared(rule, NOT_INSTALLED_TWINS)
+    for rule in _DECLARED + DEPENDENCY_RULES
+    if rule.id in NOT_INSTALLED_TWINS
 )
 
 __all__ = ["DECLARED_RULES"]

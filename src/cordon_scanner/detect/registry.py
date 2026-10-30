@@ -21,6 +21,7 @@ ROLES: dict[str, tuple[str, str]] = {
     "JudgeGate": ("cordon_scanner.detect.agents.language_model.detector", "JudgeGate"),
     "LoadPath": ("cordon_scanner.detect.code.capability.load_path", "LoadPath"),
     "NATIVE_FORMATS": ("cordon_scanner.detect.binary.detector", "NATIVE_FORMATS"),
+    "PackingFindings": ("cordon_scanner.detect.code.obfuscation.packing", "PackingFindings"),
     "ReachedFlows": ("cordon_scanner.detect.code.reached_flows", "ReachedFlows"),
     "SBOM_NAMES": ("cordon_scanner.detect.supply.sbom", "SBOM_NAMES"),
     "SBOM_SUFFIXES": ("cordon_scanner.detect.supply.sbom", "SBOM_SUFFIXES"),
@@ -40,6 +41,7 @@ if TYPE_CHECKING:
         DownloadRunning,
         ImportReachabilityNotes,
         JudgeScheduling,
+        PackerSignatures,
         ReachedFlowFacts,
         ServerSourceFinding,
         SkillScripts,
@@ -49,6 +51,7 @@ if TYPE_CHECKING:
     from cordon_scanner.detect.code import download_flow as _detect_code_download_flow
     from cordon_scanner.detect.code import reached_flows as _detect_code_reached_flows
     from cordon_scanner.detect.code.capability import load_path as _detect_code_capability_load_path
+    from cordon_scanner.detect.code.obfuscation import packing as _detect_code_obfuscation_packing
     from cordon_scanner.detect.source import submodules as _detect_source_submodules
     from cordon_scanner.detect.supply import composer_plugins as _detect_supply_composer_plugins
     from cordon_scanner.detect.supply import reachability as _detect_supply_reachability
@@ -65,6 +68,7 @@ if TYPE_CHECKING:
     JudgeGate: JudgeScheduling = _detect_agents_language_model_detector.JudgeGate
     LoadPath: SkillScripts = _detect_code_capability_load_path.LoadPath
     NATIVE_FORMATS: frozenset[str] = _detect_binary_detector.NATIVE_FORMATS
+    PackingFindings: PackerSignatures = _detect_code_obfuscation_packing.PackingFindings
     ReachedFlows: ReachedFlowFacts = _detect_code_reached_flows.ReachedFlows
     SBOM_NAMES: tuple[str, ...] = _detect_supply_sbom.SBOM_NAMES
     SBOM_SUFFIXES: tuple[str, ...] = _detect_supply_sbom.SBOM_SUFFIXES
@@ -96,6 +100,7 @@ __all__ = [
     "ImportReachability",
     "JudgeGate",
     "LoadPath",
+    "PackingFindings",
     "ReachedFlows",
     "ServerSources",
     "Submodules",

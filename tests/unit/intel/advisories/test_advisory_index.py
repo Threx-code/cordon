@@ -16,6 +16,7 @@ import pytest
 
 from cordon_scanner.intel.advisories import advisories, shipped
 from cordon_scanner.intel.advisories.advisory_index import AdvisoryIndex
+from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
 
 
 class IndexKit:
@@ -77,7 +78,7 @@ class TestEquivalence:
         source = shipped.ShippedAdvisories._shipped_raw("cargo")
         if not isinstance(source, advisories.IndexedRecords):
             pytest.skip("no shipped cargo data in this checkout")
-        database = advisories.AdvisoryDatabase.bundled()
+        database = ShippedAdvisories.database()
         name = next(iter(source))
         assert len(database.for_package("cargo", name)) >= 1
 

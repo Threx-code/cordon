@@ -320,6 +320,10 @@ class ComposerAuth:
 
 class ComposerEcosystem(BaseEcosystem):
     id = "composer"
+
+    def namespace(self, name: str, alias: str | None = None) -> str | None:
+        return name.split("/", 1)[0] if "/" in name else None
+
     purl_type = "composer"
     manifest_globs: tuple[str, ...] = ("**/composer.json", "**/composer.lock", "**/auth.json")
     lockfile_globs: tuple[str, ...] = ("**/composer.lock",)

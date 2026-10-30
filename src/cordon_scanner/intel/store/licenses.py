@@ -37,17 +37,9 @@ same finding.
 
 from __future__ import annotations
 
-import enum
 import re
 
-
-class LicenseCategory(enum.StrEnum):
-    PERMISSIVE = "permissive"
-    WEAK_COPYLEFT = "weak_copyleft"
-    COPYLEFT = "copyleft"
-    NETWORK_COPYLEFT = "network_copyleft"
-    UNKNOWN = "unknown"
-
+from cordon_scanner.intel.base import LicenseCategory
 
 #: How restrictive each category is, for resolving compound expressions. Higher
 #: binds more. UNKNOWN is deliberately absent -- it is not a point on this scale
@@ -224,6 +216,11 @@ class LicenseClassifier:
         if normalized in _NETWORK_COPYLEFT:
             return LicenseCategory.NETWORK_COPYLEFT
         return LicenseCategory.UNKNOWN
+
+    @staticmethod
+    def split_top_level(expression: str, operator: str) -> list[str] | None:
+        """`_split_top_level`, as the port names it."""
+        return LicenseClassifier._split_top_level(expression, operator)
 
     @staticmethod
     def _split_top_level(expression: str, operator: str) -> list[str] | None:

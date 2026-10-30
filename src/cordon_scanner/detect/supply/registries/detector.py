@@ -53,7 +53,7 @@ from __future__ import annotations
 
 import re
 import urllib.parse
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.detect.base import (
     BaseDetector,
@@ -68,7 +68,12 @@ from cordon_scanner.detect.supply.registries.findings import RegistryFinding
 from cordon_scanner.detect.supply.registries.notices import RegistryNotices
 from cordon_scanner.detect.supply.registries.rule_declarations import DECLARED_RULES, DETECTOR
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
-from cordon_scanner.foundation.dependencies import NAMED_BY_FILE, OS_ECOSYSTEMS, RUNTIME_ECOSYSTEM
+from cordon_scanner.foundation.dependencies import (
+    NAMED_BY_FILE,
+    OS_ECOSYSTEMS,
+    RUNTIME_ECOSYSTEM,
+    EcosystemFactsProvider,
+)
 from cordon_scanner.foundation.models import (
     Category,
     Finding,
@@ -80,8 +85,7 @@ if TYPE_CHECKING:
 
     from cordon_scanner.detect.base import Unit
     from cordon_scanner.foundation.results import Dependency
-    from cordon_scanner.intel.registries.private_registries import PrivateRegistry
-    from cordon_scanner.intel.registries.registry_client import PackageFacts
+    from cordon_scanner.intel.base import PackageFacts, PrivateRegistry
 
 MAX_QUERIES = 200
 """How many packages one scan will ask about.
@@ -161,6 +165,13 @@ counting totals would put this finding on every pin that predates the practice
 class RegistryDetector(BaseDetector):
     """Enriches the dependency graph with what the registry says."""
 
+    #: Ecosystems whose dependencies are image references (a private registry is asked with the
+    #: operator's credentials; a Dockerfile `ADD` of a URL is no registry's).
+    _IMAGE_ECOSYSTEMS: ClassVar[frozenset[str]] = frozenset({"image"})
+    #: Ecosystems whose packages are asked of the repository they were resolved from (a Helm
+    #: chart's), not of one public registry.
+    _ASKED_AT_SOURCE: ClassVar[frozenset[str]] = frozenset({"helm"})
+
     id = DETECTOR
     version = "0.1.0"
     categories = frozenset({Category.SUSPICIOUS, Category.POLICY, Category.OPERATIONAL})
@@ -204,9 +215,7 @@ class RegistryDetector(BaseDetector):
                 and d.ecosystem != RUNTIME_ECOSYSTEM
             }
         )
-        from cordon_scanner.intel.registries.private_registries import (
-            PrivateRegistry,
-        )
+        from cordon_scanner.intel.base import PrivateRegistry
 
         # Registries the organisation runs, with the credential the operator named for each.
         configured = tuple(PrivateRegistry(*pair) for pair in ctx.config.private_registries)
@@ -242,7 +251,7 @@ class RegistryDetector(BaseDetector):
             ImageReference,
             PublicRegistries,
         )
-        from cordon_scanner.intel.registries.private_registries import PrivateRegistries
+        from cordon_scanner.intel.registry import PrivateRegistries
 
         # An image pinned by digest alone is asked about by its digest. An image on a registry
         # an organisation runs answers only with credentials: asked with them where the operator
@@ -250,12 +259,13 @@ class RegistryDetector(BaseDetector):
         private_images = [
             d
             for d in unit.dependencies
-            if d.ecosystem == "image"
+            if d.ecosystem in RegistryDetector._IMAGE_ECOSYSTEMS
             and ImageEcosystem.is_reference(d.name, d.declared_spec)
             and (reference := ImageReference.parse(d.name)) is not None
             and not PublicRegistries.covers(reference.registry)
             and PrivateRegistries.matching(configured, "image", d.name, None) is None
         ]
+        versions = EcosystemFactsProvider.versions()
         askable = [
             d
             for d in self._order(unit.dependencies)
@@ -270,11 +280,14 @@ class RegistryDetector(BaseDetector):
             # A jar named only by its file has no real Maven coordinate to ask about: "absent from
             # Maven Central" would be true of a name Cordon made up, and read as dependency confusion.
             and d.resolved_from != NAMED_BY_FILE
-            and (d.version or (d.ecosystem == "image" and d.integrity))
+            and (d.version or (versions.pinned_by_digest(d.ecosystem) and d.integrity))
             and d.ecosystem in REGISTRY_ECOSYSTEMS
             and d not in private_images
             # A Dockerfile's `ADD` of a URL or repository is no registry's to answer for.
-            and (d.ecosystem != "image" or ImageEcosystem.is_reference(d.name, d.declared_spec))
+            and (
+                d.ecosystem not in RegistryDetector._IMAGE_ECOSYSTEMS
+                or ImageEcosystem.is_reference(d.name, d.declared_spec)
+            )
         ]
         asking = askable[:MAX_QUERIES]
         return askable, asking, private_images
@@ -289,9 +302,9 @@ class RegistryDetector(BaseDetector):
         unanswered: list[str],
     ) -> int:
         """Ask the registries about each dependency in turn, within the time budget: what each answers is compared with what the project declares, a name no public registry knows is reported, and a question that went unanswered is kept for the coverage note. How many were left unasked when time ran out."""
-        from cordon_scanner.intel.registries.private_registries import PrivateRegistries
-        from cordon_scanner.intel.registries.registry_client import (
+        from cordon_scanner.intel.registry import (
             PackageNotFound,
+            PrivateRegistries,
             RegistryClient,
             RegistryError,
         )
@@ -303,14 +316,14 @@ class RegistryDetector(BaseDetector):
             private = PrivateRegistries.matching(
                 configured, dependency.ecosystem, dependency.name, dependency.resolved_from
             )
+            by_digest = EcosystemFactsProvider.versions().pinned_by_digest(dependency.ecosystem)
             try:
                 observed = (
                     PrivateRegistries.facts(
                         private,
                         dependency.ecosystem,
                         dependency.name,
-                        dependency.version
-                        or (dependency.integrity if dependency.ecosystem == "image" else None),
+                        dependency.version or (dependency.integrity if by_digest else None),
                     )
                     if private is not None
                     else RegistryClient.facts(
@@ -319,13 +332,14 @@ class RegistryDetector(BaseDetector):
                         dependency.version,
                         source=dependency.resolved_from,
                     )
-                    if dependency.ecosystem == "helm" and dependency.resolved_from
+                    if dependency.ecosystem in RegistryDetector._ASKED_AT_SOURCE
+                    and dependency.resolved_from
                     else RegistryClient.facts(
                         dependency.ecosystem,
                         dependency.name,
                         dependency.version or dependency.integrity,
                     )
-                    if dependency.ecosystem == "image"
+                    if by_digest
                     else RegistryClient.facts(
                         dependency.ecosystem, dependency.name, dependency.version
                     )
@@ -444,7 +458,7 @@ class RegistryDetector(BaseDetector):
         asserting a disagreement between two things one of which was never
         read.
         """
-        from cordon_scanner.intel.registries.registry_client import RegistryClient, RegistryError
+        from cordon_scanner.intel.registry import RegistryClient, RegistryError
 
         ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
         if ecosystem_id is None or ecosystem_id not in REGISTRY_ECOSYSTEMS:
@@ -511,7 +525,7 @@ class RegistryDetector(BaseDetector):
     def _compare(
         self, dependency: Dependency, observed: object, ctx: ScanContext
     ) -> Iterable[Finding]:
-        from cordon_scanner.intel.registries.registry_client import PackageFacts
+        from cordon_scanner.intel.base import PackageFacts
 
         if not isinstance(observed, PackageFacts):  # pragma: no cover - defensive
             return
@@ -644,7 +658,7 @@ class RegistryDetector(BaseDetector):
         same ecosystem, and never when the repository is the package's own name, a prefix of it, or
         its npm scope: `@babel/plugin-x` pointing at `babel/babel` is a monorepo, not a squat.
         """
-        from cordon_scanner.intel.registries.popular import PackageIntel
+        from cordon_scanner.intel.registry import PopularPackageNames
 
         identity = RegistryEvidence.repository_identity(observed.repository)
         first = observed.first_published
@@ -657,7 +671,7 @@ class RegistryDetector(BaseDetector):
         scope = scope.lstrip("@")
         if repo in (base, scope) or owner == scope or base.startswith(repo):
             return ""
-        if repo not in PackageIntel.POPULAR_PACKAGES.get(dependency.ecosystem, frozenset()):
+        if repo not in PopularPackageNames.popular(dependency.ecosystem):
             return ""
         return f"{forge}/{owner}/{repo}"
 
@@ -746,18 +760,18 @@ class RegistryDetector(BaseDetector):
     def _unvetted(cls, dependency: Dependency, observed: object) -> str | None:
         """The shape a slopsquatted package has: new, no source repository, and either barely
         downloaded or named by adding a generic affix to an established package."""
-        from cordon_scanner.intel.registries.real import RealPackages
-        from cordon_scanner.intel.registries.registry_client import (
+        from cordon_scanner.intel.base import PackageFacts
+        from cordon_scanner.intel.registry import (
             NEW_PACKAGE_DAYS,
-            PackageFacts,
-            RegistryClient,
+            EstablishedPackageNames,
+            YoungReleases,
         )
 
         if not isinstance(observed, PackageFacts) or observed.repository:
             return None
-        if not RegistryClient._younger_than(observed.first_published, NEW_PACKAGE_DAYS):
+        if not YoungReleases.younger_than(observed.first_published, NEW_PACKAGE_DAYS):
             return None
-        established = RealPackages.real_packages(dependency.ecosystem)
+        established = EstablishedPackageNames.established(dependency.ecosystem)
         name = dependency.name.lower()
         if name in established:
             return None
@@ -804,7 +818,7 @@ class RegistryDetector(BaseDetector):
         if dependency.ecosystem not in cls.ABSENCE_IS_WITHDRAWAL:
             return True
 
-        from cordon_scanner.intel.registries.registry_hosts import PUBLIC_HOSTS
+        from cordon_scanner.intel.registry import PUBLIC_HOSTS
 
         resolved = dependency.resolved_from or ""
         if not resolved.startswith(("http://", "https://")):
@@ -825,7 +839,7 @@ class RegistryDetector(BaseDetector):
         if not resolved.startswith(("http://", "https://")):
             return False
         host = urllib.parse.urlsplit(resolved).hostname or ""
-        from cordon_scanner.intel.registries.registry_hosts import PUBLIC_HOSTS
+        from cordon_scanner.intel.registry import PUBLIC_HOSTS
 
         return host not in {
             "registry.npmjs.org",

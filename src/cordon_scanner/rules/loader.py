@@ -767,10 +767,20 @@ class RuleLoader:
             bundled = cls._load_builtin(loader, cls.builtin_pack_dir())
         # Then the packs the signed feed delivered (`intel/malware/feed_rules.py`): they add rules,
         # never replace a bundled one, and a shadow pack loads only in the Cloud analyser fleet.
-        from cordon_scanner.intel.malware.feed_rules import FeedRules
+        from cordon_scanner.rules.feed_packs import FeedPacks
 
         ids = {compiled.rule.id for pack in bundled for compiled in pack.rules}
-        return bundled + FeedRules.packs(loader or cls(), ids)
+        return bundled + FeedPacks.packs(loader or cls(), ids)
+
+    @classmethod
+    def running_feed_packs(cls, *, shadow: bool | None = None) -> tuple[str, ...]:
+        """`FeedPacks.loaded`, against the bundled rules of this install: what a default scan
+        here runs."""
+        from cordon_scanner.rules.feed_packs import FeedPacks
+
+        bundled = cls._builtin_once(str(cls.builtin_pack_dir()))
+        ids = {compiled.rule.id for pack in bundled for compiled in pack.rules}
+        return FeedPacks.loaded(cls(), ids, shadow=shadow)
 
     @staticmethod
     @OneOff.cache

@@ -27,10 +27,11 @@ import re
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import TYPE_CHECKING, Any, Final, NamedTuple
+from typing import TYPE_CHECKING, Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.redirects import NoRedirects
+from cordon_scanner.intel.base import PrivateRegistry
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -38,17 +39,6 @@ if TYPE_CHECKING:
     from cordon_scanner.intel.registries.registry_client import PackageFacts
 
 MAX_BYTES: Final = 32 << 20
-
-
-class PrivateRegistry(NamedTuple):
-    base: str
-    """`https://host[:port]/path`, without a trailing slash."""
-    variable: str
-    """The environment variable holding the token: `token` (bearer) or `user:token` (basic)."""
-
-    @property
-    def host(self) -> str:
-        return urllib.parse.urlsplit(self.base).netloc.lower()
 
 
 class PrivateRegistries:
@@ -133,7 +123,7 @@ class PrivateRegistries:
         authorization: str | None = None,
     ) -> bytes:
         """One request to the registry the credential was named for, never anywhere else."""
-        from cordon_scanner.intel.registries import registry_client as base
+        from cordon_scanner.intel.registries import registry_request as base
         from cordon_scanner.intel.registries.registry_client import PackageNotFound, RegistryError
 
         parsed = urllib.parse.urlsplit(url)
@@ -334,7 +324,7 @@ class PrivateRegistries:
     def _oci_authorization(registry: PrivateRegistry, credential: str, base_url: str) -> str:
         """The header the registry accepts: the credential itself, or the bearer token its token
         service issues for it -- asked of that service only when it is on the same host."""
-        from cordon_scanner.intel.registries import registry_client as base
+        from cordon_scanner.intel.registries import registry_request as base
         from cordon_scanner.intel.registries.registry_client import RegistryError
 
         direct = PrivateRegistries._authorization(credential)

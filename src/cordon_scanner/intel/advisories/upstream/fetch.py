@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+from cordon_scanner.foundation.collector import ScanCaches
 from cordon_scanner.intel.advisories.upstream.base import (
     Unnamed,
     Upstream,
@@ -25,6 +26,11 @@ class Fetch:
         return body
 
     resolved: ClassVar[dict[tuple[str, str, str | None, str | None], Upstream | Unnamed]] = {}
+
+
+# Network answers, kept for one scan: a long-running process (the MCP server) asks again
+# rather than keeping every answer it was ever given.
+ScanCaches.register(Fetch.resolved)
 
 
 __all__ = ["Fetch"]

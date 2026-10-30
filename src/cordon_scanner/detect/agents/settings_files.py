@@ -22,7 +22,7 @@ from cordon_scanner.foundation.models import (
     Finding,
     Severity,
 )
-from cordon_scanner.intel.malware import atr
+from cordon_scanner.intel.registry import ATR_TEXT_KINDS
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -51,7 +51,7 @@ class SettingsFileFindings:
                     unit,
                     ctx,
                     command,
-                    atr.TEXT_KINDS,
+                    ATR_TEXT_KINDS,
                     within=text,
                     local=not configuration.CommandClassifier.reaches_out(command),
                 )

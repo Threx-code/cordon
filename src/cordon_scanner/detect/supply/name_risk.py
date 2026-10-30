@@ -53,6 +53,7 @@ import unicodedata
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, Final
 
+from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 
 if TYPE_CHECKING:
@@ -157,6 +158,14 @@ class Assessment:
 class PackageIdentities:
     """Reading a published package's own metadata into a `PackageIdentity`."""
 
+    READERS: ClassVar[dict[str, str]] = {
+        "npm": "_npm",
+        "pypi": "_pypi",
+        "nuget": "_nuget",
+        "rubygems": "_rubygems",
+    }
+    """The reader of each ecosystem's own package metadata, by name."""
+
     #: A Python sdist's root directory, `<name>-<version>`, the convention `Engine` also keys on.
     _VERSIONED_DIRECTORY: ClassVar[re.Pattern[str]] = re.compile(r"-\d")
 
@@ -224,15 +233,9 @@ class PackageIdentities:
     @classmethod
     def read(cls, unit: FileUnit, ctx: ScanContext) -> PackageIdentity | None:
         kind = cls.own_metadata(unit, ctx)
-        if kind == "npm":
-            return cls._npm(unit, ctx)
-        if kind == "pypi":
-            return cls._pypi(unit, ctx)
-        if kind == "nuget":
-            return cls._nuget(unit, ctx)
-        if kind == "rubygems":
-            return cls._rubygems(unit, ctx)
-        return None
+        reader = cls.READERS.get(kind or "")
+        identity: PackageIdentity | None = getattr(cls, reader)(unit, ctx) if reader else None
+        return identity
 
     @staticmethod
     def _xml_text(text: str, tag: str) -> str:
@@ -488,7 +491,9 @@ class NameSignals:
         anyone, and are what a brand-squat or a confusion probe for that company's internal
         packages registers. The scopes are those of the established packages the scanner ships.
         """
-        if identity.ecosystem != "npm" or identity.name.startswith("@"):
+        if not EcosystemFactsProvider.traits().has_scoped_names(identity.ecosystem) or (
+            identity.name.startswith("@")
+        ):
             return None
         if identity.name in NameSignals._known("npm"):
             return None
@@ -510,8 +515,7 @@ class NameSignals:
             return None
         if identity.name in NameSignals._known(identity.ecosystem):
             return None
-        others = ("pypi", "rubygems", "cargo") if identity.ecosystem == "npm" else ("npm", "cargo")
-        for other in others:
+        for other in EcosystemFactsProvider.traits().squat_comparisons(identity.ecosystem):
             if identity.name in NameSignals._known(other):
                 return other
         return None
@@ -564,7 +568,7 @@ class NameSignals:
 
     @classmethod
     def _known(cls, ecosystem: str) -> frozenset[str]:
-        """Every name `PackageIntel.is_known_package` accepts, normalised once per process.
+        """Every name `PopularNames.is_known` accepts, normalised once per process.
 
         The same three sources (popular set, shipped allowlist, curated neighbours); asking
         `is_known_package` instead re-normalises its whole allowlist for every name it does not
@@ -572,14 +576,13 @@ class NameSignals:
         cached = cls._KNOWN.get(ecosystem)
         if cached is None:
             from cordon_scanner.ecosystems.registry import EcosystemRegistry
-            from cordon_scanner.intel.registries.popular import PackageIntel
-            from cordon_scanner.intel.registries.real import RealPackages
+            from cordon_scanner.intel.registry import EstablishedPackageNames, PopularPackageNames
 
             implementation = EcosystemRegistry.get(ecosystem)
             names = (
-                RealPackages.real_packages(ecosystem)
-                | PackageIntel.POPULAR_PACKAGES.get(ecosystem, frozenset())
-                | PackageIntel._KNOWN_NEIGHBOURS.get(ecosystem, frozenset())
+                EstablishedPackageNames.established(ecosystem)
+                | PopularPackageNames.popular(ecosystem)
+                | PopularPackageNames.neighbours(ecosystem)
             )
             cached = frozenset(
                 implementation.normalize_name(n) if implementation else n.lower() for n in names

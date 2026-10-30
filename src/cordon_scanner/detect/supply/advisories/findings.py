@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.foundation import references
+from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -26,9 +27,13 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 from cordon_scanner.foundation.results import Dependency
-from cordon_scanner.intel.advisories import exploited
-from cordon_scanner.intel.advisories.advisories import Advisory
-from cordon_scanner.intel.registries.removed import RemovedNames
+from cordon_scanner.intel.base import AdvisoryRecord, ExploitationFacts
+from cordon_scanner.intel.registry import (
+    AdvisoryCveNames,
+    Epss,
+    ExploitedCatalogue,
+    RemovedPackageNames,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -46,7 +51,7 @@ PLACEHOLDER_RULE = "POLICY.DEPENDENCY.SECURITY_PLACEHOLDER.001"
 
 REMOVED_RULE = "SUSPECT.DEPENDENCY.REMOVED_NAME.001"
 """A range over a name whose every version is malicious, and which the registry no longer serves
-(`RemovedNames`): an install fails rather than installing the malware, and a re-registration of the
+(`RemovedNameList.removed`): an install fails rather than installing the malware, and a re-registration of the
 name would deliver whatever its new owner publishes. Medium: a risk worth removing, not a block."""
 
 SECURITY_PLACEHOLDER = re.compile(r"^\d+\.\d+\.\d+-security$")
@@ -76,6 +81,15 @@ Suspicious, not malicious -- nothing has confirmed it -- and HIGH, so the defaul
 
 VULNERABLE_RULE = "VULNERABLE.DEPENDENCY.KNOWN.001"
 
+BUNDLED_RULE = "VULNERABLE.DEPENDENCY.BUNDLED.001"
+"""An advisory about a dependency installing the target does not install (`Dependency.installed`):
+one only a nested or vendored file in a published package records. Info: it never gates and never
+feeds the verdict, but a bundled UI's vulnerable library may well be served, so it is shown."""
+
+BUNDLED_MALWARE_RULE = "MALWARE.DEPENDENCY.BUNDLED.001"
+"""A known-malicious release recorded by a file outside the install set. Its code may still ship in
+the archive, so it is reported at high, not info."""
+
 EXPLOITED_RULE = "VULNERABLE.DEPENDENCY.EXPLOITED.001"
 """A known vulnerability whose CVE is on CISA's KEV catalogue or ENISA's EUVD exploited list.
 Its own rule so a policy can fail on "exploited" alone, and a CRA report can count it."""
@@ -92,15 +106,19 @@ _SEVERITY_MAP = {
 class AdvisoryFinding:
     """Building the advisory detector's findings."""
 
+    MINIMUM_SELECTED: ClassVar[frozenset[str]] = frozenset({"gomod"})
+    """Distributions whose installer selects the lowest version a requirement admits (Go's minimal
+    version selection), so a published module's floor is not what its users run."""
+
     #: The id every advisory finding carries, wherever in the package it is built.
     DETECTOR: ClassVar[str] = "advisory"
 
     @classmethod
     def removed_finding(
-        cls, dependency: Dependency, spec: str, advisory: Advisory, ctx: ScanContext
+        cls, dependency: Dependency, spec: str, advisory: AdvisoryRecord, ctx: ScanContext
     ) -> Finding:
         """The name is malicious in every version and gone from its registry (`REMOVED_RULE`)."""
-        checked = RemovedNames.checked(dependency.ecosystem)
+        checked = RemovedPackageNames.checked(dependency.ecosystem)
         return Finding(
             rule_id=REMOVED_RULE,
             category=Category.SUSPICIOUS,
@@ -138,7 +156,7 @@ class AdvisoryFinding:
 
     @classmethod
     def _placeholder_finding(
-        cls, dependency: Dependency, advisory: Advisory, ctx: ScanContext
+        cls, dependency: Dependency, advisory: AdvisoryRecord, ctx: ScanContext
     ) -> Finding:
         """The name was taken over, and this is what npm left in its place.
 
@@ -189,15 +207,13 @@ class AdvisoryFinding:
     def finding(
         cls,
         dependency: Dependency,
-        advisory: Advisory,
+        advisory: AdvisoryRecord,
         ctx: ScanContext,
         *,
         advice: Callable[[Dependency], str],
     ) -> Finding:
-        placeholder = (
-            advisory.malicious
-            and dependency.ecosystem == "npm"
-            and bool(SECURITY_PLACEHOLDER.match(dependency.version or ""))
+        placeholder = advisory.malicious and EcosystemFactsProvider.versions().is_held_version(
+            dependency.ecosystem, dependency.version or ""
         )
         if placeholder:
             return cls._placeholder_finding(dependency, advisory, ctx)
@@ -224,9 +240,7 @@ class AdvisoryFinding:
         exploitation = (
             None
             if malicious
-            else exploited.ExploitedCatalogue.catalogue().lookup(
-                exploited.ExploitedCatalogue.cves_of(advisory)
-            )
+            else ExploitedCatalogue.catalogue().lookup(AdvisoryCveNames.cves_of(advisory))
         )
         if exploitation is not None:
             rule_id = EXPLOITED_RULE
@@ -264,7 +278,7 @@ class AdvisoryFinding:
     def _conditions(
         ctx: ScanContext,
         dependency: Dependency,
-        exploitation: exploited.Exploitation | None,
+        exploitation: ExploitationFacts | None,
         malicious: bool,
         severity: Severity,
     ) -> tuple[bool, bool, bool, bool, Severity]:
@@ -285,7 +299,9 @@ class AdvisoryFinding:
         # 7,000 real modules, and keeping exploited ones blocking still blocked 26% (old
         # `golang.org/x/net` floors below the HTTP/2 rapid-reset fix) (review 98).
         go_minimum = (
-            not malicious and ctx.distribution == "gomod" and dependency.scope is Scope.RUNTIME
+            not malicious
+            and ctx.distribution in AdvisoryFinding.MINIMUM_SELECTED
+            and dependency.scope is Scope.RUNTIME
         )
         if go_minimum:
             severity = min(severity, Severity.MEDIUM)
@@ -315,10 +331,10 @@ class AdvisoryFinding:
     @staticmethod
     def _message_and_remediation(
         advice: Callable[[Dependency], str],
-        advisory: Advisory,
+        advisory: AdvisoryRecord,
         bundled_in_extension: bool,
         dependency: Dependency,
-        exploitation: exploited.Exploitation | None,
+        exploitation: ExploitationFacts | None,
         go_minimum: bool,
         maintainers_only: bool,
         malicious: bool,
@@ -347,7 +363,7 @@ class AdvisoryFinding:
                 f"{dependency.name} {dependency.version} is named by {named}. {advisory.summary}"
             )
             # How likely exploitation is, beside whether it is known: FIRST's EPSS, offline.
-            likelihood = exploited.Epss.lookup(exploited.ExploitedCatalogue.cves_of(advisory))
+            likelihood = Epss.lookup(AdvisoryCveNames.cves_of(advisory))
             if likelihood is not None:
                 message = f"{message.rstrip()} {likelihood.describe()}"
             remediation = advice(dependency)
@@ -388,11 +404,11 @@ class AdvisoryFinding:
     @classmethod
     def _scored(
         cls,
-        advisory: Advisory,
+        advisory: AdvisoryRecord,
         confidence: Confidence,
         ctx: ScanContext,
         dependency: Dependency,
-        exploitation: exploited.Exploitation | None,
+        exploitation: ExploitationFacts | None,
         in_test_fixture: bool,
         malicious: bool,
         message: str,
@@ -431,7 +447,7 @@ class AdvisoryFinding:
             # CONFIRMED for an identity match against a recorded incident, with
             # no inference in between; HIGH for a range match, which adds one
             # inferential step -- does this version fall between these two? --
-            # on top of that identity. See `Advisory.is_range`.
+            # on top of that identity. See `AdvisoryRecord.is_range`.
             confidence=confidence,
             message=message,
             location=Location(

@@ -205,9 +205,9 @@ class ChangeReview:
 
     @staticmethod
     def advisories(changes: list[PackageChange]) -> None:
-        from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
+        from cordon_scanner.intel.registry import BundledAdvisories
 
-        database = AdvisoryDatabase.bundled()
+        database = BundledAdvisories.database()
         for change in changes:
             if change.new is None:
                 continue

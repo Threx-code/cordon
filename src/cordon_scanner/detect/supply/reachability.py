@@ -39,8 +39,9 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+from cordon_scanner.ecosystems.packages.python.import_names import PythonImportNames
 from cordon_scanner.foundation.models import Severity
-from cordon_scanner.intel.advisories.advisory_text import AdvisoryTextSymbols
+from cordon_scanner.intel.registry import AdvisoryTextSymbols
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -84,34 +85,6 @@ class Usage:
     unreached_symbols: set[str] = field(default_factory=set)
     """The same, used only inside private functions nothing in the project mentions."""
 
-
-#: PyPI distribution names whose import name differs. Without these a real import
-#: would be missed and the finding wrongly lowered. Small and common on purpose:
-#: an unlisted mismatch falls to UNKNOWN (not lowered), which is the safe
-#: direction.
-_IMPORT_ALIASES: dict[str, tuple[str, ...]] = {
-    "beautifulsoup4": ("bs4",),
-    "pillow": ("PIL",),
-    "pyyaml": ("yaml",),
-    "python-dateutil": ("dateutil",),
-    "scikit-learn": ("sklearn",),
-    "msgpack-python": ("msgpack",),
-    "opencv-python": ("cv2",),
-    "protobuf": ("google",),
-    "setuptools": ("setuptools", "pkg_resources"),
-    "gitpython": ("git",),
-    "pyjwt": ("jwt",),
-    "pycryptodome": ("Crypto",),
-    "pycryptodomex": ("Cryptodome",),
-    "python-jose": ("jose",),
-    "python-multipart": ("multipart",),
-    "pyopenssl": ("OpenSSL",),
-    "python-ldap": ("ldap",),
-    "pysaml2": ("saml2",),
-    "pymongo": ("pymongo", "bson", "gridfs"),
-    "pyzmq": ("zmq",),
-    "python-magic": ("magic",),
-}
 
 _SEVERITY_DOWN: dict[Severity, Severity] = {
     Severity.CRITICAL: Severity.HIGH,
@@ -266,7 +239,7 @@ class ImportReachability:
     def _import_candidates(name: str) -> set[str]:
         normalized = name.lower().replace("_", "-")
         candidates = {name, normalized, normalized.replace("-", "_")}
-        candidates |= set(_IMPORT_ALIASES.get(normalized, ()))
+        candidates |= set(PythonImportNames.aliases(normalized))
         # A scoped npm package imports under its full `@scope/name`; an unscoped one
         # under its name. Its subpaths (`lodash/fp`) import the package, so the bare
         # name covers them.

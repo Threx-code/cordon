@@ -35,12 +35,11 @@ import urllib.parse
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Final
-
-from cordon_scanner.detect.base import FileUnit
+from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:  # from the source
-    from collections.abc import Sequence
+    from cordon_scanner.foundation.content import FileContent
+    from cordon_scanner.intel.base import ReleaseArchiveReader
 
 MIN_AGE_DAYS: Final = 90
 """How much older the baseline release must be than the one scanned.
@@ -189,47 +188,43 @@ class ReleaseHistory:
         return re.sub(rf"(?<![\w.])(v?){re.escape(version)}(?!\w)", r"\1{version}", member)
 
     @classmethod
-    def fingerprint(cls, data: bytes, filename: str, version: str) -> dict[str, str]:
+    def fingerprint(
+        cls, data: bytes, filename: str, version: str, reader: ReleaseArchiveReader
+    ) -> dict[str, str]:
         """Every file of a published archive, keyed by `key`, hashed. Read in memory."""
-        from cordon_scanner.sources.archive import ArchiveReader
-
-        out: dict[str, str] = {}
-        for member_path, member in ArchiveReader.walk_archive(data, path=filename):
-            out[cls.key(member_path, version)] = hashlib.sha256(member).hexdigest()
-        return out
+        return {
+            cls.key(member_path, version): hashlib.sha256(member).hexdigest()
+            for member_path, member in reader.members(data, filename)
+        }
 
     @classmethod
-    def obfuscated(cls, data: bytes, filename: str, version: str) -> tuple[str, ...]:
+    def obfuscated(
+        cls, data: bytes, filename: str, version: str, reader: ReleaseArchiveReader
+    ) -> tuple[str, ...]:
         """The archive's files with an obfuscator's output shape, keyed by `key`. Matched, never
         decoded: the same signatures `SUSPECT.OBFUSCATION.PACKED.001` reports."""
-        from cordon_scanner.analysis.shared.languages import LanguageRegistry
-        from cordon_scanner.detect.code.obfuscation.packing import PackingFindings
-        from cordon_scanner.foundation.content import FileContent
-        from cordon_scanner.sources.archive import ArchiveReader
-
-        out: list[str] = []
-        for member_path, member in ArchiveReader.walk_archive(data, path=filename):
-            content = FileContent.from_bytes(member_path, member)
-            if content.is_binary:
-                continue
-            language = LanguageRegistry.of_file(member_path, content)
-            if any(True for _ in PackingFindings.packers(content, language)):
-                out.append(cls.key(member_path, version))
-        return tuple(sorted(out))
+        return tuple(
+            sorted(
+                cls.key(member_path, version)
+                for member_path, member in reader.members(data, filename)
+                if reader.packed(member_path, member)
+            )
+        )
 
     @staticmethod
-    def declared(data: bytes, filename: str, ecosystem: str) -> frozenset[str]:
+    def declared(
+        data: bytes, filename: str, ecosystem: str, reader: ReleaseArchiveReader
+    ) -> frozenset[str]:
         """The runtime dependencies a published archive declares, read the way the scan reads
-        them (`declared_dependencies`)."""
-        from cordon_scanner.detect.base import FileUnit
+        them (the ecosystem's `declared_dependencies`)."""
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
         from cordon_scanner.foundation.content import FileContent
-        from cordon_scanner.sources.archive import ArchiveReader
 
-        units = [
-            FileUnit(content=FileContent.from_bytes(member, payload))
-            for member, payload in ArchiveReader.walk_archive(data, path=filename)
+        files = [
+            _ReleaseFile(member, FileContent.from_bytes(member, payload))
+            for member, payload in reader.members(data, filename)
         ]
-        return ReleaseHistory.declared_dependencies(units, ecosystem)
+        return EcosystemRegistry.declared_dependencies(files, ecosystem)
 
     # -- acquiring (online) -------------------------------------------------------------------
 
@@ -486,6 +481,8 @@ class ReleaseHistory:
         version: str,
         root: Path | None = None,
         current_dependencies: tuple[str, ...] = (),
+        *,
+        reader: ReleaseArchiveReader,
     ) -> Baseline:
         """Fetch, hash and store the established release behind `name@version`. Network.
 
@@ -505,7 +502,7 @@ class ReleaseHistory:
                 archive = OpenVsx.archive(name, release)
             else:
                 archive = RegistryClient.package_archive(eco, name, release)
-            established = cls.declared(archive.data, archive.filename, ecosystem)
+            established = cls.declared(archive.data, archive.filename, ecosystem, reader)
             introduced = {
                 dependency: cls.first_published(eco, dependency)
                 for dependency in sorted(set(current_dependencies) - set(established))[:40]
@@ -517,47 +514,21 @@ class ReleaseHistory:
                 baseline_version=archive.version,
                 baseline_published=when.isoformat(),
                 published=current.isoformat(),
-                files=cls.fingerprint(archive.data, archive.filename, archive.version),
+                files=cls.fingerprint(archive.data, archive.filename, archive.version, reader),
                 dependencies=tuple(sorted(established)),
                 introduced=introduced,
-                obfuscated=cls.obfuscated(archive.data, archive.filename, archive.version),
+                obfuscated=cls.obfuscated(archive.data, archive.filename, archive.version, reader),
             )
         cls.save(baseline, root)
         return baseline
 
-    _REQUIRES_DIST: ClassVar[re.Pattern[str]] = re.compile(
-        r"(?m)^Requires-Dist:\s*([A-Za-z0-9][A-Za-z0-9._-]*)([^\n]*)$"
-    )
 
-    @staticmethod
-    def declared_dependencies(units: Sequence[FileUnit], distribution: str) -> frozenset[str]:
-        """A release's runtime dependencies: npm's (optional ones too), PyPI's `Requires-Dist`."""
-        if distribution == "npm":
-            manifest = next((u for u in units if u.path.endswith("!package/package.json")), None)
-            try:
-                document = json.loads(manifest.content.text) if manifest is not None else {}
-            except ValueError:
-                return frozenset()
-            if not isinstance(document, dict):
-                return frozenset()
-            names: set[str] = set()
-            for section in ("dependencies", "optionalDependencies"):
-                value = document.get(section)
-                if isinstance(value, dict):
-                    names.update(str(k) for k in value)
-            return frozenset(names)
-        if distribution == "pypi":
-            for unit in units:
-                member = unit.path.rpartition("!")[2]
-                if member.endswith(("/PKG-INFO", ".dist-info/METADATA")) and member.count("/") == 1:
-                    return frozenset(
-                        re.sub(r"[-_.]+", "-", found.group(1)).lower()
-                        for found in ReleaseHistory._REQUIRES_DIST.finditer(
-                            unit.content.text[:200_000]
-                        )
-                        if "extra ==" not in found.group(2)
-                    )
-        return frozenset()
+@dataclass(frozen=True)
+class _ReleaseFile:
+    """One file of a release, as an ecosystem reads it (`ecosystems.base.ReleaseFile`)."""
+
+    path: str
+    content: FileContent
 
 
 __all__ = ["MIN_AGE_DAYS", "YOUNG_DEPENDENCY_DAYS", "Baseline", "ReleaseHistory"]

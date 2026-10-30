@@ -18,6 +18,7 @@ from cordon_scanner.detect.base import (
     ScanContext,
 )
 from cordon_scanner.detect.registry import ComposerPluginHooks, ServerSources
+from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.engine.entries import PackageEntries
 from cordon_scanner.engine.package_format import PackageFormat
 from cordon_scanner.engine.parallel import ParallelScanner
@@ -40,7 +41,6 @@ from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.errors import ArchiveError
 from cordon_scanner.foundation.models import Finding, Scope, Severity
 from cordon_scanner.foundation.results import Dependency, OperationalFinding
-from cordon_scanner.intel.registry import ReleaseHistory
 from cordon_scanner.sources.base import Rejection
 from cordon_scanner.sources.registry import ArchiveReader
 
@@ -259,7 +259,7 @@ class ArchiveStages:
                     units, set(PackageEntries.of(units, early_format, with_bin=False))
                 )
             ),
-            declared_dependencies=ReleaseHistory.declared_dependencies(units, early_format),
+            declared_dependencies=EcosystemRegistry.declared_dependencies(units, early_format),
             package_repository=PackageEntries.repository(units, early_format),
         )
         return Hooks.lifted_inherit(ctx)
@@ -384,10 +384,13 @@ class ArchiveStages:
         # without it they had no `GraphUnit` to inspect, so scanning a package
         # archive silently skipped every check about its dependencies.
         self.progress.phase("dependencies")
-        dependencies = self.engine.dependencies.build(units, acc)
+        package = PackageFormat.of(units)
+        # A published package's inventory is its root manifest and lockfile (`DependencyScope`).
+        published = package if image is None else ""
+        dependencies = self.engine.dependencies.build(units, acc, published=published)
+        self._hold_not_installed_files(acc, dependencies, ctx)
         if image is not None:
             Images.report_image_contents(image, acc)
-        package = PackageFormat.of(units)
         target_kind = "image" if image is not None else "package" if package else "archive"
         if package:
             # A consumer's installer resolves from the package's declared metadata, never from a
@@ -416,14 +419,19 @@ class ArchiveStages:
             )
             acc.findings[:] = PackageFormat.union(acc.findings, repository)
             honoured = HONOURED_PINS.get(package)
-            dependencies = tuple(
-                replace(d, scope=Scope.DEV)
-                if not both
-                and d.scope in (Scope.RUNTIME, Scope.UNKNOWN)
-                and not (honoured and honoured.search(d.declared_in or ""))
-                else d
-                for d in dependencies
-            )
+
+            def demoted(d: Dependency) -> Dependency:
+                if (
+                    not both
+                    and d.scope in (Scope.RUNTIME, Scope.UNKNOWN)
+                    and not (honoured and honoured.search(d.declared_in or ""))
+                ):
+                    return replace(d, scope=Scope.DEV)
+                return d
+
+            dependencies = tuple(demoted(d) for d in dependencies)
+            # The records outside the install set as well, so each keeps the scope it always had.
+            acc.not_installed[:] = [demoted(d) for d in acc.not_installed]
         elif image is None:
             # A source tree read from an archive: graded as a repository (`_person_run_ceiling`).
             acc.findings[:] = Ceilings.person_run_ceiling(acc.findings, units, ctx)
@@ -433,6 +441,41 @@ class ArchiveStages:
                     acc.findings, units, "openvsx", hook_paths=ctx.install_hook_paths
                 )
         return dependencies, target_kind, ctx
+
+    def _hold_not_installed_files(
+        self, acc: Accumulator, dependencies: tuple[Dependency, ...], ctx: ScanContext
+    ) -> None:
+        """A not-installed manifest's or lockfile's own findings about its records
+        (`NotInstalledFiles`), out of the verdict and kept at their twins for after it."""
+        if not acc.not_installed:
+            return
+        for name in ("manifest", "lockfile"):
+            detector = next((d for d in self.detectors if d.id == name), None)
+            split = getattr(detector, "not_installed_files", None)
+            if callable(split):
+                acc.findings[:], held = split(acc.findings, dependencies, acc.not_installed, ctx)
+                acc.not_installed_findings.extend(held)
+
+    def not_installed(self, acc: Accumulator, ctx: ScanContext) -> None:
+        """What only a file outside the install set records (`acc.not_installed`), from the
+        detectors whose finding is about the record itself -- a known advisory (`advisory`), a
+        source outside the registry or a lookalike name (`dependency`), a hallucinated name
+        (`slopsquat`) -- and a not-installed manifest's own (`acc.not_installed_findings`), added
+        once the verdict is reached: at their own info and high rules, they never feed the verdict,
+        are never graded by it or by the package's ceilings, and never gate."""
+        acc.add(acc.not_installed_findings)
+        if not acc.not_installed:
+            return
+        for name in ("advisory", "dependency", "slopsquat"):
+            detector = next((d for d in self.detectors if d.id == name), None)
+            # Switched on by the configuration, whatever the install set holds: the detectors'
+            # own `applicable` asks about installed dependencies, which a package may have none of.
+            if detector is None or not self.config.detector_enabled(detector.id):
+                continue
+            # Through the registry's detector, as the engine reaches every adapter.
+            report = getattr(detector, "not_installed", None)
+            if callable(report):
+                acc.add(report(acc.not_installed, ctx))
 
     def verdict(
         self,

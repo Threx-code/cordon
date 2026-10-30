@@ -18,7 +18,7 @@ reference set. The release itself, by name and version, is not its own sibling.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, Unit
 from cordon_scanner.detect.catalogue import DeclaredRule
@@ -35,7 +35,7 @@ from cordon_scanner.foundation.models import (
     RedactionMode,
     Severity,
 )
-from cordon_scanner.intel.malware.campaign import FACETS, CampaignFingerprint, CampaignIndex
+from cordon_scanner.intel.registry import CAMPAIGN_FACETS, CampaignFingerprint, CampaignIndex
 
 if TYPE_CHECKING:
     from cordon_scanner.detect.base import ScanContext
@@ -46,6 +46,9 @@ MAX_MANIFEST = 1 << 20
 
 class CampaignSiblingDetector(BaseDetector):
     """Reports a published npm package whose campaign fingerprint matches a condemned release's."""
+
+    APPLIES_TO: ClassVar[frozenset[str]] = frozenset({"npm"})
+    """The distributions whose campaigns the shipped index holds."""
 
     id = "campaign-sibling"
     version = "0.1.0"
@@ -77,7 +80,7 @@ class CampaignSiblingDetector(BaseDetector):
         )
 
     def inspect(self, unit: Unit, ctx: ScanContext) -> Iterable[Finding]:
-        if not isinstance(unit, FileUnit) or ctx.distribution != "npm":
+        if not isinstance(unit, FileUnit) or ctx.distribution not in self.APPLIES_TO:
             return ()
         content = unit.content
         archive, bang, member = content.path.rpartition("!")
@@ -116,7 +119,9 @@ class CampaignSiblingDetector(BaseDetector):
         siblings: list[dict[str, Any]],
     ) -> Finding:
         first = siblings[0]
-        shared = [f for f in FACETS if facets.get(f) and facets.get(f) == first["facets"].get(f)]
+        shared = [
+            f for f in CAMPAIGN_FACETS if facets.get(f) and facets.get(f) == first["facets"].get(f)
+        ]
         named = ", ".join(
             f"{r.get('name', '')}@{r.get('version', '')} ({r.get('id', '')})" for r in siblings[:3]
         )

@@ -223,3 +223,46 @@ class TestSpdx:
             moment=FIXED_MOMENT,
         )
         json.dumps(doc)  # must not raise
+
+
+class TestNotInstalled:
+    """A dependency the artifact ships but installing it does not install is listed, and marked."""
+
+    @staticmethod
+    def graph() -> tuple[Dependency, ...]:
+        bundled = Dependency(
+            purl="pkg:npm/jquery@3.3.1",
+            ecosystem="npm",
+            name="jquery",
+            version="3.3.1",
+            scope=Scope.RUNTIME,
+            declared_in="x.tgz!package/ui/package-lock.json",
+            installed=False,
+        )
+        return (*SbomGenerateHelpers.graph(), bundled)
+
+    @staticmethod
+    def kwargs() -> dict[str, str]:
+        return {
+            "root_name": "app",
+            "root_version": "1.0.0",
+            "tool_version": "0.4.0",
+            "moment": FIXED_MOMENT,
+        }
+
+    def test_cyclonedx_marks_it_with_a_property(self) -> None:
+        doc = sbom.SbomDocument.cyclonedx_document(
+            TestNotInstalled.graph(), **TestNotInstalled.kwargs()
+        )
+        jquery = next(c for c in doc["components"] if c["name"] == "jquery")
+        assert {"name": "cordon:installed", "value": "false"} in jquery["properties"]
+        others = [c for c in doc["components"] if c["name"] != "jquery"]
+        assert all("properties" not in c for c in others)
+
+    def test_spdx_marks_it_with_a_comment(self) -> None:
+        doc = sbom.SbomDocument.spdx_document(TestNotInstalled.graph(), **TestNotInstalled.kwargs())
+        jquery = next(p for p in doc["packages"] if p["name"] == "jquery")
+        assert jquery["comment"].startswith("cordon:installed=false")
+        assert all(
+            "comment" not in p for p in doc["packages"] if p["name"] not in ("jquery", "app")
+        )

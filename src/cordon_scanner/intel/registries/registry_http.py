@@ -18,15 +18,12 @@ from typing import Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.redirects import NoRedirects
-from cordon_scanner.intel.registries import registry_client as base
-from cordon_scanner.intel.registries.registry_client import (
-    PackageNotFound,
-    RegistryError,
-)
+from cordon_scanner.intel.registries import registry_request as base
 from cordon_scanner.intel.registries.registry_hosts import (
     _MAX_GZIP_BYTES,
     Redirected,
 )
+from cordon_scanner.intel.registries.registry_request import PackageNotFound, RegistryError
 
 
 class RegistryHttp:

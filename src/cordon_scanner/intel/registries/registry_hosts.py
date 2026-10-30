@@ -9,10 +9,8 @@ from __future__ import annotations
 import re
 from typing import Final
 
-from cordon_scanner.intel.registries import registry_client as base
-from cordon_scanner.intel.registries.registry_client import (
-    RegistryError,
-)
+from cordon_scanner.intel.registries import registry_request as base
+from cordon_scanner.intel.registries.registry_request import RegistryError
 
 HOSTS: Final = {
     "cargo": "https://crates.io",

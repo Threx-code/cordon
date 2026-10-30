@@ -773,6 +773,10 @@ class HexEcosystem(BaseEcosystem):
     """Hex, through mix and rebar3."""
 
     id = "hex"
+
+    def namespace(self, name: str, alias: str | None = None) -> str | None:
+        return name.split("/", 1)[0] if "/" in name else None
+
     purl_type = "hex"
     manifest_globs: tuple[str, ...] = ("**/mix.exs", "**/rebar.config")
     lockfile_globs: tuple[str, ...] = ("**/mix.lock", "**/rebar.lock")

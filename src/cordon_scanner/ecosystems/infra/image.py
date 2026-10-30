@@ -786,6 +786,13 @@ class ImageEcosystem(BaseEcosystem):
     """Container images a build pulls, a Compose file runs, and a Kubernetes manifest deploys."""
 
     id = "image"
+
+    def namespace(self, name: str, alias: str | None = None) -> str | None:
+        return name.rsplit("/", 1)[0] if "/" in name else None
+
+    def pinned_by_digest(self) -> bool:
+        return True
+
     purl_type = "docker"
     manifest_globs: tuple[str, ...] = (
         "**/Dockerfile",

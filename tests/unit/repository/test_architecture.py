@@ -542,6 +542,12 @@ class Rules:
             "synced files refused for want of this install's seal: a fact about the files on "
             "disk, re-evaluated by a feed update (reset_caches)"
         ),
+        "cordon_scanner.intel.advisories.nvd:CpeRule._sites": (
+            "one slot: the reverse index over the bundled NVD data, replaced whole (_sites[:] =)"
+        ),
+        "cordon_scanner.intel.provenance.x509:PublicKey.VERDICTS": (
+            "signature verdicts, an LRU evicting past VERDICTS_MAX (4,096)"
+        ),
     }
 
     ALL: ClassVar[tuple[str, ...]] = (

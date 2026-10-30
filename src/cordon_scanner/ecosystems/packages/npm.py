@@ -20,10 +20,13 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
     Manifest,
+    ReleaseFile,
 )
 from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from cordon_scanner.foundation.content import FileContent
 
 SCOPE_FIELDS = {
@@ -46,8 +49,50 @@ class NpmEcosystem(BaseEcosystem):
         return str(value) if isinstance(value, str) and value else None
 
     id = "npm"
+
+    def declared_dependencies(self, files: Sequence[ReleaseFile]) -> frozenset[str]:
+        """A published tarball's runtime dependencies: its package.json's, optional ones too."""
+        manifest = next((f for f in files if f.path.endswith("!package/package.json")), None)
+        try:
+            document = json.loads(manifest.content.text) if manifest is not None else {}
+        except ValueError:
+            return frozenset()
+        if not isinstance(document, dict):
+            return frozenset()
+        names: set[str] = set()
+        for section in ("dependencies", "optionalDependencies"):
+            value = document.get(section)
+            if isinstance(value, dict):
+                names.update(str(k) for k in value)
+        return frozenset(names)
+
+    def namespace(self, name: str, alias: str | None = None) -> str | None:
+        return name.split("/", 1)[0] if name.startswith("@") and "/" in name else None
+
+    def is_held_version(self, version: str) -> bool:
+        # npm's tombstone for a name its security team took over: the releases removed, and
+        # `0.0.1-security` published in their place.
+        return bool(re.match(r"^\d+\.\d+\.\d+-security$", version))
+
+    def has_install_scripts(self) -> bool:
+        return True
+
+    def has_scoped_names(self) -> bool:
+        return True
+
+    def squat_comparisons(self) -> tuple[str, ...]:
+        return ("pypi", "rubygems", "cargo")
+
     purl_type = "npm"
     manifest_globs: tuple[str, ...] = ("**/package.json", "**/deno.json", "**/deno.jsonc")
+    #: bundledDependencies: npm installs a tarball's own `node_modules` with it as shipped, and
+    #: `require()` loads them -- where a payload can hide in a dependency. Theirs too, recursively.
+    installed_with_package: tuple[str, ...] = (
+        "node_modules/*/package.json",
+        "node_modules/@*/*/package.json",
+        "node_modules/**/node_modules/*/package.json",
+        "node_modules/**/node_modules/@*/*/package.json",
+    )
     lockfile_globs: tuple[str, ...] = (
         "**/package-lock.json",
         "**/npm-shrinkwrap.json",

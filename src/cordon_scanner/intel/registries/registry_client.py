@@ -28,6 +28,7 @@ convenience that becomes one.
 
 from __future__ import annotations
 
+import dataclasses
 import functools
 import http.client
 import json
@@ -35,38 +36,23 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.redirects import NoRedirects
-
-TIMEOUT_SECONDS = 5.0
-"""Per-request ceiling. A scan waiting on a slow registry is a scan somebody
-kills, and a killed scan reports nothing at all."""
-
-MAX_RESPONSE_BYTES = 48 << 20
-"""How much of a response to read, after decompression.
-
-Four megabytes was here, on the reasoning that metadata for a large package runs to a few. It
-runs to thirty: the npm documents for `react` (6.8 MB), `aws-sdk` (10 MB), `@types/node` (11 MB),
-`typescript` (15 MB) and `next` (30 MB) all exceeded it, so the most-installed packages on npm
-were the ones `--online` always reported as unanswerable. Bodies are requested gzip-compressed
-(a tenth of the size on the wire) and this bounds what they may expand to."""
-
-RETRY_ATTEMPTS = 3
-"""How many times one question is asked before it is given up on.
-
-Three, not more. The budget this spends is bounded by the scan's own deadline,
-and a registry that has refused three times in a row is down rather than busy."""
-
-RETRY_BACKOFF_SECONDS = 0.25
-"""Base for an exponential backoff: 0.25s, then 0.5s. Short, because a scan is
-interactive and a retry that costs more than the answer is worth is not one."""
-
-RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
-"""Statuses that mean "ask again". Everything else is a decision: a 404 is the
-registry saying it does not have the package, and asking twice does not help."""
+from cordon_scanner.intel.base import PackageArchive, PackageFacts
+from cordon_scanner.intel.registries.registry_request import (
+    ARCHIVE_HOSTS,
+    MAX_RESPONSE_BYTES,
+    RETRY_ATTEMPTS,
+    RETRY_BACKOFF_SECONDS,
+    RETRY_STATUSES,
+    TIMEOUT_SECONDS,
+    USER_AGENT,
+    PackageNotFound,
+    RegistryError,
+    RegistryRequest,
+)
 
 MAX_REDIRECTS = 0
 """Redirects are not followed.
@@ -99,80 +85,14 @@ ATTESTATION_HOSTS = {
     "rubygems": frozenset({"rubygems.org"}),
 }
 
-USER_AGENT = "cordon-scanner (+https://github.com/Threx-code/cordon)"
-
-
-@dataclass(frozen=True, slots=True)
-class PackageFacts:
-    """What a registry says about one package version."""
-
-    name: str
-    version: str | None
-    yanked: bool = False
-    yanked_reason: str | None = None
-    latest: str | None = None
-    repository: str | None = None
-    """The source repository the registry records, for comparison with what the
-    package claims locally."""
-
-    digests: tuple[str, ...] = ()
-    """Hashes the registry publishes for this version's artefacts."""
-
-    attested: bool = False
-    """Whether the registry holds build provenance for *this* version."""
-
-    first_published: str | None = None
-    """ISO-8601 time of the package's first release: how long the name has existed."""
-
-    last_published: str | None = None
-    """ISO-8601 time of the package's most recent release: whether anyone still maintains it."""
-
-    deprecated: str | None = None
-    """The publisher's deprecation notice for this version (npm), or the project's own statement
-    that it is inactive (PyPI's `Development Status :: 7 - Inactive`). Publisher-written text."""
-
-    releases: int = 0
-
-    weekly_downloads: int | None = None
-    """npm's last-week download count, asked only for a package under a quarter old. None when not
-    asked, or for a registry with no first-party download figures (PyPI)."""
-
-    attested_versions: int = 0
-    """Attested releases published *before* the one pinned here.
-
-    Not a total, and the distinction is the rule. A package that has never
-    published provenance says nothing by not publishing it, and so does one
-    that started attesting last month -- every older pin predates the practice,
-    and counting totals made `requests==2.31.0` look like a gap because
-    `requests` attests now.
-
-    What is worth reporting is a release that shipped while the package was
-    already attesting and skipped it. That needs the ordering, so this counts
-    only the siblings that came first."""
-
-
-class RegistryError(RuntimeError):
-    """A question that could not be answered.
-
-    Raised rather than returning a default, so a caller cannot mistake "the
-    registry was unreachable" for "the registry said no". The two have opposite
-    meanings and the same shape if this returns `False`.
-    """
-
-
-class PackageNotFound(RegistryError):
-    """The registry answered, and it has no package by that name.
-
-    Not an outage: a definite answer about the name. A dependency the public registry does not
-    have is either private -- and a public package registered under the name would win, which is
-    dependency confusion -- or invented, which is what an AI assistant does when it suggests a
-    package that sounds right, and what slopsquatting registers.
-    """
-
 
 class RegistryClient:
     """Questions to package registries, bounded and credential-free: npm and PyPI here, and
     crates.io, RubyGems, NuGet, the Go proxy and Maven Central through `more_registries`."""
+
+    _ATTESTED_SEPARATELY: ClassVar[frozenset[str]] = frozenset({"rubygems"})
+    """Registries whose package document does not say whether a version is attested: asked at
+    their attestation endpoint, once the version is known to be listed."""
 
     @staticmethod
     def _fetch(
@@ -282,11 +202,19 @@ class RegistryClient:
 
         if ecosystem in ALIASES:
             # crates.io, RubyGems, NuGet, the Go proxy and Maven Central (G5).
-            return (
+            facts = (
                 MoreRegistries.facts(ecosystem, name, version, source)
                 if source
                 else MoreRegistries.facts(ecosystem, name, version)
             )
+            if ecosystem in RegistryClient._ATTESTED_SEPARATELY and version and not facts.yanked:
+                # Sigstore bundles published through trusted publishing; absent (404) for most.
+                try:
+                    attested = RegistryClient.attestation_payload(ecosystem, name, version)
+                except RegistryError:
+                    attested = None
+                facts = dataclasses.replace(facts, attested=attested is not None)
+            return facts
         raise RegistryError(f"no registry configured for {ecosystem}")
 
     @staticmethod
@@ -551,6 +479,11 @@ class RegistryClient:
         )
 
     @staticmethod
+    def younger_than(timestamp: str | None, days: int) -> bool:
+        """Whether an ISO-8601 time is less than `days` old (False when absent or unreadable)."""
+        return RegistryClient._younger_than(timestamp, days)
+
+    @staticmethod
     def _younger_than(timestamp: str | None, days: int) -> bool:
         import datetime as _dt
 
@@ -731,27 +664,7 @@ class RegistryClient:
 
     @staticmethod
     def _fetch_bytes(url: str, ecosystem: str) -> bytes:
-        parsed = urllib.parse.urlsplit(url)
-        if parsed.scheme != "https" or (parsed.hostname or "") not in ARCHIVE_HOSTS.get(
-            ecosystem, frozenset()
-        ):
-            raise RegistryError(
-                f"refusing an archive URL off the {ecosystem} allowlist: {parsed.hostname!r}"
-            )
-        request = urllib.request.Request(  # noqa: S310 - scheme and host checked above
-            url, headers={"User-Agent": USER_AGENT}, method="GET"
-        )
-        opener = urllib.request.build_opener(NoRedirects)
-        try:
-            with opener.open(request, timeout=TIMEOUT_SECONDS * 6) as response:
-                body = Download.read(response, MAX_ARCHIVE_BYTES + 1)
-        except urllib.error.HTTPError as exc:
-            raise RegistryError(f"HTTP {exc.code} from {parsed.netloc}") from exc
-        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
-            raise RegistryError(f"{type(exc).__name__} fetching from {parsed.netloc}") from exc
-        if len(body) > MAX_ARCHIVE_BYTES:
-            raise RegistryError(f"archive from {parsed.netloc} exceeded {MAX_ARCHIVE_BYTES} bytes")
-        return bytes(body)
+        return RegistryRequest.fetch_bytes(url, ecosystem)
 
     @staticmethod
     def _npm_archive(name: str, version: str | None) -> PackageArchive:
@@ -823,34 +736,6 @@ NEW_PACKAGE_DAYS = 90
 """A package younger than this has had little time to be noticed, reviewed or reported."""
 
 NPM_DOWNLOADS_HOST = "https://api.npmjs.org"
-
-
-#: Hosts a package archive may be downloaded from, by ecosystem. The registry names the URL, so
-#: it is confined to the registry's own file hosts before it is fetched.
-ARCHIVE_HOSTS = {
-    "npm": frozenset({"registry.npmjs.org"}),
-    "pypi": frozenset({"files.pythonhosted.org"}),
-    "cargo": frozenset({"static.crates.io"}),
-    "rubygems": frozenset({"rubygems.org"}),
-    "nuget": frozenset({"api.nuget.org"}),
-    "gomod": frozenset({"proxy.golang.org"}),
-    "hex": frozenset({"repo.hex.pm"}),
-    "pub": frozenset({"pub.dev"}),
-    "maven": frozenset({"repo.maven.apache.org"}),
-    "openvsx": frozenset({"openvsx.eclipsecontent.org"}),
-}
-MAX_ARCHIVE_BYTES = 64 << 20
-
-
-@dataclass(frozen=True, slots=True)
-class PackageArchive:
-    """One published package archive, downloaded and checked against the registry's digest."""
-
-    ecosystem: str
-    name: str
-    version: str
-    filename: str
-    data: bytes
 
 
 __all__ = [

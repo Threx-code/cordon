@@ -30,7 +30,7 @@ from cordon_scanner.foundation.models import Hook, Scope
 from cordon_scanner.foundation.results import Dependency
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Iterable, Mapping, Sequence
 
     from cordon_scanner.foundation.content import FileContent
     from cordon_scanner.foundation.models import Scope
@@ -529,8 +529,70 @@ class RegistryHosts:
         return False
 
 
-class BaseEcosystem:
+class ReleaseFile(Protocol):
+    """One file of a published release, as an ecosystem reads it for what the release declares."""
+
+    @property
+    def path(self) -> str: ...
+    @property
+    def content(self) -> FileContent: ...
+
+
+class NamingDefaults:
+    """How an ecosystem names its packages (`foundation.dependencies.EcosystemNaming`), as an
+    ecosystem with none of it answers; each ecosystem overrides what is its own."""
+
+    def namespace(self, name: str, alias: str | None = None) -> str | None:
+        return None
+
+    def is_builtin(self, name: str) -> bool:
+        return False
+
+    def coordinate_separator(self) -> str | None:
+        return None
+
+
+class VersionDefaults:
+    """What an ecosystem's versions pin (`foundation.dependencies.EcosystemVersions`), as an
+    ecosystem with none of it answers; each ecosystem overrides what is its own."""
+
+    def pinned_by_digest(self) -> bool:
+        return False
+
+    def is_mutable_version(self, version: str) -> bool:
+        return False
+
+    def admits_lowest(self, declared_spec: str) -> bool:
+        return False
+
+    def is_held_version(self, version: str) -> bool:
+        return False
+
+
+class TraitDefaults:
+    """What an ecosystem's packages can carry (`foundation.dependencies.EcosystemTraits`), as an
+    ecosystem with none of it answers; each ecosystem overrides what is its own."""
+
+    def has_install_scripts(self) -> bool:
+        return False
+
+    def has_scoped_names(self) -> bool:
+        return False
+
+    def is_ci_step(self, name: str) -> bool:
+        return False
+
+    def squat_comparisons(self) -> tuple[str, ...]:
+        return ("npm", "cargo")
+
+
+class BaseEcosystem(NamingDefaults, VersionDefaults, TraitDefaults):
     """Shared behaviour. Implementing the protocol directly is equally valid."""
+
+    def declared_dependencies(self, files: Sequence[ReleaseFile]) -> frozenset[str]:
+        """The runtime dependencies a published release of this ecosystem declares, read from its
+        own files; none where the ecosystem's releases are not read this way."""
+        return frozenset()
 
     def not_run_at_install(self, path: str, text: str) -> list[tuple[int, int]]:
         return []
@@ -587,6 +649,10 @@ class BaseEcosystem:
     purl_type: str = "generic"
     manifest_globs: tuple[str, ...] = ()
     lockfile_globs: tuple[str, ...] = ()
+    installed_with_package: tuple[str, ...] = ()
+    """Nested dependency files, relative to a published package's root, whose packages this
+    ecosystem's installer brings in with it, exactly as shipped (npm's bundled `node_modules`). The
+    inventory reads them as part of the install set (`DependencyScope`); none by default."""
     registry_hosts: frozenset[str] = frozenset()
     records_integrity: bool = True
     """Whether this ecosystem's lock format records a per-package hash at all. Where it does
@@ -813,4 +879,7 @@ __all__ = [
     "LockEntry",
     "LockGraph",
     "Manifest",
+    "NamingDefaults",
+    "TraitDefaults",
+    "VersionDefaults",
 ]

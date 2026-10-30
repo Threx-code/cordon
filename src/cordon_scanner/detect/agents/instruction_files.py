@@ -35,8 +35,7 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 from cordon_scanner.foundation.paths import ContainerPaths
-from cordon_scanner.intel.malware import atr
-from cordon_scanner.intel.registry import OfficialInstallers
+from cordon_scanner.intel.registry import ATR_TEXT_KINDS, OfficialInstallers
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -358,7 +357,7 @@ class InstructionFileFindings:
             unit,
             ctx,
             text,
-            atr.TEXT_KINDS,
+            ATR_TEXT_KINDS,
             # The project's own instruction files get the instruction-file tolerance; a skill
             # installed from elsewhere is code being installed and keeps ATR's grades (AG-2).
             instruction_file=not third_party,
