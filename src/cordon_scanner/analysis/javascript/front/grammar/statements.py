@@ -16,7 +16,7 @@ class Statements(TokenStream):
     def program(self) -> Node:
         body: list[Node] = []
         while self.tok.kind != "eof":
-            body.append(self.statement_recovering())
+            body.append(self.released(self.statement_recovering()))
         return Node("Program", 0, len(self.text), body=body)
 
     def statement_recovering(self) -> Node:

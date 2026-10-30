@@ -36,7 +36,7 @@ class Declarations(TokenStream):
     def function_body(self) -> Node:
         self._deeper()
         try:
-            return self.block()
+            return self.released(self.block())
         finally:
             self.depth -= 1
 
