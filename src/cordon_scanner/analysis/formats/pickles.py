@@ -264,12 +264,12 @@ class PickleImport:
 class PickleReport:
     imports: list[PickleImport] = field(default_factory=list)
     partial: bool = False
+    """Only part of the stream could be read (the file was read in part, or ended early)."""
     refusal: str | None = None
     """Why the read is partial, where the reader itself stopped keeping what it read: the memo
     past `MAX_MEMO_BYTES`. Reported as the file read in part."""
     memo_bytes: int = 0
     """What the memo holds, in bytes: 8 an entry."""
-    """Only part of the stream could be read (the file was read in part, or ended early)."""
     pickles: int = 0
 
 
