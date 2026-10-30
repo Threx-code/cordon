@@ -873,8 +873,17 @@ class ArchiveReader:
 
         if rejected is not None:
             for refused in result.rejected:
-                rejected.append((f"{path}!{refused.name}", refused.reason, refused.detail))
-            if result.truncated:
+                # A refusal of the archive itself (a stream that stopped) carries its own path, not
+                # "archive!archive".
+                where = path if refused.name == path else f"{path}!{refused.name}"
+                rejected.append((where, refused.reason, refused.detail))
+            damaged = any(
+                r.name == path and r.reason == Rejection.UNREADABLE for r in result.rejected
+            )
+            if result.truncated and not damaged:
+                # A stream that stopped at a limit says so here; one that stopped at damage has
+                # said so above, and damage is not a limit (stardrop 0.0.0-dev's nested tgz, a
+                # cut gzip stream, was refused twice: as damaged and as "a limit", review 98).
                 rejected.append((path, Rejection.ENTRIES, "extraction stopped early at a limit"))
 
         root = walk is None
@@ -965,13 +974,18 @@ class ArchiveReader:
                     walk.opened.add(digest)
                     continue
                 except ArchiveError as exc:
-                    # A nested archive that will not open is still worth scanning as
-                    # bytes: a payload does not stop being a payload because its
-                    # container is malformed. zstd is also reported unread: the core's
-                    # decoder refuses dictionaries, which libzstd and so the installer read,
-                    # so a stream it fails on may hold a payload it never saw.
-                    if member.data[:4] == ZSTD_MAGIC and rejected is not None:
-                        rejected.append((member_path, Rejection.UNREADABLE, str(exc)))
+                    # Still scanned as bytes (a payload is a payload whatever its container),
+                    # and reported unread as the archive it claims to be, whatever the cause
+                    # (a cut stream, a corrupt index, zstd with a dictionary): only zstd was
+                    # reported before, and a cut tgz passed as a scanned file.
+                    if rejected is not None:
+                        rejected.append(
+                            (
+                                member_path,
+                                Rejection.UNREADABLE,
+                                f"a nested archive that would not open: {exc}",
+                            )
+                        )
 
             yield member_path, member.data
 
