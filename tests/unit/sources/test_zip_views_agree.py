@@ -66,3 +66,69 @@ class TestAMemberOnlyAStreamingExtractorSeesIsFound:
         result = ArchiveReader.extract(data[:directory_offset] + kept + bytes(eocd), path="p.zip")
         assert not [r for r in result.rejected if r.reason == Rejection.HIDDEN]
         assert [m.name for m in result.members] == ["CANTON/CANTON.prj"]
+
+
+class TestAHiddenMemberIsReadOrSaysWhyNot:
+    """A hidden zip member is read from its local header (`zip-local/`), so its refusal leaves
+    nothing unread and the scan stays complete; each way one goes unread is a refusal of its own,
+    and an incomplete scan always carries an operational finding saying why (review 98: two zuppa
+    wheels ended incomplete with only a detection finding)."""
+
+    @staticmethod
+    def scan(tmp_path, data: bytes):  # type: ignore[no-untyped-def]
+        from cordon_scanner import Scanner
+        from cordon_scanner.foundation.config.settings import Config
+
+        target = tmp_path / "p.zip"
+        target.write_bytes(data)
+        limits = Config.default().limits.merged(per_file_timeout=0.0, total_timeout=0.0)
+        return Scanner(Config.default().with_overrides(limits=limits, use_cache=False)).scan(target)
+
+    def test_a_read_hidden_member_leaves_the_scan_complete(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        result = self.scan(tmp_path, TestAMemberOnlyAStreamingExtractorSeesIsFound.hidden_zip())
+        rules = {f.rule_id for f in result.findings}
+        assert "SUSPECT.ARCHIVE.POLYGLOT.001" in rules, rules
+        assert result.content_complete, sorted(rules)
+        assert "OPERATIONAL.SCAN.INCOMPLETE" not in rules
+
+    def test_a_hidden_member_that_cannot_be_read_is_refused_as_unreadable(self) -> None:
+        data = bytearray(TestAMemberOnlyAStreamingExtractorSeesIsFound.hidden_zip())
+        second = data.index(b"PK\x03\x04", 4)
+        struct.pack_into("<H", data, second + 8, 99)  # a compression method nothing reads
+        result = ArchiveReader.extract(bytes(data), path="p.zip")
+        reasons = {(r.name, r.reason) for r in result.rejected}
+        assert ("package/install.js", Rejection.UNREADABLE) in reasons, reasons
+        assert not [m for m in result.members if m.name.startswith("zip-local/")]
+
+    def test_a_hidden_member_past_the_limit_is_refused_as_read_in_part(self) -> None:
+        from cordon_scanner.foundation.config.settings import Config
+
+        limits = Config.default().limits.merged(max_file_bytes=16, max_member_bytes=16)
+        result = ArchiveReader.extract(
+            TestAMemberOnlyAStreamingExtractorSeesIsFound.hidden_zip(), path="p.zip", limits=limits
+        )
+        reasons = {(r.name, r.reason) for r in result.rejected}
+        assert ("package/install.js", Rejection.SIZE) in reasons, reasons
+
+    def test_an_incomplete_scan_with_no_reason_gets_the_backstop(self) -> None:
+        from cordon_scanner.engine.pipeline.accumulator import Accumulator
+        from cordon_scanner.foundation.results import OperationalFinding
+
+        notice = OperationalFinding.build(
+            path=".", rule_id="OPERATIONAL.INTEL.STALE", message="m", remediation="r"
+        )
+        bare = Accumulator(complete=False)
+        bare.append(notice)
+        bare.explain_incomplete()
+        assert [f.rule_id for f in bare.findings][-1] == "OPERATIONAL.SCAN.INCOMPLETE"
+        explained = Accumulator(complete=False)
+        explained.append(
+            OperationalFinding.build(
+                path="a", rule_id="OPERATIONAL.FILE.TRUNCATED", message="m", remediation="r"
+            )
+        )
+        explained.explain_incomplete()
+        assert "OPERATIONAL.SCAN.INCOMPLETE" not in {f.rule_id for f in explained.findings}
+        whole = Accumulator()
+        whole.explain_incomplete()
+        assert not whole.findings
