@@ -41,7 +41,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
-from cordon_scanner.decide.feature_schema import FeatureRecord, FeatureSchema
+from cordon_scanner.decide.feature_schema import FeatureFold, FeatureRecord, FeatureSchema
 from cordon_scanner.decide.verdict_features import VerdictFeatures
 from cordon_scanner.foundation.models import Category, Confidence, Finding, Severity
 from cordon_scanner.foundation.paths import PackagePaths
@@ -77,19 +77,41 @@ class VerdictModel:
     `detect/data/verdict.json.gz` (`bench/model/verdict_train.py`): the feature names in order, the
     trees, trees of its own for an area that needs them (`by_area`), a line per area, the floor,
     and a manifest of what it was trained and measured on.
+
+    Format 3 is fitted on folded features (`FeatureFold`) and records the fold it was fitted at
+    (`FeatureFold.stamp()`): it is loaded only at this tree's fold, and scored on folded features.
+    Format 2, from before the fold, was fitted on the raw features and is scored on them.
     """
 
-    FORMAT: ClassVar[int] = 2
+    FORMAT: ClassVar[int] = 3
+    UNFOLDED: ClassVar[int] = 2
 
     @staticmethod
     @functools.cache
     def load(path: Path = MODEL_PATH) -> dict[str, Any] | None:
         try:
             with gzip.open(path, "rt", encoding="utf-8") as handle:
-                model = json.load(handle)
+                model: dict[str, Any] = json.load(handle)
         except OSError:
             return None
-        return model if model.get("format") == VerdictModel.FORMAT else None
+        if model.get("format") == VerdictModel.UNFOLDED:
+            return model
+        if (
+            model.get("format") == VerdictModel.FORMAT
+            and model.get("fold") == FeatureFold.version()
+        ):
+            return model
+        return None
+
+    @staticmethod
+    def inputs(model: dict[str, Any], features: dict[str, float]) -> dict[str, float]:
+        """The features `model` and its sections (`by_area`, `registry`) are scored on: folded for a
+        model fitted on folded features, raw for one fitted before the fold."""
+        return (
+            features
+            if model.get("format") == VerdictModel.UNFOLDED
+            else FeatureFold.apply(features)
+        )
 
     @staticmethod
     def score(model: dict[str, Any], features: dict[str, float]) -> float:
@@ -277,6 +299,7 @@ class Verdict:
         # The second review (`intel/registry_record.py`): where the registry's record of this
         # release was acquired, its own trees score the package -- content-free malware has no
         # finding for the content verdict to weigh. It may add a block, never lift one.
+        scored = VerdictModel.inputs(model, features)
         registry = model.get("registry")
         reviewed = (
             registry is not None and package.get("reg_known") and area in registry.get("areas", {})
@@ -286,7 +309,7 @@ class Verdict:
         # `reviewed` holds only with a registry section; said again so the type is known here.
         if reviewed and registry is not None:
             summary.update(
-                registry_score=round(VerdictModel.score(registry, features), 4),
+                registry_score=round(VerdictModel.score(registry, scored), 4),
                 registry_block=float(registry["areas"][area]),
             )
         if not rules:
@@ -296,7 +319,7 @@ class Verdict:
             # package keeps its findings exactly as the rules graded them.
             return findings, summary
         # An area with trees of its own (agent skills read nothing like libraries) is scored by them.
-        score = VerdictModel.score(model.get("by_area", {}).get(area, model), features)
+        score = VerdictModel.score(model.get("by_area", {}).get(area, model), scored)
         areas = model["areas"]
         block = float(areas.get(area, areas[Verdict.FALLBACK]))
         summary.update(score=round(score, 4), block=block, model=model.get("version", ""))

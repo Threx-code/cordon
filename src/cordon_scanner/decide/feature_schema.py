@@ -19,6 +19,18 @@ from are the scan's facts, checked row by row wherever rows from two commits are
 
 `version(root)` reads the sources under `root`, the package directory of any checkout, so a row
 written before this field existed can be stamped with the version of the tree that wrote it.
+
+A row holds the raw features. What a model reads is those features folded (`FeatureFold`), in one
+function called by both the fit's reader and the scanner's scoring, and versioned on its own: a
+model records the fold it was fitted at, and scoring refuses one of another fold. Rows keep their
+version, so changing the fold needs no rescan.
+
+    scan ──> FeatureRecord.of ──> verdict.features {schema, raw values} ──> row (raw, kept)
+                    │                                                        │
+                    v                                                        v
+           FeatureFold.apply ──> VerdictModel.score     FeatureRecord.read ──> FeatureFold.apply ──> fit
+                                       ^                                                              │
+                                       └──── model {format 3, fold: FeatureFold.version()} <──────────┘
 """
 
 from __future__ import annotations
@@ -27,12 +39,13 @@ import ast
 import functools
 import hashlib
 import json
+import re
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.foundation.paths import PackagePaths
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Mapping
     from pathlib import Path
 
     from cordon_scanner.foundation.models import Finding
@@ -69,7 +82,9 @@ class FeatureSchema:
         root = PackagePaths.root() if root is None else root
         digest = hashlib.sha256()
         for path, dotted in FeatureSchema.EXTRACTOR:
-            node = FeatureSchema._node(root / FeatureSchema.source(path, dotted), dotted)
+            # A tree from before a move has the piece where EXTRACTOR recorded it.
+            moved = root / FeatureSchema.source(path, dotted)
+            node = FeatureSchema._node(moved if moved.is_file() else root / path, dotted)
             digest.update(f"{path}:{dotted}\n".encode())
             digest.update(ast.dump(FeatureSchema._without_docstrings(node)).encode())
         listed = FeatureSchema.names() if names is None else names
@@ -136,6 +151,69 @@ class FeatureSchema:
         return copy
 
 
+class FeatureScope:
+    """Which features a user's scan computes. The code and binary features (`CodeFeatures`,
+    `BinaryFeatures`: `pkg:code_<place>_(api|apih|tok)_*`, `pkg:exe_*`) are computed only under
+    `CORDON_MEASURE_FEATURES=1` (`ReachedFlows.of`), which a user's scan never sets, so a model fitted
+    on them would read zeros on every scan. A fit reads only what `computed` allows."""
+
+    #: Folded names keep these prefixes, so a folded measure-only feature is caught too.
+    MEASURE_ONLY: ClassVar[re.Pattern[str]] = re.compile(
+        r"^pkg:(?:code_(?:install|import|closure)_(?:api|apih|tok)_|exe_)"
+    )
+
+    @staticmethod
+    def computed(name: str) -> bool:
+        """Whether a user's scan computes the feature `name`."""
+        return FeatureScope.MEASURE_ONLY.match(name) is None
+
+
+class FeatureFold:
+    """The hashed code features folded to WIDTH buckets: `pkg:code_<place>_tok_<h>` and
+    `pkg:code_<place>_apih_<h>` (h < 2**18, `CodeFeatures.HASH_MOD`) become `..._f<h mod WIDTH>`,
+    colliding counts summed; every other feature as it is.
+
+    Applied only where features reach a model: the fit's reader (`FeatureRecord.read`) and the
+    scanner's scoring (`Verdict.decide`, before `VerdictModel.score`), so a model is scored on the
+    features it was fitted on. WIDTH was measured (2026-10-30, out-of-fold, line at 2% benign,
+    the fit's gradient boosting): skills recall 71.72% at 512 against 71.91% [70.89, 72.90] unfolded,
+    npm 83.98% against 84.18% [83.14, 85.17]; the smallest width inside both intervals."""
+
+    WIDTH: ClassVar[int] = 512
+    HASHED: ClassVar[re.Pattern[str]] = re.compile(r"^(pkg:code_[a-z]+_(?:tok|apih))_(\d+)$")
+    PREFIX: ClassVar[str] = "ff1-"
+
+    @staticmethod
+    def apply(values: Mapping[str, float]) -> dict[str, float]:
+        """`values` with the hashed code features folded."""
+        out: dict[str, float] = {}
+        for name, value in values.items():
+            found = FeatureFold.HASHED.match(name)
+            key = f"{found.group(1)}_f{int(found.group(2)) % FeatureFold.WIDTH}" if found else name
+            out[key] = out.get(key, 0.0) + value
+        return out
+
+    @staticmethod
+    @functools.cache
+    def version() -> str:
+        """What a model fitted on folded features was fitted at: the row version, the width and this
+        class's code. A model records it (`stamp`) and scoring refuses one of another version."""
+        digest = hashlib.sha256()
+        digest.update(f"{FeatureSchema.current()}\nwidth={FeatureFold.WIDTH}\n".encode())
+        node = FeatureSchema._node(PackagePaths.root() / "decide/feature_schema.py", "FeatureFold")
+        digest.update(ast.dump(FeatureSchema._without_docstrings(node)).encode())
+        return FeatureFold.PREFIX + digest.hexdigest()[:16]
+
+    @staticmethod
+    def stamp() -> dict[str, Any]:
+        """What a fit writes into the model it makes: the rows' version, the width, the fold."""
+        return {
+            "schema": FeatureSchema.current(),
+            "width": FeatureFold.WIDTH,
+            "fold": FeatureFold.version(),
+        }
+
+
 class FeatureRecord:
     """The features the verdict model reads, built in one place: what a scan's verdict record
     carries (`verdict.features`) and what a fit trains on. Nothing else reaches the model."""
@@ -154,11 +232,21 @@ class FeatureRecord:
         )
 
     @staticmethod
-    def read(row: dict[str, Any]) -> tuple[str | None, dict[str, float]]:
-        """A training row's (schema, features): its own record, or for a row written before the
-        record existed, the same features built from what it recorded (its findings as
-        [rule, severity, confidence, category, path, ...] and `verdict.package`), with no schema
-        (the row's producer stamp names it)."""
+    def read(
+        row: dict[str, Any], producer: str | None = None
+    ) -> tuple[str | None, dict[str, float]]:
+        """A training row's (schema, features), the features folded as scoring folds them
+        (`FeatureFold`): its own record, or for a row written before the record existed, the same
+        features built from what it recorded (its findings as [rule, severity, confidence,
+        category, path, ...] and `verdict.package`). The schema is the row's own (rows hold raw
+        features); a rebuilt row has none, so it is stamped `producer`, the version of the tree
+        that wrote it (`FeatureSchema.version` of that checkout), and a fit can refuse a mix. `None`
+        when the caller does not know it."""
+        schema, values = FeatureRecord._raw(row)
+        return (producer if schema is None else schema), FeatureFold.apply(values)
+
+    @staticmethod
+    def _raw(row: dict[str, Any]) -> tuple[str | None, dict[str, float]]:
         from cordon_scanner.decide.verdict_features import VerdictFeatures
         from cordon_scanner.foundation.models import Confidence, Severity
 
@@ -181,4 +269,4 @@ class FeatureRecord:
         )
 
 
-__all__ = ["FeatureRecord", "FeatureSchema"]
+__all__ = ["FeatureFold", "FeatureRecord", "FeatureSchema", "FeatureScope"]
