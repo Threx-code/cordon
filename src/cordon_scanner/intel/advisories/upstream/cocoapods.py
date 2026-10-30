@@ -188,9 +188,10 @@ class NpmPodspec:
     #: `@@<name>_config = { :key => 'value', key: "value", ... }`, simple string values only.
     CONSTANT: ClassVar[re.Pattern[str]] = re.compile(r"@@(\w+_config)\s*=\s*\{([^{}]*)\}")
     #: The same hash returned by a method (React Native 0.74's `def self.folly_config` in
-    #: `Helpers::Constants`, which `get_folly_config()` returns).
+    #: `Helpers::Constants`, which `get_folly_config()` returns). `\s*(?:\(\s*\))?\s*` written with one
+    #: possessive blank run per gap, so a long blank run is not split between two: linear, same matches.
     METHOD: ClassVar[re.Pattern[str]] = re.compile(
-        r"def self\.(\w+_config)\s*(?:\(\s*\))?\s*return\s*\{([^{}]*)\}\s*end"
+        r"def self\.(\w+_config)\s*+(?:\(\s*+\)\s*+)?return\s*\{([^{}]*)\}\s*end"
     )
     #: Podspecs that are the package's own code, whatever source they compute: React Native's
     #: React-Core-prebuilt is its core, built from source or downloaded as the Maven artefact
@@ -201,6 +202,9 @@ class NpmPodspec:
     FIELD: ClassVar[re.Pattern[str]] = re.compile(
         r"""(?::(\w+)\s*=>|\b(\w+):)\s*(?:'([^']*)'|"([^"]*)"|(\w+)\b)"""
     )
+    #: A release version as a lockfile states one, `1.2.3` or `1.2.3-rc.1`; possessive throughout, as
+    #: `\d+\.\d+\.\d+[\w.-]*` under fullmatch (the digit run and the tail traded digits): linear.
+    RELEASE: ClassVar[re.Pattern[str]] = re.compile(r"\d++\.\d++\.\d++[\w.-]*+")
     _packages: ClassVar[dict[tuple[str, str], dict[str, str] | None]] = {}
 
     @staticmethod
@@ -429,7 +433,7 @@ class NpmPodspec:
         package: str, inside: str, versions: list[str], locked: str, how: str
     ) -> Upstream | Unnamed:
         answers = NpmPodspec._answers(package, inside, versions, locked, how)
-        if not answers and locked not in versions and re.fullmatch(r"\d+\.\d+\.\d+[\w.-]*", locked):
+        if not answers and locked not in versions and NpmPodspec.RELEASE.fullmatch(locked):
             # The pod at a release of its own: hermes-engine 0.72.5 in a lock whose React pods
             # are at 0.72.6 is React Native 0.72.5's, pinned by that release.
             answers = NpmPodspec._answers(package, inside, [locked], locked, how)

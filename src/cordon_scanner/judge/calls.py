@@ -117,11 +117,13 @@ _SSRF: Final = re.compile(
     r"|\bhttps?://(?:10\.\d{1,3}|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}(?::\d+)?/"
     r"(?:admin|internal|actuator|debug|config|console|cgi-bin|manager)"
 )
+#: Blank runs possessive and `\s*;?\s*` as `\s*+(?:;\s*+)?`, so a quote before a long blank run is
+#: not split every way: the same answers, linear (2026-10-30).
 _SQLI: Final = re.compile(
-    r"(?i)['\"]\s*(?:or|and)\s+['\"\d(]\S{0,20}\s*(?:=|like)\s*['\"\d(]|\bor\s+1\s*=\s*1\b"
+    r"(?i)['\"]\s*+(?:or|and)\s+['\"\d(]\S{0,20}\s*(?:=|like)\s*['\"\d(]|\bor\s+1\s*=\s*1\b"
     r"|\bunion\s+(?:all\s+)?select\b|;\s*(?:drop|truncate|delete|alter|insert|update|exec)\s+"
     r"|\b(?:extractvalue|updatexml|benchmark|pg_sleep|sleep|waitfor\s+delay|load_file)\s*\("
-    r"|\bxp_cmdshell\b|\binformation_schema\b|['\"]\s*;?\s*--(?:\s|$)|/\*!?\d*\s*\*/"
+    r"|\bxp_cmdshell\b|\binformation_schema\b|['\"]\s*+(?:;\s*+)?--(?:\s|$)|/\*!?\d*\s*\*/"
 )
 _TEMPLATE: Final = re.compile(
     r"\{\{[^}]{0,200}(?:constructor\s*\.\s*constructor|__class__|__globals__|__import__|"
@@ -129,12 +131,16 @@ _TEMPLATE: Final = re.compile(
     r"\bon(?:error|load|mouseover)\s*=\s*[\"']?\w",
     re.I,
 )
+#: A safety switch set off in a config, `[safety]\nenabled = false` or `auth_check: off`, matched at
+#: a line start by `ToolCallGuard._safety_config_off`. Each blank run is possessive (what follows it is
+#: never a blank), so a run of blank lines is not split every way between them.
 _SAFETY_CONFIG: Final = re.compile(
-    r"(?im)^\s*\[?\s*(?:safety|guardrails?|sandbox|security|auth\w*|verification)\s*\]?\s*\n?"
-    r"\s*(?:enabled?|on|active|required)\s*[=:]\s*(?:false|off|no|0|disabled)\b"
-    r"|^\s*(?:safety|guardrails?|sandbox|security|auth\w*)_?(?:enabled|on|check\w*)?\s*[=:]\s*"
+    r"(?i)\s*+(?:\[\s*+)?(?:safety|guardrails?|sandbox|security|auth\w*|verification)\s*+(?:\]\s*+)?"
+    r"(?:enabled?|on|active|required)\s*+[=:]\s*+(?:false|off|no|0|disabled)\b"
+    r"|\s*+(?:auth\w*+|(?:safety|guardrails?|sandbox|security)_?(?:enabled|on|check\w*+)?)\s*+[=:]\s*+"
     r"(?:false|off|no|0|disabled)\b"
 )
+_BLANKS: Final = re.compile(r"\s+")
 _BRANDS: Final = (
     "anthropic",
     "openai",
@@ -148,7 +154,12 @@ _BRANDS: Final = (
     "slack",
     "modelcontextprotocol",
 )
-_XXE: Final = re.compile(r"(?i)<!ENTITY\s+%?\s*\w+\s+(?:SYSTEM|PUBLIC)\b|<!DOCTYPE\s+\w+\s*\[")
+#: `\s+%?\s*` written as `\s+(?:%\s*)?`: one run of blanks per item, so a long run is not split
+#: every way between two runs (the same matches; 2026-10-30).
+_XXE: Final = re.compile(r"(?i)<!ENTITY\s+(?:%\s*)?\w+\s+(?:SYSTEM|PUBLIC)\b|<!DOCTYPE\s+\w+\s*\[")
+#: A host name, its labels started only at a label's first character (the lookbehind), so a long run of
+#: label characters is not rescanned from every position: the same matches as without it.
+_HOST: Final = re.compile(r"(?i)(?:https?://)?(?<![a-z0-9-])((?:[a-z0-9-]+\.)+[a-z]{2,24})\b")
 #: Instructions addressed to the model, in the shapes a tool argument carries them. ATR's text rules
 #: read beside these; its command rules are not used here -- on plain values ("User logged in at
 #: 10:00", a `SELECT ... WHERE role = 'admin'`) they fired on 13 of 610 benign AgentDefense calls.
@@ -184,13 +195,16 @@ _ATR_CATEGORIES: Final = frozenset(
 _PROTOTYPE: Final = frozenset({"__proto__", "prototype", "constructor"})
 #: A flag whose job is to switch a control off: `bypass_auth`, `skip_human_confirmation`,
 #: `no_guardrails`, `ignore_restrictions`, `trust_remote_code`, `disable_safety`.
+#: Every word run possessive, since each is followed only by `$` or more word characters it would
+#: take back anyway; `skip_..(confirm|review|check|auth)..` as a lookahead. The same matches in linear
+#: time (2026-10-30).
 _SAFETY_OFF: Final = re.compile(
     r"(?i)^_*(?:bypass|disable|skip|ignore|override|no|without|turn_?off|allow_all|unrestricted|"
-    r"jailbr\w*|unsafe|trust_remote|auto_?(?:approve|execute|escalate|confirm)|elevat\w*|escalat\w*|"
-    r"with_elevated|exhaust|poison|steal|exfiltrat\w*|cover_tracks|infiltrat\w*|impersonat\w*)"
-    r"(?:_|$|(?=[A-Z]))[\w]*$|^(?:no_?(?:morals|ethics|limits|rate_limit|guardrails|filter\w*)|"
-    r"ignore_\w+|bypass_\w+|safety_disabled|allow_all_commands|use_victim_session|"
-    r"skip_\w*(?:confirm|review|check|auth)\w*|god_?mode|developer_?mode|do_anything_now)$"
+    r"jailbr\w*+|unsafe|trust_remote|auto_?(?:approve|execute|escalate|confirm)|elevat\w*+|escalat\w*+|"
+    r"with_elevated|exhaust|poison|steal|exfiltrat\w*+|cover_tracks|infiltrat\w*+|impersonat\w*+)"
+    r"(?:_|$|(?=[A-Z]))[\w]*+$|^(?:no_?(?:morals|ethics|limits|rate_limit|guardrails|filter\w*+)|"
+    r"ignore_\w++|bypass_\w++|safety_disabled|allow_all_commands|use_victim_session|"
+    r"skip_(?=\w*(?:confirm|review|check|auth))\w*+|god_?mode|developer_?mode|do_anything_now)$"
 )
 #: Flags that hand the agent's controls to whatever it reads, or reach past its permissions.
 _UNTRUSTED_CONTROL: Final = re.compile(
@@ -477,7 +491,7 @@ class ToolCallGuard:
                 yield GuardFinding("GUARD.INJECTION", path, f"{text[:80]!r}", view)
             if _TEMPLATE.search(text):
                 yield GuardFinding("GUARD.TEMPLATE", path, f"{text[:80]!r}", view)
-            if _SAFETY_CONFIG.search(text):
+            if ToolCallGuard._safety_config_off(text):
                 yield GuardFinding("GUARD.SAFETY_OFF", path, f"{text[:80]!r}", view)
             if view != "raw" and re.search(r"\.\.[/\\]", text):
                 # A traversal that had to be encoded to be passed.
@@ -511,9 +525,24 @@ class ToolCallGuard:
         )
 
     @staticmethod
+    def _safety_config_off(text: str) -> bool:
+        """A safety switch set off on some line. It can start only at a line start, and a line start
+        reached from an earlier one through blanks alone is covered by that one (the leading blanks
+        are taken whole from either), so only position 0 and the first line start inside each later
+        blank run are tried: linear in the text."""
+        if _SAFETY_CONFIG.match(text):
+            return True
+        for run in _BLANKS.finditer(text):
+            start, stop = run.span()
+            newline = text.find("\n", start, stop) if start else -1
+            if newline >= 0 and _SAFETY_CONFIG.match(text, newline + 1):
+                return True
+        return False
+
+    @staticmethod
     def _squatted(text: str) -> str | None:
         """A vendor's name as a label of a host that is not the vendor's: `anthropic-mcp.attacker.com`."""
-        for found in re.finditer(r"(?i)(?:https?://)?((?:[a-z0-9-]+\.)+[a-z]{2,24})\b", text):
+        for found in _HOST.finditer(text):
             host = found.group(1).lower()
             labels = host.split(".")
             registered = ".".join(labels[-2:])

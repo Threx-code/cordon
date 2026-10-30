@@ -63,6 +63,12 @@ class VcpkgVersions:
 class VcpkgPorts:
     """A vcpkg port's files at a version, and the source its portfile fetches."""
 
+    #: A CONTROL file's `Name: value` line, the value to its last non-blank as `(.*?)\s*$` gave it,
+    #: without the lazy value and the blank run trying every split of a long blank tail.
+    CONTROL_FIELD: ClassVar[re.Pattern[str]] = re.compile(
+        r"^([A-Za-z-]+):[ \t]*((?:[^\S\n]*+\S)*+)", re.MULTILINE
+    )
+
     REPOSITORY: ClassVar[str] = "https://github.com/microsoft/vcpkg"
 
     @staticmethod
@@ -107,9 +113,7 @@ class VcpkgPorts:
                 "utf-8", "replace"
             )
         # The first paragraph is the port's own; later ones are its features.
-        fields = dict(
-            re.findall(r"^([A-Za-z-]+):[ \t]*(.*?)\s*$", control.split("\n\n", 1)[0], re.MULTILINE)
-        )
+        fields = dict(VcpkgPorts.CONTROL_FIELD.findall(control.split("\n\n", 1)[0]))
         out: dict[str, Any] = {}
         if fields.get("Version"):
             out["version-string"] = fields["Version"]
@@ -282,7 +286,9 @@ class VcpkgPorts:
             return Unnamed(f"qtbase's port details at this baseline name no Qt {version}")
         field = re.escape(port)
         repositories = [f"https://code.qt.io/qt/{port}.git", f"https://github.com/qt/{port}"]
-        github = re.search(r"set\(QT_FROM_GITHUB\s+([^)]*)\)", details)
+        # \s++ possessive: the blanks and the argument run do not trade characters on an unclosed call,
+        # the same answer as `\s+` (whose greedy first try is the only one that can succeed).
+        github = re.search(r"set\(QT_FROM_GITHUB\s++([^)]*)\)", details)
         if github and port in github.group(1).split():
             return RepositoryArchive.upstream(
                 repositories[1], f"v{version}", f"{how} ({repositories[1]})"
@@ -363,8 +369,13 @@ class VcpkgPorts:
                     index += 2 if text[index] == "\\" else 1
                 index += 1
                 continue
+            # Tried only where a name can start: inside a long identifier every position was matched
+            # first and rejected after, a quadratic scan.
+            if index and (text[index - 1].isalnum() or text[index - 1] == "_"):
+                index += 1
+                continue
             found = name.match(text, index)
-            if not found or (index and (text[index - 1].isalnum() or text[index - 1] == "_")):
+            if not found:
                 index += 1
                 continue
             start, depth, index = found.end(), 1, found.end()

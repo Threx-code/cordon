@@ -5,8 +5,11 @@ from __future__ import annotations
 
 import itertools
 import json
+import random
+import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -240,3 +243,21 @@ class TestWorkspace:
     def test_without_roots_every_path_is_refused_with_how_to_add_one(self) -> None:
         with pytest.raises(OutsideWorkspace, match="--root"):
             Workspace(()).resolve(".")
+
+
+class TestSeparatorsLinear:
+    """The install-command separator splits as the pattern it replaced, in linear time (2026-10-30)."""
+
+    OLD = re.compile(r"\s*(?:&&|\|\||;|\n|\|)\s*")
+    PIECES = (" ", "\t", "\n", "&", "&&", "|", "||", ";", "a", "b", "x y", "\r")
+
+    def test_the_same_splits_as_the_old_pattern(self) -> None:
+        rng = random.Random("separators|2026-10-30")  # noqa: S311 -- a fixture, not key material
+        for _ in range(20_000):
+            text = "".join(rng.choice(self.PIECES) for _ in range(rng.randint(0, 12)))
+            assert InstallCommand._SEPARATORS.split(text) == self.OLD.split(text), text
+
+    def test_a_long_run_of_blanks_is_linear(self) -> None:
+        start = time.perf_counter()
+        InstallCommand._SEPARATORS.split("a" + " " * 2_000_000 + "b")
+        assert time.perf_counter() - start < 3

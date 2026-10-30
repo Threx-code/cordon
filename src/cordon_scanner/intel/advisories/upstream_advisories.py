@@ -93,6 +93,10 @@ class UpstreamResult:
 class Upstreams:
     """What each ecosystem says a package was built from."""
 
+    #: `git+<repository>#<ref>`, the ref after the last `#`. The lookahead rejects a blank first: without
+    #: it a value with many `#` and a blank was tried at every `#` (quadratic); the groups are unchanged.
+    CHECKOUT: ClassVar[re.Pattern[str]] = re.compile(r"git\+(?=\S*+\Z)(\S+)#(\S+)")
+
     COCOAPODS_GEM = "cocoapods"
     """The package name of CocoaPods itself: a RubyGem, which a Podfile.lock pins on its COCOAPODS
     line (a package name here, not the ecosystem)."""
@@ -296,7 +300,7 @@ class Upstreams:
         # `pod 'X', :git => ..., :commit|:tag => ...`: Podfile.lock's CHECKOUT OPTIONS hold
         # what was checked out: a commit is exact; a ref only once the repository shows it is
         # a tag -- a branch moves, so it is no fixed point.
-        git = re.fullmatch(r"git\+(\S+)#(\S+)", given)
+        git = Upstreams.CHECKOUT.fullmatch(given)
         repository = RepositoryArchive.repository(git.group(1)) if git else None
         if git and repository:
             ref, how = git.group(2), f"the {dependency.name} checkout ({repository})"

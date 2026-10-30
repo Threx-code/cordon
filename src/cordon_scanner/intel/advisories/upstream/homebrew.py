@@ -33,6 +33,11 @@ class HomebrewBottles:
     """A homebrew-core formula as it was when a version was bottled: the bottle's OCI manifest on
     ghcr.io names the commit and file (`org.opencontainers.image.source`)."""
 
+    #: A `name: "value"` field of a formula's url statement. Anchored at a word's start, so a long word
+    #: with no `:` after it is not rescanned from every position: linear, and the same fields as
+    #: `(\w+):\s*"([^"]*)"`.
+    URL_FIELD: ClassVar[re.Pattern[str]] = re.compile(r'(?<!\w)(\w+):\s*"([^"]*)"')
+
     @staticmethod
     def _ghcr(path: str, accept: str, token: str | None) -> bytes:
         import urllib.request
@@ -323,7 +328,7 @@ class HomebrewBottles:
         if repository:
             statement = re.search(rf'url\s+"{re.escape(url)}"((?:\s*,\s*\w+:\s*"[^"]*")*)', text)
             fields = dict(
-                re.findall(r'(\w+):\s*"([^"]*)"', statement.group(1) if statement else "")
+                HomebrewBottles.URL_FIELD.findall(statement.group(1) if statement else "")
             )
             ref = fields.get("revision") or fields.get("tag")
             if ref:
