@@ -21,6 +21,7 @@ ROLES: dict[str, tuple[str, str]] = {
     "LICENSE_UNKNOWN": ("cordon_scanner.intel.store.licenses", "LicenseCategory.UNKNOWN"),
     "LicenseClassifier": ("cordon_scanner.intel.store.licenses", "LicenseClassifier"),
     "MoreRegistries": ("cordon_scanner.intel.registries.more_registries", "MoreRegistries"),
+    "BuiltinPackageNames": ("cordon_scanner.intel.registries.names", "BuiltinPackageNames"),
     "RegistryError": ("cordon_scanner.intel.registries.registry_client", "RegistryError"),
     "RegistryRecord": ("cordon_scanner.intel.registries.registry_record", "RegistryRecord"),
     "ReleaseHistory": ("cordon_scanner.intel.registries.release_history", "ReleaseHistory"),
@@ -43,6 +44,7 @@ if TYPE_CHECKING:
         BundleKeys,
         FeedStatus,
         LicenseClassification,
+        PackageNames,
         RangeMatching,
         RegistryRecords,
         RegistryVersions,
@@ -53,6 +55,7 @@ if TYPE_CHECKING:
     from cordon_scanner.intel.malware import feed as _intel_malware_feed
     from cordon_scanner.intel.provenance import _ed25519 as _intel_provenance__ed25519
     from cordon_scanner.intel.registries import more_registries as _intel_registries_more_registries
+    from cordon_scanner.intel.registries import names as _intel_registries_names
     from cordon_scanner.intel.registries import registry_client as _intel_registries_registry_client
     from cordon_scanner.intel.registries import registry_record as _intel_registries_registry_record
     from cordon_scanner.intel.registries import release_history as _intel_registries_release_history
@@ -69,6 +72,7 @@ if TYPE_CHECKING:
     LICENSE_UNKNOWN: enum.Enum = _intel_store_licenses.LicenseCategory.UNKNOWN
     LicenseClassifier: LicenseClassification = _intel_store_licenses.LicenseClassifier
     MoreRegistries: RegistryVersions = _intel_registries_more_registries.MoreRegistries
+    BuiltinPackageNames: PackageNames = _intel_registries_names.BuiltinPackageNames
     RegistryError: type[Exception] = _intel_registries_registry_client.RegistryError
     RegistryRecord: RegistryRecords = _intel_registries_registry_record.RegistryRecord
     ReleaseHistory: ReleaseHistories = _intel_registries_release_history.ReleaseHistory
@@ -96,6 +100,7 @@ __all__ = [
     "YOUNG_DEPENDENCY_DAYS",
     "AdvisoryBundle",
     "AdvisoryDatabase",
+    "BuiltinPackageNames",
     "Ed25519",
     "FeedClient",
     "LicenseClassifier",
