@@ -366,8 +366,13 @@ class TestToolCatalogue:
 
 class TestHostileClients:
     def test_json_nested_past_the_parser_is_answered_not_fatal(self, tmp_path: Path) -> None:
+        # Read at any depth (`ScannedJson`): nested arrays are JSON but no request, a JSON-RPC
+        # invalid request; an unclosed nest is not JSON at all, a parse error. Answered either way.
         wire = Wire(tmp_path)
         wire.server.receive("[" * 100_000 + "]" * 100_000)
+        assert wire.replies()[0]["error"]["code"] == -32600
+        wire = Wire(tmp_path)
+        wire.server.receive("[" * 100_000)
         assert wire.replies()[0]["error"]["code"] == -32700
 
     def test_a_running_id_cannot_be_reused(self, tmp_path: Path) -> None:

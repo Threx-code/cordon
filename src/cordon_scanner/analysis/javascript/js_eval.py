@@ -32,6 +32,7 @@ from cordon_scanner.analysis.javascript.evaluation.values import (
     MAX_TEXT,
     Tok,
 )
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 
 _PUNCT: Final = (
     "===",
@@ -314,7 +315,7 @@ class JsEval:
         if "\\" not in body:
             return body
         try:
-            decoded: str = json.loads(
+            decoded: str = ScannedJson.loads(
                 '"' + body.replace('"', '\\"').replace("\\'", "'").replace("\\`", "`") + '"'
             )
             return decoded

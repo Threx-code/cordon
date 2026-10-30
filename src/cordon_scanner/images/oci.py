@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import gzip
 import io
-import json
 import posixpath
 import re
 import struct
@@ -28,6 +27,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import replace
 from typing import IO, TYPE_CHECKING, Any, ClassVar, Final
 
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.images import langpkgs
 from cordon_scanner.images import packages as pkgdb
 
@@ -212,7 +212,9 @@ class ImageLayers:
                 by_path = ImageLayers._members_by_path(archive)
                 if "index.json" not in by_path:
                     return []
-                document = json.loads(ImageLayers._read_member(archive, by_path["index.json"]))
+                document = ScannedJson.loads(
+                    ImageLayers._read_member(archive, by_path["index.json"])
+                )
                 for _ in range(4):
                     manifests = document.get("manifests") or []
                     real = ImageLayers._real_platforms(manifests)
@@ -225,7 +227,7 @@ class ImageLayers:
                     member = by_path.get(f"blobs/{algorithm}/{hexdigest}")
                     if member is None:
                         return []
-                    document = json.loads(ImageLayers._read_member(archive, member))
+                    document = ScannedJson.loads(ImageLayers._read_member(archive, member))
                     if "layers" in document:
                         return []
         except (tarfile.TarError, OSError, ValueError, KeyError):
@@ -240,7 +242,9 @@ class ImageLayers:
         for a multi-platform image, the manifest `platform` names, else the first real platform."""
         by_path = ImageLayers._members_by_path(archive)
         if "manifest.json" in by_path:
-            manifest = json.loads(ImageLayers._read_member(archive, by_path["manifest.json"]))
+            manifest = ScannedJson.loads(
+                ImageLayers._read_member(archive, by_path["manifest.json"])
+            )
             if isinstance(manifest, list) and manifest:
                 if len(manifest) > 1:
                     problems.append(
@@ -250,12 +254,12 @@ class ImageLayers:
                 return [
                     by_path.get(ImageLayers._normalise(str(layer)), str(layer)) for layer in layers
                 ]
-        index = json.loads(ImageLayers._read_member(archive, by_path["index.json"]))
+        index = ScannedJson.loads(ImageLayers._read_member(archive, by_path["index.json"]))
         descriptor: Any = (index.get("manifests") or [{}])[0]
         for _ in range(4):  # an index may point at another index (a multi-platform image)
             digest = str(descriptor.get("digest", ""))
             algorithm, _, hexdigest = digest.partition(":")
-            document = json.loads(
+            document = ScannedJson.loads(
                 ImageLayers._read_member(archive, by_path[f"blobs/{algorithm}/{hexdigest}"])
             )
             if "layers" in document:
@@ -860,15 +864,17 @@ class ImageConfig:
             by_path = ImageLayers._members_by_path(archive)
             name: str | None = None
             if "manifest.json" in by_path:
-                manifest = json.loads(ImageLayers._read_member(archive, by_path["manifest.json"]))
+                manifest = ScannedJson.loads(
+                    ImageLayers._read_member(archive, by_path["manifest.json"])
+                )
                 if isinstance(manifest, list) and manifest and manifest[0].get("Config"):
                     name = by_path.get(ImageLayers._normalise(str(manifest[0]["Config"])))
             elif "index.json" in by_path:
-                index = json.loads(ImageLayers._read_member(archive, by_path["index.json"]))
+                index = ScannedJson.loads(ImageLayers._read_member(archive, by_path["index.json"]))
                 descriptor: Any = (index.get("manifests") or [{}])[0]
                 for _ in range(4):
                     algorithm, _, hexdigest = str(descriptor.get("digest", "")).partition(":")
-                    document = json.loads(
+                    document = ScannedJson.loads(
                         ImageLayers._read_member(archive, by_path[f"blobs/{algorithm}/{hexdigest}"])
                     )
                     if "config" in document:
@@ -883,7 +889,7 @@ class ImageConfig:
                     descriptor = manifests[0]
             if name is None:
                 return None
-            config = json.loads(ImageLayers._read_member(archive, name))
+            config = ScannedJson.loads(ImageLayers._read_member(archive, name))
         return config if isinstance(config, dict) else None
 
     @staticmethod

@@ -47,12 +47,13 @@ from __future__ import annotations
 
 import html
 import io
-import json
 import posixpath
 import re
 import unicodedata
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, Final
+
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 
 if TYPE_CHECKING:
     from cordon_scanner.detect.base import FileUnit, ScanContext
@@ -309,7 +310,7 @@ class PackageIdentities:
     @classmethod
     def _npm(cls, unit: FileUnit, ctx: ScanContext) -> PackageIdentity | None:
         try:
-            data = json.loads(unit.content.text)
+            data = ScannedJson.loads(unit.content.text)
         except ValueError:
             return None
         if not isinstance(data, dict) or not isinstance(data.get("name"), str):

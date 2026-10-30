@@ -27,6 +27,8 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, ClassVar, Final
 
+from cordon_scanner.foundation.network.downloads import Download
+
 LATEST: Final = "https://api.github.com/repos/CVEProject/cvelistV5/releases/latest"
 MAX_BASELINE_BYTES: Final = 2 << 30
 
@@ -52,7 +54,7 @@ class CveList:
             headers={"User-Agent": "cordon-scanner", "Accept": "application/vnd.github+json"},
         )
         with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310
-            release = json.loads(response.read(1 << 20))
+            release = json.loads(Download.read(response, 1 << 20))
         asset = next(
             (
                 a
@@ -70,7 +72,7 @@ class CveList:
         size = 0
         download = urllib.request.Request(url, headers={"User-Agent": "cordon-scanner"})  # noqa: S310
         with urllib.request.urlopen(download, timeout=120) as response, target.open("wb") as out:  # noqa: S310
-            while chunk := response.read(1 << 20):
+            for chunk in Download.chunks(response, size=1 << 20):
                 size += len(chunk)
                 if size > MAX_BASELINE_BYTES:
                     raise CveListError("the CVE List baseline is larger than expected")

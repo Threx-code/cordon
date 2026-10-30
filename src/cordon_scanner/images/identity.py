@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import io
-import json
 import re
 import tarfile
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.images import langpkgs
 from cordon_scanner.images import packages as pkgdb
 from cordon_scanner.images.oci import ImageLayers
@@ -69,7 +69,7 @@ class ImageIdentity:
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as archive:
             by_path = ImageLayers._members_by_path(archive)
             if "index.json" in by_path:
-                index = json.loads(ImageLayers._read_member(archive, by_path["index.json"]))
+                index = ScannedJson.loads(ImageLayers._read_member(archive, by_path["index.json"]))
                 descriptor: Any = (
                     (index.get("manifests") or [{}])[0] if isinstance(index, dict) else {}
                 )
@@ -94,7 +94,7 @@ class ImageIdentity:
                     blob = by_path.get(f"blobs/{algorithm}/{hexdigest}")
                     if blob is None:
                         break
-                    document = json.loads(ImageLayers._read_member(archive, blob))
+                    document = ScannedJson.loads(ImageLayers._read_member(archive, blob))
                     if isinstance(document, dict) and isinstance(document.get("config"), dict):
                         algorithm, _, hexdigest = str(
                             document["config"].get("digest", "")
@@ -108,7 +108,9 @@ class ImageIdentity:
                         break
                     descriptor = manifests[0]
             if "manifest.json" in by_path:
-                manifest = json.loads(ImageLayers._read_member(archive, by_path["manifest.json"]))
+                manifest = ScannedJson.loads(
+                    ImageLayers._read_member(archive, by_path["manifest.json"])
+                )
                 entry = (
                     manifest[0]
                     if isinstance(manifest, list) and manifest and isinstance(manifest[0], dict)
@@ -124,7 +126,7 @@ class ImageIdentity:
         if config_bytes is None:
             return identity
         identity.image_id = f"sha256:{hashlib.sha256(config_bytes).hexdigest()}"
-        config = json.loads(config_bytes)
+        config = ScannedJson.loads(config_bytes)
         if not isinstance(config, dict):
             return identity
         rootfs = ImageIdentity._mapping(config.get("rootfs"))

@@ -10,7 +10,6 @@ read back.
 from __future__ import annotations
 
 import contextlib
-import json
 import os
 import signal
 import subprocess
@@ -22,6 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.mcp.warm import WarmScanner
 
 MAX_OUTPUT: Final = 64 << 20
@@ -46,7 +46,7 @@ class Run:
     truncated: bool
 
     def json(self) -> Any:
-        return json.loads(self.stdout)
+        return ScannedJson.loads(self.stdout)
 
 
 class CancelToken:

@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
+from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.model.features import FileFeatures, PackageArchive, PackageFeatures
 
 TOKEN_ENV: Final = "CORDON_MODEL_TOKEN"  # noqa: S105 - the variable's name, never a value
@@ -248,7 +249,7 @@ class ModelClient:
         opener = urllib.request.build_opener(_NoRedirect)
         try:
             with opener.open(request, timeout=TIMEOUT) as response:
-                raw = response.read(MAX_REPLY + 1)
+                raw = Download.read(response, MAX_REPLY + 1)
         except urllib.error.HTTPError as exc:
             hint = " (check the token)" if exc.code in (401, 403) else ""
             raise ModelError(f"the model server answered HTTP {exc.code}{hint}") from exc

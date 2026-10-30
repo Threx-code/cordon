@@ -11,7 +11,6 @@ from __future__ import annotations
 import base64
 import contextlib
 import hashlib
-import json
 import re
 import tarfile
 import tempfile
@@ -20,6 +19,8 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -58,7 +59,7 @@ class PreviousRelease:
                         parts = entry.name.split("/")
                         if parts[-1] == "package.json" and len(parts) == 2:
                             handle = archive.extractfile(entry)
-                            document = json.loads(handle.read()) if handle else {}
+                            document = ScannedJson.loads(handle.read()) if handle else {}
                             if document.get("name") and document.get("version"):
                                 return Identity("npm", document["name"], document["version"])
                         if parts[-1] == "PKG-INFO" and len(parts) == 2:

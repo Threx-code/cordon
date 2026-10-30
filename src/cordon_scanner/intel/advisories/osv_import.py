@@ -40,6 +40,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.intel.advisories.advisories import (
     DIGESTS_NAME,
     Advisory,
@@ -140,10 +141,7 @@ class OsvImport:
         written = 0
         try:
             with opener.open(request, timeout=TIMEOUT_SECONDS) as response, dest.open("wb") as out:
-                while True:
-                    chunk = response.read(1 << 20)
-                    if not chunk:
-                        break
+                for chunk in Download.chunks(response, size=1 << 20):
                     written += len(chunk)
                     if written > limit:
                         raise OsvImportError(f"{url}: exceeded {limit} bytes, aborted")

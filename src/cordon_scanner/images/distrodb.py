@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 from cordon_scanner.foundation.files.atomic import AtomicFile
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 
 if TYPE_CHECKING:
     from cordon_scanner.images.osv import Matches, Query
@@ -296,7 +297,7 @@ class DistroDatabase:
                     if not info.filename.endswith(".json") or info.file_size > MAX_RECORD_BYTES:
                         continue
                     try:
-                        raw = json.loads(bundle.read(info))
+                        raw = ScannedJson.loads(bundle.read(info))
                     except (ValueError, zipfile.BadZipFile, OSError):
                         continue
                     if not isinstance(raw, dict):
@@ -322,7 +323,7 @@ class DistroDatabase:
         digests: dict[str, Any] = {}
         if manifest_path.exists():
             try:
-                loaded = json.loads(manifest_path.read_text(encoding="utf-8"))
+                loaded = ScannedJson.loads(manifest_path.read_text(encoding="utf-8"))
                 if LocalSeal.valid(SEAL_LABEL, loaded):
                     digests = LocalSeal.unsealed(loaded)
             except (OSError, ValueError):
@@ -357,7 +358,7 @@ class DistroDatabase:
         directory = DistroDatabase.directory()
         path = directory / f"os-{family}.json.gz"
         try:
-            manifest = json.loads((directory / MANIFEST).read_text(encoding="utf-8"))
+            manifest = ScannedJson.loads((directory / MANIFEST).read_text(encoding="utf-8"))
             payload = path.read_bytes()
         except (OSError, ValueError):
             return None
@@ -365,7 +366,7 @@ class DistroDatabase:
             raise ValueError(f"{MANIFEST} is not sealed by this install")
         if LocalSeal.unsealed(manifest).get(path.name) != hashlib.sha256(payload).hexdigest():
             raise ValueError(f"{path.name} does not match its recorded digest")
-        loaded = json.loads(gzip.decompress(payload))
+        loaded = ScannedJson.loads(gzip.decompress(payload))
         return loaded if isinstance(loaded, dict) else None
 
     @staticmethod

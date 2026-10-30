@@ -35,6 +35,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
+from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.intel.advisories.advisories import DIGESTS_NAME, AdvisoryFiles
 from cordon_scanner.intel.advisories.cve_list import CveList
 from cordon_scanner.intel.advisories.nvd import CPE_NAME, CVES_NAME, CpeRule
@@ -74,7 +75,7 @@ class NvdImport:
         request = urllib.request.Request(url, headers={"User-Agent": AGENT})  # noqa: S310
         try:
             with urllib.request.urlopen(request, timeout=300) as response:  # noqa: S310
-                body: bytes = response.read(MAX_FEED_BYTES + 1)
+                body: bytes = Download.read(response, MAX_FEED_BYTES + 1)
         except OSError as exc:
             raise NvdImportError(f"{url}: {exc}") from exc
         if len(body) > MAX_FEED_BYTES:

@@ -126,12 +126,33 @@ the pool, and sizing happens before the files have been read. Being wrong costs
 at most a few idle or overloaded workers, never a difference in findings."""
 
 BATCH_TARGET_BYTES = 4 * 1024 * 1024
-"""Batches are sized by cumulative bytes rather than by file count.
+"""The largest batch: batches are sized by cumulative bytes rather than by file count.
 
 One very large file and a thousand small ones are not the same work. Sizing by
 count leaves a worker holding the large file while the others idle, which is the
 usual reason a parallel scan is barely faster than a serial one.
 """
+
+WORK_PER_WORKER = 1024 * 1024
+"""The estimated work, in bytes, that pays for one more worker.
+
+A worker costs about 1.7 s of CPU to start (0.7 s of imports, 1 s to build its engine; 0.04 s
+for the second engine in one process), and matching costs about 2 s of CPU per megabyte of
+source. Sized by batches of `BATCH_TARGET_BYTES` instead, a 9 MB archive (armadaproject/armada,
+1,346 members) got three workers and three batches, one holding 899 of the files, and took as
+long at `--jobs 4` as at `--jobs 1` (17.5 s against 18.0 s of member scanning)."""
+
+BATCHES_PER_WORKER = 8
+"""How many batches each worker's share of the work is cut into.
+
+A worker that finishes takes the next batch, so the scan ends when the work does rather than
+when the batch that happened to hold the expensive files does. Bytes are a poor estimate of
+a file's cost -- a minified bundle and a data file of the same size are not the same work --
+and only small batches make that error stop mattering. A batch costs one task submission and
+one pickled result, which is nothing beside matching it."""
+
+MIN_BATCH_BYTES = 256 * 1024
+"""The smallest batch, so a scan of many tiny files is not cut into thousands of tasks."""
 
 
 class ParallelScanner:
@@ -179,11 +200,18 @@ class ParallelScanner:
             return 1
 
         available = requested if requested > 0 else ParallelScanner.available_cpus()
-        # Never more workers than batches, and never more than files. The comment claimed
-        # this and the code did not do it, so a repository just over the threshold started
-        # a process per core to share one batch.
-        batches = max(1, math.ceil(estimate / BATCH_TARGET_BYTES))
-        return max(1, min(available, MAX_WORKERS, batches, file_count))
+        # Never more workers than the work pays for, and never more than files. The comment
+        # claimed this and the code did not do it, so a repository just over the threshold
+        # started a process per core to share one batch.
+        affordable = max(1, math.ceil(estimate / WORK_PER_WORKER))
+        return max(1, min(available, MAX_WORKERS, affordable, file_count))
+
+    @staticmethod
+    def batch_target(total_bytes: int, workers: int) -> int:
+        """The batch size for `workers` sharing `total_bytes`: `BATCHES_PER_WORKER` batches each,
+        between `MIN_BATCH_BYTES` and `BATCH_TARGET_BYTES`."""
+        share = math.ceil(total_bytes / max(1, workers * BATCHES_PER_WORKER))
+        return max(MIN_BATCH_BYTES, min(BATCH_TARGET_BYTES, share))
 
     @staticmethod
     def available_cpus(cgroup: str = "/sys/fs/cgroup") -> int:
@@ -234,7 +262,14 @@ class ParallelScanner:
         and is the cheap safe choice where it exists; elsewhere a fresh interpreter is started.
         """
         methods = multiprocessing.get_all_start_methods()
-        return multiprocessing.get_context("forkserver" if "forkserver" in methods else "spawn")
+        if "forkserver" not in methods:
+            return multiprocessing.get_context("spawn")
+        context = multiprocessing.get_context("forkserver")
+        # The engine's modules imported once, in the fork server, rather than again by every worker
+        # it forks: 0.7 s of CPU per worker otherwise. A module import is all it does here -- no
+        # thread is started and nothing is read -- so the fork stays as safe as it was.
+        context.set_forkserver_preload(["cordon_scanner.engine.engine"])
+        return context
 
     @staticmethod
     def batch_by_bytes(
@@ -601,7 +636,9 @@ class ParallelScanner:
         their results are kept. With no deadline the pool runs every batch, as it always did.
         """
 
-        batches = ParallelScanner.batch_by_bytes(files)
+        batches = ParallelScanner.batch_by_bytes(
+            files, ParallelScanner.batch_target(sum(item[2] for item in files), workers)
+        )
         if not batches:
             return []
 

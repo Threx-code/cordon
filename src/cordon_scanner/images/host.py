@@ -14,11 +14,11 @@ Read-only, bounded (files, bytes, depth), and nothing is run: no `dpkg -l`, no `
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 from typing import Final
 
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.images import langpkgs
 from cordon_scanner.images.identity import ImageInventory
 from cordon_scanner.images.oci import (
@@ -249,7 +249,7 @@ class HostFilesystem:
             crates = self._bytes(home / ".cargo" / ".crates2.json", MAX_METADATA_BYTES)
             if crates is not None:
                 try:
-                    installs = json.loads(crates).get("installs") or {}
+                    installs = ScannedJson.loads(crates).get("installs") or {}
                 except (ValueError, AttributeError):
                     installs = {}
                 for key in installs if isinstance(installs, dict) else ():

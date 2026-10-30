@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
+from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.intel.advisories.advisories import Advisory
 from cordon_scanner.intel.advisories.versions import Versions
 
@@ -229,7 +230,7 @@ class Rubysec:
         request = urllib.request.Request(ARCHIVE_URL, headers={"User-Agent": USER_AGENT})
         try:
             with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:  # noqa: S310
-                body = response.read(MAX_DOWNLOAD_BYTES + 1)
+                body = Download.read(response, MAX_DOWNLOAD_BYTES + 1)
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             raise RubysecError(f"{HOST} could not be reached ({type(exc).__name__})") from exc
         if len(body) > MAX_DOWNLOAD_BYTES:
