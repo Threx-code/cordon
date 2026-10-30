@@ -151,6 +151,23 @@ class FeatureSchema:
         return copy
 
 
+class FeatureScope:
+    """Which features a user's scan computes. The code and binary features (`CodeFeatures`,
+    `BinaryFeatures`: `pkg:code_<place>_(api|apih|tok)_*`, `pkg:exe_*`) are computed only under
+    `CORDON_MEASURE_FEATURES=1` (`ReachedFlows.of`), which a user's scan never sets, so a model fitted
+    on them would read zeros on every scan. A fit reads only what `computed` allows."""
+
+    #: Folded names keep these prefixes, so a folded measure-only feature is caught too.
+    MEASURE_ONLY: ClassVar[re.Pattern[str]] = re.compile(
+        r"^pkg:(?:code_(?:install|import|closure)_(?:api|apih|tok)_|exe_)"
+    )
+
+    @staticmethod
+    def computed(name: str) -> bool:
+        """Whether a user's scan computes the feature `name`."""
+        return FeatureScope.MEASURE_ONLY.match(name) is None
+
+
 class FeatureFold:
     """The hashed code features folded to WIDTH buckets: `pkg:code_<place>_tok_<h>` and
     `pkg:code_<place>_apih_<h>` (h < 2**18, `CodeFeatures.HASH_MOD`) become `..._f<h mod WIDTH>`,
@@ -252,4 +269,4 @@ class FeatureRecord:
         )
 
 
-__all__ = ["FeatureFold", "FeatureRecord", "FeatureSchema"]
+__all__ = ["FeatureFold", "FeatureRecord", "FeatureSchema", "FeatureScope"]

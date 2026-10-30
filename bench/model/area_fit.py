@@ -5,7 +5,7 @@
   rows (jsonl, raw) ── FeatureRecord.read(row, producer) ──► (schema, folded features)
         │                         │ schema neither current nor accepted ──► refused, nothing written
         v                         v
-  per area: support floor ── 5 family folds (out-of-fold) ──► line at the benign bar
+  per area: only what a user's scan computes (FeatureScope), support floor ── 5 family folds (out-of-fold) ──► line at the benign bar
         │
         └─ fit on every row ──► export ──► self-check: VerdictModel.score on every row
                                              == the fit's own probability, or nothing is written
@@ -40,7 +40,12 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from cordon_scanner.decide.feature_schema import FeatureFold, FeatureRecord, FeatureSchema
+from cordon_scanner.decide.feature_schema import (
+    FeatureFold,
+    FeatureRecord,
+    FeatureSchema,
+    FeatureScope,
+)
 from cordon_scanner.decide.verdict import VerdictModel
 
 
@@ -155,6 +160,13 @@ class AreaFit:
         sections = [base, *(base.get("by_area") or {}).values()]
         if base.get("registry"):
             sections.append(base["registry"])
+        unread = sorted(
+            {n for s in sections for n in s["features"] if not FeatureScope.computed(n)}
+        )
+        if unread:
+            raise ValueError(
+                f"the base model reads features a user's scan never computes ({unread[:3]})"
+            )
         hashed = sorted({n for s in sections for n in s["features"] if FeatureFold.HASHED.match(n)})
         if hashed:
             raise ValueError(
@@ -177,7 +189,12 @@ class AreaFit:
         from sklearn.model_selection import GroupKFold
 
         support = Counter(name for _, _, f in rows for name in f)
-        names = sorted(n for n, c in support.items() if c >= min_support)
+        # Only what a user's scan computes (FeatureScope): a feature the scan never computes would
+        # read zero on every scan the model judges.
+        measure_only = sorted(n for n in support if not FeatureScope.computed(n))
+        names = sorted(
+            n for n, c in support.items() if c >= min_support and FeatureScope.computed(n)
+        )
         col = {n: i for i, n in enumerate(names)}
         matrix = np.zeros((len(rows), len(names)), dtype=np.float32)
         for i, (_, _, f) in enumerate(rows):
@@ -199,12 +216,17 @@ class AreaFit:
         tp = int((oof[y == 1] >= line).sum())
         final = HistGradientBoostingClassifier(**AreaFit.SETTINGS).fit(matrix, y)
         section = AreaFit.export(final, names)
+        if not all(FeatureScope.computed(n) for n in section["features"]):
+            raise ValueError(
+                "a feature a user's scan never computes reached the export: not written"
+            )
         kept = [{n: f[n] for n in f if n in col} for _, _, f in rows]
         worst = AreaFit.check(section, kept, [float(p) for p in final.predict_proba(matrix)[:, 1]])
         measured = {
             "benign": nb,
             "malware": nm,
             "features": len(names),
+            "measure_only_left_out": len(measure_only),
             "min_support": min_support,
             "bar": bar,
             "line": line,

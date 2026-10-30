@@ -90,8 +90,14 @@ class TestTheBase:
     def test_a_base_that_reads_a_hashed_feature_is_refused(self) -> None:
         shipped = AreaFitKit.shipped()
         hashed = {**shipped, "features": [*shipped["features"], "pkg:code_install_tok_5"]}
-        with pytest.raises(ValueError, match="refit it folded"):
+        with pytest.raises(ValueError, match="never computes"):
             AreaFit.carry(hashed)
+
+    def test_a_base_that_reads_a_measure_only_feature_is_refused(self) -> None:
+        shipped = AreaFitKit.shipped()
+        unread = {**shipped, "features": [*shipped["features"], "pkg:code_import_api_exec"]}
+        with pytest.raises(ValueError, match="never computes"):
+            AreaFit.carry(unread)
 
 
 class TestTheRows:
