@@ -86,9 +86,17 @@ class _Reader:
         self.source = source
         self.position = 0
         self.count = 0
+        # The line of the last reading, so the next counts on from there: counting from the top
+        # for every element made a long document's cost grow with its square.
+        self._counted_to = 0
+        self._line = 1
 
     def line(self) -> int:
-        return self.text.count("\n", 0, self.position) + 1
+        if self.position < self._counted_to:  # never, while reading forward; counted afresh if so
+            self._counted_to, self._line = 0, 1
+        self._line += self.text.count("\n", self._counted_to, self.position)
+        self._counted_to = self.position
+        return self._line
 
     def fail(self, message: str) -> SafeXmlError:
         return SafeXmlError(f"{self.source}:{self.line()}: {message}")
