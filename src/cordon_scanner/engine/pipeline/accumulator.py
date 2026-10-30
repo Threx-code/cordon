@@ -11,11 +11,16 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from cordon_scanner.engine.pipeline.constants import INCOMPLETE_WHEN_REPORTED
-from cordon_scanner.foundation.models import Finding
-from cordon_scanner.foundation.results import Dependency
+from cordon_scanner.foundation.models import Finding, Severity
+from cordon_scanner.foundation.results import Dependency, OperationalFinding
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+
+
+NOTICES = ("OPERATIONAL.INTEL.", "OPERATIONAL.ADVISORY.")
+"""Operational findings about the advisory side, which `advisory_complete` reports: none of them
+says that a file's content went unexamined."""
 
 
 @dataclass
@@ -75,6 +80,29 @@ class Accumulator:
             return False
         self.findings.append(finding)
         return True
+
+    def explain_incomplete(self) -> None:
+        """An incomplete scan says why: when nothing operational names what went unexamined, a
+        backstop does (`OPERATIONAL.SCAN.INCOMPLETE`). Every path that leaves a scan incomplete
+        reports its own reason, so the backstop is a guarantee, never the expected path: two
+        zuppa wheels ended incomplete with only a detection finding to show for it (review 98)."""
+        if self.complete or any(
+            f.rule_id.startswith("OPERATIONAL.") and not f.rule_id.startswith(NOTICES)
+            for f in self.findings
+        ):
+            return
+        self.findings.append(
+            OperationalFinding.build(
+                path=".",
+                rule_id="OPERATIONAL.SCAN.INCOMPLETE",
+                message=(
+                    "Part of this scan's input was not examined, and no specific reason was "
+                    "recorded."
+                ),
+                remediation="Treat the unexamined part as unexamined, not as clean.",
+                severity=Severity.MEDIUM,
+            )
+        )
 
     def add(self, produced: Iterable[Finding]) -> None:
         """Retain a batch, stopping at the cap."""

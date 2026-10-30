@@ -126,6 +126,12 @@ class ArchiveMembers:
         ):
             escape = reason != Rejection.DEPTH
             return ArchiveMembers.escape_or_nesting(path, reason, detail, escape)
+        return ArchiveMembers.not_examined(path, reason, detail)
+
+    @staticmethod
+    def not_examined(path: str, reason: str, detail: str) -> Finding:
+        """That a refused member's content was not examined: the coverage note every refusal
+        carries, beside the detection finding when the refusal is itself the attack."""
         return OperationalFinding.build(
             path=path,
             rule_id="OPERATIONAL.ARCHIVE.MEMBER_REJECTED",
