@@ -85,15 +85,6 @@
   "cordon_scanner.intel.advisories.advisories:_REFUSED_SYNCED": 1,
   "cordon_scanner.intel.advisories.advisories:_TAMPERED": 1,
   "cordon_scanner.intel.advisories.nvd:CpeRule._sites": 1,
-  "cordon_scanner.intel.advisories.upstream.cocoapods:NpmPodspec._packages": 1,
-  "cordon_scanner.intel.advisories.upstream.conan:ConanCenter._homepages": 1,
-  "cordon_scanner.intel.advisories.upstream.conan:ConanCenter._index": 1,
-  "cordon_scanner.intel.advisories.upstream.conda:CondaSiblings._built": 1,
-  "cordon_scanner.intel.advisories.upstream.fetch:Fetch.resolved": 1,
-  "cordon_scanner.intel.advisories.upstream.tags:ContentProof._results": 1,
-  "cordon_scanner.intel.advisories.upstream.tags:TagInference._refs": 1,
-  "cordon_scanner.intel.advisories.upstream.tags:TagInference._tips": 1,
-  "cordon_scanner.intel.advisories.upstream_advisories:UpstreamAdvisories._records": 1,
   "cordon_scanner.intel.provenance.x509:PublicKey.VERDICTS": 1
  }
 }

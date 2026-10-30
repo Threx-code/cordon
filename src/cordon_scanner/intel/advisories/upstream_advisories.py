@@ -35,6 +35,7 @@ import urllib.parse
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
+from cordon_scanner.foundation.collector import ScanCaches
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.intel.advisories.advisories import Advisory
 from cordon_scanner.intel.advisories.upstream.base import (
@@ -926,6 +927,11 @@ class UpstreamAdvisories:
             else:
                 result.advisories[dependency.purl] = tuple(advisories)
         return result
+
+
+# Network answers, kept for one scan: a long-running process (the MCP server) asks again
+# rather than keeping every answer it was ever given.
+ScanCaches.register(UpstreamAdvisories._records)
 
 
 __all__ = ["UpstreamAdvisories", "UpstreamResult", "Upstreams"]

@@ -11,6 +11,7 @@ import tarfile
 import urllib.parse
 from typing import TYPE_CHECKING, ClassVar, Final
 
+from cordon_scanner.foundation.collector import ScanCaches
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.intel.advisories.upstream.base import (
     RepositoryArchive,
@@ -442,6 +443,11 @@ class NpmPodspec:
         if len(named) > 1:
             return Unnamed(f"{package}'s releases name different sources for {inside}")
         return next(a for a in answers if isinstance(a, Unnamed))
+
+
+# Network answers, kept for one scan: a long-running process (the MCP server) asks again
+# rather than keeping every answer it was ever given.
+ScanCaches.register(NpmPodspec._packages)
 
 
 __all__ = ["HERMES_PIN", "HERMES_PROPERTIES", "NpmPodspec", "PodSiblings"]
