@@ -103,8 +103,9 @@ class TestTheBase:
 class TestTheRows:
     def test_a_row_of_another_version_is_refused_unless_accepted(self, tmp_path: Path) -> None:
         row = {"file": "npm/x-1.0.0.tgz", "findings": [], "verdict": {"area": "npm", "package": {}}}
-        (tmp_path / "set-abc.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
-        args = (tmp_path, [("set", 0, None)], "fs1-other", "abc", set(), "npm")
+        path = tmp_path / "set-abc.jsonl"
+        path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+        args = ([(path, 0, None)], "fs1-other", set(), "npm")
         with pytest.raises(ValueError, match="refused"):
             list(AreaFit.rows(*args, set()))
         assert [label for label, _, _ in AreaFit.rows(*args, {"fs1-other"})] == [0]
@@ -114,9 +115,21 @@ class TestTheRows:
             {"file": f"{where}/x", "findings": [], "verdict": {"area": "mcp", "package": {}}}
             for where in ("benign", "malware", "elsewhere")
         ]
-        (tmp_path / "asb-abc.jsonl").write_text(
-            "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8"
-        )
-        sets = [("asb", 0, "benign/"), ("asb", 1, "malware/")]
-        found = AreaFit.rows(tmp_path, sets, "fs1-p", "abc", set(), "mcp", {"fs1-p"})
+        path = tmp_path / "asb-abc.jsonl"
+        path.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+        sets = [(path, 0, "benign/"), (path, 1, "malware/")]
+        found = AreaFit.rows(sets, "fs1-p", set(), "mcp", {"fs1-p"})
         assert [(label, unit) for label, unit, _ in found] == [(0, "benign/x"), (1, "malware/x")]
+
+    def test_a_malware_row_without_its_record_is_refused_when_required(
+        self, tmp_path: Path
+    ) -> None:
+        row = {"file": "npm/m-1.0.0.tgz", "findings": [], "verdict": {"area": "npm", "package": {}}}
+        path = tmp_path / "mal.jsonl"
+        path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+        sets = [(path, 1, None)]
+        with pytest.raises(ValueError, match="no scan-time record"):
+            list(AreaFit.rows(sets, "fs1-p", set(), "npm", {"fs1-p"}, frozenset({1})))
+        assert [label for label, _, _ in AreaFit.rows(sets, "fs1-p", set(), "npm", {"fs1-p"})] == [
+            1
+        ]

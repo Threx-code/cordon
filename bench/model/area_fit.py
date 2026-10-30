@@ -18,7 +18,7 @@ The base model's own trees and its policy (keep, lift areas, floor, add-only) ar
 are. That is sound only because none of its features is a hashed code feature, which `carry`
 checks: folding changes no input those trees read.
 
-Rows: `--rows NAME=LABEL[:PREFIX]` for each `<NAME>-<producer>.jsonl` under `--dir` (LABEL 0 benign,
+Rows: `--rows PATH=LABEL[:PREFIX]` for each row file (LABEL 0 benign,
 1 malware; PREFIX keeps only units under it), `--held` lists of units never read, `--producer` the
 rows' writer's version (`FeatureSchema.version` of that checkout), `--accept` a version proven to
 compute the same features as this tree (by a paired scan, recorded in the manifest).
@@ -82,19 +82,21 @@ class AreaFit:
 
     @staticmethod
     def rows(
-        where: Path,
-        sets: list[tuple[str, int, str | None]],
+        sets: list[tuple[Path, int, str | None]],
         producer: str,
-        commit: str,
         held: set[str],
         area: str | None,
         accepted: set[str],
+        require_record: frozenset[int] = frozenset(),
     ) -> Iterator[tuple[int, str, dict[str, float]]]:
-        """(label, unit, folded features) of every row of `area` (every area when None), refusing a
-        row whose version is neither this tree's nor accepted."""
+        """(label, unit, folded features) of every row of `area` (every area when None) in each
+        file, refusing a row whose version is neither this tree's nor accepted, and a row of a
+        label in `require_record` that has no scan-time record (one rebuilt from its reported
+        findings misses those graded away after the verdict)."""
         allowed = {FeatureSchema.current(), *accepted}
-        for name, label, prefix in sets:
-            with (where / f"{name}-{commit}.jsonl").open(encoding="utf-8") as handle:
+        for path, label, prefix in sets:
+            name = path.name
+            with path.open(encoding="utf-8") as handle:
                 for line in handle:
                     row = json.loads(line)
                     unit = row["file"]
@@ -102,6 +104,10 @@ class AreaFit:
                         continue
                     if area is not None and (row.get("verdict") or {}).get("area") != area:
                         continue
+                    if label in require_record and not isinstance(
+                        (row.get("verdict") or {}).get("features"), dict
+                    ):
+                        raise ValueError(f"{name}: {unit} has no scan-time record: refused")
                     schema, features = FeatureRecord.read(row, producer)
                     if schema not in allowed:
                         raise ValueError(
@@ -276,15 +282,22 @@ class AreaFit:
             cls.fixture(Path(sys.argv[2]))
             return
         p = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-        p.add_argument("--dir", type=Path, required=True, help="where the row files are")
         p.add_argument(
-            "--commit", required=True, help="the row files' producer commit (file suffix)"
+            "--producer",
+            required=True,
+            help="the version of rows without a record (their writer's)",
         )
-        p.add_argument("--producer", required=True, help="that commit's FeatureSchema version")
         p.add_argument(
             "--accept", nargs="*", default=[], help="versions proven equal to this tree's"
         )
-        p.add_argument("--rows", nargs="+", required=True, help="NAME=LABEL[:PREFIX]")
+        p.add_argument("--rows", nargs="+", required=True, help="PATH=LABEL[:PREFIX]")
+        p.add_argument(
+            "--require-record",
+            nargs="*",
+            type=int,
+            default=[],
+            help="labels whose rows must carry their scan-time record (1: every malware row)",
+        )
         p.add_argument("--held", nargs="*", default=[], type=Path, help="unit lists never read")
         p.add_argument("--areas", nargs="+", required=True)
         p.add_argument("--base", type=Path, required=True, help="the shipped model (format 2)")
@@ -292,12 +305,12 @@ class AreaFit:
         p.add_argument("--min-support", type=int, default=100)
         p.add_argument("--out", type=Path, required=True)
         a = p.parse_args()
-        # One file may hold both labels under different prefixes (`asb=0:benign/ asb=1:malware/`).
-        sets: list[tuple[str, int, str | None]] = []
+        # One file may hold both labels under different prefixes (`asb.jsonl=0:benign/ ...=1:malware/`).
+        sets: list[tuple[Path, int, str | None]] = []
         for spec in a.rows:
-            name, rest = spec.split("=", 1)
+            path, _, rest = spec.rpartition("=")
             label, _, prefix = rest.partition(":")
-            sets.append((name, int(label), prefix or None))
+            sets.append((Path(path), int(label), prefix or None))
         held = {
             u.strip()
             for h in a.held
@@ -308,7 +321,9 @@ class AreaFit:
             model = cls.carry(json.load(handle))
         fits: dict[str, Any] = {}
         for area in a.areas:
-            rows = list(cls.rows(a.dir, sets, a.producer, a.commit, held, area, set(a.accept)))
+            rows = list(
+                cls.rows(sets, a.producer, held, area, set(a.accept), frozenset(a.require_record))
+            )
             section, line, measured = cls.fit(rows, a.bar, a.min_support)
             model["by_area"][area] = section
             model["areas"][area] = (
@@ -319,7 +334,12 @@ class AreaFit:
         model["manifest"] = {
             **(model.get("manifest") or {}),
             "area_fits": fits,
-            "rows": {"commit": a.commit, "producer": a.producer, "accepted": a.accept},
+            "rows": {
+                "files": [str(path) for path, _, _ in sets],
+                "producer": a.producer,
+                "accepted": a.accept,
+                "record_required_for_labels": sorted(a.require_record),
+            },
         }
         with gzip.open(a.out, "wt", encoding="utf-8") as handle:
             json.dump(model, handle)
