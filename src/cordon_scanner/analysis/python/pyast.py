@@ -746,11 +746,13 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, AnalyzerCore):
         each built the same tables from scratch: 3.2 builds per file. They are built once per tree now, kept on it, and copied per caller, so what one
         caller adds -- `_walk` fills `_invoked` and records hits -- reaches no other.
         """
-        base = tree.__dict__.get("_cordon_names")
-        if base is None:
-            base = cls()
-            base._collect_names(tree)
-            tree.__dict__["_cordon_names"] = base
+
+        def collect() -> PythonAnalyzer:
+            built = cls()
+            built._collect_names(tree)
+            return built
+
+        base: PythonAnalyzer = PythonSyntax.memo(tree, ("names", cls), collect)
         fresh = cls()
         for name, value in vars(base).items():
             if name == "_hits":
