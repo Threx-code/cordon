@@ -275,7 +275,7 @@ class ExecutionFlows(AnalyzerCore):
                     isinstance(n, ast.Return)
                     and n.value is not None
                     and self._from_network(n.value, local, fetchers)
-                    for n in ast.walk(function)
+                    for n in self._scope_walk(function)
                 ):
                     fetchers.add(function.name)
 
@@ -289,7 +289,7 @@ class ExecutionFlows(AnalyzerCore):
         downloaded: set[str] = set()
         for scope in scopes:
             local = self._network_names(scope, fetchers)
-            for node in ast.walk(scope):
+            for node in self._scope_walk(scope):
                 if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
                     continue
                 spec = writers.get(node.func.id)
@@ -307,7 +307,7 @@ class ExecutionFlows(AnalyzerCore):
         if not downloaded:
             return
         for scope in scopes:
-            for node in ast.walk(scope):
+            for node in self._scope_walk(scope):
                 if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
                     continue
                 argument = runners.get(node.func.id)
@@ -332,7 +332,7 @@ class ExecutionFlows(AnalyzerCore):
             names = PythonFacts.parameter_names(function)
             local = self._network_names(function, fetchers)
             handles: dict[str, ast.AST] = {}
-            for node in ast.walk(function):
+            for node in self._scope_walk(function):
                 if isinstance(node, ast.With):
                     for item in node.items:
                         path = PythonFacts.opened_path(item.context_expr)
@@ -344,7 +344,7 @@ class ExecutionFlows(AnalyzerCore):
                         handles.update(
                             {t.id: path for t in node.targets if isinstance(t, ast.Name)}
                         )
-            for node in ast.walk(function):
+            for node in self._scope_walk(function):
                 if not (
                     isinstance(node, ast.Call)
                     and isinstance(node.func, ast.Attribute)
@@ -385,11 +385,24 @@ class ExecutionFlows(AnalyzerCore):
                     if name in used:
                         runners[function.name] = index
 
+    @staticmethod
+    def _scope_walk(scope: ast.AST) -> list[ast.AST]:
+        """`ast.walk(scope)`, in its order, walked once per scope: these readers asked for the same
+        scope's walk up to ten times each (two passes of `_network_names` per call, per function,
+        per round), 103 million node visits on one 5,000-module wheel (review 98, D2). Kept on the
+        scope, so it goes with the tree."""
+        cached: list[ast.AST] | None = scope.__dict__.get("_cordon_walk")
+        if cached is None:
+            cached = list(ast.walk(scope))
+            scope.__dict__["_cordon_walk"] = cached
+        return cached
+
     def _network_names(self, scope: ast.AST, fetchers: set[str]) -> set[str]:
         local: set[str] = set()
+        assignments = [node for node in self._scope_walk(scope) if isinstance(node, ast.Assign)]
         for _ in range(2):
-            for node in ast.walk(scope):
-                if isinstance(node, ast.Assign) and self._from_network(node.value, local, fetchers):
+            for node in assignments:
+                if self._from_network(node.value, local, fetchers):
                     local |= {t.id for t in node.targets if isinstance(t, ast.Name)}
         return local
 
