@@ -299,6 +299,7 @@
   "ecosystems/packages/jvm/gradle": "ecosystems/packages/jvm/gradle",
   "ecosystems/packages/jvm/gradle_scripts": "ecosystems/packages/jvm/gradle_scripts",
   "ecosystems/packages/hackage": "ecosystems/packages/hackage",
+  "ecosystems/packages/haskell/cabal": "ecosystems/packages/haskell/cabal",
   "ecosystems/packages/haskell/cabal_project": "ecosystems/packages/haskell/cabal_project",
   "ecosystems/packages/haskell/stack": "ecosystems/packages/haskell/stack",
   "ecosystems/packages/hex": "ecosystems/packages/hex",

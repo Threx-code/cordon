@@ -12,7 +12,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
-from cordon_scanner.ecosystems.packages.hackage import (
+from cordon_scanner.ecosystems.packages.haskell.cabal import (
     GHC_PACKAGES,
     CabalDeps,
     CabalLayout,
