@@ -28,6 +28,7 @@ convenience that becomes one.
 
 from __future__ import annotations
 
+import dataclasses
 import functools
 import http.client
 import json
@@ -35,12 +36,13 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any
+from typing import Any, ClassVar
 
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.intel.base import PackageArchive, PackageFacts
 from cordon_scanner.intel.registries.registry_request import (
+    ARCHIVE_HOSTS,
     MAX_RESPONSE_BYTES,
     RETRY_ATTEMPTS,
     RETRY_BACKOFF_SECONDS,
@@ -49,6 +51,7 @@ from cordon_scanner.intel.registries.registry_request import (
     USER_AGENT,
     PackageNotFound,
     RegistryError,
+    RegistryRequest,
 )
 
 MAX_REDIRECTS = 0
@@ -86,6 +89,10 @@ ATTESTATION_HOSTS = {
 class RegistryClient:
     """Questions to package registries, bounded and credential-free: npm and PyPI here, and
     crates.io, RubyGems, NuGet, the Go proxy and Maven Central through `more_registries`."""
+
+    _ATTESTED_SEPARATELY: ClassVar[frozenset[str]] = frozenset({"rubygems"})
+    """Registries whose package document does not say whether a version is attested: asked at
+    their attestation endpoint, once the version is known to be listed."""
 
     @staticmethod
     def _fetch(
@@ -195,11 +202,19 @@ class RegistryClient:
 
         if ecosystem in ALIASES:
             # crates.io, RubyGems, NuGet, the Go proxy and Maven Central (G5).
-            return (
+            facts = (
                 MoreRegistries.facts(ecosystem, name, version, source)
                 if source
                 else MoreRegistries.facts(ecosystem, name, version)
             )
+            if ecosystem in RegistryClient._ATTESTED_SEPARATELY and version and not facts.yanked:
+                # Sigstore bundles published through trusted publishing; absent (404) for most.
+                try:
+                    attested = RegistryClient.attestation_payload(ecosystem, name, version)
+                except RegistryError:
+                    attested = None
+                facts = dataclasses.replace(facts, attested=attested is not None)
+            return facts
         raise RegistryError(f"no registry configured for {ecosystem}")
 
     @staticmethod
@@ -649,27 +664,7 @@ class RegistryClient:
 
     @staticmethod
     def _fetch_bytes(url: str, ecosystem: str) -> bytes:
-        parsed = urllib.parse.urlsplit(url)
-        if parsed.scheme != "https" or (parsed.hostname or "") not in ARCHIVE_HOSTS.get(
-            ecosystem, frozenset()
-        ):
-            raise RegistryError(
-                f"refusing an archive URL off the {ecosystem} allowlist: {parsed.hostname!r}"
-            )
-        request = urllib.request.Request(  # noqa: S310 - scheme and host checked above
-            url, headers={"User-Agent": USER_AGENT}, method="GET"
-        )
-        opener = urllib.request.build_opener(NoRedirects)
-        try:
-            with opener.open(request, timeout=TIMEOUT_SECONDS * 6) as response:
-                body = Download.read(response, MAX_ARCHIVE_BYTES + 1)
-        except urllib.error.HTTPError as exc:
-            raise RegistryError(f"HTTP {exc.code} from {parsed.netloc}") from exc
-        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
-            raise RegistryError(f"{type(exc).__name__} fetching from {parsed.netloc}") from exc
-        if len(body) > MAX_ARCHIVE_BYTES:
-            raise RegistryError(f"archive from {parsed.netloc} exceeded {MAX_ARCHIVE_BYTES} bytes")
-        return bytes(body)
+        return RegistryRequest.fetch_bytes(url, ecosystem)
 
     @staticmethod
     def _npm_archive(name: str, version: str | None) -> PackageArchive:
@@ -741,23 +736,6 @@ NEW_PACKAGE_DAYS = 90
 """A package younger than this has had little time to be noticed, reviewed or reported."""
 
 NPM_DOWNLOADS_HOST = "https://api.npmjs.org"
-
-
-#: Hosts a package archive may be downloaded from, by ecosystem. The registry names the URL, so
-#: it is confined to the registry's own file hosts before it is fetched.
-ARCHIVE_HOSTS = {
-    "npm": frozenset({"registry.npmjs.org"}),
-    "pypi": frozenset({"files.pythonhosted.org"}),
-    "cargo": frozenset({"static.crates.io"}),
-    "rubygems": frozenset({"rubygems.org"}),
-    "nuget": frozenset({"api.nuget.org"}),
-    "gomod": frozenset({"proxy.golang.org"}),
-    "hex": frozenset({"repo.hex.pm"}),
-    "pub": frozenset({"pub.dev"}),
-    "maven": frozenset({"repo.maven.apache.org"}),
-    "openvsx": frozenset({"openvsx.eclipsecontent.org"}),
-}
-MAX_ARCHIVE_BYTES = 64 << 20
 
 
 __all__ = [

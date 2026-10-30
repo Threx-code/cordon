@@ -19,8 +19,9 @@ import urllib.parse
 from datetime import datetime
 from typing import Any, ClassVar, Final
 
-from cordon_scanner.intel.registries import registry_client as base
+from cordon_scanner.intel.base import PackageArchive
 from cordon_scanner.intel.registries.registry_client import RegistryError
+from cordon_scanner.intel.registries.registry_request import RegistryRequest
 
 API: Final = "https://open-vsx.org/api"
 FILES: Final = "https://openvsx.eclipsecontent.org"
@@ -86,7 +87,7 @@ class OpenVsx:
         return f"{FILES}/{namespace}/{extension}/{version}/{filename}"
 
     @classmethod
-    def archive(cls, name: str, version: str) -> base.PackageArchive:
+    def archive(cls, name: str, version: str) -> PackageArchive:
         """The `.vsix` the registry publishes for `version`, checked against its own SHA-256."""
         from cordon_scanner.intel.registries.registry_http import RegistryHttp
 
@@ -99,11 +100,11 @@ class OpenVsx:
         if not published or not re.fullmatch(r"[0-9a-fA-F]{64}", published[0]):
             raise RegistryError(f"Open VSX publishes no SHA-256 for {name}@{version}")
         download = cls._on_file_host(files.get("download"))
-        data = base.RegistryClient._fetch_bytes(download, "openvsx")
+        data = RegistryRequest.fetch_bytes(download, "openvsx")
         if hashlib.sha256(data).hexdigest() != published[0].lower():
             raise RegistryError(f"{name}@{version} does not match the SHA-256 Open VSX publishes")
         filename = urllib.parse.unquote(download.rpartition("/")[2])
-        return base.PackageArchive("openvsx", name, version, filename, data)
+        return PackageArchive("openvsx", name, version, filename, data)
 
 
 class MoreVersions:

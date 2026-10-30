@@ -29,8 +29,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from cordon_scanner.intel.base import PackageFacts
-from cordon_scanner.intel.registries import registry_client as base
+from cordon_scanner.intel.base import PackageArchive, PackageFacts
 from cordon_scanner.intel.registries.image_registries import ImageRegistries
 from cordon_scanner.intel.registries.infra_registries import InfraRegistries
 from cordon_scanner.intel.registries.package_registries import PackageRegistries
@@ -39,7 +38,7 @@ from cordon_scanner.intel.registries.registry_hosts import (
     HOSTS,
 )
 from cordon_scanner.intel.registries.registry_http import RegistryHttp
-from cordon_scanner.intel.registries.registry_request import RegistryError
+from cordon_scanner.intel.registries.registry_request import RegistryError, RegistryRequest
 
 
 class MoreRegistries:
@@ -233,7 +232,7 @@ class MoreRegistries:
         return "h1:" + base64.b64encode(hashlib.sha256("".join(lines).encode()).digest()).decode()
 
     @staticmethod
-    def archive(ecosystem: str, name: str, version: str | None) -> base.PackageArchive:
+    def archive(ecosystem: str, name: str, version: str | None) -> PackageArchive:
         """The archive the registry publishes for a version (`None` means the latest), downloaded from
         the registry's own file host and refused unless it matches the digest the registry publishes.
         Never unpacked to disk and never run: the bytes go to the scanner's archive reader."""
@@ -254,17 +253,17 @@ class MoreRegistries:
                 raise RegistryError(
                     f"the Go checksum database has no h1 for {name}@{resolved}; nothing to verify against"
                 )
-            data = base.RegistryClient._fetch_bytes(url, ecosystem)
+            data = RegistryRequest.fetch_bytes(url, ecosystem)
             if MoreRegistries.go_h1(data) not in expected:
                 raise RegistryError(
                     f"{name}@{resolved} does not match the h1 the Go checksum database records"
                 )
-            return base.PackageArchive(ecosystem, name, resolved, filename, data)
+            return PackageArchive(ecosystem, name, resolved, filename, data)
         if ecosystem in ("hex", "pub", "maven", "gradle"):
             filename, url, expected, data = MoreRegistries._hex_pub_maven_archive(
                 ecosystem, name, resolved, facts
             )
-            return base.PackageArchive(ecosystem, name, resolved, filename, data)
+            return PackageArchive(ecosystem, name, resolved, filename, data)
         if ecosystem == "cargo":
             filename = f"{name}-{resolved}.crate"
             url = f"https://static.crates.io/crates/{urllib.parse.quote(name, safe='')}/{urllib.parse.quote(filename, safe='')}"
@@ -297,12 +296,12 @@ class MoreRegistries:
             raise RegistryError(
                 f"{ecosystem} publishes no {algorithm} for {name}@{resolved}; nothing to verify against"
             )
-        data = base.RegistryClient._fetch_bytes(url, ecosystem)
+        data = RegistryRequest.fetch_bytes(url, ecosystem)
         if hashlib.new(algorithm, data).hexdigest() not in expected:
             raise RegistryError(
                 f"{name}@{resolved} does not match the {algorithm} {ecosystem} publishes"
             )
-        return base.PackageArchive(ecosystem, name, resolved, filename, data)
+        return PackageArchive(ecosystem, name, resolved, filename, data)
 
     @staticmethod
     def _hex_pub_maven_archive(
@@ -337,9 +336,7 @@ class MoreRegistries:
             raise RegistryError(
                 f"{ecosystem} publishes no digest for {name}@{resolved}; nothing to verify against"
             )
-        data = base.RegistryClient._fetch_bytes(
-            url, "maven" if ecosystem == "gradle" else ecosystem
-        )
+        data = RegistryRequest.fetch_bytes(url, "maven" if ecosystem == "gradle" else ecosystem)
         if hashlib.new(algorithm, data).hexdigest() not in expected:
             raise RegistryError(
                 f"{name}@{resolved} does not match the {algorithm} {ecosystem} publishes"

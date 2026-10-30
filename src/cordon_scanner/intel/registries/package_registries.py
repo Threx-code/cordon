@@ -13,7 +13,6 @@ import urllib.request
 from typing import Any, Final
 
 from cordon_scanner.intel.base import PackageFacts
-from cordon_scanner.intel.registries import registry_client as base
 from cordon_scanner.intel.registries.registry_hosts import (
     _DIGEST_LINE,
     _RELEASE_TAG,
@@ -415,15 +414,6 @@ class PackageRegistries:
         # the gem itself exists, is one its owner withdrew.
         yanked = bool(version) and not builds
         created = [str(v["created_at"]) for v in versions if isinstance(v.get("created_at"), str)]
-        attested = False
-        if builds and version:
-            # Sigstore bundles published through trusted publishing; absent (404) for most gems.
-            try:
-                attested = (
-                    base.RegistryClient._rubygems_attestation_payload(name, version) is not None
-                )
-            except RegistryError:
-                attested = False
         return PackageFacts(
             name=name,
             version=version,
@@ -435,7 +425,6 @@ class PackageRegistries:
             digests=tuple(str(v["sha"]) for v in builds if isinstance(v.get("sha"), str)),
             first_published=min(created) if created else None,
             releases=len({v.get("number") for v in versions}),
-            attested=attested,
         )
 
     @staticmethod

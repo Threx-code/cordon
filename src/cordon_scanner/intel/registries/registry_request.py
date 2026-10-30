@@ -4,6 +4,14 @@ the HTTP and host helpers read it without importing one another (architecture au
 
 from __future__ import annotations
 
+import http.client
+import urllib.error
+import urllib.parse
+import urllib.request
+
+from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.redirects import NoRedirects
+
 TIMEOUT_SECONDS = 5.0
 """Per-request ceiling. A scan waiting on a slow registry is a scan somebody
 kills, and a killed scan reports nothing at all."""
@@ -53,7 +61,55 @@ class PackageNotFound(RegistryError):
     """
 
 
+#: Hosts a package archive may be downloaded from, by ecosystem. The registry names the URL, so
+#: it is confined to the registry's own file hosts before it is fetched.
+ARCHIVE_HOSTS = {
+    "npm": frozenset({"registry.npmjs.org"}),
+    "pypi": frozenset({"files.pythonhosted.org"}),
+    "cargo": frozenset({"static.crates.io"}),
+    "rubygems": frozenset({"rubygems.org"}),
+    "nuget": frozenset({"api.nuget.org"}),
+    "gomod": frozenset({"proxy.golang.org"}),
+    "hex": frozenset({"repo.hex.pm"}),
+    "pub": frozenset({"pub.dev"}),
+    "maven": frozenset({"repo.maven.apache.org"}),
+    "openvsx": frozenset({"openvsx.eclipsecontent.org"}),
+}
+MAX_ARCHIVE_BYTES = 64 << 20
+
+
+class RegistryRequest:
+    """The download every registry client shares: a package archive from the registry's own file
+    hosts, over https, without redirects, bounded in size."""
+
+    @staticmethod
+    def fetch_bytes(url: str, ecosystem: str) -> bytes:
+        parsed = urllib.parse.urlsplit(url)
+        if parsed.scheme != "https" or (parsed.hostname or "") not in ARCHIVE_HOSTS.get(
+            ecosystem, frozenset()
+        ):
+            raise RegistryError(
+                f"refusing an archive URL off the {ecosystem} allowlist: {parsed.hostname!r}"
+            )
+        request = urllib.request.Request(  # noqa: S310 - scheme and host checked above
+            url, headers={"User-Agent": USER_AGENT}, method="GET"
+        )
+        opener = urllib.request.build_opener(NoRedirects)
+        try:
+            with opener.open(request, timeout=TIMEOUT_SECONDS * 6) as response:
+                body = Download.read(response, MAX_ARCHIVE_BYTES + 1)
+        except urllib.error.HTTPError as exc:
+            raise RegistryError(f"HTTP {exc.code} from {parsed.netloc}") from exc
+        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
+            raise RegistryError(f"{type(exc).__name__} fetching from {parsed.netloc}") from exc
+        if len(body) > MAX_ARCHIVE_BYTES:
+            raise RegistryError(f"archive from {parsed.netloc} exceeded {MAX_ARCHIVE_BYTES} bytes")
+        return bytes(body)
+
+
 __all__ = [
+    "ARCHIVE_HOSTS",
+    "MAX_ARCHIVE_BYTES",
     "MAX_RESPONSE_BYTES",
     "RETRY_ATTEMPTS",
     "RETRY_BACKOFF_SECONDS",
@@ -62,4 +118,5 @@ __all__ = [
     "USER_AGENT",
     "PackageNotFound",
     "RegistryError",
+    "RegistryRequest",
 ]
