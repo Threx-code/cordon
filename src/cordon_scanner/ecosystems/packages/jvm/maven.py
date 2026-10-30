@@ -679,6 +679,35 @@ class MavenEcosystem(BaseEcosystem):
             f"<dependencies>{deps}</dependencies></project>"
         }
 
+    # -- the release a published archive is (EcosystemReleaseIdentity) -------------
+
+    def release_manifest(self) -> re.Pattern[str] | None:
+        """`<group>/<artifact>/pom.properties` inside a jar: the coordinates Maven resolved."""
+        return MavenEcosystem.POM_PROPERTIES
+
+    def release_identity(
+        self, path: str, text: str, found: re.Match[str]
+    ) -> tuple[str, str] | None:
+        return MavenEcosystem.pom_identity(path, text)
+
+    POM_PROPERTIES: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?:^|!)META-INF/maven/[^/!]+/[^/!]+/pom\.properties$"
+    )
+
+    @staticmethod
+    def pom_identity(path: str, text: str) -> tuple[str, str] | None:
+        """`group:artifact` and version from a jar's `pom.properties`."""
+        group = re.search(r"(?m)^groupId=(\S+)", text)
+        artifact = re.search(r"(?m)^artifactId=(\S+)", text)
+        said = re.search(r"(?m)^version=(\S+)", text)
+        if group and artifact and said:
+            # A shaded jar carries the poms of what it bundles, and may not carry its
+            # own: only a pom whose artifact the jar was published as names it.
+            archive = path.split("!", 1)[0]
+            if f"{artifact.group(1)}-{said.group(1)}" in archive:
+                return f"{group.group(1)}:{artifact.group(1)}", said.group(1)
+        return None
+
 
 __all__ = [
     "MavenBuild",

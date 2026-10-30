@@ -842,5 +842,18 @@ class RubyGemsEcosystem(BaseEcosystem):
             ),
         )
 
+    # -- the release a published archive is (EcosystemReleaseIdentity) -------------
+
+    def release_manifest(self) -> re.Pattern[str] | None:
+        """A gem's `metadata`, or its gzipped `metadata.gz`: the gemspec as YAML."""
+        return re.compile(r"(?:^|!)metadata(?:\.gz)?$")
+
+    def release_identity(
+        self, path: str, text: str, found: re.Match[str]
+    ) -> tuple[str, str] | None:
+        named = re.search(r"(?m)^name:\s*(\S+)", text)
+        said = re.search(r"(?m)^\s+version:\s*['\"]?([\w.+-]+)", text)
+        return (named.group(1), said.group(1)) if named and said else None
+
 
 __all__ = ["BundlerLock", "Gemfile", "Gemspec", "RubyGemsEcosystem", "RubySource"]

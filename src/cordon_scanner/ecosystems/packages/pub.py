@@ -386,5 +386,18 @@ class PubEcosystem(BaseEcosystem):
             "pubspec.yaml": f"name: cordon_check\nenvironment:\n  sdk: '>=3.0.0 <4.0.0'\ndependencies:\n{deps}"
         }
 
+    # -- the release a published archive is (EcosystemReleaseIdentity) -------------
+
+    def release_manifest(self) -> re.Pattern[str] | None:
+        """A pub package's `pubspec.yaml`."""
+        return re.compile(r"(?:^|!)[^/!]*/?pubspec\.yaml$")
+
+    def release_identity(
+        self, path: str, text: str, found: re.Match[str]
+    ) -> tuple[str, str] | None:
+        named = re.search(r"(?m)^name:\s*['\"]?([\w-]+)", text)
+        said = re.search(r"(?m)^version:\s*['\"]?([\w.+-]+)", text)
+        return (named.group(1), said.group(1)) if named and said else None
+
 
 __all__ = ["PackageConfig", "PubEcosystem", "PubLock", "PubManifest", "PubSpec"]

@@ -599,6 +599,12 @@ class NpmEcosystem(BaseEcosystem):
             InstallTool(frozenset({"pnpx"}), "npx", flags_as="pnpm"),
         )
 
+    # -- the release a published archive is (EcosystemReleaseIdentity) -------------
+
+    def identity_in_metadata(self) -> bool:
+        """The release names itself in the metadata every published archive's checks read."""
+        return True
+
 
 __all__ = ["NpmEcosystem"]
 

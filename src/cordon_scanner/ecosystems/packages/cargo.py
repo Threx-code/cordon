@@ -311,6 +311,12 @@ class CargoEcosystem(BaseEcosystem):
             ),
         )
 
+    # -- the release a published archive is (EcosystemReleaseIdentity) -------------
+
+    def identity_in_metadata(self) -> bool:
+        """The release names itself in the metadata every published archive's checks read."""
+        return True
+
 
 class CargoFeatures:
     """Which features enable each optional dependency, and whether the defaults do.

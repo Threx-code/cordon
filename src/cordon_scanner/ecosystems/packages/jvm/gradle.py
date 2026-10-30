@@ -34,6 +34,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.packages.jvm.maven import MavenEcosystem
 from cordon_scanner.foundation.formats.safexml import SafeXml, SafeXmlError
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -478,6 +479,17 @@ class GradleEcosystem(BaseEcosystem):
         if content.basename == "verification-metadata.xml":
             return GradleVerification.parse(content, self.id)
         return GradleLock.parse(content, self.id)
+
+    # -- the release a published archive is (EcosystemReleaseIdentity) -------------
+
+    def release_manifest(self) -> re.Pattern[str] | None:
+        """A Gradle-built jar carries Maven's `pom.properties`."""
+        return MavenEcosystem.POM_PROPERTIES
+
+    def release_identity(
+        self, path: str, text: str, found: re.Match[str]
+    ) -> tuple[str, str] | None:
+        return MavenEcosystem.pom_identity(path, text)
 
 
 __all__ = ["GradleEcosystem", "GradleLock", "GradleVerification"]

@@ -395,6 +395,17 @@ class GoEcosystem(BaseEcosystem):
             ),
         )
 
+    # -- the release a published archive is (EcosystemReleaseIdentity) -------------
+
+    def release_manifest(self) -> re.Pattern[str] | None:
+        """A Go module zip's own go.mod, at `<module>@<version>/go.mod`."""
+        return re.compile(r"(?:^|!)([^!]+)@(v[^/!]+)/go\.mod$")
+
+    def release_identity(
+        self, path: str, text: str, found: re.Match[str]
+    ) -> tuple[str, str] | None:
+        return found.group(1).rpartition("!")[2], found.group(2).lstrip("v")
+
 
 class GoWork:
     """`go.work`: the modules a workspace builds together (`use`), its Go version, and

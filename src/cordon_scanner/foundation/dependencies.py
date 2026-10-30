@@ -264,6 +264,18 @@ class EcosystemVersionSyntax(Protocol):
         ...
 
 
+class EcosystemReleaseIdentity(Protocol):
+    """Which release a published archive of the ecosystem is, read from the manifest it ships."""
+
+    def identity_in_metadata(self, ecosystem: str) -> bool: ...
+
+    def release_manifest(self, ecosystem: str) -> re.Pattern[str] | None: ...
+
+    def release_identity(
+        self, ecosystem: str, path: str, text: str, found: re.Match[str]
+    ) -> tuple[str, str] | None: ...
+
+
 class InstalledEcosystemFacts(
     EcosystemFacts,
     EcosystemNaming,
@@ -271,6 +283,7 @@ class InstalledEcosystemFacts(
     EcosystemTraits,
     EcosystemProjects,
     EcosystemVersionSyntax,
+    EcosystemReleaseIdentity,
     Protocol,
 ):
     """The installed facts object as the provider holds it; each reader asks for the one port it

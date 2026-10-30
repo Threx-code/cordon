@@ -9,6 +9,7 @@ question is being asked.
 from __future__ import annotations
 
 import importlib
+import re
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, ClassVar
@@ -391,6 +392,20 @@ class RegistryFacts:
     @staticmethod
     def normalised_version(ecosystem: str, version: str) -> str:
         return RegistryFacts._of(ecosystem).normalised_version(version)
+
+    @staticmethod
+    def identity_in_metadata(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).identity_in_metadata()
+
+    @staticmethod
+    def release_manifest(ecosystem: str) -> re.Pattern[str] | None:
+        return RegistryFacts._of(ecosystem).release_manifest()
+
+    @staticmethod
+    def release_identity(
+        ecosystem: str, path: str, text: str, found: re.Match[str]
+    ) -> tuple[str, str] | None:
+        return RegistryFacts._of(ecosystem).release_identity(path, text, found)
 
 
 #: What the engine uses of this layer by name, and the module that provides each: the one place

@@ -925,6 +925,19 @@ class HexEcosystem(BaseEcosystem):
             f"  defp deps, do: [{deps}]\nend\n"
         }
 
+    # -- the release a published archive is (EcosystemReleaseIdentity) -------------
+
+    def release_manifest(self) -> re.Pattern[str] | None:
+        """A hex package's `metadata.config`."""
+        return re.compile(r"(?:^|!)metadata\.config$")
+
+    def release_identity(
+        self, path: str, text: str, found: re.Match[str]
+    ) -> tuple[str, str] | None:
+        named = re.search(r'\{<<"name">>,\s*<<"([^"]+)">>\}', text)
+        said = re.search(r'\{<<"version">>,\s*<<"([^"]+)">>\}', text)
+        return (named.group(1), said.group(1)) if named and said else None
+
 
 __all__ = [
     "Atom",

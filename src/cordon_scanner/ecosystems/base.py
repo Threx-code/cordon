@@ -852,6 +852,22 @@ class BaseEcosystem:
         """A version as given, in the form its records keep: a leading `v` dropped."""
         return version.strip().removeprefix("v")
 
+    # -- the release a published archive is (EcosystemReleaseIdentity) -----------------------
+
+    def identity_in_metadata(self) -> bool:
+        """Whether a published archive names its release in the metadata its checks read."""
+        return False
+
+    def release_manifest(self) -> re.Pattern[str] | None:
+        """The member of a published archive that names the release, as a path pattern."""
+        return None
+
+    def release_identity(
+        self, path: str, text: str, found: re.Match[str]
+    ) -> tuple[str, str] | None:
+        """(name, version) from that member: its path, its text, and the pattern's match."""
+        return None
+
 
 # Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine
 # each implementation typed by one of these, and the type checker proves the implementation
