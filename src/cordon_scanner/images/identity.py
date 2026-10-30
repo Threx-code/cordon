@@ -11,7 +11,7 @@ from typing import Any, ClassVar
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.images import langpkgs
 from cordon_scanner.images import packages as pkgdb
-from cordon_scanner.images.oci import ImageLayers
+from cordon_scanner.images.members import ImageArchive
 
 
 @dataclass
@@ -67,9 +67,9 @@ class ImageIdentity:
         references: list[str] = []
         config_bytes: bytes | None = None
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as archive:
-            by_path = ImageLayers._members_by_path(archive)
+            by_path = ImageArchive.members_by_path(archive)
             if "index.json" in by_path:
-                index = ScannedJson.loads(ImageLayers._read_member(archive, by_path["index.json"]))
+                index = ScannedJson.loads(ImageArchive.read_member(archive, by_path["index.json"]))
                 descriptor: Any = (
                     (index.get("manifests") or [{}])[0] if isinstance(index, dict) else {}
                 )
@@ -94,14 +94,14 @@ class ImageIdentity:
                     blob = by_path.get(f"blobs/{algorithm}/{hexdigest}")
                     if blob is None:
                         break
-                    document = ScannedJson.loads(ImageLayers._read_member(archive, blob))
+                    document = ScannedJson.loads(ImageArchive.read_member(archive, blob))
                     if isinstance(document, dict) and isinstance(document.get("config"), dict):
                         algorithm, _, hexdigest = str(
                             document["config"].get("digest", "")
                         ).partition(":")
                         config_path = by_path.get(f"blobs/{algorithm}/{hexdigest}")
                         if config_path is not None:
-                            config_bytes = ImageLayers._read_member(archive, config_path)
+                            config_bytes = ImageArchive.read_member(archive, config_path)
                         break
                     manifests = document.get("manifests") if isinstance(document, dict) else None
                     if not manifests:
@@ -109,7 +109,7 @@ class ImageIdentity:
                     descriptor = manifests[0]
             if "manifest.json" in by_path:
                 manifest = ScannedJson.loads(
-                    ImageLayers._read_member(archive, by_path["manifest.json"])
+                    ImageArchive.read_member(archive, by_path["manifest.json"])
                 )
                 entry = (
                     manifest[0]
@@ -119,9 +119,9 @@ class ImageIdentity:
                 for tag in entry.get("RepoTags") or ():
                     if isinstance(tag, str) and tag not in references:
                         references.append(tag)
-                config_path = by_path.get(ImageLayers._normalise(str(entry.get("Config", ""))))
+                config_path = by_path.get(ImageArchive.normalise(str(entry.get("Config", ""))))
                 if config_bytes is None and config_path is not None:
-                    config_bytes = ImageLayers._read_member(archive, config_path)
+                    config_bytes = ImageArchive.read_member(archive, config_path)
         identity.references = tuple(references)
         if config_bytes is None:
             return identity
