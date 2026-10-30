@@ -47,14 +47,18 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 from cordon_scanner.foundation.results import Dependency
-from cordon_scanner.intel.advisories.advisories import Advisory, AdvisoryDatabase, AdvisoryFiles
-from cordon_scanner.intel.advisories.ranges import VersionRanges
-from cordon_scanner.intel.advisories.upstream_advisories import SUPPORTED as UPSTREAM_ECOSYSTEMS
-from cordon_scanner.intel.advisories.upstream_advisories import UpstreamAdvisories, UpstreamResult
+from cordon_scanner.intel.base import AdvisoryCatalog, AdvisoryRecord, UpstreamFindings
 from cordon_scanner.intel.registry import (
+    UPSTREAM_ECOSYSTEMS,
+    AdvisoryFiles,
     BundledAdvisories,
     EstablishedPackageNames,
+    FeedStore,
+    OsvImport,
     RemovedPackageNames,
+    UpstreamAdvisories,
+    VersionRanges,
+    Versions,
 )
 
 if TYPE_CHECKING:
@@ -88,7 +92,7 @@ class AdvisoryDetector(BaseDetector):
     categories = frozenset({Category.MALICIOUS, Category.VULNERABLE, Category.SUSPICIOUS})
     requires = DetectorRequirements(content=False, dependencies=True)
 
-    def __init__(self, database: AdvisoryDatabase | None = None) -> None:
+    def __init__(self, database: AdvisoryCatalog | None = None) -> None:
         # `is None`, not `or`. An AdvisoryDatabase is falsy when empty, so
         # `database or bundled()` silently replaced a deliberately empty
         # database -- an organisation stating "these are the only advisories I
@@ -140,22 +144,9 @@ class AdvisoryDetector(BaseDetector):
 
         # Ecosystems no advisory source covers, matched through the upstream their own data names
         # (`intel/upstream_advisories`), when the scan may use the network.
-        upstream: UpstreamResult | None = None
-        if not ctx.offline:
-            candidates = [
-                d
-                for d in unit.dependencies
-                if not d.local
-                and not d.bundled
-                and d.ecosystem in UPSTREAM_ECOSYSTEMS
-                and not self._database.covers(d.ecosystem)
-            ]
-            if candidates:
-                upstream = UpstreamAdvisories.check(candidates)
-        # Then NVD (`intel/nvd`), for what no repository route named -- offline too, since its data
-        # is bundled: tied to a CPE product by a curated mapping, or by the guarded rule from the
-        # homepage and download the route read on the way.
-        upstream = self._with_nvd(unit, upstream)
+        upstream = UpstreamAdvisories.for_graph(
+            unit.dependencies, self._database.covers, offline=ctx.offline
+        )
         no_feed = self._no_feed_note(
             unit, ctx.config.policy.accept_no_feed or frozenset(), upstream
         )
@@ -214,7 +205,7 @@ class AdvisoryDetector(BaseDetector):
         ctx: ScanContext,
         findings: list[Finding],
         unit: GraphUnit,
-        upstream: UpstreamResult | None,
+        upstream: UpstreamFindings | None,
     ) -> None:
         """Each dependency's findings: its advisories, a provisional hold the feed keeps on it, malicious repositories its code is fetched from, and a declared range that admits a recorded malicious release."""
         for dependency in unit.dependencies:
@@ -354,7 +345,7 @@ class AdvisoryDetector(BaseDetector):
             degrades_coverage=False,
         )
 
-    def _own_records(self, dependency: Dependency) -> tuple[Advisory, ...]:
+    def _own_records(self, dependency: Dependency) -> tuple[AdvisoryRecord, ...]:
         """The records about this dependency by its own name: by version, and for an image pinned by
         digest by that digest too (an image record lists its digest among its versions). A Helm chart
         record that names its repositories holds only for a chart from one of them."""
@@ -396,7 +387,9 @@ class AdvisoryDetector(BaseDetector):
             text = text.removeprefix(scheme)
         return text.rstrip("/")
 
-    def _repository_matches(self, dependency: Dependency) -> tuple[str, list[Advisory]] | None:
+    def _repository_matches(
+        self, dependency: Dependency
+    ) -> tuple[str, list[AdvisoryRecord]] | None:
         """Malicious-repository records for code this dependency fetches straight from a repository.
 
         A git dependency (`git+https://...`, `github:owner/repo`, a cargo `git =`), an action
@@ -405,8 +398,6 @@ class AdvisoryDetector(BaseDetector):
         repository recorded as malicious -- in OSV's GIT records or as a Go module -- is matched
         here by `host/owner/repo`, every commit of it.
         """
-        from cordon_scanner.intel.advisories.osv_import import OsvImport
-
         candidates: list[str] = []
         if dependency.ecosystem == "actions":
             candidates.append(f"github.com/{dependency.name}")
@@ -435,7 +426,7 @@ class AdvisoryDetector(BaseDetector):
             key = OsvImport.repository_key(candidate)
             if key is None:
                 continue
-            found: list[Advisory] = []
+            found: list[AdvisoryRecord] = []
             for ecosystem in ("git", "gomod"):
                 if ecosystem == dependency.ecosystem:
                     continue  # already matched by name above
@@ -530,43 +521,8 @@ class AdvisoryDetector(BaseDetector):
             )
             break
 
-    def _with_nvd(self, unit: GraphUnit, upstream: UpstreamResult | None) -> UpstreamResult | None:
-        from cordon_scanner.intel.advisories.nvd import ECOSYSTEMS as NVD_ECOSYSTEMS
-        from cordon_scanner.intel.advisories.nvd import NvdAdvisories
-
-        candidates = [
-            d
-            for d in unit.dependencies
-            if not d.local
-            and not d.bundled
-            and d.ecosystem in NVD_ECOSYSTEMS
-            and not self._database.covers(d.ecosystem)
-            and not (upstream is not None and d.purl in upstream.checked)
-        ]
-        if not candidates:
-            return upstream
-        found = NvdAdvisories.check(
-            candidates,
-            upstream.homes if upstream is not None else {},
-            upstream.versions if upstream is not None else {},
-        )
-        merged = upstream if upstream is not None else UpstreamResult()
-        merged.checked |= found.checked
-        merged.advisories.update(found.advisories)
-        for dependency in candidates:
-            if dependency.purl in found.checked:
-                merged.unchecked.pop(dependency.purl, None)
-            elif dependency.purl in found.unchecked:
-                before = merged.unchecked.get(dependency.purl)
-                merged.unchecked[dependency.purl] = (
-                    f"{before}; and NVD: {found.unchecked[dependency.purl]}"
-                    if before
-                    else f"NVD: {found.unchecked[dependency.purl]}"
-                )
-        return merged
-
     def _no_feed_note(
-        self, unit: GraphUnit, accepted: frozenset[str], upstream: UpstreamResult | None
+        self, unit: GraphUnit, accepted: frozenset[str], upstream: UpstreamFindings | None
     ) -> Finding | None:
         """Name the scanned ecosystems no advisory source covers.
 
@@ -643,7 +599,7 @@ class AdvisoryDetector(BaseDetector):
 
     @staticmethod
     def _why_unchecked(
-        derivable: list[str], unchecked: list[Dependency], upstream: UpstreamResult | None
+        derivable: list[str], unchecked: list[Dependency], upstream: UpstreamFindings | None
     ) -> str:
         """Why the uncovered dependencies went unchecked: what --online would add, or the reasons the upstream lookup gave."""
         if upstream is None:
@@ -690,7 +646,7 @@ class AdvisoryDetector(BaseDetector):
         if age_days <= STALE_AFTER_DAYS:
             return None
         message = (
-            f"Advisory data is {age_days} day(s) old (built {meta.built_at}, "
+            f"AdvisoryRecord data is {age_days} day(s) old (built {meta.built_at}, "
             f"{meta.record_count} record(s) from {', '.join(meta.sources) or 'bundled sources'}), "
             f"beyond the {STALE_AFTER_DAYS}-day freshness window this build expects. "
             f"Run `cordon-scanner advisories sync` for current data."
@@ -759,8 +715,6 @@ class AdvisoryDetector(BaseDetector):
         highest -- anything at or below it is named by something.
         """
         from functools import cmp_to_key
-
-        from cordon_scanner.intel.advisories.versions import Versions
 
         generic = "Upgrade to a version the advisory does not name."
         if not dependency.version or not dependency.ecosystem:
@@ -868,8 +822,6 @@ class AdvisoryDetector(BaseDetector):
         """The feed's provisional verdicts for one ecosystem, read once per detector."""
         cache = self._provisional_cache
         if ecosystem not in cache:
-            from cordon_scanner.intel.malware.feed import FeedStore
-
             try:
                 cache[ecosystem] = FeedStore.read_provisional(
                     _SHARED_DATA_KEYS.get(ecosystem, ecosystem)

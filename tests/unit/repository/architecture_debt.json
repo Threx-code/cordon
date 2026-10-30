@@ -26,15 +26,7 @@
   "cordon_scanner.images.identity -> cordon_scanner.images.oci": 1,
   "cordon_scanner.images.oci -> cordon_scanner.images.identity": 1
  },
- "detect_on_intel": {
-  "cordon_scanner.detect.supply.advisories.detector -> cordon_scanner.intel.advisories.advisories": 1,
-  "cordon_scanner.detect.supply.advisories.detector -> cordon_scanner.intel.advisories.nvd": 1,
-  "cordon_scanner.detect.supply.advisories.detector -> cordon_scanner.intel.advisories.osv_import": 1,
-  "cordon_scanner.detect.supply.advisories.detector -> cordon_scanner.intel.advisories.ranges": 1,
-  "cordon_scanner.detect.supply.advisories.detector -> cordon_scanner.intel.advisories.upstream_advisories": 1,
-  "cordon_scanner.detect.supply.advisories.detector -> cordon_scanner.intel.advisories.versions": 1,
-  "cordon_scanner.detect.supply.advisories.detector -> cordon_scanner.intel.malware.feed": 1
- },
+ "detect_on_intel": {},
  "ecosystem_names": {
   "cordon_scanner.analysis.javascript.evaluation.expressions:_BuiltinCalls._builtin": 2,
   "cordon_scanner.analysis.javascript.evaluation.expressions:_BuiltinCalls._method": 1,
