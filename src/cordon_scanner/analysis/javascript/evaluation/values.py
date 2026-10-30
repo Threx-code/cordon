@@ -29,7 +29,9 @@ _HIDDEN_SIGNIFICANT: Final = re.compile(
 #: A loop that builds a string one `String.fromCharCode` at a time over an array: the decoder a
 #: small local function is (`JsEval.BUILTIN_DECODER_LOOP`).
 BUILTIN_DECODER_LOOP: Final = re.compile(
-    r"for\s*\([^)]{0,80}\)\s*\{?\s*[\w$]+\s*\+=\s*String\s*\.\s*fromCharCode\s*\(\s*([\w$]+)\s*\[\s*[\w$]+\s*\]\s*\)"
+    # Every space run is possessive: each is followed by a character that cannot be space. The two
+    # runs around an optional `{` split one run of spaces every way before failing (5x for 2x).
+    r"for\s*+\([^)]{0,80}\)\s*+(?:\{\s*+)?[\w$]+\s*+\+=\s*+String\s*+\.\s*+fromCharCode\s*+\(\s*+([\w$]+)\s*+\[\s*+[\w$]+\s*+\]\s*+\)"
 )
 HOLE: Final = "_"
 """How an unknown piece of a string is written in the view."""

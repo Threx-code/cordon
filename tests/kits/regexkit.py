@@ -438,6 +438,64 @@ class Inputs:
         prefix, unit, suffix = shape
         return prefix + unit * max(n // len(unit), 1) + suffix
 
+    #: How far a bounded repeat is filled, at most: past this its cost no longer grows with its bound.
+    FILL = 8_000
+
+    @staticmethod
+    def bounded(pattern: AnyPattern) -> list[str]:
+        """Each rule-1 adjacency at its worst: the path up to the first repeat as matched, one run of a
+        character both repeats take, long enough to fill the second to its bound, then a character
+        nothing takes, so the match fails at its last step. Repeated by `Ladder.bounded`, every start
+        retries every split, which a generic run of one character need not reach."""
+        try:
+            shape = Shape(pattern)
+        except (re.error, RecursionError):
+            return []
+        # The shape's own parse: `Parsed` remembers each node's characters by its identity, so the
+        # nodes asked about must be the ones it parsed.
+        parsed = shape.parsed
+        units: list[str] = []
+
+        def sample(node: Node) -> str:
+            name = str(node[0])
+            if name in Parsed.ATOMS:
+                return (parsed.accepts(node) or [""])[0]
+            if name in Parsed.REPEATS:
+                low = int(node[1][0])  # type: ignore[index]
+                return "".join(sample(child) for child in Parsed.children(node)) * low
+            if name == "BRANCH":
+                return "".join(sample(child) for child in node[1][1][0])  # type: ignore[index]
+            return "".join(sample(child) for child in Parsed.children(node))
+
+        def pairs(items: list[Node]) -> None:
+            for path in shape.paths(items):
+                for i, first in enumerate(path):
+                    if str(first[0]) not in ("MAX_REPEAT", "MIN_REPEAT") or (
+                        Parsed.high(first) != Parsed.MAXREPEAT
+                    ):
+                        continue
+                    takes = parsed.chars(first)
+                    for later in path[i + 1 :]:
+                        name = str(later[0])
+                        if name in Parsed.REPEATS and Parsed.high(later) > 1:
+                            shared = sorted(parsed.chars(later) & takes, key=lambda c: c != " ")
+                            fill = min(Parsed.high(later), Inputs.FILL) + Shape.LARGE // 2
+                            prefix = "".join(sample(node) for node in path[:i])
+                            units.extend(prefix + c * fill + Inputs.NEVER for c in shared[:2])
+                            break
+                        if not (
+                            parsed.optional(later)
+                            or (name in Parsed.ATOMS and parsed.chars(later) <= takes)
+                        ):
+                            break
+                for node in path:
+                    if str(node[0]) in Parsed.REPEATS or str(node[0]) == "ATOMIC_GROUP":
+                        pairs(Parsed.children(node))
+
+        with contextlib.suppress(RecursionError):
+            pairs(list(parsed.tree))
+        return list(dict.fromkeys(units))[: Inputs.LIMIT]
+
 
 class Growth:
     """Time a call at n and 4n against a linear reference timed in the same loop.
@@ -556,6 +614,19 @@ class Ladder:
         return None
 
     @staticmethod
+    def bounded(found: Found) -> str | None:
+        """Over the bound on any of `Inputs.bounded`'s worst cases, repeated to LONG characters, in
+        any of the pattern's modes; None when every one holds."""
+        encode = Ladder.encoder(found.pattern)
+        for unit in Inputs.bounded(found.pattern):
+            text = encode((unit * (Ladder.LONG // len(unit) + 1))[: Ladder.LONG])
+            for mode in sorted(found.modes):
+                took = Growth.best(functools.partial(Ladder.runner(found.pattern, mode), text), 3)
+                if took > Ladder.ABSOLUTE:
+                    return f"slow at its bound: {took:.3f}s on {Ladder.LONG:,} characters, {mode}, {unit[:24]!r}"
+        return None
+
+    @staticmethod
     def verdict(pattern: AnyPattern, modes: frozenset[str]) -> str | None:
         for mode in sorted(modes):
             for shape in Inputs.shapes(pattern):
@@ -619,12 +690,6 @@ class Listed:
     #: Superlinear today and being rewritten, with who owns the fix; each fix removes its own line.
     OPEN: ClassVar[dict[str, str]] = {
         "detect.code.features:CodeFeatures._URL": "modelling team (measurement-only, every-literal proof)",
-        "analysis.formats.documents:_PDF_STREAM": "outer-layer team",
-        "analysis.go.go_eval:_ASSIGN": "outer-layer team",
-        "analysis.go.go_eval:_HELPER": "outer-layer team",
-        "analysis.javascript.evaluation.values:BUILTIN_DECODER_LOOP": "outer-layer team",
-        "analysis.javascript.js_eval:JsEval.BUILTIN_DECODER_LOOP": "outer-layer team",
-        "analysis.shared.deobfuscation:ObfuscatorIo._ROTATION": "outer-layer team",
     }
     #: Kept as the specification of code that replaced them: superlinear, and called by nothing.
     SPECIFICATIONS: ClassVar[dict[str, str]] = {
@@ -638,6 +703,8 @@ class Listed:
     LINEAR: ClassVar[frozenset[str]] = frozenset(
         {
             "analysis.formats.documents:_RTF_CLASS",
+            "analysis.go.go_eval:_ASSIGN",
+            "analysis.go.go_eval:_HELPER",
             "analysis.go.go_eval:_TABLE",
             "analysis.javascript.flow.vocabulary:_URL",
             "analysis.javascript.front.lexer:Lexer.ASCII_NAME",
@@ -645,6 +712,7 @@ class Listed:
             "analysis.javascript.front.lexer:Lexer.SPACE_RUN",
             "analysis.nix.nix_code:RUNS_BEFORE",
             "analysis.shared.deobfuscation:Layers._INVISIBLE_RUN",
+            "analysis.shared.deobfuscation:ObfuscatorIo._ROTATION",
             "analysis.shared.render_diff:HiddenInstruction._DESTINATION",
             "analysis.shared.render_diff:RenderDiff._COMMENT",
             "detect.agents.ci_workflows:_BROAD_TOOLS",
