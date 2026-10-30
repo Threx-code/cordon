@@ -308,6 +308,7 @@
   "ecosystems/packages/haskell/cabal_project": "ecosystems/packages/haskell/cabal_project",
   "ecosystems/packages/haskell/stack": "ecosystems/packages/haskell/stack",
   "ecosystems/packages/hex": "ecosystems/packages/hex",
+  "ecosystems/packages/hex_literals": "ecosystems/packages/hex_literals",
   "ecosystems/packages/homebrew": "ecosystems/packages/homebrew",
   "ecosystems/packages/javascript/bun": "ecosystems/packages/javascript/bun",
   "ecosystems/packages/javascript/bun_lockb": "ecosystems/packages/javascript/bun_lockb",
