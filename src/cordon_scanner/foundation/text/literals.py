@@ -43,7 +43,8 @@ class LiteralGate:
 
     def __init__(self, literals: tuple[bytes, ...] | list[bytes] | set[bytes]) -> None:
         minimal: list[bytes] = []
-        for literal in sorted(set(literals), key=len):
+        # Length, then the bytes: equal lengths otherwise kept the set's hash-seeded order.
+        for literal in sorted(set(literals), key=lambda b: (len(b), b)):
             if not any(kept in literal for kept in minimal):
                 minimal.append(literal)
         self.literals: tuple[bytes, ...] = tuple(minimal)
@@ -73,7 +74,7 @@ class LiteralGate:
             chosen.append(best)
             uncovered = {literal for literal in uncovered if best not in literal}
         core: list[bytes] = []
-        for piece in sorted(set(chosen), key=len):
+        for piece in sorted(set(chosen), key=lambda b: (len(b), b)):
             if not any(kept in piece for kept in core):
                 core.append(piece)
         if len(core) * 2 > len(minimal):
