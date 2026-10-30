@@ -26,7 +26,7 @@ from cordon_scanner.foundation.models import (
     RedactionMode,
     Severity,
 )
-from cordon_scanner.intel.advisories import exploited
+from cordon_scanner.intel.registry import EUVD_PAGE, KEV_PAGE, Epss, ExploitedCatalogue
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -34,7 +34,7 @@ if TYPE_CHECKING:
     from cordon_scanner.detect.base import ScanContext, Unit
     from cordon_scanner.images.osv import Query, Vulnerability
     from cordon_scanner.images.packages import OsPackage
-    from cordon_scanner.intel.advisories.exploited import Catalogue
+    from cordon_scanner.intel.base import ExploitedLookup
 
 PACKAGE_RULE: Final = "VULNERABLE.IMAGE.PACKAGE.001"
 EXPLOITED_RULE: Final = "VULNERABLE.IMAGE.EXPLOITED.001"
@@ -108,7 +108,7 @@ class OsPackageDetector(BaseDetector):
                     "A package installed in this container image has a vulnerability on CISA's KEV "
                     "catalogue or ENISA's EUVD exploited list."
                 ),
-                references=(ref.OSV, exploited.KEV_PAGE, exploited.EUVD_PAGE),
+                references=(ref.OSV, KEV_PAGE, EUVD_PAGE),
                 remediation="Rebuild on a patched base now, ahead of other findings.",
             ),
             DeclaredRule(
@@ -157,7 +157,7 @@ class OsPackageDetector(BaseDetector):
                 matches = osv.OsvClient.match(list(by_query))
             except osv.OsvError as exc:
                 return [self._unmatched(str(exc), ctx)]
-        catalogue = exploited.ExploitedCatalogue.catalogue()
+        catalogue = ExploitedCatalogue.catalogue()
         findings: list[Finding] = []
         named: set[tuple[str, str]] = set()
         for query, vulnerabilities in matches.by_query.items():
@@ -190,7 +190,7 @@ class OsPackageDetector(BaseDetector):
             advisories = alas.AmazonLinuxAdvisories.fetch(inventory.release.version_id, arch)
         except alas.AlasError as exc:
             return [self._unmatched(str(exc), ctx)]
-        catalogue = exploited.ExploitedCatalogue.catalogue()
+        catalogue = ExploitedCatalogue.catalogue()
         findings: list[Finding] = []
         named: set[tuple[str, str]] = set()
         for match in alas.AmazonLinuxAdvisories.affected(inventory.packages, advisories):
@@ -223,7 +223,7 @@ class OsPackageDetector(BaseDetector):
         self,
         package: OsPackage,
         vulnerability: Vulnerability,
-        catalogue: Catalogue,
+        catalogue: ExploitedLookup,
         ctx: ScanContext,
     ) -> Finding:
         exploitation = catalogue.lookup(set(vulnerability.cves))
@@ -249,7 +249,7 @@ class OsPackageDetector(BaseDetector):
         message += fix
         if exploitation:
             message += " " + exploitation.describe()
-        likelihood = exploited.Epss.lookup(set(vulnerability.cves))
+        likelihood = Epss.lookup(set(vulnerability.cves))
         if likelihood is not None:
             message += " " + likelihood.describe()
         references = vulnerability.references + (exploitation.references() if exploitation else ())

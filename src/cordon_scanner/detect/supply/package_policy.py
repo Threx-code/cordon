@@ -48,7 +48,8 @@ from cordon_scanner.foundation.models import (
     Scope,
     Severity,
 )
-from cordon_scanner.intel.store.licenses import LicenseCategory, LicenseClassifier
+from cordon_scanner.intel.base import LicenseCategory
+from cordon_scanner.intel.registry import LicenseClassifier
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -108,14 +109,14 @@ class LicenceExpressions:
     def branches(expression: str) -> list[list[str]]:
         """The expression as alternatives (OR) of conjunctions (AND), `WITH` kept on its base."""
         text = expression.strip().strip("()")
-        alternatives = LicenseClassifier._split_top_level(text, "OR") or [text]
+        alternatives = LicenseClassifier.split_top_level(text, "OR") or [text]
         out: list[list[str]] = []
         for alternative in alternatives:
             part = alternative.strip().strip("()")
-            atoms = LicenseClassifier._split_top_level(part, "AND") or [part]
+            atoms = LicenseClassifier.split_top_level(part, "AND") or [part]
             out.append(
                 [
-                    (LicenseClassifier._split_top_level(a.strip().strip("()"), "WITH") or [a])[0]
+                    (LicenseClassifier.split_top_level(a.strip().strip("()"), "WITH") or [a])[0]
                     .strip()
                     .strip("()")
                     for a in atoms

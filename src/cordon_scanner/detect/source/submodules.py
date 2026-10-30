@@ -67,7 +67,7 @@ class GitModules:
 
     @staticmethod
     def parse(content: FileContent, ecosystem: str) -> Manifest:
-        from cordon_scanner.intel.advisories.osv_import import OsvImport
+        from cordon_scanner.intel.registry import OsvImport
 
         sections, error = GitModules.sections(content.text)
         if error:

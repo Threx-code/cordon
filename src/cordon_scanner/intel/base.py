@@ -86,6 +86,12 @@ class AdvisoryRecord(Protocol):
     def last_affected(self) -> str | None: ...
     @property
     def repositories(self) -> tuple[str, ...]: ...
+    @property
+    def symbols(self) -> tuple[str, ...]: ...
+    @property
+    def matched_through(self) -> str: ...
+    @property
+    def is_range(self) -> bool: ...
     def affects(self, version: str | None) -> bool: ...
 
 
@@ -489,6 +495,87 @@ class IntelUpdates:
         return cls._generation
 
 
+class AtrRuleFacts(Protocol):
+    """What a detector reads of one ATR rule (`intel.malware.atr.AtrRule`)."""
+
+    @property
+    def rule_id(self) -> str: ...
+    @property
+    def title(self) -> str: ...
+    @property
+    def category(self) -> str: ...
+    @property
+    def severity(self) -> str: ...
+    @property
+    def status(self) -> str: ...
+    @property
+    def grade(self) -> str: ...
+    @property
+    def instruction_hits(self) -> int | None: ...
+
+
+class AtrMatchFacts(Protocol):
+    """One ATR rule's match in a text, as a detector reads it (`intel.malware.atr.AtrMatch`)."""
+
+    @property
+    def rule(self) -> AtrRuleFacts: ...
+    @property
+    def start(self) -> int: ...
+    @property
+    def end(self) -> int: ...
+
+
+class InstructionRules(Protocol):
+    """What a detector uses of the class `AtrEngine`."""
+
+    def evaluate(self, text: str, kinds: Iterable[str]) -> Sequence[AtrMatchFacts]: ...
+
+
+class RuleAddresses(Protocol):
+    """What a detector uses of the class `RuleLinks`: where a rule is published."""
+
+    def url(self, rule_id: str) -> str: ...
+
+
+class HallucinationLookup(Protocol):
+    """What a detector uses of the class `HallucinatedPackages`."""
+
+    def lookup(self, ecosystem: str, name: str) -> Hallucination | None: ...
+
+
+class CampaignFacets(Protocol):
+    """What a detector uses of the class `CampaignFingerprint`."""
+
+    def of(self, manifest: Mapping[str, Any], paths: Iterable[str]) -> dict[str, str | None]: ...
+
+
+class CampaignSiblings(Protocol):
+    """What a detector uses of a `CampaignIndex`: the condemned releases a package is one
+    campaign with."""
+
+    def siblings(self, facets: Mapping[str, str | None]) -> list[dict[str, Any]]: ...
+
+
+class CampaignIndexes(Protocol):
+    """What a detector uses of the class `CampaignIndex`."""
+
+    def shipped(self) -> CampaignSiblings: ...
+
+
+class FeedOverlays(Protocol):
+    """What a detector reads of the feed's installed overlays (`intel.malware.feed.FeedStore`)."""
+
+    def read_provisional(self, ecosystem: str) -> list[dict[str, Any]]: ...
+    def read_overlay(self, ecosystem: str) -> tuple[list[dict[str, Any]], frozenset[str]]: ...
+
+
+class AdvisoryTextReading(Protocol):
+    """What a detector uses of the class `AdvisoryTextSymbols`."""
+
+    def is_text(self, symbols: tuple[str, ...] | list[str]) -> bool: ...
+    def matches(self, used: str, named: str) -> bool: ...
+
+
 # Values the ports carry: plain data, defined here so a detector holds them without reaching a
 # concrete intel module.
 
@@ -639,6 +726,14 @@ class PackageArchive:
 
 class FeedError(Exception):
     """The feed could not be used. Carries a message that is safe to show."""
+
+
+@dataclass(frozen=True)
+class Hallucination:
+    ecosystem: str
+    name: str
+    intended: str
+    note: str
 
 
 __all__ = [

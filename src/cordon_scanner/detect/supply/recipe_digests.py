@@ -67,7 +67,7 @@ class RecipeDigests:
 
     @staticmethod
     def load(ecosystem: str) -> dict[str, tuple[dict[str, Any], bool]]:
-        from cordon_scanner.intel.malware.feed import FeedStore
+        from cordon_scanner.intel.registry import FeedStore
 
         index: dict[str, tuple[dict[str, Any], bool]] = {}
         upserts, withdrawn = FeedStore.read_overlay(ecosystem)

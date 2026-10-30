@@ -41,7 +41,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.ecosystems.packages.python.import_names import PythonImportNames
 from cordon_scanner.foundation.models import Severity
-from cordon_scanner.intel.advisories.advisory_text import AdvisoryTextSymbols
+from cordon_scanner.intel.registry import AdvisoryTextSymbols
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence

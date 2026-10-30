@@ -24,7 +24,7 @@ from cordon_scanner.foundation.models import (
     RedactionMode,
     Severity,
 )
-from cordon_scanner.intel.malware import hallucinated
+from cordon_scanner.intel.registry import HallucinatedPackages
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -106,7 +106,7 @@ class SlopsquatDetector(BaseDetector):
     def _findings(self, dependencies: Iterable[Dependency], ctx: ScanContext) -> list[Finding]:
         findings: list[Finding] = []
         for dependency in dependencies:
-            match = hallucinated.HallucinatedPackages.lookup(dependency.ecosystem, dependency.name)
+            match = HallucinatedPackages.lookup(dependency.ecosystem, dependency.name)
             if match is None:
                 continue
             message = (

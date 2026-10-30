@@ -38,7 +38,7 @@ from cordon_scanner.foundation.models import (
     Finding,
     Severity,
 )
-from cordon_scanner.intel.malware import atr
+from cordon_scanner.intel.registry import ATR_TEXT_KINDS
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -157,7 +157,7 @@ class McpServerFindings:
                     severity=None if blocking else Severity.MEDIUM,
                 )
             yield from AgentTextFindings.threat_rules(
-                unit, ctx, description, atr.TEXT_KINDS, within=text, unconfirmed=unconfirmed
+                unit, ctx, description, ATR_TEXT_KINDS, within=text, unconfirmed=unconfirmed
             )
         names = (m.group("name") or m.group("pyname") for m in _TOOL_NAME.finditer(text))
         for name in dict.fromkeys(names):
@@ -370,7 +370,7 @@ class McpServerFindings:
         if isinstance(command, str):
             launch = " ".join([command, *args])
             yield from AgentTextFindings.threat_rules(
-                unit, ctx, launch, atr.TEXT_KINDS, within=text
+                unit, ctx, launch, ATR_TEXT_KINDS, within=text
             )
             verdict = configuration.CommandClassifier.classify(launch)
             if verdict is not None or FETCH_EXEC.search(launch):

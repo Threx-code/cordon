@@ -13,6 +13,16 @@ from typing import TYPE_CHECKING
 #: that knows, so the layer's modules can move without the engine changing. Each is imported
 #: when it is first asked for (PEP 562), as the engine's own imports were.
 ROLES: dict[str, tuple[str, str]] = {
+    "AtrEngine": ("cordon_scanner.intel.malware.atr", "AtrEngine"),
+    "RuleLinks": ("cordon_scanner.intel.malware.atr", "RuleLinks"),
+    "ATR_TEXT_KINDS": ("cordon_scanner.intel.malware.atr", "TEXT_KINDS"),
+    "ATR_INSTRUCTION_TOLERANCE": ("cordon_scanner.intel.malware.atr", "INSTRUCTION_TOLERANCE"),
+    "HallucinatedPackages": ("cordon_scanner.intel.malware.hallucinated", "HallucinatedPackages"),
+    "CampaignFingerprint": ("cordon_scanner.intel.malware.campaign", "CampaignFingerprint"),
+    "CampaignIndex": ("cordon_scanner.intel.malware.campaign", "CampaignIndex"),
+    "CAMPAIGN_FACETS": ("cordon_scanner.intel.malware.campaign", "FACETS"),
+    "FeedStore": ("cordon_scanner.intel.malware.feed", "FeedStore"),
+    "AdvisoryTextSymbols": ("cordon_scanner.intel.advisories.advisory_text", "AdvisoryTextSymbols"),
     "AdvisoryBundle": ("cordon_scanner.intel.store.dbsync", "AdvisoryBundle"),
     "BundledAdvisories": ("cordon_scanner.intel.advisories.shipped", "ShippedAdvisories"),
     "AdvisoryFiles": ("cordon_scanner.intel.advisories.advisories", "AdvisoryFiles"),
@@ -82,6 +92,7 @@ if TYPE_CHECKING:
     import enum
 
     from cordon_scanner.intel.advisories import advisories as _intel_advisories_advisories
+    from cordon_scanner.intel.advisories import advisory_text as _intel_advisories_advisory_text
     from cordon_scanner.intel.advisories import exploited as _intel_advisories_exploited
     from cordon_scanner.intel.advisories import osv_import as _intel_advisories_osv_import
     from cordon_scanner.intel.advisories import ranges as _intel_advisories_ranges
@@ -91,20 +102,26 @@ if TYPE_CHECKING:
     from cordon_scanner.intel.base import (
         AdvisoryCves,
         AdvisoryFileChecks,
+        AdvisoryTextReading,
         ArtifactQueries,
         AttestationQueries,
         BottleProvenance,
         BundledAdvisoryDatabase,
         BundleKeys,
         BundleVerification,
+        CampaignFacets,
+        CampaignIndexes,
         ChartProvenance,
         CollectionSignatureQueries,
         DataFiles,
         EstablishedNames,
         Exploitations,
         ExploitLikelihoods,
+        FeedOverlays,
         FeedStatus,
+        HallucinationLookup,
         InstallerChecks,
+        InstructionRules,
         Keyrings,
         LicenseExpressions,
         LiveServers,
@@ -121,12 +138,16 @@ if TYPE_CHECKING:
         ReleaseHistories,
         RemovedNameList,
         RepositoryHeads,
+        RuleAddresses,
         SignatureCheck,
         ToolApprovals,
         UpstreamLookup,
         VersionOrdering,
     )
+    from cordon_scanner.intel.malware import atr as _intel_malware_atr
+    from cordon_scanner.intel.malware import campaign as _intel_malware_campaign
     from cordon_scanner.intel.malware import feed as _intel_malware_feed
+    from cordon_scanner.intel.malware import hallucinated as _intel_malware_hallucinated
     from cordon_scanner.intel.provenance import _ed25519 as _intel_provenance__ed25519
     from cordon_scanner.intel.provenance import (
         ansible_signatures as _intel_provenance_ansible_signatures,
@@ -207,6 +228,16 @@ if TYPE_CHECKING:
     PublishedManifests: PublishedManifestQueries = _intel_registries_registry_client.RegistryClient
     RegistryArtifacts: ArtifactQueries = _intel_registries_registry_client.RegistryClient
     RegistryClient: PackageFactsQueries = _intel_registries_registry_client.RegistryClient
+    AtrEngine: InstructionRules = _intel_malware_atr.AtrEngine
+    RuleLinks: RuleAddresses = _intel_malware_atr.RuleLinks
+    ATR_TEXT_KINDS: tuple[str, ...] = _intel_malware_atr.TEXT_KINDS
+    ATR_INSTRUCTION_TOLERANCE: int = _intel_malware_atr.INSTRUCTION_TOLERANCE
+    HallucinatedPackages: HallucinationLookup = _intel_malware_hallucinated.HallucinatedPackages
+    CampaignFingerprint: CampaignFacets = _intel_malware_campaign.CampaignFingerprint
+    CampaignIndex: CampaignIndexes = _intel_malware_campaign.CampaignIndex
+    CAMPAIGN_FACETS: tuple[str, ...] = _intel_malware_campaign.FACETS
+    FeedStore: FeedOverlays = _intel_malware_feed.FeedStore
+    AdvisoryTextSymbols: AdvisoryTextReading = _intel_advisories_advisory_text.AdvisoryTextSymbols
     AnsibleSignatures: CollectionSignatureQueries = (
         _intel_provenance_ansible_signatures.AnsibleSignatures
     )
@@ -230,6 +261,9 @@ def __getattr__(name: str) -> object:
 
 
 __all__ = [
+    "ATR_INSTRUCTION_TOLERANCE",
+    "ATR_TEXT_KINDS",
+    "CAMPAIGN_FACETS",
     "ECOSYSTEMS",
     "EUVD_PAGE",
     "KEV_PAGE",
@@ -243,16 +277,22 @@ __all__ = [
     "AdvisoryBundle",
     "AdvisoryCveNames",
     "AdvisoryFiles",
+    "AdvisoryTextSymbols",
     "AnsibleSignatures",
+    "AtrEngine",
     "AttestationDocuments",
     "BazelProvenance",
     "BundledAdvisories",
+    "CampaignFingerprint",
+    "CampaignIndex",
     "Ed25519",
     "Epss",
     "EstablishedPackageNames",
     "ExploitedCatalogue",
     "FeedClient",
+    "FeedStore",
     "GitHubRepository",
+    "HallucinatedPackages",
     "HelmProvenance",
     "HomebrewProvenance",
     "IntelDataFile",
@@ -274,6 +314,7 @@ __all__ = [
     "RegistryRecord",
     "ReleaseHistory",
     "RemovedPackageNames",
+    "RuleLinks",
     "SigstoreVerification",
     "UpstreamAdvisories",
     "VersionRanges",

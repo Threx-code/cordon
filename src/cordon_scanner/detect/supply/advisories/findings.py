@@ -27,9 +27,13 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 from cordon_scanner.foundation.results import Dependency
-from cordon_scanner.intel.advisories import exploited
-from cordon_scanner.intel.advisories.advisories import Advisory
-from cordon_scanner.intel.registry import RemovedPackageNames
+from cordon_scanner.intel.base import AdvisoryRecord, ExploitationFacts
+from cordon_scanner.intel.registry import (
+    AdvisoryCveNames,
+    Epss,
+    ExploitedCatalogue,
+    RemovedPackageNames,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -107,7 +111,7 @@ class AdvisoryFinding:
 
     @classmethod
     def removed_finding(
-        cls, dependency: Dependency, spec: str, advisory: Advisory, ctx: ScanContext
+        cls, dependency: Dependency, spec: str, advisory: AdvisoryRecord, ctx: ScanContext
     ) -> Finding:
         """The name is malicious in every version and gone from its registry (`REMOVED_RULE`)."""
         checked = RemovedPackageNames.checked(dependency.ecosystem)
@@ -148,7 +152,7 @@ class AdvisoryFinding:
 
     @classmethod
     def _placeholder_finding(
-        cls, dependency: Dependency, advisory: Advisory, ctx: ScanContext
+        cls, dependency: Dependency, advisory: AdvisoryRecord, ctx: ScanContext
     ) -> Finding:
         """The name was taken over, and this is what npm left in its place.
 
@@ -199,7 +203,7 @@ class AdvisoryFinding:
     def finding(
         cls,
         dependency: Dependency,
-        advisory: Advisory,
+        advisory: AdvisoryRecord,
         ctx: ScanContext,
         *,
         advice: Callable[[Dependency], str],
@@ -232,9 +236,7 @@ class AdvisoryFinding:
         exploitation = (
             None
             if malicious
-            else exploited.ExploitedCatalogue.catalogue().lookup(
-                exploited.ExploitedCatalogue.cves_of(advisory)
-            )
+            else ExploitedCatalogue.catalogue().lookup(AdvisoryCveNames.cves_of(advisory))
         )
         if exploitation is not None:
             rule_id = EXPLOITED_RULE
@@ -272,7 +274,7 @@ class AdvisoryFinding:
     def _conditions(
         ctx: ScanContext,
         dependency: Dependency,
-        exploitation: exploited.Exploitation | None,
+        exploitation: ExploitationFacts | None,
         malicious: bool,
         severity: Severity,
     ) -> tuple[bool, bool, bool, bool, Severity]:
@@ -323,10 +325,10 @@ class AdvisoryFinding:
     @staticmethod
     def _message_and_remediation(
         advice: Callable[[Dependency], str],
-        advisory: Advisory,
+        advisory: AdvisoryRecord,
         bundled_in_extension: bool,
         dependency: Dependency,
-        exploitation: exploited.Exploitation | None,
+        exploitation: ExploitationFacts | None,
         go_minimum: bool,
         maintainers_only: bool,
         malicious: bool,
@@ -355,7 +357,7 @@ class AdvisoryFinding:
                 f"{dependency.name} {dependency.version} is named by {named}. {advisory.summary}"
             )
             # How likely exploitation is, beside whether it is known: FIRST's EPSS, offline.
-            likelihood = exploited.Epss.lookup(exploited.ExploitedCatalogue.cves_of(advisory))
+            likelihood = Epss.lookup(AdvisoryCveNames.cves_of(advisory))
             if likelihood is not None:
                 message = f"{message.rstrip()} {likelihood.describe()}"
             remediation = advice(dependency)
@@ -396,11 +398,11 @@ class AdvisoryFinding:
     @classmethod
     def _scored(
         cls,
-        advisory: Advisory,
+        advisory: AdvisoryRecord,
         confidence: Confidence,
         ctx: ScanContext,
         dependency: Dependency,
-        exploitation: exploited.Exploitation | None,
+        exploitation: ExploitationFacts | None,
         in_test_fixture: bool,
         malicious: bool,
         message: str,
@@ -439,7 +441,7 @@ class AdvisoryFinding:
             # CONFIRMED for an identity match against a recorded incident, with
             # no inference in between; HIGH for a range match, which adds one
             # inferential step -- does this version fall between these two? --
-            # on top of that identity. See `Advisory.is_range`.
+            # on top of that identity. See `AdvisoryRecord.is_range`.
             confidence=confidence,
             message=message,
             location=Location(

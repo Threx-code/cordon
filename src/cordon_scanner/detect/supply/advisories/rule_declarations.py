@@ -20,7 +20,7 @@ from cordon_scanner.foundation.models import (
     Confidence,
     Severity,
 )
-from cordon_scanner.intel.advisories import exploited
+from cordon_scanner.intel.registry import EUVD_PAGE, KEV_PAGE
 
 DECLARED_RULES: tuple[DeclaredRule, ...] = (
     DeclaredRule(
@@ -126,7 +126,7 @@ DECLARED_RULES: tuple[DeclaredRule, ...] = (
             "CISA's Known Exploited Vulnerabilities catalogue or ENISA's EUVD exploited "
             "list: attackers are using it, not merely able to."
         ),
-        references=(references.OSV, exploited.KEV_PAGE, exploited.EUVD_PAGE),
+        references=(references.OSV, KEV_PAGE, EUVD_PAGE),
         remediation=(
             "Upgrade now, ahead of other advisories. Under the EU Cyber Resilience Act an "
             "actively exploited vulnerability in a product you ship is reportable within "
