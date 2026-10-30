@@ -18,6 +18,7 @@ answer (a version computed in Ruby) is unresolved, with that reason.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar
 
@@ -803,6 +804,24 @@ class RubyGemsEcosystem(BaseEcosystem):
 
     def parse_lockfile(self, content: FileContent) -> LockGraph:
         return BundlerLock.parse(content, self.id)
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A project pinning these releases, as its own lockfile: `{path: content}`."""
+        specs_text = "".join(f"    {name} ({version})\n" for name, version in pins)
+        deps = "".join(f"  {name}\n" for name, _version in pins)
+        return {
+            "Gemfile.lock": f"GEM\n  remote: https://rubygems.org/\n  specs:\n{specs_text}\n"
+            f"PLATFORMS\n  ruby\n\nDEPENDENCIES\n{deps}"
+        }
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A project naming these packages with no version: `{path: content}`."""
+        return {
+            "Gemfile": "source 'https://rubygems.org'\n"
+            + "".join(f"gem '{name}'\n" for name in names)
+        }
 
 
 __all__ = ["BundlerLock", "Gemfile", "Gemspec", "RubyGemsEcosystem", "RubySource"]

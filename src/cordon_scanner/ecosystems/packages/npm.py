@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.ecosystems.base import (
@@ -550,6 +551,36 @@ class NpmEcosystem(BaseEcosystem):
             if name and version and (not scoped or "/" in name):
                 return (name, version)
         return None
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A project pinning these releases, as its own lockfile: `{path: content}`."""
+        packages: dict[str, object] = {"": {"name": "cordon-check", "dependencies": dict(pins)}}
+        for name, version in pins:
+            packages[f"node_modules/{name}"] = {"version": version}
+        return {
+            "package-lock.json": json.dumps(
+                {
+                    "name": "cordon-check",
+                    "lockfileVersion": 3,
+                    "requires": True,
+                    "packages": packages,
+                }
+            )
+        }
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A project naming these packages with no version: `{path: content}`."""
+        return {
+            "package.json": json.dumps(
+                {
+                    "name": "cordon-check",
+                    "version": "0.0.0",
+                    "dependencies": dict.fromkeys(names, "*"),
+                }
+            )
+        }
 
 
 __all__ = ["NpmEcosystem"]

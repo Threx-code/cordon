@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import posixpath
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -899,6 +900,26 @@ class HexEcosystem(BaseEcosystem):
         if content.basename == "rebar.lock":
             return RebarLock.parse(content, self.id)
         return MixLock.parse(content, self.id)
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A project pinning these releases, as its own lockfile: `{path: content}`."""
+        zeros = "0" * 64
+        body = "".join(
+            f'  "{name}": {{:hex, :{name}, "{version}", "{zeros}", [:mix], [], "hexpm", "{zeros}"}},\n'
+            for name, version in pins
+        )
+        return {"mix.lock": "%{\n" + body + "}\n"}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A project naming these packages with no version: `{path: content}`."""
+        deps = ", ".join(f'{{:{name}, ">= 0.0.0"}}' for name in names)
+        return {
+            "mix.exs": "defmodule CordonCheck.MixProject do\n  use Mix.Project\n"
+            '  def project, do: [app: :cordon_check, version: "0.0.0", deps: deps()]\n'
+            f"  defp deps, do: [{deps}]\nend\n"
+        }
 
 
 __all__ = [

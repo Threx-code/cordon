@@ -19,7 +19,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import re
-from collections.abc import Collection, Mapping
+from collections.abc import Collection, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.ecosystems.base import (
@@ -519,6 +519,29 @@ class CranEcosystem(BaseEcosystem):
 
     def parse_lockfile(self, content: FileContent) -> LockGraph:
         return RenvLock.parse(content, self.id)
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A project pinning these releases, as its own lockfile: `{path: content}`."""
+        packages_r = {
+            name: {
+                "Package": name,
+                "Version": version,
+                "Source": "Repository",
+                "Repository": "CRAN",
+            }
+            for name, version in pins
+        }
+        return {"renv.lock": json.dumps({"R": {"Version": "4.3.0"}, "Packages": packages_r})}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A project naming these packages with no version: `{path: content}`."""
+        return {
+            "DESCRIPTION": "Package: cordoncheck\nVersion: 0.0.0\nImports: "
+            + ", ".join(names)
+            + "\n"
+        }
 
 
 __all__ = [

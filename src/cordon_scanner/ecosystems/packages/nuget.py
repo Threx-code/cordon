@@ -21,8 +21,10 @@ from __future__ import annotations
 import json
 import posixpath
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar
+from xml.sax.saxutils import escape
 
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
@@ -803,6 +805,29 @@ class NuGetEcosystem(BaseEcosystem):
         if content.basename == "project.assets.json":
             return NuGetAssets.lock(content, self.id)
         return NuGetLock.parse(content, self.id)
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A project pinning these releases, as its own lockfile: `{path: content}`."""
+        locked = {
+            name: {"type": "Direct", "requested": f"[{version}, )", "resolved": version}
+            for name, version in pins
+        }
+        return {
+            "packages.lock.json": json.dumps({"version": 1, "dependencies": {"net8.0": locked}})
+        }
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A project naming these packages with no version: `{path: content}`."""
+
+        def xml(value: str) -> str:
+            return escape(value, {'"': "&quot;"})
+
+        refs = "".join(f'<PackageReference Include="{xml(name)}" />' for name in names)
+        return {
+            "check.csproj": f'<Project Sdk="Microsoft.NET.Sdk"><ItemGroup>{refs}</ItemGroup></Project>'
+        }
 
 
 __all__ = [

@@ -22,6 +22,7 @@ positives.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -778,6 +779,18 @@ class BaseEcosystem:
                     command=str(command),
                     ecosystem=self.id,
                 )
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A project pinning these releases, as this ecosystem's own lockfile: `{path: content}`;
+        None where the ecosystem has no project to write."""
+        return None
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A project naming these packages with no version: `{path: content}`; None where the
+        ecosystem has no project to write. Raises ValueError where it needs a version."""
+        return None
 
 
 # Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine

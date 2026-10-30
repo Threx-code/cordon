@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import posixpath
 import re
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar
+from xml.sax.saxutils import escape
 
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
@@ -627,6 +629,45 @@ class MavenEcosystem(BaseEcosystem):
                 "output, and commit trusted checksums under .mvn/checksums/"
             ),
         )
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A project pinning these releases, as its own lockfile: `{path: content}`."""
+
+        def xml(value: str) -> str:
+            return escape(value, {'"': "&quot;"})
+
+        deps = "".join(
+            f"<dependency><groupId>{xml(name.split(':')[0])}</groupId>"
+            f"<artifactId>{xml(name.split(':')[1])}</artifactId>"
+            f"<version>{xml(version or '')}</version></dependency>"
+            for name, version in pins
+        )
+        return {
+            "pom.xml": '<?xml version="1.0"?><project xmlns="http://maven.apache.org/POM/4.0.0">'
+            "<modelVersion>4.0.0</modelVersion><groupId>cordon.check</groupId>"
+            "<artifactId>check</artifactId><version>1</version>"
+            f"<dependencies>{deps}</dependencies></project>"
+        }
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A project naming these packages with no version: `{path: content}`."""
+
+        def xml(value: str) -> str:
+            return escape(value, {'"': "&quot;"})
+
+        deps = "".join(
+            f"<dependency><groupId>{xml(name.split(':')[0])}</groupId>"
+            f"<artifactId>{xml(name.split(':')[1])}</artifactId></dependency>"
+            for name in names
+        )
+        return {
+            "pom.xml": '<?xml version="1.0"?><project xmlns="http://maven.apache.org/POM/4.0.0">'
+            "<modelVersion>4.0.0</modelVersion><groupId>cordon.check</groupId>"
+            "<artifactId>check</artifactId><version>1</version>"
+            f"<dependencies>{deps}</dependencies></project>"
+        }
 
 
 __all__ = [

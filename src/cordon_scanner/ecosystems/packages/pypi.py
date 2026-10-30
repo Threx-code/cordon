@@ -13,6 +13,7 @@ from __future__ import annotations
 import ast
 import re
 import tomllib
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
@@ -642,6 +643,16 @@ class PypiEcosystem(PypiLockfiles, BaseEcosystem):
                 name="python", spec=spec.strip(), scope=Scope.PLATFORM, field_name=field_name
             )
         return None
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A project pinning these releases, as its own lockfile: `{path: content}`."""
+        return {"requirements.txt": "".join(f"{name}=={version}\n" for name, version in pins)}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A project naming these packages with no version: `{path: content}`."""
+        return {"requirements.txt": "".join(f"{name}\n" for name in names)}
 
     # -- Lockfiles -------------------------------------------------------
 

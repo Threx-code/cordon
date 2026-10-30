@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tomllib
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.ecosystems.base import (
@@ -276,6 +277,26 @@ class CargoEcosystem(BaseEcosystem):
             for e in entries
         ]
         return LockGraph(path=content.path, ecosystem=self.id, entries=tuple(entries))
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A project pinning these releases, as its own lockfile: `{path: content}`."""
+        return {
+            "Cargo.lock": "version = 3\n"
+            + "".join(
+                f'\n[[package]]\nname = "{name}"\nversion = "{version}"\n'
+                'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+                for name, version in pins
+            )
+        }
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A project naming these packages with no version: `{path: content}`."""
+        deps = "".join(f'"{name}" = "*"\n' for name in names)
+        return {
+            "Cargo.toml": f'[package]\nname = "cordon-check"\nversion = "0.0.0"\n\n[dependencies]\n{deps}'
+        }
 
 
 class CargoFeatures:

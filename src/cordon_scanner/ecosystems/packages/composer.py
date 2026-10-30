@@ -18,6 +18,7 @@ from __future__ import annotations
 import fnmatch
 import json
 import re
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.ecosystems.base import (
@@ -386,6 +387,27 @@ class ComposerEcosystem(BaseEcosystem):
 
     def parse_lockfile(self, content: FileContent) -> LockGraph:
         return ComposerLock.parse(content, self.id)
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A project pinning these releases, as its own lockfile: `{path: content}`."""
+        return {
+            "composer.lock": json.dumps(
+                {
+                    "packages": [{"name": name, "version": version} for name, version in pins],
+                    "packages-dev": [],
+                }
+            )
+        }
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A project naming these packages with no version: `{path: content}`."""
+        return {
+            "composer.json": json.dumps(
+                {"name": "cordon/check", "require": dict.fromkeys(names, "*")}
+            )
+        }
 
 
 __all__ = [

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.ecosystems.base import (
@@ -353,6 +354,22 @@ class GoEcosystem(BaseEcosystem):
         return LockGraph(
             path=content.path, ecosystem=self.id, entries=tuple(entries), companion=True
         )
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A project pinning these releases, as its own lockfile: `{path: content}`."""
+
+        def go_version(version: str | None) -> str:
+            v = version or ""
+            return v if v.startswith("v") else f"v{v}"
+
+        lines = "".join(f"\t{name} {go_version(version)}\n" for name, version in pins)
+        return {"go.mod": f"module cordon.invalid/check\n\ngo 1.22\n\nrequire (\n{lines})\n"}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A project naming these packages with no version: `{path: content}`."""
+        raise ValueError("a Go module needs a version: Go records none without one")
 
 
 class GoWork:
