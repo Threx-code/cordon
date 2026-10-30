@@ -200,7 +200,9 @@ class ParsedCommand:
 class InstallCommand:
     """Splits shell text into the package installs it performs."""
 
-    _SEPARATORS: ClassVar[re.Pattern[str]] = re.compile(r"\s*(?:&&|\|\||;|\n|\|)\s*")
+    #: A leading whitespace run is taken only from its start (the lookbehind), so a long run of blanks
+    #: is not retried at every position: linear, and the same splits as `\s*(?:&&|\|\||;|\n|\|)\s*`.
+    _SEPARATORS: ClassVar[re.Pattern[str]] = re.compile(r"(?:(?<!\s)\s+)?(?:&&|\|\||;|\n|\|)\s*")
     _ENV: ClassVar[re.Pattern[str]] = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
     #: Flags that take a value as the next word, per tool; the value is not a package.
     _VALUED: ClassVar[dict[str, frozenset[str]]] = {
