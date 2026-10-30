@@ -59,6 +59,24 @@ class ScannedJson:
         except RecursionError as error:
             raise JsonTooDeep("JSON nested too deeply to decode") from error
 
+    @staticmethod
+    def strings(value: object) -> list[str]:
+        """Every string in a parsed document, in document order: the leaves of its objects'
+        values and its arrays, at any depth. Iterative, as `loads` is, so a deep document is read
+        the same as a shallow one."""
+        found: list[str] = []
+        stack: list[object] = [value]
+        while stack:
+            item = stack.pop()
+            if isinstance(item, str):
+                found.append(item)
+                continue
+            children = (
+                item.values() if isinstance(item, dict) else item if isinstance(item, list) else ()
+            )
+            stack.extend(reversed(list(children)))
+        return found
+
 
 class _Iterative:
     """`json.loads` with an explicit stack: CPython's `JSONObject`, `JSONArray` and `scan_once`, whose

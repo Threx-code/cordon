@@ -355,7 +355,28 @@ class Rules:
         return out
 
     @staticmethod
+    @staticmethod
+    def dispatched_on(test: ast.expr) -> str | None:
+        """What a branch dispatches on: `x` when the test is `isinstance(x, T)`, alone or as the
+        first condition of an `and`. A branch that checks something else (a key's value, a call's
+        name) is not dispatch on a type, whatever isinstance checks follow."""
+        first = (
+            test.values[0]
+            if isinstance(test, ast.BoolOp) and isinstance(test.op, ast.And)
+            else test
+        )
+        if (
+            isinstance(first, ast.Call)
+            and isinstance(first.func, ast.Name)
+            and first.func.id == "isinstance"
+            and first.args
+        ):
+            return ast.dump(first.args[0])
+        return None
+
+    @staticmethod
     def isinstance_chains() -> dict[str, int]:
+        """Functions with three or more consecutive branches on the type of one subject."""
         out: dict[str, int] = {}
         for module, tree in Modules.trees().items():
             owner = {id(n): name for name, scope in Modules.scoped(tree) for n in ast.walk(scope)}
@@ -363,8 +384,13 @@ class Rules:
             for node in ast.walk(tree):
                 if not isinstance(node, ast.If) or id(node) in inner:
                     continue
+                subject = Rules.dispatched_on(node.test)
                 chain, current = 0, node
-                while isinstance(current, ast.If) and "isinstance(" in ast.unparse(current.test):
+                while (
+                    subject is not None
+                    and isinstance(current, ast.If)
+                    and Rules.dispatched_on(current.test) == subject
+                ):
                     chain += 1
                     inner.add(id(current))
                     current = current.orelse[0] if len(current.orelse) == 1 else None

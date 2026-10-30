@@ -48,7 +48,7 @@ from cordon_scanner.foundation.paths import StatePaths
 from cordon_scanner.version import SCHEMA_VERSION
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Callable, Iterator, Sequence
 
     from cordon_scanner.detect.base import ScanContext
     from cordon_scanner.foundation.config.settings import Config
@@ -430,26 +430,9 @@ class ScanCache:
         stack: list[Any] = [value]
         while stack:
             item = stack.pop()
-            if item is None or isinstance(item, (bool, int, float, str, bytes)):
-                digest.update(f"{type(item).__name__}:{item!r};".encode())
-            elif isinstance(item, Enum):
-                digest.update(f"enum:{type(item).__name__}.{item.name};".encode())
-            elif isinstance(item, Path):
-                digest.update(f"path:{item.as_posix()};".encode())
-            elif isinstance(item, (frozenset, set)):
-                members = sorted(ScanCache._canonical(member) for member in item)
-                digest.update(f"set:{len(members)}:".encode())
-                for member in members:
-                    digest.update(member.encode("utf-8") + b"\0")
-            elif isinstance(item, (list, tuple)):
-                digest.update(f"seq:{len(item)}:".encode())
-                stack.extend(reversed(item))
-            elif isinstance(item, dict):
-                ordered = sorted(item.items(), key=lambda pair: ScanCache._canonical(pair[0]))
-                digest.update(f"map:{len(ordered)}:".encode())
-                for key, member in reversed(ordered):
-                    stack.append(member)
-                    stack.append(key)
+            feeder = next((f for kind, f in FEEDERS.items() if isinstance(item, kind)), None)
+            if feeder is not None:
+                feeder(digest, item, stack)
             elif is_dataclass(item) and not isinstance(item, type):
                 names = [f.name for f in fields(item)]
                 digest.update(f"obj:{type(item).__qualname__}:{len(names)}:".encode())
@@ -976,6 +959,62 @@ class ScanCache:
             self._writable = False
         return self._writable
 
+
+class Feeders:
+    """How `ScanCache._feed` writes each kind of value into a digest. A value is fed as the first
+    kind in FEEDERS it is an instance of, so a subclass (an IntEnum, a PosixPath, a defaultdict)
+    is fed as it always was: scalars, then enums, paths, sets, sequences, mappings."""
+
+    @staticmethod
+    def scalar(digest: Any, item: Any, stack: list[Any]) -> None:
+        digest.update(f"{type(item).__name__}:{item!r};".encode())
+
+    @staticmethod
+    def enum(digest: Any, item: Any, stack: list[Any]) -> None:
+        digest.update(f"enum:{type(item).__name__}.{item.name};".encode())
+
+    @staticmethod
+    def path(digest: Any, item: Any, stack: list[Any]) -> None:
+        digest.update(f"path:{item.as_posix()};".encode())
+
+    @staticmethod
+    def members(digest: Any, item: Any, stack: list[Any]) -> None:
+        members = sorted(ScanCache._canonical(member) for member in item)
+        digest.update(f"set:{len(members)}:".encode())
+        for member in members:
+            digest.update(member.encode("utf-8") + b"\0")
+
+    @staticmethod
+    def sequence(digest: Any, item: Any, stack: list[Any]) -> None:
+        digest.update(f"seq:{len(item)}:".encode())
+        stack.extend(reversed(item))
+
+    @staticmethod
+    def mapping(digest: Any, item: Any, stack: list[Any]) -> None:
+        ordered = sorted(item.items(), key=lambda pair: ScanCache._canonical(pair[0]))
+        digest.update(f"map:{len(ordered)}:".encode())
+        for key, member in reversed(ordered):
+            stack.append(member)
+            stack.append(key)
+
+
+#: The kinds `_feed` knows, each with its feeder, in the order they are tried: the scalars come
+#: before Enum, so an IntEnum is fed as its int, as it always was.
+FEEDERS: dict[type, Callable[[Any, Any, list[Any]], None]] = {
+    type(None): Feeders.scalar,
+    bool: Feeders.scalar,
+    int: Feeders.scalar,
+    float: Feeders.scalar,
+    str: Feeders.scalar,
+    bytes: Feeders.scalar,
+    Enum: Feeders.enum,
+    Path: Feeders.path,
+    frozenset: Feeders.members,
+    set: Feeders.members,
+    list: Feeders.sequence,
+    tuple: Feeders.sequence,
+    dict: Feeders.mapping,
+}
 
 __all__ = [
     "CACHE_VERSION",
