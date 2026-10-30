@@ -144,7 +144,7 @@ class SecretDetector(BaseDetector):
 
     id = "secrets"
     # 0.2.1: the assignment pattern no longer matches across a newline. The bump is not
-    # cosmetic - `ScanCache.detector_signature` is `id@version`, and it is the ONLY thing that
+    # cosmetic - `CacheSignature.detector_signature` is `id@version`, and it is the ONLY thing that
     # invalidates a cached result when a detector's behaviour changes. Without it, everyone who
     # upgrades keeps being served the false positives this release removes, out of a cache whose
     # other inputs (file content, rulepack hash, config) are all unchanged.

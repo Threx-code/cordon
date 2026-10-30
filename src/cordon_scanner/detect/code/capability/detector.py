@@ -131,7 +131,7 @@ class CapabilityDetector(BaseDetector):
     # 0.2.0: a spawn whose whole argv is written out no longer satisfies a composite,
     # a capability named in a comment is not a capability, a link-local destination is
     # not egress, and a provisioning script's persistence is ceilinged. The bump is
-    # what invalidates a cached result: `ScanCache.detector_signature` is `id@version`
+    # what invalidates a cached result: `CacheSignature.detector_signature` is `id@version`
     # and nothing else notices that a detector's behaviour changed.
     # 0.10.0: a presence test on one environment name is not whole-environment
     # access, and a primitive that is called is recorded once rather than twice.

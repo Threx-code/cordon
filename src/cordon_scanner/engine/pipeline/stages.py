@@ -21,7 +21,7 @@ from cordon_scanner.detect.base import (
     ScanContext,
 )
 from cordon_scanner.detect.registry import ComposerPluginHooks, ServerSources
-from cordon_scanner.engine.cache import ScanCache
+from cordon_scanner.engine.cache import CacheSignature
 from cordon_scanner.engine.parallel import MAX_CARRIED_BYTES, ParallelScanner
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.ceilings import Ceilings
@@ -184,7 +184,7 @@ class ScanStages:
             if self.engine.detection.enabled(d, ctx)
             and not (d.requires.dependencies and d.requires.content is False)
         ]
-        signature = ScanCache.scan_signature(file_detectors, ctx, self.config)
+        signature = CacheSignature.scan_signature(file_detectors, ctx, self.config)
 
         # A source whose bytes are not what is on disk cannot have its files
         # re-read by a worker: a staged scan would examine the working tree
