@@ -882,6 +882,7 @@
   "test_windows.py": "foundation/files",
   "test_workload_images.py": "ecosystems",
   "test_chain.py": "detect/binary/rule_engine",
+  "test_search_parts.py": "detect/binary/rule_engine",
   "test_dotnet.py": "detect/binary/modules",
   "test_elf.py": "detect/binary/modules",
   "test_rule_engine_function_length.py": "detect/binary",
