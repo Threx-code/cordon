@@ -12,15 +12,12 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
-from cordon_scanner.intel.registries.registry_client import (
-    PackageFacts,
-    PackageNotFound,
-    RegistryError,
-)
+from cordon_scanner.intel.base import PackageFacts
 from cordon_scanner.intel.registries.registry_hosts import (
     HOSTS,
 )
 from cordon_scanner.intel.registries.registry_http import RegistryHttp
+from cordon_scanner.intel.registries.registry_request import PackageNotFound, RegistryError
 
 
 class InfraRegistries:

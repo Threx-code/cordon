@@ -18,7 +18,6 @@ if TYPE_CHECKING:
     from cordon_scanner.intel.provenance.bazel_provenance import ModuleCheck
     from cordon_scanner.intel.provenance.helm_provenance import ChartCheck
     from cordon_scanner.intel.provenance.homebrew_provenance import BottleCheck
-    from cordon_scanner.intel.registries.registry_client import PackageArchive
     from cordon_scanner.intel.store.live_mcp import ServedTool
 
 # Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine
@@ -600,6 +599,17 @@ class CollectionCheck:
     outcome: str
     """`verified`, `invalid`, `unverifiable`, `unconfigured` (signed; no keyring) or `absent`."""
     detail: str
+
+
+@dataclass(frozen=True, slots=True)
+class PackageArchive:
+    """One published package archive, downloaded and checked against the registry's digest."""
+
+    ecosystem: str
+    name: str
+    version: str
+    filename: str
+    data: bytes
 
 
 __all__ = [

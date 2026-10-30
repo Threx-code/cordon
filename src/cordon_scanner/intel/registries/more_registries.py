@@ -29,19 +29,17 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from cordon_scanner.intel.base import PackageFacts
 from cordon_scanner.intel.registries import registry_client as base
 from cordon_scanner.intel.registries.image_registries import ImageRegistries
 from cordon_scanner.intel.registries.infra_registries import InfraRegistries
 from cordon_scanner.intel.registries.package_registries import PackageRegistries
-from cordon_scanner.intel.registries.registry_client import (
-    PackageFacts,
-    RegistryError,
-)
 from cordon_scanner.intel.registries.registry_hosts import (
     ALIASES,
     HOSTS,
 )
 from cordon_scanner.intel.registries.registry_http import RegistryHttp
+from cordon_scanner.intel.registries.registry_request import RegistryError
 
 
 class MoreRegistries:

@@ -8,12 +8,9 @@ import json
 import re
 from typing import Any, Final
 
-from cordon_scanner.intel.registries.registry_client import (
-    PackageFacts,
-    PackageNotFound,
-    RegistryError,
-)
+from cordon_scanner.intel.base import PackageFacts
 from cordon_scanner.intel.registries.registry_http import RegistryHttp
+from cordon_scanner.intel.registries.registry_request import PackageNotFound, RegistryError
 
 
 class ImageRegistries:

@@ -123,7 +123,7 @@ class PrivateRegistries:
         authorization: str | None = None,
     ) -> bytes:
         """One request to the registry the credential was named for, never anywhere else."""
-        from cordon_scanner.intel.registries import registry_client as base
+        from cordon_scanner.intel.registries import registry_request as base
         from cordon_scanner.intel.registries.registry_client import PackageNotFound, RegistryError
 
         parsed = urllib.parse.urlsplit(url)
@@ -324,7 +324,7 @@ class PrivateRegistries:
     def _oci_authorization(registry: PrivateRegistry, credential: str, base_url: str) -> str:
         """The header the registry accepts: the credential itself, or the bearer token its token
         service issues for it -- asked of that service only when it is on the same host."""
-        from cordon_scanner.intel.registries import registry_client as base
+        from cordon_scanner.intel.registries import registry_request as base
         from cordon_scanner.intel.registries.registry_client import RegistryError
 
         direct = PrivateRegistries._authorization(credential)

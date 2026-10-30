@@ -465,6 +465,7 @@
   "intel/registries/image_registries": "intel/registries/image_registries",
   "intel/registries/registry_http": "intel/registries/registry_http",
   "intel/registries/registry_hosts": "intel/registries/registry_hosts",
+  "intel/registries/registry_request": "intel/registries/registry_request",
   "intel/registries/openvsx": "intel/registries/openvsx",
   "intel/registries/names": "intel/registries/names",
   "intel/registries/popular": "intel/registries/popular",
