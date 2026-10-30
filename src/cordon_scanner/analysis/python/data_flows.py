@@ -37,11 +37,12 @@ class DataFlows(AnalyzerCore):
         `env=`. Every other use of the holder -- serialised, sent, iterated, returned -- keeps
         the read a whole-environment read.
         """
-        # Kept on the tree: three passes ask, and the answer depends only on the tree and its
-        # name tables, which are complete before any of them runs.
-        kept: frozenset[int] | None = tree.__dict__.get("_cordon_handed")
-        if kept is not None:
-            return kept
+        # Kept with the tree (`PythonSyntax.memo`): three passes ask, and the answer depends only
+        # on the tree and its name tables, which are complete before any of them runs.
+        handed: frozenset[int] = PythonSyntax.memo(tree, "handed", lambda: self._handed(tree))
+        return handed
+
+    def _handed(self, tree: ast.AST) -> frozenset[int]:
         # Keyed by (enclosing function, name): `env` is the usual name, and one function's
         # hand-off says nothing about what another function does with its own `env`.
         environ_nodes: dict[tuple[int, str], list[int]] = {}
@@ -112,9 +113,7 @@ class DataFlows(AnalyzerCore):
             ]
             if uses and all(self._harmless_use(use, parents) for use in uses):
                 excused.update(nodes)
-        result = frozenset(excused)
-        tree.__dict__["_cordon_handed"] = result
-        return result
+        return frozenset(excused)
 
     def _harmless_use(self, use: ast.Name, parents: dict[int, ast.AST]) -> bool:
         parent = parents.get(id(use))

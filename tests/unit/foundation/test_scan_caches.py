@@ -163,3 +163,36 @@ class TestNoAnalysisOutlivesItsFile:
         gc.collect()
         alive = [o for o in gc.get_objects() if isinstance(o, (PythonAnalyzer, PythonValueFlow))]
         assert not alive, f"{len(alive)} analysers, and their id()-keyed maps, outlived the scan"
+
+    def test_an_indexed_tree_is_freed_by_reference_counts_alone(self) -> None:
+        """A list of a subtree's nodes starts with the subtree's root, so one kept on the root made
+        the tree reference itself, and every tree waited for the cycle collector (D1). Kept on the
+        index, the tree goes the moment its index does, with the collector off."""
+        import ast
+        import weakref
+
+        from cordon_scanner.analysis.python.execution_flows import ExecutionFlows
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
+        source = "class A:\n    def f(self):\n        return 1\n\ndef g():\n    pass\n" * 50
+        ScanCaches.after_scan()
+        tree = PythonSyntax.shared(source)
+        function = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef))
+        # Every per-subtree list, including ones that hold the node they are kept for.
+        PythonSyntax.of(tree, ast.Module, ast.FunctionDef)
+        PythonSyntax.of(function, ast.FunctionDef)
+        PythonSyntax.nodes(function)
+        ExecutionFlows._scope_walk(function)
+        ExecutionFlows._scope_walk(tree)
+        PythonSyntax.parents(function)
+        from cordon_scanner.analysis.python.pyast import PythonAnalyzer
+
+        PythonAnalyzer._prepared(tree)
+        dead = weakref.ref(tree)
+        del tree, function
+        gc.disable()
+        try:
+            ScanCaches.after_scan()  # the shared-tree and index caches let it go
+            assert dead() is None, "the tree outlived its caches: something in it refers to it"
+        finally:
+            gc.enable()

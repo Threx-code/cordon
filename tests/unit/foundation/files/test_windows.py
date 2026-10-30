@@ -153,3 +153,73 @@ class TestAPaddedFile:
         note = next(f for f in found if f.rule_id == "OPERATIONAL.FILE.TRUNCATED")
         assert "to limits.max_stream_bytes" in note.message
         assert not note.message.startswith("Read to its end")
+
+
+class TestStatementWindows:
+    """D1: an oversized Python module is read a second time in windows cut between top-level
+    statements, so each window parses and the syntax-tree tier reads the whole module."""
+
+    @staticmethod
+    def module(statements: int) -> str:
+        return "".join(
+            f"class C{n}:\n    @property\n    def v(self):\n        return {n}\n\n"
+            for n in range(statements)
+        )
+
+    def test_aligned_windows_cover_the_file_once_and_each_parses(self) -> None:
+        import ast
+
+        from cordon_scanner.analysis.python.statements import PythonStatements
+
+        data = self.module(400).encode()
+        windows = list(
+            Windows.aligned(
+                BytesWindows(data), size=2_000, limit=len(data), cut=PythonStatements.last_cut
+            )
+        )
+        assert len(windows) > 5
+        assert b"".join(w.data for w in windows) == data  # no gap, no overlap
+        for window in windows:
+            assert window.lines_before == data[: window.begin].count(b"\n")
+            ast.parse(window.data.decode())
+
+    def test_the_tree_tier_reads_every_statement_window_of_an_oversized_module(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import ast
+
+        from cordon_scanner.analysis.python import pysyntax
+
+        parsed: dict[int, int] = {}  # each parsed source, by its hash: its length
+        original = pysyntax.PythonSyntax.parse
+
+        def counting(source: str | bytes, *args: object, **kwargs: object) -> object:
+            tree = original(source, *args, **kwargs)  # type: ignore[arg-type]
+            if isinstance(tree, ast.Module) and len(source) > 30_000:
+                parsed[hash(source)] = len(source)
+            return tree
+
+        monkeypatch.setattr(pysyntax.PythonSyntax, "parse", staticmethod(counting))
+        body = self.module(3_000)
+        (tmp_path / "generated.py").write_text(body, encoding="utf-8")
+        WindowKit.findings(tmp_path, WindowKit.config(max_file_bytes=65_536))
+        # The prefix, cut mid-statement, does not parse; the aligned windows each do, and
+        # together they are the whole module.
+        assert sum(parsed.values()) >= len(body.encode()) * 0.99, (
+            len(body),
+            sorted(parsed.values()),
+        )
+
+    def test_a_module_just_under_the_limit_is_read_as_before(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cordon_scanner.engine import window_pass
+
+        body = self.module(1_000)
+        size = len(body.encode())
+        (tmp_path / "generated.py").write_text(body, encoding="utf-8")
+        config = WindowKit.config(max_file_bytes=size + 1)
+        with_pass = [f.to_dict() for f in WindowKit.findings(tmp_path, config)]
+        monkeypatch.setattr(window_pass, "STATEMENT_CUTS", {})
+        without = [f.to_dict() for f in WindowKit.findings(tmp_path, config)]
+        assert with_pass == without

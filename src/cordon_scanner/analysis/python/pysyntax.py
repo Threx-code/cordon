@@ -71,14 +71,16 @@ class PythonSyntax:
         index: TreeIndex | None = place[0]() if place is not None else None
         if index is not None and place is not None and place[1] == 0:
             return index.parents
-        cached: dict[int, ast.AST] | None = tree.__dict__.get("_cordon_parents")
-        if cached is None:
-            cached = {}
+
+        def compute() -> dict[int, ast.AST]:
+            parents: dict[int, ast.AST] = {}
             for node in PythonSyntax.nodes(tree):
                 for child in ast.iter_child_nodes(node):
-                    cached[id(child)] = node
-            tree.__dict__["_cordon_parents"] = cached
-        return cached
+                    parents[id(child)] = node
+            return parents
+
+        found: dict[int, ast.AST] = PythonSyntax.memo(tree, "parents", compute)
+        return found
 
     @staticmethod
     def passed(tree: ast.AST) -> list[tuple[ast.AST, int, str]]:
@@ -151,17 +153,38 @@ class PythonSyntax:
     def nodes(tree: ast.AST) -> list[ast.AST]:
         """Every node of `tree`, computed once per tree, for a reader that walks it many times: the
         `TreeIndex` order (depth-first) for the root of an indexed tree, else `ast.walk`'s."""
-        cached = tree.__dict__.get("_cordon_nodes")
-        if cached is None:
-            place: tuple[Any, int, int] | None = tree.__dict__.get("_cordon_place")
-            index: TreeIndex | None = place[0]() if place is not None else None
-            if index is not None and place is not None and place[1] == 0:
-                # The root of an indexed tree: its depth-first order is already built, and a second
-                # full traversal for a breadth-first one was most of what the index cost.
-                return index.order
-            cached = list(ast.walk(tree))
-            tree.__dict__["_cordon_nodes"] = cached
-        return cached
+        place: tuple[Any, int, int] | None = tree.__dict__.get("_cordon_place")
+        index: TreeIndex | None = place[0]() if place is not None else None
+        if index is not None and place is not None and place[1] == 0:
+            # The root of an indexed tree: its depth-first order is already built, and a second
+            # full traversal for a breadth-first one was most of what the index cost.
+            return index.order
+        walked: list[ast.AST] = PythonSyntax.memo(tree, "nodes", lambda: list(ast.walk(tree)))
+        return walked
+
+    @staticmethod
+    def memo(node: ast.AST, key: object, compute: Callable[[], Any]) -> Any:
+        """`compute()`, once per node and key: something made of `node`'s subtree -- a list of its
+        nodes, its parents' table, an analyser's name tables.
+
+        Kept on the node's `TreeIndex`, under the node's entry number, not on the node: a list of a
+        subtree's nodes starts with the subtree's root, so a list kept on the root made the root
+        reference itself, every indexed tree was cyclic garbage, and each waited for the cycle
+        collector -- 800 MB a window on datadog 16.0.0's generated modules (review 98, D1). Nodes
+        reach their index through a weak reference, so the index, its lists and the tree go
+        together, by reference counts, once `TreeIndex.RECENT` lets the index go. A node of a tree
+        parsed outside `shared` has no index and keeps its lists on itself, as before."""
+        place: tuple[Any, int, int] | None = node.__dict__.get("_cordon_place")
+        index: TreeIndex | None = place[0]() if place is not None else None
+        store: dict[Any, Any] = (
+            index.cache if index is not None else node.__dict__.setdefault("_cordon_memo", {})
+        )
+        slot = (place[1], key) if index is not None and place is not None else key
+        found = store.get(slot)
+        if found is None:
+            found = compute()
+            store[slot] = found
+        return found
 
     @staticmethod
     def of(tree: ast.AST, *types: type) -> list[Any]:
@@ -169,18 +192,17 @@ class PythonSyntax:
         and set of types. Most analysis passes want only calls, or only assignments: filtering the
         whole tree inside each of them was most of the Python analyser's time on a large tree --
         76 million `isinstance` calls scanning this package's 239 Python files."""
-        cache: dict[tuple[type, ...], list[Any]] = tree.__dict__.setdefault("_cordon_by_type", {})
-        found = cache.get(types)
-        if found is None:
+
+        def compute() -> list[Any]:
             place: tuple[Any, int, int] | None = tree.__dict__.get("_cordon_place")
             index: TreeIndex | None = place[0]() if place is not None else None
             if index is not None and place is not None and place[1] == 0:
                 # The root of an indexed tree: its per-type positions, merged in order, are the same
                 # list in the same order as filtering every node, without testing every node.
-                found = [index.order[p] for p in index.positions(types)]
-            else:
-                found = [node for node in PythonSyntax.nodes(tree) if isinstance(node, types)]
-            cache[types] = found
+                return [index.order[p] for p in index.positions(types)]
+            return [node for node in PythonSyntax.nodes(tree) if isinstance(node, types)]
+
+        found: list[Any] = PythonSyntax.memo(tree, ("of", types), compute)
         return found
 
 
@@ -204,6 +226,8 @@ class TreeIndex:
         self.kinds: dict[tuple[type, ...], list[type]] = {}
         self.parents: dict[int, ast.AST] = {}
         """`id(child) -> parent`, recorded during the same traversal."""
+        self.cache: dict[Any, Any] = {}
+        """`(entry, key) -> value`: what `PythonSyntax.memo` keeps for this tree's nodes."""
 
     @staticmethod
     def build(tree: ast.AST) -> TreeIndex:

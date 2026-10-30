@@ -155,6 +155,32 @@ class Window:
 
 class Windows:
     @staticmethod
+    def aligned(
+        source: WindowSource, *, size: int, limit: int, cut: Callable[[bytes], int]
+    ) -> Iterator[Window]:
+        """The whole of `source` from its first byte, up to `limit`, in windows of at most `size`
+        that end where `cut` says a window may end (the offset in the window of the last unit it
+        holds whole; 0 where none can be cut, and the window is then cut at `size`). Windows do
+        not overlap: each starts where the one before ended, so nothing is read twice."""
+        end_limit = min(source.size, limit)
+        if size <= 0:
+            return
+        with source.reader() as read:
+            begin, lines = 0, 0
+            while begin < end_limit:
+                stop = min(end_limit, begin + size)
+                data = read(begin, stop - begin)
+                if not data:
+                    return
+                if stop < end_limit:
+                    at = cut(data)
+                    if at > 0:
+                        data = data[:at]
+                yield Window(begin=begin, lines_before=lines, data=data)
+                lines += data.count(b"\n")
+                begin += len(data)
+
+    @staticmethod
     def iterate(
         source: WindowSource, prefix: bytes, *, size: int, overlap: int, limit: int
     ) -> Iterator[Window]:

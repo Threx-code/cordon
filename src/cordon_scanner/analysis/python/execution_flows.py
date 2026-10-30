@@ -389,13 +389,10 @@ class ExecutionFlows(AnalyzerCore):
     def _scope_walk(scope: ast.AST) -> list[ast.AST]:
         """`ast.walk(scope)`, in its order, walked once per scope: these readers asked for the same
         scope's walk up to ten times each (two passes of `_network_names` per call, per function,
-        per round), 103 million node visits on one 5,000-module wheel (review 98, D2). Kept on the
-        scope, so it goes with the tree."""
-        cached: list[ast.AST] | None = scope.__dict__.get("_cordon_walk")
-        if cached is None:
-            cached = list(ast.walk(scope))
-            scope.__dict__["_cordon_walk"] = cached
-        return cached
+        per round), 103 million node visits on one 5,000-module wheel (review 98, D2). Kept with
+        the tree's index (`PythonSyntax.memo`), so it goes with the tree."""
+        walked: list[ast.AST] = PythonSyntax.memo(scope, "walk", lambda: list(ast.walk(scope)))
+        return walked
 
     def _network_names(self, scope: ast.AST, fetchers: set[str]) -> set[str]:
         local: set[str] = set()
