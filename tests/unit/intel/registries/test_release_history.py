@@ -11,7 +11,9 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.detect.base import FileUnit
+from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.engine.pipeline.history import History
+from cordon_scanner.engine.release_archives import ReleaseArchives
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import Category, Severity
@@ -281,12 +283,12 @@ class TestANewYoungDependency:
 
     def test_declared_dependencies_are_read_per_format(self) -> None:
         npm = self.units({"a": "1"})
-        assert ReleaseHistory.declared_dependencies(npm, "npm") == {"a"}
+        assert EcosystemRegistry.declared_dependencies(npm, "npm") == {"a"}
         metadata = b"Name: x\nVersion: 1\nRequires-Dist: Foo_Bar>=1\nRequires-Dist: pytest; extra == 'test'\n"
         pypi = [
             FileUnit(FileContent(path="x-1.tar.gz!x-1/PKG-INFO", raw=metadata, size=len(metadata)))
         ]
-        assert ReleaseHistory.declared_dependencies(pypi, "pypi") == {"foo-bar"}
+        assert EcosystemRegistry.declared_dependencies(pypi, "pypi") == {"foo-bar"}
 
 
 class TestObfuscatedSinceAnEstablishedRelease:
@@ -366,9 +368,9 @@ class TestObfuscatedSinceAnEstablishedRelease:
                 info = tarfile.TarInfo(member)
                 info.size = len(data)
                 archive.addfile(info, io.BytesIO(data))
-        assert ReleaseHistory.obfuscated(buffer.getvalue(), "tool-1.4.0.tgz", "1.4.0") == (
-            "package/lib.js",
-        )
+        assert ReleaseHistory.obfuscated(
+            buffer.getvalue(), "tool-1.4.0.tgz", "1.4.0", ReleaseArchives()
+        ) == ("package/lib.js",)
 
 
 class TestOpenVsx:

@@ -100,7 +100,9 @@ class IntelCommand:
         import json as _json
 
         from cordon_scanner.detect.base import FileUnit
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
         from cordon_scanner.engine.pipeline.history import History
+        from cordon_scanner.engine.release_archives import ReleaseArchives
         from cordon_scanner.foundation.content import FileContent
         from cordon_scanner.intel.malware import feed
         from cordon_scanner.intel.registries.registry_client import RegistryError
@@ -142,8 +144,9 @@ class IntelCommand:
                 baseline = ReleaseHistory.acquire(
                     *identity,
                     current_dependencies=tuple(
-                        sorted(ReleaseHistory.declared_dependencies(units, distribution))
+                        sorted(EcosystemRegistry.declared_dependencies(units, distribution))
                     ),
+                    reader=ReleaseArchives(),
                 )
             except RegistryError as exc:
                 results.append(

@@ -651,6 +651,13 @@ class JudgeScheduling(Protocol):
     def wants(self, findings: list[Any]) -> bool: ...
 
 
+class PackerSignatures(Protocol):
+    """What the engine uses of the class `PackingFindings`: whether a text file has an obfuscator's
+    output shape (an established release's archive, read for intel's release history)."""
+
+    def packers(self, content: FileContent, language: str | None = ...) -> Iterable[object]: ...
+
+
 class ReachedFlowFacts(Protocol):
     """What the engine uses of the class `ReachedFlows`."""
 

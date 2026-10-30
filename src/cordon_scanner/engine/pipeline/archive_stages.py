@@ -18,6 +18,7 @@ from cordon_scanner.detect.base import (
     ScanContext,
 )
 from cordon_scanner.detect.registry import ComposerPluginHooks, ServerSources
+from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.engine.entries import PackageEntries
 from cordon_scanner.engine.package_format import PackageFormat
 from cordon_scanner.engine.parallel import ParallelScanner
@@ -40,7 +41,6 @@ from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.errors import ArchiveError
 from cordon_scanner.foundation.models import Finding, Scope, Severity
 from cordon_scanner.foundation.results import Dependency, OperationalFinding
-from cordon_scanner.intel.registry import ReleaseHistory
 from cordon_scanner.sources.base import Rejection
 from cordon_scanner.sources.registry import ArchiveReader
 
@@ -259,7 +259,7 @@ class ArchiveStages:
                     units, set(PackageEntries.of(units, early_format, with_bin=False))
                 )
             ),
-            declared_dependencies=ReleaseHistory.declared_dependencies(units, early_format),
+            declared_dependencies=EcosystemRegistry.declared_dependencies(units, early_format),
             package_repository=PackageEntries.repository(units, early_format),
         )
         return Hooks.lifted_inherit(ctx)

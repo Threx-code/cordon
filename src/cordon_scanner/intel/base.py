@@ -11,7 +11,6 @@ if TYPE_CHECKING:
     from pathlib import Path
     from typing import Any
 
-    from cordon_scanner.detect.base import FileUnit
     from cordon_scanner.foundation.results import Dependency
 
 # Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine
@@ -279,13 +278,19 @@ class ReleaseBaseline(Protocol):
 class ReleaseHistories(Protocol):
     """What the engine uses of the class `ReleaseHistory`."""
 
-    def declared_dependencies(
-        self, units: Sequence[FileUnit], distribution: str
-    ) -> frozenset[str]: ...
     def key(self, member_path: str, version: str) -> str: ...
     def load(
         self, ecosystem: str, name: str, version: str, root: Path | None = ...
     ) -> ReleaseBaseline | None: ...
+
+
+class ReleaseArchiveReader(Protocol):
+    """How `ReleaseHistory.acquire` reads an established release's archive, handed in by its caller
+    (the archive reader and the packing signatures live above intel): its files, and whether one
+    has an obfuscator's output shape."""
+
+    def members(self, data: bytes, filename: str) -> Iterable[tuple[str, bytes]]: ...
+    def packed(self, path: str, data: bytes) -> bool: ...
 
 
 class SignatureCheck(Protocol):
