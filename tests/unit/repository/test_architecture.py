@@ -471,46 +471,78 @@ class Rules:
 
     @staticmethod
     def hidden_state() -> dict[str, int]:
-        """Mutable module-level or class-level stores that some code writes to and that are not
+        """Mutable module-level or class-level stores that a function writes to and that are not
         registered with ScanCaches: state that outlives a scan, unseen by the registry that empties
-        what a scan held. A table only ever read is a constant and is left; a store written to is
-        either a cache (register it) or deliberate process state (list it, with its reason)."""
+        what a scan held. A table only ever read, or filled once at import, is a constant and is
+        left; a store a function writes to is either a cache (register it) or deliberate process
+        state (PROCESS_STATE, with its reason)."""
         stores = Rules.stores()
         written: set[str] = set()
         registered: set[str] = set()
+
+        def named(node: ast.AST) -> str | None:
+            return node.attr if isinstance(node, ast.Attribute) else getattr(node, "id", None)
+
         for tree in Modules.trees().values():
+            # Only writes a function makes: a module-level write runs once, at import.
+            in_functions = {
+                id(inner)
+                for _, scope in Modules.scoped(tree)
+                if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef))
+                for inner in ast.walk(scope)
+            }
             for node in ast.walk(tree):
+                if isinstance(node, ast.Call) and ast.unparse(node.func).endswith(
+                    "ScanCaches.register"
+                ):
+                    registered.update(r for r in (named(a) for a in node.args) if r)
+                if id(node) not in in_functions:
+                    continue
                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-                    holder = node.func.value
-                    name = (
-                        holder.attr
-                        if isinstance(holder, ast.Attribute)
-                        else getattr(holder, "id", None)
-                    )
+                    name = named(node.func.value)
                     if node.func.attr in Rules.MUTATORS and name in stores:
                         written.add(name)
-                    if ast.unparse(node.func).endswith("ScanCaches.register"):
-                        for arg in node.args:
-                            ref = (
-                                arg.attr
-                                if isinstance(arg, ast.Attribute)
-                                else getattr(arg, "id", None)
-                            )
-                            if ref:
-                                registered.add(ref)
                 elif isinstance(node, (ast.Assign, ast.AugAssign)):
                     targets = node.targets if isinstance(node, ast.Assign) else [node.target]
                     for target in targets:
-                        if isinstance(target, ast.Subscript):
-                            holder = target.value
-                            name = (
-                                holder.attr
-                                if isinstance(holder, ast.Attribute)
-                                else getattr(holder, "id", None)
-                            )
-                            if name in stores:
-                                written.add(name)
-        return {stores[name]: 1 for name in sorted(written - registered)}
+                        if isinstance(target, ast.Subscript) and named(target.value) in stores:
+                            written.add(str(named(target.value)))
+        return {
+            stores[name]: 1
+            for name in sorted(written - registered)
+            if stores[name] not in Rules.PROCESS_STATE
+        }
+
+    #: Stores a function writes to that are process state by design, and why each is bounded or
+    #: must outlive a scan.
+    PROCESS_STATE: ClassVar[dict[str, str]] = {
+        "cordon_scanner.foundation.collector:ScanCaches._clearers": "the registry itself",
+        "cordon_scanner.detect.binary.modules.der:Hash._BY_NAME": "filled once per hash OID name",
+        "cordon_scanner.detect.binary.rule_engine.lang:Rules.BUILT_IN": "the built-in modules, once",
+        "cordon_scanner.detect.secrets.history:SecretLiveness.ISSUERS": "the issuer checks, once",
+        "cordon_scanner.detect.supply.dependency:DependencyDetector._NORMALISED_CACHE": (
+            "one entry per ecosystem"
+        ),
+        "cordon_scanner.detect.supply.name_risk:NameSignals._KNOWN": "one entry per ecosystem",
+        "cordon_scanner.engine.registry:_PROVIDERS": "one entry per installed entry point",
+        "cordon_scanner.foundation.signatures.ecdsa:Ecdsa.SEEN": (
+            "public keys seen, cleared past 4 x KEY_TABLES"
+        ),
+        "cordon_scanner.foundation.signatures.ecdsa:Ecdsa.BASE_TABLES": (
+            "precomputed point tables, cleared past KEY_TABLES"
+        ),
+        "cordon_scanner.detect.infra.generated_policies:_REFUSED": (
+            "policy files refused as tampered: a fact about the files on disk, not one scan"
+        ),
+        "cordon_scanner.intel.advisories.advisories:_TAMPERED": (
+            "advisory files failing their digest: a tamper must stay reported for the process's "
+            "life, or the next scan reads the planted file as clean"
+        ),
+        "cordon_scanner.intel.advisories.advisories:_REFUSED_SYNCED": (
+            "synced files refused for want of this install's seal: a fact about the files on "
+            "disk, re-evaluated by a feed update (reset_caches)"
+        ),
+    }
 
     ALL: ClassVar[tuple[str, ...]] = (
         "adapter_order",

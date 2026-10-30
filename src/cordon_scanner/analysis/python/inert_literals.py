@@ -26,6 +26,7 @@ from typing import ClassVar
 
 from cordon_scanner.analysis.python.py_flow import Label, PythonValueFlow
 from cordon_scanner.foundation.capabilities import Capability
+from cordon_scanner.foundation.collector import ScanCaches
 
 
 class InertLiterals(PythonValueFlow):
@@ -232,5 +233,9 @@ class InertLiterals(PythonValueFlow):
             for byte_start, byte_end, _ in hits
         )
 
+
+# Spans of the files a scan read, keyed by their bytes: emptied after each scan with the other caches
+# that hold a scan's files (foundation/collector).
+ScanCaches.register(InertLiterals._CACHE)
 
 __all__ = ["InertLiterals"]
