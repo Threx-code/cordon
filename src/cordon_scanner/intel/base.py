@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import enum
+import threading
 import urllib.parse
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, NamedTuple, Protocol
+from typing import TYPE_CHECKING, ClassVar, NamedTuple, Protocol
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -467,6 +468,25 @@ class ReleaseAgeQueries(Protocol):
     """What a detector uses of the class `RegistryClient` to ask how old a release is."""
 
     def younger_than(self, timestamp: str | None, days: int) -> bool: ...
+
+
+class IntelUpdates:
+    """How many times this process has installed new intelligence. Whatever caches intel data
+    compares the generation it read at with `current()` and rereads when they differ, so the
+    code that installs an update tells no cache by name (architecture audit F3)."""
+
+    _generation: ClassVar[int] = 0
+    _lock: ClassVar[threading.Lock] = threading.Lock()
+
+    @classmethod
+    def bump(cls) -> None:
+        """Record that new intelligence was installed in this process."""
+        with cls._lock:
+            cls._generation += 1
+
+    @classmethod
+    def current(cls) -> int:
+        return cls._generation
 
 
 # Values the ports carry: plain data, defined here so a detector holds them without reaching a

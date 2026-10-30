@@ -25,8 +25,6 @@
   "cordon_scanner.foundation.config.settings -> cordon_scanner.foundation.config.parser": 1,
   "cordon_scanner.images.identity -> cordon_scanner.images.oci": 1,
   "cordon_scanner.images.oci -> cordon_scanner.images.identity": 1,
-  "cordon_scanner.intel.advisories.shipped -> cordon_scanner.intel.malware.feed": 1,
-  "cordon_scanner.intel.malware.feed -> cordon_scanner.intel.advisories.shipped": 1,
   "cordon_scanner.intel.malware.feed -> cordon_scanner.intel.malware.feed_rules": 1,
   "cordon_scanner.intel.malware.feed_rules -> cordon_scanner.intel.malware.feed": 1,
   "cordon_scanner.intel.registries.more_registries -> cordon_scanner.intel.registries.package_registries": 1,

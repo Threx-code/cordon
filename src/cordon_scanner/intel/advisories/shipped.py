@@ -8,6 +8,7 @@ from __future__ import annotations
 import gzip
 from collections.abc import Mapping
 from pathlib import Path
+from typing import ClassVar
 
 from cordon_scanner.foundation.once import OneOff
 from cordon_scanner.intel.advisories.advisories import (
@@ -20,10 +21,23 @@ from cordon_scanner.intel.advisories.advisories import (
     AdvisoryFiles,
     IndexedRecords,
 )
+from cordon_scanner.intel.base import IntelUpdates
 
 
 class ShippedAdvisories:
     """The generated advisory records, read and cached per ecosystem."""
+
+    _generation: ClassVar[int] = IntelUpdates.current()
+    """The `IntelUpdates` generation the caches were filled at."""
+
+    @staticmethod
+    def _current() -> None:
+        """Reread from the next question on, when intelligence was installed since the caches
+        were filled."""
+        now = IntelUpdates.current()
+        if now != ShippedAdvisories._generation:
+            ShippedAdvisories.reset_caches()
+            ShippedAdvisories._generation = now
 
     @staticmethod
     def _advisory_from_dict(ecosystem: str, raw: dict[str, object]) -> Advisory:
@@ -157,6 +171,7 @@ class ShippedAdvisories:
     @staticmethod
     def records(ecosystem: str) -> Mapping[str, tuple[dict[str, object], ...]]:
         """One ecosystem's generated records by lowercased name (`DeferredRecords`)."""
+        ShippedAdvisories._current()
         return ShippedAdvisories._shipped_raw(ecosystem)
 
     @staticmethod
@@ -178,6 +193,7 @@ class ShippedAdvisories:
         on every scan -- 38 merges and 0.7 s of a 0.9 s warm scan of a 4 KB package. A feed
         update clears it with the other caches (`reset_caches`).
         """
+        ShippedAdvisories._current()
         with AdvisoryDatabase.SHARED_LOCK:
             if AdvisoryDatabase.shared is None:
                 AdvisoryDatabase.shared = AdvisoryDatabase(
