@@ -13,6 +13,7 @@ import functools
 from typing import ClassVar
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+from cordon_scanner.foundation.collector import ScanCaches
 
 
 class DocumentationSpans:
@@ -102,6 +103,7 @@ class DocumentationSpans:
         return len(raw)
 
     @staticmethod
+    @ScanCaches.register  # holds files: emptied after each scan (foundation/collector)
     @functools.lru_cache(maxsize=8)
     def of(raw: bytes, language: str | None) -> tuple[tuple[int, int], ...]:
         """Byte ranges of Python docstrings, and of a JSON manifest's project metadata
