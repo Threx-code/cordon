@@ -532,6 +532,29 @@ class TestDesignRules:
         )
         assert not found, "imports the package's front door from inside:\n" + "\n".join(found)
 
+    def test_every_detector_runs_within_a_budget(self) -> None:
+        """A detector's per-file entry is called only by a budgeted runner: the engine's two
+        (detection, and the parallel workers) and `detect.base.DetectorRun` for everything else.
+        The history pass and the cloud device scan called it directly, with no deadline, so one
+        crafted blob or file held them."""
+        runners = {
+            "cordon_scanner.detect.base",
+            "cordon_scanner.engine.pipeline.detection",
+            "cordon_scanner.engine.parallel",
+        }
+        found = sorted(
+            f"{module}:{node.lineno}"
+            for module, tree in Modules.trees().items()
+            if module not in runners
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "inspect"
+        )
+        assert not found, (
+            "a detector run outside a budgeted runner (use DetectorRun):\n" + "\n".join(found)
+        )
+
     def test_no_override_refuses_its_base(self) -> None:
         classes: dict[str, list[ast.ClassDef]] = defaultdict(list)
         for tree in Modules.trees().values():

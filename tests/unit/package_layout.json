@@ -660,6 +660,7 @@
   "test_network_reads.py": "repository",
   "test_total_sorts.py": "repository",
   "test_architecture.py": "repository",
+  "test_detector_run.py": "detect",
   "test_scan_cache_rules.py": "repository",
   "test_scanned_json.py": "foundation/formats",
   "test_deep_documents.py": "engine",
