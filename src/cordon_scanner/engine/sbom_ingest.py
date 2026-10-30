@@ -42,6 +42,34 @@ class PackageUrl:
     )
 
     #: Package URL types, as the ecosystems Cordon matches them under.
+    #: How each purl type forms the name its ecosystem uses from namespace and name: a Maven
+    #: coordinate (`group:artifact`), the name alone (the namespace is a distribution or channel),
+    #: an image reference (its registry host kept); any other type is `namespace/name`.
+    NAME_FORMS: ClassVar[dict[str, str]] = {
+        "maven": "coordinate",
+        **dict.fromkeys(
+            (
+                "deb",
+                "apk",
+                "rpm",
+                "conda",
+                "cran",
+                "hackage",
+                "cargo",
+                "pypi",
+                "gem",
+                "nuget",
+                "hex",
+                "pub",
+                "cocoapods",
+                "conan",
+                "brew",
+            ),
+            "name",
+        ),
+        "docker": "image",
+        "oci": "image",
+    }
     ECOSYSTEMS: ClassVar[dict[str, str]] = {
         "npm": "npm",
         "pypi": "pypi",
@@ -100,28 +128,13 @@ class PackageUrl:
         """The name the ecosystem itself uses: `@scope/name`, `group:artifact`, a module path."""
         if not self.namespace:
             return self.name
-        if self.type == "maven":
+        form = PackageUrl.NAME_FORMS.get(self.type, "path")
+        if form == "coordinate":
             return f"{self.namespace}:{self.name}"
-        if self.type in (
-            "deb",
-            "apk",
-            "rpm",
-            "conda",
-            "cran",
-            "hackage",
-            "cargo",
-            "pypi",
-            "gem",
-            "nuget",
-            "hex",
-            "pub",
-            "cocoapods",
-            "conan",
-            "brew",
-        ):
+        if form == "name":
             # The namespace is the distribution or channel; the package's own name is the name.
             return self.name
-        if self.type in ("docker", "oci"):
+        if form == "image":
             host = self.qualifiers.get("repository_url", "").split("/", 1)[0]
             return (
                 f"{host}/{self.namespace}/{self.name}"
