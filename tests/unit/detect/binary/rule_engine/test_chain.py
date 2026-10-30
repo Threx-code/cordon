@@ -32,7 +32,9 @@ class Runs:
             search._Hunt.BUSY = -1
             if not chain:
                 search._Hunt._chained = lambda self, events: None  # type: ignore[method-assign]
-            return [(m.rule, m.strings) for m in rules.match(data, timeout=60)]
+            # No deadline: this compares answers, and a wall clock under load made the two sides
+            # differ by one of them running out of time (a run of 10,000 spaces took 24 s a side).
+            return [(m.rule, m.strings) for m in rules.match(data, timeout=None)]
         except RuleError as exc:
             return ("refused", str(exc))
         finally:
