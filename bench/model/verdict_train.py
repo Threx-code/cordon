@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import contextlib
 import datetime
 import gzip
 import hashlib
@@ -293,6 +294,13 @@ class VerdictTrain:
                         "area": newer.get("area"),
                     },
                 }
+            # The old verdict model's OWN finding (SUSPECT.VERDICT.MODEL.001) is the output of the
+            # model we are replacing: once the new model ships it emits that finding itself, so using
+            # it as a floor keeper is circular. Drop it from every training row's findings -> excluded
+            # from the floor (it is already not a feature, via VerdictFeatures.is_code). Intent
+            # (LATER_RULES / SUSPECT.INTENT.UNEXPLAINED_EFFECT) is kept: a separate serve-time stage
+            # computed by the same build, so it is legitimate evidence (data-and-measurement team, 2026-10-26).
+            row["findings"] = [f for f in row["findings"] if f[0] != VerdictFeatures.OWN_RULE]
             features = cls.evidence(row)
             rules = {k[2:]: v for k, v in features.items() if k.startswith("r:") and "#" not in k}
             data.append(
@@ -574,6 +582,25 @@ class VerdictTrain:
         )
         p.add_argument("--no-monotone", action="store_true")
         p.add_argument(
+            "--code-support-min",
+            type=int,
+            default=3,
+            help="keep a code tok/apih feature only if it recurs across at least this many distinct "
+            "malware families OR distinct legitimate packages on the work half (drops memorisation)",
+        )
+        p.add_argument(
+            "--code-budget",
+            type=int,
+            default=11500,
+            help="hard cap on kept code tok/apih features; the highest-support ones are kept so the "
+            "dense matrix stays within memory (non-code features are always kept in full)",
+        )
+        p.add_argument(
+            "--no-prune-code",
+            action="store_true",
+            help="disable the code-feature support prune (ablation / dense-vs-sparse equivalence only)",
+        )
+        p.add_argument(
             "--add-only",
             nargs="*",
             default=[],
@@ -610,6 +637,13 @@ class VerdictTrain:
         p.add_argument("--report", type=Path)
         p.add_argument("--attribution", type=Path)
         p.add_argument("--dump", type=Path, help="every row: half, eco, area, label, score, kept")
+        p.add_argument(
+            "--finals",
+            action="store_true",
+            help="score and report the HELD-OUT half (benign and malware). OFF by default: lever "
+            "measurement must never read holdout -- it is scored once, at the finals, on the final "
+            "build. Without it the report is the WORK half (out-of-fold recall, work false-block rate).",
+        )
         a = p.parse_args()
 
         if not (a.malware or a.benchmark):
@@ -672,8 +706,84 @@ class VerdictTrain:
                 f"{100 * bm / max(1, len(mal)):.1f}%, benign {bb}/{len(ben)} = "
                 f"{100 * bb / max(1, len(ben)):.2f}% -- the model must beat this"
             )
-        names = sorted({k for r in work for k in r["f"]})
+        # Code reading (family E) emits a very large sparse token space -- hundreds of thousands of
+        # distinct `pkg:code_<place>_(tok|apih)_` keys across the work half. HGB needs a DENSE matrix,
+        # so the column set must be bounded. Keep a code token/hash feature only where it recurs
+        # across INDEPENDENT sources: at least --code-support-min DISTINCT malware families OR distinct
+        # legitimate packages on the work half (`r["family"]` is the malware family for a malicious row
+        # and "pkg:<package>" for a legitimate one, so it is the right grouping key for both sides of
+        # the OR). If the survivors still exceed --code-budget, keep the highest-support ones. EVERY
+        # non-code feature -- named API, reached capabilities, flows, shape, `exe_*`, rule evidence --
+        # is kept in full. Counts are reported; the kept list ships in the model's feature index, so
+        # serve scores exactly these columns (acceptance s6, train==serve). --no-prune-code disables.
+        code_re = re.compile(r"^pkg:code_(?:install|import|closure)_(?:tok|apih)_")
+        if a.no_prune_code:
+            names = sorted({k for r in work for k in r["f"]})
+        else:
+            fam_support: dict[str, set] = collections.defaultdict(
+                set
+            )  # code key -> malware families
+            pkg_support: dict[str, set] = collections.defaultdict(set)  # code key -> legit packages
+            noncode: set[str] = set()
+            for r in work:
+                grp, is_mal = r["family"], r["label"]
+                for k in r["f"]:
+                    if code_re.match(k):
+                        (fam_support if is_mal else pkg_support)[k].add(grp)
+                    else:
+                        noncode.add(k)
+
+            def _supp(k: str) -> tuple[int, int]:
+                return len(fam_support.get(k, ())), len(pkg_support.get(k, ()))
+
+            all_code = set(fam_support) | set(pkg_support)
+            kept_code = {k for k in all_code if max(_supp(k)) >= a.code_support_min}
+            if len(kept_code) > a.code_budget:
+                kept_code = set(
+                    sorted(kept_code, key=lambda k: (-max(_supp(k)), -sum(_supp(k)), k))[
+                        : a.code_budget
+                    ]
+                )
+            names = sorted(noncode | kept_code)
+            # Per-source contribution (ablation, 06-DETECTION-MODEL s5.4): of the kept code features,
+            # how many each source qualified -- so the report can show neither malware-family support
+            # nor legitimate-package support dominates the budget.
+            m = a.code_support_min
+            by_fam_only = sum(1 for k in kept_code if _supp(k)[0] >= m and _supp(k)[1] < m)
+            by_pkg_only = sum(1 for k in kept_code if _supp(k)[1] >= m and _supp(k)[0] < m)
+            by_both = sum(1 for k in kept_code if _supp(k)[0] >= m and _supp(k)[1] >= m)
+            print(
+                f"code-feature prune: {len(all_code)} distinct code tok/apih -> kept {len(kept_code)} "
+                f"(support>={m} families-or-packages, budget={a.code_budget}); "
+                f"non-code features {len(noncode)}; total model features {len(names)}"
+            )
+            print(
+                f"  kept code by source: malware-family-only {by_fam_only}, legit-package-only "
+                f"{by_pkg_only}, both {by_both} (neither source should dominate the budget)"
+            )
+            # The support maps key all >1M distinct code features to sets of families/packages (tens
+            # of millions of entries) and are function-scoped, so they would stay resident through the
+            # fit. Drop them now that `names` is fixed -- they are the bulk of the load-time footprint.
+            del fam_support, pkg_support, all_code, kept_code, noncode
         index = {k: i for i, k in enumerate(names)}
+        # Free the pre-prune feature dicts too: the full code token space held across every row is the
+        # real memory cost, not the bounded dense matrix. Every downstream read -- the matrix build and
+        # `has_code` -- needs only the kept columns, so drop the rest now, in place, so `work`/`test`
+        # (views over `data`) shrink too. Then force a collection so the arenas are released before the
+        # matrix and fit allocate; without this the fit OOMs (measured: ~12 GB resident never dropped).
+        keep_keys = frozenset(names)
+        for r in data:
+            r["f"] = {k: v for k, v in r["f"].items() if k in keep_keys}
+        import gc
+
+        gc.collect()
+        # gc frees the objects but CPython's allocator keeps the emptied arenas, so RSS stays at the
+        # ~12 GB load-time high-water mark and the dense matrix + fit then OOM. Hand the freed arenas
+        # back to the OS with malloc_trim (glibc); harmless no-op where it is unavailable (musl).
+        import ctypes
+
+        with contextlib.suppress(OSError, AttributeError):  # no glibc, or no malloc_trim in it
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
 
         def matrix(rows):
             x = np.zeros((len(rows), len(names)), dtype=np.float32)
@@ -683,7 +793,22 @@ class VerdictTrain:
                         x[i, index[k]] = v
             return x
 
-        monotone = [0 if (a.no_monotone or k.startswith("pkg:")) else 1 for k in names]
+        # Monotone in the direction of harm (06-DETECTION-MODEL s3): more of a REACHED capability
+        # (install_/import_/closure_/agent_can_*) or a flow to an unknown, raw-IP or drop destination
+        # can never make a package look safer. Rule evidence stays monotone as before. Everything else
+        # -- code words/API, flows to a fixed host, whole-package `can_*`, shape, `code_share`, `exe_*`
+        # -- is unconstrained, so a capability nothing runs cannot push a library toward a block.
+        cap_reach = re.compile(r"^pkg:(?:install|import|closure|agent)_can_")
+        flow_harm = re.compile(r"^pkg:(?:install|import|closure)_flow_.*_(?:unknown|ip|drop)$")
+
+        def _mono(k: str) -> int:
+            if a.no_monotone:
+                return 0
+            if not k.startswith("pkg:"):
+                return 1
+            return 1 if (cap_reach.match(k) or flow_harm.match(k)) else 0
+
+        monotone = [_mono(k) for k in names]
 
         def model():
             return HistGradientBoostingClassifier(
@@ -696,6 +821,16 @@ class VerdictTrain:
             )
 
         xw, yw = matrix(work), np.array([r["label"] for r in work])
+        # xw now holds every work feature; the CV and the per-area fits read it, not the dicts. The
+        # work rows' dicts are needed again only for `r:` rule keys (has_code, attribution), so drop
+        # their bulky code/package columns here to free ~half the resident feature dicts before the
+        # fit. Holdout (`test`) rows keep full `f` (the holdout matrix and the exported-tree check
+        # still read them). This, with the code-feature prune, keeps the fit inside a shared VM.
+        for r in work:
+            r["f"] = {k: v for k, v in r["f"].items() if k.startswith("r:")}
+        gc.collect()
+        with contextlib.suppress(OSError, AttributeError):  # no glibc, or no malloc_trim in it
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
         # The floor: code rules that, at high confidence and high severity, fired on no benign unit
         # of the work half and on at least three malware samples there. Chosen by that evidence,
         # not by the rule's prefix: `SUSPECT.EXFIL.WALLET_SECRET.001` blocked every hijacked `xrpl`
@@ -887,31 +1022,37 @@ class VerdictTrain:
             lines[area] = 1.01
 
         fitted = {x: model().fit(xw[idx], yw[idx]) for x, idx in groups.items()}
-        xt = matrix(test)
-        for x, clf in fitted.items():
-            idx = [
-                i for i, r in enumerate(test) if (r["area"] if r["area"] in fitted else "*") == x
-            ]
-            if idx:
-                for i, s_ in zip(idx, clf.predict_proba(xt[idx])[:, 1], strict=True):
-                    test[i]["score"] = float(s_)
         exported = cls.export(fitted["*"], names)
         if a.separate:
             exported["by_area"] = {x: cls.export(fitted[x], names) for x in a.separate}
-        # The exported trees must score exactly what was measured.
-        drift = max(
-            (
-                abs(
-                    VerdictModel.score(exported.get("by_area", {}).get(r["area"], exported), r["f"])
-                    - r["score"]
-                )
-                for r in test[:500]
-            ),
-            default=0,
-        )
-        print(f"exported trees against sklearn, largest difference: {drift:.2e}")
-        if drift >= 1e-4:
-            raise SystemExit(f"exported trees do not score what was measured: {drift}")
+        if a.finals:
+            # HELD-OUT read -- only at the finals (see --finals). Score the holdout with the fitted
+            # per-area models, then check the exported trees reproduce those scores.
+            xt = matrix(test)
+            for x, clf in fitted.items():
+                idx = [
+                    i
+                    for i, r in enumerate(test)
+                    if (r["area"] if r["area"] in fitted else "*") == x
+                ]
+                if idx:
+                    for i, s_ in zip(idx, clf.predict_proba(xt[idx])[:, 1], strict=True):
+                        test[i]["score"] = float(s_)
+            drift = max(
+                (
+                    abs(
+                        VerdictModel.score(
+                            exported.get("by_area", {}).get(r["area"], exported), r["f"]
+                        )
+                        - r["score"]
+                    )
+                    for r in test[:500]
+                ),
+                default=0,
+            )
+            print(f"exported trees against sklearn, largest difference: {drift:.2e}")
+            if drift >= 1e-4:
+                raise SystemExit(f"exported trees do not score what was measured: {drift}")
 
         def ci_low(k: int, n: int) -> float:
             if not n:
@@ -921,9 +1062,14 @@ class VerdictTrain:
             margin = z * ((ph * (1 - ph) / n + z * z / (4 * n * n)) ** 0.5)
             return round(100 * (centre - margin) / (1 + z * z / n), 2)
 
+        # Lever measurement reads the WORK half only (out-of-fold scores, the work-set line); the
+        # holdout is scored only with --finals. `rows_eval`/`half_key` select which.
+        rows_eval = test if a.finals else work
+        half_key = "holdout" if a.finals else "work"
         report: dict[str, Any] = {
             "split": a.split,
             "leave_out": a.leave_out,
+            "measured_half": half_key,
             "budget_percent": a.budget,
             "lines": lines,
             "floor": floor,
@@ -944,13 +1090,15 @@ class VerdictTrain:
                     fixtures.add(r["file"])
         relabelled = collections.Counter(
             r["eco"]
-            for r in test
+            for r in rows_eval
             if not r["label"] and r["file"].split("/", 1)[-1] in fixtures and blocked(r, lines)
         )
         dropped = collections.Counter(
-            r["eco"] for r in test if not r["label"] and r["file"].split("/", 1)[-1] in fixtures
+            r["eco"]
+            for r in rows_eval
+            if not r["label"] and r["file"].split("/", 1)[-1] in fixtures
         )
-        for eco, (k, n) in sorted(benign_rates(test, lines, "holdout").items()):
+        for eco, (k, n) in sorted(benign_rates(rows_eval, lines, half_key).items()):
             report["benign_blocked"][eco] = {
                 "blocked": k,
                 "units": n,
@@ -963,7 +1111,7 @@ class VerdictTrain:
                     100 * k2 / n2, 3
                 )
         by: dict[str, list[int]] = collections.defaultdict(lambda: [0, 0, 0, 0, 0])
-        for r in test:
+        for r in rows_eval:
             if r["label"]:
                 for key in (r["source"], "ALL"):
                     by[key][0] += 1
@@ -997,7 +1145,7 @@ class VerdictTrain:
                     )
         if a.attribution:
             with a.attribution.open("w", encoding="utf-8") as handle:
-                for r in test:
+                for r in rows_eval:
                     b = blocked(r, lines)
                     if bool(r["label"]) == b:
                         continue
