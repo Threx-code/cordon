@@ -226,28 +226,18 @@ class Scope:
         self.slots -= count
 
 
-class Builder:
-    """Conditions built into closures for one rule set."""
+class _BuilderValues:
+    """What a condition's parts are (their kinds), and the literals worked out at build time."""
 
-    def __init__(
-        self,
-        rules: list[RuleDef],
-        modules: dict[str, Module],
-        externals: dict[str, Any],
-    ) -> None:
-        self.rules, self.modules, self.externals = rules, modules, externals
-        self.scope: Scope = Scope(rules[0]) if rules else None  # type: ignore[assignment]
-        self.before: set[str] = set()
+    rules: list[RuleDef]
+    modules: dict[str, Module]
+    externals: dict[str, Any]
+    scope: Scope
+    before: set[str]
 
-    def build(self) -> None:
-        """Every rule's `run` and `sets`, in order: a rule may name only rules before it."""
-        for rule in self.rules:
-            self.scope = Scope(rule)
-            kind, fn = self.node(rule.condition)
-            Builder.as_test(kind, "a condition")
-            rule.run = Builder.truth(fn)
-            rule.width = self.scope.width
-            self.before.add(rule.name)
+    def node(self, node: Node) -> tuple[Any, Fn]:
+        """`Builder.node`: every part builds its sub-conditions through it."""
+        raise NotImplementedError
 
     # -- types --
 
@@ -284,15 +274,6 @@ class Builder:
             return v is not None and bool(v)
 
         return test
-
-    # -- nodes --
-
-    def node(self, node: Node) -> tuple[Any, Fn]:
-        build = Builder.BUILDS.get(type(node))
-        if build is None:
-            raise RuleError(f"a condition of an unknown kind: {type(node).__name__}")
-        result: tuple[Any, Fn] = build(self, node)
-        return result
 
     def constant(self, node: Node) -> tuple[bool, Any]:
         """(True, its value) when `node` is made of literals alone, worked out now; one that
@@ -341,128 +322,13 @@ class Builder:
     def _entrypoint(self, node: EntryPoint) -> tuple[Any, Fn]:
         return INT, lambda f: None
 
-    def _external(self, node: External) -> tuple[Any, Fn]:
-        v = self.externals[node.name]
-        if isinstance(v, str):
-            v = v.encode()
-        kind = (
-            BOOL
-            if isinstance(v, bool)
-            else TEXT
-            if isinstance(v, bytes)
-            else FLOAT
-            if isinstance(v, float)
-            else INT
-        )
-        return kind, lambda f: v
-
-    def _name(self, node: Name) -> tuple[Any, Fn]:
-        name = node.name
-        if name in self.before:
-            return BOOL, lambda f: f.decided.get(name, False)
-        found = self.scope.lookup(name)
-        if found is None:
-            raise RuleError(f"an undefined identifier {name}")
-        slot, kind = found
-        return kind, lambda f: f.env[slot]
-
-    def _path(self, node: Path) -> tuple[Any, Fn]:
-        if node.module:
-            kind: Any = self.modules[node.root].schema
-            root = node.root
-            fn: Fn = lambda f: f.module(root)  # noqa: E731
-        else:
-            if node.root in self.before:
-                raise RuleError(f"{node.root} is a rule, not a structure")
-            found = self.scope.lookup(node.root)
-            if found is None:
-                raise RuleError(f"an undefined identifier {node.root}")
-            slot, kind = found
-            fn = lambda f: f.env[slot]  # noqa: E731
-        for step in node.steps:
-            kind, fn = self._step(kind, fn, step)
-        if isinstance(kind, Scalar) and kind is INT:
-            inner = fn
-
-            def signed(f: Frame) -> Any:
-                return Data.signed(inner(f))
-
-            return kind, signed
-        if isinstance(kind, Scalar) and kind is FLOAT:
-            inner_float = fn
-
-            def number(f: Frame) -> Any:
-                v = inner_float(f)
-                return None if v is None or (type(v) is float and math.isnan(v)) else v
-
-            return kind, number
-        return kind, fn
-
-    def _step(self, kind: Any, fn: Fn, step: Any) -> tuple[Any, Fn]:
-        if isinstance(step, Field):
-            if not isinstance(kind, Record):
-                raise RuleError(f"{step.name} is not a field of {Builder.describe(kind)}")
-            if step.name not in kind.fields:
-                raise RuleError(f"an undefined identifier {step.name}")
-            name = step.name
-
-            def field(f: Frame) -> Any:
-                d = fn(f)
-                return None if d is None else d.get(name)
-
-            return kind.fields[name], field
-        if isinstance(step, Index):
-            key_kind, key = self.node(step.key)
-            if isinstance(kind, Seq):
-                if key_kind not in (INT,):
-                    raise RuleError("an array is indexed with an integer")
-            elif isinstance(kind, Keyed):
-                if key_kind is not TEXT:
-                    raise RuleError("a dictionary is indexed with a string")
-            else:
-                raise RuleError(f"{Builder.describe(kind)} cannot be indexed")
-
-            def index(f: Frame) -> Any:
-                d = fn(f)
-                if d is None:
-                    return None
-                k = key(f)
-                return None if k is None else d.get(k)
-
-            return kind.item, index
-        assert isinstance(step, Invoke)  # noqa: S101 - the grammar gives only these three
-        if not isinstance(kind, Call):
-            raise RuleError("only a function can be called")
-        built: list[Fn] = []
-        kinds: list[str | None] = []
-        for arg in step.args:
-            if isinstance(arg, Pattern):
-                matcher = arg.matcher
-                kinds.append("regex")
-                built.append(Builder.fixed(matcher))
-                continue
-            arg_kind, arg_fn = self.node(arg)  # a test is a boolean argument
-            kinds.append(Builder.scalar(arg_kind, "a function's argument").name)
-            built.append(arg_fn)
-        choice = kind.pick(tuple(kinds))
-        if choice is None:
-            raise RuleError(f"no function takes arguments of types {tuple(kinds)}")
-        result = kind.sigs[choice].result
-
-        def invoke(f: Frame) -> Any:
-            impls = fn(f)
-            if impls is None:
-                return None
-            args = [a(f) for a in built]
-            if any(a is None for a in args):
-                return None
-            return impls[choice](*args)
-
-        return result, invoke
-
     @staticmethod
     def fixed(value: Any) -> Fn:
         return lambda f: value
+
+
+class _BuilderStrings(_BuilderValues):
+    """Conditions over a string's matches: found, counted, placed, read."""
 
     def _hits(self, name: str) -> Callable[[Frame], list[tuple[int, int]]]:
         if name != "$":
@@ -546,6 +412,10 @@ class Builder:
             return int.from_bytes(raw, "big" if big else "little", signed=signed)
 
         return INT, read
+
+
+class _BuilderOperators(_BuilderStrings):
+    """Arithmetic, comparison and boolean conditions."""
 
     def _arith(self, node: Arith) -> tuple[Any, Fn]:
         lk, left = self.node(node.left)
@@ -686,6 +556,10 @@ class Builder:
         kind, fn = self.node(node.operand)
         Builder.as_test(kind, "a test")
         return BOOL, lambda f: fn(f) is not None
+
+
+class _BuilderQuantifiers(_BuilderOperators):
+    """Quantified conditions: `N of`, a condition for each string, `for` loops and their domains."""
 
     # -- sets and quantities --
 
@@ -903,6 +777,158 @@ class Builder:
 
             return seq, [item]
         raise RuleError("a for loop iterates over a range, a list, an array or a dictionary")
+
+
+class Builder(_BuilderQuantifiers):
+    """Conditions built into closures for one rule set."""
+
+    def __init__(
+        self,
+        rules: list[RuleDef],
+        modules: dict[str, Module],
+        externals: dict[str, Any],
+    ) -> None:
+        self.rules, self.modules, self.externals = rules, modules, externals
+        self.scope: Scope = Scope(rules[0]) if rules else None  # type: ignore[assignment]
+        self.before: set[str] = set()
+
+    def build(self) -> None:
+        """Every rule's `run` and `sets`, in order: a rule may name only rules before it."""
+        for rule in self.rules:
+            self.scope = Scope(rule)
+            kind, fn = self.node(rule.condition)
+            Builder.as_test(kind, "a condition")
+            rule.run = Builder.truth(fn)
+            rule.width = self.scope.width
+            self.before.add(rule.name)
+
+    # -- nodes --
+
+    def node(self, node: Node) -> tuple[Any, Fn]:
+        build = Builder.BUILDS.get(type(node))
+        if build is None:
+            raise RuleError(f"a condition of an unknown kind: {type(node).__name__}")
+        result: tuple[Any, Fn] = build(self, node)
+        return result
+
+    def _external(self, node: External) -> tuple[Any, Fn]:
+        v = self.externals[node.name]
+        if isinstance(v, str):
+            v = v.encode()
+        kind = (
+            BOOL
+            if isinstance(v, bool)
+            else TEXT
+            if isinstance(v, bytes)
+            else FLOAT
+            if isinstance(v, float)
+            else INT
+        )
+        return kind, lambda f: v
+
+    def _name(self, node: Name) -> tuple[Any, Fn]:
+        name = node.name
+        if name in self.before:
+            return BOOL, lambda f: f.decided.get(name, False)
+        found = self.scope.lookup(name)
+        if found is None:
+            raise RuleError(f"an undefined identifier {name}")
+        slot, kind = found
+        return kind, lambda f: f.env[slot]
+
+    def _path(self, node: Path) -> tuple[Any, Fn]:
+        if node.module:
+            kind: Any = self.modules[node.root].schema
+            root = node.root
+            fn: Fn = lambda f: f.module(root)  # noqa: E731
+        else:
+            if node.root in self.before:
+                raise RuleError(f"{node.root} is a rule, not a structure")
+            found = self.scope.lookup(node.root)
+            if found is None:
+                raise RuleError(f"an undefined identifier {node.root}")
+            slot, kind = found
+            fn = lambda f: f.env[slot]  # noqa: E731
+        for step in node.steps:
+            kind, fn = self._step(kind, fn, step)
+        if isinstance(kind, Scalar) and kind is INT:
+            inner = fn
+
+            def signed(f: Frame) -> Any:
+                return Data.signed(inner(f))
+
+            return kind, signed
+        if isinstance(kind, Scalar) and kind is FLOAT:
+            inner_float = fn
+
+            def number(f: Frame) -> Any:
+                v = inner_float(f)
+                return None if v is None or (type(v) is float and math.isnan(v)) else v
+
+            return kind, number
+        return kind, fn
+
+    def _step(self, kind: Any, fn: Fn, step: Any) -> tuple[Any, Fn]:
+        if isinstance(step, Field):
+            if not isinstance(kind, Record):
+                raise RuleError(f"{step.name} is not a field of {Builder.describe(kind)}")
+            if step.name not in kind.fields:
+                raise RuleError(f"an undefined identifier {step.name}")
+            name = step.name
+
+            def field(f: Frame) -> Any:
+                d = fn(f)
+                return None if d is None else d.get(name)
+
+            return kind.fields[name], field
+        if isinstance(step, Index):
+            key_kind, key = self.node(step.key)
+            if isinstance(kind, Seq):
+                if key_kind not in (INT,):
+                    raise RuleError("an array is indexed with an integer")
+            elif isinstance(kind, Keyed):
+                if key_kind is not TEXT:
+                    raise RuleError("a dictionary is indexed with a string")
+            else:
+                raise RuleError(f"{Builder.describe(kind)} cannot be indexed")
+
+            def index(f: Frame) -> Any:
+                d = fn(f)
+                if d is None:
+                    return None
+                k = key(f)
+                return None if k is None else d.get(k)
+
+            return kind.item, index
+        assert isinstance(step, Invoke)  # noqa: S101 - the grammar gives only these three
+        if not isinstance(kind, Call):
+            raise RuleError("only a function can be called")
+        built: list[Fn] = []
+        kinds: list[str | None] = []
+        for arg in step.args:
+            if isinstance(arg, Pattern):
+                matcher = arg.matcher
+                kinds.append("regex")
+                built.append(Builder.fixed(matcher))
+                continue
+            arg_kind, arg_fn = self.node(arg)  # a test is a boolean argument
+            kinds.append(Builder.scalar(arg_kind, "a function's argument").name)
+            built.append(arg_fn)
+        choice = kind.pick(tuple(kinds))
+        if choice is None:
+            raise RuleError(f"no function takes arguments of types {tuple(kinds)}")
+        result = kind.sigs[choice].result
+
+        def invoke(f: Frame) -> Any:
+            impls = fn(f)
+            if impls is None:
+                return None
+            args = [a(f) for a in built]
+            if any(a is None for a in args):
+                return None
+            return impls[choice](*args)
+
+        return result, invoke
 
     BUILDS: ClassVar[dict[type, Callable[..., tuple[Any, Fn]]]] = {}
 
