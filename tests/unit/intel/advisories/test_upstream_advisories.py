@@ -23,6 +23,7 @@ from cordon_scanner.detect.supply.advisories.findings import AdvisoryFinding
 from cordon_scanner.foundation.results import Dependency
 from cordon_scanner.intel.advisories.upstream.base import RepositoryArchive, Unnamed, Upstream
 from cordon_scanner.intel.advisories.upstream.fetch import Fetch
+from cordon_scanner.intel.advisories.upstream.homebrew import HomebrewBottles
 from cordon_scanner.intel.advisories.upstream.inference import Inference
 from cordon_scanner.intel.advisories.upstream.vcpkg import VcpkgPorts
 from cordon_scanner.intel.advisories.upstream_advisories import UpstreamAdvisories, Upstreams
@@ -1898,4 +1899,22 @@ class TestVcpkgLinear:
         start = time.perf_counter()
         VcpkgPorts.commands("a" * 2_000_000)
         self.NEW_GITHUB.search("set(QT_FROM_GITHUB" + " " * 2_000_000)
+        assert time.perf_counter() - start < 3
+
+
+class TestHomebrewUrlFieldLinear:
+    """A formula url statement's fields are read as before, in linear time (2026-10-30)."""
+
+    OLD = re.compile(r'(\w+):\s*"([^"]*)"')
+    PIECES = ("a", "b", "_", "1", ":", '"', ",", " ", "\t", "tag", ': "v1"', "\n", "\\")
+
+    def test_the_same_fields_as_the_old_pattern(self) -> None:
+        rng = random.Random("homebrew-fields|2026-10-30")  # noqa: S311 -- a fixture, not key material
+        for _ in range(20_000):
+            text = "".join(rng.choice(self.PIECES) for _ in range(rng.randint(0, 12)))
+            assert HomebrewBottles.URL_FIELD.findall(text) == self.OLD.findall(text), text
+
+    def test_a_long_word_is_linear(self) -> None:
+        start = time.perf_counter()
+        HomebrewBottles.URL_FIELD.findall("a" * 2_000_000)
         assert time.perf_counter() - start < 3
