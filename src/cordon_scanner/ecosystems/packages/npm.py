@@ -605,6 +605,16 @@ class NpmEcosystem(BaseEcosystem):
         """The release names itself in the metadata every published archive's checks read."""
         return True
 
+    # -- what a published archive of it runs at install (EcosystemArchiveTraits) ---------
+
+    def compiled_is_inert(self) -> bool:
+        """A compiled file in its archive does not run at install."""
+        return True
+
+    def install_manifests(self) -> frozenset[str]:
+        """The files its installer runs or reads to build: an author-time file elsewhere."""
+        return frozenset({"package.json"})
+
 
 __all__ = ["NpmEcosystem"]
 

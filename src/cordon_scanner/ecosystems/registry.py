@@ -394,6 +394,23 @@ class RegistryFacts:
         return RegistryFacts._of(ecosystem).normalised_version(version)
 
     @staticmethod
+    def compiled_is_inert(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).compiled_is_inert()
+
+    @staticmethod
+    def install_manifests(ecosystem: str) -> frozenset[str]:
+        return RegistryFacts._of(ecosystem).install_manifests()
+
+    @staticmethod
+    def any_install_manifest() -> frozenset[str]:
+        return frozenset().union(
+            *(
+                RegistryFacts._of(e.id).install_manifests()
+                for e in EcosystemRegistry.all_ecosystems()
+            )
+        )
+
+    @staticmethod
     def identity_in_metadata(ecosystem: str) -> bool:
         return RegistryFacts._of(ecosystem).identity_in_metadata()
 

@@ -276,6 +276,18 @@ class EcosystemReleaseIdentity(Protocol):
     ) -> tuple[str, str] | None: ...
 
 
+class EcosystemArchiveTraits(Protocol):
+    """What a published archive of the ecosystem runs at install."""
+
+    def compiled_is_inert(self, ecosystem: str) -> bool: ...
+
+    def install_manifests(self, ecosystem: str) -> frozenset[str]: ...
+
+    def any_install_manifest(self) -> frozenset[str]:
+        """Every ecosystem's install manifests together."""
+        ...
+
+
 class InstalledEcosystemFacts(
     EcosystemFacts,
     EcosystemNaming,
@@ -284,6 +296,7 @@ class InstalledEcosystemFacts(
     EcosystemProjects,
     EcosystemVersionSyntax,
     EcosystemReleaseIdentity,
+    EcosystemArchiveTraits,
     Protocol,
 ):
     """The installed facts object as the provider holds it; each reader asks for the one port it

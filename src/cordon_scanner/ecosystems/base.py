@@ -868,6 +868,16 @@ class BaseEcosystem:
         """(name, version) from that member: its path, its text, and the pattern's match."""
         return None
 
+    # -- what a published archive of it runs at install (EcosystemArchiveTraits) -------------
+
+    def compiled_is_inert(self) -> bool:
+        """Whether a compiled file in its archive does not run at install."""
+        return False
+
+    def install_manifests(self) -> frozenset[str]:
+        """The files its installer runs or reads to build; none by default."""
+        return frozenset()
+
 
 # Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine
 # each implementation typed by one of these, and the type checker proves the implementation
