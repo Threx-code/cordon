@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
+    InstallTool,
     LockEntry,
     LockGraph,
     Manifest,
@@ -408,6 +409,14 @@ class ComposerEcosystem(BaseEcosystem):
                 {"name": "cordon/check", "require": dict.fromkeys(names, "*")}
             )
         }
+
+    def install_tool(self) -> Sequence[InstallTool]:
+        """`composer require`, with `vendor/name:constraint`."""
+        return (
+            InstallTool(
+                frozenset({"composer"}), "composer", subcommands=frozenset({"require", "req"})
+            ),
+        )
 
 
 __all__ = [

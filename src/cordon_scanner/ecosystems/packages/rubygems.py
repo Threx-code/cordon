@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, ClassVar
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
+    InstallTool,
     LockEntry,
     LockGraph,
     Manifest,
@@ -822,6 +823,24 @@ class RubyGemsEcosystem(BaseEcosystem):
             "Gemfile": "source 'https://rubygems.org'\n"
             + "".join(f"gem '{name}'\n" for name in names)
         }
+
+    def install_tool(self) -> Sequence[InstallTool]:
+        """`gem install` and `bundle add`, with `-v`."""
+        versions = frozenset({"-v", "--version"})
+        return (
+            InstallTool(
+                frozenset({"gem"}),
+                "generic",
+                subcommands=frozenset({"install"}),
+                version_flags=versions,
+            ),
+            InstallTool(
+                frozenset({"bundle"}),
+                "generic",
+                subcommands=frozenset({"add"}),
+                version_flags=versions,
+            ),
+        )
 
 
 __all__ = ["BundlerLock", "Gemfile", "Gemspec", "RubyGemsEcosystem", "RubySource"]

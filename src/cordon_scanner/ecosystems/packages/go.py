@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, ClassVar
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
+    InstallTool,
     LockEntry,
     LockGraph,
     Manifest,
@@ -370,6 +371,18 @@ class GoEcosystem(BaseEcosystem):
     def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
         """A project naming these packages with no version: `{path: content}`."""
         raise ValueError("a Go module needs a version: Go records none without one")
+
+    def install_tool(self) -> Sequence[InstallTool]:
+        """`go get` and `go install` with `module@version`; a query word is no version."""
+        return (
+            InstallTool(
+                frozenset({"go"}),
+                "generic",
+                subcommands=frozenset({"get", "install"}),
+                at_version=True,
+                version_queries=frozenset({"latest", "upgrade", "patch", "none"}),
+            ),
+        )
 
 
 class GoWork:

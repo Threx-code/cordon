@@ -14,10 +14,15 @@ source, a local path, a custom index.
 
 from __future__ import annotations
 
+import functools
 import re
 import shlex
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Final
+
+from cordon_scanner.ecosystems.base import InstallTool
+from cordon_scanner.ecosystems.registry import EcosystemRegistry
 
 #: The ecosystems a package check accepts, by the name the advisory database uses.
 ECOSYSTEMS: Final[tuple[str, ...]] = (
@@ -73,6 +78,9 @@ ALIASES: Final[dict[str, str]] = {
     "java": "maven",
     "gradle": "maven",
 }
+
+#: A tool's reader: (ecosystem, tool, its declaration, the words after it, the result) -> read.
+Reader = Callable[[str, str, InstallTool, list[str], "ParsedCommand"], bool]
 
 _NAME: Final = re.compile(r"^[A-Za-z0-9@][A-Za-z0-9@._~+:/-]{0,213}$")
 _VERSION: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+~!-]{0,127}$")
@@ -155,8 +163,6 @@ class Lockfiles:
 
     @staticmethod
     def _project(eco: str) -> Any:
-        from cordon_scanner.ecosystems.registry import EcosystemRegistry
-
         project = EcosystemRegistry.get(eco)
         if project is None:
             raise PackageError(f"unsupported ecosystem {eco!r}")
@@ -376,84 +382,100 @@ class InstallCommand:
             and rest[1] in {"pip", "pip3"}
         ):
             tool, rest = "pip", rest[2:]
-        if tool in {"npm", "pnpm", "yarn", "bun", "cnpm"}:
-            sub = rest[0] if rest else ""
-            if tool == "yarn" and sub == "global":
-                rest, sub = rest[1:], (rest[1] if len(rest) > 1 else "")
-            if sub in {"dlx", "x", "exec"} and tool != "npm":
-                cls._npm_args(rest[1:], out, first_only=True, tool=tool)
-                return True
-            if sub not in {
-                "install",
-                "i",
-                "add",
-                "isntall",
-                "in",
-                "ins",
-                "inst",
-                "insta",
-                "instal",
-                "isnt",
-                "isnta",
-                "isntal",
-            }:
-                return False
-            cls._npm_args(rest[1:], out, tool="npm" if tool == "cnpm" else tool)
-            return True
-        if tool in {"npx", "bunx", "pnpx"}:
-            cls._npm_args(
-                rest, out, first_only=True, tool={"bunx": "bun", "pnpx": "pnpm"}.get(tool, "npx")
-            )
-            return True
-        if tool in {
-            "pip",
-            "pip3",
-            "pipx",
-            "uv",
-            "poetry",
-            "pdm",
-            "rye",
-            "uvx",
-            "pipenv",
-            "conda",
-            "mamba",
-        }:
-            return cls._python(tool, rest, out)
-        if tool == "cargo" and rest and rest[0] in {"add", "install"}:
-            cls._generic(
-                "cargo", rest[1:], out, version_flags={"--version", "--vers"}, at_version=True
-            )
-            return True
-        if tool in {"gem"} and rest and rest[0] == "install":
-            cls._generic("rubygems", rest[1:], out, version_flags={"-v", "--version"})
-            return True
-        if tool == "bundle" and rest and rest[0] == "add":
-            cls._generic("rubygems", rest[1:], out, version_flags={"-v", "--version"})
-            return True
-        if tool == "go" and rest and rest[0] in {"get", "install"}:
-            cls._generic("gomod", rest[1:], out, version_flags=set(), at_version=True, keep_v=True)
-            return True
-        if tool == "dotnet" and "package" in rest and rest[: rest.index("package")][:1] == ["add"]:
-            cls._generic(
-                "nuget",
-                rest[rest.index("package") + 1 :],
-                out,
-                version_flags={"-v", "--version"},
-                single=True,
-            )
-            return True
-        if tool in {"nuget", "nuget.exe"} and rest and rest[0].lower() == "install":
-            cls._generic(
-                "nuget", rest[1:], out, version_flags={"-Version", "-version"}, single=True
-            )
-            return True
-        if tool == "composer" and rest and rest[0] in {"require", "req"}:
-            cls._composer(rest[1:], out)
-            return True
+        declared = cls._tools().get(tool)
+        if declared is not None:
+            eco, spec = declared
+            return cls._readers()[spec.reader](eco, tool, spec, rest, out)
         if tool in {"brew", "apt", "apt-get", "yum", "dnf", "apk", "choco", "winget", "port"}:
             out.unchecked.append(f"{tool}: system packages are not checked by name here")
             return True
         return False
+
+    @staticmethod
+    @functools.cache
+    def _tools() -> dict[str, tuple[str, InstallTool]]:
+        """Every package tool the ecosystems declare (EcosystemProjects.install_tool), by name."""
+        table: dict[str, tuple[str, InstallTool]] = {}
+        for ecosystem in EcosystemRegistry.all_ecosystems():
+            for spec in Lockfiles._project(ecosystem.id).install_tool():
+                for name in spec.names:
+                    if name in table:
+                        raise RuntimeError(
+                            f"{name!r} is declared by {table[name][0]} and {ecosystem.id}"
+                        )
+                    table[name] = (ecosystem.id, spec)
+        return table
+
+    @classmethod
+    def _readers(cls) -> dict[str, Reader]:
+        return {
+            "generic": cls._read_generic,
+            "npm": cls._read_npm,
+            "npx": cls._read_npx,
+            "python": cls._python,
+            "composer": cls._read_composer,
+            "dotnet": cls._read_dotnet,
+            "unchecked": cls._read_unchecked,
+        }
+
+    @classmethod
+    def _read_npm(
+        cls, eco: str, tool: str, spec: InstallTool, rest: list[str], out: ParsedCommand
+    ) -> bool:
+        sub = rest[0] if rest else ""
+        if tool == "yarn" and sub == "global":
+            rest, sub = rest[1:], (rest[1] if len(rest) > 1 else "")
+        if sub in spec.runners:
+            cls._npm_args(rest[1:], out, first_only=True, tool=tool)
+            return True
+        if sub not in spec.subcommands:
+            return False
+        cls._npm_args(rest[1:], out, tool=spec.flags_as or tool)
+        return True
+
+    @classmethod
+    def _read_npx(
+        cls, eco: str, tool: str, spec: InstallTool, rest: list[str], out: ParsedCommand
+    ) -> bool:
+        cls._npm_args(rest, out, first_only=True, tool=spec.flags_as or tool)
+        return True
+
+    @classmethod
+    def _read_generic(
+        cls, eco: str, tool: str, spec: InstallTool, rest: list[str], out: ParsedCommand
+    ) -> bool:
+        if not rest or (rest[0].lower() if spec.any_case else rest[0]) not in spec.subcommands:
+            return False
+        cls._generic(eco, rest[1:], out, spec)
+        return True
+
+    @classmethod
+    def _read_dotnet(
+        cls, eco: str, tool: str, spec: InstallTool, rest: list[str], out: ParsedCommand
+    ) -> bool:
+        """`dotnet add [project] package NAME`."""
+        if "package" not in rest or rest[: rest.index("package")][:1] != ["add"]:
+            return False
+        cls._generic(eco, rest[rest.index("package") + 1 :], out, spec)
+        return True
+
+    @classmethod
+    def _read_composer(
+        cls, eco: str, tool: str, spec: InstallTool, rest: list[str], out: ParsedCommand
+    ) -> bool:
+        if not rest or rest[0] not in spec.subcommands:
+            return False
+        cls._composer(eco, rest[1:], out)
+        return True
+
+    @staticmethod
+    def _read_unchecked(
+        eco: str, tool: str, spec: InstallTool, rest: list[str], out: ParsedCommand
+    ) -> bool:
+        if not rest or rest[0] not in spec.subcommands:
+            return False
+        out.unchecked.append(f"{tool}: {spec.note}")
+        return True
 
     @classmethod
     def _flags(cls, eco: str, args: list[str], out: ParsedCommand, tool: str = "") -> list[str]:
@@ -540,14 +562,9 @@ class InstallCommand:
         cls._add(out, "npm", name, version)
 
     @classmethod
-    def _python(cls, tool: str, rest: list[str], out: ParsedCommand) -> bool:
-        if tool in {"conda", "mamba"}:
-            if rest[:1] == ["install"]:
-                out.unchecked.append(
-                    f"{tool}: conda packages are checked by scanning an environment file"
-                )
-                return True
-            return False
+    def _python(
+        cls, eco: str, tool: str, declared: InstallTool, rest: list[str], out: ParsedCommand
+    ) -> bool:
         if tool == "uvx":
             args = rest
         elif tool == "uv":
@@ -577,7 +594,7 @@ class InstallCommand:
             if rest[:1] not in (["install"], ["download"]):
                 return False
             args = rest[1:]
-        for word in cls._flags("pypi", args, out):
+        for word in cls._flags(eco, args, out):
             if cls._source(word) or " @ " in word or word.startswith("@"):
                 out.unchecked.append(f"{word}: not a registry package")
                 continue
@@ -590,52 +607,40 @@ class InstallCommand:
             if spec and not exact:
                 cls._add(
                     out,
-                    "pypi",
+                    eco,
                     name,
                     None,
                     note=f"range {spec}: the version is chosen at install time",
                 )
             else:
-                cls._add(out, "pypi", name, exact.group(1) if exact else None)
+                cls._add(out, eco, name, exact.group(1) if exact else None)
             if (tool in {"uvx", "pipx"} and rest[:1] == ["run"]) or tool == "uvx":
                 break
         return True
 
     @classmethod
-    def _generic(
-        cls,
-        eco: str,
-        args: list[str],
-        out: ParsedCommand,
-        *,
-        version_flags: set[str],
-        at_version: bool = False,
-        keep_v: bool = False,
-        single: bool = False,
-    ) -> None:
+    def _generic(cls, eco: str, args: list[str], out: ParsedCommand, spec: InstallTool) -> None:
         version_flag_value: str | None = None
         for i, word in enumerate(args):
             flag, _, inline = word.partition("=")
-            if flag in version_flags:
+            if flag in spec.version_flags:
                 version_flag_value = inline or (args[i + 1] if i + 1 < len(args) else None)
         for word in cls._flags(eco, args, out):
             if cls._source(word):
                 out.unchecked.append(f"{word}: not a registry package")
                 continue
             name, version = word, version_flag_value
-            if at_version and "@" in word:
+            if spec.at_version and "@" in word:
                 name, version = word.split("@", 1)
-                if eco == "gomod" and version in {"latest", "upgrade", "patch", "none"}:
+                if version in spec.version_queries:
                     version = None
-            if eco == "gomod" and version and not keep_v:
-                version = version.removeprefix("v")
             cls._add(out, eco, name, version)
-            if single:
+            if spec.single:
                 break
 
     @classmethod
-    def _composer(cls, args: list[str], out: ParsedCommand) -> None:
-        for word in cls._flags("composer", args, out):
+    def _composer(cls, eco: str, args: list[str], out: ParsedCommand) -> None:
+        for word in cls._flags(eco, args, out):
             name, _, constraint = word.partition(":")
             exact = (
                 constraint
@@ -647,7 +652,7 @@ class InstallCommand:
                 if constraint and not exact
                 else ""
             )
-            cls._add(out, "composer", name, exact, note=note)
+            cls._add(out, eco, name, exact, note=note)
 
     @staticmethod
     def _add(out: ParsedCommand, eco: str, name: str, version: str | None, note: str = "") -> None:

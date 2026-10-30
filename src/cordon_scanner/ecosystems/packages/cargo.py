@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
+    InstallTool,
     LockEntry,
     LockGraph,
     Manifest,
@@ -297,6 +298,18 @@ class CargoEcosystem(BaseEcosystem):
         return {
             "Cargo.toml": f'[package]\nname = "cordon-check"\nversion = "0.0.0"\n\n[dependencies]\n{deps}'
         }
+
+    def install_tool(self) -> Sequence[InstallTool]:
+        """`cargo add` and `cargo install`, with `crate@version` or `--vers`."""
+        return (
+            InstallTool(
+                frozenset({"cargo"}),
+                "generic",
+                subcommands=frozenset({"add", "install"}),
+                version_flags=frozenset({"--version", "--vers"}),
+                at_version=True,
+            ),
+        )
 
 
 class CargoFeatures:

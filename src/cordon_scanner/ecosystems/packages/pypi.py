@@ -20,6 +20,7 @@ from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
+    InstallTool,
     Manifest,
 )
 from cordon_scanner.ecosystems.packages.python.lockfiles import PypiLockfiles
@@ -653,6 +654,15 @@ class PypiEcosystem(PypiLockfiles, BaseEcosystem):
     def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
         """A project naming these packages with no version: `{path: content}`."""
         return {"requirements.txt": "".join(f"{name}\n" for name in names)}
+
+    def install_tool(self) -> Sequence[InstallTool]:
+        """pip and the Python tools that install from PyPI; each one's own subcommands."""
+        return (
+            InstallTool(
+                frozenset({"pip", "pip3", "pipx", "uv", "poetry", "pdm", "rye", "uvx", "pipenv"}),
+                "python",
+            ),
+        )
 
     # -- Lockfiles -------------------------------------------------------
 

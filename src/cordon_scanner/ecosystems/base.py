@@ -792,10 +792,43 @@ class BaseEcosystem:
         ecosystem has no project to write. Raises ValueError where it needs a version."""
         return None
 
+    def install_tool(self) -> Sequence[InstallTool]:
+        """The package tools whose install commands name this ecosystem's packages."""
+        return ()
+
 
 # Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine
 # each implementation typed by one of these, and the type checker proves the implementation
 # conforms, so the engine never sees a concrete adapter type.
+
+
+@dataclass(frozen=True, slots=True)
+class InstallTool:
+    """One package tool's install command, as a package check reads it from a shell command."""
+
+    names: frozenset[str]
+    """The executable's names."""
+    reader: str
+    """How its arguments are read: `generic`, `npm`, `npx`, `python`, `composer`, `dotnet` or
+    `unchecked` (recognised, but not checked by name)."""
+    subcommands: frozenset[str] = frozenset()
+    """The first words that install; empty where the reader knows the tool's own."""
+    runners: frozenset[str] = frozenset()
+    """Subcommands that fetch and run one package once (`pnpm dlx`)."""
+    flags_as: str = ""
+    """Whose flag table its flags follow, where not its own name's."""
+    version_flags: frozenset[str] = frozenset()
+    """Flags whose value is the version (`--vers 1.0`)."""
+    at_version: bool = False
+    """`name@version` names the version."""
+    version_queries: frozenset[str] = frozenset()
+    """Words in the version's place that ask for one instead (`@latest`): no version."""
+    single: bool = False
+    """One package per command."""
+    any_case: bool = False
+    """The subcommand is matched in any case."""
+    note: str = ""
+    """What an `unchecked` tool's install is told."""
 
 
 class ImageName(Protocol):
@@ -823,6 +856,7 @@ __all__ = [
     "Ecosystem",
     "ImageName",
     "ImageReferences",
+    "InstallTool",
     "LockEntry",
     "LockGraph",
     "Manifest",

@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
+    InstallTool,
     LockEntry,
     LockGraph,
     Manifest,
@@ -581,6 +582,39 @@ class NpmEcosystem(BaseEcosystem):
                 }
             )
         }
+
+    def install_tool(self) -> Sequence[InstallTool]:
+        """npm and the clients that read its registry: install words npm itself accepts (its
+        misspellings included), the other clients' one-off runners, and npx's three spellings."""
+        install = frozenset(
+            {
+                "install",
+                "i",
+                "add",
+                "isntall",
+                "in",
+                "ins",
+                "inst",
+                "insta",
+                "instal",
+                "isnt",
+                "isnta",
+                "isntal",
+            }
+        )
+        runners = frozenset({"dlx", "x", "exec"})
+        return (
+            InstallTool(frozenset({"npm"}), "npm", subcommands=install),
+            InstallTool(
+                frozenset({"cnpm"}), "npm", subcommands=install, runners=runners, flags_as="npm"
+            ),
+            InstallTool(
+                frozenset({"pnpm", "yarn", "bun"}), "npm", subcommands=install, runners=runners
+            ),
+            InstallTool(frozenset({"npx"}), "npx"),
+            InstallTool(frozenset({"bunx"}), "npx", flags_as="bun"),
+            InstallTool(frozenset({"pnpx"}), "npx", flags_as="pnpm"),
+        )
 
 
 __all__ = ["NpmEcosystem"]

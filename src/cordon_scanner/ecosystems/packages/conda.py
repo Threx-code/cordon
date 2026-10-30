@@ -17,11 +17,13 @@ A pip entry in an environment or a lock is a PyPI package, recorded as one.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
+    InstallTool,
     LockEntry,
     LockGraph,
     Manifest,
@@ -526,6 +528,19 @@ class CondaEcosystem(BaseEcosystem):
         if content.basename.startswith("conda-lock."):
             return CondaLock.parse(content, self.id)
         return ExplicitExport.parse(content, self.id)
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def install_tool(self) -> Sequence[InstallTool]:
+        """conda installs are read from an environment file, not checked by name."""
+        return (
+            InstallTool(
+                frozenset({"conda", "mamba"}),
+                "unchecked",
+                subcommands=frozenset({"install"}),
+                note="conda packages are checked by scanning an environment file",
+            ),
+        )
 
 
 __all__ = [

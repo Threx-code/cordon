@@ -29,6 +29,7 @@ from xml.sax.saxutils import escape
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
+    InstallTool,
     LockEntry,
     LockGraph,
     Manifest,
@@ -828,6 +829,25 @@ class NuGetEcosystem(BaseEcosystem):
         return {
             "check.csproj": f'<Project Sdk="Microsoft.NET.Sdk"><ItemGroup>{refs}</ItemGroup></Project>'
         }
+
+    def install_tool(self) -> Sequence[InstallTool]:
+        """`dotnet add [project] package` and `nuget install`, one package each."""
+        return (
+            InstallTool(
+                frozenset({"dotnet"}),
+                "dotnet",
+                version_flags=frozenset({"-v", "--version"}),
+                single=True,
+            ),
+            InstallTool(
+                frozenset({"nuget", "nuget.exe"}),
+                "generic",
+                subcommands=frozenset({"install"}),
+                version_flags=frozenset({"-Version", "-version"}),
+                single=True,
+                any_case=True,
+            ),
+        )
 
 
 __all__ = [
