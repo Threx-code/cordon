@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import posixpath
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.detect.base import FileUnit, ScanContext
@@ -148,6 +148,8 @@ class IdentityFindings:
 
     #: A version that wins semver resolution over any real release: major 99 or above, or every
     #: component all nines (`9.9.9`, `99.99.99`). What winning resolution is for is the attack.
+    #: Where the dependency-confusion foothold's shape was measured (review 98: npm only).
+    CONFUSION_SHAPE_MEASURED_ON: ClassVar[frozenset[str]] = frozenset({"npm"})
     _WINNING_VERSION = re.compile(r"^(?:(?:\d{3,}|99)\.|9+(?:\.9+){1,3}(?:[-+].*)?$)")
 
     _CODE_SUFFIXES = (".js", ".cjs", ".mjs", ".ts")
@@ -164,7 +166,9 @@ class IdentityFindings:
         (review 98): the shape is 246 of 1,923 malicious units, 3 of them caught by nothing else, and
         0 of 11,255 benign npm units across the random, popular and ecosystem corpora."""
         version = (manifest.version or "").strip()
-        if manifest.ecosystem != "npm" or not cls._WINNING_VERSION.match(version):
+        if manifest.ecosystem not in cls.CONFUSION_SHAPE_MEASURED_ON or not (
+            cls._WINNING_VERSION.match(version)
+        ):
             return
         if SourcePaths.is_editor_extension(unit.path):
             return

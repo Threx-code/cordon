@@ -30,6 +30,7 @@ from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, Graph
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.supply.dependency_rules import ABANDONED_RULE, DECLARED_RULES, DETECTOR
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
+from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -554,7 +555,7 @@ class DependencyDetector(BaseDetector):
             and not dep.local
             and not dep.bundled
             and getattr(ecosystem, "records_integrity", True)
-            and not (dep.ecosystem == "gomod" and dep.name == "stdlib")
+            and not EcosystemFactsProvider.naming().is_builtin(dep.ecosystem, dep.name)
             and ecosystem.is_registry_host(dep.resolved_from)
         ):
             yield self._finding(

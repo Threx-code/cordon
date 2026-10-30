@@ -421,6 +421,13 @@ class GitHubActionsEcosystem(BaseEcosystem):
     """The actions and reusable workflows a repository's CI runs."""
 
     id = "actions"
+
+    def namespace(self, name: str, alias: str | None = None) -> str | None:
+        return name.split("/", 1)[0] if "/" in name else None
+
+    def is_ci_step(self, name: str) -> bool:
+        return name.startswith("steps-")
+
     purl_type = "githubactions"
     manifest_globs: tuple[str, ...] = (
         "**/.github/workflows/*.yml",

@@ -312,12 +312,10 @@ class Dependency:
 
     @property
     def namespace(self) -> str | None:
-        from cordon_scanner.foundation.dependencies import DependencyIdentity
+        from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
 
-        # A Homebrew formula from a named tap is recorded by its own name, its tap the namespace
-        # its full name (`user/repo/name`, kept as the alias) carries.
-        name = self.alias if self.ecosystem == "homebrew" and self.alias else self.name
-        return DependencyIdentity.namespace(self.ecosystem, name)
+        # Each ecosystem declares its own: a Homebrew tap's comes from the full name, the alias.
+        return EcosystemFactsProvider.naming().namespace(self.ecosystem, self.name, self.alias)
 
     @property
     def source(self) -> tuple[str, str | None]:

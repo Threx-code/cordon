@@ -7,7 +7,7 @@ read. Each is reported where the script is declared, graded by what it runs."""
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.shared.inline_programs import InlinePrograms
 from cordon_scanner.analysis.shared.source_paths import SourcePaths
@@ -15,6 +15,7 @@ from cordon_scanner.detect.base import FileUnit, ScanContext
 from cordon_scanner.detect.supply.manifests.findings import ManifestFinding
 from cordon_scanner.detect.supply.manifests.scripts import ManifestScripts
 from cordon_scanner.foundation.capabilities import Capability
+from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
 from cordon_scanner.foundation.models import (
     AUTHOR_TIME_HOOKS,
     INSTALL_TIME_HOOKS,
@@ -70,16 +71,25 @@ READABLE_HOOK_TARGETS = frozenset(
 class LifecycleFindings:
     """The manifest findings about install-time lifecycle scripts."""
 
+    #: Ecosystems whose manifest hooks are the project's own build steps (a Dockerfile's RUN),
+    #: judged by the rules that read them in context, not as a dependency's install script.
+    BUILD_STEP_HOOKS: ClassVar[frozenset[str]] = frozenset({"image"})
+    #: Ecosystems whose manifest can mark a package unpublishable (npm's `"private": true`).
+    PRIVATE_FLAG: ClassVar[frozenset[str]] = frozenset({"npm"})
+
     @classmethod
     def lifecycle_findings(
         cls, manifest: Manifest, unit: FileUnit, ctx: ScanContext
     ) -> Iterable[Finding]:
-        if manifest.ecosystem == "image":
+        if manifest.ecosystem in LifecycleFindings.BUILD_STEP_HOOKS:
             # A Dockerfile's RUN steps are the project's own build, judged by the Dockerfile rules
             # that read them in context (a fetched script piped to a shell, sudo, a remote ADD).
             # Listed as build hooks; graded as a dependency's install script, each was reported twice.
             return
-        if manifest.ecosystem == "npm" and SourcePaths.is_editor_extension(unit.path):
+        traits = EcosystemFactsProvider.traits()
+        if traits.has_install_scripts(manifest.ecosystem) and SourcePaths.is_editor_extension(
+            unit.path
+        ):
             # A packaged or installed editor extension: the editor unpacks it and runs its `main`,
             # never npm, so no lifecycle script in it -- its own `postinstall`, or one in a bundled
             # node_modules manifest, which ran when the extension was built -- runs on this
@@ -87,7 +97,9 @@ class LifecycleFindings:
             # What the extension's code does is read by the code detectors, with its severity.
             return
         scripts, declared = (
-            ManifestScripts.npm_scripts(unit) if manifest.ecosystem == "npm" else ({}, {})
+            ManifestScripts.npm_scripts(unit)
+            if traits.has_install_scripts(manifest.ecosystem)
+            else ({}, {})
         )
         for hook in manifest.hooks:
             yield from LifecycleFindings._hook_findings(
@@ -197,7 +209,7 @@ class LifecycleFindings:
         # separate question the file detectors answer -- and cannot
         # answer at all if nothing points at it.
         first_party = ManifestScripts._is_first_party(unit.path, ctx) or (
-            manifest.ecosystem == "npm"
+            manifest.ecosystem in LifecycleFindings.PRIVATE_FLAG
             and not ManifestScripts._is_vendored(unit.path)
             and ManifestScripts.unpublishable(unit)
         )

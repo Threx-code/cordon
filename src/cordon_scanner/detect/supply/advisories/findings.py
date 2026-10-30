@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.foundation import references
+from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -194,10 +195,8 @@ class AdvisoryFinding:
         *,
         advice: Callable[[Dependency], str],
     ) -> Finding:
-        placeholder = (
-            advisory.malicious
-            and dependency.ecosystem == "npm"
-            and bool(SECURITY_PLACEHOLDER.match(dependency.version or ""))
+        placeholder = advisory.malicious and EcosystemFactsProvider.versions().is_held_version(
+            dependency.ecosystem, dependency.version or ""
         )
         if placeholder:
             return cls._placeholder_finding(dependency, advisory, ctx)

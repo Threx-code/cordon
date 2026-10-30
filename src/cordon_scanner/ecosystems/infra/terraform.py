@@ -659,6 +659,11 @@ class TerraformEcosystem(BaseEcosystem):
     """Terraform providers and modules."""
 
     id = "terraform"
+
+    def namespace(self, name: str, alias: str | None = None) -> str | None:
+        parts = name.split("/")
+        return parts[-2] if len(parts) >= 2 else None
+
     purl_type = "terraform"
     manifest_globs: tuple[str, ...] = ("**/*.tf", "**/*.tf.json")
     lockfile_globs: tuple[str, ...] = ("**/.terraform.lock.hcl",)

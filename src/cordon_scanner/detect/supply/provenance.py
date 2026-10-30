@@ -24,7 +24,8 @@ from __future__ import annotations
 import bisect
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING
+from types import MappingProxyType
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.detect.base import (
     BaseDetector,
@@ -36,6 +37,7 @@ from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.supply.registries.evidence import RegistryEvidence
 from cordon_scanner.detect.supply.registries.findings import NETWORK_CAVEAT
 from cordon_scanner.foundation import references
+from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -52,7 +54,7 @@ from cordon_scanner.foundation.scoring import ScoringContext
 from cordon_scanner.intel.provenance import attest
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator
+    from collections.abc import Callable, Iterable, Iterator, Mapping
 
     from cordon_scanner.detect.base import Unit
     from cordon_scanner.foundation.results import Dependency
@@ -82,6 +84,57 @@ _REPOSITORY_NAME = re.compile(r"[^/#?]+")
 
 class ProvenanceDetector(BaseDetector):
     """Verifies, rather than merely observes, a dependency's attestation."""
+
+    @staticmethod
+    def _versioned(d: Dependency) -> bool:
+        return bool(d.version)
+
+    @staticmethod
+    def _image_askable(d: Dependency) -> bool:
+        from cordon_scanner.ecosystems.infra.image import ImageEcosystem
+
+        return bool(d.version or d.integrity) and ImageEcosystem.is_reference(
+            d.name, d.declared_spec
+        )
+
+    #: Which dependencies of an ecosystem have a provenance to ask about, where it is not every
+    #: one with a version: each ecosystem's own rule, declared here rather than chained.
+    _ASKABLE: ClassVar[Mapping[str, Callable[[Dependency], bool]]] = MappingProxyType(
+        {
+            # An image pinned by digest alone is asked about by that digest; what a Dockerfile
+            # `ADD`s from a URL is no registry's.
+            "image": lambda d: ProvenanceDetector._image_askable(d),
+            # A Brewfile names a formula without a version: its bottles are the current version's.
+            "homebrew": lambda d: True,
+            # Maven signs each file: a classifier jar or a WAR has its own bundle, and the
+            # registry's is the plain jar's. Comparing the plain jar's signature with a
+            # classified artefact's checksum would call an honest signature a forgery.
+            "maven": lambda d: bool(d.version) and "?" not in d.purl,
+            "gradle": lambda d: bool(d.version) and "?" not in d.purl,
+            # A Bazel module is attested in the Bazel Central Registry: one from another registry,
+            # or a Maven artefact a Bazel extension installs, is not asked there.
+            "bazel": lambda d: (
+                bool(d.version) and not (d.resolved_from or d.local or ":" in d.name)
+            ),
+            # A Helm chart is asked of the repository it came from: over HTTPS or OCI, not one
+            # named only (`@name`) or the project's own (`file://`).
+            "helm": lambda d: (
+                bool(d.version) and (d.resolved_from or "").startswith(("https://", "oci://"))
+            ),
+        }
+    )
+    #: The ecosystems whose provenance is not the registry's attestation, by their verifier.
+    _VERIFIERS: ClassVar[Mapping[str, str]] = MappingProxyType(
+        {
+            "homebrew": "_verify_homebrew",
+            "bazel": "_verify_bazel",
+            "helm": "_verify_helm",
+            "ansible": "_verify_ansible",
+        }
+    )
+    #: Where a publisher signs every artefact or none, so an unsigned one the project runs is the
+    #: gap itself, with no siblings to compare (images).
+    _SIGNS_ALL_OR_NONE: ClassVar[frozenset[str]] = frozenset({"image"})
 
     id = "provenance"
     version = "0.1.0"
@@ -183,7 +236,6 @@ class ProvenanceDetector(BaseDetector):
         # dependencies first, so a truncated pass spends the budget where
         # provenance is most likely to be claimed.
         from cordon_scanner.detect.supply.registries.detector import MAX_QUERIES, RegistryDetector
-        from cordon_scanner.ecosystems.infra.image import ImageEcosystem
 
         candidates = [
             d
@@ -191,24 +243,7 @@ class ProvenanceDetector(BaseDetector):
             if d.ecosystem in SUPPORTED_ECOSYSTEMS
             # The project's own code has no registry and no attestation to ask about.
             and not d.local
-            # An image pinned by digest alone is asked about by that digest; what a Dockerfile
-            # `ADD`s from a URL is no registry's.
-            # A Brewfile names a formula without a version: its bottles are the current version's.
-            and (d.version or (d.ecosystem == "image" and d.integrity) or d.ecosystem == "homebrew")
-            and (d.ecosystem != "image" or ImageEcosystem.is_reference(d.name, d.declared_spec))
-            # Maven signs each file: a classifier jar or a WAR has its own bundle, and the
-            # registry's is the plain jar's. Comparing the plain jar's signature with a
-            # classified artefact's checksum would call an honest signature a forgery.
-            and not (d.ecosystem in ("maven", "gradle") and "?" in d.purl)
-            # A Bazel module is attested in the Bazel Central Registry: one from another registry,
-            # or a Maven artefact a Bazel extension installs, is not asked there.
-            and not (d.ecosystem == "bazel" and (d.resolved_from or d.local or ":" in d.name))
-            # A Helm chart is asked of the repository it came from: over HTTPS or OCI, not one
-            # named only (`@name`) or the project's own (`file://`).
-            and not (
-                d.ecosystem == "helm"
-                and not (d.resolved_from or "").startswith(("https://", "oci://"))
-            )
+            and ProvenanceDetector._ASKABLE.get(d.ecosystem, ProvenanceDetector._versioned)(d)
         ]
         findings: list[Finding] = []
         for index, dependency in enumerate(candidates[:MAX_QUERIES]):
@@ -250,23 +285,14 @@ class ProvenanceDetector(BaseDetector):
         )
 
     def _verify(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
-        if dependency.ecosystem == "homebrew":
-            yield from self._verify_homebrew(dependency, ctx)
-            return
-        if dependency.ecosystem == "bazel":
-            yield from self._verify_bazel(dependency, ctx)
-            return
-        if dependency.ecosystem == "helm":
-            yield from self._verify_helm(dependency, ctx)
-            return
-        if dependency.ecosystem == "ansible":
-            yield from self._verify_ansible(dependency, ctx)
+        verifier = ProvenanceDetector._VERIFIERS.get(dependency.ecosystem)
+        if verifier is not None:
+            yield from getattr(self, verifier)(dependency, ctx)
             return
         from cordon_scanner.intel.registries.registry_client import RegistryClient, RegistryError
 
-        asked = dependency.version or (
-            dependency.integrity if dependency.ecosystem == "image" else None
-        )
+        by_digest = EcosystemFactsProvider.versions().pinned_by_digest(dependency.ecosystem)
+        asked = dependency.version or (dependency.integrity if by_digest else None)
         try:
             observed = RegistryClient.facts(dependency.ecosystem, dependency.name, asked)
         except RegistryError:
@@ -280,7 +306,10 @@ class ProvenanceDetector(BaseDetector):
             # An image is different: a publisher signs every image or none, so there are no
             # siblings to compare with, and an image the project RUNS with nothing tying it to a
             # build is the M4 gap itself. A build stage's image never ships, and is left alone.
-            if dependency.ecosystem == "image" and dependency.scope is Scope.RUNTIME:
+            if (
+                dependency.ecosystem in ProvenanceDetector._SIGNS_ALL_OR_NONE
+                and dependency.scope is Scope.RUNTIME
+            ):
                 yield self._finding(
                     UNSIGNED_IMAGE_RULE,
                     ctx,

@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, GraphUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.foundation import references
+from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -227,7 +228,9 @@ class PackagePolicyDetector(BaseDetector):
             if dependency.local or dependency.scope is Scope.PLATFORM:
                 continue
             # Go's standard library arrives with the toolchain: nobody chooses it from a list.
-            if not (dependency.ecosystem == "gomod" and dependency.name == "stdlib"):
+            if not EcosystemFactsProvider.naming().is_builtin(
+                dependency.ecosystem, dependency.name
+            ):
                 findings.extend(self._packages(dependency, ctx))
             findings.extend(self._licences(dependency, ctx))
         del policy

@@ -460,6 +460,10 @@ class AnsibleGalaxyEcosystem(BaseEcosystem):
     """Galaxy roles and collections, declared and installed."""
 
     id = "ansible"
+
+    def namespace(self, name: str, alias: str | None = None) -> str | None:
+        return name.split(".", 1)[0] if "." in name else None
+
     purl_type = "ansible"
     manifest_globs: tuple[str, ...] = (
         "**/requirements.yml",

@@ -240,6 +240,16 @@ class GradleWrapper:
 
 class GradleEcosystem(BaseEcosystem):
     id = "gradle"
+
+    def namespace(self, name: str, alias: str | None = None) -> str | None:
+        return name.split(":", 1)[0] if ":" in name else None
+
+    def coordinate_separator(self) -> str | None:
+        return ":"
+
+    def is_mutable_version(self, version: str) -> bool:
+        return version.upper().endswith("-SNAPSHOT")
+
     purl_type = "maven"
     manifest_globs: tuple[str, ...] = (
         "**/build.gradle",

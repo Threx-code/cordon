@@ -605,6 +605,7 @@
   "test_binding_injection.py": "detect/binary",
   "test_binmeta.py": "images",
   "test_build_advisory_db.py": "intel/advisories",
+  "test_ecosystem_facts.py": "ecosystems/python",
   "test_python_import_names.py": "ecosystems/python",
   "test_bun_and_deno_locks.py": "ecosystems",
   "test_cache.py": "engine",

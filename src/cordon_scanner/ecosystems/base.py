@@ -30,7 +30,7 @@ from cordon_scanner.foundation.models import Hook, Scope
 from cordon_scanner.foundation.results import Dependency
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Iterable, Mapping, Sequence
 
     from cordon_scanner.foundation.content import FileContent
     from cordon_scanner.foundation.models import Scope
@@ -529,8 +529,59 @@ class RegistryHosts:
         return False
 
 
+class ReleaseFile(Protocol):
+    """One file of a published release, as an ecosystem reads it for what the release declares."""
+
+    @property
+    def path(self) -> str: ...
+    @property
+    def content(self) -> FileContent: ...
+
+
 class BaseEcosystem:
     """Shared behaviour. Implementing the protocol directly is equally valid."""
+
+    def declared_dependencies(self, files: Sequence[ReleaseFile]) -> frozenset[str]:
+        """The runtime dependencies a published release of this ecosystem declares, read from its
+        own files; none where the ecosystem's releases are not read this way."""
+        return frozenset()
+
+    # -- What each ecosystem declares about itself (`foundation.dependencies`' naming, versions
+    # and traits ports, answered by `ecosystems.registry.RegistryFacts`). The defaults are an
+    # ecosystem's that has none of them; each ecosystem overrides what is its own.
+
+    def namespace(self, name: str, alias: str | None = None) -> str | None:
+        return None
+
+    def is_builtin(self, name: str) -> bool:
+        return False
+
+    def coordinate_separator(self) -> str | None:
+        return None
+
+    def pinned_by_digest(self) -> bool:
+        return False
+
+    def is_mutable_version(self, version: str) -> bool:
+        return False
+
+    def admits_lowest(self, declared_spec: str) -> bool:
+        return False
+
+    def is_held_version(self, version: str) -> bool:
+        return False
+
+    def has_install_scripts(self) -> bool:
+        return False
+
+    def has_scoped_names(self) -> bool:
+        return False
+
+    def is_ci_step(self, name: str) -> bool:
+        return False
+
+    def squat_comparisons(self) -> tuple[str, ...]:
+        return ("npm", "cargo")
 
     def not_run_at_install(self, path: str, text: str) -> list[tuple[int, int]]:
         return []
