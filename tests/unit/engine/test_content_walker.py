@@ -472,9 +472,33 @@ class TestPathGlobMatchIsMemoised(ContentWalkerFixtures):
     A cache-hit assertion rather than a wall-clock one: immune to CI
     machine speed, and it verifies the mechanism directly instead of an
     emergent timing property multiple other changes could also move.
+
+    Read as the scan ends, before the caches that hold a scan's files are
+    emptied (`foundation.collector.ScanCaches`): emptying an lru_cache
+    also resets its counts, and the hits that matter are the ones inside
+    the scan.
     """
 
-    def test_config_detector_pattern_cache_gets_hits_across_files(self, tmp_path) -> None:
+    @staticmethod
+    def hits_inside_the_scan(cache, monkeypatch, scan) -> int:
+        from cordon_scanner.foundation.collector import ScanCaches
+
+        seen: list[int] = []
+        emptied = ScanCaches.after_scan
+
+        def counting() -> None:
+            seen.append(cache.cache_info().hits)
+            emptied()
+
+        monkeypatch.setattr(ScanCaches, "after_scan", staticmethod(counting))
+        cache.cache_clear()
+        scan()
+        assert seen, "the scan never reached its end"
+        return seen[-1]
+
+    def test_config_detector_pattern_cache_gets_hits_across_files(
+        self, tmp_path, monkeypatch
+    ) -> None:
         from cordon_scanner import Scanner
         from cordon_scanner.detect.infra.config_files import ConfigDetector
         from cordon_scanner.foundation.config.settings import Config
@@ -486,12 +510,16 @@ class TestPathGlobMatchIsMemoised(ContentWalkerFixtures):
                 "on: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n", encoding="utf-8"
             )
 
-        ConfigDetector._pattern_matches.cache_clear()
-        Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
-        info = ConfigDetector._pattern_matches.cache_info()
-        assert info.hits > 0, "fifty CI-shaped files sharing CI_PATHS produced no cache hits"
+        hits = self.hits_inside_the_scan(
+            ConfigDetector._pattern_matches,
+            monkeypatch,
+            lambda: Scanner(Config.default().with_overrides(use_cache=False)).scan(root),
+        )
+        assert hits > 0, "fifty CI-shaped files sharing CI_PATHS produced no cache hits"
 
-    def test_rule_selector_pattern_cache_gets_hits_across_files(self, tmp_path) -> None:
+    def test_rule_selector_pattern_cache_gets_hits_across_files(
+        self, tmp_path, monkeypatch
+    ) -> None:
         from cordon_scanner import Scanner
         from cordon_scanner.detect.base import RuleSelector
         from cordon_scanner.foundation.config.settings import Config
@@ -501,10 +529,12 @@ class TestPathGlobMatchIsMemoised(ContentWalkerFixtures):
         for i in range(50):
             (root / f"app{i}.py").write_text(f"x = {i}\n", encoding="utf-8")
 
-        RuleSelector._pattern_matches.cache_clear()
-        Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
-        info = RuleSelector._pattern_matches.cache_info()
-        assert info.hits > 0, "fifty similarly-shaped files produced no rule-pack cache hits"
+        hits = self.hits_inside_the_scan(
+            RuleSelector._pattern_matches,
+            monkeypatch,
+            lambda: Scanner(Config.default().with_overrides(use_cache=False)).scan(root),
+        )
+        assert hits > 0, "fifty similarly-shaped files produced no rule-pack cache hits"
 
     def test_the_cache_does_not_change_which_findings_are_reported(self, tmp_path) -> None:
         """The optimisation must be invisible in the output, not just fast."""
