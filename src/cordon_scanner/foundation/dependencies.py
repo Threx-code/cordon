@@ -35,6 +35,8 @@ from __future__ import annotations
 import functools
 import re
 import threading
+from collections.abc import Sequence
+from dataclasses import dataclass
 from importlib.metadata import entry_points
 from typing import Final, Protocol
 
@@ -207,8 +209,69 @@ class EcosystemTraits(Protocol):
     def squat_comparisons(self, ecosystem: str) -> tuple[str, ...]: ...
 
 
+@dataclass(frozen=True, slots=True)
+class InstallTool:
+    """One package tool's install command, as a package check reads it from a shell command."""
+
+    names: frozenset[str]
+    """The executable's names."""
+    reader: str
+    """How its arguments are read: `generic`, `npm`, `npx`, `python`, `composer`, `dotnet` or
+    `unchecked` (recognised, but not checked by name)."""
+    subcommands: frozenset[str] = frozenset()
+    """The first words that install; empty where the reader knows the tool's own."""
+    runners: frozenset[str] = frozenset()
+    """Subcommands that fetch and run one package once (`pnpm dlx`)."""
+    flags_as: str = ""
+    """Whose flag table its flags follow, where not its own name's."""
+    version_flags: frozenset[str] = frozenset()
+    """Flags whose value is the version (`--vers 1.0`)."""
+    at_version: bool = False
+    """`name@version` names the version."""
+    version_queries: frozenset[str] = frozenset()
+    """Words in the version's place that ask for one instead (`@latest`): no version."""
+    single: bool = False
+    """One package per command."""
+    any_case: bool = False
+    """The subcommand is matched in any case."""
+    note: str = ""
+    """What an `unchecked` tool's install is told."""
+
+
+class EcosystemProjects(Protocol):
+    """The projects a package check writes for an ecosystem, and the tools whose install commands
+    name its packages."""
+
+    def pinned_project(
+        self, ecosystem: str, pins: Sequence[tuple[str, str]]
+    ) -> dict[str, str] | None:
+        """A project pinning these releases, as the ecosystem's lockfile: `{path: content}`."""
+        ...
+
+    def loose_project(self, ecosystem: str, names: Sequence[str]) -> dict[str, str] | None:
+        """A project naming these packages with no version; raises ValueError where the ecosystem
+        records none without one."""
+        ...
+
+    def install_tool(self, ecosystem: str) -> Sequence[InstallTool]: ...
+
+
+class EcosystemVersionSyntax(Protocol):
+    """How an ecosystem writes a version."""
+
+    def normalised_version(self, ecosystem: str, version: str) -> str:
+        """A version as given, in the form the ecosystem's records keep (Go keeps its `v`)."""
+        ...
+
+
 class InstalledEcosystemFacts(
-    EcosystemFacts, EcosystemNaming, EcosystemVersions, EcosystemTraits, Protocol
+    EcosystemFacts,
+    EcosystemNaming,
+    EcosystemVersions,
+    EcosystemTraits,
+    EcosystemProjects,
+    EcosystemVersionSyntax,
+    Protocol,
 ):
     """The installed facts object as the provider holds it; each reader asks for the one port it
     uses (`naming`, `versions`, `traits`)."""

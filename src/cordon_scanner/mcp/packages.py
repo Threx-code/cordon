@@ -19,10 +19,10 @@ import re
 import shlex
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, Final
+from typing import ClassVar, Final
 
-from cordon_scanner.ecosystems.base import InstallTool
-from cordon_scanner.ecosystems.registry import EcosystemRegistry
+from cordon_scanner.ecosystems.registry import EcosystemRegistry, RegistryFacts
+from cordon_scanner.foundation.dependencies import InstallTool
 
 #: The ecosystems a package check accepts, by the name the advisory database uses.
 ECOSYSTEMS: Final[tuple[str, ...]] = (
@@ -116,10 +116,13 @@ class PackageSpec:
         name = name.strip()
         if not _NAME.match(name) or ".." in name or "\\" in name:
             raise PackageError(f"not a valid {eco} package name: {name[:80]!r}")
-        if eco == "maven" and name.count(":") != 1:
-            raise PackageError(f"a Maven package is named group:artifact, not {name!r}")
+        separator = RegistryFacts.coordinate_separator(eco)
+        if separator is not None and name.count(separator) != 1:
+            raise PackageError(
+                f"a {eco.capitalize()} package is named group{separator}artifact, not {name!r}"
+            )
         if version is not None:
-            version = version.strip().removeprefix("v") if eco != "gomod" else version.strip()
+            version = RegistryFacts.normalised_version(eco, version)
             if not version:
                 version = None
             elif not _VERSION.match(version):
@@ -135,7 +138,8 @@ class PackageSpec:
         kind = FETCHABLE.get(self.ecosystem)
         if kind is None:
             return None
-        name = self.name.replace(":", "/") if self.ecosystem == "maven" else self.name
+        separator = RegistryFacts.coordinate_separator(self.ecosystem)
+        name = self.name.replace(separator, "/") if separator else self.name
         return f"pkg:{kind}/{name}" + (f"@{self.version}" if self.version else "")
 
 
@@ -162,16 +166,9 @@ class Lockfiles:
         return files
 
     @staticmethod
-    def _project(eco: str) -> Any:
-        project = EcosystemRegistry.get(eco)
-        if project is None:
-            raise PackageError(f"unsupported ecosystem {eco!r}")
-        return project
-
-    @staticmethod
     def _pinned(eco: str, specs: list[PackageSpec]) -> dict[str, str]:
         """The ecosystem's own lockfile pinning these releases (EcosystemProjects)."""
-        files = Lockfiles._project(eco).pinned_project([(s.name, s.version or "") for s in specs])
+        files = RegistryFacts.pinned_project(eco, [(s.name, s.version or "") for s in specs])
         if files is None:
             raise PackageError(f"unsupported ecosystem {eco!r}")
         return dict(files)
@@ -181,7 +178,7 @@ class Lockfiles:
         """Names without a version: what the name alone can answer -- typosquat, documented
         hallucination, a name that only ever carried malware. No version is invented."""
         try:
-            files = Lockfiles._project(eco).loose_project([s.name for s in specs])
+            files = RegistryFacts.loose_project(eco, [s.name for s in specs])
         except ValueError as exc:  # an ecosystem that records nothing without a version
             raise PackageError(str(exc)) from exc
         if files is None:
@@ -397,7 +394,7 @@ class InstallCommand:
         """Every package tool the ecosystems declare (EcosystemProjects.install_tool), by name."""
         table: dict[str, tuple[str, InstallTool]] = {}
         for ecosystem in EcosystemRegistry.all_ecosystems():
-            for spec in Lockfiles._project(ecosystem.id).install_tool():
+            for spec in RegistryFacts.install_tool(ecosystem.id):
                 for name in spec.names:
                     if name in table:
                         raise RuntimeError(

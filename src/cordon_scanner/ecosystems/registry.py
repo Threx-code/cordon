@@ -43,7 +43,7 @@ if TYPE_CHECKING:
 
     from cordon_scanner.ecosystems.base import ImageReferences
     from cordon_scanner.ecosystems.infra import image as _ecosystems_infra_image
-    from cordon_scanner.foundation.dependencies import InstalledEcosystemFacts
+    from cordon_scanner.foundation.dependencies import InstalledEcosystemFacts, InstallTool
 
     ImageReference: ImageReferences = _ecosystems_infra_image.ImageReference
 
@@ -375,6 +375,22 @@ class RegistryFacts:
     @staticmethod
     def squat_comparisons(ecosystem: str) -> tuple[str, ...]:
         return RegistryFacts._of(ecosystem).squat_comparisons()
+
+    @staticmethod
+    def pinned_project(ecosystem: str, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        return RegistryFacts._of(ecosystem).pinned_project(pins)
+
+    @staticmethod
+    def loose_project(ecosystem: str, names: Sequence[str]) -> dict[str, str] | None:
+        return RegistryFacts._of(ecosystem).loose_project(names)
+
+    @staticmethod
+    def install_tool(ecosystem: str) -> Sequence[InstallTool]:
+        return RegistryFacts._of(ecosystem).install_tool()
+
+    @staticmethod
+    def normalised_version(ecosystem: str, version: str) -> str:
+        return RegistryFacts._of(ecosystem).normalised_version(version)
 
 
 #: What the engine uses of this layer by name, and the module that provides each: the one place

@@ -379,6 +379,10 @@ class GoEcosystem(BaseEcosystem):
         """A project naming these packages with no version: `{path: content}`."""
         raise ValueError("a Go module needs a version: Go records none without one")
 
+    def normalised_version(self, version: str) -> str:
+        """A Go version keeps its `v`: `v1.2.3` is the module's own tag."""
+        return version.strip()
+
     def install_tool(self) -> Sequence[InstallTool]:
         """`go get` and `go install` with `module@version`; a query word is no version."""
         return (
