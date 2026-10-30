@@ -31,9 +31,10 @@ class SchemaKit:
 
     @staticmethod
     def tree(where: Path) -> Path:
-        for path, _ in FeatureSchema.EXTRACTOR:
-            (where / path).parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy(PackagePaths.root() / path, where / path)
+        for path, dotted in FeatureSchema.EXTRACTOR:
+            source = FeatureSchema.source(path, dotted)
+            (where / source).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(PackagePaths.root() / source, where / source)
         return where
 
     @staticmethod
@@ -57,7 +58,7 @@ class TestTheVersion:
         root = SchemaKit.tree(tmp_path)
         SchemaKit.edit(
             root,
-            "decide/verdict.py",
+            "decide/verdict_features.py",
             '"""What the model scores, from (rule, severity, confidence, category, path) per finding.',
             '"""What the model scores (reworded), from (rule, severity, confidence, category, path).\n'
             "        # and a comment",
@@ -68,7 +69,7 @@ class TestTheVersion:
         root = SchemaKit.tree(tmp_path)
         SchemaKit.edit(
             root,
-            "decide/verdict.py",
+            "decide/verdict_features.py",
             'out[key + "#n"] = out.get(key + "#n", 0.0) + 1.0',
             'out[key + "#n"] = out.get(key + "#n", 0.0) + 2.0',
         )

@@ -275,16 +275,10 @@ class TestTheShippedVerdict:
     def test_the_record_holds_every_input_the_score_read(self) -> None:
         findings = [VerdictKit.finding("SUSPECT.X.001", Severity.HIGH)] * 3
         _, summary = VerdictKit.decide(findings, VerdictKit.model())
-        assert summary["evidence"]["r:SUSPECT.X.001"] == float(Severity.HIGH)
-        assert summary["evidence"]["r:SUSPECT.X.001#n"] == 3.0
-        rebuilt = {
-            **summary["evidence"],
-            **{
-                f"pkg:{name}": float(value)
-                for name, value in summary["package"].items()
-                if name not in VerdictFeatures.COSMETIC and isinstance(value, int | float)
-            },
-        }
+        values = summary["features"]["values"]
+        assert values["r:SUSPECT.X.001"] == float(Severity.HIGH)
+        assert values["r:SUSPECT.X.001#n"] == 3.0
+        rebuilt = dict(values)
         assert round(VerdictModel.score(VerdictKit.model(), rebuilt), 4) == summary["score"]
 
     def test_under_its_line_a_malicious_finding_is_held_as_a_warning(self) -> None:

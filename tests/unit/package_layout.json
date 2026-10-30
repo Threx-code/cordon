@@ -109,6 +109,7 @@
   "decide/policy": "decide/policy",
   "decide/feature_schema": "decide/feature_schema",
   "decide/verdict": "decide/verdict",
+  "decide/verdict_features": "decide/verdict_features",
   "decide/vex": "decide/vex",
   "detect/agents/autorun": "detect/agents/autorun",
   "detect/agents/chain": "detect/agents/chain",

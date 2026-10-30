@@ -49,6 +49,17 @@ class FeatureSchema:
         ("engine/pipeline/history.py", "History.registry_facts"),
     )
     PREFIX: ClassVar[str] = "fs1-"
+    #: Where a piece now lives, when it moved after EXTRACTOR recorded it. The version hashes the
+    #: recorded location, not the file: moving code is not a change to the features, so a move must
+    #: not refuse every row computed before it. The code itself is still read and hashed.
+    MOVED: ClassVar[dict[str, str]] = {
+        "decide/verdict.py:VerdictFeatures": "decide/verdict_features.py",
+    }
+
+    @staticmethod
+    def source(path: str, dotted: str) -> str:
+        """The file an EXTRACTOR piece is read from now (`MOVED`), relative to the package."""
+        return FeatureSchema.MOVED.get(f"{path}:{dotted}", path)
 
     @staticmethod
     def version(root: Path | None = None, names: list[str] | None = None) -> str:
@@ -58,7 +69,7 @@ class FeatureSchema:
         root = PackagePaths.root() if root is None else root
         digest = hashlib.sha256()
         for path, dotted in FeatureSchema.EXTRACTOR:
-            node = FeatureSchema._node(root / path, dotted)
+            node = FeatureSchema._node(root / FeatureSchema.source(path, dotted), dotted)
             digest.update(f"{path}:{dotted}\n".encode())
             digest.update(ast.dump(FeatureSchema._without_docstrings(node)).encode())
         listed = FeatureSchema.names() if names is None else names
@@ -76,7 +87,7 @@ class FeatureSchema:
     def names() -> list[str]:
         """The static feature names: an empty package's facts, the cosmetic facts and the coverage
         rules' axes."""
-        from cordon_scanner.decide.verdict import VerdictFeatures
+        from cordon_scanner.decide.verdict_features import VerdictFeatures
 
         package = VerdictFeatures.package([], {}, [])
         return sorted(
@@ -132,7 +143,7 @@ class FeatureRecord:
     @staticmethod
     def of(findings: Iterable[Finding], package: dict[str, float]) -> dict[str, float]:
         """The features of a scan's findings and package facts."""
-        from cordon_scanner.decide.verdict import VerdictFeatures
+        from cordon_scanner.decide.verdict_features import VerdictFeatures
 
         return VerdictFeatures.evidence(
             (
@@ -148,7 +159,7 @@ class FeatureRecord:
         record existed, the same features built from what it recorded (its findings as
         [rule, severity, confidence, category, path, ...] and `verdict.package`), with no schema
         (the row's producer stamp names it)."""
-        from cordon_scanner.decide.verdict import VerdictFeatures
+        from cordon_scanner.decide.verdict_features import VerdictFeatures
         from cordon_scanner.foundation.models import Confidence, Severity
 
         verdict = row.get("verdict") or {}
