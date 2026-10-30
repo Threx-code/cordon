@@ -16,8 +16,8 @@ verdict the CLI, CI and the editor would give.
     agents.py     AgentTools: content an agent is about to use: files, skills, MCP servers,
                   extensions
     machine.py    MachineTools: container images and this machine
-    knowledge.py  KnowledgeTools: rules, intel and this server
-    catalogue.py  Catalogue: the tool definitions, in a fixed order
+    knowledge.py  KnowledgeTools: rules and intel
+    catalogue.py  Catalogue: the tool definitions, in a fixed order; ServerStatus, which lists them
 """
 
 from __future__ import annotations
@@ -29,10 +29,13 @@ from cordon_scanner.mcp.packages import (
     ECOSYSTEMS,
 )
 from cordon_scanner.mcp.results import SCAN_OUTPUT
+from cordon_scanner.mcp.runner import CancelToken, TimedOut
 from cordon_scanner.mcp.tools.agents import AgentTools
 from cordon_scanner.mcp.tools.base import (
     MAX_PACKAGES,
     SEVERITY_ENUM,
+    Outcome,
+    Scans,
     Settings,
     Tool,
 )
@@ -612,7 +615,7 @@ class Catalogue:
                 "The directories this server may read, whether online checks and machine-wide reads are allowed, "
                 "the scan deadline, the Cordon Cloud sign-in and the tools available.",
                 s({}),
-                KnowledgeTools.server_status,
+                ServerStatus.report,
                 data,
             ),
         ]
@@ -622,6 +625,33 @@ class Catalogue:
         """The tools this server offers: one whose server flag is off is not listed at all."""
         enabled = {"online": settings.allow_online, "machine": settings.allow_machine}
         return [t for t in TOOLS if all(enabled[n] for n in t.needs)]
+
+
+class ServerStatus:
+    """The `server_status` tool: this server's settings and the tools it offers. Beside the
+    catalogue, which it lists, so the tools need not import the module that lists them."""
+
+    @staticmethod
+    def report(settings: Settings, args: dict[str, Any], token: CancelToken) -> Outcome:
+        try:
+            run = settings.runner.run(["whoami"], timeout=30, token=token)
+            # Signed in or not, never who: the identity would go to the model and its provider.
+            cloud = "signed in" if run.exit_code == 0 else "not signed in"
+        except TimedOut:
+            cloud = "unknown (timed out)"
+        structured = {
+            "server": "cordon-scanner",
+            "version": settings.version,
+            "workspace_roots": settings.workspace.describe(),
+            "online_allowed": settings.allow_online,
+            "machine_reads_allowed": settings.allow_machine,
+            "private_network_allowed": settings.allow_private_network,
+            "scan_timeout_seconds": settings.timeout,
+            "cordon_cloud": cloud,
+            "ecosystems": list(ECOSYSTEMS),
+            "tools": [t.name for t in Catalogue.available(settings)],
+        }
+        return Scans.data(structured, "Cordon MCP server status")
 
 
 TOOLS: Final[list[Tool]] = Catalogue.build()

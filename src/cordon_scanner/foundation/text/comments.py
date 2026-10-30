@@ -49,6 +49,8 @@ from __future__ import annotations
 import functools
 import re
 
+from cordon_scanner.foundation.collector import ScanCaches
+
 HASH = ("#",)
 SLASHES = ("//",)
 DASHES = ("--",)
@@ -163,6 +165,7 @@ class SourceComments:
         return re.compile("|".join(alternatives))
 
     @staticmethod
+    @ScanCaches.register  # holds files: emptied after each scan (foundation/collector)
     @functools.lru_cache(maxsize=4)
     def block_comment_spans(text: str, language: str | None) -> tuple[tuple[int, int], ...]:
         """Where the `/* ... */` blocks are, as half-open offset ranges.

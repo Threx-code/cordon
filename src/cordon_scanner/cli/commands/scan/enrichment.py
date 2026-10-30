@@ -131,7 +131,9 @@ class ScanEnrichment:
                     named = getattr(args, "package_identity", None)
                     identity = (
                         previous_release.Identity(*named)
-                        if named and named[0] not in ("npm", "pypi") and named[2]
+                        if named
+                        and named[0] not in previous_release.PreviousRelease.FROM_ARCHIVE
+                        and named[2]
                         else previous_release.PreviousRelease.identify(target)
                     )
                     if identity is None:

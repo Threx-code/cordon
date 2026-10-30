@@ -48,6 +48,13 @@ COMPARABLE = frozenset(
 )
 
 
+#: Why a release of an ecosystem without a verified archive source is not fetched, where there is
+#: more to say than that.
+NOT_COMPARED: dict[str, str] = {
+    "composer": "Packagist publishes no archive digest, so the release was not fetched",
+}
+
+
 @dataclass
 class PackageChange:
     """One package's difference between the base and the working tree."""
@@ -239,10 +246,8 @@ class ChangeReview:
         candidates.sort(key=lambda c: (not c.direct, c.kind != "added"))
         for count, change in enumerate(candidates):
             if change.ecosystem not in COMPARABLE:
-                change.compared = (
-                    "Packagist publishes no archive digest, so the release was not fetched"
-                    if change.ecosystem == "composer"
-                    else f"no verified archive source for {change.ecosystem}"
+                change.compared = NOT_COMPARED.get(
+                    change.ecosystem, f"no verified archive source for {change.ecosystem}"
                 )
                 continue
             if count >= MAX_FETCHED:

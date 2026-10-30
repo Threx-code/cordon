@@ -12,9 +12,9 @@ from typing import Any
 
 import pytest
 
-from cordon_scanner.intel.provenance._der import Der, DerError
-from cordon_scanner.intel.provenance._dsa import Dsa
-from cordon_scanner.intel.provenance._ecdsa import Ecdsa
+from cordon_scanner.foundation.signatures.der import Der, DerError
+from cordon_scanner.foundation.signatures.dsa import Dsa
+from cordon_scanner.foundation.signatures.ecdsa import Ecdsa
 from cordon_scanner.intel.provenance._ed25519 import Ed25519
 from cordon_scanner.intel.provenance._rsa import Rsa
 from support import ROOT as REPO

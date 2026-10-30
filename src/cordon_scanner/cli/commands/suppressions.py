@@ -24,12 +24,15 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from cordon_scanner.foundation.config.parser import ConfigParser
-from cordon_scanner.foundation.config.policy import OrgConstraints
+from cordon_scanner.foundation.config.policy import (
+    MIN_JUSTIFICATION_CHARS,
+    OrgConstraints,
+    PolicyComparisons,
+)
 from cordon_scanner.foundation.config.resolver import ConfigResolver
 from cordon_scanner.foundation.config.settings import (
     CONFIG_FILENAMES,
     CONFIG_VERSION,
-    MIN_JUSTIFICATION_CHARS,
     Config,
 )
 from cordon_scanner.foundation.errors import ConfigError, ExitCode
@@ -104,7 +107,7 @@ class SuppressionRules:
             return f"no rule {suppression.rule!r} exists, so this suppresses nothing"
         if category in self.constraints.forbid_suppressing:
             return f"{suppression.rule} is a {category.value} rule, and organisation policy forbids suppressing those"
-        violation = ConfigParser._suppression_violation(suppression, self.constraints)
+        violation = PolicyComparisons._suppression_violation(suppression, self.constraints)
         if violation:
             return violation
         if date.fromisoformat(suppression.expires) <= today:

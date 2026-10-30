@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 from typing import Any, Final
 
-from cordon_scanner.detect.infra.iac import IacPolicy
+from cordon_scanner.detect.infra.iac_model import IacPolicy
 from cordon_scanner.detect.infra.iac_policies import CURATED, CuratedPolicies
 from cordon_scanner.detect.infra.policy_terms import HIGH, LOW, MEDIUM
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson

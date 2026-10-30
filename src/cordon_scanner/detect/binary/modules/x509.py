@@ -12,8 +12,8 @@ from typing import Any, ClassVar
 from cordon_scanner.detect.binary.modules.der import BadDer, Clock, Encode, Hash, Tlv
 from cordon_scanner.detect.binary.modules.layout import Cursor
 from cordon_scanner.detect.binary.modules.oids import ObjectIds
-from cordon_scanner.intel.provenance._dsa import Dsa
-from cordon_scanner.intel.provenance._ecdsa import Ecdsa
+from cordon_scanner.foundation.signatures.dsa import Dsa
+from cordon_scanner.foundation.signatures.ecdsa import Ecdsa
 
 
 class X500:

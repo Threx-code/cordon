@@ -30,6 +30,28 @@ ROLES: dict[str, tuple[str, str]] = {
         "cordon_scanner.intel.registries.release_history",
         "YOUNG_DEPENDENCY_DAYS",
     ),
+    "BazelProvenance": ("cordon_scanner.intel.provenance.bazel_provenance", "BazelProvenance"),
+    "GitHubRepository": ("cordon_scanner.intel.provenance.github_repository", "GitHubRepository"),
+    "HelmProvenance": ("cordon_scanner.intel.provenance.helm_provenance", "HelmProvenance"),
+    "HomebrewProvenance": (
+        "cordon_scanner.intel.provenance.homebrew_provenance",
+        "HomebrewProvenance",
+    ),
+    "IntelDataFile": ("cordon_scanner.intel.store.datafile", "IntelDataFile"),
+    "KNOWN_INSTALLERS": ("cordon_scanner.intel.registries.installers", "KNOWN_INSTALLERS"),
+    "LiveMcp": ("cordon_scanner.intel.store.live_mcp", "LiveMcp"),
+    "LiveMcpError": ("cordon_scanner.intel.store.live_mcp", "LiveMcpError"),
+    "McpApprovals": ("cordon_scanner.intel.store.live_mcp", "McpApprovals"),
+    "OfficialInstallers": ("cordon_scanner.intel.registries.installers", "OfficialInstallers"),
+    "OpenPgp": ("cordon_scanner.intel.provenance.openpgp", "OpenPgp"),
+    "PUBLIC_HOSTS": ("cordon_scanner.intel.registries.registry_hosts", "PUBLIC_HOSTS"),
+    "PrivateRegistries": (
+        "cordon_scanner.intel.registries.private_registries",
+        "PrivateRegistries",
+    ),
+    "PublishedManifests": ("cordon_scanner.intel.registries.registry_client", "RegistryClient"),
+    "RegistryArtifacts": ("cordon_scanner.intel.registries.registry_client", "RegistryClient"),
+    "RegistryClient": ("cordon_scanner.intel.registries.registry_client", "RegistryClient"),
 }
 
 if TYPE_CHECKING:
@@ -40,24 +62,55 @@ if TYPE_CHECKING:
     from cordon_scanner.intel.advisories import versions as _intel_advisories_versions
     from cordon_scanner.intel.base import (
         AdvisoryDatabases,
+        ArtifactQueries,
+        BottleProvenance,
         BundleKeys,
+        ChartProvenance,
+        DataFiles,
         FeedStatus,
+        InstallerChecks,
+        Keyrings,
         LicenseClassification,
+        LiveServers,
+        ModuleProvenance,
+        PackageFactsQueries,
+        PrivateRegistryQueries,
+        PublishedManifestQueries,
         RangeMatching,
         RegistryRecords,
         RegistryVersions,
         ReleaseHistories,
+        RepositoryHeads,
         SignatureCheck,
+        ToolApprovals,
         VersionOrdering,
     )
     from cordon_scanner.intel.malware import feed as _intel_malware_feed
     from cordon_scanner.intel.provenance import _ed25519 as _intel_provenance__ed25519
+    from cordon_scanner.intel.provenance import (
+        bazel_provenance as _intel_provenance_bazel_provenance,
+    )
+    from cordon_scanner.intel.provenance import (
+        github_repository as _intel_provenance_github_repository,
+    )
+    from cordon_scanner.intel.provenance import helm_provenance as _intel_provenance_helm_provenance
+    from cordon_scanner.intel.provenance import (
+        homebrew_provenance as _intel_provenance_homebrew_provenance,
+    )
+    from cordon_scanner.intel.provenance import openpgp as _intel_provenance_openpgp
+    from cordon_scanner.intel.registries import installers as _intel_registries_installers
     from cordon_scanner.intel.registries import more_registries as _intel_registries_more_registries
+    from cordon_scanner.intel.registries import (
+        private_registries as _intel_registries_private_registries,
+    )
     from cordon_scanner.intel.registries import registry_client as _intel_registries_registry_client
+    from cordon_scanner.intel.registries import registry_hosts as _intel_registries_registry_hosts
     from cordon_scanner.intel.registries import registry_record as _intel_registries_registry_record
     from cordon_scanner.intel.registries import release_history as _intel_registries_release_history
+    from cordon_scanner.intel.store import datafile as _intel_store_datafile
     from cordon_scanner.intel.store import dbsync as _intel_store_dbsync
     from cordon_scanner.intel.store import licenses as _intel_store_licenses
+    from cordon_scanner.intel.store import live_mcp as _intel_store_live_mcp
 
     # Each implementation, as the engine sees it: by its protocol (the type checker proves the
     # implementation conforms) or, for a plain value, by the value's type.
@@ -76,6 +129,26 @@ if TYPE_CHECKING:
     Versions: VersionOrdering = _intel_advisories_versions.Versions
     YOUNG_DEPENDENCY_DAYS: int = _intel_registries_release_history.YOUNG_DEPENDENCY_DAYS
 
+    # The detectors' ports (intel/base.py, review 27 F2).
+    BazelProvenance: ModuleProvenance = _intel_provenance_bazel_provenance.BazelProvenance
+    GitHubRepository: RepositoryHeads = _intel_provenance_github_repository.GitHubRepository
+    HelmProvenance: ChartProvenance = _intel_provenance_helm_provenance.HelmProvenance
+    HomebrewProvenance: BottleProvenance = _intel_provenance_homebrew_provenance.HomebrewProvenance
+    IntelDataFile: DataFiles = _intel_store_datafile.IntelDataFile
+    KNOWN_INSTALLERS: tuple[tuple[str, str], ...] = _intel_registries_installers.KNOWN_INSTALLERS
+    LiveMcp: LiveServers = _intel_store_live_mcp.LiveMcp
+    LiveMcpError: type[Exception] = _intel_store_live_mcp.LiveMcpError
+    McpApprovals: ToolApprovals = _intel_store_live_mcp.McpApprovals
+    OfficialInstallers: InstallerChecks = _intel_registries_installers.OfficialInstallers
+    OpenPgp: Keyrings = _intel_provenance_openpgp.OpenPgp
+    PUBLIC_HOSTS: frozenset[str] = _intel_registries_registry_hosts.PUBLIC_HOSTS
+    PrivateRegistries: PrivateRegistryQueries = (
+        _intel_registries_private_registries.PrivateRegistries
+    )
+    PublishedManifests: PublishedManifestQueries = _intel_registries_registry_client.RegistryClient
+    RegistryArtifacts: ArtifactQueries = _intel_registries_registry_client.RegistryClient
+    RegistryClient: PackageFactsQueries = _intel_registries_registry_client.RegistryClient
+
 
 def __getattr__(name: str) -> object:
     """The implementation of one of `ROLES`, imported on first use."""
@@ -91,15 +164,31 @@ def __getattr__(name: str) -> object:
 
 __all__ = [
     "ECOSYSTEMS",
+    "KNOWN_INSTALLERS",
     "LICENSE_UNKNOWN",
+    "PUBLIC_HOSTS",
     "ROLES",
     "YOUNG_DEPENDENCY_DAYS",
     "AdvisoryBundle",
     "AdvisoryDatabase",
+    "BazelProvenance",
     "Ed25519",
     "FeedClient",
+    "GitHubRepository",
+    "HelmProvenance",
+    "HomebrewProvenance",
+    "IntelDataFile",
     "LicenseClassifier",
+    "LiveMcp",
+    "LiveMcpError",
+    "McpApprovals",
     "MoreRegistries",
+    "OfficialInstallers",
+    "OpenPgp",
+    "PrivateRegistries",
+    "PublishedManifests",
+    "RegistryArtifacts",
+    "RegistryClient",
     "RegistryError",
     "RegistryRecord",
     "ReleaseHistory",

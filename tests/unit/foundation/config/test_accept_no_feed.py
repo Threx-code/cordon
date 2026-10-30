@@ -11,8 +11,7 @@ from __future__ import annotations
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.foundation.config.parser import ConfigParser
-from cordon_scanner.foundation.config.policy import Policy
+from cordon_scanner.foundation.config.policy import Policy, PolicyComparisons
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.errors import ConfigError
 from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
@@ -49,7 +48,7 @@ class TestTheSetting:
         ],
     )
     def test_merged_with_an_organisation_policy(self, org, repo, merged) -> None:
-        result = ConfigParser._stricter_policy(
+        result = PolicyComparisons._stricter_policy(
             Policy(accept_no_feed=org), Policy(accept_no_feed=repo)
         )
         assert result.accept_no_feed == merged

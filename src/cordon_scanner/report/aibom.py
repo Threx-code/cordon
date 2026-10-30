@@ -223,7 +223,7 @@ class AiBom:
             }
             if launched is not None:
                 ecosystem, spec, pinned = launched
-                if ecosystem in ("npm", "pypi"):
+                if ecosystem in McpConfigs.SPLIT_SPECS:
                     package, version = McpConfigs.split_spec(ecosystem, spec)
                     quoted = urllib.parse.quote(package, safe="/")
                     entry["purl"] = f"pkg:{ecosystem}/{quoted}" + (f"@{version}" if version else "")

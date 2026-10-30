@@ -14,7 +14,7 @@ read is not evidence that a malicious release would be installed.
 from __future__ import annotations
 
 import re
-from typing import Final
+from typing import ClassVar, Final
 
 from cordon_scanner.intel.advisories.versions import Versions
 
@@ -32,13 +32,29 @@ class VersionRanges:
     def admits(ecosystem: str, spec: str, version: str) -> bool:
         """Whether `spec` admits `version` under the ecosystem's range syntax."""
         spec = spec.strip()
-        if ecosystem == "npm":
-            return VersionRanges._npm_admits(spec, version)
-        if ecosystem == "pypi":
-            return VersionRanges._pep440_admits(spec, version)
-        if ecosystem in ("maven", "gradle", "nuget"):
-            return VersionRanges._interval_admits(ecosystem, spec, version)
-        return False
+        syntax = VersionRanges.SYNTAX.get(ecosystem)
+        if syntax is None:
+            return False
+        admitted: bool = getattr(VersionRanges, syntax)(ecosystem, spec, version)
+        return admitted
+
+    #: Each ecosystem's range syntax, by the method that reads it; an ecosystem not here admits
+    #: nothing. A new syntax is an entry and a method.
+    SYNTAX: ClassVar[dict[str, str]] = {
+        "npm": "_npm_syntax",
+        "pypi": "_pep440_syntax",
+        "maven": "_interval_admits",
+        "gradle": "_interval_admits",
+        "nuget": "_interval_admits",
+    }
+
+    @staticmethod
+    def _npm_syntax(ecosystem: str, spec: str, version: str) -> bool:
+        return VersionRanges._npm_admits(spec, version)
+
+    @staticmethod
+    def _pep440_syntax(ecosystem: str, spec: str, version: str) -> bool:
+        return VersionRanges._pep440_admits(spec, version)
 
     # -- Maven, Gradle and NuGet intervals ---------------------------------------------------------
 

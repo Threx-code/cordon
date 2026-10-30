@@ -90,10 +90,10 @@ class CommandLine:
         # resolves may lead inside the network (`core.netguard`).
         NetworkGuard.install_if_enabled()
         arguments = list(sys.argv[1:] if argv is None else argv)
-        if arguments[:1] == ["mcp"]:
-            from cordon_scanner.mcp import main as mcp_main
-
-            return mcp_main(arguments[1:])
+        for front in CommandParser.front_ends():
+            if arguments[:1] == [front.NAME]:
+                code: int = front.main(arguments[1:])
+                return code
 
         parser = CommandParser.build()
         args = parser.parse_args(argv)

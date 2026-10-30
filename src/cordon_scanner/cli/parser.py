@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from typing import Any, ClassVar
 
 from cordon_scanner.cli.commands.account.login import LoginCommand
 from cordon_scanner.cli.commands.account.logout import LogoutCommand
@@ -27,6 +28,22 @@ from cordon_scanner.version import PROGRAM, __version__
 
 
 class CommandParser:
+    #: Front ends that drive these commands, found by entry point: `cordon-scanner mcp`.
+    FRONT_ENDS: ClassVar[str] = "cordon_scanner.commands"
+
+    @staticmethod
+    def front_ends() -> list[Any]:
+        """The front ends this distribution ships, by name. Another package's entry point in the
+        group is not loaded: the command line is not extended by whatever is installed beside it."""
+        from importlib.metadata import entry_points
+
+        found = [
+            e
+            for e in entry_points(group=CommandParser.FRONT_ENDS)
+            if e.dist is not None and e.dist.name == "cordon-scanner"
+        ]
+        return [e.load() for e in sorted(found, key=lambda e: (e.name, e.value))]
+
     EPILOG = f"""\
 exit codes:
   0  clean          the scan completed and nothing met the failure policy
@@ -95,16 +112,10 @@ tutorials for this version ({__version__}):
         ReviewCommand.add_parser(sub)
         SuppressCommand.add_parser(sub)
         CompletionCommand.add_parser(sub)
-        # `run` hands `mcp` the rest of the command line before this parser sees it; the same
-        # options are configured here so help, completion and the command reference show them.
-        from cordon_scanner.mcp.server import Server as McpServer
-
-        McpServer.configure(
-            sub.add_parser(
-                "mcp",
-                help="serve Cordon to AI agents over the Model Context Protocol (stdio)",
-            )
-        )
+        # `run` hands a front end (`mcp`) the rest of the command line before this parser sees it;
+        # its options are configured here so help, completion and the command reference show them.
+        for front in CommandParser.front_ends():
+            front.configure(sub.add_parser(front.NAME, help=front.HELP))
         help_cmd = sub.add_parser("help", help="this screen, or the help for one command")
         help_cmd.add_argument(
             "topic", nargs="*", metavar="COMMAND", help="a command, or a command and its action"

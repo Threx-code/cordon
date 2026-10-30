@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.model.features import FileFeatures, PackageArchive, PackageFeatures
 
 TOKEN_ENV: Final = "CORDON_MODEL_TOKEN"  # noqa: S105 - the variable's name, never a value
@@ -61,11 +62,6 @@ class Verdict:
     package_score: float
     file_score: float | None
     reasons: tuple[str, ...]
-
-
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
-        return None
 
 
 class ModelTargets:
@@ -246,7 +242,7 @@ class ModelClient:
             },
             method="POST",
         )
-        opener = urllib.request.build_opener(_NoRedirect)
+        opener = urllib.request.build_opener(NoRedirects)
         try:
             with opener.open(request, timeout=TIMEOUT) as response:
                 raw = Download.read(response, MAX_REPLY + 1)

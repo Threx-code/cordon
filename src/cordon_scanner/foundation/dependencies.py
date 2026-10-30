@@ -36,10 +36,13 @@ import functools
 import re
 import threading
 from importlib.metadata import entry_points
-from typing import Final, Protocol
+from typing import TYPE_CHECKING, Final, Protocol
 
 from cordon_scanner.foundation.models import Scope
-from cordon_scanner.foundation.results import Dependency
+
+if TYPE_CHECKING:
+    # Read only in annotations: results imports this module to classify a Dependency.
+    from cordon_scanner.foundation.results import Dependency
 
 ARCHIVE_SUFFIXES: Final = (
     ".tgz",

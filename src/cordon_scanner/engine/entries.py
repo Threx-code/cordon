@@ -37,19 +37,9 @@ class PackageEntries:
                 document = {}
             targets: list[str] = [document.get("main") or "index.js"]
 
-            def strings(value: object) -> None:
-                if isinstance(value, str):
-                    targets.append(value)
-                elif isinstance(value, dict):
-                    for nested in value.values():
-                        strings(nested)
-                elif isinstance(value, list):
-                    for nested in value:
-                        strings(nested)
-
             if with_bin:
-                strings(document.get("bin"))
-            strings(document.get("exports"))
+                targets.extend(ScannedJson.strings(document.get("bin")))
+            targets.extend(ScannedJson.strings(document.get("exports")))
             for target in targets:
                 if not isinstance(target, str) or "*" in target:
                     continue

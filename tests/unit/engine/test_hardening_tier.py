@@ -5,8 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from cordon_scanner import Scanner
-from cordon_scanner.foundation.config.parser import ConfigParser
-from cordon_scanner.foundation.config.policy import Policy
+from cordon_scanner.foundation.config.policy import Policy, PolicyComparisons
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Severity
 
@@ -43,7 +42,7 @@ class TestHardeningTier:
         assert found and any(severity > Severity.LOW for severity in found)
 
     def test_the_stricter_merge_keeps_hardening_on(self) -> None:
-        merged = ConfigParser._stricter_policy(Policy(hardening=True), Policy())
+        merged = PolicyComparisons._stricter_policy(Policy(hardening=True), Policy())
         assert merged.hardening
 
 

@@ -465,39 +465,60 @@ class PythonDownloads:
             return self.constants[node.id]
         return self._name(node)
 
+    #: What each kind of node teaches `_walk` about names, by the method that learns it.
+    _LEARN: ClassVar[dict[type[ast.AST], str]] = {
+        ast.Assign: "_learn_assignment",
+        ast.AnnAssign: "_learn_assignment",
+        ast.AugAssign: "_learn_assignment",
+        ast.With: "_learn_with",
+        ast.AsyncWith: "_learn_with",
+        ast.For: "_learn_loop",
+        ast.AsyncFor: "_learn_loop",
+        ast.FunctionDef: "_learn_function",
+        ast.AsyncFunctionDef: "_learn_function",
+    }
+
     def _walk(self) -> list[int]:
         hits: list[int] = []
         for node in ast.walk(self.tree):
-            if isinstance(node, ast.Assign | ast.AnnAssign | ast.AugAssign):
-                value = node.value
-                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-                for target in targets:
-                    for leaf in ast.walk(target):
-                        if not isinstance(leaf, ast.Name | ast.Attribute):
-                            continue
-                        key = self._name(leaf)
-                        if isinstance(value, ast.Call) and self._callee(value)[1] == "open":
-                            self._handle(key, value)
-                        if isinstance(value, ast.Constant) and isinstance(value.value, str):
-                            self.constants[key] = value.value
-                        if self._carries(value):
-                            self.tainted.add(key)
-                        elif value is not None and self._names_a_path(value):
-                            self.constants.setdefault(key, self._path(value))
-            elif isinstance(node, ast.With | ast.AsyncWith):
-                for item in node.items:
-                    if item.optional_vars is not None and self._carries(item.context_expr):
-                        self.tainted.add(self._name(item.optional_vars))
-                    self._file_handle(item)
-            elif isinstance(node, ast.For | ast.AsyncFor) and self._carries(node.iter):
-                self.tainted.add(self._name(node.target))
-            elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-                for ret in ast.walk(node):
-                    if isinstance(ret, ast.Return) and self._carries(ret.value):
-                        self.tainted.add(node.name)
+            learner = self._LEARN.get(type(node))
+            if learner is not None:
+                getattr(self, learner)(node)
             if isinstance(node, ast.Call) and self._call(node):
                 hits.append(node.lineno)
         return sorted(set(hits))
+
+    def _learn_assignment(self, node: ast.Assign | ast.AnnAssign | ast.AugAssign) -> None:
+        value = node.value
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        for target in targets:
+            for leaf in ast.walk(target):
+                if not isinstance(leaf, ast.Name | ast.Attribute):
+                    continue
+                key = self._name(leaf)
+                if isinstance(value, ast.Call) and self._callee(value)[1] == "open":
+                    self._handle(key, value)
+                if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                    self.constants[key] = value.value
+                if self._carries(value):
+                    self.tainted.add(key)
+                elif value is not None and self._names_a_path(value):
+                    self.constants.setdefault(key, self._path(value))
+
+    def _learn_with(self, node: ast.With | ast.AsyncWith) -> None:
+        for item in node.items:
+            if item.optional_vars is not None and self._carries(item.context_expr):
+                self.tainted.add(self._name(item.optional_vars))
+            self._file_handle(item)
+
+    def _learn_loop(self, node: ast.For | ast.AsyncFor) -> None:
+        if self._carries(node.iter):
+            self.tainted.add(self._name(node.target))
+
+    def _learn_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        for ret in ast.walk(node):
+            if isinstance(ret, ast.Return) and self._carries(ret.value):
+                self.tainted.add(node.name)
 
     @staticmethod
     def _names_a_path(node: ast.AST) -> bool:

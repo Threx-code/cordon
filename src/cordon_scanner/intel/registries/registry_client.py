@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.redirects import NoRedirects
 
 TIMEOUT_SECONDS = 5.0
 """Per-request ceiling. A scan waiting on a slow registry is a scan somebody
@@ -169,13 +170,6 @@ class PackageNotFound(RegistryError):
     """
 
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    """Refuses every redirect by returning no follow-up request."""
-
-    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
-        return None
-
-
 class RegistryClient:
     """Questions to package registries, bounded and credential-free: npm and PyPI here, and
     crates.io, RubyGems, NuGet, the Go proxy and Maven Central through `more_registries`."""
@@ -205,7 +199,7 @@ class RegistryClient:
             headers={"User-Agent": USER_AGENT, "Accept": accept, "Accept-Encoding": "gzip"},
             method="GET",
         )
-        opener = urllib.request.build_opener(_NoRedirect)
+        opener = urllib.request.build_opener(NoRedirects)
 
         body = b""
         for attempt in range(RETRY_ATTEMPTS):
@@ -709,6 +703,15 @@ class RegistryClient:
         return None
 
     @staticmethod
+    def version_manifest(name: str, version: str) -> dict[str, Any]:
+        """npm's manifest for one published version, as the registry serves it: what a tarball's own
+        package.json is compared with. Raises RegistryError when it cannot be had."""
+        quoted = urllib.parse.quote(name, safe="@/")
+        return RegistryClient._fetch(
+            f"{REGISTRY_HOSTS['npm']}/{quoted}/{urllib.parse.quote(version, safe='')}"
+        )
+
+    @staticmethod
     def package_archive(ecosystem: str, name: str, version: str | None) -> PackageArchive:
         """Download the archive a registry publishes for a version (`None` means the latest).
 
@@ -738,7 +741,7 @@ class RegistryClient:
         request = urllib.request.Request(  # noqa: S310 - scheme and host checked above
             url, headers={"User-Agent": USER_AGENT}, method="GET"
         )
-        opener = urllib.request.build_opener(_NoRedirect)
+        opener = urllib.request.build_opener(NoRedirects)
         try:
             with opener.open(request, timeout=TIMEOUT_SECONDS * 6) as response:
                 body = Download.read(response, MAX_ARCHIVE_BYTES + 1)

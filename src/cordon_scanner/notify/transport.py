@@ -13,8 +13,9 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, ClassVar, Final
+from typing import ClassVar, Final
 
+from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.version import __version__
 
 
@@ -30,11 +31,6 @@ Transport = Callable[[str, bytes, Mapping[str, str]], "Reply | int"]
 """Posts a body and returns the receiver's `Reply` (or just its status). Replaced in tests."""
 
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
-        return None
-
-
 class HttpsTransport:
     """POST over HTTPS without following redirects."""
 
@@ -46,7 +42,7 @@ class HttpsTransport:
         request = urllib.request.Request(  # noqa: S310  (scheme checked by the caller)
             url, data=body, headers=dict(headers), method="POST"
         )
-        opener = urllib.request.build_opener(_NoRedirect)
+        opener = urllib.request.build_opener(NoRedirects)
         try:
             with opener.open(request, timeout=HttpsTransport.TIMEOUT_SECONDS) as response:
                 return Reply(int(response.status))
