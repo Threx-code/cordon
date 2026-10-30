@@ -5,11 +5,12 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from typing import ClassVar
 from unittest import mock
 
 import pytest
 
-from cordon_scanner.decide.feature_schema import FeatureRecord, FeatureSchema
+from cordon_scanner.decide.feature_schema import FeatureFold, FeatureRecord, FeatureSchema
 from cordon_scanner.decide.verdict import Verdict, VerdictModel
 from cordon_scanner.foundation.models import (
     Category,
@@ -171,3 +172,96 @@ class TestTheRecord:
         assert FeatureRecord.read(legacy) == (None, summary["features"]["values"])
         own = {"verdict": {"features": summary["features"]}}
         assert FeatureRecord.read(own) == (FeatureSchema.current(), summary["features"]["values"])
+
+
+class FoldKit:
+    """Raw hashed code features, and a format-3 model split on one folded bucket: 0.9 when
+    `pkg:code_install_tok_f5` (raw buckets 5, 517, 1029, ... summed) is above 2.5, else 0.1."""
+
+    RAW: ClassVar[dict[str, float]] = {
+        "code_install_tok_5": 1.0,
+        "code_install_tok_517": 2.0,
+        "code_import_apih_262143": 1.0,
+        "code_install_api_exec": 1.0,
+    }
+
+    @staticmethod
+    def model(fold: str | None = None) -> dict[str, object]:
+        model = RecordKit.model()
+        model["features"] = ["pkg:code_install_tok_f5"]
+        return {
+            **model,
+            "format": VerdictModel.FORMAT,
+            **FeatureFold.stamp(),
+            "fold": fold or FeatureFold.version(),
+        }
+
+    @staticmethod
+    def decide(model: dict[str, object] | None):
+        with mock.patch.object(VerdictModel, "load", return_value=model):
+            return Verdict.decide(
+                [RecordKit.finding()],
+                [("package/package.json", 10), ("package/index.js", 10)],
+                {"package/package.json": b'{"name": "x"}'},
+                profile=dict(FoldKit.RAW),
+            )
+
+
+class TestTheFold:
+    def test_hashed_code_features_fold_and_others_stay(self) -> None:
+        folded = FeatureFold.apply({f"pkg:{k}": v for k, v in FoldKit.RAW.items()} | {"r:X#n": 2.0})
+        assert folded == {
+            "pkg:code_install_tok_f5": 3.0,
+            "pkg:code_import_apih_f511": 1.0,
+            "pkg:code_install_api_exec": 1.0,
+            "r:X#n": 2.0,
+        }
+
+    def test_the_fit_and_the_scanner_fold_to_identical_vectors(self) -> None:
+        _, summary = FoldKit.decide(FoldKit.model())
+        # The row keeps the raw features; the fit's reader and scoring fold them the same way.
+        assert summary["features"]["values"]["pkg:code_install_tok_517"] == 2.0
+        _, fitted = FeatureRecord.read({"verdict": {"features": summary["features"]}})
+        scored = VerdictModel.inputs(FoldKit.model(), summary["features"]["values"])
+        assert fitted == scored == FeatureFold.apply(summary["features"]["values"])
+        # The score was taken on the folded bucket (1 + 2 > 2.5), which no raw feature reaches.
+        assert summary["score"] == round(VerdictModel.score(FoldKit.model(), fitted), 4) == 0.9
+
+    def test_a_model_from_before_the_fold_is_scored_on_raw_features(self) -> None:
+        unfolded = {**RecordKit.model(), "format": VerdictModel.UNFOLDED}
+        features = {"pkg:code_install_tok_517": 2.0}
+        assert VerdictModel.inputs(unfolded, features) is features
+
+    def test_a_model_of_another_fold_is_refused(self, tmp_path: Path) -> None:
+        import gzip
+        import json
+
+        def written(model: dict[str, object]) -> Path:
+            path = tmp_path / f"m{len(list(tmp_path.iterdir()))}.json.gz"
+            with gzip.open(path, "wt", encoding="utf-8") as handle:
+                json.dump(model, handle)
+            return path
+
+        VerdictModel.load.cache_clear()
+        assert VerdictModel.load(written(FoldKit.model())) is not None
+        assert VerdictModel.load(written(FoldKit.model(fold="ff1-0000000000000000"))) is None
+        assert VerdictModel.load(written({**FoldKit.model(), "fold": None})) is None
+        assert (
+            VerdictModel.load(written({**RecordKit.model(), "format": VerdictModel.UNFOLDED}))
+            is not None
+        )
+
+    def test_the_width_moves_the_fold_version_and_not_the_row_version(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        rows, fold = FeatureSchema.current(), FeatureFold.version()
+        monkeypatch.setattr(FeatureFold, "WIDTH", 1024)
+        FeatureFold.version.cache_clear()
+        try:
+            assert FeatureFold.version() != fold
+            assert FeatureFold.stamp()["width"] == 1024
+            assert FeatureSchema.version() == rows
+        finally:
+            monkeypatch.undo()
+            FeatureFold.version.cache_clear()
+        assert FeatureFold.version() == fold
