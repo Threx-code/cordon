@@ -222,7 +222,10 @@ class CpeRule:
         if len(products) == 1:
             site, product = min(found)
             return product, f"NVD's {product} alone lists its project's site, {site}"
-        names = sorted((CpeRule.name(p.split(":", 1)[1]) for p in products), key=len)
+        # Length, then the name: a set's order follows the hash seed, so equal lengths broke ties by it.
+        names = sorted(
+            (CpeRule.name(p.split(":", 1)[1]) for p in products), key=lambda n: (len(n), n)
+        )
         if (
             len(products) > 1
             and len({product.split(":", 1)[0] for product in products}) == 1
