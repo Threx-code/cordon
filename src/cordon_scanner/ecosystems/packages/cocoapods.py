@@ -237,7 +237,7 @@ class Podspec:
             return BaseEcosystem._err(content, ecosystem, f"not a readable podspec: {exc}")
         if content.basename.endswith(".podspec.json"):
             return BaseEcosystem._err(content, ecosystem, "a JSON podspec is not read")
-        opened = sum(1 for _, line in lines if re.search(r"\bdo\s*(?:\|[^|]*\|)?\s*$", line))
+        opened = sum(1 for _, line in lines if re.search(r"\bdo\s*(?:\|[^|]*\|\s*)?$", line))
         closed = sum(1 for _, line in lines if re.match(r"\s*end\b", line))
         if opened > closed:
             # A podspec is one `Pod::Spec.new do |s| ... end` block: a block left open is a file
@@ -258,7 +258,9 @@ class Podspec:
             found = re.search(r"\.name\s*=\s*['\"]([^'\"]+)['\"]", line)
             if found and name is None:
                 name = found.group(1)
-            dependency = re.search(r"(\w+)\.dependency\s*\(?\s*['\"]([^'\"]+)['\"](.*)$", line)
+            dependency = re.search(
+                r"(?<!\w)(\w+)\.dependency\s*(?:\(\s*)?['\"]([^'\"]+)['\"](.*)$", line
+            )
             if dependency:
                 pod = PodName.root(dependency.group(2))
                 if name and pod == name:

@@ -164,7 +164,7 @@ class MSBuildConditions:
         if not condition:
             return ()
         out = []
-        for part in re.split(r"\s+and\s+", condition, flags=re.IGNORECASE):
+        for part in re.split(r"(?<!\s)\s+and\s+", condition, flags=re.IGNORECASE):
             found = MSBuildConditions.EQUALS.match(part)
             if found and found.group(1) in MSBuildConditions.LABELS:
                 out.append(f"{MSBuildConditions.LABELS[found.group(1)]} {found.group(2)}")

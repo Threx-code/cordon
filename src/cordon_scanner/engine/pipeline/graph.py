@@ -278,7 +278,9 @@ class Graph:
                 # A URL inside the description loses its userinfo and query: a token in an
                 # index URL is a credential, and the report is not where it goes.
                 cleaned = re.sub(
-                    r"\S+://\S+", lambda m: DependencySource.sanitise(m.group(0)) or "", source
+                    r"(?<!\S)\S+://\S+",
+                    lambda m: DependencySource.sanitise(m.group(0)) or "",
+                    source,
                 )
                 found.append((unit.path, ecosystem_id, cleaned))
         return tuple(sorted(set(found)))

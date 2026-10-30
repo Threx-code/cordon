@@ -338,7 +338,9 @@ class Compose:
         """A service built from a context: what it builds from, and the images its additional contexts name."""
         context = ComposeLines.scalar(build[0]) if build[0] and not build[0].startswith("{") else ""
         inline = (
-            dict(re.findall(r"(\w+)\s*:\s*([^,}]+)", build[0])) if build[0].startswith("{") else {}
+            dict(re.findall(r"(?<!\w)(\w+)\s*:\s*([^,}]+)", build[0]))
+            if build[0].startswith("{")
+            else {}
         )
         nested_fields = {k: (v, n) for k, v, n, _ in ComposeLines.children(build[1])}
         context = (

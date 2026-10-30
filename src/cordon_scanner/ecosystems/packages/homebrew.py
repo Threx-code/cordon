@@ -393,7 +393,7 @@ class NotRunAtInstall:
         r"uninstall_postflight|desc|homepage|license)\b"
     )
     CAVEATS_HEREDOC: ClassVar[re.Pattern[str]] = re.compile(
-        r"^\s*(?:def\s+)?caveats\s*(?:\(\s*\))?\s*(?:=\s*)?<<[~-]?['\"]?([A-Z_][A-Z0-9_]*)"
+        r"^\s*(?:def\s+)?caveats\s*(?:\(\s*\)\s*)?(?:=\s*)?<<[~-]?['\"]?([A-Z_][A-Z0-9_]*)"
     )
 
     @staticmethod

@@ -88,7 +88,11 @@ class CondaFile:
 
 
 class Environment:
-    SELECTOR: ClassVar[re.Pattern[str]] = re.compile(r"^\s*-\s*(.+?)\s*#\s*\[([^\]]{1,64})\]")
+    #: `- spec  # [linux]`: the dash, then the first `#` past the spec whose tail is a selector.
+    #: Read with `find`, not as `^\s*-\s*(.+?)\s*#\s*\[...\]`, whose lazy spec and the space
+    #: after it shared every space of a long line between them (cubic: 62 s on 8,000 bytes).
+    _DASH: ClassVar[re.Pattern[str]] = re.compile(r"\s*-")
+    _SELECTOR: ClassVar[re.Pattern[str]] = re.compile(r"\s*\[([^\]]{1,64})\]")
 
     @staticmethod
     def selectors(text: str) -> dict[str, str]:
@@ -96,10 +100,26 @@ class Environment:
         which the data reader drops with the comment."""
         out: dict[str, str] = {}
         for line in text.splitlines():
-            found = Environment.SELECTOR.match(line)
-            if found:
-                out[found.group(1).strip().strip("'\"")] = found.group(2).strip()
+            found = Environment.selector(line)
+            if found is not None:
+                out[found[0].strip().strip("'\"")] = found[1].strip()
         return out
+
+    @staticmethod
+    def selector(line: str) -> tuple[str, str] | None:
+        """(spec, selector) of one dependency line, or None. The spec is everything between the
+        dash and the first `#` that a selector follows; the caller strips both."""
+        head = Environment._DASH.match(line)
+        if head is None:
+            return None
+        rest = line[head.end() :]
+        at = rest.find("#", 1)
+        while at != -1:
+            tail = Environment._SELECTOR.match(rest, at + 1)
+            if tail is not None:
+                return rest[:at], tail.group(1)
+            at = rest.find("#", at + 1)
+        return None
 
     @staticmethod
     def parse(content: FileContent, ecosystem: str) -> Manifest:

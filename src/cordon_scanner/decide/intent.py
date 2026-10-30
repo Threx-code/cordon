@@ -498,9 +498,12 @@ class IntentObserver:
         r"\s*(?:await\s+)?$"
     )
     #: `import x from 'm'`, `import * as x from 'm'`, `import x, { a, b as c } from 'm'`.
+    #: Each run of space belongs to the item before it: written as runs between optional items,
+    #: a long run after `import` split between four of them every way (match took hours on 8,000
+    #: spaces). The same spans and groups (200,000 random statements).
     _BOUND_AFTER: ClassVar[re.Pattern[str]] = re.compile(
-        r"import\s+(?:\*\s*as\s+(?P<name>[A-Za-z_$][\w$]*)|(?P<default>[A-Za-z_$][\w$]*)?\s*,?\s*"
-        r"(?:\{(?P<names>[^{}]{0,400})\})?)\s*from\b"
+        r"import\s+(?:\*\s*as\s+(?P<name>[A-Za-z_$][\w$]*)\s*|(?:(?P<default>[A-Za-z_$][\w$]*)\s*)?"
+        r"(?:,\s*)?(?:\{(?P<names>[^{}]{0,400})\}\s*)?)from\b"
     )
 
     @staticmethod

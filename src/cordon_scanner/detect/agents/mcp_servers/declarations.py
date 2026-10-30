@@ -165,7 +165,7 @@ class McpConfigs:
                 continue
             if not in_block:
                 continue
-            env_start = re.match(r"^(\s*)-?\s*env\s*:\s*$", line)
+            env_start = re.match(r"^(\s*)(?:-\s*)?env\s*:\s*$", line)
             if env_start is not None and servers:
                 indent = len(env_start.group(1))
                 env: dict[str, str] = {}

@@ -363,7 +363,7 @@ class Gemspec:
     """A gemspec's dependencies and native extensions, read statically."""
 
     DEPENDENCY: ClassVar[re.Pattern[str]] = re.compile(
-        r"""\.add_(runtime_|development_)?dependency\s*\(?\s*(["'])([\w.\-]{1,128})\2(.*)$"""
+        r"""\.add_(runtime_|development_)?dependency\s*(?:\(\s*)?(["'])([\w.\-]{1,128})\2(.*)$"""
     )
 
     @staticmethod

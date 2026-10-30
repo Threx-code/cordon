@@ -73,7 +73,9 @@ class WorkflowFindings:
     @classmethod
     def workflow(cls, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
         text = unit.content.text
-        uses = list(re.finditer(r"(?m)^\s*-?\s*uses:\s*['\"]?([\w.-]+/[\w./-]+?)@([\w.\-]+)", text))
+        uses = list(
+            re.finditer(r"(?m)^\s*(?:-\s*)?uses:\s*['\"]?([\w.-]+/[\w./-]+?)@([\w.\-]+)", text)
+        )
         known = AgentRules.agent_actions()
         agents = [m for m in uses if m.group(1).lower() in known]
         if not agents:

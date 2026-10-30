@@ -133,7 +133,7 @@ class DistroVersions:
             letter = ord(match.group(2)) if match.group(2) else 0
             suffixes = tuple(
                 (
-                    DistroVersions._APK_SUFFIX.get(re.sub(r"\d+$", "", s), 4),
+                    DistroVersions._APK_SUFFIX.get(re.sub(r"(?<!\d)\d+$", "", s), 4),
                     int(re.sub(r"^\D+", "", s) or 0),
                 )
                 for s in match.group(3).split("_")

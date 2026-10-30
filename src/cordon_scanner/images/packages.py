@@ -531,17 +531,17 @@ class RpmDatabase:
         body = requirement[1:-1]
         if "(" in body:
             return ()
-        body = re.split(r"\s+(?:if|unless)\s+", body, maxsplit=1)[0]
+        body = re.split(r"(?<!\s)\s+(?:if|unless)\s+", body, maxsplit=1)[0]
         names = [
             re.split(r"\s", part.strip(), maxsplit=1)[0]
-            for part in re.split(r"\s+(?:and|with)\s+", body)
+            for part in re.split(r"(?<!\s)\s+(?:and|with)\s+", body)
             if part.strip()
         ]
         if " or " in body:
             return (
                 "|".join(
                     re.split(r"\s", part.strip(), maxsplit=1)[0]
-                    for part in re.split(r"\s+or\s+", body)
+                    for part in re.split(r"(?<!\s)\s+or\s+", body)
                     if part.strip()
                 ),
             )

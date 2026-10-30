@@ -485,7 +485,7 @@ class GradleReader:
             self.build.includes.extend(
                 s.group(2).lstrip(":").replace(":", "/") for s in self.STRING.finditer(value)
             )
-        found = re.match(r"""^includeBuild\s*\(?\s*(["'])([^"']{1,256})\1""", text)
+        found = re.match(r"""^includeBuild\s*(?:\(\s*)?(["'])([^"']{1,256})\1""", text)
         if found:
             self.build.included_builds.append(found.group(2))
         for key in ("group", "version"):
@@ -502,7 +502,7 @@ class GradleReader:
             if head in ("maven", "ivy") and statement.closure is not None:
                 for inner in statement.closure:
                     found = re.search(
-                        r"""\burl\s*(?:=|\s)\s*(?:uri\(\s*)?(["'])([^"'\n]{1,512})\1""", inner.text
+                        r"""\burl(?:\s*=\s*|\s+)(?:uri\(\s*)?(["'])([^"'\n]{1,512})\1""", inner.text
                     )
                     if found:
                         self.build.sources.append(f"repository {head}: {found.group(2)}")
@@ -518,17 +518,19 @@ class GradleReader:
         for statement in statements:
             text = statement.text
             plugin_id, version = "", ""
-            found = re.match(r"""^id\s*\(?\s*(["'])([\w.\-]{1,200})\1\s*\)?(.*)$""", text)
+            found = re.match(r"""^id\s*(?:\(\s*)?(["'])([\w.\-]{1,200})\1\s*\)?(.*)$""", text)
             if found:
                 plugin_id = found.group(2)
                 rest = found.group(3)
-                version_found = re.search(r"""\bversion\s*\(?\s*(["'])([^"'\n]{1,128})\1""", rest)
+                version_found = re.search(
+                    r"""\bversion\s*(?:\(\s*)?(["'])([^"'\n]{1,128})\1""", rest
+                )
                 version = version_found.group(2) if version_found else ""
             found_kotlin = re.match(r"""^kotlin\s*\(\s*(["'])([\w.\-]{1,100})\1\s*\)(.*)$""", text)
             if found_kotlin:
                 plugin_id = f"org.jetbrains.kotlin.{found_kotlin.group(2)}"
                 version_found = re.search(
-                    r"""\bversion\s*\(?\s*(["'])([^"'\n]{1,128})\1""", found_kotlin.group(3)
+                    r"""\bversion\s*(?:\(\s*)?(["'])([^"'\n]{1,128})\1""", found_kotlin.group(3)
                 )
                 version = version_found.group(2) if version_found else ""
             found_alias = re.match(r"""^alias\s*\(\s*libs\.plugins\.([\w.]{1,200})\s*\)""", text)
@@ -612,7 +614,7 @@ class GradleReader:
             )
 
     SUBSTITUTE: ClassVar[re.Pattern[str]] = re.compile(
-        r"""substitute\s*\(?\s*(module|project)\s*\(\s*(["'])([^"'\n]{1,200})\2\s*\)\s*\)?"""
+        r"""substitute\s*(?:\(\s*)?(module|project)\s*\(\s*(["'])([^"'\n]{1,200})\2\s*\)\s*\)?"""
         r"""\s*\.?\s*(?:using|with)\s*\(?\s*(module|project)\s*\(\s*(["'])([^"'\n]{1,200})\5"""
     )
     FORCE: ClassVar[re.Pattern[str]] = re.compile(r"""^force\s*\(?\s*(.*?)\)?$""", re.DOTALL)
@@ -701,7 +703,8 @@ class GradleReader:
                     capabilities.extend(
                         f"capability {m.group(2)}"
                         for m in re.finditer(
-                            r"""requireCapability\s*\(?\s*(["'])([^"'\n]{1,200})\1""", required.text
+                            r"""requireCapability\s*(?:\(\s*)?(["'])([^"'\n]{1,200})\1""",
+                            required.text,
                         )
                     )
             if inner.head == "exclude":

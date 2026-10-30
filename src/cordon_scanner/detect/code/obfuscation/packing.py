@@ -84,7 +84,7 @@ PACKERS: tuple[tuple[str, re.Pattern[bytes], frozenset[str], int], ...] = (
     ),
     (
         "JSFuck",
-        re.compile(rb"\[\]\[\s*[\"'@]?\s*(?:filter|constructor)"),
+        re.compile(rb"\[\]\[\s*(?:[\"'@]\s*)?(?:filter|constructor)"),
         JAVASCRIPT_LANGUAGES,
         1,
     ),
