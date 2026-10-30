@@ -15,10 +15,12 @@ Nothing here renders, evaluates or executes the document.
 
 from __future__ import annotations
 
+import bisect
 import io
 import re
 import zipfile
 import zlib
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Final
 
@@ -237,14 +239,14 @@ class DocumentReader:
         """The file itself, plus every Flate stream inflated -- object streams hide dictionaries."""
         segments = [raw]
         budget = MAX_INFLATED_BYTES
-        for count, match in enumerate(_PDF_STREAM.finditer(raw)):
+        for count, (header, start) in enumerate(PdfStreams.headers(raw)):
             if count >= MAX_PDF_STREAMS:
                 report.partial = True
                 break
-            if b"FlateDecode" not in match.group(1) and b"Fl " not in match.group(1):
+            if b"FlateDecode" not in header and b"Fl " not in header:
                 continue
-            end = raw.find(b"endstream", match.end())
-            body = raw[match.end() : end if end >= 0 else len(raw)]
+            end = raw.find(b"endstream", start)
+            body = raw[start : end if end >= 0 else len(raw)]
             inflater = zlib.decompressobj()
             try:
                 inflated = inflater.decompress(body, budget)
@@ -311,7 +313,10 @@ class DocumentReader:
 # -- PDF ---------------------------------------------------------------------------------------
 
 _PDF_NAME: Final = re.compile(rb"/([A-Za-z0-9#]{1,64})")
-_PDF_STREAM: Final = re.compile(rb"<<(.{0,4096}?)>>\s*stream\r?\n", re.DOTALL)
+#: The end of a stream's dictionary: `>>`, white space, `stream` and its line break. Matched from
+#: the start of the white space only (the lookbehind), so a long run of it is read once.
+_STREAM_KEYWORD: Final = re.compile(rb"(?<!\s)\s*stream\r?\n")
+MAX_PDF_DICTIONARY: Final = 4096
 _RISKY_URI: Final = re.compile(
     rb"/URI\s*\(\s*((?:javascript|vbscript|file|data|smb|ms-[\w-]+|search-ms):[^)]{0,300}"
     rb"|\\\\[^)]{0,300}"
@@ -336,3 +341,37 @@ _RISKY_CLASSES: Final = (b"equation.3", b"package", b"htmlfile", b"ole2link", b"
 
 
 __all__ = ["AUTO_EXEC", "EXEC_OR_FETCH", "DocumentReader", "DocumentReport", "Signal"]
+
+
+class PdfStreams:
+    r"""Each stream's dictionary and where its data starts: every `<<`, the first `>>`, white space
+    and `stream` after it, at most MAX_PDF_DICTIONARY bytes on, in order and not overlapping.
+
+    That is what `<<(.{0,4096}?)>>\s*stream\r?\n` found, without its cost. Tried at every `<<`,
+    the pattern read up to 4,096 bytes on before failing, so a file of `<` characters cost
+    4,096 steps each: 80,000 of them took 2.6 s. Here the dictionary ends are found in one pass,
+    and each `<<` looks its end up."""
+
+    @staticmethod
+    def headers(raw: bytes) -> Iterator[tuple[bytes, int]]:
+        # `>>` directly before the white space; white space cannot hold `>`, so a keyword has at
+        # most one such end, two bytes before its run of white space starts.
+        ends: list[int] = []
+        starts: list[int] = []
+        for keyword in _STREAM_KEYWORD.finditer(raw):
+            close = keyword.start() - 2
+            if close >= 0 and raw[close : close + 2] == b">>":
+                ends.append(close)
+                starts.append(keyword.end())
+        if not ends:
+            return
+        pos = 0
+        while (open_ := raw.find(b"<<", pos)) >= 0:
+            index = bisect.bisect_left(ends, open_ + 2)
+            if index == len(ends):
+                return
+            if ends[index] - (open_ + 2) <= MAX_PDF_DICTIONARY:
+                yield raw[open_ + 2 : ends[index]], starts[index]
+                pos = starts[index]
+            else:
+                pos = open_ + 1
