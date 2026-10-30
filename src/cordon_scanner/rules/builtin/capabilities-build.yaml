@@ -536,7 +536,7 @@ rules:
         # `hex::decode(content.trim())` to read a journal UUID. Both came out as
         # decode-then-execute, which is the opposite of what the first one does.
         - '\bhex\s*::\s*decode\s*\((?!\s*(?:[A-Za-z_][A-Za-z0-9_.]{0,60})?(?:[Ss]ha(?:1|256|512)?|SHA(?:1|256|512)?|[Mm]d5|MD5|[Cc]hecksum|CHECKSUM|[Dd]igest|DIGEST|[Hh]ash|HASH|[Uu]uid|UUID|[Gg]uid|GUID)[A-Za-z0-9_]{0,20}\s*[,)])'
-        - '\bfrom_utf8\s*\(\s*&?\s*decoded\b'
+        - '\bfrom_utf8\s*\(\s*(?:&\s*)?decoded\b'
         - '\bstring\s*\(\s*DECODE\b'
     tests:
       positive:
