@@ -38,7 +38,11 @@ from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from cordon_scanner.foundation.config.policy import OrgConstraints, Policy
+from cordon_scanner.foundation.config.policy import (
+    OrgConstraints,
+    Policy,
+    PolicyComparisons,
+)
 from cordon_scanner.foundation.config.provenance import Layer, Provenance
 from cordon_scanner.foundation.errors import ConfigError, PolicyViolationError
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS, Limits
@@ -61,16 +65,6 @@ CONFIG_FILENAMES = (
     ".cordon.yaml",
     ".cordon.yml",
 )
-
-
-MIN_JUSTIFICATION_CHARS = 40
-"""A suppression's justification must be long enough to contain a reason.
-
-Not arbitrary: the failure being prevented is `justification: "false positive"`,
-which records that somebody decided, not what they decided or why. A reviewer
-reading it two years later learns nothing, so the suppression is never revisited
-and becomes permanent by default.
-"""
 
 
 # ---------------------------------------------------------------------------
@@ -392,7 +386,6 @@ class Config:
         return config._withhold_untrusted_powers()
 
     def _withhold_untrusted_powers(self) -> Config:
-        from cordon_scanner.foundation.config.parser import ConfigParser
 
         clamped: list[str] = []
         reduced: list[str] = []
@@ -417,7 +410,7 @@ class Config:
         # conditioned on the gate being non-empty, and the same untrusted file
         # controlled both -- so five lines re-opened the bug the fix was written
         # against, in the file the fix lives in.
-        policy = ConfigParser._stricter_policy(self.policy, Policy.default())
+        policy = PolicyComparisons._stricter_policy(self.policy, Policy.default())
         if policy != self.policy:
             clamped.append("policy.fail_on")
 
@@ -472,7 +465,6 @@ class Config:
         self, clamped: list[str]
     ) -> tuple[bool, bool, bool, bool, int | None, tuple[str, ...]]:
         """The switches an untrusted layer may only turn towards safety: offline, plugins, archives, the intel feed, its age, minified paths."""
-        from cordon_scanner.foundation.config.parser import ConfigParser
 
         # Going online is an operator's decision, never the scan target's.
         #
@@ -520,7 +512,7 @@ class Config:
             clamped.append("scan.max_intel_age")
         # A pattern that names a place is kept and reported like an exclusion; one that spans the
         # tree (`**`, or a bare `*.js` that matches every directory) is a rule switched off.
-        minified = tuple(p for p in self.minified if not ConfigParser._spans_tree(p))
+        minified = tuple(p for p in self.minified if not PolicyComparisons._spans_tree(p))
         if len(minified) != len(self.minified):
             clamped.append("scan.minified")
         return offline, allow_plugins, expand_archives, intel_feed, max_intel_age, minified
@@ -570,12 +562,11 @@ class Config:
         and a justification are demanded of the repository by the tool, not by
         anybody's policy.
         """
-        from cordon_scanner.foundation.config.parser import ConfigParser
 
         violations = [
             f"suppression {s.rule} at {s.path}: {problem}"
             for s in self.suppressions
-            if (problem := ConfigParser._suppression_violation(s, constraints))
+            if (problem := PolicyComparisons._suppression_violation(s, constraints))
         ]
         if violations:
             listed = "\n  - ".join(violations)
@@ -641,7 +632,6 @@ class Config:
         One error listing every conflict, rather than one per run: an operator
         fixing these is otherwise made to rediscover them one at a time.
         """
-        from cordon_scanner.foundation.config.parser import ConfigParser
 
         violations: list[str] = []
 
@@ -704,7 +694,7 @@ class Config:
                     )
 
         for suppression in self.suppressions:
-            problem = ConfigParser._suppression_violation(suppression, constraints)
+            problem = PolicyComparisons._suppression_violation(suppression, constraints)
             if problem:
                 violations.append(
                     f"suppression {suppression.rule} at {suppression.path}: {problem}"
@@ -722,7 +712,6 @@ class Config:
 
     def _merged_under(self, org: Config, constraints: OrgConstraints) -> Config:
         """Take the stricter value of each pair. Called only after checking."""
-        from cordon_scanner.foundation.config.parser import ConfigParser
 
         return replace(
             self,
@@ -749,7 +738,7 @@ class Config:
             judge_max_calls=min(self.judge_max_calls, org.judge_max_calls),
             max_intel_age=IntelAge._shorter_age(self.max_intel_age, org.max_intel_age),
             allow_plugins=self.allow_plugins and org.allow_plugins,
-            policy=ConfigParser._stricter_policy(self.policy, org.policy),
+            policy=PolicyComparisons._stricter_policy(self.policy, org.policy),
             constraints=constraints,
             # Kept so `recheck_constraints` has something to compare against
             # after the command line has had its turn.
@@ -944,7 +933,6 @@ class Config:
 TOP_LEVEL_KEYS = frozenset(
     {"version", "scan", "policy", "evidence", "suppressions", "rules", "notify"}
 )
-LICENSE_UNKNOWN_ORDER = ("allow", "report", "deny")
 
 
 class IntelAge:

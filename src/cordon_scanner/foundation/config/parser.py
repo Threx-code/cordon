@@ -27,14 +27,13 @@ if TYPE_CHECKING:
 from cordon_scanner.foundation.config.policy import (
     DEFAULT_ADVISORY_DOMAINS,
     DEFAULT_MAX_MAJOR_DRIFT,
-    OrgConstraints,
+    LICENSE_UNKNOWN_ORDER,
+    MIN_JUSTIFICATION_CHARS,
     Policy,
 )
 from cordon_scanner.foundation.config.provenance import Provenance
 from cordon_scanner.foundation.config.settings import (
     CONFIG_VERSION,
-    LICENSE_UNKNOWN_ORDER,
-    MIN_JUSTIFICATION_CHARS,
     TOP_LEVEL_KEYS,
     Config,
 )
@@ -142,15 +141,6 @@ class ConfigParser:
                 )
             previous = current
         return previous[-1]
-
-    @staticmethod
-    def _spans_tree(pattern: str) -> bool:
-        """Whether a path pattern reaches across the whole tree rather than naming a place."""
-        stripped = pattern.strip().lstrip("./")
-        if not stripped or "**" in stripped:
-            return True
-        first = stripped.split("/", 1)[0]
-        return "*" in first or "?" in first
 
     @staticmethod
     def _as_str_tuple(value: Any, where: str) -> tuple[str, ...]:
@@ -540,99 +530,6 @@ class ConfigParser:
                 )
             )
         return tuple(out)
-
-    @staticmethod
-    def _suppression_violation(s: Suppression, c: OrgConstraints) -> str | None:
-        """Check one suppression against the organisation ceiling."""
-        if c.require_justification and len(s.justification.strip()) < MIN_JUSTIFICATION_CHARS:
-            return "justification is too short"
-        if c.require_approver and not s.approved_by:
-            return "organisation policy requires an approver"
-        if c.forbid_path_only_suppressions and (not s.rule or s.rule == "*"):
-            return "wildcard rule suppressions are forbidden; name the specific rule"
-        if c.forbid_path_only_suppressions:
-            # The check tested only the rule half. `{rule: SUSPECT.PERSIST.001,
-            # path: "*"}` therefore disabled that rule across the whole
-            # repository -- and suppression path matching used fnmatchcase,
-            # whose `*` crosses `/`, so a single character did it. That is
-            # precisely the failure the rule-and-path pair exists to prevent.
-            #
-            # Listing the exact strings was not enough either: `*.js` reads as
-            # specific and, under fnmatch, was not. Matching is now
-            # path-aware, and any pattern that can still reach arbitrary depth
-            # is refused, because a suppression that spans directories is a
-            # rule-level exception wearing a path.
-            stripped = s.path.strip()
-            if not stripped or stripped in {"*", "**", "**/*", "/"}:
-                return "wildcard path suppressions are forbidden; name the specific path"
-            if "**" in stripped:
-                return (
-                    "a suppression path may not use `**`; it spans directories, which "
-                    "makes the exception rule-wide rather than path-specific"
-                )
-        try:
-            expires = date.fromisoformat(s.expires)
-        except ValueError:
-            return "expiry is not a valid date"
-        horizon = (expires - date.today()).days
-        if horizon > c.max_suppression_days:
-            return (
-                f"expiry is {horizon} days away, exceeding the maximum of {c.max_suppression_days}"
-            )
-        return None
-
-    @staticmethod
-    def _stricter_policy(a: Policy, b: Policy) -> Policy:
-        """Merge two failure policies, keeping the stricter of each field."""
-        if a.fail_on_severity is None:
-            severity = b.fail_on_severity
-        elif b.fail_on_severity is None:
-            severity = a.fail_on_severity
-        else:
-            severity = min(a.fail_on_severity, b.fail_on_severity)
-        return Policy(
-            fail_on_severity=severity,
-            fail_on_categories=a.fail_on_categories | b.fail_on_categories,
-            fail_on_incomplete=a.fail_on_incomplete or b.fail_on_incomplete,
-            min_confidence_to_fail=min(a.min_confidence_to_fail, b.min_confidence_to_fail),
-            # Intersection, because merging two policies must never end weaker
-            # than either. A domain is advisory only if BOTH sides say so; an
-            # organisation policy that blocks on infrastructure is not undone by
-            # a repository's own file leaving the default in place.
-            advisory_domains=a.advisory_domains & b.advisory_domains,
-            # Either side asking for the hardening tier at full severity gets it: reporting more
-            # is the stricter choice.
-            hardening=a.hardening or b.hardening,
-            # The tighter of the two, for the same reason: merging must never
-            # end weaker than either side asked for.
-            max_major_drift=min(a.max_major_drift, b.max_major_drift),
-            # Unsaid on one side, the other side's; said on both, only what both accept.
-            accept_no_feed=(
-                b.accept_no_feed
-                if a.accept_no_feed is None
-                else a.accept_no_feed
-                if b.accept_no_feed is None
-                else a.accept_no_feed & b.accept_no_feed
-            ),
-            # Deny lists add up; allow lists narrow (an empty one allows everything, so the other
-            # side's applies); unknown licences take the stricter handling. A repository's own file
-            # cannot loosen what the organisation set.
-            package_deny=tuple(dict.fromkeys((*a.package_deny, *b.package_deny))),
-            package_allow=ConfigParser._narrower(a.package_allow, b.package_allow),
-            license_deny=tuple(dict.fromkeys((*a.license_deny, *b.license_deny))),
-            license_allow=ConfigParser._narrower(a.license_allow, b.license_allow),
-            license_unknown=max(
-                a.license_unknown, b.license_unknown, key=LICENSE_UNKNOWN_ORDER.index
-            ),
-        )
-
-    @staticmethod
-    def _narrower(a: tuple[str, ...], b: tuple[str, ...]) -> tuple[str, ...]:
-        if not a:
-            return b
-        if not b:
-            return a
-        return tuple(x for x in a if x in set(b))
 
 
 __all__ = ["ConfigParser"]
