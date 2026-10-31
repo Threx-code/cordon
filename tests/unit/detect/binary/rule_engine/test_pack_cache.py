@@ -15,21 +15,8 @@ from cordon_scanner.detect.binary.rule_engine.tokens import Includes
 RULES = 'rule a { strings: $x = "EVIL" condition: $x } rule b { condition: filesize > 3 }'
 
 
-class Spy:
-    """Counts reads of rule text, so a test sees whether the cache was used."""
-
-    calls: int = 0
-
-    @staticmethod
-    def install(monkeypatch: pytest.MonkeyPatch) -> None:
-        original = Rules._read
-        Spy.calls = 0
-
-        def counted(*args: Any, **kwargs: Any) -> Any:
-            Spy.calls += 1
-            return original(*args, **kwargs)
-
-        monkeypatch.setattr(Rules, "_read", staticmethod(counted))
+class Kept:
+    """The one entry a cache directory holds."""
 
     @staticmethod
     def entry(root: Path) -> Path:
@@ -38,86 +25,79 @@ class Spy:
 
 
 class TestThePackCache:
-    def test_a_kept_compile_matches_as_a_fresh_one(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        Spy.install(monkeypatch)
+    def test_a_kept_compile_matches_as_a_fresh_one(self, tmp_path: Path) -> None:
         cache = PackCache(tmp_path)
         first = Rules.compile(RULES, cache=cache)
         second = Rules.compile(RULES, cache=cache)
-        assert Spy.calls == 1
+        assert cache.loaded == 1
         data = b"xxEVILxx"
         assert [(m.rule, m.strings) for m in second.match(data)] == [
             (m.rule, m.strings) for m in first.match(data)
         ]
 
-    def test_other_text_or_externals_are_another_entry(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        Spy.install(monkeypatch)
+    def test_other_text_or_externals_are_another_entry(self, tmp_path: Path) -> None:
         cache = PackCache(tmp_path)
         Rules.compile(RULES, cache=cache)
         Rules.compile(RULES + " rule c { condition: true }", cache=cache)
         Rules.compile(RULES, externals={"x": 1}, cache=cache)
-        assert Spy.calls == 3
+        assert cache.loaded == 0
 
-    def test_an_entry_others_could_write_is_refused(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        Spy.install(monkeypatch)
+    def test_an_entry_others_could_write_is_refused(self, tmp_path: Path) -> None:
         cache = PackCache(tmp_path)
         Rules.compile(RULES, cache=cache)
-        Spy.entry(tmp_path).chmod(0o666)
+        Kept.entry(tmp_path).chmod(0o666)
         Rules.compile(RULES, cache=cache)
-        assert Spy.calls == 2
+        assert (cache.loaded, cache.refused) == (0, 1)
 
-    def test_a_changed_included_file_is_a_miss(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        Spy.install(monkeypatch)
+    def test_a_changed_included_file_is_a_miss(self, tmp_path: Path) -> None:
         (tmp_path / "m.yar").write_text("rule m { condition: true }", encoding="utf-8")
         cache = PackCache(tmp_path / "cache")
         text = 'include "m.yar"'
         Rules.compile(text, includes=Includes(tmp_path), cache=cache)
         Rules.compile(text, includes=Includes(tmp_path), cache=cache)
-        assert Spy.calls == 1
+        assert cache.loaded == 1
         (tmp_path / "m.yar").write_text("rule m { condition: false }", encoding="utf-8")
         rules = Rules.compile(text, includes=Includes(tmp_path), cache=cache)
-        assert Spy.calls == 2
+        assert cache.loaded == 1
         assert not rules.match(b"x")
 
-    def test_an_entry_kept_by_another_build_is_never_read(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """An interpreted build's entry is never unpickled by a compiled build, or the other way."""
-        Spy.install(monkeypatch)
+    def test_this_build_is_named(self, tmp_path: Path) -> None:
+        engine, build, abi = PackCache(tmp_path).made_by.split(" ")
+        assert (len(engine), build) == (16, "python")
+        assert abi.startswith("cpython-")
+
+    @pytest.mark.parametrize(
+        "other",
+        [
+            "0123456789abcdef compiled:0123456789abcdef cpython-312-aarch64",  # another build
+            "another-engine python cpython-312-aarch64",  # another engine
+        ],
+    )
+    def test_an_entry_another_maker_kept_is_never_read(self, tmp_path: Path, other: str) -> None:
+        """An interpreted build's entry is never unpickled by a compiled build, or the other way,
+        nor by another engine."""
+        Rules.compile(RULES, cache=PackCache(tmp_path, made_by=other))
         cache = PackCache(tmp_path)
-        assert PackCache.build_kind().startswith("python ")
-        Rules.compile(RULES, cache=cache)
-        monkeypatch.setattr(PackCache, "_BUILD", "compiled:0123456789abcdef cpython-312-aarch64")
         assert Rules.compile(RULES, cache=cache).match(b"EVIL")
-        assert Spy.calls == 2
+        assert cache.loaded == 0
+        assert len([p for p in tmp_path.iterdir() if not p.name.startswith(".")]) == 2  # one each
 
-    def test_another_engine_never_reads_the_entry(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        Spy.install(monkeypatch)
+    def test_an_entry_renamed_to_another_makers_key_is_refused(self, tmp_path: Path) -> None:
+        """The signed header names the maker too, so the key alone is not trusted."""
+        other = "another-engine python cpython-312-aarch64"
+        Rules.compile(RULES, cache=PackCache(tmp_path, made_by=other))
+        cache = PackCache(tmp_path)
+        Kept.entry(tmp_path).rename(tmp_path / cache.key(RULES, {}, frozenset(Rules.loaded(None))))
+        assert Rules.compile(RULES, cache=cache).match(b"EVIL")
+        assert cache.loaded == 0
+
+    def test_a_corrupt_entry_is_a_miss(self, tmp_path: Path) -> None:
         cache = PackCache(tmp_path)
         Rules.compile(RULES, cache=cache)
-        monkeypatch.setattr(PackCache, "_ENGINE", "another-engine")
-        Rules.compile(RULES, cache=cache)
-        assert Spy.calls == 2
-
-    def test_a_corrupt_entry_is_a_miss(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        Spy.install(monkeypatch)
-        cache = PackCache(tmp_path)
-        Rules.compile(RULES, cache=cache)
-        entry = Spy.entry(tmp_path)
+        entry = Kept.entry(tmp_path)
         entry.write_bytes(entry.read_bytes()[:-20])
         assert Rules.compile(RULES, cache=cache).match(b"EVIL")
-        assert Spy.calls == 2
+        assert cache.loaded == 0
 
 
 class TestRulesKeptAreBuiltOnFirstRun:
@@ -147,14 +127,12 @@ class TestRulesKeptAreBuiltOnFirstRun:
 
 
 class TestTheSignature:
-    def test_a_tampered_pickle_is_never_loaded(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_a_tampered_pickle_is_never_loaded(self, tmp_path: Path) -> None:
         import pickle
 
         cache = PackCache(tmp_path)
         Rules.compile(RULES, cache=cache)
-        entry = Spy.entry(tmp_path)
+        entry = Kept.entry(tmp_path)
         mac, header, _ = entry.read_bytes().split(b"\n", 2)
 
         class Boom:
@@ -162,16 +140,14 @@ class TestTheSignature:
                 return (pytest.fail, ("the tampered pickle was loaded",))
 
         entry.write_bytes(mac + b"\n" + header + b"\n" + pickle.dumps(Boom()))
-        Spy.install(monkeypatch)
         fresh = PackCache(tmp_path)
         assert Rules.compile(RULES, cache=fresh).match(b"EVIL")
-        assert Spy.calls == 1
-        assert fresh.refused == 1
+        assert (fresh.loaded, fresh.refused) == (0, 1)
 
     def test_an_unsigned_entry_is_refused(self, tmp_path: Path) -> None:
         cache = PackCache(tmp_path)
         Rules.compile(RULES, cache=cache)
-        entry = Spy.entry(tmp_path)
+        entry = Kept.entry(tmp_path)
         entry.write_bytes(entry.read_bytes().split(b"\n", 1)[1])
         fresh = PackCache(tmp_path)
         Rules.compile(RULES, cache=fresh)

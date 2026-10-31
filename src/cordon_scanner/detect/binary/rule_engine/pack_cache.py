@@ -9,8 +9,9 @@ The closures are built again on every load (they are functions, which are not ke
 An entry is used only when everything that made it is the same, and is refused otherwise:
 
     key      the rule text, its externals, the modules the scan provides, this cache's FORMAT,
-             a digest of the rule engine's own source (a different engine never reads it), and
-             the build running it -- interpreted or compiled, and the interpreter's ABI (`build_kind`)
+             and `made_by`: a digest of the rule engine's own source (a different engine never
+             reads it) and the build running it -- interpreted or compiled, and the interpreter's
+             ABI (`build_kind`) -- also in the signed header, checked on load
     files    every file its includes read, by path and sha256, checked on load
     owner    the entry is the current user's and writable by no one else
     mac      HMAC-SHA256 over the entry's bytes, with a per-user key kept 0600 in the cache
@@ -19,7 +20,7 @@ An entry is used only when everything that made it is the same, and is refused o
              backup or a truncation that wrote the directory without the key is never loaded
 
 A refused or unreadable entry is a cache miss, counted in `refused`: the rules are compiled as
-if there were none. (A pickle-free form would need every rule-tree class written to and read
+if there were none. An entry read is counted in `loaded`. (A pickle-free form would need every rule-tree class written to and read
 from plain data; the key keeps the pickle to what this user's own compiles wrote.)
 """
 
@@ -39,15 +40,19 @@ from typing import Any, ClassVar
 class PackCache:
     """Entries under one directory, one file per key."""
 
-    FORMAT: ClassVar[int] = 1
+    FORMAT: ClassVar[int] = 2
     _ENGINE: ClassVar[str] = ""
     _BUILD: ClassVar[str] = ""
 
     KEY_NAME: ClassVar[str] = ".pack-key"
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, made_by: str | None = None) -> None:
+        """`made_by` names what writes and reads the entries; by default this engine and build
+        (a test names another to see an entry refused across them)."""
         self.root = root
+        self.made_by = made_by or f"{PackCache.engine_digest()} {PackCache.build_kind()}"
         self.refused = 0
+        self.loaded = 0
         self._key: bytes | None = None
 
     def secret(self) -> bytes | None:
@@ -128,13 +133,11 @@ class PackCache:
             PackCache._BUILD = f"{kind} {abi}"
         return PackCache._BUILD
 
-    @staticmethod
-    def key(text: str, externals: dict[str, Any], modules: frozenset[str]) -> str:
+    def key(self, text: str, externals: dict[str, Any], modules: frozenset[str]) -> str:
         made_of = json.dumps(
             [
                 PackCache.FORMAT,
-                PackCache.engine_digest(),
-                PackCache.build_kind(),
+                self.made_by,
                 sorted(modules),
                 sorted(externals.items(), key=str),
             ],
@@ -168,14 +171,14 @@ class PackCache:
             header = json.loads(header_line)
             if header.get("format") != PackCache.FORMAT or header.get("key") != key:
                 return None
-            if header.get("engine") != PackCache.engine_digest():
-                return None
-            if header.get("build") != PackCache.build_kind():
+            if header.get("made_by") != self.made_by:
                 return None
             for name, sha in header.get("files", []):
                 if PackCache._sha(Path(name)) != sha:
                     return None
-            return pickle.loads(body)  # noqa: S301 -- signed with this user's key, checked above
+            value = pickle.loads(body)  # noqa: S301 -- signed with this user's key, checked above
+            self.loaded += 1
+            return value
         except FileNotFoundError:
             return None
         except (OSError, ValueError, EOFError, pickle.UnpicklingError, AttributeError, ImportError):
@@ -198,8 +201,7 @@ class PackCache:
             header = {
                 "format": PackCache.FORMAT,
                 "key": key,
-                "engine": PackCache.engine_digest(),
-                "build": PackCache.build_kind(),
+                "made_by": self.made_by,
                 "files": [[str(p), PackCache._sha(p)] for p in files],
             }
             signed = json.dumps(header).encode() + b"\n" + body

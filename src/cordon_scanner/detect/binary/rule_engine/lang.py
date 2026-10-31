@@ -226,7 +226,7 @@ class Rules:
         and prepared rules for the next compile of the same text (`pack_cache`)."""
         loaded = Rules.loaded(modules)
         given = dict(externals or {})
-        key = PackCache.key(text, given, frozenset(loaded)) if cache is not None else ""
+        key = cache.key(text, given, frozenset(loaded)) if cache is not None else ""
         kept = cache.get(key) if cache is not None else None
         if kept is not None:
             rules, imports = kept
