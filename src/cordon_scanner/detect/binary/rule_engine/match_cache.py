@@ -40,7 +40,11 @@ class MatchCache:
     """Kept matches under one directory, by rule-set identity and file content."""
 
     FORMAT: ClassVar[int] = 1
-    UNCACHEABLE: ClassVar[frozenset[str]] = frozenset({"time", "console"})
+    #: Answers that depend on more than the file's bytes: the clock, what a console call does,
+    #: and the scanner's facts about the package around the file (`modules.scanner_facts`).
+    UNCACHEABLE: ClassVar[frozenset[str]] = frozenset(
+        {"time", "console", "package", "js", "python"}
+    )
 
     def __init__(self, root: Path) -> None:
         self.root = root

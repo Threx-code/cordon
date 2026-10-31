@@ -26,9 +26,8 @@ from cordon_scanner.engine.parallel import MAX_CARRIED_BYTES, ParallelScanner
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.ceilings import Ceilings
 from cordon_scanner.engine.pipeline.constants import REPOSITORY_SCOPE
-from cordon_scanner.engine.pipeline.facts import TreeFacts
+from cordon_scanner.engine.pipeline.facts import ScanFactsGathering, TreeFacts
 from cordon_scanner.engine.pipeline.graph import Graph
-from cordon_scanner.engine.pipeline.history import History
 from cordon_scanner.engine.pipeline.hooks import Hooks
 from cordon_scanner.engine.pipeline.publisher import Publisher
 from cordon_scanner.engine.pipeline.releases import ReleaseChecks
@@ -243,6 +242,18 @@ class ScanStages:
                         continue
                     acc.add(self.engine.detection.run(detector, graph_unit, ctx, acc))
             acc.add(self.engine.dependencies.sbom_listed_findings(acc.findings, ctx))
+            # A rule file reading the scanner's facts is matched now that they exist, before
+            # every step after detection (`engine/pipeline/facts`).
+            ScanFactsGathering.deferred(
+                self.engine,
+                file_detectors,
+                units,
+                acc,
+                root,
+                ctx,
+                carry_content=carry_content,
+                where=REPOSITORY_SCOPE,
+            )
 
     def after_detection(
         self,
@@ -325,18 +336,14 @@ class ScanStages:
             )
         )
 
-        labels: dict[str, Any] = {}
         graded, verdict = Ceilings.verdict(
             Ceilings.hardening_tier(
                 Hooks.onto_manifest(Publisher.test_identity_keys(list(findings), units), units),
                 self.config.policy,
             ),
             units,
-            {
-                **self.engine._capability_profile(units, ctx, labels),
-                **History.registry_facts(units),
-            },
-            self.engine._intent_observation(units, ctx, labels),
+            ScanFactsGathering.verdict_facts(self.engine, units, ctx, acc),
+            self.engine._intent_observation(units, ctx, acc.labels),
         )
         findings = tuple(graded)
         dependencies = self.engine.detection.annotated(dependencies, findings, ctx, units)

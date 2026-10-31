@@ -379,6 +379,25 @@ class ArchiveStages:
         acc.add(ReleaseChecks.placeholder_release(units, ctx))
         acc.add(ReleaseChecks.borrowed_server_name(units, ctx))
 
+    def deferred(
+        self,
+        units: list[FileUnit],
+        acc: Accumulator,
+        path: Path,
+        detectors: list[Detector],
+        ctx: ScanContext,
+    ) -> None:
+        """A rule file reading the scanner's facts, matched over the members now that they exist,
+        before every step after detection (`engine/pipeline/facts`)."""
+        from cordon_scanner.engine.pipeline.facts import ScanFactsGathering
+
+        content = [
+            d for d in detectors if not (d.requires.dependencies and d.requires.content is False)
+        ]
+        ScanFactsGathering.deferred(
+            self.engine, content, units, acc, path.parent, ctx, carry_content=True, where=path.name
+        )
+
     def dependencies(
         self, units: list[FileUnit], acc: Accumulator, image: Any, ctx: ScanContext
     ) -> tuple[tuple[Dependency, ...], str, ScanContext]:
@@ -515,18 +534,16 @@ class ArchiveStages:
                     continue
                 acc.add(self.engine.detection.run(detector, graph_unit, ctx, acc))
 
-        labels: dict[str, Any] = {}
+        from cordon_scanner.engine.pipeline.facts import ScanFactsGathering
+
         acc.findings[:], verdict = Ceilings.verdict(
             Ceilings.hardening_tier(
                 Hooks.onto_manifest(Publisher.test_identity_keys(acc.findings, units), units),
                 self.config.policy,
             ),
             units,
-            {
-                **self.engine._capability_profile(units, ctx, labels),
-                **History.registry_facts(units),
-            },
-            self.engine._intent_observation(units, ctx, labels),
+            ScanFactsGathering.verdict_facts(self.engine, units, ctx, acc),
+            self.engine._intent_observation(units, ctx, acc.labels),
         )
         dependencies = self.engine.detection.annotated(dependencies, acc.findings, ctx, units)
         return dependencies, verdict

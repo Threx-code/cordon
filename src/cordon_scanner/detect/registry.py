@@ -14,6 +14,10 @@ from typing import TYPE_CHECKING
 #: when it is first asked for (PEP 562), as the engine's own imports were.
 ROLES: dict[str, tuple[str, str]] = {
     "BinaryDetector": ("cordon_scanner.detect.binary.detector", "BinaryDetector"),
+    "CampaignSiblings": (
+        "cordon_scanner.detect.supply.campaign_sibling",
+        "CampaignSiblingDetector",
+    ),
     "ComposerPluginHooks": ("cordon_scanner.detect.supply.composer_plugins", "ComposerPluginHooks"),
     "DeclaredSource": ("cordon_scanner.detect.supply.manifests.sources", "DeclaredSource"),
     "DownloadFlow": ("cordon_scanner.detect.code.download_flow", "DownloadFlow"),
@@ -37,6 +41,7 @@ if TYPE_CHECKING:
     from cordon_scanner.detect.agents.mcp_servers import source as _detect_agents_mcp_servers_source
     from cordon_scanner.detect.base import (
         BinaryIdentification,
+        CampaignSiblingFacts,
         ComposerPluginPaths,
         DeclaredSourceKinds,
         DownloadRunning,
@@ -56,6 +61,7 @@ if TYPE_CHECKING:
     from cordon_scanner.detect.code.capability import load_path as _detect_code_capability_load_path
     from cordon_scanner.detect.code.obfuscation import packing as _detect_code_obfuscation_packing
     from cordon_scanner.detect.source import submodules as _detect_source_submodules
+    from cordon_scanner.detect.supply import campaign_sibling as _detect_supply_campaign_sibling
     from cordon_scanner.detect.supply import composer_plugins as _detect_supply_composer_plugins
     from cordon_scanner.detect.supply import reachability as _detect_supply_reachability
     from cordon_scanner.detect.supply import sbom as _detect_supply_sbom
@@ -64,6 +70,7 @@ if TYPE_CHECKING:
     # Each implementation, as the engine sees it: by its protocol (the type checker proves the
     # implementation conforms) or, for a plain value, by the value's type.
     BinaryDetector: BinaryIdentification = _detect_binary_detector.BinaryDetector
+    CampaignSiblings: CampaignSiblingFacts = _detect_supply_campaign_sibling.CampaignSiblingDetector
     ComposerPluginHooks: ComposerPluginPaths = _detect_supply_composer_plugins.ComposerPluginHooks
     DeclaredSource: DeclaredSourceKinds = _detect_supply_manifests_sources.DeclaredSource
     DownloadFlow: DownloadRunning = _detect_code_download_flow.DownloadFlow
@@ -98,6 +105,7 @@ __all__ = [
     "SBOM_NAMES",
     "SBOM_SUFFIXES",
     "BinaryDetector",
+    "CampaignSiblings",
     "ComposerPluginHooks",
     "DeclaredSource",
     "DownloadFlow",

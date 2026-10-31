@@ -180,6 +180,10 @@
   "detect/binary/modules/reports/cuckoo": "detect/binary/modules/reports/cuckoo",
   "detect/binary/modules/reports/vt": "detect/binary/modules/reports/vt",
   "detect/binary/modules/reports/vt_net": "detect/binary/modules/reports/vt_net",
+  "detect/binary/modules/scanner_facts/facts": "detect/binary/modules/scanner_facts/facts",
+  "detect/binary/modules/scanner_facts/js": "detect/binary/modules/scanner_facts/js",
+  "detect/binary/modules/scanner_facts/package": "detect/binary/modules/scanner_facts/package",
+  "detect/binary/modules/scanner_facts/python": "detect/binary/modules/scanner_facts/python",
   "detect/binary/modules/signature": "detect/binary/modules/signature",
   "detect/binary/modules/tables": "detect/binary/modules/tables",
   "detect/binary/modules/tlsh": "detect/binary/modules/tlsh",
@@ -618,6 +622,7 @@
  "tests": {
   "test_accept_no_feed.py": "foundation/config",
   "test_adversarial_package.py": "cloud",
+  "test_scanner_facts.py": "detect/binary/modules",
   "test_upstream_port.py": "intel/ports",
   "test_exploited_port.py": "intel/ports",
   "test_advisory_port.py": "intel/ports",

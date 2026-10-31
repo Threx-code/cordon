@@ -124,6 +124,11 @@ class RuleFileEngine:
         #: The rules that also read a file's decoded layers (`layers = "decoded"`); every other rule
         #: reads the raw bytes only.
         self.layered = frozenset(r.name for r in self.rules.rules if RuleLayers.wanted(r.meta))
+        from cordon_scanner.detect.binary.modules.scanner_facts.facts import ScanFacts
+
+        #: The scanner-fact modules the rules import: when any, the files are matched in the
+        #: engine's deferred pass, once those facts exist (`engine/pipeline/facts`).
+        self.facts = self.rules.imports & ScanFacts.MODULES
         """What the compiler decided where a rule did not say (a field two engines declare with
         different types, read in the reference's shape): reported with the scan, never silent."""
 
@@ -146,12 +151,32 @@ class RuleFileEngine:
         )
         return [path, *read]
 
-    def match(self, data: bytes) -> list[Any]:
+    def fact_modules(self, unit: FileUnit, ctx: ScanContext) -> dict[str, Any]:
+        """The `package`, `js` and `python` modules the rules import, for this file of this scan
+        (`modules.scanner_facts`): read from the facts the engine gathered after detection."""
+        from cordon_scanner.detect.binary.modules.scanner_facts.js import Js
+        from cordon_scanner.detect.binary.modules.scanner_facts.package import Package
+        from cordon_scanner.detect.binary.modules.scanner_facts.python import Python
+
+        facts = ctx.scan_facts or {}
+        out: dict[str, Any] = {}
+        if "package" in self.facts:
+            out["package"] = Package.module(facts, unit.path, ctx)
+        if "js" in self.facts:
+            out["js"] = Js.module(unit.path, ctx, unit.content)
+        if "python" in self.facts:
+            out["python"] = Python.module(unit.path, ctx, unit.content)
+        return out
+
+    def match(self, data: bytes, facts: dict[str, Any] | None = None) -> list[Any]:
+        """The rules' matches over `data`; `facts` gives the scanner-fact modules for the file
+        (`fact_modules`), whose answers are never kept by content (`MatchCache.UNCACHEABLE`)."""
         if self.identity is not None:
             kept = self.matches.get(self.identity, data)
             if kept is not None:
                 return kept
-        found = list(self.rules.match(data, timeout=MATCH_TIMEOUT_SECONDS, given=self.given))
+        given = {**self.given, **facts} if facts else self.given
+        found = list(self.rules.match(data, timeout=MATCH_TIMEOUT_SECONDS, given=given))
         if self.identity is not None:
             self.matches.put(self.identity, data, found)
         return found
@@ -279,8 +304,11 @@ class RuleFileDetector(BaseDetector):
             ]
         if not isinstance(unit, FileUnit) or engine is None:
             return ()
+        if engine.facts and ctx.scan_facts is None:
+            return ()  # matched in the deferred pass, with the scanner's facts (`defers`)
+        facts = engine.fact_modules(unit, ctx) if engine.facts else None
         try:
-            matches = engine.match(unit.content.raw)
+            matches = engine.match(unit.content.raw, facts)
         except Exception as exc:  # noqa: BLE001
             refused = [
                 self._operational(
@@ -298,11 +326,24 @@ class RuleFileDetector(BaseDetector):
             if RuleFileEngine.applies(match, unit.content.path)
         ]
         if engine.layered and "#" not in unit.path:
-            found += self._layered(engine, unit, {str(m.rule) for m in matches}, ctx)
+            found += self._layered(engine, unit, {str(m.rule) for m in matches}, ctx, facts)
         return found
 
+    def defers(self, ctx: ScanContext) -> bool:
+        """Whether this scan's files are matched after detection, in the engine's deferred pass:
+        the rules import a module reading the scanner's facts (`modules.scanner_facts`), which
+        exist only once every detector has run. A rule set importing none of them is matched
+        during detection, as before."""
+        engine = self._ensure(ctx) if self.applicable(ctx) else None
+        return bool(engine is not None and engine.facts)
+
     def _layered(
-        self, engine: RuleFileEngine, unit: FileUnit, matched: set[str], ctx: ScanContext
+        self,
+        engine: RuleFileEngine,
+        unit: FileUnit,
+        matched: set[str],
+        ctx: ScanContext,
+        facts: dict[str, Any] | None = None,
     ) -> list[Finding]:
         """The rules that ask for decoded layers, over each layer under the file's bytes
         (`rule_layers`), each match naming its layer. A rule that matched the raw bytes is not
@@ -312,7 +353,7 @@ class RuleFileDetector(BaseDetector):
         out: list[Finding] = []
         for layer in RuleLayers.of(unit.content.raw):
             try:
-                matches = engine.match(layer.data)
+                matches = engine.match(layer.data, facts)
             except Exception as exc:  # noqa: BLE001
                 out.append(
                     self._operational(

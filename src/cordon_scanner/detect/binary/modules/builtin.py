@@ -437,6 +437,9 @@ class Builtin:
         from cordon_scanner.detect.binary.modules.pe import Pe
         from cordon_scanner.detect.binary.modules.reports.cuckoo import Cuckoo
         from cordon_scanner.detect.binary.modules.reports.vt import Vt
+        from cordon_scanner.detect.binary.modules.scanner_facts.js import Js
+        from cordon_scanner.detect.binary.modules.scanner_facts.package import Package
+        from cordon_scanner.detect.binary.modules.scanner_facts.python import Python
 
         return {
             "math": Module(MathModule.SCHEMA, lambda file: MathModule(file).values()),
@@ -461,6 +464,11 @@ class Builtin:
             "msi": Module(Msi.SCHEMA, Msi.data),
             "vba": Module(Vba.SCHEMA, Vba.data),
             "androguard": Androguard.module(),
+            # the scanner's facts: every field undefined until the rule file's deferred pass
+            # gives each file its own (`scanner_facts`)
+            "package": Package.EMPTY,
+            "js": Js.EMPTY,
+            "python": Python.EMPTY,
         }
 
 
