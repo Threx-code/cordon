@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from typing import Any, ClassVar
 
 from cordon_scanner.cli.commands.account.login import LoginCommand
@@ -41,7 +42,9 @@ class VersionAction(argparse.Action):
         from cordon_scanner.detect.binary.rule_engine.automaton import Automaton
 
         native = "yes" if Automaton.NATIVE else "no"
-        parser.exit(message=f"{PROGRAM} {__version__}\nnative: {native}, {Automaton.status()}\n")
+        # On stdout, as argparse's own version action prints, so `--version | head -1` still works.
+        sys.stdout.write(f"{PROGRAM} {__version__}\nnative: {native}, {Automaton.status()}\n")
+        parser.exit()
 
 
 class CommandParser:

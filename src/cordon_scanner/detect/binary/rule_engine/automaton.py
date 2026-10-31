@@ -18,6 +18,7 @@ index builds its automata on first use after a load.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import os
 from collections.abc import Iterable, Sequence
@@ -44,8 +45,6 @@ class Native:
 class Automaton:
     MODULE, WHY = Native.load()
     NATIVE: ClassVar[bool] = MODULE is not None
-    DIGEST: ClassVar[list[str]] = []
-    """The loaded extension's sha256, worked out once, when first asked for."""
 
     @staticmethod
     def status() -> str:
@@ -53,14 +52,18 @@ class Automaton:
         the sha256 of the binary loaded, or the Python one and why."""
         if Automaton.MODULE is None:
             return f"Python anchor matcher ({Automaton.WHY})"
-        if not Automaton.DIGEST:
-            path = getattr(Automaton.MODULE, "__file__", None)
-            try:
-                digest = hashlib.sha256(Path(str(path)).read_bytes()).hexdigest()
-                Automaton.DIGEST.append(digest)
-            except (OSError, TypeError):
-                Automaton.DIGEST.append("unreadable")
-        return f"native anchor matcher (sha256 {Automaton.DIGEST[0]})"
+        return f"native anchor matcher (sha256 {Automaton.digest()})"
+
+    @staticmethod
+    @functools.cache
+    def digest() -> str:
+        """The loaded extension's sha256, worked out once, when first asked for: the binary does
+        not change while the process runs."""
+        path = getattr(Automaton.MODULE, "__file__", None)
+        try:
+            return hashlib.sha256(Path(str(path)).read_bytes()).hexdigest()
+        except (OSError, TypeError):
+            return "unreadable"
 
     __slots__ = ("_c", "_ids", "_set", "empty", "fold", "needles")
 

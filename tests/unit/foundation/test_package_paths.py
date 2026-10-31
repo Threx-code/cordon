@@ -63,6 +63,13 @@ class TestPackagePaths:
         PyPI runs without it, quietly: until 2026-10-20 the wheel lacked the rule pack and the
         bundled EPSS scores (`intel/data/epss.csv.gz`)."""
         declared = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
+        # A native extension's C source is compiled into the wheel, not shipped in it (the sdist
+        # carries it), and a built binary is the build's, not a data file.
+        native_sources = {
+            str(source)
+            for ext in declared["tool"]["cordon-build"].get("native", [])
+            for source in ext["sources"]
+        }
         globs = [
             PACKAGE.joinpath(*package.split(".")[1:]) / pattern
             for package, patterns in declared["tool"]["cordon-build"]["package-data"].items()
@@ -72,9 +79,10 @@ class TestPackagePaths:
             p
             for p in sorted(PACKAGE.rglob("*"))
             if p.is_file()
-            and p.suffix not in (".py", ".pyc")
+            and p.suffix not in (".py", ".pyc", ".so", ".pyd")
             and "__pycache__" not in p.parts
             and not p.relative_to(PACKAGE).as_posix().startswith(self.NOT_IN_WHEEL)
+            and p.relative_to(REPO).as_posix() not in native_sources
         ]
         assert len(data) > 50  # a walk that found nothing passes for the wrong reason
         missing = [
