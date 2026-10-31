@@ -143,8 +143,17 @@ class PackCache:
             self.refused += 1
             return None
 
-    def put(self, key: str, value: Any, files: list[Path]) -> None:
-        """Keep `value` under `key`, with the files it was read from; a failure keeps nothing."""
+    @staticmethod
+    def dumps(value: Any) -> bytes | None:
+        """`value` pickled now, to keep later (`put`); None when it cannot be."""
+        try:
+            return pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
+        except (pickle.PicklingError, TypeError, AttributeError, RecursionError):
+            return None
+
+    def put(self, key: str, body: bytes, files: list[Path]) -> None:
+        """Keep the pickled `body` under `key`, with the files it was read from; a failure keeps
+        nothing."""
         try:
             self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
             header = {
@@ -153,7 +162,6 @@ class PackCache:
                 "engine": PackCache.engine_digest(),
                 "files": [[str(p), PackCache._sha(p)] for p in files],
             }
-            body = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
             signed = json.dumps(header).encode() + b"\n" + body
             mac = self._mac(signed)
             if mac is None:
