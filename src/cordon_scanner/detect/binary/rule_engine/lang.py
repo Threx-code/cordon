@@ -184,6 +184,30 @@ class Strings:
                 s.fixed = where[s.name]
 
 
+class Plan:
+    """Which rules one match has to look at. A rule with strings that is false unless one of them
+    matches (it needs a match, or has a clause of strings: `Gates.hopeless`) is false outright when
+    none of its strings has an anchor in the file, so it is visited only when one does
+    (`by_string`); every other rule is visited always (`always`)."""
+
+    __slots__ = ("always", "by_string", "global_skippable", "names")
+
+    def __init__(self, rules: list[RuleDef]) -> None:
+        self.names = [r.name for r in rules]
+        self.by_string: dict[int, int] = {}
+        self.always: list[int] = []
+        self.global_skippable: list[int] = []
+        for i, rule in enumerate(rules):
+            skippable = bool(rule.strings) and (rule.needs_match or bool(rule.clauses))
+            if not skippable:
+                self.always.append(i)
+                continue
+            if rule.is_global:
+                self.global_skippable.append(i)
+            for s in rule.strings:
+                self.by_string[id(s)] = i
+
+
 class Rules:
     """Compiled rules: `Rules.compile(text)`, then `rules.match(data)`."""
 
@@ -201,6 +225,7 @@ class Rules:
         self.imports = imports
         self._index: tuple[Any, list[StringDef]] | None = None
         self._magic: MagicIndex | None = None
+        self._plan: Plan | None = None
 
     @staticmethod
     def loaded(given: dict[str, Any] | None) -> dict[str, Module]:
@@ -310,6 +335,12 @@ class Rules:
             self._index = (AnchorIndex([s.search for s in strings]), strings)
         return self._index
 
+    def plan(self) -> Plan:
+        """Which rules a match must visit (`Plan`), worked out once for the rule set."""
+        if self._plan is None:
+            self._plan = Plan(self.rules)
+        return self._plan
+
     def magic_index(self) -> MagicIndex:
         """The anchor indexes by leading-byte requirement, each built when a file first needs it."""
         if self._magic is None:
@@ -341,8 +372,18 @@ class Rules:
         seen: dict[Any, Any] = {}
         live = self.magic_index().live(data, seen)
         found_by: dict[str, dict[str, Sequence[tuple[int, int]]]] = {}
-        all_global = True
-        for rule in self.rules:
+        # only the rules a string with an anchor here can reach, and those that may hold with no
+        # match, are visited; every other rule is false without being looked at (Gates.hopeless)
+        plan = self.plan()
+        visit = set(plan.always)
+        for sid in live:
+            reached = plan.by_string.get(sid)
+            if reached is not None:
+                visit.add(reached)
+        frame.decided.update(dict.fromkeys(plan.names, False))
+        all_global = all(i in visit for i in plan.global_skippable)
+        for i in sorted(visit):
+            rule = self.rules[i]
             frame.found, frame.env = {}, [None] * rule.width
             if Gates.hopeless(rule, live) or (
                 rule.gates and not all(gate(frame) for gate in rule.gates)
