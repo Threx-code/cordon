@@ -490,7 +490,9 @@ done:
  * (end, longer anchor first, higher order first, as listed), the text checked at each start
  * (or, flag 1 "fits", the owner's fit length taken), flag 2 "fullword" applied, and each start
  * recorded once (flag 4 "greedy": a later event replaces its length), stopping at the first new
- * start past max_hits. fixed >= 0: only that start counts. */
+ * start past max_hits. fixed >= 0: only that start counts. left >= 0: the seconds allowed, read
+ * at the first event and every 4,096th (TimeoutError past them). Every start, length, back and
+ * fit length must lie in [0, 2**40] (ValueError otherwise), so no sum of them overflows. */
 typedef struct { int64_t e0, nl, no, seq, at; int32_t owner; } Event;
 
 /* seconds on a monotonic clock, for the match's time allowed */
@@ -522,6 +524,8 @@ static int cmp_i64(const void *x, const void *y) {
 }
 
 static uint8_t ALNUM[256];
+
+#define TEXT_MOST ((long long)1 << 40) /* the largest start, length, back or fit length taken */
 
 static int whole(const uint8_t *d, int64_t n, int64_t start, int64_t length, int wide) {
     if (wide) {
@@ -561,6 +565,9 @@ static PyObject *text_hits(PyObject *self, PyObject *args) {
         long long length = PyLong_AsLongLong(PyTuple_GET_ITEM(o, 1)), back = PyLong_AsLongLong(PyTuple_GET_ITEM(o, 2));
         long long order = PyLong_AsLongLong(PyTuple_GET_ITEM(o, 3)), f = PyLong_AsLongLong(PyTuple_GET_ITEM(o, 4));
         if (PyErr_Occurred()) goto done;
+        if (length < 0 || length > TEXT_MOST || back < 0 || back > TEXT_MOST || f < 0 || f > TEXT_MOST) {
+            PyErr_SetString(PyExc_ValueError, "an owner's length, back or fit length is out of range"); goto done;
+        }
         fit[k] = f;
         Py_ssize_t m = PyList_GET_SIZE(starts);
         for (Py_ssize_t i = 0; i < m; i++) {
@@ -568,6 +575,7 @@ static PyObject *text_hits(PyObject *self, PyObject *args) {
             if (!PyLong_CheckExact(x)) { PyErr_SetString(PyExc_TypeError, "a start is not an int"); goto done; }
             long long sv = PyLong_AsLongLong(x);
             if (sv == -1 && PyErr_Occurred()) goto done;
+            if (sv < 0 || sv > TEXT_MOST) { PyErr_SetString(PyExc_ValueError, "a start is out of range"); goto done; }
             if (back <= sv + length) {
                 ev[count].e0 = sv + length; ev[count].nl = -length; ev[count].no = -order;
                 ev[count].seq = count; ev[count].at = sv + length - back; ev[count].owner = (int32_t)k;
@@ -626,7 +634,7 @@ done:
 
 static PyMethodDef module_methods[] = {
     {"check_text", check_text, METH_VARARGS, "check_text(data, offsets, text, mode) -> int64 lengths."},
-    {"text_hits", text_hits, METH_VARARGS, "text_hits(data, owners, text, mode, flags, max_hits, fixed) -> (starts, lengths)."},
+    {"text_hits", text_hits, METH_VARARGS, "text_hits(data, owners, text, mode, flags, max_hits, fixed[, left]) -> (starts, lengths)."},
     {NULL, NULL, 0, NULL}};
 
 /* The GIL: this module keeps it (single-phase init, so a free-threaded build turns the GIL on
