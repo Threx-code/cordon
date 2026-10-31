@@ -1,4 +1,4 @@
-"""rule_engine.automaton: the native anchor automaton (cordon_scanner._native._anchors) and the Python
+"""rule_engine.anchoring.automaton: the native anchor automaton (cordon_scanner._native._anchors) and the Python
 reading give the same answers. A property over random anchor sets and random or adversarial data
 holds `present` and `positions` (with a cap) equal both ways, with and without case folding; the
 number of cases is CORDON_NATIVE_EXAMPLES (2,000 by default; the proof runs 100,000). Eight threads
@@ -14,7 +14,7 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from cordon_scanner.detect.binary.rule_engine.automaton import Automaton
+from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton, TextCheck
 
 EXAMPLES = int(os.environ.get("CORDON_NATIVE_EXAMPLES", "2000"))
 NATIVE = pytest.mark.skipif(not Automaton.NATIVE, reason=str(Automaton.WHY))
@@ -199,3 +199,30 @@ class TestArgumentShapes:
         a = self.native()
         with pytest.raises(RuntimeError, match="already built"):
             a.__init__([b"x"])  # type: ignore[misc]
+
+
+@NATIVE
+class TestTheTextCheck:
+    """The native text check (`_anchors.check_text`) and its Python twin give each offset the same
+    length, every mode (ascii, wide, nocase, xor, together), offsets past either end included."""
+
+    @settings(max_examples=EXAMPLES, deadline=None, suppress_health_check=list(HealthCheck))
+    @given(
+        text=st.binary(min_size=1, max_size=6) | st.sampled_from([b"aB", b"\x00", b"ab\x00"]),
+        data=DATA,
+        mode=st.integers(0, 15),
+        extra=st.lists(st.integers(-3, 400), max_size=20),
+    )
+    def test_native_and_python_agree(
+        self, text: bytes, data: bytes, mode: int, extra: list[int]
+    ) -> None:
+        offsets = sorted({*range(len(data) + 2), *extra})
+        assert TextCheck.lengths(data, offsets, text, mode, native=True) == TextCheck.lengths(
+            data, offsets, text, mode, native=False
+        )
+
+    def test_bad_arguments_are_refused(self) -> None:
+        with pytest.raises(ValueError, match="int64"):
+            Automaton.MODULE.check_text(b"ab", b"\x00\x00\x00", b"a", 1)
+        with pytest.raises(TypeError):
+            Automaton.MODULE.check_text("ab", b"", b"a", 1)

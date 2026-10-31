@@ -24,14 +24,14 @@ from __future__ import annotations
 import binascii
 import dataclasses
 import time
-from collections.abc import Callable, Iterator
-from dataclasses import dataclass
+from collections.abc import Callable, Iterator, Sequence
 from typing import Any, ClassVar
 
 from cordon_scanner.detect.binary.modules.builtin import Builtin
 from cordon_scanner.detect.binary.modules.values import Module
 from cordon_scanner.detect.binary.rule_engine.build import Builder, Frame
 from cordon_scanner.detect.binary.rule_engine.gates import Gates, MagicIndex
+from cordon_scanner.detect.binary.rule_engine.hits import Hits, Match
 from cordon_scanner.detect.binary.rule_engine.pack_cache import PackCache
 from cordon_scanner.detect.binary.rule_engine.syntax import (
     Both,
@@ -49,16 +49,6 @@ from cordon_scanner.detect.binary.rule_engine.syntax import (
 from cordon_scanner.detect.binary.rule_engine.tokens import Includes, RuleError
 
 MAX_MATCHES = 1_000_000
-
-
-@dataclass
-class Match:
-    """What a matching rule reports: its name, tags, meta, and each string instance."""
-
-    rule: str
-    tags: list[str]
-    meta: dict[str, Any]
-    strings: list[tuple[int, str, bytes]]
 
 
 class Tree:
@@ -121,18 +111,23 @@ class Strings:
                 raise RuleError(f"string {s.name}: {exc}") from exc
 
     @staticmethod
-    def search(
-        s: StringDef, data: bytes, deadline: float | None, seen: dict[Any, Any]
-    ) -> list[tuple[int, int]]:
-        """Where `s` matches in `data`, as (offset, length) pairs in offset order. Running out of
-        time, or a pattern needing more than its bounds allow, refuses the file."""
-        from cordon_scanner.detect.binary.rule_engine.pattern import RunError
+    def search(s: StringDef, data: bytes, deadline: float | None, seen: dict[Any, Any]) -> Hits:
+        """Where `s` matches in `data`, as (offset, length) pairs in offset order (`Hits`). Running
+        out of time, or a pattern needing more than its bounds allow, or more matches in the file
+        than `Hits.MOST`, refuses the file."""
+        from cordon_scanner.detect.binary.rule_engine.pattern import RunError, TooManyMatches
 
         why: str | None = None
         cause: BaseException | None = None
         assert s.search is not None  # noqa: S101 - every string is prepared (`Strings.prepare`)
         try:
-            hits: list[tuple[int, int]] = s.search.find(data, s.fixed, deadline, seen)
+            found: list[tuple[int, int]] = s.search.find(data, s.fixed, deadline, seen)
+            hits = Hits(found)
+            del found
+            held = seen.get(("matches",), 0) + len(hits)
+            if held > Hits.MOST:
+                raise TooManyMatches(f"more than {Hits.MOST:,} matches in one file")
+            seen[("matches",)] = held
         except TimeoutError as exc:
             why, cause = "matching took longer than the time allowed", exc
         except RunError as exc:
@@ -190,6 +185,30 @@ class Strings:
                 s.fixed = where[s.name]
 
 
+class Plan:
+    """Which rules one match has to look at. A rule with strings that is false unless one of them
+    matches (it needs a match, or has a clause of strings: `Gates.hopeless`) is false outright when
+    none of its strings has an anchor in the file, so it is visited only when one does
+    (`by_string`); every other rule is visited always (`always`)."""
+
+    __slots__ = ("always", "by_string", "global_skippable", "names")
+
+    def __init__(self, rules: list[RuleDef]) -> None:
+        self.names = [r.name for r in rules]
+        self.by_string: dict[int, int] = {}
+        self.always: list[int] = []
+        self.global_skippable: list[int] = []
+        for i, rule in enumerate(rules):
+            skippable = bool(rule.strings) and (rule.needs_match or bool(rule.clauses))
+            if not skippable:
+                self.always.append(i)
+                continue
+            if rule.is_global:
+                self.global_skippable.append(i)
+            for s in rule.strings:
+                self.by_string[id(s)] = i
+
+
 class Rules:
     """Compiled rules: `Rules.compile(text)`, then `rules.match(data)`."""
 
@@ -207,6 +226,7 @@ class Rules:
         self.imports = imports
         self._index: tuple[Any, list[StringDef]] | None = None
         self._magic: MagicIndex | None = None
+        self._plan: Plan | None = None
 
     @staticmethod
     def loaded(given: dict[str, Any] | None) -> dict[str, Module]:
@@ -310,7 +330,7 @@ class Rules:
     def index(self) -> tuple[Any, list[StringDef]]:
         """One index of every string's anchors, built once for the rule set."""
         if self._index is None:
-            from cordon_scanner.detect.binary.rule_engine.anchor_index import AnchorIndex
+            from cordon_scanner.detect.binary.rule_engine.anchoring.anchor_index import AnchorIndex
 
             strings = [s for r in self.rules for s in r.strings]
             searches = [s.search for s in strings if s.search is not None]
@@ -318,10 +338,16 @@ class Rules:
             self._index = (AnchorIndex(searches), strings)
         return self._index
 
+    def plan(self) -> Plan:
+        """Which rules a match must visit (`Plan`), worked out once for the rule set."""
+        if self._plan is None:
+            self._plan = Plan(self.rules)
+        return self._plan
+
     def magic_index(self) -> MagicIndex:
         """The anchor indexes by leading-byte requirement, each built when a file first needs it."""
         if self._magic is None:
-            from cordon_scanner.detect.binary.rule_engine.anchor_index import AnchorIndex
+            from cordon_scanner.detect.binary.rule_engine.anchoring.anchor_index import AnchorIndex
 
             self._magic = MagicIndex(self.rules, AnchorIndex)
         return self._magic
@@ -348,14 +374,24 @@ class Rules:
         frame = Frame(data, modules)
         seen: dict[Any, Any] = {}
         live = self.magic_index().live(data, seen)
-        found_by: dict[str, dict[str, list[tuple[int, int]]]] = {}
-        all_global = True
-        for rule in self.rules:
+        found_by: dict[str, dict[str, Sequence[tuple[int, int]]]] = {}
+        # only the rules a string with an anchor here can reach, and those that may hold with no
+        # match, are visited; every other rule is false without being looked at (Gates.hopeless)
+        plan = self.plan()
+        visit = set(plan.always)
+        for sid in live:
+            reached = plan.by_string.get(sid)
+            if reached is not None:
+                visit.add(reached)
+        frame.decided.update(dict.fromkeys(plan.names, False))
+        all_global = all(i in visit for i in plan.global_skippable)
+        for i in sorted(visit):
+            rule = self.rules[i]
             frame.found, frame.env = {}, [None] * rule.width
             if Gates.hopeless(rule, live) or (
                 rule.gates and not all(gate(frame) for gate in rule.gates)
             ):
-                found: dict[str, list[tuple[int, int]]] = {s.name: [] for s in rule.strings}
+                found: dict[str, Sequence[tuple[int, int]]] = {s.name: [] for s in rule.strings}
                 may = False
             else:
                 found, may = Gates.search(
@@ -379,13 +415,12 @@ class Rules:
                 continue
             # an anonymous string is reported as `$`, as the reference reports it; its inner name
             # (`$#anonymousN`) only keeps it apart from its rule's other anonymous strings
-            instances = [
-                (at, "$" if s.name.startswith("$#") else s.name, data[at : at + n])
+            hits: list[tuple[str, Sequence[tuple[int, int]]]] = [
+                ("$" if s.name.startswith("$#") else s.name, found_by[rule.name][s.name])
                 for s in rule.strings
                 if not s.private
-                for at, n in found_by[rule.name][s.name]
             ]
-            out.append(Match(rule.name, list(rule.tags), dict(rule.meta), instances))
+            out.append(Match(rule.name, list(rule.tags), dict(rule.meta), data=data, hits=hits))
         return out
 
 

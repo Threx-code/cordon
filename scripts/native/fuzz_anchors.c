@@ -16,6 +16,33 @@
 #include "../../src/cordon_scanner/_native/anchors.c"
 
 static PyObject *Type;
+static PyObject *Check;
+
+/* the text check written again, plainly, for the harness to hold check_text to */
+static int64_t naive_text(const uint8_t *d, int64_t n, int64_t at, const uint8_t *t, int64_t m, long mode) {
+    if (at < 0 || at >= n) return 0;
+    int fold = (mode & 4) != 0;
+    int64_t len = 0;
+    for (int pass = 0; pass < 4 && len == 0; pass++) {
+        int wide = pass == 1 || pass == 2, x = pass >= 2;
+        if (pass == 0 && !(mode & 1)) continue;
+        if (pass == 1 && !(mode & 2)) continue;
+        if (pass == 2 && (!(mode & 8) || !(mode & 2) || fold)) continue;
+        if (pass == 3 && (!(mode & 8) || fold)) continue;
+        int64_t need = wide ? 2 * m : m;
+        if (n - at < need || m == 0) continue;
+        uint8_t key = x ? (uint8_t)(d[at] ^ t[0]) : 0;
+        int ok = 1;
+        for (int64_t i = 0; i < m && ok; i++) {
+            uint8_t a = d[at + (wide ? 2 * i : i)], b = (uint8_t)(t[i] ^ key);
+            if (fold) { a = LOWER[a]; b = LOWER[b]; }
+            if (a != b) ok = 0;
+            if (wide && (uint8_t)(d[at + 2 * i + 1] ^ key) != 0) ok = 0;
+        }
+        if (ok) len = need;
+    }
+    return len;
+}
 
 int LLVMFuzzerInitialize(int *argc, char ***argv) {
     (void)argc; (void)argv;
@@ -24,7 +51,8 @@ int LLVMFuzzerInitialize(int *argc, char ***argv) {
     PyObject *m = PyImport_ImportModule("_anchors");
     if (!m) { PyErr_Print(); abort(); }
     Type = PyObject_GetAttrString(m, "Automaton");
-    if (!Type) abort();
+    Check = PyObject_GetAttrString(m, "check_text");
+    if (!Type || !Check) abort();
     return 0;
 }
 
@@ -82,6 +110,26 @@ int LLVMFuzzerTestOneInput(const uint8_t *buf, size_t size) {
         for (int k = 0; k < count && k < 64; k++) if (o[k] != first[k]) abort();
     }
     Py_DECREF(pos); Py_DECREF(ids); Py_DECREF(present); Py_DECREF(a);
+    {   /* the text check: the first needle as text, every offset from -2 to past the end */
+        if (n > 0) {
+            PyObject *text = PyList_GET_ITEM(needles, 0);
+            int64_t count = (int64_t)dn + 4, *offs = malloc(sizeof(int64_t) * (size_t)count);
+            if (!offs) abort();
+            for (int64_t i = 0; i < count; i++) offs[i] = i - 2;
+            for (long mode = 0; mode < 16; mode++) {
+                PyObject *ob = PyBytes_FromStringAndSize((const char *)offs, (Py_ssize_t)(count * 8));
+                PyObject *got = PyObject_CallFunction(Check, "OOOl", data, ob, text, mode);
+                if (!got || PyBytes_GET_SIZE(got) != count * 8) abort();
+                const int64_t *g = (const int64_t *)PyBytes_AS_STRING(got);
+                for (int64_t i = 0; i < count; i++) {
+                    int64_t want = naive_text(d, (int64_t)dn, offs[i], (const uint8_t *)PyBytes_AS_STRING(text), PyBytes_GET_SIZE(text), mode);
+                    if (g[i] != want) abort();
+                }
+                Py_DECREF(got); Py_DECREF(ob);
+            }
+            free(offs);
+        }
+    }
 out:
     Py_DECREF(args); Py_DECREF(kw); Py_DECREF(data); Py_DECREF(needles);
     return 0;

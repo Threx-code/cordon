@@ -1781,7 +1781,7 @@ rule's own samples.
 | `OPERATIONAL.RULEFILE.STATUS` | info | The rule file examined the scan's files |
 | `OPERATIONAL.RULEFILE.UNAVAILABLE` | info | A rule file was asked for and could not be used |
 | `SUSPECT.RULEFILE.MATCH.001` | high | An operator's rule matched this file |
-| `SUSPECT.RULEFILE.UNBOUNDED.001` | high | A file could not be matched against the rule file within its bounds |
+| `SUSPECT.RULEFILE.UNMATCHED.001` | high | A file could not be matched against the rule file |
 
 ## SBOMs
 

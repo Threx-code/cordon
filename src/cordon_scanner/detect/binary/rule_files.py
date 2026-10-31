@@ -30,7 +30,7 @@ from cordon_scanner.detect.base import (
     ScanContext,
     Unit,
 )
-from cordon_scanner.detect.binary.rule_engine.automaton import Automaton
+from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.foundation.models import (
     Category,
@@ -53,7 +53,7 @@ MALICIOUS_RULE: Final = "MALWARE.RULEFILE.MATCH.001"
 STATUS_RULE: Final = "OPERATIONAL.RULEFILE.STATUS"
 UNAVAILABLE_RULE: Final = "OPERATIONAL.RULEFILE.UNAVAILABLE"
 SHAPE_RULE: Final = "OPERATIONAL.RULEFILE.SHAPE"
-UNBOUNDED_RULE: Final = "SUSPECT.RULEFILE.UNBOUNDED.001"
+UNMATCHED_RULE: Final = "SUSPECT.RULEFILE.UNMATCHED.001"
 REFERENCE: Final = "https://github.com/Threx-code/cordon/blob/main/tutorials/31-rule-files.md"
 MATCH_TIMEOUT_SECONDS: Final = 10
 MAX_RULES_BYTES: Final = 16 << 20
@@ -225,10 +225,10 @@ class RuleFileDetector(BaseDetector):
             rule(UNAVAILABLE_RULE, "A rule file was asked for and could not be used", Severity.INFO, Category.OPERATIONAL,
                  "The scan was asked to use a rule file and could not, so no file was matched against it.",
                  "Check the rules file compiles, and that it imports only modules Cordon's engine implements."),
-            rule(UNBOUNDED_RULE, "A file could not be matched against the rule file within its bounds", Severity.HIGH,
+            rule(UNMATCHED_RULE, "A file could not be matched against the rule file", Severity.HIGH,
                  Category.SUSPICIOUS,
-                 "A string of the rule file has more places to try in this file than the engine reads in one file (8,000,000), so the file was not matched against the rule file. A file can be padded to reach this on purpose, so it is not passed as clean.",
-                 "Inspect the file: a large run of one repeated byte, or a format the rule's strings occur in everywhere, is what reaches the bound."),
+                 "Matching this file against the rule file stopped before an answer: it ran past the time allowed, a pattern needed more threads than the engine runs, a string had more places to try than the engine holds for one file, or a module could not read the file. A file can be built to do any of these on purpose, so it is not passed as clean.",
+                 "Inspect the file: a large run of one repeated byte, a format the rule's strings occur in everywhere, or a malformed header is what stops a match."),
             rule(SHAPE_RULE, "A rule reads a field two engines declare differently, and did not say which", Severity.INFO,
                  Category.OPERATIONAL,
                  "A field with two shapes (one per rule engine) was read in the reference engine's shape because nothing in the rule decided.",
@@ -289,8 +289,9 @@ class RuleFileDetector(BaseDetector):
                     ctx,
                 )
             ]
-            if RuleFileDetector.unbounded(exc):
-                refused.append(self._unbounded(unit, exc, ctx))
+            # every failure here comes from the file being matched (the rule file compiled when the
+            # engine was built): one an attacker can cause, so it fails the gate, never passes clean
+            refused.append(self._unmatched(unit, exc, ctx))
             return refused
         found = [
             self._finding(unit, match, ctx)
@@ -382,24 +383,24 @@ class RuleFileDetector(BaseDetector):
         )
 
     @staticmethod
-    def unbounded(exc: BaseException) -> bool:
-        """Whether matching stopped at the engine's per-file bound (`rule_engine.scan.Unbounded`)."""
-        from cordon_scanner.detect.binary.rule_engine.scan import Unbounded
-
+    def why(exc: BaseException) -> str:
+        """What stopped the match, from the error and the errors it was raised from."""
+        reasons: list[str] = []
         seen: BaseException | None = exc
         for _ in range(8):
             if seen is None:
-                return False
-            if isinstance(seen, Unbounded):
-                return True
+                break
+            text = str(seen) or type(seen).__name__
+            if text not in reasons:
+                reasons.append(text)
             seen = seen.__cause__
-        return False
+        return "; ".join(reasons)
 
-    def _unbounded(self, unit: Any, exc: BaseException, ctx: ScanContext) -> Finding:
-        """The refusal as a finding that fails the gate: a file past the bound is not passed."""
-        message = f"{unit.content.path} could not be matched against the rule file within its bounds ({exc})."
+    def _unmatched(self, unit: Any, exc: BaseException, ctx: ScanContext) -> Finding:
+        """The failed match as a finding that fails the gate: a file that stops a match is not passed."""
+        message = f"{unit.content.path} could not be matched against the rule file ({RuleFileDetector.why(exc)})."
         return Finding(
-            rule_id=UNBOUNDED_RULE,
+            rule_id=UNMATCHED_RULE,
             category=Category.SUSPICIOUS,
             severity=Severity.HIGH,
             confidence=Confidence.CONFIRMED,
@@ -407,13 +408,13 @@ class RuleFileDetector(BaseDetector):
             location=Location(path=str(unit.content.path)),
             evidence=Evidence(
                 kind=EvidenceKind.METADATA,
-                match_hash=Evidence.hash_bytes(f"{UNBOUNDED_RULE}:{message}".encode()),
+                match_hash=Evidence.hash_bytes(f"{UNMATCHED_RULE}:{message}".encode()),
                 redaction=RedactionMode.NONE,
             ),
             remediation=next(
-                r.remediation for r in self.declared_rules() if r.id == UNBOUNDED_RULE
+                r.remediation for r in self.declared_rules() if r.id == UNMATCHED_RULE
             ),
-            explanation=Explanation(summary=message, matched_rule=UNBOUNDED_RULE),
+            explanation=Explanation(summary=message, matched_rule=UNMATCHED_RULE),
             risk=ctx.scorer.score(Severity.HIGH, Confidence.CONFIRMED),
             detector=self.id,
             references=(REFERENCE,),

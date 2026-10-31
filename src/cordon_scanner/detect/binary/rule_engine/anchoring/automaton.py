@@ -21,11 +21,12 @@ from __future__ import annotations
 import functools
 import hashlib
 import os
+from array import array
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any, ClassVar
 
-from cordon_scanner.detect.binary.rule_engine.needles import NeedleSet
+from cordon_scanner.detect.binary.rule_engine.anchoring.needles import NeedleSet
 
 
 class Native:
@@ -143,4 +144,53 @@ class Automaton:
         return found
 
 
-__all__ = ["Automaton"]
+class TextCheck:
+    """Each candidate offset's text match length (0 for none) for one text part, as
+    `scan._Hunt._check_text` reads it: natively (`_anchors.check_text`) when the extension is in use,
+    else this module's Python twin, the same comparisons one offset at a time."""
+
+    ASCII, WIDE, NOCASE, XOR = 1, 2, 4, 8
+
+    @staticmethod
+    def mode(flags: dict[str, Any]) -> int:
+        return (
+            (TextCheck.ASCII if "ascii" in flags else 0) | (TextCheck.WIDE if "wide" in flags else 0)
+            | (TextCheck.NOCASE if "nocase" in flags else 0) | (TextCheck.XOR if "xor" in flags else 0)
+        )  # fmt: skip
+
+    @staticmethod
+    def lengths(
+        data: bytes, offsets: list[int], text: bytes, mode: int, *, native: bool | None = None
+    ) -> list[int]:
+        if (Automaton.NATIVE if native is None else native and Automaton.NATIVE) and offsets:
+            raw = Automaton.MODULE.check_text(data, array("q", offsets).tobytes(), text, mode)
+            return list(memoryview(raw).cast("q"))
+        return [TextCheck.at(data, q, text, mode) for q in offsets]
+
+    @staticmethod
+    def at(data: bytes, q: int, text: bytes, mode: int) -> int:
+        from cordon_scanner.detect.binary.rule_engine.pattern import Bytes
+        from cordon_scanner.detect.binary.rule_engine.scan import _Compare
+
+        if q < 0 or q >= len(data):
+            return 0
+        length = 0
+        if mode & TextCheck.NOCASE:
+            if mode & TextCheck.ASCII:
+                length = _Compare.same(data, q, text, Bytes.LOWER)
+            if mode & TextCheck.WIDE and length == 0:
+                length = _Compare.same_wide(data, q, text, Bytes.LOWER)
+            return length
+        if mode & TextCheck.ASCII:
+            length = _Compare.same(data, q, text, None)
+        if mode & TextCheck.WIDE and length == 0:
+            length = _Compare.same_wide(data, q, text, None)
+        if mode & TextCheck.XOR and length == 0:
+            if mode & TextCheck.WIDE:
+                length = _Compare.xored_wide(data, q, text)
+            if length == 0:
+                length = _Compare.xored(data, q, text)
+        return length
+
+
+__all__ = ["Automaton", "TextCheck"]
