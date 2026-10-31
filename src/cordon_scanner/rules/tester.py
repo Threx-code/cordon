@@ -113,7 +113,7 @@ class RuleTester:
 
         if compiled.match.regex is not None:
             regex = compiled.match.regex_for(data)
-            return regex is not None and regex.search(data) is not None
+            return regex is not None and compiled.match.search(regex, data) is not None
         if compiled.match.literals:
             return any(lit in data for lit in compiled.match.literals)
         return False

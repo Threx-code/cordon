@@ -855,7 +855,7 @@ class Labelling:
                 if compiled.id in seen or compiled.match.regex is None:
                     continue
                 regex = compiled.match.regex_for(payload)
-                if regex is None or regex.search(payload) is None:
+                if regex is None or compiled.match.search(regex, payload) is None:
                     continue
                 seen.add(compiled.id)
                 start, end = cls._span_of_line(content, command.line)
