@@ -309,7 +309,7 @@ class Rules:
     def index(self) -> tuple[Any, list[StringDef]]:
         """One index of every string's anchors, built once for the rule set."""
         if self._index is None:
-            from cordon_scanner.detect.binary.rule_engine.scan import AnchorIndex
+            from cordon_scanner.detect.binary.rule_engine.anchor_index import AnchorIndex
 
             strings = [s for r in self.rules for s in r.strings]
             self._index = (AnchorIndex([s.search for s in strings]), strings)
@@ -318,7 +318,7 @@ class Rules:
     def magic_index(self) -> MagicIndex:
         """The anchor indexes by leading-byte requirement, each built when a file first needs it."""
         if self._magic is None:
-            from cordon_scanner.detect.binary.rule_engine.scan import AnchorIndex
+            from cordon_scanner.detect.binary.rule_engine.anchor_index import AnchorIndex
 
             self._magic = MagicIndex(self.rules, AnchorIndex)
         return self._magic

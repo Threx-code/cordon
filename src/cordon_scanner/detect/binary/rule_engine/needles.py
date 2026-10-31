@@ -1,5 +1,5 @@
 """cordon-rule's anchor prefilter: which of a rule set's many anchors occur in a piece of data,
-found in one pass over it (`scan.AnchorIndex` asks)."""
+found in one pass over it (`anchor_index.AnchorIndex` asks)."""
 
 from __future__ import annotations
 
