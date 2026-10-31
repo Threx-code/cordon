@@ -412,11 +412,26 @@ class AnchorIndex:
                 self.folded.setdefault(folded, []).append(i)
             if s.zeros:
                 self.always.add(i)
+        # the literal runs `Search._holds_required` asks about ride in the same automata, so one
+        # pass answers them too: plain runs as they are, a `nocase` string's runs lowered
+        self.runs: dict[bool, dict[bytes, list[bytes]]] = {False: {}, True: {}}
+        for s in searches:
+            f = s.flags
+            if "wide" in f or "xor" in f or "base64" in f or "base64wide" in f:
+                continue
+            nocase = "nocase" in f
+            for part in s.parts:
+                for run in part.required:
+                    held = self.runs[nocase].setdefault(run.lower() if nocase else run, [])
+                    if run not in held:
+                        held.append(run)
         self.exact_keys, self.folded_keys = list(self.exact), list(self.folded)
-        self.exact_id = {n: i for i, n in enumerate(self.exact_keys)}
-        self.folded_id = {n: i for i, n in enumerate(self.folded_keys)}
-        self.exact_set = Automaton(self.exact_keys)
-        self.folded_set = Automaton(self.folded_keys, fold=True)
+        self.exact_all = self.exact_keys + [r for r in self.runs[False] if r not in self.exact]
+        self.folded_all = self.folded_keys + [r for r in self.runs[True] if r not in self.folded]
+        self.exact_id = {n: i for i, n in enumerate(self.exact_all)}
+        self.folded_id = {n: i for i, n in enumerate(self.folded_all)}
+        self.exact_set = Automaton(self.exact_all)
+        self.folded_set = Automaton(self.folded_all, fold=True)
 
     def live(self, data: bytes, seen: dict[Any, Any]) -> set[int]:
         """The strings with an anchor in `data`. (`seen` is the data's shared record, which
@@ -424,14 +439,28 @@ class AnchorIndex:
         out = set(self.always)
         # whether each anchor occurs at all, in one pass; where, only for a string that is
         # searched (`Search.find`), and not even there for an anchor its gate reads in one pass
-        for i in self.exact_set.present(data):
-            out.update(self.exact[self.exact_keys[i]])
-        if self.folded:
-            for i in self.folded_set.present(
-                data, AnchorIndex.lowered(data, seen, self.folded_set)
-            ):
-                out.update(self.folded[self.folded_keys[i]])
+        found = {self.exact_all[i] for i in self.exact_set.present(data)}
+        for needle in found:
+            if needle in self.exact:
+                out.update(self.exact[needle])
+        AnchorIndex.held(seen, self.runs[False], found, folded=False)
+        if self.folded_all:
+            lowered = AnchorIndex.lowered(data, seen, self.folded_set)
+            found = {self.folded_all[i] for i in self.folded_set.present(data, lowered)}
+            for needle in found:
+                if needle in self.folded:
+                    out.update(self.folded[needle])
+            AnchorIndex.held(seen, self.runs[True], found, folded=True)
         return out
+
+    @staticmethod
+    def held(
+        seen: dict[Any, Any], runs: dict[bytes, list[bytes]], found: set[bytes], *, folded: bool
+    ) -> None:
+        """Whether each required run occurs, kept as `Search._holds_required` keeps it."""
+        for run, originals in runs.items():
+            for original in originals:
+                seen[("holds", folded, original)] = run in found
 
     @staticmethod
     def lowered(data: bytes, seen: dict[Any, Any], automaton: Automaton) -> bytes | None:

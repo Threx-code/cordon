@@ -75,7 +75,10 @@ static inline int32_t step(const Automaton *a, int32_t state, uint8_t c) {
     }
 }
 
-/* Build: needles sorted (so each new branch is the last child at its node), a trie in
+/* build() runs no Python code: it reads the list only through PyBytes_Check and the size and data
+ * macros, so the list cannot change while it is read. Keep it so.
+ *
+ * Build: needles sorted (so each new branch is the last child at its node), a trie in
  * first-child/next-sibling form, laid out breadth-first into the edge arrays, failure and
  * output links by the breadth-first queue. Returns 0, or -1 with an exception set. */
 static int build(Automaton *a, PyObject *seq) {
@@ -251,41 +254,46 @@ static PyObject *Automaton_present(Automaton *self, PyObject *arg) {
 }
 
 /* positions: one walk; each wanted needle's start offsets, at most `cap` of them, then marked
- * as too many and no longer collected. */
+ * as too many and no longer collected. The ids are copied into a tuple and must be exact ints, so
+ * no Python code runs between reading them and using them (an __index__ could change a list under
+ * the loop). Each needle's offsets grow as they are found, doubling up to cap + 1, so memory is
+ * bounded by what the data holds, not by what the caller asks for. */
 static PyObject *Automaton_positions(Automaton *self, PyObject *args) {
     PyObject *data, *ids; Py_ssize_t cap;
     if (!PyArg_ParseTuple(args, "OOn", &data, &ids, &cap)) return NULL;
     if (!self->first) { PyErr_SetString(PyExc_RuntimeError, "not built"); return NULL; }
     if (cap < 0 || cap > (Py_ssize_t)1 << 24) { PyErr_SetString(PyExc_ValueError, "cap out of range"); return NULL; }
-    size_t nn = (size_t)(self->needles ? self->needles : 1);
-    int32_t *slot = PyMem_RawMalloc(sizeof(int32_t) * nn); /* needle -> its row, or NONE */
-    if (!slot) return PyErr_NoMemory();
-    for (size_t i = 0; i < nn; i++) slot[i] = NONE;
-    PyObject *seq = PySequence_Fast(ids, "ids must be a sequence");
-    if (!seq) { PyMem_RawFree(slot); return NULL; }
-    Py_ssize_t rows = PySequence_Fast_GET_SIZE(seq);
-    if (rows > (Py_ssize_t)self->needles) { /* distinct ids in range: never more rows than needles */
-        PyErr_SetString(PyExc_ValueError, "more ids than needles"); PyMem_RawFree(slot); Py_DECREF(seq); return NULL;
+    PyObject *seq = PySequence_Tuple(ids);
+    if (!seq) return NULL;
+    Py_ssize_t rows = PyTuple_GET_SIZE(seq);
+    if (rows > (Py_ssize_t)self->needles) {
+        PyErr_SetString(PyExc_ValueError, "more ids than needles"); Py_DECREF(seq); return NULL;
     }
-    int64_t **off = PyMem_RawCalloc((size_t)(rows ? rows : 1), sizeof(int64_t *));
-    Py_ssize_t *got = PyMem_RawCalloc((size_t)(rows ? rows : 1), sizeof(Py_ssize_t));
-    int32_t *who = PyMem_RawMalloc(sizeof(int32_t) * (size_t)(rows ? rows : 1));
-    if (!off || !got || !who) { PyErr_NoMemory(); goto done_early; }
+    size_t nn = (size_t)(self->needles ? self->needles : 1), nr = (size_t)(rows ? rows : 1);
+    int32_t *slot = PyMem_RawMalloc(sizeof(int32_t) * nn); /* needle -> its row, or NONE */
+    int64_t **off = PyMem_RawCalloc(nr, sizeof(int64_t *));
+    Py_ssize_t *got = PyMem_RawCalloc(nr, sizeof(Py_ssize_t));
+    Py_ssize_t *room = PyMem_RawCalloc(nr, sizeof(Py_ssize_t));
+    int32_t *who = PyMem_RawMalloc(sizeof(int32_t) * nr);
+    PyObject *out = NULL;
+    int short_of_memory = 0;
+    if (!slot || !off || !got || !room || !who) { PyErr_NoMemory(); goto done; }
+    for (size_t i = 0; i < nn; i++) slot[i] = NONE;
     for (Py_ssize_t r = 0; r < rows; r++) {
-        long id = PyLong_AsLong(PySequence_Fast_GET_ITEM(seq, r));
-        if (id == -1 && PyErr_Occurred()) goto done_early;
-        if (id < 0 || id >= self->needles) { PyErr_SetString(PyExc_IndexError, "a needle id out of range"); goto done_early; }
-        if (slot[id] != NONE) { PyErr_SetString(PyExc_ValueError, "a needle id asked twice"); goto done_early; }
+        PyObject *item = PyTuple_GET_ITEM(seq, r);
+        if (!PyLong_CheckExact(item)) { PyErr_SetString(PyExc_TypeError, "a needle id is not an int"); goto done; }
+        long id = PyLong_AsLong(item);
+        if (id == -1 && PyErr_Occurred()) goto done;
+        if (id < 0 || id >= self->needles) { PyErr_SetString(PyExc_IndexError, "a needle id out of range"); goto done; }
+        if (slot[id] != NONE) { PyErr_SetString(PyExc_ValueError, "a needle id asked twice"); goto done; }
         slot[id] = (int32_t)r; who[r] = (int32_t)id;
-        off[r] = PyMem_RawMalloc(sizeof(int64_t) * (size_t)(cap + 1));
-        if (!off[r]) { PyErr_NoMemory(); goto done_early; }
     }
     Py_buffer view;
-    if (PyObject_GetBuffer(data, &view, PyBUF_SIMPLE) < 0) goto done_early;
+    if (PyObject_GetBuffer(data, &view, PyBUF_SIMPLE) < 0) goto done;
     const uint8_t *d = view.buf; Py_ssize_t len = view.len; const Automaton *a = self; int fold = self->fold;
     Py_BEGIN_ALLOW_THREADS
     int32_t s = 0;
-    for (Py_ssize_t i = 0; i < len; i++) {
+    for (Py_ssize_t i = 0; i < len && !short_of_memory; i++) {
         uint8_t c = fold ? LOWER[d[i]] : d[i];
         s = step(a, s, c);
         for (int32_t v = a->term[s] != NONE ? s : a->out[s]; v != NONE; v = a->out[v]) {
@@ -293,27 +301,35 @@ static PyObject *Automaton_positions(Automaton *self, PyObject *args) {
             if (id < 0 || id >= a->needles) continue;
             int32_t r = slot[id];
             if (r == NONE || got[r] > cap) continue;
-            if (got[r] < cap + 1) off[r][got[r]] = (int64_t)(i - a->length[id] + 1);
+            if (got[r] < cap) {
+                if (got[r] == room[r]) { /* grow: double, up to cap */
+                    Py_ssize_t want = room[r] ? room[r] * 2 : 16;
+                    if (want > cap) want = cap;
+                    int64_t *grown = PyMem_RawRealloc(off[r], sizeof(int64_t) * (size_t)want);
+                    if (!grown) { short_of_memory = 1; break; }
+                    off[r] = grown; room[r] = want;
+                }
+                off[r][got[r]] = (int64_t)(i - a->length[id] + 1);
+            }
             got[r]++;
         }
     }
     Py_END_ALLOW_THREADS
     PyBuffer_Release(&view);
-    PyObject *out = PyDict_New();
+    if (short_of_memory) { PyErr_NoMemory(); goto done; }
+    out = PyDict_New();
     for (Py_ssize_t r = 0; out && r < rows; r++) {
         PyObject *key = PyLong_FromLong(who[r]), *val;
         if (got[r] > cap) { val = Py_None; Py_INCREF(val); }
-        else val = PyBytes_FromStringAndSize((const char *)off[r], (Py_ssize_t)(got[r] * (Py_ssize_t)sizeof(int64_t)));
+        else val = PyBytes_FromStringAndSize(got[r] ? (const char *)off[r] : "", (Py_ssize_t)(got[r] * (Py_ssize_t)sizeof(int64_t)));
         if (!key || !val || PyDict_SetItem(out, key, val) < 0) Py_CLEAR(out);
         Py_XDECREF(key); Py_XDECREF(val);
     }
-    for (Py_ssize_t r = 0; r < rows; r++) PyMem_RawFree(off[r]);
-    PyMem_RawFree(off); PyMem_RawFree(got); PyMem_RawFree(who); PyMem_RawFree(slot); Py_DECREF(seq);
-    return out;
-done_early:
+done:
     if (off) for (Py_ssize_t r = 0; r < rows; r++) PyMem_RawFree(off[r]);
-    PyMem_RawFree(off); PyMem_RawFree(got); PyMem_RawFree(who); PyMem_RawFree(slot); Py_DECREF(seq);
-    return NULL;
+    PyMem_RawFree(off); PyMem_RawFree(got); PyMem_RawFree(room); PyMem_RawFree(who); PyMem_RawFree(slot);
+    Py_DECREF(seq);
+    return out;
 }
 
 static PyObject *Automaton_reduce(Automaton *self, PyObject *unused) {
@@ -349,6 +365,10 @@ static PyTypeObject AutomatonType = {
     .tp_getset = Automaton_getset,
 };
 
+/* The GIL: this module keeps it (single-phase init, so a free-threaded build turns the GIL on
+ * when it is imported). The automaton is immutable once built and a walk only reads it, but the
+ * check-then-build in __init__ is not atomic without the GIL, so the module does not declare
+ * itself free-threading safe. */
 static struct PyModuleDef module = {PyModuleDef_HEAD_INIT, "_anchors", "Cordon's native anchor automaton.", -1, NULL, NULL, NULL, NULL, NULL};
 
 PyMODINIT_FUNC PyInit__anchors(void) {

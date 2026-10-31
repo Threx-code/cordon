@@ -75,7 +75,7 @@ class TestTheSameAnswers:
         import pickle
 
         with pytest.raises(TypeError):
-            pickle.dumps(Automaton([b"ab"])._c)
+            pickle.dumps(Automaton([bytes([i, 7]) for i in range(40)])._c)
 
 
 @NATIVE
@@ -103,3 +103,99 @@ class TestTheReading:
     def test_the_status_names_the_matcher(self) -> None:
         assert Automaton.NATIVE is (Automaton.MODULE is not None)
         assert isinstance(Automaton.WHY, str) and Automaton.WHY
+
+
+@NATIVE
+class TestArgumentShapes:
+    """The extension's own arguments: any shape a caller passes is answered or refused with an
+    exception, never a crash (the security review's findings 1, 4 and 6)."""
+
+    @staticmethod
+    def native() -> object:
+        return Automaton.MODULE.Automaton([bytes([i, 7]) for i in range(40)])
+
+    def test_an_index_that_changes_the_list_is_refused(self) -> None:
+        ids: list[object] = []
+
+        class Evil:
+            def __index__(self) -> int:
+                ids.clear()
+                return 0
+
+        ids.extend([Evil(), 1, 2])
+        with pytest.raises(TypeError, match="not an int"):
+            self.native().positions(b"\x01\x07", ids, 5)  # type: ignore[attr-defined]
+
+    @pytest.mark.parametrize(
+        "ids",
+        [(0, 1), [0, 1], range(2), iter([0, 1]), (i for i in (0, 1))],
+    )
+    def test_any_sequence_of_ints(self, ids: object) -> None:
+        got = self.native().positions(b"\x00\x07\x01\x07", ids, 5)  # type: ignore[attr-defined]
+        assert {k: bytes(v) for k, v in got.items()} == {
+            0: (0).to_bytes(8, "little"),
+            1: (2).to_bytes(8, "little"),
+        }
+
+    @pytest.mark.parametrize(
+        ("ids", "cap", "error"),
+        [
+            ([True], 5, TypeError), ([1.0], 5, TypeError), (["0"], 5, TypeError), ([-1], 5, IndexError),
+            ([40], 5, IndexError), ([1 << 70], 5, OverflowError), ([0, 0], 5, ValueError),
+            ([0], -1, ValueError), ([0], 1 << 30, ValueError), (5, 5, TypeError), (list(range(41)), 5, ValueError),
+        ],
+    )  # fmt: skip
+    def test_bad_ids_and_caps_are_refused(
+        self, ids: object, cap: int, error: type[Exception]
+    ) -> None:
+        with pytest.raises(error):
+            self.native().positions(b"\x00\x07", ids, cap)  # type: ignore[attr-defined]
+
+    @pytest.mark.parametrize(
+        "data",
+        [
+            b"\x00\x07",
+            bytearray(b"\x00\x07"),
+            memoryview(b"\x00\x07"),
+            type("B", (bytes,), {})(b"\x00\x07"),
+        ],
+    )
+    def test_any_contiguous_buffer(self, data: object) -> None:
+        a = self.native()
+        assert a.present(data) == [0]  # type: ignore[attr-defined]
+        assert list(a.positions(data, [0], 3)) == [0]  # type: ignore[attr-defined]
+
+    @pytest.mark.parametrize("data", ["text", 5, None, memoryview(b"\x00\x07\x00\x07")[::2]])
+    def test_what_is_not_a_contiguous_buffer_is_refused(self, data: object) -> None:
+        a = self.native()
+        with pytest.raises((TypeError, BufferError, ValueError)):
+            a.present(data)  # type: ignore[attr-defined]
+        with pytest.raises((TypeError, BufferError, ValueError)):
+            a.positions(data, [0], 3)  # type: ignore[attr-defined]
+
+    def test_a_large_cap_costs_only_what_is_found(self) -> None:
+        import resource
+
+        a = Automaton.MODULE.Automaton([bytes([i, i, i]) for i in range(40)])
+        before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        got = a.positions(
+            b"\x05\x05\x05", list(range(40)), 1 << 24
+        )  # 40 x 16 M offsets if allocated up front
+        after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        assert got[5] == (0).to_bytes(8, "little") and all(
+            got[i] == b"" for i in range(40) if i != 5
+        )
+        assert after - before < 64 * 1024  # KB: far below the 5 GB an up-front allocation would ask
+
+    def test_build_refuses_bad_needles(self) -> None:
+        for needles, error in (
+            ([b""], ValueError),
+            ([b"a", b"a"], ValueError),
+            (["a"], TypeError),
+            (5, TypeError),
+        ):
+            with pytest.raises(error):
+                Automaton.MODULE.Automaton(needles)
+        a = self.native()
+        with pytest.raises(RuntimeError, match="already built"):
+            a.__init__([b"x"])  # type: ignore[misc]
