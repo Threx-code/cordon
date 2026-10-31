@@ -21,6 +21,7 @@
 
 #define MAX_BYTES ((size_t)256 << 20) /* an automaton larger than this is refused at build */
 #define NONE (-1)
+#define DENSE_ROWS 16384 /* nodes with a full row of 256 next states (16 MB at most) */
 
 typedef struct {
     PyObject_HEAD
@@ -34,6 +35,9 @@ typedef struct {
     int32_t *term;    /* per node: the needle ending here, or NONE */
     int32_t *length;  /* per needle: its length */
     int32_t root[256];/* the root's child for each byte, or 0 (stay at the root) */
+    int32_t *dense;   /* per node: its row in `table`, or NONE (the busiest nodes have one) */
+    int32_t *table;   /* rows of 256: the state after each byte, failure links already followed */
+    int32_t rows;
     int fold;
     size_t nbytes;
 } Automaton;
@@ -43,8 +47,8 @@ static uint8_t LOWER[256];
 static void free_arrays(Automaton *a) {
     PyMem_RawFree(a->first); PyMem_RawFree(a->count); PyMem_RawFree(a->ebyte);
     PyMem_RawFree(a->target); PyMem_RawFree(a->fail); PyMem_RawFree(a->out);
-    PyMem_RawFree(a->term); PyMem_RawFree(a->length);
-    a->first = a->count = a->target = a->fail = a->out = a->term = a->length = NULL;
+    PyMem_RawFree(a->term); PyMem_RawFree(a->length); PyMem_RawFree(a->dense); PyMem_RawFree(a->table);
+    a->first = a->count = a->target = a->fail = a->out = a->term = a->length = a->dense = a->table = NULL;
     a->ebyte = NULL;
 }
 
@@ -65,9 +69,11 @@ static inline int32_t child(const Automaton *a, int32_t node, uint8_t c) {
     return NONE;
 }
 
-/* The state after reading `c` in `state`. */
+/* The state after reading `c` in `state`: one load at a node with a table row, else its edges
+ * and failure links (which lead to shallower nodes, the shallowest of which have rows). */
 static inline int32_t step(const Automaton *a, int32_t state, uint8_t c) {
     for (;;) {
+        if (a->dense && a->dense[state] != NONE) return a->table[(size_t)a->dense[state] * 256 + c];
         int32_t t = child(a, state, c);
         if (t != NONE) return t;
         if (state == 0) return 0;
@@ -188,7 +194,28 @@ static int build(Automaton *a, PyObject *seq) {
             a->out[v] = a->term[f] != NONE ? f : a->out[f];
         }
     }
-    a->nbytes = nn * (sizeof(int32_t) * 5) + ne * (1 + sizeof(int32_t)) + (size_t)n * sizeof(int32_t) + sizeof(a->root);
+    /* table rows for the root and the shallowest nodes (node order is breadth-first, so they come
+     * first), DENSE_ROWS at most: the walk spends most of its steps there */
+    {
+        int32_t rows = made < DENSE_ROWS ? made : DENSE_ROWS;
+        a->dense = PyMem_RawMalloc(sizeof(int32_t) * nn);
+        a->table = PyMem_RawMalloc(sizeof(int32_t) * 256 * (size_t)rows);
+        if (!a->dense || !a->table) { PyErr_NoMemory(); goto fail; }
+        for (size_t i = 0; i < nn; i++) a->dense[i] = NONE;
+        for (int32_t u = 0; u < rows; u++) {
+            int32_t *row = a->table + (size_t)u * 256;
+            for (int c = 0; c < 256; c++) {
+                int32_t t = child(a, u, (uint8_t)c);
+                if (t != NONE) row[c] = t;
+                else if (u == 0) row[c] = 0;
+                else row[c] = step(a, a->fail[u], (uint8_t)c); /* a shallower node, already done */
+            }
+            a->dense[u] = u;
+        }
+        a->rows = rows;
+    }
+    a->nbytes = nn * (sizeof(int32_t) * 6) + ne * (1 + sizeof(int32_t)) + (size_t)n * sizeof(int32_t) + sizeof(a->root)
+              + (size_t)a->rows * 256 * sizeof(int32_t);
     PyMem_RawFree(order); PyMem_RawFree(tmp); PyMem_RawFree(fc); PyMem_RawFree(lc); PyMem_RawFree(ns);
     PyMem_RawFree(by); PyMem_RawFree(tm); PyMem_RawFree(queue); PyMem_RawFree(newid);
     return 0;
@@ -365,11 +392,104 @@ static PyTypeObject AutomatonType = {
     .tp_getset = Automaton_getset,
 };
 
+
+/* check_text(data, offsets, text, mode) -> bytes of int64: for each candidate offset (int64 bytes),
+ * the length a text string matches there, or 0, as rule_engine.scan._Hunt._check_text reads it.
+ * mode: 1 ascii, 2 wide, 4 nocase (ASCII folding on both sides), 8 xor. The order of the tries is
+ * the Python one: nocase: ascii, then wide; else ascii, then wide, then (xor) xor-wide, then xor. */
+#define M_ASCII 1
+#define M_WIDE 2
+#define M_NOCASE 4
+#define M_XOR 8
+
+static int64_t same(const uint8_t *d, Py_ssize_t n, Py_ssize_t at, const uint8_t *t, Py_ssize_t m, int fold) {
+    if (n - at < m) return 0;
+    for (Py_ssize_t i = 0; i < m; i++) {
+        uint8_t a = d[at + i], b = t[i];
+        if (fold) { a = LOWER[a]; b = LOWER[b]; }
+        if (a != b) return 0;
+    }
+    return (int64_t)m;
+}
+
+static int64_t same_wide(const uint8_t *d, Py_ssize_t n, Py_ssize_t at, const uint8_t *t, Py_ssize_t m, int fold) {
+    if (n - at < 2 * m) return 0;
+    for (Py_ssize_t i = 0; i < m; i++) if (d[at + 2 * i + 1] != 0) return 0;
+    for (Py_ssize_t i = 0; i < m; i++) {
+        uint8_t a = d[at + 2 * i], b = t[i];
+        if (fold) { a = LOWER[a]; b = LOWER[b]; }
+        if (a != b) return 0;
+    }
+    return (int64_t)(2 * m);
+}
+
+static int64_t xored(const uint8_t *d, Py_ssize_t n, Py_ssize_t at, const uint8_t *t, Py_ssize_t m) {
+    if (n - at < m || m == 0) return 0;
+    uint8_t key = (uint8_t)(d[at] ^ t[0]);
+    for (Py_ssize_t i = 0; i < m; i++) if (d[at + i] != (uint8_t)(t[i] ^ key)) return 0;
+    return (int64_t)m;
+}
+
+static int64_t xored_wide(const uint8_t *d, Py_ssize_t n, Py_ssize_t at, const uint8_t *t, Py_ssize_t m) {
+    if (n - at < 2 * m || m == 0) return 0;
+    uint8_t key = (uint8_t)(d[at] ^ t[0]);
+    for (Py_ssize_t i = 0; i < m; i++) {
+        if (d[at + 2 * i] != (uint8_t)(t[i] ^ key) || (uint8_t)(d[at + 2 * i + 1] ^ key) != 0) return 0;
+    }
+    return (int64_t)(2 * m);
+}
+
+static int64_t text_at(const uint8_t *d, Py_ssize_t n, Py_ssize_t at, const uint8_t *t, Py_ssize_t m, long mode) {
+    if (at < 0 || at >= n) return 0;
+    int64_t length = 0;
+    if (mode & M_NOCASE) {
+        if (mode & M_ASCII) length = same(d, n, at, t, m, 1);
+        if ((mode & M_WIDE) && length == 0) length = same_wide(d, n, at, t, m, 1);
+        return length;
+    }
+    if (mode & M_ASCII) length = same(d, n, at, t, m, 0);
+    if ((mode & M_WIDE) && length == 0) length = same_wide(d, n, at, t, m, 0);
+    if ((mode & M_XOR) && length == 0) {
+        if (mode & M_WIDE) length = xored_wide(d, n, at, t, m);
+        if (length == 0) length = xored(d, n, at, t, m);
+    }
+    return length;
+}
+
+static PyObject *check_text(PyObject *self, PyObject *args) {
+    (void)self;
+    Py_buffer data, offsets, text; long mode;
+    if (!PyArg_ParseTuple(args, "y*y*y*l", &data, &offsets, &text, &mode)) return NULL;
+    PyObject *out = NULL;
+    if (offsets.len % (Py_ssize_t)sizeof(int64_t) != 0) {
+        PyErr_SetString(PyExc_ValueError, "offsets must be int64s"); goto done;
+    }
+    Py_ssize_t count = offsets.len / (Py_ssize_t)sizeof(int64_t);
+    out = PyBytes_FromStringAndSize(NULL, offsets.len);
+    if (!out) goto done;
+    int64_t *lengths = (int64_t *)PyBytes_AS_STRING(out);
+    const int64_t *at = (const int64_t *)offsets.buf;
+    const uint8_t *d = data.buf, *t = text.buf; Py_ssize_t n = data.len, m = text.len;
+    Py_BEGIN_ALLOW_THREADS
+    for (Py_ssize_t i = 0; i < count; i++) {
+        int64_t q = at[i];
+        lengths[i] = (q < 0 || q >= (int64_t)n) ? 0 : text_at(d, n, (Py_ssize_t)q, t, m, mode);
+    }
+    Py_END_ALLOW_THREADS
+done:
+    PyBuffer_Release(&data); PyBuffer_Release(&offsets); PyBuffer_Release(&text);
+    return out;
+}
+
+static PyMethodDef module_methods[] = {
+    {"check_text", check_text, METH_VARARGS, "check_text(data, offsets, text, mode) -> int64 lengths."},
+    {NULL, NULL, 0, NULL}};
+
 /* The GIL: this module keeps it (single-phase init, so a free-threaded build turns the GIL on
  * when it is imported). The automaton is immutable once built and a walk only reads it, but the
  * check-then-build in __init__ is not atomic without the GIL, so the module does not declare
  * itself free-threading safe. */
-static struct PyModuleDef module = {PyModuleDef_HEAD_INIT, "_anchors", "Cordon's native anchor automaton.", -1, NULL, NULL, NULL, NULL, NULL};
+static struct PyModuleDef module = {PyModuleDef_HEAD_INIT, "_anchors", "Cordon's native anchor automaton and text check.", -1, module_methods, NULL, NULL, NULL, NULL};
 
 PyMODINIT_FUNC PyInit__anchors(void) {
     for (int i = 0; i < 256; i++) LOWER[i] = (uint8_t)(i >= 'A' && i <= 'Z' ? i + 32 : i);
