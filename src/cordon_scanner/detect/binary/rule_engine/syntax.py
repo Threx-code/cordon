@@ -19,7 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
-from cordon_scanner.detect.binary.rule_engine.tokens import RuleError, Token, Tokens
+from cordon_scanner.detect.binary.rule_engine.tokens import Includes, RuleError, Token, Tokens
 
 
 class Node:
@@ -329,7 +329,9 @@ class _TokenStream:
         return str(tok.value)
 
     def fail(self, what: str) -> RuleError:
-        return RuleError(f"line {self.tok.line}: {what}")
+        tok = self.tok
+        where = f"{tok.chain[-1].name} " if tok.chain else ""
+        return RuleError(f"{where}line {tok.line}: {what}")
 
 
 class _ConditionGrammar(_TokenStream):
@@ -698,8 +700,16 @@ class Grammar(_ConditionGrammar):
         for big in (False, True)
     }
 
-    def __init__(self, text: str, externals: dict[str, Any], modules: frozenset[str]) -> None:
+    def __init__(
+        self,
+        text: str,
+        externals: dict[str, Any],
+        modules: frozenset[str],
+        includes: Includes | None = None,
+    ) -> None:
         self.toks = Tokens(text).all()
+        #: Where `include` reads from; None refuses every include.
+        self.includes = includes
         self.i = 0
         self.modules, self.externals = modules, externals
         self.imports: set[str] = set()
@@ -725,13 +735,23 @@ class Grammar(_ConditionGrammar):
                     raise RuleError(f"the {name!r} module is not one cordon-rule provides")
                 self.imports.add(name)
             elif self.sees("include"):
-                raise self.fail("include is not allowed")
+                self._include()
             else:
                 self.rules.append(self._rule())
         names = [r.name for r in self.rules]
         if len(set(names)) != len(names):
             raise RuleError("a rule name defined twice")
         return self.rules
+
+    def _include(self) -> None:
+        """`include "name"`: the named file's tokens in place of the directive."""
+        tok, name = self.tok, self.peek()
+        if self.includes is None:
+            raise self.fail("include is not allowed")
+        if name.kind != "text":
+            raise self.fail("include needs a file name")
+        text = name.value.decode("utf-8", "surrogateescape")
+        self.toks[self.i : self.i + 2] = self.includes.tokens(text, tok.chain, tok.line)
 
     def _rule(self) -> RuleDef:
         private = is_global = False

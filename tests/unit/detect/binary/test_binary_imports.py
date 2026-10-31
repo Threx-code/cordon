@@ -423,7 +423,7 @@ class TestRuleFile(RuleFileFixtures):
             for f in result.findings
         )
 
-    def test_includes_are_refused(self, scan) -> None:
+    def test_an_include_from_outside_the_collection_is_refused(self, scan) -> None:
         result = scan('include "/etc/other.yar"\n' + self.rule("x"))
         assert any(
             f.rule_id == "OPERATIONAL.RULEFILE.UNAVAILABLE" and "include" in f.message

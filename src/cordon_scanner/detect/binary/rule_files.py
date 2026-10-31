@@ -62,15 +62,21 @@ class RuleFileEngine:
 
     def __init__(self, rules_path: str) -> None:
         from cordon_scanner.detect.binary.rule_engine.lang import Rules
+        from cordon_scanner.detect.binary.rule_engine.tokens import Includes
 
         path = BUILTIN_PACK if rules_path == BUILTIN else Path(rules_path)
         if not path.is_file():
             raise OSError(f"no rule file at {rules_path}")
         if path.stat().st_size > MAX_RULES_BYTES:
             raise OSError(f"the rule file is over {MAX_RULES_BYTES} bytes")
-        # Compiled from the operator's file. `include` is refused: an include directive would let
-        # one rules file pull in others from wherever it names, which is not what was asked for.
-        self.rules = Rules.compile(path.read_text(encoding="utf-8", errors="replace"))
+        # Compiled from the operator's file. `include` reads only files under that file's own
+        # directory (a rule collection's index includes its members), never from wherever it
+        # names, and all of them together stay within the size limit.
+        size = path.stat().st_size
+        self.rules = Rules.compile(
+            path.read_text(encoding="utf-8", errors="replace"),
+            includes=Includes(path.parent, top=path, max_bytes=MAX_RULES_BYTES - size),
+        )
         self.version = "cordon-rule"
 
     def match(self, data: bytes) -> list[Any]:

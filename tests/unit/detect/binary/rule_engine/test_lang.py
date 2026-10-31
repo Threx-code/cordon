@@ -12,6 +12,7 @@ import base64
 import json
 import time
 from collections.abc import Iterator, Mapping
+from pathlib import Path
 from typing import Any, ClassVar
 
 import pytest
@@ -27,6 +28,7 @@ from cordon_scanner.detect.binary.modules.values import (
     Sig,
 )
 from cordon_scanner.detect.binary.rule_engine.lang import RuleError, Rules
+from cordon_scanner.detect.binary.rule_engine.tokens import Includes
 from support import ROOT
 
 
@@ -344,3 +346,68 @@ class TestHostileInput:
     def test_includes_are_refused(self) -> None:
         with pytest.raises(RuleError, match="include"):
             Rules.compile('include "x.yar"\nrule r { condition: true }')
+
+
+class TestIncludes:
+    """`include` reads files under one root, relative to the including file, as the reference
+    does; it never reads outside the root, follows a cycle, or exceeds the byte budget."""
+
+    @staticmethod
+    def tree(root: Path, files: dict[str, str]) -> None:
+        for name, text in files.items():
+            (root / name).parent.mkdir(parents=True, exist_ok=True)
+            (root / name).write_text(text)
+
+    def test_an_index_includes_its_members_relative_to_each_file(self, tmp_path: Path) -> None:
+        self.tree(
+            tmp_path,
+            {
+                "index.yar": 'include "./malware/a.yar"\nrule top { condition: a and b }',
+                "malware/a.yar": 'include "../utils/b.yar"\nrule a { condition: true }',
+                "utils/b.yar": "private rule b { condition: true }",
+            },
+        )
+        top = tmp_path / "index.yar"
+        rules = Rules.compile(top.read_text(), includes=Includes(tmp_path, top=top))
+        assert [r.name for r in rules.rules] == ["b", "a", "top"]
+        assert [m.rule for m in rules.match(b"x")] == ["a", "top"]
+
+    def test_a_file_outside_the_root_is_refused(self, tmp_path: Path) -> None:
+        self.tree(
+            tmp_path, {"c/index.yar": 'include "../x.yar"', "x.yar": "rule x { condition: true }"}
+        )
+        top = tmp_path / "c" / "index.yar"
+        with pytest.raises(RuleError, match="outside the rule collection"):
+            Rules.compile(top.read_text(), includes=Includes(top.parent, top=top))
+
+    def test_a_link_out_of_the_root_is_refused(self, tmp_path: Path) -> None:
+        self.tree(
+            tmp_path, {"c/index.yar": 'include "link.yar"', "x.yar": "rule x { condition: true }"}
+        )
+        (tmp_path / "c" / "link.yar").symlink_to(tmp_path / "x.yar")
+        top = tmp_path / "c" / "index.yar"
+        with pytest.raises(RuleError, match="outside the rule collection"):
+            Rules.compile(top.read_text(), includes=Includes(top.parent, top=top))
+
+    def test_an_absolute_name_is_refused(self, tmp_path: Path) -> None:
+        with pytest.raises(RuleError, match="an absolute path"):
+            Rules.compile('include "/etc/other.yar"', includes=Includes(tmp_path))
+
+    def test_a_cycle_is_refused(self, tmp_path: Path) -> None:
+        self.tree(tmp_path, {"a.yar": 'include "b.yar"', "b.yar": 'include "a.yar"'})
+        top = tmp_path / "a.yar"
+        with pytest.raises(RuleError, match="an include cycle"):
+            Rules.compile(top.read_text(), includes=Includes(tmp_path, top=top))
+
+    def test_the_byte_budget_covers_every_included_file(self, tmp_path: Path) -> None:
+        self.tree(tmp_path, {"a.yar": "rule a { condition: true }" + " " * 100})
+        with pytest.raises(RuleError, match="over the size limit"):
+            Rules.compile('include "a.yar"', includes=Includes(tmp_path, max_bytes=64))
+
+    def test_an_error_in_an_included_file_names_that_file(self, tmp_path: Path) -> None:
+        self.tree(tmp_path, {"bad.yar": "rule a { condition: $x }"})
+        with pytest.raises(RuleError, match="undefined string"):
+            Rules.compile('include "bad.yar"', includes=Includes(tmp_path))
+        self.tree(tmp_path, {"worse.yar": "rule a { condition: true and }"})
+        with pytest.raises(RuleError, match=r"worse\.yar line 1"):
+            Rules.compile('include "worse.yar"', includes=Includes(tmp_path))

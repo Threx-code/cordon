@@ -44,7 +44,7 @@ from cordon_scanner.detect.binary.rule_engine.syntax import (
     RuleDef,
     StringDef,
 )
-from cordon_scanner.detect.binary.rule_engine.tokens import RuleError
+from cordon_scanner.detect.binary.rule_engine.tokens import Includes, RuleError
 
 MAX_MATCHES = 1_000_000
 
@@ -205,13 +205,17 @@ class Rules:
 
     @staticmethod
     def compile(
-        text: str, externals: dict[str, Any] | None = None, modules: dict[str, Any] | None = None
+        text: str,
+        externals: dict[str, Any] | None = None,
+        modules: dict[str, Any] | None = None,
+        includes: Includes | None = None,
     ) -> Rules:
-        """`modules` adds modules (`modules.values.Module`s) to the built-in ones."""
+        """`modules` adds modules (`modules.values.Module`s) to the built-in ones; `includes` says
+        where `include` may read from (None: every include is refused)."""
         loaded = Rules.loaded(modules)
         given = dict(externals or {})
         try:
-            rules = Grammar(text, given, frozenset(loaded)).read()
+            rules = Grammar(text, given, frozenset(loaded), includes).read()
             Strings.prepare(rules)
         except (IndexError, ValueError, binascii.Error) as exc:
             if isinstance(exc, RuleError):

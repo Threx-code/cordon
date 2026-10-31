@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, ClassVar
 
 
@@ -23,6 +24,60 @@ class Token:
     kind: str
     value: Any
     line: int
+    #: The included files this token was read through, outermost first (empty: the given text).
+    chain: tuple[Path, ...] = ()
+
+
+class Includes:
+    """Where `include` may read from: files under one directory, the rule collection's root.
+
+    A name is read relative to the file that includes it (the top file's directory for the given
+    text), as the reference reads it. Refused: an absolute name, a file outside the root once
+    links are resolved, a file already being included (a cycle), nesting deeper than
+    `MAX_DEPTH`, and more bytes in all than `max_bytes`."""
+
+    MAX_DEPTH: ClassVar[int] = 32
+
+    def __init__(self, root: Path, top: Path | None = None, max_bytes: int = 16 << 20) -> None:
+        self.root = root.resolve()
+        self.top = top.resolve() if top is not None else None
+        self.left = max_bytes
+
+    def tokens(self, name: str, chain: tuple[Path, ...], line: int) -> list[Token]:
+        """The tokens of the file `name` names, from a directive on `line` of the last file in
+        `chain`; each carries the chain it was read through."""
+
+        def refuse(why: str) -> RuleError:
+            return RuleError(f"line {line}: include {name!r}: {why}")
+
+        if Path(name).is_absolute():
+            raise refuse("an absolute path")
+        including = chain[-1] if chain else self.top
+        target = ((including.parent if including else self.root) / name).resolve()
+        if not target.is_relative_to(self.root):
+            raise refuse("outside the rule collection")
+        if target in chain or target == self.top:
+            raise refuse("an include cycle")
+        if len(chain) >= Includes.MAX_DEPTH:
+            raise refuse(f"includes nested deeper than {Includes.MAX_DEPTH}")
+        if not target.is_file():
+            raise refuse("no such file")
+        size = target.stat().st_size
+        if size > self.left:
+            raise refuse("the included rules are over the size limit")
+        self.left -= size
+        where = target.relative_to(self.root)
+        try:
+            text = target.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            raise refuse(f"unreadable: {exc.strerror}") from exc
+        try:
+            toks = Tokens(text).all()[:-1]
+        except RuleError as exc:
+            raise RuleError(f"{where}: {exc}") from exc
+        for tok in toks:
+            tok.chain = (*chain, target)
+        return toks
 
 
 class Tokens:
