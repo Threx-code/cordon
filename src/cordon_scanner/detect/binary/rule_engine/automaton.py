@@ -53,7 +53,8 @@ class Automaton:
             raise ValueError("a needle is given twice")
         self.empty = [i for i, n in enumerate(self.needles) if not n]
         self._ids = [i for i, n in enumerate(self.needles) if n]
-        use = Automaton.NATIVE if native is None else native and Automaton.NATIVE
+        # below NeedleSet.FEW needles, `needle in data` each (memchr in C) beats any automaton walk
+        use = (Automaton.NATIVE and len(self._ids) >= NeedleSet.FEW) if native is None else native and Automaton.NATIVE
         self._c = (
             Automaton.MODULE.Automaton([self.needles[i] for i in self._ids], fold=fold)
             if use
