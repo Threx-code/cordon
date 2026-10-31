@@ -243,6 +243,12 @@ packages = ["cordon_scanner", "cordon_sandbox"]
 # They ship in the sdist with their licence (MANIFEST.in), not in the wheel without it.
 exclude = ["cordon_scanner/rules/rule_files/upstream"]
 
+[[tool.cordon-build.native]]
+# The anchor automaton (src/cordon_scanner/_native/anchors.c); without a compiler the wheel is pure
+# and the rule engine reads anchors in Python, as `cordon-scanner --version` says.
+name = "cordon_scanner._native._anchors"
+sources = ["src/cordon_scanner/_native/anchors.c"]
+
 [tool.cordon-build.package-data]
 "cordon_scanner" = ["py.typed"]
 "cordon_sandbox" = ["py.typed"]
