@@ -109,3 +109,21 @@ class TestThePool:
             assert engine.pool is not None and engine.pool._executor is None  # never started
         finally:
             engine.pool.close() if engine.pool else None
+
+    def test_a_broken_pool_falls_back_to_the_serial_match(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A worker that cannot start, or is killed, breaks the pool, not the file: the file is
+        matched serially, with the serial answer, and the pool is dropped."""
+        from concurrent.futures.process import BrokenProcessPool
+
+        engine = Kit.engine(tmp_path, monkeypatch)
+        assert engine.pool is not None
+
+        def broken(data: bytes, timeout: float) -> list:
+            raise BrokenProcessPool("a worker was killed")
+
+        monkeypatch.setattr(engine.pool, "match", broken)
+        data = Kit.data()
+        assert engine.match(data) == engine.rules.match(data, given=engine.given)
+        assert engine.pool is None

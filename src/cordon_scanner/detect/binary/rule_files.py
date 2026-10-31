@@ -57,7 +57,9 @@ SHAPE_RULE: Final = "OPERATIONAL.RULEFILE.SHAPE"
 UNMATCHED_RULE: Final = "SUSPECT.RULEFILE.UNMATCHED.001"
 REFERENCE: Final = "https://github.com/Threx-code/cordon/blob/main/tutorials/31-rule-files.md"
 MATCH_TIMEOUT_SECONDS: Final = 10
-MAX_RULES_BYTES: Final = 16 << 20
+#: The operator's own rule file, not the scanned data: large enough for YARA-Forge's full pack
+#: (over 16 MiB), its compile still bounded by the time it takes, and kept by the pack cache.
+MAX_RULES_BYTES: Final = 256 << 20
 #: `--rule-file builtin`: the pack shipped with Cordon (`rules/rule_files/`), DataDog GuardDog's `threat-*`
 #: source-code rules at a pinned commit, Apache-2.0, less any that fired on the benign corpus.
 BUILTIN: Final = "builtin"
@@ -164,9 +166,18 @@ class RuleFileEngine:
                 return kept
         from cordon_scanner.detect.binary.rule_pool import RulePool
 
+        found: list[Any] | None = None
         if self.pool is not None and len(data) >= RulePool.LARGE:
-            found = self.pool.match(data, MATCH_TIMEOUT_SECONDS)
-        else:
+            from concurrent.futures.process import BrokenProcessPool
+
+            try:
+                found = self.pool.match(data, MATCH_TIMEOUT_SECONDS)
+            except (BrokenProcessPool, OSError):
+                # the pool, not the file, failed (a worker could not start, or was killed): the
+                # file is matched serially, and the scan carries on without the pool
+                self.pool.close()
+                self.pool = None
+        if found is None:
             found = list(self.rules.match(data, timeout=MATCH_TIMEOUT_SECONDS, given=self.given))
         if self.identity is not None:
             self.matches.put(self.identity, data, found)
