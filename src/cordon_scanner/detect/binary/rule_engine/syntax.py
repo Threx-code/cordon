@@ -17,9 +17,16 @@ values have the right types is checked afterwards, against the modules' declarat
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.detect.binary.rule_engine.tokens import Includes, RuleError, Token, Tokens
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from cordon_scanner.detect.binary.rule_engine.build import Frame
+    from cordon_scanner.detect.binary.rule_engine.scan import Search
+    from cordon_scanner.detect.binary.rule_engine.search_parts import Matcher
 
 
 class Node:
@@ -85,7 +92,7 @@ class Invoke:
 class Pattern(Node):
     """A regular expression where a value goes (a function's argument)."""
 
-    matcher: Any
+    matcher: Matcher
 
 
 @dataclass(slots=True)
@@ -163,7 +170,7 @@ class Compare(Test):
 @dataclass(slots=True)
 class Matches(Test):
     subject: Node
-    matcher: Any
+    matcher: Matcher
 
 
 @dataclass(slots=True)
@@ -257,7 +264,7 @@ class StringDef:
     value: Any
     modifiers: dict[str, Any]
     #: The string ready to be searched for (`rule_engine.scan.Search`).
-    search: Any = None
+    search: Search | None = None
     #: The one offset the string can count at, when the condition only asks `$a at <constant>`.
     fixed: int | None = None
 
@@ -276,7 +283,7 @@ class RuleDef:
     private: bool = False
     is_global: bool = False
     #: The condition, ready to run (`rule_engine.build`).
-    run: Any = None
+    run: Callable[[Frame], bool] | None = None
     #: The condition is false whenever none of the rule's strings matched, and calls nothing:
     #: it needs no running then.
     needs_match: bool = False
@@ -286,7 +293,7 @@ class RuleDef:
     #: field with two shapes read in the reference's, for one. Part of the rule set's load result.
     notes: list[str] = field(default_factory=list)
     #: The condition's top-level parts that read no string, each ready to run (`rule_engine.gates`).
-    gates: list[Any] = field(default_factory=list)
+    gates: list[Callable[[Frame], Any]] = field(default_factory=list)
     #: Sets of strings of which one must match for the condition to hold (`rule_engine.gates`).
     clauses: list[frozenset[str]] = field(default_factory=list)
     #: The leading-byte requirements among its gates (`rule_engine.gates.MagicIndex`).
@@ -390,7 +397,7 @@ class _ConditionGrammar(_TokenStream):
         return Matches(subject, Grammar.matcher(source, flags))
 
     @staticmethod
-    def matcher(source: str, flags: str) -> Any:
+    def matcher(source: str, flags: str) -> Matcher:
         from cordon_scanner.detect.binary.rule_engine.pattern import PatternError
         from cordon_scanner.detect.binary.rule_engine.search_parts import Matcher
 

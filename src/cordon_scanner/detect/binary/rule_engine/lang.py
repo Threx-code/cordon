@@ -130,6 +130,7 @@ class Strings:
 
         why: str | None = None
         cause: BaseException | None = None
+        assert s.search is not None  # noqa: S101 - every string is prepared (`Strings.prepare`)
         try:
             hits: list[tuple[int, int]] = s.search.find(data, s.fixed, deadline, seen)
         except TimeoutError as exc:
@@ -312,7 +313,9 @@ class Rules:
             from cordon_scanner.detect.binary.rule_engine.anchor_index import AnchorIndex
 
             strings = [s for r in self.rules for s in r.strings]
-            self._index = (AnchorIndex([s.search for s in strings]), strings)
+            searches = [s.search for s in strings if s.search is not None]
+            assert len(searches) == len(strings)  # noqa: S101 - every string is prepared
+            self._index = (AnchorIndex(searches), strings)
         return self._index
 
     def magic_index(self) -> MagicIndex:
@@ -363,6 +366,7 @@ class Rules:
                 result = False
             else:
                 frame.env = [None] * rule.width
+                assert rule.run is not None  # noqa: S101 - every rule is built, or stubbed to be
                 result = rule.run(frame)
             frame.decided[rule.name] = result
             if rule.is_global and not result:
