@@ -273,11 +273,12 @@ class Rules:
         """The conditions built into closures, for rules read now; `lazily`, each on its first
         run, for rules a cache kept (built once already, without error)."""
         try:
-            builder = Builder(rules, loaded, given)
             if lazily:
-                builder.lazily()
+                from cordon_scanner.detect.binary.rule_engine.lazy_build import LazyBuild
+
+                LazyBuild.stubs(rules, loaded, given)
             else:
-                builder.build()
+                Builder(rules, loaded, given).build()
         except RuleError:
             raise
         except (ValueError, TypeError, IndexError, KeyError, OverflowError) as exc:

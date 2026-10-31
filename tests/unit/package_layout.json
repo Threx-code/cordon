@@ -191,6 +191,7 @@
   "detect/binary/rule_engine/chain": "detect/binary/rule_engine/chain",
   "detect/binary/rule_engine/gates": "detect/binary/rule_engine/gates",
   "detect/binary/rule_engine/lang": "detect/binary/rule_engine/lang",
+  "detect/binary/rule_engine/lazy_build": "detect/binary/rule_engine/lazy_build",
   "detect/binary/rule_engine/needles": "detect/binary/rule_engine/needles",
   "detect/binary/rule_engine/pack_cache": "detect/binary/rule_engine/pack_cache",
   "detect/binary/rule_engine/match_cache": "detect/binary/rule_engine/match_cache",
