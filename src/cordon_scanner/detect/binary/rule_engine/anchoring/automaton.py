@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from cordon_scanner.detect.binary.rule_engine.anchoring.needles import NeedleSet
+from cordon_scanner.detect.binary.rule_engine.pattern import Bytes
 
 
 class Native:
@@ -169,28 +170,82 @@ class TextCheck:
 
     @staticmethod
     def at(data: bytes, q: int, text: bytes, mode: int) -> int:
-        from cordon_scanner.detect.binary.rule_engine.pattern import Bytes
-        from cordon_scanner.detect.binary.rule_engine.scan import _Compare
-
         if q < 0 or q >= len(data):
             return 0
         length = 0
         if mode & TextCheck.NOCASE:
             if mode & TextCheck.ASCII:
-                length = _Compare.same(data, q, text, Bytes.LOWER)
+                length = Compare.same(data, q, text, Bytes.LOWER)
             if mode & TextCheck.WIDE and length == 0:
-                length = _Compare.same_wide(data, q, text, Bytes.LOWER)
+                length = Compare.same_wide(data, q, text, Bytes.LOWER)
             return length
         if mode & TextCheck.ASCII:
-            length = _Compare.same(data, q, text, None)
+            length = Compare.same(data, q, text, None)
         if mode & TextCheck.WIDE and length == 0:
-            length = _Compare.same_wide(data, q, text, None)
+            length = Compare.same_wide(data, q, text, None)
         if mode & TextCheck.XOR and length == 0:
             if mode & TextCheck.WIDE:
-                length = _Compare.xored_wide(data, q, text)
+                length = Compare.xored_wide(data, q, text)
             if length == 0:
-                length = _Compare.xored(data, q, text)
+                length = Compare.xored(data, q, text)
         return length
 
 
-__all__ = ["Automaton", "TextCheck"]
+class Compare:
+    """Text compared at an offset: as is, every other byte zero (wide), or xored with a key."""
+
+    @staticmethod
+    def same(data: bytes, at: int, text: bytes, fold: bytes | None) -> int:
+        if len(data) - at < len(text):
+            return 0
+        piece = data[at : at + len(text)]
+        if fold is not None:
+            return len(text) if piece.translate(fold) == text.translate(fold) else 0
+        return len(text) if piece == text else 0
+
+    @staticmethod
+    def same_wide(data: bytes, at: int, text: bytes, fold: bytes | None) -> int:
+        if len(data) - at < 2 * len(text):
+            return 0
+        piece = data[at : at + 2 * len(text)]
+        if piece[1::2].count(0) != len(text):
+            return 0
+        low = piece[0::2]
+        if fold is not None:
+            return 2 * len(text) if low.translate(fold) == text.translate(fold) else 0
+        return 2 * len(text) if low == text else 0
+
+    @staticmethod
+    def xored(data: bytes, at: int, text: bytes) -> int:
+        if len(data) - at < len(text):
+            return 0
+        key = data[at] ^ text[0]
+        piece = data[at : at + len(text)]
+        return len(text) if all(a == b ^ key for a, b in zip(piece, text, strict=True)) else 0
+
+    @staticmethod
+    def xored_wide(data: bytes, at: int, text: bytes) -> int:
+        if len(data) - at < 2 * len(text):
+            return 0
+        key = data[at] ^ text[0]
+        for i, b in enumerate(text):
+            if data[at + 2 * i] != b ^ key or data[at + 2 * i + 1] ^ key != 0:
+                return 0
+        return 2 * len(text)
+
+    @staticmethod
+    def whole(data: bytes, start: int, length: int, wide: bool) -> bool:
+        """No letter or digit joins the match on either side (a zero byte between, if wide)."""
+        alnum = Bytes.ALNUM
+        n = len(data)
+        if wide:
+            if start >= 2 and data[start - 1] == 0 and data[start - 2] in alnum:
+                return False
+            end = start + length
+            return not (end + 1 < n and data[end + 1] == 0 and data[end] in alnum)
+        if start >= 1 and data[start - 1] in alnum:
+            return False
+        return not (start + length < n and data[start + length] in alnum)
+
+
+__all__ = ["Automaton", "Compare", "TextCheck"]
