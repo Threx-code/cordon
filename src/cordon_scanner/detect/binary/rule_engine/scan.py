@@ -55,6 +55,34 @@ class Search:
     ascii, fullword, xor (lo, hi), base64, base64wide, dotall, greedy, plain."""
 
     METACHARS: ClassVar[bytes] = b"\\^$|()[]*?{,.+}"
+    #: Every attribute a search holds: what a kept pack (`pack_cache`) pickles and restores.
+    STATE: ClassVar[tuple[str, ...]] = (
+        "flags",
+        "parts",
+        "needles",
+        "folds",
+        "zeros",
+        "hex_layouts",
+    )
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        """Pickled as its state, restored without preparing it again. A compiled (mypyc) class
+        is rebuilt by calling its constructor, so the default reduction -- a bare instance, then
+        its `__dict__` -- does not apply; `_restore` builds the cheapest search there is and sets
+        the kept state over it."""
+        return (Search._restore, ({name: getattr(self, name) for name in Search.STATE},))
+
+    @staticmethod
+    def _restore(state: dict[str, Any]) -> Search:
+        search = Search("text", b"\0", {})
+        search.flags, search.parts = state["flags"], state["parts"]
+        search.needles, search.folds, search.zeros = (
+            state["needles"],
+            state["folds"],
+            state["zeros"],
+        )
+        search.hex_layouts = state["hex_layouts"]
+        return search
 
     def __init__(self, kind: str, value: Any, modifiers: dict[str, Any]) -> None:
         self.flags: dict[str, Any] = dict(modifiers)
@@ -128,9 +156,12 @@ class Search:
     def _literal(root: Term) -> bytes | None:
         if root.kind == LIT:
             return bytes([root.value])
-        if root.kind == SEQ and all(k.kind == LIT for k in root.kids):
-            return bytes(k.value for k in root.kids)
-        return None
+        if root.kind != SEQ:
+            return None
+        for k in root.kids:
+            if k.kind != LIT:
+                return None
+        return bytes([k.value for k in root.kids])
 
     def _add_text(self, text: bytes) -> None:
         f = self.flags
@@ -230,7 +261,7 @@ class Search:
         out = bytearray()
         for i in range(0, len(data) - len(data) % 3, 3):
             n = data[i] << 16 | data[i + 1] << 8 | data[i + 2]
-            out += bytes(alphabet[n >> s & 63] for s in (18, 12, 6, 0))
+            out += bytes([alphabet[n >> s & 63] for s in (18, 12, 6, 0)])
         rest = data[len(data) - len(data) % 3 :]
         if len(rest) == 1:
             out += bytes([alphabet[rest[0] >> 2], alphabet[(rest[0] & 3) << 4]]) + b"=="
@@ -242,7 +273,7 @@ class Search:
 
     @staticmethod
     def widen(data: bytes) -> bytes:
-        return b"".join(bytes([b, 0]) for b in data)
+        return b"".join([bytes([b, 0]) for b in data])
 
     # -- searching ---------------------------------------------------------------
 
@@ -601,7 +632,9 @@ class _Hunt:
             return along
         ahead = self._ahead(p)
         if ahead is not None and lazy:
-            return (m.start() for m in ahead.finditer(data))
+            # map, not a generator expression: compiled (mypyc), a generator expression passed on
+            # becomes a list, which would hold every place at once
+            return map(re.Match.start, ahead.finditer(data))
         if ahead is not None:
             found: list[int] = []
             most = min(Places.MOST, self.budget[0]) if self.budget is not None else Places.MOST
@@ -622,7 +655,7 @@ class _Hunt:
             if self.budget is not None:
                 self.budget[0] -= len(data)
             return list(range(len(data)))
-        mask = data.translate(bytes(1 if b in firsts else 0 for b in range(256)))
+        mask = data.translate(bytes([1 if b in firsts else 0 for b in range(256)]))
         if lazy:
             return Streams.finds(mask, b"\x01")
         return Search.occurrences(mask, b"\x01", self.budget)
@@ -699,7 +732,7 @@ class _Hunt:
         )
         if reads is None:
             return None
-        table = bytes(1 if b in reads else 0 for b in range(256))
+        table = bytes([1 if b in reads else 0 for b in range(256)])
         run, covered = int.from_bytes(self.data.translate(table), "little"), 1
         while covered * 2 <= length:
             run &= run >> (8 * covered)

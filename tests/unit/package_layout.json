@@ -629,6 +629,7 @@
  "tests": {
   "test_accept_no_feed.py": "foundation/config",
   "test_adversarial_package.py": "cloud",
+  "test_lazy_starts.py": "detect/binary/rule_engine",
   "test_scanner_facts.py": "detect/binary/modules",
   "test_upstream_port.py": "intel/ports",
   "test_exploited_port.py": "intel/ports",
