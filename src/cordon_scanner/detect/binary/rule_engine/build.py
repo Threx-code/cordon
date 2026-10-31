@@ -28,6 +28,7 @@ from cordon_scanner.detect.binary.modules.values import (
     Scalar,
     Seq,
 )
+from cordon_scanner.detect.binary.rule_engine.gates import Gates
 from cordon_scanner.detect.binary.rule_engine.shapes import Shapes
 from cordon_scanner.detect.binary.rule_engine.syntax import (
     Arith,
@@ -809,6 +810,7 @@ class Builder(_BuilderQuantifiers):
             kind, fn = self.node(rule.condition)
             Builder.as_test(kind, "a condition")
             rule.run = Builder.truth(fn)
+            Gates.prepare(rule, lambda part: Builder.truth(self.node(part)[1]))
             rule.width = self.scope.width
             self.before.add(rule.name)
 

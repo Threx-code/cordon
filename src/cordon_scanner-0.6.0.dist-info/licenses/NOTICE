@@ -1,0 +1,101 @@
+Cordon
+Copyright 2026 Cordon Contributors
+
+This product includes software developed by the Cordon Contributors.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+this file except in compliance with the License. You may obtain a copy of the
+License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed
+under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, either express or implied. See the License for the
+specific language governing permissions and limitations under the License.
+
+-------------------------------------------------------------------------------
+Third-party data
+
+The Cordon engine has no third-party runtime dependencies.
+
+Rule packs and threat-intelligence databases distributed alongside Cordon may
+incorporate third-party data under separate terms. Every pack declares its own
+`license` and `source` fields, and any pack whose licence is incompatible with
+Apache-2.0 is distributed separately rather than bundled with this
+distribution.
+
+-------------------------------------------------------------------------------
+Syft
+
+src/cordon_scanner/images/data/java-groups.json is derived from Syft
+(https://github.com/anchore/syft), Copyright Anchore, Inc., by
+scripts/build/syft_java_groups.py: the map from Java artifact names to the Maven groups
+that publish them (cpegenerate.DefaultArtifactIDToGroupID). The version it was
+built from is recorded in the file. It is used under the Apache License,
+Version 2.0, the licence above.
+
+-------------------------------------------------------------------------------
+Agent Threat Rules
+
+src/cordon_scanner/intel/data/atr-rules.json.gz is derived from the Agent
+Threat Rules catalogue (https://github.com/Agent-Threat-Rule/agent-threat-rules)
+by scripts/build/import_atr.py: its rule identifiers, titles, categories, severities
+and detection patterns, translated to Python's regular-expression dialect. The
+commit it was built from is recorded in the file. It is used under the
+following licence:
+
+MIT License
+
+Copyright (c) 2026 ATR Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+-------------------------------------------------------------------------------
+TLSH
+
+src/cordon_scanner/detect/binary/modules/tlsh.py computes the TLSH locality-sensitive hash
+(https://github.com/trendmicro/tlsh), Copyright Trend Micro Incorporated, and carries its
+fixed Pearson permutation and length-code tables. They are used under the Apache License,
+Version 2.0, the licence above.
+
+-------------------------------------------------------------------------------
+OpenSSL object names
+
+src/cordon_scanner/detect/binary/modules/oid_itu_t.py, oid_iso.py and oid_joint.py hold the
+short and long names OpenSSL 1.1 gives object identifiers, and modules/oids.py the sizes of the
+digests it knows, generated from OpenSSL's object tables (https://www.openssl.org). This product includes software developed by the
+OpenSSL Project for use in the OpenSSL Toolkit.
+
+-------------------------------------------------------------------------------
+YARA
+
+Cordon's rule engine reads rule files in the YARA format and was inspired by YARA
+(https://github.com/VirusTotal/yara); it is Cordon's own code, and Cordon is not affiliated
+with or endorsed by the YARA project or VirusTotal.
+
+-------------------------------------------------------------------------------
+Ecosystem and agent marks
+
+docs/assets/marks/marks.json holds the marks the README shows beside each ecosystem and AI
+agent Cordon reads, as the project's website draws them: from SVG Logos (@iconify-json/logos,
+CC0-1.0, https://github.com/gilbarbara/logos), Simple Icons (simple-icons, CC0-1.0,
+https://simpleicons.org) and the website's own source files. Each mark is its owner's
+trademark, shown only to name the product or ecosystem it stands for; Cordon is not
+affiliated with or endorsed by any of them.
