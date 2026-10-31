@@ -16,10 +16,6 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 
-ALWAYS_RUN = frozenset({"capability", "obfuscation", "secrets", "binary"})
-"""Detectors the per-file budget never skips: the ones that find malware, hidden code, secrets and
-committed executables. See `Detection.inspect_file`."""
-
 BLINDING_SETTINGS = frozenset(
     {
         "scan.allow_plugins",
@@ -401,7 +397,6 @@ BROAD_EXCLUSION_MIN_FILES = 25
 
 __all__ = [
     "ADVISORY_DETECTORS",
-    "ALWAYS_RUN",
     "ARCHIVE_ESCAPE_RULE",
     "ARCHIVE_LINK_TO_SECRET_RULE",
     "ARCHIVE_NESTING_RULE",
