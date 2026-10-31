@@ -17,7 +17,6 @@ from collections.abc import Iterable, Iterator
 from typing import Any, ClassVar
 
 from cordon_scanner.detect.binary.rule_engine.anchors import Anchor, Anchors
-from cordon_scanner.detect.binary.rule_engine.automaton import Automaton
 from cordon_scanner.detect.binary.rule_engine.chain import Chain
 from cordon_scanner.detect.binary.rule_engine.pattern import (
     GAP,
@@ -26,6 +25,7 @@ from cordon_scanner.detect.binary.rule_engine.pattern import (
     Bytes,
     PatternError,
     Program,
+    RunError,
     Term,
 )
 from cordon_scanner.detect.binary.rule_engine.pattern_readers import (
@@ -38,6 +38,12 @@ from cordon_scanner.detect.binary.rule_engine.threads import REACH, Lanes, Threa
 
 #: The most matches one string records; past this it is not searched further in that data.
 MAX_HITS = 1_000_000
+
+
+class Unbounded(RunError):
+    """A string with more places to try in one file than `Search.MOST`: the file is refused for the
+    rule file, and the scan reports it at a severity that fails the gate (`rule_files`), since a file
+    can be padded to pass the bound on purpose."""
 
 
 class Search:
@@ -253,11 +259,11 @@ class Search:
         for needle, length, owners in self.needles:
             starts = seen.get(needle)
             if starts is None:
-                gated = self._gated(data, needle, length, owners)
+                gated = self._gated(data, needle, length, owners, Search.budget(seen))
                 if gated is not None:
                     events.extend(gated)
                     continue
-                starts = seen[needle] = Search.occurrences(data, needle)
+                starts = seen[needle] = Search.occurrences(data, needle, Search.budget(seen))
             if starts:
                 Search._occurred(events, starts, length, owners)
         for folded, length, spellings in self.folds:
@@ -268,10 +274,13 @@ class Search:
                 lowered = seen.get(("lowered",))
                 if lowered is None:
                     lowered = seen[("lowered",)] = data.lower()
-                starts = seen[("folded", folded)] = Search.occurrences(lowered, folded)
+                starts = seen[("folded", folded)] = Search.occurrences(
+                    lowered, folded, Search.budget(seen)
+                )
             for s in starts:
                 Search._occurred(events, (s,), length, spellings[data[s : s + length]])
         hunt = _Hunt(self, data, fixed, deadline)
+        hunt.budget = Search.budget(seen)
         for order, p, anchor in self.zeros:
             events.extend((at, 0, -order, p, anchor, at) for at in hunt.starts(p))
         if not events:
@@ -284,7 +293,12 @@ class Search:
     GATED: ClassVar[int] = 256
 
     def _gated(
-        self, data: bytes, needle: bytes, length: int, owners: list[tuple[int, int, AnchorAt]]
+        self,
+        data: bytes,
+        needle: bytes,
+        length: int,
+        owners: list[tuple[int, int, AnchorAt]],
+        budget: list[int],
     ) -> list[Event] | None:
         """The events of a common anchor, from its parts' forward gates run once over the data in
         C, rather than from every occurrence: an occurrence whose gate fails is one `_Hunt._check`
@@ -310,10 +324,13 @@ class Search:
         for (order, p, anchor), gate in zip(owners, gates, strict=True):
             lead = anchor[1]
             for found in gate.finditer(data):
+                if len(events) >= min(Search.MOST, budget[0]):
+                    raise Search.too_many()
                 offset = found.start()
                 at = offset + lead
                 if data.startswith(needle, at):
                     events.append((at + length, -length, -order, p, anchor, offset))
+        budget[0] -= len(events)
         return events
 
     def _holds_required(self, data: bytes, seen: dict[Any, Any]) -> bool:
@@ -384,110 +401,40 @@ class Search:
         self.zeros = zeros
 
     @staticmethod
-    def occurrences(data: bytes, needle: bytes) -> list[int]:
-        """Every offset `needle` begins at, overlapping ones included."""
-        out = []
+    def occurrences(data: bytes, needle: bytes, budget: list[int] | None = None) -> list[int]:
+        """Every offset `needle` begins at, overlapping ones included; an `Unbounded` past
+        `Search.MOST` of them, or past what is left of the file's `budget` (`Search.budget`),
+        which this spends."""
+        out: list[int] = []
         at = data.find(needle)
+        most = Search.MOST if budget is None else min(Search.MOST, budget[0])
         while at >= 0:
+            if len(out) >= most:
+                raise Search.too_many()
             out.append(at)
             at = data.find(needle, at + 1)
-        return out
-
-
-class AnchorIndex:
-    """Every anchor of a rule set, looked for once per piece of data: which strings have one
-    that occurs there. Only those (and strings with no anchor, which run everywhere) need
-    searching; every other string has no match without being looked at."""
-
-    def __init__(self, searches: list[Search]) -> None:
-        self.exact: dict[bytes, list[int]] = {}
-        self.folded: dict[bytes, list[int]] = {}
-        self.always: set[int] = set()
-        for i, s in enumerate(searches):
-            if s.needles is None:
-                s._index()
-            for needle, _, _ in s.needles or ():
-                self.exact.setdefault(needle, []).append(i)
-            for folded, _, _ in s.folds:
-                self.folded.setdefault(folded, []).append(i)
-            if s.zeros:
-                self.always.add(i)
-        # the literal runs `Search._holds_required` asks about ride in the same automata, so one
-        # pass answers them too: plain runs as they are, a `nocase` string's runs lowered
-        self.runs: dict[bool, dict[bytes, list[bytes]]] = {False: {}, True: {}}
-        for s in searches:
-            f = s.flags
-            if "wide" in f or "xor" in f or "base64" in f or "base64wide" in f:
-                continue
-            nocase = "nocase" in f
-            for part in s.parts:
-                for run in part.required:
-                    held = self.runs[nocase].setdefault(run.lower() if nocase else run, [])
-                    if run not in held:
-                        held.append(run)
-        self.exact_keys, self.folded_keys = list(self.exact), list(self.folded)
-        self.exact_all = self.exact_keys + [r for r in self.runs[False] if r not in self.exact]
-        self.folded_all = self.folded_keys + [r for r in self.runs[True] if r not in self.folded]
-        self.exact_id = {n: i for i, n in enumerate(self.exact_all)}
-        self.folded_id = {n: i for i, n in enumerate(self.folded_all)}
-        self.exact_set = Automaton(self.exact_all)
-        self.folded_set = Automaton(self.folded_all, fold=True)
-
-    def live(self, data: bytes, seen: dict[Any, Any]) -> set[int]:
-        """The strings with an anchor in `data`. (`seen` is the data's shared record, which
-        `Search.find` fills with where each anchor occurs.)"""
-        out = set(self.always)
-        # whether each anchor occurs at all, in one pass; where, only for a string that is
-        # searched (`Search.find`), and not even there for an anchor its gate reads in one pass
-        found = {self.exact_all[i] for i in self.exact_set.present(data)}
-        for needle in found:
-            if needle in self.exact:
-                out.update(self.exact[needle])
-        AnchorIndex.held(seen, self.runs[False], found, folded=False)
-        if self.folded_all:
-            lowered = AnchorIndex.lowered(data, seen, self.folded_set)
-            found = {self.folded_all[i] for i in self.folded_set.present(data, lowered)}
-            for needle in found:
-                if needle in self.folded:
-                    out.update(self.folded[needle])
-            AnchorIndex.held(seen, self.runs[True], found, folded=True)
+        if budget is not None:
+            budget[0] -= len(out)
         return out
 
     @staticmethod
-    def held(
-        seen: dict[Any, Any], runs: dict[bytes, list[bytes]], found: set[bytes], *, folded: bool
-    ) -> None:
-        """Whether each required run occurs, kept as `Search._holds_required` keeps it."""
-        for run, originals in runs.items():
-            for original in originals:
-                seen[("holds", folded, original)] = run in found
+    def budget(seen: dict[Any, Any]) -> list[int]:
+        """What one file may still hold of anchor occurrences and places to try, across every
+        string searched in it (`Search.MOST` in all): the bound is the whole match's, not each
+        string's."""
+        held: list[int] = seen.setdefault(("budget",), [Search.MOST])
+        return held
+
+    #: The most anchor occurrences, or places to run an anchorless part from, one string reads in
+    #: one file. Past it the file is refused for the rule file (a `RunError`, which the scan reports
+    #: as the rule file being unavailable for that file) instead of being built in memory: one
+    #: hostile file of a common anchor (100 MB of zeros for `{ 00 00 00 00 }`) cannot exhaust the
+    #: scan's memory. Below it every answer is the one an unbounded search gives.
+    MOST: ClassVar[int] = 8_000_000
 
     @staticmethod
-    def lowered(data: bytes, seen: dict[Any, Any], automaton: Automaton) -> bytes | None:
-        """The data lowered, shared through `seen`, where the reading needs it (not natively)."""
-        if automaton.native:
-            return None
-        lowered = seen.get(("lowered",))
-        if lowered is None:
-            lowered = seen[("lowered",)] = data.lower()
-        return lowered
-
-    def prefill(self, data: bytes, seen: dict[Any, Any], searches: list[Search]) -> None:
-        """Where each anchor of `searches` begins, found in one pass per automaton and kept in
-        `seen` the way `Search.find` keeps what it finds: an anchor occurring more than
-        `Search.GATED` times is left for `Search.find`, which reads a common anchor its own way."""
-        exact = {self.exact_id[n] for s in searches for n, _, _ in s.needles or () if n not in seen}
-        for i, starts in self.exact_set.positions(data, exact, Search.GATED).items():
-            if starts is not None:
-                seen[self.exact_keys[i]] = starts
-        folded = {
-            self.folded_id[f] for s in searches for f, _, _ in s.folds if ("folded", f) not in seen
-        }
-        if folded:
-            lowered = AnchorIndex.lowered(data, seen, self.folded_set)
-            for i, starts in self.folded_set.positions(data, folded, Search.GATED, lowered).items():
-                if starts is not None:
-                    seen[("folded", self.folded_keys[i])] = starts
+    def too_many() -> Unbounded:
+        return Unbounded(f"more than {Search.MOST:,} places to try in one file")
 
 
 class _Hunt:
@@ -520,6 +467,8 @@ class _Hunt:
         self.factor_runs: dict[int, list[tuple[list[int], int]]] = {}
         #: Per part, how many anchor occurrences the data has.
         self.busy: dict[int, int] = {}
+        #: What the file may still hold of places to try (`Search.budget`); None outside a match.
+        self.budget: list[int] | None = None
 
     def run(self, events: list[Event]) -> list[tuple[int, int]]:
         """Checks each anchor occurrence, in the order `events` gives."""
@@ -580,12 +529,25 @@ class _Hunt:
             return along
         ahead = self._ahead(p)
         if ahead is not None:
-            return [m.start() for m in ahead.finditer(data)]
+            found: list[int] = []
+            most = min(Search.MOST, self.budget[0]) if self.budget is not None else Search.MOST
+            for m in ahead.finditer(data):
+                if len(found) >= most:
+                    raise Search.too_many()
+                found.append(m.start())
+            if self.budget is not None:
+                self.budget[0] -= len(found)
+            return found
         firsts = self._firsts(p)
         if firsts is None:
+            most = min(Search.MOST, self.budget[0]) if self.budget is not None else Search.MOST
+            if len(data) > most:
+                raise Search.too_many()
+            if self.budget is not None:
+                self.budget[0] -= len(data)
             return list(range(len(data)))
         mask = data.translate(bytes(1 if b in firsts else 0 for b in range(256)))
-        return Search.occurrences(mask, b"\x01")
+        return Search.occurrences(mask, b"\x01", self.budget)
 
     def _along(self, p: int, segments: int | None = None) -> list[int] | None:
         """The starts whose bytes follow a part's single starting path, found for the whole data
@@ -637,7 +599,7 @@ class _Hunt:
         if not alive:
             return []
         found = alive.to_bytes(n, "little")
-        return Search.occurrences(found, b"\x01")
+        return Search.occurrences(found, b"\x01", self.budget)
 
     def _ahead(self, p: int) -> re.Pattern[bytes] | None:
         """For a part searched for only one byte wide, `Threads.prefilter` of its start."""
@@ -703,7 +665,7 @@ class _Hunt:
             run &= run >> (8 * (length - covered))
         if not run:
             return []
-        return Search.occurrences(run.to_bytes(len(self.data), "little"), b"\x01")
+        return Search.occurrences(run.to_bytes(len(self.data), "little"), b"\x01", self.budget)
 
     def _viable(self, p: int, anchor: AnchorAt, offset: int) -> bool:
         """Whether the runs `_check` makes from an anchor at `offset` can find anything: the
@@ -998,4 +960,4 @@ class _Compare:
         return not (start + length < n and data[start + length] in alnum)
 
 
-__all__ = ["MAX_HITS", "AnchorIndex", "Search", "_Compare", "_Hunt"]
+__all__ = ["MAX_HITS", "Search", "_Compare", "_Hunt"]

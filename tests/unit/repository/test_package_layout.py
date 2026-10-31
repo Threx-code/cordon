@@ -34,6 +34,7 @@ class Layout:
     LAYERS: ClassVar[dict[str, int]] = {
         "version": 0,
         "foundation": 0,
+        "_native": 0,
         "analysis": 1,
         "detect": 2,
         "ecosystems": 2,

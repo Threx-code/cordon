@@ -315,6 +315,7 @@ rather than a document.
 | `SUSPECT.PERSIST.001` | high | `composites` | persistence |
 | `SUSPECT.REGISTRY.SELF_PUBLISH.001` | high | `composites` | malicious_code |
 | `SUSPECT.RULEFILE.MATCH.001` | high | `rule-file` | malicious_code |
+| `SUSPECT.RULEFILE.UNBOUNDED.001` | high | `rule-file` | malicious_code |
 | `SUSPECT.TARGETED_PAYLOAD.001` | high | `composites` | malicious_code |
 | `SUSPECT.VERDICT.MODEL.001` | high | `manifest` | malicious_code |
 

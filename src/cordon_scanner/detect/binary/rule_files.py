@@ -53,6 +53,7 @@ MALICIOUS_RULE: Final = "MALWARE.RULEFILE.MATCH.001"
 STATUS_RULE: Final = "OPERATIONAL.RULEFILE.STATUS"
 UNAVAILABLE_RULE: Final = "OPERATIONAL.RULEFILE.UNAVAILABLE"
 SHAPE_RULE: Final = "OPERATIONAL.RULEFILE.SHAPE"
+UNBOUNDED_RULE: Final = "SUSPECT.RULEFILE.UNBOUNDED.001"
 REFERENCE: Final = "https://github.com/Threx-code/cordon/blob/main/tutorials/31-rule-files.md"
 MATCH_TIMEOUT_SECONDS: Final = 10
 MAX_RULES_BYTES: Final = 16 << 20
@@ -219,6 +220,10 @@ class RuleFileDetector(BaseDetector):
             rule(UNAVAILABLE_RULE, "A rule file was asked for and could not be used", Severity.INFO, Category.OPERATIONAL,
                  "The scan was asked to use a rule file and could not, so no file was matched against it.",
                  "Check the rules file compiles, and that it imports only modules Cordon's engine implements."),
+            rule(UNBOUNDED_RULE, "A file could not be matched against the rule file within its bounds", Severity.HIGH,
+                 Category.SUSPICIOUS,
+                 "A string of the rule file has more places to try in this file than the engine reads in one file (8,000,000), so the file was not matched against the rule file. A file can be padded to reach this on purpose, so it is not passed as clean.",
+                 "Inspect the file: a large run of one repeated byte, or a format the rule's strings occur in everywhere, is what reaches the bound."),
             rule(SHAPE_RULE, "A rule reads a field two engines declare differently, and did not say which", Severity.INFO,
                  Category.OPERATIONAL,
                  "A field with two shapes (one per rule engine) was read in the reference engine's shape because nothing in the rule decided.",
@@ -272,13 +277,16 @@ class RuleFileDetector(BaseDetector):
         try:
             matches = engine.match(unit.content.raw)
         except Exception as exc:  # noqa: BLE001
-            return [
+            refused = [
                 self._operational(
                     UNAVAILABLE_RULE,
                     f"The rule file could not be matched against {unit.content.path}: {type(exc).__name__}.",
                     ctx,
                 )
             ]
+            if RuleFileDetector.unbounded(exc):
+                refused.append(self._unbounded(unit, exc, ctx))
+            return refused
         return [
             self._finding(unit, match, ctx)
             for match in matches
@@ -320,6 +328,45 @@ class RuleFileDetector(BaseDetector):
             risk=ctx.scorer.score(severity, Confidence.HIGH),
             detector=self.id,
             references=(REFERENCE,),
+        )
+
+    @staticmethod
+    def unbounded(exc: BaseException) -> bool:
+        """Whether matching stopped at the engine's per-file bound (`rule_engine.scan.Unbounded`)."""
+        from cordon_scanner.detect.binary.rule_engine.scan import Unbounded
+
+        seen: BaseException | None = exc
+        for _ in range(8):
+            if seen is None:
+                return False
+            if isinstance(seen, Unbounded):
+                return True
+            seen = seen.__cause__
+        return False
+
+    def _unbounded(self, unit: Any, exc: BaseException, ctx: ScanContext) -> Finding:
+        """The refusal as a finding that fails the gate: a file past the bound is not passed."""
+        message = f"{unit.content.path} could not be matched against the rule file within its bounds ({exc})."
+        return Finding(
+            rule_id=UNBOUNDED_RULE,
+            category=Category.SUSPICIOUS,
+            severity=Severity.HIGH,
+            confidence=Confidence.CONFIRMED,
+            message=message,
+            location=Location(path=str(unit.content.path)),
+            evidence=Evidence(
+                kind=EvidenceKind.METADATA,
+                match_hash=Evidence.hash_bytes(f"{UNBOUNDED_RULE}:{message}".encode()),
+                redaction=RedactionMode.NONE,
+            ),
+            remediation=next(
+                r.remediation for r in self.declared_rules() if r.id == UNBOUNDED_RULE
+            ),
+            explanation=Explanation(summary=message, matched_rule=UNBOUNDED_RULE),
+            risk=ctx.scorer.score(Severity.HIGH, Confidence.CONFIRMED),
+            detector=self.id,
+            references=(REFERENCE,),
+            degrades_coverage=True,
         )
 
     def _operational(self, rule_id: str, message: str, ctx: ScanContext) -> Finding:
