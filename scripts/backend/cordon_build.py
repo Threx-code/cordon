@@ -21,6 +21,7 @@ import gzip
 import hashlib
 import io
 import os
+import re
 import tarfile
 import time
 import tomllib
@@ -275,11 +276,23 @@ class Native:
     Reproducible: source paths are mapped out of the binary and the inputs go in sorted order.
     """
 
-    POSIX_FLAGS: ClassVar[tuple[str, ...]] = (
-        "-O2", "-fPIC", "-std=c11", "-Wall", "-Wextra", "-Wconversion", "-Wshadow", "-Werror",
-        "-fstack-protector-strong", "-U_FORTIFY_SOURCE", "-D_FORTIFY_SOURCE=3", "-fno-strict-overflow",
-        "-fno-delete-null-pointer-checks",
+    #: Every extension, ours or generated: hardening only.
+    HARDENING: ClassVar[tuple[str, ...]] = (
+        "-O2", "-fPIC", "-fstack-protector-strong", "-U_FORTIFY_SOURCE", "-D_FORTIFY_SOURCE=3",
+        "-fno-strict-overflow", "-fno-delete-null-pointer-checks",
     )  # fmt: skip
+    #: Our own C, also held to every warning as an error. Generated C (mypyc's) cannot be, and
+    #: takes its generator's own warning set instead, checked against `GENERATED_ARG`.
+    STRICT: ClassVar[tuple[str, ...]] = (
+        "-std=c11", "-Wall", "-Wextra", "-Wconversion", "-Wshadow", "-Werror",
+    )  # fmt: skip
+    POSIX_FLAGS: ClassVar[tuple[str, ...]] = (*HARDENING, *STRICT)
+    #: What a generator may add to a compile line: warnings, the optimisation and debug levels, and
+    #: MSVC's warning switches. Nothing that names a file, a define, a library or a linker option,
+    #: so a changed manifest cannot change what is built from what.
+    GENERATED_ARG: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?:-W[a-z][a-z0-9=+-]*|-Werror|-O[0-3s]|-g[0-3]?|/W[0-4]|/wd\d{4}|/O[12dx])"
+    )
     #: Linux only (proven there; macOS keeps the common set): stack-clash probes, and the CPU's
     #: control-flow protection (branch target identification and return-address signing on
     #: aarch64, CET on x86_64). FORTIFY 3 falls back to 2's checks on a glibc older than 2.34.
@@ -305,7 +318,41 @@ class Native:
     def wanted(project: Project) -> list[dict[str, Any]]:
         if os.environ.get("CORDON_BUILD_PURE") == "1":
             return []
-        return list(project.build.get("native", []))
+        return [*project.build.get("native", []), *Native.generated(project)]
+
+    @staticmethod
+    def generated(project: Project) -> list[dict[str, Any]]:
+        """The extensions a code generator emitted (`CORDON_BUILD_MYPYC`: the manifest
+        `scripts/build/mypyc_emit.py` writes), each marked generated; none without it.
+
+        Run only where the generator was installed pinned by hash (the release wheel job), so an
+        ordinary build never reads one. Every module must sit inside the project's own packages,
+        and every compile argument must match `GENERATED_ARG`; anything else fails the build."""
+        import json
+
+        path = os.environ.get("CORDON_BUILD_MYPYC")
+        if not path:
+            return []
+        manifest = json.loads(Path(path).read_text(encoding="utf-8"))
+        packages = tuple(f"{p}." for p in project.packages())
+        out: list[dict[str, Any]] = []
+        for ext in manifest["extensions"]:
+            name = str(ext["name"])
+            if not name.startswith(packages):
+                raise Native.Failed(f"generated module {name} is outside the project's packages")
+            bad = [a for a in ext.get("args", []) if not Native.GENERATED_ARG.fullmatch(str(a))]
+            if bad:
+                raise Native.Failed(f"generated module {name} asks for compile arguments {bad}")
+            out.append(
+                {
+                    "name": name,
+                    "sources": [str(s) for s in ext["sources"]],
+                    "include_dirs": [str(d) for d in ext.get("include_dirs", [])],
+                    "args": [str(a) for a in ext.get("args", [])],
+                    "generated": True,
+                }
+            )
+        return out
 
     @staticmethod
     def compiler() -> list[str] | None:
@@ -432,13 +479,29 @@ class Native:
         suffix = sysconfig.get_config_var("EXT_SUFFIX") or ".so"
         module = str(ext["name"])
         sources = sorted(str(project.root / s) for s in ext["sources"])
+        generated = bool(ext.get("generated"))
+        dirs = [str(project.root / d) for d in ext.get("include_dirs", [])]
+        work = work / module  # each extension's objects apart: two may have a scan.c
+        work.mkdir(parents=True, exist_ok=True)
         target = work / (module.split(".")[-1] + suffix)
         if os.name == "nt":
-            command = [*cc, *Native.MSVC_FLAGS, f"/I{include}", f"/Fo{work}\\", "/LD", *sources,
+            flags = (
+                [*Native.MSVC_FLAGS[:4], *ext.get("args", [])] if generated else Native.MSVC_FLAGS
+            )
+            command = [*cc, *flags, f"/I{include}", *(f"/I{d}" for d in dirs), f"/Fo{work}\\", "/LD", *sources,
                        f"/Fe{target}", "/link", *Native.MSVC_LINK, f"/LIBPATH:{Path(sys.base_prefix) / 'libs'}"]  # fmt: skip
             subprocess.run(command, check=True, cwd=work)  # noqa: S603 - the interpreter's own compiler and our sources
         else:
-            compile_ = [*cc, *Native.POSIX_FLAGS, *Native.linux_flags(), *Native.arch(), f"-ffile-prefix-map={project.root}=.", f"-I{include}", "-c"]  # fmt: skip
+            flags = (
+                [*Native.HARDENING, *ext.get("args", [])] if generated else list(Native.POSIX_FLAGS)
+            )
+            # Every source and include directory mapped out of the binary, the generator's runtime
+            # (outside the project) included, so the same tree builds the same bytes anywhere.
+            maps = [f"-ffile-prefix-map={project.root}=."] + [
+                f"-ffile-prefix-map={d}=include{i}" for i, d in enumerate(dirs)
+                if not Path(d).is_relative_to(project.root)
+            ]  # fmt: skip
+            compile_ = [*cc, *flags, *Native.linux_flags(), *Native.arch(), *maps, f"-I{include}", *(f"-I{d}" for d in dirs), "-c"]  # fmt: skip
             objects = []
             for source in sources:
                 obj = work / (Path(source).stem + ".o")
