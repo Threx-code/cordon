@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from cordon_scanner.detect.binary.rule_engine.lang import Rules
+from cordon_scanner.detect.binary.rule_engine.lang import RuleError, Rules
 from cordon_scanner.detect.binary.rule_engine.pack_cache import PackCache
 from cordon_scanner.detect.binary.rule_engine.tokens import Includes
 
@@ -106,6 +106,32 @@ class TestThePackCache:
         entry.write_bytes(entry.read_bytes()[:-20])
         assert Rules.compile(RULES, cache=cache).match(b"EVIL")
         assert Spy.calls == 2
+
+
+class TestRulesKeptAreBuiltOnFirstRun:
+    MIXED = (
+        'private rule base { strings: $a = "AA" condition: $a } '
+        "global rule g { condition: filesize > 2 } "
+        'rule uses { strings: $b = "BB" condition: base and $b } '
+        "rule loop { condition: for any i in (0 .. filesize - 1) : ( uint8(i) == 0x43 ) } "
+        'rule set { strings: $c = "CC" $d = "DD" condition: 1 of ($c, $d) and uses }'
+    )
+
+    def test_a_kept_set_answers_as_a_fresh_one(self, tmp_path: Path) -> None:
+        fresh = Rules.compile(self.MIXED)
+        cache = PackCache(tmp_path)
+        Rules.compile(self.MIXED, cache=cache)
+        kept = Rules.compile(self.MIXED, cache=cache)
+        for data in (b"AABBCC", b"AABB", b"BBCC", b"x", b"AACCDDBB", b"C"):
+            assert [(m.rule, m.strings) for m in kept.match(data)] == [
+                (m.rule, m.strings) for m in fresh.match(data)
+            ]
+
+    def test_a_set_that_does_not_build_is_never_kept(self, tmp_path: Path) -> None:
+        cache = PackCache(tmp_path)
+        with pytest.raises(RuleError):
+            Rules.compile('rule r { condition: "a" + 1 }', cache=cache)
+        assert [p for p in tmp_path.iterdir() if not p.name.startswith(".")] == []
 
 
 class TestTheSignature:

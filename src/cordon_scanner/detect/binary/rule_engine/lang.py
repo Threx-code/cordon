@@ -230,11 +230,14 @@ class Rules:
         kept = cache.get(key) if cache is not None else None
         if kept is not None:
             rules, imports = kept
-        else:
-            rules, imports = Rules._read(text, given, loaded, includes)
-            if cache is not None:
-                cache.put(key, (rules, imports), list(includes.read) if includes else [])
-        return Rules._built(rules, loaded, given, imports)
+            return Rules._built(rules, loaded, given, imports, lazily=True)
+        rules, imports = Rules._read(text, given, loaded, includes)
+        # kept only once the whole set has built without error, from its state before building
+        blob = PackCache.dumps((rules, imports)) if cache is not None else None
+        built = Rules._built(rules, loaded, given, imports)
+        if cache is not None and blob is not None:
+            cache.put(key, blob, list(includes.read) if includes else [])
+        return built
 
     @staticmethod
     def _read(
@@ -245,6 +248,14 @@ class Rules:
             grammar = Grammar(text, given, frozenset(loaded), includes)
             rules = grammar.read()
             Strings.prepare(rules)
+            # what the condition tree alone decides, worked out once and kept with the rules
+            for rule in rules:
+                rule.needs_match = (
+                    bool(rule.strings)
+                    and Tree.needs_match(rule.condition)
+                    and not Tree.calls(rule.condition)
+                )
+                Strings.place(rule)
         except (IndexError, ValueError, binascii.Error) as exc:
             if isinstance(exc, RuleError):
                 raise
@@ -257,21 +268,20 @@ class Rules:
         loaded: dict[str, Module],
         given: dict[str, Any],
         imports: frozenset[str],
+        lazily: bool = False,
     ) -> Rules:
-        """The conditions built into closures, for rules read now or kept."""
+        """The conditions built into closures, for rules read now; `lazily`, each on its first
+        run, for rules a cache kept (built once already, without error)."""
         try:
-            Builder(rules, loaded, given).build()
+            builder = Builder(rules, loaded, given)
+            if lazily:
+                builder.lazily()
+            else:
+                builder.build()
         except RuleError:
             raise
         except (ValueError, TypeError, IndexError, KeyError, OverflowError) as exc:
             raise RuleError(f"the rules do not compile: {type(exc).__name__}: {exc}") from exc
-        for rule in rules:
-            rule.needs_match = (
-                bool(rule.strings)
-                and Tree.needs_match(rule.condition)
-                and not Tree.calls(rule.condition)
-            )
-            Strings.place(rule)
         return Rules(rules, loaded, imports)
 
     @property

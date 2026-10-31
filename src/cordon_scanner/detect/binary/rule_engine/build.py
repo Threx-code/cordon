@@ -814,6 +814,29 @@ class Builder(_BuilderQuantifiers):
             rule.width = self.scope.width
             self.before.add(rule.name)
 
+    def lazily(self) -> None:
+        """Each rule built the first time it runs: for rules a pack cache kept, which were built
+        once without error when they were kept. Most of a large pack's rules never run on a given
+        file (their strings do not occur), so a load builds only what a scan needs."""
+        names = [rule.name for rule in self.rules]
+        for position, rule in enumerate(self.rules):
+            rule.width = 0
+            rule.run = self._built_on_first_run(rule, names, position)
+
+    def _built_on_first_run(
+        self, rule: RuleDef, names: list[str], position: int
+    ) -> Callable[[Frame], bool]:
+        def run(frame: Frame) -> bool:
+            builder = Builder(self.rules, self.modules, self.externals)
+            builder.before, builder.scope = set(names[:position]), Scope(rule)
+            kind, fn = builder.node(rule.condition)
+            Builder.as_test(kind, "a condition")
+            rule.run, rule.width = Builder.truth(fn), builder.scope.width
+            frame.env = [None] * rule.width
+            return bool(rule.run(frame))
+
+        return run
+
     # -- nodes --
 
     def node(self, node: Node) -> tuple[Any, Fn]:
