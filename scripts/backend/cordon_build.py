@@ -654,8 +654,11 @@ class Backend:
             (project.root / "src" / n).relative_to(project.root).as_posix()
             for n in project.wheel_files()
         }
-        files |= {  # the native extensions' C sources, so an sdist install can compile them
-            str(source) for ext in project.build.get("native", []) for source in ext["sources"]
+        files |= {  # the native extensions' C sources, and the files they include, so an sdist
+            # install can compile them (`depends`: included by a source, never compiled alone)
+            str(source)
+            for ext in project.build.get("native", [])
+            for source in (*ext["sources"], *ext.get("depends", ()))
         }
         files |= {  # the backend itself, so the sdist builds with nothing installed
             p.relative_to(project.root).as_posix()
