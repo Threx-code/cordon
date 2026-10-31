@@ -31,6 +31,7 @@ from typing import Any, ClassVar
 from cordon_scanner.detect.binary.modules.builtin import Builtin
 from cordon_scanner.detect.binary.modules.values import Module
 from cordon_scanner.detect.binary.rule_engine.build import Builder, Frame
+from cordon_scanner.detect.binary.rule_engine.gates import Gates, MagicIndex
 from cordon_scanner.detect.binary.rule_engine.pack_cache import PackCache
 from cordon_scanner.detect.binary.rule_engine.syntax import (
     Both,
@@ -204,6 +205,7 @@ class Rules:
         #: The modules the rules import.
         self.imports = imports
         self._index: tuple[Any, list[StringDef]] | None = None
+        self._magic: MagicIndex | None = None
 
     @staticmethod
     def loaded(given: dict[str, Any] | None) -> dict[str, Module]:
@@ -286,6 +288,14 @@ class Rules:
             self._index = (AnchorIndex([s.search for s in strings]), strings)
         return self._index
 
+    def magic_index(self) -> MagicIndex:
+        """The anchor indexes by leading-byte requirement, each built when a file first needs it."""
+        if self._magic is None:
+            from cordon_scanner.detect.binary.rule_engine.scan import AnchorIndex
+
+            self._magic = MagicIndex(self.rules, AnchorIndex)
+        return self._magic
+
     def match(
         self,
         data: bytes,
@@ -307,17 +317,22 @@ class Rules:
             modules = {**modules, "console": Builtin.console(console)}
         frame = Frame(data, modules)
         seen: dict[Any, Any] = {}
-        index, strings = self.index()
-        live = {id(strings[i]) for i in index.live(data, seen)}
+        live = self.magic_index().live(data, seen)
         found_by: dict[str, dict[str, list[tuple[int, int]]]] = {}
         all_global = True
         for rule in self.rules:
-            found = {
-                s.name: Strings.search(s, data, deadline, seen) if id(s) in live else []
-                for s in rule.strings
-            }
+            frame.found, frame.env = {}, [None] * rule.width
+            if Gates.hopeless(rule, live) or (
+                rule.gates and not all(gate(frame) for gate in rule.gates)
+            ):
+                found: dict[str, list[tuple[int, int]]] = {s.name: [] for s in rule.strings}
+                may = False
+            else:
+                found, may = Gates.search(
+                    rule, live, lambda s: Strings.search(s, data, deadline, seen)
+                )
             found_by[rule.name] = frame.found = found
-            if rule.needs_match and not any(found.values()):
+            if not may or (rule.needs_match and not any(found.values())):
                 result = False
             else:
                 frame.env = [None] * rule.width

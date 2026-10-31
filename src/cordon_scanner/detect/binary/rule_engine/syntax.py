@@ -285,6 +285,12 @@ class RuleDef:
     #: What the compiler decided for the rule where the rule did not say (`rule_engine.build`): a
     #: field with two shapes read in the reference's, for one. Part of the rule set's load result.
     notes: list[str] = field(default_factory=list)
+    #: The condition's top-level parts that read no string, each ready to run (`rule_engine.gates`).
+    gates: list[Any] = field(default_factory=list)
+    #: Sets of strings of which one must match for the condition to hold (`rule_engine.gates`).
+    clauses: list[frozenset[str]] = field(default_factory=list)
+    #: The leading-byte requirements among its gates (`rule_engine.gates.MagicIndex`).
+    magic: frozenset[tuple[int, bool, bool, int]] = frozenset()
 
 
 class _TokenStream:
