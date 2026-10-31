@@ -9,12 +9,14 @@ from __future__ import annotations
 import posixpath
 import re
 from dataclasses import replace
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.detect.base import FileUnit
 from cordon_scanner.ecosystems.base import WORKSPACE_INHERITED, Coordinate, LockEntry, LockGraph
 from cordon_scanner.ecosystems.registry import EcosystemRegistry, RegistryFacts
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
+from cordon_scanner.foundation.collector import ScanCaches
 from cordon_scanner.foundation.models import Scope, Severity
 from cordon_scanner.foundation.results import Dependency, OperationalFinding
 
@@ -197,7 +199,7 @@ class Graph:
         """Manifests that name the lockfile resolving them (`lockfile: "../../mix.lock"` in an
         umbrella app): members of the project that lockfile belongs to, when it was read."""
         locked = {(d.project or "", d.ecosystem) for d in collected}
-        contents = {u.path: u.content for u in units}
+        contents = MappingProxyType({u.path: u.content for u in units})  # Graph.view_of
         out: dict[tuple[str, str], str | None] = {}
         for unit in units:
             ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
@@ -295,11 +297,56 @@ class Graph:
     def manifest_of(ecosystem: Any, unit: FileUnit, files: Mapping[str, Any]) -> Any:
         """A manifest parsed with the rest of its build in view, where the ecosystem needs it:
         a Maven module inherits from a parent POM elsewhere in the tree, a .NET project from
-        `Directory.Packages.props` above it. Other ecosystems read one file on its own."""
+        `Directory.Packages.props` above it. Other ecosystems read one file on its own.
+
+        A manifest parsed in view of its tree is kept for the scan (`_parsed`), by the file and
+        the very files in view (`view_of`): five steps ask for each one, and a repository of a
+        hundred POMs resolving parents against thousands of files paid seconds for each ask. The
+        same file with the same files in view parses the same, and a parsed `Manifest` is never
+        changed."""
         in_tree = getattr(ecosystem, "parse_in_tree", None)
-        if in_tree is not None:
-            return in_tree(unit.content, files)
-        return ecosystem.parse_manifest(unit.content)
+        if in_tree is None:
+            return ecosystem.parse_manifest(unit.content)
+        key = (
+            ScanCaches.identity(ecosystem),
+            ScanCaches.identity(unit.content),
+            Graph.view_of(files),
+        )
+        kept = Graph._parsed.get(key)
+        if kept is not None and kept[0] is unit.content:
+            return kept[1]
+        manifest = in_tree(unit.content, files)
+        Graph._parsed[key] = (unit.content, manifest)
+        return manifest
+
+    @staticmethod
+    def view_of(files: Mapping[str, Any]) -> int:
+        """A small id for the files a manifest is parsed in view of: equal for two mappings of the
+        same paths to the very same contents. Worked out once for each mapping object (a step
+        builds one and asks for every manifest with it), the signature kept once for each distinct
+        view: an entry of `_parsed` holds the id, not the view. Holding each view in every entry
+        kept 18,543 paths and contents for each of 10,475 Terraform manifests in one repository,
+        and ended the scan at 8 GB (2026-10-31). The mapping is kept with its id, so the contents
+        it names stay alive and no id is reused within the scan.
+
+        Relied on: a mapping is not changed once asked about, since its view is answered from its
+        id. Callers pass a read-only `MappingProxyType`, so a change raises where it would be
+        made; and a mapping whose size has moved since is worked out again, never answered from
+        the old view."""
+        seen = Graph._views.get(ScanCaches.identity(files))
+        if seen is not None and seen[0] is files and seen[2] == len(files):
+            return seen[1]
+        signature = tuple((path, ScanCaches.identity(content)) for path, content in files.items())
+        view = Graph._signatures.setdefault(signature, len(Graph._signatures))
+        Graph._views[ScanCaches.identity(files)] = (files, view, len(files))
+        return view
+
+    #: Manifests parsed in view of their tree this scan (`manifest_of`), emptied after it.
+    _parsed: ClassVar[dict[tuple[int, int, int], tuple[Any, Any]]] = {}
+    #: Each files mapping asked about this scan, with its view's id (`view_of`).
+    _views: ClassVar[dict[int, tuple[Mapping[str, Any], int, int]]] = {}
+    #: Each distinct view's signature, once, with its id.
+    _signatures: ClassVar[dict[tuple[tuple[str, int], ...], int]] = {}
 
     MAX_INCLUDE_DEPTH: ClassVar[int] = 8
 
@@ -482,7 +529,7 @@ class Graph:
         shared: dict[tuple[str | None, str, str], str] = {}
         forced: dict[tuple[str | None, str, str], tuple[str, str, str | None]] = {}
         routed: dict[tuple[str | None, str], dict[str, str]] = {}
-        contents = {u.path: u.content for u in units}
+        contents = MappingProxyType({u.path: u.content for u in units})  # Graph.view_of
         Graph.manifest_declarations(
             units, covered, members, contents, shared, routed, declared, declared_from_lock, forced
         )
@@ -510,7 +557,7 @@ class Graph:
         units: list[FileUnit],
         covered: set[tuple[str | None, str]],
         members: dict[tuple[str, str], str | None] | None,
-        contents: dict[str, FileContent],
+        contents: Mapping[str, FileContent],
         shared: dict[tuple[str | None, str, str], str],
         routed: dict[tuple[str | None, str], dict[str, str]],
         declared: dict[tuple[str | None, str, str], tuple[str, DeclaredDependency]],
@@ -812,7 +859,7 @@ class Graph:
         these names is resolved to the member by the workspace, not fetched from the registry.
         """
         members: set[tuple[str, str]] = set()
-        contents = {u.path: u.content for u in units}
+        contents = MappingProxyType({u.path: u.content for u in units})  # Graph.view_of
         for unit in units:
             if "node_modules/" in f"/{unit.path}" or "site-packages/" in unit.path:
                 continue
@@ -839,3 +886,8 @@ class Graph:
 
 
 __all__ = ["Graph"]
+
+
+ScanCaches.register(Graph._parsed)
+ScanCaches.register(Graph._views)
+ScanCaches.register(Graph._signatures)

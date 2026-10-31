@@ -12,6 +12,7 @@ from __future__ import annotations
 import io
 import posixpath
 from dataclasses import replace
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.detect.base import (
@@ -28,7 +29,7 @@ from cordon_scanner.foundation.models import Category, Confidence, Finding, Seve
 from cordon_scanner.foundation.results import Dependency, OperationalFinding
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
     from cordon_scanner.ecosystems.base import Ecosystem
     from cordon_scanner.engine.engine import Engine
@@ -612,7 +613,7 @@ class Dependencies:
         collected: list[Dependency] = []
         members = Graph.workspace_members(units)
         by_path = {u.path: u for u in units}
-        contents = {u.path: u.content for u in units}
+        contents = MappingProxyType({u.path: u.content for u in units})  # Graph.view_of
 
         for unit in units:
             ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
@@ -650,7 +651,7 @@ class Dependencies:
 
     @staticmethod
     def readable_manifest(
-        ecosystem: Ecosystem, unit: FileUnit, contents: dict[str, Any], acc: Accumulator
+        ecosystem: Ecosystem, unit: FileUnit, contents: Mapping[str, Any], acc: Accumulator
     ) -> Any:
         """The manifest the inventory is about to read, or None: one it cannot read leaves its
         dependencies out of the graph, so the scan is incomplete.
