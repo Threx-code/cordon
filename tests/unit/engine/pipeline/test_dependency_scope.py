@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import ClassVar
 
@@ -10,10 +10,19 @@ from cordon_scanner.engine.pipeline.dependency_scope import DependencyScope
 
 
 @dataclass
+class Content:
+    """A manifest with no scripts: these tests are about which files are read, not what a
+    package's install scripts install (`test_install_scripts.py`)."""
+
+    raw: bytes = b"{}"
+
+
+@dataclass
 class Unit:
-    """Only the path, which is all the scope reads."""
+    """The path, and a manifest's content for the install scripts the scope reads."""
 
     path: str
+    content: Content = field(default_factory=Content)
 
 
 class Paths:

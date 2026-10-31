@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
+from cordon_scanner.engine.pipeline.install_scripts import InstallScripts
 from cordon_scanner.foundation.files.globs import PathGlob
 from cordon_scanner.foundation.files.walk import DEFAULT_PRUNE_DIRS, INSTALLED_CODE_PRUNE_DIRS
 
@@ -44,6 +45,10 @@ class DependencyScope:
     published: str
     root: str | None
     members: set[str] = field(default_factory=set)
+    scripted: set[str] = field(default_factory=set)
+    """Nested directories the package's own install scripts install (`install_scripts.py`)."""
+    scripted_unresolved: bool = False
+    """An install script installs somewhere it does not name: every nested project counts."""
 
     #: Ecosystems whose files run in a repository's own automation and never for a package's
     #: installer: a workflow, a container build.
@@ -63,7 +68,32 @@ class DependencyScope:
             if DependencyScope._dependency_file(u.path) and not DependencyScope._pruned(u.path)
         ]
         root = min(roots, key=lambda d: (len(DependencyScope._SEPARATOR.findall(d)), d), default="")
-        return DependencyScope(archive=True, published=published, root=root)
+        scope = DependencyScope(archive=True, published=published, root=root)
+        scope._read_install_scripts(units)
+        return scope
+
+    def _read_install_scripts(self, units: Iterable[FileUnit]) -> None:
+        """The nested projects the root's install scripts install, and theirs in turn: installing a
+        project runs its own lifecycle scripts too."""
+        manifests = {
+            DependencyScope.directory(u.path): u.content.raw
+            for u in units
+            if u.path.rsplit("/", 1)[-1] == "package.json" and not DependencyScope._pruned(u.path)
+        }
+        todo = [self.root] if self.root in manifests else []
+        seen: set[str] = set()
+        while todo:
+            directory = todo.pop()
+            if directory in seen:
+                continue
+            seen.add(directory)
+            scripts = InstallScripts.of(manifests[directory])
+            self.scripted_unresolved = self.scripted_unresolved or scripts.unresolved
+            for relative in scripts.directories:
+                nested = f"{directory}/{relative}" if directory else relative
+                self.scripted.add(nested)
+                if nested in manifests:
+                    todo.append(nested)
 
     @staticmethod
     def directory(path: str) -> str:
@@ -96,6 +126,9 @@ class DependencyScope:
         if DependencyScope._dependency_file(path) in DependencyScope.REPOSITORY_ONLY:
             return False
         where = DependencyScope.directory(path)
+        if self.scripted_unresolved or where in self.scripted:
+            # Installed by the package's own install script: what it declares is installed.
+            return True
         return where == self.root or where in self.members
 
     def _installed_with_package(self, path: str) -> bool:
