@@ -106,11 +106,10 @@ class Limits:
 
     # -- Time --------------------------------------------------------------
     per_file_timeout: float = 5.0
-    """Deprecated for a scan's files: every detector runs on every file of a scan, a directory's as
-    a package's, and this no longer cuts any (a cut on the wall clock made a directory's findings,
-    complete flag and exit code depend on the machine's load). Read for one more release, and
-    still the per-blob bound of the git-history secret sweep (`detect/secrets/history.py`) and of
-    a device scan's detector runs (`cloud/device.py`). The scan as a whole is bounded by
+    """Deprecated: nothing is cut on it. Every detector runs on every file of a scan, a directory's
+    as a package's, every historical blob of the git-history secret sweep, and every detector run of
+    a device scan (a cut on the wall clock made findings, the complete flag and the exit code depend
+    on the machine's load). Read for one more release. The scan as a whole is bounded by
     `total_timeout`.
 
     What it bounded, when it bounded a file: the time one file's detectors may accumulate.
