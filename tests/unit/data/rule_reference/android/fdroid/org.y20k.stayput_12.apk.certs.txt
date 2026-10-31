@@ -1,0 +1,17 @@
+Verifies
+Verified using v1 scheme (JAR signing): false
+Verified using v2 scheme (APK Signature Scheme v2): true
+Verified using v3 scheme (APK Signature Scheme v3): false
+Verified using v3.1 scheme (APK Signature Scheme v3.1): false
+Verified using v4 scheme (APK Signature Scheme v4): false
+Verified for SourceStamp: false
+Number of signers: 1
+Signer #1 certificate DN: CN=Christian Weh, O=Y20K, C=Germany
+Signer #1 certificate SHA-256 digest: 6105145f84e5cbd697f0f6e12c9777042e9b2db667a7ff0da412f67435316dd8
+Signer #1 certificate SHA-1 digest: 73283e250113cbfbddb1dea5a919245fbb4d6b7c
+Signer #1 certificate MD5 digest: 4ae7d8b52ed930b70d93fc7c1c3a9cdc
+Signer #1 key algorithm: RSA
+Signer #1 key size (bits): 2048
+Signer #1 public key SHA-256 digest: 80ab76a9fb4c5b080069f0db871dbd1e1f4323aff997d787aa2766467507344b
+Signer #1 public key SHA-1 digest: 9fd991e79b7f90900592e2e5cd10ae01bf316a60
+Signer #1 public key MD5 digest: aba4e3fccec0183d59fc7fa42f57ca24
