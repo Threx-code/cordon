@@ -1,4 +1,5 @@
-"""Record the reference's `macho` and `dex` module values for the YARA test fixtures, from `yara -D`.
+"""Record the reference engines' module values for the test fixtures: YARA's from `yara -D`, YARA-X's
+from `yr dump --output-format=json`.
 
 A maintainer's measurement tool, never part of Cordon: it reads the text dumps `yara -D` (YARA 4.5.8,
 built from source in the reference image) writes for a rule importing the module, one file per fixture,
@@ -101,6 +102,11 @@ class Dump:
 
 def main(dumps: Path, fixtures: Path, out: Path) -> None:
     record: dict[str, Any] = {}
+    for path in sorted(dumps.glob("*.json")):  # yr's JSON dumps (`yr dump --output-format=json`)
+        name = path.name[:-5]
+        data = (fixtures / name).read_bytes()
+        dump = json.loads(path.read_text(encoding="utf-8"))
+        record[name] = {"sha256": hashlib.sha256(data).hexdigest(), "modules": dump}
     for path in sorted(dumps.glob("*.yara.txt")):
         if path.stat().st_size == 0:
             continue  # the reference gave no dump (it was killed on a crafted file)

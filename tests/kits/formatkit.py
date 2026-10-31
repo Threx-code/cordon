@@ -137,6 +137,110 @@ class FormatKit:
         return bytes(header) + struct.pack("<128I", *fat) + directory + b"".join(blobs)
 
     @staticmethod
+    def cfb(streams: dict[str, bytes]) -> bytes:
+        """An MS-CFB file as the specification lays one out: 512-byte sectors, streams under 4,096
+        bytes in the mini stream (64-byte mini sectors chained in the mini FAT, the mini stream owned
+        by the root), larger ones in regular sectors, the directory over as many sectors as its
+        entries need, the cutoff 4,096. Storages are one level deep ("VBA/dir")."""
+        sector, mini, cutoff = 512, 64, 4096
+        end, free, fatsect = 0xFFFFFFFE, 0xFFFFFFFF, 0xFFFFFFFD
+        names = list(streams)
+        storages = sorted({n.split("/", 1)[0] for n in names if "/" in n})
+        mini_data, mini_fat, mini_start = bytearray(), [], {}
+        for name in names:  # the mini stream: small streams back to back, chained in the mini FAT
+            data = streams[name]
+            if len(data) < cutoff:
+                first = len(mini_data) // mini
+                count = max((len(data) + mini - 1) // mini, 1)
+                mini_start[name] = first
+                mini_data += data.ljust(count * mini, b"\x00")
+                mini_fat += [first + i + 1 for i in range(count - 1)] + [end]
+        blobs: list[bytes] = []  # each regular-sector run after the FAT: directory, mini FAT, data
+        dir_sectors = max((1 + len(storages) + len(names)) * 128 + sector - 1, sector) // sector
+        blobs.append(b"\x00" * (dir_sectors * sector))  # filled once the sector numbers are known
+        blobs.append(b"".join(struct.pack("<I", v) for v in mini_fat))
+        blobs.append(bytes(mini_data))
+        for name in names:
+            if len(streams[name]) >= cutoff:
+                blobs.append(streams[name])
+        runs = [max((len(blob) + sector - 1) // sector, 1) if blob else 0 for blob in blobs]
+        fat_sectors = 1
+        while fat_sectors * (sector // 4) < sum(runs) + fat_sectors:
+            fat_sectors += 1
+        starts: list[int] = []
+        cursor = fat_sectors
+        for count in runs:
+            starts.append(cursor if count else end)
+            cursor += count
+        fat = [free] * (fat_sectors * (sector // 4))
+        fat[:fat_sectors] = [fatsect] * fat_sectors
+        for start, count in zip(starts, runs, strict=True):
+            for i in range(count):
+                fat[start + i] = start + i + 1 if i < count - 1 else end
+        large_starts = dict(
+            zip([n for n in names if len(streams[n]) >= cutoff], starts[3:], strict=True)
+        )
+        none = 0xFFFFFFFF
+
+        def entry(
+            name: str, kind: int, left: int, right: int, child: int, start: int, size: int
+        ) -> bytes:
+            encoded = (name + "\x00").encode("utf-16-le")
+            return (
+                encoded.ljust(64, b"\x00") + struct.pack("<HBB", len(encoded), kind, 1)
+                + struct.pack("<III", left, right, child) + b"\x00" * 36 + struct.pack("<IQ", start, size)
+            )  # fmt: skip
+
+        storage_index = {n: 1 + i for i, n in enumerate(storages)}
+        first_stream = 1 + len(storages)
+        top = [storage_index[s] for s in storages] + [
+            first_stream + i for i, n in enumerate(names) if "/" not in n
+        ]
+        records = [
+            entry("Root Entry", 5, none, none, top[0] if top else none, starts[2], len(mini_data))
+        ]
+        for storage in storages:
+            members = [first_stream + i for i, n in enumerate(names) if n.startswith(storage + "/")]
+            at = top.index(storage_index[storage])
+            records.append(
+                entry(
+                    storage,
+                    1,
+                    none,
+                    top[at + 1] if at + 1 < len(top) else none,
+                    members[0] if members else none,
+                    0,
+                    0,
+                )
+            )
+        for i, name in enumerate(names):
+            parent = name.split("/", 1)[0] if "/" in name else None
+            siblings = (
+                [first_stream + j for j, n in enumerate(names) if n.startswith(parent + "/")]
+                if parent
+                else [t for t in top if t >= first_stream]
+            )
+            here = first_stream + i
+            after = siblings[siblings.index(here) + 1] if here != siblings[-1] else none
+            start = mini_start[name] if name in mini_start else large_starts[name]
+            records.append(
+                entry(name.rsplit("/", 1)[-1], 2, none, after, none, start, len(streams[name]))
+            )
+        blobs[0] = b"".join(records)
+        header = bytearray(512)
+        header[0:8] = ole.MAGIC
+        struct.pack_into("<HHHHH", header, 0x18, 0x3E, 3, 0xFFFE, 9, 6)
+        struct.pack_into("<IIIIIIIII", header, 0x28, 0, fat_sectors, starts[0], 0, cutoff,
+                         starts[1], runs[1], end, 0)  # fmt: skip
+        struct.pack_into(
+            "<109I", header, 0x4C, *(list(range(fat_sectors)) + [free] * (109 - fat_sectors))
+        )
+        body = b"".join(struct.pack("<I", v) for v in fat)
+        for blob, count in zip(blobs, runs, strict=True):
+            body += blob.ljust(count * sector, b"\x00")
+        return bytes(header) + body
+
+    @staticmethod
     def dir_stream(modules: dict[str, int]) -> bytes:
         records = struct.pack("<HI", 0x0001, 4) + struct.pack("<I", 1)
         records += struct.pack("<HI", 0x0009, 4) + b"\x00" * 6

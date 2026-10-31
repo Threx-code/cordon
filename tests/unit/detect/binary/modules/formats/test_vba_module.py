@@ -60,7 +60,7 @@ class Build:
         code = FormatKit.ovba_literal(
             ('Attribute VB_Name = "Module1"\r\n' + source).encode("latin-1")
         )
-        return FormatKit.compound({
+        return FormatKit.cfb({
             "VBA/dir": Build.dir_stream([(b"Module1", b"Module1", len(cache), kind)]),
             "VBA/Module1": cache + code,
         })  # fmt: skip
@@ -106,7 +106,7 @@ class TestNoMacros:
         for data in (
             b"PK\x03\x04 not a zip",
             FormatKit.ooxml({"word/document.xml": "<w/>"}),
-            FormatKit.compound({"WordDocument": b"w" * 10}),
+            FormatKit.cfb({"WordDocument": b"w" * 10}),
             b"plain",
         ):
             d = Vba.data(data)
@@ -114,7 +114,7 @@ class TestNoMacros:
             assert Data.conforms(Vba.SCHEMA, d) == []
 
     def test_a_module_without_source_is_left_out(self) -> None:
-        raw = FormatKit.compound({"VBA/dir": Build.dir_stream([(b"Gone", b"Gone", 0, 0x0021)])})
+        raw = FormatKit.cfb({"VBA/dir": Build.dir_stream([(b"Gone", b"Gone", 0, 0x0021)])})
         d = Vba.data(raw)
         assert (
             d["has_macros"] is True

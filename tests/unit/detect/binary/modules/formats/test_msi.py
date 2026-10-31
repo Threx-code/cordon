@@ -14,13 +14,13 @@ from kits.formatkit import FormatKit
 
 class TestUnsigned:
     def test_a_package_without_a_signature_stream(self) -> None:
-        d = Msi.data(FormatKit.compound({"Table": b"t" * 600}))
+        d = Msi.data(FormatKit.cfb({"Table": b"t" * 600}))
         assert d == {"is_signed": False, "signatures": {}}
         assert Data.conforms(Msi.SCHEMA, d) == []
 
     def test_a_signature_stream_that_holds_no_signature(self) -> None:
         d = Msi.data(
-            FormatKit.compound({"\x05DigitalSignature": b"\x30\x03\x02\x01\x00", "Table": b"t"})
+            FormatKit.cfb({"\x05DigitalSignature": b"\x30\x03\x02\x01\x00", "Table": b"t"})
         )
         assert d["is_signed"] is False and d["signatures"] == {}
 
@@ -30,7 +30,7 @@ class TestUnsigned:
 
 class TestDigest:
     def test_the_digest_covers_the_header_and_the_streams_in_order(self) -> None:
-        raw = FormatKit.compound({"A": b"a" * 600, "\x05DigitalSignature": b"sig", "B": b"b" * 10})
+        raw = FormatKit.cfb({"A": b"a" * 600, "\x05DigitalSignature": b"sig", "B": b"b" * 10})
         compound = Olecf.compound(raw)
         assert compound is not None
         listing = Olecf.listing(compound)

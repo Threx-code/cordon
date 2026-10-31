@@ -1,0 +1,247 @@
+{
+ "classmod.ole": {
+  "modules": {
+   "msi": {
+    "is_signed": false
+   },
+   "olecf": {
+    "is_olecf": true,
+    "streams": [
+     {
+      "name": "Root Entry",
+      "size": 448,
+      "type": "ROOT"
+     },
+     {
+      "name": "VBA",
+      "size": 0,
+      "type": "STORAGE"
+     },
+     {
+      "name": "dir",
+      "size": 316,
+      "type": "STREAM"
+     },
+     {
+      "name": "Module1",
+      "size": 124,
+      "type": "STREAM"
+     }
+    ]
+   },
+   "vba": {
+    "has_macros": true,
+    "modules": [
+     {
+      "code": "Attribute VB_Name = \"Module1\"\r\nSub AutoOpen()\r\n  Shell \"calc\"\r\nEnd Sub\r\n",
+      "name": "Module1",
+      "type": "MODULE_TYPE_CLASS"
+     }
+    ],
+    "project_info": {
+     "module_count": 1,
+     "name": "VBAProject",
+     "references": [
+      "stdole"
+     ],
+     "version": "1.7"
+    }
+   }
+  },
+  "sha256": "ef2bbc10c5f22250129952285f5e23679770b6b9de6f070a55953a99d0ae908d"
+ },
+ "junksig.msi": {
+  "modules": {
+   "msi": {
+    "is_signed": false
+   },
+   "olecf": {
+    "is_olecf": true,
+    "streams": [
+     {
+      "name": "Root Entry",
+      "size": 128,
+      "type": "ROOT"
+     },
+     {
+      "name": "DigitalSignature",
+      "size": 5,
+      "type": "STREAM"
+     },
+     {
+      "name": "Table",
+      "size": 1,
+      "type": "STREAM"
+     }
+    ]
+   }
+  },
+  "sha256": "c9623cb3edd7c4e31289f9ab2a3e8b8567b962ab158bdac659bc42d239d5d976"
+ },
+ "names.ole": {
+  "modules": {
+   "msi": {
+    "is_signed": false
+   },
+   "olecf": {
+    "is_olecf": true,
+    "streams": [
+     {
+      "name": "Root Entry",
+      "size": 128,
+      "type": "ROOT"
+     },
+     {
+      "name": "Summary",
+      "size": 1,
+      "type": "STREAM"
+     },
+     {
+      "name": "Table",
+      "size": 3,
+      "type": "STREAM"
+     }
+    ]
+   }
+  },
+  "sha256": "c518aa6579f84161489bdfbf745e150015a21c5fbdc98ae8abf18cdb344adae1"
+ },
+ "plain.ole": {
+  "modules": {
+   "msi": {
+    "is_signed": false
+   },
+   "olecf": {
+    "is_olecf": true,
+    "streams": [
+     {
+      "name": "Root Entry",
+      "size": 768,
+      "type": "ROOT"
+     },
+     {
+      "name": "VBA",
+      "size": 0,
+      "type": "STORAGE"
+     },
+     {
+      "name": "dir",
+      "size": 10,
+      "type": "STREAM"
+     },
+     {
+      "name": "Module1",
+      "size": 700,
+      "type": "STREAM"
+     },
+     {
+      "name": "Big",
+      "size": 5000,
+      "type": "STREAM"
+     }
+    ]
+   }
+  },
+  "sha256": "ce5c6b1eb3c5487dbd3cf0839e0be95536cae5bc809fdd0bc216d7e43b4fd175"
+ },
+ "project.docm": {
+  "modules": {
+   "msi": {
+    "is_signed": false
+   },
+   "vba": {
+    "has_macros": true,
+    "modules": [
+     {
+      "code": "Attribute VB_Name = \"Module1\"\r\nSub AutoOpen()\r\n  Shell \"calc\"\r\nEnd Sub\r\n",
+      "name": "Module1",
+      "type": "MODULE_TYPE_STANDARD"
+     }
+    ],
+    "project_info": {
+     "module_count": 1,
+     "name": "VBAProject",
+     "references": [
+      "stdole"
+     ],
+     "version": "1.7"
+    }
+   }
+  },
+  "sha256": "dd3180a44c51c1052ef6d50ed8fa7b679675f22816add0cd343f670ff62f54a2"
+ },
+ "project.ole": {
+  "modules": {
+   "msi": {
+    "is_signed": false
+   },
+   "olecf": {
+    "is_olecf": true,
+    "streams": [
+     {
+      "name": "Root Entry",
+      "size": 448,
+      "type": "ROOT"
+     },
+     {
+      "name": "VBA",
+      "size": 0,
+      "type": "STORAGE"
+     },
+     {
+      "name": "dir",
+      "size": 316,
+      "type": "STREAM"
+     },
+     {
+      "name": "Module1",
+      "size": 124,
+      "type": "STREAM"
+     }
+    ]
+   },
+   "vba": {
+    "has_macros": true,
+    "modules": [
+     {
+      "code": "Attribute VB_Name = \"Module1\"\r\nSub AutoOpen()\r\n  Shell \"calc\"\r\nEnd Sub\r\n",
+      "name": "Module1",
+      "type": "MODULE_TYPE_STANDARD"
+     }
+    ],
+    "project_info": {
+     "module_count": 1,
+     "name": "VBAProject",
+     "references": [
+      "stdole"
+     ],
+     "version": "1.7"
+    }
+   }
+  },
+  "sha256": "34425e52cb25cfd97601200ad1d1456c3e86c44ad7b0ea2dbca81d8c42ab7faf"
+ },
+ "unsigned.msi": {
+  "modules": {
+   "msi": {
+    "is_signed": false
+   },
+   "olecf": {
+    "is_olecf": true,
+    "streams": [
+     {
+      "name": "Root Entry",
+      "size": 640,
+      "type": "ROOT"
+     },
+     {
+      "name": "Table",
+      "size": 600,
+      "type": "STREAM"
+     }
+    ]
+   }
+  },
+  "sha256": "52c312f47082406d4b04a3f0bdf0fc353207984f2355cfdb667e63521d29746c"
+ }
+}
