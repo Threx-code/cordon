@@ -423,6 +423,7 @@ class Builtin:
         from cordon_scanner.detect.binary.modules.cuckoo import Cuckoo
         from cordon_scanner.detect.binary.modules.dotnet import Dotnet
         from cordon_scanner.detect.binary.modules.elf import Elf
+        from cordon_scanner.detect.binary.modules.file_type import FileType
         from cordon_scanner.detect.binary.modules.pe import Pe
 
         return {
@@ -436,6 +437,7 @@ class Builtin:
             "dotnet": Module(Dotnet.SCHEMA, Dotnet.data),
             # with no report given to the scan (`Rules.match(given=...)` gives one)
             "cuckoo": Cuckoo.module(),
+            "magic": FileType.module(),
         }
 
 
