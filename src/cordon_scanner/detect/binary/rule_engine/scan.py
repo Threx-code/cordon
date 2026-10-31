@@ -13,15 +13,16 @@ from __future__ import annotations
 import bisect
 import re
 import time
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from typing import Any, ClassVar
 
 from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Compare as _Compare
-from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import TextCheck
+from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import TextCheck, TextFind
 from cordon_scanner.detect.binary.rule_engine.anchoring.places import Places
 from cordon_scanner.detect.binary.rule_engine.anchoring.stream import Streams
 from cordon_scanner.detect.binary.rule_engine.anchors import Anchor, Anchors
 from cordon_scanner.detect.binary.rule_engine.chain import Chain
+from cordon_scanner.detect.binary.rule_engine.hits import Hits
 from cordon_scanner.detect.binary.rule_engine.pattern import (
     GAP,
     LIT,
@@ -243,7 +244,7 @@ class Search:
         fixed: int | None = None,
         deadline: float | None = None,
         seen: dict[Any, Any] | None = None,
-    ) -> list[tuple[int, int]]:
+    ) -> Sequence[tuple[int, int]]:
         """(offset, length) of each match, by offset. With `fixed`, only a match there counts.
         `seen` holds where each anchor occurs in `data`, shared by every string searched there,
         so each distinct anchor is looked for once per piece of data."""
@@ -259,6 +260,8 @@ class Search:
             streamed = hunt.run_streamed(Streams.sources(self, data, seen, hunt))
             if streamed is not None:
                 return streamed
+        if TextFind.usable(self):
+            return self._text_find(data, fixed, seen, deadline)
         events: list[Event] = []
         for needle, length, owners in self.needles:
             starts = seen.get(needle)
@@ -291,6 +294,39 @@ class Search:
             return []
         events.sort(key=lambda e: (e[0], e[1], e[2]))
         return hunt.run(events)
+
+    def _text_find(
+        self, data: bytes, fixed: int | None, seen: dict[Any, Any], deadline: float | None
+    ) -> Hits:
+        """A text string's matches in one native call (`TextFind`), from each anchor's
+        occurrences, found and kept in `seen` as `find` keeps them."""
+        assert self.needles is not None  # noqa: S101 - set by _index
+        owners = []
+        for needle, length, holders in self.needles:
+            starts = seen.get(needle)
+            if starts is None:
+                starts = seen[needle] = Search.occurrences(data, needle, Search.budget(seen))
+            owners += [
+                (starts, length, length + a[1], order, len(a[0]) + a[1]) for order, _, a in holders
+            ]
+        for folded, length, spellings in self.folds:
+            # a folded anchor's owners are those of how the data spells it at each occurrence
+            starts = seen.get(("folded", folded))
+            if starts is None:
+                lowered = seen.get(("lowered",))
+                if lowered is None:
+                    lowered = seen[("lowered",)] = data.lower()
+                budget = Search.budget(seen)
+                starts = seen[("folded", folded)] = Search.occurrences(lowered, folded, budget)
+            spelled: dict[bytes, list[int]] = {}
+            for at in starts:
+                spelled.setdefault(data[at : at + length], []).append(at)
+            for spelling, found in spelled.items():
+                owners += [
+                    (found, length, length + a[1], order, len(a[0]) + a[1])
+                    for order, _, a in spellings[spelling]
+                ]
+        return TextFind.hits(self, data, owners, fixed, MAX_HITS, deadline)
 
     #: An anchor occurring more often than this has its forward gate run over the whole data at
     #: once (`_gated`) rather than tested at each occurrence.

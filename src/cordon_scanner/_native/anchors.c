@@ -481,8 +481,160 @@ done:
     return out;
 }
 
+
+/* text_hits(data, owners, text, mode, flags, max_hits, fixed) -> (starts, lengths), int64 bytes by
+ * start: one text string's matches from its anchors' occurrences, as rule_engine.scan's hunt finds
+ * them. owners: a sequence of (starts, anchor length, back, order, fit length), starts a sequence
+ * of ints (each owner's anchor occurrences). Each occurrence s with back <= s + length is an
+ * event at end e = s + length starting at e - back; the events are taken in order of
+ * (end, longer anchor first, higher order first, as listed), the text checked at each start
+ * (or, flag 1 "fits", the owner's fit length taken), flag 2 "fullword" applied, and each start
+ * recorded once (flag 4 "greedy": a later event replaces its length), stopping at the first new
+ * start past max_hits. fixed >= 0: only that start counts. left >= 0: the seconds allowed, read
+ * at the first event and every 4,096th (TimeoutError past them). Every start, length, back and
+ * fit length must lie in [0, 2**40] (ValueError otherwise), so no sum of them overflows. */
+typedef struct { int64_t e0, nl, no, seq, at; int32_t owner; } Event;
+
+/* seconds on a monotonic clock, for the match's time allowed */
+#ifdef _WIN32
+#include <windows.h>
+static double now_seconds(void) {
+    LARGE_INTEGER f, c; QueryPerformanceFrequency(&f); QueryPerformanceCounter(&c);
+    return (double)c.QuadPart / (double)f.QuadPart;
+}
+#else
+#include <time.h>
+static double now_seconds(void) {
+    struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
+    return (double)t.tv_sec + (double)t.tv_nsec / 1e9;
+}
+#endif
+
+static int cmp_event(const void *x, const void *y) {
+    const Event *a = x, *b = y;
+    if (a->e0 != b->e0) return a->e0 < b->e0 ? -1 : 1;
+    if (a->nl != b->nl) return a->nl < b->nl ? -1 : 1;
+    if (a->no != b->no) return a->no < b->no ? -1 : 1;
+    return a->seq < b->seq ? -1 : (a->seq > b->seq);
+}
+
+static int cmp_i64(const void *x, const void *y) {
+    int64_t a = *(const int64_t *)x, b = *(const int64_t *)y;
+    return a < b ? -1 : (a > b);
+}
+
+static uint8_t ALNUM[256];
+
+#define TEXT_MOST ((long long)1 << 40) /* the largest start, length, back or fit length taken */
+
+static int whole(const uint8_t *d, int64_t n, int64_t start, int64_t length, int wide) {
+    if (wide) {
+        if (start >= 2 && d[start - 1] == 0 && ALNUM[d[start - 2]]) return 0;
+        int64_t end = start + length;
+        return !(end + 1 < n && d[end + 1] == 0 && ALNUM[d[end]]);
+    }
+    if (start >= 1 && ALNUM[d[start - 1]]) return 0;
+    return !(start + length < n && ALNUM[d[start + length]]);
+}
+
+static PyObject *text_hits(PyObject *self, PyObject *args) {
+    (void)self;
+    Py_buffer data, text; PyObject *owners; long mode, flags; Py_ssize_t max_hits, fixed; double left = -1.0;
+    if (!PyArg_ParseTuple(args, "y*Oy*llnn|d", &data, &owners, &text, &mode, &flags, &max_hits, &fixed, &left)) return NULL;
+    PyObject *result = NULL, *seq = NULL;
+    Event *ev = NULL; int64_t *fit = NULL, *keys = NULL, *hs = NULL, *hl = NULL, *slot = NULL;
+    seq = PySequence_Tuple(owners);
+    if (!seq) goto done;
+    Py_ssize_t no = PyTuple_GET_SIZE(seq), total = 0;
+    if (max_hits < 0 || max_hits > ((Py_ssize_t)1 << 30)) { PyErr_SetString(PyExc_ValueError, "max_hits out of range"); goto done; }
+    for (Py_ssize_t k = 0; k < no; k++) {
+        PyObject *o = PyTuple_GET_ITEM(seq, k);
+        if (!PyTuple_Check(o) || PyTuple_GET_SIZE(o) != 5 || !PyList_Check(PyTuple_GET_ITEM(o, 0))) {
+            PyErr_SetString(PyExc_TypeError, "an owner is (list of starts, length, back, order, fit length)"); goto done;
+        }
+        Py_ssize_t m = PyList_GET_SIZE(PyTuple_GET_ITEM(o, 0));
+        if (m > ((Py_ssize_t)1 << 28) - total) { PyErr_SetString(PyExc_MemoryError, "too many occurrences"); goto done; }
+        total += m;
+    }
+    ev = PyMem_RawMalloc(sizeof(Event) * (size_t)(total ? total : 1));
+    fit = PyMem_RawMalloc(sizeof(int64_t) * (size_t)(no ? no : 1));
+    if (!ev || !fit) { PyErr_NoMemory(); goto done; }
+    Py_ssize_t count = 0;
+    for (Py_ssize_t k = 0; k < no; k++) {
+        PyObject *o = PyTuple_GET_ITEM(seq, k), *starts = PyTuple_GET_ITEM(o, 0);
+        long long length = PyLong_AsLongLong(PyTuple_GET_ITEM(o, 1)), back = PyLong_AsLongLong(PyTuple_GET_ITEM(o, 2));
+        long long order = PyLong_AsLongLong(PyTuple_GET_ITEM(o, 3)), f = PyLong_AsLongLong(PyTuple_GET_ITEM(o, 4));
+        if (PyErr_Occurred()) goto done;
+        if (length < 0 || length > TEXT_MOST || back < 0 || back > TEXT_MOST || f < 0 || f > TEXT_MOST) {
+            PyErr_SetString(PyExc_ValueError, "an owner's length, back or fit length is out of range"); goto done;
+        }
+        fit[k] = f;
+        Py_ssize_t m = PyList_GET_SIZE(starts);
+        for (Py_ssize_t i = 0; i < m; i++) {
+            PyObject *x = PyList_GET_ITEM(starts, i);
+            if (!PyLong_CheckExact(x)) { PyErr_SetString(PyExc_TypeError, "a start is not an int"); goto done; }
+            long long sv = PyLong_AsLongLong(x);
+            if (sv == -1 && PyErr_Occurred()) goto done;
+            if (sv < 0 || sv > TEXT_MOST) { PyErr_SetString(PyExc_ValueError, "a start is out of range"); goto done; }
+            if (back <= sv + length) {
+                ev[count].e0 = sv + length; ev[count].nl = -length; ev[count].no = -order;
+                ev[count].seq = count; ev[count].at = sv + length - back; ev[count].owner = (int32_t)k;
+                count++;
+            }
+        }
+    }
+    Py_ssize_t cap = 1; /* the recorded starts: an open-addressed table of at least twice their bound */
+    Py_ssize_t bound = count < max_hits + 1 ? count : max_hits + 1;
+    while (cap < 2 * (bound ? bound : 1)) cap <<= 1;
+    keys = PyMem_RawMalloc(sizeof(int64_t) * (size_t)cap);
+    slot = PyMem_RawMalloc(sizeof(int64_t) * (size_t)cap);
+    hs = PyMem_RawMalloc(sizeof(int64_t) * (size_t)(bound ? bound : 1));
+    hl = PyMem_RawMalloc(sizeof(int64_t) * (size_t)(bound ? bound : 1));
+    if (!keys || !slot || !hs || !hl) { PyErr_NoMemory(); goto done; }
+    for (Py_ssize_t i = 0; i < cap; i++) keys[i] = -1;
+    const uint8_t *d = data.buf, *t = text.buf; int64_t n = data.len, mt = text.len;
+    Py_ssize_t held = 0;
+    int late = 0;
+    double began = now_seconds();
+    Py_BEGIN_ALLOW_THREADS
+    qsort(ev, (size_t)count, sizeof(Event), cmp_event);
+    for (Py_ssize_t i = 0; i < count; i++) {
+        /* the time allowed, read where the hunt reads it: the first event and every 4096th */
+        if (i % 4096 == 0 && left >= 0.0 && now_seconds() - began >= left) { late = 1; break; }
+        int64_t at = ev[i].at;
+        if (at >= n) continue;
+        if (fixed >= 0 && at != fixed) continue;
+        int64_t length = (flags & 1) ? fit[ev[i].owner] : text_at(d, n, (Py_ssize_t)at, t, mt, mode);
+        if (length == 0) continue;
+        if ((flags & 2) && !whole(d, n, at, length, length == 2 * mt)) continue;
+        uint64_t h = (uint64_t)at * 0x9E3779B97F4A7C15ULL;
+        Py_ssize_t j = (Py_ssize_t)(h & (uint64_t)(cap - 1));
+        while (keys[j] != -1 && keys[j] != at) j = (j + 1) & (cap - 1);
+        if (keys[j] == at) { if (flags & 4) hl[slot[j]] = length; continue; }
+        if (held >= max_hits) break; /* full: no event after this one is read */
+        keys[j] = at; slot[j] = held; hs[held] = at; hl[held] = length; held++;
+    }
+    Py_END_ALLOW_THREADS
+    if (late) { PyErr_SetString(PyExc_TimeoutError, "matching took longer than the time allowed"); goto done; }
+    { /* by start */
+        int64_t *pairs = PyMem_RawMalloc(sizeof(int64_t) * 2 * (size_t)(held ? held : 1));
+        if (!pairs) { PyErr_NoMemory(); goto done; }
+        for (Py_ssize_t i = 0; i < held; i++) { pairs[2 * i] = hs[i]; pairs[2 * i + 1] = hl[i]; }
+        qsort(pairs, (size_t)held, 2 * sizeof(int64_t), cmp_i64);
+        for (Py_ssize_t i = 0; i < held; i++) { hs[i] = pairs[2 * i]; hl[i] = pairs[2 * i + 1]; }
+        PyMem_RawFree(pairs);
+    }
+    result = Py_BuildValue("(y#y#)", (const char *)hs, (Py_ssize_t)(held * 8), (const char *)hl, (Py_ssize_t)(held * 8));
+done:
+    PyMem_RawFree(ev); PyMem_RawFree(fit); PyMem_RawFree(keys); PyMem_RawFree(slot); PyMem_RawFree(hs); PyMem_RawFree(hl);
+    Py_XDECREF(seq);
+    PyBuffer_Release(&data); PyBuffer_Release(&text);
+    return result;
+}
+
 static PyMethodDef module_methods[] = {
     {"check_text", check_text, METH_VARARGS, "check_text(data, offsets, text, mode) -> int64 lengths."},
+    {"text_hits", text_hits, METH_VARARGS, "text_hits(data, owners, text, mode, flags, max_hits, fixed[, left]) -> (starts, lengths)."},
     {NULL, NULL, 0, NULL}};
 
 /* The GIL: this module keeps it (single-phase init, so a free-threaded build turns the GIL on
@@ -492,7 +644,10 @@ static PyMethodDef module_methods[] = {
 static struct PyModuleDef module = {PyModuleDef_HEAD_INIT, "_anchors", "Cordon's native anchor automaton and text check.", -1, module_methods, NULL, NULL, NULL, NULL};
 
 PyMODINIT_FUNC PyInit__anchors(void) {
-    for (int i = 0; i < 256; i++) LOWER[i] = (uint8_t)(i >= 'A' && i <= 'Z' ? i + 32 : i);
+    for (int i = 0; i < 256; i++) {
+        LOWER[i] = (uint8_t)(i >= 'A' && i <= 'Z' ? i + 32 : i);
+        ALNUM[i] = (uint8_t)((i >= '0' && i <= '9') || (i >= 'A' && i <= 'Z') || (i >= 'a' && i <= 'z'));
+    }
     if (PyType_Ready(&AutomatonType) < 0) return NULL;
     PyObject *m = PyModule_Create(&module);
     if (!m) return NULL;

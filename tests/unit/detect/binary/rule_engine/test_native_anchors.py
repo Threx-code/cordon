@@ -226,3 +226,42 @@ class TestTheTextCheck:
             Automaton.MODULE.check_text(b"ab", b"\x00\x00\x00", b"a", 1)
         with pytest.raises(TypeError):
             Automaton.MODULE.check_text("ab", b"", b"a", 1)
+
+
+@NATIVE
+class TestTextHitsArguments:
+    """text_hits refuses an owner it cannot read, and any start, length, back or fit length outside
+    [0, 2**40], with an exception, never a read outside the data."""
+
+    @staticmethod
+    def call(owners: object, max_hits: int = 10, left: float = -1.0) -> object:
+        return Automaton.MODULE.text_hits(b"abcabc", owners, b"abc", 1, 1 | 2, max_hits, -1, left)
+
+    @pytest.mark.parametrize(
+        ("owners", "error"),
+        [
+            ([([0], 3, 3, 0, -1)], ValueError), ([([0], -1, 3, 0, 3)], ValueError),
+            ([([0], 3, -9, 0, 3)], ValueError), ([([-1], 3, 3, 0, 3)], ValueError),
+            ([([1 << 62], 3, 3, 0, 3)], ValueError), ([([0], 1 << 62, 0, 0, 3)], ValueError),
+            ([([0], 3, 3, 0, 1 << 62)], ValueError), ([([0], 3, 3, 0, 1 << 70)], OverflowError),
+            ([([0.0], 3, 3, 0, 3)], TypeError), ([((0,), 3, 3, 0, 3)], TypeError),
+            ([([0], 3, 3, 0)], TypeError), (5, TypeError),
+        ],
+    )  # fmt: skip
+    def test_bad_owners_are_refused(self, owners: object, error: type[Exception]) -> None:
+        with pytest.raises(error):
+            self.call(owners)
+
+    def test_bad_max_hits_is_refused(self) -> None:
+        with pytest.raises(ValueError, match="max_hits"):
+            self.call([([0], 3, 3, 0, 3)], max_hits=-1)
+
+    def test_a_fit_past_the_end_reads_nothing_outside(self) -> None:
+        starts, lengths = self.call([([3, 0], 3, 3, 0, 1 << 40)])  # type: ignore[misc]
+        # fullword: the start at 3 follows "c", so only 0 is kept, with the fit length as given
+        assert bytes(starts) == (0).to_bytes(8, "little")
+        assert bytes(lengths) == (1 << 40).to_bytes(8, "little")
+
+    def test_no_time_left_is_a_timeout(self) -> None:
+        with pytest.raises(TimeoutError):
+            self.call([([0, 3], 3, 3, 0, 3)], left=0.0)

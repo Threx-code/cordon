@@ -123,8 +123,8 @@ class Strings:
         cause: BaseException | None = None
         assert s.search is not None  # noqa: S101 - every string is prepared (`Strings.prepare`)
         try:
-            found: list[tuple[int, int]] = s.search.find(data, s.fixed, deadline, seen)
-            hits = Hits(found)
+            found: Sequence[tuple[int, int]] = s.search.find(data, s.fixed, deadline, seen)
+            hits = found if isinstance(found, Hits) else Hits(found)
             del found
             held = seen.get(("matches",), 0) + len(hits)
             if held > Hits.MOST:
