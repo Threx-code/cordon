@@ -321,6 +321,14 @@ class TestRangesDecidedAtRunTime:
         assert bool(rules.match(b"x")) is want
 
 
+class TestAnonymousStrings:
+    def test_an_anonymous_string_is_reported_as_dollar(self) -> None:
+        """As the reference reports it (YARA-Forge's GODMODERULES_IDDQD_God_Mode_Rule, 31 Oct)."""
+        rules = Rules.compile('rule r { strings: $ = "AB" $ = "CD" condition: all of them }')
+        (match,) = rules.match(b"xABxCD")
+        assert sorted(match.strings) == [(1, "$", b"AB"), (4, "$", b"CD")]
+
+
 class TestAtOffsets:
     """The offset after `at` is a whole arithmetic expression, as the reference's grammar reads
     it (signature collections write `$name at @crc[1] + 16`); a comparison or `and` ends it."""

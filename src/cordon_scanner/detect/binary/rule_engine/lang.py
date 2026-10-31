@@ -326,8 +326,10 @@ class Rules:
         for rule in self.rules:
             if not frame.decided[rule.name] or rule.private:
                 continue
+            # an anonymous string is reported as `$`, as the reference reports it; its inner name
+            # (`$#anonymousN`) only keeps it apart from its rule's other anonymous strings
             instances = [
-                (at, s.name, data[at : at + n])
+                (at, "$" if s.name.startswith("$#") else s.name, data[at : at + n])
                 for s in rule.strings
                 if not s.private
                 for at, n in found_by[rule.name][s.name]
