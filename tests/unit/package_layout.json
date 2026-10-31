@@ -944,6 +944,7 @@
   "test_layout.py": "detect/binary/modules",
   "test_malformed_replay.py": "detect/binary/modules",
   "test_macho.py": "detect/binary/modules/formats",
+  "test_yara_assertions.py": "detect/binary/modules/formats",
   "test_matching.py": "detect/binary/rule_engine",
   "test_builtin.py": "detect/binary/modules",
   "test_oids.py": "detect/binary/modules",
