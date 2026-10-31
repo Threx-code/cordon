@@ -17,7 +17,7 @@ Named differences from YARA-X's reading: a symbol whose name runs off the string
 and the table goes on (YARA-X stops there); an export node's flags are read as bits (YARA-X matches
 the whole value, so a weak stub is misread); an entitlements plist with an entity declaration is not
 parsed (XML entity expansion is unbounded); a name is rendered from its attributes in order with
-", " between, as x509-parser prints one.
+", " between, as x509-parser prints one, which labels a user id `uid` where OpenSSL says `UID`.
 """
 
 from __future__ import annotations
@@ -78,6 +78,8 @@ class Shape:
 class MachoX:
     """The link-edit names, their reading, and their functions."""
 
+    LABELS: ClassVar[dict[str, str]] = {"0.9.2342.19200300.100.1.1": "uid"}
+    """The attribute labels x509-parser gives otherwise than OpenSSL's short names."""
     LC_SYMTAB: ClassVar[int] = 0x02
     LC_DYSYMTAB: ClassVar[int] = 0x0B
     LC_CODE_SIGNATURE: ClassVar[int] = 0x1D
@@ -462,7 +464,7 @@ class MachoX:
         for rdn in name.rdns:
             for oid, _tag, data in rdn:
                 names = ObjectIds.NAMES.get(oid)
-                label = (names[0] or names[1] or oid) if names else oid
+                label = MachoX.LABELS.get(oid) or ((names[0] or names[1] or oid) if names else oid)
                 parts.append(f"{label}={data.decode('utf-8', 'replace')}")
         return ", ".join(parts).encode("utf-8")
 

@@ -16,8 +16,8 @@ engine's recorded output is what the tests hold this to.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any, ClassVar
 
 from cordon_scanner.detect.binary.modules.der import BadDer, Clock, Encode, Hash, Tlv
@@ -435,8 +435,10 @@ class Signatures:
     MSG_DIGEST: ClassVar[str] = "1.2.840.113549.1.9.4"
 
     @staticmethod
-    def parse(blob: bytes, now: int, depth: int = 0) -> list[Signed]:
-        """``authenticode_new``: this signature, then the ones nested in it."""
+    def parse(blob: bytes, now: int, depth: int = 0, *, bundled: bool = False) -> list[Signed]:
+        """``authenticode_new``: this signature, then the ones nested in it. With `bundled`, a
+        Microsoft timestamp's chain is built from its own certificates and the signature's together
+        (YARA-X's reading, which the installer module follows); without, from its own (YARA's)."""
         if not blob:
             return []
         sig = Signed()
@@ -464,7 +466,7 @@ class Signatures:
         nested = Signer.values_of(si.unsigned_attrs, Signatures.SPC_NESTED) or []
         if depth < Signed.MAX_DEPTH:
             for value in nested[: Signed.MAX_NESTED]:
-                out.extend(Signatures.parse(value.span, now, depth + 1))
+                out.extend(Signatures.parse(value.span, now, depth + 1, bundled=bundled))
         for value in (Signer.values_of(si.unsigned_attrs, Signatures.PKCS9_COUNTERSIG) or [])[
             : Signed.MAX_NESTED
         ]:
@@ -473,6 +475,9 @@ class Signatures:
             : Signed.MAX_NESTED
         ]:
             counter = Countersign.from_microsoft(value, si.signature, now)
+            if bundled and counter.chain:
+                pool = [*(counter.certs or []), *signed.certs]
+                counter.chain = ChainWalk.build(counter.chain[0], pool, now)
             sig.countersigs.append(counter)
             sig.certs.extend(counter.certs or [])
         resolved = [s.locate(signed.certs) for s in signed.signers]

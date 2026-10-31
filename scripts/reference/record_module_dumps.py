@@ -100,35 +100,43 @@ class Dump:
         return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def main(dumps: Path, fixtures: Path, out: Path) -> None:
-    record: dict[str, Any] = {}
-    for path in sorted(dumps.glob("*.json")):  # yr's JSON dumps (`yr dump --output-format=json`)
-        name = path.name[:-5]
-        data = (fixtures / name).read_bytes()
-        dump = json.loads(path.read_text(encoding="utf-8"))
-        record[name] = {"sha256": hashlib.sha256(data).hexdigest(), "modules": dump}
-    for path in sorted(dumps.glob("*.yara.txt")):
-        if path.stat().st_size == 0:
-            continue  # the reference gave no dump (it was killed on a crafted file)
-        name, module = path.name.rsplit(".", 3)[0], path.name.rsplit(".", 3)[1]
-        data = (fixtures / name).read_bytes()
-        entry = record.setdefault(name, {"sha256": hashlib.sha256(data).hexdigest(), "modules": {}})
-        tree = Dump.parse(path.read_text(encoding="utf-8", errors="replace")).get(module, {})
-        if name.startswith(
-            "shared-"
-        ):  # a crafted file of thousands of entries: its leaves as a digest
-            leaves = Dump.leaves(tree, "", {})
-            entry["modules"][module] = {
-                "summary": True,
-                "number_of_methods": tree.get("number_of_methods"),
-                "leaf_count": len(leaves),
-                "leaf_digest": Dump.digest(leaves),
-            }
-        else:
-            entry["modules"][module] = tree
-    out.write_text(json.dumps(record, indent=1, sort_keys=True) + "\n", encoding="utf-8")
-    print(f"{len(record)} fixtures recorded to {out}")
+class Recorder:
+    """The recording run: every dump in a directory, with its file's SHA-256, into one JSON file."""
+
+    @staticmethod
+    def main(dumps: Path, fixtures: Path, out: Path) -> None:
+        record: dict[str, Any] = {}
+        for path in sorted(
+            dumps.glob("*.json")
+        ):  # yr's JSON dumps (`yr dump --output-format=json`)
+            name = path.name[:-5]
+            data = (fixtures / name).read_bytes()
+            dump = json.loads(path.read_text(encoding="utf-8"))
+            record[name] = {"sha256": hashlib.sha256(data).hexdigest(), "modules": dump}
+        for path in sorted(dumps.glob("*.yara.txt")):
+            if path.stat().st_size == 0:
+                continue  # the reference gave no dump (it was killed on a crafted file)
+            name, module = path.name.rsplit(".", 3)[0], path.name.rsplit(".", 3)[1]
+            data = (fixtures / name).read_bytes()
+            entry = record.setdefault(
+                name, {"sha256": hashlib.sha256(data).hexdigest(), "modules": {}}
+            )
+            tree = Dump.parse(path.read_text(encoding="utf-8", errors="replace")).get(module, {})
+            if name.startswith(
+                "shared-"
+            ):  # a crafted file of thousands of entries: its leaves as a digest
+                leaves = Dump.leaves(tree, "", {})
+                entry["modules"][module] = {
+                    "summary": True,
+                    "number_of_methods": tree.get("number_of_methods"),
+                    "leaf_count": len(leaves),
+                    "leaf_digest": Dump.digest(leaves),
+                }
+            else:
+                entry["modules"][module] = tree
+        out.write_text(json.dumps(record, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+        print(f"{len(record)} fixtures recorded to {out}")
 
 
 if __name__ == "__main__":
-    main(Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]))
+    Recorder.main(Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]))

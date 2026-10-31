@@ -1,0 +1,517 @@
+{
+ "gh-macos-arm64": {
+  "modules": {
+   "macho": {
+    "CPU_ARCH_ABI64": 16777216,
+    "CPU_SUBTYPE_386": 3,
+    "CPU_SUBTYPE_486": 4,
+    "CPU_SUBTYPE_486SX": 132,
+    "CPU_SUBTYPE_586": 5,
+    "CPU_SUBTYPE_ARM64_ALL": 0,
+    "CPU_SUBTYPE_ARM_ALL": 0,
+    "CPU_SUBTYPE_ARM_V4T": 5,
+    "CPU_SUBTYPE_ARM_V5": 7,
+    "CPU_SUBTYPE_ARM_V5TEJ": 7,
+    "CPU_SUBTYPE_ARM_V6": 6,
+    "CPU_SUBTYPE_ARM_V6M": 14,
+    "CPU_SUBTYPE_ARM_V7": 9,
+    "CPU_SUBTYPE_ARM_V7EM": 16,
+    "CPU_SUBTYPE_ARM_V7F": 10,
+    "CPU_SUBTYPE_ARM_V7K": 12,
+    "CPU_SUBTYPE_ARM_V7M": 15,
+    "CPU_SUBTYPE_ARM_V7S": 11,
+    "CPU_SUBTYPE_ARM_XSCALE": 8,
+    "CPU_SUBTYPE_CELERON": 103,
+    "CPU_SUBTYPE_CELERON_MOBILE": 119,
+    "CPU_SUBTYPE_I386_ALL": 3,
+    "CPU_SUBTYPE_INTEL_MODEL_ALL": 0,
+    "CPU_SUBTYPE_ITANIUM": 11,
+    "CPU_SUBTYPE_ITANIUM_2": 27,
+    "CPU_SUBTYPE_LIB64": 2147483648,
+    "CPU_SUBTYPE_MC980000_ALL": 0,
+    "CPU_SUBTYPE_MC98601": 1,
+    "CPU_SUBTYPE_PENT": 5,
+    "CPU_SUBTYPE_PENTII_M3": 54,
+    "CPU_SUBTYPE_PENTII_M5": 86,
+    "CPU_SUBTYPE_PENTIUM_3": 8,
+    "CPU_SUBTYPE_PENTIUM_3_M": 24,
+    "CPU_SUBTYPE_PENTIUM_3_XEON": 40,
+    "CPU_SUBTYPE_PENTIUM_4": 10,
+    "CPU_SUBTYPE_PENTIUM_4_M": 26,
+    "CPU_SUBTYPE_PENTIUM_M": 9,
+    "CPU_SUBTYPE_PENTPRO": 22,
+    "CPU_SUBTYPE_POWERPC_601": 1,
+    "CPU_SUBTYPE_POWERPC_602": 2,
+    "CPU_SUBTYPE_POWERPC_603": 3,
+    "CPU_SUBTYPE_POWERPC_603e": 4,
+    "CPU_SUBTYPE_POWERPC_603ev": 5,
+    "CPU_SUBTYPE_POWERPC_604": 6,
+    "CPU_SUBTYPE_POWERPC_604e": 7,
+    "CPU_SUBTYPE_POWERPC_620": 8,
+    "CPU_SUBTYPE_POWERPC_7400": 10,
+    "CPU_SUBTYPE_POWERPC_7450": 11,
+    "CPU_SUBTYPE_POWERPC_750": 9,
+    "CPU_SUBTYPE_POWERPC_970": 100,
+    "CPU_SUBTYPE_POWERPC_ALL": 0,
+    "CPU_SUBTYPE_SPARC_ALL": 0,
+    "CPU_SUBTYPE_X86_64_ALL": 3,
+    "CPU_SUBTYPE_XEON": 12,
+    "CPU_SUBTYPE_XEON_MP": 28,
+    "CPU_TYPE_ARM": 12,
+    "CPU_TYPE_ARM64": 16777228,
+    "CPU_TYPE_I386": 7,
+    "CPU_TYPE_MC680X0": 6,
+    "CPU_TYPE_MC88000": 13,
+    "CPU_TYPE_MC98000": 10,
+    "CPU_TYPE_MIPS": 8,
+    "CPU_TYPE_POWERPC": 18,
+    "CPU_TYPE_POWERPC64": 16777234,
+    "CPU_TYPE_SPARC": 14,
+    "CPU_TYPE_X86": 7,
+    "CPU_TYPE_X86_64": 16777223,
+    "FAT_CIGAM": 3199925962,
+    "FAT_CIGAM_64": 3216703178,
+    "FAT_MAGIC": 3405691582,
+    "FAT_MAGIC_64": 3405691583,
+    "MH_ALLMODSBOUND": 4096,
+    "MH_ALLOW_STACK_EXECUTION": 131072,
+    "MH_APP_EXTENSION_SAFE": 33554432,
+    "MH_BINDATLOAD": 8,
+    "MH_BINDS_TO_WEAK": 65536,
+    "MH_BUNDLE": 8,
+    "MH_CANONICAL": 16384,
+    "MH_CIGAM": 3472551422,
+    "MH_CIGAM_64": 3489328638,
+    "MH_CORE": 4,
+    "MH_DEAD_STRIPPABLE_DYLIB": 4194304,
+    "MH_DSYM": 10,
+    "MH_DYLDLINK": 4,
+    "MH_DYLIB": 6,
+    "MH_DYLIB_STUB": 9,
+    "MH_DYLINKER": 7,
+    "MH_EXECUTE": 2,
+    "MH_FORCE_FLAT": 256,
+    "MH_FVMLIB": 3,
+    "MH_HAS_TLV_DESCRIPTORS": 8388608,
+    "MH_INCRLINK": 2,
+    "MH_KEXT_BUNDLE": 11,
+    "MH_LAZY_INIT": 64,
+    "MH_MAGIC": 4277009102,
+    "MH_MAGIC_64": 4277009103,
+    "MH_NOFIXPREBINDING": 1024,
+    "MH_NOMULTIDEFS": 512,
+    "MH_NOUNDEFS": 1,
+    "MH_NO_HEAP_EXECUTION": 16777216,
+    "MH_NO_REEXPORTED_DYLIBS": 1048576,
+    "MH_OBJECT": 1,
+    "MH_PIE": 2097152,
+    "MH_PREBINDABLE": 2048,
+    "MH_PREBOUND": 16,
+    "MH_PRELOAD": 5,
+    "MH_ROOT_SAFE": 262144,
+    "MH_SETUID_SAFE": 524288,
+    "MH_SPLIT_SEGS": 32,
+    "MH_SUBSECTIONS_VIA_SYMBOLS": 8192,
+    "MH_TWOLEVEL": 128,
+    "MH_WEAK_DEFINES": 32768,
+    "SECTION_ATTRIBUTES": 4294967040,
+    "SECTION_TYPE": 255,
+    "SG_FVMLIB": 2,
+    "SG_HIGHVM": 1,
+    "SG_NORELOC": 4,
+    "SG_PROTECTED_VERSION_1": 8,
+    "S_16BYTE_LITERALS": 14,
+    "S_4BYTE_LITERALS": 3,
+    "S_8BYTE_LITERALS": 4,
+    "S_ATTR_DEBUG": 33554432,
+    "S_ATTR_EXT_RELOC": 512,
+    "S_ATTR_LIVE_SUPPORT": 134217728,
+    "S_ATTR_LOC_RELOC": 256,
+    "S_ATTR_NO_DEAD_STRIP": 268435456,
+    "S_ATTR_NO_TOC": 1073741824,
+    "S_ATTR_PURE_INSTRUCTIONS": 2147483648,
+    "S_ATTR_SELF_MODIFYING_CODE": 67108864,
+    "S_ATTR_SOME_INSTRUCTIONS": 1024,
+    "S_ATTR_STRIP_STATIC_SYMS": 536870912,
+    "S_COALESCED": 11,
+    "S_CSTRING_LITERALS": 2,
+    "S_DTRACE_DOF": 15,
+    "S_GB_ZEROFILL": 12,
+    "S_INTERPOSING": 13,
+    "S_LAZY_DYLIB_SYMBOL_POINTERS": 16,
+    "S_LAZY_SYMBOL_POINTERS": 7,
+    "S_LITERAL_POINTERS": 5,
+    "S_MOD_INIT_FUNC_POINTERS": 9,
+    "S_MOD_TERM_FUNC_POINTERS": 10,
+    "S_NON_LAZY_SYMBOL_POINTERS": 6,
+    "S_REGULAR": 0,
+    "S_SYMBOL_STUBS": 8,
+    "S_THREAD_LOCAL_INIT_FUNCTION_POINTERS": 21,
+    "S_THREAD_LOCAL_REGULAR": 17,
+    "S_THREAD_LOCAL_VARIABLES": 19,
+    "S_THREAD_LOCAL_VARIABLE_POINTERS": 20,
+    "S_THREAD_LOCAL_ZEROFILL": 18,
+    "S_ZEROFILL": 1,
+    "cpusubtype": 0,
+    "cputype": 16777228,
+    "entry_point": 562768,
+    "fat_arch": {},
+    "file": {},
+    "filetype": 2,
+    "flags": 2097156,
+    "magic": 3489328638,
+    "ncmds": 17,
+    "number_of_segments": 5,
+    "reserved": 0,
+    "segments": {
+     "0": {
+      "fileoff": 0,
+      "flags": 0,
+      "fsize": 0,
+      "initprot": 0,
+      "maxprot": 0,
+      "nsects": 0,
+      "sections": {},
+      "segname": {
+       "b": "5f5f504147455a45524f"
+      },
+      "vmaddr": 0,
+      "vmsize": 4294967296
+     },
+     "1": {
+      "fileoff": 0,
+      "flags": 0,
+      "fsize": 32866304,
+      "initprot": 5,
+      "maxprot": 7,
+      "nsects": 4,
+      "sections": {
+       "0": {
+        "addr": 4294971392,
+        "align": 4,
+        "flags": 2147484672,
+        "nreloc": 0,
+        "offset": 4096,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "reserved3": 0,
+        "sectname": {
+         "b": "5f5f74657874"
+        },
+        "segname": {
+         "b": "5f5f54455854"
+        },
+        "size": 15374788
+       },
+       "1": {
+        "addr": 4310346208,
+        "align": 5,
+        "flags": 2147484680,
+        "nreloc": 0,
+        "offset": 15378912,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 6,
+        "reserved3": 0,
+        "sectname": {
+         "b": "5f5f73796d626f6c5f7374756231"
+        },
+        "segname": {
+         "b": "5f5f54455854"
+        },
+        "size": 1764
+       },
+       "2": {
+        "addr": 4310348000,
+        "align": 5,
+        "flags": 0,
+        "nreloc": 0,
+        "offset": 15380704,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "reserved3": 0,
+        "sectname": {
+         "b": "5f5f726f64617461"
+        },
+        "segname": {
+         "b": "5f5f54455854"
+        },
+        "size": 4045529
+       },
+       "3": {
+        "addr": 4314393536,
+        "align": 3,
+        "flags": 0,
+        "nreloc": 0,
+        "offset": 19426240,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "reserved3": 0,
+        "sectname": {
+         "b": "5f5f676f70636c6e746162"
+        },
+        "segname": {
+         "b": "5f5f54455854"
+        },
+        "size": 13433058
+       }
+      },
+      "segname": {
+       "b": "5f5f54455854"
+      },
+      "vmaddr": 4294967296,
+      "vmsize": 32866304
+     },
+     "2": {
+      "fileoff": 32866304,
+      "flags": 16,
+      "fsize": 4352512,
+      "initprot": 3,
+      "maxprot": 3,
+      "nsects": 4,
+      "sections": {
+       "0": {
+        "addr": 4327833600,
+        "align": 5,
+        "flags": 0,
+        "nreloc": 0,
+        "offset": 32866304,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "reserved3": 0,
+        "sectname": {
+         "b": "5f5f726f64617461"
+        },
+        "segname": {
+         "b": "5f5f444154415f434f4e5354"
+        },
+        "size": 365816
+       },
+       "1": {
+        "addr": 4328199424,
+        "align": 4,
+        "flags": 0,
+        "nreloc": 0,
+        "offset": 33232128,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "reserved3": 0,
+        "sectname": {
+         "b": "5f5f676f5f74797065"
+        },
+        "segname": {
+         "b": "5f5f444154415f434f4e5354"
+        },
+        "size": 3963128
+       },
+       "2": {
+        "addr": 4332162552,
+        "align": 3,
+        "flags": 0,
+        "nreloc": 0,
+        "offset": 37195256,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "reserved3": 0,
+        "sectname": {
+         "b": "5f5f676f5f66756e63"
+        },
+        "segname": {
+         "b": "5f5f444154415f434f4e5354"
+        },
+        "size": 22384
+       },
+       "3": {
+        "addr": 4332184936,
+        "align": 2,
+        "flags": 6,
+        "nreloc": 0,
+        "offset": 37217640,
+        "reloff": 0,
+        "reserved1": 147,
+        "reserved2": 0,
+        "reserved3": 0,
+        "sectname": {
+         "b": "5f5f676f74"
+        },
+        "segname": {
+         "b": "5f5f444154415f434f4e5354"
+        },
+        "size": 1176
+       }
+      },
+      "segname": {
+       "b": "5f5f444154415f434f4e5354"
+      },
+      "vmaddr": 4327833600,
+      "vmsize": 4352512
+     },
+     "3": {
+      "fileoff": 37224448,
+      "flags": 0,
+      "fsize": 1494016,
+      "initprot": 3,
+      "maxprot": 3,
+      "nsects": 7,
+      "sections": {
+       "0": {
+        "addr": 4332191744,
+        "align": 4,
+        "flags": 0,
+        "nreloc": 0,
+        "offset": 37224448,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "reserved3": 0,
+        "sectname": {
+         "b": "5f5f676f5f6275696c64696e666f"
+        },
+        "segname": {
+         "b": "5f5f44415441"
+        },
+        "size": 15840
+       },
+       "1": {
+        "addr": 4332207584,
+        "align": 5,
+        "flags": 0,
+        "nreloc": 0,
+        "offset": 37240288,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "reserved3": 0,
+        "sectname": {
+         "b": "5f5f676f5f66697073696e666f"
+        },
+        "segname": {
+         "b": "5f5f44415441"
+        },
+        "size": 120
+       },
+       "2": {
+        "addr": 4332207712,
+        "align": 5,
+        "flags": 0,
+        "nreloc": 0,
+        "offset": 37240416,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "reserved3": 0,
+        "sectname": {
+         "b": "5f5f676f5f6d6f64756c65"
+        },
+        "segname": {
+         "b": "5f5f44415441"
+        },
+        "size": 568
+       },
+       "3": {
+        "addr": 4332208288,
+        "align": 5,
+        "flags": 0,
+        "nreloc": 0,
+        "offset": 37240992,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "reserved3": 0,
+        "sectname": {
+         "b": "5f5f6e6f70747264617461"
+        },
+        "segname": {
+         "b": "5f5f44415441"
+        },
+        "size": 1066273
+       },
+       "4": {
+        "addr": 4333274592,
+        "align": 5,
+        "flags": 0,
+        "nreloc": 0,
+        "offset": 38307296,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "reserved3": 0,
+        "sectname": {
+         "b": "5f5f64617461"
+        },
+        "segname": {
+         "b": "5f5f44415441"
+        },
+        "size": 411154
+       },
+       "5": {
+        "addr": 4333685760,
+        "align": 5,
+        "flags": 1,
+        "nreloc": 0,
+        "offset": 0,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "reserved3": 0,
+        "sectname": {
+         "b": "5f5f627373"
+        },
+        "segname": {
+         "b": "5f5f44415441"
+        },
+        "size": 237976
+       },
+       "6": {
+        "addr": 4333923744,
+        "align": 5,
+        "flags": 1,
+        "nreloc": 0,
+        "offset": 0,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "reserved3": 0,
+        "sectname": {
+         "b": "5f5f6e6f707472627373"
+        },
+        "segname": {
+         "b": "5f5f44415441"
+        },
+        "size": 35872024
+       }
+      },
+      "segname": {
+       "b": "5f5f44415441"
+      },
+      "vmaddr": 4332191744,
+      "vmsize": 37604024
+     },
+     "4": {
+      "fileoff": 38731776,
+      "flags": 0,
+      "fsize": 1103008,
+      "initprot": 1,
+      "maxprot": 1,
+      "nsects": 0,
+      "sections": {},
+      "segname": {
+       "b": "5f5f4c494e4b45444954"
+      },
+      "vmaddr": 4369809408,
+      "vmsize": 1114112
+     }
+    },
+    "sizeofcmds": 2144,
+    "stack_size": 0
+   }
+  },
+  "sha256": "8a4258433c81106343144857750316241759d06dcf16265cf3c4864a8f2f2ad6"
+ }
+}
