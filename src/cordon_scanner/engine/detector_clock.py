@@ -14,6 +14,7 @@ byte what they were. CPU time (`time.process_time`), so a loaded machine does no
 
 from __future__ import annotations
 
+import contextlib
 import os
 import time
 from typing import TYPE_CHECKING, ClassVar, TypeVar
@@ -21,7 +22,7 @@ from typing import TYPE_CHECKING, ClassVar, TypeVar
 from cordon_scanner.foundation.collector import ScanCaches
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Callable, Iterator, Mapping
 
 T = TypeVar("T")
 
@@ -33,10 +34,23 @@ class DetectorClock:
 
     #: Seconds by detector id, for the scan in progress; emptied after each scan.
     _spent: ClassVar[dict[str, float]] = {}
+    #: Batches a timed scan sent to this worker: the clock is on for them whatever this process's
+    #: environment says. A warm pool's workers started before the scan set the switch.
+    _forced: ClassVar[int] = 0
 
     @staticmethod
     def enabled() -> bool:
-        return os.environ.get(DetectorClock.SWITCH) == "1"
+        return DetectorClock._forced > 0 or os.environ.get(DetectorClock.SWITCH) == "1"
+
+    @staticmethod
+    @contextlib.contextmanager
+    def on() -> Iterator[None]:
+        """The clock on for what runs inside, as a timed scan asked, in whichever process runs it."""
+        DetectorClock._forced += 1
+        try:
+            yield
+        finally:
+            DetectorClock._forced -= 1
 
     @staticmethod
     def timed(detector_id: str, run: Callable[[], T]) -> T:

@@ -53,6 +53,18 @@ class TestTheClock(ParallelFixtures):
         # batches. Both scans ran the same detectors, so both name the same ones.
         assert set(parallel) == set(serial)
 
+    def test_a_pool_started_before_the_clock_was_on_still_times_the_scan(
+        self, repository: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A warm pool's workers started with the clock off; the scan that turns it on is still
+        timed in them, because the clock follows the scan, not the worker's environment."""
+        monkeypatch.delenv(DetectorClock.SWITCH, raising=False)
+        ClockKit.scan(repository, 4)  # the pool starts, clock off
+        monkeypatch.setenv(DetectorClock.SWITCH, "1")
+        serial = ClockKit.scan(repository, 1)["detector_cpu_ms"]
+        parallel = ClockKit.scan(repository, 4)["detector_cpu_ms"]
+        assert set(parallel) == set(serial)
+
     def test_each_scan_starts_from_zero(
         self, repository: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

@@ -502,7 +502,10 @@ class ParallelScanner:
         """`_inspect_batch`, with the CPU time each detector spent on it (`DetectorClock`)."""
         from cordon_scanner.engine.detector_clock import DetectorClock
 
-        out = ParallelScanner._inspect_batch(batch, root, deadline)
+        # The clock follows the scan that asked for it, not this worker's environment: a warm pool's
+        # workers may have started before the scan turned the clock on.
+        with DetectorClock.on():
+            out = ParallelScanner._inspect_batch(batch, root, deadline)
         return out, DetectorClock.taken()
 
     @staticmethod
