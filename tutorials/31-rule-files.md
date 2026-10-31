@@ -46,8 +46,10 @@ ran" never look alike.
 - **Conditions**: counts, offsets and lengths of matches (`#a`, `@a[i]`, `!a[i]`), `at` and `in`,
   string sets and quantifiers, both `for` loops, arithmetic and bitwise operators, the integer
   readers, `defined`, and the string operators including `matches`.
-- **Modules**: `math`, `hash`, `string`, `console` and `time`; `pe`, `elf` and `dotnet` for
-  executables; `cuckoo` for what a sandbox run did (below).
+- **Modules**: `math`, `hash`, `string`, `console` and `time`; `pe`, `elf`, `dotnet`, `macho` and
+  `dex` for executables; `olecf`, `msi` and `vba` for compound files, installers and macros; `lnk`,
+  `zip` and `crx` for shortcuts, archives and browser extensions; `magic` for a file's type;
+  `cuckoo` for what a sandbox run did (below).
 
 ## Giving a module data: `cuckoo`
 

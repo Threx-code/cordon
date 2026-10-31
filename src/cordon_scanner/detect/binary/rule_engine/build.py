@@ -21,12 +21,14 @@ from typing import Any, ClassVar
 from cordon_scanner.detect.binary.modules.values import (
     Call,
     Data,
+    Dual,
     Keyed,
     Module,
     Record,
     Scalar,
     Seq,
 )
+from cordon_scanner.detect.binary.rule_engine.shapes import Shapes
 from cordon_scanner.detect.binary.rule_engine.syntax import (
     Arith,
     Both,
@@ -252,9 +254,10 @@ class _BuilderValues:
             return {"int": "an integer", "float": "a float", "text": "a string"}.get(
                 kind.name, "a boolean"
             )
-        return {Record: "a structure", Seq: "an array", Keyed: "a dictionary", Call: "a function"}[
-            type(kind)
-        ]
+        return {
+            Record: "a structure", Seq: "an array", Keyed: "a dictionary", Call: "a function",
+            Dual: "a field with two shapes",
+        }[type(kind)]  # fmt: skip
 
     @staticmethod
     def scalar(kind: Any, what: str) -> Scalar:
@@ -485,6 +488,10 @@ class _BuilderOperators(_BuilderStrings):
         lk, left = self.node(node.left)
         rk, right = self.node(node.right)
         op = node.op
+        if isinstance(lk, Dual) or isinstance(rk, Dual):
+            rule = self.scope.rule
+            lk, left = Shapes.settle(rule, lk, left, Shapes.decide(lk, rk, node.right), node.left)
+            rk, right = Shapes.settle(rule, rk, right, Shapes.decide(rk, lk, node.left), node.right)
         a_kind, b_kind = Builder.scalar(lk, op), Builder.scalar(rk, op)
         if op in Fold.TEXT_TESTS:
             for k in (a_kind, b_kind):
@@ -508,7 +515,7 @@ class _BuilderOperators(_BuilderStrings):
         return BOOL, compare
 
     def _matches(self, node: Matches) -> tuple[Any, Fn]:
-        kind, fn = self.node(node.subject)
+        kind, fn = Shapes.settle(self.scope.rule, *self.node(node.subject), None, node.subject)
         if Builder.scalar(kind, "matches") is not TEXT:
             raise RuleError(f"matches needs a string, not {Builder.describe(kind)}")
         matcher, rule = node.matcher, self.scope.rule.name
@@ -553,7 +560,7 @@ class _BuilderOperators(_BuilderStrings):
         return BOOL, negate
 
     def _defined(self, node: Defined) -> tuple[Any, Fn]:
-        kind, fn = self.node(node.operand)
+        kind, fn = Shapes.settle(self.scope.rule, *self.node(node.operand), None, node.operand)
         Builder.as_test(kind, "a test")
         return BOOL, lambda f: fn(f) is not None
 
@@ -908,6 +915,7 @@ class Builder(_BuilderQuantifiers):
             raise RuleError("only a function can be called")
         built: list[Fn] = []
         kinds: list[str | None] = []
+        duals: list[tuple[int, Any, Fn, Node]] = []
         for arg in step.args:
             if isinstance(arg, Pattern):
                 matcher = arg.matcher
@@ -915,12 +923,35 @@ class Builder(_BuilderQuantifiers):
                 built.append(Builder.fixed(matcher))
                 continue
             arg_kind, arg_fn = self.node(arg)  # a test is a boolean argument
+            if isinstance(arg_kind, Dual):  # offered in its first shape, then its second
+                duals.append((len(kinds), arg_kind, arg_fn, arg))
+                kinds.append(arg_kind.first.name)
+                built.append(arg_fn)
+                continue
             kinds.append(Builder.scalar(arg_kind, "a function's argument").name)
             built.append(arg_fn)
         choice = kind.pick(tuple(kinds))
+        if duals:
+            other_kinds = list(kinds)
+            for pos, dual, _fn, _arg in duals:
+                other_kinds[pos] = dual.second.name
+            other = kind.pick(tuple(other_kinds))
+            if choice is None:
+                choice = other
+            elif other is not None and other != choice:
+                for _pos, dual, _fn, arg in duals:
+                    self.scope.rule.notes.append(
+                        f"{Shapes.spell(arg)} has two shapes and the function takes either: "
+                        f"passed as {dual.labels[0]}, not {dual.labels[1]}"
+                    )
         if choice is None:
             raise RuleError(f"no function takes arguments of types {tuple(kinds)}")
         result = kind.sigs[choice].result
+        for pos, dual, dual_fn, arg in duals:
+            wanted = Builder.SCALARS.get(kind.sigs[choice].params[pos])
+            shape = None if wanted is None else dual.index_of(wanted)
+            settled: tuple[Any, Fn] = Shapes.settle(self.scope.rule, dual, dual_fn, shape, arg)
+            built[pos] = settled[1]
 
         def invoke(f: Frame) -> Any:
             impls = fn(f)
@@ -934,6 +965,7 @@ class Builder(_BuilderQuantifiers):
         return result, invoke
 
     BUILDS: ClassVar[dict[type, Callable[..., tuple[Any, Fn]]]] = {}
+    SCALARS: ClassVar[dict[str, Scalar]] = {"int": INT, "float": FLOAT, "text": TEXT, "bool": BOOL}
 
 
 Builder.BUILDS.update({

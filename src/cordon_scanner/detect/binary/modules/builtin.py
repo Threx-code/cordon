@@ -424,7 +424,12 @@ class Builtin:
         from cordon_scanner.detect.binary.modules.elf import Elf
         from cordon_scanner.detect.binary.modules.file_type import FileType
         from cordon_scanner.detect.binary.modules.formats.crx import Crx
+        from cordon_scanner.detect.binary.modules.formats.dex import Dex
         from cordon_scanner.detect.binary.modules.formats.lnk import Lnk
+        from cordon_scanner.detect.binary.modules.formats.macho import Macho
+        from cordon_scanner.detect.binary.modules.formats.msi import Msi
+        from cordon_scanner.detect.binary.modules.formats.olecf import Olecf
+        from cordon_scanner.detect.binary.modules.formats.vba import Vba
         from cordon_scanner.detect.binary.modules.formats.zip import Zip
         from cordon_scanner.detect.binary.modules.pe import Pe
         from cordon_scanner.detect.binary.modules.reports.cuckoo import Cuckoo
@@ -444,6 +449,11 @@ class Builtin:
             # with no report given to the scan (`Rules.match(given=...)` gives one)
             "cuckoo": Cuckoo.module(),
             "magic": FileType.module(),
+            "macho": Module(Macho.SCHEMA, Macho.data),
+            "dex": Module(Dex.SCHEMA, Dex.data),
+            "olecf": Module(Olecf.SCHEMA, Olecf.data),
+            "msi": Module(Msi.SCHEMA, Msi.data),
+            "vba": Module(Vba.SCHEMA, Vba.data),
         }
 
 
