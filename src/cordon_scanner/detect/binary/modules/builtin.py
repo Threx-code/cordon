@@ -414,6 +414,8 @@ class Builtin:
     def modules() -> dict[str, Module]:
         from cordon_scanner.detect.binary.modules.dotnet import Dotnet
         from cordon_scanner.detect.binary.modules.elf import Elf
+        from cordon_scanner.detect.binary.modules.formats.dex import Dex
+        from cordon_scanner.detect.binary.modules.formats.macho import Macho
         from cordon_scanner.detect.binary.modules.pe import Pe
 
         return {
@@ -425,6 +427,8 @@ class Builtin:
             "pe": Module(Pe.SCHEMA, Pe.data),
             "elf": Module(Elf.SCHEMA, Elf.data),
             "dotnet": Module(Dotnet.SCHEMA, Dotnet.data),
+            "macho": Module(Macho.SCHEMA, Macho.data),
+            "dex": Module(Dex.SCHEMA, Dex.data),
         }
 
 

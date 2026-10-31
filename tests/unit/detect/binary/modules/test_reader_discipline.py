@@ -5,8 +5,8 @@ past it is a regression. ``modules.layout`` itself holds the one allowed ``struc
 ``modules.tlsh`` is a hash transform, not a format reader, so it is out of scope.
 
 Scoped to the format readers by name: modules.pe, modules.elf, modules.dotnet with dotnet_metadata and
-dotnet_signatures, and modules.signature with x509 and der (the parts those two split into). A new
-reader is added to READERS here.
+dotnet_signatures, modules.signature with x509 and der (the parts those two split into), and
+modules.formats' macho and dex. A new reader is added to READERS here.
 """
 
 from __future__ import annotations
@@ -25,6 +25,8 @@ READERS = (
     "signature",
     "x509",
     "der",
+    "formats/macho",
+    "formats/dex",
 )
 BINARY = ROOT / "src" / "cordon_scanner" / "detect" / "binary" / "modules"
 
