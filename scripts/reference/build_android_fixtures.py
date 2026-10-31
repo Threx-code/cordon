@@ -2,7 +2,8 @@
 directory. A maintainer's tool, never part of Cordon; signing and the reference dumps are in the README
 of tests/unit/data/rule_reference/android.
 
-    python scripts/reference/build_android_fixtures.py OUT_DIR
+    PYTHONPATH=src:tests:tests/unit/detect/binary/modules/formats \\
+        python scripts/reference/build_android_fixtures.py OUT_DIR
 """
 
 from __future__ import annotations
@@ -10,22 +11,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.path[:0] = [
-    str(Path(__file__).resolve().parents[2] / "tests"),
-    str(
-        Path(__file__).resolve().parents[2]
-        / "tests"
-        / "unit"
-        / "detect"
-        / "binary"
-        / "modules"
-        / "formats"
-    ),
-]
+from test_dex import Build
 
-from test_dex import Build  # noqa: E402
-
-from kits.androidkit import AndroidKit, Ref  # noqa: E402
+from kits.androidkit import AndroidKit, Ref
 
 
 class Fixtures:

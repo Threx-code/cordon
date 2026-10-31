@@ -66,9 +66,8 @@ class Apk:
     MIN_SDK, TARGET_SDK, MAX_SDK = 0x0101020C, 0x01010270, 0x01010271
     MAX_MEMBER: ClassVar[int] = 64 << 20
     MAX_DEX: ClassVar[int] = 32
-    URL: ClassVar[re.Pattern[bytes]] = re.compile(
-        rb"(?:https?|ftp)://[^\s\"'<>\x00]+", re.IGNORECASE
-    )
+    SCHEMES: ClassVar[tuple[bytes, ...]] = (b"https", b"http", b"ftp")
+    STOP: ClassVar[frozenset[int]] = frozenset(b" \t\n\r\x0b\x0c\"'<>\x00")
     SIGNERS: ClassVar[tuple[int, ...]] = (0x7109871A, 0xF05368C0)
     """The signing block's v2 and v3 scheme IDs, in the order they are looked at."""
 
@@ -300,10 +299,25 @@ class Apk:
             if data is None:
                 break
             for text in Apk.dex_strings(data):
-                for m in Apk.URL.finditer(text):
-                    if m.group(0) not in seen:
-                        seen.add(m.group(0))
-                        out.urls.append(m.group(0))
+                for url in Apk.links(text):
+                    if url not in seen:
+                        seen.add(url)
+                        out.urls.append(url)
+
+    @staticmethod
+    def links(text: bytes) -> list[bytes]:
+        """The `scheme://...` runs in a string, the scheme any case, each up to a space, a quote or
+        `<>`: one pass, each byte read at most twice."""
+        out, lowered, at = [], text.lower(), text.find(b"://")
+        while at >= 0:
+            scheme = next((s for s in Apk.SCHEMES if lowered.endswith(s, 0, at)), None)
+            end = at + 3
+            while end < len(text) and text[end] not in Apk.STOP:
+                end += 1
+            if scheme is not None and end > at + 3:
+                out.append(text[at - len(scheme) : end])
+            at = text.find(b"://", max(end, at + 3))
+        return out
 
     @staticmethod
     def dex_strings(data: bytes) -> list[bytes]:
