@@ -277,9 +277,17 @@ class Native:
 
     POSIX_FLAGS: ClassVar[tuple[str, ...]] = (
         "-O2", "-fPIC", "-std=c11", "-Wall", "-Wextra", "-Wconversion", "-Wshadow", "-Werror",
-        "-fstack-protector-strong", "-D_FORTIFY_SOURCE=2", "-fno-strict-overflow",
+        "-fstack-protector-strong", "-U_FORTIFY_SOURCE", "-D_FORTIFY_SOURCE=3", "-fno-strict-overflow",
         "-fno-delete-null-pointer-checks",
     )  # fmt: skip
+    #: Linux only (proven there; macOS keeps the common set): stack-clash probes, and the CPU's
+    #: control-flow protection (branch target identification and return-address signing on
+    #: aarch64, CET on x86_64). FORTIFY 3 falls back to 2's checks on a glibc older than 2.34.
+    LINUX_FLAGS: ClassVar[dict[str, tuple[str, ...]]] = {
+        "": ("-fstack-clash-protection",),
+        "aarch64": ("-mbranch-protection=standard",),
+        "x86_64": ("-fcf-protection=full",),
+    }
     #: GNU ld and lld; Apple's linker has no -z and already makes no executable stack.
     ELF_LINK: ClassVar[tuple[str, ...]] = ("-Wl,-z,relro,-z,now,-z,noexecstack",)
     MSVC_FLAGS: ClassVar[tuple[str, ...]] = ("/nologo", "/O2", "/GS", "/guard:cf", "/W4", "/WX")
@@ -355,6 +363,16 @@ class Native:
         return [*flags, f"-mmacosx-version-min={Native.macos_target()}"]
 
     @staticmethod
+    def linux_flags() -> list[str]:
+        import platform
+        import sys
+
+        name: str = sys.platform
+        if not name.startswith("linux"):
+            return []
+        return [*Native.LINUX_FLAGS[""], *Native.LINUX_FLAGS.get(platform.machine(), ())]
+
+    @staticmethod
     def linker() -> list[str]:
         import shlex
         import sysconfig
@@ -420,7 +438,7 @@ class Native:
                        f"/Fe{target}", "/link", *Native.MSVC_LINK, f"/LIBPATH:{Path(sys.base_prefix) / 'libs'}"]  # fmt: skip
             subprocess.run(command, check=True, cwd=work)  # noqa: S603 - the interpreter's own compiler and our sources
         else:
-            compile_ = [*cc, *Native.POSIX_FLAGS, *Native.arch(), f"-ffile-prefix-map={project.root}=.", f"-I{include}", "-c"]  # fmt: skip
+            compile_ = [*cc, *Native.POSIX_FLAGS, *Native.linux_flags(), *Native.arch(), f"-ffile-prefix-map={project.root}=.", f"-I{include}", "-c"]  # fmt: skip
             objects = []
             for source in sources:
                 obj = work / (Path(source).stem + ".o")
