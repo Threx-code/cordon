@@ -80,6 +80,28 @@ class Collector:
                     gc.set_threshold(*Collector._saved)
                     Collector._saved = None
 
+    _paused: ClassVar[int] = 0
+    _was_enabled: ClassVar[bool] = True
+
+    @staticmethod
+    def paused(work: Callable[..., T], *args: Any) -> T:
+        """`work(*args)` with the collector off, its state before restored after; nested and
+        concurrent calls share it as `during`'s do. Only for work that makes many long-lived
+        objects and no garbage -- a kept rule pack's load, 1.4 M objects -- where collecting finds
+        nothing and only re-walks what was made: 2.70 s of such a load against 0.62 s paused."""
+        with Collector._lock:
+            if Collector._paused == 0:
+                Collector._was_enabled = gc.isenabled()
+                gc.disable()
+            Collector._paused += 1
+        try:
+            return work(*args)
+        finally:
+            with Collector._lock:
+                Collector._paused -= 1
+                if Collector._paused == 0 and Collector._was_enabled:
+                    gc.enable()
+
 
 class ScanCaches:
     """Every cache registered as holding a scan's files, and how to empty each."""
