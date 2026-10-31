@@ -51,3 +51,8 @@ bench/results/*.log
 # A run's output is a measurement on one machine, not source. Published results are added on
 # purpose (`git add -f`), so a run is never committed by accident.
 bench/results/
+
+# The native extensions are built by cordon_build into each wheel, never kept in the source tree.
+src/cordon_scanner/_native/*.so
+src/cordon_scanner/_native/*.pyd
+src/cordon_scanner/_native/ENGINE_BUILD
