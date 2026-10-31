@@ -8,6 +8,7 @@ from cordon_scanner.detect.binary.rule_engine.lang import Rules
 from cordon_scanner.detect.binary.rule_shares import RuleShares
 
 TEXT = """
+import "pe"
 global rule g { condition: filesize > 0 }
 rule a { strings: $a = "aaaa" condition: $a }
 rule b { strings: $b = "bbbb" condition: $b and a }
@@ -15,7 +16,7 @@ rule loader_one { strings: $x = "xxxx" condition: $x }
 rule loader_two { strings: $y = "yyyy" condition: $y }
 rule any_loader { condition: any of (loader_*) }
 rule lone { strings: $z = "zzzz" condition: $z }
-rule lone2 { strings: $w = "wwww" condition: $w }
+rule lone2 { strings: $w = "wwww" condition: $w and pe.exports("*") }
 """
 
 
@@ -66,7 +67,8 @@ class TestGroups:
             text = "\n".join(
                 line
                 for line in TEXT.strip().splitlines()
-                if line.split("{")[0].split()[-1] in Kit.names(rules.rules, share)
+                if line.startswith("import ")
+                or line.split("{")[0].split()[-1] in Kit.names(rules.rules, share)
             )
             together |= {m.rule for m in Rules.compile(text).match(data)}
         assert sorted(together) == serial

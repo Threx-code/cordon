@@ -6,8 +6,11 @@ that a false global rule makes every rule false. So a rule set divides into grou
 each other, and each share of groups can be matched on its own and the answers put together:
 exactly the serial answer, rule for rule.
 
-Grouped conservatively: any identifier in a condition that names a rule, or any `prefix*` that
-could match one, links the two, whatever the position, so a share never lacks a rule it reads.
+Grouped by the two places a condition can read another rule: a bare identifier (`Name`, a rule
+or a loop variable) and an entry of a set that is not a string (`Members`, `any of (loader_*)`),
+a `prefix*` entry linking every rule it could match. A literal, a module path or a string set
+(`$a*`) never reads a rule, so it links nothing: in YARA-Forge a single `"*"` literal had joined
+all 12,455 rules into one group.
 A group that holds a global rule goes into every share, so each share decides the globals itself
 and all agree. Over-grouping costs only parallelism, never an answer.
 """
@@ -24,12 +27,17 @@ class RuleShares:
 
     @staticmethod
     def words(node: Any) -> Iterator[str]:
-        """Every string a condition carries, at any depth: rule names among them."""
+        """Every rule a condition can read: bare identifiers, and set entries that are not
+        strings (each `prefix*` as written), at any depth."""
+        from cordon_scanner.detect.binary.rule_engine.syntax import Members, Name
+
         stack = [node]
         while stack:
             item = stack.pop()
-            if isinstance(item, str):
-                yield item
+            if isinstance(item, Name):
+                yield item.name
+            elif isinstance(item, Members):
+                yield from (n for n in item.names or () if not n.startswith("$"))
             elif isinstance(item, (list, tuple)):
                 stack.extend(item)
             elif dataclasses.is_dataclass(item) and not isinstance(item, type):
