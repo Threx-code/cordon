@@ -16,6 +16,7 @@ import time
 from collections.abc import Iterable, Iterator
 from typing import Any, ClassVar
 
+from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Compare as _Compare
 from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import TextCheck
 from cordon_scanner.detect.binary.rule_engine.anchoring.places import Places
 from cordon_scanner.detect.binary.rule_engine.anchoring.stream import Streams
@@ -932,61 +933,4 @@ class _Hunt:
                 self._lengthen(p - 1, other, links + 1)
 
 
-class _Compare:
-    """Text compared at an offset: as is, every other byte zero (wide), or xored with a key."""
-
-    @staticmethod
-    def same(data: bytes, at: int, text: bytes, fold: bytes | None) -> int:
-        if len(data) - at < len(text):
-            return 0
-        piece = data[at : at + len(text)]
-        if fold is not None:
-            return len(text) if piece.translate(fold) == text.translate(fold) else 0
-        return len(text) if piece == text else 0
-
-    @staticmethod
-    def same_wide(data: bytes, at: int, text: bytes, fold: bytes | None) -> int:
-        if len(data) - at < 2 * len(text):
-            return 0
-        piece = data[at : at + 2 * len(text)]
-        if piece[1::2].count(0) != len(text):
-            return 0
-        low = piece[0::2]
-        if fold is not None:
-            return 2 * len(text) if low.translate(fold) == text.translate(fold) else 0
-        return 2 * len(text) if low == text else 0
-
-    @staticmethod
-    def xored(data: bytes, at: int, text: bytes) -> int:
-        if len(data) - at < len(text):
-            return 0
-        key = data[at] ^ text[0]
-        piece = data[at : at + len(text)]
-        return len(text) if all(a == b ^ key for a, b in zip(piece, text, strict=True)) else 0
-
-    @staticmethod
-    def xored_wide(data: bytes, at: int, text: bytes) -> int:
-        if len(data) - at < 2 * len(text):
-            return 0
-        key = data[at] ^ text[0]
-        for i, b in enumerate(text):
-            if data[at + 2 * i] != b ^ key or data[at + 2 * i + 1] ^ key != 0:
-                return 0
-        return 2 * len(text)
-
-    @staticmethod
-    def whole(data: bytes, start: int, length: int, wide: bool) -> bool:
-        """No letter or digit joins the match on either side (a zero byte between, if wide)."""
-        alnum = Bytes.ALNUM
-        n = len(data)
-        if wide:
-            if start >= 2 and data[start - 1] == 0 and data[start - 2] in alnum:
-                return False
-            end = start + length
-            return not (end + 1 < n and data[end + 1] == 0 and data[end] in alnum)
-        if start >= 1 and data[start - 1] in alnum:
-            return False
-        return not (start + length < n and data[start + length] in alnum)
-
-
-__all__ = ["MAX_HITS", "Search", "_Compare", "_Hunt"]
+__all__ = ["MAX_HITS", "Search", "_Hunt"]
