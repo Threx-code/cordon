@@ -4,7 +4,8 @@
 Why not setuptools: a release is built from whatever the build backend runs, and a backend is
 code from outside the project executing with the release's privileges. Cordon ships no third-party
 code; this keeps it from building with any either. It does exactly what this project needs and no
-more: pure-Python packages under `src/`, package data by glob, the sdist by `MANIFEST.in`.
+more: Python packages under `src/`, package data by glob, the project's own C extensions compiled
+with the platform compiler (`Native`), and the sdist by `MANIFEST.in`.
 
 Reproducible: entries sorted, timestamps from `SOURCE_DATE_EPOCH` (else 1980-01-01), permissions
 normalised, so the same tree builds the same bytes.
@@ -254,17 +255,120 @@ class Archive:
             gz.write(raw.getvalue())
 
 
+class Native:
+    """The project's own C extensions (`[[tool.cordon-build.native]]`: a module name and its C
+    sources), compiled with the interpreter's own compiler settings (`sysconfig`) and the hardening
+    flags below. Nothing is downloaded and nothing outside the standard library and the platform
+    compiler runs.
+
+    A wheel with an extension is tagged for this interpreter and platform. With no compiler, or with
+    `CORDON_BUILD_PURE=1`, the pure wheel is built as before and the build says so on stderr: every
+    extension has a pure-Python twin that gives the same results. `CORDON_WHEEL_PLATFORM` overrides
+    the platform tag (CI sets `manylinux_2_28_x86_64` and the like inside the manylinux image, whose
+    glibc is what that tag promises). Reproducible: source paths are mapped out of the binary and the
+    inputs are compiled in sorted order.
+    """
+
+    POSIX_FLAGS: ClassVar[tuple[str, ...]] = (
+        "-O2", "-fPIC", "-std=c11", "-Wall", "-Wextra", "-Wconversion", "-Wshadow", "-Werror",
+        "-fstack-protector-strong", "-D_FORTIFY_SOURCE=2", "-fno-strict-overflow",
+        "-fno-delete-null-pointer-checks",
+    )  # fmt: skip
+    POSIX_LINK: ClassVar[tuple[str, ...]] = ("-Wl,-z,relro,-z,now,-z,noexecstack",)
+    MSVC_FLAGS: ClassVar[tuple[str, ...]] = ("/O2", "/GS", "/guard:cf", "/W4", "/WX")
+    MSVC_LINK: ClassVar[tuple[str, ...]] = (
+        "/guard:cf",
+        "/DYNAMICBASE",
+        "/HIGHENTROPYVA",
+        "/NXCOMPAT",
+    )
+
+    @staticmethod
+    def wanted(project: Project) -> list[dict[str, Any]]:
+        return (
+            []
+            if os.environ.get("CORDON_BUILD_PURE") == "1"
+            else list(project.build.get("native", []))
+        )
+
+    @staticmethod
+    def compiler() -> list[str] | None:
+        """The C compiler the interpreter was built with, as a command; None when there is none."""
+        import shlex
+        import shutil
+        import sysconfig
+
+        if os.name == "nt":
+            return ["cl"] if shutil.which("cl") else None
+        cc = sysconfig.get_config_var("CC") or "cc"
+        command = shlex.split(cc)
+        return command if command and shutil.which(command[0]) else None
+
+    @staticmethod
+    def build(project: Project, work: Path) -> list[tuple[str, bytes]]:
+        """Each extension compiled into `work`, as (archive name, bytes); [] when built pure."""
+        import subprocess
+        import sys
+        import sysconfig
+
+        wanted = Native.wanted(project)
+        if not wanted:
+            return []
+        cc = Native.compiler()
+        if cc is None:
+            sys.stderr.write("cordon_build: no C compiler; building the pure wheel (native: no)\n")
+            return []
+        include = sysconfig.get_paths()["include"]
+        suffix = sysconfig.get_config_var("EXT_SUFFIX") or ".so"
+        out: list[tuple[str, bytes]] = []
+        for ext in sorted(wanted, key=lambda e: str(e["name"])):
+            module = str(ext["name"])
+            sources = sorted(str(project.root / s) for s in ext["sources"])
+            target = work / (module.split(".")[-1] + suffix)
+            if os.name == "nt":
+                command = [*cc, *Native.MSVC_FLAGS, f"/I{include}", "/LD", *sources, f"/Fe{target}",
+                           "/link", *Native.MSVC_LINK, f"/LIBPATH:{Path(sys.base_prefix) / 'libs'}"]  # fmt: skip
+            else:
+                ldshared = sysconfig.get_config_var("LDSHARED") or f"{cc[0]} -shared"
+                import shlex
+
+                prefix_map = f"-ffile-prefix-map={project.root}=."
+                command = [*cc, *Native.POSIX_FLAGS, prefix_map, f"-I{include}", "-c"]
+                objects = []
+                for source in sources:
+                    obj = work / (Path(source).stem + ".o")
+                    subprocess.run([*command, source, "-o", str(obj)], check=True)  # noqa: S603 - the interpreter's own compiler and our sources
+                    objects.append(str(obj))
+                command = [*shlex.split(ldshared), *objects, *Native.POSIX_LINK, "-o", str(target)]
+            subprocess.run(command, check=True)  # noqa: S603 - sysconfig's linker and our objects
+            out.append((module.replace(".", "/") + suffix, target.read_bytes()))
+        return out
+
+    @staticmethod
+    def tag() -> str:
+        """This interpreter's wheel tag: cpXY-cpXY-<platform>."""
+        import sys
+        import sysconfig
+
+        version = f"cp{sys.version_info.major}{sys.version_info.minor}"
+        platform = os.environ.get("CORDON_WHEEL_PLATFORM") or sysconfig.get_platform()
+        return f"{version}-{version}-{platform.replace('-', '_').replace('.', '_')}"
+
+
 class Backend:
     """The PEP 517 and PEP 660 hooks."""
 
     @staticmethod
-    def _dist_info(project: Project, tag_editable: bool = False) -> list[tuple[str, bytes]]:
+    def _dist_info(
+        project: Project, tag_editable: bool = False, tag: str = "py3-none-any"
+    ) -> list[tuple[str, bytes]]:
         info = f"{project.dist}-{project.version}.dist-info"
+        purelib = "true" if tag == "py3-none-any" else "false"
         out = [
             (f"{info}/METADATA", project.metadata().encode()),
             (
                 f"{info}/WHEEL",
-                b"Wheel-Version: 1.0\nGenerator: cordon_build\nRoot-Is-Purelib: true\nTag: py3-none-any\n\n",
+                f"Wheel-Version: 1.0\nGenerator: cordon_build\nRoot-Is-Purelib: {purelib}\nTag: {tag}\n\n".encode(),
             ),
         ]
         entry = project.entry_points()
@@ -284,8 +388,8 @@ class Backend:
         return out
 
     @staticmethod
-    def _wheel_name(project: Project) -> str:
-        return f"{project.dist}-{project.version}-py3-none-any.whl"
+    def _wheel_name(project: Project, tag: str = "py3-none-any") -> str:
+        return f"{project.dist}-{project.version}-{tag}.whl"
 
     @staticmethod
     def get_requires_for_build_wheel(config_settings: dict[str, Any] | None = None) -> list[str]:
@@ -318,10 +422,16 @@ class Backend:
         config_settings: dict[str, Any] | None = None,
         metadata_directory: str | None = None,
     ) -> str:
+        import tempfile
+
         project = Project()
         entries = [(name, path.read_bytes()) for name, path in project.wheel_files().items()]
-        entries += Backend._dist_info(project)
-        name = Backend._wheel_name(project)
+        with tempfile.TemporaryDirectory() as work:
+            compiled = Native.build(project, Path(work))
+        tag = Native.tag() if compiled else "py3-none-any"
+        entries = sorted(entries + compiled)
+        entries += Backend._dist_info(project, tag=tag)
+        name = Backend._wheel_name(project, tag)
         Archive.wheel(
             Path(wheel_directory) / name,
             entries,
@@ -358,6 +468,9 @@ class Backend:
         files |= {
             (project.root / "src" / n).relative_to(project.root).as_posix()
             for n in project.wheel_files()
+        }
+        files |= {  # the native extensions' C sources, so an sdist install can compile them
+            str(source) for ext in project.build.get("native", []) for source in ext["sources"]
         }
         files |= {  # the backend itself, so the sdist builds with nothing installed
             p.relative_to(project.root).as_posix()

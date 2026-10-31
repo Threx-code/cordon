@@ -1014,7 +1014,8 @@
   "test_damaged_nested_archive.py": "sources",
   "test_zip_views_agree.py": "sources",
   "test_zstd.py": "intel/store",
-  "test_build_backend.py": "repository/release"
+  "test_build_backend.py": "repository/release",
+  "test_native_build.py": "repository/release"
  },
  "shims": {
   "intel/provenance/_der": {
