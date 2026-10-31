@@ -65,7 +65,7 @@ class PackRuleDetector(BaseDetector):
             if not self.reporting(compiled):
                 continue
             regex = compiled.match.regex_for(content.raw, None)
-            match = regex.search(content.raw) if regex is not None else None
+            match = compiled.match.search(regex, content.raw) if regex is not None else None
             if match is None:
                 continue
             rule = compiled.rule
