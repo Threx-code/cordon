@@ -20,6 +20,8 @@ from collections.abc import Callable, Iterator
 from functools import partial
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.detect.binary.rule_engine.anchoring.places import Places
+
 if TYPE_CHECKING:
     from cordon_scanner.detect.binary.rule_engine.scan import Search, _Hunt
     from cordon_scanner.detect.binary.rule_engine.search_parts import AnchorAt, Event
@@ -88,17 +90,21 @@ class Streams:
     @staticmethod
     def dense(data: bytes, needle: bytes, seen: dict[Any, Any], folded: bool) -> bool:
         """Whether `needle` occurs more than `ABOVE` times without overlaps (`count`'s answer),
-        read with its offsets in one pass where they are few: up to `ABOVE` overlapping ones
-        are kept in `seen` for the find that follows (`Search.located`), and their count without
-        overlaps is `count`'s. Past `ABOVE` overlapping ones, `count` itself decides."""
+        read with its offsets in one pass where they are few: up to `ABOVE` overlapping ones (and
+        no more than the file's budget holds) are kept in `seen` for the find that follows
+        (`Search.located`), and their count without overlaps is `count`'s. Past that, `count`
+        itself decides, and the find reads the offsets as it did."""
         key = ("count", folded, needle)
         if seen.get(key) is None:
+            # never more offsets than the find could keep: past the file's budget it refuses
+            # them (`Places.occurrences`), so holding more would only cost memory
+            keep = min(Streams.ABOVE, Places.MOST, Places.budget(seen)[0])
             found: list[int] = []
             at = data.find(needle)
-            while at >= 0 and len(found) <= Streams.ABOVE:
+            while at >= 0 and len(found) <= keep:
                 found.append(at)
                 at = data.find(needle, at + 1)
-            if len(found) <= Streams.ABOVE:
+            if len(found) <= keep:
                 apart, end = 0, 0
                 for at in found:  # leftmost without overlaps, as bytes.count counts
                     if at >= end:

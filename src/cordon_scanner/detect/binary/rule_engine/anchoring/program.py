@@ -14,10 +14,10 @@ import time
 from array import array
 from typing import Any, ClassVar
 
+from cordon_scanner.detect.binary.rule_engine import threads
 from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton
 from cordon_scanner.detect.binary.rule_engine.hits import Hits
 from cordon_scanner.detect.binary.rule_engine.pattern import Op, RunError
-from cordon_scanner.detect.binary.rule_engine.threads import MAX_THREADS, REACH
 
 
 class Encoded:
@@ -158,7 +158,7 @@ class PatternFind:
         try:
             starts, lengths = Automaton.MODULE.pattern_hits(
                 data, owners, forward, backward, flags, max_hits, -1 if fixed is None else fixed,
-                MAX_THREADS, REACH,
+                threads.MAX_THREADS, threads.REACH,  # read here, as Threads reads them
                 -1.0 if deadline is None else max(deadline - time.monotonic(), 0.0),
             )  # fmt: skip
         except Automaton.MODULE.TooManyThreads as exc:
