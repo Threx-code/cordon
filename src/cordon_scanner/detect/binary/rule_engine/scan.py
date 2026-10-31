@@ -24,7 +24,6 @@ from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import (
     TextFind,
 )
 from cordon_scanner.detect.binary.rule_engine.anchoring.places import Places
-from cordon_scanner.detect.binary.rule_engine.anchoring.program import PatternFind
 from cordon_scanner.detect.binary.rule_engine.anchoring.stream import Streams
 from cordon_scanner.detect.binary.rule_engine.anchors import Anchor, Anchors
 from cordon_scanner.detect.binary.rule_engine.chain import Chain
@@ -95,8 +94,6 @@ class Search:
         #: A plain hex part's layouts for the native find (`HexFind`): None until worked out,
         #: False where it does not apply.
         self.hex_layouts: tuple[bytes, bytes] | bool | None = None
-        #: A pattern part's programs for the native runner (`PatternFind`), as `hex_layouts`.
-        self.programs: tuple[bytes, bytes] | bool | None = None
         f = self.flags
         if kind == "regex":
             source, marks = value
@@ -306,8 +303,6 @@ class Search:
             return self._text_find(data, fixed, seen, deadline)
         if HexFind.layouts(self) is not None:
             return HexFind.hits(self, data, seen, fixed, MAX_HITS, deadline)
-        if PatternFind.programs(self) is not None:
-            return PatternFind.hits(self, data, seen, fixed, MAX_HITS, deadline)
         events: list[Event] = []
         for needle, length, owners in self.needles:
             starts = seen.get(needle)
@@ -316,7 +311,7 @@ class Search:
                 if gated is not None:
                     events.extend(gated)
                     continue
-                starts = seen[needle] = Search.located(data, needle, seen)
+                starts = seen[needle] = Search.occurrences(data, needle, Search.budget(seen))
             if starts:
                 Search._occurred(events, starts, length, owners)
         for folded, length, spellings in self.folds:
@@ -327,7 +322,9 @@ class Search:
                 lowered = seen.get(("lowered",))
                 if lowered is None:
                     lowered = seen[("lowered",)] = data.lower()
-                starts = seen[("folded", folded)] = Search.located(lowered, folded, seen, True)
+                starts = seen[("folded", folded)] = Search.occurrences(
+                    lowered, folded, Search.budget(seen)
+                )
             for s in starts:
                 Search._occurred(events, (s,), length, spellings[data[s : s + length]])
         hunt = _Hunt(self, data, fixed, deadline)
@@ -349,7 +346,7 @@ class Search:
         for needle, length, holders in self.needles:
             starts = seen.get(needle)
             if starts is None:
-                starts = seen[needle] = Search.located(data, needle, seen)
+                starts = seen[needle] = Search.occurrences(data, needle, Search.budget(seen))
             owners += [
                 (starts, length, length + a[1], order, len(a[0]) + a[1]) for order, _, a in holders
             ]
@@ -360,7 +357,8 @@ class Search:
                 lowered = seen.get(("lowered",))
                 if lowered is None:
                     lowered = seen[("lowered",)] = data.lower()
-                starts = seen[("folded", folded)] = Search.located(lowered, folded, seen, True)
+                budget = Search.budget(seen)
+                starts = seen[("folded", folded)] = Search.occurrences(lowered, folded, budget)
             spelled: dict[bytes, list[int]] = {}
             for at in starts:
                 spelled.setdefault(data[at : at + length], []).append(at)
@@ -476,15 +474,6 @@ class Search:
     def occurrences(data: bytes, needle: bytes, budget: list[int] | None = None) -> list[int]:
         """Every offset `needle` begins at (`Places.occurrences`, which bounds them)."""
         return Places.occurrences(data, needle, budget)
-
-    @staticmethod
-    def located(
-        data: bytes, needle: bytes, seen: dict[Any, Any], folded: bool = False
-    ) -> list[int]:
-        """An anchor's offsets for the file's `seen`, taking those `Streams.wanted` found while
-        deciding to stream (each anchor's data read once), spent from the file's budget here."""
-        held = seen.pop(("pending", folded, needle), None)
-        return Places.occurrences(data, needle, Search.budget(seen), held)
 
     @staticmethod
     def budget(seen: dict[Any, Any]) -> list[int]:

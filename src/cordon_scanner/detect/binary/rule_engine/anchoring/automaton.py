@@ -341,8 +341,8 @@ class HexFind:
     shortest match), the backward one from its backward entry to every start it reaches (so a
     pattern of repeated bytes, where an anchor may sit at several places, has each tried), the
     first match at a start kept, and the stop at `MAX_HITS`. Only for a string of one plain part
-    (no alternatives) with no chain, factor or anchorless part and only the instructions Lanes
-    reads; every other string, and every string where the extension is not in use, is found
+    (no alternatives) with no heavy jump or repeat, no anchorless part and only the instructions
+    Lanes reads; every other string, and every string where the extension is not in use, is found
     by the hunt itself, which is this one's twin."""
 
     FULLWORD: ClassVar[int] = 2
@@ -363,11 +363,7 @@ class HexFind:
         if not Automaton.NATIVE or len(search.parts) != 1 or search.zeros or search.folds:
             return None
         part = search.parts[0]
-        # a heavy part is taken too: the hunt turns an event of a busy heavy part away only when
-        # `_viable` (always true for plain) or `_factor_near` (true for a part with no factors,
-        # and a plain part's layout has none: its jumps are gaps, not counted runs) says no, so
-        # the hunt runs every event as hex_hits does
-        if part.text is not None or not search.flags.get("plain") or part.chain or part.factors:
+        if part.text is not None or not search.flags.get("plain") or part.heavy or part.chain:
             return None
         out = []
         for ops in (part.forward, part.backward):
@@ -389,7 +385,7 @@ class HexFind:
         for needle, length, holders in search.needles:
             starts = seen.get(needle)
             if starts is None:
-                starts = seen[needle] = search.located(data, needle, seen)
+                starts = seen[needle] = search.occurrences(data, needle, search.budget(seen))
             owners += [
                 (starts, length, length + a[1], order, -1 if a[2] is None else a[2],
                  -1 if a[3] is None else a[3])

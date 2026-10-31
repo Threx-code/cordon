@@ -19,39 +19,15 @@ from cordon_scanner.detect.binary.rule_engine.lang import RuleError, Rules
 EXAMPLES = int(os.environ.get("CORDON_HEXFIND_EXAMPLES", "500"))
 NATIVE = pytest.mark.skipif(not Automaton.NATIVE, reason=str(Automaton.WHY))
 TOKEN = st.sampled_from(["61", "62", "00", "41", "??", "6?", "?1", "~61", "~?2", "4?"])
-JUMP = st.sampled_from(
-    [
-        "[1]",
-        "[2]",
-        "[0-2]",
-        "[1-3]",
-        "[0-5]",
-        "[4-9]",
-        "[2-15]",
-        "[3-40]",
-        "[16-60]",
-        "[0-300]",
-        "[20]",
-    ]
-)
+JUMP = st.sampled_from(["[1]", "[2]", "[0-2]", "[1-3]", "[0-5]", "[4-9]", "[2-15]", "[3-40]"])
 PIECE = st.lists(TOKEN, min_size=1, max_size=4).map(" ".join)
 HEX = st.lists(st.tuples(PIECE, JUMP), min_size=1, max_size=3).flatmap(
     lambda pieces: st.just(" ".join(f"{p} {j}" for p, j in pieces[:-1]) + " " + pieces[-1][0])
 )
-DATA = st.one_of(
-    st.lists(
-        st.sampled_from(
-            [b"a", b"b", b"A", b"\x00", b"aa", b"ab", b"a\x00b", b"1", b"\x61\x62\x61"]
-        ),
-        max_size=200,
-    ).map(b"".join),
-    # past the hunt's BUSY (64) occurrences of an anchor, where a heavy part's runs are first
-    # tested for a factor near them (_factor_near): the C runs every event, so the two agree
-    # only if that test never turns away a match
-    st.tuples(st.integers(80, 600), st.sampled_from([b"a", b"ab", b"aab", b"a\x00"])).map(
-        lambda t: t[1] * t[0]
-    ),
-)
+DATA = st.lists(
+    st.sampled_from([b"a", b"b", b"A", b"\x00", b"aa", b"ab", b"a\x00b", b"1", b"\x61\x62\x61"]),
+    max_size=200,
+).map(b"".join)
 
 
 class Both:

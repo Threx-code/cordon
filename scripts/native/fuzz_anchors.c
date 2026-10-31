@@ -25,7 +25,6 @@ static PyObject *Type;
 static PyObject *Check;
 static PyObject *Hits;
 static PyObject *HexHits;
-static PyObject *VmRun, *VmHits, *VmTooMany;
 
 /* the text check written again, plainly, for the harness to hold check_text to */
 static int64_t naive_text(const uint8_t *d, int64_t n, int64_t at, const uint8_t *t, int64_t m, long mode) {
@@ -300,84 +299,6 @@ static void check_hex(const uint8_t *buf, size_t size, const uint8_t *d, size_t 
     Py_DECREF(got); Py_DECREF(fo); Py_DECREF(bo); Py_DECREF(owners);
 }
 
-/* threads_run and pattern_hits over programs drawn from the input, any op with any operands
- * (most valid, some not): each call returns or refuses (ValueError, TooManyThreads, TypeError),
- * never reads or writes outside what it was given (ASan, UBSan). Their answers are held to the
- * Python twin by the modelling team's property and target; this one holds memory safety. */
-static PyObject *draw_program(const uint8_t *b, size_t nb) {
-    int64_t buf[7 + 6 * 16 + 4 * 2];
-    int nops = nb ? 1 + b[0] % 16 : 1, ncls = nb > 1 ? b[1] % 3 : 0, maxc = nb > 2 ? b[2] % 5 : 0;
-    memset(buf, 0, sizeof buf);
-    buf[0] = 0x43505247; buf[1] = 2; buf[2] = nops; buf[3] = ncls; buf[6] = maxc;
-    size_t at = 3;
-    for (int i = 0; i < nops; i++) {
-        int64_t *r = buf + 7 + 6 * i;
-        uint8_t k = at < nb ? b[at++] : 18, v = at < nb ? b[at++] : 0, w = at < nb ? b[at++] : 0;
-        r[0] = i == nops - 1 && (k & 1) ? 18 : 1 + k % 22;
-        switch (r[0]) {
-        case 19: r[1] = v % 8; r[2] = w % (nops + 1); r[3] = v & 1; break;  /* a target past the end sometimes */
-        case 20: r[1] = v % (nops + 1); break;
-        case 21: case 22: r[1] = v % 4; r[2] = r[1] + w % 5; r[3] = (v >> 2) % (nops + 1); r[4] = w & 1; break;
-        case 13: r[1] = v % 3; r[2] = r[1] + w % 6; r[3] = v & 1; break;
-        case 6: r[1] = v % (ncls + 1); r[2] = w & 1; break;
-        case 3: case 4: r[1] = v; r[2] = w; break;
-        default: r[1] = v; break;
-        }
-    }
-    int64_t *cls = buf + 7 + 6 * nops;
-    for (int i = 0; i < 4 * ncls; i++) cls[i] = (int64_t)(((uint64_t)(at < nb ? b[at++] : 0x55) * 0x0101010101010101ULL));
-    return PyBytes_FromStringAndSize((const char *)buf, (Py_ssize_t)(8 * (7 + 6 * nops + 4 * ncls)));
-}
-
-static int vm_refused(void) {
-    if (!PyErr_Occurred()) return 0;
-    if (PyErr_ExceptionMatches(PyExc_ValueError) || PyErr_ExceptionMatches(VmTooMany) ||
-        PyErr_ExceptionMatches(PyExc_TypeError)) { PyErr_Clear(); return 1; }
-    PyErr_Print(); abort();
-}
-
-static void check_vm(const uint8_t *buf, size_t size, PyObject *data, PyObject *needles) {
-    if (size < 8) return;
-    size_t half = size / 2 < 48 ? size / 2 : 48;
-    PyObject *fw = draw_program(buf, half), *bw = draw_program(buf + half, half);
-    Py_ssize_t dn = PyBytes_GET_SIZE(data);
-    long flags = (long)(buf[size - 1] & 63);
-    Py_ssize_t at = dn ? (Py_ssize_t)(buf[size - 2] % (dn + 1)) : 0;
-    PyObject *r = PyObject_CallFunction(VmRun, "OiOnlnn", fw, (int)(buf[size - 3] % 17), data, at, flags, (Py_ssize_t)64, (Py_ssize_t)256);
-    if (!r) vm_refused();
-    else {
-        if (flags & 16) { if (!PyTuple_Check(r) || PyTuple_GET_SIZE(r) != 2) abort(); }
-        else { long long len = PyLong_AsLongLong(r); if (len < -1 || len > 256) abort(); }
-        Py_DECREF(r);
-    }
-    PyObject *owners = PyList_New(0);
-    Py_ssize_t n = PyList_GET_SIZE(needles);
-    for (Py_ssize_t i = 0; i < n && i < 4; i++) {
-        PyObject *s = PyList_GET_ITEM(needles, i);
-        int64_t occ[64];
-        int m = naive_count((const uint8_t *)PyBytes_AS_STRING(data), (size_t)dn, (const uint8_t *)PyBytes_AS_STRING(s), (size_t)PyBytes_GET_SIZE(s), 0, occ, 64);
-        if (m > 64) m = 64;
-        PyObject *starts = PyList_New(0);
-        for (int k = 0; k < m; k++) { PyObject *x = PyLong_FromLongLong(occ[k]); PyList_Append(starts, x); Py_DECREF(x); }
-        PyObject *row = Py_BuildValue("(OnniLL)", starts, PyBytes_GET_SIZE(s), PyBytes_GET_SIZE(s) + (Py_ssize_t)(buf[i % size] % 3), (int)i,
-                                      (long long)(buf[(i + 1) % size] % 17) - 1, (long long)(buf[(i + 2) % size] % 17) - 1);
-        PyList_Append(owners, row); Py_DECREF(row); Py_DECREF(starts);
-    }
-    PyObject *h = PyObject_CallFunction(VmHits, "OOOOlnnnn", data, owners, fw, bw, (long)(buf[size - 4] & 63),
-                                        (Py_ssize_t)(buf[size - 5] % 9), (Py_ssize_t)((buf[size - 6] & 16) ? buf[size - 6] % (dn + 1) : -1),
-                                        (Py_ssize_t)64, (Py_ssize_t)256);
-    if (!h) vm_refused();
-    else {
-        if (!PyTuple_Check(h) || PyTuple_GET_SIZE(h) != 2) abort();
-        PyObject *gs = PyTuple_GET_ITEM(h, 0), *gl = PyTuple_GET_ITEM(h, 1);
-        if (PyBytes_GET_SIZE(gs) != PyBytes_GET_SIZE(gl) || PyBytes_GET_SIZE(gs) > 8 * 8) abort(); /* max_hits <= 8 */
-        const int64_t *st = (const int64_t *)PyBytes_AS_STRING(gs);
-        for (Py_ssize_t k = 1; k < PyBytes_GET_SIZE(gs) / 8; k++) if (st[k] <= st[k - 1]) abort(); /* by start, once each */
-        Py_DECREF(h);
-    }
-    Py_DECREF(owners); Py_DECREF(fw); Py_DECREF(bw);
-}
-
 int LLVMFuzzerInitialize(int *argc, char ***argv) {
     (void)argc; (void)argv;
     PyImport_AppendInittab("_anchors", PyInit__anchors);
@@ -388,10 +309,7 @@ int LLVMFuzzerInitialize(int *argc, char ***argv) {
     Check = PyObject_GetAttrString(m, "check_text");
     Hits = PyObject_GetAttrString(m, "text_hits");
     HexHits = PyObject_GetAttrString(m, "hex_hits");
-    VmRun = PyObject_GetAttrString(m, "threads_run");
-    VmHits = PyObject_GetAttrString(m, "pattern_hits");
-    VmTooMany = PyObject_GetAttrString(m, "TooManyThreads");
-    if (!Type || !Check || !Hits || !HexHits || !VmRun || !VmHits || !VmTooMany) abort();
+    if (!Type || !Check || !Hits || !HexHits) abort();
     return 0;
 }
 
@@ -460,7 +378,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *buf, size_t size) {
         }
     }
     check_hits((const uint8_t *)PyBytes_AS_STRING(data), (size_t)PyBytes_GET_SIZE(data), needles, data, fold);
-    check_vm(buf, size, data, needles);
     if (PyBytes_GET_SIZE(data) < 4000)
         check_hex(buf, size, (const uint8_t *)PyBytes_AS_STRING(data), (size_t)PyBytes_GET_SIZE(data), needles, data);
 out:
