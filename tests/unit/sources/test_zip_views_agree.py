@@ -132,3 +132,36 @@ class TestAHiddenMemberIsReadOrSaysWhyNot:
         whole = Accumulator()
         whole.explain_incomplete()
         assert not whole.findings
+
+    def test_the_pruned_directory_note_is_the_reason_and_no_backstop_joins_it(self) -> None:
+        """A pruned node_modules leaves the scan incomplete and says so at low severity; a medium
+        backstop beside it would block a default scan the note was written to leave quiet."""
+        from cordon_scanner.engine.pipeline.accumulator import Accumulator
+        from cordon_scanner.foundation.models import Category, Severity
+        from cordon_scanner.foundation.results import OperationalFinding
+
+        pruned = Accumulator(complete=False)
+        pruned.append(
+            OperationalFinding.build(
+                path=".",
+                rule_id="POLICY.COVERAGE.PRUNED",
+                category=Category.POLICY,
+                severity=Severity.LOW,
+                message="m",
+                remediation="r",
+            )
+        )
+        pruned.explain_incomplete()
+        assert [f.rule_id for f in pruned.findings] == ["POLICY.COVERAGE.PRUNED"]
+        detection_only = Accumulator(complete=False)
+        detection_only.append(
+            OperationalFinding.build(
+                path="a",
+                rule_id="SUSPECT.ARCHIVE.POLYGLOT.001",
+                category=Category.SUSPICIOUS,
+                message="m",
+                remediation="r",
+            )
+        )
+        detection_only.explain_incomplete()
+        assert detection_only.findings[-1].rule_id == "OPERATIONAL.SCAN.INCOMPLETE"

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from cordon_scanner.engine.pipeline.constants import INCOMPLETE_WHEN_REPORTED
 from cordon_scanner.foundation.models import Finding, Severity
 from cordon_scanner.foundation.results import Dependency, OperationalFinding
+from cordon_scanner.foundation.taxonomy import AttackCategory
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -82,12 +83,17 @@ class Accumulator:
         return True
 
     def explain_incomplete(self) -> None:
-        """An incomplete scan says why: when nothing operational names what went unexamined, a
+        """An incomplete scan says why: when no coverage finding names what went unexamined, a
         backstop does (`OPERATIONAL.SCAN.INCOMPLETE`). Every path that leaves a scan incomplete
         reports its own reason, so the backstop is a guarantee, never the expected path: two
-        zuppa wheels ended incomplete with only a detection finding to show for it (review 98)."""
+        zuppa wheels ended incomplete with only a detection finding to show for it (review 98).
+
+        A coverage finding is what the taxonomy says it is (`AttackCategory.COVERAGE`): every
+        `OPERATIONAL.` finding and `POLICY.COVERAGE.PRUNED` among them. The pruned-directory note
+        already says what went unread at its own, low severity; a second, medium note beside it
+        would block a default scan it was written to leave quiet."""
         if self.complete or any(
-            f.rule_id.startswith("OPERATIONAL.") and not f.rule_id.startswith(NOTICES)
+            f.attack_category is AttackCategory.COVERAGE and not f.rule_id.startswith(NOTICES)
             for f in self.findings
         ):
             return
