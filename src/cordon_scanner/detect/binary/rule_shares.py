@@ -18,7 +18,7 @@ and all agree. Over-grouping costs only parallelism, never an answer.
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from typing import Any
 
 
@@ -31,14 +31,15 @@ class RuleShares:
         strings (each `prefix*` as written), at any depth."""
         from cordon_scanner.detect.binary.rule_engine.syntax import Members, Name
 
+        reads: dict[type, Callable[[Any], Iterable[str]]] = {
+            Name: lambda n: (n.name,),
+            Members: lambda m: (x for x in m.names or () if not x.startswith("$")),
+        }
         stack = [node]
         while stack:
             item = stack.pop()
-            if isinstance(item, Name):
-                yield item.name
-            elif isinstance(item, Members):
-                yield from (n for n in item.names or () if not n.startswith("$"))
-            elif isinstance(item, (list, tuple)):
+            yield from reads.get(type(item), lambda _: ())(item)
+            if isinstance(item, (list, tuple)):
                 stack.extend(item)
             elif dataclasses.is_dataclass(item) and not isinstance(item, type):
                 stack.extend(getattr(item, f.name) for f in dataclasses.fields(item))

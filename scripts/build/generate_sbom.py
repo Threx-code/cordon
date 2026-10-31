@@ -29,7 +29,7 @@ import tomllib
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 ROOT = next(
     (p for p in (Path.cwd(), *Path.cwd().parents) if (p / "src" / "cordon_scanner").is_dir()), None
@@ -38,6 +38,22 @@ ROOT = next(
 
 class ReleaseSbom:
     """The release's own SBOM."""
+
+    #: What the platform wheels hold that Cordon did not write: mypyc's runtime, compiled into
+    #: their engine extension. No runtime dependency: nothing is installed beside the wheel.
+    LIB_RT: ClassVar[dict[str, str]] = {
+        "name": "mypyc-lib-rt",
+        "version": "2.4.0",
+        "purl": "pkg:pypi/mypy@2.4.0#mypyc/lib-rt",
+        "licenses": "MIT AND PSF-2.0",
+        "copyright": "Copyright (c) 2012-2023 Jukka Lehtosalo and contributors; "
+        "Copyright (c) 2015-2023 Dropbox, Inc.",
+    }
+
+    @staticmethod
+    def compiled(files: list[dict[str, str]]) -> bool:
+        """Whether any artefact is a platform wheel (one that holds lib-rt)."""
+        return any(f["name"].endswith(".whl") and "-py3-none-any" not in f["name"] for f in files)
 
     @staticmethod
     def metadata() -> dict[str, Any]:
@@ -95,9 +111,24 @@ class ReleaseSbom:
                     "hashes": [{"alg": f["alg"], "content": f["content"]} for f in files],
                 },
             },
-            # Empty, and that is the claim being published. A consumer diffing this
-            # against a later release sees a new runtime dependency immediately.
-            "components": [],
+            # No runtime dependency, and that is the claim being published: a consumer diffing
+            # this against a later release sees a new one immediately. The one component is code
+            # compiled into the platform wheels, declared as such, not installed beside them.
+            "components": [
+                {
+                    "type": "library",
+                    "bom-ref": ReleaseSbom.LIB_RT["purl"],
+                    "name": ReleaseSbom.LIB_RT["name"],
+                    "version": ReleaseSbom.LIB_RT["version"],
+                    "purl": ReleaseSbom.LIB_RT["purl"],
+                    "scope": "required",
+                    "copyright": ReleaseSbom.LIB_RT["copyright"],
+                    "licenses": [{"expression": ReleaseSbom.LIB_RT["licenses"]}],
+                    "description": "mypyc's runtime, compiled into the platform wheels' engine extension",
+                }
+            ]
+            if ReleaseSbom.compiled(files)
+            else [],
             "dependencies": [{"ref": purl, "dependsOn": []}],
         }
 
@@ -105,7 +136,7 @@ class ReleaseSbom:
     def spdx(project: dict[str, Any], files: list[dict[str, str]], moment: str) -> dict[str, Any]:
         name = project["name"]
         version = project["version"]
-        return {
+        document: dict[str, Any] = {
             "spdxVersion": "SPDX-2.3",
             "dataLicense": "CC0-1.0",
             "SPDXID": "SPDXRef-DOCUMENT",
@@ -146,6 +177,36 @@ class ReleaseSbom:
                 }
             ],
         }
+        if ReleaseSbom.compiled(files):
+            lib = ReleaseSbom.LIB_RT
+            document["packages"].append(
+                {
+                    "SPDXID": "SPDXRef-mypyc-lib-rt",
+                    "name": lib["name"],
+                    "versionInfo": lib["version"],
+                    "downloadLocation": "https://pypi.org/project/mypy/2.4.0/",
+                    "filesAnalyzed": False,
+                    "licenseConcluded": lib["licenses"],
+                    "licenseDeclared": lib["licenses"],
+                    "copyrightText": lib["copyright"],
+                    "comment": "mypyc's runtime, compiled into the platform wheels' engine extension",
+                    "externalRefs": [
+                        {
+                            "referenceCategory": "PACKAGE-MANAGER",
+                            "referenceType": "purl",
+                            "referenceLocator": lib["purl"],
+                        }
+                    ],
+                }
+            )
+            document["relationships"].append(
+                {
+                    "spdxElementId": "SPDXRef-Package",
+                    "relationshipType": "CONTAINS",
+                    "relatedSpdxElement": "SPDXRef-mypyc-lib-rt",
+                }
+            )
+        return document
 
     @staticmethod
     def main() -> int:

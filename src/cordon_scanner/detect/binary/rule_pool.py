@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import multiprocessing
 from array import array
+from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
 from typing import Any, ClassVar
 
@@ -36,13 +37,23 @@ from cordon_scanner.detect.binary.rule_shares import RuleShares
 class Worker:
     """What one worker process holds: the rules and their given module data, loaded once."""
 
+    #: Deliberate process state: each worker process loads one engine, once, and holds it for its
+    #: life; nothing a scan holds is kept here.
     engine: ClassVar[Any] = None
+    why: ClassVar[Callable[[BaseException], str]] = str
 
     @staticmethod
-    def load(rules_path: str, module_data: tuple[tuple[str, str], ...], use_cache: bool) -> None:
-        from cordon_scanner.detect.binary.rule_files import RuleFileEngine
-
-        Worker.engine = RuleFileEngine(rules_path, module_data, use_cache=use_cache, workers=1)
+    def load(
+        engine_type: Callable[..., Any],
+        why: Callable[[BaseException], str],
+        rules_path: str,
+        module_data: tuple[tuple[str, str], ...],
+        use_cache: bool,
+    ) -> None:
+        """Called once in each worker, with the engine type and the refusal's wording passed in
+        (by name), so this module imports neither."""
+        Worker.engine = engine_type(rules_path, module_data, use_cache=use_cache, workers=1)
+        Worker.why = why
 
     @staticmethod
     def match(data: bytes, timeout: float, share: frozenset[int]) -> tuple[Any, ...]:
@@ -55,9 +66,7 @@ class Worker:
                 data, timeout=timeout, given=engine.given, subset=share, spent=spent
             )
         except RuleError as exc:
-            from cordon_scanner.detect.binary.rule_files import RuleFileDetector
-
-            return ("refused", RuleFileDetector.why(exc))
+            return ("refused", Worker.why(exc))
         out = []
         for m in found:
             strings = []
@@ -79,15 +88,14 @@ class RulePool:
     def __init__(
         self,
         rules: Rules,
-        rules_path: str,
-        module_data: tuple[tuple[str, str], ...],
-        use_cache: bool,
+        start: tuple[Any, ...],
         workers: int,
     ) -> None:
+        """`start` is what each worker loads with (`Worker.load`'s arguments)."""
         self.rules = rules
         self.shares = RuleShares.of(rules.rules, min(workers, RulePool.MOST_WORKERS))
         self.order = {rule.name: i for i, rule in enumerate(rules.rules)}
-        self._start = (rules_path, module_data, use_cache)
+        self._start = start
         self._executor: ProcessPoolExecutor | None = None
 
     @staticmethod

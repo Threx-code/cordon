@@ -261,6 +261,19 @@ class TestGeneratedExtensions:
             n for n in names if n.startswith("probe/_probe")
         ]
 
+    @needs_compiler
+    def test_a_generated_group_says_which_generator_built_it(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        root = Kit.project(tmp_path / "p")
+        monkeypatch.chdir(root)
+        manifest = self.manifest(root, "probe.engine__mypyc", ["-O3"])
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        manifest.write_text(json.dumps({"mypy": "2.4.0", **data}), encoding="utf-8")
+        monkeypatch.setenv("CORDON_BUILD_MYPYC", str(manifest))
+        wheel = zipfile.ZipFile(tmp_path / Kit.backend().build_wheel(str(tmp_path)))
+        assert wheel.read("probe/ENGINE_BUILD") == b"mypyc 2.4.0\n"
+
     @pytest.mark.parametrize(
         ("name", "args"),
         [

@@ -57,7 +57,7 @@ class Stand:
             raise RuntimeError("cordon: mypyc_emit compiles nothing")
 
     class Unix:  # mypycify reads only compiler_type, to choose its warning flags
-        compiler_type = "unix"
+        compiler_type = "msvc" if os.name == "nt" else "unix"
 
     class BuildExt:  # mypycify patches setuptools' copy step; no setuptools build runs
         def copy_extensions_to_source(self) -> None:
@@ -92,28 +92,32 @@ class Stand:
         )
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--group", required=True, help="the shared module's place in the package")
-    parser.add_argument("manifest", type=Path)
-    parser.add_argument("modules", nargs="+")
-    args = parser.parse_args()
-    os.environ.setdefault("MYPY_CACHE_DIR", str(Path("build") / "mypy-cache"))
-    Stand.install()
-    import mypy.version
-    import mypyc.build
+class Emit:
+    @staticmethod
+    def main() -> int:
+        parser = argparse.ArgumentParser(description=__doc__)
+        parser.add_argument(
+            "--group", required=True, help="the shared module's place in the package"
+        )
+        parser.add_argument("manifest", type=Path)
+        parser.add_argument("modules", nargs="+")
+        args = parser.parse_args()
+        os.environ.setdefault("MYPY_CACHE_DIR", str(Path("build") / "mypy-cache"))
+        Stand.install()
+        import mypy.version
+        import mypyc.build
 
-    mypyc.build.mypycify(
-        args.modules, opt_level="3", debug_level="1", target_dir="build", group_name=args.group
-    )
-    args.manifest.parent.mkdir(parents=True, exist_ok=True)
-    args.manifest.write_text(
-        json.dumps({"mypy": mypy.version.__version__, "extensions": Stand.made}, indent=1),
-        encoding="utf-8",
-    )
-    print("mypy", mypy.version.__version__, "extensions", [e["name"] for e in Stand.made])
-    return 0
+        mypyc.build.mypycify(
+            args.modules, opt_level="3", debug_level="1", target_dir="build", group_name=args.group
+        )
+        args.manifest.parent.mkdir(parents=True, exist_ok=True)
+        args.manifest.write_text(
+            json.dumps({"mypy": mypy.version.__version__, "extensions": Stand.made}, indent=1),
+            encoding="utf-8",
+        )
+        print("mypy", mypy.version.__version__, "extensions", [e["name"] for e in Stand.made])
+        return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(Emit.main())

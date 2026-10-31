@@ -20,6 +20,24 @@ on:
 permissions:
   contents: read
 
+env:
+  # The engine modules mypyc compiles (scripts/build/mypyc_emit.py, ci/mypyc-requirements.txt);
+  # their .py stays in the wheel as the twin, and the pure wheel has only that.
+  MYPYC_GROUP: cordon_scanner._native.engine
+  MYPYC_MODULES: >-
+    src/cordon_scanner/detect/binary/rule_engine/threads.py
+    src/cordon_scanner/detect/binary/rule_engine/scan.py
+  # Every wheel's own check: the native matcher and the compiled engine loaded, and nothing
+  # imported beside the wheel (mypyc's runtime is compiled in, librt never installed).
+  WHEEL_CHECK: >-
+    import sys;
+    from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton as A;
+    import cordon_scanner.detect.binary.rule_engine.scan as s, cordon_scanner.detect.binary.rule_engine.threads as t;
+    assert A.NATIVE, A.WHY;
+    assert not s.__file__.endswith('.py') and not t.__file__.endswith('.py'), (s.__file__, t.__file__);
+    assert 'librt' not in sys.modules and 'mypy_extensions' not in sys.modules;
+    print(A.status(), s.__file__, t.__file__)
+
 jobs:
   linux:
     name: linux ${{ matrix.arch }}
@@ -46,13 +64,18 @@ jobs:
           export SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct 2>/dev/null || echo 315532800)
           for py in cp311-cp311 cp312-cp312 cp313-cp313; do
             python=/opt/python/$py/bin/python
+            $python -m venv /tmp/mypyc-$py
+            /tmp/mypyc-$py/bin/pip install -q --require-hashes -r ci/mypyc-requirements.txt
+            rm -rf build
+            /tmp/mypyc-$py/bin/python scripts/build/mypyc_emit.py --group "$MYPYC_GROUP" build/mypyc/ext.json $MYPYC_MODULES
+            export CORDON_BUILD_MYPYC=build/mypyc/ext.json
             $python -c "import sys; sys.path.insert(0, 'scripts/backend'); import cordon_build; print(cordon_build.build_wheel('wheelhouse'))"
             wheel=$(ls wheelhouse/*-$py-manylinux_2_28_${{ matrix.arch }}.whl)
             auditwheel show "$wheel"
             $python -m venv /tmp/venv-$py
             /tmp/venv-$py/bin/pip install -q --require-hashes -r ci/dev-requirements.txt
             /tmp/venv-$py/bin/pip install -q --no-deps "$wheel"
-            (cd /tmp && /tmp/venv-$py/bin/python -I -c "from cordon_scanner.detect.binary.rule_engine.automaton import Automaton as A; assert A.NATIVE, A.WHY; print(A.WHY)")
+            (cd /tmp && /tmp/venv-$py/bin/python -I -c "$WHEEL_CHECK")
             /tmp/venv-$py/bin/python -m pytest -q -p no:cacheprovider tests/unit/detect/binary/rule_engine
           done
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -88,12 +111,16 @@ jobs:
         run: |
           set -euo pipefail
           export SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)
+          python -m venv /tmp/mypyc
+          /tmp/mypyc/bin/pip install -q --require-hashes -r ci/mypyc-requirements.txt
+          /tmp/mypyc/bin/python scripts/build/mypyc_emit.py --group "$MYPYC_GROUP" build/mypyc/ext.json $MYPYC_MODULES
+          export CORDON_BUILD_MYPYC=build/mypyc/ext.json
           python -c "import sys; sys.path.insert(0, 'scripts/backend'); import cordon_build; print(cordon_build.build_wheel('wheelhouse'))"
           wheel=$(ls wheelhouse/*-macosx_11_0_${{ matrix.arch }}.whl)
           python -m venv /tmp/venv
           /tmp/venv/bin/pip install -q --require-hashes -r ci/dev-requirements.txt
           /tmp/venv/bin/pip install -q --no-deps "$wheel"
-          (cd /tmp && /tmp/venv/bin/python -I -c "from cordon_scanner.detect.binary.rule_engine.automaton import Automaton as A; assert A.NATIVE, A.WHY; print(A.WHY)")
+          (cd /tmp && /tmp/venv/bin/python -I -c "$WHEEL_CHECK")
           /tmp/venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/detect/binary/rule_engine
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
@@ -113,11 +140,19 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           architecture: x64
+      - name: Emit the compiled engine modules' C with mypyc
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv mypyc-venv
+          mypyc-venv/Scripts/pip install -q --require-hashes -r ci/mypyc-requirements.txt
+          mypyc-venv/Scripts/python scripts/build/mypyc_emit.py --group "$MYPYC_GROUP" build/mypyc/ext.json $MYPYC_MODULES
       - name: Build the wheel with MSVC
         # The runner's own Visual Studio, found by its own locator; no action fetches a compiler.
         shell: cmd
         env:
           CORDON_BUILD_NATIVE: require
+          CORDON_BUILD_MYPYC: build/mypyc/ext.json
         run: |
           for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvars64.bat"
           if errorlevel 1 exit /b 1
@@ -131,7 +166,7 @@ jobs:
           python -m venv venv
           venv/Scripts/pip install -q --require-hashes -r ci/dev-requirements.txt
           venv/Scripts/pip install -q --no-deps "$wheel"
-          (cd "$RUNNER_TEMP" && "$GITHUB_WORKSPACE/venv/Scripts/python" -I -c "from cordon_scanner.detect.binary.rule_engine.automaton import Automaton as A; assert A.NATIVE, A.WHY; print(A.WHY)")
+          (cd "$RUNNER_TEMP" && "$GITHUB_WORKSPACE/venv/Scripts/python" -I -c "$WHEEL_CHECK")
           venv/Scripts/python -m pytest -q -p no:cacheprovider tests/unit/detect/binary/rule_engine
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:

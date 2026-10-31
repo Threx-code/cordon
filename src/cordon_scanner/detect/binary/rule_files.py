@@ -133,7 +133,11 @@ class RuleFileEngine:
         from cordon_scanner.detect.binary.rule_pool import RulePool
 
         self.pool = (
-            RulePool(self.rules, rules_path, module_data, use_cache, workers)
+            RulePool(
+                self.rules,
+                (RuleFileEngine, RuleFileDetector.why, rules_path, module_data, use_cache),
+                workers,
+            )
             if RulePool.wanted(self.rules, workers)
             else None
         )
@@ -296,7 +300,9 @@ class RuleFileDetector(BaseDetector):
                     str(ctx.config.rule_file),
                     tuple(ctx.config.rule_module_data),
                     use_cache=ctx.config.use_cache,
-                    workers=ctx.config.limits.max_workers or os.cpu_count() or 1,
+                    workers=getattr(getattr(ctx.config, "limits", None), "max_workers", 0)
+                    or os.cpu_count()
+                    or 1,
                 )
             except Exception as exc:  # noqa: BLE001
                 self._failed = (

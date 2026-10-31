@@ -350,6 +350,7 @@ class Native:
                     "include_dirs": [str(d) for d in ext.get("include_dirs", [])],
                     "args": [str(a) for a in ext.get("args", [])],
                     "generated": True,
+                    "generator": f"mypyc {manifest.get('mypy', '')}".strip(),
                 }
             )
         return out
@@ -457,10 +458,11 @@ class Native:
             sys.stderr.write("cordon_build: no C compiler; building the pure wheel (native: no)\n")
             return []
         try:
-            return [
+            built = [
                 Native._one(project, ext, cc, work)
                 for ext in sorted(wanted, key=lambda e: str(e["name"]))
             ]
+            return built + Native.engine_build(wanted)
         except (subprocess.CalledProcessError, OSError) as error:
             if required:
                 raise Native.Failed(f"the native build failed: {error}") from error
@@ -468,6 +470,19 @@ class Native:
                 f"cordon_build: the native build failed ({error}); building the pure wheel\n"
             )
             return []
+
+    @staticmethod
+    def engine_build(wanted: list[dict[str, Any]]) -> list[tuple[str, bytes]]:
+        """`ENGINE_BUILD` beside each generated group module (`<group>__mypyc`): which generator
+        built the compiled modules, read by the scan's status line; none when nothing was
+        generated. Written from the generator's own manifest, so it cannot say what did not build."""
+        out = []
+        for ext in wanted:
+            name = str(ext["name"])
+            if ext.get("generated") and name.endswith("__mypyc"):
+                package = name.rsplit(".", 1)[0].replace(".", "/")
+                out.append((f"{package}/ENGINE_BUILD", f"{ext['generator']}\n".encode()))
+        return sorted(out)
 
     @staticmethod
     def _one(project: Project, ext: dict[str, Any], cc: list[str], work: Path) -> tuple[str, bytes]:
