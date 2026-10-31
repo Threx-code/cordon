@@ -430,8 +430,6 @@ class _Hunt:
         self.masks: dict[bytes, bytes] = {}
         #: Per (part, entries), where an anchor's runs can find anything (`_viable`), or None.
         self.feasible: dict[tuple[int, Any, Any], Any] = {}
-        #: The data as an integer of 0/1 bytes, for each set of bytes a path step reads.
-        self.masks_int: dict[bytes, int] = {}
         #: Per part, where each of its factors' runs starts, with its length (`_factor_near`).
         self.factor_runs: dict[int, list[tuple[list[int], int]]] = {}
         #: Per part, how many anchor occurrences the data has.
@@ -707,15 +705,32 @@ class _Hunt:
     def _viable(self, p: int, anchor: AnchorAt, offset: int) -> bool:
         """Whether the runs `_check` makes from an anchor at `offset` can find anything: the
         bytes from the anchor must follow its forward run's starting path, and the bytes before
-        it its backward run's. Both are worked out for the whole data at once, for each pair of
-        entries, and only for a part whose anchors occur often enough to repay it."""
+        it its backward run's, each step's byte in its class (a byte outside the data is in
+        none). Read at `offset` alone, the path worked out once for each pair of entries."""
         key = (p, anchor[2], anchor[3])
-        ok = self.feasible.get(key, False)
-        if ok is False:
-            ok = self.feasible[key] = self._viable_at(p, anchor[2], anchor[3])
-        return ok is None or bool(ok[offset])
+        reads = self.feasible.get(key, False)
+        if reads is False:
+            reads = self.feasible[key] = self._viable_reads(p, anchor[2], anchor[3])
+        if reads is None:
+            return True
+        data, n = self.data, len(self.data)
+        ahead, behind = reads
+        for k, table in ahead:
+            q = offset + k
+            if q >= n or not table[data[q]]:
+                return False
+        for k, table in behind:
+            q = offset - k - 1
+            if q < 0 or not table[data[q]]:
+                return False
+        return True
 
-    def _viable_at(self, p: int, fwd: int | None, back: int | None) -> bytearray | None:
+    def _viable_reads(
+        self, p: int, fwd: int | None, back: int | None
+    ) -> tuple[list[tuple[int, bytes]], list[tuple[int, bytes]]] | None:
+        """The steps `_viable` reads, as (how far from the anchor, the step's 0/1 class table),
+        forwards and backwards; None when the part is not tested so (plain, wide, no forward
+        entry, or paths of one step)."""
         part = self.s.parts[p]
         if self.s.flags.get("plain") or self._widths() != [False] or fwd is None:
             return None
@@ -728,50 +743,25 @@ class _Hunt:
         )
         if len(ahead) < 2 and len(behind) < 2:
             return None
-        n = len(self.data)
-        alive = (1 << (8 * (n + 1))) - 1  # one byte for each position, 0 to n
-        if len(ahead) >= 2:
-            alive &= self._path_mask(ahead, backwards=False)
-        if len(behind) >= 2:
-            alive &= self._path_mask(behind, backwards=True)
-        return bytearray(alive.to_bytes(n + 1, "little"))
+        return (
+            _Hunt._reads(ahead) if len(ahead) >= 2 else [],
+            _Hunt._reads(behind) if len(behind) >= 2 else [],
+        )
 
-    def _path_mask(self, steps: list[bytes], *, backwards: bool) -> int:
-        """Positions (as one byte each of an integer, 1 for yes) where a run reading `steps`
-        survives: forwards, step i reads the byte i after the position; backwards, the byte
-        i + 1 before it. Only the first `_Hunt.SEGMENTS` runs of one byte class are used."""
-        data = self.data
-        cache = self.masks_int
-
-        def mask(table: bytes) -> int:
-            m = cache.get(table)
-            if m is None:
-                m = cache[table] = int.from_bytes(data.translate(table), "little")
-            return m
-
-        def placed(m: int, i: int) -> int:
-            return m << (8 * (i + 1)) if backwards else m >> (8 * i)
-
-        alive = placed(mask(steps[0]), 0)
+    @staticmethod
+    def _reads(steps: list[bytes]) -> list[tuple[int, bytes]]:
+        """The steps of a path a viability test reads: the first, then the runs of one byte class
+        after it, `_Hunt.SEGMENTS` runs in all, each step of a run read."""
+        out = [(0, steps[0])]
         i, used = 1, 1
-        while i < len(steps) and alive and used < _Hunt.SEGMENTS:
+        while i < len(steps) and used < _Hunt.SEGMENTS:
             used += 1
             same = 1
             while i + same < len(steps) and steps[i + same] == steps[i]:
                 same += 1
-            run, covered = mask(steps[i]), 1
-            # one byte class `same` times over: windows doubled until one covers half the run,
-            # then one more, overlapping, closes it (forwards a window reaches on from the
-            # position, backwards it reaches back)
-            while covered * 2 <= same:
-                run &= (run << (8 * covered)) if backwards else (run >> (8 * covered))
-                covered *= 2
-            if covered < same:
-                extra = 8 * (same - covered)
-                run &= (run << extra) if backwards else (run >> extra)
-            alive &= placed(run, i)  # the window starts at the run's first step
+            out += [(k, steps[k]) for k in range(i, i + same)]
             i += same
-        return alive
+        return out
 
     def _check(self, p: int, anchor: AnchorAt, offset: int) -> None:
         part = self.s.parts[p]

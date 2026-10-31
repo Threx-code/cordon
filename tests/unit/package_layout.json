@@ -1013,6 +1013,7 @@
   "test_native_anchors.py": "detect/binary/rule_engine",
   "test_hits.py": "detect/binary/rule_engine",
   "test_plan.py": "detect/binary/rule_engine",
+  "test_viable.py": "detect/binary/rule_engine",
   "test_stream.py": "detect/binary/rule_engine",
   "test_rule_file_fail_closed.py": "detect/binary",
   "test_builtin.py": "detect/binary/modules",
