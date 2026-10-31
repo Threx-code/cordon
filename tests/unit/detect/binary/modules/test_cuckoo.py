@@ -1,4 +1,4 @@
-"""The `cuckoo` module (modules.cuckoo) against the reference engine's answers.
+"""The `cuckoo` module (modules.reports.cuckoo) against the reference engine's answers.
 
 Each case is a report and the rules it matches, recorded from YARA 4.5.8's own module
 (`yara -x cuckoo=report.json`, cordon-yara-ref:2) on the same rules and report. The reports are
@@ -13,7 +13,7 @@ from typing import Any, ClassVar
 
 import pytest
 
-from cordon_scanner.detect.binary.modules.cuckoo import Cuckoo
+from cordon_scanner.detect.binary.modules.reports.cuckoo import Cuckoo
 from cordon_scanner.detect.binary.modules.values import Data
 from cordon_scanner.detect.binary.rule_engine.lang import Rules
 

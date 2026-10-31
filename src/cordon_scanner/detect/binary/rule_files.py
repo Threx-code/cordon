@@ -76,8 +76,15 @@ class RuleFileEngine:
         # collection's index includes its members), all within the size limit. The built-in
         # pack, and rule text from anywhere else, never reads another file.
         text = path.read_text(encoding="utf-8", errors="replace")
+        # Compiled once per version of the rules (`rule_engine/pack_cache`): a collection read and
+        # prepared on the first scan is loaded on the next, in every worker.
+        from cordon_scanner.detect.binary.rule_engine.pack_cache import PackCache
+        from cordon_scanner.foundation.paths import StatePaths
+
         self.rules = Rules.compile(
-            text, includes=None if rules_path == BUILTIN else RuleFileEngine.includes(path)
+            text,
+            includes=None if rules_path == BUILTIN else RuleFileEngine.includes(path),
+            cache=PackCache(StatePaths.default_cache_dir() / "rule-packs"),
         )
         self.version = "cordon-rule"
         # Data given to the scan for a module (`--rule-module-data cuckoo=report.json`): read
