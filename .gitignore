@@ -51,3 +51,4 @@ bench/results/*.log
 # A run's output is a measurement on one machine, not source. Published results are added on
 # purpose (`git add -f`), so a run is never committed by accident.
 bench/results/
+.fuzz/

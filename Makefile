@@ -18,7 +18,7 @@ PKG := cordon_scanner
 VERSION := $(shell $(PY) -c "from $(PKG).version import __version__; print(__version__)" 2>/dev/null)
 
 .DEFAULT_GOAL := help
-.PHONY: help setup fmt lint types test test-all scan check live matrix demo prepush prepush-quick hooks \
+.PHONY: help setup fmt lint types test test-all fuzz-native scan check live matrix demo prepush prepush-quick hooks \
         build verify preflight guards release clean
 
 help:  ## List the targets
@@ -69,6 +69,21 @@ test-fast:  ## The suite with no coverage, for the edit-run loop
 test-all: test  ## The suite plus the perf and fuzz markers, which CI deselects
 	$(PY) -m pytest -q -m perf -s tests/perf/
 	$(PY) -m pytest -q -m fuzz tests/fuzz/
+
+FUZZ_SECONDS ?= 1800
+fuzz-native:  ## The native extension under libFuzzer, ASan and UBSan, two workers ($(FUZZ_SECONDS) s; needs clang)
+	@# Every call of _native/_anchors against the harness's naive checks; a wrong answer aborts
+	@# like a crash does. The corpus and any crash-* inputs land in .fuzz/ (docs/01-ARCHITECTURE.md 8.5).
+	mkdir -p .fuzz/corpus
+	clang -g -O1 -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=undefined \
+		-I$$($(PY) -c 'import sysconfig; print(sysconfig.get_paths()["include"])') \
+		scripts/native/fuzz_anchors.c \
+		-L$$($(PY) -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))') \
+		-lpython$$($(PY) -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")') \
+		-o .fuzz/fuzz_anchors
+	cd .fuzz && ASAN_OPTIONS=detect_leaks=0 \
+		LD_LIBRARY_PATH=$$($(PY) -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))') \
+		./fuzz_anchors -max_total_time=$(FUZZ_SECONDS) -workers=2 -jobs=2 corpus/
 
 scan:  ## Cordon scans Cordon
 	@# A security tool that cannot pass its own checks has no standing to
