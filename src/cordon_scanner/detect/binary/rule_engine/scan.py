@@ -306,7 +306,7 @@ class Search:
         turns away unread, so leaving it out changes no match. Only where that holds -- a pattern
         part, not `plain`, read one byte wide (no `wide`, `xor` or `base64`) -- and each gated
         position still has the anchor's bytes where it should. None to take every occurrence."""
-        gates = self.gates(data, needle, owners)
+        gates = Streams.gates(self, data, needle, owners)
         if gates is None:
             return None
         events: list[Event] = []
@@ -321,28 +321,6 @@ class Search:
                     events.append((at + length, -length, -order, p, anchor, offset))
         budget[0] -= len(events)
         return events
-
-    def gates(
-        self, data: bytes, needle: bytes, owners: list[tuple[int, int, AnchorAt]]
-    ) -> list[Any] | None:
-        """Each owner's forward gate, where a common anchor's events come from them (`_gated`),
-        else None: a pattern part, not `plain`, one byte wide, more than `GATED` occurrences."""
-        f = self.flags
-        if "wide" in f or "xor" in f or "base64" in f or "base64wide" in f or f.get("plain"):
-            return None
-        if data.count(needle) <= Search.GATED:
-            return None
-        nocase, dotall = "nocase" in f, "dotall" in f
-        gates = []
-        for _, p, anchor in owners:
-            part = self.parts[p]
-            if part.text is not None or anchor[2] is None:
-                return None
-            gate = part.gate(anchor[2], nocase, dotall)
-            if gate is None:
-                return None
-            gates.append(gate)
-        return gates
 
     def _holds_required(self, data: bytes, seen: dict[Any, Any]) -> bool:
         """Whether `data` holds every literal run each part's matches must hold
@@ -478,10 +456,19 @@ class _Hunt:
         """`run` over sorted event streams (`rule_engine.anchoring.stream`), pulling only until full; None
         where the string's matches are worked out from all its offsets at once (a chain)."""
         busy, total = Streams.busy(sources, _Hunt.BUSY + 1)
-        parts = self.s.parts
-        if len(parts) == 1 and parts[0].chain is not None and total > _Hunt.BUSY:
-            return None
         self.busy = busy
+        backward = self._chain_ready() if total > _Hunt.BUSY else None
+        if backward is not None:
+            chain, lag = self.s.parts[0].chain, Streams.lag(self.s)
+            anchors = Streams.offsets(Streams.merged(sources), lag, len(self.data))
+            for start, length in Streams.chained(
+                chain, self.data, anchors, backward=backward, nocase=self.nocase,
+                dotall=self.dotall, deadline=self.deadline,
+            ):  # fmt: skip
+                if self.full:
+                    break
+                self._found(0, start, length, False)
+            return sorted(self.hits.items())
         self._run_events(Streams.merged(sources), len(self.data))
         return sorted(self.hits.items())
 
@@ -501,15 +488,10 @@ class _Hunt:
         """Every match of a string that is one chain of class repeats (`rule_engine.chain`), worked out
         directly from its anchors' offsets when they occur often enough to make running them
         dear; None to run them as usual (as for an anchor outside the chain's first term)."""
-        parts, f = self.s.parts, self.s.flags
-        part = parts[0]
-        if len(parts) != 1 or part.chain is None or len(events) <= _Hunt.BUSY:
+        part = self.s.parts[0]
+        backward = self._chain_ready() if len(events) > _Hunt.BUSY else None
+        if backward is None or part.chain is None:
             return None
-        if f.get("plain") or "fullword" in f or self._widths() != [False] or self.fixed is not None:
-            return None
-        if any(anchor[2] != part.root_entry for anchor in part.anchors):
-            return None
-        backward = any(anchor[3] is not None for anchor in part.anchors)
         n = len(self.data)
         offsets = sorted({e[5] for e in events if e[5] < n})
         return part.chain.matches(
@@ -520,6 +502,19 @@ class _Hunt:
             dotall=self.dotall,
             deadline=self.deadline,
         )
+
+    def _chain_ready(self) -> bool | None:
+        """Whether this string's matches come from its chain's matcher (`_chained`), and if so
+        whether a match may start back over the first term (True or False); None when not."""
+        parts, f = self.s.parts, self.s.flags
+        part = parts[0]
+        if len(parts) != 1 or part.chain is None:
+            return None
+        if f.get("plain") or "fullword" in f or self._widths() != [False] or self.fixed is not None:
+            return None
+        if any(anchor[2] != part.root_entry for anchor in part.anchors):
+            return None
+        return any(anchor[3] is not None for anchor in part.anchors)
 
     def starts(self, p: int, *, lazy: bool = False) -> Iterable[int]:
         """Where a part with no anchor is run from: every position, less those no run from

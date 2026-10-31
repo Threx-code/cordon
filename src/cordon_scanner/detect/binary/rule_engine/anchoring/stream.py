@@ -33,6 +33,45 @@ class Streams:
     ABOVE: ClassVar[int] = 262_144
 
     @staticmethod
+    def lag(search: Search) -> int:
+        """How far an event's offset may lie before its end (an anchor's length and lead)."""
+        backs = [
+            length + anchor[1]
+            for _, length, owners in (search.needles or [])
+            for _, _, anchor in owners
+        ]
+        backs += [
+            length + anchor[1]
+            for _, length, spellings in search.folds
+            for owners in spellings.values()
+            for _, _, anchor in owners
+        ]
+        return max(backs, default=0)
+
+    @staticmethod
+    def gates(
+        search: Search, data: bytes, needle: bytes, owners: list[tuple[int, int, AnchorAt]]
+    ) -> list[Any] | None:
+        """Each owner's forward gate, where a common anchor's events come from them (`_gated`),
+        else None: a pattern part, not `plain`, one byte wide, more than `GATED` occurrences."""
+        f = search.flags
+        if "wide" in f or "xor" in f or "base64" in f or "base64wide" in f or f.get("plain"):
+            return None
+        if data.count(needle) <= type(search).GATED:
+            return None
+        nocase, dotall = "nocase" in f, "dotall" in f
+        gates = []
+        for _, p, anchor in owners:
+            part = search.parts[p]
+            if part.text is not None or anchor[2] is None:
+                return None
+            gate = part.gate(anchor[2], nocase, dotall)
+            if gate is None:
+                return None
+            gates.append(gate)
+        return gates
+
+    @staticmethod
     def finds(data: bytes, needle: bytes) -> Iterator[int]:
         """Every offset `needle` begins at, overlapping ones included, one at a time."""
         at = data.find(needle)
@@ -100,7 +139,7 @@ class Streams:
         out: list[tuple[Source, frozenset[int]]] = []
         for needle, length, owners in search.needles or ():
             starts = seen.get(needle)
-            gates = search.gates(data, needle, owners) if starts is None else None
+            gates = Streams.gates(search, data, needle, owners) if starts is None else None
             if gates is not None:
                 out += [
                     (partial(Streams.gated, data, needle, length, o, g), frozenset({o[1]}))
@@ -182,6 +221,77 @@ class Streams:
                 parts[q] = parts.get(q, 0) + c
                 total += c
         return parts, total
+
+    #: The width of the windows a chain string's anchors are handed to its matcher in.
+    WINDOW: ClassVar[int] = 1 << 20
+
+    @staticmethod
+    def offsets(events: Iterator[Event], lag: int, n: int) -> Iterator[int]:
+        """The distinct offsets of `events`, ascending. An event's offset is its end less at most
+        `lag`, and the events come by end, so an offset below the current end less `lag` can come
+        no more: it is given then, and only the offsets in that span are held."""
+        held: list[int] = []
+        last = -1
+        for e in events:
+            if e[5] < n:
+                heapq.heappush(held, e[5])
+            while held and held[0] < e[0] - lag:
+                q = heapq.heappop(held)
+                if q != last:
+                    yield q
+                    last = q
+        while held:
+            q = heapq.heappop(held)
+            if q != last:
+                yield q
+                last = q
+
+    @staticmethod
+    def chained(chain: Any, data: bytes, anchors: Iterator[int], *, backward: bool, nocase: bool,
+                dotall: bool, deadline: float | None) -> Iterator[tuple[int, int]]:  # fmt: skip
+        """A chain string's matches from its anchors, a window of `WINDOW` offsets at a time, by
+        start: what `Chain.matches` gives over all of them at once.
+
+        It is exact because a chain's answer for an anchor is what a run from it gives, and a run
+        reads at most `REACH` bytes on from the anchor and, backward, at most `REACH` back: the
+        anchors of [a, b) are answered over the data from a - REACH to b + 2 REACH, as over the whole.
+        A match starting in [a, b) comes from an anchor in [a, b + REACH] (a start is never past its
+        anchor, nor more than `REACH` before it), and where several anchors' backward runs reach one
+        start the last keeps it; so each window is given every anchor to b + REACH, and keeps only
+        the starts in [a, b)."""
+        from cordon_scanner.detect.binary.rule_engine.threads import REACH
+
+        n, window = len(data), Streams.WINDOW
+        pending: list[int] = []
+        source = iter(anchors)
+        exhausted = False
+        a = 0
+        while True:
+            if not pending and not exhausted:
+                nxt = next(source, None)
+                if nxt is None:
+                    exhausted = True
+                else:
+                    pending.append(nxt)
+            if not pending:
+                return
+            a = max(a, pending[0] - REACH)
+            b = a + window
+            while not exhausted and pending[-1] < b + REACH:
+                nxt = next(source, None)
+                if nxt is None:
+                    exhausted = True
+                else:
+                    pending.append(nxt)
+            base, end = max(0, a - REACH), min(n, b + 2 * REACH)
+            given = [q - base for q in pending if q <= b + REACH]
+            found = chain.matches(data[base:end], given, backward=backward, nocase=nocase,
+                                  dotall=dotall, deadline=deadline)  # fmt: skip
+            for start, length in found or ():
+                if a <= start + base < b:
+                    yield start + base, length
+            pending = [q for q in pending if q >= b]
+            a = b
 
     @staticmethod
     def merged(sources: list[tuple[Source, frozenset[int]]]) -> Iterator[Event]:
