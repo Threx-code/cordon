@@ -75,11 +75,13 @@ class DependencyScope:
     def _read_install_scripts(self, units: Iterable[FileUnit]) -> None:
         """The nested projects the root's install scripts install, and theirs in turn: installing a
         project runs its own lifecycle scripts too."""
+        units = list(units)
         manifests = {
             DependencyScope.directory(u.path): u.content.raw
             for u in units
             if u.path.rsplit("/", 1)[-1] == "package.json" and not DependencyScope._pruned(u.path)
         }
+        files = {u.path: u for u in units}
         todo = [self.root] if self.root in manifests else []
         seen: set[str] = set()
         while todo:
@@ -88,7 +90,17 @@ class DependencyScope:
                 continue
             seen.add(directory)
             scripts = InstallScripts.of(manifests[directory])
-            self.scripted_unresolved = self.scripted_unresolved or scripts.unresolved
+            self.scripted_unresolved = (
+                self.scripted_unresolved
+                or scripts.unresolved
+                or any(
+                    InstallScripts.installs(files[program].content.raw)
+                    for program in (
+                        f"{directory}/{p}" if directory else p for p in scripts.programs
+                    )
+                    if program in files
+                )
+            )
             for relative in scripts.directories:
                 nested = f"{directory}/{relative}" if directory else relative
                 self.scripted.add(nested)

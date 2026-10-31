@@ -63,7 +63,13 @@ class TestInstallScripts:
 
     @pytest.mark.parametrize(
         "script",
-        ["npm install --prefix $DIR", "cd $(node where.js) && npm i", "cd `pwd`/app && yarn"],
+        [
+            "npm install --prefix $DIR",
+            "cd $(node where.js) && npm i",
+            "cd `pwd`/app && yarn",
+            'node -e \'require("child_process").execSync("npm install", {cwd: "app"})\'',
+            "sh -c 'cd app && npm ci'",
+        ],
     )
     def test_an_install_somewhere_unnamed_is_unresolved(self, script: str) -> None:
         assert InstallScripts.of(Manifest.scripts(install=script)).unresolved
@@ -76,6 +82,33 @@ class TestInstallScripts:
         )
         assert (found.directories, found.unresolved) == (set(), False)
 
+    @pytest.mark.parametrize(
+        ("script", "programs"),
+        [
+            ("node scripts/setup.js", {"scripts/setup.js"}),
+            ("cd tools && sh ./install.sh --quiet", {"tools/install.sh"}),
+            ("./bin/postinstall", {"bin/postinstall"}),
+            ("node -e 'x'", set()),
+            ("node $SCRIPT", set()),
+        ],
+    )
+    def test_the_programs_a_script_runs(self, script: str, programs: set[str]) -> None:
+        assert InstallScripts.of(Manifest.scripts(postinstall=script)).programs == programs
+
+    @pytest.mark.parametrize(
+        ("program", "installs"),
+        [
+            (b'execSync("npm install", {cwd: "app"})', True),
+            (b"spawn('yarn', ['install'], {cwd})", True),
+            (b'exec("pnpm i")', True),
+            (b'run(["npm", "--prefix", d, "ci"])', True),
+            (b'console.log("npm installed it")', False),
+            (b"// please run the installer", False),
+        ],
+    )
+    def test_a_program_that_spells_an_install(self, program: bytes, installs: bool) -> None:
+        assert InstallScripts.installs(program) is installs
+
     @pytest.mark.parametrize("manifest", [b"", b"[]", b'{"scripts": 3}', b"\xff\xfe not json"])
     def test_a_manifest_that_says_nothing_installs_nothing(self, manifest: bytes) -> None:
         assert InstallScripts.of(manifest) == InstallScripts()
@@ -83,7 +116,9 @@ class TestInstallScripts:
 
 class TestScriptedInstalls:
     @staticmethod
-    def rules(tmp_path: Path, postinstall: str | None) -> set[str]:
+    def rules(
+        tmp_path: Path, postinstall: str | None, extra: dict[str, str] | None = None
+    ) -> set[str]:
         root: dict[str, object] = {"name": "x", "version": "1.0.0"}
         if postinstall is not None:
             root["scripts"] = {"postinstall": postinstall}
@@ -91,6 +126,7 @@ class TestScriptedInstalls:
             "package.json": json.dumps(root),
             "app/package.json": json.dumps({"name": "app", "version": "1.0.0"}),
             "app/package-lock.json": Tarball.lock(minimist="1.2.5"),
+            **(extra or {}),
         }
         records = (
             Advisory(
@@ -118,3 +154,19 @@ class TestScriptedInstalls:
 
     def test_an_install_somewhere_unnamed_counts_every_nested_project(self, tmp_path: Path) -> None:
         assert self.rules(tmp_path, "npm install --prefix $TARGET") == {VULNERABLE_RULE}
+
+    def test_a_program_the_script_runs_that_installs_counts_every_nested_project(
+        self, tmp_path: Path
+    ) -> None:
+        program = 'require("child_process").execSync("npm install", { cwd: "app" });\n'
+        assert self.rules(tmp_path, "node scripts/setup.js", {"scripts/setup.js": program}) == {
+            VULNERABLE_RULE
+        }
+
+    def test_a_program_the_script_runs_that_installs_nothing_changes_nothing(
+        self, tmp_path: Path
+    ) -> None:
+        program = 'console.log("built");\n'
+        assert self.rules(tmp_path, "node scripts/setup.js", {"scripts/setup.js": program}) == {
+            BUNDLED_RULE
+        }
