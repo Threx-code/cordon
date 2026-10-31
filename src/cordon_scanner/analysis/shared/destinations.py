@@ -35,9 +35,12 @@ signal to change a finding's severity on their own.
 from __future__ import annotations
 
 import re
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from cordon_scanner.foundation.text.literals import LiteralGate
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 WEBHOOK_HOSTS: Final = frozenset(
     {
@@ -314,6 +317,43 @@ class Destinations:
         return _PREFILTER_GATE.present(raw)
 
     @staticmethod
+    def candidates(raw: bytes) -> Iterator[re.Match[bytes]]:
+        """`destination_matcher().finditer(raw)`, the same matches in the same order, found from
+        where a host occurs rather than by trying the alternation at every byte.
+
+        Every match begins where one of the hosts begins (the pattern is a lookbehind, then the
+        hosts), so its start is one of their occurrences; the matcher is tried at each, in order,
+        past the end of the last match, as `finditer` resumes. `match` at a position reads the
+        bytes before it, so the lookbehind decides as it did. The matcher ignores ASCII case
+        (bytes), which `bytes.lower` keeps every offset of. The alternation opens with that
+        lookbehind, which the regular expression engine cannot skip ahead to: a 4 MB API model
+        with no host in it took 1.3 s to search (measured 2026-10-31)."""
+        matcher = Destinations.destination_matcher()
+        lowered = raw.lower()
+        starts: set[int] = set()
+        for host in Destinations._hosts():
+            at = lowered.find(host)
+            while at >= 0:
+                starts.add(at)
+                at = lowered.find(host, at + 1)
+        end = 0
+        for start in sorted(starts):
+            if start < end:
+                continue
+            found = matcher.match(raw, start)
+            if found is not None:
+                end = found.end()
+                yield found
+
+    @staticmethod
+    def _hosts() -> tuple[bytes, ...]:
+        """Every host of the alternation, lowered, as bytes: where its matches can begin."""
+        global _HOSTS
+        if _HOSTS is None:
+            _HOSTS = tuple(sorted(host.lower().encode("utf-8") for host in ALL_HOSTS))
+        return _HOSTS
+
+    @staticmethod
     def destination_matcher() -> re.Pattern[bytes]:
         """A compiled matcher over every host, built once and reused.
 
@@ -387,6 +427,7 @@ _PREFILTER_GATE: LiteralGate | None = None
 
 
 _MATCHER: re.Pattern[bytes] | None = None
+_HOSTS: tuple[bytes, ...] | None = None
 
 
 __all__ = [

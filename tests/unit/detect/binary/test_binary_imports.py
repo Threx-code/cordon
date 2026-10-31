@@ -409,6 +409,11 @@ class TestRuleFile(RuleFileFixtures):
     def test_a_file_the_rule_does_not_match_is_not_reported(self, scan) -> None:
         result = scan(self.rule("Trojan_Foo"), {"clean.bin": b"nothing here"})
         assert not [f for f in result.findings if f.rule_id == "SUSPECT.RULEFILE.MATCH.001"]
+        # and the rule file ran: a rule file that failed to load would report no match either
+        ids = {f.rule_id for f in result.findings}
+        assert (
+            "OPERATIONAL.RULEFILE.STATUS" in ids and "OPERATIONAL.RULEFILE.UNAVAILABLE" not in ids
+        )
 
     def test_a_rule_declared_malicious_is_malware(self, scan) -> None:
         result = scan(self.rule("Ransom_X", 'category = "malicious"'))
@@ -541,6 +546,7 @@ class TestRuleFile(RuleFileFixtures):
         (tmp_path / "x.bin").write_bytes(b"EVIL")
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
         assert not any("RULEFILE" in f.rule_id for f in result.findings)
+        assert result.stats.files_scanned >= 1  # the file was read, by every other detector
 
     def test_a_repository_config_cannot_name_the_rules(self, tmp_path) -> None:
         (tmp_path / "cordon.yaml").write_text(
