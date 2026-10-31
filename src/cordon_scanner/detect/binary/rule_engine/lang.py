@@ -24,14 +24,14 @@ from __future__ import annotations
 import binascii
 import dataclasses
 import time
-from collections.abc import Callable, Iterator
-from dataclasses import dataclass
+from collections.abc import Callable, Iterator, Sequence
 from typing import Any, ClassVar
 
 from cordon_scanner.detect.binary.modules.builtin import Builtin
 from cordon_scanner.detect.binary.modules.values import Module
 from cordon_scanner.detect.binary.rule_engine.build import Builder, Frame
 from cordon_scanner.detect.binary.rule_engine.gates import Gates, MagicIndex
+from cordon_scanner.detect.binary.rule_engine.hits import Hits, Match
 from cordon_scanner.detect.binary.rule_engine.pack_cache import PackCache
 from cordon_scanner.detect.binary.rule_engine.syntax import (
     Both,
@@ -49,16 +49,6 @@ from cordon_scanner.detect.binary.rule_engine.syntax import (
 from cordon_scanner.detect.binary.rule_engine.tokens import Includes, RuleError
 
 MAX_MATCHES = 1_000_000
-
-
-@dataclass
-class Match:
-    """What a matching rule reports: its name, tags, meta, and each string instance."""
-
-    rule: str
-    tags: list[str]
-    meta: dict[str, Any]
-    strings: list[tuple[int, str, bytes]]
 
 
 class Tree:
@@ -121,17 +111,22 @@ class Strings:
                 raise RuleError(f"string {s.name}: {exc}") from exc
 
     @staticmethod
-    def search(
-        s: StringDef, data: bytes, deadline: float | None, seen: dict[Any, Any]
-    ) -> list[tuple[int, int]]:
-        """Where `s` matches in `data`, as (offset, length) pairs in offset order. Running out of
-        time, or a pattern needing more than its bounds allow, refuses the file."""
-        from cordon_scanner.detect.binary.rule_engine.pattern import RunError
+    def search(s: StringDef, data: bytes, deadline: float | None, seen: dict[Any, Any]) -> Hits:
+        """Where `s` matches in `data`, as (offset, length) pairs in offset order (`Hits`). Running
+        out of time, or a pattern needing more than its bounds allow, or more matches in the file
+        than `Hits.MOST`, refuses the file."""
+        from cordon_scanner.detect.binary.rule_engine.pattern import RunError, TooManyMatches
 
         why: str | None = None
         cause: BaseException | None = None
         try:
-            hits: list[tuple[int, int]] = s.search.find(data, s.fixed, deadline, seen)
+            found: list[tuple[int, int]] = s.search.find(data, s.fixed, deadline, seen)
+            hits = Hits(found)
+            del found
+            held = seen.get(("matches",), 0) + len(hits)
+            if held > Hits.MOST:
+                raise TooManyMatches(f"more than {Hits.MOST:,} matches in one file")
+            seen[("matches",)] = held
         except TimeoutError as exc:
             why, cause = "matching took longer than the time allowed", exc
         except RunError as exc:
@@ -345,14 +340,14 @@ class Rules:
         frame = Frame(data, modules)
         seen: dict[Any, Any] = {}
         live = self.magic_index().live(data, seen)
-        found_by: dict[str, dict[str, list[tuple[int, int]]]] = {}
+        found_by: dict[str, dict[str, Sequence[tuple[int, int]]]] = {}
         all_global = True
         for rule in self.rules:
             frame.found, frame.env = {}, [None] * rule.width
             if Gates.hopeless(rule, live) or (
                 rule.gates and not all(gate(frame) for gate in rule.gates)
             ):
-                found: dict[str, list[tuple[int, int]]] = {s.name: [] for s in rule.strings}
+                found: dict[str, Sequence[tuple[int, int]]] = {s.name: [] for s in rule.strings}
                 may = False
             else:
                 found, may = Gates.search(
@@ -375,13 +370,12 @@ class Rules:
                 continue
             # an anonymous string is reported as `$`, as the reference reports it; its inner name
             # (`$#anonymousN`) only keeps it apart from its rule's other anonymous strings
-            instances = [
-                (at, "$" if s.name.startswith("$#") else s.name, data[at : at + n])
+            hits: list[tuple[str, Sequence[tuple[int, int]]]] = [
+                ("$" if s.name.startswith("$#") else s.name, found_by[rule.name][s.name])
                 for s in rule.strings
                 if not s.private
-                for at, n in found_by[rule.name][s.name]
             ]
-            out.append(Match(rule.name, list(rule.tags), dict(rule.meta), instances))
+            out.append(Match(rule.name, list(rule.tags), dict(rule.meta), data=data, hits=hits))
         return out
 
 

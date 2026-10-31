@@ -32,6 +32,16 @@ class RunError(RuntimeError):
     """A run that went past one of its fixed bounds."""
 
 
+class Unbounded(RunError):
+    """A string with more places to try in one file than `anchoring.places.Places.MOST`: the file
+    is refused for the rule file, and the scan reports it at a severity that fails the gate
+    (`rule_files`), since a file can be padded to pass the bound on purpose."""
+
+
+class TooManyMatches(RunError):
+    """More matches in one file, all strings together, than `hits.Hits.MOST`."""
+
+
 # Term kinds. Byte terms first: these are the ones an anchor can be made of.
 LIT, MASKED, ANY = 1, 2, 3
 

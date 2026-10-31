@@ -23,7 +23,7 @@ A rule whose condition reaches `console` is never gated: its messages are part o
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from cordon_scanner.detect.binary.rule_engine.syntax import (
@@ -169,14 +169,14 @@ class Gates:
 
     @staticmethod
     def search(
-        rule: RuleDef, live: set[int], find: Callable[[Any], list[tuple[int, int]]]
-    ) -> tuple[dict[str, list[tuple[int, int]]], bool]:
+        rule: RuleDef, live: set[int], find: Callable[[Any], Sequence[tuple[int, int]]]
+    ) -> tuple[dict[str, Sequence[tuple[int, int]]], bool]:
         """The rule's strings searched as its clauses allow: (what was found, whether the rule may
         hold). A string not searched is reported as no match."""
         alive = {s.name for s in rule.strings if id(s) in live}
         if any(clause.isdisjoint(alive) for clause in rule.clauses):
             return {s.name: [] for s in rule.strings}, False
-        found: dict[str, list[tuple[int, int]]] = {
+        found: dict[str, Sequence[tuple[int, int]]] = {
             s.name: [] for s in rule.strings if s.name not in alive
         }
         if rule.clauses:

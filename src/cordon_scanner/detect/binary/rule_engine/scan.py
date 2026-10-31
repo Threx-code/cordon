@@ -16,7 +16,7 @@ import time
 from collections.abc import Iterable, Iterator
 from typing import Any, ClassVar
 
-from cordon_scanner.detect.binary.rule_engine.anchoring.places import Places, Unbounded
+from cordon_scanner.detect.binary.rule_engine.anchoring.places import Places
 from cordon_scanner.detect.binary.rule_engine.anchoring.stream import Streams
 from cordon_scanner.detect.binary.rule_engine.anchors import Anchor, Anchors
 from cordon_scanner.detect.binary.rule_engine.chain import Chain
@@ -28,6 +28,7 @@ from cordon_scanner.detect.binary.rule_engine.pattern import (
     PatternError,
     Program,
     Term,
+    Unbounded,
 )
 from cordon_scanner.detect.binary.rule_engine.pattern_readers import (
     LINK_GAP,

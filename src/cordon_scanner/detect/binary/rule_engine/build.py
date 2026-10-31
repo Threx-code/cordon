@@ -15,7 +15,7 @@ Undefined is None. It propagates through arithmetic and comparisons, and a test 
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from typing import Any, ClassVar
 
 from cordon_scanner.detect.binary.modules.values import (
@@ -86,7 +86,7 @@ class Frame:
         #: Module data read from this file, by module name.
         self.loaded: dict[str, Any] = {}
         #: The matches of each string of the rule being decided: (offset, length), by offset.
-        self.found: dict[str, list[tuple[int, int]]] = {}
+        self.found: dict[str, Sequence[tuple[int, int]]] = {}
         self.decided: dict[str, bool] = {}
         #: Loop variables, by the slot the builder gave each.
         self.env: list[Any] = []
@@ -334,7 +334,7 @@ class _BuilderValues:
 class _BuilderStrings(_BuilderValues):
     """Conditions over a string's matches: found, counted, placed, read."""
 
-    def _hits(self, name: str) -> Callable[[Frame], list[tuple[int, int]]]:
+    def _hits(self, name: str) -> Callable[[Frame], Sequence[tuple[int, int]]]:
         if name != "$":
             return lambda f: f.found[name]
         if not self.scope.strings_bound:

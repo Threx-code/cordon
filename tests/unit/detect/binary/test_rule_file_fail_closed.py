@@ -16,9 +16,10 @@ import pytest
 from cordon_scanner.detect.binary import rule_files
 from cordon_scanner.detect.binary.modules.values import Module
 from cordon_scanner.detect.binary.rule_engine import scan, threads
-from cordon_scanner.detect.binary.rule_engine.anchoring.places import Places, Unbounded
+from cordon_scanner.detect.binary.rule_engine.anchoring.places import Places
 from cordon_scanner.detect.binary.rule_engine.anchoring.stream import Streams
 from cordon_scanner.detect.binary.rule_engine.lang import RuleError, Rules
+from cordon_scanner.detect.binary.rule_engine.pattern import Unbounded
 
 ZEROS = bytes(8 << 20)
 

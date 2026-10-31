@@ -6,13 +6,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from cordon_scanner.detect.binary.rule_engine.pattern import RunError
-
-
-class Unbounded(RunError):
-    """A string with more places to try in one file than `Places.MOST`: the file is refused for the
-    rule file, and the scan reports it at a severity that fails the gate (`rule_files`), since a file
-    can be padded to pass the bound on purpose."""
+from cordon_scanner.detect.binary.rule_engine.pattern import Unbounded
 
 
 class Places:
