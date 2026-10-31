@@ -280,7 +280,7 @@ class Search:
                 if gated is not None:
                     events.extend(gated)
                     continue
-                starts = seen[needle] = Search.occurrences(data, needle, Search.budget(seen))
+                starts = seen[needle] = Search.located(data, needle, seen)
             if starts:
                 Search._occurred(events, starts, length, owners)
         for folded, length, spellings in self.folds:
@@ -291,9 +291,7 @@ class Search:
                 lowered = seen.get(("lowered",))
                 if lowered is None:
                     lowered = seen[("lowered",)] = data.lower()
-                starts = seen[("folded", folded)] = Search.occurrences(
-                    lowered, folded, Search.budget(seen)
-                )
+                starts = seen[("folded", folded)] = Search.located(lowered, folded, seen, True)
             for s in starts:
                 Search._occurred(events, (s,), length, spellings[data[s : s + length]])
         hunt = _Hunt(self, data, fixed, deadline)
@@ -315,7 +313,7 @@ class Search:
         for needle, length, holders in self.needles:
             starts = seen.get(needle)
             if starts is None:
-                starts = seen[needle] = Search.occurrences(data, needle, Search.budget(seen))
+                starts = seen[needle] = Search.located(data, needle, seen)
             owners += [
                 (starts, length, length + a[1], order, len(a[0]) + a[1]) for order, _, a in holders
             ]
@@ -326,8 +324,7 @@ class Search:
                 lowered = seen.get(("lowered",))
                 if lowered is None:
                     lowered = seen[("lowered",)] = data.lower()
-                budget = Search.budget(seen)
-                starts = seen[("folded", folded)] = Search.occurrences(lowered, folded, budget)
+                starts = seen[("folded", folded)] = Search.located(lowered, folded, seen, True)
             spelled: dict[bytes, list[int]] = {}
             for at in starts:
                 spelled.setdefault(data[at : at + length], []).append(at)
@@ -443,6 +440,15 @@ class Search:
     def occurrences(data: bytes, needle: bytes, budget: list[int] | None = None) -> list[int]:
         """Every offset `needle` begins at (`Places.occurrences`, which bounds them)."""
         return Places.occurrences(data, needle, budget)
+
+    @staticmethod
+    def located(
+        data: bytes, needle: bytes, seen: dict[Any, Any], folded: bool = False
+    ) -> list[int]:
+        """An anchor's offsets for the file's `seen`, taking those `Streams.wanted` found while
+        deciding to stream (each anchor's data read once), spent from the file's budget here."""
+        held = seen.pop(("pending", folded, needle), None)
+        return Places.occurrences(data, needle, Search.budget(seen), held)
 
     @staticmethod
     def budget(seen: dict[Any, Any]) -> list[int]:

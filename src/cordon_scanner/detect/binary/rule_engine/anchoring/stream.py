@@ -86,6 +86,28 @@ class Streams:
         return int(held)
 
     @staticmethod
+    def dense(data: bytes, needle: bytes, seen: dict[Any, Any], folded: bool) -> bool:
+        """Whether `needle` occurs more than `ABOVE` times without overlaps (`count`'s answer),
+        read with its offsets in one pass where they are few: up to `ABOVE` overlapping ones
+        are kept in `seen` for the find that follows (`Search.located`), and their count without
+        overlaps is `count`'s. Past `ABOVE` overlapping ones, `count` itself decides."""
+        key = ("count", folded, needle)
+        if seen.get(key) is None:
+            found: list[int] = []
+            at = data.find(needle)
+            while at >= 0 and len(found) <= Streams.ABOVE:
+                found.append(at)
+                at = data.find(needle, at + 1)
+            if len(found) <= Streams.ABOVE:
+                apart, end = 0, 0
+                for at in found:  # leftmost without overlaps, as bytes.count counts
+                    if at >= end:
+                        apart, end = apart + 1, at + len(needle)
+                seen[key] = apart
+                seen[("pending", folded, needle)] = found
+        return Streams.count(data, needle, seen, folded=folded) > Streams.ABOVE
+
+    @staticmethod
     def finds(data: bytes, needle: bytes) -> Iterator[int]:
         """Every offset `needle` begins at, overlapping ones included, one at a time."""
         at = data.find(needle)
@@ -97,16 +119,15 @@ class Streams:
     def wanted(search: Search, data: bytes, seen: dict[Any, Any]) -> bool:
         """Whether `search` should be streamed over `data`."""
         for needle, _, _ in search.needles or ():
-            if seen.get(needle) is None and Streams.count(data, needle, seen) > Streams.ABOVE:
+            if seen.get(needle) is None and Streams.dense(data, needle, seen, False):
                 return True
         if search.folds:
             lowered = seen.get(("lowered",))
             if lowered is None:
                 lowered = seen[("lowered",)] = data.lower()
             for folded, _, _ in search.folds:
-                if (
-                    seen.get(("folded", folded)) is None
-                    and Streams.count(lowered, folded, seen, folded=True) > Streams.ABOVE
+                if seen.get(("folded", folded)) is None and Streams.dense(
+                    lowered, folded, seen, True
                 ):
                     return True
         return bool(search.zeros) and len(data) > Streams.ABOVE

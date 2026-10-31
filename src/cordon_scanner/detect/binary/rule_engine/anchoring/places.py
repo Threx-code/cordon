@@ -18,18 +18,26 @@ class Places:
     MOST: ClassVar[int] = 8_000_000
 
     @staticmethod
-    def occurrences(data: bytes, needle: bytes, budget: list[int] | None = None) -> list[int]:
+    def occurrences(
+        data: bytes, needle: bytes, budget: list[int] | None = None, held: list[int] | None = None
+    ) -> list[int]:
         """Every offset `needle` begins at, overlapping ones included; an `Unbounded` past
         `Places.MOST` of them, or past what is left of the file's `budget` (`Places.budget`),
-        which this spends."""
-        out: list[int] = []
-        at = data.find(needle)
+        which this spends. `held`: those offsets, found already (`Streams.wanted`), bounded and
+        spent here as if found here."""
         most = Places.MOST if budget is None else min(Places.MOST, budget[0])
-        while at >= 0:
-            if len(out) >= most:
+        if held is not None:
+            if len(held) > most:
                 raise Places.too_many()
-            out.append(at)
-            at = data.find(needle, at + 1)
+            out = held
+        else:
+            out = []
+            at = data.find(needle)
+            while at >= 0:
+                if len(out) >= most:
+                    raise Places.too_many()
+                out.append(at)
+                at = data.find(needle, at + 1)
         if budget is not None:
             budget[0] -= len(out)
         return out

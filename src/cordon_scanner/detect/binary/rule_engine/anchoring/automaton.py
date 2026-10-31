@@ -351,7 +351,7 @@ class HexFind:
         for needle, length, holders in search.needles:
             starts = seen.get(needle)
             if starts is None:
-                starts = seen[needle] = search.occurrences(data, needle, search.budget(seen))
+                starts = seen[needle] = search.located(data, needle, seen)
             owners += [
                 (starts, length, length + a[1], order, -1 if a[2] is None else a[2],
                  -1 if a[3] is None else a[3])
