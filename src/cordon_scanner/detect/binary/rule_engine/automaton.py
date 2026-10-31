@@ -18,8 +18,10 @@ index builds its automata on first use after a load.
 
 from __future__ import annotations
 
+import hashlib
 import os
 from collections.abc import Iterable, Sequence
+from pathlib import Path
 from typing import Any, ClassVar
 
 from cordon_scanner.detect.binary.rule_engine.needles import NeedleSet
@@ -42,6 +44,23 @@ class Native:
 class Automaton:
     MODULE, WHY = Native.load()
     NATIVE: ClassVar[bool] = MODULE is not None
+    DIGEST: ClassVar[list[str]] = []
+    """The loaded extension's sha256, worked out once, when first asked for."""
+
+    @staticmethod
+    def status() -> str:
+        """Which anchor matcher runs, for the rule-file status and `--version`: the native one with
+        the sha256 of the binary loaded, or the Python one and why."""
+        if Automaton.MODULE is None:
+            return f"Python anchor matcher ({Automaton.WHY})"
+        if not Automaton.DIGEST:
+            path = getattr(Automaton.MODULE, "__file__", None)
+            try:
+                digest = hashlib.sha256(Path(str(path)).read_bytes()).hexdigest()
+                Automaton.DIGEST.append(digest)
+            except (OSError, TypeError):
+                Automaton.DIGEST.append("unreadable")
+        return f"native anchor matcher (sha256 {Automaton.DIGEST[0]})"
 
     __slots__ = ("_c", "_ids", "_set", "empty", "fold", "needles")
 
@@ -54,7 +73,11 @@ class Automaton:
         self.empty = [i for i, n in enumerate(self.needles) if not n]
         self._ids = [i for i, n in enumerate(self.needles) if n]
         # below NeedleSet.FEW needles, `needle in data` each (memchr in C) beats any automaton walk
-        use = (Automaton.NATIVE and len(self._ids) >= NeedleSet.FEW) if native is None else native and Automaton.NATIVE
+        use = (
+            (Automaton.NATIVE and len(self._ids) >= NeedleSet.FEW)
+            if native is None
+            else native and Automaton.NATIVE
+        )
         self._c = (
             Automaton.MODULE.Automaton([self.needles[i] for i in self._ids], fold=fold)
             if use
