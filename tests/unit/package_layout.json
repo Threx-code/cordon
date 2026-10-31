@@ -957,6 +957,7 @@
   "test_elf.py": "detect/binary/modules",
   "test_lnk.py": "detect/binary/modules/formats",
   "test_zip.py": "detect/binary/modules/formats",
+  "test_yarax_lnk_zip.py": "detect/binary/modules/formats",
   "test_rule_engine_function_length.py": "detect/binary",
   "test_lang.py": "detect/binary/rule_engine",
   "test_layout.py": "detect/binary/modules",
