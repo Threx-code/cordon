@@ -50,14 +50,18 @@ class Streams:
 
     @staticmethod
     def gates(
-        search: Search, data: bytes, needle: bytes, owners: list[tuple[int, int, AnchorAt]]
+        search: Search,
+        data: bytes,
+        needle: bytes,
+        owners: list[tuple[int, int, AnchorAt]],
+        seen: dict[Any, Any],
     ) -> list[Any] | None:
         """Each owner's forward gate, where a common anchor's events come from them (`_gated`),
         else None: a pattern part, not `plain`, one byte wide, more than `GATED` occurrences."""
         f = search.flags
         if "wide" in f or "xor" in f or "base64" in f or "base64wide" in f or f.get("plain"):
             return None
-        if data.count(needle) <= type(search).GATED:
+        if Streams.count(data, needle, seen) <= type(search).GATED:
             return None
         nocase, dotall = "nocase" in f, "dotall" in f
         gates = []
@@ -72,6 +76,16 @@ class Streams:
         return gates
 
     @staticmethod
+    def count(data: bytes, needle: bytes, seen: dict[Any, Any], *, folded: bool = False) -> int:
+        """How often `needle` occurs in `data` without overlaps (in C), worked out once a file and
+        kept in `seen`, which every string searched there shares."""
+        key = ("count", folded, needle)
+        held = seen.get(key)
+        if held is None:
+            held = seen[key] = data.count(needle)
+        return int(held)
+
+    @staticmethod
     def finds(data: bytes, needle: bytes) -> Iterator[int]:
         """Every offset `needle` begins at, overlapping ones included, one at a time."""
         at = data.find(needle)
@@ -83,14 +97,17 @@ class Streams:
     def wanted(search: Search, data: bytes, seen: dict[Any, Any]) -> bool:
         """Whether `search` should be streamed over `data`."""
         for needle, _, _ in search.needles or ():
-            if seen.get(needle) is None and data.count(needle) > Streams.ABOVE:
+            if seen.get(needle) is None and Streams.count(data, needle, seen) > Streams.ABOVE:
                 return True
         if search.folds:
             lowered = seen.get(("lowered",))
             if lowered is None:
                 lowered = seen[("lowered",)] = data.lower()
             for folded, _, _ in search.folds:
-                if seen.get(("folded", folded)) is None and lowered.count(folded) > Streams.ABOVE:
+                if (
+                    seen.get(("folded", folded)) is None
+                    and Streams.count(lowered, folded, seen, folded=True) > Streams.ABOVE
+                ):
                     return True
         return bool(search.zeros) and len(data) > Streams.ABOVE
 
@@ -139,7 +156,7 @@ class Streams:
         out: list[tuple[Source, frozenset[int]]] = []
         for needle, length, owners in search.needles or ():
             starts = seen.get(needle)
-            gates = Streams.gates(search, data, needle, owners) if starts is None else None
+            gates = Streams.gates(search, data, needle, owners, seen) if starts is None else None
             if gates is not None:
                 out += [
                     (partial(Streams.gated, data, needle, length, o, g), frozenset({o[1]}))

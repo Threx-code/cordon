@@ -16,6 +16,7 @@ import time
 from collections.abc import Iterable, Iterator
 from typing import Any, ClassVar
 
+from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import TextCheck
 from cordon_scanner.detect.binary.rule_engine.anchoring.places import Places
 from cordon_scanner.detect.binary.rule_engine.anchoring.stream import Streams
 from cordon_scanner.detect.binary.rule_engine.anchors import Anchor, Anchors
@@ -261,7 +262,7 @@ class Search:
         for needle, length, owners in self.needles:
             starts = seen.get(needle)
             if starts is None:
-                gated = self._gated(data, needle, length, owners, Search.budget(seen))
+                gated = self._gated(data, needle, length, owners, seen)
                 if gated is not None:
                     events.extend(gated)
                     continue
@@ -300,14 +301,15 @@ class Search:
         needle: bytes,
         length: int,
         owners: list[tuple[int, int, AnchorAt]],
-        budget: list[int],
+        seen: dict[Any, Any],
     ) -> list[Event] | None:
         """The events of a common anchor, from its parts' forward gates run once over the data in
         C, rather than from every occurrence: an occurrence whose gate fails is one `_Hunt._check`
         turns away unread, so leaving it out changes no match. Only where that holds -- a pattern
         part, not `plain`, read one byte wide (no `wide`, `xor` or `base64`) -- and each gated
         position still has the anchor's bytes where it should. None to take every occurrence."""
-        gates = Streams.gates(self, data, needle, owners)
+        gates = Streams.gates(self, data, needle, owners, seen)
+        budget = Search.budget(seen)
         if gates is None:
             return None
         events: list[Event] = []
@@ -436,6 +438,9 @@ class _Hunt:
         self.busy: dict[int, int] = {}
         #: What the file may still hold of places to try (`Search.budget`); None outside a match.
         self.budget: list[int] | None = None
+        #: Per text part, each candidate offset's match length, worked out for all of them at once
+        #: (`anchoring.automaton.TextCheck`) before the events are run.
+        self.texts: dict[int, dict[int, int]] = {}
 
     def run(self, events: list[Event]) -> list[tuple[int, int]]:
         """Checks each anchor occurrence, in the order `events` gives."""
@@ -450,8 +455,33 @@ class _Hunt:
                     break
                 self._found(0, start, length, False)
             return sorted(self.hits.items())
+        self._texts(events)
         self._run_events(events, n)
         return sorted(self.hits.items())
+
+    #: Text-part candidates of one string above which they are checked all at once.
+    BATCH: ClassVar[int] = 16
+
+    def _texts(self, events: list[Event]) -> None:
+        """Each text part's candidates checked in one call (natively where it can) instead of one
+        `_check_text` comparison each; the answers `_check_text` then reads are the same."""
+        parts, n = self.s.parts, len(self.data)
+        wanted = {p for p, part in enumerate(parts) if part.text is not None and not part.fits}
+        if not wanted:
+            return
+        offsets: dict[int, set[int]] = {}
+        for e in events:
+            if e[3] in wanted and e[5] < n:
+                offsets.setdefault(e[3], set()).add(e[5])
+        mode = TextCheck.mode(self.s.flags)
+        for p, found in offsets.items():
+            if len(found) >= _Hunt.BATCH:
+                ordered = sorted(found)
+                text = parts[p].text
+                assert text is not None  # noqa: S101 - a text part
+                self.texts[p] = dict(
+                    zip(ordered, TextCheck.lengths(self.data, ordered, text, mode), strict=True)
+                )
 
     def run_streamed(self, sources: list[Any]) -> list[tuple[int, int]] | None:
         """`run` over sorted event streams (`rule_engine.anchoring.stream`), pulling only until full; None
@@ -806,6 +836,8 @@ class _Hunt:
         data, n = self.data, len(self.data)
         if part.fits:
             length = len(anchor[0]) + anchor[1]
+        elif p in self.texts:
+            length = self.texts[p].get(offset, 0)
         elif "nocase" in f:
             length = 0
             if "ascii" in f:
