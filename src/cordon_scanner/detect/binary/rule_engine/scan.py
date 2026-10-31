@@ -64,6 +64,7 @@ class Search:
         "folds",
         "zeros",
         "hex_layouts",
+        "programs",
     )
 
     def __reduce__(self) -> tuple[Any, ...]:
@@ -83,6 +84,7 @@ class Search:
             state["zeros"],
         )
         search.hex_layouts = state["hex_layouts"]
+        search.programs = state["programs"]
         return search
 
     def __init__(self, kind: str, value: Any, modifiers: dict[str, Any]) -> None:
