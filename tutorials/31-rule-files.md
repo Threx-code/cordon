@@ -40,8 +40,8 @@ ran" never look alike.
 - **Conditions**: counts, offsets and lengths of matches (`#a`, `@a[i]`, `!a[i]`), `at` and `in`,
   string sets and quantifiers, both `for` loops, arithmetic and bitwise operators, the integer
   readers, `defined`, and the string operators including `matches`.
-- **Modules**: `math`, `hash`, `string`, `console` and `time`; `pe`, `elf` and `dotnet` for
-  executables.
+- **Modules**: `math`, `hash`, `string`, `console` and `time`; `pe`, `elf`, `dotnet`, `macho` and
+  `dex` for executables.
 
 ## How it is held to its behaviour
 
