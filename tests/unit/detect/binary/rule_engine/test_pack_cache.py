@@ -106,3 +106,45 @@ class TestThePackCache:
         entry.write_bytes(entry.read_bytes()[:-20])
         assert Rules.compile(RULES, cache=cache).match(b"EVIL")
         assert Spy.calls == 2
+
+
+class TestTheSignature:
+    def test_a_tampered_pickle_is_never_loaded(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import pickle
+
+        cache = PackCache(tmp_path)
+        Rules.compile(RULES, cache=cache)
+        entry = Spy.entry(tmp_path)
+        mac, header, _ = entry.read_bytes().split(b"\n", 2)
+
+        class Boom:
+            def __reduce__(self) -> Any:
+                return (pytest.fail, ("the tampered pickle was loaded",))
+
+        entry.write_bytes(mac + b"\n" + header + b"\n" + pickle.dumps(Boom()))
+        Spy.install(monkeypatch)
+        fresh = PackCache(tmp_path)
+        assert Rules.compile(RULES, cache=fresh).match(b"EVIL")
+        assert Spy.calls == 1
+        assert fresh.refused == 1
+
+    def test_an_unsigned_entry_is_refused(self, tmp_path: Path) -> None:
+        cache = PackCache(tmp_path)
+        Rules.compile(RULES, cache=cache)
+        entry = Spy.entry(tmp_path)
+        entry.write_bytes(entry.read_bytes().split(b"\n", 1)[1])
+        fresh = PackCache(tmp_path)
+        Rules.compile(RULES, cache=fresh)
+        assert fresh.refused == 1
+
+    def test_a_key_others_can_read_is_replaced(self, tmp_path: Path) -> None:
+        cache = PackCache(tmp_path)
+        Rules.compile(RULES, cache=cache)
+        key = tmp_path / PackCache.KEY_NAME
+        key.chmod(0o644)
+        fresh = PackCache(tmp_path)
+        Rules.compile(RULES, cache=fresh)
+        assert fresh.refused == 1
+        assert not key.stat().st_mode & 0o077
