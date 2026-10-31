@@ -145,6 +145,10 @@ class Config:
     """A cordon-rule rule file to match every file against (`--rule-file`). Set only by the
     operator, for the reason `clamav` is: a repository that chose the rules run against it would
     choose rules that never match. See `detect/binary/rule_files`."""
+    rule_module_data: tuple[tuple[str, str], ...] = ()
+    """`(module, file)` pairs of data given to the rule file's modules (`--rule-module-data
+    cuckoo=report.json`): a sandbox run's report for `cuckoo`, read once for the scan. Set only by
+    the operator, with `rule_file`, never from a repository's configuration."""
     keyrings: tuple[str, ...] = ()
     """OpenPGP keyrings whose keys a Helm chart's provenance file may be signed by (`--keyring`,
     `CORDON_KEYRINGS`), as `helm verify --keyring` takes them. Set only by the operator, never
@@ -730,6 +734,7 @@ class Config:
             notify_on=self.notify_on or org.notify_on,
             clamav=self.clamav or org.clamav,
             rule_file=self.rule_file or org.rule_file,
+            rule_module_data=self.rule_module_data or org.rule_module_data,
             keyrings=self.keyrings or org.keyrings,
             judge=self.judge or org.judge,
             judge_blocks=self.judge_blocks or org.judge_blocks,
@@ -827,6 +832,7 @@ class Config:
             "max_intel_age": self.max_intel_age,
             "clamav": bool(self.clamav),
             "rule_file": bool(self.rule_file),
+            "rule_module_data": bool(self.rule_module_data),
             "keyrings": bool(self.keyrings),
             "judge": bool(self.judge),
             "evidence": str(self.evidence),
@@ -915,6 +921,7 @@ class Config:
             "max_intel_age": self.max_intel_age,
             "clamav": bool(self.clamav),
             "rule_file": bool(self.rule_file),
+            "rule_module_data": bool(self.rule_module_data),
             "keyrings": bool(self.keyrings),
             "judge": bool(self.judge),
             "detectors": dict(sorted(self.detectors.items())),

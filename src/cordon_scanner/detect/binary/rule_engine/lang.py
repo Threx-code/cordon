@@ -31,6 +31,7 @@ from typing import Any, ClassVar
 from cordon_scanner.detect.binary.modules.builtin import Builtin
 from cordon_scanner.detect.binary.modules.values import Module
 from cordon_scanner.detect.binary.rule_engine.build import Builder, Frame
+from cordon_scanner.detect.binary.rule_engine.pack_cache import PackCache
 from cordon_scanner.detect.binary.rule_engine.syntax import (
     Both,
     Either,
@@ -44,7 +45,7 @@ from cordon_scanner.detect.binary.rule_engine.syntax import (
     RuleDef,
     StringDef,
 )
-from cordon_scanner.detect.binary.rule_engine.tokens import RuleError
+from cordon_scanner.detect.binary.rule_engine.tokens import Includes, RuleError
 
 MAX_MATCHES = 1_000_000
 
@@ -193,8 +194,15 @@ class Rules:
     #: The built-in modules, loaded once.
     BUILT_IN: ClassVar[dict[str, Module]] = {}
 
-    def __init__(self, rules: list[RuleDef], modules: dict[str, Module]) -> None:
+    def __init__(
+        self,
+        rules: list[RuleDef],
+        modules: dict[str, Module],
+        imports: frozenset[str] = frozenset(),
+    ) -> None:
         self.rules, self.modules = rules, modules
+        #: The modules the rules import.
+        self.imports = imports
         self._index: tuple[Any, list[StringDef]] | None = None
 
     @staticmethod
@@ -205,18 +213,50 @@ class Rules:
 
     @staticmethod
     def compile(
-        text: str, externals: dict[str, Any] | None = None, modules: dict[str, Any] | None = None
+        text: str,
+        externals: dict[str, Any] | None = None,
+        modules: dict[str, Any] | None = None,
+        includes: Includes | None = None,
+        cache: PackCache | None = None,
     ) -> Rules:
-        """`modules` adds modules (`modules.values.Module`s) to the built-in ones."""
+        """`modules` adds modules (`modules.values.Module`s) to the built-in ones; `includes` says
+        where `include` may read from (None: every include is refused); `cache` keeps the parsed
+        and prepared rules for the next compile of the same text (`pack_cache`)."""
         loaded = Rules.loaded(modules)
         given = dict(externals or {})
+        key = PackCache.key(text, given, frozenset(loaded)) if cache is not None else ""
+        kept = cache.get(key) if cache is not None else None
+        if kept is not None:
+            rules, imports = kept
+        else:
+            rules, imports = Rules._read(text, given, loaded, includes)
+            if cache is not None:
+                cache.put(key, (rules, imports), list(includes.read) if includes else [])
+        return Rules._built(rules, loaded, given, imports)
+
+    @staticmethod
+    def _read(
+        text: str, given: dict[str, Any], loaded: dict[str, Module], includes: Includes | None
+    ) -> tuple[list[RuleDef], frozenset[str]]:
+        """The rules parsed and their strings' searches prepared: what the cache keeps."""
         try:
-            rules = Grammar(text, given, frozenset(loaded)).read()
+            grammar = Grammar(text, given, frozenset(loaded), includes)
+            rules = grammar.read()
             Strings.prepare(rules)
         except (IndexError, ValueError, binascii.Error) as exc:
             if isinstance(exc, RuleError):
                 raise
             raise RuleError(f"the rules do not parse: {exc}") from exc
+        return rules, frozenset(grammar.imports)
+
+    @staticmethod
+    def _built(
+        rules: list[RuleDef],
+        loaded: dict[str, Module],
+        given: dict[str, Any],
+        imports: frozenset[str],
+    ) -> Rules:
+        """The conditions built into closures, for rules read now or kept."""
         try:
             Builder(rules, loaded, given).build()
         except RuleError:
@@ -230,7 +270,7 @@ class Rules:
                 and not Tree.calls(rule.condition)
             )
             Strings.place(rule)
-        return Rules(rules, loaded)
+        return Rules(rules, loaded, imports)
 
     def index(self) -> tuple[Any, list[StringDef]]:
         """One index of every string's anchors, built once for the rule set."""
@@ -242,12 +282,22 @@ class Rules:
         return self._index
 
     def match(
-        self, data: bytes, timeout: float | None = None, console: Callable[[str], Any] | None = None
+        self,
+        data: bytes,
+        timeout: float | None = None,
+        console: Callable[[str], Any] | None = None,
+        given: dict[str, Module] | None = None,
     ) -> list[Match]:
         """The rules `data` matches; a `RuleError` once `timeout` seconds have passed. `console`
-        receives each `console.log`/`console.hex` message."""
+        receives each `console.log`/`console.hex` message. `given` replaces built-in modules for
+        this match by name, as one built from data given to the scan (`Cuckoo.module(report)`)."""
         deadline = time.monotonic() + timeout if timeout is not None else None
         modules = self.modules
+        if given:
+            unknown = set(given) - set(modules)
+            if unknown:
+                raise RuleError(f"data given for modules the rules do not have: {sorted(unknown)}")
+            modules = {**modules, **given}
         if console is not None:
             modules = {**modules, "console": Builtin.console(console)}
         frame = Frame(data, modules)
@@ -276,8 +326,10 @@ class Rules:
         for rule in self.rules:
             if not frame.decided[rule.name] or rule.private:
                 continue
+            # an anonymous string is reported as `$`, as the reference reports it; its inner name
+            # (`$#anonymousN`) only keeps it apart from its rule's other anonymous strings
             instances = [
-                (at, s.name, data[at : at + n])
+                (at, "$" if s.name.startswith("$#") else s.name, data[at : at + n])
                 for s in rule.strings
                 if not s.private
                 for at, n in found_by[rule.name][s.name]

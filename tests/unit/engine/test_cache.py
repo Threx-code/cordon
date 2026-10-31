@@ -515,6 +515,17 @@ class TestEverythingAFileDependsOnIsInTheKey:
         rules.write_text("rule b { condition: false }\n", encoding="utf-8")
         assert CacheSignature.scan_signature([], ctx, config) != before
 
+    def test_an_included_members_contents_are_in_the_signature(self, tmp_path) -> None:
+        rules = tmp_path / "index.yar"
+        rules.write_text('include "member.yar"\n', encoding="utf-8")
+        member = tmp_path / "member.yar"
+        member.write_text("rule a { condition: true }\n", encoding="utf-8")
+        config = Config.default().with_overrides(rule_file=str(rules))
+        ctx = self.context()
+        before = CacheSignature.scan_signature([], ctx, config)
+        member.write_text("rule a { condition: false }\n", encoding="utf-8")
+        assert CacheSignature.scan_signature([], ctx, config) != before
+
     def test_a_result_that_says_it_is_incomplete_is_not_cached(self, tmp_path) -> None:
         """A detector failure from one bad moment (memory, load) was served for that content
         until the code changed."""

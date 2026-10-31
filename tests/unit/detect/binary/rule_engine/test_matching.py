@@ -9,8 +9,11 @@ import base64
 from typing import Any
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from cordon_scanner.detect.binary.rule_engine.lang import RuleError, Rules
+from cordon_scanner.detect.binary.rule_engine.needles import NeedleSet
 from cordon_scanner.detect.binary.rule_engine.pattern import Memo, PatternError
 from cordon_scanner.detect.binary.rule_engine.pattern_readers import RegexReader
 
@@ -103,6 +106,34 @@ class TestPatternsRefused:
     def test_the_reader_names_the_problem(self) -> None:
         with pytest.raises(PatternError, match="backreferences"):
             RegexReader(b"(a)\\1").read()
+
+
+class TestNeedleSet:
+    """Which anchors occur, found in one pass: the same set as looking for each one."""
+
+    @staticmethod
+    def text(alphabet: bytes, min_size: int, max_size: int) -> Any:
+        return st.lists(st.sampled_from(list(alphabet)), min_size=min_size, max_size=max_size).map(
+            bytes
+        )
+
+    @given(
+        st.lists(text(b"abc\x00", 1, 12), max_size=80),
+        text(b"abcd\x00", 0, 200),
+    )
+    @settings(max_examples=400, deadline=None)
+    def test_it_finds_exactly_the_needles_that_occur(
+        self, needles: list[bytes], data: bytes
+    ) -> None:
+        assert NeedleSet(needles).present(data) == {n for n in set(needles) if n in data}
+
+    def test_needles_that_share_a_long_prefix_are_each_checked(self) -> None:
+        needles = [b"abcdefgh" + bytes((i,)) for i in range(40)] + [b"abcdefgh", b"abc"]
+        assert NeedleSet(needles).present(b"xxabcdefgh\x05yy") == {
+            b"abcdefgh\x05",
+            b"abcdefgh",
+            b"abc",
+        }
 
 
 class TestRobustness:

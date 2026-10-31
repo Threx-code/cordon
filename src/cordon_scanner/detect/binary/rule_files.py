@@ -20,7 +20,7 @@ from __future__ import annotations
 import contextlib
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from cordon_scanner.detect.base import (
     BaseDetector,
@@ -44,6 +44,9 @@ from cordon_scanner.foundation.models import (
 )
 from cordon_scanner.foundation.paths import PackagePaths
 
+if TYPE_CHECKING:
+    from cordon_scanner.detect.binary.rule_engine.tokens import Includes
+
 MATCH_RULE: Final = "SUSPECT.RULEFILE.MATCH.001"
 MALICIOUS_RULE: Final = "MALWARE.RULEFILE.MATCH.001"
 STATUS_RULE: Final = "OPERATIONAL.RULEFILE.STATUS"
@@ -60,7 +63,7 @@ BUILTIN_PACK: Final = PackagePaths.root() / "rules" / "rule_files" / "cordon-bui
 class RuleFileEngine:
     """Compile once, match many, with cordon-rule."""
 
-    def __init__(self, rules_path: str) -> None:
+    def __init__(self, rules_path: str, module_data: tuple[tuple[str, str], ...] = ()) -> None:
         from cordon_scanner.detect.binary.rule_engine.lang import Rules
 
         path = BUILTIN_PACK if rules_path == BUILTIN else Path(rules_path)
@@ -68,13 +71,56 @@ class RuleFileEngine:
             raise OSError(f"no rule file at {rules_path}")
         if path.stat().st_size > MAX_RULES_BYTES:
             raise OSError(f"the rule file is over {MAX_RULES_BYTES} bytes")
-        # Compiled from the operator's file. `include` is refused: an include directive would let
-        # one rules file pull in others from wherever it names, which is not what was asked for.
-        self.rules = Rules.compile(path.read_text(encoding="utf-8", errors="replace"))
+        # Compiled from the operator's file. `include` is a file read, so only the operator's own
+        # file on disk may use it, and only for files under that file's directory (a rule
+        # collection's index includes its members), all within the size limit. The built-in
+        # pack, and rule text from anywhere else, never reads another file.
+        text = path.read_text(encoding="utf-8", errors="replace")
+        # Compiled once per version of the rules (`rule_engine/pack_cache`): a collection read and
+        # prepared on the first scan is loaded on the next, in every worker.
+        from cordon_scanner.detect.binary.rule_engine.pack_cache import PackCache
+        from cordon_scanner.foundation.paths import StatePaths
+
+        self.rules = Rules.compile(
+            text,
+            includes=None if rules_path == BUILTIN else RuleFileEngine.includes(path),
+            cache=PackCache(StatePaths.default_cache_dir() / "rule-packs"),
+        )
         self.version = "cordon-rule"
+        # Data given to the scan for a module (`--rule-module-data cuckoo=report.json`): read
+        # once, here; a module the rules import that takes data and was given none answers
+        # without it, and the scan says so (`without`).
+        from cordon_scanner.detect.binary.modules.builtin import Builtin
+
+        takes = Builtin.with_data()
+        self.given: dict[str, Any] = {}
+        for name, data_path in module_data:
+            if name not in takes:
+                raise OSError(f"no module reads data given to the scan by the name {name!r}")
+            self.given[name] = takes[name](Path(data_path).read_bytes())
+        self.without = sorted((self.rules.imports & set(takes)) - set(self.given))
+
+    @staticmethod
+    def includes(path: Path) -> Includes:
+        """Where an operator's rule file at `path` may include from."""
+        from cordon_scanner.detect.binary.rule_engine.tokens import Includes
+
+        return Includes(path.parent, top=path, max_bytes=MAX_RULES_BYTES - path.stat().st_size)
+
+    @staticmethod
+    def files(rules_path: str) -> list[Path]:
+        """The rule file and every file its includes read, for a scan's cache (the built-in
+        pack includes nothing)."""
+        if rules_path == BUILTIN:
+            return [BUILTIN_PACK]
+        path = Path(rules_path)
+        read = RuleFileEngine.includes(path).closure(
+            path.read_text(encoding="utf-8", errors="replace")
+        )
+        return [path, *read]
 
     def match(self, data: bytes) -> list[Any]:
-        return list(self.rules.match(data, timeout=MATCH_TIMEOUT_SECONDS))
+        return list(self.rules.match(data, timeout=MATCH_TIMEOUT_SECONDS, given=self.given))
 
     @staticmethod
     def applies(match: Any, path: str) -> bool:
@@ -150,7 +196,9 @@ class RuleFileDetector(BaseDetector):
     def _ensure(self, ctx: ScanContext) -> RuleFileEngine | None:
         if self._engine is None and self._failed is None:
             try:
-                self._engine = RuleFileEngine(str(ctx.config.rule_file))
+                self._engine = RuleFileEngine(
+                    str(ctx.config.rule_file), tuple(ctx.config.rule_module_data)
+                )
             except Exception as exc:  # noqa: BLE001
                 self._failed = (
                     f"the rules could not be loaded: {type(exc).__name__}: {str(exc)[:200]}"
@@ -168,10 +216,15 @@ class RuleFileDetector(BaseDetector):
                         ctx,
                     )
                 ]
+            without = "".join(
+                f" The rules import {name}, which reads data given to the scan, and none was "
+                f"given (--rule-module-data {name}=FILE): its functions answered without it."
+                for name in engine.without
+            )
             return [
                 self._operational(
                     STATUS_RULE,
-                    f"Files were also matched against the rule file ({engine.version}).",
+                    f"Files were also matched against the rule file ({engine.version}).{without}",
                     ctx,
                 )
             ]

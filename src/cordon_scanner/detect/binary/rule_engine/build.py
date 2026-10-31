@@ -734,7 +734,10 @@ class _BuilderQuantifiers(_BuilderOperators):
 
             def span(f: Frame) -> Any:
                 a, b = lo(f), hi(f)
-                if a is None or b is None:
+                # a range whose lower bound is above its upper when the rule runs is no domain:
+                # the loop is false whatever its quantifier (`all`, `none`, `0`), as the
+                # reference engines answer -- not an empty loop, which `all` would satisfy
+                if a is None or b is None or a > b:
                     return None
                 return range(a, b + 1)
 

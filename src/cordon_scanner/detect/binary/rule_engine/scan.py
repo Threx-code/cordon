@@ -18,6 +18,7 @@ from typing import Any, ClassVar
 
 from cordon_scanner.detect.binary.rule_engine.anchors import Anchor, Anchors
 from cordon_scanner.detect.binary.rule_engine.chain import Chain
+from cordon_scanner.detect.binary.rule_engine.needles import NeedleSet
 from cordon_scanner.detect.binary.rule_engine.pattern import (
     GAP,
     LIT,
@@ -411,23 +412,23 @@ class AnchorIndex:
                 self.folded.setdefault(folded, []).append(i)
             if s.zeros:
                 self.always.add(i)
+        self.exact_set = NeedleSet(self.exact)
+        self.folded_set = NeedleSet(self.folded)
 
     def live(self, data: bytes, seen: dict[Any, Any]) -> set[int]:
         """The strings with an anchor in `data`. (`seen` is the data's shared record, which
         `Search.find` fills with where each anchor occurs.)"""
         out = set(self.always)
-        for needle, users in self.exact.items():
-            # whether it occurs at all, in C; where, only for a string that is searched
-            # (`Search.find`), and not even there for an anchor its gate reads in one pass
-            if needle in data:
-                out.update(users)
+        # whether each anchor occurs at all, in one pass; where, only for a string that is
+        # searched (`Search.find`), and not even there for an anchor its gate reads in one pass
+        for needle in self.exact_set.present(data):
+            out.update(self.exact[needle])
         if self.folded:
             lowered = seen.get(("lowered",))
             if lowered is None:
                 lowered = seen[("lowered",)] = data.lower()
-            for folded, users in self.folded.items():
-                if folded in lowered:
-                    out.update(users)
+            for folded in self.folded_set.present(lowered):
+                out.update(self.folded[folded])
         return out
 
 

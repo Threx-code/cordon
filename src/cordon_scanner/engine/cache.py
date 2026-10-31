@@ -421,13 +421,24 @@ class CacheSignature:
 
     @staticmethod
     def _rule_file_digest(config: Config) -> str:
-        """The contents of the operator's rule file, when one is set."""
+        """The contents of the operator's rule file, when one is set, and of every file its
+        includes read: changing an included member changes the rules."""
         if not config.rule_file:
             return ""
+        from cordon_scanner.detect.registry import RuleFiles
+
         try:
-            return hashlib.sha256(Path(config.rule_file).read_bytes()).hexdigest()[:16]
+            digest = hashlib.sha256()
+            given = [Path(p) for _, p in config.rule_module_data]
+            for path in [*RuleFiles.files(config.rule_file), *given]:
+                digest.update(
+                    f"{path.as_posix()}:".encode() + hashlib.sha256(path.read_bytes()).digest()
+                )
+            return digest.hexdigest()[:16]
         except OSError:
             return "unreadable"
+        except ValueError:  # an include the rules refuse (RuleError)
+            return "does-not-compile"
 
     @staticmethod
     def _detector_identity(detector: Any) -> str:

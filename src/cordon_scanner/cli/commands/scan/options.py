@@ -377,6 +377,16 @@ class ScanOptions:
             "shipped with Cordon). Off by default; never set from a repository's own "
             "configuration (env: CORDON_RULE_FILE)",
         )
+        execution.add_argument(
+            "--rule-module-data",
+            dest="rule_module_data",
+            action="append",
+            metavar="MODULE=FILE",
+            default=[],
+            help="give a rule file's module data for the scan, as `yara -x` does: "
+            "`cuckoo=report.json` (a Cuckoo sandbox report) answers the cuckoo module's functions "
+            "(repeatable). Never set from a repository's own configuration",
+        )
         execution.add_argument("--yara", dest="rule_file_old", help=argparse.SUPPRESS)
         execution.add_argument(
             "--clamav",

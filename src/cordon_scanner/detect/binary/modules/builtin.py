@@ -411,13 +411,23 @@ class Builtin:
         return Module(ConsoleModule.SCHEMA, lambda file: ConsoleModule(sink).values())
 
     @staticmethod
+    def with_data() -> dict[str, Callable[[bytes], Module]]:
+        """The modules that read data given to the scan (a sandbox report, say), each built from
+        that data; a module here answers without it too, as `modules()` holds it."""
+        from cordon_scanner.detect.binary.modules.reports.cuckoo import Cuckoo
+
+        return {"cuckoo": Cuckoo.module}
+
+    @staticmethod
     def modules() -> dict[str, Module]:
         from cordon_scanner.detect.binary.modules.dotnet import Dotnet
         from cordon_scanner.detect.binary.modules.elf import Elf
+        from cordon_scanner.detect.binary.modules.file_type import FileType
         from cordon_scanner.detect.binary.modules.formats.crx import Crx
         from cordon_scanner.detect.binary.modules.formats.lnk import Lnk
         from cordon_scanner.detect.binary.modules.formats.zip import Zip
         from cordon_scanner.detect.binary.modules.pe import Pe
+        from cordon_scanner.detect.binary.modules.reports.cuckoo import Cuckoo
 
         return {
             "math": Module(MathModule.SCHEMA, lambda file: MathModule(file).values()),
@@ -431,6 +441,9 @@ class Builtin:
             "lnk": Module(Lnk.SCHEMA, Lnk.data),
             "zip": Module(Zip.SCHEMA, Zip.data),
             "crx": Module(Crx.SCHEMA, Crx.data),
+            # with no report given to the scan (`Rules.match(given=...)` gives one)
+            "cuckoo": Cuckoo.module(),
+            "magic": FileType.module(),
         }
 
 
