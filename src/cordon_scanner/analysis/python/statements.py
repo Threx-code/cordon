@@ -16,12 +16,16 @@ from __future__ import annotations
 
 import io
 import tokenize
+from typing import ClassVar
 
 CONTINUATIONS = frozenset({"else", "elif", "except", "finally"})
 """Keywords at depth 0 that continue the compound statement before them."""
 
 
 class PythonStatements:
+    STRAY_BYTES: ClassVar[dict[int, str]] = dict.fromkeys(range(0xDC80, 0xDD00), "�")
+    """The lone surrogates `surrogateescape` decodes the 128 bytes 0x80-0xFF to, as U+FFFD."""
+
     @staticmethod
     def starts(text: str) -> list[int]:
         """The character offsets where `text`'s top-level statements start, 0 first. A text that
@@ -57,9 +61,15 @@ class PythonStatements:
         """The byte offset of the last top-level statement start in `data` past its first byte, or
         0 where `data` is one statement (it cannot be cut there)."""
         # Every byte kept as a character (a stray byte as a lone surrogate), so a character offset
-        # maps back to the byte it came from.
-        text = data.decode("utf-8", "surrogateescape")
-        starts = [s for s in PythonStatements.starts(text) if s > 0]
+        # maps back to the byte it came from. The tokenizer encodes its text as UTF-8, which a lone
+        # surrogate cannot be (pkqer 1: an internal error, no report), so it reads each stray byte
+        # as U+FFFD instead: one character for one, the offsets unchanged.
+        try:
+            text = seen = data.decode("utf-8")
+        except UnicodeDecodeError:
+            text = data.decode("utf-8", "surrogateescape")
+            seen = text.translate(PythonStatements.STRAY_BYTES)
+        starts = [s for s in PythonStatements.starts(seen) if s > 0]
         if not starts:
             return 0
         return len(text[: starts[-1]].encode("utf-8", "surrogateescape"))

@@ -121,6 +121,26 @@ class TestTheWithholding:
         assert WindowedKit.findings(WindowedKit.scan(tmp_path, text)) == withheld
 
 
+class TestAStrayByte:
+    def test_a_module_read_in_windows_with_a_byte_that_is_not_utf8_is_scanned(
+        self, tmp_path
+    ) -> None:
+        """pkqer 1: a stray byte in an oversized module reached the statement cut's tokenizer as a
+        lone surrogate, and the scan ended in an internal error with no report."""
+        text = WindowedKit.source(1200)
+        at = text.index("def f600(")
+        data = text[:at].encode() + b'S = "\xa7"\n' + text[at:].encode()
+        (tmp_path / "setup.py").write_bytes(data)
+        config = Config.default().with_overrides(use_cache=False)
+        limits = dataclasses.replace(
+            config.limits, max_file_bytes=LIMIT, per_file_timeout=0, total_timeout=0
+        )
+        result = Scanner(config.with_overrides(limits=limits)).scan(tmp_path)
+        assert {"SUSPECT.DECODE_EXEC.001", "MALWARE.INSTALL.DECODED_LAUNCH.001"} & {
+            f.rule_id for f in result.findings
+        }
+
+
 class TestNeverWithholdingWhatParses:
     """The one way withholding could lose a finding: `may_parse` saying no (the pure-Python
     tokenizer) to a text the C parser accepts. Real modules cut at arbitrary offsets, with the
