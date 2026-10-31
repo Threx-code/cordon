@@ -363,7 +363,12 @@ class HclParser:
                 # Some other key expression: read up to its separator.
                 self.expression(depth + 1, stops=("=", ":"))
                 key = None
-            elif token[0] == "ident" and (after := self.peek()) is not None and after[1] in ".[(":
+            elif (
+                token[0] == "ident"
+                and (after := self.peek()) is not None
+                and after == ("punct", after[1])
+                and after[1] in (".", "[", "(")
+            ):
                 # A name that goes on is an expression key (`local.m[count.index] = ...`): only a
                 # bare name or string is a literal one. Read from the name up to its separator,
                 # under the bounds a value's expression has; not a name, as `(local.k)` is not.

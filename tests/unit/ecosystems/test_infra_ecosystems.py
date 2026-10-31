@@ -365,6 +365,14 @@ class TestTerraformExpressionKeys:
         text = f'resource "x" "y" {{\n  data = {{\n    {key} = 1\n  }}\n}}\n'
         assert self.keys_of(text) == stored
 
+    def test_a_name_at_the_end_of_the_file_fails_as_before(self) -> None:
+        """A key name with nothing after it is not read as an expression key: the reader fails as
+        it did before expression keys were read, from the same place and with the same words."""
+        from cordon_scanner.ecosystems.infra.terraform import HclError
+
+        with pytest.raises(HclError, match=r"^the file ends inside a block$"):
+            self.blocks('resource "x" "y" {\n  data = {\n    a')
+
     def test_a_deep_parenthesised_key_never_recurses(self) -> None:
         from cordon_scanner.ecosystems.infra.terraform import HclError
 
