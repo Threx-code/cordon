@@ -297,6 +297,30 @@ class TestLoopsOverLazyArrays:
         assert items.reads == 1000  # the loop reads each element as it reaches it, once
 
 
+class TestRangesDecidedAtRunTime:
+    """A for range whose bounds are known only when the rule runs; the answers are YARA 4.5.8's and
+    YARA-X 1.21.0's, which agree, on a one-byte file. A range found reversed there is no domain:
+    every quantifier is false (a .NET DLL with no exports, `for all i in (0 ..
+    pe.number_of_exports - 1)`, matched a YARA-Forge rule the reference does not)."""
+
+    @pytest.mark.parametrize(
+        ("condition", "want"),
+        [
+            ("for all i in (0 .. filesize - 2) : ( false )", False),
+            ("for any i in (0 .. filesize - 2) : ( true )", False),
+            ("for none i in (0 .. filesize - 2) : ( true )", False),
+            ("for 0 i in (0 .. filesize - 2) : ( true )", False),
+            ("not for all i in (0 .. filesize - 2) : ( false )", True),
+            ("for all i in (filesize + 1 .. filesize) : ( false )", False),
+            ("for all i in (filesize - 3 .. filesize) : ( true )", True),
+            ("for all i in (filesize + 4 .. filesize + 4) : ( i == 5 )", True),
+        ],
+    )
+    def test_the_loop_answers_as_the_references(self, condition: str, want: bool) -> None:
+        rules = Rules.compile(f"rule r {{ condition: {condition} }}")
+        assert bool(rules.match(b"x")) is want
+
+
 class TestAtOffsets:
     """The offset after `at` is a whole arithmetic expression, as the reference's grammar reads
     it (signature collections write `$name at @crc[1] + 16`); a comparison or `and` ends it."""
@@ -356,7 +380,7 @@ class TestIncludes:
     def tree(root: Path, files: dict[str, str]) -> None:
         for name, text in files.items():
             (root / name).parent.mkdir(parents=True, exist_ok=True)
-            (root / name).write_text(text)
+            (root / name).write_text(text, encoding="utf-8")
 
     def test_an_index_includes_its_members_relative_to_each_file(self, tmp_path: Path) -> None:
         self.tree(
@@ -368,7 +392,7 @@ class TestIncludes:
             },
         )
         top = tmp_path / "index.yar"
-        rules = Rules.compile(top.read_text(), includes=Includes(tmp_path, top=top))
+        rules = Rules.compile(top.read_text(encoding="utf-8"), includes=Includes(tmp_path, top=top))
         assert [r.name for r in rules.rules] == ["b", "a", "top"]
         assert [m.rule for m in rules.match(b"x")] == ["a", "top"]
 
@@ -378,7 +402,7 @@ class TestIncludes:
         )
         top = tmp_path / "c" / "index.yar"
         with pytest.raises(RuleError, match="outside the rule collection"):
-            Rules.compile(top.read_text(), includes=Includes(top.parent, top=top))
+            Rules.compile(top.read_text(encoding="utf-8"), includes=Includes(top.parent, top=top))
 
     def test_a_link_out_of_the_root_is_refused(self, tmp_path: Path) -> None:
         self.tree(
@@ -387,7 +411,7 @@ class TestIncludes:
         (tmp_path / "c" / "link.yar").symlink_to(tmp_path / "x.yar")
         top = tmp_path / "c" / "index.yar"
         with pytest.raises(RuleError, match="outside the rule collection"):
-            Rules.compile(top.read_text(), includes=Includes(top.parent, top=top))
+            Rules.compile(top.read_text(encoding="utf-8"), includes=Includes(top.parent, top=top))
 
     def test_an_absolute_name_is_refused(self, tmp_path: Path) -> None:
         with pytest.raises(RuleError, match="an absolute path"):
@@ -397,7 +421,7 @@ class TestIncludes:
         self.tree(tmp_path, {"a.yar": 'include "b.yar"', "b.yar": 'include "a.yar"'})
         top = tmp_path / "a.yar"
         with pytest.raises(RuleError, match="an include cycle"):
-            Rules.compile(top.read_text(), includes=Includes(tmp_path, top=top))
+            Rules.compile(top.read_text(encoding="utf-8"), includes=Includes(tmp_path, top=top))
 
     def test_the_byte_budget_covers_every_included_file(self, tmp_path: Path) -> None:
         self.tree(tmp_path, {"a.yar": "rule a { condition: true }" + " " * 100})
@@ -414,7 +438,7 @@ class TestIncludes:
             },
         )
         top = tmp_path / "a.yar"
-        read = Includes(tmp_path, top=top).closure(top.read_text())
+        read = Includes(tmp_path, top=top).closure(top.read_text(encoding="utf-8"))
         assert read == [tmp_path.resolve() / "b" / "c.yar", tmp_path.resolve() / "b" / "d.yar"]
 
     def test_an_error_in_an_included_file_names_that_file(self, tmp_path: Path) -> None:
