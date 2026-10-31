@@ -435,7 +435,9 @@ class CapabilityDetector(BaseDetector):
             ):
                 continue
             matched = matched_capabilities
-            anchor = FindingAnchor.anchor(matched, local_by_capability, window)
+            anchor = FindingAnchor.anchor(
+                matched, local_by_capability, window, CompositeEvaluator.rules_of(compiled)
+            )
 
             finding = CompositeGrading(
                 compiled,

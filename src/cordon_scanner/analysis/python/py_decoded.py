@@ -169,6 +169,8 @@ class PythonDecodedRun(PythonValueFlow):
         self.handles: dict[str, ast.AST] = {}
         self.assigned: dict[str, list[ast.AST]] = {}
         self.written: set[str] = set()
+        #: The literals of paths a decoded image was written to (`call_flow`).
+        self.images: set[str] = set()
 
     def seed(self, node: ast.AST) -> Label | None:
         if not isinstance(node, ast.Call):
@@ -204,7 +206,7 @@ class PythonDecodedRun(PythonValueFlow):
         unreached: set[int] = set()
         reached: set[int] = set()
         for node in analysis.calls:
-            if analysis._consumes(node):
+            if analysis._consumes(node) or analysis._moves_an_image(node):
                 return frozenset()
             if analysis._runs(node):
                 lines = range(node.lineno, (node.end_lineno or node.lineno) + 1)
@@ -215,6 +217,20 @@ class PythonDecodedRun(PythonValueFlow):
         # The excuse is taken by line: a line holding a reached run keeps every hit on it, as
         # `exec(__import__("base64").b64decode(...))` holds an unreached `__import__` beside it.
         return frozenset(unreached - reached)
+
+    #: Calls that give a file another name, place or mode: what turns a written `x.png` into a file
+    #: that runs.
+    MOVES: ClassVar[frozenset[str]] = frozenset(
+        ["rename", "replace", "move", "copy", "copy2", "copyfile", "copyfileobj", "chmod",
+         "symlink", "symlink_to", "link", "hardlink_to", "with_suffix", "with_name", "with_stem"]
+    )  # fmt: skip
+
+    def _moves_an_image(self, node: ast.Call) -> bool:
+        """Whether a call renames, copies or re-modes a file a decoded image was written to: then the
+        image's bytes may run under the new name, and nothing is excused (fail closed)."""
+        if not self.images or self.name(node.func) not in self.MOVES:
+            return False
+        return bool(self._literals(node) & self.images)
 
     def _names_written(self, node: ast.Call) -> bool:
         """Whether the run names a file a decoded value was written to, by the same literal or its
@@ -256,8 +272,40 @@ class PythonDecodedRun(PythonValueFlow):
             path = self.handles[where.id]
         elif isinstance(where, ast.Call) and where.args:
             path = where.args[0]  # `open(p, "wb").write(x)`, `Path(p).write_bytes(x)`
-        self.written |= self._literals(path)
+        literals = self._literals(path)
+        self.written |= literals
+        if self._ends_in_image(path):
+            self.images |= literals
+            # A decoded screenshot or generated picture saved as `x.png`: the file is marked, so a
+            # run naming it is still reached (`_names_written`), but the path is not a decoded
+            # value -- every later use of it (a report, a mkdir of its folder) is not one of the
+            # decoded bytes (review 98, two public skills).
+            return False
         return self.bind(where, value) | (path is not where and self.bind(path, value))
+
+    #: The file names a decoded image is written under.
+    IMAGES: ClassVar[tuple[str, ...]] = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico")
+
+    def _ends_in_image(self, node: ast.AST, depth: int = 0) -> bool:
+        """Whether a written path's last characters are written out as an image extension, whatever
+        comes before them: `out / "shot.png"`, `name + ".png"`, `f"{name}.png"`,
+        `os.path.join(d, "a.png")`, or a name bound once to one of those. `"a.png" if c else ext`
+        is not: the extension could be anything `ext` is."""
+        if isinstance(node, ast.Constant):
+            return isinstance(node.value, str) and node.value.lower().endswith(self.IMAGES)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add | ast.Div):
+            return self._ends_in_image(node.right, depth)
+        if isinstance(node, ast.JoinedStr) and node.values:
+            return self._ends_in_image(node.values[-1], depth)
+        if isinstance(node, ast.Call) and node.args and not node.keywords:
+            name = self.name(node.func)
+            if name in ("join", "joinpath", "Path", "PurePath"):
+                return self._ends_in_image(node.args[-1], depth)
+            return False
+        if isinstance(node, ast.Name) and depth < 3:
+            bound = self.assigned.get(node.id, [])
+            return len(bound) == 1 and self._ends_in_image(bound[0], depth + 1)
+        return False
 
     def _literals(self, node: ast.AST, depth: int = 0) -> set[str]:
         """The string literals an expression is built from, through what its names are assigned."""

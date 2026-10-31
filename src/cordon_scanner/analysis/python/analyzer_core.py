@@ -35,6 +35,8 @@ class AnalyzerCore:
         self._invoked: dict[int, ast.Call] = {}
         # Names whose every possible value is written in the file. See `_enumerated`.
         self._enumerated: set[str] = set()
+        # `__import__` calls that only ask whether a module is installed. See `_probes_of`.
+        self._probes: set[int] = set()
         self._follow_literals = True
         # Name -> the string literal it is bound to, for names bound exactly once.
         self._strings: dict[str, str | None] = {}
