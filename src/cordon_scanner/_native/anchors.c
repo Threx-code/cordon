@@ -905,6 +905,7 @@ done:
 
 static PyMethodDef module_methods[] = {
     {"check_text", check_text, METH_VARARGS, "check_text(data, offsets, text, mode) -> int64 lengths."},
+    {"pattern_hits", pattern_hits, METH_VARARGS, "pattern_hits(data, owners, forward, backward, flags, max_hits, fixed, max_threads, reach[, left]) -> (starts, lengths)."},
     {"threads_run", threads_run, METH_VARARGS, "threads_run(program, entry, data, at, flags, max_threads, reach[, left]) -> length, or (starts, lengths)."},
     {"hex_hits", hex_hits, METH_VARARGS, "hex_hits(data, owners, forward, backward, reach, flags, max_hits, fixed[, left]) -> (starts, lengths)."},
     {"text_hits", text_hits, METH_VARARGS, "text_hits(data, owners, text, mode, flags, max_hits, fixed[, left]) -> (starts, lengths)."},
