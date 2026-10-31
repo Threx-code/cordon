@@ -86,6 +86,18 @@ class TestThePackCache:
         assert Spy.calls == 2
         assert not rules.match(b"x")
 
+    def test_an_entry_kept_by_another_build_is_never_read(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An interpreted build's entry is never unpickled by a compiled build, or the other way."""
+        Spy.install(monkeypatch)
+        cache = PackCache(tmp_path)
+        assert PackCache.build_kind().startswith("python ")
+        Rules.compile(RULES, cache=cache)
+        monkeypatch.setattr(PackCache, "_BUILD", "compiled:0123456789abcdef cpython-312-aarch64")
+        assert Rules.compile(RULES, cache=cache).match(b"EVIL")
+        assert Spy.calls == 2
+
     def test_another_engine_never_reads_the_entry(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

@@ -9,7 +9,8 @@ The closures are built again on every load (they are functions, which are not ke
 An entry is used only when everything that made it is the same, and is refused otherwise:
 
     key      the rule text, its externals, the modules the scan provides, this cache's FORMAT,
-             and a digest of the rule engine's own source (a different engine never reads it)
+             a digest of the rule engine's own source (a different engine never reads it), and
+             the build running it -- interpreted or compiled, and the interpreter's ABI (`build_kind`)
     files    every file its includes read, by path and sha256, checked on load
     owner    the entry is the current user's and writable by no one else
     mac      HMAC-SHA256 over the entry's bytes, with a per-user key kept 0600 in the cache
@@ -40,6 +41,7 @@ class PackCache:
 
     FORMAT: ClassVar[int] = 1
     _ENGINE: ClassVar[str] = ""
+    _BUILD: ClassVar[str] = ""
 
     KEY_NAME: ClassVar[str] = ".pack-key"
 
@@ -97,11 +99,42 @@ class PackCache:
         return PackCache._ENGINE
 
     @staticmethod
+    def build_kind() -> str:
+        """Which build of the engine is running, so an entry one build kept is never read by
+        another: "python" when every rule-engine module runs from source, else "compiled:" and a
+        digest of the compiled files (mypyc's modules and its shared runtime), with the
+        interpreter's ABI (cache tag, ABI flags, machine). A pickle names classes, not layouts: a
+        compiled class reading an interpreted class's state, or the other way, is refused here."""
+        if not PackCache._BUILD:
+            import platform
+            import sys
+
+            prefix = "cordon_scanner.detect.binary.rule_engine."
+            compiled = sorted(
+                str(getattr(module, "__file__", ""))
+                for name, module in list(sys.modules.items())
+                if (name.startswith(prefix) or name.endswith("__mypyc"))
+                and str(getattr(module, "__file__", "")).endswith((".so", ".pyd"))
+            )
+            kind = "python"
+            if compiled:
+                digest = hashlib.sha256()
+                for path in compiled:
+                    digest.update(path.encode() + b"\0" + Path(path).read_bytes())
+                kind = "compiled:" + digest.hexdigest()[:16]
+            abi = (
+                f"{sys.implementation.cache_tag}{getattr(sys, 'abiflags', '')}-{platform.machine()}"
+            )
+            PackCache._BUILD = f"{kind} {abi}"
+        return PackCache._BUILD
+
+    @staticmethod
     def key(text: str, externals: dict[str, Any], modules: frozenset[str]) -> str:
         made_of = json.dumps(
             [
                 PackCache.FORMAT,
                 PackCache.engine_digest(),
+                PackCache.build_kind(),
                 sorted(modules),
                 sorted(externals.items(), key=str),
             ],
@@ -137,6 +170,8 @@ class PackCache:
                 return None
             if header.get("engine") != PackCache.engine_digest():
                 return None
+            if header.get("build") != PackCache.build_kind():
+                return None
             for name, sha in header.get("files", []):
                 if PackCache._sha(Path(name)) != sha:
                     return None
@@ -164,6 +199,7 @@ class PackCache:
                 "format": PackCache.FORMAT,
                 "key": key,
                 "engine": PackCache.engine_digest(),
+                "build": PackCache.build_kind(),
                 "files": [[str(p), PackCache._sha(p)] for p in files],
             }
             signed = json.dumps(header).encode() + b"\n" + body
