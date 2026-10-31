@@ -109,7 +109,10 @@ static int vm_settle(VM *vm, const int32_t *first, TList *out) {
     int64_t *forked = NULL; Py_ssize_t nforked = 0, fcap = 0;
     int ok = 1;
     int32_t th[3 + T_MAX_COUNTS];
-    if (++vm->nesting > vm->nops + 1) { vm->error = 3; ok = 0; goto end; } /* a skip's go settling into itself */
+    /* a skip's go settles as its own call, and may settle into the same skip again: each level
+     * makes a thread first, so past max_threads levels vm_new has already raised what the twin
+     * raises (too many threads); this bound only keeps the C stack from going further */
+    if (++vm->nesting > vm->max_threads + 2) { vm->error = 3; ok = 0; goto end; }
     if (!tl_push(&queue, first, vm)) { ok = 0; goto end; }
     while (queue.n > 0) {
         if (++vm->settled > T_SETTLE_MOST) { vm->error = 3; ok = 0; goto end; }
@@ -184,15 +187,18 @@ static int vm_settle(VM *vm, const int32_t *first, TList *out) {
                 go[2] = -1;
                 /* the settle of `go`, recursively, as its own call (its own forks) */
                 TList went = {NULL, 0, 0, vm->stride};
-                int32_t copy[3 + T_MAX_COUNTS], keep[3 + T_MAX_COUNTS];
+                /* the two threads on the heap, not this frame: the recursion may run max_threads deep */
+                int32_t *copy = PyMem_RawMalloc(sizeof(int32_t) * 2 * (size_t)vm->stride);
+                if (!copy) { vm->error = 2; ok = 0; goto end; }
+                int32_t *keep = copy + vm->stride;
                 memcpy(copy, go, sizeof(int32_t) * (size_t)vm->stride);
                 memcpy(keep, spin, sizeof(int32_t) * (size_t)vm->stride);
-                if (!vm_settle(vm, copy, &went)) { PyMem_RawFree(went.t); ok = 0; goto end; }
-                if (eager && !tl_push(out, keep, vm)) { PyMem_RawFree(went.t); ok = 0; goto end; }
-                for (Py_ssize_t k = 0; k < went.n; k++)
-                    if (!tl_push(out, tl_at(&went, k), vm)) { PyMem_RawFree(went.t); ok = 0; goto end; }
-                if (!eager && !tl_push(out, keep, vm)) { PyMem_RawFree(went.t); ok = 0; goto end; }
-                PyMem_RawFree(went.t);
+                int fine = vm_settle(vm, copy, &went);
+                if (fine && eager) fine = tl_push(out, keep, vm);
+                for (Py_ssize_t k = 0; fine && k < went.n; k++) fine = tl_push(out, tl_at(&went, k), vm);
+                if (fine && !eager) fine = tl_push(out, keep, vm);
+                PyMem_RawFree(went.t); PyMem_RawFree(copy);
+                if (!fine) { ok = 0; goto end; }
                 tl_remove(&queue, 0);
             } else {
                 t[0] += 1;
@@ -424,7 +430,7 @@ static PyObject *threads_run(PyObject *self, PyObject *args) {
         if (bad) { PyErr_SetString(PyExc_ValueError, "a program holds an instruction out of range"); goto done; }
     }
     if (vm_goto_cycle(vm.ops, vm.nops)) { PyErr_SetString(PyExc_ValueError, "a program jumps in a circle"); goto done; }
-    if (entry < 0 || entry >= vm.nops || at < 0 || at > data.len || max_threads < 1 || max_threads > (1 << 20) ||
+    if (entry < 0 || entry >= vm.nops || at < 0 || at > data.len || max_threads < 1 || max_threads > 4096 ||
         reach < 0 || reach > (1 << 20)) {
         PyErr_SetString(PyExc_ValueError, "an entry, offset, thread bound or reach out of range"); goto done;
     }
@@ -539,7 +545,7 @@ static PyObject *pattern_hits(PyObject *self, PyObject *args) {
     Record rec; memset(&rec, 0, sizeof rec);
     Pairs back = {NULL, NULL, 0, 0};
     if (!vm_program(&fv, &fb) || !vm_program(&bv, &bb)) goto done;
-    if (max_hits < 0 || max_hits > ((Py_ssize_t)1 << 30) || max_threads < 1 || max_threads > (1 << 20) || reach < 1 || reach > (1 << 20)) {
+    if (max_hits < 0 || max_hits > ((Py_ssize_t)1 << 30) || max_threads < 1 || max_threads > 4096 || reach < 1 || reach > (1 << 20)) {
         PyErr_SetString(PyExc_ValueError, "max_hits, the thread bound or reach out of range"); goto done;
     }
     rec.max_hits = max_hits; rec.greedy = (flags & PH_GREEDY) != 0;
