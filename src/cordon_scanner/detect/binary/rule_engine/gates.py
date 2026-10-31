@@ -22,6 +22,7 @@ A rule whose condition reaches `console` is never gated: its messages are part o
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Callable
 from typing import Any
 
@@ -48,9 +49,13 @@ Magic = tuple[int, bool, bool, int]
 class Gates:
     @staticmethod
     def parts(node: Any) -> list[Any]:
-        from cordon_scanner.detect.binary.rule_engine.lang import Tree
-
-        return list(Tree.parts(node))
+        """Everything directly inside `node`: nodes, steps, lists and names (as `lang.Tree.parts`,
+        kept here so this module imports nothing of the compiler's)."""
+        if dataclasses.is_dataclass(node) and not isinstance(node, type):
+            return [getattr(node, f.name) for f in dataclasses.fields(node)]
+        if isinstance(node, (list, tuple)):
+            return list(node)
+        return []
 
     @staticmethod
     def reaches(node: Any, test: Callable[[Any], bool]) -> bool:
