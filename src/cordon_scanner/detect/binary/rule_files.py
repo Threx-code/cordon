@@ -30,6 +30,7 @@ from cordon_scanner.detect.base import (
     ScanContext,
     Unit,
 )
+from cordon_scanner.detect.binary.rule_engine.automaton import Automaton
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.foundation.models import (
     Category,
@@ -257,7 +258,8 @@ class RuleFileDetector(BaseDetector):
             return [
                 self._operational(
                     STATUS_RULE,
-                    f"Files were also matched against the rule file ({engine.version}).{without}",
+                    f"Files were also matched against the rule file ({engine.version}), with the "
+                    f"{Automaton.status()}.{without}",
                     ctx,
                 ),
                 *(

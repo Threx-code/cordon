@@ -27,6 +27,23 @@ from cordon_scanner.cli.help import ColourArgumentParser
 from cordon_scanner.version import PROGRAM, __version__
 
 
+class VersionAction(argparse.Action):
+    """`--version`: the version, and which anchor matcher a rule file runs with (worked out only
+    when asked, since it hashes the native binary)."""
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: object,
+        values: object,
+        option: str | None = None,
+    ) -> None:
+        from cordon_scanner.detect.binary.rule_engine.automaton import Automaton
+
+        native = "yes" if Automaton.NATIVE else "no"
+        parser.exit(message=f"{PROGRAM} {__version__}\nnative: {native}, {Automaton.status()}\n")
+
+
 class CommandParser:
     #: Front ends that drive these commands, found by entry point: `cordon-scanner mcp`.
     FRONT_ENDS: ClassVar[str] = "cordon_scanner.commands"
@@ -68,7 +85,9 @@ tutorials for this version ({__version__}):
             epilog=cls.EPILOG,
             formatter_class=argparse.RawDescriptionHelpFormatter,
         )
-        parser.add_argument("--version", action="version", version=f"{PROGRAM} {__version__}")
+        parser.add_argument(
+            "--version", action=VersionAction, nargs=0, help="show the version and exit"
+        )
 
         sub = parser.add_subparsers(dest="command", metavar="<command>")
 
