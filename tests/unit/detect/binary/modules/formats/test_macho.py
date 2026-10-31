@@ -1,16 +1,17 @@
 """The Mach-O reader (modules.formats.macho) on objects built here byte by byte: a little-endian x86-64
 executable with a segment, a section and LC_MAIN; a big-endian PowerPC object whose entry point comes from
 LC_UNIXTHREAD through the segment that holds it; a fat file of both; and the reference's bounds and quirks
-(the magic read big-endian, the thread command's size read little-endian, a short segment command read
-whole, an architecture past the end). The values asserted are worked from the reference's source
-(YARA 4.5.8, libyara/modules/macho/macho.c); the recorded-reference differential joins the review harness
-once the reference image exists."""
+(the magic read big-endian), and the reader's own strict readings where the reference's are accidents
+(a short segment command, a thread state that does not fit its command, a fat entry that is not an object,
+an architecture with no entry point). The values asserted are worked from the format and the reference's
+declared names; the recorded-reference differential joins the review harness once the reference image
+exists."""
 
 from __future__ import annotations
 
 import struct
 
-from cordon_scanner.detect.binary.modules.formats.macho import MASK64, UNDEFINED, Macho
+from cordon_scanner.detect.binary.modules.formats.macho import Macho
 from cordon_scanner.detect.binary.modules.formats.macho_tables import MachoTables
 from cordon_scanner.detect.binary.modules.values import Data
 
@@ -134,10 +135,9 @@ class TestObjects:
         assert d["entry_point"] == 0x40  # srr0 0x1040 in a segment at vmaddr 0x1000, fileoff 0
         assert "stack_size" not in d
 
-    def test_the_thread_command_size_is_read_little_endian_whatever_the_file(self) -> None:
-        """The reference takes the thread command's cmdsize in host order; a big-endian file's reads as a
-        huge value, cut to what remains, so the state must fit in what remains. A thread command followed
-        by more bytes still works; one whose state is cut short gives no entry point."""
+    def test_a_thread_state_must_fit_its_command(self) -> None:
+        """A thread command whose declared size runs past the file ends the command walk, so no entry
+        point (the reference reads the size in host order and takes what remains)."""
         e = ">"
         seg = Build.segment32(e, b"__TEXT", 0x1000, 0x2000, 0)
         thread = Build.ppc_thread(e, 0x1040)[:-8]  # the state 8 bytes short: cmdsize says 176
@@ -174,11 +174,12 @@ class TestBounds:
         assert "magic" not in d and d["segments"] == {} and d["MH_EXECUTE"] == 2
         assert d["file_index_for_arch"][0](T["CPU_TYPE_X86_64"]) is None
 
-    def test_an_object_shorter_than_the_64_bit_header_sets_nothing(self) -> None:
+    def test_an_object_needs_its_own_header_size(self) -> None:
+        """32 bytes for a 64-bit object, 28 for a 32-bit one (the reference wants 32 for both)."""
         assert "magic" not in Macho.data(Build.x86_64()[:31])
-        assert "magic" not in Macho.data(
-            b"\xce\xfa\xed\xfe" + b"\x00" * 24
-        )  # 28 bytes: a 32-bit header, still short
+        thin = b"\xce\xfa\xed\xfe" + struct.pack("<6I", T["CPU_TYPE_X86"], 3, 2, 0, 0, 0)
+        assert Macho.data(thin)["ncmds"] == 0 and "reserved" not in Macho.data(thin)
+        assert "magic" not in Macho.data(thin[:27])
 
     def test_the_command_walk_stops_at_a_broken_command(self) -> None:
         e = "<"
@@ -191,16 +192,15 @@ class TestBounds:
         past_end = Build.header(e, T["CPU_TYPE_X86_64"], 2, 0) + seg + main[:20]
         assert "entry_point" not in Macho.data(past_end)
 
-    def test_a_short_segment_command_is_read_whole_from_where_it_starts(self) -> None:
-        """A segment command whose cmdsize is 8 is still read as a 56-byte structure when that many bytes
-        remain (the reference checks the remaining size, not cmdsize), with no sections."""
+    def test_a_segment_command_shorter_than_a_segment_is_neither_read_nor_counted(self) -> None:
+        """The reference reads the 56-byte structure from whatever follows an 8-byte command and counts
+        it; this reader reads a command within its own size."""
         e = "<"
         seg = Build.segment32(e, b"__TEXT", 0x1000, 0x2000, 0)
         short = struct.pack(f"{e}2I", MachoTables.LC_SEGMENT, 8) + seg[8:]
         data = Build.header(e, T["CPU_TYPE_X86"], 1, 8, is64=False) + short
         d = Macho.data(data)
-        assert d["number_of_segments"] == 1 and d["segments"][0]["segname"] == b"__TEXT"
-        assert d["segments"][0]["vmaddr"] == 0x1000
+        assert d["number_of_segments"] == 0 and d["segments"] == {}
 
 
 class TestFat:
@@ -229,15 +229,15 @@ class TestFat:
         assert ep_type(T["CPU_TYPE_ARM64"]) is None and ep_subtype(T["CPU_TYPE_POWERPC"], 1) is None
 
     def test_an_architecture_past_the_end_lists_no_file(self) -> None:
-        """Its entry stays; the one-argument entry point adds the reference's undefined marker to the
-        offset, as the reference does, while the two-argument form is undefined."""
+        """Its architecture entry stays; both entry-point forms are undefined for it (the reference adds
+        its undefined marker to the offset in the one-argument form)."""
         data = Build.fat(
             [(T["CPU_TYPE_X86_64"], 3, Build.x86_64())],
             extra=((T["CPU_TYPE_ARM64"], 0, 1 << 20, 64),),
         )
         d = Macho.data(data)
         assert d["nfat_arch"] == 2 and 1 in d["fat_arch"] and 1 not in d["file"]
-        assert d["entry_point_for_arch"][0](T["CPU_TYPE_ARM64"]) == ((1 << 20) + UNDEFINED) & MASK64
+        assert d["entry_point_for_arch"][0](T["CPU_TYPE_ARM64"]) is None
         assert d["entry_point_for_arch"][1](T["CPU_TYPE_ARM64"], 0) is None
         assert d["file_index_for_arch"][0](T["CPU_TYPE_ARM64"]) is None
 
@@ -251,8 +251,10 @@ class TestFat:
         )
         assert "nfat_arch" not in Macho.data(b"\xca\xfe\xba\xbe\x00\x00\x00")
 
-    def test_a_fat_entry_that_is_not_an_object_is_still_read_as_one(self) -> None:
-        """The reference parses whatever a fat entry points at as a header: the bytes decide the values."""
+    def test_a_fat_entry_that_is_not_an_object_lists_no_fields(self) -> None:
+        """The reference parses whatever a fat entry points at as a header; this reader reads an object
+        only behind an object magic."""
         junk = b"\x00" * 64
         d = Macho.data(Build.fat([(T["CPU_TYPE_ARM"], 0, junk)]))
-        assert d["file"][0]["magic"] == 0 and d["file"][0]["number_of_segments"] == 0
+        assert d["file"][0] == {"segments": {}} and d["fat_arch"][0]["size"] == 64
+        assert d["entry_point_for_arch"][0](T["CPU_TYPE_ARM"]) is None

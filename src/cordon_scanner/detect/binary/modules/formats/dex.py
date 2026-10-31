@@ -2,27 +2,35 @@
 
 A Dalvik executable (Android's dex format, versions 035 to 039) is read from its header through the
 string, type, prototype, field and method id tables, the map list, and the class definitions, whose
-class data names each encoded field and method through those tables: the field or method's own name,
-its class's descriptor, and its type or prototype's shorty. A method's code item follows when it has
-one. Every table is a Layout read in one call; the ULEB128 counts and the encoded entries are read a
-byte at a time through the Cursor.
+class data names each encoded field and method through those tables: the entry's own name, its class's
+descriptor, and its type's descriptor or its prototype's shorty. A method's code item follows when it
+has one. Every table is a Layout read in one call; each distinct class data is decoded once, and the
+`field` and `method` sequences present the classes' runs end to end without copying them, so a file whose
+classes share one class data costs one decode, not one per class.
 
-The values are the reference's, quirks included: a string's bytes start one byte after its length,
-whatever that length's encoding took; the id tables are read in order and the walk ends at the first
-that does not fit; an encoded entry whose ids do not resolve keeps the fields read so far at its index,
-which the next entry overwrites; a table index past 0x80000 resolves to nothing. A file that is not a
-dex answers undefined for everything but the constants.
+The names and the values a rule reads are the reference's (YARA's `dex` module), and so are the two
+readings rules depend on: a string's bytes are taken from one byte past the start of its length, whatever
+that length's encoding took, and an id past 0x80000 resolves to nothing. Where the reference's reading is
+an implementation accident rather than the format, this reader reads the format and the difference is
+named here and pinned in its tests: each table is read on its own (the reference stops at the first that
+does not fit); an encoded entry is read whenever its varints fit (the reference wants 8 or 12 bytes
+first); an entry whose ids do not resolve ends its class's walk and leaves nothing (the reference leaves
+its decoded fields at the next index and reads the same bytes again as the next group); a class whose
+data does not decode contributes nothing (the reference ends the read with the totals unset); a varint
+is at most five bytes with the fifth in range; a name is compared whole. A file that is not a dex answers
+undefined for everything but the constants.
 """
 
 from __future__ import annotations
 
+import bisect
+from collections.abc import Iterator, Mapping
 from typing import Any, ClassVar
 
 from cordon_scanner.detect.binary.modules.layout import U16, U32, Blob, Cursor, Grid, Layout
 from cordon_scanner.detect.binary.modules.values import Call, Record, Scalar, Seq, Sig
 
 INT, TEXT = Scalar.INT, Scalar.TEXT
-MASK32 = (1 << 32) - 1
 
 
 class DexTables:
@@ -79,7 +87,7 @@ class DexTables:
         "TYPE_ANNOTATIONS_DIRECTORY_ITEM": 0x2006,
     }
     MAX_INDEX: ClassVar[int] = 0x80000
-    """A table index past this resolves to nothing (the reference's bound on lookups)."""
+    """An id past this resolves to nothing: the reference's bound, which rules see."""
 
 
 class Shape:
@@ -114,10 +122,68 @@ class Shape:
         ("registers_size", U16), ("ins_size", U16), ("outs_size", U16), ("tries_size", U16),
         ("debug_info_off", U32), ("insns_size", U32),
     ))  # fmt: skip
+    COUNTS: ClassVar[tuple[str, ...]] = (
+        "static_fields_size", "instance_fields_size", "direct_methods_size", "virtual_methods_size"
+    )  # fmt: skip
+    """A class data's four varint counts, in order."""
 
     @staticmethod
     def names(layout: Layout) -> tuple[str, ...]:
         return tuple(name for name, _ in layout.fields)
+
+
+class Run:
+    """One class data decoded: its counts, and its fields and methods in the order the class lists them.
+    Shared by every class whose definition points at the same offset."""
+
+    __slots__ = ("counts", "fields", "methods")
+
+    def __init__(self, counts: dict[str, int]) -> None:
+        self.counts = counts
+        self.fields: list[dict[str, Any]] = []
+        self.methods: list[dict[str, Any]] = []
+
+
+class Runs(Mapping[int, Any]):
+    """`field` or `method`: the classes' runs laid end to end, read by index without a copy. The length
+    is the entries of every class, so two classes sharing one class data give its entries twice, at
+    different indices, as the reference reports them."""
+
+    __slots__ = ("_runs", "_starts", "total")
+
+    def __init__(self) -> None:
+        self._starts: list[int] = []
+        self._runs: list[list[dict[str, Any]]] = []
+        self.total = 0
+
+    def add(self, entries: list[dict[str, Any]]) -> None:
+        if entries:
+            self._starts.append(self.total)
+            self._runs.append(entries)
+            self.total += len(entries)
+
+    def distinct(self) -> Iterator[list[dict[str, Any]]]:
+        """Each run once, however many classes share it."""
+        seen: set[int] = set()
+        for run in self._runs:
+            if id(run) not in seen:
+                seen.add(id(run))
+                yield run
+
+    def __getitem__(self, key: int) -> Any:
+        if not isinstance(key, int) or not 0 <= key < self.total:
+            raise KeyError(key)
+        i = bisect.bisect_right(self._starts, key) - 1
+        return self._runs[i][key - self._starts[i]]
+
+    def __contains__(self, key: object) -> bool:
+        return isinstance(key, int) and 0 <= key < self.total
+
+    def __iter__(self) -> Iterator[int]:
+        return iter(range(self.total))
+
+    def __len__(self) -> int:
+        return self.total
 
 
 class Dex:
@@ -147,9 +213,7 @@ class Dex:
         "field_ids": Seq(Record(dict.fromkeys(Shape.names(Shape.FIELD_ID), INT))),
         "method_ids": Seq(Record(dict.fromkeys(Shape.names(Shape.METHOD_ID), INT))),
         "class_defs": Seq(Record(dict.fromkeys(Shape.names(Shape.CLASS_DEF), INT))),
-        "class_data_item": Seq(Record(dict.fromkeys(
-            ("static_fields_size", "instance_fields_size", "direct_methods_size", "virtual_methods_size"), INT
-        ))),
+        "class_data_item": Seq(Record(dict.fromkeys(Shape.COUNTS, INT))),
         "map_list": Record({"size": INT, "map_item": Seq(Record(dict.fromkeys(Shape.names(Shape.MAP_ITEM), INT)))}),
         "number_of_fields": INT, "field": Seq(FIELD),
         "has_method": Call(
@@ -161,9 +225,9 @@ class Dex:
 
     TABLES: ClassVar[tuple[tuple[str, Layout], ...]] = (
         ("type_ids", Shape.TYPE_ID), ("proto_ids", Shape.PROTO_ID), ("field_ids", Shape.FIELD_ID),
-        ("method_ids", Shape.METHOD_ID),
+        ("method_ids", Shape.METHOD_ID), ("class_defs", Shape.CLASS_DEF),
     )  # fmt: skip
-    """The id tables after the strings, in the order the reference reads them."""
+    """The id tables after the strings, each read whole in one call."""
     ARRAYS: ClassVar[tuple[str, ...]] = (
         "string_ids", "type_ids", "proto_ids", "field_ids", "method_ids", "class_defs",
         "class_data_item", "field", "method",
@@ -172,7 +236,7 @@ class Dex:
     __slots__ = ("cur", "n", "out")
 
     def __init__(self, file: bytes, out: dict[str, Any]) -> None:
-        self.cur = Cursor(file)  # dex files are little-endian; the reference reads them so
+        self.cur = Cursor(file)  # the format is little-endian
         self.n = len(file)
         self.out = out
 
@@ -181,79 +245,60 @@ class Dex:
         out: dict[str, Any] = {**DexTables.MAGICS, **DexTables.INTEGERS}
         out["header"] = {}
         out["map_list"] = {"map_item": {}}
-        for name in (
-            Dex.ARRAYS
-        ):  # the reference always presents these arrays, empty when nothing fills them
+        for name in Dex.ARRAYS:  # the declared arrays are present, empty when nothing fills them
             out[name] = {}
         if len(file) >= Shape.HEADER.stride() and file[:8] in DexTables.MAGICS.values():
             Dex(file, out).read()
         Dex._functions(out)
         return out
 
-    def fits(self, at: int, size: int) -> bool:
-        """The reference's `fits_in_dex`: `size` bytes at `at` lie within the file."""
+    def within(self, at: int, size: int) -> bool:
+        """Whether `size` bytes at `at` lie inside the file."""
         return 0 <= size <= self.n and 0 <= at <= self.n - size
 
-    def uleb(self, at: int) -> tuple[int, int] | None:
-        """A ULEB128 value as the reference decodes it, with the bytes it took: up to five, the fifth's
-        high bits kept (`cur << 28`), the result cut to 32 bits; None where the file ends first."""
-        cur = self.cur
-        if at >= self.n:
-            return None
-        result = cur.uint(at, 1)
-        size = 1
-        if result > 0x7F:
-            result &= 0x7F
-            for shift in (7, 14, 21):
-                if at + size >= self.n:
-                    return None
-                byte = cur.uint(at + size, 1)
-                size += 1
-                result |= (byte & 0x7F) << shift
-                if byte <= 0x7F:
-                    return result & MASK32, size
-            if at + size >= self.n:
+    def varint(self, at: int) -> tuple[int, int] | None:
+        """The ULEB128 value at `at` and the bytes it took: up to five, the fifth within the 32-bit range;
+        None where the file ends first or the encoding runs past that."""
+        result = 0
+        for i in range(5):
+            if at + i >= self.n:
                 return None
-            result |= cur.uint(at + size, 1) << 28
-            size += 1
-        return result & MASK32, size
+            byte = self.cur.uint(at + i, 1)
+            if i == 4 and byte > 0x0F:
+                return None
+            result |= (byte & 0x7F) << (7 * i)
+            if byte < 0x80:
+                return result, i + 1
+        return None
 
     def read(self) -> None:
-        """The header, then each table in the reference's order, stopping at the first that does not fit;
-        the map list and the class definitions last."""
+        """The header, the strings, each id table, the map list, then the classes and their data."""
         cur, out = self.cur, self.out
         h = Shape.HEADER.read(cur, 0)
         out["header"] = dict(h)
-        if not self.fits(h["string_ids_offset"], h["string_ids_size"] * 4):
-            return
         self._strings(h["string_ids_offset"], h["string_ids_size"])
         for name, layout in Dex.TABLES:
             at, count = h[name + "_offset"], h[name + "_size"]
-            if not self.fits(at, count * layout.stride()):
-                return
+            if not self.within(at, count * layout.stride()):
+                continue  # a table outside the file is empty; the others are still read
             grid = Grid(cur, at, layout, count)
             names = grid.names
             out[name] = {i: dict(zip(names, t, strict=True)) for i, t in enumerate(grid.tuples())}
-        if (
-            h["map_offset"] != 0
-            and self.fits(h["map_offset"], 4)
-            and not self._map(h["map_offset"])
-        ):
-            return
-        if not self.fits(h["class_defs_offset"], h["class_defs_size"] * Shape.CLASS_DEF.stride()):
-            return
-        self._classes(h["class_defs_offset"], h["class_defs_size"])
+        if h["map_offset"] != 0:
+            self._map(h["map_offset"])
+        self._classes()
 
     def _strings(self, at: int, count: int) -> None:
-        """string_ids: each string's offset, its length, and its bytes from one past the length."""
+        """string_ids: each string's offset, its length, and its bytes from one past the length's
+        start (the reference's reading, which rules see)."""
         cur = self.cur
         strings: dict[int, Any] = {}
+        if not self.within(at, count * 4):
+            return
         for i in range(count):
             offset = cur.uint(at + i * 4, 4)
-            if not self.fits(offset, 4):
-                continue
-            length = self.uleb(offset)
-            if length is None or not self.fits(offset + 1, length[0]):
+            length = self.varint(offset) if self.within(offset, 1) else None
+            if length is None or not self.within(offset + 1, length[0]):
                 continue
             strings[i] = {
                 "offset": offset,
@@ -262,74 +307,70 @@ class Dex:
             }
         self.out["string_ids"] = strings
 
-    def _map(self, at: int) -> bool:
-        """map_list; False when its items do not fit, which ends the read."""
+    def _map(self, at: int) -> None:
+        """map_list: its size, and the items that fit."""
+        if not self.within(at, 4):
+            return
         size = self.cur.uint(at, 4)
         self.out["map_list"]["size"] = size
-        if not self.fits(at, 4 + size * Shape.MAP_ITEM.stride()):
-            return False
+        if not self.within(at + 4, size * Shape.MAP_ITEM.stride()):
+            return
         grid = Grid(self.cur, at + 4, Shape.MAP_ITEM, size)
         names = grid.names
         self.out["map_list"]["map_item"] = {
             i: dict(zip(names, t, strict=True)) for i, t in enumerate(grid.tuples())
         }
-        return True
 
-    def _classes(self, at: int, count: int) -> None:
-        """class_defs, and each class's data: its counts, then its fields and methods in the reference's
-        order (static fields, instance fields, direct methods, virtual methods). A class's data that does
-        not fit, or whose counts do not decode, ends the read with the method and field totals unset."""
+    def _classes(self) -> None:
+        """Each class's data, decoded once per distinct offset: its counts as a class_data_item, its
+        fields and methods as the next run of `field` and `method`."""
         out = self.out
-        grid = Grid(self.cur, at, Shape.CLASS_DEF, count)
-        names = grid.names
-        defs = {i: dict(zip(names, t, strict=True)) for i, t in enumerate(grid.tuples())}
-        out["class_defs"] = defs
+        runs: dict[int, Run] = {}
         items: dict[int, Any] = {}
-        out["class_data_item"] = items
-        fields: dict[int, Any] = {}
-        methods: dict[int, Any] = {}
-        out["field"], out["method"] = fields, methods
-        field_count = method_count = 0
-        for d in defs.values():
-            data_at = d["class_data_offset"]
-            if data_at == 0:
+        fields, methods = Runs(), Runs()
+        for d in out["class_defs"].values():
+            at = d["class_data_offset"]
+            if at == 0:
                 continue
-            if not self.fits(data_at, 16):
-                return
-            counts: list[int] = []
-            pos = data_at
-            for _ in range(4):
-                decoded = self.uleb(pos)
-                if decoded is None:
-                    return
-                counts.append(decoded[0])
-                pos += decoded[1]
-            items[len(items)] = dict(zip(
-                ("static_fields_size", "instance_fields_size", "direct_methods_size", "virtual_methods_size"),
-                counts, strict=True,
-            ))  # fmt: skip
-            for group, (static, instance) in enumerate(((1, 0), (0, 1))):
-                previous = 0
-                for _ in range(counts[group]):
-                    taken, previous = self._field(
-                        fields, pos, previous, field_count, static, instance
-                    )
-                    if taken == 0:
-                        break
-                    pos += taken
-                    field_count += 1
-            for group, (direct, virtual) in enumerate(((1, 0), (0, 1))):
-                previous = 0
-                for _ in range(counts[2 + group]):
-                    taken, previous = self._method(
-                        methods, pos, previous, method_count, direct, virtual
-                    )
-                    if taken == 0:
-                        break
-                    pos += taken
-                    method_count += 1
-        out["number_of_methods"] = method_count
-        out["number_of_fields"] = field_count
+            run = runs.get(at)
+            if run is None:
+                run = self._class_data(at)
+                if run is None:
+                    continue
+                runs[at] = run
+            items[len(items)] = run.counts
+            fields.add(run.fields)
+            methods.add(run.methods)
+        out["class_data_item"] = items
+        out["field"], out["method"] = fields, methods
+        out["number_of_fields"], out["number_of_methods"] = fields.total, methods.total
+
+    def _class_data(self, at: int) -> Run | None:
+        """One class data: four counts, then the static fields, instance fields, direct methods and
+        virtual methods, each group's ids relative to the group's start; None when the counts do not
+        decode. An entry that does not decode or resolve ends the walk with what came before it."""
+        counts = self._varints(at, 4)
+        if counts is None:
+            return None
+        values, pos = counts[0], at + counts[1]
+        run = Run(dict(zip(Shape.COUNTS, values, strict=True)))
+        for group, (static, instance) in enumerate(((1, 0), (0, 1))):
+            previous = 0
+            for _ in range(values[group]):
+                entry, taken, previous = self._field(pos, previous, static, instance)
+                if entry is None:
+                    return run
+                run.fields.append(entry)
+                pos += taken
+        for group, (direct, virtual) in enumerate(((1, 0), (0, 1))):
+            previous = 0
+            for _ in range(values[2 + group]):
+                entry, taken, previous = self._method(pos, previous, direct, virtual)
+                if entry is None:
+                    return run
+                run.methods.append(entry)
+                pos += taken
+        return run
 
     def _lookup(self, table: str, index: int | None, key: str) -> int | None:
         """`table[index].key`, or None past the table or the reference's index bound."""
@@ -344,28 +385,34 @@ class Dex:
         row = self.out["string_ids"].get(index)
         return None if row is None else row["value"]
 
+    def _varints(self, at: int, count: int) -> tuple[list[int], int] | None:
+        """`count` varints from `at` and the bytes they took, or None where one does not decode."""
+        values: list[int] = []
+        pos = at
+        for _ in range(count):
+            decoded = self.varint(pos)
+            if decoded is None:
+                return None
+            values.append(decoded[0])
+            pos += decoded[1]
+        return values, pos - at
+
     def _field(
-        self, fields: dict[int, Any], at: int, previous: int, index: int, static: int, instance: int
-    ) -> tuple[int, int]:
-        """One encoded field at `at`: `(bytes taken, the field id it names)`, 0 taken when it does not
-        decode or its id is past the table (its decoded values stay at `index`, as the reference leaves
-        them)."""
-        if not self.fits(at, 8):
-            return 0, previous
-        diff = self.uleb(at)
-        if diff is None:
-            return 0, previous
-        flags = self.uleb(at + diff[1])
-        if flags is None:
-            return 0, previous
-        entry = fields.setdefault(index, {})
-        entry.update(
-            field_idx_diff=diff[0], access_flags=flags[0], static=static, instance=instance
-        )
-        previous = (previous + diff[0]) & MASK32
+        self, at: int, previous: int, static: int, instance: int
+    ) -> tuple[dict[str, Any] | None, int, int]:
+        """One encoded field: `(entry, bytes taken, the field id it names)`; no entry when its varints do
+        not decode or its id is past the table."""
+        decoded = self._varints(at, 2)
+        if decoded is None:
+            return None, 0, previous
+        (diff, flags), taken = decoded
+        previous += diff
         name_idx = self._lookup("field_ids", previous, "name_idx")
         if name_idx is None:
-            return 0, previous
+            return None, 0, previous
+        entry: dict[str, Any] = {
+            "field_idx_diff": diff, "access_flags": flags, "static": static, "instance": instance
+        }  # fmt: skip
         self._names(
             entry,
             name_idx,
@@ -374,35 +421,24 @@ class Dex:
                 "type_ids", self._lookup("field_ids", previous, "type_idx"), "descriptor_idx"
             ),
         )
-        return diff[1] + flags[1], previous
+        return entry, taken, previous
 
     def _method(
-        self, methods: dict[int, Any], at: int, previous: int, index: int, direct: int, virtual: int
-    ) -> tuple[int, int]:
-        """One encoded method at `at`, and its code item when it has one; as `_field` otherwise."""
-        if not self.fits(at, 12):
-            return 0, previous
-        parts: list[tuple[int, int]] = []
-        pos = at
-        for _ in range(3):
-            decoded = self.uleb(pos)
-            if decoded is None:
-                return 0, previous
-            parts.append(decoded)
-            pos += decoded[1]
-        (diff, _), (flags, _), (code_off, _) = parts
-        entry = methods.setdefault(index, {})
-        entry.update(
-            method_idx_diff=diff,
-            access_flags=flags,
-            code_off=code_off,
-            direct=direct,
-            virtual=virtual,
-        )
-        previous = (previous + diff) & MASK32
+        self, at: int, previous: int, direct: int, virtual: int
+    ) -> tuple[dict[str, Any] | None, int, int]:
+        """One encoded method, and its code item when it has one; as `_field` otherwise."""
+        decoded = self._varints(at, 3)
+        if decoded is None:
+            return None, 0, previous
+        (diff, flags, code_off), taken = decoded
+        previous += diff
         name_idx = self._lookup("method_ids", previous, "name_idx")
         if name_idx is None:
-            return 0, previous
+            return None, 0, previous
+        entry: dict[str, Any] = {
+            "method_idx_diff": diff, "access_flags": flags, "code_off": code_off,
+            "direct": direct, "virtual": virtual,
+        }  # fmt: skip
         self._names(
             entry,
             name_idx,
@@ -411,20 +447,20 @@ class Dex:
                 "proto_ids", self._lookup("method_ids", previous, "proto_idx"), "shorty_idx"
             ),
         )
-        if code_off != 0 and self.fits(code_off, Shape.CODE_ITEM.stride()):
+        head = Shape.CODE_ITEM.stride()
+        if code_off != 0 and self.within(code_off, head):
             code = Shape.CODE_ITEM.read(self.cur, code_off)
             item: dict[str, Any] = dict(code)
             entry["code_item"] = item
-            length = (code["insns_size"] * 2) & MASK32
-            if self.fits(code_off + Shape.CODE_ITEM.stride(), length):
-                item["insns"] = self.cur.blob(code_off + Shape.CODE_ITEM.stride(), length)
-        return pos - at, previous
+            if self.within(code_off + head, code["insns_size"] * 2):
+                item["insns"] = self.cur.blob(code_off + head, code["insns_size"] * 2)
+        return entry, taken, previous
 
     def _names(
         self, entry: dict[str, Any], name_idx: int, class_idx: int | None, shorty_idx: int | None
     ) -> None:
-        """The entry's name, its class's descriptor and its type or prototype's shorty, each set when its
-        string resolves."""
+        """The entry's name, its class's descriptor and its type's descriptor or prototype's shorty,
+        each set when its string resolves."""
         name = self._string(name_idx)
         if name is not None:
             entry["name"] = name
@@ -436,68 +472,45 @@ class Dex:
             entry["proto"] = proto
 
     @staticmethod
-    def _cstr(text: bytes) -> bytes:
-        """The bytes a C string comparison sees: up to the first NUL."""
-        return text.split(b"\x00", 1)[0]
-
-    @staticmethod
     def _functions(out: dict[str, Any]) -> None:
-        """has_method and has_class over the methods read (`number_of_methods` of them): by name, by
-        class and name, or by regular expression on each; undefined when the file is not a dex."""
-        methods, count = out["method"], out.get("number_of_methods")
-        cstr = Dex._cstr
+        """has_method and has_class over the methods read: by name, by class and name, or by regular
+        expression on each, each distinct run checked once; undefined when the file is not a dex."""
+        methods = out["method"]
+        read = "number_of_methods" in out
 
-        def rows() -> list[tuple[bytes | None, bytes | None]]:
-            return [
-                (methods.get(i, {}).get("class_name"), methods.get(i, {}).get("name"))
-                for i in range(count or 0)
-            ]
+        def entries() -> Iterator[dict[str, Any]]:
+            runs = methods.distinct() if isinstance(methods, Runs) else iter(())
+            for run in runs:
+                yield from run
 
         def matched(regex: Any, text: bytes) -> bool:
-            return int(regex.run(cstr(text))) != -1
+            return int(regex.run(text)) != -1
 
-        def by_name(name: bytes) -> int | None:
-            if count is None:
-                return None
-            return int(any(n is not None and cstr(n) == cstr(name) for _c, n in rows()))
+        def holds(test: Any) -> int | None:
+            return int(any(test(m) for m in entries())) if read else None
 
         def by_class_and_name(cls: bytes, name: bytes) -> int | None:
-            if count is None:
-                return None
-            for c, n in rows():
-                if c is not None and cstr(c) != cstr(cls):
-                    continue
-                if n is not None and cstr(n) == cstr(name):
-                    return 1
-            return 0
-
-        def by_regex(regex: Any) -> int | None:
-            if count is None:
-                return None
-            return int(any(n is not None and matched(regex, n) for _c, n in rows()))
+            return holds(lambda m: m.get("class_name", cls) == cls and m.get("name") == name)
 
         def by_class_and_regex(cls_re: Any, name_re: Any) -> int | None:
-            if count is None:
-                return None
-            for c, n in rows():
-                if c is not None and not matched(cls_re, c):
-                    continue
-                if n is not None and matched(name_re, n):
-                    return 1
-            return 0
+            return holds(
+                lambda m: (
+                    ("class_name" not in m or matched(cls_re, m["class_name"]))
+                    and "name" in m
+                    and matched(name_re, m["name"])
+                )
+            )
 
-        def class_by_name(cls: bytes) -> int | None:
-            if count is None:
-                return None
-            return int(any(c is not None and cstr(c) == cstr(cls) for c, _n in rows()))
-
-        def class_by_regex(regex: Any) -> int | None:
-            if count is None:
-                return None
-            return int(any(c is not None and matched(regex, c) for c, _n in rows()))
-
-        out["has_method"] = (by_name, by_class_and_name, by_regex, by_class_and_regex)
-        out["has_class"] = (class_by_name, class_by_regex)
+        out["has_method"] = (
+            lambda name: holds(lambda m: m.get("name") == name),
+            by_class_and_name,
+            lambda regex: holds(lambda m: "name" in m and matched(regex, m["name"])),
+            by_class_and_regex,
+        )
+        out["has_class"] = (
+            lambda cls: holds(lambda m: m.get("class_name") == cls),
+            lambda regex: holds(lambda m: "class_name" in m and matched(regex, m["class_name"])),
+        )
 
 
 __all__ = ["Dex"]
