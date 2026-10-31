@@ -127,7 +127,7 @@ verdicts.
 
 `--rule-file RULES` also matches every file against a rule file the operator names, with
 cordon-rule, Cordon's own rule engine: nothing to install, and the `math`, `hash`, `time`,
-`console`, `string`, `pe`, `elf`, `dotnet`, `macho` and `dex` modules. A rule whose metadata says
+`console`, `string`, `pe`, `elf`, `dotnet`, `macho`, `dex`, `olecf`, `msi` and `vba` modules. A rule whose metadata says
 `category = "malicious"` is reported as malware; a `severity` meta sets the severity. A
 repository's own config cannot name the rules. See **[31 · Rule files](31-rule-files.md)**.
 

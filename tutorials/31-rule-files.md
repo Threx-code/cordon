@@ -41,7 +41,7 @@ ran" never look alike.
   string sets and quantifiers, both `for` loops, arithmetic and bitwise operators, the integer
   readers, `defined`, and the string operators including `matches`.
 - **Modules**: `math`, `hash`, `string`, `console` and `time`; `pe`, `elf`, `dotnet`, `macho` and
-  `dex` for executables.
+  `dex` for executables; `olecf`, `msi` and `vba` for compound files, installers and macros.
 
 ## How it is held to its behaviour
 

@@ -71,6 +71,9 @@ class CompoundFile:
         for sector in fat_sectors[: fat_count or len(fat_sectors)]:
             self.fat.extend(struct.unpack_from(f"<{self.sector // 4}I", data, self._offset(sector)))
         root_start, root_size, raw_entries = self._entries(self._chain(dir_start))
+        self.directory: list[Entry] = self._directory
+        """Every directory record in the order the directory sectors hold them, each by its own
+        name (no path), linked into the tree or not, unused records included (kind 0)."""
         self.ministream = self._chain(root_start)[:root_size] if root_size else b""
         self.minifat: list[int] = []
         if minifat_count and minifat_start < self.sectors:
@@ -115,6 +118,7 @@ class CompoundFile:
     def _entries(self, directory: bytes) -> tuple[int, int, list[Entry]]:
         count = min(len(directory) // 128, MAX_ENTRIES)
         raw: list[tuple[str, int, int, int, int, int, int]] = []
+        self._directory = []
         for index in range(count):
             record = directory[index * 128 : (index + 1) * 128]
             length = struct.unpack_from("<H", record, 64)[0]
@@ -123,6 +127,7 @@ class CompoundFile:
             left, right, child = struct.unpack_from("<III", record, 68)
             start, size = struct.unpack_from("<II", record, 116)
             raw.append((name, kind, left, right, child, start, size))
+            self._directory.append(Entry(name, kind, start, size))
         if not raw or raw[0][1] != 5:
             raise FormatError("the compound file has no root entry")
         entries: list[Entry] = []
@@ -228,14 +233,14 @@ class VbaSource:
                 try:
                     text = VbaSource.decompress(data, offset)
                 except FormatError:
-                    text = VbaSource._search_source(data)
+                    text = VbaSource.search_source(data)
                 modules.append(VbaModule(stream_name, text.decode("latin-1")))
             if not records:
                 # The `dir` stream is unreadable; modules still start with `Attribute VB_Name`.
                 for name, entry in streams.items():
                     if name in ("dir", "_vba_project") or name.startswith("__srp_"):
                         continue
-                    text = VbaSource._search_source(compound.open(entry))
+                    text = VbaSource.search_source(compound.open(entry))
                     if text:
                         modules.append(
                             VbaModule(entry.path.rsplit("/", 1)[-1], text.decode("latin-1"))
@@ -265,7 +270,7 @@ class VbaSource:
         return found
 
     @staticmethod
-    def _search_source(data: bytes) -> bytes:
+    def search_source(data: bytes) -> bytes:
         """Decompress from the first container that starts `Attribute`, as every module does."""
         index = data.find(b"\x00Attribut")
         if index < 3:
@@ -282,4 +287,113 @@ class VbaModule:
     source: str
 
 
-__all__ = ["MAGIC", "CompoundFile", "Entry", "VbaModule", "VbaSource"]
+@dataclass(frozen=True)
+class VbaModuleRecord:
+    """One module's records in the `dir` stream: its names, its stream and offset, its kind."""
+
+    name: bytes
+    unicode_name: str | None
+    stream: bytes | None
+    unicode_stream: str | None
+    offset: int
+    kind: int
+    """1 for a standard module (MODULESTANDARD), 2 for a class module (MODULECLASS), 3 unknown."""
+
+
+@dataclass(frozen=True)
+class VbaProject:
+    """The `dir` stream's project records (MS-OVBA 2.3.4.2), read record by record."""
+
+    codepage: int
+    name: bytes | None
+    version: tuple[int, int] | None
+    references: list[bytes]
+    modules: list[VbaModuleRecord]
+
+
+class VbaDirectory:
+    """The `dir` stream as records: each is an id, a size and that many bytes, read in order
+    whatever their order, so a project with records in an unexpected order or with an extra one is
+    still read; PROJECTVERSION declares 4 bytes and holds 6."""
+
+    MODULE_RECORDS: Final = frozenset({0x0047, 0x001A, 0x0032, 0x0031, 0x0021, 0x0022, 0x002B})
+    """A module's own records after its name: unicode name, stream name and its unicode form,
+    offset, standard or class kind, terminator."""
+
+    @staticmethod
+    def records(data: bytes) -> list[tuple[int, bytes]]:
+        found: list[tuple[int, bytes]] = []
+        position = 0
+        while position + 6 <= len(data):
+            record, size = struct.unpack_from("<HI", data, position)
+            position += 6
+            if record == 0x0009:
+                size = 6
+            found.append((record, data[position : position + size]))
+            position += size
+        return found
+
+    @staticmethod
+    def project(data: bytes) -> VbaProject:
+        """The project the decompressed `dir` stream describes."""
+        codepage, name, version = 1252, None, None
+        references: list[bytes] = []
+        modules: list[VbaModuleRecord] = []
+        current: dict[str, object] | None = None
+        for record, value in VbaDirectory.records(data):
+            if record == 0x0003 and len(value) == 2:
+                codepage = struct.unpack("<H", value)[0]
+            elif record == 0x0004:
+                name = value
+            elif record == 0x0009 and len(value) == 6:
+                major, minor = struct.unpack("<IH", value)
+                version = (major, minor)
+            elif record == 0x0016:
+                references.append(value)
+            elif record == 0x0019 or (record == 0x001A and current is None):
+                # MODULENAME starts a module; a stream name with none before it does too, named by it
+                current = {
+                    "name": value,
+                    "unicode_name": None,
+                    "stream": value if record == 0x001A else None,
+                    "unicode_stream": None,
+                    "offset": 0,
+                    "kind": 3,
+                }
+                modules.append(VbaModuleRecord(**current))  # type: ignore[arg-type]
+            elif current is not None and record in VbaDirectory.MODULE_RECORDS:
+                if record == 0x0047:
+                    current["unicode_name"] = VbaDirectory._utf16(value)
+                elif record == 0x001A:
+                    current["stream"] = value
+                elif record == 0x0032:
+                    current["unicode_stream"] = VbaDirectory._utf16(value)
+                elif record == 0x0031 and len(value) == 4:
+                    current["offset"] = struct.unpack("<I", value)[0]
+                elif record in (0x0021, 0x0022):
+                    current["kind"] = 1 if record == 0x0021 else 2
+                modules[-1] = VbaModuleRecord(**current)  # type: ignore[arg-type]
+                if record == 0x002B:  # MODULETERMINATOR
+                    current = None
+        return VbaProject(codepage, name, version, references, modules)
+
+    @staticmethod
+    def _utf16(value: bytes) -> str | None:
+        if len(value) % 2:
+            return None
+        try:
+            return value.decode("utf-16-le")
+        except UnicodeDecodeError:
+            return None
+
+
+__all__ = [
+    "MAGIC",
+    "CompoundFile",
+    "Entry",
+    "VbaDirectory",
+    "VbaModule",
+    "VbaModuleRecord",
+    "VbaProject",
+    "VbaSource",
+]

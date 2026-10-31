@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from collections.abc import Callable
 from typing import Any, ClassVar
 
 from cordon_scanner.detect.binary.modules.der import BadDer, Clock, Encode, Hash, Tlv
@@ -580,13 +581,24 @@ class Signatures:
         if len(data) < cert_addr + length or length <= 8:
             return []
         found = Signatures.parse(data[cert_addr + 8 : cert_addr + length], now)
+        Signatures.check_digests(
+            found,
+            lambda name: Signatures.authenticode_digest(data, name, pe_offset, is64, cert_addr),
+        )
+        return found
+
+    @staticmethod
+    def check_digests(found: list[Signed], digest_of: Callable[[str], bytes | None]) -> None:
+        """Each signature's file digest computed by `digest_of` (the hash name's digest of the
+        signed content; None where it cannot be) and held against the signed one: the flags say
+        where it is wrong, the algorithm unknown, or the content unreadable."""
         for sig in found:
             name = Hash.base(sig.digest_alg)
             if name is None or not sig.digest:
                 if sig.flags == Signed.CLEAN:
                     sig.flags = Signed.ALGORITHM_UNKNOWN
                 continue
-            digest = Signatures.authenticode_digest(data, name, pe_offset, is64, cert_addr)
+            digest = digest_of(name)
             if digest is None:
                 if sig.flags == Signed.CLEAN:
                     sig.flags = Signed.DIGEST_ERROR
@@ -594,7 +606,6 @@ class Signatures:
             sig.authenticode_digest = digest
             if digest != sig.digest[: len(digest)] or len(sig.digest) < len(digest):
                 sig.flags = Signed.FILE_DIGEST_WRONG
-        return found
 
     @staticmethod
     def _present(fields: dict[str, Any]) -> dict[str, Any]:
@@ -618,9 +629,14 @@ class Signatures:
     def signature_values(data: bytes) -> tuple[dict[int, Any], int]:
         """``pe.signatures`` as schema-first data (a Seq of SIGNATURE), and ``pe.is_signed``: every
         reported signature, each with the signer certificate's fields flattened in, as the reference reports it."""
+        return Signatures.records(Signatures.read(data, int(time.time())))
+
+    @staticmethod
+    def records(found: list[Signed]) -> tuple[dict[int, Any], int]:
+        """The SIGNATURE records of parsed and checked signatures, and whether any is valid."""
         out: dict[int, Any] = {}
         any_valid = 0
-        for sig in Signatures.read(data, int(time.time())):
+        for sig in found:
             if sig.flags in Signed.SUPPRESSED:
                 continue
             verified = sig.flags == Signed.CLEAN
