@@ -470,9 +470,8 @@ class DeviceInventory:
         findings: list[dict[str, Any]] = []
         for logical, raw in files:
             unit = FileUnit(content=FileContent(path=logical, raw=raw, size=len(raw)))
-            # Within the per-file budget, as a scan is: a crafted file must not hold the device.
-            found, _ = DetectorRun.findings(detector, unit, context, config.limits.per_file_timeout)
-            for finding in found:
+            # run to its end, as a scan's files are: the device scan's own bound is what ends it
+            for finding in DetectorRun.findings(detector, unit, context):
                 findings.append(
                     {
                         "rule_id": finding.rule_id,
