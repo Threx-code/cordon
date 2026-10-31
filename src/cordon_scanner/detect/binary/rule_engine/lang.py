@@ -122,8 +122,8 @@ class Strings:
         why: str | None = None
         cause: BaseException | None = None
         try:
-            found: list[tuple[int, int]] = s.search.find(data, s.fixed, deadline, seen)
-            hits = Hits(found)
+            found: Sequence[tuple[int, int]] = s.search.find(data, s.fixed, deadline, seen)
+            hits = found if isinstance(found, Hits) else Hits(found)
             del found
             held = seen.get(("matches",), 0) + len(hits)
             if held > Hits.MOST:

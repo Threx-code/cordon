@@ -21,12 +21,14 @@ from __future__ import annotations
 import functools
 import hashlib
 import os
+import time
 from array import array
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any, ClassVar
 
 from cordon_scanner.detect.binary.rule_engine.anchoring.needles import NeedleSet
+from cordon_scanner.detect.binary.rule_engine.hits import Hits
 from cordon_scanner.detect.binary.rule_engine.pattern import Bytes
 
 
@@ -248,4 +250,51 @@ class Compare:
         return not (start + length < n and data[start + length] in alnum)
 
 
-__all__ = ["Automaton", "Compare", "TextCheck"]
+class TextFind:
+    """A text string's whole find in one native call (`_anchors.text_hits`): its anchors'
+    occurrences in, its matches (start, length) out, as `scan._Hunt` finds them -- the events in
+    the hunt's order, the text checked at each, `fullword`, the first match at a start kept (or,
+    `greedy`, the last), and the stop at `MAX_HITS`. Only for a string of one text part with no
+    case-folded anchors, base64 or anchorless part; every other string, and every string where the
+    extension is not in use, is found by the hunt itself, which is this one's twin."""
+
+    FITS, FULLWORD, GREEDY = 1, 2, 4
+
+    @staticmethod
+    def usable(search: Any) -> bool:
+        if not Automaton.NATIVE or len(search.parts) != 1 or search.parts[0].text is None:
+            return False
+        f = search.flags
+        return not (search.folds or search.zeros or "base64" in f or "base64wide" in f)
+
+    @staticmethod
+    def hits(
+        search: Any,
+        data: bytes,
+        owners: list[tuple[list[int], int, int, int, int]],
+        fixed: int | None,
+        max_hits: int,
+        deadline: float | None = None,
+    ) -> Hits:
+        part, f = search.parts[0], search.flags
+        flags = (
+            (TextFind.FITS if part.fits else 0) | (TextFind.FULLWORD if "fullword" in f else 0)
+            | (TextFind.GREEDY if f.get("greedy") else 0)
+        )  # fmt: skip
+        starts, lengths = Automaton.MODULE.text_hits(
+            data,
+            owners,
+            part.text,
+            TextCheck.mode(f),
+            flags,
+            max_hits,
+            -1 if fixed is None else fixed,
+            -1.0 if deadline is None else max(deadline - time.monotonic(), 0.0),
+        )
+        out = Hits()
+        out.starts.frombytes(starts)
+        out.lengths.frombytes(lengths)
+        return out
+
+
+__all__ = ["Automaton", "Compare", "TextCheck", "TextFind"]
