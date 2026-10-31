@@ -76,6 +76,22 @@ class TestTheMetadata:
             Vt.module(b"[1, 2]")
 
 
+class TestTheNetFunctions:
+    def test_the_methods_answer_from_their_structures_raw(self) -> None:
+        data = VtData.message(
+            VtSchema.ROOT, {"net": {"domain": {"raw": "gooogle.com"}, "ip": {"raw": "10.1.2.3"}}}
+        )
+        domain, ip = data["net"]["domain"], data["net"]["ip"]
+        assert domain["permutation_of"][0](b"google.com") is True
+        assert domain["permutation_of"][1](b"google.com", 16) is False  # not a bitsquat
+        assert ip["in_range"][0](b"10.0.0.0/8") is True
+        assert ip["in_range"][0](b"11.0.0.0/8") is False
+
+    def test_without_raw_the_methods_are_undefined(self) -> None:
+        data = VtData.message(VtSchema.ROOT, {"net": {"domain": {"root": "x.com"}}})
+        assert "permutation_of" not in data["net"]["domain"]
+
+
 class TestWhatAFileRulesetMayRead:
     def test_vt_net_is_refused_as_yara_x_refuses_it_for_files(self) -> None:
         with pytest.raises(RuleError):

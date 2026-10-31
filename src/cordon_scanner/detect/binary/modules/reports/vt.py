@@ -26,7 +26,16 @@ import re
 from datetime import datetime
 from typing import Any, ClassVar
 
-from cordon_scanner.detect.binary.modules.values import Keyed, Module, Record, Scalar, Seq
+from cordon_scanner.detect.binary.modules.reports.vt_net import VtNet
+from cordon_scanner.detect.binary.modules.values import (
+    Call,
+    Keyed,
+    Module,
+    Record,
+    Scalar,
+    Seq,
+    Sig,
+)
 from cordon_scanner.foundation.paths import PackagePaths
 
 #: The tables generated from YARA-X's vt .proto files (scripts/reference/vt_schema.py).
@@ -41,6 +50,14 @@ _KIND = {
     "bool": "bool", "float": "float", "double": "float", "string": "text", "bytes": "text",
 }  # fmt: skip
 _TIME = ("google.protobuf.Timestamp", "google.protobuf.Duration")
+#: The functions YARA-X declares as methods of a message (`module_export(method_of = ...)`), each
+#: answered from that structure's own `raw` by `vt_net.VtNet`.
+_METHODS: dict[str, dict[str, Call]] = {
+    "vt.net.EnrichedIP": {"in_range": Call(Sig(("text",), Scalar.BOOL))},
+    "vt.net.EnrichedDomain": {
+        "permutation_of": Call(Sig(("text",), Scalar.BOOL), Sig(("text", "int"), Scalar.BOOL))
+    },
+}
 
 
 class VtSchema:
@@ -64,6 +81,7 @@ class VtSchema:
             fields[rule] = (
                 Seq(inner) if kind == "repeated" else Keyed(inner) if kind == "map" else inner
             )
+        fields.update(_METHODS.get(target, {}))
         return Record(fields)
 
     @staticmethod
@@ -193,6 +211,21 @@ class VtData:
                 read = VtData.read(value, raw, lowercase)
                 if read is not None:
                     out[rule] = read
+        return VtData._methods(target, out)
+
+    @staticmethod
+    def _methods(target: str, out: dict[str, Any]) -> dict[str, Any]:
+        """The structure's methods, bound to its `raw` (undefined without one)."""
+        raw = out.get("raw")
+        if target not in _METHODS or not isinstance(raw, bytes):
+            return out
+        if target == "vt.net.EnrichedIP":
+            out["in_range"] = (lambda cidr: VtNet.in_range(raw, cidr),)
+        else:
+            out["permutation_of"] = (
+                lambda other: VtNet.permutation_of(raw, other),
+                lambda other, kinds: VtNet.permutation_of(raw, other, kinds),
+            )
         return out
 
 
