@@ -23,6 +23,7 @@ from cordon_scanner.detect.binary.imports import (
 )
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Severity
+from support import ROOT
 
 
 class Build:
@@ -429,6 +430,38 @@ class TestRuleFile(RuleFileFixtures):
             f.rule_id == "OPERATIONAL.RULEFILE.UNAVAILABLE" and "include" in f.message
             for f in result.findings
         )
+
+    def test_an_operators_index_file_includes_its_members(self, scan, tmp_path) -> None:
+        (tmp_path / "members").mkdir()
+        (tmp_path / "members" / "evil.yar").write_text(self.rule("Member_Evil"), encoding="utf-8")
+        result = scan('include "members/evil.yar"\n')
+        assert any(
+            f.rule_id == "SUSPECT.RULEFILE.MATCH.001" and "Member_Evil" in f.message
+            for f in result.findings
+        )
+
+    def test_the_built_in_pack_never_includes(self, tmp_path, monkeypatch) -> None:
+        from cordon_scanner.detect.binary import rule_files
+        from cordon_scanner.detect.binary.rule_engine.lang import RuleError
+
+        (tmp_path / "member.yar").write_text(self.rule("Member"), encoding="utf-8")
+        pack = tmp_path / "pack.yar"
+        pack.write_text('include "member.yar"\n', encoding="utf-8")
+        monkeypatch.setattr(rule_files, "BUILTIN_PACK", pack)
+        with pytest.raises(RuleError, match="include is not allowed"):
+            rule_files.RuleFileEngine(rule_files.BUILTIN)
+
+    def test_only_the_operators_rule_file_may_include(self) -> None:
+        """Feed packs, rules inside a scanned package or archive, and rule text passed without a
+        file never reach a compile that includes: `Includes` is built in one place, for the
+        operator's own file on disk."""
+        src = ROOT / "src" / "cordon_scanner"
+        builders = sorted(
+            str(p.relative_to(src))
+            for p in src.rglob("*.py")
+            if "Includes(" in p.read_text(encoding="utf-8")
+        )
+        assert builders == ["detect/binary/rule_files.py"]
 
     def test_a_module_the_engine_does_not_implement_is_reported_and_marks_the_scan_incomplete(
         self, scan

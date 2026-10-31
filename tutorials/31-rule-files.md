@@ -33,7 +33,13 @@ ran" never look alike.
 ## What the language covers
 
 - **Rules**: `global` and `private` rules, tags, `meta`, `strings`, `condition`, references to
-  other rules and `prefix*` sets of them. `include` is refused: a rule file pulls in nothing else.
+  other rules and `prefix*` sets of them. `include "name"` reads another file, named relative to
+  the file that includes it, and only from under the directory of the rule file you passed to
+  `--rule-file`: a collection's index file loads its members, and nothing outside that directory
+  is read (an absolute name, a `..` that leaves it, or a link pointing out of it is refused, as is
+  a cycle or nesting deeper than 32). All the files together stay within the 16 MiB limit. The
+  built-in pack (`--rule-file builtin`) never includes. A change to an included file is seen by
+  the scan cache, as a change to the rule file itself is.
 - **Strings**: text with `nocase`, `wide`, `ascii`, `fullword`, `private`, `xor`, `base64` and
   `base64wide`; hex patterns with wildcards, nibble masks, `~` negation, jumps and alternatives;
   regular expressions with `i` and `s`.

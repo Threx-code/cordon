@@ -158,6 +158,12 @@ test or conformance case that fails on the old code.
 
 ### Changed
 
+- **A rule file's `include` now loads files from its own directory.** An operator's index file
+  (`--rule-file index.yar`) loads the members it names, read relative to the file that includes
+  them, where before every `include` was refused. Only files under the rule file's directory are
+  read; an absolute name, a path or link leading out, a cycle and nesting deeper than 32 are
+  refused, all the files share the 16 MiB limit, and the built-in pack never includes (tutorial
+  31). The scan cache keys on every included file.
 - **Rule files run on cordon-rule, Cordon's own rule engine**, and are named for it: `--rule-file`
   (env `CORDON_RULE_FILE`), the `rule_file` setting, the `rule-file` detector and the rules
   `SUSPECT.RULEFILE.MATCH.001`, `MALWARE.RULEFILE.MATCH.001`, `OPERATIONAL.RULEFILE.STATUS` and

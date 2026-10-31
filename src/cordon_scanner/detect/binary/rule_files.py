@@ -20,7 +20,7 @@ from __future__ import annotations
 import contextlib
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from cordon_scanner.detect.base import (
     BaseDetector,
@@ -44,6 +44,9 @@ from cordon_scanner.foundation.models import (
 )
 from cordon_scanner.foundation.paths import PackagePaths
 
+if TYPE_CHECKING:
+    from cordon_scanner.detect.binary.rule_engine.tokens import Includes
+
 MATCH_RULE: Final = "SUSPECT.RULEFILE.MATCH.001"
 MALICIOUS_RULE: Final = "MALWARE.RULEFILE.MATCH.001"
 STATUS_RULE: Final = "OPERATIONAL.RULEFILE.STATUS"
@@ -62,22 +65,37 @@ class RuleFileEngine:
 
     def __init__(self, rules_path: str) -> None:
         from cordon_scanner.detect.binary.rule_engine.lang import Rules
-        from cordon_scanner.detect.binary.rule_engine.tokens import Includes
 
         path = BUILTIN_PACK if rules_path == BUILTIN else Path(rules_path)
         if not path.is_file():
             raise OSError(f"no rule file at {rules_path}")
         if path.stat().st_size > MAX_RULES_BYTES:
             raise OSError(f"the rule file is over {MAX_RULES_BYTES} bytes")
-        # Compiled from the operator's file. `include` reads only files under that file's own
-        # directory (a rule collection's index includes its members), never from wherever it
-        # names, and all of them together stay within the size limit.
-        size = path.stat().st_size
+        # Compiled from the operator's file. `include` is a file read, so only the operator's own
+        # file on disk may use it, and only for files under that file's directory (a rule
+        # collection's index includes its members), all within the size limit. The built-in
+        # pack, and rule text from anywhere else, never reads another file.
+        text = path.read_text(encoding="utf-8", errors="replace")
         self.rules = Rules.compile(
-            path.read_text(encoding="utf-8", errors="replace"),
-            includes=Includes(path.parent, top=path, max_bytes=MAX_RULES_BYTES - size),
+            text, includes=None if rules_path == BUILTIN else RuleFileEngine.includes(path)
         )
         self.version = "cordon-rule"
+
+    @staticmethod
+    def includes(path: Path) -> Includes:
+        """Where an operator's rule file at `path` may include from."""
+        from cordon_scanner.detect.binary.rule_engine.tokens import Includes
+
+        return Includes(path.parent, top=path, max_bytes=MAX_RULES_BYTES - path.stat().st_size)
+
+    @staticmethod
+    def files(rules_path: str) -> list[Path]:
+        """The operator's rule file and every file its includes read, for a scan's cache."""
+        path = Path(rules_path)
+        read = RuleFileEngine.includes(path).closure(
+            path.read_text(encoding="utf-8", errors="replace")
+        )
+        return [path, *read]
 
     def match(self, data: bytes) -> list[Any]:
         return list(self.rules.match(data, timeout=MATCH_TIMEOUT_SECONDS))

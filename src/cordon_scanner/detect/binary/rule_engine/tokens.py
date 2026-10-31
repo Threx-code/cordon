@@ -42,6 +42,21 @@ class Includes:
         self.root = root.resolve()
         self.top = top.resolve() if top is not None else None
         self.left = max_bytes
+        #: Every file read so far, in the order the directives named them.
+        self.read: list[Path] = []
+
+    def closure(self, text: str) -> list[Path]:
+        """Every file `text`'s includes read, at any depth, found without compiling the rules:
+        what a scan's cache must key on besides the top file."""
+        toks, i = Tokens(text).all(), 0
+        while i < len(toks) - 1:
+            tok, name = toks[i], toks[i + 1]
+            if tok.kind == "word" and tok.value == "include" and name.kind == "text":
+                text_name = name.value.decode("utf-8", "surrogateescape")
+                toks[i : i + 2] = self.tokens(text_name, tok.chain, tok.line)
+            else:
+                i += 1
+        return list(self.read)
 
     def tokens(self, name: str, chain: tuple[Path, ...], line: int) -> list[Token]:
         """The tokens of the file `name` names, from a directive on `line` of the last file in
@@ -66,6 +81,7 @@ class Includes:
         if size > self.left:
             raise refuse("the included rules are over the size limit")
         self.left -= size
+        self.read.append(target)
         where = target.relative_to(self.root)
         try:
             text = target.read_text(encoding="utf-8", errors="replace")

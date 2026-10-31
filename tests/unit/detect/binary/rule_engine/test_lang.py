@@ -404,6 +404,19 @@ class TestIncludes:
         with pytest.raises(RuleError, match="over the size limit"):
             Rules.compile('include "a.yar"', includes=Includes(tmp_path, max_bytes=64))
 
+    def test_the_closure_lists_every_file_read_at_any_depth(self, tmp_path: Path) -> None:
+        self.tree(
+            tmp_path,
+            {
+                "a.yar": 'include "b/c.yar"',
+                "b/c.yar": 'include "d.yar"',
+                "b/d.yar": "rule d { condition: true }",
+            },
+        )
+        top = tmp_path / "a.yar"
+        read = Includes(tmp_path, top=top).closure(top.read_text())
+        assert read == [tmp_path.resolve() / "b" / "c.yar", tmp_path.resolve() / "b" / "d.yar"]
+
     def test_an_error_in_an_included_file_names_that_file(self, tmp_path: Path) -> None:
         self.tree(tmp_path, {"bad.yar": "rule a { condition: $x }"})
         with pytest.raises(RuleError, match="undefined string"):
