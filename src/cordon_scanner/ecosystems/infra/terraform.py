@@ -36,6 +36,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.foundation.collector import ScanCaches
 from cordon_scanner.foundation.models import Scope
 
 if TYPE_CHECKING:
@@ -438,8 +439,34 @@ class ModuleSource:
 class TerraformConfiguration:
     """The .tf / .tf.json files of one module directory, read one file at a time."""
 
+    #: Each file's parse this scan, by the file's content object (`blocks`), emptied after it.
+    _parsed: ClassVar[dict[int, tuple[FileContent, Block | Exception]]] = {}
+
     @staticmethod
     def blocks(content: FileContent) -> Block:
+        """The file's blocks, parsed once a scan: a module directory's files are each read for
+        every file of the directory (`_with_implied_providers`) and a manifest is asked for by
+        several steps, so one main.tf was parsed a dozen times a scan. A parsed Block is never
+        changed once built, so the kept one is the one a fresh parse gives; a parse that fails
+        fails the same way each time it is asked."""
+        key = ScanCaches.identity(content)
+        kept = TerraformConfiguration._parsed.get(key)
+        if kept is None or kept[0] is not content:
+            try:
+                parsed: Block | Exception = TerraformConfiguration._blocks(content)
+            except (HclError, json.JSONDecodeError, ValueError) as exc:
+                parsed = exc
+            kept = TerraformConfiguration._parsed[key] = (content, parsed)
+        if isinstance(kept[1], Exception):
+            # the very exception the parse raised, not one rebuilt from its args: a
+            # JSONDecodeError cannot be (its constructor wants the document and position), so a
+            # rebuilt one was a TypeError no caller catches, and a module directory holding one
+            # unreadable .tf.json lost its other files' dependencies on the second read
+            raise kept[1].with_traceback(None)
+        return kept[1]
+
+    @staticmethod
+    def _blocks(content: FileContent) -> Block:
         if content.basename.endswith(".json"):
             return TerraformConfiguration.from_json(content)
         return HclParser.parse(content.text)
@@ -745,3 +772,6 @@ __all__ = [
     "TerraformLock",
     "TerraformProviders",
 ]
+
+
+ScanCaches.register(TerraformConfiguration._parsed)
