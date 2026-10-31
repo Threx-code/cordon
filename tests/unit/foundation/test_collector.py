@@ -60,3 +60,46 @@ class TestCollector:
     def test_a_worker_keeps_the_relaxed_schedule(self) -> None:
         Collector.relax()
         assert gc.get_threshold() == Collector.THRESHOLD
+
+
+class TestPaused:
+    """The collector off for a load that makes no garbage, and its state put back after."""
+
+    def test_off_inside_and_back_on_after(self) -> None:
+        assert gc.isenabled()
+        assert Collector.paused(gc.isenabled) is False
+        assert gc.isenabled()
+
+    def test_a_caller_that_turned_it_off_keeps_it_off(self) -> None:
+        gc.disable()
+        try:
+            Collector.paused(lambda: None)
+            assert not gc.isenabled()
+        finally:
+            gc.enable()
+
+    def test_nested_and_failing_calls_restore_once(self) -> None:
+        def fails() -> None:
+            assert Collector.paused(gc.isenabled) is False  # an inner call ends first
+            assert not gc.isenabled()  # still inside the outer one
+            raise RuntimeError("boom")
+
+        with pytest.raises(RuntimeError):
+            Collector.paused(fails)
+        assert gc.isenabled()
+
+    def test_concurrent_calls_restore_after_the_last(self) -> None:
+        inside, release = threading.Event(), threading.Event()
+
+        def long_load() -> None:
+            inside.set()
+            release.wait(10)
+
+        worker = threading.Thread(target=Collector.paused, args=(long_load,))
+        worker.start()
+        assert inside.wait(10)
+        Collector.paused(lambda: None)  # a second load ends while the first runs
+        assert not gc.isenabled()
+        release.set()
+        worker.join(10)
+        assert gc.isenabled()

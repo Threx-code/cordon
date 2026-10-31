@@ -226,11 +226,16 @@ class Rules:
         and prepared rules for the next compile of the same text (`pack_cache`)."""
         loaded = Rules.loaded(modules)
         given = dict(externals or {})
-        key = PackCache.key(text, given, frozenset(loaded)) if cache is not None else ""
-        kept = cache.get(key) if cache is not None else None
-        if kept is not None:
-            rules, imports = kept
-            return Rules._built(rules, loaded, given, imports, lazily=True)
+        key = ""
+        if cache is not None:
+            # a load makes the pack's objects and no garbage, so the collector is off for it
+            # (foundation/collector: 2.70 s of the full YARA-Forge pack's load against 0.62 s)
+            from cordon_scanner.foundation.collector import Collector
+
+            key = cache.key(text, given, frozenset(loaded))
+            found = Collector.paused(Rules._kept, cache, key, loaded, given)
+            if found is not None:
+                return found
         rules, imports = Rules._read(text, given, loaded, includes)
         # kept only once the whole set has built without error, from its state before building
         blob = PackCache.dumps((rules, imports)) if cache is not None else None
@@ -238,6 +243,17 @@ class Rules:
         if cache is not None and blob is not None:
             cache.put(key, blob, list(includes.read) if includes else [])
         return built
+
+    @staticmethod
+    def _kept(
+        cache: PackCache, key: str, loaded: dict[str, Module], given: dict[str, Any]
+    ) -> Rules | None:
+        """The rules `cache` kept under `key`, each to be built on its first run; None if none."""
+        kept = cache.get(key)
+        if kept is None:
+            return None
+        rules, imports = kept
+        return Rules._built(rules, loaded, given, imports, lazily=True)
 
     @staticmethod
     def _read(
