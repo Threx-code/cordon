@@ -89,7 +89,9 @@ class TestThePerFileBudget:
         assert "OPERATIONAL.FILE.TIMEOUT" not in {f.rule_id for f in result.findings}
         assert result.complete is True
 
-    def test_the_file_s_own_time_is_still_charged(self, tmp_path, monkeypatch) -> None:
+    def test_the_file_s_own_time_cuts_nothing(self, tmp_path, monkeypatch) -> None:
+        """No per-file wall-clock cut (2026-10-31): a file whose own work outruns per_file_timeout
+        is read to its end, with the findings a quick run gives, and the scan stays complete."""
         from cordon_scanner.intel.malware.atr import AtrEngine
 
         real = AtrEngine.catalogue
@@ -98,6 +100,10 @@ class TestThePerFileBudget:
             time.sleep(1.0)
             return real()
 
+        quick = self._scan(tmp_path, monkeypatch, real)
         result = self._scan(tmp_path, monkeypatch, slow)
-        assert "OPERATIONAL.FILE.TIMEOUT" in {f.rule_id for f in result.findings}
-        assert result.complete is False
+        assert "OPERATIONAL.FILE.TIMEOUT" not in {f.rule_id for f in result.findings}
+        assert result.complete == quick.complete
+        assert sorted(f.rule_id for f in result.findings) == sorted(
+            f.rule_id for f in quick.findings
+        )
