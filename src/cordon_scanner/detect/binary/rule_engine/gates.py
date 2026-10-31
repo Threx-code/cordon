@@ -13,6 +13,11 @@ one running it would give):
   the clause of fewest live strings first, and the first clause found empty ends the rule's search.
 
 A rule whose condition reaches `console` is never gated: its messages are part of its result.
+
+- **Magic.** A gate that compares an integer read at offset 0 with a constant (`uint16(0) == 0x5A4D`)
+  is false on every file whose leading bytes differ, so that rule's anchors are not looked for in such
+  a file at all (`MagicIndex`): the anchor index is built per set of leading-byte requirements a file
+  meets, once each, and holds only the strings of rules whose requirements it meets.
 """
 
 from __future__ import annotations
@@ -22,6 +27,7 @@ from typing import Any
 
 from cordon_scanner.detect.binary.rule_engine.syntax import (
     Both,
+    Compare,
     Count,
     EachString,
     Either,
@@ -31,8 +37,12 @@ from cordon_scanner.detect.binary.rule_engine.syntax import (
     Of,
     Path,
     Place,
+    Read,
     RuleDef,
 )
+
+Magic = tuple[int, bool, bool, int]
+"""A leading-bytes requirement: the read's width, whether big-endian, whether signed, the value."""
 
 
 class Gates:
@@ -127,6 +137,20 @@ class Gates:
             [build(p) for p in parts if not Gates.reads_strings(p)] if len(parts) > 1 else []
         )
         rule.clauses = [c for c in Gates.clauses(rule.condition, names) if c <= set(names)]
+        rule.magic = frozenset(m for p in parts if rule.gates and (m := Gates.magic(p)) is not None)
+
+    @staticmethod
+    def magic(node: Node) -> Magic | None:
+        """The requirement `node` states on the file's first bytes, where it is `read(0) == constant`."""
+        if not isinstance(node, Compare) or node.op != "==":
+            return None
+        for read, value in ((node.left, node.right), (node.right, node.left)):
+            if (
+                isinstance(read, Read) and isinstance(read.at, Literal) and read.at.value == 0
+                and isinstance(value, Literal) and type(value.value) is int
+            ):  # fmt: skip
+                return (read.width, read.big, read.signed, value.value)
+        return None
 
     @staticmethod
     def hopeless(rule: RuleDef, live: set[int]) -> bool:
@@ -168,4 +192,32 @@ class Gates:
         return found, True
 
 
-__all__ = ["Gates"]
+class MagicIndex:
+    """The rule set's anchor indexes by the leading-byte requirements a file meets."""
+
+    def __init__(self, rules: list[RuleDef], build: Callable[[list[Any]], Any]) -> None:
+        self.rules, self.build = rules, build
+        self.strings = [s for r in rules for s in r.strings]
+        self.keys = sorted({m for r in rules for m in r.magic})
+        self.built: dict[frozenset[Magic], tuple[Any, list[Any]]] = {}
+
+    @staticmethod
+    def meets(data: bytes, m: Magic) -> bool:
+        width, big, signed, value = m
+        if len(data) < width:
+            return False
+        return int.from_bytes(data[:width], "big" if big else "little", signed=signed) == value
+
+    def live(self, data: bytes, seen: dict[Any, Any]) -> set[int]:
+        """The ids of the strings with an anchor in `data`, among the rules whose leading-byte
+        requirements `data` meets."""
+        met = frozenset(m for m in self.keys if MagicIndex.meets(data, m))
+        entry = self.built.get(met)
+        if entry is None:
+            strings = [s for r in self.rules if r.magic <= met for s in r.strings]
+            entry = self.built[met] = (self.build([s.search for s in strings]), strings)
+        index, strings = entry
+        return {id(strings[i]) for i in index.live(data, seen)}
+
+
+__all__ = ["Gates", "MagicIndex"]

@@ -65,7 +65,7 @@ class TestTheSameMatches:
             Rules.compile(Ungated.source(condition)),
         )
         for rule in plain.rules:
-            rule.gates, rule.clauses = [], []
+            rule.gates, rule.clauses, rule.magic = [], [], frozenset()
         for data in FILES:
             assert Ungated.matches(gated, data) == Ungated.matches(plain, data)
 
@@ -90,6 +90,22 @@ class TestWhatIsGated:
         assert len(self.rule("$a and uint16(0) == 0x5A4D and filesize > 2").gates) == 2
         assert self.rule("$a or uint16(0) == 0x5A4D").gates == []
         assert self.rule("uint16(0) == 0x5A4D").gates == []  # nothing to save without strings
+
+    def test_leading_byte_requirements(self) -> None:
+        assert self.rule("$a and uint16(0) == 0x5A4D").magic == frozenset(
+            {(2, False, False, 0x5A4D)}
+        )
+        assert self.rule("$a or uint16(0) == 0x5A4D").magic == frozenset()
+        assert self.rule("$a and uint16(2) == 0x5A4D").magic == frozenset()
+
+    def test_a_rule_whose_magic_the_file_lacks_has_no_live_string(self) -> None:
+        rules = Rules.compile(Ungated.source("$a and uint16(0) == 0x5A4D"))
+        names = [[m.rule for m in rules.match(f)] for f in (FILES[0], FILES[4])]
+        assert names == [["r0", "r"], ["r0"]]  # MZ...abc holds; abc alone has no MZ
+        assert set(rules.magic_index().built) == {
+            frozenset({(2, False, False, 0x5A4D)}),
+            frozenset(),
+        }
 
     def test_a_rule_that_logs_is_not_gated(self) -> None:
         r = Rules.compile(

@@ -289,6 +289,8 @@ class RuleDef:
     gates: list[Any] = field(default_factory=list)
     #: Sets of strings of which one must match for the condition to hold (`rule_engine.gates`).
     clauses: list[frozenset[str]] = field(default_factory=list)
+    #: The leading-byte requirements among its gates (`rule_engine.gates.MagicIndex`).
+    magic: frozenset[tuple[int, bool, bool, int]] = frozenset()
 
 
 class _TokenStream:
