@@ -1011,7 +1011,7 @@
   "test_gates.py": "detect/binary/rule_engine",
   "test_native_anchors.py": "detect/binary/rule_engine",
   "test_stream.py": "detect/binary/rule_engine",
-  "test_rule_file_bound.py": "detect/binary",
+  "test_rule_file_fail_closed.py": "detect/binary",
   "test_builtin.py": "detect/binary/modules",
   "test_oids.py": "detect/binary/modules",
   "test_rule_pack.py": "detect/binary",

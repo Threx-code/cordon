@@ -13,7 +13,9 @@ from pathlib import Path
 
 import pytest
 
-from cordon_scanner.detect.binary.rule_engine import scan
+from cordon_scanner.detect.binary import rule_files
+from cordon_scanner.detect.binary.modules.values import Module
+from cordon_scanner.detect.binary.rule_engine import scan, threads
 from cordon_scanner.detect.binary.rule_engine.anchoring.places import Places, Unbounded
 from cordon_scanner.detect.binary.rule_engine.anchoring.stream import Streams
 from cordon_scanner.detect.binary.rule_engine.lang import RuleError, Rules
@@ -65,19 +67,18 @@ class TestTheBound:
         assert [m.rule for m in rules.match(bytes(1000))] == ["z"]
 
 
-class TestFailClosed:
-    def test_a_padded_file_fails_the_scan(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        monkeypatch.setattr(Places, "MOST", 100_000)
-        monkeypatch.setattr(Streams, "ABOVE", 1 << 40)
+class Scan:
+    """One CLI scan of `files` against `rule`, as the Action and the guard hook run it."""
+
+    @staticmethod
+    def run(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch, files: dict[str, bytes], rule: str
+    ) -> tuple[int, dict[str, str], str]:
         (tmp_path / "pkg").mkdir()
-        (tmp_path / "pkg" / "pad.bin").write_bytes(ZEROS)
+        for name, data in files.items():
+            (tmp_path / "pkg" / name).write_bytes(data)
         rules = tmp_path / "r.yar"
-        rules.write_text(
-            'rule z { meta: category = "malicious" strings: $z = { 00 00 00 00 } condition: #z > 5 }',
-            encoding="utf-8",
-        )
+        rules.write_text(rule, encoding="utf-8")
         out = tmp_path / "out.json"
         argv = ["cordon-scanner", "scan", str(tmp_path / "pkg"), "--offline", "--no-color", "--quiet",
                 "--rule-file", str(rules), "-f", f"json:{out}"]  # fmt: skip
@@ -85,10 +86,59 @@ class TestFailClosed:
         with pytest.raises(SystemExit) as code:
             runpy.run_module("cordon_scanner", run_name="__main__")
         report = json.loads(out.read_text(encoding="utf-8"))
-        ids = {f["rule_id"]: f["severity"] for f in report["findings"]}
-        assert ids.get("SUSPECT.RULEFILE.UNBOUNDED.001") == "high"
+        found = {f["rule_id"]: f["severity"] for f in report["findings"]}
+        why = next((f["message"] for f in report["findings"] if f["rule_id"] == UNMATCHED), "")
         assert report["complete"] is False
-        assert code.value.code not in (0, None)
+        return int(code.value.code or 0), found, why
+
+
+UNMATCHED = "SUSPECT.RULEFILE.UNMATCHED.001"
+MALWARE = 'rule z { meta: category = "malicious" strings: $z = { 00 00 00 00 } condition: #z > 5 }'
+
+
+class TestEveryCauseFailsClosed:
+    """Each way the matched file can stop a match fails the scan (a non-zero exit), named."""
+
+    def test_the_places_bound(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(Places, "MOST", 100_000)
+        monkeypatch.setattr(Streams, "ABOVE", 1 << 40)
+        code, found, why = Scan.run(tmp_path, monkeypatch, {"pad.bin": ZEROS}, MALWARE)
+        assert code != 0 and found.get(UNMATCHED) == "high" and "places to try" in why
+
+    def test_the_time_allowed(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(rule_files, "MATCH_TIMEOUT_SECONDS", 0)
+        code, found, why = Scan.run(tmp_path, monkeypatch, {"pad.bin": bytes(1 << 20)}, MALWARE)
+        assert (
+            code != 0 and found.get(UNMATCHED) == "high" and "longer than the time allowed" in why
+        )
+
+    def test_the_thread_limit(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(threads, "MAX_THREADS", 2)
+        rule = 'rule r { meta: category = "malicious" strings: $r = /a[ab]{0,40}b/ condition: $r }'
+        code, found, why = Scan.run(tmp_path, monkeypatch, {"x.bin": b"\x00" + b"ab" * 200}, rule)
+        assert code != 0 and found.get(UNMATCHED) == "high" and "too many threads" in why
+
+    def test_a_module_that_cannot_read_the_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        Rules.loaded(None)
+
+        def broken(file: bytes) -> dict[str, object]:
+            raise ValueError("a header the reader could not read")
+
+        monkeypatch.setitem(Rules.BUILT_IN, "pe", Module(Rules.BUILT_IN["pe"].schema, broken))
+        rule = 'import "pe" rule r { meta: category = "malicious" condition: pe.number_of_sections > 0 }'
+        code, found, why = Scan.run(tmp_path, monkeypatch, {"x.exe": b"MZ" + bytes(500)}, rule)
+        assert code != 0 and found.get(UNMATCHED) == "high" and "could not read" in why
+
+    def test_a_rule_file_that_does_not_compile_is_configuration(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The operator's own mistake, not the file's doing: reported, not a finding against a file."""
+        _code, found, _ = Scan.run(
+            tmp_path, monkeypatch, {"x.bin": b"abc"}, "rule r { condition: nonsense( }"
+        )
+        assert "OPERATIONAL.RULEFILE.UNAVAILABLE" in found and UNMATCHED not in found
 
 
 class TestTheStream:
