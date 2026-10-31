@@ -126,7 +126,11 @@ class TestCountersignCertSetOpacity:
     chain and digest, the signed content being untouched -- while a malformed element's own TLV header, or a
     damaged plain certificate (declared structure, which is descended), is refused. cpython-wmi.pyd carries a
     real, verifying Microsoft timestamp; we append elements to its countersignature's certificate set and
-    refix the enclosing DER lengths, so the signature over the untouched signed content still holds."""
+    refix the enclosing DER lengths, so the signature over the untouched signed content still holds.
+
+    The named difference (modules.signature): the reference empties such a countersignature; this
+    reader reports it verified, since its signature, imprint and digest all check. It is the only
+    difference left on the 14,292-file malformed set: 43 values, on one file."""
 
     @staticmethod
     def _der_len(length: int) -> bytes:
