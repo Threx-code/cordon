@@ -15,6 +15,7 @@ from cordon_scanner.detect.base import FileUnit
 from cordon_scanner.ecosystems.base import WORKSPACE_INHERITED, Coordinate, LockEntry, LockGraph
 from cordon_scanner.ecosystems.registry import EcosystemRegistry, RegistryFacts
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
+from cordon_scanner.foundation.collector import ScanCaches
 from cordon_scanner.foundation.models import Scope, Severity
 from cordon_scanner.foundation.results import Dependency, OperationalFinding
 
@@ -295,11 +296,30 @@ class Graph:
     def manifest_of(ecosystem: Any, unit: FileUnit, files: Mapping[str, Any]) -> Any:
         """A manifest parsed with the rest of its build in view, where the ecosystem needs it:
         a Maven module inherits from a parent POM elsewhere in the tree, a .NET project from
-        `Directory.Packages.props` above it. Other ecosystems read one file on its own."""
+        `Directory.Packages.props` above it. Other ecosystems read one file on its own.
+
+        A manifest parsed in view of its tree is kept for the scan (`_parsed`), by the file and
+        the very files in view: five steps ask for each one, and a repository of a hundred POMs
+        resolving parents against thousands of files paid seconds for each ask. The same file
+        with the same files in view parses the same, and a parsed `Manifest` is never changed."""
         in_tree = getattr(ecosystem, "parse_in_tree", None)
-        if in_tree is not None:
-            return in_tree(unit.content, files)
-        return ecosystem.parse_manifest(unit.content)
+        if in_tree is None:
+            return ecosystem.parse_manifest(unit.content)
+        held = tuple(files.values())
+        key = (id(ecosystem), id(unit.content), tuple(files), tuple(map(id, held)))
+        kept = Graph._parsed.get(key)
+        if (
+            kept is not None
+            and kept[0] is unit.content
+            and all(a is b for a, b in zip(kept[1], held, strict=True))
+        ):
+            return kept[2]
+        manifest = in_tree(unit.content, files)
+        Graph._parsed[key] = (unit.content, held, manifest)
+        return manifest
+
+    #: Manifests parsed in view of their tree this scan (`manifest_of`), emptied after it.
+    _parsed: ClassVar[dict[tuple[Any, ...], tuple[Any, tuple[Any, ...], Any]]] = {}
 
     MAX_INCLUDE_DEPTH: ClassVar[int] = 8
 
@@ -839,3 +859,6 @@ class Graph:
 
 
 __all__ = ["Graph"]
+
+
+ScanCaches.register(Graph._parsed)
