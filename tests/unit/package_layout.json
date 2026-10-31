@@ -1025,6 +1025,7 @@
   "test_androguard_fdroid.py": "detect/binary/modules/formats",
   "test_matching.py": "detect/binary/rule_engine",
   "test_gates.py": "detect/binary/rule_engine",
+  "test_lazy_starts.py": "detect/binary/rule_engine",
   "test_native_anchors.py": "detect/binary/rule_engine",
   "test_rule_layers.py": "detect/binary",
   "test_rule_shares.py": "detect/binary",
