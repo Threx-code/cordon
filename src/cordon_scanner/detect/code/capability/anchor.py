@@ -50,6 +50,7 @@ class FindingAnchor:
         matched: tuple[Capability, ...],
         by_capability: dict[Capability, CapabilityHit],
         hits: list[CapabilityHit],
+        named: frozenset[str] = frozenset(),
     ) -> CapabilityHit:
         """Where to point the finding.
 
@@ -71,8 +72,20 @@ class FindingAnchor:
         findings was CORRECT, and every one of them reads as a tool that does
         not know what it is looking at -- which is the more expensive failure,
         because a false positive is argued with and this is simply disbelieved.
+
+        `named`: the hit rules the composite names, whose hits are its evidence when it names no
+        capability at all.
         """
         relevant = [by_capability[c] for c in matched if c in by_capability]
+        # A rule the composite names is evidence too: `MALWARE.INSTALL.BACKGROUND.001` is matched by
+        # `CAP.JS.DETACHED.001` alone, names no capability, and pointed at the file's earliest
+        # best-ranked hit -- an `os.homedir()` two hundred lines above the detached spawn (review
+        # 98, a public skill's memory gateway).
+        # Only for a composite that names no capability at all: one that names any points where it
+        # always has, even when none of them was hit in the window (269 findings of 15 such rules
+        # moved line in the 959-unit A/B when this read "no named capability hit", 2026-10-31).
+        if not matched:
+            relevant = [h for h in hits if h.rule_id in named]
         order = FindingAnchor.ANCHOR_SPECIFICITY
 
         def rank(hit: CapabilityHit) -> int:

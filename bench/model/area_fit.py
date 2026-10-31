@@ -38,7 +38,7 @@ import sys
 from collections import Counter
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from cordon_scanner.decide.feature_schema import (
     FeatureFold,
@@ -141,6 +141,36 @@ class AreaFit:
             "baseline": float(clf._baseline_prediction.ravel()[0]),
             "trees": trees,
         }
+
+    #: Features whose value depends on how loaded the machine was, not on the package: a model
+    #: splitting on one would let load move a block score. `cov:capped` is the per-file wall-clock
+    #: budget (OPERATIONAL.FILE.TIMEOUT, `VerdictFeatures.COVERAGE_RULES`); it leaves this list when
+    #: the outer-layer team's deterministic work budget makes it a property of the file. Measured
+    #: 2026-10-31 on the 93488958 reference rows: 437 rows carry it and no shipped tree splits on it.
+    LOAD_DEPENDENT: ClassVar[frozenset[str]] = frozenset({"cov:capped"})
+
+    @staticmethod
+    def refuse_load_dependent(model: Any, where: str = "model") -> None:
+        """Raise unless no scoring section anywhere in `model` (the main trees, `by_area`, a carried
+        section) splits on a `LOAD_DEPENDENT` feature. Called before any model is written."""
+        if isinstance(model, dict):
+            names, trees = model.get("features"), model.get("trees")
+            if isinstance(names, list) and isinstance(trees, list):
+                for tree in trees:
+                    for node in tree:
+                        if (
+                            not node.get("leaf")
+                            and names[int(node["feature"])] in AreaFit.LOAD_DEPENDENT
+                        ):
+                            raise ValueError(
+                                f"{where} splits on {names[int(node['feature'])]}, which depends on "
+                                "machine load: not written"
+                            )
+            for key, value in model.items():
+                AreaFit.refuse_load_dependent(value, f"{where}.{key}")
+        elif isinstance(model, list):
+            for i, value in enumerate(model):
+                AreaFit.refuse_load_dependent(value, f"{where}[{i}]")
 
     @staticmethod
     def check(
@@ -341,6 +371,7 @@ class AreaFit:
                 "record_required_for_labels": sorted(a.require_record),
             },
         }
+        AreaFit.refuse_load_dependent(model)
         with gzip.open(a.out, "wt", encoding="utf-8") as handle:
             json.dump(model, handle)
         print(f"written {a.out}", file=sys.stderr)

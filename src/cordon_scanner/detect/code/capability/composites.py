@@ -590,6 +590,25 @@ class CompositeEvaluator:
             walk(term)
         return tuple(dict.fromkeys(found))
 
+    @staticmethod
+    def rules_of(compiled: CompiledRule) -> frozenset[str]:
+        """Every hit rule a composite expression names (`rule: CAP.JS.DETACHED.001`): what the
+        finding is about where a rule, not a capability, is its evidence."""
+        found: set[str] = set()
+
+        def walk(term: object) -> None:
+            if not isinstance(term, dict):
+                return
+            if "rule" in term:
+                found.add(str(term["rule"]))
+            for key in ("all", "any"):
+                for nested in term.get(key) or ():
+                    walk(nested)
+
+        for term in (*compiled.match.all_of, *compiled.match.any_of):
+            walk(term)
+        return frozenset(found)
+
 
 class _SlidingCounts:
     """What `_evaluate_over` counts over a window, kept as the window slides along hits in offset order.

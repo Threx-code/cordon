@@ -402,7 +402,12 @@ class Detection:
         as incomplete.
         """
         try:
-            produced = DetectorClock.timed(detector.id, lambda: list(detector.inspect(unit, ctx)))
+            # a structural detector does not parse a windowed Python prefix that cannot parse
+            # (`WindowPass.withheld`): the statement-aligned pass reads those bytes
+            with WindowPass.withheld(detector.id, unit):
+                produced = DetectorClock.timed(
+                    detector.id, lambda: list(detector.inspect(unit, ctx))
+                )
         except Exception as exc:  # noqa: BLE001
             acc.complete = False
             return [

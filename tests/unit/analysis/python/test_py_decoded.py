@@ -4,6 +4,8 @@ reach a run, or leave the file's sight, keeps the pairing."""
 
 from __future__ import annotations
 
+import pytest
+
 from cordon_scanner import Scanner
 from cordon_scanner.analysis.python.py_decoded import PythonDecodedRun
 from cordon_scanner.foundation.config.settings import Config
@@ -91,6 +93,53 @@ class TestReached:
         source = HEAD + (
             f"obj = loader.loads(base64.{DECODE}(blob))\n"
             f"subprocess.{RUN}(['git', 'status', here])\n"
+        )
+        assert not excused(source)
+
+
+class TestADecodedImage:
+    """A decoded screenshot or generated picture saved under an image name is not a value every later
+    use of its path carries (review 98, the windows-qa-engineer public skill): the program the file
+    starts beside it is not running it. Renaming the image, or running it by name, keeps the pair."""
+
+    SAVE = (
+        "def capture(out, encoded):\n"
+        "    shot = out / 'notepad.png'\n"
+        f"    shot.write_bytes(base64.{DECODE}(encoded))\n"
+        "    report.update(screenshot=str(shot))\n"
+        "    print(json.dumps(report))\n"
+        "    out.mkdir(parents=True, exist_ok=True)\n"
+    )
+
+    def test_a_program_started_beside_a_saved_screenshot(self) -> None:
+        source = HEAD + self.SAVE + f"app = subprocess.{RUN}(['notepad.exe'])\n"
+        assert excused(source)
+
+    def test_the_image_run_by_its_name(self) -> None:
+        source = HEAD + self.SAVE + f"subprocess.{RUN}(['python', 'notepad.png'])\n"
+        assert not excused(source)
+
+    def test_the_image_renamed_before_a_run(self) -> None:
+        source = (
+            HEAD
+            + self.SAVE
+            + (
+                "os.rename('notepad.png', 'notepad.exe')\n"
+                f"app = subprocess.{RUN}(['notepad.exe'])\n"
+            )
+        )
+        assert not excused(source)
+
+    @pytest.mark.parametrize(
+        "name",
+        ["'notepad.png' + suffix + '.exe'", "('notepad.png' if small else ext)", "name_from(x)"],
+        ids=["another-extension", "an-extension-chosen", "a-name-computed"],
+    )
+    def test_a_file_whose_name_does_not_end_as_an_image(self, name: str) -> None:
+        source = (
+            HEAD
+            + self.SAVE.replace("'notepad.png'", name)
+            + (f"app = subprocess.{RUN}(['notepad.exe'])\n")
         )
         assert not excused(source)
 

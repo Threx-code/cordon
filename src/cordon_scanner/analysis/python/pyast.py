@@ -320,6 +320,49 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, AnalyzerCore):
             # computed name. Six names, all of them legible.
             self._enumerated.add(node.target.id)
 
+    #: What a failed import raises.
+    _MISSING: ClassVar[frozenset[str]] = frozenset({"ImportError", "ModuleNotFoundError"})
+
+    @classmethod
+    def _probes_of(cls, tree: ast.AST) -> set[int]:
+        """`__import__(name)` calls that only ask whether a module is installed: a statement of its
+        own, its result dropped, in a `try` whose handler catches the failed import. Nothing is
+        reached through such a call, so the name it is handed is not a dispatch -- the dependency
+        checks real skills run (`check_module(name)`, review 98, anything-to-notebooklm). A name
+        handed whole (a variable), never a call building it; and none at all in a file that then
+        takes a module back from `sys.modules` by a computed key, which is how a probe's import
+        would be reached after all."""
+        for node in PythonSyntax.of(tree, ast.Subscript):
+            target = node.value
+            if (
+                isinstance(target, ast.Attribute)
+                and target.attr == "modules"
+                and isinstance(target.value, ast.Name)
+                and target.value.id == "sys"
+                and not isinstance(node.slice, ast.Constant)
+            ):
+                return set()
+        found: set[int] = set()
+        for node in PythonSyntax.of(tree, ast.Try):
+            caught: set[str] = set()
+            for handler in node.handlers:
+                kinds = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
+                caught |= {k.id for k in kinds if isinstance(k, ast.Name)}
+            if not caught & cls._MISSING:
+                continue
+            for statement in node.body:
+                call = statement.value if isinstance(statement, ast.Expr) else None
+                if (
+                    isinstance(call, ast.Call)
+                    and isinstance(call.func, ast.Name)
+                    and call.func.id == "__import__"
+                    and len(call.args) == 1
+                    and not call.keywords
+                    and isinstance(call.args[0], ast.Name)
+                ):
+                    found.add(id(call))
+        return found
+
     def _collect_names(self, tree: ast.AST) -> None:
         """Build the alias and binding maps before evaluating any call.
 
@@ -348,6 +391,7 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, AnalyzerCore):
             ):
                 self._bundled_paths.update(t.id for t in node.targets if isinstance(t, ast.Name))
         self._collect_reads(tree)
+        self._probes = self._probes_of(tree)
         for node in PythonSyntax.of(tree, *self._BIND):
             getattr(self, self._BIND[type(node)])(node)
         # The tables are complete: from here a name resolves the same way every time it is asked.
@@ -527,6 +571,9 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, AnalyzerCore):
             first = node.args[0] if node.args else None
             if isinstance(first, ast.Name) and first.id in self._enumerated:
                 # Enumerated rather than computed. See `_collect_names`.
+                return
+            if id(node) in self._probes:
+                # Asked whether it is installed, and nothing reached through it (`_probes_of`).
                 return
             if imported is None and first is not None and self._assembled_name(first):
                 self._dynamic(node, "__import__ with a computed module name")
