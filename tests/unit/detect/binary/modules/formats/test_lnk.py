@@ -12,7 +12,7 @@ import uuid
 import pytest
 
 from cordon_scanner.detect.binary.modules.builtin import Builtin
-from cordon_scanner.detect.binary.modules.lnk import Lnk
+from cordon_scanner.detect.binary.modules.formats.lnk import Lnk
 from cordon_scanner.detect.binary.modules.values import Data
 from cordon_scanner.detect.binary.rule_engine.lang import Rules
 
