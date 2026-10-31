@@ -17,8 +17,8 @@ from collections.abc import Iterable, Iterator
 from typing import Any, ClassVar
 
 from cordon_scanner.detect.binary.rule_engine.anchors import Anchor, Anchors
+from cordon_scanner.detect.binary.rule_engine.automaton import Automaton
 from cordon_scanner.detect.binary.rule_engine.chain import Chain
-from cordon_scanner.detect.binary.rule_engine.needles import NeedleSet
 from cordon_scanner.detect.binary.rule_engine.pattern import (
     GAP,
     LIT,
@@ -412,8 +412,11 @@ class AnchorIndex:
                 self.folded.setdefault(folded, []).append(i)
             if s.zeros:
                 self.always.add(i)
-        self.exact_set = NeedleSet(self.exact)
-        self.folded_set = NeedleSet(self.folded)
+        self.exact_keys, self.folded_keys = list(self.exact), list(self.folded)
+        self.exact_id = {n: i for i, n in enumerate(self.exact_keys)}
+        self.folded_id = {n: i for i, n in enumerate(self.folded_keys)}
+        self.exact_set = Automaton(self.exact_keys)
+        self.folded_set = Automaton(self.folded_keys, fold=True)
 
     def live(self, data: bytes, seen: dict[Any, Any]) -> set[int]:
         """The strings with an anchor in `data`. (`seen` is the data's shared record, which
@@ -421,15 +424,41 @@ class AnchorIndex:
         out = set(self.always)
         # whether each anchor occurs at all, in one pass; where, only for a string that is
         # searched (`Search.find`), and not even there for an anchor its gate reads in one pass
-        for needle in self.exact_set.present(data):
-            out.update(self.exact[needle])
+        for i in self.exact_set.present(data):
+            out.update(self.exact[self.exact_keys[i]])
         if self.folded:
-            lowered = seen.get(("lowered",))
-            if lowered is None:
-                lowered = seen[("lowered",)] = data.lower()
-            for folded in self.folded_set.present(lowered):
-                out.update(self.folded[folded])
+            for i in self.folded_set.present(
+                data, AnchorIndex.lowered(data, seen, self.folded_set)
+            ):
+                out.update(self.folded[self.folded_keys[i]])
         return out
+
+    @staticmethod
+    def lowered(data: bytes, seen: dict[Any, Any], automaton: Automaton) -> bytes | None:
+        """The data lowered, shared through `seen`, where the reading needs it (not natively)."""
+        if automaton.native:
+            return None
+        lowered = seen.get(("lowered",))
+        if lowered is None:
+            lowered = seen[("lowered",)] = data.lower()
+        return lowered
+
+    def prefill(self, data: bytes, seen: dict[Any, Any], searches: list[Search]) -> None:
+        """Where each anchor of `searches` begins, found in one pass per automaton and kept in
+        `seen` the way `Search.find` keeps what it finds: an anchor occurring more than
+        `Search.GATED` times is left for `Search.find`, which reads a common anchor its own way."""
+        exact = {self.exact_id[n] for s in searches for n, _, _ in s.needles or () if n not in seen}
+        for i, starts in self.exact_set.positions(data, exact, Search.GATED).items():
+            if starts is not None:
+                seen[self.exact_keys[i]] = starts
+        folded = {
+            self.folded_id[f] for s in searches for f, _, _ in s.folds if ("folded", f) not in seen
+        }
+        if folded:
+            lowered = AnchorIndex.lowered(data, seen, self.folded_set)
+            for i, starts in self.folded_set.positions(data, folded, Search.GATED, lowered).items():
+                if starts is not None:
+                    seen[("folded", self.folded_keys[i])] = starts
 
 
 class _Hunt:

@@ -213,16 +213,30 @@ class MagicIndex:
             return False
         return int.from_bytes(data[:width], "big" if big else "little", signed=signed) == value
 
-    def live(self, data: bytes, seen: dict[Any, Any]) -> set[int]:
-        """The ids of the strings with an anchor in `data`, among the rules whose leading-byte
-        requirements `data` meets."""
+    def index(self, data: bytes) -> tuple[Any, list[Any]]:
+        """The anchor index for the leading-byte requirements `data` meets, and its strings."""
         met = frozenset(m for m in self.keys if MagicIndex.meets(data, m))
         entry = self.built.get(met)
         if entry is None:
             strings = [s for r in self.rules if r.magic <= met for s in r.strings]
             entry = self.built[met] = (self.build([s.search for s in strings]), strings)
-        index, strings = entry
-        return {id(strings[i]) for i in index.live(data, seen)}
+        return entry
+
+    def live(self, data: bytes, seen: dict[Any, Any]) -> set[int]:
+        """The ids of the strings with an anchor in `data`, among the rules whose leading-byte
+        requirements `data` meets; then where the anchors of those that will be searched begin,
+        in one pass (`AnchorIndex.prefill`)."""
+        index, strings = self.index(data)
+        live = {id(strings[i]) for i in index.live(data, seen)}
+        searched = [
+            s.search
+            for r in self.rules
+            if not Gates.hopeless(r, live)
+            for s in r.strings
+            if id(s) in live
+        ]
+        index.prefill(data, seen, searched)
+        return live
 
 
 __all__ = ["Gates", "MagicIndex"]
