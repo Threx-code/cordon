@@ -767,6 +767,7 @@
   "test_embedded.py": "analysis/shared",
   "test_engine.py": "engine",
   "test_enterprise_noise.py": "intel/registries",
+  "test_known_package_lookup.py": "intel/registries",
   "test_epss.py": "intel/advisories",
   "test_exploited.py": "intel/advisories",
   "test_extension_and_repository_coverage.py": "intel/advisories",
