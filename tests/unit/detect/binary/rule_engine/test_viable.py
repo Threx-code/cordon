@@ -70,3 +70,29 @@ class TestTheSameAnswer:
                 at - k - 1 >= 0 and t[data[at - k - 1]] for k, t in reads[1]
             )
             assert got == bool(want[at]), at
+
+
+class TestMemory:
+    """The shape that took six real 100 MB ELF members past 4 GB (YARA-Forge's log-indicator
+    regexes, a long class run between anchors that occur often): the whole-file masks grew with
+    the file, about 125 MB of peak on 8 MB here; read at the offsets, nothing grows."""
+
+    def test_no_allocation_grows_with_the_file(self) -> None:
+        try:
+            import resource
+        except ImportError:  # not on Windows
+            return
+        from cordon_scanner.detect.binary.rule_engine.lang import Rules
+
+        words = ["\\/mifs\\/api", "\\/ows\\/v2", "\\/aa\\/bb", "\\/cc\\/dd"]
+        source = " ".join(
+            f"rule r{i} {{ strings: $r = /{w}[^\\n]{{1,300}} 200 [1-9][0-9]{{0,60}} / condition: $r }}"
+            for i, w in enumerate(words)
+        )
+        rules = Rules.compile(source)
+        unit = b"/mifs/api /ows/v2 /aa/bb /cc/dd \x00 200 x" + bytes(range(256))
+        data = (unit * ((8 << 20) // len(unit) + 1))[: 8 << 20]
+        rules.match(data[:4096])
+        before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024
+        assert rules.match(data) == []
+        assert resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024 - before < 40
