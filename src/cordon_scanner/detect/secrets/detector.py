@@ -30,6 +30,7 @@ from cordon_scanner.analysis.shared.source_paths import FIXTURE_CEILING, SourceP
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.secrets.assembly import MIN_CHARACTER_CLASSES, SecretAssembly
+from cordon_scanner.detect.secrets.literal_search import LiteralSearch
 from cordon_scanner.detect.secrets.names import NOT_A_SECRET, SecretNames
 from cordon_scanner.detect.secrets.patterns import (
     ASSIGNMENT,
@@ -206,7 +207,7 @@ class SecretDetector(BaseDetector):
             # cheaper than the regex and rejects almost every file.
             if spec.prefilter and not any(lit in raw for lit in spec.prefilter):
                 continue
-            for match in spec.pattern.finditer(raw):
+            for match in LiteralSearch.matches(spec.pattern, spec.prefilter, raw):
                 # Named distinctly from `raw`. Reusing that name here rebinds
                 # the file content to the matched token, so every later
                 # prefilter tests the previous match instead of the file and
