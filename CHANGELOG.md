@@ -17,6 +17,10 @@ test or conformance case that fails on the old code.
 
 ### Added
 
+- **Rules can read a file's decoded layers** (`layers = "decoded"` in a rule's meta): what a file
+  carries under `atob`, `Buffer.from`, `b64decode`, `bytes.fromhex`, `unhexlify` and zlib or gzip,
+  decoded to bytes up to four layers deep, each match naming its layer. Rules without the meta read
+  the raw bytes only, unchanged.
 - **Rule files can use the `cuckoo` module**, answered from a Cuckoo sandbox report given with
   `--rule-module-data cuckoo=report.json` (the `rule_module_data` setting, operator only), as
   `yara -x` gives one. Its answers are the reference engine's on the same report, including the

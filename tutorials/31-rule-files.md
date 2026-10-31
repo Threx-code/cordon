@@ -25,7 +25,18 @@ rules that never match.
 | `OPERATIONAL.RULEFILE.STATUS` | the rule file ran over the scan's files |
 | `OPERATIONAL.RULEFILE.UNAVAILABLE` | the rule file was asked for and could not be used |
 
-A rule's `path_include` meta (`"*.py,*.js"`) limits which files its match counts for. A rule file
+A rule's `path_include` meta (`"*.py,*.js"`) limits which files its match counts for.
+
+A rule whose meta says `layers = "decoded"` also reads what each file carries under a wrapper:
+`atob("...")`, `Buffer.from(..., "base64")` or `"hex"`, Python's `b64decode`, `bytes.fromhex` and
+`unhexlify` over a literal, and zlib or gzip data inside any of them, peeled up to four layers deep.
+The layers are decoded to bytes, so a rule finds an executable under base64 as readily as a script.
+A match on a layer names it ("matched this file's layer decoded from atob (layer 2)"), and a rule
+that matched the raw bytes is not reported again for a layer. Every other rule reads the raw bytes
+only, as YARA does, so a rule file without the meta answers exactly as it did. Nothing is run, a
+layer is at most 1 MiB, and compressed data is inflated only that far.
+
+A rule file
 that does not compile, or that imports a module cordon-rule does not provide, is reported as
 `OPERATIONAL.RULEFILE.UNAVAILABLE` and marks the scan incomplete: "no rule matched" and "no rule
 ran" never look alike.

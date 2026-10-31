@@ -119,6 +119,11 @@ class RuleFileEngine:
             else None
         )
         self.notes: list[tuple[str, str]] = self.rules.notes
+        from cordon_scanner.detect.binary.rule_layers import RuleLayers
+
+        #: The rules that also read a file's decoded layers (`layers = "decoded"`); every other rule
+        #: reads the raw bytes only.
+        self.layered = frozenset(r.name for r in self.rules.rules if RuleLayers.wanted(r.meta))
         """What the compiler decided where a rule did not say (a field two engines declare with
         different types, read in the reference's shape): reported with the scan, never silent."""
 
@@ -287,18 +292,58 @@ class RuleFileDetector(BaseDetector):
             if RuleFileDetector.unbounded(exc):
                 refused.append(self._unbounded(unit, exc, ctx))
             return refused
-        return [
+        found = [
             self._finding(unit, match, ctx)
             for match in matches
             if RuleFileEngine.applies(match, unit.content.path)
         ]
+        if engine.layered and "#" not in unit.path:
+            found += self._layered(engine, unit, {str(m.rule) for m in matches}, ctx)
+        return found
+
+    def _layered(
+        self, engine: RuleFileEngine, unit: FileUnit, matched: set[str], ctx: ScanContext
+    ) -> list[Finding]:
+        """The rules that ask for decoded layers, over each layer under the file's bytes
+        (`rule_layers`), each match naming its layer. A rule that matched the raw bytes is not
+        reported again for a layer; a layer that cannot be matched fails as the raw file does."""
+        from cordon_scanner.detect.binary.rule_layers import RuleLayers
+
+        out: list[Finding] = []
+        for layer in RuleLayers.of(unit.content.raw):
+            try:
+                matches = engine.match(layer.data)
+            except Exception as exc:  # noqa: BLE001
+                out.append(
+                    self._operational(
+                        UNAVAILABLE_RULE,
+                        f"The rule file could not be matched against {unit.content.path}'s layer "
+                        f"decoded from {layer.how}: {type(exc).__name__}.",
+                        ctx,
+                    )
+                )
+                if RuleFileDetector.unbounded(exc):
+                    out.append(self._unbounded(unit, exc, ctx))
+                continue
+            for match in matches:
+                name = str(match.rule)
+                if (
+                    name in engine.layered
+                    and name not in matched
+                    and RuleFileEngine.applies(match, unit.content.path)
+                ):
+                    matched.add(name)
+                    out.append(self._finding(unit, match, ctx, layer=(layer.how, layer.depth)))
+        return out
 
     @staticmethod
     def _meta(match: Any) -> dict[str, Any]:
         meta = getattr(match, "meta", None)
         return meta if isinstance(meta, dict) else {}
 
-    def _finding(self, unit: FileUnit, match: Any, ctx: ScanContext) -> Finding:
+    def _finding(
+        self, unit: FileUnit, match: Any, ctx: ScanContext, layer: tuple[str, int] | None = None
+    ) -> Finding:
         name = str(getattr(match, "rule", "unnamed"))[:128]
         meta = self._meta(match)
         malicious = str(meta.get("category", "")).lower() == "malicious"
@@ -314,14 +359,20 @@ class RuleFileDetector(BaseDetector):
             category=category,
             severity=severity,
             confidence=Confidence.HIGH,
-            message=f"The rule {name} matched this file."
+            message=(
+                f"The rule {name} matched this file."
+                if layer is None
+                else f"The rule {name} matched this file's layer decoded from {layer[0]} "
+                f"(layer {layer[1]})."
+            )
             + (f" {str(meta['description'])[:300]}" if meta.get("description") else ""),
             location=Location(path=unit.content.path, project=unit.project),
             evidence=Evidence(
                 kind=EvidenceKind.HASH,
                 match_hash=Evidence.hash_bytes(f"{name}:".encode() + unit.content.raw[:65536]),
                 redaction=RedactionMode.HASH_ONLY,
-                metadata=(("rule", name),),
+                metadata=(("rule", name),)
+                + (() if layer is None else (("layer", layer[0]), ("depth", str(layer[1])))),
             ),
             remediation=next(r.remediation for r in self.declared_rules() if r.id == rule_id),
             explanation=Explanation(summary=f"rule {name} matched", matched_rule=rule_id),
