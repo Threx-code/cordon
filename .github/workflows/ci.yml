@@ -20,6 +20,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Every platform's native wheel built, installed and tested, so a change that breaks one is seen
+  # before it merges rather than on the release tag.
+  native:
+    uses: ./.github/workflows/native-wheels.yml
+
   test:
     # The OS belongs in the name. Nine jobs shared three names, so a failure
     # could not be attributed to a platform without opening the API, and the

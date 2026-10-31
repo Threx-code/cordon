@@ -32,8 +32,15 @@ jobs:
   live:
     uses: ./.github/workflows/live-checks.yml
 
-  build:
+  # The platform wheels, each built natively with the scanner's own C extension, installed and
+  # tested on its platform. `build` puts them into `dist/` beside the pure wheel before anything
+  # is hashed, so the SBOM, the Action's pin, the attestations and the upload all cover them.
+  native:
     needs: live
+    uses: ./.github/workflows/native-wheels.yml
+
+  build:
+    needs: [live, native]
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -87,7 +94,29 @@ jobs:
       - run: |
           # A fixed timestamp makes the wheel byte-reproducible, so a third
           # party can rebuild from the tag and compare digests with the SBOM.
-          SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) python -m build --no-isolation
+          # CORDON_BUILD_PURE: this job makes the sdist and the pure wheel, which
+          # installs anywhere; the platform wheels come from `native`.
+          SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) CORDON_BUILD_PURE=1 python -m build --no-isolation
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: wheels-*
+          merge-multiple: true
+          path: dist
+
+      - name: Every platform wheel is here, and the pure wheel
+        run: |
+          set -euo pipefail
+          ls -l dist
+          version="${{ steps.version.outputs.version }}"
+          for tag in py3-none-any \
+              cp311-cp311-manylinux_2_28_x86_64 cp312-cp312-manylinux_2_28_x86_64 cp313-cp313-manylinux_2_28_x86_64 \
+              cp311-cp311-manylinux_2_28_aarch64 cp312-cp312-manylinux_2_28_aarch64 cp313-cp313-manylinux_2_28_aarch64 \
+              cp311-cp311-macosx_11_0_arm64 cp312-cp312-macosx_11_0_arm64 cp313-cp313-macosx_11_0_arm64 \
+              cp311-cp311-macosx_11_0_x86_64 cp312-cp312-macosx_11_0_x86_64 cp313-cp313-macosx_11_0_x86_64 \
+              cp311-cp311-win_amd64 cp312-cp312-win_amd64 cp313-cp313-win_amd64; do
+            test -f "dist/cordon_scanner-$version-$tag.whl" || { echo "::error::no $tag wheel"; exit 1; }
+          done
 
       - name: The wheel carries a verdict model this code loads
         run: |
@@ -95,7 +124,7 @@ jobs:
           # Without `detect/data/verdict.json.gz` the scanner runs with every verdict line off and
           # says nothing: a release must not go out that way.
           python -m venv /tmp/cordon-verdict
-          /tmp/cordon-verdict/bin/pip install -q --no-deps dist/*.whl
+          /tmp/cordon-verdict/bin/pip install -q --no-deps dist/*-py3-none-any.whl
           /tmp/cordon-verdict/bin/python -c "from cordon_scanner.decide.verdict import VerdictModel as V; import sys; sys.exit(V.load() is None)"
 
       - name: Generate the SBOM
@@ -116,7 +145,10 @@ jobs:
         # previous wheel is fetched by pip; the scanner itself makes no network request.
         run: |
           set -euo pipefail
-          wheel=$(ls dist/*.whl)
+          # The wheel most installs get (this runner's: CPython 3.12, manylinux x86_64), and pip
+          # fetches the previous release's wheel for the same platform. The first native release
+          # reports its new binary here, at medium, so it is seen and does not block.
+          wheel=$(ls dist/*-cp312-cp312-manylinux_2_28_x86_64.whl)
           current=$(basename "$wheel" | sed -E 's/^cordon_scanner-([^-]+)-.*/\1/')
           python -m venv /tmp/cordon-release
           /tmp/cordon-release/bin/pip install -q --no-deps "$wheel"
