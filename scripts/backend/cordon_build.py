@@ -257,16 +257,22 @@ class Archive:
 
 class Native:
     """The project's own C extensions (`[[tool.cordon-build.native]]`: a module name and its C
-    sources), compiled with the interpreter's own compiler settings (`sysconfig`) and the hardening
-    flags below. Nothing is downloaded and nothing outside the standard library and the platform
-    compiler runs.
+    sources), compiled with the interpreter's own compiler and linker (`sysconfig`) and the
+    hardening flags below. Nothing is downloaded and nothing outside the standard library and the
+    platform compiler runs.
 
-    A wheel with an extension is tagged for this interpreter and platform. With no compiler, or with
-    `CORDON_BUILD_PURE=1`, the pure wheel is built as before and the build says so on stderr: every
-    extension has a pure-Python twin that gives the same results. `CORDON_WHEEL_PLATFORM` overrides
-    the platform tag (CI sets `manylinux_2_28_x86_64` and the like inside the manylinux image, whose
-    glibc is what that tag promises). Reproducible: source paths are mapped out of the binary and the
-    inputs are compiled in sorted order.
+    A wheel with an extension is tagged for this interpreter and platform. Every extension has a
+    pure-Python twin that gives the same results, so the pure `py3-none-any` wheel is built, and the
+    build says why on stderr, when `CORDON_BUILD_PURE=1`, when there is no compiler, or when the
+    compile fails (a newer compiler's new warning under -Werror must not fail a user's install
+    from the sdist). `CORDON_BUILD_NATIVE=require` makes the last two an error instead: CI sets it,
+    so a release wheel that should be native cannot quietly come out pure.
+
+    `CORDON_WHEEL_PLATFORM` sets the platform tag: CI sets `manylinux_2_28_x86_64` and the like
+    inside the manylinux image, whose glibc is what that tag promises. On macOS the build is for
+    one architecture, `ARCHFLAGS` (default: this machine's), and the tag says which; the
+    interpreter's own `-arch` pairs (python.org builds are universal2) are taken off the link line.
+    Reproducible: source paths are mapped out of the binary and the inputs go in sorted order.
     """
 
     POSIX_FLAGS: ClassVar[tuple[str, ...]] = (
@@ -274,8 +280,9 @@ class Native:
         "-fstack-protector-strong", "-D_FORTIFY_SOURCE=2", "-fno-strict-overflow",
         "-fno-delete-null-pointer-checks",
     )  # fmt: skip
-    POSIX_LINK: ClassVar[tuple[str, ...]] = ("-Wl,-z,relro,-z,now,-z,noexecstack",)
-    MSVC_FLAGS: ClassVar[tuple[str, ...]] = ("/O2", "/GS", "/guard:cf", "/W4", "/WX")
+    #: GNU ld and lld; Apple's linker has no -z and already makes no executable stack.
+    ELF_LINK: ClassVar[tuple[str, ...]] = ("-Wl,-z,relro,-z,now,-z,noexecstack",)
+    MSVC_FLAGS: ClassVar[tuple[str, ...]] = ("/nologo", "/O2", "/GS", "/guard:cf", "/W4", "/WX")
     MSVC_LINK: ClassVar[tuple[str, ...]] = (
         "/guard:cf",
         "/DYNAMICBASE",
@@ -283,13 +290,14 @@ class Native:
         "/NXCOMPAT",
     )
 
+    class Failed(Exception):
+        """The native build could not be made, and `CORDON_BUILD_NATIVE=require` was set."""
+
     @staticmethod
     def wanted(project: Project) -> list[dict[str, Any]]:
-        return (
-            []
-            if os.environ.get("CORDON_BUILD_PURE") == "1"
-            else list(project.build.get("native", []))
-        )
+        if os.environ.get("CORDON_BUILD_PURE") == "1":
+            return []
+        return list(project.build.get("native", []))
 
     @staticmethod
     def compiler() -> list[str] | None:
@@ -300,49 +308,124 @@ class Native:
 
         if os.name == "nt":
             return ["cl"] if shutil.which("cl") else None
-        cc = sysconfig.get_config_var("CC") or "cc"
-        command = shlex.split(cc)
+        command = shlex.split(sysconfig.get_config_var("CC") or "cc")
         return command if command and shutil.which(command[0]) else None
+
+    @staticmethod
+    def macos() -> bool:
+        import sys
+
+        name: str = (
+            sys.platform
+        )  # read at run time: a type checker would fix it to its own platform
+        return name == "darwin"
+
+    @staticmethod
+    def archs() -> list[str]:
+        """macOS: the architectures built for (`ARCHFLAGS`, default this machine's); elsewhere none."""
+        import platform
+        import shlex
+
+        if not Native.macos():
+            return []
+        words = shlex.split(os.environ.get("ARCHFLAGS") or f"-arch {platform.machine()}")
+        return [words[i + 1] for i, w in enumerate(words[:-1]) if w == "-arch"]
+
+    @staticmethod
+    def macos_target() -> str:
+        """The oldest macOS the binary runs on, and the tag says: the interpreter's, at least 11.0
+        when arm64 is built (the first macOS on arm64)."""
+        import sysconfig
+
+        target = os.environ.get("MACOSX_DEPLOYMENT_TARGET") or str(
+            sysconfig.get_config_var("MACOSX_DEPLOYMENT_TARGET") or "11.0"
+        )
+        parts = tuple(int(p) for p in target.split(".")[:2] if p.isdigit())
+        if "arm64" in Native.archs() and parts < (11, 0):
+            return "11.0"
+        return ".".join(str(p) for p in (*parts, 0)[:2])
+
+    @staticmethod
+    def arch() -> list[str]:
+        """macOS: the architecture and deployment-target flags, for the compiler and the linker."""
+        archs = Native.archs()
+        if not archs:
+            return []
+        flags = [w for a in archs for w in ("-arch", a)]
+        return [*flags, f"-mmacosx-version-min={Native.macos_target()}"]
+
+    @staticmethod
+    def linker() -> list[str]:
+        import shlex
+        import sysconfig
+
+        words = shlex.split(sysconfig.get_config_var("LDSHARED") or "cc -shared")
+        if Native.macos():  # the interpreter's -arch pairs out; ours in, by arch()
+            kept = []
+            skip = False
+            for word in words:
+                if skip:
+                    skip = False
+                elif word == "-arch":
+                    skip = True
+                else:
+                    kept.append(word)
+            return [*kept, *Native.arch()]
+        return [*words, *Native.ELF_LINK]
 
     @staticmethod
     def build(project: Project, work: Path) -> list[tuple[str, bytes]]:
         """Each extension compiled into `work`, as (archive name, bytes); [] when built pure."""
         import subprocess
         import sys
-        import sysconfig
 
         wanted = Native.wanted(project)
         if not wanted:
             return []
+        required = os.environ.get("CORDON_BUILD_NATIVE") == "require"
         cc = Native.compiler()
         if cc is None:
+            if required:
+                raise Native.Failed("no C compiler, and CORDON_BUILD_NATIVE=require")
             sys.stderr.write("cordon_build: no C compiler; building the pure wheel (native: no)\n")
             return []
+        try:
+            return [
+                Native._one(project, ext, cc, work)
+                for ext in sorted(wanted, key=lambda e: str(e["name"]))
+            ]
+        except (subprocess.CalledProcessError, OSError) as error:
+            if required:
+                raise Native.Failed(f"the native build failed: {error}") from error
+            sys.stderr.write(
+                f"cordon_build: the native build failed ({error}); building the pure wheel\n"
+            )
+            return []
+
+    @staticmethod
+    def _one(project: Project, ext: dict[str, Any], cc: list[str], work: Path) -> tuple[str, bytes]:
+        import subprocess
+        import sys
+        import sysconfig
+
         include = sysconfig.get_paths()["include"]
         suffix = sysconfig.get_config_var("EXT_SUFFIX") or ".so"
-        out: list[tuple[str, bytes]] = []
-        for ext in sorted(wanted, key=lambda e: str(e["name"])):
-            module = str(ext["name"])
-            sources = sorted(str(project.root / s) for s in ext["sources"])
-            target = work / (module.split(".")[-1] + suffix)
-            if os.name == "nt":
-                command = [*cc, *Native.MSVC_FLAGS, f"/I{include}", "/LD", *sources, f"/Fe{target}",
-                           "/link", *Native.MSVC_LINK, f"/LIBPATH:{Path(sys.base_prefix) / 'libs'}"]  # fmt: skip
-            else:
-                ldshared = sysconfig.get_config_var("LDSHARED") or f"{cc[0]} -shared"
-                import shlex
-
-                prefix_map = f"-ffile-prefix-map={project.root}=."
-                command = [*cc, *Native.POSIX_FLAGS, prefix_map, f"-I{include}", "-c"]
-                objects = []
-                for source in sources:
-                    obj = work / (Path(source).stem + ".o")
-                    subprocess.run([*command, source, "-o", str(obj)], check=True)  # noqa: S603 - the interpreter's own compiler and our sources
-                    objects.append(str(obj))
-                command = [*shlex.split(ldshared), *objects, *Native.POSIX_LINK, "-o", str(target)]
-            subprocess.run(command, check=True)  # noqa: S603 - sysconfig's linker and our objects
-            out.append((module.replace(".", "/") + suffix, target.read_bytes()))
-        return out
+        module = str(ext["name"])
+        sources = sorted(str(project.root / s) for s in ext["sources"])
+        target = work / (module.split(".")[-1] + suffix)
+        if os.name == "nt":
+            command = [*cc, *Native.MSVC_FLAGS, f"/I{include}", f"/Fo{work}\\", "/LD", *sources,
+                       f"/Fe{target}", "/link", *Native.MSVC_LINK, f"/LIBPATH:{Path(sys.base_prefix) / 'libs'}"]  # fmt: skip
+            subprocess.run(command, check=True, cwd=work)  # noqa: S603 - the interpreter's own compiler and our sources
+        else:
+            compile_ = [*cc, *Native.POSIX_FLAGS, *Native.arch(), f"-ffile-prefix-map={project.root}=.", f"-I{include}", "-c"]  # fmt: skip
+            objects = []
+            for source in sources:
+                obj = work / (Path(source).stem + ".o")
+                subprocess.run([*compile_, source, "-o", str(obj)], check=True)  # noqa: S603 - the interpreter's own compiler and our sources
+                objects.append(str(obj))
+            subprocess.run([*Native.linker(), *objects, "-o", str(target)], check=True)  # noqa: S603 - sysconfig's linker and our objects
+        return module.replace(".", "/") + suffix, target.read_bytes()
 
     @staticmethod
     def tag() -> str:
@@ -352,6 +435,10 @@ class Native:
 
         version = f"cp{sys.version_info.major}{sys.version_info.minor}"
         platform = os.environ.get("CORDON_WHEEL_PLATFORM") or sysconfig.get_platform()
+        if not os.environ.get("CORDON_WHEEL_PLATFORM") and Native.macos():
+            archs = sorted(Native.archs())
+            machine = "universal2" if archs == ["arm64", "x86_64"] else "_".join(archs)
+            platform = f"macosx-{Native.macos_target()}-{machine}"
         return f"{version}-{version}-{platform.replace('-', '_').replace('.', '_')}"
 
 

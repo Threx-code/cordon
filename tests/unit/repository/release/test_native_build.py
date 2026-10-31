@@ -144,3 +144,71 @@ class TestNativeBuild:
         tag = Kit.backend().Native.tag()
         assert tag.endswith("-manylinux_2_28_x86_64") and tag.startswith("cp")
         assert os.environ["CORDON_WHEEL_PLATFORM"] == "manylinux_2_28_x86_64"
+
+    def test_a_failed_compile_builds_the_pure_wheel_unless_native_is_required(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        backend = Kit.backend()
+        root = Kit.project(tmp_path / "p")
+        (root / "src" / "probe" / "_probe.c").write_text("this is not C\n", encoding="utf-8")
+        monkeypatch.chdir(root)
+        monkeypatch.setattr(
+            backend.Native,
+            "compiler",
+            staticmethod(lambda: [sys.executable, "-c", "raise SystemExit(1)"]),
+        )
+        monkeypatch.delenv("CORDON_BUILD_NATIVE", raising=False)
+        assert backend.build_wheel(str(tmp_path)).endswith("-py3-none-any.whl")
+        monkeypatch.setenv("CORDON_BUILD_NATIVE", "require")
+        with pytest.raises(backend.Native.Failed):
+            backend.build_wheel(str(tmp_path))
+
+    def test_no_compiler_is_an_error_only_when_native_is_required(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        backend = Kit.backend()
+        monkeypatch.chdir(Kit.project(tmp_path / "p"))
+        monkeypatch.setattr(backend.Native, "compiler", staticmethod(lambda: None))
+        monkeypatch.delenv("CORDON_BUILD_NATIVE", raising=False)
+        assert backend.build_wheel(str(tmp_path)).endswith("-py3-none-any.whl")
+        monkeypatch.setenv("CORDON_BUILD_NATIVE", "require")
+        with pytest.raises(backend.Native.Failed):
+            backend.build_wheel(str(tmp_path))
+
+    @pytest.mark.parametrize(
+        ("archflags", "target", "expected"),
+        [
+            ("-arch arm64", "10.9", "macosx_11_0_arm64"),
+            ("-arch x86_64", "10.9", "macosx_10_9_x86_64"),
+            ("-arch arm64 -arch x86_64", "11.0", "macosx_11_0_universal2"),
+        ],
+    )
+    def test_a_macos_tag_names_the_architecture_and_target_built_for(
+        self, monkeypatch: pytest.MonkeyPatch, archflags: str, target: str, expected: str
+    ) -> None:
+        backend = Kit.backend()
+        monkeypatch.setattr(sys, "platform", "darwin")
+        monkeypatch.delenv("CORDON_WHEEL_PLATFORM", raising=False)
+        monkeypatch.setenv("ARCHFLAGS", archflags)
+        monkeypatch.setenv("MACOSX_DEPLOYMENT_TARGET", target)
+        assert backend.Native.tag().endswith("-" + expected)
+        flags = backend.Native.arch()
+        assert f"-mmacosx-version-min={expected.split('_')[1]}.{expected.split('_')[2]}" in flags
+
+    def test_the_macos_link_line_drops_the_interpreters_architectures(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import sysconfig
+
+        backend = Kit.backend()
+        monkeypatch.setattr(sys, "platform", "darwin")
+        monkeypatch.setenv("ARCHFLAGS", "-arch arm64")
+        monkeypatch.setenv("MACOSX_DEPLOYMENT_TARGET", "11.0")
+        line = "clang -bundle -undefined dynamic_lookup -arch arm64 -arch x86_64"
+        real = sysconfig.get_config_var
+        monkeypatch.setattr(
+            sysconfig, "get_config_var", lambda n: line if n == "LDSHARED" else real(n)
+        )
+        linker = backend.Native.linker()
+        assert linker.count("-arch") == 1 and "x86_64" not in linker
+        assert not [w for w in linker if w.startswith("-Wl,-z")]
