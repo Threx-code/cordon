@@ -12,8 +12,10 @@
  * results are checked against a naive search of the same data, so a wrong answer is a crash too.
  * check_text is held to naive_text at every offset and mode, and text_hits, over the needles'
  * occurrences as owners with flags, max_hits and fixed drawn from the data, to naive_hits; and
- * hex_hits, with forward and backward layouts drawn from the input, to naive_hex (a search over
- * each layout from its entry: the shortest match forwards, every start reached backwards).
+ * hex_hits, with forward and backward layouts drawn from the input, to a search over each layout
+ * from its entry: every start reached, by the first event to reach it, with a length the forward
+ * layout can reach from there (which of those lengths is threads.Lanes' order, as YARA's, held
+ * by test_hex_find against Lanes and by the reference against yara, not here).
  */
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
@@ -140,7 +142,7 @@ static void check_hits(const uint8_t *d, size_t dn, PyObject *needles, PyObject 
 }
 
 /* hex_hits checked: a layout of at most 8 instructions drawn from the input, both ways */
-#define HX_REACH 64
+#define HX_REACH 60 /* every forward length fits one 64-bit set */
 typedef struct { int64_t op[9][3]; int n; } Layout;
 
 static void draw_layout(Layout *l, const uint8_t *b, size_t nb) {
@@ -162,25 +164,24 @@ static void draw_layout(Layout *l, const uint8_t *b, size_t nb) {
     l->op[l->n][0] = L_DONE; l->op[l->n][1] = l->op[l->n][2] = 0; l->n++;
 }
 
-/* forwards: the shortest length from (pc, done), -1 if none; as Lanes reads (reach limits) */
-static int64_t hx_fwd(const Layout *l, int pc, int64_t done, const uint8_t *d, int64_t at, int64_t reach) {
+/* forwards: the set of lengths reachable from (pc, done), one bit each; as Lanes reads (reach) */
+static uint64_t hx_fwd(const Layout *l, int pc, int64_t done, const uint8_t *d, int64_t at, int64_t reach) {
     const int64_t *o = l->op[pc];
-    if (o[0] == L_DONE) return done;
+    if (o[0] == L_DONE) return (uint64_t)1 << done;
     if (o[0] == L_SKIP) {
-        if (done + o[1] >= reach) return -1;
-        int64_t best = -1;
+        if (done + o[1] >= reach) return 0;
+        uint64_t all = 0;
         for (int64_t j = o[1]; j <= o[2]; j++) {
             if (j > o[1] && done + j >= reach) break;
-            int64_t r = hx_fwd(l, pc + 1, done + j, d, at, reach);
-            if (r >= 0 && (best < 0 || r < best)) best = r;
+            all |= hx_fwd(l, pc + 1, done + j, d, at, reach);
         }
-        return best;
+        return all;
     }
-    if (done >= reach) return -1;
+    if (done >= reach) return 0;
     uint8_t c = d[at + done]; int ok;
     if (o[0] == L_ANY) ok = 1; else if (o[0] == L_BYTE) ok = c == o[1]; else if (o[0] == L_NOT_BYTE) ok = c != o[1];
     else if (o[0] == L_MASK) ok = (c & o[1]) == o[2]; else ok = (c & o[1]) != o[2];
-    return ok ? hx_fwd(l, pc + 1, done + 1, d, at, reach) : -1;
+    return ok ? hx_fwd(l, pc + 1, done + 1, d, at, reach) : 0;
 }
 
 /* backwards: marks each done reached at DONE (a start at - done) */
@@ -212,7 +213,7 @@ static void check_hex(const uint8_t *buf, size_t size, const uint8_t *d, size_t 
     Layout fw, bw;
     size_t half = size / 2 < 16 ? size / 2 : 16;
     draw_layout(&fw, buf, half); draw_layout(&bw, buf + half, half);
-    int64_t occ[64], backs[8], ends[64 * 8], start_len[4096]; int no = 0;
+    int64_t occ[64], backs[8], ends[64 * 8], start_at[4096]; uint64_t start_fwd[4096]; int no = 0;
     PyObject *owners = PyList_New(0);
     int64_t evn = 0, ev[64 * 8][4];
     for (Py_ssize_t i = 0; i < n && no < 8; i++, no++) {
@@ -240,7 +241,7 @@ static void check_hex(const uint8_t *buf, size_t size, const uint8_t *d, size_t 
     PyObject *fo = layout_bytes(&fw), *bo = layout_bytes(&bw);
     PyObject *got = PyObject_CallFunction(HexHits, "OOOOnlnn", data, owners, fo, bo, (Py_ssize_t)HX_REACH, 0L, (Py_ssize_t)4096, (Py_ssize_t)-1);
     if (!got) { PyErr_Print(); abort(); }
-    for (size_t i = 0; i < 4096; i++) start_len[i] = -1;
+    for (size_t i = 0; i < 4096; i++) start_at[i] = -1;
     for (int64_t i = 0; i < evn; i++) {
         int k = (int)(ev[i][3] / 4), fe = (ev[i][3] & 2) != 0, be = (ev[i][3] & 1) != 0;
         if (!fe) continue;
@@ -248,22 +249,26 @@ static void check_hex(const uint8_t *buf, size_t size, const uint8_t *d, size_t 
         (void)len;
         if (at >= (int64_t)dn) continue;
         int64_t reach = (int64_t)dn - at < HX_REACH ? (int64_t)dn - at : HX_REACH;
-        int64_t length = hx_fwd(&fw, 0, 0, d, at, reach);
-        if (length < 0) continue;
+        uint64_t lengths = hx_fwd(&fw, 0, 0, d, at, reach);
+        if (!lengths) continue;
         if (be) {
             uint8_t reached[HX_REACH + 1]; memset(reached, 0, sizeof reached);
             int64_t rb = at < HX_REACH ? at : HX_REACH;
             hx_back(&bw, 0, 0, d, at, rb, reached);
             for (int64_t dd = 0; dd <= rb; dd++)
-                if (reached[dd] && at - dd >= 0 && at - dd < 4096 && start_len[at - dd] < 0) start_len[at - dd] = dd + length;
-        } else if (at < 4096 && start_len[at] < 0) start_len[at] = length;
+                if (reached[dd] && at - dd >= 0 && at - dd < 4096 && start_at[at - dd] < 0) {
+                    start_at[at - dd] = at; start_fwd[at - dd] = lengths;
+                }
+        } else if (at < 4096 && start_at[at] < 0) { start_at[at] = at; start_fwd[at] = lengths; }
     }
     PyObject *gs = PyTuple_GET_ITEM(got, 0), *gl = PyTuple_GET_ITEM(got, 1);
     const int64_t *s0 = (const int64_t *)PyBytes_AS_STRING(gs), *l0 = (const int64_t *)PyBytes_AS_STRING(gl);
     Py_ssize_t held = PyBytes_GET_SIZE(gs) / 8, w = 0;
     for (int64_t st = 0; st < 4096; st++) {
-        if (start_len[st] < 0) continue;
-        if (w >= held || s0[w] != st || l0[w] != start_len[st]) abort();
+        if (start_at[st] < 0) continue;
+        if (w >= held || s0[w] != st) abort();
+        int64_t forward = l0[w] - (start_at[st] - st); /* the length past the first event's offset */
+        if (forward < 0 || forward > HX_REACH || !((start_fwd[st] >> forward) & 1)) abort();
         w++;
     }
     if (w != held) abort();
