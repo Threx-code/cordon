@@ -380,6 +380,7 @@ class Rules:
         seen: dict[Any, Any] = {}
         live = self.magic_index().live(data, seen)
         found_by: dict[str, dict[str, Sequence[tuple[int, int]]]] = {}
+        held: dict[str, bool] = {}  # each distinct gate's result on this file (`Gates.hold`)
         # only the rules a string with an anchor here can reach, and those that may hold with no
         # match, are visited; every other rule is false without being looked at (Gates.hopeless)
         plan = self.plan()
@@ -395,9 +396,7 @@ class Rules:
         for i in sorted(visit):
             rule = self.rules[i]
             frame.found, frame.env = {}, [None] * rule.width
-            if Gates.hopeless(rule, live) or (
-                rule.gates and not all(gate(frame) for gate in rule.gates)
-            ):
+            if Gates.hopeless(rule, live) or (rule.gates and not Gates.hold(rule, frame, held)):
                 found: dict[str, Sequence[tuple[int, int]]] = {s.name: [] for s in rule.strings}
                 may = False
             else:
