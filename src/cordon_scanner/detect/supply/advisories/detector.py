@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, GraphUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
+from cordon_scanner.detect.supply.advisories.distinct import DistinctAdvisories
 from cordon_scanner.detect.supply.advisories.findings import (
     BUNDLED_MALWARE_RULE,
     BUNDLED_RULE,
@@ -225,15 +226,14 @@ class AdvisoryDetector(BaseDetector):
                 # describes someone else's bytes -- React's `eslint-plugin-react-internal@link:`
                 # is not the npm package squatted under that name.
                 continue
-            reported: set[str] = set()
-            for advisory in (
-                *self._own_records(dependency),
-                *(upstream.advisories.get(dependency.purl, ()) if upstream is not None else ()),
+            # One finding per fact: two sources' records of one malicious release or one CVE
+            # are one finding, naming every identifier (`distinct.py`).
+            for advisory in DistinctAdvisories.of(
+                (
+                    *self._own_records(dependency),
+                    *(upstream.advisories.get(dependency.purl, ()) if upstream is not None else ()),
+                )
             ):
-                # One record can match through its version list and its range both.
-                if advisory.identifier and advisory.identifier in reported:
-                    continue
-                reported.add(advisory.identifier)
                 findings.append(
                     AdvisoryFinding.finding(dependency, advisory, ctx, advice=self._upgrade_advice)
                 )
@@ -281,11 +281,7 @@ class AdvisoryDetector(BaseDetector):
         a declared range that admits a recorded malicious release (the only one for a record with
         no version, as a nested manifest's are). A removed name's warning is about installing it,
         so not here."""
-        reported: set[str] = set()
-        for advisory in self._own_records(dependency):
-            if advisory.identifier and advisory.identifier in reported:
-                continue
-            reported.add(advisory.identifier)
+        for advisory in DistinctAdvisories.of(self._own_records(dependency)):
             yield AdvisoryFinding.finding(dependency, advisory, ctx, advice=self._upgrade_advice)
         malicious = any(a.malicious for a in self._own_records(dependency))
         repository = self._repository_matches(dependency)
