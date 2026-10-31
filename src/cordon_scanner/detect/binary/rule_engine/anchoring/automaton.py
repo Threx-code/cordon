@@ -51,13 +51,47 @@ class Automaton:
     MODULE, WHY = Native.load()
     NATIVE: ClassVar[bool] = MODULE is not None
 
+    #: The rule-engine modules a wheel may hold compiled (mypyc), each with its Python twin.
+    COMPILED: ClassVar[tuple[str, ...]] = ("scan", "threads")
+    #: What the build writes beside the compiled modules: the compiler and its version.
+    ENGINE_BUILD: ClassVar[str] = "ENGINE_BUILD"
+
     @staticmethod
     def status() -> str:
         """Which anchor matcher runs, for the rule-file status and `--version`: the native one with
-        the sha256 of the binary loaded, or the Python one and why."""
+        the sha256 of the binary loaded, or the Python one and why; then which engine modules run
+        compiled (`engine`)."""
         if Automaton.MODULE is None:
-            return f"Python anchor matcher ({Automaton.WHY})"
-        return f"native anchor matcher (sha256 {Automaton.digest()})"
+            matcher = f"Python anchor matcher ({Automaton.WHY})"
+        else:
+            matcher = f"native anchor matcher (sha256 {Automaton.digest()})"
+        return f"{matcher}; {Automaton.engine()}"
+
+    @staticmethod
+    def engine() -> str:
+        """ "engine modules compiled: scan, threads (mypyc 2.4.0)", or "engine: Python". A compiled
+        module is found before its source at import, whatever CORDON_NO_NATIVE says, so this is
+        read from what was loaded -- a module whose file is an extension, as
+        `PackCache.build_kind` reads it -- not from a setting."""
+        import importlib
+        import sys
+
+        prefix = "cordon_scanner.detect.binary.rule_engine."
+        compiled = []
+        for name in Automaton.COMPILED:
+            module = sys.modules.get(prefix + name) or importlib.import_module(prefix + name)
+            if str(getattr(module, "__file__", "")).endswith((".so", ".pyd")):
+                compiled.append(name)
+        if not compiled:
+            return "engine: Python"
+        from cordon_scanner.foundation.paths import PackagePaths
+
+        stamp = PackagePaths.root() / "_native" / Automaton.ENGINE_BUILD
+        try:
+            built = stamp.read_text(encoding="utf-8").strip()[:64] or "mypyc"
+        except OSError:
+            built = "mypyc"
+        return f"engine modules compiled: {', '.join(compiled)} ({built})"
 
     @staticmethod
     @functools.cache
