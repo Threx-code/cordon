@@ -189,6 +189,21 @@ class ReachedFlows:
         return path + "#" + suffix
 
     @staticmethod
+    def language(path: str, head: bytes) -> str | None:
+        """Which flow reader a file is read with, as `of` reads it: "py", "js", or None; an
+        extensionless script by its `#!` line (the rule modules `js` and `python` use this)."""
+        name = path.rsplit("!", 1)[-1].lower()
+        if name.endswith(".py"):
+            return "py"
+        if name.endswith(ReachedFlows.CODE):
+            return "js"
+        if "." not in name.rsplit("/", 1)[-1]:
+            named = ReachedFlows._interpreted(path, head[:128])
+            if named is not None and named.endswith((".js", ".py")):
+                return named[-2:]
+        return None
+
+    @staticmethod
     def facts(place: str, text: str, *, python: bool = False) -> dict[str, float]:
         """One file's facts under `place`: each source, sink and destination kind it joins, and
         the framework calls it makes."""

@@ -41,7 +41,7 @@ from cordon_scanner.foundation.models import (
 from cordon_scanner.foundation.scoring import RiskScorer, ScoringContext
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Sequence
+    from collections.abc import Callable, Iterable, Mapping, Sequence
     from pathlib import Path
     from typing import Any
 
@@ -237,6 +237,13 @@ class ScanContext:
     """The operating-system inventory (`images.oci.ImageInventory`) when the target is a
     container image tarball, else None. Carried whole because matching needs what a purl cannot
     hold faithfully: Debian's source-package version and the distribution's advisory namespace."""
+
+    scan_facts: Mapping[str, Any] | None = None
+    """The facts the package verdict reads -- the capability profile's capabilities, the reached
+    files' flows, the registry record, the campaign siblings -- gathered once after detection
+    (`engine/pipeline/facts`) for the rule file's deferred pass (`modules.scanner_facts`).
+    None during detection, before they exist. A fact like the others: carried to a worker and
+    part of a file's cache key, so a file is never served findings made under other facts."""
 
     #: The fields that belong to the process holding the context rather than to the scan target,
     #: each with where its effect is accounted for. Everything else is a fact about the target:
@@ -665,6 +672,16 @@ class PackerSignatures(Protocol):
     output shape (an established release's archive, read for intel's release history)."""
 
     def packers(self, content: FileContent, language: str | None = ...) -> Iterable[object]: ...
+
+
+class CampaignSiblingFacts(Protocol):
+    """What the engine uses of the class `CampaignSiblingDetector`: an npm manifest's campaign
+    facets and the condemned releases sharing two of them, for the `package` rule module."""
+
+    def siblings_of(
+        self, unit: FileUnit, ctx: ScanContext
+    ) -> tuple[dict[str, str | None], list[dict[str, Any]]] | None: ...
+    def shared(self, facets: dict[str, str | None], sibling: dict[str, Any]) -> list[str]: ...
 
 
 class ReachedFlowFacts(Protocol):

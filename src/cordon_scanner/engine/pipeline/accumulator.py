@@ -8,7 +8,7 @@ instance reusable and safe to share; each phase that adds to a scan is handed th
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.engine.pipeline.constants import INCOMPLETE_WHEN_REPORTED
 from cordon_scanner.foundation.models import Finding, Severity
@@ -46,6 +46,12 @@ class Accumulator:
     files_skipped: int = 0
     bytes_scanned: int = 0
     rules_evaluated: int = 0
+
+    verdict_facts: dict[str, float] | None = None
+    """The facts the package verdict reads, when the rule file's deferred pass gathered them
+    already (`engine/pipeline/facts`): the verdict reuses them instead of computing twice."""
+    labels: dict[str, Any] = field(default_factory=dict)
+    """The capability labels computed with those facts, which the intent observation reuses."""
 
     finding_cap: int = 0
     """Ceiling on retained findings, from `limits.max_findings`.

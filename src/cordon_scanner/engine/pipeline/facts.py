@@ -1,23 +1,45 @@
 """Facts about the scanned tree that the detectors are handed with each file: which files are a
 package's entry points, which a skill runs, which native code ships, where its provenance is
-declared, and which files were already labelled once.
+declared, and which files were already labelled once (`TreeFacts`).
+
+## The scanner's facts for the rule file (`ScanFactsGathering`)
+
+A rule file importing `package`, `js` or `python` (`detect/binary/modules/scanner_facts`) reads
+what the package verdict reads, which exists only once every detector has run. So its files are
+not matched during detection (`RuleFileDetector.defers`); `Stages.detect` gathers the facts here,
+then runs the rule-file detector again over the files, on the same worker pool, with the facts on
+the context. Its findings then take every later step a finding takes -- the ceilings, the
+suppressions, the folds, the verdict -- and the verdict reuses the facts gathered here rather
+than computing them twice.
+
+    detection ──► gather (profile + flows + registry + campaigns) ──► deferred rule pass
+                                    │                                        │
+                                    └──── the verdict's facts ◄── findings ──┘
+
+    `verdict`     the dict the verdict reads: the capability profile and reached flows
+                  (`Engine._capability_profile`) and the registry facts (`History`)
+    `scan_facts`  what the modules read (`ScanFacts`): those, reshaped, and the campaign siblings
 """
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.detect.base import (
     FileUnit,
     ScanContext,
 )
+from cordon_scanner.engine.pipeline.history import History
 from cordon_scanner.foundation.errors import SourceError
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
 
     from cordon_scanner.detect.base import CapabilityLabelling, CapabilityMark
+    from cordon_scanner.engine.engine import Engine
+    from cordon_scanner.engine.pipeline.accumulator import Accumulator
 
 
 class TreeFacts:
@@ -118,4 +140,156 @@ class TreeFacts:
         return held
 
 
-__all__ = ["TreeFacts"]
+class ScanFactsGathering:
+    """`gather`: the verdict's facts and the rule modules' facts, from one computation; and
+    `deferred`, the rule file's pass over them."""
+
+    #: The measurement runs' marker (`ReachedFlows.MEASURE`): a content-only run, where the
+    #: gathered facts hold no registry record (`ScanFacts`).
+    CONTENT_ONLY: ClassVar[str] = "CORDON_MEASURE_FEATURES"
+
+    @staticmethod
+    def content_only() -> bool:
+        import os
+
+        return os.environ.get(ScanFactsGathering.CONTENT_ONLY) == "1"
+
+    @staticmethod
+    def verdict(
+        engine: Engine, units: Sequence[FileUnit], ctx: ScanContext, labels: dict[str, Any]
+    ) -> dict[str, float]:
+        """The facts the package verdict reads (`Stages.fold_and_judge`)."""
+        return {
+            **engine._capability_profile(units, ctx, labels),
+            **History.registry_facts(units),
+        }
+
+    @staticmethod
+    def gather(
+        engine: Engine, units: Sequence[FileUnit], ctx: ScanContext, labels: dict[str, Any]
+    ) -> tuple[dict[str, float], dict[str, Any]]:
+        """(the verdict's facts, the modules' facts)."""
+        verdict = ScanFactsGathering.verdict(engine, units, ctx, labels)
+        return verdict, {
+            "identity": ScanFactsGathering.identity(units),
+            "can": ScanFactsGathering.capabilities(verdict),
+            "flows": ScanFactsGathering.flows(verdict),
+            "registry": ScanFactsGathering.registry(
+                verdict, content_only=ScanFactsGathering.content_only()
+            ),
+            "campaign": ScanFactsGathering.campaigns(units, ctx),
+        }
+
+    @staticmethod
+    def deferred(
+        engine: Engine,
+        detectors: Sequence[Any],
+        units: list[FileUnit],
+        acc: Accumulator,
+        root: Path,
+        ctx: ScanContext,
+        *,
+        carry_content: bool,
+        where: str,
+    ) -> None:
+        """The deferred pass: when a detector defers (`RuleFileDetector.defers`), gather the
+        facts, keep the verdict's on `acc`, and run the deferring detectors over every file with
+        the facts on the context -- across the worker pool where detection used one, since the
+        context (facts included) is what a worker receives and what a file's cache key holds."""
+        from cordon_scanner.engine.cache import CacheSignature
+        from cordon_scanner.engine.parallel import ParallelScanner
+
+        later = [d for d in detectors if callable(getattr(d, "defers", None)) and d.defers(ctx)]
+        if not later:
+            return
+        acc.verdict_facts, facts = ScanFactsGathering.gather(engine, units, ctx, acc.labels)
+        ctx = replace(ctx, scan_facts=facts)
+        signature = CacheSignature.scan_signature(later, ctx, engine.config)
+        workers = ParallelScanner.worker_count(
+            engine.config.limits.max_workers, len(units), sum(u.content.size for u in units)
+        )
+        if workers > 1:
+            acc.add(
+                engine.detection.parallel(
+                    units,
+                    root,
+                    ctx,
+                    acc,
+                    later,
+                    signature,
+                    carry_content=carry_content,
+                    where=where,
+                )
+            )
+            return
+        for unit in units:
+            acc.add(engine.detection.inspect_file(unit, ctx, acc, later, signature))
+
+    @staticmethod
+    def verdict_facts(
+        engine: Engine, units: Sequence[FileUnit], ctx: ScanContext, acc: Accumulator
+    ) -> dict[str, float]:
+        """The verdict's facts: those the deferred pass gathered, else computed now."""
+        if acc.verdict_facts is not None:
+            return acc.verdict_facts
+        return ScanFactsGathering.verdict(engine, units, ctx, acc.labels)
+
+    @staticmethod
+    def identity(units: Sequence[FileUnit]) -> list[str] | None:
+        """[ecosystem, name, version] of the release the scan is, as the registry facts read it."""
+        files = [u for u in units if isinstance(u, FileUnit)]
+        distribution = History.history_distribution(files)
+        if not distribution:
+            return None
+        found = History.history_identity(files, distribution)
+        return list(found) if found is not None else None
+
+    @staticmethod
+    def campaigns(units: Sequence[FileUnit], ctx: ScanContext) -> dict[str, list[int]]:
+        """Per npm package (by its archive), [condemned siblings, most facets one shares], as the
+        campaign detector computes them."""
+        from cordon_scanner.detect.registry import CampaignSiblings
+
+        out: dict[str, list[int]] = {}
+        for unit in units:
+            found = CampaignSiblings.siblings_of(unit, ctx)
+            if found is None:
+                continue
+            facets, siblings = found
+            shared = max((len(CampaignSiblings.shared(facets, s)) for s in siblings), default=0)
+            out[unit.content.path.rpartition("!")[0]] = [len(siblings), shared]
+        return out
+
+    @staticmethod
+    def flows(facts: Mapping[str, float]) -> list[list[str]]:
+        """The flow facts as [place, source, sink, destination]: sinks and destinations are one
+        word each, so a key splits from the right (sources may hold an underscore)."""
+        out = []
+        for key in facts:
+            place, mark, rest = key.partition("_flow_")
+            if mark and place and rest.count("_") >= 2:
+                source, sink, destination = rest.rsplit("_", 2)
+                out.append([place, source, sink, destination])
+        return sorted(out)
+
+    @staticmethod
+    def capabilities(facts: Mapping[str, float]) -> list[list[str]]:
+        """The profile's capability facts as [place, capability]."""
+        out = []
+        for key, value in facts.items():
+            place, mark, name = key.partition("_can_")
+            if mark and place and name and value:
+                out.append([place, name])
+        return sorted(out)
+
+    @staticmethod
+    def registry(facts: Mapping[str, float], *, content_only: bool) -> dict[str, float] | None:
+        """The registry record's facts, or None: none was acquired, or the run is content-only
+        (registry knowledge never enters a content-only number)."""
+        reg = {k: v for k, v in facts.items() if k.startswith("reg_")}
+        if content_only or not reg.get("reg_known"):
+            return None
+        return reg
+
+
+__all__ = ["ScanFactsGathering", "TreeFacts"]

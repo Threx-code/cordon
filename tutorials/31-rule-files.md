@@ -41,6 +41,63 @@ that does not compile, or that imports a module cordon-rule does not provide, is
 `OPERATIONAL.RULEFILE.UNAVAILABLE` and marks the scan incomplete: "no rule matched" and "no rule
 ran" never look alike.
 
+## Rules over what the scanner knows: `package`, `js`, `python`
+
+Three modules read what Cordon has already worked out about the package a file is in, so a rule can
+say "the install hook sends the environment somewhere it does not name" rather than only "these
+bytes occur":
+
+```
+import "package"
+import "js"
+
+rule install_hook_sends_environment {
+  condition:
+    package.place == "install" and js.flow("environment", "request", "unknown")
+}
+
+rule first_release_with_a_new_hook {
+  condition:
+    package.registry.known and package.registry.first_release and package.install_time
+}
+```
+
+| Field | What it reads |
+|-------|---------------|
+| `package.ecosystem`, `name`, `version` | the release the scan names (its manifest) |
+| `package.place` | where this file runs: `install`, `import`, `closure`, `agent`, `ci`, or `""` |
+| `package.install_time` | the package has an install hook or a file one runs |
+| `package.can(place, capability)` | the capability profile of the code run at `place` |
+| `package.flow(place, source, sink, destination)` | a reached file's flow; `""` is any |
+| `package.flows` | how many flows the reached code has |
+| `package.campaign.siblings`, `shared` | condemned releases sharing two facets with this one (npm) |
+| `package.registry.known`, `age_days`, `first_release`, `prior_versions`, `prior_24h`, `new_publisher`, `maintainers`, `hooks`, `hooks_added`, `dependencies_added`, `confusion_version`, `prerelease_build` | the registry's record of the release, from `cordon-scanner intel acquire` |
+| `js.flow(source, sink, destination)`, `js.flows`, `js.sinks`, `js.place` | this JavaScript file's own flows |
+| `python.flow(...)`, `python.flows`, `python.sinks`, `python.place` | this Python file's own flows |
+
+Sources are `secret_file`, `home_file`, `network_response`, `decoded`, `environment`, `identity`,
+`browser`, `clipboard` and `wallet_key`; sinks `request`, `connection`, `dns`, `process`, `open` and
+`execute`; destinations `drop`, `ip`, `fixed` and `unknown`.
+
+Each value is a fact the package verdict reads; nothing is analysed for the rule. Those facts exist
+only once every detector has run, so a rule file importing one of these modules is matched after
+detection, in a pass of its own, and its matches then go through everything any finding goes
+through (the ceilings, suppressions, folds and verdict):
+
+```
+  detection ──► the verdict's facts ──► the rule file, with the facts ──► ceilings, suppressions,
+  (every          profile, flows,          (same worker pool;              folds, verdict
+   detector)      registry, campaigns       each file's own place)          (facts reused)
+```
+
+A rule file importing none of the three is matched during detection exactly as before. Where
+there is no fact, a field is undefined, never false or 0: with no registry record acquired,
+`package.registry.known` is false and every other registry field undefined; a non-npm package has no
+`campaign`; a file of another language, or over 1 MB, has every `js` or `python` field undefined.
+A measurement run (`CORDON_MEASURE_FEATURES=1`) is content-only: the registry record is never read
+there, so no rule carries registry knowledge into a content-only number. These answers depend on
+more than a file's bytes, so they are never kept in the match cache.
+
 ## What the language covers
 
 - **Rules**: `global` and `private` rules, tags, `meta`, `strings`, `condition`, references to
@@ -61,7 +118,8 @@ ran" never look alike.
   `dex` for executables; `olecf`, `msi` and `vba` for compound files, installers and macros; `lnk`,
   `zip` and `crx` for shortcuts, archives and browser extensions; `magic` for a file's type;
   `androguard` for Android packages;
-  `cuckoo` for what a sandbox run did (below).
+  `cuckoo` for what a sandbox run did (below); `package`, `js` and `python` for what the scanner
+  knows of the package (above).
 
 ## Giving a module data: `cuckoo`
 
