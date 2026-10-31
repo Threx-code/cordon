@@ -550,6 +550,7 @@ class ArchiveStages:
             units,
             ScanFactsGathering.verdict_facts(self.engine, units, ctx, acc),
             self.engine._intent_observation(units, ctx, acc.labels),
+            repository=not ctx.package_distribution,
         )
         dependencies = self.engine.detection.annotated(dependencies, acc.findings, ctx, units)
         return dependencies, verdict
