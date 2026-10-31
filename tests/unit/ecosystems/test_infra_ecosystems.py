@@ -291,3 +291,32 @@ class TestNoFormatNoise:
         result = InfraHelpers.scan(tmp_path, {name: 'brew "jq"\nvscode "ellacrity.recoil"\n'})
         assert any(f.rule_id == "MALWARE.EXTENSION.KNOWN.001" for f in result.findings)
         assert "jq" in {d.name for d in result.dependencies}
+
+
+class TestTerraformParsedOnce:
+    """A file's configuration is parsed once a scan (`TerraformConfiguration.blocks`): asked again
+    it answers as a fresh parse would, a parse that fails included."""
+
+    MAIN = 'terraform {\n  required_providers {\n    aws = { source = "hashicorp/aws", version = "~> 5.0" }\n  }\n}\nresource "google_storage_bucket" "b" {\n  name = "x"\n}\n'
+
+    @staticmethod
+    def content(path: str, text: str) -> FileContent:
+        raw = text.encode()
+        return FileContent(path=path, raw=raw, size=len(raw))
+
+    def test_an_unreadable_tf_json_fails_alike_each_time_and_spares_its_siblings(self) -> None:
+        from cordon_scanner.ecosystems.infra.terraform import TerraformConfiguration
+        from cordon_scanner.foundation.collector import ScanCaches
+
+        ecosystem = EcosystemRegistry.get("terraform")
+        broken = self.content("mod/broken.tf.json", "{not json")
+        main = self.content("mod/main.tf", self.MAIN)
+        files = {c.path: c for c in (broken, main)}
+        ScanCaches.after_scan()
+        first = [ecosystem.parse_in_tree(c, files) for c in (main, broken)]
+        again = [ecosystem.parse_in_tree(c, files) for c in (main, broken)]
+        assert again == first  # the second read of each, from the kept parses, is the first's
+        assert first[1].parse_error and not first[0].parse_error
+        assert {d.name for d in first[0].dependencies} == {"hashicorp/aws", "hashicorp/google"}
+        ScanCaches.after_scan()
+        assert not TerraformConfiguration._parsed

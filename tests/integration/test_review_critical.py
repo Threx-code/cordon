@@ -257,29 +257,34 @@ class TestC05PatternValidation:
 
 
 class TestC05PerFileTimeout:
-    """The documented backstop did not exist: `per_file_timeout` was declared,
-    documented at length, and referenced nowhere."""
+    """C-05, superseded (2026-10-31): a per-file cut on the wall clock made a directory's findings,
+    its complete flag and its exit code depend on the machine's load, while a package's members
+    were never cut. Every detector now runs on every file, in both; `total_timeout` bounds the
+    scan, and `per_file_timeout` is deprecated for a scan's files."""
 
-    def test_the_limit_is_read_by_the_engine(self) -> None:
-        """Somewhere in the engine package, not in one named module: the phases move."""
-        engine = ROOT / "src" / "cordon_scanner" / "engine"
-        assert any(
-            "limits.per_file_timeout" in path.read_text(encoding="utf-8")
-            for path in engine.rglob("*.py")
-        )
-
-    def test_an_exhausted_budget_marks_the_scan_incomplete(self, tmp_path) -> None:
-        """A partial file must not be reported as a clean one."""
-        (tmp_path / "a.js").write_text(PAYLOAD, encoding="utf-8")
+    @staticmethod
+    def findings(tmp_path, per_file_timeout: float):
         cfg = Config.default()
-        cfg = cfg.with_overrides(use_cache=False, limits=cfg.limits.merged(per_file_timeout=1e-9))
+        cfg = cfg.with_overrides(
+            use_cache=False, limits=cfg.limits.merged(per_file_timeout=per_file_timeout)
+        )
         result = Scanner(cfg).scan(tmp_path)
-        assert result.complete is False
-        assert "OPERATIONAL.FILE.TIMEOUT" in {f.rule_id for f in result.findings}
+        rows = sorted(
+            (f.rule_id, f.location.path, f.location.line, f.severity.value) for f in result.findings
+        )
+        return result, rows
 
-    def test_a_partial_file_is_not_cached(self, tmp_path) -> None:
-        """Caching the output of a run that hit a limit would make the
-        degradation permanent and invisible."""
+    def test_no_file_is_cut_however_small_the_setting(self, tmp_path) -> None:
+        (tmp_path / "a.js").write_text(PAYLOAD, encoding="utf-8")
+        result, tiny = self.findings(tmp_path, 1e-9)
+        assert result.complete is True
+        assert "OPERATIONAL.FILE.TIMEOUT" not in {row[0] for row in tiny}
+        _, default = self.findings(tmp_path, Config.default().limits.per_file_timeout)
+        assert tiny == default
+
+    def test_a_complete_file_is_cached_whatever_the_setting(self, tmp_path) -> None:
+        """With no cut, a result is complete, so it is cached: the cache's rule (only a complete
+        result) is unchanged, and no setting turns a file's result partial any more."""
         (tmp_path / "a.js").write_text(PAYLOAD, encoding="utf-8")
         cfg = Config.default()
         cache_dir = tmp_path / "cd"
@@ -288,8 +293,8 @@ class TestC05PerFileTimeout:
             cache_dir=str(cache_dir),
             limits=cfg.limits.merged(per_file_timeout=1e-9),
         )
-        Scanner(cfg).scan(tmp_path)
-        assert not list(cache_dir.rglob("*.json"))
+        assert Scanner(cfg).scan(tmp_path).complete is True
+        assert list(cache_dir.rglob("*.json"))
 
 
 class TestC06CacheAuthentication:

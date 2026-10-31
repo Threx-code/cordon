@@ -8,7 +8,6 @@ A file whose checks did not all run is reported, never cached, and leaves the sc
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -25,12 +24,10 @@ from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.archives import ArchiveMembers
 from cordon_scanner.engine.pipeline.constants import (
     ADVISORY_DETECTORS,
-    ALWAYS_RUN,
     REPOSITORY_SCOPE,
 )
 from cordon_scanner.engine.window_pass import WindowPass
 from cordon_scanner.foundation.models import Category, Finding, Severity
-from cordon_scanner.foundation.once import OneOff
 from cordon_scanner.foundation.results import Dependency, OperationalFinding
 
 if TYPE_CHECKING:
@@ -73,39 +70,20 @@ class Detection:
             return list(cached)
 
         produced: list[Finding] = []
-        budget = self.config.limits.per_file_timeout
-        # `perf_counter`, not `monotonic`. Windows' monotonic clock ticks about
-        # every 15 milliseconds, so a per-file budget smaller than one tick
-        # measured zero elapsed time and never tripped -- the same coarse-clock
-        # failure that made `--timeout 0` a no-op there. perf_counter is the
-        # high-resolution timer and is what a sub-second budget needs.
-        started = time.perf_counter()
-        # A catalogue loaded for the first time while this file was inspected is the process's
-        # cost, not the file's (`foundation/once.py`): left out, a loaded machine no longer turns a
-        # two-line agent configuration into an incomplete scan.
-        loads = OneOff.spent()
-
-        def elapsed() -> float:
-            return time.perf_counter() - started - (OneOff.spent() - loads)
-
-        skipped: list[str] = []
-        skipped_judge = False
-
+        # Every detector runs on every file, as it does on every member of a package
+        # (`ArchiveStages.serial`): a per-file cut on the wall clock made a directory's result
+        # depend on the machine's load (one 1 MB main.tf came out with and without its
+        # OPERATIONAL.FILE.TIMEOUT note), and a package and its unpacked directory decide alike
+        # now. The scan's own `total_timeout` still bounds the whole.
         root = ctx.repository.root if ctx.repository is not None else None
         with ScanCache.watch(root, unit.path) as watch:
-            skipped_judge = self.each_detector(
-                detectors, budget, elapsed, skipped, produced, unit, ctx, acc, skipped_judge
-            )
+            skipped_judge = self.each_detector(detectors, produced, unit, ctx, acc)
 
             # The rest of an oversized file, a window at a time (`core/windows.py`). The workers
             # make the same call (`ParallelScanner._inspect_batch`), so a parallel scan reads as far.
             windowed, intact = WindowPass.run(
                 unit,
-                [
-                    d
-                    for d in detectors
-                    if d.id not in skipped and not (d.id == JudgeGate.ID and skipped_judge)
-                ],
+                [d for d in detectors if not (d.id == JudgeGate.ID and skipped_judge)],
                 lambda detector, part: self.run(detector, part, ctx, acc),
                 produced,
             )
@@ -113,11 +91,6 @@ class Detection:
         if not intact:
             acc.complete = False
             produced.append(ArchiveMembers.changed_while_read(unit.path))
-
-        if skipped:
-            Detection.over_budget(acc, produced, unit, budget, skipped)
-            # Not cached below, because acc.complete is now False.
-            return produced
 
         # Every finding carries the hash of the file it came from, recorded once here
         # rather than in each of eleven detectors. `_collapse_repeats` is the only
@@ -139,68 +112,20 @@ class Detection:
     def each_detector(
         self,
         detectors: list[Detector],
-        budget: float,
-        elapsed: Callable[[], float],
-        skipped: list[str],
         produced: list[Finding],
         unit: FileUnit,
         ctx: ScanContext,
         acc: Accumulator,
-        skipped_judge: bool,
     ) -> bool:
-        """Every detector over the unit, each under the file's time budget, the judge last."""
+        """Every detector over the unit, the judge last; whether the judge was left out (it reads
+        the grey band only, after every other detector: review 98, AG-5)."""
+        skipped_judge = False
         for detector in JudgeGate.last(detectors):
-            # Checked between detectors rather than inside one. Python's `re`
-            # cannot be interrupted mid-match -- a single call holds the
-            # interpreter until it returns -- so nothing in this process can
-            # bound one pathological regex. What this does bound is
-            # accumulation: fifty detectors and several hundred rules over a
-            # very large file. The single-regex case is prevented at load time
-            # instead, by PatternCompiler rejecting the shapes that backtrack.
-            #
-            # Stating the division plainly because the previous docstring did
-            # not: it named this timeout as the backstop for catastrophic
-            # regexes, the timeout was never implemented, and had it been it
-            # could not have stopped the case it was named for.
-            #
-            # The budget never cuts the detectors that find malware and secrets. It did, and that
-            # was a way to hide a payload: pad a file with near-miss credentials so an earlier
-            # detector spends the budget, and `capability` never ran on it -- an INFO note and a
-            # passing scan. Those detectors' patterns are validated linear at load and the file is
-            # capped in size, so their cost is bounded without the budget; the total timeout still
-            # ends the scan. What the budget cuts now is everything else, and it says which.
-            if budget > 0 and elapsed() >= budget and detector.id not in ALWAYS_RUN:
-                skipped.append(detector.id)
-                continue
-
-            # The judge reads the grey band only, after every other detector (review 98, AG-5).
             if detector.id == JudgeGate.ID and not JudgeGate.wants(produced):
                 skipped_judge = True
                 continue
             produced.extend(self.run(detector, unit, ctx, acc))
         return skipped_judge
-
-    @staticmethod
-    def over_budget(
-        acc: Accumulator, produced: list[Finding], unit: FileUnit, budget: float, skipped: list[str]
-    ) -> None:
-        """Detectors skipped on this file because its time budget ran out: the scan is incomplete, and says so."""
-        acc.complete = False
-        produced.append(
-            OperationalFinding.build(
-                path=unit.path,
-                rule_id="OPERATIONAL.FILE.TIMEOUT",
-                message=(
-                    f"This file exceeded its {budget:.0f}s budget, so these detectors did not "
-                    f"run on it: {', '.join(skipped)}. The malware, obfuscation, secret and "
-                    f"binary detectors ran in full."
-                ),
-                remediation=(
-                    "Raise limits.per_file_timeout, or exclude the file if it "
-                    "is generated output rather than source."
-                ),
-            )
-        )
 
     def parallel(
         self,
