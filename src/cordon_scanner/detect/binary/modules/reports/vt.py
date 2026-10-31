@@ -12,7 +12,7 @@ enum field an integer, a Timestamp its seconds and nanos. Every enum the root me
 declares, and every top-level enum of the root's file, is a structure of constants hung from the
 module's root: its path is the names of the messages it is declared in (the root left out), then
 its own name (left out when the enum is inline); a constant's value is its (yara.enum_value) where
-given, else its number. Text fields marked lowercase are lowercased.
+given, else its number. A text field's value is compared as supplied, lowercase or not.
 
 The vt.net functions (domain permutations, `in_range`) are declared with the rest and answered by
 the network functions module; until it lands they answer undefined.
@@ -76,7 +76,14 @@ class VtSchema:
         if depth > 32:
             raise ValueError(f"vt: a type nested past 32 levels: {target}")
         fields: dict[str, Any] = {}
-        for rule, _proto, kind, value, *_ in VtSchema.MESSAGES[target]["fields"]:
+        for rule, _proto, kind, value, _key, _lower, _files_only, refused, *_ in VtSchema.MESSAGES[
+            target
+        ]["fields"]:
+            if refused:
+                # its access list does not accept files (vt.net, the IP-only whois fields,
+                # gti_assessment's gti/staff): a ruleset matching files is refused it, as YARA-X
+                # refuses it
+                continue
             inner = VtSchema.decl(value, depth + 1)
             fields[rule] = (
                 Seq(inner) if kind == "repeated" else Keyed(inner) if kind == "map" else inner
@@ -131,6 +138,42 @@ class VtSchema:
 class VtData:
     """LiveHuntData in protobuf's JSON form, read into the declaration's plain data."""
 
+    _ZERO: ClassVar[dict[str, Any]] = {"int": 0, "float": 0.0, "bool": False, "text": b""}
+
+    @staticmethod
+    def defaults(target: str, depth: int = 0) -> dict[str, Any]:
+        """What a structure reads with nothing supplied, as YARA-X reads protobuf 3: every
+        non-repeated field its type's zero value (0, 0.0, false, empty text, an enum's 0), through
+        every non-repeated structure; arrays and dictionaries empty."""
+        out: dict[str, Any] = {}
+        if depth > 32:
+            return out
+        for rule, _proto, kind, value, *_ in VtSchema.MESSAGES[target]["fields"]:
+            if kind != "single":
+                continue
+            if value in _KIND:
+                out[rule] = VtData._ZERO[_KIND[value]]
+            elif value in VtSchema.ENUMS:
+                numbers = VtSchema.ENUMS[value]["numbers"]
+                zero = next((n for n, v in numbers.items() if v == 0), None)
+                out[rule] = VtSchema.ENUMS[value]["values"].get(zero, 0) if zero else 0
+            elif value in VtSchema.MESSAGES:
+                out[rule] = VtData.defaults(value, depth + 1)
+        return VtData._methods(target, out)
+
+    @staticmethod
+    def merge(into: dict[Any, Any], given: dict[Any, Any]) -> None:
+        """`given` over `into`, structure by structure (supplied values over the defaults)."""
+        for key, value in given.items():
+            if (
+                isinstance(value, dict)
+                and isinstance(into.get(key), dict)
+                and not isinstance(key, int)
+            ):
+                VtData.merge(into[key], value)
+            else:
+                into[key] = value
+
     @staticmethod
     def camel(name: str) -> str:
         head, *rest = name.split("_")
@@ -154,8 +197,9 @@ class VtData:
         if kind == "text":
             if not isinstance(value, str):
                 return None
-            raw = base64.b64decode(value) if target == "bytes" else value.encode("utf-8")
-            return raw.lower() if lowercase else raw
+            # (yara.field_options) lowercase does not change the value: YARA-X 1.21.0 compares
+            # the text as supplied (measured, R10 vt values)
+            return base64.b64decode(value) if target == "bytes" else value.encode("utf-8")
         if target in VtSchema.ENUMS:
             values = VtSchema.ENUMS[target]["values"]
             if isinstance(value, str):
@@ -241,15 +285,13 @@ class Vt:
         left out and a rule naming it does not compile."""
         root = VtSchema.decl(VtSchema.ROOT)
         assert isinstance(root, Record)  # noqa: S101 - the root is a message
-        refused = {row[0] for row in VtSchema.MESSAGES[VtSchema.ROOT]["fields"] if row[7]}
-        kept = {name: decl for name, decl in root.fields.items() if name not in refused}
-        return Record({**kept, **VtSchema._shape(Vt.CONSTANTS).fields})
+        return Record({**root.fields, **VtSchema._shape(Vt.CONSTANTS).fields})
 
     @staticmethod
     def module(raw: bytes | None = None) -> Module:
         """The module for a scan given LiveHuntData JSON `raw` (None: no metadata); ValueError
         when it is not a JSON object."""
-        values: dict[str, Any] = dict(Vt.CONSTANTS)
+        values: dict[str, Any] = {**VtData.defaults(VtSchema.ROOT), **Vt.CONSTANTS}
         if raw is not None:
             try:
                 obj = json.loads(raw)
@@ -257,7 +299,7 @@ class Vt:
                 raise ValueError(f"the vt metadata is not JSON: {exc.msg}") from exc
             if not isinstance(obj, dict):
                 raise ValueError("the vt metadata is not a JSON object")
-            values.update(VtData.message(VtSchema.ROOT, obj) or {})
+            VtData.merge(values, VtData.message(VtSchema.ROOT, obj) or {})
         schema = Vt.schema()
         return Module(schema, lambda file: values)
 

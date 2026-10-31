@@ -48,7 +48,7 @@ class TestTheMetadata:
     def test_livehunt_json_is_read_under_yara_names(self) -> None:
         data = VtData.message(VtSchema.ROOT, META)
         meta = data["metadata"]
-        assert meta["sha256"] == b"abcdef00"  # (yara.field_options) lowercase
+        assert meta["sha256"] == b"ABCDEF00"  # as supplied: YARA-X does not lowercase it
         assert meta["file_size"] == 1024  # int64 as JSON text
         assert meta["tags"] == {0: b"peexe", 1: b"signed"}
         assert meta["first_submission_date"] == 1767323045
@@ -63,8 +63,13 @@ class TestTheMetadata:
         )
         assert rules.match(b"x", given={"vt": module})
 
-    def test_without_metadata_every_field_is_undefined(self) -> None:
-        rules = Rules.compile('import "vt" rule r { condition: not defined vt.metadata.sha256 }')
+    def test_without_metadata_fields_read_their_zero_values(self) -> None:
+        """As YARA-X reads protobuf 3: a scalar has no presence, so unset is its zero value, at
+        any depth; an array is empty (measured against YARA-X 1.21.0 on 948 probes)."""
+        rules = Rules.compile(
+            'import "vt" rule r { condition: defined vt.metadata.sha256 and vt.metadata.sha256 == "" '
+            "and vt.metadata.analysis_stats.malicious == 0 and not defined vt.metadata.tags[0] }"
+        )
         assert rules.match(b"x")
 
     def test_a_value_of_the_wrong_kind_is_no_value(self) -> None:
@@ -93,6 +98,14 @@ class TestTheNetFunctions:
 
 
 class TestWhatAFileRulesetMayRead:
-    def test_vt_net_is_refused_as_yara_x_refuses_it_for_files(self) -> None:
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "vt.net.domain.raw",  # for URL, domain and IP rulesets
+            "vt.metadata.gti_assessment.verdict.value",  # for gti and staff rulesets
+            "vt.metadata.itw.ip.first_whois",  # for IP rulesets, below a field files may read
+        ],
+    )
+    def test_a_field_its_access_list_keeps_from_files_is_refused(self, path: str) -> None:
         with pytest.raises(RuleError):
-            Rules.compile('import "vt" rule r { condition: defined vt.net.domain.raw }')
+            Rules.compile(f'import "vt" rule r {{ condition: defined {path} }}')
