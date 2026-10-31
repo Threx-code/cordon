@@ -254,9 +254,11 @@ class TextFind:
     """A text string's whole find in one native call (`_anchors.text_hits`): its anchors'
     occurrences in, its matches (start, length) out, as `scan._Hunt` finds them -- the events in
     the hunt's order, the text checked at each, `fullword`, the first match at a start kept (or,
-    `greedy`, the last), and the stop at `MAX_HITS`. Only for a string of one text part with no
-    case-folded anchors, base64 or anchorless part; every other string, and every string where the
-    extension is not in use, is found by the hunt itself, which is this one's twin."""
+    `greedy`, the last), and the stop at `MAX_HITS`. A case-folded anchor's occurrences are grouped
+    by how the data spells them there, each spelling with its owners (no two groups can tie on the
+    hunt's key: a tie needs one owner, so one anchor). Only for a string of one text part with no
+    base64 or anchorless part; every other string, and every string where the extension is not in
+    use, is found by the hunt itself, which is this one's twin."""
 
     FITS, FULLWORD, GREEDY = 1, 2, 4
 
@@ -265,7 +267,7 @@ class TextFind:
         if not Automaton.NATIVE or len(search.parts) != 1 or search.parts[0].text is None:
             return False
         f = search.flags
-        return not (search.folds or search.zeros or "base64" in f or "base64wide" in f)
+        return not (search.zeros or "base64" in f or "base64wide" in f)
 
     @staticmethod
     def hits(

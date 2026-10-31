@@ -309,6 +309,23 @@ class Search:
             owners += [
                 (starts, length, length + a[1], order, len(a[0]) + a[1]) for order, _, a in holders
             ]
+        for folded, length, spellings in self.folds:
+            # a folded anchor's owners are those of how the data spells it at each occurrence
+            starts = seen.get(("folded", folded))
+            if starts is None:
+                lowered = seen.get(("lowered",))
+                if lowered is None:
+                    lowered = seen[("lowered",)] = data.lower()
+                budget = Search.budget(seen)
+                starts = seen[("folded", folded)] = Search.occurrences(lowered, folded, budget)
+            spelled: dict[bytes, list[int]] = {}
+            for at in starts:
+                spelled.setdefault(data[at : at + length], []).append(at)
+            for spelling, found in spelled.items():
+                owners += [
+                    (found, length, length + a[1], order, len(a[0]) + a[1])
+                    for order, _, a in spellings[spelling]
+                ]
         return TextFind.hits(self, data, owners, fixed, MAX_HITS, deadline)
 
     #: An anchor occurring more often than this has its forward gate run over the whole data at

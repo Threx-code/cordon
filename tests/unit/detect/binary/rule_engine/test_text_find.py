@@ -31,6 +31,10 @@ MODS = st.sampled_from(
         " wide fullword",
         " xor fullword",
         " private",
+        " nocase",
+        " nocase wide",
+        " nocase fullword",
+        " nocase ascii wide",
     ]
 )
 DATA = st.lists(
