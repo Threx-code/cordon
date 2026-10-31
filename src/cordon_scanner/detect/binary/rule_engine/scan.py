@@ -788,7 +788,7 @@ class _Hunt:
             return  # a run from the anchor dies on the bytes around it, or no match fits there
         for wide in self._widths():
             if f.get("plain"):
-                length = Lanes(part.forward).run(fwd, self.data, offset)
+                length = Lanes(part.forward).run(fwd, self.data, offset, deadline=self.deadline)
             elif not wide and not part.can_start(fwd, self.data, offset, self.nocase, self.dotall):
                 length = -1  # every thread dies within the gate's reach having matched nothing
             else:
@@ -807,7 +807,9 @@ class _Hunt:
                     self._found(p, start, before + length, wide)
 
                 if f.get("plain"):
-                    Lanes(part.backward).run(back, self.data, offset, backwards=True, every=found)
+                    Lanes(part.backward).run(
+                        back, self.data, offset, backwards=True, every=found, deadline=self.deadline
+                    )
                 else:
                     part.runners()[1].run(
                         back, self.data, offset, backwards=True, wide=wide, nocase=self.nocase,

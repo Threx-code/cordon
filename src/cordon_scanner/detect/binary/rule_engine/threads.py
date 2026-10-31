@@ -5,6 +5,7 @@ found in one pass without backtracking, and the lanes that run several at once.
 from __future__ import annotations
 
 import re
+import time
 from collections.abc import Callable
 from typing import Any, ClassVar
 
@@ -517,9 +518,15 @@ class Lanes:
     def __init__(self, ops: list[tuple[int, ...]]) -> None:
         self.ops = ops
 
+    #: Lane steps between two readings of the time allowed, as `_anchors.hex_hits` reads it: one
+    #: run can hold thousands of lanes, so the time is read inside it, not only between runs.
+    STEPS: ClassVar[int] = 4096
+
     def run(self, entry: int, data: bytes, at: int, *, backwards: bool = False,
-            every: Callable[[int, int], None] | None = None) -> int:  # fmt: skip
+            every: Callable[[int, int], None] | None = None,
+            deadline: float | None = None) -> int:  # fmt: skip
         ops = self.ops
+        steps = 0
         step = -1 if backwards else 1
         reach = min(at if backwards else len(data) - at, REACH)
         pc = entry
@@ -530,6 +537,13 @@ class Lanes:
             code = op[0]
             k = 0
             while k < len(lanes):
+                steps += 1
+                if (
+                    steps % Lanes.STEPS == 0
+                    and deadline is not None
+                    and time.monotonic() > deadline
+                ):
+                    raise TimeoutError("matching took longer than the time allowed")
                 lane = lanes[k]
                 if lane[1] != rnd:
                     k += 1
@@ -549,6 +563,12 @@ class Lanes:
                         for j in range(lo + 1, hi + 1):
                             if done + j >= reach:
                                 break
+                            steps += 1  # each insert moves the lanes after it: read here too
+                            if (
+                                steps % Lanes.STEPS == 0 and deadline is not None
+                                and time.monotonic() > deadline
+                            ):  # fmt: skip
+                                raise TimeoutError("matching took longer than the time allowed")
                             spot = lane[0] + j * step
                             while place + 1 < len(lanes) and lanes[place + 1][0] <= spot:
                                 place += 1

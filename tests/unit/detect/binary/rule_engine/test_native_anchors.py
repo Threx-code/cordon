@@ -265,3 +265,84 @@ class TestTextHitsArguments:
     def test_no_time_left_is_a_timeout(self) -> None:
         with pytest.raises(TimeoutError):
             self.call([([0, 3], 3, 3, 0, 3)], left=0.0)
+
+
+@NATIVE
+class TestHexHitsArguments:
+    """hex_hits (and text_hits) take only exact ints in an owner, so no Python code runs between
+    counting the occurrences and writing them; the start table is sized by what is found; and
+    the time allowed is read inside one event's lanes (review findings 1-3)."""
+
+    BYTE, SKIP, DONE = 1, 13, 18
+
+    @staticmethod
+    def layout(*ops: tuple[int, int, int]) -> bytes:
+        return b"".join(int(v).to_bytes(8, "little", signed=True) for op in ops for v in op)
+
+    def plain(self) -> tuple[bytes, bytes]:
+        return self.layout((self.BYTE, 0x61, 0), (self.DONE, 0, 0)), self.layout((self.DONE, 0, 0))
+
+    def test_an_index_that_grows_the_starts_is_refused(self) -> None:
+        starts: list[int] = [0]
+
+        class Grows:
+            def __index__(self) -> int:
+                starts.extend(range(1, 100_000))  # past what was counted, were it run
+                return 1
+
+        forward, backward = self.plain()
+        with pytest.raises(TypeError, match="not an int"):
+            Automaton.MODULE.hex_hits(
+                b"a" * 10, [(starts, Grows(), 1, 0, 0, 0)], forward, backward, 4096, 0, 10, -1
+            )
+        with pytest.raises(TypeError, match="not an int"):
+            Automaton.MODULE.text_hits(b"a" * 10, [(starts, 1, Grows(), 0, 1)], b"a", 1, 0, 10, -1)
+
+    def test_one_occurrence_costs_no_table_of_max_hits(self) -> None:
+        import tracemalloc
+
+        forward, backward = self.plain()
+        tracemalloc.start()
+        try:
+            got = Automaton.MODULE.hex_hits(
+                b"xa", [([1], 1, 1, 0, 0, 0)], forward, backward, 4096, 0, 1_000_000, -1
+            )
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        assert bytes(got[0]) == (1).to_bytes(8, "little")
+        assert peak < 1 << 20  # a table sized by max_hits was about 48 MB
+
+    def test_one_event_of_many_lanes_runs_out_of_time(self) -> None:
+        import time
+
+        from cordon_scanner.detect.binary.rule_engine.pattern import Op
+        from cordon_scanner.detect.binary.rule_engine.threads import Lanes
+
+        data = b"a" + b"b" * 70_000
+        # every position after the skip reads "b", so each becomes a lane, each insert a move
+        forward = self.layout(
+            (self.BYTE, 0x61, 0), (self.SKIP, 0, 65_000), (self.BYTE, 0x62, 0), (self.BYTE, 0x63, 0),
+            (self.DONE, 0, 0),
+        )  # fmt: skip
+        began = time.monotonic()
+        with pytest.raises(TimeoutError):
+            Automaton.MODULE.hex_hits(
+                data,
+                [([0], 1, 1, 0, 0, -1)],
+                forward,
+                self.layout((self.DONE, 0, 0)),
+                1 << 17,
+                0,
+                10,
+                -1,
+                0.05,
+            )
+        assert time.monotonic() - began < 5
+        ops = [(Op.BYTE, 0x61), (Op.SKIP, 0, 65_000), (Op.BYTE, 0x62), (Op.BYTE, 0x63), (Op.DONE,)]
+        began = time.monotonic()
+        with pytest.raises(TimeoutError):
+            # REACH bounds the Python twin's lanes to 4,096; a time already past is read at the
+            # 4,096th step, inside this one run (Lanes has no reading between runs of its own)
+            Lanes(ops).run(0, data, 0, deadline=time.monotonic() - 1)
+        assert time.monotonic() - began < 5

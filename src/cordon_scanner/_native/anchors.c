@@ -562,6 +562,8 @@ static PyObject *text_hits(PyObject *self, PyObject *args) {
     Py_ssize_t count = 0;
     for (Py_ssize_t k = 0; k < no; k++) {
         PyObject *o = PyTuple_GET_ITEM(seq, k), *starts = PyTuple_GET_ITEM(o, 0);
+        for (Py_ssize_t q = 1; q < 5; q++)
+            if (!PyLong_CheckExact(PyTuple_GET_ITEM(o, q))) { PyErr_SetString(PyExc_TypeError, "an owner's field is not an int"); goto done; }
         long long length = PyLong_AsLongLong(PyTuple_GET_ITEM(o, 1)), back = PyLong_AsLongLong(PyTuple_GET_ITEM(o, 2));
         long long order = PyLong_AsLongLong(PyTuple_GET_ITEM(o, 3)), f = PyLong_AsLongLong(PyTuple_GET_ITEM(o, 4));
         if (PyErr_Occurred()) goto done;
@@ -570,6 +572,9 @@ static PyObject *text_hits(PyObject *self, PyObject *args) {
         }
         fit[k] = f;
         Py_ssize_t m = PyList_GET_SIZE(starts);
+        /* no Python code runs between the passes (every field an exact int), so no list grew;
+         * checked all the same, as no write past `ev` may rest on that */
+        if (m > total - count) { PyErr_SetString(PyExc_RuntimeError, "an owner's starts changed while read"); goto done; }
         for (Py_ssize_t i = 0; i < m; i++) {
             PyObject *x = PyList_GET_ITEM(starts, i);
             if (!PyLong_CheckExact(x)) { PyErr_SetString(PyExc_TypeError, "a start is not an int"); goto done; }
@@ -647,9 +652,37 @@ typedef struct { int64_t pos, rnd; } Lane;
 
 typedef struct {
     Lane *lanes; Py_ssize_t cap;
-    int64_t *keys, *slot, *hs, *hl; Py_ssize_t kcap, held, max_hits;
-    int full, fullword, nomem;
+    int64_t *keys, *hs, *hl; Py_ssize_t kcap, hcap, held, max_hits;
+    int full, fullword, nomem, late;
+    double began, left; int64_t steps; /* the time allowed, read every 4,096 lane steps too */
 } HexRun;
+
+/* the recorded starts: an open-addressed table kept under half full, grown with them, and the
+ * starts and lengths in the order found; sized by what is found, never by max_hits */
+static int hex_grow(HexRun *h) {
+    if (h->held + 1 > h->hcap) {
+        Py_ssize_t c = h->hcap ? 2 * h->hcap : 64;
+        int64_t *a = PyMem_RawRealloc(h->hs, sizeof(int64_t) * (size_t)c);
+        if (!a) return 0;
+        h->hs = a;
+        int64_t *b = PyMem_RawRealloc(h->hl, sizeof(int64_t) * (size_t)c);
+        if (!b) return 0;
+        h->hl = b; h->hcap = c;
+    }
+    if (2 * (h->held + 1) <= h->kcap) return 1;
+    Py_ssize_t kc = h->kcap ? 2 * h->kcap : 128;
+    int64_t *k = PyMem_RawMalloc(sizeof(int64_t) * (size_t)kc);
+    if (!k) return 0;
+    for (Py_ssize_t i = 0; i < kc; i++) k[i] = -1;
+    for (Py_ssize_t i = 0; i < h->held; i++) {
+        uint64_t x = (uint64_t)h->hs[i] * 0x9E3779B97F4A7C15ULL;
+        Py_ssize_t j = (Py_ssize_t)(x & (uint64_t)(kc - 1));
+        while (k[j] != -1) j = (j + 1) & (kc - 1);
+        k[j] = h->hs[i];
+    }
+    PyMem_RawFree(h->keys); h->keys = k; h->kcap = kc;
+    return 1;
+}
 
 static int lanes_room(HexRun *h, Py_ssize_t need) {
     if (need <= h->cap) return 1;
@@ -663,12 +696,18 @@ static int lanes_room(HexRun *h, Py_ssize_t need) {
 
 static void hex_record(HexRun *h, const uint8_t *d, int64_t n, int64_t start, int64_t length) {
     if (h->fullword && !whole(d, n, start, length, 0)) return;
+    if (h->kcap) {
+        uint64_t x = (uint64_t)start * 0x9E3779B97F4A7C15ULL;
+        Py_ssize_t j = (Py_ssize_t)(x & (uint64_t)(h->kcap - 1));
+        while (h->keys[j] != -1 && h->keys[j] != start) j = (j + 1) & (h->kcap - 1);
+        if (h->keys[j] == start) return;
+    }
+    if (h->held >= h->max_hits) { h->full = 1; return; }
+    if (!hex_grow(h)) { h->nomem = 1; return; }
     uint64_t x = (uint64_t)start * 0x9E3779B97F4A7C15ULL;
     Py_ssize_t j = (Py_ssize_t)(x & (uint64_t)(h->kcap - 1));
-    while (h->keys[j] != -1 && h->keys[j] != start) j = (j + 1) & (h->kcap - 1);
-    if (h->keys[j] == start) return;
-    if (h->held >= h->max_hits) { h->full = 1; return; }
-    h->keys[j] = start; h->slot[j] = h->held; h->hs[h->held] = start; h->hl[h->held] = length; h->held++;
+    while (h->keys[j] != -1) j = (j + 1) & (h->kcap - 1);
+    h->keys[j] = start; h->hs[h->held] = start; h->hl[h->held] = length; h->held++;
 }
 
 /* threads.Lanes.run written in C, step for step: the lanes sorted as the Python list keeps them,
@@ -680,6 +719,7 @@ static int64_t lanes_run(HexRun *h, const int64_t *ops, Py_ssize_t nops, int64_t
     int64_t reach = backwards ? at : n - at;
     if (reach > reach_most) reach = reach_most;
     int64_t pc = entry, rnd = 0;
+    h->steps = 0; /* counted per run, as threads.Lanes counts them */
     if (!lanes_room(h, 1)) return -1;
     Lane *L = h->lanes; Py_ssize_t count = 1;
     L[0].pos = backwards ? at - 1 : at; L[0].rnd = 0;
@@ -689,6 +729,9 @@ static int64_t lanes_run(HexRun *h, const int64_t *ops, Py_ssize_t nops, int64_t
         int64_t code = op[0];
         Py_ssize_t k = 0;
         while (k < count) {
+            if (++h->steps % 4096 == 0 && h->left >= 0.0 && now_seconds() - h->began >= h->left) { /* Lanes.STEPS */
+                h->late = 1; return -1;
+            }
             if (L[k].rnd != rnd) { k++; continue; }
             int64_t done = backwards ? at - L[k].pos - 1 : L[k].pos - at;
             int ok = 0;
@@ -705,6 +748,10 @@ static int64_t lanes_run(HexRun *h, const int64_t *ops, Py_ssize_t nops, int64_t
                     const int64_t *nx = ops + 3 * (pc + 1);
                     for (int64_t j = lo + 1; j <= hi; j++) {
                         if (done + j >= reach) break;
+                        /* each insert moves the lanes after it: the time is read here as well */
+                        if (++h->steps % 4096 == 0 && h->left >= 0.0 && now_seconds() - h->began >= h->left) {
+                            h->late = 1; return -1;
+                        }
                         int64_t spot = L[k].pos + j * step;
                         while (place + 1 < count && L[place + 1].pos <= spot) place++;
                         if (L[place].rnd == rnd + 1 && L[place].pos == spot) continue;
@@ -786,6 +833,8 @@ static PyObject *hex_hits(PyObject *self, PyObject *args) {
     Py_ssize_t count = 0;
     for (Py_ssize_t k = 0; k < no; k++) {
         PyObject *o = PyTuple_GET_ITEM(seq, k), *starts = PyTuple_GET_ITEM(o, 0);
+        for (Py_ssize_t q = 1; q < 6; q++)
+            if (!PyLong_CheckExact(PyTuple_GET_ITEM(o, q))) { PyErr_SetString(PyExc_TypeError, "an owner's field is not an int"); goto done; }
         long long length = PyLong_AsLongLong(PyTuple_GET_ITEM(o, 1)), back = PyLong_AsLongLong(PyTuple_GET_ITEM(o, 2));
         long long order = PyLong_AsLongLong(PyTuple_GET_ITEM(o, 3));
         long long fe = PyLong_AsLongLong(PyTuple_GET_ITEM(o, 4)), be = PyLong_AsLongLong(PyTuple_GET_ITEM(o, 5));
@@ -795,6 +844,9 @@ static PyObject *hex_hits(PyObject *self, PyObject *args) {
         }
         ent[2 * k] = fe; ent[2 * k + 1] = be;
         Py_ssize_t m = PyList_GET_SIZE(starts);
+        /* no Python code runs between the passes (every field an exact int), so no list grew;
+         * checked all the same, as no write past `ev` may rest on that */
+        if (m > total - count) { PyErr_SetString(PyExc_RuntimeError, "an owner's starts changed while read"); goto done; }
         for (Py_ssize_t i = 0; i < m; i++) {
             PyObject *x = PyList_GET_ITEM(starts, i);
             if (!PyLong_CheckExact(x)) { PyErr_SetString(PyExc_TypeError, "a start is not an int"); goto done; }
@@ -808,38 +860,26 @@ static PyObject *hex_hits(PyObject *self, PyObject *args) {
             }
         }
     }
-    Py_ssize_t bound = count < max_hits + 1 ? count : max_hits + 1;
-    h.kcap = 1;
-    while (h.kcap < 2 * (bound ? bound : 1)) h.kcap <<= 1;
-    /* a backward run records several starts: the table holds max_hits + 1 at most */
-    while (h.kcap < 2 * (max_hits + 1) && h.kcap < ((Py_ssize_t)1 << 31)) h.kcap <<= 1;
-    h.keys = PyMem_RawMalloc(sizeof(int64_t) * (size_t)h.kcap);
-    h.slot = PyMem_RawMalloc(sizeof(int64_t) * (size_t)h.kcap);
-    h.hs = PyMem_RawMalloc(sizeof(int64_t) * (size_t)(max_hits + 1));
-    h.hl = PyMem_RawMalloc(sizeof(int64_t) * (size_t)(max_hits + 1));
-    if (!h.keys || !h.slot || !h.hs || !h.hl) { PyErr_NoMemory(); goto done; }
-    for (Py_ssize_t i = 0; i < h.kcap; i++) h.keys[i] = -1;
     const uint8_t *d = data.buf; int64_t n = data.len;
     const int64_t *fops = fb.buf, *bops = bb.buf;
-    int late = 0;
-    double began = now_seconds();
+    h.began = now_seconds(); h.left = left;
     Py_BEGIN_ALLOW_THREADS
     qsort(ev, (size_t)count, sizeof(Event), cmp_event);
     for (Py_ssize_t i = 0; i < count; i++) {
-        if (i % 4096 == 0 && left >= 0.0 && now_seconds() - began >= left) { late = 1; break; }
-        if (h.full || h.nomem) break;
+        if (i % 4096 == 0 && left >= 0.0 && now_seconds() - h.began >= left) { h.late = 1; break; }
+        if (h.full || h.nomem || h.late) break;
         int64_t at = ev[i].at;
         if (at >= n) continue;
         if (fixed >= 0 && at != fixed) continue;
         int64_t fe = ent[2 * ev[i].owner], be = ent[2 * ev[i].owner + 1];
         if (fe < 0) continue;
         int64_t length = lanes_run(&h, fops, nf, fe, d, n, at, 0, reach, 0);
-        if (h.nomem) break;
+        if (h.nomem || h.late) break;
         if (length != -1 && be >= 0) lanes_run(&h, bops, nb, be, d, n, at, 1, reach, length);
         else if (length >= 0) hex_record(&h, d, n, at, length);
     }
     Py_END_ALLOW_THREADS
-    if (late) { PyErr_SetString(PyExc_TimeoutError, "matching took longer than the time allowed"); goto done; }
+    if (h.late) { PyErr_SetString(PyExc_TimeoutError, "matching took longer than the time allowed"); goto done; }
     if (h.nomem == 1) { PyErr_NoMemory(); goto done; }
     if (h.nomem == 2) { PyErr_SetString(PyExc_ValueError, "a layout runs past its end"); goto done; }
     {
@@ -850,11 +890,12 @@ static PyObject *hex_hits(PyObject *self, PyObject *args) {
         qsort(pairs, (size_t)held, 2 * sizeof(int64_t), cmp_i64);
         for (Py_ssize_t i = 0; i < held; i++) { h.hs[i] = pairs[2 * i]; h.hl[i] = pairs[2 * i + 1]; }
         PyMem_RawFree(pairs);
-        result = Py_BuildValue("(y#y#)", (const char *)h.hs, held * 8, (const char *)h.hl, held * 8);
+        static const char none[1] = {0}; /* nothing found: h.hs is NULL, and y# of NULL is None */
+        result = Py_BuildValue("(y#y#)", held ? (const char *)h.hs : none, held * 8, held ? (const char *)h.hl : none, held * 8);
     }
 done:
     PyMem_RawFree(ev); PyMem_RawFree(ent); PyMem_RawFree(h.lanes);
-    PyMem_RawFree(h.keys); PyMem_RawFree(h.slot); PyMem_RawFree(h.hs); PyMem_RawFree(h.hl);
+    PyMem_RawFree(h.keys); PyMem_RawFree(h.hs); PyMem_RawFree(h.hl);
     Py_XDECREF(seq);
     PyBuffer_Release(&fb); PyBuffer_Release(&bb); PyBuffer_Release(&data);
     return result;

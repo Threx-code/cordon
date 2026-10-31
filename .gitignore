@@ -52,3 +52,5 @@ bench/results/*.log
 # purpose (`git add -f`), so a run is never committed by accident.
 bench/results/
 .fuzz/
+src/cordon_scanner/_native/*.so
+src/cordon_scanner/_native/*.pyd
