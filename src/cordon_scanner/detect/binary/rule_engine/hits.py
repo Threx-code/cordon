@@ -85,6 +85,11 @@ class Match:
         self._strings, self._data, self._hits = strings, data, hits or []
 
     @property
+    def hits(self) -> list[tuple[str, Sequence[tuple[int, int]]]]:
+        """Each string's matches as (name, its (offset, length) pairs), without the bytes."""
+        return self._hits
+
+    @property
     def strings(self) -> list[tuple[int, str, bytes]]:
         """Each instance as (offset, name, the bytes matched), by string then offset."""
         if self._strings is not None:

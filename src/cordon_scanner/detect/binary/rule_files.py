@@ -18,6 +18,7 @@ HIGH and SUSPICIOUS, because a rule asserts a pattern, not a verdict -- unless i
 from __future__ import annotations
 
 import contextlib
+import os
 from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
@@ -72,6 +73,7 @@ class RuleFileEngine:
         module_data: tuple[tuple[str, str], ...] = (),
         *,
         use_cache: bool = True,
+        workers: int = 1,
     ) -> None:
         from cordon_scanner.detect.binary.rule_engine.lang import Rules
 
@@ -124,6 +126,15 @@ class RuleFileEngine:
         #: The rules that also read a file's decoded layers (`layers = "decoded"`); every other rule
         #: reads the raw bytes only.
         self.layered = frozenset(r.name for r in self.rules.rules if RuleLayers.wanted(r.meta))
+        # A large file matched by several processes at once, each against a share of the rules
+        # (`rule_pool`): the serial answer, from the scan's main process only.
+        from cordon_scanner.detect.binary.rule_pool import RulePool
+
+        self.pool = (
+            RulePool(self.rules, rules_path, module_data, use_cache, workers)
+            if RulePool.wanted(self.rules, workers)
+            else None
+        )
         """What the compiler decided where a rule did not say (a field two engines declare with
         different types, read in the reference's shape): reported with the scan, never silent."""
 
@@ -151,7 +162,12 @@ class RuleFileEngine:
             kept = self.matches.get(self.identity, data)
             if kept is not None:
                 return kept
-        found = list(self.rules.match(data, timeout=MATCH_TIMEOUT_SECONDS, given=self.given))
+        from cordon_scanner.detect.binary.rule_pool import RulePool
+
+        if self.pool is not None and len(data) >= RulePool.LARGE:
+            found = self.pool.match(data, MATCH_TIMEOUT_SECONDS)
+        else:
+            found = list(self.rules.match(data, timeout=MATCH_TIMEOUT_SECONDS, given=self.given))
         if self.identity is not None:
             self.matches.put(self.identity, data, found)
         return found
@@ -242,6 +258,7 @@ class RuleFileDetector(BaseDetector):
                     str(ctx.config.rule_file),
                     tuple(ctx.config.rule_module_data),
                     use_cache=ctx.config.use_cache,
+                    workers=ctx.config.limits.max_workers or os.cpu_count() or 1,
                 )
             except Exception as exc:  # noqa: BLE001
                 self._failed = (
