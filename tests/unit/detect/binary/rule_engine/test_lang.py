@@ -295,6 +295,32 @@ class TestLoopsOverLazyArrays:
         assert items.reads == 1000  # the loop reads each element as it reaches it, once
 
 
+class TestAtOffsets:
+    """The offset after `at` is a whole arithmetic expression, as the reference's grammar reads
+    it (signature collections write `$name at @crc[1] + 16`); a comparison or `and` ends it."""
+
+    def test_arithmetic_after_at_is_the_offset(self) -> None:
+        rules = Rules.compile(
+            'rule r { strings: $c = "C" $n = "N" condition: $n at @c[1] + 2 * 2 }'
+        )
+        assert rules.match(b"xC123N")
+        assert not rules.match(b"xC12N")
+
+    def test_and_ends_the_offset(self) -> None:
+        rules = Rules.compile('rule r { strings: $a = "A" condition: $a at 1 + 1 and #a == 1 }')
+        assert rules.match(b"xxA")
+        assert not rules.match(b"xxAA")
+
+    def test_of_at_takes_the_whole_expression_too(self) -> None:
+        rules = Rules.compile('rule r { strings: $a = "A" condition: any of them at 1 + 1 }')
+        assert rules.match(b"xxA")
+        assert not rules.match(b"xA")
+
+    def test_a_test_after_at_is_refused(self) -> None:
+        with pytest.raises(RuleError, match="at takes a value"):
+            Rules.compile('rule r { strings: $a = "A" condition: $a at not true }')
+
+
 class TestHostileInput:
     def test_a_whitespace_flood_does_not_make_a_regex_slow(self) -> None:
         rules = Rules.compile(r"rule r { strings: $a = /\s*\(/ condition: $a }")

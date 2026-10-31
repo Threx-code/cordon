@@ -494,7 +494,7 @@ class _ConditionGrammar(_TokenStream):
             self.used.add(name)
         if mark == "$":
             if self.take("at"):
-                return Found(name, at=self._unary())
+                return Found(name, at=self._offset())
             if self.take("in"):
                 return Found(name, span=self._span())
             return Found(name)
@@ -507,6 +507,14 @@ class _ConditionGrammar(_TokenStream):
             if nth.TEST:
                 raise self.fail("a match's index is a value")
         return Place(name, nth, mark == "!")
+
+    def _offset(self) -> Node:
+        """The offset after `at`: a whole arithmetic expression, as the reference reads it
+        (`$a at @b[1] + 16` is `$a at (@b[1] + 16)`); a comparison ends it."""
+        offset = self.condition(Grammar.LEVELS["=="])
+        if offset.TEST:
+            raise self.fail("at takes a value")
+        return offset
 
     def _span(self) -> tuple[Node, Node]:
         self.need("(")
@@ -592,7 +600,7 @@ class _ConditionGrammar(_TokenStream):
         self.need("of")
         members = self._members()
         if self.take("at"):
-            return Of(quantity, members, at=self._unary())
+            return Of(quantity, members, at=self._offset())
         if self.take("in"):
             return Of(quantity, members, span=self._span())
         return Of(quantity, members)
