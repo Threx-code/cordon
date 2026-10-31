@@ -38,6 +38,7 @@ import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar, Final
 
+from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.analysis.shared.destinations import Destinations
 from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.text.comments import BLOCK_COMMENT_LANGUAGES, SourceComments
@@ -665,7 +666,7 @@ class VerifiedDownload:
     @staticmethod
     def _python_frames(code: str) -> list[tuple[int, int, str]] | None:
         try:
-            tree = ast.parse(code)
+            tree = PythonSyntax.parse(code)
         except (SyntaxError, ValueError, RecursionError):
             return None
         starts = [0]

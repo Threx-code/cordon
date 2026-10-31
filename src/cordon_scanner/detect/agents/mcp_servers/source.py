@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Final
 
+from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.detect.agents import configuration
 from cordon_scanner.detect.agents.text_patterns import (
     AGENT_CHANNEL,
@@ -395,7 +396,7 @@ class McpServerSource:
         if "tool" not in text:
             return []
         try:
-            tree = ast.parse(text)
+            tree = PythonSyntax.parse(text)
         except (SyntaxError, ValueError, RecursionError):
             return []
         # Line starts as the parser counts lines (\n, \r\n, \r), not as `splitlines` does.

@@ -29,6 +29,8 @@ import re
 import shlex
 from typing import ClassVar
 
+from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
 
 class ShellDownloads:
     """The downloaded-bytes flow in a shell script, read statement by statement."""
@@ -407,7 +409,7 @@ class PythonDownloads:
     @classmethod
     def runs(cls, text: str) -> list[int] | None:
         try:
-            tree = ast.parse(text)
+            tree = PythonSyntax.parse(text)
         except (SyntaxError, ValueError, RecursionError):
             return None
         flow = cls(tree)

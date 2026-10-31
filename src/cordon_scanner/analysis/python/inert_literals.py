@@ -25,6 +25,7 @@ import re
 from typing import ClassVar
 
 from cordon_scanner.analysis.python.py_flow import Label, PythonValueFlow
+from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.collector import ScanCaches
 
@@ -171,7 +172,7 @@ class InertLiterals(PythonValueFlow):
         """UTF-8 byte spans of the focus-line literals that reach no sink. Empty on a syntax error
         or past the seed limit, so nothing is lowered on a file this cannot read."""
         try:
-            tree = ast.parse(source)
+            tree = PythonSyntax.parse(source)
         except (SyntaxError, ValueError):
             return frozenset()
         analysis = cls(tree, focus=focus)

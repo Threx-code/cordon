@@ -869,6 +869,7 @@
   "test_detector_clock.py": "engine",
   "test_parallel.py": "engine",
   "test_pattern_literals.py": "analysis/python",
+  "test_untrusted_parse.py": "analysis/python",
   "test_anchored.py": "rules",
   "test_pattern_safety.py": "rules",
   "test_pickle_own_package.py": "detect/binary",

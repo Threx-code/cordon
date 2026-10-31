@@ -25,6 +25,8 @@ import re
 from collections.abc import Callable
 from typing import Any, ClassVar, Final
 
+from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
 _TOOL_DECORATOR: Final = re.compile(r"\btool\b|\.tool\(|tool\s*$")
 _RUNS_COMMANDS: Final = re.compile(
     r"(?i)exec|run|shell|command|terminal|bash|\bcmd\b|script|process|subprocess|kubectl|"
@@ -61,7 +63,8 @@ class McpCode:
     @staticmethod
     def _parse(text: str) -> ast.Module | None:
         try:
-            return ast.parse(text)
+            tree: ast.Module = PythonSyntax.parse(text)
+            return tree
         except (SyntaxError, ValueError, RecursionError):
             return None
 

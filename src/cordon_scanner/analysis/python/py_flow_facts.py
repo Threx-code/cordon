@@ -26,6 +26,7 @@ from typing import ClassVar
 from cordon_scanner.analysis.javascript.js_flow import JsFlow
 from cordon_scanner.analysis.python.py_flow import Label, PythonValueFlow
 from cordon_scanner.analysis.python.py_identity import IdentityVariables
+from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 
 
 class PythonFlowFacts(PythonValueFlow):
@@ -136,7 +137,7 @@ class PythonFlowFacts(PythonValueFlow):
     @classmethod
     def of(cls, source: str) -> set[tuple[str, str, str]]:
         try:
-            tree = ast.parse(source)
+            tree = PythonSyntax.parse(source)
         except (SyntaxError, ValueError, RecursionError):
             return set()
         analysis = cls(tree)
