@@ -79,6 +79,10 @@ class PackCache:
         key = self.secret()
         return hmac.new(key, data, "sha256").hexdigest() if key else None
 
+    def sign(self, data: bytes) -> str | None:
+        """HMAC-SHA256 of `data` under this directory's per-user key; None when there is no key."""
+        return self._mac(data)
+
     @staticmethod
     def engine_digest() -> str:
         """A digest of the rule engine's source files: what a kept entry was made by."""

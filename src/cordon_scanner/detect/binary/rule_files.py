@@ -64,7 +64,13 @@ BUILTIN_PACK: Final = PackagePaths.root() / "rules" / "rule_files" / "cordon-bui
 class RuleFileEngine:
     """Compile once, match many, with cordon-rule."""
 
-    def __init__(self, rules_path: str, module_data: tuple[tuple[str, str], ...] = ()) -> None:
+    def __init__(
+        self,
+        rules_path: str,
+        module_data: tuple[tuple[str, str], ...] = (),
+        *,
+        use_cache: bool = True,
+    ) -> None:
         from cordon_scanner.detect.binary.rule_engine.lang import Rules
 
         path = BUILTIN_PACK if rules_path == BUILTIN else Path(rules_path)
@@ -85,7 +91,7 @@ class RuleFileEngine:
         self.rules = Rules.compile(
             text,
             includes=None if rules_path == BUILTIN else RuleFileEngine.includes(path),
-            cache=PackCache(StatePaths.default_cache_dir() / "rule-packs"),
+            cache=PackCache(StatePaths.default_cache_dir() / "rule-packs") if use_cache else None,
         )
         self.version = "cordon-rule"
         # Data given to the scan for a module (`--rule-module-data cuckoo=report.json`): read
@@ -100,6 +106,16 @@ class RuleFileEngine:
                 raise OSError(f"no module reads data given to the scan by the name {name!r}")
             self.given[name] = takes[name](Path(data_path).read_bytes())
         self.without = sorted((self.rules.imports & set(takes)) - set(self.given))
+        # Matches kept by file content (`rule_engine/match_cache`): the same bytes in another
+        # package, or the next scan, are not matched again. None when the rules cannot be kept.
+        from cordon_scanner.detect.binary.rule_engine.match_cache import MatchCache
+
+        self.matches = MatchCache(StatePaths.default_cache_dir() / "rule-matches")
+        self.identity = (
+            MatchCache.identity(RuleFileEngine.files(rules_path), module_data, self.rules.imports)
+            if use_cache
+            else None
+        )
         self.notes: list[tuple[str, str]] = self.rules.notes
         """What the compiler decided where a rule did not say (a field two engines declare with
         different types, read in the reference's shape): reported with the scan, never silent."""
@@ -124,7 +140,14 @@ class RuleFileEngine:
         return [path, *read]
 
     def match(self, data: bytes) -> list[Any]:
-        return list(self.rules.match(data, timeout=MATCH_TIMEOUT_SECONDS, given=self.given))
+        if self.identity is not None:
+            kept = self.matches.get(self.identity, data)
+            if kept is not None:
+                return kept
+        found = list(self.rules.match(data, timeout=MATCH_TIMEOUT_SECONDS, given=self.given))
+        if self.identity is not None:
+            self.matches.put(self.identity, data, found)
+        return found
 
     @staticmethod
     def applies(match: Any, path: str) -> bool:
@@ -205,7 +228,9 @@ class RuleFileDetector(BaseDetector):
         if self._engine is None and self._failed is None:
             try:
                 self._engine = RuleFileEngine(
-                    str(ctx.config.rule_file), tuple(ctx.config.rule_module_data)
+                    str(ctx.config.rule_file),
+                    tuple(ctx.config.rule_module_data),
+                    use_cache=ctx.config.use_cache,
                 )
             except Exception as exc:  # noqa: BLE001
                 self._failed = (
