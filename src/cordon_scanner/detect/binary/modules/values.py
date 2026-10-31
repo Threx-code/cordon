@@ -85,6 +85,36 @@ class Keyed(Items):
     __slots__ = ()
 
 
+class Dual:
+    """A field two engines declare under one name with different types: `first` is the reference's
+    shape and `second` the other engine's. Its data is a pair, one value per shape, either None. The
+    compiler picks the shape from how the rule uses the field (`rule_engine.build`), so a rule written
+    for either engine reads its own value; where nothing decides, it reads the first and the rule's load
+    result says so."""
+
+    __slots__ = ("companions", "first", "labels", "second")
+
+    def __init__(
+        self,
+        first: Scalar,
+        second: Scalar,
+        labels: tuple[str, str],
+        companions: frozenset[str] = frozenset(),
+    ) -> None:
+        self.first, self.second, self.labels = first, second, labels
+        self.companions = companions
+        """Names of the module's other members that belong to the second shape: a rule comparing this
+        field with one of them is read in the second shape."""
+
+    def shape(self, index: int) -> Scalar:
+        return self.first if index == 0 else self.second
+
+    def index_of(self, scalar: Scalar) -> int | None:
+        """The one shape of this scalar type, or None when both or neither are."""
+        hits = [i for i, s in enumerate((self.first, self.second)) if s is scalar]
+        return hits[0] if len(hits) == 1 else None
+
+
 class Sig:
     """One way to call a function: the kinds of its parameters (`int`, `float`, `text`,
     `bool`, `regex`) and the scalar it returns."""
@@ -175,12 +205,19 @@ class Data:
         if isinstance(declared, Call):
             ok = isinstance(data, tuple) and len(data) == len(declared.sigs)
             return [] if ok and all(callable(f) for f in data) else [f"{where}: not callables"]
+        if isinstance(declared, Dual):
+            if not (isinstance(data, tuple) and len(data) == 2):
+                return [f"{where or '.'}: not a pair of shapes"]
+            return Data.conforms(declared.first, data[0], f"{where}#0") + Data.conforms(
+                declared.second, data[1], f"{where}#1"
+            )
         return [f"{where or '.'}: an unknown declaration"]
 
 
 __all__ = [
     "Call",
     "Data",
+    "Dual",
     "Keyed",
     "Module",
     "Record",

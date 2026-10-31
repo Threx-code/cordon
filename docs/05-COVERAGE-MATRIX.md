@@ -729,6 +729,7 @@ rather than a document.
 | `OPERATIONAL.REGISTRY.NOT_ASKED.001` | low | `registry` | coverage |
 | `OPERATIONAL.REGISTRY.NO_SOURCE.001` | low | `registry` | coverage |
 | `OPERATIONAL.REGISTRY.UNREACHABLE.001` | low | `registry` | coverage |
+| `OPERATIONAL.RULEFILE.SHAPE` | info | `rule-file` | coverage |
 | `OPERATIONAL.RULEFILE.STATUS` | info | `rule-file` | coverage |
 | `OPERATIONAL.RULEFILE.UNAVAILABLE` | info | `rule-file` | coverage |
 | `OPERATIONAL.SBOM.UNREADABLE.001` | low | `sbom` | coverage |

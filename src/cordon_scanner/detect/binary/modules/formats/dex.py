@@ -19,6 +19,10 @@ its decoded fields at the next index and reads the same bytes again as the next 
 data does not decode contributes nothing (the reference ends the read with the totals unset); a varint
 is at most five bytes with the fifth in range; a name is compared whole. A file that is not a dex answers
 undefined for everything but the constants.
+
+The one `dex` name also answers YARA-X's shape (`formats.dex_x`): its names are filled from the same
+parse, each under its own engine's bounds, and the two names both engines declare with different types
+(`header.magic`, `header.signature`) hold both values for the compiler to pick from.
 """
 
 from __future__ import annotations
@@ -27,6 +31,7 @@ import bisect
 from collections.abc import Iterator, Mapping
 from typing import Any, ClassVar
 
+from cordon_scanner.detect.binary.modules.formats.dex_x import DexX
 from cordon_scanner.detect.binary.modules.layout import U16, U32, Blob, Cursor, Grid, Layout
 from cordon_scanner.detect.binary.modules.values import Call, Record, Scalar, Seq, Sig
 
@@ -191,8 +196,7 @@ class Dex:
     its names through."""
 
     HEADER: ClassVar[Record] = Record({
-        "magic": TEXT, "checksum": INT, "signature": TEXT,
-        **dict.fromkeys(Shape.names(Shape.HEADER)[3:], INT),
+        "checksum": INT, **dict.fromkeys(Shape.names(Shape.HEADER)[3:], INT), **DexX.HEADER,
     })  # fmt: skip
     FIELD: ClassVar[Record] = Record({
         "class_name": TEXT, "name": TEXT, "proto": TEXT, "static": INT, "instance": INT,
@@ -212,15 +216,18 @@ class Dex:
         "proto_ids": Seq(Record(dict.fromkeys(Shape.names(Shape.PROTO_ID), INT))),
         "field_ids": Seq(Record(dict.fromkeys(Shape.names(Shape.FIELD_ID), INT))),
         "method_ids": Seq(Record(dict.fromkeys(Shape.names(Shape.METHOD_ID), INT))),
-        "class_defs": Seq(Record(dict.fromkeys(Shape.names(Shape.CLASS_DEF), INT))),
+        "class_defs": Seq(Record({**dict.fromkeys(Shape.names(Shape.CLASS_DEF), INT), **DexX.CLASS})),
         "class_data_item": Seq(Record(dict.fromkeys(Shape.COUNTS, INT))),
-        "map_list": Record({"size": INT, "map_item": Seq(Record(dict.fromkeys(Shape.names(Shape.MAP_ITEM), INT)))}),
+        "map_list": Record({
+            "size": INT, "map_item": Seq(Record(dict.fromkeys(Shape.names(Shape.MAP_ITEM), INT))), **DexX.MAP,
+        }),
         "number_of_fields": INT, "field": Seq(FIELD),
         "has_method": Call(
             Sig(("text",), INT), Sig(("text", "text"), INT), Sig(("regex",), INT), Sig(("regex", "regex"), INT)
         ),
         "has_class": Call(Sig(("text",), INT), Sig(("regex",), INT)),
         "number_of_methods": INT, "method": Seq(METHOD),
+        **DexX.FIELDS,
     })  # fmt: skip
 
     TABLES: ClassVar[tuple[tuple[str, Layout], ...]] = (
@@ -233,12 +240,14 @@ class Dex:
         "class_data_item", "field", "method",
     )  # fmt: skip
 
-    __slots__ = ("cur", "n", "out")
+    __slots__ = ("cur", "n", "out", "raw")
 
     def __init__(self, file: bytes, out: dict[str, Any]) -> None:
         self.cur = Cursor(file)  # the format is little-endian
         self.n = len(file)
         self.out = out
+        self.raw: dict[str, Any] = {"map_items": {}}
+        """The parse both shapes are filled from: the header, the id tables, the map items."""
 
     @staticmethod
     def data(file: bytes) -> dict[str, Any]:
@@ -247,8 +256,11 @@ class Dex:
         out["map_list"] = {"map_item": {}}
         for name in Dex.ARRAYS:  # the declared arrays are present, empty when nothing fills them
             out[name] = {}
-        if len(file) >= Shape.HEADER.stride() and file[:8] in DexTables.MAGICS.values():
-            Dex(file, out).read()
+        DexX.empty(out)
+        if len(file) >= Shape.HEADER.stride() and file[:4] == b"dex\n":
+            dex = Dex(file, out)
+            dex.read(yara=file[:8] in DexTables.MAGICS.values())
+            DexX.fill(dex, file)
         Dex._functions(out)
         return out
 
@@ -271,30 +283,41 @@ class Dex:
                 return result, i + 1
         return None
 
-    def read(self) -> None:
-        """The header, the strings, each id table, the map list, then the classes and their data."""
-        cur, out = self.cur, self.out
+    def read(self, *, yara: bool) -> None:
+        """The header, the strings, each id table, the map list, then the classes and their data, into
+        the raw parse; `yara` says whether the file is one YARA's shape reads (a version 035 to 039),
+        and then the raw parse is also that shape's tables."""
+        cur, out, raw = self.cur, self.out, self.raw
         h = Shape.HEADER.read(cur, 0)
-        out["header"] = dict(h)
-        self._strings(h["string_ids_offset"], h["string_ids_size"])
+        raw["header"] = dict(h)
+        raw["string_ids"] = self._strings(h["string_ids_offset"], h["string_ids_size"])
         for name, layout in Dex.TABLES:
             at, count = h[name + "_offset"], h[name + "_size"]
+            raw[name] = {}
             if not self.within(at, count * layout.stride()):
                 continue  # a table outside the file is empty; the others are still read
             grid = Grid(cur, at, layout, count)
             names = grid.names
-            out[name] = {i: dict(zip(names, t, strict=True)) for i, t in enumerate(grid.tuples())}
+            raw[name] = {i: dict(zip(names, t, strict=True)) for i, t in enumerate(grid.tuples())}
         if h["map_offset"] != 0:
             self._map(h["map_offset"])
+        if not yara:
+            return
+        out["header"] = dict(h)
+        for name in ("string_ids", *(name for name, _ in Dex.TABLES)):
+            out[name] = raw[name]
+        if "map_size" in raw:
+            out["map_list"]["size"] = raw["map_size"]
+            out["map_list"]["map_item"] = dict(raw["map_items"])
         self._classes()
 
-    def _strings(self, at: int, count: int) -> None:
+    def _strings(self, at: int, count: int) -> dict[int, Any]:
         """string_ids: each string's offset, its length, and its bytes from one past the length's
         start (the reference's reading, which rules see)."""
         cur = self.cur
         strings: dict[int, Any] = {}
         if not self.within(at, count * 4):
-            return
+            return strings
         for i in range(count):
             offset = cur.uint(at + i * 4, 4)
             length = self.varint(offset) if self.within(offset, 1) else None
@@ -305,19 +328,19 @@ class Dex:
                 "size": length[0],
                 "value": cur.blob(offset + 1, length[0]),
             }
-        self.out["string_ids"] = strings
+        return strings
 
     def _map(self, at: int) -> None:
         """map_list: its size, and the items that fit."""
         if not self.within(at, 4):
             return
         size = self.cur.uint(at, 4)
-        self.out["map_list"]["size"] = size
+        self.raw["map_size"] = size
         if not self.within(at + 4, size * Shape.MAP_ITEM.stride()):
             return
         grid = Grid(self.cur, at + 4, Shape.MAP_ITEM, size)
         names = grid.names
-        self.out["map_list"]["map_item"] = {
+        self.raw["map_items"] = {
             i: dict(zip(names, t, strict=True)) for i, t in enumerate(grid.tuples())
         }
 
@@ -328,7 +351,7 @@ class Dex:
         runs: dict[int, Run] = {}
         items: dict[int, Any] = {}
         fields, methods = Runs(), Runs()
-        for d in out["class_defs"].values():
+        for d in self.raw["class_defs"].values():
             at = d["class_data_offset"]
             if at == 0:
                 continue
@@ -376,13 +399,13 @@ class Dex:
         """`table[index].key`, or None past the table or the reference's index bound."""
         if index is None or not 0 <= index <= DexTables.MAX_INDEX:
             return None
-        row = self.out[table].get(index)
+        row = self.raw[table].get(index)
         return None if row is None else row.get(key)
 
     def _string(self, index: int | None) -> bytes | None:
         if index is None or not 0 <= index <= DexTables.MAX_INDEX:
             return None
-        row = self.out["string_ids"].get(index)
+        row = self.raw["string_ids"].get(index)
         return None if row is None else row["value"]
 
     def _varints(self, at: int, count: int) -> tuple[list[int], int] | None:

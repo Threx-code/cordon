@@ -16,7 +16,7 @@ values have the right types is checked afterwards, against the modules' declarat
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
 from cordon_scanner.detect.binary.rule_engine.tokens import RuleError, Token, Tokens
@@ -282,6 +282,9 @@ class RuleDef:
     needs_match: bool = False
     #: How many loop variables the condition holds at once (`rule_engine.build`).
     width: int = 0
+    #: What the compiler decided for the rule where the rule did not say (`rule_engine.build`): a
+    #: field with two shapes read in the reference's, for one. Part of the rule set's load result.
+    notes: list[str] = field(default_factory=list)
 
 
 class _TokenStream:

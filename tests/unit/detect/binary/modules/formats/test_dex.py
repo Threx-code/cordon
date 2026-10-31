@@ -142,7 +142,7 @@ class TestValues:
     def test_header_tables_class_data_and_names(self) -> None:
         d = Dex.data(Build.dex())
         h = d["header"]
-        assert (h["magic"], h["checksum"], h["signature"], h["header_size"], h["endian_tag"]) == (
+        assert (h["magic"][0], h["checksum"], h["signature"][0], h["header_size"], h["endian_tag"]) == (
             b"dex\n035\x00", 0x1234, b"\xab" * 20, 0x70, 0x12345678
         )  # fmt: skip
         assert h["string_ids_size"] == 4 and h["class_defs_size"] == 1
@@ -177,10 +177,8 @@ class TestValues:
             "registers_size": 1, "ins_size": 0, "outs_size": 0, "tries_size": 0, "debug_info_off": 0,
             "insns_size": 2, "insns": b"\x0e\x00\x0e\x00",
         }  # fmt: skip
-        assert d["map_list"] == {
-            "size": 1,
-            "map_item": {0: {"type": 0, "unused": 0, "size": 1, "offset": 0}},
-        }
+        assert d["map_list"]["size"] == 1
+        assert d["map_list"]["map_item"] == {0: {"type": 0, "unused": 0, "size": 1, "offset": 0}}
 
     def test_has_method_and_has_class(self) -> None:
         d = Dex.data(Build.dex())
@@ -280,7 +278,7 @@ class TestBounds:
             and d["number_of_fields"] == 0
             and d["class_data_item"] == {}
         )
-        assert d["map_list"] == {"map_item": {}}
+        assert d["map_list"]["map_item"] == {} and "size" not in d["map_list"]
 
     def test_a_varint_is_at_most_five_bytes_with_the_fifth_in_range(self) -> None:
         reader = Dex(
@@ -298,5 +296,5 @@ class TestBounds:
     def test_a_decoded_value_type_check(self) -> None:
         out: dict[str, Any] = Dex.data(Build.dex())
         assert all(
-            isinstance(v, bytes) for v in (out["DEX_FILE_MAGIC_039"], out["header"]["magic"])
+            isinstance(v, bytes) for v in (out["DEX_FILE_MAGIC_039"], out["header"]["magic"][0])
         )

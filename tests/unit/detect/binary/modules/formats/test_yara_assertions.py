@@ -197,7 +197,7 @@ class TestDex:
         return Dex.data(Fixture.read("dex_file.bin"))
 
     def test_header_and_tables(self, d: dict[str, Any]) -> None:
-        assert d["header"]["magic"] == d["DEX_FILE_MAGIC_035"]
+        assert d["header"]["magic"][0] == d["DEX_FILE_MAGIC_035"]  # YARA's shape of the dual field
         assert d["header"]["checksum"] == 0x3F9C602F
         assert d["header"]["data_size"] == 0x18C
         assert d["string_ids"][0]["value"] == b"<clinit>"

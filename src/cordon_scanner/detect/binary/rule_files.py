@@ -48,6 +48,7 @@ MATCH_RULE: Final = "SUSPECT.RULEFILE.MATCH.001"
 MALICIOUS_RULE: Final = "MALWARE.RULEFILE.MATCH.001"
 STATUS_RULE: Final = "OPERATIONAL.RULEFILE.STATUS"
 UNAVAILABLE_RULE: Final = "OPERATIONAL.RULEFILE.UNAVAILABLE"
+SHAPE_RULE: Final = "OPERATIONAL.RULEFILE.SHAPE"
 REFERENCE: Final = "https://github.com/Threx-code/cordon/blob/main/tutorials/31-rule-files.md"
 MATCH_TIMEOUT_SECONDS: Final = 10
 MAX_RULES_BYTES: Final = 16 << 20
@@ -72,6 +73,9 @@ class RuleFileEngine:
         # one rules file pull in others from wherever it names, which is not what was asked for.
         self.rules = Rules.compile(path.read_text(encoding="utf-8", errors="replace"))
         self.version = "cordon-rule"
+        self.notes: list[tuple[str, str]] = self.rules.notes
+        """What the compiler decided where a rule did not say (a field two engines declare with
+        different types, read in the reference's shape): reported with the scan, never silent."""
 
     def match(self, data: bytes) -> list[Any]:
         return list(self.rules.match(data, timeout=MATCH_TIMEOUT_SECONDS))
@@ -145,6 +149,10 @@ class RuleFileDetector(BaseDetector):
             rule(UNAVAILABLE_RULE, "A rule file was asked for and could not be used", Severity.INFO, Category.OPERATIONAL,
                  "The scan was asked to use a rule file and could not, so no file was matched against it.",
                  "Check the rules file compiles, and that it imports only modules Cordon's engine implements."),
+            rule(SHAPE_RULE, "A rule reads a field two engines declare differently, and did not say which", Severity.INFO,
+                 Category.OPERATIONAL,
+                 "A field with two shapes (one per rule engine) was read in the reference engine's shape because nothing in the rule decided.",
+                 "Compare the field with a value of the shape you mean (an integer or a text, a 40-digit hex string or raw bytes), or read a name only one engine has."),
         )  # fmt: skip
 
     def _ensure(self, ctx: ScanContext) -> RuleFileEngine | None:
@@ -173,7 +181,11 @@ class RuleFileDetector(BaseDetector):
                     STATUS_RULE,
                     f"Files were also matched against the rule file ({engine.version}).",
                     ctx,
-                )
+                ),
+                *(
+                    self._operational(SHAPE_RULE, f"Rule {name}: {note}.", ctx)
+                    for name, note in engine.notes
+                ),
             ]
         if not isinstance(unit, FileUnit) or engine is None:
             return ()

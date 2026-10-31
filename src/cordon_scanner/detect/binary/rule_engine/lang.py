@@ -232,6 +232,11 @@ class Rules:
             Strings.place(rule)
         return Rules(rules, loaded)
 
+    @property
+    def notes(self) -> list[tuple[str, str]]:
+        """What the compiler decided for each rule where the rule did not say, as (rule, note)."""
+        return [(rule.name, note) for rule in self.rules for note in rule.notes]
+
     def index(self) -> tuple[Any, list[StringDef]]:
         """One index of every string's anchors, built once for the rule set."""
         if self._index is None:
