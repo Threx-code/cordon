@@ -248,6 +248,8 @@ exclude = ["cordon_scanner/rules/rule_files/upstream"]
 # and the rule engine reads anchors in Python, as `cordon-scanner --version` says.
 name = "cordon_scanner._native._anchors"
 sources = ["src/cordon_scanner/_native/anchors.c"]
+# Included by anchors.c, not compiled alone: shipped in the sdist beside it.
+depends = ["src/cordon_scanner/_native/threads_vm.c"]
 
 [tool.cordon-build.package-data]
 "cordon_scanner" = ["py.typed"]
