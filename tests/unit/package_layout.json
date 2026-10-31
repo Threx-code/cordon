@@ -157,6 +157,7 @@
   "detect/binary/modules/formats/dex_x": "detect/binary/modules/formats/dex_x",
   "detect/binary/modules/formats/macho": "detect/binary/modules/formats/macho",
   "detect/binary/modules/formats/macho_tables": "detect/binary/modules/formats/macho_tables",
+  "detect/binary/modules/formats/macho_x": "detect/binary/modules/formats/macho_x",
   "detect/binary/modules/formats/msi": "detect/binary/modules/formats/msi",
   "detect/binary/modules/formats/olecf": "detect/binary/modules/formats/olecf",
   "detect/binary/modules/formats/vba": "detect/binary/modules/formats/vba",

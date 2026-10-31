@@ -26,6 +26,11 @@ EXACT = sorted(n for n in RECORDED if not n.startswith("shared-"))
 
 
 class Tree:
+    MACHO_X = (
+        "dylibs", "rpaths", "linker_options", "dynamic_linker", "source_version", "uuid",
+        "build_version", "min_version", "symtab", "dysymtab", "dyld_info", "code_signature_data",
+        "entitlements", "certificates", "exports", "imports",
+    )  # fmt: skip
     """Our data rendered the way the recorded dump is: integers as signed 64-bit, strings as hex under
     `b`, arrays keyed by index as text, functions and the second shape of a dual field left out."""
 
@@ -69,6 +74,14 @@ class Tree:
     def ours(module: str, data: bytes) -> dict[str, Any]:
         schema, read = READERS[module]
         tree = Tree.recode(schema, read(data))
+        if module == "macho":  # the names the other engine declares are not in the reference's dump
+            for obj in [tree, *tree.get("file", {}).values()]:
+                for k in Tree.MACHO_X:
+                    obj.pop(k, None)
+                for seg in obj.get("segments", {}).values():
+                    seg.pop("filesize", None)
+            for arch in tree.get("fat_arch", {}).values():
+                arch.pop("reserved", None)
         if module == "dex":  # the names the other engine declares are not in the reference's dump
             for k in ("strings", "types", "protos", "fields", "methods"):
                 tree.pop(k, None)

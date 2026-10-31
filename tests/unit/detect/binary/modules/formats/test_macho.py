@@ -9,6 +9,7 @@ exists."""
 
 from __future__ import annotations
 
+import hashlib
 import struct
 
 from cordon_scanner.detect.binary.modules.formats.macho import Macho
@@ -256,5 +257,143 @@ class TestFat:
         only behind an object magic."""
         junk = b"\x00" * 64
         d = Macho.data(Build.fat([(T["CPU_TYPE_ARM"], 0, junk)]))
-        assert d["file"][0] == {"segments": {}} and d["fat_arch"][0]["size"] == 64
+        assert d["file"][0] == {k: {} for k in Macho.OBJECT_ARRAYS}
+        assert d["fat_arch"][0]["size"] == 64
         assert d["entry_point_for_arch"][0](T["CPU_TYPE_ARM"]) is None
+
+
+class TestTheSecondShape:
+    """YARA-X's names on commands built here: the libraries, run paths, linker, versions and UUID; the
+    symbol table with the exports and imports it gives a file without dyld info; an export trie and a
+    bind stream; an entitlements plist in the code signature; and the functions over them."""
+
+    E = "<"
+
+    @staticmethod
+    def dylib(name: bytes, current: int = 0x010203, compat: int = 0x010000) -> bytes:
+        body = struct.pack("<4I", 24, 2, current, compat) + name + b"\x00"
+        body = body.ljust((len(body) + 8 + 7) // 8 * 8 - 8, b"\x00")
+        return struct.pack("<2I", 0x0C, 8 + len(body)) + body
+
+    @staticmethod
+    def named(cmd: int, text: bytes) -> bytes:
+        body = struct.pack("<I", 12) + text + b"\x00"
+        body = body.ljust((len(body) + 8 + 7) // 8 * 8 - 8, b"\x00")
+        return struct.pack("<2I", cmd, 8 + len(body)) + body
+
+    def test_libraries_paths_linker_versions_and_uuid(self) -> None:
+        e = self.E
+        cmds = (
+            self.dylib(b"/usr/lib/libSystem.B.dylib", 0x04BD0000, 0x010000)
+            + self.named(0x1C | 0x80000000, b"@executable_path/../Frameworks")
+            + self.named(0x0E, b"/usr/lib/dyld")
+            + struct.pack("<2IQ", 0x2A, 16, (1 << 40) | (2 << 30) | (3 << 20) | (4 << 10) | 5)
+            + struct.pack("<2I", 0x1B, 24)
+            + bytes(range(16))
+            + struct.pack("<6I", 0x32, 32, 1, 0x000D0100, 0x000D0300, 1)
+            + struct.pack("<2I", 3, 0x03E80100)
+            + struct.pack("<4I", 0x24, 16, 0x000A0F00, 0x000B0000)
+            + struct.pack("<3I", 0x2D, 32, 2)
+            + b"-framework\x00Cocoa\x00".ljust(20, b"\x00")
+        )
+        data = Build.header(e, T["CPU_TYPE_X86_64"], 8, len(cmds)) + cmds
+        d = Macho.data(data)
+        assert d["dylibs"] == {0: {
+            "name": b"/usr/lib/libSystem.B.dylib", "timestamp": 2,
+            "compatibility_version": b"1.0.0", "current_version": b"1213.0.0",
+        }}  # fmt: skip
+        assert (
+            d["rpaths"] == {0: b"@executable_path/../Frameworks"}
+            and d["dynamic_linker"] == b"/usr/lib/dyld"
+        )
+        assert d["source_version"] == b"1.2.3.4.5"
+        assert d["uuid"] == b"00010203-0405-0607-0809-0A0B0C0D0E0F"
+        assert d["build_version"] == {
+            "platform": 1, "minos": b"13.1.0", "sdk": b"13.3.0", "ntools": 1, "tools": {0: {"tool": 3, "version": b"1000.1"}}
+        }  # fmt: skip
+        assert d["min_version"] == {"device": 0x24, "version": b"10.15.0", "sdk": b"11.0.0"}
+        assert d["linker_options"] == {0: b"-framework", 1: b"Cocoa"}
+        assert (
+            d["has_dylib"][0](b"/USR/LIB/libsystem.b.dylib") is True
+            and d["has_dylib"][0](b"x") is False
+        )
+        assert d["has_rpath"][0](b"@executable_path/../frameworks") is True
+        assert (
+            d["dylib_hash"][0]() == hashlib.md5(b"/usr/lib/libsystem.b.dylib").hexdigest().encode()  # noqa: S324
+        )
+        assert Data.conforms(Macho.SCHEMA, d) == []
+
+    def test_a_symbol_table_gives_a_file_without_dyld_info_its_exports_and_imports(self) -> None:
+        e = self.E
+        strings = b"\x00_main\x00_printf\x00"
+        nlists = struct.pack("<IBBHQ", 1, 0x0F, 1, 0, 0x1000) + struct.pack(
+            "<IBBHQ", 7, 0x01, 0, 0, 0
+        )
+        header_size = 32
+        cmds_size = 24 + 72
+        symoff = header_size + cmds_size
+        stroff = symoff + len(nlists)
+        cmds = struct.pack("<6I", 0x02, 24, symoff, 2, stroff, len(strings)) + struct.pack(
+            "<18I", 0x0B, 72, *([0] * 16)
+        )
+        data = Build.header(e, T["CPU_TYPE_X86_64"], 2, len(cmds)) + cmds + nlists + strings
+        d = Macho.data(data)
+        assert d["symtab"]["entries"] == {0: b"_main", 1: b"_printf"}
+        assert d["symtab"]["nlists"][1] == {
+            "n_strx": 7,
+            "n_type": 1,
+            "n_sect": 0,
+            "n_desc": 0,
+            "n_value": 0,
+        }
+        assert (
+            d["symtab"]["symoff"],
+            d["symtab"]["nsyms"],
+            d["symtab"]["stroff"],
+            d["symtab"]["strsize"],
+        ) == (symoff, 2, stroff, 15)
+        assert d["dysymtab"]["nlocrel"] == 0 and len(d["dysymtab"]) == 16
+        assert d["exports"] == {0: b"_main"} and d["imports"] == {0: b"_printf"}
+        assert d["has_export"][0](b"_MAIN") is True and d["has_import"][0](b"_printf") is True
+        assert d["export_hash"][0]() == hashlib.md5(b"_main").hexdigest().encode()  # noqa: S324
+        assert d["symhash"][0]() == hashlib.md5(b"_printf").hexdigest().encode()  # noqa: S324
+        assert d["entitlement_hash"][0]() is None
+
+    def test_an_export_trie_a_bind_stream_and_an_entitlements_plist(self) -> None:
+        e = self.E
+        # the trie: root (no terminal) with one edge "_main" to a node exporting it
+        trie = b"\x00\x01_main\x00\x09" + b"\x02\x00\x10" + b"\x00"
+        binds = b"\x40_printf\x00\x40_malloc\x00\x40_printf\x00"
+        plist = (
+            b'<?xml version="1.0"?><plist><dict><key>com.apple.security.app-sandbox</key><true/>'
+            b"<key>keychain-access-groups</key><array><string>com.example.app</string></array></dict></plist>"
+        )
+        ent_blob = struct.pack(">2I", 0xFADE7171, 8 + len(plist)) + plist
+        superblob = (
+            struct.pack(">3I", 0xFADE0CC0, 20 + len(ent_blob), 1)
+            + struct.pack(">2I", 5, 20)
+            + ent_blob
+        )
+        header_size = 32
+        cmds_size = 48 + 16
+        trie_at = header_size + cmds_size
+        binds_at = trie_at + len(trie)
+        cs_at = binds_at + len(binds)
+        cmds = struct.pack(
+            "<12I", 0x22, 48, 0, 0, binds_at, len(binds), 0, 0, 0, 0, trie_at, len(trie)
+        )
+        cmds += struct.pack("<4I", 0x1D, 16, cs_at, len(superblob))
+        data = Build.header(e, T["CPU_TYPE_X86_64"], 2, len(cmds)) + cmds + trie + binds + superblob
+        d = Macho.data(data)
+        assert d["exports"] == {0: b"_main"} and d["imports"] == {0: b"_printf", 1: b"_malloc"}
+        assert d["dyld_info"]["export_off"] == trie_at and d["dyld_info"]["bind_size"] == len(binds)
+        assert d["code_signature_data"] == {"dataoff": cs_at, "datasize": len(superblob)}
+        assert d["entitlements"] == {
+            0: b"com.apple.security.app-sandbox",
+            1: b"keychain-access-groups",
+            2: b"com.example.app",
+        }
+        assert d["has_entitlement"][0](b"COM.APPLE.SECURITY.APP-SANDBOX") is True
+        assert d["import_hash"][0]() == hashlib.md5(b"_malloc,_printf").hexdigest().encode()  # noqa: S324
+        assert d["certificates"] == {}
+        assert Data.conforms(Macho.SCHEMA, d) == []

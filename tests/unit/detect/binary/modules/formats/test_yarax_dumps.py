@@ -6,6 +6,7 @@ it nothing (no macros, not a compound file); then the module's own flag is held 
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from typing import Any
@@ -13,6 +14,8 @@ from typing import Any
 import pytest
 from test_vba_module import SOURCE, Build
 
+from cordon_scanner.detect.binary.modules.formats.macho import Macho
+from cordon_scanner.detect.binary.modules.formats.macho_tables import MachoTables
 from cordon_scanner.detect.binary.modules.formats.msi import Msi
 from cordon_scanner.detect.binary.modules.formats.olecf import Olecf
 from cordon_scanner.detect.binary.modules.formats.vba import Vba
@@ -40,8 +43,20 @@ FLAGS = {"olecf": "is_olecf", "msi": "is_signed", "vba": "has_macros"}
 NAMES = {
     "STORAGE": 1, "STREAM": 2, "ROOT": 5, "UNKNOWN": 0,
     "MODULE_TYPE_STANDARD": 1, "MODULE_TYPE_CLASS": 2, "MODULE_TYPE_UNKNOWN": 3,
+    "MACOSX": 0x24, "IPHONEOS": 0x25, "TVOS": 0x2F, "WATCHOS": 0x30,
 }  # fmt: skip
 """YARA-X dumps an enum as its name; a rule reads its number."""
+MACHO_RECORDED: dict[str, Any] = json.loads(
+    (
+        ROOT
+        / "tests"
+        / "unit"
+        / "data"
+        / "rule_reference"
+        / "yara_tests"
+        / "reference-x-1.21.0-macho.json"
+    ).read_text(encoding="utf-8")
+)
 
 
 class Fixtures:
@@ -82,7 +97,7 @@ class Tree:
         if data is None or isinstance(schema, Call):
             return None
         if isinstance(schema, Scalar):
-            return data.decode("utf-8", "replace") if isinstance(data, bytes) else data
+            return data.decode("utf-8", "surrogateescape") if isinstance(data, bytes) else data
         if isinstance(schema, Record):
             out = {}
             for k, kind in schema.fields.items():
@@ -97,6 +112,10 @@ class Tree:
     def theirs(v: Any) -> Any:
         if isinstance(v, str) and v in NAMES:
             return NAMES[v]
+        if isinstance(v, dict) and set(v) == {"encoding", "value"}:  # a byte string, or a timestamp
+            if v["encoding"] == "base64":
+                return base64.b64decode(v["value"]).decode("utf-8", "surrogateescape")
+            return Tree.theirs(v["value"])
         if isinstance(v, dict):
             return {k: Tree.theirs(x) for k, x in v.items()}
         if isinstance(v, list):
@@ -142,3 +161,23 @@ class TestTheYaraXDumps:
         got = Tree.leaves(mine, "", {})
         assert {k: got.get(k, "MISSING") for k in want if got.get(k, "MISSING") != want[k]} == {}
         assert sorted(set(got) - set(want)) == []
+
+
+class TestTheMachoDumps:
+    """The macho superset held to `yr dump --module macho` over the YARA test fixtures: every leaf
+    YARA-X names, with its byte strings decoded and its enums read by value; our constants and
+    YARA's own names (fsize beside filesize, number_of_segments) are not in its dump."""
+
+    DIR = ROOT / "tests" / "unit" / "data" / "rule_reference" / "yara_tests"
+
+    @pytest.mark.parametrize("name", sorted(MACHO_RECORDED))
+    def test_every_leaf_is_the_one_yara_x_gives(self, name: str) -> None:
+        data = (self.DIR / name).read_bytes()
+        assert hashlib.sha256(data).hexdigest() == MACHO_RECORDED[name]["sha256"]
+        want = Tree.leaves(Tree.theirs(MACHO_RECORDED[name]["modules"]["macho"]), "", {})
+        mine = Tree.ours(Macho.SCHEMA, Macho.data(data))
+        for constant in MachoTables.MACHO:
+            mine.pop(constant, None)
+        got = {k: v for k, v in Tree.leaves(mine, "", {}).items() if not k.endswith(".fsize")}
+        got = {k: v for k, v in got.items() if k.endswith(".value") or True}
+        assert {k: got.get(k, "MISSING") for k in want if got.get(k, "MISSING") != want[k]} == {}

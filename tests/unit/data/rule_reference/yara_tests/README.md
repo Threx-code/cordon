@@ -35,3 +35,5 @@ in the reference image) for seven compound files the kit builds to the MS-CFB sp
 (`FormatKit.cfb`: mini stream, mini FAT, cutoff 4,096) in `test_yarax_dumps.py`, which rebuilds them,
 holds their hashes to the recorded ones and replays the values leaf by leaf. Those files are Cordon's
 own bytes; a module YARA-X leaves out of a dump is the one whose flag is false here.
+
+`reference-x-1.21.0-macho.json` holds YARA-X's `macho` values for the six Mach-O files above, replayed by `test_yarax_dumps.py`'s macho class against the superset the one `macho` name answers.
