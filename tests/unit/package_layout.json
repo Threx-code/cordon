@@ -689,6 +689,7 @@
   "test_bun_and_deno_locks.py": "ecosystems",
   "test_bun_lockb.py": "ecosystems/javascript",
   "test_cache.py": "engine",
+  "test_archive_settles.py": "engine",
   "test_ci_attacks.py": "detect/infra",
   "test_ci_drop_point.py": "detect/infra",
   "test_pack_rules.py": "detect/code",

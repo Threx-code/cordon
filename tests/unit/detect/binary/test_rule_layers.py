@@ -57,12 +57,12 @@ class TestLayers:
     @pytest.mark.parametrize(
         ("text", "how"),
         [
-            (b'eval(atob("' + base64.b64encode(MARK) + b'"))', "atob"),
+            (b'const p = atob("' + base64.b64encode(MARK) + b'");', "atob"),
             (b"x = Buffer.from('" + base64.b64encode(MARK) + b"', 'base64')", "Buffer.from base64"),
             (b"x = Buffer.from('" + MARK.hex().encode() + b"', 'hex')", "Buffer.from hex"),
-            (b'exec(base64.b64decode(b"' + base64.b64encode(MARK) + b'"))', "b64decode"),
-            (b'exec(bytes.fromhex("' + MARK.hex().encode() + b'"))', "bytes.fromhex"),
-            (b'exec(binascii.unhexlify("' + MARK.hex().encode() + b'"))', "unhexlify"),
+            (b'payload = base64.b64decode(b"' + base64.b64encode(MARK) + b'")', "b64decode"),
+            (b'payload = bytes.fromhex("' + MARK.hex().encode() + b'")', "bytes.fromhex"),
+            (b'payload = binascii.unhexlify("' + MARK.hex().encode() + b'")', "unhexlify"),
         ],
     )
     def test_each_wrapper_is_taken_off(self, text: bytes, how: str) -> None:
@@ -71,11 +71,11 @@ class TestLayers:
 
     def test_layers_are_peeled_in_turn_and_named(self) -> None:
         inner = (
-            b"exec(zlib.decompress(base64.b64decode('"
+            b"payload = zlib.decompress(base64.b64decode('"
             + base64.b64encode(zlib.compress(MARK * 4))
-            + b"')))"
+            + b"'))"
         )
-        outer = b'eval(atob("' + base64.b64encode(inner) + b'"))'
+        outer = b'const p = atob("' + base64.b64encode(inner) + b'");'
         layers = RuleLayers.of(outer)
         assert [(layer.how, layer.depth) for layer in layers] == [
             ("atob", 2),

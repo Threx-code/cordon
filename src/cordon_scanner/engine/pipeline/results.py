@@ -9,7 +9,7 @@ none folds two findings that differ in what they matched.
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.engine.pipeline.constants import (
     CREDENTIAL_NAME_CEILING,
@@ -534,6 +534,34 @@ class ResultFolding:
                 continue
             out.append(finding)
         return tuple(out)
+
+    @staticmethod
+    def settled(config: Any, acc: Any) -> tuple[Finding, ...]:
+        """Suppression expiry, the operator's suppressions, and the folds over repeated findings:
+        what every scan, of a directory or an archive, does to its findings before the verdict.
+        One step for both, so a package is not graded one way unpacked and another packed."""
+        # A suppression that expired is reported, not merely inactive: the
+        # finding it was hiding reappears at the same moment somebody is told
+        # why, rather than as an unexplained new failure weeks later.
+        from cordon_scanner.decide.policy import SuppressionMatcher
+
+        matcher = SuppressionMatcher(config)
+        acc.add(matcher.expiry_findings())
+        return tuple(
+            ResultFolding.key_table(
+                ResultFolding.credential_name(
+                    ResultFolding.polyglot_corpus(
+                        ResultFolding.key_corpus(
+                            ResultFolding.idiom(
+                                ResultFolding.repeats(
+                                    ResultFolding.graded_pair(matcher.apply(acc.findings))
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
 
 
 __all__ = ["ResultFolding"]

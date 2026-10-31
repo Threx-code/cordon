@@ -290,7 +290,14 @@ class SuppressionMatcher:
         """
         if finding.rule_id != Renamed.rule(suppression.rule):  # an old rule ID still suppresses
             return False
-        return cls._path_matches(finding.location.path, suppression.path)
+        path = finding.location.path or ""
+        # In a scanned archive a finding's path is `<archive>!<member>`: the suppression may name
+        # the member as it is within the archive (`package/index.js`), the path the same file has
+        # when the package is scanned unpacked. Only the operator's config is read for an archive.
+        within = path.split("!", 1)[1] if "!" in path else None
+        return cls._path_matches(path, suppression.path) or (
+            within is not None and cls._path_matches(within, suppression.path)
+        )
 
     @staticmethod
     def _path_matches(path: str, pattern: str) -> bool:

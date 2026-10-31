@@ -536,6 +536,12 @@ class ArchiveStages:
 
         from cordon_scanner.engine.pipeline.facts import ScanFactsGathering
 
+        # The operator's suppressions and the folds, as a directory scan applies them (they were
+        # missing here, so a package was graded differently packed and unpacked); the
+        # suppressions are the operator's config, never anything read from inside the archive.
+        from cordon_scanner.engine.pipeline.results import ResultFolding
+
+        acc.findings[:] = ResultFolding.settled(self.config, acc)
         acc.findings[:], verdict = Ceilings.verdict(
             Ceilings.hardening_tier(
                 Hooks.onto_manifest(Publisher.test_identity_keys(acc.findings, units), units),
