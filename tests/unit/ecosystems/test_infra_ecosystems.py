@@ -320,3 +320,69 @@ class TestTerraformParsedOnce:
         assert {d.name for d in first[0].dependencies} == {"hashicorp/aws", "hashicorp/google"}
         ScanCaches.after_scan()
         assert not TerraformConfiguration._parsed
+
+
+class TestTerraformExpressionKeys:
+    """An object's key may be an expression (HCL: a bare identifier is a literal name, anything
+    else is evaluated). `local.suppliers[count.index] = ...` in a `data = { ... }` map made three
+    files of ministryofjustice/cloud-platform-environments unreadable, and the scan incomplete
+    (2026-10-31). A key's expression is read under the same bounds as a value's."""
+
+    @staticmethod
+    def blocks(text: str):
+        from cordon_scanner.ecosystems.infra.terraform import TerraformConfiguration
+
+        raw = text.encode()
+        return TerraformConfiguration._blocks(FileContent(path="main.tf", raw=raw, size=len(raw)))
+
+    @staticmethod
+    def keys_of(text: str) -> set[str]:
+        root = TestTerraformExpressionKeys.blocks(text)
+        return set(root.blocks[0].attributes["data"])
+
+    def test_a_traversal_key_with_an_index_parses(self) -> None:
+        text = (
+            'resource "kubernetes_secret" "apikeys" {\n'
+            "  count = length(local.suppliers)\n"
+            "  data = {\n"
+            "    local.suppliers[count.index] = aws_api_gateway_api_key.api_keys[count.index].value\n"
+            "  }\n"
+            "}\n"
+        )
+        assert self.keys_of(text) == set()  # an evaluated key is not a name, as `(local.k)` is not
+
+    @pytest.mark.parametrize(
+        ("key", "stored"),
+        [
+            ("a", {"a"}),
+            ('"a"', {"a"}),
+            ("(var.k)", set()),
+            ("local.m[0]", set()),
+            ("a.b", set()),
+        ],
+    )
+    def test_spec_shaped_keys(self, key: str, stored: set[str]) -> None:
+        text = f'resource "x" "y" {{\n  data = {{\n    {key} = 1\n  }}\n}}\n'
+        assert self.keys_of(text) == stored
+
+    def test_a_deep_parenthesised_key_never_recurses(self) -> None:
+        from cordon_scanner.ecosystems.infra.terraform import HclError
+
+        key = "(" * 10_000 + "x" + ")" * 10_000
+        text = f'resource "x" "y" {{\n  data = {{\n    {key} = 1\n  }}\n}}\n'
+        try:
+            keys = self.keys_of(text)
+        except HclError:
+            return  # refused within the reader's bounds, by name
+        assert keys == set()
+
+    def test_a_deep_braced_key_is_refused_by_name(self) -> None:
+        """Pins the bound a key shares with a value: a key opening with `{` recurses through
+        `object` under MAX_DEPTH (64), refused by name, never a RecursionError. It holds before the
+        change too: a bound kept, not a defect fixed."""
+        from cordon_scanner.ecosystems.infra.terraform import HclError
+
+        key = "{" * 100 + "}" * 100
+        text = f'resource "x" "y" {{\n  data = {{\n    {key} = 1\n  }}\n}}\n'
+        with pytest.raises(HclError, match="nested too deeply"):
+            self.blocks(text)

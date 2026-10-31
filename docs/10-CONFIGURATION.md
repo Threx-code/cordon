@@ -116,7 +116,7 @@ environment:
 | `max_findings` | 50,000 | Findings retained. |
 | `max_dependencies` | 100,000 | Nodes in the dependency graph. |
 | `per_file_timeout` | 5 s | **Deprecated; nothing is cut on it**: every detector runs on every file, in a directory as in a package, on every historical blob of the git-history secret sweep, and in every detector run of a device scan (a wall-clock cut made results depend on machine load). Read for one more release. |
-| `total_timeout` | 900 s | Whole scan. `0` means no limit. |
+| `total_timeout` | 900 s | Whole scan. `0` means no limit. A backstop, not a budget: it depends on the machine's load, so on a starved machine a scan can stop at it, and is then reported incomplete (`OPERATIONAL.SCAN.TIMEOUT`), never passed. Real scans sit well inside it: the heaviest measured unit takes 124 s quiet on one core (14%). |
 | `max_archive_ratio` | 200 | Compression ratio before an archive is refused. |
 | `max_archive_entries` | 50,000 | Members extracted. |
 | `max_archive_depth` | 8 | Nested archive levels. |
