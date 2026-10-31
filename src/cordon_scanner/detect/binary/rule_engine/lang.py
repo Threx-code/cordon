@@ -29,10 +29,12 @@ from typing import Any, ClassVar
 
 from cordon_scanner.detect.binary.modules.builtin import Builtin
 from cordon_scanner.detect.binary.modules.values import Module
+from cordon_scanner.detect.binary.rule_engine.anchoring.places import Places
 from cordon_scanner.detect.binary.rule_engine.build import Builder, Frame
 from cordon_scanner.detect.binary.rule_engine.gates import Gates, MagicIndex
 from cordon_scanner.detect.binary.rule_engine.hits import Hits, Match
 from cordon_scanner.detect.binary.rule_engine.pack_cache import PackCache
+from cordon_scanner.detect.binary.rule_engine.scan import Search
 from cordon_scanner.detect.binary.rule_engine.syntax import (
     Both,
     Either,
@@ -355,10 +357,16 @@ class Rules:
         timeout: float | None = None,
         console: Callable[[str], Any] | None = None,
         given: dict[str, Module] | None = None,
+        subset: frozenset[int] | None = None,
+        spent: dict[str, int] | None = None,
     ) -> list[Match]:
         """The rules `data` matches; a `RuleError` once `timeout` seconds have passed. `console`
         receives each `console.log`/`console.hex` message. `given` replaces built-in modules for
-        this match by name, as one built from data given to the scan (`Cuckoo.module(report)`)."""
+        this match by name, as one built from data given to the scan (`Cuckoo.module(report)`).
+        `subset`: only the rules at these positions are decided and reported (one share of a
+        match split over workers; the caller keeps rules a reference joins, and global rules, in
+        each share they bear on). `spent`, when given, is filled with what the match used of the
+        file's bounds: "places" (of `Places.MOST`) and "matches" (of `Hits.MOST`)."""
         deadline = time.monotonic() + timeout if timeout is not None else None
         modules = self.modules
         if given:
@@ -382,6 +390,8 @@ class Rules:
                 visit.add(reached)
         frame.decided.update(dict.fromkeys(plan.names, False))
         all_global = all(i in visit for i in plan.global_skippable)
+        if subset is not None:
+            visit &= subset
         for i in sorted(visit):
             rule = self.rules[i]
             frame.found, frame.env = {}, [None] * rule.width
@@ -403,10 +413,15 @@ class Rules:
             frame.decided[rule.name] = result
             if rule.is_global and not result:
                 all_global = False
+        if spent is not None:
+            spent["places"] = Places.MOST - Search.budget(seen)[0]
+            spent["matches"] = int(seen.get(("matches",), 0))
         out: list[Match] = []
         if not all_global:
             return out
-        for rule in self.rules:
+        for i, rule in enumerate(self.rules):
+            if subset is not None and i not in subset:
+                continue
             if not frame.decided[rule.name] or rule.private:
                 continue
             # an anonymous string is reported as `$`, as the reference reports it; its inner name

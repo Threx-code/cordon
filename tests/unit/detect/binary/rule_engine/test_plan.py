@@ -85,3 +85,14 @@ class TestThePlan:
         assert Both.matches(text, data, True, monkeypatch) == Both.matches(
             text, data, False, monkeypatch
         )
+
+
+class TestAShare:
+    def test_a_subset_decides_and_reports_only_its_rules(self) -> None:
+        rules = Rules.compile(
+            'rule a { strings: $s = "ab" condition: $s } rule b { strings: $s = "zz" condition: $s }'
+        )
+        spent: dict[str, int] = {}
+        assert [m.rule for m in rules.match(b"ab zz", subset=frozenset({1}), spent=spent)] == ["b"]
+        assert [m.rule for m in rules.match(b"ab zz", subset=frozenset({0}))] == ["a"]
+        assert spent["matches"] == 1 and spent["places"] >= 0
