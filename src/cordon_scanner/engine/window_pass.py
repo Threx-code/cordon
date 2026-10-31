@@ -15,10 +15,12 @@ pass did not find, so every finding already made stands as it was.
 
 from __future__ import annotations
 
+import contextlib
 import gc
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.analysis.python.statements import PythonStatements
 from cordon_scanner.detect.base import FileUnit
 from cordon_scanner.foundation.collector import ScanCaches
@@ -41,6 +43,44 @@ STRUCTURAL_DETECTORS = frozenset({"capability", "secrets"})
 
 
 class WindowPass:
+    #: Whether a windowed piece's text may parse (`PythonStatements.may_parse`), worked out once
+    #: for the structural detectors that both ask: its identity -> (the text, the answer).
+    _PARSES: ClassVar[dict[int, tuple[str, bool]]] = {}
+
+    @staticmethod
+    def withheld(detector_id: str, unit: Any) -> contextlib.AbstractContextManager[None]:
+        """What a detector reads `unit` under in the first pass: for a structural detector over the
+        prefix of a Python file past `max_file_bytes` that cannot parse (cut inside a statement), its
+        text is not parsed (`PythonSyntax.withholding`). The statement-aligned pass parses the same
+        bytes as whole statements from byte 0, for the same detectors, and the findings of both are
+        one set. Every other detector, and a prefix that may parse, read as before."""
+        content = getattr(unit, "content", None)
+        if (
+            detector_id not in STRUCTURAL_DETECTORS
+            or content is None
+            or getattr(unit, "language", None) not in STATEMENT_CUTS
+            or not content.truncated
+            or content.window_source is None
+        ):
+            return contextlib.nullcontext()
+        return WindowPass._unless_it_parses(content.text)
+
+    @staticmethod
+    def _forget(text: str) -> None:
+        """Drop `text`'s answer from `_PARSES` once nothing reads it again (a plain window)."""
+        key = ScanCaches.identity(text)
+        kept = WindowPass._PARSES.get(key)
+        if kept is not None and kept[0] is text:
+            del WindowPass._PARSES[key]
+
+    @staticmethod
+    def _unless_it_parses(text: str) -> contextlib.AbstractContextManager[None]:
+        key = ScanCaches.identity(text)
+        kept = WindowPass._PARSES.get(key)
+        if kept is None or kept[0] is not text:
+            kept = WindowPass._PARSES[key] = (text, PythonStatements.may_parse(text))
+        return contextlib.nullcontext() if kept[1] else PythonSyntax.withholding(text)
+
     @staticmethod
     def run(
         unit: Any,
@@ -68,8 +108,12 @@ class WindowPass:
                 overlap=OVERLAP,
                 limit=content.limits.max_stream_bytes,
             )
-            WindowPass._read(unit, source, windows, picked, inspect, seen, out)
             cut = STATEMENT_CUTS.get(unit.language or "")
+            # A plain window of such a file is cut inside a statement as its prefix is: not parsed
+            # by the structural detectors either, unless it may parse.
+            WindowPass._read(
+                unit, source, windows, picked, inspect, seen, out, withhold=cut is not None
+            )
             structural = [d for d in picked if getattr(d, "id", "") in STRUCTURAL_DETECTORS]
             if cut is not None and structural:
                 # The first pass's caches go before the first statement window too: it would
@@ -100,10 +144,12 @@ class WindowPass:
         out: list[Finding],
         *,
         release: bool = False,
+        withhold: bool = False,
     ) -> None:
         """Each detector over each window, its findings placed in the whole file, new ones kept.
 
-        With `release`, the registered caches are emptied after each window: a statement window is
+        With `withhold`, a structural detector does not parse a window that cannot parse
+        (`_unless_it_parses`): a plain window of a statement-cut language. With `release`, the registered caches are emptied after each window: a statement window is
         up to `max_file_bytes` of Python, and its tree is several hundred megabytes, which the
         shared-tree and index caches (4 and 8 deep) would otherwise keep for the windows after it.
         Five of them took datadog 16.0.0 past 4.6 GB (review 98, D1). Files under the limit, and
@@ -122,7 +168,14 @@ class WindowPass:
                 project=unit.project,
             )
             for detector in detectors:
-                for finding in inspect(detector, part):
+                held = (
+                    WindowPass._unless_it_parses(part.content.text)
+                    if withhold and getattr(detector, "id", "") in STRUCTURAL_DETECTORS
+                    else contextlib.nullcontext()
+                )
+                with held:
+                    found = list(inspect(detector, part))
+                for finding in found:
                     moved = (
                         WindowPass.shifted(finding, window.lines_before, window.begin)
                         if finding.location.path == content.path
@@ -132,6 +185,10 @@ class WindowPass:
                     if key not in seen:
                         seen.add(key)
                         out.append(moved)
+            if withhold:
+                # the answer is needed only while this window is read: kept, it would hold the
+                # window's text (up to max_file_bytes) until the scan ends, every window's at once
+                WindowPass._forget(part.content.text)
             if release:
                 del part
                 ScanCaches.after_scan()
@@ -160,5 +217,7 @@ class WindowPass:
             ),
         )
 
+
+ScanCaches.register(WindowPass._PARSES)
 
 __all__ = ["WINDOW_DETECTORS", "WindowPass"]

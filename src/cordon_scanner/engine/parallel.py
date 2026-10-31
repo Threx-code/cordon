@@ -556,9 +556,13 @@ class ParallelScanner:
             relative: str = relative,
         ) -> list[Any]:
             try:
-                return DetectorClock.timed(
-                    getattr(detector, "id", "unknown"), lambda: list(detector.inspect(part, ctx))
-                )
+                # as the serial path (`Detection.run`): a structural detector does not parse a
+                # windowed Python prefix that cannot parse
+                with WindowPass.withheld(getattr(detector, "id", ""), part):
+                    return DetectorClock.timed(
+                        getattr(detector, "id", "unknown"),
+                        lambda: list(detector.inspect(part, ctx)),
+                    )
             except Exception as exc:  # noqa: BLE001
                 # A detector that fails in a worker must not silently reduce
                 # coverage. It is reported the same way the serial path reports

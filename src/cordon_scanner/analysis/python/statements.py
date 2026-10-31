@@ -64,5 +64,18 @@ class PythonStatements:
             return 0
         return len(text[: starts[-1]].encode("utf-8", "surrogateescape"))
 
+    @staticmethod
+    def may_parse(text: str) -> bool:
+        """Whether `text` may parse, read from its tokens alone: its token stream reaches its end
+        without breaking. A piece of a file cut at a byte limit inside a string, a bracket or a line
+        does not; one cut after a whole line may, and is then parsed as before -- so a piece is only
+        ever kept from a reader when it cannot parse (`engine/window_pass.py`)."""
+        try:
+            for _ in tokenize.generate_tokens(io.StringIO(text).readline):
+                pass
+        except (tokenize.TokenError, IndentationError, SyntaxError):
+            return False
+        return True
+
 
 __all__ = ["CONTINUATIONS", "PythonStatements"]
