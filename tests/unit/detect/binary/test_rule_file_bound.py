@@ -1,4 +1,4 @@
-"""The rule-file engine's per-file bound (rule_engine.scan.Search.MOST): a file with more places to
+"""The rule-file engine's per-file bound (rule_engine.places.Places.MOST): a file with more places to
 try than the bound, in all of its strings together, is refused instead of built in memory, and the
 refusal fails the gate (SUSPECT.RULEFILE.UNBOUNDED.001, HIGH): a file padded on purpose to reach the
 bound (malware followed by megabytes of zeros) is never passed as clean. Run on 8 MB of zeros with
@@ -13,8 +13,10 @@ from pathlib import Path
 
 import pytest
 
+from cordon_scanner.detect.binary.rule_engine import scan
 from cordon_scanner.detect.binary.rule_engine.lang import RuleError, Rules
-from cordon_scanner.detect.binary.rule_engine.scan import Search, Unbounded
+from cordon_scanner.detect.binary.rule_engine.places import Places, Unbounded
+from cordon_scanner.detect.binary.rule_engine.stream import Streams
 
 ZEROS = bytes(8 << 20)
 
@@ -34,7 +36,10 @@ class TestTheBound:
     def test_one_string_past_the_bound_refuses_the_file(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(Search, "MOST", 100_000)
+        monkeypatch.setattr(Places, "MOST", 100_000)
+        monkeypatch.setattr(
+            Streams, "ABOVE", 1 << 40
+        )  # the whole-list hunt, which the bound guards
         rules = Rules.compile("rule z { strings: $z = { 00 00 00 00 } condition: #z > 5 }")
         before = Bound.peak_mb()
         with pytest.raises(RuleError) as caught:
@@ -44,7 +49,8 @@ class TestTheBound:
 
     def test_the_bound_is_the_files_not_each_strings(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Five strings of 30,000 places each fit a bound of 100,000 one by one, not together."""
-        monkeypatch.setattr(Search, "MOST", 100_000)
+        monkeypatch.setattr(Places, "MOST", 100_000)
+        monkeypatch.setattr(Streams, "ABOVE", 1 << 40)
         data = b"".join(bytes([i]) * 4 + b"x" for i in range(1, 6)) * 30_000
         strings = " ".join(f"$s{i} = {{ {i:02x} {i:02x} }}" for i in range(1, 6))
         alone = Rules.compile("rule a { strings: $s1 = { 01 01 } condition: #s1 > 0 }")
@@ -63,7 +69,8 @@ class TestFailClosed:
     def test_a_padded_file_fails_the_scan(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        monkeypatch.setattr(Search, "MOST", 100_000)
+        monkeypatch.setattr(Places, "MOST", 100_000)
+        monkeypatch.setattr(Streams, "ABOVE", 1 << 40)
         (tmp_path / "pkg").mkdir()
         (tmp_path / "pkg" / "pad.bin").write_bytes(ZEROS)
         rules = tmp_path / "r.yar"
@@ -82,3 +89,16 @@ class TestFailClosed:
         assert ids.get("SUSPECT.RULEFILE.UNBOUNDED.001") == "high"
         assert report["complete"] is False
         assert code.value.code not in (0, None)
+
+
+class TestTheStream:
+    def test_the_zeros_are_matched_in_bounded_memory(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Streamed, 8 MB of zeros is matched, not refused, and holds the matches and nothing more."""
+        monkeypatch.setattr(Places, "MOST", 100_000)
+        rules = Rules.compile("rule z { strings: $z = { 00 00 00 00 } condition: #z > 5 }")
+        before = Bound.peak_mb()
+        found = rules.match(ZEROS)
+        assert [m.rule for m in found] == ["z"] and len(
+            found[0].strings
+        ) == scan.MAX_HITS  # stopped where the whole-list hunt stops
+        assert Bound.peak_mb() - before < 1200  # the matches themselves; no list of every place

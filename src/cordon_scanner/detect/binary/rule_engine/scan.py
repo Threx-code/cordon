@@ -25,7 +25,6 @@ from cordon_scanner.detect.binary.rule_engine.pattern import (
     Bytes,
     PatternError,
     Program,
-    RunError,
     Term,
 )
 from cordon_scanner.detect.binary.rule_engine.pattern_readers import (
@@ -33,17 +32,13 @@ from cordon_scanner.detect.binary.rule_engine.pattern_readers import (
     HexReader,
     RegexReader,
 )
+from cordon_scanner.detect.binary.rule_engine.places import Places, Unbounded
 from cordon_scanner.detect.binary.rule_engine.search_parts import AnchorAt, Event, Part
+from cordon_scanner.detect.binary.rule_engine.stream import Streams
 from cordon_scanner.detect.binary.rule_engine.threads import REACH, Lanes, Threads
 
 #: The most matches one string records; past this it is not searched further in that data.
 MAX_HITS = 1_000_000
-
-
-class Unbounded(RunError):
-    """A string with more places to try in one file than `Search.MOST`: the file is refused for the
-    rule file, and the scan reports it at a severity that fails the gate (`rule_files`), since a file
-    can be padded to pass the bound on purpose."""
 
 
 class Search:
@@ -255,6 +250,12 @@ class Search:
         seen = {} if seen is None else seen
         if not self._holds_required(data, seen):
             return []
+        if Streams.wanted(self, data, seen):
+            hunt = _Hunt(self, data, fixed, deadline)
+            hunt.budget = Search.budget(seen)
+            streamed = hunt.run_streamed(Streams.sources(self, data, seen, hunt))
+            if streamed is not None:
+                return streamed
         events: list[Event] = []
         for needle, length, owners in self.needles:
             starts = seen.get(needle)
@@ -305,6 +306,27 @@ class Search:
         turns away unread, so leaving it out changes no match. Only where that holds -- a pattern
         part, not `plain`, read one byte wide (no `wide`, `xor` or `base64`) -- and each gated
         position still has the anchor's bytes where it should. None to take every occurrence."""
+        gates = self.gates(data, needle, owners)
+        if gates is None:
+            return None
+        events: list[Event] = []
+        for (order, p, anchor), gate in zip(owners, gates, strict=True):
+            lead = anchor[1]
+            for found in gate.finditer(data):
+                if len(events) >= min(Places.MOST, budget[0]):
+                    raise Search.too_many()
+                offset = found.start()
+                at = offset + lead
+                if data.startswith(needle, at):
+                    events.append((at + length, -length, -order, p, anchor, offset))
+        budget[0] -= len(events)
+        return events
+
+    def gates(
+        self, data: bytes, needle: bytes, owners: list[tuple[int, int, AnchorAt]]
+    ) -> list[Any] | None:
+        """Each owner's forward gate, where a common anchor's events come from them (`_gated`),
+        else None: a pattern part, not `plain`, one byte wide, more than `GATED` occurrences."""
         f = self.flags
         if "wide" in f or "xor" in f or "base64" in f or "base64wide" in f or f.get("plain"):
             return None
@@ -320,18 +342,7 @@ class Search:
             if gate is None:
                 return None
             gates.append(gate)
-        events: list[Event] = []
-        for (order, p, anchor), gate in zip(owners, gates, strict=True):
-            lead = anchor[1]
-            for found in gate.finditer(data):
-                if len(events) >= min(Search.MOST, budget[0]):
-                    raise Search.too_many()
-                offset = found.start()
-                at = offset + lead
-                if data.startswith(needle, at):
-                    events.append((at + length, -length, -order, p, anchor, offset))
-        budget[0] -= len(events)
-        return events
+        return gates
 
     def _holds_required(self, data: bytes, seen: dict[Any, Any]) -> bool:
         """Whether `data` holds every literal run each part's matches must hold
@@ -402,39 +413,16 @@ class Search:
 
     @staticmethod
     def occurrences(data: bytes, needle: bytes, budget: list[int] | None = None) -> list[int]:
-        """Every offset `needle` begins at, overlapping ones included; an `Unbounded` past
-        `Search.MOST` of them, or past what is left of the file's `budget` (`Search.budget`),
-        which this spends."""
-        out: list[int] = []
-        at = data.find(needle)
-        most = Search.MOST if budget is None else min(Search.MOST, budget[0])
-        while at >= 0:
-            if len(out) >= most:
-                raise Search.too_many()
-            out.append(at)
-            at = data.find(needle, at + 1)
-        if budget is not None:
-            budget[0] -= len(out)
-        return out
+        """Every offset `needle` begins at (`Places.occurrences`, which bounds them)."""
+        return Places.occurrences(data, needle, budget)
 
     @staticmethod
     def budget(seen: dict[Any, Any]) -> list[int]:
-        """What one file may still hold of anchor occurrences and places to try, across every
-        string searched in it (`Search.MOST` in all): the bound is the whole match's, not each
-        string's."""
-        held: list[int] = seen.setdefault(("budget",), [Search.MOST])
-        return held
-
-    #: The most anchor occurrences, or places to run an anchorless part from, one string reads in
-    #: one file. Past it the file is refused for the rule file (a `RunError`, which the scan reports
-    #: as the rule file being unavailable for that file) instead of being built in memory: one
-    #: hostile file of a common anchor (100 MB of zeros for `{ 00 00 00 00 }`) cannot exhaust the
-    #: scan's memory. Below it every answer is the one an unbounded search gives.
-    MOST: ClassVar[int] = 8_000_000
+        return Places.budget(seen)
 
     @staticmethod
     def too_many() -> Unbounded:
-        return Unbounded(f"more than {Search.MOST:,} places to try in one file")
+        return Places.too_many()
 
 
 class _Hunt:
@@ -486,11 +474,24 @@ class _Hunt:
         self._run_events(events, n)
         return sorted(self.hits.items())
 
-    def _run_events(self, events: list[Event], n: int) -> None:
+    def run_streamed(self, sources: list[Any]) -> list[tuple[int, int]] | None:
+        """`run` over sorted event streams (`rule_engine.stream`), pulling only until full; None
+        where the string's matches are worked out from all its offsets at once (a chain)."""
+        busy, total = Streams.busy(sources, _Hunt.BUSY + 1)
+        parts = self.s.parts
+        if len(parts) == 1 and parts[0].chain is not None and total > _Hunt.BUSY:
+            return None
+        self.busy = busy
+        self._run_events(Streams.merged(sources), len(self.data))
+        return sorted(self.hits.items())
+
+    def _run_events(self, events: Iterable[Event], n: int) -> None:
         for count, (_, _, _, part, anchor, offset) in enumerate(events):
             if count % 4096 == 0 and self.deadline is not None and time.monotonic() > self.deadline:
                 raise TimeoutError("matching took longer than the time allowed")
-            if offset >= n or self.full:
+            if self.full:
+                break
+            if offset >= n:
                 continue
             if self.fixed is not None and part == 0 and offset != self.fixed:
                 continue
@@ -520,17 +521,19 @@ class _Hunt:
             deadline=self.deadline,
         )
 
-    def starts(self, p: int) -> list[int]:
+    def starts(self, p: int, *, lazy: bool = False) -> Iterable[int]:
         """Where a part with no anchor is run from: every position, less those no run from
-        there can do anything at."""
+        there can do anything at. `lazy`: one at a time, holding none of them."""
         data = self.data
-        along = self._along(p)
+        along = self._along(p, lazy=lazy)
         if along is not None:
             return along
         ahead = self._ahead(p)
+        if ahead is not None and lazy:
+            return (m.start() for m in ahead.finditer(data))
         if ahead is not None:
             found: list[int] = []
-            most = min(Search.MOST, self.budget[0]) if self.budget is not None else Search.MOST
+            most = min(Places.MOST, self.budget[0]) if self.budget is not None else Places.MOST
             for m in ahead.finditer(data):
                 if len(found) >= most:
                     raise Search.too_many()
@@ -539,17 +542,23 @@ class _Hunt:
                 self.budget[0] -= len(found)
             return found
         firsts = self._firsts(p)
+        if firsts is None and lazy:
+            return iter(range(len(data)))
         if firsts is None:
-            most = min(Search.MOST, self.budget[0]) if self.budget is not None else Search.MOST
+            most = min(Places.MOST, self.budget[0]) if self.budget is not None else Places.MOST
             if len(data) > most:
                 raise Search.too_many()
             if self.budget is not None:
                 self.budget[0] -= len(data)
             return list(range(len(data)))
         mask = data.translate(bytes(1 if b in firsts else 0 for b in range(256)))
+        if lazy:
+            return Streams.finds(mask, b"\x01")
         return Search.occurrences(mask, b"\x01", self.budget)
 
-    def _along(self, p: int, segments: int | None = None) -> list[int] | None:
+    def _along(
+        self, p: int, segments: int | None = None, *, lazy: bool = False
+    ) -> Iterable[int] | None:
         """The starts whose bytes follow a part's single starting path, found for the whole data
         at once: each step's bytes become a 0/1 mask, the masks are shifted into line and ANDed
         as integers (in C), and what survives is every position the path runs on from. None
@@ -599,6 +608,8 @@ class _Hunt:
         if not alive:
             return []
         found = alive.to_bytes(n, "little")
+        if lazy:
+            return Streams.finds(found, b"\x01")
         return Search.occurrences(found, b"\x01", self.budget)
 
     def _ahead(self, p: int) -> re.Pattern[bytes] | None:
