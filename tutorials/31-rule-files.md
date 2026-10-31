@@ -49,6 +49,7 @@ ran" never look alike.
 - **Modules**: `math`, `hash`, `string`, `console` and `time`; `pe`, `elf`, `dotnet`, `macho` and
   `dex` for executables; `olecf`, `msi` and `vba` for compound files, installers and macros; `lnk`,
   `zip` and `crx` for shortcuts, archives and browser extensions; `magic` for a file's type;
+  `androguard` for Android packages;
   `cuckoo` for what a sandbox run did (below).
 
 ## Giving a module data: `cuckoo`
@@ -82,3 +83,16 @@ Every run is bounded: a pattern reads at most 4,096 bytes from where it starts, 
 threads, and each file is matched under a timeout, so a pathological rule cannot hold a scan.
 
 Next: back to **[the tutorial map](README.md)**.
+
+## Android packages: `androguard`
+
+`androguard` answers the Koodous rule collections' functions (`package_name`, `app_name`,
+`main_activity`, `activity`, `service`, `receiver`, `permission`, `permissions_number`, `url`,
+`certificate.sha1`, `certificate.subject`, `certificate.issuer`, `min_sdk`, `max_sdk`, `target_sdk`)
+from the APK itself: the compiled manifest, the resource table, the signer's certificate (v1 or the v2
+and v3 signing block) and the URLs in the dex string tables. No report is needed. A Koodous report can
+be given instead, and every file of the scan answers from it:
+
+```
+cordon-scanner scan . --rule-file rules.yar --rule-module-data androguard=report.json
+```
