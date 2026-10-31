@@ -137,12 +137,13 @@ class FormatKit:
         return bytes(header) + struct.pack("<128I", *fat) + directory + b"".join(blobs)
 
     @staticmethod
-    def cfb(streams: dict[str, bytes]) -> bytes:
-        """An MS-CFB file as the specification lays one out: 512-byte sectors, streams under 4,096
+    def cfb(streams: dict[str, bytes], sector: int = 512) -> bytes:
+        """An MS-CFB file as the specification lays one out: 512-byte sectors (version 3), or 4,096
+        (version 4, the header padded to the first sector, the directory's sector count set), streams under 4,096
         bytes in the mini stream (64-byte mini sectors chained in the mini FAT, the mini stream owned
         by the root), larger ones in regular sectors, the directory over as many sectors as its
         entries need, the cutoff 4,096. Storages are one level deep ("VBA/dir")."""
-        sector, mini, cutoff = 512, 64, 4096
+        mini, cutoff = 64, 4096
         end, free, fatsect = 0xFFFFFFFE, 0xFFFFFFFF, 0xFFFFFFFD
         names = list(streams)
         storages = sorted({n.split("/", 1)[0] for n in names if "/" in n})
@@ -227,10 +228,11 @@ class FormatKit:
                 entry(name.rsplit("/", 1)[-1], 2, none, after, none, start, len(streams[name]))
             )
         blobs[0] = b"".join(records)
-        header = bytearray(512)
+        header = bytearray(sector)
         header[0:8] = ole.MAGIC
-        struct.pack_into("<HHHHH", header, 0x18, 0x3E, 3, 0xFFFE, 9, 6)
-        struct.pack_into("<IIIIIIIII", header, 0x28, 0, fat_sectors, starts[0], 0, cutoff,
+        version = 4 if sector == 4096 else 3
+        struct.pack_into("<HHHHH", header, 0x18, 0x3E, version, 0xFFFE, sector.bit_length() - 1, 6)
+        struct.pack_into("<IIIIIIIII", header, 0x28, runs[0] if version == 4 else 0, fat_sectors, starts[0], 0, cutoff,
                          starts[1], runs[1], end, 0)  # fmt: skip
         struct.pack_into(
             "<109I", header, 0x4C, *(list(range(fat_sectors)) + [free] * (109 - fat_sectors))

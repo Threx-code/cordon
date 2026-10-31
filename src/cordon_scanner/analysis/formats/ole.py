@@ -6,7 +6,10 @@ text has to be decompressed before anything can be said about it: `AutoOpen` and
 compressed bytes are split by copy tokens often enough that matching the raw stream misses them.
 
 Every chain walk is bounded by the file's own sector count and refuses a loop, and decompressed
-output is capped, so a crafted file costs at most a linear pass over itself.
+output is capped, so a crafted file costs at most a linear pass over itself. A version 4 file's
+4,096-byte sectors are numbered from the end of its first sector (the header and its padding), and its
+stream sizes are 64-bit; a version 3 file's 512-byte sectors start at byte 512 and the size's high half
+is ignored, as the specification says.
 """
 
 from __future__ import annotations
@@ -57,7 +60,7 @@ class CompoundFile:
             difat_start,
             difat_count,
         ) = struct.unpack_from("<II4xIIIII", data, 0x2C)
-        self.sectors: int = max((len(data) - 512) // self.sector, 0)
+        self.sectors: int = max(len(data) // self.sector - 1, 0)
         fat_sectors = [s for s in struct.unpack_from("<109I", data, 0x4C) if s < self.sectors]
         seen: set[int] = set()
         current = difat_start
@@ -74,6 +77,9 @@ class CompoundFile:
         self.directory: list[Entry] = self._directory
         """Every directory record in the order the directory sectors hold them, each by its own
         name (no path), linked into the tree or not, unused records included (kind 0)."""
+        self.records: list[bytes] = self._records
+        """The same records as the directory sectors hold them, 128 bytes each (the tree links, the
+        class id, state bits and times a signature's digest reads)."""
         self.ministream = self._chain(root_start)[:root_size] if root_size else b""
         self.minifat: list[int] = []
         if minifat_count and minifat_start < self.sectors:
@@ -84,7 +90,7 @@ class CompoundFile:
     def _offset(self, sector: int) -> int:
         if sector >= self.sectors:
             raise FormatError("a sector reference points past the end of the file")
-        return 512 + sector * self.sector
+        return (sector + 1) * self.sector  # the header fills the first sector, 512 or 4,096 bytes
 
     def _chain(self, start: int) -> bytes:
         parts: list[bytes] = []
@@ -119,13 +125,17 @@ class CompoundFile:
         count = min(len(directory) // 128, MAX_ENTRIES)
         raw: list[tuple[str, int, int, int, int, int, int]] = []
         self._directory = []
+        self._records: list[bytes] = []
         for index in range(count):
             record = directory[index * 128 : (index + 1) * 128]
+            self._records.append(record)
             length = struct.unpack_from("<H", record, 64)[0]
             name = record[: max(min(length, 64) - 2, 0)].decode("utf-16-le", errors="replace")
             kind = record[66]
             left, right, child = struct.unpack_from("<III", record, 68)
-            start, size = struct.unpack_from("<II", record, 116)
+            start, size = struct.unpack_from("<IQ", record, 116)
+            if self.sector == 512:  # a version 3 file: the high half is not a size and is ignored
+                size &= 0xFFFFFFFF
             raw.append((name, kind, left, right, child, start, size))
             self._directory.append(Entry(name, kind, start, size))
         if not raw or raw[0][1] != 5:
