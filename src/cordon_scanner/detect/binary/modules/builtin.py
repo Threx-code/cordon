@@ -411,7 +411,16 @@ class Builtin:
         return Module(ConsoleModule.SCHEMA, lambda file: ConsoleModule(sink).values())
 
     @staticmethod
+    def with_data() -> dict[str, Callable[[bytes], Module]]:
+        """The modules that read data given to the scan (a sandbox report, say), each built from
+        that data; a module here answers without it too, as `modules()` holds it."""
+        from cordon_scanner.detect.binary.modules.cuckoo import Cuckoo
+
+        return {"cuckoo": Cuckoo.module}
+
+    @staticmethod
     def modules() -> dict[str, Module]:
+        from cordon_scanner.detect.binary.modules.cuckoo import Cuckoo
         from cordon_scanner.detect.binary.modules.dotnet import Dotnet
         from cordon_scanner.detect.binary.modules.elf import Elf
         from cordon_scanner.detect.binary.modules.pe import Pe
@@ -425,6 +434,8 @@ class Builtin:
             "pe": Module(Pe.SCHEMA, Pe.data),
             "elf": Module(Elf.SCHEMA, Elf.data),
             "dotnet": Module(Dotnet.SCHEMA, Dotnet.data),
+            # with no report given to the scan (`Rules.match(given=...)` gives one)
+            "cuckoo": Cuckoo.module(),
         }
 
 

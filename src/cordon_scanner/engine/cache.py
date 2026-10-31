@@ -425,21 +425,19 @@ class CacheSignature:
         includes read: changing an included member changes the rules."""
         if not config.rule_file:
             return ""
-        from cordon_scanner.detect.binary.rule_engine.tokens import RuleError
-        from cordon_scanner.detect.binary.rule_files import BUILTIN, RuleFileEngine
+        from cordon_scanner.detect.registry import RuleFiles
 
         try:
-            if config.rule_file == BUILTIN:
-                return "builtin"
             digest = hashlib.sha256()
-            for path in RuleFileEngine.files(config.rule_file):
+            given = [Path(p) for _, p in config.rule_module_data]
+            for path in [*RuleFiles.files(config.rule_file), *given]:
                 digest.update(
                     f"{path.as_posix()}:".encode() + hashlib.sha256(path.read_bytes()).digest()
                 )
             return digest.hexdigest()[:16]
         except OSError:
             return "unreadable"
-        except RuleError:
+        except ValueError:  # an include the rules refuse (RuleError)
             return "does-not-compile"
 
     @staticmethod

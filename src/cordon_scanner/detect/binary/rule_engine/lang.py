@@ -193,8 +193,15 @@ class Rules:
     #: The built-in modules, loaded once.
     BUILT_IN: ClassVar[dict[str, Module]] = {}
 
-    def __init__(self, rules: list[RuleDef], modules: dict[str, Module]) -> None:
+    def __init__(
+        self,
+        rules: list[RuleDef],
+        modules: dict[str, Module],
+        imports: frozenset[str] = frozenset(),
+    ) -> None:
         self.rules, self.modules = rules, modules
+        #: The modules the rules import.
+        self.imports = imports
         self._index: tuple[Any, list[StringDef]] | None = None
 
     @staticmethod
@@ -215,7 +222,8 @@ class Rules:
         loaded = Rules.loaded(modules)
         given = dict(externals or {})
         try:
-            rules = Grammar(text, given, frozenset(loaded), includes).read()
+            grammar = Grammar(text, given, frozenset(loaded), includes)
+            rules = grammar.read()
             Strings.prepare(rules)
         except (IndexError, ValueError, binascii.Error) as exc:
             if isinstance(exc, RuleError):
@@ -234,7 +242,7 @@ class Rules:
                 and not Tree.calls(rule.condition)
             )
             Strings.place(rule)
-        return Rules(rules, loaded)
+        return Rules(rules, loaded, frozenset(grammar.imports))
 
     def index(self) -> tuple[Any, list[StringDef]]:
         """One index of every string's anchors, built once for the rule set."""
@@ -246,12 +254,22 @@ class Rules:
         return self._index
 
     def match(
-        self, data: bytes, timeout: float | None = None, console: Callable[[str], Any] | None = None
+        self,
+        data: bytes,
+        timeout: float | None = None,
+        console: Callable[[str], Any] | None = None,
+        given: dict[str, Module] | None = None,
     ) -> list[Match]:
         """The rules `data` matches; a `RuleError` once `timeout` seconds have passed. `console`
-        receives each `console.log`/`console.hex` message."""
+        receives each `console.log`/`console.hex` message. `given` replaces built-in modules for
+        this match by name, as one built from data given to the scan (`Cuckoo.module(report)`)."""
         deadline = time.monotonic() + timeout if timeout is not None else None
         modules = self.modules
+        if given:
+            unknown = set(given) - set(modules)
+            if unknown:
+                raise RuleError(f"data given for modules the rules do not have: {sorted(unknown)}")
+            modules = {**modules, **given}
         if console is not None:
             modules = {**modules, "console": Builtin.console(console)}
         frame = Frame(data, modules)

@@ -47,7 +47,25 @@ ran" never look alike.
   string sets and quantifiers, both `for` loops, arithmetic and bitwise operators, the integer
   readers, `defined`, and the string operators including `matches`.
 - **Modules**: `math`, `hash`, `string`, `console` and `time`; `pe`, `elf` and `dotnet` for
-  executables.
+  executables; `cuckoo` for what a sandbox run did (below).
+
+## Giving a module data: `cuckoo`
+
+`cuckoo`'s functions (`network.dns_lookup`, `network.http_get`, `network.http_post`,
+`network.http_request`, `network.http_user_agent`, `network.host`, `network.tcp`, `network.udp`,
+`registry.key_access`, `filesystem.file_access`, `sync.mutex`) answer from a Cuckoo sandbox report
+given to the scan, as `yara -x cuckoo=report.json` gives one:
+
+```
+cordon-scanner scan . --rule-file rules.yar --rule-module-data cuckoo=report.json
+```
+
+The report is read once and every file of the scan is matched against the same run. A report
+that is not JSON, or that holds an integer outside 64 bits, makes the rule file unavailable for the
+scan (`OPERATIONAL.RULEFILE.UNAVAILABLE`). Without a report the functions answer 0, and
+`OPERATIONAL.RULEFILE.STATUS` says the rules import `cuckoo` and none was given. An item of
+`hosts`, `keys`, `files` or `mutexes` that is not text is skipped (the reference engine crashes on
+one).
 
 ## How it is held to its behaviour
 

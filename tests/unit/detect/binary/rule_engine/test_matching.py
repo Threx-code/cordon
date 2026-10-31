@@ -13,9 +13,9 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from cordon_scanner.detect.binary.rule_engine.lang import RuleError, Rules
+from cordon_scanner.detect.binary.rule_engine.needles import NeedleSet
 from cordon_scanner.detect.binary.rule_engine.pattern import Memo, PatternError
 from cordon_scanner.detect.binary.rule_engine.pattern_readers import RegexReader
-from cordon_scanner.detect.binary.rule_engine.scan import NeedleSet
 
 DOTS = b"."
 

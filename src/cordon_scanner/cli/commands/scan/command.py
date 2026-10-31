@@ -173,6 +173,14 @@ class ScanCommand:
             overrides["keyrings"] = tuple(args.keyrings)
         if rule_file := Renamed.rule_file(args, PROGRAM):
             overrides["rule_file"] = rule_file
+        if given := getattr(args, "rule_module_data", None):
+            pairs = [item.partition("=") for item in given]
+            bad = [
+                item for item, (_, eq, path) in zip(given, pairs, strict=True) if not eq or not path
+            ]
+            if bad:
+                raise ConfigError(f"--rule-module-data takes MODULE=FILE, not {bad[0]!r}")
+            overrides["rule_module_data"] = tuple((name, path) for name, _, path in pairs)
         if getattr(args, "registry_tokens", None):
             from cordon_scanner.intel.registries.private_registries import PrivateRegistries
 

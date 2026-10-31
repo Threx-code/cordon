@@ -84,6 +84,7 @@ MAX_WORKERS = 16
 CARRIED_SETTINGS: tuple[str, ...] = (
     "clamav",
     "rule_file",
+    "rule_module_data",
     "judge",
     "judge_blocks",
     "judge_max_calls",

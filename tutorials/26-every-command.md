@@ -177,6 +177,12 @@ Scan a directory, file or archive.
 │                           Cordon). Off by default; never set from a        │
 │                           repository's own configuration (env:             │
 │                           CORDON_RULE_FILE)                                │
+│ --rule-module-data MODULE=FILE                                             │
+│                           give a rule file's module data for the scan, as  │
+│                           `yara -x` does: `cuckoo=report.json` (a Cuckoo   │
+│                           sandbox report) answers the cuckoo module's      │
+│                           functions (repeatable). Never set from a         │
+│                           repository's own configuration                   │
 │ --clamav SOCKET           also hand each file to a local ClamAV daemon: a  │
 │                           Unix socket path, or tcp://127.0.0.1:3310. Off   │
 │                           by default; the report says whether it ran.      │

@@ -457,18 +457,64 @@ class TestRuleFile(RuleFileFixtures):
         operator's own file on disk."""
         src = ROOT / "src" / "cordon_scanner"
         builders = sorted(
-            str(p.relative_to(src))
+            p.relative_to(src).as_posix()
             for p in src.rglob("*.py")
             if "Includes(" in p.read_text(encoding="utf-8")
         )
         assert builders == ["detect/binary/rule_files.py"]
 
+    def test_a_cuckoo_report_given_to_the_scan_answers_the_cuckoo_module(self, tmp_path) -> None:
+        rules = tmp_path / "rules.yar"
+        rules.write_text(
+            'import "cuckoo"\nrule Beacon { condition: cuckoo.network.dns_lookup(/evil/) }\n',
+            encoding="utf-8",
+        )
+        report = tmp_path / "report.json"
+        report.write_text(
+            '{"network": {"domains": [{"ip": "1.2.3.4", "domain": "evil.example.com"}]}}',
+            encoding="utf-8",
+        )
+        target = tmp_path / "repo"
+        target.mkdir()
+        (target / "a.bin").write_bytes(b"x")
+        config = Config.default().with_overrides(
+            use_cache=False, rule_file=str(rules), rule_module_data=(("cuckoo", str(report)),)
+        )
+        result = Scanner(config).scan(target)
+        assert any(
+            "Beacon" in f.message
+            for f in result.findings
+            if f.rule_id == "SUSPECT.RULEFILE.MATCH.001"
+        )
+        status = [f for f in result.findings if f.rule_id == "OPERATIONAL.RULEFILE.STATUS"]
+        assert status and "none was given" not in status[0].message
+
+    def test_without_a_report_the_scan_says_cuckoo_had_none(self, scan) -> None:
+        result = scan(
+            'import "cuckoo"\nrule Beacon { condition: cuckoo.network.dns_lookup(/x/) }\n'
+        )
+        assert not [f for f in result.findings if f.rule_id == "SUSPECT.RULEFILE.MATCH.001"]
+        status = [f for f in result.findings if f.rule_id == "OPERATIONAL.RULEFILE.STATUS"]
+        assert status and "cuckoo" in status[0].message and "none was given" in status[0].message
+
+    def test_a_report_the_module_refuses_makes_the_rule_file_unavailable(self, tmp_path) -> None:
+        from cordon_scanner.detect.binary.rule_files import RuleFileEngine
+
+        rules = tmp_path / "rules.yar"
+        rules.write_text('import "cuckoo"\nrule r { condition: true }\n', encoding="utf-8")
+        bad = tmp_path / "bad.json"
+        bad.write_text("not json", encoding="utf-8")
+        with pytest.raises(ValueError, match="cuckoo report"):
+            RuleFileEngine(str(rules), (("cuckoo", str(bad)),))
+        with pytest.raises(OSError, match="no module reads data"):
+            RuleFileEngine(str(rules), (("pe", str(bad)),))
+
     def test_a_module_the_engine_does_not_implement_is_reported_and_marks_the_scan_incomplete(
         self, scan
     ) -> None:
-        result = scan('import "cuckoo"\nrule x { condition: true }\n')
+        result = scan('import "no_such_module"\nrule x { condition: true }\n')
         note = [f for f in result.findings if f.rule_id == "OPERATIONAL.RULEFILE.UNAVAILABLE"]
-        assert note and "cuckoo" in note[0].message and not result.complete
+        assert note and "no_such_module" in note[0].message and not result.complete
 
     def test_rules_that_do_not_compile_are_reported(self, scan) -> None:
         result = scan("rule broken { condition: }\n")

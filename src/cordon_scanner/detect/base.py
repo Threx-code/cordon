@@ -618,6 +618,13 @@ class BinaryIdentification(Protocol):
     def identify(self, raw: bytes) -> FileFormat | None: ...
 
 
+class RuleFileInputs(Protocol):
+    """What the engine uses of the class `RuleFileEngine`: the files an operator's rule file
+    reads, for the scan cache."""
+
+    def files(self, rules_path: str) -> list[Path]: ...
+
+
 class ComposerPluginPaths(Protocol):
     """What the engine uses of the class `ComposerPluginHooks`."""
 

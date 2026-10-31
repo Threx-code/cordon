@@ -23,6 +23,7 @@ ROLES: dict[str, tuple[str, str]] = {
     "NATIVE_FORMATS": ("cordon_scanner.detect.binary.detector", "NATIVE_FORMATS"),
     "PackingFindings": ("cordon_scanner.detect.code.obfuscation.packing", "PackingFindings"),
     "ReachedFlows": ("cordon_scanner.detect.code.reached_flows", "ReachedFlows"),
+    "RuleFiles": ("cordon_scanner.detect.binary.rule_files", "RuleFileEngine"),
     "SBOM_NAMES": ("cordon_scanner.detect.supply.sbom", "SBOM_NAMES"),
     "SBOM_SUFFIXES": ("cordon_scanner.detect.supply.sbom", "SBOM_SUFFIXES"),
     "ServerSources": ("cordon_scanner.detect.agents.mcp_servers.source", "ServerSources"),
@@ -43,11 +44,13 @@ if TYPE_CHECKING:
         JudgeScheduling,
         PackerSignatures,
         ReachedFlowFacts,
+        RuleFileInputs,
         ServerSourceFinding,
         SkillScripts,
         SubmoduleDependencies,
     )
     from cordon_scanner.detect.binary import detector as _detect_binary_detector
+    from cordon_scanner.detect.binary import rule_files as _detect_binary_rule_files
     from cordon_scanner.detect.code import download_flow as _detect_code_download_flow
     from cordon_scanner.detect.code import reached_flows as _detect_code_reached_flows
     from cordon_scanner.detect.code.capability import load_path as _detect_code_capability_load_path
@@ -70,6 +73,7 @@ if TYPE_CHECKING:
     NATIVE_FORMATS: frozenset[str] = _detect_binary_detector.NATIVE_FORMATS
     PackingFindings: PackerSignatures = _detect_code_obfuscation_packing.PackingFindings
     ReachedFlows: ReachedFlowFacts = _detect_code_reached_flows.ReachedFlows
+    RuleFiles: RuleFileInputs = _detect_binary_rule_files.RuleFileEngine
     SBOM_NAMES: tuple[str, ...] = _detect_supply_sbom.SBOM_NAMES
     SBOM_SUFFIXES: tuple[str, ...] = _detect_supply_sbom.SBOM_SUFFIXES
     ServerSources: ServerSourceFinding = _detect_agents_mcp_servers_source.ServerSources
