@@ -120,3 +120,33 @@ class TestThroughTheScan:
             "The rule layered matched this file.",
             "The rule raw_only matched this file.",
         ]
+
+
+class TestALayerFailsClosed:
+    def test_a_layer_past_the_bound_fails_the_scan(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The raw file is base64 text with no zero byte in it; its decoded layer is a megabyte of
+        zeros, past a lowered bound. The layer's refusal fails the scan as the raw file's would."""
+        from cordon_scanner.detect.binary.rule_engine.anchoring.places import Places
+
+        monkeypatch.setattr(Places, "MOST", 100_000)
+        rules = tmp_path / "z.yar"
+        rules.write_text(
+            'rule z { meta: layers = "decoded" category = "malicious" '
+            "strings: $z = { 00 00 00 00 } condition: #z > 5 }",
+            encoding="utf-8",
+        )
+        (tmp_path / "pkg").mkdir()
+        body = b'x = atob("' + base64.b64encode(bytes(1 << 20)) + b'");\n'
+        (tmp_path / "pkg" / "index.js").write_bytes(body)
+        out = tmp_path / "out.json"
+        argv = ["cordon-scanner", "scan", str(tmp_path / "pkg"), "--offline", "--no-color", "--quiet",
+                "--rule-file", str(rules), "-f", f"json:{out}"]  # fmt: skip
+        monkeypatch.setattr(sys, "argv", argv)
+        with pytest.raises(SystemExit) as code:
+            runpy.run_module("cordon_scanner", run_name="__main__")
+        report = json.loads(out.read_text(encoding="utf-8"))
+        ids = {f["rule_id"]: f["severity"] for f in report["findings"]}
+        assert ids.get("SUSPECT.RULEFILE.UNMATCHED.001") == "high"
+        assert code.value.code not in (0, None)

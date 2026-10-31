@@ -323,8 +323,7 @@ class RuleFileDetector(BaseDetector):
                         ctx,
                     )
                 )
-                if RuleFileDetector.unbounded(exc):
-                    out.append(self._unbounded(unit, exc, ctx))
+                out.append(self._unmatched(unit, exc, ctx))  # as the raw file: never passed clean
                 continue
             for match in matches:
                 name = str(match.rule)
