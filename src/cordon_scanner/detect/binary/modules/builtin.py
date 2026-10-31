@@ -414,16 +414,18 @@ class Builtin:
     def with_data() -> dict[str, Callable[[bytes], Module]]:
         """The modules that read data given to the scan (a sandbox report, say), each built from
         that data; a module here answers without it too, as `modules()` holds it."""
+        from cordon_scanner.detect.binary.modules.formats.androguard import Androguard
         from cordon_scanner.detect.binary.modules.reports.cuckoo import Cuckoo
         from cordon_scanner.detect.binary.modules.reports.vt import Vt
 
-        return {"cuckoo": Cuckoo.module, "vt": Vt.module}
+        return {"cuckoo": Cuckoo.module, "vt": Vt.module, "androguard": Androguard.module}
 
     @staticmethod
     def modules() -> dict[str, Module]:
         from cordon_scanner.detect.binary.modules.dotnet import Dotnet
         from cordon_scanner.detect.binary.modules.elf import Elf
         from cordon_scanner.detect.binary.modules.file_type import FileType
+        from cordon_scanner.detect.binary.modules.formats.androguard import Androguard
         from cordon_scanner.detect.binary.modules.formats.crx import Crx
         from cordon_scanner.detect.binary.modules.formats.dex import Dex
         from cordon_scanner.detect.binary.modules.formats.lnk import Lnk
@@ -458,6 +460,7 @@ class Builtin:
             "olecf": Module(Olecf.SCHEMA, Olecf.data),
             "msi": Module(Msi.SCHEMA, Msi.data),
             "vba": Module(Vba.SCHEMA, Vba.data),
+            "androguard": Androguard.module(),
         }
 
 

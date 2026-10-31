@@ -1,0 +1,60 @@
+[console_scripts]
+cordon-sandbox = cordon_sandbox.cli:SandboxCli.main
+cordon-scanner = cordon_scanner.cli.main:CommandLine.main
+
+[cordon_scanner.detectors]
+advisory = cordon_scanner.detect.supply.advisories.detector:AdvisoryDetector
+agent-judge = cordon_scanner.detect.agents.language_model.detector:AgentJudgeDetector
+agents = cordon_scanner.detect.agents.chain:AgentChainDetector
+attestation = cordon_scanner.detect.supply.attestation:AttestationDetector
+binary = cordon_scanner.detect.binary.detector:BinaryDetector
+campaign-sibling = cordon_scanner.detect.supply.campaign_sibling:CampaignSiblingDetector
+capability = cordon_scanner.detect.code.capability.detector:CapabilityDetector
+clamav = cordon_scanner.detect.binary.clamav:ClamavDetector
+config = cordon_scanner.detect.infra.config_files:ConfigDetector
+dependency = cordon_scanner.detect.supply.dependency:DependencyDetector
+formats = cordon_scanner.detect.binary.formats:FormatDetector
+iac = cordon_scanner.detect.infra.iac:IacDetector
+license = cordon_scanner.detect.supply.license:LicenseDetector
+lockfile = cordon_scanner.detect.supply.lockfile:LockfileDetector
+manifest = cordon_scanner.detect.supply.manifests.detector:ManifestDetector
+mcp-live = cordon_scanner.detect.agents.mcp_servers.live:LiveMcpDetector
+mcp-packages = cordon_scanner.detect.agents.mcp_servers.packages:McpPackageDetector
+model = cordon_scanner.detect.agents.model:ModelDetector
+obfuscated-hook = cordon_scanner.detect.supply.obfuscated_hook:ObfuscatedHookDetector
+obfuscation = cordon_scanner.detect.code.obfuscation.detector:ObfuscationDetector
+os-packages = cordon_scanner.detect.supply.ospackages:OsPackageDetector
+pack-rules = cordon_scanner.detect.code.pack_rules:PackRuleDetector
+package-policy = cordon_scanner.detect.supply.package_policy:PackagePolicyDetector
+provenance = cordon_scanner.detect.supply.provenance:ProvenanceDetector
+recipe-digest = cordon_scanner.detect.supply.recipe_digests:RecipeDigestDetector
+registry = cordon_scanner.detect.supply.registries.detector:RegistryDetector
+rule-file = cordon_scanner.detect.binary.rule_files:RuleFileDetector
+sbom = cordon_scanner.detect.supply.sbom:SbomDetector
+secrets = cordon_scanner.detect.secrets.detector:SecretDetector
+slopsquat = cordon_scanner.detect.supply.slopsquat:SlopsquatDetector
+vcs = cordon_scanner.detect.source.vcs:VcsDetector
+
+[cordon_scanner.reporters]
+codeclimate = cordon_scanner.report.codeclimate:CodeClimateReporter
+github = cordon_scanner.report.github:GithubReporter
+json = cordon_scanner.report.json_:JsonReporter
+junit = cordon_scanner.report.junit:JunitReporter
+markdown = cordon_scanner.report.markdown:MarkdownReporter
+sarif = cordon_scanner.report.sarif:SarifReporter
+text = cordon_scanner.report.text:TextReporter
+vex = cordon_scanner.report.vex:VexReporter
+
+[cordon_scanner.ecosystem_facts]
+builtin = cordon_scanner.ecosystems.registry:RegistryFacts
+
+[cordon_scanner.model_providers]
+builtin = cordon_scanner.judge.providers:ProviderFactory
+
+[cordon_scanner.commands]
+mcp = cordon_scanner.mcp.server:Server
+
+[cordon_scanner.notifiers]
+slack = cordon_scanner.notify.channels.slack:SlackChannel
+teams = cordon_scanner.notify.channels.teams:TeamsChannel
+webhook = cordon_scanner.notify.channels.webhook:WebhookChannel
