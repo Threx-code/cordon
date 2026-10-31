@@ -84,7 +84,7 @@ class TestMatchCache:
         cache = MatchCache(tmp_path / "m")
         ident = Kit.identity(Kit.write(tmp_path))
         cache.put(ident, b"data", [])
-        cache._path(ident, b"data").chmod(0o666)  # noqa: S103 -- the refusal is what is tested
+        cache._path(ident, b"data").chmod(0o666)  # world-writable: the refusal is what is tested
         assert cache.get(ident, b"data") is None
 
     def test_meta_values_keep_their_type(self, tmp_path: Path) -> None:
