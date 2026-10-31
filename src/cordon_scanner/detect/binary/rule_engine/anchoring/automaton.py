@@ -25,7 +25,7 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any, ClassVar
 
-from cordon_scanner.detect.binary.rule_engine.needles import NeedleSet
+from cordon_scanner.detect.binary.rule_engine.anchoring.needles import NeedleSet
 
 
 class Native:

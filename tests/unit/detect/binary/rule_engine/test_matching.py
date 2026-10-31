@@ -12,8 +12,8 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from cordon_scanner.detect.binary.rule_engine.anchoring.needles import NeedleSet
 from cordon_scanner.detect.binary.rule_engine.lang import RuleError, Rules
-from cordon_scanner.detect.binary.rule_engine.needles import NeedleSet
 from cordon_scanner.detect.binary.rule_engine.pattern import Memo, PatternError
 from cordon_scanner.detect.binary.rule_engine.pattern_readers import RegexReader
 

@@ -530,7 +530,7 @@ class Rules:
             "one interned tuple of field names per node shape, a fixed set the grammar decides"
         ),
         "cordon_scanner.foundation.collector:ScanCaches._clearers": "the registry itself",
-        "cordon_scanner.detect.binary.rule_engine.automaton:Automaton.DIGEST": (
+        "cordon_scanner.detect.binary.rule_engine.anchoring.automaton:Automaton.DIGEST": (
             "the sha256 of the one native binary the process loaded: one value, worked out once"
         ),
         "cordon_scanner.detect.binary.modules.der:Hash._BY_NAME": "filled once per hash OID name",

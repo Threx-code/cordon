@@ -1,4 +1,4 @@
-"""rule_engine.automaton: the native anchor automaton (cordon_scanner._native._anchors) and the Python
+"""rule_engine.anchoring.automaton: the native anchor automaton (cordon_scanner._native._anchors) and the Python
 reading give the same answers. A property over random anchor sets and random or adversarial data
 holds `present` and `positions` (with a cap) equal both ways, with and without case folding; the
 number of cases is CORDON_NATIVE_EXAMPLES (2,000 by default; the proof runs 100,000). Eight threads
@@ -14,7 +14,7 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from cordon_scanner.detect.binary.rule_engine.automaton import Automaton
+from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton
 
 EXAMPLES = int(os.environ.get("CORDON_NATIVE_EXAMPLES", "2000"))
 NATIVE = pytest.mark.skipif(not Automaton.NATIVE, reason=str(Automaton.WHY))

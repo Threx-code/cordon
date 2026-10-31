@@ -16,6 +16,8 @@ import time
 from collections.abc import Iterable, Iterator
 from typing import Any, ClassVar
 
+from cordon_scanner.detect.binary.rule_engine.anchoring.places import Places, Unbounded
+from cordon_scanner.detect.binary.rule_engine.anchoring.stream import Streams
 from cordon_scanner.detect.binary.rule_engine.anchors import Anchor, Anchors
 from cordon_scanner.detect.binary.rule_engine.chain import Chain
 from cordon_scanner.detect.binary.rule_engine.pattern import (
@@ -32,9 +34,7 @@ from cordon_scanner.detect.binary.rule_engine.pattern_readers import (
     HexReader,
     RegexReader,
 )
-from cordon_scanner.detect.binary.rule_engine.places import Places, Unbounded
 from cordon_scanner.detect.binary.rule_engine.search_parts import AnchorAt, Event, Part
-from cordon_scanner.detect.binary.rule_engine.stream import Streams
 from cordon_scanner.detect.binary.rule_engine.threads import REACH, Lanes, Threads
 
 #: The most matches one string records; past this it is not searched further in that data.
@@ -475,7 +475,7 @@ class _Hunt:
         return sorted(self.hits.items())
 
     def run_streamed(self, sources: list[Any]) -> list[tuple[int, int]] | None:
-        """`run` over sorted event streams (`rule_engine.stream`), pulling only until full; None
+        """`run` over sorted event streams (`rule_engine.anchoring.stream`), pulling only until full; None
         where the string's matches are worked out from all its offsets at once (a chain)."""
         busy, total = Streams.busy(sources, _Hunt.BUSY + 1)
         parts = self.s.parts

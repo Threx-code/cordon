@@ -30,7 +30,7 @@ from cordon_scanner.detect.base import (
     ScanContext,
     Unit,
 )
-from cordon_scanner.detect.binary.rule_engine.automaton import Automaton
+from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.foundation.models import (
     Category,
@@ -333,7 +333,7 @@ class RuleFileDetector(BaseDetector):
     @staticmethod
     def unbounded(exc: BaseException) -> bool:
         """Whether matching stopped at the engine's per-file bound (`rule_engine.scan.Unbounded`)."""
-        from cordon_scanner.detect.binary.rule_engine.places import Unbounded
+        from cordon_scanner.detect.binary.rule_engine.anchoring.places import Unbounded
 
         seen: BaseException | None = exc
         for _ in range(8):

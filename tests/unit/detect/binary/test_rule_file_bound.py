@@ -1,4 +1,4 @@
-"""The rule-file engine's per-file bound (rule_engine.places.Places.MOST): a file with more places to
+"""The rule-file engine's per-file bound (rule_engine.anchoring.places.Places.MOST): a file with more places to
 try than the bound, in all of its strings together, is refused instead of built in memory, and the
 refusal fails the gate (SUSPECT.RULEFILE.UNBOUNDED.001, HIGH): a file padded on purpose to reach the
 bound (malware followed by megabytes of zeros) is never passed as clean. Run on 8 MB of zeros with
@@ -14,9 +14,9 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner.detect.binary.rule_engine import scan
+from cordon_scanner.detect.binary.rule_engine.anchoring.places import Places, Unbounded
+from cordon_scanner.detect.binary.rule_engine.anchoring.stream import Streams
 from cordon_scanner.detect.binary.rule_engine.lang import RuleError, Rules
-from cordon_scanner.detect.binary.rule_engine.places import Places, Unbounded
-from cordon_scanner.detect.binary.rule_engine.stream import Streams
 
 ZEROS = bytes(8 << 20)
 

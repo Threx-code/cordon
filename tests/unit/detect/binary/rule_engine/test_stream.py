@@ -1,4 +1,4 @@
-"""rule_engine.stream: the streamed hunt gives the matches the whole-list hunt gives. Random strings
+"""rule_engine.anchoring.stream: the streamed hunt gives the matches the whole-list hunt gives. Random strings
 (text with and without nocase, wide, fullword; hex with wildcards and jumps; regular expressions,
 anchored and not) over random data with long runs of a few bytes are matched both ways, and every
 match -- each string's offsets and lengths, so every count and position a condition reads -- must be
@@ -14,8 +14,8 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from cordon_scanner.detect.binary.rule_engine import scan
+from cordon_scanner.detect.binary.rule_engine.anchoring.stream import Streams
 from cordon_scanner.detect.binary.rule_engine.lang import RuleError, Rules
-from cordon_scanner.detect.binary.rule_engine.stream import Streams
 
 EXAMPLES = int(os.environ.get("CORDON_STREAM_EXAMPLES", "500"))
 ALPHABET = b"ab\\x00A"

@@ -1,6 +1,6 @@
 """How many places to try one file may hold for a rule file's strings (`Places.MOST`, in all), and
 the refusal past it (`Unbounded`): the whole-list hunt's bound, which a file padded on purpose cannot
-use to exhaust the scan's memory (the streamed hunt, `rule_engine.stream`, holds none of them)."""
+use to exhaust the scan's memory (the streamed hunt, `rule_engine.anchoring.stream`, holds none of them)."""
 
 from __future__ import annotations
 
