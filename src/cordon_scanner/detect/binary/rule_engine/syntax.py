@@ -294,6 +294,9 @@ class RuleDef:
     notes: list[str] = field(default_factory=list)
     #: The condition's top-level parts that read no string, each ready to run (`rule_engine.gates`).
     gates: list[Callable[[Frame], Any]] = field(default_factory=list)
+    #: Each gate's structure, the key its result is kept under for one file (`Gates.hold`); None
+    #: for a gate that reads another rule's result.
+    gate_keys: list[str | None] = field(default_factory=list)
     #: Sets of strings of which one must match for the condition to hold (`rule_engine.gates`).
     clauses: list[frozenset[str]] = field(default_factory=list)
     #: The leading-byte requirements among its gates (`rule_engine.gates.MagicIndex`).

@@ -589,6 +589,48 @@ without an explicit review trailer.
 Pattern safety is enforced at pack load, not at match time. A rule pack must not
 be able to hang the scanner, and organisations author their own rules.
 
+### 8.5 The native accelerator and its Python twins
+
+The YARA-compatible rule engine (`detect/binary/rule_engine`) has one optional C extension,
+`cordon_scanner._native._anchors` (`src/cordon_scanner/_native/anchors.c`), built when the wheel's
+build has a compiler (`[[tool.cordon-build.native]]` in `pyproject.toml`). Every call it offers has
+a Python twin that gives the same answer, so a wheel without it finds exactly what a wheel with it
+finds (constraint C6), only more slowly.
+
+```
+  rule file + file bytes
+          │
+          ▼
+  ┌──────────────────────┐  native?   ┌─────────────────────────────┬──────────────────────────┐
+  │ anchoring.automaton  │ ─────────► │ C (_anchors)                │ Python twin              │
+  └──────────────────────┘            ├─────────────────────────────┼──────────────────────────┤
+          │                           │ Automaton.present/positions │ NeedleSet, bytes.find    │
+          │                           │ check_text                  │ TextCheck.at             │
+          │                           │ text_hits  (TextFind)       │ scan._Hunt, text parts   │
+          │                           │ hex_hits   (HexFind)        │ scan._Hunt + Lanes       │
+          │                           └─────────────────────────────┴──────────────────────────┘
+          ▼
+  matches (start, length) ── identical either way, held by the properties below
+```
+
+- **What runs in C.** Which anchors occur, and where (an Aho-Corasick automaton, case-folded or not).
+  The text check at each candidate offset. A text string's whole find (`text_hits`), and a plain hex
+  string's whole find (`hex_hits`, a step-for-step port of `threads.Lanes`). Every other string
+  (regular expressions, hex with alternatives or heavy jumps, base64, linked parts) is found by the
+  Python hunt. A string is found natively only from `NeedleSet.FEW` anchors up.
+- **When it is used.** Whenever the extension imports. `CORDON_NO_NATIVE=1` turns it off for a
+  process, and the engine reads everything in Python.
+- **How to tell.** `cordon-scanner --version` prints a second line: `native: yes, native anchor
+  matcher (sha256 <digest of the loaded binary>)`, or `native: no, Python anchor matcher (<why>)`.
+  The rule file's load status says the same.
+- **Bounds.** The time allowed for a match is read inside the C loops as the hunt reads it (the
+  first event and every 4,096th), and every argument the extension takes is bounded on entry
+  (ValueError or TypeError, never a read outside the data).
+- **Proof that the twins agree.** Hypothesis properties, each run at 100,000 cases before a merge:
+  `test_native_anchors` (the automaton and `check_text`), `test_text_find`, `test_hex_find`. The
+  libFuzzer harness `scripts/native/fuzz_anchors.c` runs every call under ASan and UBSan against
+  naive checks of its own (`make fuzz-native`). The full suite also runs with `CORDON_NO_NATIVE=1`.
+
 ### 8.4 Suppression
 
 ```yaml

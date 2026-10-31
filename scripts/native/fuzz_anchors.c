@@ -11,7 +11,11 @@
  * made: the build (which may refuse the needles), present, and positions over every id; the
  * results are checked against a naive search of the same data, so a wrong answer is a crash too.
  * check_text is held to naive_text at every offset and mode, and text_hits, over the needles'
- * occurrences as owners with flags, max_hits and fixed drawn from the data, to naive_hits.
+ * occurrences as owners with flags, max_hits and fixed drawn from the data, to naive_hits; and
+ * hex_hits, with forward and backward layouts drawn from the input, to a search over each layout
+ * from its entry: every start reached, by the first event to reach it, with a length the forward
+ * layout can reach from there (which of those lengths is threads.Lanes' order, as YARA's, held
+ * by test_hex_find against Lanes and by the reference against yara, not here).
  */
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
@@ -20,6 +24,7 @@
 static PyObject *Type;
 static PyObject *Check;
 static PyObject *Hits;
+static PyObject *HexHits;
 
 /* the text check written again, plainly, for the harness to hold check_text to */
 static int64_t naive_text(const uint8_t *d, int64_t n, int64_t at, const uint8_t *t, int64_t m, long mode) {
@@ -136,6 +141,140 @@ static void check_hits(const uint8_t *d, size_t dn, PyObject *needles, PyObject 
     Py_DECREF(got); Py_DECREF(owners);
 }
 
+/* hex_hits checked: a layout of at most 8 instructions drawn from the input, both ways */
+#define HX_REACH 60 /* every forward length fits one 64-bit set */
+typedef struct { int64_t op[9][3]; int n; } Layout;
+
+static void draw_layout(Layout *l, const uint8_t *b, size_t nb) {
+    l->n = 0;
+    for (size_t i = 0; i + 1 < nb && l->n < 8; i += 2) {
+        uint8_t k = b[i] % 6, v = b[i + 1];
+        int64_t *o = l->op[l->n++];
+        o[1] = o[2] = 0;
+        if (k == 0) { o[0] = L_BYTE; o[1] = v % 4 + 'a'; }
+        else if (k == 1) { o[0] = L_NOT_BYTE; o[1] = v % 4 + 'a'; }
+        else if (k == 2) { o[0] = L_MASK; o[1] = 0xF0; o[2] = 0x60; }
+        else if (k == 3) { o[0] = L_NOT_MASK; o[1] = 0x0F; o[2] = v & 0x0F; }
+        else if (k == 4) { o[0] = L_ANY; }
+        else if (l->n < 8) { o[0] = L_SKIP; o[1] = v % 3; o[2] = o[1] + v / 64; }
+        else { o[0] = L_ANY; }
+        if (o[0] == L_SKIP && l->n == 8) o[0] = L_ANY;
+    }
+    if (l->n > 0 && l->op[l->n - 1][0] == L_SKIP) l->op[l->n - 1][0] = L_ANY;
+    l->op[l->n][0] = L_DONE; l->op[l->n][1] = l->op[l->n][2] = 0; l->n++;
+}
+
+/* forwards: the set of lengths reachable from (pc, done), one bit each; as Lanes reads (reach) */
+static uint64_t hx_fwd(const Layout *l, int pc, int64_t done, const uint8_t *d, int64_t at, int64_t reach) {
+    const int64_t *o = l->op[pc];
+    if (o[0] == L_DONE) return (uint64_t)1 << done;
+    if (o[0] == L_SKIP) {
+        if (done + o[1] >= reach) return 0;
+        uint64_t all = 0;
+        for (int64_t j = o[1]; j <= o[2]; j++) {
+            if (j > o[1] && done + j >= reach) break;
+            all |= hx_fwd(l, pc + 1, done + j, d, at, reach);
+        }
+        return all;
+    }
+    if (done >= reach) return 0;
+    uint8_t c = d[at + done]; int ok;
+    if (o[0] == L_ANY) ok = 1; else if (o[0] == L_BYTE) ok = c == o[1]; else if (o[0] == L_NOT_BYTE) ok = c != o[1];
+    else if (o[0] == L_MASK) ok = (c & o[1]) == o[2]; else ok = (c & o[1]) != o[2];
+    return ok ? hx_fwd(l, pc + 1, done + 1, d, at, reach) : 0;
+}
+
+/* backwards: marks each done reached at DONE (a start at - done) */
+static void hx_back(const Layout *l, int pc, int64_t done, const uint8_t *d, int64_t at, int64_t reach, uint8_t *got) {
+    const int64_t *o = l->op[pc];
+    if (o[0] == L_DONE) { got[done < reach ? done : reach] = 1; return; }
+    if (o[0] == L_SKIP) {
+        if (done + o[1] >= reach) return;
+        for (int64_t j = o[1]; j <= o[2]; j++) {
+            if (j > o[1] && done + j >= reach) break;
+            hx_back(l, pc + 1, done + j, d, at, reach, got);
+        }
+        return;
+    }
+    if (done >= reach) return;
+    uint8_t c = d[at - 1 - done]; int ok;
+    if (o[0] == L_ANY) ok = 1; else if (o[0] == L_BYTE) ok = c == o[1]; else if (o[0] == L_NOT_BYTE) ok = c != o[1];
+    else if (o[0] == L_MASK) ok = (c & o[1]) == o[2]; else ok = (c & o[1]) != o[2];
+    if (ok) hx_back(l, pc + 1, done + 1, d, at, reach, got);
+}
+
+static PyObject *layout_bytes(const Layout *l) {
+    return PyBytes_FromStringAndSize((const char *)l->op, (Py_ssize_t)(l->n * 3 * 8));
+}
+
+static void check_hex(const uint8_t *buf, size_t size, const uint8_t *d, size_t dn, PyObject *needles, PyObject *data) {
+    Py_ssize_t n = PyList_GET_SIZE(needles);
+    if (n == 0 || size < 4) return;
+    Layout fw, bw;
+    size_t half = size / 2 < 16 ? size / 2 : 16;
+    draw_layout(&fw, buf, half); draw_layout(&bw, buf + half, half);
+    int64_t occ[64], backs[8], ends[64 * 8], start_at[4096]; uint64_t start_fwd[4096]; int no = 0;
+    PyObject *owners = PyList_New(0);
+    int64_t evn = 0, ev[64 * 8][4];
+    for (Py_ssize_t i = 0; i < n && no < 8; i++, no++) {
+        PyObject *s = PyList_GET_ITEM(needles, i);
+        int64_t len = PyBytes_GET_SIZE(s);
+        int m = naive_count(d, dn, (const uint8_t *)PyBytes_AS_STRING(s), (size_t)len, 0, occ, 64);
+        if (m > 64) m = 64;
+        backs[no] = len + (int64_t)(buf[i % size] % 3);
+        int fe = buf[(i + 1) % size] & 1 ? 0 : -1, be = buf[(i + 2) % size] & 2 ? 0 : -1;
+        if (i == 0) fe = 0;
+        PyObject *starts = PyList_New(0);
+        for (int k = 0; k < m; k++) {
+            PyObject *x = PyLong_FromLongLong(occ[k]); PyList_Append(starts, x); Py_DECREF(x);
+            if (backs[no] > occ[k] + len) continue;
+            int64_t e[4] = {occ[k] + len, -len, -(int64_t)i, (int64_t)no * 4 + (fe == 0) * 2 + (be == 0)}, j = evn++;
+            while (j > 0 && (ev[j - 1][0] > e[0] || (ev[j - 1][0] == e[0] && (ev[j - 1][1] > e[1] ||
+                   (ev[j - 1][1] == e[1] && ev[j - 1][2] > e[2]))))) { memcpy(ev[j], ev[j - 1], sizeof ev[j]); j--; }
+            memcpy(ev[j], e, sizeof e);
+            ends[j] = 0;
+        }
+        PyObject *row = Py_BuildValue("(OLLLii)", starts, len, backs[no], (long long)i, fe, be);
+        PyList_Append(owners, row); Py_DECREF(row); Py_DECREF(starts);
+    }
+    (void)ends;
+    PyObject *fo = layout_bytes(&fw), *bo = layout_bytes(&bw);
+    PyObject *got = PyObject_CallFunction(HexHits, "OOOOnlnn", data, owners, fo, bo, (Py_ssize_t)HX_REACH, 0L, (Py_ssize_t)4096, (Py_ssize_t)-1);
+    if (!got) { PyErr_Print(); abort(); }
+    for (size_t i = 0; i < 4096; i++) start_at[i] = -1;
+    for (int64_t i = 0; i < evn; i++) {
+        int k = (int)(ev[i][3] / 4), fe = (ev[i][3] & 2) != 0, be = (ev[i][3] & 1) != 0;
+        if (!fe) continue;
+        int64_t len = -ev[i][1], at = ev[i][0] - backs[k];
+        (void)len;
+        if (at >= (int64_t)dn) continue;
+        int64_t reach = (int64_t)dn - at < HX_REACH ? (int64_t)dn - at : HX_REACH;
+        uint64_t lengths = hx_fwd(&fw, 0, 0, d, at, reach);
+        if (!lengths) continue;
+        if (be) {
+            uint8_t reached[HX_REACH + 1]; memset(reached, 0, sizeof reached);
+            int64_t rb = at < HX_REACH ? at : HX_REACH;
+            hx_back(&bw, 0, 0, d, at, rb, reached);
+            for (int64_t dd = 0; dd <= rb; dd++)
+                if (reached[dd] && at - dd >= 0 && at - dd < 4096 && start_at[at - dd] < 0) {
+                    start_at[at - dd] = at; start_fwd[at - dd] = lengths;
+                }
+        } else if (at < 4096 && start_at[at] < 0) { start_at[at] = at; start_fwd[at] = lengths; }
+    }
+    PyObject *gs = PyTuple_GET_ITEM(got, 0), *gl = PyTuple_GET_ITEM(got, 1);
+    const int64_t *s0 = (const int64_t *)PyBytes_AS_STRING(gs), *l0 = (const int64_t *)PyBytes_AS_STRING(gl);
+    Py_ssize_t held = PyBytes_GET_SIZE(gs) / 8, w = 0;
+    for (int64_t st = 0; st < 4096; st++) {
+        if (start_at[st] < 0) continue;
+        if (w >= held || s0[w] != st) abort();
+        int64_t forward = l0[w] - (start_at[st] - st); /* the length past the first event's offset */
+        if (forward < 0 || forward > HX_REACH || !((start_fwd[st] >> forward) & 1)) abort();
+        w++;
+    }
+    if (w != held) abort();
+    Py_DECREF(got); Py_DECREF(fo); Py_DECREF(bo); Py_DECREF(owners);
+}
+
 int LLVMFuzzerInitialize(int *argc, char ***argv) {
     (void)argc; (void)argv;
     PyImport_AppendInittab("_anchors", PyInit__anchors);
@@ -145,7 +284,8 @@ int LLVMFuzzerInitialize(int *argc, char ***argv) {
     Type = PyObject_GetAttrString(m, "Automaton");
     Check = PyObject_GetAttrString(m, "check_text");
     Hits = PyObject_GetAttrString(m, "text_hits");
-    if (!Type || !Check || !Hits) abort();
+    HexHits = PyObject_GetAttrString(m, "hex_hits");
+    if (!Type || !Check || !Hits || !HexHits) abort();
     return 0;
 }
 
@@ -214,6 +354,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *buf, size_t size) {
         }
     }
     check_hits((const uint8_t *)PyBytes_AS_STRING(data), (size_t)PyBytes_GET_SIZE(data), needles, data, fold);
+    if (PyBytes_GET_SIZE(data) < 4000)
+        check_hex(buf, size, (const uint8_t *)PyBytes_AS_STRING(data), (size_t)PyBytes_GET_SIZE(data), needles, data);
 out:
     Py_DECREF(args); Py_DECREF(kw); Py_DECREF(data); Py_DECREF(needles);
     return 0;

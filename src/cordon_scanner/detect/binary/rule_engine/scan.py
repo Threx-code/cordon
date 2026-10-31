@@ -16,8 +16,13 @@ import time
 from collections.abc import Iterable, Iterator, Sequence
 from typing import Any, ClassVar
 
+from cordon_scanner.detect.binary.rule_engine.anchoring.along import Along
 from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Compare as _Compare
-from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import TextCheck, TextFind
+from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import (
+    HexFind,
+    TextCheck,
+    TextFind,
+)
 from cordon_scanner.detect.binary.rule_engine.anchoring.places import Places
 from cordon_scanner.detect.binary.rule_engine.anchoring.stream import Streams
 from cordon_scanner.detect.binary.rule_engine.anchors import Anchor, Anchors
@@ -58,6 +63,9 @@ class Search:
         self.needles: list[tuple[bytes, int, list[tuple[int, int, AnchorAt]]]] | None = None
         self.folds: list[tuple[bytes, int, dict[bytes, list[tuple[int, int, AnchorAt]]]]] = []
         self.zeros: list[tuple[int, int, AnchorAt]] = []
+        #: A plain hex part's layouts for the native find (`HexFind`): None until worked out,
+        #: False where it does not apply.
+        self.hex_layouts: tuple[bytes, bytes] | bool | None = None
         f = self.flags
         if kind == "regex":
             source, marks = value
@@ -262,6 +270,8 @@ class Search:
                 return streamed
         if TextFind.usable(self):
             return self._text_find(data, fixed, seen, deadline)
+        if HexFind.layouts(self) is not None:
+            return HexFind.hits(self, data, seen, fixed, MAX_HITS, deadline)
         events: list[Event] = []
         for needle, length, owners in self.needles:
             starts = seen.get(needle)
@@ -620,58 +630,19 @@ class _Hunt:
     def _along(
         self, p: int, segments: int | None = None, *, lazy: bool = False
     ) -> Iterable[int] | None:
-        """The starts whose bytes follow a part's single starting path, found for the whole data
-        at once: each step's bytes become a 0/1 mask, the masks are shifted into line and ANDed
-        as integers (in C), and what survives is every position the path runs on from. None
-        when the part starts along no path of two steps or more. With `segments`, only that many
-        runs of one byte class from the path's start are used: fewer starts are ruled out, at a
-        bounded cost."""
+        """The starts whose bytes follow a part's single starting path (`Along`), found a window
+        at a time; None when the part starts along no path of two steps or more. With
+        `segments`, only that many runs of one byte class from the path's start are used: fewer
+        starts are ruled out, at a bounded cost."""
         part = self.s.parts[p]
         if self.s.flags.get("plain") or part.root_entry is None or self._widths() != [False]:
             return None
         steps = part.runners()[0].path(part.root_entry, nocase=self.nocase, dotall=self.dotall)
         if len(steps) < 2:
             return None
-        data, n = self.data, len(self.data)
-        if n == 0:
-            return []
-        masks: dict[bytes, int] = {}
-
-        def mask(table: bytes) -> int:
-            m = masks.get(table)
-            if m is None:
-                m = masks[table] = int.from_bytes(data.translate(table), "little")
-            return m
-
-        alive = mask(steps[0])
-        i, used = 1, 1
-        while i < len(steps) and alive:
-            if segments is not None and used >= segments:
-                break
-            used += 1
-            same = 1  # how many steps from i ask for the same bytes
-            while i + same < len(steps) and steps[i + same] == steps[i]:
-                same += 1
-            if same >= 4:
-                # one byte class `same` times over: AND windows that double in length until one
-                # covers half the run, then close it with one more, overlapping
-                run, covered = mask(steps[i]), 1
-                while covered * 2 <= same:
-                    run &= run >> (8 * covered)
-                    covered *= 2
-                if covered < same:
-                    run &= run >> (8 * (same - covered))
-                alive &= run >> (8 * i)
-                i += same
-            else:
-                alive &= mask(steps[i]) >> (8 * i)
-                i += 1
-        if not alive:
-            return []
-        found = alive.to_bytes(n, "little")
         if lazy:
-            return Streams.finds(found, b"\x01")
-        return Search.occurrences(found, b"\x01", self.budget)
+            return Along.lazy(steps, self.data, segments)
+        return Along.listed(steps, self.data, segments, self.budget)
 
     def _ahead(self, p: int) -> re.Pattern[bytes] | None:
         """For a part searched for only one byte wide, `Threads.prefilter` of its start."""
@@ -817,7 +788,7 @@ class _Hunt:
             return  # a run from the anchor dies on the bytes around it, or no match fits there
         for wide in self._widths():
             if f.get("plain"):
-                length = Lanes(part.forward).run(fwd, self.data, offset)
+                length = Lanes(part.forward).run(fwd, self.data, offset, deadline=self.deadline)
             elif not wide and not part.can_start(fwd, self.data, offset, self.nocase, self.dotall):
                 length = -1  # every thread dies within the gate's reach having matched nothing
             else:
@@ -836,7 +807,9 @@ class _Hunt:
                     self._found(p, start, before + length, wide)
 
                 if f.get("plain"):
-                    Lanes(part.backward).run(back, self.data, offset, backwards=True, every=found)
+                    Lanes(part.backward).run(
+                        back, self.data, offset, backwards=True, every=found, deadline=self.deadline
+                    )
                 else:
                     part.runners()[1].run(
                         back, self.data, offset, backwards=True, wide=wide, nocase=self.nocase,

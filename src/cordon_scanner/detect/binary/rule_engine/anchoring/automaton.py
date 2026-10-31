@@ -29,7 +29,8 @@ from typing import Any, ClassVar
 
 from cordon_scanner.detect.binary.rule_engine.anchoring.needles import NeedleSet
 from cordon_scanner.detect.binary.rule_engine.hits import Hits
-from cordon_scanner.detect.binary.rule_engine.pattern import Bytes
+from cordon_scanner.detect.binary.rule_engine.pattern import Bytes, Op
+from cordon_scanner.detect.binary.rule_engine.threads import REACH
 
 
 class Native:
@@ -299,4 +300,73 @@ class TextFind:
         return out
 
 
-__all__ = ["Automaton", "Compare", "TextCheck", "TextFind"]
+class HexFind:
+    """A plain hex string's whole find in one native call (`_anchors.hex_hits`): its anchors'
+    occurrences in, its matches out, as `scan._Hunt` finds them with `threads.Lanes` -- the
+    events in the hunt's order, the forward layout run from each anchor's forward entry (the
+    shortest match), the backward one from its backward entry to every start it reaches (so a
+    pattern of repeated bytes, where an anchor may sit at several places, has each tried), the
+    first match at a start kept, and the stop at `MAX_HITS`. Only for a string of one plain part
+    (no alternatives) with no heavy jump or repeat, no anchorless part and only the instructions
+    Lanes reads; every other string, and every string where the extension is not in use, is found
+    by the hunt itself, which is this one's twin."""
+
+    FULLWORD: ClassVar[int] = 2
+    RUNS: ClassVar[frozenset[int]] = frozenset(
+        {Op.BYTE, Op.NOT_BYTE, Op.MASK, Op.NOT_MASK, Op.ANY, Op.SKIP, Op.DONE}
+    )
+
+    @staticmethod
+    def layouts(search: Any) -> tuple[bytes, bytes] | None:
+        """The part's forward and backward layouts as int64 triples, worked out once; None when
+        the string is not found so."""
+        if search.hex_layouts is None:
+            search.hex_layouts = HexFind._encoded(search) or False
+        return search.hex_layouts or None
+
+    @staticmethod
+    def _encoded(search: Any) -> tuple[bytes, bytes] | None:
+        if not Automaton.NATIVE or len(search.parts) != 1 or search.zeros or search.folds:
+            return None
+        part = search.parts[0]
+        if part.text is not None or not search.flags.get("plain") or part.heavy or part.chain:
+            return None
+        out = []
+        for ops in (part.forward, part.backward):
+            if any(op[0] not in HexFind.RUNS for op in ops):
+                return None
+            flat = array("q")
+            for op in ops:
+                flat.extend((*tuple(op), 0, 0)[:3])
+            out.append(flat.tobytes())
+        return out[0], out[1]
+
+    @staticmethod
+    def hits(
+        search: Any, data: bytes, seen: dict[Any, Any], fixed: int | None, max_hits: int,
+        deadline: float | None,
+    ) -> Hits:  # fmt: skip
+        forward, backward = search.hex_layouts
+        owners = []
+        for needle, length, holders in search.needles:
+            starts = seen.get(needle)
+            if starts is None:
+                starts = seen[needle] = search.occurrences(data, needle, search.budget(seen))
+            owners += [
+                (starts, length, length + a[1], order, -1 if a[2] is None else a[2],
+                 -1 if a[3] is None else a[3])
+                for order, _, a in holders
+            ]  # fmt: skip
+        starts, lengths = Automaton.MODULE.hex_hits(
+            data, owners, forward, backward, REACH,
+            HexFind.FULLWORD if "fullword" in search.flags else 0, max_hits,
+            -1 if fixed is None else fixed,
+            -1.0 if deadline is None else max(deadline - time.monotonic(), 0.0),
+        )  # fmt: skip
+        out = Hits()
+        out.starts.frombytes(starts)
+        out.lengths.frombytes(lengths)
+        return out
+
+
+__all__ = ["Automaton", "Compare", "HexFind", "TextCheck", "TextFind"]
