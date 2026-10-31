@@ -212,3 +212,17 @@ class TestNativeBuild:
         linker = backend.Native.linker()
         assert linker.count("-arch") == 1 and "x86_64" not in linker
         assert not [w for w in linker if w.startswith("-Wl,-z")]
+
+    def test_native_required_with_nothing_declared_is_an_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        backend = Kit.backend()
+        root = Kit.project(tmp_path / "p")
+        text = (root / "pyproject.toml").read_text(encoding="utf-8")
+        (root / "pyproject.toml").write_text(
+            text.split("[[tool.cordon-build.native]]")[0], encoding="utf-8"
+        )
+        monkeypatch.chdir(root)
+        monkeypatch.setenv("CORDON_BUILD_NATIVE", "require")
+        with pytest.raises(backend.Native.Failed):
+            backend.build_wheel(str(tmp_path))

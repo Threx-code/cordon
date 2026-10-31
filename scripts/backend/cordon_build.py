@@ -380,9 +380,11 @@ class Native:
         import sys
 
         wanted = Native.wanted(project)
-        if not wanted:
-            return []
         required = os.environ.get("CORDON_BUILD_NATIVE") == "require"
+        if not wanted:
+            if required:
+                raise Native.Failed("CORDON_BUILD_NATIVE=require, but no native extension is built")
+            return []
         cc = Native.compiler()
         if cc is None:
             if required:

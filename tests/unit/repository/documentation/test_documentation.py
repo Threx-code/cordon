@@ -437,18 +437,39 @@ class TestWorkflowShellParses:
     WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.yml"))
 
     @staticmethod
+    def _step_shell(lines: list[str], at: int, indent: int) -> str:
+        """The `shell:` of the step holding line `at` (keys at `indent`), or "bash"."""
+        start = at
+        while start > 0 and not re.match(rf"^\s{{{indent - 2}}}- ", lines[start]):
+            start -= 1
+        end = at + 1
+        while end < len(lines) and not re.match(rf"^\s{{0,{indent - 2}}}- ", lines[end]):
+            end += 1
+        for line in lines[start:end]:
+            found = re.match(rf"^(?:\s{{{indent}}}|\s{{{indent - 2}}}- )shell: (\S+)", line)
+            if found:
+                return found.group(1)
+        return "bash"
+
+    @staticmethod
     def _run_blocks(text: str) -> list[str]:
-        """Every `run: |` body, dedented. A small parser rather than a YAML one,
-        because the point is to read the file the way the runner does."""
+        """Every `run: |` body a POSIX shell runs, dedented. A small parser rather than a YAML
+        one, because the point is to read the file the way the runner does. A step with
+        `shell: cmd` or `pwsh` (a Windows build) is not bash, so `bash -n` has nothing to say."""
         blocks: list[str] = []
         lines = text.splitlines()
         index = 0
         while index < len(lines):
-            match = re.match(r"^(\s*)run: \|\s*$", lines[index])
+            # `run:` as a step's own key or as its first (`- run: |`); both are the step's script.
+            match = re.match(r"^(\s*)(- )?run: \|\s*$", lines[index])
             if not match:
                 index += 1
                 continue
-            indent = len(match.group(1)) + 2
+            key = len(match.group(1)) + (2 if match.group(2) else 0)
+            if TestWorkflowShellParses._step_shell(lines, index, key) not in {"bash", "sh"}:
+                index += 1
+                continue
+            indent = key + 2
             body: list[str] = []
             index += 1
             while index < len(lines) and (
@@ -501,6 +522,16 @@ class TestWorkflowShellParses:
             assert result.returncode == 0, (
                 f"{workflow.name} run block {number} is not valid shell: {result.stderr.strip()}"
             )
+
+    def test_only_a_cmd_or_pwsh_step_is_left_out(self) -> None:
+        workflow = (
+            "jobs:\n  w:\n    steps:\n"
+            "      - name: build\n        shell: cmd\n        run: |\n          for /f %%i in (x) do y\n"
+            "      - name: test\n        shell: bash\n        run: |\n          echo bash\n"
+            "      - run: |\n          echo default\n"
+            "      - shell: pwsh\n        run: |\n          Write-Host x\n"
+        )
+        assert self._run_blocks(workflow) == ["echo bash", "echo default"]
 
 
 class TestEveryDocumentLinkResolves:
