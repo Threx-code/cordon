@@ -94,6 +94,9 @@ class TestLayers:
         assert RuleLayers.of(b'atob("aGk=")') == []
         assert RuleLayers.of(b'atob("!!!!!!!!!!!!!!!!!!!!")') == []
         assert RuleLayers.of(b'bytes.fromhex("abc")') == []
+        # and a literal of the same forms, long and well formed, is peeled (not every one refused)
+        long_text = base64.b64encode(b"x" * 64)
+        assert [layer.how for layer in RuleLayers.of(b'atob("' + long_text + b'")')] == ["atob"]
 
     def test_the_built_in_pack_reads_raw_bytes_only(self) -> None:
         """No built-in rule asks for layers, so the pack's results stay the ones proven against

@@ -265,6 +265,13 @@ class ExecutionFlows(AnalyzerCore):
         ]
         if not functions:
             return
+        # A runner -- a helper that starts a parameter -- depends on nothing found below, and with
+        # none the pass finds nothing: looked for first, so a file with no such helper (most) is
+        # done before the two rounds of fetchers (measured 2026-10-31: 2.8 s of
+        # azure_storage_blob's 8.8 s of Python analysis was this pass).
+        runners = self._helper_runners(functions)
+        if not runners:
+            return
 
         fetchers: set[str] = set()
 
@@ -280,9 +287,8 @@ class ExecutionFlows(AnalyzerCore):
                     fetchers.add(function.name)
 
         writers: dict[str, tuple[int, int | None]] = {}
-        runners: dict[str, int] = {}
-        self._helper_downloads(functions, fetchers, writers, runners)
-        if not writers or not runners:
+        self._helper_downloads(functions, fetchers, writers)
+        if not writers:
             return
 
         scopes: list[ast.AST] = [tree, *functions]
@@ -320,14 +326,33 @@ class ExecutionFlows(AnalyzerCore):
                         f"{node.func.id} runs the file a helper downloaded",
                     )
 
+    def _helper_runners(
+        self, functions: list[ast.FunctionDef | ast.AsyncFunctionDef]
+    ) -> dict[str, int]:
+        """Each helper that runs a path its caller hands it: name -> the parameter it starts."""
+        runners: dict[str, int] = {}
+        for function in functions:
+            names = PythonFacts.parameter_names(function)
+            for node in PythonSyntax.of(function, ast.Call):
+                resolved = self._resolve_callee(node)
+                if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.SPAWN:
+                    continue
+                call = resolved[1]
+                if not call.args:
+                    continue
+                used = {x.id for x in PythonSyntax.within(call.args[0], ast.Name)}
+                for index, name in enumerate(names):
+                    if name in used:
+                        runners[function.name] = index
+        return runners
+
     def _helper_downloads(
         self,
         functions: list[ast.FunctionDef | ast.AsyncFunctionDef],
         fetchers: set[str],
         writers: dict[str, tuple[int, int | None]],
-        runners: dict[str, int],
     ) -> None:
-        """Each helper that downloads to a path its caller hands it, and each that runs one."""
+        """Each helper that downloads to a path its caller hands it."""
         for function in functions:
             names = PythonFacts.parameter_names(function)
             local = self._network_names(function, fetchers)
@@ -373,17 +398,6 @@ class ExecutionFlows(AnalyzerCore):
                     writers[function.name] = (names.index(path.id), None)
                 elif data_param is not None:
                     writers[function.name] = (names.index(path.id), data_param)
-            for node in PythonSyntax.of(function, ast.Call):
-                resolved = self._resolve_callee(node)
-                if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.SPAWN:
-                    continue
-                call = resolved[1]
-                if not call.args:
-                    continue
-                used = {x.id for x in PythonSyntax.within(call.args[0], ast.Name)}
-                for index, name in enumerate(names):
-                    if name in used:
-                        runners[function.name] = index
 
     @staticmethod
     def _scope_walk(scope: ast.AST) -> list[ast.AST]:

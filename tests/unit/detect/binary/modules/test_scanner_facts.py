@@ -172,10 +172,17 @@ class TestTheFileModules:
     ) -> None:
         text = PY_SENDS if path.endswith(".py") else SENDS
         assert module.values(path, Fixture.ctx(), self.content(path, text)) == {}
+        # and the reader works: its own language's file of the same text has its flows (a reader
+        # that raised would also give {} above)
+        own = "x.js" if module is Js else "x.py"
+        mine = SENDS if module is Js else PY_SENDS
+        assert module.values(own, Fixture.ctx(), self.content(own, mine))["flows"] >= 1
 
     def test_a_file_past_the_readers_size_has_every_field_undefined(self) -> None:
         big = SENDS + "//" + "x" * 1_000_001 + "\n"
         assert Js.values("index.js", Fixture.ctx(), self.content("index.js", big)) == {}
+        small = SENDS + "//" + "x" * 900_000 + "\n"  # the same, under the limit: read
+        assert Js.values("index.js", Fixture.ctx(), self.content("index.js", small))["flows"] >= 1
 
     def test_outside_a_scan_every_field_is_undefined(self) -> None:
         rules = Rules.compile(
@@ -275,9 +282,16 @@ class TestTheDeferredPass:
 
         path = tmp_path / "rules.yar"
         path.write_text(self.PLAIN, encoding="utf-8")
-        ctx = SimpleNamespace(
-            config=SimpleNamespace(rule_file=str(path), rule_module_data=(), use_cache=False)
+        config = SimpleNamespace(
+            rule_file=str(path),
+            rule_module_data=(),
+            use_cache=False,
+            limits=SimpleNamespace(max_workers=1),
         )
-        assert RuleFileDetector().defers(ctx) is False  # type: ignore[arg-type]
+        ctx = SimpleNamespace(config=config)
+        # the engine must load: a rule set that failed to load defers nothing either
+        detector = RuleFileDetector()
+        assert detector._ensure(ctx) is not None  # type: ignore[arg-type]
+        assert detector.defers(ctx) is False  # type: ignore[arg-type]
         path.write_text(self.DEFERRED, encoding="utf-8")
         assert RuleFileDetector().defers(ctx) is True  # type: ignore[arg-type]
