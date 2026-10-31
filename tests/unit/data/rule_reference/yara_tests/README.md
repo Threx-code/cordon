@@ -18,3 +18,14 @@ before the recorded-reference differential (which needs the reference image) run
 
 Fetched 2026-10-31 from raw.githubusercontent.com at the tag; the byte arrays were decoded from their C
 initialisers with no change.
+
+`shared-100x100.dex` is Cordon's own crafted dex (100 class definitions pointing at one class data of
+100 methods), the file the reference's quadratic class-data walk is measured on; it holds no third-party
+bytes.
+
+`reference-4.5.8.json` holds the reference's `macho` and `dex` module values for every file here, as
+`yara -D` (YARA 4.5.8 built from source in the reference image) printed them, recorded once by
+`scripts/reference/record_module_dumps.py` with each file's SHA-256; `test_yara_dumps.py` replays them
+leaf by leaf without the reference. The crafted file is recorded as a digest of its 88,593 leaves, so the
+one named divergence (the reference drops each class's last three methods) is pinned without storing
+them.

@@ -471,10 +471,11 @@ class Dex:
             ),
         )
         head = Shape.CODE_ITEM.stride()
+        item: dict[str, Any] = {}
+        entry["code_item"] = item  # the record is present on every method, empty without code
         if code_off != 0 and self.within(code_off, head):
             code = Shape.CODE_ITEM.read(self.cur, code_off)
-            item: dict[str, Any] = dict(code)
-            entry["code_item"] = item
+            item.update(code)
             if self.within(code_off + head, code["insns_size"] * 2):
                 item["insns"] = self.cur.blob(code_off + head, code["insns_size"] * 2)
         return entry, taken, previous

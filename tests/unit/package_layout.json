@@ -954,6 +954,7 @@
   "test_olecf.py": "detect/binary/modules/formats",
   "test_vba_module.py": "detect/binary/modules/formats",
   "test_yara_assertions.py": "detect/binary/modules/formats",
+  "test_yara_dumps.py": "detect/binary/modules/formats",
   "test_matching.py": "detect/binary/rule_engine",
   "test_builtin.py": "detect/binary/modules",
   "test_oids.py": "detect/binary/modules",
