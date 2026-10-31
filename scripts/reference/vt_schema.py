@@ -38,13 +38,19 @@ SCALARS = {
 }
 
 
-def strip_comments(text):
-    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
-    return re.sub(r"//[^\n]*", "", text)
+class ProtoText:
+    """A .proto file's text: comments removed, then split into tokens."""
 
+    @staticmethod
+    def strip_comments(text):
+        text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+        return re.sub(r"//[^\n]*", "", text)
 
-def tokens(text):
-    return re.findall(r'"(?:[^"\\]|\\.)*"|[A-Za-z_][\w.]*|-?\d+(?:\.\d+)?|[{}\[\]();=<>,:]', text)
+    @staticmethod
+    def tokens(text):
+        return re.findall(
+            r'"(?:[^"\\]|\\.)*"|[A-Za-z_][\w.]*|-?\d+(?:\.\d+)?|[{}\[\]();=<>,:]', text
+        )
 
 
 class Parser:
@@ -198,16 +204,20 @@ class Parser:
                 info["numbers"][tok] = number
 
 
-def resolve(name, scope, known):
-    """A type name as protobuf resolves it: innermost scope outwards, then as written."""
-    if name in SCALARS:
-        return name
-    parts = scope.split(".")
-    for i in range(len(parts), 0, -1):
-        cand = ".".join(parts[:i]) + "." + name
-        if cand in known:
-            return cand
-    return name if name in known else None
+class Names:
+    """Type names as protobuf resolves them."""
+
+    @staticmethod
+    def resolve(name, scope, known):
+        """A type name as protobuf resolves it: innermost scope outwards, then as written."""
+        if name in SCALARS:
+            return name
+        parts = scope.split(".")
+        for i in range(len(parts), 0, -1):
+            cand = ".".join(parts[:i]) + "." + name
+            if cand in known:
+                return cand
+        return name if name in known else None
 
 
 class VtSchemaFile:
@@ -219,100 +229,104 @@ class VtSchemaFile:
         return json.dumps(data, indent=1, sort_keys=True) + "\n"
 
 
-def main(protos, out):
-    messages, enums = {}, {}
-    for path in sorted(Path(protos, "vt").rglob("*.proto")):
-        text = strip_comments(path.read_text(encoding="utf-8"))
-        pkg = re.search(r"package\s+([\w.]+)\s*;", text).group(1)
-        p = Parser(tokens(text), pkg)
-        p.file()
-        messages.update(p.messages)
-        enums.update(p.enums)
-    # protobuf's well-known types, as their .proto declares them
-    for wkt in ("google.protobuf.Timestamp", "google.protobuf.Duration"):
-        messages[wkt] = {
-            "rule_name": wkt.rsplit(".", 1)[1],
-            "scope": "google.protobuf",
-            "fields": [
-                {
-                    "proto": "seconds",
-                    "number": 1,
-                    "rule": "seconds",
-                    "kind": "single",
-                    "type": "int64",
-                    "scope": wkt,
-                    "ignore": False,
-                    "lowercase": False,
-                    "files_only": False,
-                    "not_for_files": False,
-                },
-                {
-                    "proto": "nanos",
-                    "number": 2,
-                    "rule": "nanos",
-                    "kind": "single",
-                    "type": "int32",
-                    "scope": wkt,
-                    "ignore": False,
-                    "lowercase": False,
-                    "files_only": False,
-                    "not_for_files": False,
-                },
-            ],
-        }
-    known = set(messages) | set(enums)
-    fields = {}
-    for full, info in messages.items():
-        rows = []
-        for f in info["fields"]:
-            if f["ignore"]:
-                continue
-            if f["kind"] == "map":
-                key, value = f["type"]
-                target = resolve(value, f["scope"], known)
+class Generate:
+    """The generator's run: the protos read, the tables written."""
+
+    @staticmethod
+    def main(protos, out):
+        messages, enums = {}, {}
+        for path in sorted(Path(protos, "vt").rglob("*.proto")):
+            text = ProtoText.strip_comments(path.read_text(encoding="utf-8"))
+            pkg = re.search(r"package\s+([\w.]+)\s*;", text).group(1)
+            p = Parser(ProtoText.tokens(text), pkg)
+            p.file()
+            messages.update(p.messages)
+            enums.update(p.enums)
+        # protobuf's well-known types, as their .proto declares them
+        for wkt in ("google.protobuf.Timestamp", "google.protobuf.Duration"):
+            messages[wkt] = {
+                "rule_name": wkt.rsplit(".", 1)[1],
+                "scope": "google.protobuf",
+                "fields": [
+                    {
+                        "proto": "seconds",
+                        "number": 1,
+                        "rule": "seconds",
+                        "kind": "single",
+                        "type": "int64",
+                        "scope": wkt,
+                        "ignore": False,
+                        "lowercase": False,
+                        "files_only": False,
+                        "not_for_files": False,
+                    },
+                    {
+                        "proto": "nanos",
+                        "number": 2,
+                        "rule": "nanos",
+                        "kind": "single",
+                        "type": "int32",
+                        "scope": wkt,
+                        "ignore": False,
+                        "lowercase": False,
+                        "files_only": False,
+                        "not_for_files": False,
+                    },
+                ],
+            }
+        known = set(messages) | set(enums)
+        fields = {}
+        for full, info in messages.items():
+            rows = []
+            for f in info["fields"]:
+                if f["ignore"]:
+                    continue
+                if f["kind"] == "map":
+                    key, value = f["type"]
+                    target = Names.resolve(value, f["scope"], known)
+                    rows.append(
+                        [
+                            f["rule"],
+                            f["proto"],
+                            "map",
+                            target,
+                            key,
+                            f["lowercase"],
+                            f["files_only"],
+                            f["not_for_files"],
+                            f["number"],
+                        ]
+                    )
+                    continue
+                target = Names.resolve(f["type"], f["scope"], known)
+                if target is None:
+                    raise SystemExit(f"unresolved type {f['type']} in {full}")
                 rows.append(
                     [
                         f["rule"],
                         f["proto"],
-                        "map",
+                        f["kind"],
                         target,
-                        key,
+                        None,
                         f["lowercase"],
                         f["files_only"],
                         f["not_for_files"],
                         f["number"],
                     ]
                 )
-                continue
-            target = resolve(f["type"], f["scope"], known)
-            if target is None:
-                raise SystemExit(f"unresolved type {f['type']} in {full}")
-            rows.append(
-                [
-                    f["rule"],
-                    f["proto"],
-                    f["kind"],
-                    target,
-                    None,
-                    f["lowercase"],
-                    f["files_only"],
-                    f["not_for_files"],
-                    f["number"],
-                ]
-            )
-        fields[full] = {"rule_name": info["rule_name"], "scope": info["scope"], "fields": rows}
-    root = "vt.titan.LiveHuntData"
-    data = {"ROOT": root, "MESSAGES": fields, "ENUMS": enums}
-    Path(out).write_text(VtSchemaFile.render(data), encoding="utf-8")
-    print(
-        len(fields),
-        "messages",
-        len(enums),
-        "enums",
-        sum(len(m["fields"]) for m in fields.values()),
-        "fields",
-    )
+            fields[full] = {"rule_name": info["rule_name"], "scope": info["scope"], "fields": rows}
+        root = "vt.titan.LiveHuntData"
+        data = {"ROOT": root, "MESSAGES": fields, "ENUMS": enums}
+        Path(out).write_text(VtSchemaFile.render(data), encoding="utf-8")
+        print(
+            len(fields),
+            "messages",
+            len(enums),
+            "enums",
+            sum(len(m["fields"]) for m in fields.values()),
+            "fields",
+        )
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2])
+    Generate.main(sys.argv[1], sys.argv[2])
