@@ -91,6 +91,23 @@ Cordon's rule engine reads rule files in the YARA format and was inspired by YAR
 with or endorsed by the YARA project or VirusTotal.
 
 -------------------------------------------------------------------------------
+Public Suffix List
+
+src/cordon_scanner/detect/binary/modules/reports/data/public_suffix_list.dat is the Public
+Suffix List (https://publicsuffix.org) as the psl crate 2.1.238 packages it (data/rules.txt),
+used unchanged by the vt module's domain functions. It is subject to the Mozilla Public
+License, version 2.0 (https://mozilla.org/MPL/2.0/).
+
+-------------------------------------------------------------------------------
+YARA-X and the module names it defines
+
+The lnk, zip, crx, macho, dex, olecf, msi, vba and vt modules answer the names YARA-X
+(https://github.com/VirusTotal/yara-x, BSD-3-Clause) declares, so rules written for it read the
+same values. The look-alike letter and keyboard-neighbour tables of the vt module's permutation
+checks are the reference's. The code reading each format is Cordon's own; Cordon is not
+affiliated with or endorsed by VirusTotal.
+
+-------------------------------------------------------------------------------
 Ecosystem and agent marks
 
 docs/assets/marks/marks.json holds the marks the README shows beside each ecosystem and AI

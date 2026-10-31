@@ -251,6 +251,8 @@ exclude = ["cordon_scanner/rules/rule_files/upstream"]
 # its rules came from and how they measured. Missing from the wheel before 2026-10-20: an install
 # from PyPI had no pack to load.
 "cordon_scanner.rules" = ["rule_files/*.yar", "rule_files/*.json"]
+# The Public Suffix List snapshot the vt module's domain functions read (psl 2.1.238, MPL-2.0).
+"cordon_scanner.detect.binary.modules.reports" = ["data/*.dat"]
 # Syft's artifact-to-group map for jars named only by their file (scripts/build/syft_java_groups.py).
 "cordon_scanner.images" = ["data/*.json"]
 # The detection model's feature patterns (`cordon_scanner.model`).
