@@ -415,8 +415,9 @@ class Builtin:
         """The modules that read data given to the scan (a sandbox report, say), each built from
         that data; a module here answers without it too, as `modules()` holds it."""
         from cordon_scanner.detect.binary.modules.reports.cuckoo import Cuckoo
+        from cordon_scanner.detect.binary.modules.reports.vt import Vt
 
-        return {"cuckoo": Cuckoo.module}
+        return {"cuckoo": Cuckoo.module, "vt": Vt.module}
 
     @staticmethod
     def modules() -> dict[str, Module]:
@@ -425,6 +426,7 @@ class Builtin:
         from cordon_scanner.detect.binary.modules.file_type import FileType
         from cordon_scanner.detect.binary.modules.pe import Pe
         from cordon_scanner.detect.binary.modules.reports.cuckoo import Cuckoo
+        from cordon_scanner.detect.binary.modules.reports.vt import Vt
 
         return {
             "math": Module(MathModule.SCHEMA, lambda file: MathModule(file).values()),
@@ -437,6 +439,8 @@ class Builtin:
             "dotnet": Module(Dotnet.SCHEMA, Dotnet.data),
             # with no report given to the scan (`Rules.match(given=...)` gives one)
             "cuckoo": Cuckoo.module(),
+            # without LiveHunt metadata: the enum constants, every field undefined
+            "vt": Vt.module(),
             "magic": FileType.module(),
         }
 
