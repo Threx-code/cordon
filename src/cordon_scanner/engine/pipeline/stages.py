@@ -329,6 +329,7 @@ class ScanStages:
             units,
             ScanFactsGathering.verdict_facts(self.engine, units, ctx, acc),
             self.engine._intent_observation(units, ctx, acc.labels),
+            repository=not ctx.package_distribution,
         )
         findings = tuple(graded)
         dependencies = self.engine.detection.annotated(dependencies, findings, ctx, units)

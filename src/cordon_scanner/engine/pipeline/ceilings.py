@@ -67,9 +67,12 @@ class Ceilings:
         units: Sequence[FileUnit],
         profile: dict[str, float] | None = None,
         intent: Any = None,
+        *,
+        repository: bool = False,
     ) -> tuple[list[Finding], dict[str, Any]]:
         """The package verdict over everything this scan found (`core/verdict.py`), then the
-        intent layer over what the package's code does (`core/intent.py`)."""
+        intent layer over what the package's code does (`core/intent.py`). `repository`: the
+        target is no published package, so a MALICIOUS finding keeps its grade."""
         from cordon_scanner.decide.intent import Intent
         from cordon_scanner.decide.verdict import Verdict
 
@@ -85,7 +88,7 @@ class Ceilings:
             if u.path.rsplit("!", 1)[-1].lower().endswith((".js", ".mjs", ".cjs", ".ts", ".py"))
         ]
         graded, verdict = Verdict.decide(
-            list(findings), paths_sizes, manifests, sources, profile or {}
+            list(findings), paths_sizes, manifests, sources, profile or {}, repository=repository
         )
         second, line = verdict.get("registry_score"), verdict.get("registry_block")
         Ceilings.second_opinion(second, line, graded, verdict)
