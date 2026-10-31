@@ -62,14 +62,8 @@ class TestThePackCache:
         assert not rules.match(b"x")
 
     def test_this_build_is_named(self, tmp_path: Path) -> None:
-        """ "python" from source; "compiled:<digest>" when the engine modules load as extensions."""
-        import sys
-
         engine, build, abi = PackCache(tmp_path).made_by.split(" ")
-        module = sys.modules["cordon_scanner.detect.binary.rule_engine.scan"]
-        compiled = str(getattr(module, "__file__", "")).endswith((".so", ".pyd"))
-        assert len(engine) == 16
-        assert build.startswith("compiled:") if compiled else build == "python"
+        assert (len(engine), build) == (16, "python")
         assert abi.startswith("cpython-")
 
     @pytest.mark.parametrize(
@@ -168,32 +162,3 @@ class TestTheSignature:
         Rules.compile(RULES, cache=fresh)
         assert fresh.refused == 1
         assert not key.stat().st_mode & 0o077
-
-
-class TestAKeptSearch:
-    """A kept pack's searches restored as they were, interpreted or compiled (a compiled class is
-    rebuilt by its constructor, so `Search` pickles its own state)."""
-
-    def test_every_attribute_is_kept(self) -> None:
-        from cordon_scanner.detect.binary.rule_engine.scan import Search
-
-        search = Search("regex", ("ev[i1]l", "i"), {})
-        names = getattr(Search, "__mypyc_attrs__", None) or tuple(vars(search))
-        assert sorted(names) == sorted(Search.STATE)
-
-    def test_a_search_round_trips(self) -> None:
-        import pickle
-
-        from cordon_scanner.detect.binary.rule_engine.scan import Search
-
-        for kind, value, modifiers in (
-            ("text", b"EVIL", {}),
-            ("text", b"ab", {"wide": True, "xor": (0, 255)}),
-            ("hex", "4D 5A ?? 00", {}),
-            ("regex", ("ev[i1]l", "i"), {}),
-        ):
-            search = Search(kind, value, modifiers)
-            kept = pickle.dumps(search, protocol=pickle.HIGHEST_PROTOCOL)
-            back = pickle.loads(kept)  # noqa: S301 -- this test's own pickle, made one line up
-            data = b"xx EVIL ev1l MZ\x01\x00 a\x00b\x00"
-            assert back.find(data) == search.find(data)

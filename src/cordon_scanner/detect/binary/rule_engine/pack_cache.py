@@ -107,7 +107,7 @@ class PackCache:
     def build_kind() -> str:
         """Which build of the engine is running, so an entry one build kept is never read by
         another: "python" when every rule-engine module runs from source, else "compiled:" and a
-        digest of the compiled files (mypyc's modules and its shared runtime), with the
+        digest of the compiled rule-engine modules, with the
         interpreter's ABI (cache tag, ABI flags, machine). A pickle names classes, not layouts: a
         compiled class reading an interpreted class's state, or the other way, is refused here."""
         if not PackCache._BUILD:
@@ -118,7 +118,7 @@ class PackCache:
             compiled = sorted(
                 str(getattr(module, "__file__", ""))
                 for name, module in list(sys.modules.items())
-                if (name.startswith(prefix) or name.endswith("__mypyc"))
+                if name.startswith(prefix)
                 and str(getattr(module, "__file__", "")).endswith((".so", ".pyd"))
             )
             kind = "python"

@@ -317,7 +317,7 @@ class Threads:
             return b"(?!)"
         parts = []
         for rest, cs in groups.items():
-            members = b"".join([re.escape(bytes([c])) for c in sorted(cs)])
+            members = b"".join(re.escape(bytes([c])) for c in sorted(cs))
             parts.append(b"[" + members + b"]" + (b"" if rest is None else rest))
         body = b"(?:" + b"|".join(parts) + b")"
         return None if len(body) > 1 << 16 else body
@@ -417,7 +417,7 @@ class Threads:
     @staticmethod
     def _keys(threads: list[list[Any]]) -> tuple[tuple[Any, ...], ...]:
         """The threads as a step sees them: the later of two identical threads dropped."""
-        return tuple(dict.fromkeys([(t[0], t[1], t[2]) for t in threads]))
+        return tuple(dict.fromkeys((t[0], t[1], t[2]) for t in threads))
 
     def _pass(
         self, threads: list[list[Any]], c: int, low: bool, around: tuple[bool, bool, bool, bool],

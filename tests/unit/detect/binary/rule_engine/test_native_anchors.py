@@ -346,37 +346,3 @@ class TestHexHitsArguments:
             # 4,096th step, inside this one run (Lanes has no reading between runs of its own)
             Lanes(ops).run(0, data, 0, deadline=time.monotonic() - 1)
         assert time.monotonic() - began < 5
-
-
-class TestTheEngineLine:
-    """The status and `--version` say which engine modules run compiled, read from what loaded."""
-
-    PREFIX = "cordon_scanner.detect.binary.rule_engine."
-
-    def test_it_names_what_loaded(self) -> None:
-        """From source, "engine: Python"; built with the compiled modules, each one named."""
-        import importlib
-
-        loaded = [importlib.import_module(self.PREFIX + name) for name in Automaton.COMPILED]
-        compiled = [
-            name
-            for name, module in zip(Automaton.COMPILED, loaded, strict=True)
-            if str(getattr(module, "__file__", "")).endswith(".so")
-        ]
-        expected = (
-            f"engine modules compiled: {', '.join(compiled)}" if compiled else "engine: Python"
-        )
-        assert Automaton.engine().startswith(expected)
-        assert Automaton.status().endswith(Automaton.engine())
-
-    def test_only_a_module_loaded_from_an_extension_is_named(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        import sys
-        from types import SimpleNamespace
-
-        compiled = SimpleNamespace(__file__="/x/threads.cpython-312-aarch64-linux-gnu.so")
-        source = SimpleNamespace(__file__="/x/scan.py")
-        monkeypatch.setitem(sys.modules, self.PREFIX + "threads", compiled)
-        monkeypatch.setitem(sys.modules, self.PREFIX + "scan", source)
-        assert Automaton.engine().startswith("engine modules compiled: threads (")

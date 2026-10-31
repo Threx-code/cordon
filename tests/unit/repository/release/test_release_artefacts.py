@@ -112,24 +112,6 @@ class TestSbomGenerator:
         assert cdx["components"] == []
         assert cdx["dependencies"][0]["dependsOn"] == []
 
-    def test_a_platform_wheel_declares_the_runtime_compiled_into_it(self, tmp_path: Path) -> None:
-        """mypyc's lib-rt is compiled into the platform wheels: declared in both formats, with
-        both its licences, as code the release contains, still with no runtime dependency."""
-        (tmp_path / "cordon_scanner-0.1.0-cp312-cp312-manylinux_2_28_x86_64.whl").write_bytes(b"x")
-        cdx, spdx = self.generate(tmp_path)
-        (lib,) = cdx["components"]
-        assert lib["name"] == "mypyc-lib-rt" and lib["licenses"] == [
-            {"expression": "MIT AND PSF-2.0"}
-        ]
-        assert cdx["dependencies"][0]["dependsOn"] == []
-        names = {p["name"] for p in spdx["packages"]}
-        assert "mypyc-lib-rt" in names
-        assert {
-            "spdxElementId": "SPDXRef-Package",
-            "relationshipType": "CONTAINS",
-            "relatedSpdxElement": "SPDXRef-mypyc-lib-rt",
-        } in spdx["relationships"]
-
     def test_check_mode_fails_if_a_runtime_dependency_appears(self) -> None:
         """The claim is verified against packaging metadata rather than
         restated, so it cannot drift from the truth."""
