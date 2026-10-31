@@ -17,7 +17,11 @@ from collections.abc import Iterable, Iterator, Sequence
 from typing import Any, ClassVar
 
 from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Compare as _Compare
-from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import TextCheck, TextFind
+from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import (
+    HexFind,
+    TextCheck,
+    TextFind,
+)
 from cordon_scanner.detect.binary.rule_engine.anchoring.places import Places
 from cordon_scanner.detect.binary.rule_engine.anchoring.stream import Streams
 from cordon_scanner.detect.binary.rule_engine.anchors import Anchor, Anchors
@@ -58,6 +62,9 @@ class Search:
         self.needles: list[tuple[bytes, int, list[tuple[int, int, AnchorAt]]]] | None = None
         self.folds: list[tuple[bytes, int, dict[bytes, list[tuple[int, int, AnchorAt]]]]] = []
         self.zeros: list[tuple[int, int, AnchorAt]] = []
+        #: A plain hex part's layouts for the native find (`HexFind`): None until worked out,
+        #: False where it does not apply.
+        self.hex_layouts: tuple[bytes, bytes] | bool | None = None
         f = self.flags
         if kind == "regex":
             source, marks = value
@@ -262,6 +269,8 @@ class Search:
                 return streamed
         if TextFind.usable(self):
             return self._text_find(data, fixed, seen, deadline)
+        if HexFind.layouts(self) is not None:
+            return HexFind.hits(self, data, seen, fixed, MAX_HITS, deadline)
         events: list[Event] = []
         for needle, length, owners in self.needles:
             starts = seen.get(needle)

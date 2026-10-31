@@ -632,8 +632,237 @@ done:
     return result;
 }
 
+/* hex_hits(data, owners, forward, backward, reach, flags, max_hits, fixed[, left]) -> (starts,
+ * lengths): one plain hex string's matches (one part, no alternatives) from its anchors'
+ * occurrences, as rule_engine.scan's hunt finds them with threads.Lanes. owners: a sequence of
+ * (starts, anchor length, back, order, forward entry, backward entry), an entry -1 for none;
+ * forward and backward: the part's layouts as int64 triples (code, a, b). Each occurrence s with
+ * back <= s + length is an event at offset s + length - back, taken in the hunt's order; at each
+ * the forward layout is run from its entry (the shortest match), then the backward one, each
+ * start it reaches a match of the two lengths together (flag 2 fullword applied), the first at a
+ * start kept, stopping at max_hits. fixed >= 0: only events at that offset. left as text_hits. */
+enum { L_BYTE = 1, L_NOT_BYTE = 2, L_MASK = 3, L_NOT_MASK = 4, L_ANY = 5, L_SKIP = 13, L_DONE = 18 };
+
+typedef struct { int64_t pos, rnd; } Lane;
+
+typedef struct {
+    Lane *lanes; Py_ssize_t cap;
+    int64_t *keys, *slot, *hs, *hl; Py_ssize_t kcap, held, max_hits;
+    int full, fullword, nomem;
+} HexRun;
+
+static int lanes_room(HexRun *h, Py_ssize_t need) {
+    if (need <= h->cap) return 1;
+    Py_ssize_t c = h->cap ? h->cap : 64;
+    while (c < need) c *= 2;
+    Lane *l = PyMem_RawRealloc(h->lanes, sizeof(Lane) * (size_t)c);
+    if (!l) { h->nomem = 1; return 0; }
+    h->lanes = l; h->cap = c;
+    return 1;
+}
+
+static void hex_record(HexRun *h, const uint8_t *d, int64_t n, int64_t start, int64_t length) {
+    if (h->fullword && !whole(d, n, start, length, 0)) return;
+    uint64_t x = (uint64_t)start * 0x9E3779B97F4A7C15ULL;
+    Py_ssize_t j = (Py_ssize_t)(x & (uint64_t)(h->kcap - 1));
+    while (h->keys[j] != -1 && h->keys[j] != start) j = (j + 1) & (h->kcap - 1);
+    if (h->keys[j] == start) return;
+    if (h->held >= h->max_hits) { h->full = 1; return; }
+    h->keys[j] = start; h->slot[j] = h->held; h->hs[h->held] = start; h->hl[h->held] = length; h->held++;
+}
+
+/* threads.Lanes.run written in C, step for step: the lanes sorted as the Python list keeps them,
+ * a skip inserting each reachable position after the lane, a lane that fails deleted. Backwards,
+ * each start reached is recorded with `length` added (the forward run's), and -1 returned. */
+static int64_t lanes_run(HexRun *h, const int64_t *ops, Py_ssize_t nops, int64_t entry, const uint8_t *d,
+                         int64_t n, int64_t at, int backwards, int64_t reach_most, int64_t length) {
+    int64_t step = backwards ? -1 : 1;
+    int64_t reach = backwards ? at : n - at;
+    if (reach > reach_most) reach = reach_most;
+    int64_t pc = entry, rnd = 0;
+    if (!lanes_room(h, 1)) return -1;
+    Lane *L = h->lanes; Py_ssize_t count = 1;
+    L[0].pos = backwards ? at - 1 : at; L[0].rnd = 0;
+    while (count > 0) {
+        if (pc < 0 || pc >= nops) { h->nomem = 2; return -1; }
+        const int64_t *op = ops + 3 * pc;
+        int64_t code = op[0];
+        Py_ssize_t k = 0;
+        while (k < count) {
+            if (L[k].rnd != rnd) { k++; continue; }
+            int64_t done = backwards ? at - L[k].pos - 1 : L[k].pos - at;
+            int ok = 0;
+            if (code == L_DONE) {
+                if (!backwards) return done;
+                int64_t st = L[k].pos + 1 < 0 ? 0 : L[k].pos + 1;
+                hex_record(h, d, n, st, (done < reach ? done : reach) + length);
+            } else if (code == L_SKIP) {
+                int64_t lo = op[1], hi = op[2];
+                if (done + lo < reach) {
+                    ok = 1;
+                    Py_ssize_t place = k;
+                    if (pc + 1 >= nops) { h->nomem = 2; return -1; }
+                    const int64_t *nx = ops + 3 * (pc + 1);
+                    for (int64_t j = lo + 1; j <= hi; j++) {
+                        if (done + j >= reach) break;
+                        int64_t spot = L[k].pos + j * step;
+                        while (place + 1 < count && L[place + 1].pos <= spot) place++;
+                        if (L[place].rnd == rnd + 1 && L[place].pos == spot) continue;
+                        if (nx[0] == L_BYTE && nx[1] != d[spot]) continue;
+                        if (!lanes_room(h, count + 1)) return -1;
+                        L = h->lanes;
+                        memmove(L + place + 2, L + place + 1, sizeof(Lane) * (size_t)(count - place - 1));
+                        L[place + 1].pos = spot; L[place + 1].rnd = rnd + 1; count++;
+                    }
+                    L[k].pos += lo * step;
+                }
+            } else if (done < reach) {
+                uint8_t c = d[L[k].pos];
+                if (code == L_ANY) ok = 1;
+                else if (code == L_BYTE) ok = c == op[1];
+                else if (code == L_NOT_BYTE) ok = c != op[1];
+                else if (code == L_MASK) ok = (c & op[1]) == op[2];
+                else ok = (c & op[1]) != op[2];
+                if (ok) L[k].pos += step;
+            }
+            if (ok) { L[k].rnd = rnd + 1; k++; }
+            else { memmove(L + k, L + k + 1, sizeof(Lane) * (size_t)(count - k - 1)); count--; }
+        }
+        if (code != L_DONE) pc++;
+        rnd++;
+    }
+    return -1;
+}
+
+static int read_ops(PyObject *ob, Py_buffer *b, Py_ssize_t *nops) {
+    if (PyObject_GetBuffer(ob, b, PyBUF_SIMPLE) < 0) return 0;
+    if (b->len % 24) { PyErr_SetString(PyExc_ValueError, "a layout is int64 triples"); PyBuffer_Release(b); return 0; }
+    *nops = b->len / 24;
+    const int64_t *o = b->buf;
+    for (Py_ssize_t i = 0; i < *nops; i++) {
+        int64_t c = o[3 * i], a = o[3 * i + 1], z = o[3 * i + 2];
+        int known = c == L_BYTE || c == L_NOT_BYTE || c == L_MASK || c == L_NOT_MASK || c == L_ANY || c == L_SKIP || c == L_DONE;
+        if (!known || (c == L_SKIP && (a < 0 || z < a || z > TEXT_MOST || i + 1 >= *nops)) ||
+            ((c >= L_BYTE && c <= L_NOT_MASK) && (a < 0 || a > 255 || z < 0 || z > 255))) {
+            PyErr_SetString(PyExc_ValueError, "a layout holds an instruction hex_hits does not run");
+            PyBuffer_Release(b); return 0;
+        }
+    }
+    if (*nops == 0 || o[3 * (*nops - 1)] != L_DONE) {
+        PyErr_SetString(PyExc_ValueError, "a layout ends with DONE"); PyBuffer_Release(b); return 0;
+    }
+    return 1;
+}
+
+static PyObject *hex_hits(PyObject *self, PyObject *args) {
+    (void)self;
+    Py_buffer data, fb, bb; PyObject *owners, *fo, *bo; long flags; Py_ssize_t max_hits, fixed, reach; double left = -1.0;
+    if (!PyArg_ParseTuple(args, "y*OOOnlnn|d", &data, &owners, &fo, &bo, &reach, &flags, &max_hits, &fixed, &left)) return NULL;
+    Py_ssize_t nf = 0, nb = 0;
+    if (!read_ops(fo, &fb, &nf)) { PyBuffer_Release(&data); return NULL; }
+    if (!read_ops(bo, &bb, &nb)) { PyBuffer_Release(&fb); PyBuffer_Release(&data); return NULL; }
+    PyObject *result = NULL, *seq = NULL;
+    Event *ev = NULL; int64_t *ent = NULL;
+    HexRun h; memset(&h, 0, sizeof h);
+    h.max_hits = max_hits; h.fullword = (flags & 2) != 0;
+    if (max_hits < 0 || max_hits > ((Py_ssize_t)1 << 30) || reach < 1 || reach > ((Py_ssize_t)1 << 20)) {
+        PyErr_SetString(PyExc_ValueError, "max_hits or reach out of range"); goto done;
+    }
+    seq = PySequence_Tuple(owners);
+    if (!seq) goto done;
+    Py_ssize_t no = PyTuple_GET_SIZE(seq), total = 0;
+    for (Py_ssize_t k = 0; k < no; k++) {
+        PyObject *o = PyTuple_GET_ITEM(seq, k);
+        if (!PyTuple_Check(o) || PyTuple_GET_SIZE(o) != 6 || !PyList_Check(PyTuple_GET_ITEM(o, 0))) {
+            PyErr_SetString(PyExc_TypeError, "an owner is (list of starts, length, back, order, forward entry, backward entry)"); goto done;
+        }
+        Py_ssize_t m = PyList_GET_SIZE(PyTuple_GET_ITEM(o, 0));
+        if (m > ((Py_ssize_t)1 << 28) - total) { PyErr_SetString(PyExc_MemoryError, "too many occurrences"); goto done; }
+        total += m;
+    }
+    ev = PyMem_RawMalloc(sizeof(Event) * (size_t)(total ? total : 1));
+    ent = PyMem_RawMalloc(sizeof(int64_t) * 2 * (size_t)(no ? no : 1));
+    if (!ev || !ent) { PyErr_NoMemory(); goto done; }
+    Py_ssize_t count = 0;
+    for (Py_ssize_t k = 0; k < no; k++) {
+        PyObject *o = PyTuple_GET_ITEM(seq, k), *starts = PyTuple_GET_ITEM(o, 0);
+        long long length = PyLong_AsLongLong(PyTuple_GET_ITEM(o, 1)), back = PyLong_AsLongLong(PyTuple_GET_ITEM(o, 2));
+        long long order = PyLong_AsLongLong(PyTuple_GET_ITEM(o, 3));
+        long long fe = PyLong_AsLongLong(PyTuple_GET_ITEM(o, 4)), be = PyLong_AsLongLong(PyTuple_GET_ITEM(o, 5));
+        if (PyErr_Occurred()) goto done;
+        if (length < 0 || length > TEXT_MOST || back < 0 || back > TEXT_MOST || fe < -1 || fe >= nf || be < -1 || be >= nb) {
+            PyErr_SetString(PyExc_ValueError, "an owner's length, back or entries are out of range"); goto done;
+        }
+        ent[2 * k] = fe; ent[2 * k + 1] = be;
+        Py_ssize_t m = PyList_GET_SIZE(starts);
+        for (Py_ssize_t i = 0; i < m; i++) {
+            PyObject *x = PyList_GET_ITEM(starts, i);
+            if (!PyLong_CheckExact(x)) { PyErr_SetString(PyExc_TypeError, "a start is not an int"); goto done; }
+            long long sv = PyLong_AsLongLong(x);
+            if (sv == -1 && PyErr_Occurred()) goto done;
+            if (sv < 0 || sv > TEXT_MOST) { PyErr_SetString(PyExc_ValueError, "a start is out of range"); goto done; }
+            if (back <= sv + length) {
+                ev[count].e0 = sv + length; ev[count].nl = -length; ev[count].no = -order;
+                ev[count].seq = count; ev[count].at = sv + length - back; ev[count].owner = (int32_t)k;
+                count++;
+            }
+        }
+    }
+    Py_ssize_t bound = count < max_hits + 1 ? count : max_hits + 1;
+    h.kcap = 1;
+    while (h.kcap < 2 * (bound ? bound : 1)) h.kcap <<= 1;
+    /* a backward run records several starts: the table holds max_hits + 1 at most */
+    while (h.kcap < 2 * (max_hits + 1) && h.kcap < ((Py_ssize_t)1 << 31)) h.kcap <<= 1;
+    h.keys = PyMem_RawMalloc(sizeof(int64_t) * (size_t)h.kcap);
+    h.slot = PyMem_RawMalloc(sizeof(int64_t) * (size_t)h.kcap);
+    h.hs = PyMem_RawMalloc(sizeof(int64_t) * (size_t)(max_hits + 1));
+    h.hl = PyMem_RawMalloc(sizeof(int64_t) * (size_t)(max_hits + 1));
+    if (!h.keys || !h.slot || !h.hs || !h.hl) { PyErr_NoMemory(); goto done; }
+    for (Py_ssize_t i = 0; i < h.kcap; i++) h.keys[i] = -1;
+    const uint8_t *d = data.buf; int64_t n = data.len;
+    const int64_t *fops = fb.buf, *bops = bb.buf;
+    int late = 0;
+    double began = now_seconds();
+    Py_BEGIN_ALLOW_THREADS
+    qsort(ev, (size_t)count, sizeof(Event), cmp_event);
+    for (Py_ssize_t i = 0; i < count; i++) {
+        if (i % 4096 == 0 && left >= 0.0 && now_seconds() - began >= left) { late = 1; break; }
+        if (h.full || h.nomem) break;
+        int64_t at = ev[i].at;
+        if (at >= n) continue;
+        if (fixed >= 0 && at != fixed) continue;
+        int64_t fe = ent[2 * ev[i].owner], be = ent[2 * ev[i].owner + 1];
+        if (fe < 0) continue;
+        int64_t length = lanes_run(&h, fops, nf, fe, d, n, at, 0, reach, 0);
+        if (h.nomem) break;
+        if (length != -1 && be >= 0) lanes_run(&h, bops, nb, be, d, n, at, 1, reach, length);
+        else if (length >= 0) hex_record(&h, d, n, at, length);
+    }
+    Py_END_ALLOW_THREADS
+    if (late) { PyErr_SetString(PyExc_TimeoutError, "matching took longer than the time allowed"); goto done; }
+    if (h.nomem == 1) { PyErr_NoMemory(); goto done; }
+    if (h.nomem == 2) { PyErr_SetString(PyExc_ValueError, "a layout runs past its end"); goto done; }
+    {
+        Py_ssize_t held = h.held;
+        int64_t *pairs = PyMem_RawMalloc(sizeof(int64_t) * 2 * (size_t)(held ? held : 1));
+        if (!pairs) { PyErr_NoMemory(); goto done; }
+        for (Py_ssize_t i = 0; i < held; i++) { pairs[2 * i] = h.hs[i]; pairs[2 * i + 1] = h.hl[i]; }
+        qsort(pairs, (size_t)held, 2 * sizeof(int64_t), cmp_i64);
+        for (Py_ssize_t i = 0; i < held; i++) { h.hs[i] = pairs[2 * i]; h.hl[i] = pairs[2 * i + 1]; }
+        PyMem_RawFree(pairs);
+        result = Py_BuildValue("(y#y#)", (const char *)h.hs, held * 8, (const char *)h.hl, held * 8);
+    }
+done:
+    PyMem_RawFree(ev); PyMem_RawFree(ent); PyMem_RawFree(h.lanes);
+    PyMem_RawFree(h.keys); PyMem_RawFree(h.slot); PyMem_RawFree(h.hs); PyMem_RawFree(h.hl);
+    Py_XDECREF(seq);
+    PyBuffer_Release(&fb); PyBuffer_Release(&bb); PyBuffer_Release(&data);
+    return result;
+}
+
 static PyMethodDef module_methods[] = {
     {"check_text", check_text, METH_VARARGS, "check_text(data, offsets, text, mode) -> int64 lengths."},
+    {"hex_hits", hex_hits, METH_VARARGS, "hex_hits(data, owners, forward, backward, reach, flags, max_hits, fixed[, left]) -> (starts, lengths)."},
     {"text_hits", text_hits, METH_VARARGS, "text_hits(data, owners, text, mode, flags, max_hits, fixed[, left]) -> (starts, lengths)."},
     {NULL, NULL, 0, NULL}};
 
