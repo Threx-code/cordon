@@ -38,7 +38,12 @@ typedef struct {
     Py_ssize_t live, max_threads;
     int error; /* 1 too many threads, 2 out of memory, 3 a malformed program, 4 out of time */
     double began, left; int64_t steps;
+    int64_t settled; int nesting; /* a malformed program's bounds: settle steps a run, recursion */
 } VM;
+
+/* A compiled layout settles in a bounded number of steps; a malformed one (an epsilon cycle no
+ * fork or count cuts) would settle forever, so past this many a run refuses the program. */
+#define T_SETTLE_MOST ((int64_t)1 << 26)
 
 static int tl_room(TList *l, Py_ssize_t need, VM *vm) {
     if (need <= l->cap) return 1;
@@ -72,6 +77,16 @@ static void tl_remove(TList *l, Py_ssize_t at) {
     l->n--;
 }
 
+/* Whether a chain of GOTOs comes back on itself: a thread there would never leave. */
+static int vm_goto_cycle(const int64_t *ops, Py_ssize_t nops) {
+    for (Py_ssize_t i = 0; i < nops; i++) {
+        Py_ssize_t pc = i, k = 0;
+        while (ops[pc * T_RECORD] == T_GOTO && k++ <= nops) pc = (Py_ssize_t)ops[pc * T_RECORD + 1];
+        if (k > nops) return 1;
+    }
+    return 0;
+}
+
 /* Threads._new: the bound is checked before the thread is counted. */
 static int vm_new(VM *vm) {
     if (vm->live >= vm->max_threads) { vm->error = 1; return 0; }
@@ -94,8 +109,10 @@ static int vm_settle(VM *vm, const int32_t *first, TList *out) {
     int64_t *forked = NULL; Py_ssize_t nforked = 0, fcap = 0;
     int ok = 1;
     int32_t th[3 + T_MAX_COUNTS];
+    if (++vm->nesting > vm->nops + 1) { vm->error = 3; ok = 0; goto end; } /* a skip's go settling into itself */
     if (!tl_push(&queue, first, vm)) { ok = 0; goto end; }
     while (queue.n > 0) {
+        if (++vm->settled > T_SETTLE_MOST) { vm->error = 3; ok = 0; goto end; }
         int32_t *t = tl_at(&queue, 0);
         const int64_t *op = vm_op(vm, t[0]);
         int64_t code = op[0];
@@ -187,20 +204,43 @@ static int vm_settle(VM *vm, const int32_t *first, TList *out) {
         }
     }
 end:
+    vm->nesting--;
     PyMem_RawFree(queue.t); PyMem_RawFree(forked);
     return ok;
 }
 
-/* The later of two identical threads dropped (Threads._keys), in place. */
-static void vm_dedupe(TList *l) {
+/* The later of two identical threads dropped (Threads._keys), in place: an open-addressed table
+ * over the whole thread (pc, depth, skipped, counts), as dict.fromkeys keys it. */
+static uint64_t thread_hash(const int32_t *t) {
+    uint64_t h = 1469598103934665603ULL;
+    for (int32_t k = 0; k < 3 + t[1]; k++) { h ^= (uint32_t)t[k]; h *= 1099511628211ULL; }
+    return h;
+}
+
+static int vm_dedupe(TList *l, VM *vm) {
+    if (l->n < 2) return 1;
+    Py_ssize_t cap = 1;
+    while (cap < 2 * l->n) cap <<= 1;
+    Py_ssize_t *slots = PyMem_RawMalloc(sizeof(Py_ssize_t) * (size_t)cap);
+    if (!slots) { vm->error = 2; return 0; }
+    for (Py_ssize_t i = 0; i < cap; i++) slots[i] = -1;
     Py_ssize_t w = 0;
     for (Py_ssize_t i = 0; i < l->n; i++) {
         int32_t *t = tl_at(l, i);
+        Py_ssize_t j = (Py_ssize_t)(thread_hash(t) & (uint64_t)(cap - 1));
         int dup = 0;
-        for (Py_ssize_t j = 0; j < w && !dup; j++) dup = same_thread(tl_at(l, j), t);
-        if (!dup) { if (w != i) memcpy(tl_at(l, w), t, sizeof(int32_t) * (size_t)l->stride); w++; }
+        while (slots[j] != -1) {
+            if (same_thread(tl_at(l, slots[j]), t)) { dup = 1; break; }
+            j = (j + 1) & (cap - 1);
+        }
+        if (dup) continue;
+        if (w != i) memcpy(tl_at(l, w), t, sizeof(int32_t) * (size_t)l->stride);
+        slots[j] = w; /* kept threads sit at w <= i, before any later one is copied over them */
+        w++;
     }
+    PyMem_RawFree(slots);
     l->n = w;
+    return 1;
 }
 
 static int vm_read(VM *vm, const int64_t *op, int c) {
@@ -309,9 +349,9 @@ static int64_t vm_run(VM *vm, int32_t entry, const uint8_t *d, int64_t n, int64_
     int32_t start[3 + T_MAX_COUNTS];
     memset(start, 0, sizeof start);
     start[0] = entry; start[1] = 0; start[2] = -1;
-    vm->live = 0;
+    vm->live = 0; vm->settled = 0; vm->nesting = 0;
     if (!vm_new(vm) || !vm_settle(vm, start, &cur)) goto end;
-    vm_dedupe(&cur);
+    if (!vm_dedupe(&cur, vm)) goto end;
     while (cur.n > 0) {
         int c = -1, low = 0;
         if (done < reach) { c = d[pos]; low = !wide || d[pos + 1] == 0; }
@@ -325,7 +365,7 @@ static int64_t vm_run(VM *vm, int32_t entry, const uint8_t *d, int64_t n, int64_
         int64_t hits = 0;
         nxt.n = 0;
         if (!vm_pass(vm, &cur, c, low, around, &nxt, &hits)) goto end;
-        vm_dedupe(&nxt);
+        if (!vm_dedupe(&nxt, vm)) goto end;
         if (hits) {
             result = done;
             if (vm->flags & TF_EVERY)
@@ -337,7 +377,7 @@ static int64_t vm_run(VM *vm, int32_t entry, const uint8_t *d, int64_t n, int64_
         if ((vm->flags & TF_SCAN) && done < reach) {
             vm->live = nxt.n;
             if (!vm_new(vm) || !vm_settle(vm, start, &nxt)) goto end;
-            vm_dedupe(&nxt);
+            if (!vm_dedupe(&nxt, vm)) goto end;
         }
         TList swap = cur; cur = nxt; nxt = swap;
     }
@@ -383,6 +423,7 @@ static PyObject *threads_run(PyObject *self, PyObject *args) {
         if ((c >= T_BYTE && c <= T_SKIP) || (c >= T_START && c <= T_NON_EDGE)) bad = bad || i + 1 >= vm.nops;
         if (bad) { PyErr_SetString(PyExc_ValueError, "a program holds an instruction out of range"); goto done; }
     }
+    if (vm_goto_cycle(vm.ops, vm.nops)) { PyErr_SetString(PyExc_ValueError, "a program jumps in a circle"); goto done; }
     if (entry < 0 || entry >= vm.nops || at < 0 || at > data.len || max_threads < 1 || max_threads > (1 << 20) ||
         reach < 0 || reach > (1 << 20)) {
         PyErr_SetString(PyExc_ValueError, "an entry, offset, thread bound or reach out of range"); goto done;
@@ -395,7 +436,7 @@ static PyObject *threads_run(PyObject *self, PyObject *args) {
     Py_END_ALLOW_THREADS
     if (vm.error == 1) { PyErr_SetString(TooManyThreads, "a pattern needed too many threads"); goto done; }
     if (vm.error == 2) { PyErr_NoMemory(); goto done; }
-    if (vm.error == 3) { PyErr_SetString(PyExc_ValueError, "a program's counts do not nest as declared"); goto done; }
+    if (vm.error == 3) { PyErr_SetString(PyExc_ValueError, "a malformed program: its counts nest deeper than declared, or it never settles"); goto done; }
     if (vm.error == 4) { PyErr_SetString(PyExc_TimeoutError, "matching took longer than the time allowed"); goto done; }
     if (flags & TF_EVERY) {
         static const char none[1] = {0};
@@ -436,6 +477,7 @@ static int vm_program(VM *vm, Py_buffer *prog) {
         if ((c >= T_BYTE && c <= T_SKIP) || (c >= T_START && c <= T_NON_EDGE)) bad = bad || i + 1 >= vm->nops;
         if (bad) { PyErr_SetString(PyExc_ValueError, "a program holds an instruction out of range"); return 0; }
     }
+    if (vm_goto_cycle(vm->ops, vm->nops)) { PyErr_SetString(PyExc_ValueError, "a program jumps in a circle"); return 0; }
     return 1;
 }
 
@@ -582,7 +624,7 @@ static PyObject *pattern_hits(PyObject *self, PyObject *args) {
     Py_END_ALLOW_THREADS
     if (nomem || err == 2) { PyErr_NoMemory(); goto done; }
     if (err == 1) { PyErr_SetString(TooManyThreads, "a pattern needed too many threads"); goto done; }
-    if (err == 3) { PyErr_SetString(PyExc_ValueError, "a program's counts do not nest as declared"); goto done; }
+    if (err == 3) { PyErr_SetString(PyExc_ValueError, "a malformed program: its counts nest deeper than declared, or it never settles"); goto done; }
     if (err == 4) { PyErr_SetString(PyExc_TimeoutError, "matching took longer than the time allowed"); goto done; }
     {
         Py_ssize_t held = rec.held;
