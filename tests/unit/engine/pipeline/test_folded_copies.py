@@ -4,6 +4,7 @@ copy's gap, leaves every other copy blocking, named, in a directory scan and an 
 
 from __future__ import annotations
 
+import dataclasses
 import io
 import tarfile
 from datetime import date, timedelta
@@ -77,3 +78,23 @@ class TestASuppressedCopyHidesNoOther:
         # before: the fold kept the suppressed first copy, so the other was hidden with it
         assert live == {prefix + Copies.NAMES[1]}
         assert verdict.exit_code is not ExitCode.CLEAN
+
+
+class TestAnAcceptedCopyGapHidesNoOther:
+    #: A nested archive that does not open: its bytes left unread, a gap at its own path.
+    BROKEN = b"\x1f\x8b\x08\x00" + b"\x00" * 6 + b"not a deflate stream at all"
+
+    @pytest.mark.parametrize("make", [Copies.directory, Copies.archive])
+    def test_the_other_copy_s_gap_still_blocks_and_is_named(self, tmp_path, make) -> None:
+        names = ("pkg/a.tgz", "pkg/b.tgz")
+        target, prefix = make(tmp_path, data=self.BROKEN, names=names)
+        config = Config.default().with_overrides(use_cache=False)
+        plain = Copies.scan(target, config)[0]
+        rules = {rule for rule, path in plain.content_gaps if path == prefix + names[0]}
+        assert rules, f"no gap at the first copy: {plain.content_gaps}"
+        accepted = tuple(Copies.suppression(rule, prefix + names[0]) for rule in rules)
+        policy = dataclasses.replace(config.policy, accepted_gaps=accepted)
+        result, verdict = Copies.scan(target, config.with_overrides(policy=policy))
+        assert any(path == prefix + names[1] for _, path in result.content_gaps)
+        assert verdict.exit_code is not ExitCode.CLEAN
+        assert prefix + names[1] in verdict.reason

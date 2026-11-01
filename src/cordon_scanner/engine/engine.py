@@ -78,6 +78,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Sequence
 
     from cordon_scanner.detect.base import Detector
+    from cordon_scanner.engine.pipeline.units import Expansion
     from cordon_scanner.foundation.models import Finding
 
 
@@ -113,7 +114,7 @@ class Engine:
         self.progress: Progress = progress if progress is not None else NullProgress()
         # Archives opened during a directory scan, by content hash, and the
         # counters reported in `ScanStats`: opened, members, milliseconds.
-        self._expansions: dict[str, list[tuple[str, bytes]] | None] = {}
+        self._expansions: dict[str, Expansion] = {}
         self._archive_stats = [0, 0, 0]
         # What an ingested SBOM itself lists as vulnerable: `(document, vulnerability, purl,
         # name, version, tool)`, reported once the scan's own matching has run.
