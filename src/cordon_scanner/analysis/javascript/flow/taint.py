@@ -3,6 +3,8 @@ and the taint of a token range, compiled once and read through bindings and call
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from cordon_scanner.analysis.javascript.flow.sinks import Sinks
 from cordon_scanner.analysis.javascript.flow.vocabulary import (
     _BROWSER,
@@ -252,11 +254,15 @@ class Taint(Sinks):
                     if target is not None:
                         calls.append((k, target))
                         k = self.match[k + 1]
-                    elif what == "ref" and self.is_p(k + 1, ".") and self.is_name(k + 2):
-                        # A member read `x.g`: x's own labels and its field g's, never another
-                        # field's (item 59). `name.` marks x's own labels without its fields; a
-                        # parameter's field is its own label, resolved at each call (`Calls`).
-                        field = str(self.t[k + 2].value)
+                    elif (
+                        what == "ref"
+                        and (member := self._member_at(k)) is not None
+                        and (self.canonical(resolved) not in self.collapsed)
+                    ):
+                        # A member read `x.g` (or `x?.g`): x's own labels and its field g's, never
+                        # another field's (item 59). `name.` marks x's own labels without its
+                        # fields; a parameter's field is its own label, resolved at each call.
+                        field = str(self.t[member].value)
                         root = self.canonical(resolved)
                         param = self._param_index(root)
                         if param is not None:
@@ -265,6 +271,9 @@ class Taint(Sinks):
                         else:
                             refs.append((root[0], root[1] + "."))
                         refs.append((root[0], f"{root[1]}.{field}"))
+                        refs.append(
+                            (root[0], root[1] + ".*")
+                        )  # the other fields, unnarrowed labels
                         if resolved != root:
                             refs.append((resolved[0], resolved[1] + "."))
                     else:
@@ -303,6 +312,14 @@ class Taint(Sinks):
             raise _OverBudget
         out: set[Label] = set(labels)
         for ref in refs:
+            if ref[1].endswith(".*"):
+                # Another field's labels reach a member read unless they are NARROWED: field
+                # sensitivity separates what a reply would make run, never what is sent.
+                for field in self.fields.get((ref[0], ref[1][:-2]), ()):
+                    got = self.vars.get(field)
+                    if got:
+                        out |= Taint.unnarrowed(got)
+                continue
             if ref[1].endswith(".-"):
                 # A parameter's own labels without its whole-parameter label: its field read
                 # carries ("Q", ...) instead.
@@ -360,6 +377,16 @@ class Taint(Sinks):
                 out.add(label)
         return out
 
+    def _member_at(self, k: int) -> int | None:
+        """The member name's token after the name at `k`: `x.g` or `x?.g`; None otherwise."""
+        if self.is_p(k + 1, ".") and self.is_name(k + 2):
+            return k + 2
+        if self.is_p(k + 1, "?.") and self.is_name(k + 2):
+            return k + 2
+        if self.is_p(k + 1, "?") and self.is_p(k + 2, ".") and self.is_name(k + 3):
+            return k + 3
+        return None
+
     def _param_index(self, key: tuple[int, str]) -> int | None:
         """The parameter position of `key` when it is a parameter of its own scope's function."""
         if key[0] <= 0 or key[0] > len(self.fns):
@@ -372,20 +399,30 @@ class Taint(Sinks):
         it has no such key), a variable's field and its own labels, or the whole argument when its
         shape is unknown (item 59)."""
         s, e = arg
+        whole = self.taint(s, e, scope)
+        out: set[Label] = Taint.unnarrowed(whole)  # what is sent is never narrowed by field
         if self.is_p(s, "{") and self.match[s] == e - 1:
             entries = self.literal_entries(s, e)
             if entries is not None:
-                out: set[Label] = set()
                 for key, vs, ve in entries:
                     if key == field:
                         out |= self.taint(vs, ve, scope)
                 return out
         elif e - s == 1 and self.is_name(s):
             root = self.canonical(self.resolve(str(self.t[s].value), scope))
-            out = set(self.vars.get(root, set()))
+            out |= self.vars.get(root, set())
             out |= self.vars.get((root[0], f"{root[1]}.{field}"), set())
             return out
-        return self.taint(s, e, scope)
+        return whole
+
+    #: The labels field sensitivity narrows (item 59, the fallback cordon-47 set): what a reply makes
+    #: run. Every other label -- a credential, the identity, the environment -- reaches a read of any
+    #: field of the object holding it, as before: over-approximating what is sent is the safe side.
+    NARROWED: ClassVar[frozenset[str]] = frozenset({"network_response", "decoded"})
+
+    @classmethod
+    def unnarrowed(cls, labels: set[Label]) -> set[Label]:
+        return {x for x in labels if not (isinstance(x, str) and x in cls.NARROWED)}
 
     def _registry_template(self, k: int) -> bool:
         """Whether the registry host at string `k` begins a package tarball URL: `/-/` and `.tgz`

@@ -43,6 +43,8 @@ class Structure:
         self.fields: dict[tuple[int, str], set[tuple[int, str]]] = {}
         #: `y = x`: y -> x, so a field written through either lands on one object (item 59).
         self.alias_of: dict[tuple[int, str], tuple[int, str]] = {}
+        #: Objects past `MAX_FIELDS` fields: whole-object again.
+        self.collapsed: set[tuple[int, str]] = set()
         self.aliases: dict[str, str] = {}  # local name -> "module" or "module.member"
         self.connections: set[tuple[int, str]] = set()  # names bound to an open connection
         self.raw_connections: set[tuple[int, str]] = set()  # ... to a raw socket among them

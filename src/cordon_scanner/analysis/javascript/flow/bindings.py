@@ -21,6 +21,7 @@ class Bindings(Structure):
         """(targets, rhs_start, rhs_end): every binding site, with the names it writes."""
         t = self.t
         out: list[tuple[list[tuple[int, str]], int, int]] = []
+        self._aliases()
         for i in range(self.n):
             tok = t[i]
             if tok.kind == "name" and tok.value in _DECLARE:
@@ -76,14 +77,13 @@ class Bindings(Structure):
                 base = self._assign_base(i - 1)
                 if base is None:
                     continue
-                target = self.canonical(self.resolve(base, scope))
+                target = self.resolve(base, scope)
                 field = self._assign_field(i - 1)
                 if field is not None:
+                    target = self.canonical(target)  # a field write lands on the aliased object
                     # `x.f = v` stores into x's field f, not into all of x (item 59, notes/60): a
                     # read of x.g does not carry v; a whole use of x does (`Taint.taint`).
-                    key = (target[0], f"{target[1]}.{field}")
-                    self.fields.setdefault(target, set()).add(key)
-                    target = key
+                    target = self.field_key(target, field)
                 end = self.expr_end(i + 1)
                 if (
                     field is not None
@@ -111,13 +111,8 @@ class Bindings(Structure):
         e: int,
         out: list[tuple[list[tuple[int, str]], int, int]],
     ) -> bool:
-        """`y = x`: y aliases x (and also takes x's value). `o = {k: v, ...}`: each key binds o's field.
-        True when the binding was written here (an object literal without a spread or computed key)."""
-        if e - s == 1 and self.is_name(s) and str(self.t[s].value) not in _KEYWORDS:
-            self.alias_of[target] = self.canonical(
-                self.resolve(str(self.t[s].value), self.scope_of(s))
-            )
-            return False
+        """`o = {k: v, ...}`: each key binds o's field. True when the binding was written here (an
+        object literal without a spread or computed key). Aliases are decided before (`_aliases`)."""
         if not (self.is_p(s, "{") and self.match[s] == e - 1):
             return False
         entries = self.literal_entries(s, e)
@@ -125,10 +120,80 @@ class Bindings(Structure):
             return False
         target = self.canonical(target)
         for key, vs, ve in entries:
-            field = (target[0], f"{target[1]}.{key}")
-            self.fields.setdefault(target, set()).add(field)
-            out.append(([field], vs, ve))
+            out.append(([self.field_key(target, key)], vs, ve))
         return True
+
+    #: Past this many fields an object is whole-object again, so a whole use reads a bounded set
+    #: (outer-layer review of 7b361a11).
+    MAX_FIELDS = 256
+
+    def field_key(self, target: tuple[int, str], field: str) -> tuple[int, str]:
+        """The key `x.f` binds: x's field f, or x itself once x has MAX_FIELDS fields (collapsed)."""
+        if target in self.collapsed:
+            return target
+        held = self.fields.setdefault(target, set())
+        key = (target[0], f"{target[1]}.{field}")
+        if key not in held and len(held) >= self.MAX_FIELDS:
+            self.collapsed.add(target)
+            return target
+        held.add(key)
+        return key
+
+    def _aliases(self) -> None:
+        """`y = x` and `const y = x`: y aliases x, so a field written through either lands on one
+        object, but only for a name bound exactly once and outside every loop. A name bound twice
+        (`let y = x; ...; y = other`) or in a loop is never an alias: decided at the last binding,
+        an alias would send a field read to the wrong object (outer-layer review of 7b361a11)."""
+        t, n = self.t, self.n
+        in_loop = bytearray(n)
+        for i in range(n):
+            if not (self.is_name(i, "for") or self.is_name(i, "while")):
+                continue
+            if self.is_p(i + 1, "(") and self.match[i + 1] > 0:
+                body = self.match[i + 1] + 1
+                if self.is_p(body, "{") and self.match[body] > 0:
+                    in_loop[body : self.match[body]] = b"\x01" * (self.match[body] - body)
+                else:
+                    end = min(n, self.expr_end(body) + 1)
+                    in_loop[body:end] = b"\x01" * (end - body)
+        counts: dict[tuple[int, str], int] = {}
+        candidates: dict[tuple[int, str], tuple[int, str]] = {}
+        looped: set[tuple[int, str]] = set()
+        for i in range(n):
+            tok = t[i]
+            if tok.kind != "name" or tok.value in _KEYWORDS:
+                continue
+            declared = self.is_name(i - 1) and (
+                str(t[i - 1].value) in _DECLARE or str(t[i - 1].value) in ("function", "class")
+            )
+            assigned = (
+                self.is_p(i + 1, "=")
+                and not self.is_p(i - 1, ".")
+                and not self.is_p(i - 1, "?.")
+                and not (self.is_p(i - 1, "{") or self.is_p(i - 1, ","))
+            )
+            if not (declared or (assigned and not declared and self._is_statement_start(i))):
+                continue
+            key = self.resolve(str(tok.value), self.scope_of(i))
+            counts[key] = counts.get(key, 0) + 1
+            if in_loop[i]:
+                looped.add(key)
+            if (
+                self.is_p(i + 1, "=")
+                and self.is_name(i + 2)
+                and str(t[i + 2].value) not in _KEYWORDS
+                and self.expr_end(i + 2) == i + 3
+            ):
+                candidates[key] = self.resolve(str(t[i + 2].value), self.scope_of(i + 2))
+        for key, to in candidates.items():
+            if counts.get(key) == 1 and key not in looped and to != key:
+                self.alias_of[key] = to
+
+    def _is_statement_start(self, i: int) -> bool:
+        """Whether the name at `i` begins a statement (`y = x;`), not a part of an expression."""
+        if i == 0 or self.is_p(i - 1, ";") or self.is_p(i - 1, "{") or self.is_p(i - 1, "}"):
+            return True
+        return self._new_line_between(i - 1, i)
 
     def literal_entries(self, s: int, e: int) -> list[tuple[str, int, int]] | None:
         """An object literal's (key, value start, value end) at depth one; None when a spread, a
