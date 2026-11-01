@@ -144,3 +144,50 @@ class TestTheTwoPathsAgree:
         assert not complete
         assert ("OPERATIONAL.DETECTOR.FAILED", "mod0007.js") in gaps
         assert exit_code.name == "INCOMPLETE"
+
+    @pytest.mark.parametrize(
+        ("manifest", "payload_name", "payload"),
+        [
+            # Only a hook's interpreter decides it: `node ./payload.png` makes payload.png
+            # JavaScript, and its content has too few markers for the content sniff. A worker
+            # named the language from the file alone (LanguageRegistry.of_file), so under --jobs
+            # this was no language and no language rule read it. Fails on the old pool.
+            (
+                '{"name": "x", "version": "1.0.0", "scripts": {"postinstall": "node ./payload.png"}}',
+                "payload.png",
+                "const p = atob(BLOB);\neval(p);\n",
+            ),
+            # The content sniff decides it, which of_file already did in a worker: a guard.
+            (
+                '{"name": "x", "version": "1.0.0"}',
+                "loader",
+                "const p = atob(BLOB);\neval(p);\nmodule.exports = function run(a) { return a; };\n",
+            ),
+        ],
+    )
+    def test_the_parent_s_language_reaches_the_worker(
+        self, tmp_path, manifest: str, payload_name: str, payload: str
+    ) -> None:
+        """The parent's language for a unit is the worker's (outer-layer review, item 28). Built-in
+        detectors only, so the workers run."""
+        root = tmp_path / "repo"
+        root.mkdir()
+        for i in range(FILES):
+            (root / f"mod{i:04d}.js").write_text(f"export const v{i} = {i};\n", encoding="utf-8")
+        (root / "package.json").write_text(manifest, encoding="utf-8")
+        (root / payload_name).write_text(payload, encoding="utf-8")
+        found = []
+        for workers in (1, 2):
+            config = Config.default().with_overrides(
+                use_cache=False, limits=Config.default().limits.merged(max_workers=workers)
+            )
+            result = Scanner(config).scan(root)
+            found.append(
+                sorted(
+                    (f.rule_id, f.location.line)
+                    for f in result.findings
+                    if f.location.path == payload_name
+                )
+            )
+        assert found[0] == found[1]
+        assert any(rule == "SUSPECT.DECODE_EXEC.001" for rule, _ in found[0])

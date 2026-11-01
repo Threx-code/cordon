@@ -511,8 +511,8 @@ class TestThePoolStopsAtTheDeadline(ParallelFixtures):
     already past, so the outcome cannot depend on how loaded the machine is."""
 
     @staticmethod
-    def items(*indices: int) -> list[tuple[int, str, int, str, None]]:
-        return [(index, f"m{index}.js", 10, "", None) for index in indices]
+    def items(*indices: int) -> list[tuple[int, str, int, str, None, str, None]]:
+        return [(index, f"m{index}.js", 10, "", None, "javascript", None) for index in indices]
 
     def test_a_worker_past_the_deadline_reads_nothing(self, monkeypatch) -> None:
         from types import SimpleNamespace

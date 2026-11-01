@@ -229,7 +229,7 @@ class Detection:
 
     def inspect_here(
         self,
-        pending: list[tuple[int, str, int, str, bytes | str | None]],
+        pending: list[WorkItem],
         by_path: dict[str, FileUnit],
         results: list[Finding],
         ctx: ScanContext,
@@ -241,7 +241,7 @@ class Detection:
         # The pool did not run. Fall back rather than lose coverage. `None`
         # rather than an empty list, so a pool that ran and legitimately
         # found nothing is not re-scanned from scratch.
-        for _index, path, _size, _digest, _carried in pending:
+        for _index, path, _size, _digest, _carried, _language, _project in pending:
             unit = by_path[path]
             results.extend(self.inspect_file(unit, ctx, acc, detectors, signature))
             self.progress.advance(unit.path)
@@ -252,7 +252,7 @@ class Detection:
         ctx: ScanContext,
         signature: str,
         results: list[Finding],
-        pending: list[tuple[int, str, int, str, bytes | str | None]],
+        pending: list[WorkItem],
         carry_content: bool,
     ) -> None:
         """The units a worker can take, each with the bytes it must carry when the source cannot be re-read."""
@@ -280,6 +280,12 @@ class Detection:
                         unit.content.carried
                         if carry_content or "!" in unit.path or "#" in unit.path
                         else None,
+                        # The parent's own decisions about the unit, never made again in a worker:
+                        # its language (a hook's interpreter, which a worker reading the file
+                        # alone cannot know: a hook-run payload.png was no language under --jobs)
+                        # and its project.
+                        unit.language,
+                        unit.project,
                     )
                 )
 
