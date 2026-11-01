@@ -175,3 +175,28 @@ class TestNamedInCodeNotWritten:
             f"import os, shutil, subprocess\nfrom setuptools import setup\n{body}setup(name='x')\n"
         )
         assert RULE in PersistHelpers.rules(tmp_path, {"setup.py": setup})
+
+
+class TestAProcessManagerAtInstall:
+    """A postinstall handing its own script to a process manager keeps it running past the install
+    and starts it again: pm2 restarts what it runs. The npm work half's crypto-encrypt-ts did this
+    and passed on content, blocked only by intel (cordon-a0's miss read, 1 Nov). Inert fixtures."""
+
+    @staticmethod
+    def files(command: str) -> dict[str, str]:
+        return {
+            "package.json": '{"name": "x", "version": "1.0.0", "scripts": {"postinstall": "node setup.js"}}',
+            "setup.js": "const { exec } = require('child_process');\n"
+            "const path = require('path');\n"
+            "const target = path.join(__dirname, 'start.js');\n"
+            f"exec('{command} ' + target, () => {{}});\n",
+            "start.js": "console.log('started');\n",
+        }
+
+    @pytest.mark.parametrize("command", ["pm2 start", "forever start"])
+    def test_handing_itself_to_a_process_manager_is_planting(self, tmp_path, command) -> None:
+        assert RULE in PersistHelpers.rules(tmp_path, self.files(command))
+
+    @pytest.mark.parametrize("command", ["pm2 list", "pm2 logs"])
+    def test_only_asking_the_process_manager_is_not(self, tmp_path, command) -> None:
+        assert RULE not in PersistHelpers.rules(tmp_path, self.files(command))

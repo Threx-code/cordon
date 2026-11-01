@@ -454,8 +454,12 @@ rules:
         # No `path ... >` alternative. `rm -f /etc/systemd/system/x.service &>
         # /dev/null` has a redirect AFTER the path and writes nothing to it; a write
         # puts the redirect first, which the alternative above already covers.
-        - '\bsystemctl\s+enable\b'
-        - '\blaunchctl\s+load\b'
+        - '\bsystemctl\s+(?:--user\s+)?enable\b'
+        - '\blaunchctl\s+(?:load|bootstrap)\b'
+        # A process manager keeping the code running past the install and starting it again: pm2's
+        # `start` (it restarts what it runs), `startup` and `save` (at boot), forever's `start`
+        # (npm work half: crypto-encrypt-ts's postinstall runs `pm2` on its own start script).
+        - '\bpm2\s+(?:start|startup|save)\b|\bforever\s+start\b'
         - '\b(?:cp|mv|install|ln|tee|touch|mkdir|defaults\s+write)\b[^\n]{0,100}?(?:LaunchAgents|LaunchDaemons)'
         - '>[ \t]{0,8}[^\n]{0,60}?(?:LaunchAgents|LaunchDaemons)'
         - '\bRegister-ScheduledTask\b|\bschtasks\s+/create\b'
@@ -472,6 +476,10 @@ rules:
         - "net user /add flask 123qwe123"
         - "net localgroup \"Remote Desktop Users\" flask /add"
         - "useradd -m -s /bin/bash backdoor"
+        - "pm2 start ./scripts/start.js --name svc"
+        - "forever start app.js"
+        - "systemctl --user enable svc.service"
+        - "launchctl bootstrap gui/501 ~/Library/LaunchAgents/svc.plist"
         - "usermod -aG sudo backdoor"
         - "echo 'curl x|sh' >> ~/.bashrc"
         - "crontab -l | { cat; echo '@reboot /tmp/x'; } | crontab -"
@@ -484,6 +492,9 @@ rules:
         - "cp agent.service /etc/systemd/system/agent.service"
         - "systemctl enable agent.service"
       negative:
+        - "pm2 list"
+        - "pm2 logs svc"
+        - "forever list"
         - "systemctl status nginx"
         - "cat ~/.bashrc"
         - "rm -f /etc/systemd/system/pihole-FTL.service"
