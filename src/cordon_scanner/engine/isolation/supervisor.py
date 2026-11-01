@@ -27,7 +27,7 @@ import signal
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.foundation.errors import CordonError
 
@@ -175,6 +175,11 @@ class Worker:
 class WorkerMain:
     """What runs inside a worker process."""
 
+    #: Set in a worker's environment as it starts, so code that would start processes of its own
+    #: can tell it is inside one (`RulePool.wanted`): a process a worker spawned is not the
+    #: supervisor's to bound, kill or reap, and outlives the worker it came from.
+    INSIDE: ClassVar[str] = "CORDON_ISOLATED_WORKER"
+
     @staticmethod
     def from_template(sock: Any) -> None:
         """A worker the template forked: its setup, work and bounds arrive first on its socket."""
@@ -194,6 +199,7 @@ class WorkerMain:
     def run(
         conn: Connection, setup: tuple[str, tuple[Any, ...]], work: str, bounds: Bounds
     ) -> None:
+        os.environ[WorkerMain.INSIDE] = "1"
         isolation = Limits.apply(bounds)
         WorkerMain.resolve(setup[0])(*setup[1])
         run = WorkerMain.resolve(work)

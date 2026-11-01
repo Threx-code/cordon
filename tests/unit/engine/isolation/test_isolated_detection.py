@@ -149,6 +149,43 @@ class TestADetectorGivenToTheScannerRunsInTheWorkers:
         assert result.complete is False
 
 
+class TestAWorkerStartsNoProcessOfItsOwn:
+    """The binary rule pool spreads one large file over processes of its own. Inside a supervised
+    worker those would be outside its bounds, its kill and its reaping, and outlive it; a plainly
+    forked worker has no `parent_process()`, so that check alone let every worker start one."""
+
+    def test_a_large_file_under_a_large_collection_starts_no_rule_pool(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from cordon_scanner.detect.binary import rule_pool
+
+        rules = tmp_path / "operator.yar"
+        rules.write_text(
+            "\n".join(
+                f"rule f{i} {{ strings: $a = {{ {i // 256:02X} {i % 256:02X} EE {i % 251:02X} 7A }}"
+                " condition: $a }"
+                for i in range(rule_pool.RulePool.MIN_RULES + 50)
+            ),
+            encoding="utf-8",
+        )
+        root = tmp_path / "pkg"
+        root.mkdir()
+        (root / "blob.bin").write_bytes(bytes(range(256)) * (rule_pool.RulePool.LARGE // 128))
+        starts = tmp_path / "pool-starts.txt"  # written in the worker, read here
+        real = rule_pool.RulePool.executor
+
+        def recorded(self):
+            with starts.open("a", encoding="utf-8") as out:
+                out.write(f"{os.getpid()}\n")
+            return real(self)
+
+        monkeypatch.setattr(rule_pool.RulePool, "executor", recorded)
+        config = Config.default().with_overrides(use_cache=False, rule_file=str(rules))
+        Scanner(config.with_overrides(limits=config.limits.merged(max_workers=2))).scan(root)
+        # before: each forked worker started its own pool (S/proofs-item28/pool/pool250-native.txt)
+        assert not starts.exists(), starts.read_text(encoding="utf-8")
+
+
 class TestNoWorkerCanStart:
     def test_it_is_a_scanner_error(self, tmp_path, monkeypatch) -> None:
         from cordon_scanner.engine import engine as engine_module
