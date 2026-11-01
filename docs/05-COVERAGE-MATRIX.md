@@ -719,6 +719,7 @@ rather than a document.
 |---|---|---|---|
 | `OPERATIONAL.CLAMAV.STATUS` | info | `clamav` | coverage |
 | `OPERATIONAL.CLAMAV.UNAVAILABLE` | info | `clamav` | coverage |
+| `OPERATIONAL.FORMAT.NOT_A_PICKLE` | info | `formats` | coverage |
 | `OPERATIONAL.FORMAT.UNREADABLE` | info | `formats` | coverage |
 | `OPERATIONAL.IMAGE.UNMATCHED` | info | `os-packages` | coverage |
 | `OPERATIONAL.JUDGE.BUDGET` | info | `agent-judge` | coverage |

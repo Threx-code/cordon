@@ -599,6 +599,7 @@ class ScanCache:
             suppressed=suppression,
             capabilities=tuple(Capability(c) for c in data.get("capabilities", ())),
             always_report=bool(data.get("always_report", False)),
+            degrades_coverage=bool(data.get("degrades_coverage", False)),
             fingerprint=data.get("fingerprint", ""),
         )
 

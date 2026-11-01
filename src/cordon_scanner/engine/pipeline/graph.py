@@ -53,8 +53,7 @@ class Graph:
             replacement, why = known
             if (f"{directory}/{replacement}" if directory else replacement) in present:
                 continue  # the readable lockfile is beside it and is what was read
-            acc.complete = False
-            acc.append(
+            acc.incomplete(
                 OperationalFinding.build(
                     path=unit.path,
                     rule_id="OPERATIONAL.LOCKFILE.UNSUPPORTED",
@@ -249,7 +248,9 @@ class Graph:
                     continue
                 ecosystem = EcosystemRegistry.get(ecosystem_id)
                 try:
-                    manifest = ecosystem.parse_manifest(unit.content) if ecosystem else None
+                    manifest = (
+                        ParsedManifests.manifest_alone(ecosystem, unit) if ecosystem else None
+                    )
                 except Exception:  # noqa: BLE001, S112
                     continue
                 if manifest is not None and manifest.name and manifest.name.lower() in names:
@@ -269,8 +270,8 @@ class Graph:
             if ecosystem is None or ecosystem_id is None:
                 continue
             try:
-                manifest = ecosystem.parse_manifest(unit.content)
-            except Exception:  # noqa: BLE001, S112
+                manifest = ParsedManifests.manifest_alone(ecosystem, unit)
+            except Exception:  # noqa: BLE001, S112 -- recorded once by manifest_alone
                 continue
             for source in manifest.sources:
                 # A URL inside the description loses its userinfo and query: a token in an
@@ -303,19 +304,33 @@ class Graph:
         the very files in view (`view_of`): five steps ask for each one, and a repository of a
         hundred POMs resolving parents against thousands of files paid seconds for each ask. The
         same file with the same files in view parses the same, and a parsed `Manifest` is never
-        changed."""
+        changed.
+
+        A manifest read on its own is kept the same way, by the file alone, and so is a parse that
+        raised: every step that asks gets the one outcome, and the failure is recorded once
+        (`raised`, a content cause, item 27). A setup.py was parsed six times a scan, and a
+        parse that raised was dropped unmarked at eight of those asks (item 26)."""
         in_tree = getattr(ecosystem, "parse_in_tree", None)
-        if in_tree is None:
-            return ecosystem.parse_manifest(unit.content)
         key = (
             ScanCaches.identity(ecosystem),
             ScanCaches.identity(unit.content),
-            Graph.view_of(files),
+            Graph.view_of(files) if in_tree is not None else -1,
         )
         kept = Graph._parsed.get(key)
         if kept is not None and kept[0] is unit.content:
+            if isinstance(kept[1], BaseException):
+                raise kept[1]
             return kept[1]
-        manifest = in_tree(unit.content, files)
+        try:
+            manifest = (
+                in_tree(unit.content, files)
+                if in_tree is not None
+                else ecosystem.parse_manifest(unit.content)
+            )
+        except Exception as exc:
+            Graph._parsed[key] = (unit.content, exc)
+            ParsedManifests._raised.setdefault(unit.path, f"{type(exc).__name__}: {exc}")
+            raise
         Graph._parsed[key] = (unit.content, manifest)
         return manifest
 
@@ -341,7 +356,7 @@ class Graph:
         Graph._views[ScanCaches.identity(files)] = (files, view, len(files))
         return view
 
-    #: Manifests parsed in view of their tree this scan (`manifest_of`), emptied after it.
+    #: Manifests parsed this scan (`manifest_of`), or what their parse raised, emptied after it.
     _parsed: ClassVar[dict[tuple[int, int, int], tuple[Any, Any]]] = {}
     #: Each files mapping asked about this scan, with its view's id (`view_of`).
     _views: ClassVar[dict[int, tuple[Mapping[str, Any], int, int]]] = {}
@@ -885,9 +900,71 @@ class Graph:
         return frozenset(members)
 
 
-__all__ = ["Graph"]
+__all__ = ["Graph", "ParsedManifests"]
+
+
+class ParsedManifests:
+    """What a scan's manifest parses came to, beside `Graph.manifest_of`'s own cache: a manifest
+    read on its own once a scan (`manifest_alone`), and every parse that raised, said once
+    (`report_raised`; items 26 and 27)."""
+
+    #: The paths of manifests whose parse raised this scan, with what it raised (`raised`).
+    _raised: ClassVar[dict[str, str]] = {}
+
+    @staticmethod
+    def manifest_alone(ecosystem: Any, unit: FileUnit) -> Any:
+        """`ecosystem.parse_manifest(unit.content)`, the file read on its own, once a scan: kept
+        as `manifest_of` keeps a parse (its outcome, a raise included, recorded once), under its
+        own key, so a step that read the file alone reads exactly that still."""
+        key = (ScanCaches.identity(ecosystem), ScanCaches.identity(unit.content), -2)
+        kept = Graph._parsed.get(key)
+        if kept is not None and kept[0] is unit.content:
+            if isinstance(kept[1], BaseException):
+                raise kept[1]
+            return kept[1]
+        try:
+            manifest = ecosystem.parse_manifest(unit.content)
+        except Exception as exc:
+            Graph._parsed[key] = (unit.content, exc)
+            ParsedManifests._raised.setdefault(unit.path, f"{type(exc).__name__}: {exc}")
+            raise
+        Graph._parsed[key] = (unit.content, manifest)
+        return manifest
+
+    @staticmethod
+    def raised() -> dict[str, str]:
+        """The manifests whose parse raised this scan, by path, with what it raised."""
+        return dict(ParsedManifests._raised)
+
+    @staticmethod
+    def record_raised(path: str, exc: BaseException) -> None:
+        """A manifest parse that raised outside `manifest_of` (one read from disk on its own)."""
+        ParsedManifests._raised.setdefault(path, f"{type(exc).__name__}: {exc}")
+
+    @staticmethod
+    def report_raised(acc: Any) -> None:
+        """Each manifest whose parse raised this scan, said once (OPERATIONAL.PARSER.FAILED, a
+        content cause), wherever it was asked: eight steps dropped such a manifest unmarked, its
+        install hooks with it (item 26, item 27)."""
+        said = {f.location.path for f in acc.findings if f.rule_id == "OPERATIONAL.PARSER.FAILED"}
+        for path, why in sorted(ParsedManifests._raised.items()):
+            if path in said:
+                continue
+            acc.incomplete(
+                OperationalFinding.build(
+                    path=path,
+                    rule_id="OPERATIONAL.PARSER.FAILED",
+                    message=(
+                        "This manifest's parser failed, so its dependencies and install hooks "
+                        f"were not read: {why}"
+                    ),
+                    remediation="Report this with the file that triggered it.",
+                    severity=Severity.MEDIUM,
+                )
+            )
 
 
 ScanCaches.register(Graph._parsed)
+ScanCaches.register(ParsedManifests._raised)
 ScanCaches.register(Graph._views)
 ScanCaches.register(Graph._signatures)

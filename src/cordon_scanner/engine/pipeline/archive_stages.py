@@ -41,7 +41,6 @@ from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.errors import ArchiveError
 from cordon_scanner.foundation.models import Finding, Scope, Severity
 from cordon_scanner.foundation.results import Dependency, OperationalFinding
-from cordon_scanner.sources.base import Rejection
 from cordon_scanner.sources.registry import ArchiveReader
 
 if TYPE_CHECKING:
@@ -111,8 +110,7 @@ class ArchiveStages:
         try:
             for member_path, member_data in members:
                 if self.config.limits.total_timeout > 0 and time.monotonic() > deadline:
-                    acc.complete = False
-                    acc.append(
+                    acc.incomplete(
                         OperationalFinding.build(
                             path=path.name,
                             rule_id="OPERATIONAL.SCAN.TIMEOUT",
@@ -135,8 +133,7 @@ class ArchiveStages:
                     self.config.limits.max_memory_bytes > 0
                     and retained > self.config.limits.max_memory_bytes
                 ):
-                    acc.complete = False
-                    acc.append(
+                    acc.incomplete(
                         OperationalFinding.build(
                             path=path.name,
                             rule_id="OPERATIONAL.SCAN.MEMORY_LIMIT",
@@ -155,8 +152,10 @@ class ArchiveStages:
                     member_path, member_data, self.config.limits
                 )
                 if member_content.truncated:
-                    acc.complete = acc.complete and ArchiveMembers.read_to_end(member_content)
-                    acc.append(ArchiveMembers.truncated_note(member_path, member_content))
+                    note = ArchiveMembers.truncated_note(member_path, member_content)
+                    acc.append(
+                        note if ArchiveMembers.read_to_end(member_content) else acc.gap(note)
+                    )
                 units.append(
                     FileUnit(
                         content=member_content,
@@ -166,8 +165,7 @@ class ArchiveStages:
                 acc.files_scanned += 1
                 acc.bytes_scanned += len(member_data)
         except ArchiveError as exc:
-            acc.complete = False
-            acc.append(
+            acc.incomplete(
                 OperationalFinding.build(
                     path=path.name,
                     rule_id="OPERATIONAL.ARCHIVE.REJECTED",
@@ -187,24 +185,20 @@ class ArchiveStages:
     def refused(rejected: list[tuple[str, str, str]], acc: Accumulator, image: Any) -> None:
         """Each member the archive reader refused, as a finding."""
         for member_path, reason, detail in rejected:
-            # A link has no content of its own, and a hidden zip member is read from its local
-            # header (`zip-local/`): neither refusal leaves anything unread. A hidden member that
-            # could not be read carries a refusal of its own (unreadable, or past the size limit).
-            # Text named as an archive was scanned as text (item 27, class 7): nothing unread.
-            acc.complete = acc.complete and reason in (
-                Rejection.LINK,
-                Rejection.HIDDEN,
-                Rejection.NOT_AN_ARCHIVE,
-            )
+            # A link has no content of its own, a hidden zip member is read from its local header
+            # (`zip-local/`), text named as an archive is scanned as text: none leaves anything
+            # unread. A hidden member that could not be read carries a refusal of its own.
             finding = ArchiveMembers.rejected(member_path, reason, detail, image=image is not None)
+            if reason in ArchiveMembers.NOTHING_UNREAD:
+                acc.append(finding)
+                continue
+            if finding.rule_id.startswith("OPERATIONAL."):
+                acc.incomplete(finding)
+                continue
+            # The attack is reported; that the member went unread is said too, and that note is
+            # the gap (an attack finding graded low, a fixture's, must not leave it unrecorded).
             acc.append(finding)
-            if reason not in (
-                Rejection.LINK,
-                Rejection.HIDDEN,
-                Rejection.NOT_AN_ARCHIVE,
-            ) and not finding.rule_id.startswith("OPERATIONAL."):
-                # The attack is reported; that the member went unread is said too.
-                acc.append(ArchiveMembers.not_examined(member_path, reason, detail))
+            acc.incomplete(ArchiveMembers.not_examined(member_path, reason, detail))
 
     def context(
         self, units: list[FileUnit], acc: Accumulator, ctx: ScanContext, image: Any
@@ -298,8 +292,7 @@ class ArchiveStages:
             signature = CacheSignature.scan_signature(content_detectors, ctx, self.config)
             for start in range(0, len(units), ARCHIVE_SLICE):
                 if self.config.limits.total_timeout > 0 and time.monotonic() > deadline:
-                    acc.complete = False
-                    acc.append(
+                    acc.incomplete(
                         OperationalFinding.build(
                             path=path.name,
                             rule_id="OPERATIONAL.SCAN.TIMEOUT",
@@ -345,8 +338,7 @@ class ArchiveStages:
             # eight to match against -- so a deadline that only covered
             # expansion bounded the wrong half.
             if self.config.limits.total_timeout > 0 and time.monotonic() > deadline:
-                acc.complete = False
-                acc.append(
+                acc.incomplete(
                     OperationalFinding.build(
                         path=path.name,
                         rule_id="OPERATIONAL.SCAN.TIMEOUT",
@@ -376,8 +368,7 @@ class ArchiveStages:
             )
             produced.extend(windowed)
             if not intact:
-                acc.complete = False
-                produced.append(ArchiveMembers.changed_while_read(unit.path))
+                produced.append(acc.gap(ArchiveMembers.changed_while_read(unit.path)))
             acc.add(produced)
             self.progress.advance(unit.path)
         acc.add(ReleaseChecks.unexamined_install_code(acc.findings, ctx))

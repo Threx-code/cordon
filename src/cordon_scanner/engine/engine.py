@@ -44,7 +44,7 @@ from cordon_scanner.engine.pipeline.coverage import Coverage
 from cordon_scanner.engine.pipeline.dependencies import Dependencies
 from cordon_scanner.engine.pipeline.detection import Detection
 from cordon_scanner.engine.pipeline.facts import TreeFacts
-from cordon_scanner.engine.pipeline.graph import Graph
+from cordon_scanner.engine.pipeline.graph import Graph, ParsedManifests
 from cordon_scanner.engine.pipeline.hooks import Hooks
 from cordon_scanner.engine.pipeline.images import Images
 from cordon_scanner.engine.pipeline.stages import ScanStages
@@ -170,8 +170,7 @@ class Engine:
         self.progress.phase("inventory")
         inventory = HostFilesystem(root, home).inventory()
         for problem in inventory.problems:
-            acc.complete = False
-            acc.append(
+            acc.incomplete(
                 OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.HOST.PARTIAL",
@@ -191,6 +190,7 @@ class Engine:
                     if detector.requires.dependencies and self.detection.enabled(detector, ctx):
                         acc.add(self.detection.run(detector, graph_unit, ctx, acc))
         dependencies = self.detection.annotated(dependencies, acc.findings, ctx, [])
+        ParsedManifests.report_raised(acc)
         acc.explain_incomplete()
         result = ScanResult(
             findings=tuple(acc.findings),
@@ -205,9 +205,7 @@ class Engine:
                 duration_ms=int((time.monotonic() - started) * 1000),
                 detector_cpu_ms=DetectorClock.milliseconds(),
             ),
-            complete=acc.complete and acc.advisory_complete,
-            content_complete=acc.complete,
-            advisory_complete=acc.advisory_complete,
+            **acc.coverage(),
             schema_version=SCHEMA_VERSION,
             engine_version=__version__,
             rulepack_version=self.rules.version,
@@ -252,6 +250,7 @@ class Engine:
 
         self.stages.after_detection(dependencies, acc, units, ctx, inventory)
 
+        ParsedManifests.report_raised(acc)
         acc.explain_incomplete()
         findings, verdict, dependencies = self.stages.fold_and_judge(acc, units, ctx, dependencies)
         result = ScanResult(
@@ -275,9 +274,7 @@ class Engine:
                 duration_ms=int((time.monotonic() - started) * 1000),
                 detector_cpu_ms=DetectorClock.milliseconds(),
             ),
-            complete=acc.complete and acc.advisory_complete,
-            content_complete=acc.complete,
-            advisory_complete=acc.advisory_complete,
+            **acc.coverage(),
             schema_version=SCHEMA_VERSION,
             engine_version=__version__,
             rulepack_version=self.rules.version,
@@ -414,6 +411,7 @@ class Engine:
         dependencies, target_kind, ctx = self.archive_stages.dependencies(units, acc, image, ctx)
         dependencies, verdict = self.archive_stages.verdict(acc, ctx, image, units, dependencies)
         self.archive_stages.not_installed(acc, ctx)
+        ParsedManifests.report_raised(acc)
         acc.explain_incomplete()
         result = ScanResult(
             findings=tuple(acc.findings),
@@ -431,9 +429,7 @@ class Engine:
                 duration_ms=int((time.monotonic() - started) * 1000),
                 detector_cpu_ms=DetectorClock.milliseconds(),
             ),
-            complete=acc.complete and acc.advisory_complete,
-            content_complete=acc.complete,
-            advisory_complete=acc.advisory_complete,
+            **acc.coverage(),
             schema_version=SCHEMA_VERSION,
             engine_version=__version__,
             rulepack_version=self.rules.version,
@@ -511,7 +507,7 @@ class Engine:
         hooks = [hook for hook in hooks if Hooks.hook_executes(hook, package_directories)]
 
         if acc is not None and walker.stats.limit_hit:
-            acc.complete = False
+            acc.named_elsewhere("OPERATIONAL.SCAN.LIMIT", REPOSITORY_SCOPE)
 
         # A project is a subtree with its own manifest. Modelling a monorepo as
         # N projects is what keeps detector selection correct: without it, a
@@ -654,7 +650,8 @@ class Engine:
             if tree is not None and hooks_from_tree is not None:
                 manifest = hooks_from_tree(manifest, tree)
             return list(manifest.hooks)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 -- said once (ParsedManifests.report_raised)
+            ParsedManifests.record_raised(rel_path, exc)
             return []
 
     # -- Phase 1: planning and unit production ---------------------------

@@ -67,6 +67,20 @@ class TestInAScan:
         assert "OPERATIONAL.ARCHIVE.MEMBER_REJECTED" not in {f.rule_id for f in result.findings}
         assert result.content_complete
 
+    def test_in_a_directory_s_archive_too(self, tmp_path) -> None:
+        """A directory scan expands its archives itself (units.expand_members): the same reasons
+        that leave nothing unread (`ArchiveMembers.NOTHING_UNREAD`)."""
+        tree = tmp_path / "repo"
+        tree.mkdir()
+        with tarfile.open(tree / "vendor.tar.gz", "w:gz") as tar:
+            for name, data in (("Dockerfile.conda", b"FROM miniconda3\nRUN x\n"), ("x.tar", b"")):
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+        result = Scanner(Config.default().with_overrides(use_cache=False, offline=True)).scan(tree)
+        assert "OPERATIONAL.ARCHIVE.MEMBER_REJECTED" not in {f.rule_id for f in result.findings}
+        assert result.content_complete
+
     def test_a_text_prefix_does_not_hide_a_zip(self, tmp_path) -> None:
         inner = NotAnArchiveKit.zipped({"info/run.py": PLANT})
         result = NotAnArchiveKit.sdist(tmp_path, "evil.conda", b"a text line\n" + inner)

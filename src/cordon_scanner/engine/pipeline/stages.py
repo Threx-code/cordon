@@ -94,8 +94,7 @@ class ScanStages:
             units, root if root.is_dir() else root.parent
         )
         for path, problem in unreadable:
-            acc.complete = False
-            acc.append(
+            acc.incomplete(
                 OperationalFinding.build(
                     path=path,
                     rule_id="OPERATIONAL.MANIFEST.UNPARSED",

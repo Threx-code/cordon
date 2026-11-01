@@ -89,8 +89,7 @@ class Detection:
             )
         produced.extend(windowed)
         if not intact:
-            acc.complete = False
-            produced.append(ArchiveMembers.changed_while_read(unit.path))
+            produced.append(acc.gap(ArchiveMembers.changed_while_read(unit.path)))
 
         # Every finding carries the hash of the file it came from, recorded once here
         # rather than in each of eleven detectors. `_collapse_repeats` is the only
@@ -212,16 +211,17 @@ class Detection:
         """The pool stopped at the scan's budget with `count` files not reached. As the serial
         loops report it: the scan is partial, and says so, rather than matching on past its
         budget with nothing to show the budget was passed."""
-        acc.complete = False
-        return OperationalFinding.build(
-            path=where,
-            rule_id="OPERATIONAL.SCAN.TIMEOUT",
-            message=(
-                f"The {self.config.limits.total_timeout:.0f}s budget was reached with "
-                f"{count} file(s) still unexamined."
-            ),
-            remediation="Raise --timeout, or scan a smaller part at a time.",
-            severity=Severity.MEDIUM,
+        return acc.gap(
+            OperationalFinding.build(
+                path=where,
+                rule_id="OPERATIONAL.SCAN.TIMEOUT",
+                message=(
+                    f"The {self.config.limits.total_timeout:.0f}s budget was reached with "
+                    f"{count} file(s) still unexamined."
+                ),
+                remediation="Raise --timeout, or scan a smaller part at a time.",
+                severity=Severity.MEDIUM,
+            )
         )
 
     def inspect_here(
@@ -280,6 +280,18 @@ class Detection:
                     )
                 )
 
+    @staticmethod
+    def degraded(produced: list[Finding], acc: Accumulator) -> None:
+        """The findings that say their detector answered fewer questions than it was asked: an
+        advisory source's leave the advisory side incomplete, any other's the content (kept in
+        `produced`, its cause recorded)."""
+        degrading = [f for f in produced if f.degrades_coverage]
+        if any(f.detector in ADVISORY_DETECTORS for f in degrading):
+            acc.advisory_complete = False
+        for finding in degrading:
+            if finding.detector not in ADVISORY_DETECTORS:
+                acc.gap(finding)
+
     def merge_worker_results(
         self,
         produced: list[tuple[int, list[Finding], bool, bool]],
@@ -299,22 +311,32 @@ class Detection:
                 # reports an unreadable file, and never cached: storing it would
                 # file a result under a key describing content the result was
                 # not produced from.
-                acc.complete = False
                 results.append(
-                    OperationalFinding.build(
-                        path=unit.path,
-                        rule_id="OPERATIONAL.FILE.UNREADABLE",
-                        message=(
-                            "A worker could not read this file, or read different "
-                            "content than the scan had already hashed, so its checks "
-                            "did not run on the content being reported."
-                        ),
-                        remediation=(
-                            "Re-run the scan on a tree nothing else is writing to, or pass -j 1."
-                        ),
+                    acc.gap(
+                        OperationalFinding.build(
+                            path=unit.path,
+                            rule_id="OPERATIONAL.FILE.UNREADABLE",
+                            message=(
+                                "A worker could not read this file, or read different "
+                                "content than the scan had already hashed, so its checks "
+                                "did not run on the content being reported."
+                            ),
+                            remediation=(
+                                "Re-run the scan on a tree nothing else is writing to, or pass -j 1."
+                            ),
+                        )
                     )
                 )
                 continue
+            for finding in findings:
+                # As the serial path (`run`): a detector that failed on the file, or a finding that
+                # says its detector answered fewer questions than it was asked, left part of it
+                # unread. The worker returns them as findings; their cause is recorded here, or a
+                # crash under --jobs left the scan "complete" (item 27).
+                if finding.rule_id == "OPERATIONAL.DETECTOR.FAILED" or (
+                    finding.degrades_coverage and finding.detector not in ADVISORY_DETECTORS
+                ):
+                    acc.gap(finding)
             if acc.complete and cacheable:
                 self.cache.put(self.cache_key(unit, ctx, signature), findings)
 
@@ -409,17 +431,18 @@ class Detection:
                     detector.id, lambda: list(detector.inspect(unit, ctx))
                 )
         except Exception as exc:  # noqa: BLE001
-            acc.complete = False
             return [
-                OperationalFinding.build(
-                    path=getattr(unit, "path", "<graph>"),
-                    rule_id="OPERATIONAL.DETECTOR.FAILED",
-                    message=(
-                        f"Detector {detector.id!r} failed on this file, so its checks "
-                        f"did not run: {type(exc).__name__}: {exc}"
-                    ),
-                    remediation="Report this with the file that triggered it.",
-                    severity=Severity.MEDIUM,
+                acc.gap(
+                    OperationalFinding.build(
+                        path=getattr(unit, "path", "<graph>"),
+                        rule_id="OPERATIONAL.DETECTOR.FAILED",
+                        message=(
+                            f"Detector {detector.id!r} failed on this file, so its checks "
+                            f"did not run: {type(exc).__name__}: {exc}"
+                        ),
+                        remediation="Report this with the file that triggered it.",
+                        severity=Severity.MEDIUM,
+                    )
                 )
             ]
 
@@ -449,22 +472,23 @@ class Detection:
                 # finding killed the entire scan on the first file it touched,
                 # inside the very method whose docstring says a broken detector
                 # must not abort anything.
-                acc.complete = False
                 kept.append(
-                    OperationalFinding.build(
-                        path=unit.path,
-                        rule_id="OPERATIONAL.DETECTOR.STRAY_FINDING",
-                        message=(
-                            f"Detector {detector.id!r} reported {len(stray)} finding(s) "
-                            f"about other paths while inspecting this file "
-                            f"({stray[0].location.path!r}). They were discarded."
-                        ),
-                        remediation=(
-                            "Report this. A file detector must report only about the "
-                            "file it was given, or findings cannot be traced to their "
-                            "source."
-                        ),
-                        severity=Severity.MEDIUM,
+                    acc.gap(
+                        OperationalFinding.build(
+                            path=unit.path,
+                            rule_id="OPERATIONAL.DETECTOR.STRAY_FINDING",
+                            message=(
+                                f"Detector {detector.id!r} reported {len(stray)} finding(s) "
+                                f"about other paths while inspecting this file "
+                                f"({stray[0].location.path!r}). They were discarded."
+                            ),
+                            remediation=(
+                                "Report this. A file detector must report only about the "
+                                "file it was given, or findings cannot be traced to their "
+                                "source."
+                            ),
+                            severity=Severity.MEDIUM,
+                        )
                     )
                 )
             produced = kept
@@ -473,11 +497,7 @@ class Detection:
         # cannot observe from outside: that it answered fewer questions than it
         # was asked. Reading it here keeps `complete` meaning the same thing
         # whether the coverage was lost in the walk or inside a detector.
-        degrading = [f for f in produced if f.degrades_coverage]
-        if any(f.detector in ADVISORY_DETECTORS for f in degrading):
-            acc.advisory_complete = False
-        if any(f.detector not in ADVISORY_DETECTORS for f in degrading):
-            acc.complete = False
+        Detection.degraded(produced, acc)
 
         return self.drop_disabled(produced)
 

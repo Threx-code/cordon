@@ -92,6 +92,19 @@ class PolicyGate:
                 triggering,
             )
 
+        gaps = cls._unaccepted_gaps(result, policy)
+        if gaps:
+            # Part of the content was left unread because of the content itself (item 27): that
+            # blocks whatever `fail_on_incomplete` says, as reading less is how a payload is
+            # hidden. After the findings, so a scan that found something still says so (exit 1).
+            rule, path = gaps[0]
+            more = f", and {len(gaps) - 1} more" if len(gaps) > 1 else ""
+            return Verdict(
+                ExitCode.INCOMPLETE,
+                f"part of the content was not examined because of the content itself ({rule} at "
+                f"{path}{more}); a file's gap is accepted only in policy.accepted_gaps",
+            )
+
         if not result.complete:
             # Reported, but not fatal without the flag. The distinction is
             # deliberate: making an incomplete scan fail by default would break
@@ -102,6 +115,20 @@ class PolicyGate:
             )
 
         return Verdict(ExitCode.CLEAN, "no findings met the failure policy")
+
+    @staticmethod
+    def _unaccepted_gaps(result: ScanResult, policy: Policy) -> list[tuple[str, str]]:
+        """The content gaps no unexpired acceptance covers, by the suppression's own matching of a
+        rule at a path (an archive member by its path within the archive too)."""
+        today = date.today()
+        accepted = [
+            gap for gap in policy.accepted_gaps or () if date.fromisoformat(gap.expires) >= today
+        ]
+        return [
+            (rule, path)
+            for rule, path in result.content_gaps
+            if not any(SuppressionMatcher.covers(rule, path, gap) for gap in accepted)
+        ]
 
     @staticmethod
     def _fails(finding: Finding, policy: Policy) -> bool:
@@ -288,9 +315,13 @@ class SuppressionMatcher:
         also exempt that script from every other rule, nor exempt every file
         from the spawn rule.
         """
-        if finding.rule_id != Renamed.rule(suppression.rule):  # an old rule ID still suppresses
+        return cls.covers(finding.rule_id, finding.location.path or "", suppression)
+
+    @classmethod
+    def covers(cls, rule: str, path: str, suppression: Suppression) -> bool:
+        """Whether a suppression (or an accepted gap, item 27) covers `rule` at `path`."""
+        if rule != Renamed.rule(suppression.rule):  # an old rule ID still suppresses
             return False
-        path = finding.location.path or ""
         # In a scanned archive a finding's path is `<archive>!<member>`: the suppression may name
         # the member as it is within the archive (`package/index.js`), the path the same file has
         # when the package is scanned unpacked. Only the operator's config is read for an archive.

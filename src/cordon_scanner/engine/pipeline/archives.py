@@ -6,6 +6,7 @@ reported as lost coverage rather than skipped silently.
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import ClassVar
 
 from cordon_scanner.engine.pipeline.constants import (
     ARCHIVE_ESCAPE_RULE,
@@ -29,6 +30,12 @@ from cordon_scanner.sources.base import Rejection
 
 class ArchiveMembers:
     """What happened to an archive's members on the way in."""
+
+    #: Refusals that leave nothing unread: a link has no content of its own, a hidden zip member is
+    #: read from its local header, and text named as an archive is scanned as text (item 27).
+    NOTHING_UNREAD: ClassVar[frozenset[str]] = frozenset(
+        {Rejection.LINK, Rejection.HIDDEN, Rejection.NOT_AN_ARCHIVE}
+    )
 
     @staticmethod
     def changed_while_read(path: str) -> Finding:

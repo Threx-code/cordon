@@ -39,6 +39,7 @@ from cordon_scanner.engine.pipeline.constants import (
     PRINTING_COMMANDS,
     PROJECT_BUILD_FILENAMES,
 )
+from cordon_scanner.engine.pipeline.graph import ParsedManifests
 from cordon_scanner.foundation.dependencies import HookKinds
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import AUTHOR_TIME_HOOKS, Finding, Hook, Severity
@@ -688,7 +689,7 @@ class Hooks:
             if ecosystem is None:
                 continue
             try:
-                manifest = ecosystem.parse_manifest(unit.content)
+                manifest = ParsedManifests.manifest_alone(ecosystem, unit)
                 # And the hooks only the tree shows: a CRAN source package's `configure` and
                 # `cleanup` beside its DESCRIPTION. The manifest detector and the inventory
                 # already ask; without it here those scripts were never install-time code.
@@ -727,8 +728,7 @@ class Hooks:
         # was never read and nothing says so), which is the trade this
         # whole audit is about.
         if acc is not None:
-            acc.complete = False
-            acc.append(
+            acc.incomplete(
                 OperationalFinding.build(
                     path=unit.path,
                     rule_id="OPERATIONAL.PARSER.FAILED",

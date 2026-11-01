@@ -474,6 +474,10 @@ class ScanResult:
     advisory_complete: bool = True
     """Every dependency was checked against an advisory or registry source and the intel was
     current. Its absence is reported; it is no reason to call a package's content unread."""
+    content_gaps: tuple[tuple[str, str], ...] = ()
+    """(rule, path) of each part of the content left unread because of the content itself
+    (`CONTENT_GAPS`): the gate blocks on any the operator has not accepted, whatever
+    `fail_on_incomplete` says (item 27)."""
     schema_version: int = 1
     engine_version: str = "0.0.0"
     rulepack_version: str = "0.0.0"
@@ -549,6 +553,7 @@ class ScanResult:
                 "complete": self.complete,
                 "content_complete": self.content_complete,
                 "advisory_complete": self.advisory_complete,
+                "content_gaps": [{"rule": rule, "path": path} for rule, path in self.content_gaps],
                 "intel": self.intel,
                 "stats": self.stats.to_dict(),
                 "repository": self.repository.to_dict() if self.repository else None,
@@ -562,6 +567,44 @@ class ScanResult:
 
 
 NO_RISK = RiskScore(value=0, base=0, confidence_multiplier=1.0)
+
+
+CONTENT_GAPS = frozenset(
+    {
+        # the archive's bytes
+        "OPERATIONAL.ARCHIVE.REJECTED",
+        "OPERATIONAL.ARCHIVE.MEMBER_REJECTED",
+        # size, shape and cost the content chose
+        "OPERATIONAL.SCAN.MEMORY_LIMIT",
+        "OPERATIONAL.SCAN.TIMEOUT",
+        "OPERATIONAL.SCAN.LIMIT",
+        "OPERATIONAL.SCAN.FINDING_LIMIT",
+        "OPERATIONAL.FILE.TRUNCATED",  # only past max_stream_bytes: read to its end, it is complete
+        "OPERATIONAL.WALK.TOO_DEEP",
+        "OPERATIONAL.GRAPH.LIMIT",
+        "OPERATIONAL.SECRET_HISTORY.INCOMPLETE.001",
+        # a reader or detector the content stopped
+        "OPERATIONAL.DETECTOR.FAILED",
+        "OPERATIONAL.DETECTOR.STRAY_FINDING",
+        "OPERATIONAL.PARSER.FAILED",
+        "OPERATIONAL.MANIFEST.UNPARSED",
+        "OPERATIONAL.LOCKFILE.UNPARSED",
+        "OPERATIONAL.LOCKFILE.UNSUPPORTED",
+        "OPERATIONAL.SBOM.INVALID",
+        "OPERATIONAL.FORMAT.UNREADABLE",
+        "OPERATIONAL.IMAGE.UNREADABLE",
+        "OPERATIONAL.IMAGE.PARTIAL",
+        "OPERATIONAL.IMAGE.UNMATCHED",
+        # no reason recorded: unknown is never let pass (`Accumulator.explain_incomplete`)
+        "OPERATIONAL.SCAN.INCOMPLETE",
+    }
+)
+"""The coverage findings whose cause is the scanned content (item 27): a scan carrying one is not
+complete, and the gate blocks it whatever `fail_on_incomplete` says, unless the operator accepted
+that gap for that file (`accepted_gaps`). Every other cause of an incomplete scan -- the machine,
+a tool, the network, the operator's own scope -- is reported, and blocks only with the flag. The
+table in reviews/release-070/design-notes/27-fail-closed-incompleteness.md is this set's reasoning,
+cause by cause; a new coverage rule is put in it or explicitly left out (tests/unit/engine)."""
 
 
 class OperationalFinding:
