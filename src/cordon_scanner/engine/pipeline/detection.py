@@ -102,8 +102,11 @@ class Detection:
 
         # Only a complete result is cached. Caching the output of a run that hit
         # a limit would make the degradation permanent and invisible. Nor one whose
-        # inspection read past the file (`Watch`): what it read is in no key.
-        if acc.complete and not watch.reached:
+        # inspection read past the file (`Watch`): what it read is in no key. Nor one holding a
+        # finding that degrades coverage, which is checked on the file's own findings rather
+        # than the scan's flag: an advisory source's sets only `advisory_complete`, and a warm
+        # hit returning it would not set that again.
+        if acc.complete and not watch.reached and not any(f.degrades_coverage for f in produced):
             self.cache.put(key, produced)
 
         return produced
@@ -328,16 +331,16 @@ class Detection:
                     )
                 )
                 continue
+            # As the serial path (`run`): a detector that failed on the file, or a finding that
+            # says its detector answered fewer questions than it was asked, left part of it
+            # unread. The worker returns them as findings; their cause is recorded here, or a
+            # crash under --jobs left the scan "complete" (item 27). The same call as the serial
+            # path's, so an advisory source's leaves the advisory side incomplete here too.
             for finding in findings:
-                # As the serial path (`run`): a detector that failed on the file, or a finding that
-                # says its detector answered fewer questions than it was asked, left part of it
-                # unread. The worker returns them as findings; their cause is recorded here, or a
-                # crash under --jobs left the scan "complete" (item 27).
-                if finding.rule_id == "OPERATIONAL.DETECTOR.FAILED" or (
-                    finding.degrades_coverage and finding.detector not in ADVISORY_DETECTORS
-                ):
+                if finding.rule_id == "OPERATIONAL.DETECTOR.FAILED":
                     acc.gap(finding)
-            if acc.complete and cacheable:
+            Detection.degraded(findings, acc)
+            if acc.complete and cacheable and not any(f.degrades_coverage for f in findings):
                 self.cache.put(self.cache_key(unit, ctx, signature), findings)
 
     def cache_key(self, unit: FileUnit, ctx: ScanContext, signature: str) -> CacheKey:

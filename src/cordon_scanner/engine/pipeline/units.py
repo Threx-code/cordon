@@ -44,12 +44,6 @@ if TYPE_CHECKING:
 class Units:
     """Reads a tree's files into the units detectors read."""
 
-    #: An OSError's text, on every platform, for a path the tree's own shape put out of reach.
-    SHAPE_ERRORS: ClassVar[tuple[str, ...]] = (
-        "File name too long",
-        "Too many levels of symbolic links",
-    )
-
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
         self._archive_stats = engine._archive_stats
@@ -351,11 +345,11 @@ class Units:
     ) -> None:
         """Files the walk could not open, a file-count limit reached, directories too deep, and walk errors."""
         if unopened:
-            # An archive that was not opened is content that was not examined. Said
-            # once, with the paths, and it makes the scan incomplete: `--no-expand`
-            # buys speed, not a clean result.
-            sample = ", ".join(sorted(unopened)[:5])
-            more = f" and {len(unopened) - 5} more" if len(unopened) > 5 else ""
+            # An archive that was not opened is content that was not examined, and the scan says
+            # so: incomplete, with every archive named. The operator's own choice (`--no-expand`
+            # buys speed, not a clean result), which no package can make, so it blocks only with
+            # fail_on_incomplete (`NOT_CONTENT_GAPS`). An archive a limit left unread is refused
+            # (ARCHIVE.REJECTED, MEMBER_REJECTED), the package's doing, and blocks.
             acc.incomplete(
                 OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
@@ -363,7 +357,7 @@ class Units:
                     message=(
                         f"{len(unopened)} archive(s) were not opened because archive "
                         f"expansion is off, so their contents were not examined: "
-                        f"{sample}{more}."
+                        f"{', '.join(sorted(unopened))}."
                     ),
                     remediation="Scan without --no-expand, or set scan.expand_archives: true.",
                 )
@@ -441,18 +435,34 @@ class Units:
                 )
             )
 
-        # A name too long to open, or a loop of links, is the tree's own shape, which the content
-        # chose (a content cause, item 27); a permission or an I/O error is the machine's.
-        shaped = [e for e in walker.stats.errors if any(m in e[1] for m in Units.SHAPE_ERRORS)]
-        for errors, rule in (
-            ([e for e in walker.stats.errors if e not in shaped], "OPERATIONAL.WALK.ERROR"),
-            (shaped, "OPERATIONAL.WALK.SHAPE"),
+        # Every path the walk could not reach is a gap of its own, which blocks whatever its cause
+        # (item 27): a machine's cause can be provoked too, a mode-000 directory is EACCES. The
+        # cause, read from the errno or the walker's own reason and never from a message, decides
+        # only what the finding says to do.
+        for errors, rule, remediation in (
+            (
+                [e for e in walker.stats.errors if e.the_machines],
+                "OPERATIONAL.WALK.ERROR",
+                "The host refused or failed the read (a permission, I/O, the process's own limits): "
+                "retry where the scan can read the whole tree. A path the walker could not reach is "
+                "not a path that was found clean. If the tree's own permissions hide it, the package "
+                "is hiding content.",
+            ),
+            (
+                [e for e in walker.stats.errors if not e.the_machines],
+                "OPERATIONAL.WALK.SHAPE",
+                "The tree's own shape put these paths out of reach (a name too long, a loop of "
+                "links, a path past scan.limits.max_path_bytes): the package is hiding content from "
+                "the scan. Inspect them directly, or accept the gap for that path deliberately.",
+            ),
         ):
             if not errors:
                 continue
-            sample = ", ".join(path for path, _ in errors[:5])
+            for error in errors:
+                acc.named_elsewhere(rule, error.path)
+            sample = ", ".join(e.path[:120] for e in errors[:5])
             more = f" and {len(errors) - 5} more" if len(errors) > 5 else ""
-            acc.incomplete(
+            acc.append(
                 OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id=rule,
@@ -460,10 +470,7 @@ class Units:
                         f"{len(errors)} path(s) could not be traversed and were "
                         f"not examined: {sample}{more}."
                     ),
-                    remediation=(
-                        "Check permissions and path lengths. A path the walker could "
-                        "not reach is not a path that was found clean."
-                    ),
+                    remediation=remediation,
                     severity=Severity.MEDIUM,
                 )
             )
@@ -569,20 +576,6 @@ class Units:
             else:
                 acc.append(pruned)
 
-    @staticmethod
-    def refused(acc: Accumulator, where: str, reason: str, detail: str) -> None:
-        """A member a directory's archive refused, as the archive target reports one
-        (`ArchiveStages.refused`): nothing unread for a link, a hidden member or text named as an
-        archive; else a gap, and beside an attack finding, the note that is the gap."""
-        refused = ArchiveMembers.rejected(where, reason, detail)
-        if reason in ArchiveMembers.NOTHING_UNREAD:
-            acc.append(refused)
-        elif refused.rule_id.startswith("OPERATIONAL."):
-            acc.incomplete(refused)
-        else:
-            acc.append(refused)
-            acc.incomplete(ArchiveMembers.not_examined(where, reason, detail))
-
     def expand_members(
         self, rel_path: str, loaded: FileContent, acc: Accumulator, deadline: float
     ) -> list[FileUnit] | None:
@@ -651,7 +644,7 @@ class Units:
                     )
                 directory = rel_path[: -len(prefix)]
                 for member_path, reason, detail in rejected:
-                    Units.refused(acc, directory + member_path, reason, detail)
+                    ArchiveMembers.refuse(acc, directory + member_path, reason, detail)
             cache[digest] = members
             if members is not None:
                 self._archive_stats[0] += 1

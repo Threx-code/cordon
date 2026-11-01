@@ -179,26 +179,8 @@ class ArchiveStages:
                 )
             )
 
-        ArchiveStages.refused(rejected, acc, image)
-
-    @staticmethod
-    def refused(rejected: list[tuple[str, str, str]], acc: Accumulator, image: Any) -> None:
-        """Each member the archive reader refused, as a finding."""
         for member_path, reason, detail in rejected:
-            # A link has no content of its own, a hidden zip member is read from its local header
-            # (`zip-local/`), text named as an archive is scanned as text: none leaves anything
-            # unread. A hidden member that could not be read carries a refusal of its own.
-            finding = ArchiveMembers.rejected(member_path, reason, detail, image=image is not None)
-            if reason in ArchiveMembers.NOTHING_UNREAD:
-                acc.append(finding)
-                continue
-            if finding.rule_id.startswith("OPERATIONAL."):
-                acc.incomplete(finding)
-                continue
-            # The attack is reported; that the member went unread is said too, and that note is
-            # the gap (an attack finding graded low, a fixture's, must not leave it unrecorded).
-            acc.append(finding)
-            acc.incomplete(ArchiveMembers.not_examined(member_path, reason, detail))
+            ArchiveMembers.refuse(acc, member_path, reason, detail, image=image is not None)
 
     def context(
         self, units: list[FileUnit], acc: Accumulator, ctx: ScanContext, image: Any

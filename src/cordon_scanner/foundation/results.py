@@ -476,7 +476,7 @@ class ScanResult:
     current. Its absence is reported; it is no reason to call a package's content unread."""
     content_gaps: tuple[tuple[str, str], ...] = ()
     """(rule, path) of each part of the content left unread because of the content itself
-    (`CONTENT_GAPS`): the gate blocks on any the operator has not accepted, whatever
+    (every cause but `NOT_CONTENT_GAPS`): the gate blocks on any the operator has not accepted, whatever
     `fail_on_incomplete` says (item 27)."""
     schema_version: int = 1
     engine_version: str = "0.0.0"
@@ -569,42 +569,40 @@ class ScanResult:
 NO_RISK = RiskScore(value=0, base=0, confidence_multiplier=1.0)
 
 
-CONTENT_GAPS = frozenset(
-    {
-        # the archive's bytes
-        "OPERATIONAL.ARCHIVE.REJECTED",
-        "OPERATIONAL.ARCHIVE.MEMBER_REJECTED",
-        # size, shape and cost the content chose
-        "OPERATIONAL.SCAN.MEMORY_LIMIT",
-        "OPERATIONAL.SCAN.TIMEOUT",
-        "OPERATIONAL.SCAN.LIMIT",
-        "OPERATIONAL.SCAN.FINDING_LIMIT",
-        "OPERATIONAL.FILE.TRUNCATED",  # only past max_stream_bytes: read to its end, it is complete
-        "OPERATIONAL.WALK.TOO_DEEP",
-        "OPERATIONAL.GRAPH.LIMIT",
-        "OPERATIONAL.SECRET_HISTORY.INCOMPLETE.001",
-        # a reader or detector the content stopped
-        "OPERATIONAL.DETECTOR.FAILED",
-        "OPERATIONAL.DETECTOR.STRAY_FINDING",
-        "OPERATIONAL.PARSER.FAILED",
-        "OPERATIONAL.MANIFEST.UNPARSED",
-        "OPERATIONAL.LOCKFILE.UNPARSED",
-        "OPERATIONAL.LOCKFILE.UNSUPPORTED",
-        "OPERATIONAL.SBOM.INVALID",
-        "OPERATIONAL.FORMAT.UNREADABLE",
-        "OPERATIONAL.IMAGE.UNREADABLE",
-        "OPERATIONAL.IMAGE.PARTIAL",
-        "OPERATIONAL.IMAGE.UNMATCHED",
-        # no reason recorded: unknown is never let pass (`Accumulator.explain_incomplete`)
-        "OPERATIONAL.SCAN.INCOMPLETE",
-    }
-)
-"""The coverage findings whose cause is the scanned content (item 27): a scan carrying one is not
-complete, and the gate blocks it whatever `fail_on_incomplete` says, unless the operator accepted
-that gap for that file (`accepted_gaps`). Every other cause of an incomplete scan -- the machine,
-a tool, the network, the operator's own scope -- is reported, and blocks only with the flag. The
-table in reviews/release-070/design-notes/27-fail-closed-incompleteness.md is this set's reasoning,
-cause by cause; a new coverage rule is put in it or explicitly left out (tests/unit/engine)."""
+NOT_CONTENT_GAPS: dict[str, str] = {
+    "POLICY.COVERAGE.PRUNED": (
+        "a coverage choice the operator made: the walk's scope pruned installed code, which the "
+        "operator's scope, not the package, put out of the scan"
+    ),
+    "OPERATIONAL.ARCHIVE.NOT_EXPANDED": (
+        "a coverage choice the operator made: archive expansion turned off (--no-expand, or "
+        "scan.expand_archives: false), which no package can set; every archive left unopened is "
+        "named in the report. An archive a limit left unread is ARCHIVE.REJECTED or "
+        "MEMBER_REJECTED, the package's doing, and blocks"
+    ),
+    "OPERATIONAL.CLAMAV.UNAVAILABLE": (
+        "an optional extra engine absent: every byte was read by the scanner's own detectors"
+    ),
+    "OPERATIONAL.HOST.PARTIAL": (
+        "host-side data: a host's package databases the scanning user cannot read, no package's bytes"
+    ),
+    "OPERATIONAL.IAC.POLICIES_REFUSED": (
+        "the scanner's own generated policy set fails its shipped digest: no package content is in "
+        "it, and every byte was read by the hand-written policies and every other detector"
+    ),
+}
+"""The only gaps that do not block: those that leave no byte of the scanned content unread (item 27;
+cordon-47's rule under the owner's fail-closed decision, 1 Nov). The test is "is any byte of the
+package unread?", never "whose fault is it?": an attacker can provoke the machine's causes (a
+mode-000 directory is EACCES, a file swapped during the read is changed-while-read, a member past a
+limit is unexpanded). A gap carrying one of these is reported and blocks only with
+`fail_on_incomplete`. Every other rule recorded through `Accumulator.incomplete`, `gap` or
+`named_elsewhere` -- a new or unknown one included -- blocks whatever the flag says, unless the
+operator accepted that gap for that file (`accepted_gaps`, recorded in the report); its cause
+decides its message and remediation, never pass or fail. Inverted, so a cause added later blocks:
+a list of the content's own causes let a path past max_path_bytes, and a name too long, pass the
+default gate (outer-layer review of C5). Stale intel is the advisory side, never a gap. One row
+per rule in reviews/release-070/design-notes/27-fail-closed-incompleteness.md."""
 
 
 class OperationalFinding:

@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.engine.pipeline.constants import INCOMPLETE_WHEN_REPORTED
 from cordon_scanner.foundation.models import Finding, Severity
-from cordon_scanner.foundation.results import CONTENT_GAPS, Dependency, OperationalFinding
+from cordon_scanner.foundation.results import NOT_CONTENT_GAPS, Dependency, OperationalFinding
 from cordon_scanner.foundation.taxonomy import AttackCategory
 
 if TYPE_CHECKING:
@@ -65,8 +65,9 @@ class Accumulator:
     capped: bool = False
 
     content_gaps: list[tuple[str, str]] = field(default_factory=list)
-    """(rule, path) of each coverage finding whose cause is the scanned content (`CONTENT_GAPS`),
+    """(rule, path) of each coverage finding whose cause is the scanned content (every cause but `NOT_CONTENT_GAPS`),
     recorded where the scan stopped being complete: the gate blocks on these (item 27)."""
+    _gap_keys: set[tuple[str, str]] = field(default_factory=set, repr=False)
 
     not_installed: list[Dependency] = field(default_factory=list)
     """Dependency records only a file outside the inventory's scope declares (`DependencyScope`):
@@ -78,7 +79,7 @@ class Accumulator:
 
     def incomplete(self, finding: Finding) -> bool:
         """The one way a scan stops being complete: `finding` says what went unread and why, and
-        its rule is the cause the gate reads (`CONTENT_GAPS`, item 27). Retained as `append`."""
+        its rule is the cause the gate reads (every cause but `NOT_CONTENT_GAPS`, item 27). Retained as `append`."""
         self.complete = False
         self._gap(finding.rule_id, finding.location.path)
         return self.append(finding)
@@ -109,7 +110,10 @@ class Accumulator:
         self._gap(rule, path)
 
     def _gap(self, rule: str, path: str) -> None:
-        if rule in CONTENT_GAPS:
+        # Once per (rule, path): a finding both reported-incomplete and passed to `incomplete` is
+        # one gap, not two.
+        if rule not in NOT_CONTENT_GAPS and (rule, path) not in self._gap_keys:
+            self._gap_keys.add((rule, path))
             self.content_gaps.append((rule, path))
 
     def append(self, finding: Finding) -> bool:

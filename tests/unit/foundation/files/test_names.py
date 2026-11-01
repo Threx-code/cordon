@@ -47,7 +47,7 @@ class TestNamesAsText:
         if a != b:
             assert Names.text(a) != Names.text(b)
 
-    @pytest.mark.parametrize("name", ["README.md", "pkg/a b.py", "é/ü.js", "‮yp.txt.py"])
+    @pytest.mark.parametrize("name", ["README.md", "pkg/a b.py", "é/ü.js", "\u202eyp.txt.py"])
     def test_a_name_that_is_text_is_untouched(self, name: str) -> None:
         assert Names.text(name) == name
         assert Names.text(name, backslash=True) == name

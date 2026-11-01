@@ -57,11 +57,25 @@ class ParallelGapsKit:
         return acc
 
     @staticmethod
-    def note(rule: str, *, degrades: bool = False):
+    def note(rule: str, *, degrades: bool = False, detector: str = "capability"):
         finding = OperationalFinding.build(
             path="pkg/a.py", rule_id=rule, message="m", remediation="r"
         )
-        return dataclasses.replace(finding, detector="capability", degrades_coverage=degrades)
+        return dataclasses.replace(finding, detector=detector, degrades_coverage=degrades)
+
+    @staticmethod
+    def cached(findings: list) -> list:
+        """The keys the merge stored, for one trusted, cacheable worker result."""
+        puts: list = []
+        engine = SimpleNamespace(
+            cache=SimpleNamespace(put=lambda key, value: puts.append(key)),
+            cache_key=lambda unit, ctx, signature: unit.path,
+        )
+        unit = FileUnit(content=FileContent.from_bytes("pkg/a.py", b"x = 1\n"))
+        Detection.merge_worker_results(
+            engine, [(0, findings, True, True)], [unit], [], Accumulator(), None, ""
+        )
+        return puts
 
 
 class TestAWorkersGap:
@@ -77,6 +91,30 @@ class TestAWorkersGap:
     def test_a_finding_that_does_not_changes_nothing(self) -> None:
         acc = ParallelGapsKit.merged([ParallelGapsKit.note("OPERATIONAL.X.Y")])
         assert acc.complete and not acc.content_gaps
+
+    def test_an_advisory_source_s_leaves_the_advisory_side_incomplete(self) -> None:
+        """The serial path's `Detection.degraded` sets it; the merge recorded only the content
+        side's, so under --jobs an advisory source that answered fewer questions said complete."""
+        acc = ParallelGapsKit.merged(
+            [
+                ParallelGapsKit.note(
+                    "OPERATIONAL.REGISTRY.UNANSWERED", degrades=True, detector="registry"
+                )
+            ]
+        )
+        assert acc.advisory_complete is False and acc.content_gaps == []
+
+    def test_a_result_holding_a_degrading_finding_is_not_cached(self) -> None:
+        """An advisory source's degrading finding leaves `acc.complete` alone, so its file was
+        cached, and a warm hit returned it without setting `advisory_complete` again: the cold
+        and warm scans disagreed (outer-layer review of C5)."""
+        degrading = ParallelGapsKit.note(
+            "OPERATIONAL.REGISTRY.UNANSWERED", degrades=True, detector="registry"
+        )
+        assert ParallelGapsKit.cached([degrading]) == []
+        assert ParallelGapsKit.cached([ParallelGapsKit.note("OPERATIONAL.FILE.SYMLINK")]) == [
+            "pkg/a.py"
+        ]
 
     def test_degrades_coverage_crosses_back_from_a_worker(self) -> None:
         note = ParallelGapsKit.note("OPERATIONAL.X.Y", degrades=True)

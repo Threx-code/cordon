@@ -388,7 +388,9 @@ class TestDisplayWidth:
     ) -> None:
         import shutil
 
-        monkeypatch.setattr(shutil, "get_terminal_size", lambda *a, **k: os.terminal_size((columns, 24)))
+        monkeypatch.setattr(
+            shutil, "get_terminal_size", lambda *a, **k: os.terminal_size((columns, 24))
+        )
         stream = io.StringIO()
         progress = TerminalProgress(stream, color=color, min_redraw=0.0)
         progress.phase("scanning", total=999)
