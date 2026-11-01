@@ -170,6 +170,7 @@ class Units:
                 self.out_of_time(acc)
                 return True, selected
 
+            acc.ledger_tree.append(entry.rel_path)
             if entry.is_symlink:
                 Units.symlink_skipped(acc, entry)
                 continue
@@ -207,6 +208,7 @@ class Units:
                     return True, selected
                 acc.files_scanned += 1
                 acc.bytes_scanned += len(member.content.raw)
+                acc.ledger_tree.append(member.path)
                 yield member
         return False, selected
 

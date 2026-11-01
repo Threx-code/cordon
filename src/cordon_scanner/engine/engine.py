@@ -40,7 +40,7 @@ from cordon_scanner.engine.detector_clock import DetectorClock
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.archive_stages import ArchiveStages
 from cordon_scanner.engine.pipeline.constants import REPOSITORY_SCOPE
-from cordon_scanner.engine.pipeline.coverage import Coverage
+from cordon_scanner.engine.pipeline.coverage import Coverage, CoverageLedger
 from cordon_scanner.engine.pipeline.dependencies import Dependencies
 from cordon_scanner.engine.pipeline.detection import Detection
 from cordon_scanner.engine.pipeline.facts import TreeFacts
@@ -298,6 +298,7 @@ class Engine:
         self.stages.detect(units, acc, root, ctx, dependencies)
 
         self.stages.after_detection(dependencies, acc, units, ctx, inventory)
+        acc.add(CoverageLedger.findings(acc))
 
         ParsedManifests.report_raised(acc)
         acc.explain_incomplete()
@@ -460,6 +461,7 @@ class Engine:
         dependencies, target_kind, ctx = self.archive_stages.dependencies(units, acc, image, ctx)
         dependencies, verdict = self.archive_stages.verdict(acc, ctx, image, units, dependencies)
         self.archive_stages.not_installed(acc, ctx)
+        acc.add(CoverageLedger.findings(acc))
         ParsedManifests.report_raised(acc)
         acc.explain_incomplete()
         result = ScanResult(

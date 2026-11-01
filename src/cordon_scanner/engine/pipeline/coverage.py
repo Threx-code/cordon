@@ -8,7 +8,7 @@ so every gap in coverage is reported, never left to be inferred.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.engine.pipeline.constants import (
     BLINDING_SETTINGS,
@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from cordon_scanner.engine.engine import Engine
+    from cordon_scanner.engine.pipeline.accumulator import Accumulator
 
 
 class Coverage:
@@ -417,3 +418,70 @@ class Coverage:
 
 
 __all__ = ["Coverage"]
+
+
+class CoverageLedger:
+    """Every file the scan was given, accounted for (release item 38, notes/38-per-file-coverage-
+    ledger.md). A file the walk presented or an archive listed is READ (its unit inspected, or
+    answered from the cache), or named by a step's own coverage finding (GAPPED: refused,
+    truncated, unreadable, a worker gap, never started; SCOPED: the operator's prune or exclusion),
+    or it is UNACCOUNTED: in the tree, and no step read, refused or scoped it.
+
+    Accounting, not a reader: a join of paths the steps already record (`Accumulator.ledger_*`)
+    with the findings they already made, once per scan, linear in files. Derived units (a
+    deobfuscated form, an inline hook) are never tree entries, so never ledger entries.
+
+    Report-only first, as the note says: UNACCOUNTED is info until the npm baseline and the
+    repository corpus show zero; `BLOCKING` then makes it a content gap (item 27)."""
+
+    RULE: ClassVar[str] = "OPERATIONAL.COVERAGE.UNACCOUNTED"
+    BLOCKING: ClassVar[bool] = False
+    #: Each unaccounted file is named up to this many; past it, one finding gives the rest's count.
+    NAMED: ClassVar[int] = 200
+    _NAMING: ClassVar[tuple[str, ...]] = ("OPERATIONAL.", "POLICY.COVERAGE.")
+
+    @classmethod
+    def unaccounted(cls, acc: Accumulator) -> list[str]:
+        """The tree's files no step accounted for, each once, in the order the walk presented them."""
+        named = {path for _, path in acc.content_gaps}
+        named.update(f.location.path for f in acc.findings if f.rule_id.startswith(cls._NAMING))
+        return [
+            path
+            for path in dict.fromkeys(acc.ledger_tree)
+            if path not in acc.ledger_read
+            and path not in acc.ledger_unstarted
+            and path not in named
+        ]
+
+    @classmethod
+    def findings(cls, acc: Accumulator) -> list[Finding]:
+        """OPERATIONAL.COVERAGE.UNACCOUNTED at each unaccounted file."""
+        missing = cls.unaccounted(acc)
+        out = [cls._finding(path, acc) for path in missing[: cls.NAMED]]
+        if len(missing) > cls.NAMED:
+            out.append(
+                cls._finding(
+                    REPOSITORY_SCOPE,
+                    acc,
+                    f"{len(missing) - cls.NAMED} more file(s) in the tree were accounted for by no step.",
+                )
+            )
+        return out
+
+    @classmethod
+    def _finding(cls, path: str, acc: Accumulator, message: str | None = None) -> Finding:
+        finding = OperationalFinding.build(
+            path=path,
+            rule_id=cls.RULE,
+            message=message
+            or (
+                "This file is in the scanned tree, and no step read it, refused it or left it out "
+                "by the scan's configuration: its content was not examined, for no stated reason."
+            ),
+            remediation=(
+                "Report it: a file the scanner neither reads nor names is a scanner fault. Treat "
+                "the file as unexamined until it is."
+            ),
+            severity=Severity.MEDIUM if cls.BLOCKING else Severity.INFO,
+        )
+        return acc.gap(finding) if cls.BLOCKING else finding

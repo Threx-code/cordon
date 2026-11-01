@@ -69,6 +69,14 @@ class Accumulator:
     recorded where the scan stopped being complete: the gate blocks on these (item 27)."""
     _gap_keys: set[tuple[str, str]] = field(default_factory=set, repr=False)
 
+    ledger_tree: list[str] = field(default_factory=list)
+    """Every file the walk presented and every archive member listed, by path, in order: what the
+    coverage ledger (item 38, `CoverageLedger`) accounts for."""
+    ledger_read: set[str] = field(default_factory=set)
+    """Paths whose unit was inspected: by a worker, or answered from the cache."""
+    ledger_unstarted: set[str] = field(default_factory=set)
+    """Paths of units the pool never started because the scan's budget ran out (GAPPED by path)."""
+
     not_installed: list[Dependency] = field(default_factory=list)
     """Dependency records only a file outside the inventory's scope declares (`DependencyScope`):
     reported with `installed=False`, never read by an install-set check or the verdict."""
