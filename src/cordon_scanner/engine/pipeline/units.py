@@ -709,7 +709,7 @@ class Units:
         what the code does is graded rather than that it was hidden. A file that cannot be
         reversed, or only in part, is not lifted, and its obfuscation finding keeps its grade.
         """
-        from cordon_scanner.analysis.shared.deobfuscation import Deobfuscator
+        from cordon_scanner.analysis.shared.deobfuscator import Deobfuscator
 
         lifted: list[FileUnit] = []
         for unit in units:
