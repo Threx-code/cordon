@@ -82,6 +82,9 @@ class Accumulator:
     """Findings a member detector made about a file outside the inventory's scope, held out of the
     verdict at their info twins (`NotInstalledFiles`) and added after it."""
 
+    late: bool = False
+    """Whether `out_of_time` has reported the spent budget."""
+
     def incomplete(self, finding: Finding) -> bool:
         """The one way a scan stops being complete: `finding` says what went unread and why, and
         its rule is the cause the gate reads (every cause but `NOT_CONTENT_GAPS`, item 27). Retained as `append`."""
@@ -96,6 +99,33 @@ class Accumulator:
         self.complete = False
         self._gap(finding.rule_id, finding.location.path)
         return finding
+
+    def out_of_time(self, ctx: Any, where: str, step: str) -> bool:
+        """Whether the scan's budget is spent (`ScanContext.out_of_time`), checked before work after
+        detection: then `step` does not run, and the scan says so, once, as a blocking gap (item 64:
+        past the deadline the release checks loaded the whole advisory index, tens of seconds under
+        load, while the scan was already over its budget)."""
+        if ctx is None or not ctx.out_of_time():
+            return False
+        if not self.late:
+            self.late = True
+            self.incomplete(
+                OperationalFinding.build(
+                    path=where,
+                    rule_id="OPERATIONAL.SCAN.TIMEOUT",
+                    message=f"The scan's budget was spent before {step}, which did not run, nor did "
+                    "any later step after detection.",
+                    remediation="Rescan with more time (--timeout), or on a less loaded machine.",
+                    severity=Severity.MEDIUM,
+                )
+            )
+        return True
+
+    def ended_late(self, ctx: Any, where: str) -> None:
+        """A scan that ends past its deadline is never complete, whatever it finished (item 64: one ran
+        nine times past its budget and exited 0, called complete)."""
+        if ctx is not None and ctx.out_of_time() and self.complete:
+            self.out_of_time(ctx, where, "the end of the scan")
 
     def coverage(self) -> dict[str, Any]:
         """The result's coverage fields, as `ScanResult` takes them."""

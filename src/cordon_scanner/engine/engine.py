@@ -240,6 +240,7 @@ class Engine:
                         acc.add(self.detection.run(detector, graph_unit, ctx, acc))
         dependencies = self.detection.annotated(dependencies, acc.findings, ctx, [])
         ParsedManifests.report_raised(acc)
+        acc.ended_late(ctx, REPOSITORY_SCOPE)
         acc.explain_incomplete()
         result = ScanResult(
             findings=tuple(acc.findings),
@@ -300,6 +301,7 @@ class Engine:
         self.stages.after_detection(dependencies, acc, units, ctx, inventory)
 
         ParsedManifests.report_raised(acc)
+        acc.ended_late(ctx, REPOSITORY_SCOPE)
         acc.explain_incomplete()
         findings, verdict, dependencies = self.stages.fold_and_judge(acc, units, ctx, dependencies)
         result = ScanResult(
@@ -493,6 +495,7 @@ class Engine:
         dependencies, verdict = self.archive_stages.verdict(acc, ctx, image, units, dependencies)
         self.archive_stages.not_installed(acc, ctx)
         ParsedManifests.report_raised(acc)
+        acc.ended_late(ctx, path.name)
         acc.explain_incomplete()
         result = ScanResult(
             findings=tuple(acc.findings),

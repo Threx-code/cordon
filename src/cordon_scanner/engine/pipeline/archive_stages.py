@@ -27,6 +27,7 @@ from cordon_scanner.engine.pipeline.ceilings import Ceilings
 from cordon_scanner.engine.pipeline.constants import (
     ARCHIVE_SLICE,
     HONOURED_PINS,
+    REPOSITORY_SCOPE,
 )
 from cordon_scanner.engine.pipeline.facts import TreeFacts
 from cordon_scanner.engine.pipeline.graph import Graph
@@ -305,6 +306,8 @@ class ArchiveStages:
         """The checks on the release as a whole, after every member was read in the workers. There
         is no per-member pass here: this process never inspects a member (item 28; item 55 deleted
         the loop that was left for one, which no member reached)."""
+        if acc.out_of_time(ctx, REPOSITORY_SCOPE, "the release checks"):
+            return
         acc.add(ReleaseChecks.unexamined_install_code(acc.findings, ctx))
         acc.add(ReleaseChecks.native_code_in_a_pure_wheel(units, ctx))
         acc.add(ReleaseChecks.known_malicious_release(units, ctx))
@@ -323,6 +326,8 @@ class ArchiveStages:
         before every step after detection (`engine/pipeline/facts`)."""
         from cordon_scanner.engine.pipeline.facts import ScanFactsGathering
 
+        if acc.out_of_time(ctx, REPOSITORY_SCOPE, "the rule file's deferred pass"):
+            return
         content = [
             d for d in detectors if not (d.requires.dependencies and d.requires.content is False)
         ]
@@ -457,7 +462,9 @@ class ArchiveStages:
                 *(d for d in dependencies if (d.ecosystem, d.name.lower(), d.version) in present),
                 *installed,
             )
-        if dependencies:
+        if dependencies and not acc.out_of_time(
+            ctx, REPOSITORY_SCOPE, "the dependency graph's checks"
+        ):
             ctx = replace(ctx, dependencies=Graph.packages(dependencies))
             graph_unit = GraphUnit(dependencies=Graph.packages(dependencies))
             for detector in self.detectors:
