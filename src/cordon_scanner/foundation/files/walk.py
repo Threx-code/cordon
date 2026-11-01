@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from cordon_scanner.foundation.files.globs import PathGlob
+from cordon_scanner.foundation.files.names import Names
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS, Limits
 
 if TYPE_CHECKING:
@@ -391,7 +392,7 @@ class Walker:
 
             if stat_module.S_ISLNK(stat.st_mode) and not self.follow_symlinks:
                 self.stats.symlinks_skipped += 1
-                yield WalkEntry(full, rel, 0, is_symlink=True)
+                yield WalkEntry(full, Names.text(rel, backslash=True), 0, is_symlink=True)
                 continue
 
             if not stat_module.S_ISREG(stat.st_mode):
@@ -406,7 +407,7 @@ class Walker:
                 return True, total_bytes
 
             self.stats.files_yielded += 1
-            yield WalkEntry(full, rel, stat.st_size)
+            yield WalkEntry(full, Names.text(rel, backslash=True), stat.st_size)
         return False, total_bytes
 
     def _keep_directories(
@@ -466,7 +467,7 @@ class Walker:
             self.stats.files_excluded += 1
             return
         self.stats.files_yielded = 1
-        yield WalkEntry(path, rel, path.stat().st_size)
+        yield WalkEntry(path, Names.text(rel, backslash=True), path.stat().st_size)
 
     @staticmethod
     def _relative(path: Path, root: Path) -> str:

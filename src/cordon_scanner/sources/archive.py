@@ -36,6 +36,7 @@ from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.foundation.errors import ArchiveError
+from cordon_scanner.foundation.files.names import Names
 from cordon_scanner.foundation.files.spill import Spill, SpilledBytes
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS, Limits
 from cordon_scanner.sources.base import RejectedMember, Rejection
@@ -198,7 +199,9 @@ class ArchiveReader:
 
         normalised = PurePosixPath(*(p for p in parts if p not in {".", ""}))
         text = str(normalised)
-        return None if text in {".", ""} else text
+        # Made text after normalising, never before: the `\` of a `\xNN` is then never read as a
+        # separator, and no member name holds a backslash, so no escaped name equals a real one.
+        return None if text in {".", ""} else Names.text(text)
 
     @staticmethod
     def _links_seen(result: ExtractionResult) -> bool:

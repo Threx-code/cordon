@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from cordon_scanner.foundation.content import FileContent
+from cordon_scanner.foundation.files.names import Names
 from cordon_scanner.foundation.limits import Limits
 
 if TYPE_CHECKING:
@@ -176,6 +177,11 @@ class RejectedMember:
     name: str
     reason: str
     detail: str = ""
+
+    def __post_init__(self) -> None:
+        # A refused member's name is reported as it came, before normalising, so it is made text
+        # here, once, for every one of the places that refuse a member (item 34).
+        object.__setattr__(self, "name", Names.text(self.name))
 
 
 # Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine
