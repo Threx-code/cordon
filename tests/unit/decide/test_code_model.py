@@ -186,3 +186,21 @@ class TestTheRecordFormat:
         assert FileScoreRecord.decode(current.message) == (0.97, ["os>hostname"])
         assert FileScoreRecord.decode(old.message) is None
         assert FileScoreRecord.current((current, old)) == (current,)
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "v1 score=0.9700 ngrams=" + "a" * 600,
+            "v1 score=0.9700 ngrams=a|b|c|d",
+            "v1 score=9.9999 ngrams=a",
+            "v1 score=0.97 ngrams=a",
+        ],
+        ids=["too-long", "too-many-carriers", "score-past-one", "malformed"],
+    )
+    def test_an_oversized_or_malformed_record_is_refused(self, message: str) -> None:
+        assert FileScoreRecord.decode(message) is None
+
+    def test_what_the_encoder_writes_always_decodes(self) -> None:
+        message = FileScoreRecord.encode(0.5, ["x" * 500, "b", "c", "d"])
+        decoded = FileScoreRecord.decode(message)
+        assert decoded is not None and len(decoded[1]) == FileScoreRecord.MAX_CARRIERS

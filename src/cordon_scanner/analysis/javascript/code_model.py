@@ -338,10 +338,14 @@ class FileScoreRecord:
     RULE: ClassVar[str] = "INTERNAL.CODE_MODEL.FILE_SCORE"
     VERSION: ClassVar[str] = "v1"
     _FORM: ClassVar[re.Pattern[str]] = re.compile(r"^v1 score=(\d\.\d{4}) ngrams=([^\s]*)$")
+    #: The longest record the encoder writes (three carriers, each a short n-gram name) is far under
+    #: this; a longer message, or more carriers, is refused before it is matched (outer-layer review).
+    MAX_MESSAGE: ClassVar[int] = 512
+    MAX_CARRIERS: ClassVar[int] = 3
 
     @classmethod
     def encode(cls, score: float, carriers: list[str]) -> str:
-        names = "|".join(c.replace("|", "") for c in carriers)
+        names = "|".join(c.replace("|", "")[:96] for c in carriers[: cls.MAX_CARRIERS])
         return f"{cls.VERSION} score={min(max(score, 0.0), 1.0):.4f} ngrams={names}"
 
     @classmethod
@@ -354,11 +358,15 @@ class FileScoreRecord:
 
     @classmethod
     def decode(cls, message: str) -> tuple[float, list[str]] | None:
+        if not isinstance(message, str) or len(message) > cls.MAX_MESSAGE:
+            return None
         match = cls._FORM.match(message)
         if match is None:
             return None
-        names = match.group(2)
-        return float(match.group(1)), names.split("|") if names else []
+        names = match.group(2).split("|") if match.group(2) else []
+        if len(names) > cls.MAX_CARRIERS or float(match.group(1)) > 1.0:
+            return None
+        return float(match.group(1)), names
 
 
 __all__ = ["CodeFeatures", "CodeModelUnavailable", "CodeModelWeights", "FileScoreRecord"]
