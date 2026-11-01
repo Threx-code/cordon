@@ -231,6 +231,8 @@ class Taint(Sinks):
                 k = max(k + 1, self.fns[fid - 1].end)  # a function literal's value carries nothing
                 continue
             f = fact[k]
+            if f is None and self.is_p(k + 1, "(") and self.local_callee(k) is not None:
+                labels.add(("C", k))  # `h.read()` with `h = require("./h")`: resolved by the parent
             if f is not None:
                 what, v = f
                 if what == "src":
@@ -254,6 +256,12 @@ class Taint(Sinks):
                     if target is not None:
                         calls.append((k, target))
                         k = self.match[k + 1]
+                    elif what == "call" and self.local_callee(k) is not None:
+                        # A call into one of the package's own modules (item 60, 3C): its result is
+                        # a symbol the parent resolves from that module's summaries; its arguments
+                        # still carry what they carry.
+                        labels.add(("C", k))
+                        refs.append(resolved)
                     elif (
                         what == "ref"
                         and (member := self._member_at(k)) is not None
@@ -368,7 +376,7 @@ class Taint(Sinks):
             if isinstance(label, tuple) and label[0] == "Q" and label[1] == fn.fid:
                 if label[2] < len(args):
                     out |= self.arg_field(args[label[2]], label[3], scope)
-            elif isinstance(label, tuple) and label[1] == fn.fid:
+            elif isinstance(label, tuple) and label[0] in ("P", "R") and label[1] == fn.fid:
                 if label[2] < len(args):
                     s, e = args[label[2]]
                     value = self.taint(s, e, scope)
@@ -376,6 +384,35 @@ class Taint(Sinks):
             else:
                 out.add(label)
         return out
+
+    def local_callee(self, k: int) -> tuple[str, str] | None:
+        """(module, export name) when the call at `k` calls one of the package's own modules: a member
+        of a name bound by `require("./x")` (`h.send(...)`), the name itself (its default export), or
+        a name destructured from one (`const {send} = require("./h")`). None for any other call."""
+        if self.is_p(k - 1, ".") and self.is_name(k - 2) and not self.is_p(k - 3, "."):
+            module = self.aliases.get(str(self.t[k - 2].value))
+            if module is not None and Taint._local(module) and not Taint._member_alias(module):
+                return module, str(self.t[k].value)
+            return None
+        if self.is_p(k - 1, "."):
+            return None
+        module = self.aliases.get(str(self.t[k].value))
+        if module is None or not Taint._local(module):
+            return None
+        if Taint._member_alias(module):
+            root, _, member = module.rpartition(".")
+            return root, member
+        return module, "default"
+
+    @staticmethod
+    def _local(module: str) -> bool:
+        return module.startswith(("./", "../", "/"))
+
+    @staticmethod
+    def _member_alias(module: str) -> bool:
+        """`./h.send` (a destructured member) as against `./h` or `../lib/h.js` (a path)."""
+        tail = module.rsplit("/", 1)[-1]
+        return "." in tail and not tail.endswith((".js", ".cjs", ".mjs", ".ts", ".json"))
 
     def _member_at(self, k: int) -> int | None:
         """The member name's token after the name at `k`: `x.g` or `x?.g`; None otherwise."""
