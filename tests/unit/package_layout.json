@@ -1043,6 +1043,7 @@
   "test_stream.py": "detect/binary/rule_engine",
   "test_rule_file_fail_closed.py": "detect/binary",
   "test_builtin.py": "detect/binary/modules",
+  "test_region_memo.py": "detect/binary/modules",
   "test_oids.py": "detect/binary/modules",
   "test_rule_pack.py": "detect/binary",
   "test_pe.py": "detect/binary/modules",

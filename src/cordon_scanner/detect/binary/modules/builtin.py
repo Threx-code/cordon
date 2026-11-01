@@ -10,6 +10,7 @@ undefined).
 
 from __future__ import annotations
 
+import collections
 import hashlib
 import math
 import struct
@@ -34,6 +35,38 @@ class Region:
             return None
         return data[offset : offset + length]
 
+    @staticmethod
+    def span(data: bytes, offset: int, length: int) -> tuple[int, int] | None:
+        """The (start, end) `of` reads, clamped to the data: two asks reading the same bytes have
+        the same span, an offset or length past the end included. None where `of` is None."""
+        if offset < 0 or length < 0 or offset >= len(data):
+            return None
+        return offset, min(len(data), offset + length)
+
+
+class Kept:
+    """What a module worked out for one region of one file, the last `MOST` regions kept (least
+    recently asked first out): a rule set asks the same few regions hundreds of times (668
+    hashes of 6 to 37 distinct regions a file, review 6y), while a rule looping over every block
+    asks thousands once each, and must not hold them all."""
+
+    MOST: ClassVar[int] = 256
+
+    def __init__(self) -> None:
+        self._kept: collections.OrderedDict[Any, Any] = collections.OrderedDict()
+
+    def get(self, key: Any, work: Callable[[], Any]) -> Any:
+        if key in self._kept:
+            self._kept.move_to_end(key)
+            return self._kept[key]
+        value = self._kept[key] = work()
+        if len(self._kept) > Kept.MOST:
+            self._kept.popitem(last=False)
+        return value
+
+    def __len__(self) -> int:
+        return len(self._kept)
+
 
 class Arith:
     """IEEE double arithmetic where Python raises, and single-precision rounding."""
@@ -51,14 +84,31 @@ class Arith:
 
 class ByteStats:
     """Statistics of a run of bytes. Over a data region they are taken from the byte-value
-    tally, value 0 to 255; over a string, byte by byte in order."""
+    tally, value 0 to 255; over a string, byte by byte in order.
 
-    def __init__(self, run: bytes) -> None:
+    `run` is the bytes, read in order by the in-order statistics; a region's tally may be given
+    (`MathModule` keeps it per file), with `length` the region's size, and then `run` may be
+    empty: the tally statistics read only the tally and the length."""
+
+    def __init__(
+        self, run: bytes, tally: tuple[int, ...] | None = None, length: int | None = None
+    ) -> None:
         self.run = run
-        self.tally = [run.count(v) for v in range(256)] if run else [0] * 256
+        self.tally = ByteStats.tally_of(run) if tally is None else tally
+        self.length = len(run) if length is None else length
+
+    @staticmethod
+    def tally_of(run: bytes | memoryview) -> tuple[int, ...]:
+        """How often each byte value 0 to 255 occurs in `run`, in one pass (`collections.Counter`,
+        whose counting is C). It was 256 passes, one `count` a value: 1.754 s against 0.318 s on
+        an 8.9 MB file, 7.70 s of the 14 large files' 28.5 (review 6y)."""
+        if not run:
+            return (0,) * 256
+        seen = collections.Counter(run)
+        return tuple(seen.get(v, 0) for v in range(256))
 
     def entropy(self) -> float:
-        total = len(self.run)
+        total = self.length
         bits = 0.0
         for n in self.tally:
             if n:
@@ -70,7 +120,7 @@ class ByteStats:
         weighted = 0.0
         for value, n in enumerate(self.tally):
             weighted += float(value) * n
-        return Arith.divide(weighted, float(len(self.run)))
+        return Arith.divide(weighted, float(self.length))
 
     def mean_in_order(self) -> float:
         total = 0.0
@@ -82,7 +132,7 @@ class ByteStats:
         spread = 0.0
         for value, n in enumerate(self.tally):
             spread += abs(float(value) - centre) * n
-        return Arith.divide(spread, float(len(self.run)))
+        return Arith.divide(spread, float(self.length))
 
     def deviation_in_order(self, centre: float) -> float:
         spread = 0.0
@@ -161,11 +211,27 @@ class MathModule:
 
     def __init__(self, data: bytes) -> None:
         self.data = data
+        #: Each region's byte tally, by its clamped span (`Region.span`), for this file.
+        self.tallies = Kept()
 
-    def _region(self, stat: Callable[[ByteStats], Any]) -> Callable[[int, int], Any]:
+    def tallied(self, span: tuple[int, int]) -> ByteStats:
+        """A region's statistics from its kept tally: no copy of the region is made."""
+        start, end = span
+        tally = self.tallies.get(span, lambda: ByteStats.tally_of(memoryview(self.data)[start:end]))
+        return ByteStats(b"", tally, end - start)
+
+    def _region(
+        self, stat: Callable[[ByteStats], Any], *, in_order: bool = False
+    ) -> Callable[[int, int], Any]:
+        """`stat` over a region. A statistic that reads only the tally is answered from the kept
+        one; one that reads the bytes in order (`in_order`) reads them, as before."""
+
         def over(offset: int, length: int) -> Any:
-            run = Region.of(self.data, offset, length)
-            return None if run is None else stat(ByteStats(run))
+            if in_order:
+                run = Region.of(self.data, offset, length)
+                return None if run is None else stat(ByteStats(run))
+            span = Region.span(self.data, offset, length)
+            return None if span is None else stat(self.tallied(span))
 
         return over
 
@@ -187,8 +253,13 @@ class MathModule:
         return Arith.single(Arith.divide(hits, Arith.single(float(len(run)))))
 
     def mode(self, offset: int | None = None, length: int | None = None) -> Any:
-        run = self._run(offset, length)
-        return None if run is None else ByteStats(run).most_common()
+        if offset is None:
+            span: tuple[int, int] | None = (0, len(self.data))
+            if not self.data:
+                return ByteStats(b"").most_common()
+        else:
+            span = Region.span(self.data, offset, length or 0)
+        return None if span is None else self.tallied(span).most_common()
 
     @staticmethod
     def smaller(a: int, b: int) -> int:
@@ -221,10 +292,13 @@ class MathModule:
             "entropy": (region(ByteStats.entropy), per_text(ByteStats.entropy)),
             "mean": (region(ByteStats.mean), per_text(ByteStats.mean_in_order)),
             "serial_correlation": (
-                region(ByteStats.serial_correlation),
+                region(ByteStats.serial_correlation, in_order=True),
                 per_text(ByteStats.serial_correlation),
             ),
-            "monte_carlo_pi": (region(ByteStats.pi_error), per_text(ByteStats.pi_error)),
+            "monte_carlo_pi": (
+                region(ByteStats.pi_error, in_order=True),
+                per_text(ByteStats.pi_error),
+            ),
             "deviation": (
                 lambda o, n, c: region(lambda b: b.deviation(c))(o, n),
                 lambda s, c: ByteStats(s).deviation_in_order(c),
@@ -257,22 +331,30 @@ class HashModule:
 
     def __init__(self, data: bytes) -> None:
         self.data = data
+        #: Each region's result, by (function, clamped span), for this file.
+        self.results = Kept()
 
-    def _both(self, of: Callable[[bytes], Any]) -> tuple[Callable[..., Any], ...]:
+    def _both(self, name: str, of: Callable[[bytes], Any]) -> tuple[Callable[..., Any], ...]:
+        """`of` over a region of the file, kept by the region's span; over a string, worked out
+        each time (a string is not a region of the file)."""
+
         def over(offset: int, length: int) -> Any:
-            run = Region.of(self.data, offset, length)
-            return None if run is None else of(run)
+            span = Region.span(self.data, offset, length)
+            if span is None:
+                return None
+            start, end = span
+            return self.results.get((name, span), lambda: of(self.data[start:end]))
 
         return (over, of)
 
     def values(self) -> dict[str, Any]:
         def digest(name: str) -> tuple[Callable[..., Any], ...]:
-            return self._both(lambda b: hashlib.new(name, b).hexdigest().encode())
+            return self._both(name, lambda b: hashlib.new(name, b).hexdigest().encode())
 
         return {
             **{n: digest(n) for n in HashModule.NAMES},
-            "crc32": self._both(lambda b: zlib.crc32(b) & 0xFFFFFFFF),
-            "checksum32": self._both(lambda b: sum(b) & 0xFFFFFFFF),
+            "crc32": self._both("crc32", lambda b: zlib.crc32(b) & 0xFFFFFFFF),
+            "checksum32": self._both("checksum32", lambda b: sum(b) & 0xFFFFFFFF),
         }
 
 
