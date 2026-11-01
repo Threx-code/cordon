@@ -22,7 +22,9 @@ class IncludeKit:
 
     @staticmethod
     def failed_at(result) -> set[str]:
-        return {f.location.path for f in result.findings if f.rule_id == "OPERATIONAL.PARSER.FAILED"}
+        return {
+            f.location.path for f in result.findings if f.rule_id == "OPERATIONAL.PARSER.FAILED"
+        }
 
 
 class TestAnIncludedFileIsNeverDroppedUnsaid:
@@ -49,7 +51,9 @@ class TestAnIncludedFileIsNeverDroppedUnsaid:
             nested = f"-r r{i + 1}.txt\n" if i < depth else ""
             (tmp_path / f"r{i}.txt").write_text(f"{nested}pkg{i}==1.0\n")
         result = IncludeKit.scan(tmp_path)
-        assert IncludeKit.failed_at(result), "an include past the depth bound was not followed, and nothing said so"
+        assert IncludeKit.failed_at(result), (
+            "an include past the depth bound was not followed, and nothing said so"
+        )
         assert result.content_complete is False
         assert PolicyGate.evaluate(result, Policy.default()).exit_code is ExitCode.INCOMPLETE
 
