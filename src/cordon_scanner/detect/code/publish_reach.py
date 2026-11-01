@@ -63,13 +63,18 @@ class PublishReach:
     def self_propagating(cls, text: str) -> bool:
         """Whether the file writes its own package.json and RENAMES its package (release tooling bumps
         versions, it never renames: outer-layer review), with a loop or timer: the self-propagation
-        shape, from the file's tokens by co-presence. A rename is `.name =`, `['name'] =`,
-        `Object.assign(x, {name: ...})` or a rebuild `{...x, name: ...}`."""
+        shape, from the file's tokens by co-presence. The rename is of the manifest's own variable --
+        one assigned from `JSON.parse(...)` or `require(...package.json...)` in the file -- so a class
+        property (`this.name = name`) or an error's name is not it: `m.name =`, `m['name'] =`,
+        `Object.assign(m, {name: ...})`, or a rebuild `{...m, name: ...}`."""
         from cordon_scanner.analysis.javascript.js_eval import JsEval
 
         if "package.json" not in text:
             return False
         tokens = JsEval.tokens(text, templates=True)
+        manifests = cls._manifest_names(tokens)
+        if not manifests:
+            return False
         manifest = writes = loops = renamed = False
         for i, tok in enumerate(tokens):
             value = str(tok.value)
@@ -80,29 +85,62 @@ class PublishReach:
             elif tok.kind == "name" and value in cls._LOOPS:
                 loops = True
             if not renamed and value == "name" and tok.kind in ("name", "str"):
-                renamed = cls._renames_at(tokens, i)
+                renamed = cls._renames_at(tokens, i, manifests)
         return manifest and writes and loops and renamed
 
     @staticmethod
-    def _renames_at(tokens: list[Any], i: int) -> bool:
-        """Whether the `name` token at `i` is assigned: `.name =`, `['name'] =`, or a `name:` key
-        in an object literal that Object.assign or a spread rebuild hands over."""
+    def _manifest_names(tokens: list[Any]) -> frozenset[str]:
+        """Names assigned from `JSON.parse(` or `require(` naming package.json: `const m = JSON.parse(`."""
+        out: set[str] = set()
+        for i in range(len(tokens) - 3):
+            name, eq = tokens[i], tokens[i + 1]
+            if name.kind != "name" or eq.kind != "punct" or eq.value != "=":
+                continue
+            ahead = [str(t.value) for t in tokens[i + 2 : i + 8]]
+            parsed = ahead[:2] == ["JSON", "."] and "parse" in ahead
+            required = ahead[:1] == ["require"] and any("package.json" in a for a in ahead)
+            if parsed or required:
+                out.add(str(name.value))
+        return frozenset(out)
+
+    @staticmethod
+    def _renames_at(tokens: list[Any], i: int, manifests: frozenset[str]) -> bool:
+        """Whether the `name` token at `i` renames a manifest variable."""
 
         def punct(j: int, *values: str) -> bool:
             return 0 <= j < len(tokens) and tokens[j].kind == "punct" and tokens[j].value in values
 
+        def manifest_at(j: int) -> bool:
+            return (
+                0 <= j < len(tokens)
+                and tokens[j].kind == "name"
+                and str(tokens[j].value) in manifests
+            )
+
         tok = tokens[i]
-        if tok.kind == "name" and punct(i - 1, ".") and punct(i + 1, "=", "+="):
+        if (
+            tok.kind == "name"
+            and punct(i - 1, ".")
+            and manifest_at(i - 2)
+            and punct(i + 1, "=", "+=")
+        ):
             return True
         if (
             tok.kind == "str"
             and punct(i - 1, "[")
+            and manifest_at(i - 2)
             and punct(i + 1, "]")
             and punct(i + 2, "=", "+=")
         ):
             return True
         if punct(i + 1, ":") and punct(i - 1, "{", ","):
-            # An object key: a rename when the literal is Object.assign's or rebuilds with a spread.
-            window = [str(t.value) for t in tokens[max(0, i - 12) : i]]
-            return "assign" in window or "..." in window
+            # An object key: Object.assign(<manifest>, {name}) or {...<manifest>, name}.
+            window = tokens[max(0, i - 12) : i]
+            values = [str(t.value) for t in window]
+            spread = any(
+                values[j] == "..." and str(window[j + 1].value) in manifests
+                for j in range(len(values) - 1)
+            )
+            assigned = "assign" in values and any(str(t.value) in manifests for t in window)
+            return spread or assigned
         return False

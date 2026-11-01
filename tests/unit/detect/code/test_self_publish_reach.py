@@ -204,3 +204,30 @@ class TestASelfRenamingPublishLoop:
     ) -> None:
         body = "for (let i = 0; i < 0; i++) {\n  data.version = '0.0.0';\n" + self.WRITE + "}\n"
         assert Severity.HIGH not in self.severities(tmp_path, body)
+
+    def test_a_class_property_named_name_is_no_rename(self, tmp_path: Path) -> None:
+        # `this.name = ...` in a release loop that publishes: not the manifest's own name.
+        body = (
+            "class Job { constructor(n) { this.name = n; } }\n"
+            "for (let i = 0; i < 0; i++) {\n  new Job('x');\n" + self.WRITE + self.PUBLISH + "}\n"
+        )
+        found = self.severities(tmp_path, body)
+        assert found and all(s <= Severity.MEDIUM for s in found)
+
+    def test_the_same_loop_as_python_source_text_keeps_its_ceiling(self, tmp_path: Path) -> None:
+        # A Python file whose strings hold the JavaScript loop (as this test file does): the shape is
+        # read from JavaScript only.
+        loop = (
+            "for (let i = 0; i < 0; i++) { data.name = 'example-renamed'; "
+            + self.WRITE.strip()
+            + " "
+            + self.PUBLISH.strip()
+            + " }"
+        )
+        source = (
+            "import subprocess\n"
+            f"SNIPPET = {(self.HEAD + loop)!r}\n"
+            "subprocess.run(['npm', 'publish'])\n"
+        )
+        found = PublishKit.severities(tmp_path, self.MANIFEST, {"package/tools/notes.py": source})
+        assert Severity.HIGH not in found
