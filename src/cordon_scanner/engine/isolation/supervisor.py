@@ -82,6 +82,8 @@ class Outcome:
     results: dict[int, Any] = field(default_factory=dict)
     failed: dict[int, str] = field(default_factory=dict)
     isolation: dict[str, str] = field(default_factory=dict)
+    #: Units never given to a worker because the deadline had passed first.
+    unstarted: list[int] = field(default_factory=list)
 
 
 class IsolationUnavailable(RuntimeError):
@@ -247,9 +249,14 @@ class Supervisor:
     none, by its index."""
 
     def __init__(self, context: BaseContext, setup: tuple[str, tuple[Any, ...]], work: str,
-                 bounds: Bounds, workers: int) -> None:  # fmt: skip
+                 bounds: Bounds, workers: int, *, deadline: float | None = None,
+                 on_result: Callable[[int, Any], None] | None = None) -> None:  # fmt: skip
+        """`deadline`, a `time.monotonic()` reading: no unit is given to a worker after it (those
+        go to `Outcome.unstarted`); one already running finishes. `on_result` is called in this
+        process with each unit's index and result as it arrives."""
         self.context, self.setup, self.work, self.bounds = context, setup, work, bounds
         self.workers = max(1, workers)
+        self.deadline, self.on_result = deadline, on_result
         self.outcome = Outcome()
         self.retry: list[Unit] = []
 
@@ -273,9 +280,16 @@ class Supervisor:
         unready_ends = 0
         try:
             while pool and (queue or any(w.unit is not None for w in pool)):
+                if self.deadline is not None and queue and time.monotonic() >= self.deadline:
+                    self.outcome.unstarted.extend(unit.index for unit in queue)
+                    queue.clear()
                 for worker in pool:
                     if worker.ready and worker.unit is None and queue:
                         worker.give(queue.popleft(), self.bounds)
+                if not queue and all(w.unit is None for w in pool):
+                    # Nothing to give and nothing in flight (the deadline may have just emptied the
+                    # queue): waiting now, with no unit's backstop to bound it, would never end.
+                    break
                 self._wait(pool)
                 started_any = started_any or any(w.ready for w in pool)
                 for worker in list(pool):
@@ -327,6 +341,8 @@ class Supervisor:
         elif message[0] == "done" and worker.unit is not None and message[1] == worker.unit.index:
             self.outcome.results[message[1]] = message[2]
             worker.unit = None
+            if self.on_result is not None:
+                self.on_result(message[1], message[2])
         elif message[0] == "failed" and worker.unit is not None and message[1] == worker.unit.index:
             # The same exception from the same input: not run again, which would only repeat it.
             self.outcome.failed[message[1]] = message[2]

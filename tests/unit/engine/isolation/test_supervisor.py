@@ -142,6 +142,17 @@ class TestTheSupervisor:
         assert outcome.results == {i: i for i in range(1, 5)}
         assert not supervisor.retry  # raised, not died: named at once, not run again
 
+    def test_no_unit_is_started_past_the_deadline(self) -> None:
+        seen: list[int] = []
+        units = [Unit(0, ("sleep", 1.5), 1)] + [Unit(i, ("echo", i), 1) for i in range(1, 4)]
+        supervisor = Harness.supervisor(Bounds(), workers=1)
+        supervisor.deadline = time.monotonic() + 0.5
+        supervisor.on_result = lambda index, result: seen.append(index)
+        outcome = supervisor.run(units)
+        assert outcome.results == {0: "woke"}  # the one running finished
+        assert sorted(outcome.unstarted) == [1, 2, 3]
+        assert seen == [0]
+
     def test_no_worker_that_can_start_is_said_not_run_here(self) -> None:
         with pytest.raises(IsolationUnavailable):
             Harness.supervisor(Bounds(), setup="setup_that_raises").run([Unit(0, ("echo", 1), 1)])
