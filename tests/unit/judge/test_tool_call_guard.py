@@ -9,6 +9,8 @@ from __future__ import annotations
 import random
 import re
 import time
+from collections.abc import Callable
+from typing import ClassVar
 
 import pytest
 
@@ -146,6 +148,10 @@ class TestReview98GuardSteps:
             "send_message", {"url": "https://hooks.example.invalid/x", "payload": "weekly report"}
         )
         assert not verdict.blocked
+
+
+#: Linear grows about 10x for 10x the input, quadratic about 100x (`TestJudgePatternsLinear.growth`).
+GROWTH_LINE = 30
 
 
 class TestJudgePatternsLinear:
@@ -305,14 +311,42 @@ class TestJudgePatternsLinear:
             new = [((s, e), (text[h:e],)) for s, h, e in ToolCallGuard._hosts(text)]
             assert new == old, text
 
-    def test_long_runs_are_linear(self) -> None:
-        start = time.perf_counter()
-        ToolCallGuard._safety_config_off("\n" * 2_000_000)
-        ToolCallGuard._safety_config_off("auth" + "a" * 2_000_000 + "!")
-        calls._SAFETY_OFF.match("_" * 2_000_000 + "!")
-        calls._XXE.search("<!ENTITY" + " " * 2_000_000)
-        calls._SQLI.search('"' + " " * 2_000_000)
-        list(ToolCallGuard._hosts("a" * 2_000_000))
-        list(ToolCallGuard._hosts("h." * 1_000_000))
-        list(ToolCallGuard._hosts("a.." * 700_000))
-        assert time.perf_counter() - start < 3
+    #: Each probe at n characters, a function of n: the long runs a backtracking pattern chokes on.
+    LONG_RUNS: ClassVar[dict[str, Callable[[int], object]]] = {
+        "config newlines": lambda n: ToolCallGuard._safety_config_off("\n" * n),
+        "config word": lambda n: ToolCallGuard._safety_config_off("auth" + "a" * n + "!"),
+        "safety off": lambda n: calls._SAFETY_OFF.match("_" * n + "!"),
+        "xxe": lambda n: calls._XXE.search("<!ENTITY" + " " * n),
+        "sqli": lambda n: calls._SQLI.search('"' + " " * n),
+        "host letters": lambda n: list(ToolCallGuard._hosts("a" * n)),
+        "host labels": lambda n: list(ToolCallGuard._hosts("h." * (n // 2))),
+        "host dots": lambda n: list(ToolCallGuard._hosts("a.." * (n // 3))),
+    }
+
+    @staticmethod
+    def growth(probe: Callable[[int], object], n: int) -> float:
+        """The probe's CPU at 10n over its CPU at n, each the best of three. CPU time, not wall
+        time: on a loaded host wall time varies about 2x and an absolute deadline fails a linear
+        pattern (the 3 s bound did, on 1 Nov). Linear grows about 10x, quadratic about 100x. The
+        smaller run is floored at 2 ms, so a run too fast to time cannot inflate the ratio.
+        Measured at 1 core under load (1 Nov): the linear probes 5.6-12.6x, the quadratic mutant
+        83-93x; the line at 30x sits between them with room on both sides (15x failed 1 run of 6)."""
+
+        def cpu(size: int) -> float:
+            best = float("inf")
+            for _ in range(3):
+                start = time.process_time()
+                probe(size)
+                best = min(best, time.process_time() - start)
+            return best
+
+        return cpu(10 * n) / max(cpu(n), 0.002)
+
+    @pytest.mark.parametrize("name", sorted(LONG_RUNS))
+    def test_long_runs_are_linear(self, name: str) -> None:
+        assert self.growth(self.LONG_RUNS[name], 200_000) < GROWTH_LINE
+
+    def test_the_measure_catches_a_quadratic_pattern(self) -> None:
+        """` *!` searched over spaces tries every start and scans to the end from each."""
+        quadratic = re.compile(" *!")
+        assert self.growth(lambda n: quadratic.search(" " * n), 2_000) > GROWTH_LINE
