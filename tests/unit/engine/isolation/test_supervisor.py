@@ -34,6 +34,15 @@ class Workloads:
         raise RuntimeError("planted: a setup that cannot finish")
 
     @staticmethod
+    def wait_for(path: Path, pattern: str | None = None) -> None:
+        """Until `path` exists (or holds a file matching `pattern`), bounded: a broken handshake
+        ends in the assertion that follows, never in a hang."""
+        for _ in range(3000):
+            if any(path.glob(pattern)) if pattern else path.exists():
+                return
+            time.sleep(0.01)
+
+    @staticmethod
     def run(item: tuple[str, object]) -> object:
         kind, arg = item
         if kind == "echo":
@@ -51,17 +60,22 @@ class Workloads:
         if kind == "sleep":  # no CPU: only the wall backstop sees it
             time.sleep(float(arg))  # type: ignore[arg-type]
             return "woke"
-        if kind == "busy":  # in flight a while, so others overlap it
+        if kind == "busy":  # in flight until `company`'s first run has seen it, so they overlap
             folder = Path(str(arg))
             mark = folder / f"{os.getpid()}.running"
             mark.touch()
-            time.sleep(1.0)
+            # A handshake, not a sleep: the two workers may become ready seconds apart, and a fixed
+            # sleep let `busy` finish before `company` started (item 63: 5 of 30 runs on 144c6bf9).
+            Workloads.wait_for(folder / "company.died")
             mark.unlink()
             return "busy"
         if kind == "company":  # dies when another unit is in flight beside it, lives alone
-            time.sleep(0.4)
-            others = [p for p in Path(str(arg)).glob("*.running") if p.stem != str(os.getpid())]
+            folder = Path(str(arg))
+            if not (folder / "company.died").exists():
+                Workloads.wait_for(folder, "*.running")  # its first run: until `busy` is in flight
+            others = [p for p in folder.glob("*.running") if p.stem != str(os.getpid())]
             if others:
+                (folder / "company.died").touch()
                 os._exit(9)
             return "alone"
         if kind == "die":
@@ -162,9 +176,24 @@ class TestTheSupervisor:
         monkeypatch.setattr(Worker, "give", given_then_past)
         supervisor.on_result = lambda index, result: seen.append(index)
         outcome = supervisor.run(units)
-        assert outcome.results == {0: 0}  # the one running finished
-        assert sorted(outcome.unstarted) == [1, 2, 3]
-        assert seen == [0]
+        # The one running either finished before the deadline was seen, or was ended at it (item 64):
+        # never failed, never run again.
+        assert outcome.results in ({0: 0}, {})
+        assert sorted(outcome.unstarted) == ([1, 2, 3] if outcome.results else [0, 1, 2, 3])
+        assert seen == sorted(outcome.results)
+        assert not outcome.failed
+
+    def test_a_unit_running_at_the_deadline_is_ended_at_it(self) -> None:
+        """Item 64: under load a unit in flight ran on to its own wall backstop, ten times its CPU
+        budget, long past the scan's deadline (the long-line probe: a 60 s budget, 343 s). The
+        deadline holds for it too: it is ended, and its file is reported unexamined."""
+        supervisor = Harness.supervisor(Bounds(), workers=1)
+        supervisor.deadline = time.monotonic() + 3.0
+        outcome = supervisor.run([Unit(0, ("sleep", 60), 1)])
+        assert outcome.results == {}
+        assert outcome.unstarted == [0]
+        assert not outcome.failed
+        assert not supervisor.retry
 
     def test_no_worker_that_can_start_is_said_not_run_here(self) -> None:
         with pytest.raises(IsolationUnavailable):

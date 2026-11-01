@@ -86,7 +86,8 @@ class Outcome:
     results: dict[int, Any] = field(default_factory=dict)
     failed: dict[int, str] = field(default_factory=dict)
     isolation: dict[str, str] = field(default_factory=dict)
-    #: Units never given to a worker because the deadline had passed first.
+    #: Units never given to a worker because the deadline had passed first, or running when it
+    #: passed and ended at it (item 64): unexamined either way.
     unstarted: list[int] = field(default_factory=list)
 
 
@@ -342,9 +343,12 @@ class Supervisor:
         unready_ends = 0
         try:
             while pool and (queue or any(w.unit is not None for w in pool)):
-                if self.deadline is not None and queue and self.clock() >= self.deadline:
+                if self.deadline is not None and self.clock() >= self.deadline:
                     self.outcome.unstarted.extend(unit.index for unit in queue)
                     queue.clear()
+                    self._stop_in_flight(pool)
+                    if not pool:
+                        break
                 for worker in pool:
                     if worker.ready and worker.unit is None and queue:
                         worker.give(queue.popleft(), self.bounds)
@@ -380,10 +384,23 @@ class Supervisor:
                     worker.conn.send(None)
                 worker.end()
 
+    def _stop_in_flight(self, pool: list[Worker]) -> None:
+        """The scan's deadline holds for a unit already running too (item 64): each worker holding
+        one is ended, and its unit is unexamined, never retried. Under load a running unit otherwise
+        ran on to its own wall backstop, ten times its CPU budget, long past the deadline."""
+        for worker in [w for w in pool if w.unit is not None]:
+            unit, worker.unit = worker.unit, None
+            assert unit is not None  # noqa: S101 - held, by the filter above
+            self.outcome.unstarted.append(unit.index)
+            pool.remove(worker)
+            worker.end()
+
     def _wait(self, pool: list[Worker]) -> None:
-        """Until a worker answers or ends, or the nearest wall backstop falls due."""
+        """Until a worker answers or ends, or the nearest wall backstop or the deadline falls due."""
         now = time.monotonic()
         due = [w.given_at + self.bounds.wall_budget(w.unit.size) - now for w in pool if w.unit]
+        if self.deadline is not None and due:
+            due.append(self.deadline - self.clock())
         timeout = max(0.0, min(due)) if due else None
         waitable: list[Any] = [w.conn for w in pool]
         # a template worker's sentinel is its connection: each object once, or the selector refuses it

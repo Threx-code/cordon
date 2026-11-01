@@ -200,6 +200,25 @@ class VerdictFeatures:
         sources: Sequence[tuple[str, bytes]] = (),
         source_facts: Sequence[tuple[str, frozenset[str], frozenset[str]]] | None = None,
     ) -> dict[str, float]:
+        features = VerdictFeatures._layout(paths_sizes)
+        # What each source file says, as (path, wanted modules it names, abilities it shows): from the
+        # workers' facts when given (item 56: the parent reads no scanned bytes), else from the bytes
+        # by the same function, so the two cannot differ.
+        wanted = VerdictFeatures.wanted_dependencies(manifests)
+        read = (
+            list(source_facts)
+            if source_facts is not None
+            else [(p, *VerdictFeatures.source_facts(d, wanted)) for p, d in sources]
+        )
+        VerdictFeatures._manifest_facts(features, manifests, read)
+        VerdictFeatures._ability(features, read)
+        VerdictFeatures._skill_claim(features, manifests)
+        return features
+
+    @staticmethod
+    def _layout(paths_sizes: Sequence[tuple[str, int]]) -> dict[str, float]:
+        """What the file list says: counts, sizes and the files a real project ships; the manifest
+        facts start at zero."""
         names = [p.rsplit("!", 1)[-1] for p, _ in paths_sizes]
         sizes = [s for _, s in paths_sizes]
         total = sum(sizes) or 1
@@ -240,15 +259,16 @@ class VerdictFeatures:
                 )
             ),
         }
-        # What each source file says, as (path, wanted modules it names, abilities it shows): from the
-        # workers' facts when given (item 56: the parent reads no scanned bytes), else from the bytes
-        # by the same function, so the two cannot differ.
-        wanted = VerdictFeatures.wanted_dependencies(manifests)
-        read = (
-            list(source_facts)
-            if source_facts is not None
-            else [(p, *VerdictFeatures.source_facts(d, wanted)) for p, d in sources]
-        )
+        return features
+
+    @staticmethod
+    def _manifest_facts(
+        features: dict[str, float],
+        manifests: dict[str, bytes],
+        read: Sequence[tuple[str, frozenset[str], frozenset[str]]],
+    ) -> None:
+        """The shallowest package.json's hooks, dependencies, version, name and purpose (with which
+        of its dependencies the sources use), and a setup.py's command classes."""
         for path, data in sorted(manifests.items(), key=lambda kv: kv[0].count("/")):
             base = path.rsplit("!", 1)[-1]
             if base.endswith("package.json"):
@@ -277,7 +297,7 @@ class VerdictFeatures:
                 )
                 VerdictFeatures._purpose(features, manifest)
                 VerdictFeatures._dependencies_used(features, manifest, read)
-                break
+                return
             if base.endswith("setup.py"):
                 features["hook"] = max(
                     features["hook"],
@@ -285,9 +305,6 @@ class VerdictFeatures:
                         bool(re.search(rb"cmdclass|class \w+\((?:install|develop|egg_info)", data))
                     ),
                 )
-        VerdictFeatures._ability(features, read)
-        VerdictFeatures._skill_claim(features, manifests)
-        return features
 
     #: What a skill's own description says it reaches: the claims an attacker would have to make
     #: to explain its scripts, and that an honest skill makes because it needs them.

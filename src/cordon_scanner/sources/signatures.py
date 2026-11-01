@@ -174,5 +174,50 @@ class UnopenedFormats:
             return len(data) >= 12 and all(b in UnopenedFormats._CPIO_OCTAL for b in data[6:12])
         return False
 
+    #: What `format_of` reads of a member: an ISO's identifier sits at 0x8001.
+    HEAD = 0x8806
+
+    @staticmethod
+    def refused(member_path: str, data: bytes, rejected: list[tuple[str, str, str]]) -> bool:
+        """A member in an archive format no reader here opens, refused as unread at its path,
+        whatever it is called (item 53); False when it is no such format."""
+        from cordon_scanner.sources.base import Rejection
+
+        found = UnopenedFormats.format_of(bytes(data[: UnopenedFormats.HEAD]))
+        if found is None:
+            return False
+        rejected.append(
+            (
+                member_path,
+                Rejection.UNSUPPORTED_FORMAT,
+                f"a {found} archive, a format no reader here opens; its contents were not examined",
+            )
+        )
+        return True
+
+    @staticmethod
+    def nested(
+        member_path: str, inner: bytes, exc: Exception, rejected: list[tuple[str, str, str]]
+    ) -> None:
+        """A nested member named as an archive that would not open, refused as unread; unless no
+        reader opens it and there is nothing to open: 0 bytes hold nothing (class 8, no refusal),
+        and text is scanned as the text it is (class 7, said, complete; item 27)."""
+        from cordon_scanner.sources.archive_names import MemberNames
+        from cordon_scanner.sources.base import Rejection
+
+        shape = MemberNames.not_an_archive(inner)
+        if shape == "empty" or UnopenedFormats.refused(member_path, inner, rejected):
+            return
+        # Bytes whose structure says archive (a whole header, `ArchiveSignatures.opens`) are a broken
+        # archive however they decode: an ar of object files is valid UTF-8, and was passed as text.
+        if shape == "text" and not ArchiveSignatures.opens(bytes(inner[: UnopenedFormats.HEAD])):
+            reason, detail = (
+                Rejection.NOT_AN_ARCHIVE,
+                "named as an archive, it is text no reader opens",
+            )
+        else:
+            reason, detail = Rejection.UNREADABLE, f"a nested archive that would not open: {exc}"
+        rejected.append((member_path, reason, detail))
+
 
 __all__ = ["STREAM_SUFFIXES", "ArchiveSignatures", "CompressedHeader", "UnopenedFormats"]

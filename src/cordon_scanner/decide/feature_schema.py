@@ -89,7 +89,10 @@ class FeatureSchema:
     SAME_AS: ClassVar[dict[str, tuple[str, str]]] = {
         # 56 phase (a), producer 1: the verdict's source facts from the workers (b2d0711f).
         # Identity: test_verdict_facts.py::TestTheVerdictIsIdentical (record, vector, score ==).
-        "fs1-967b9ad44c459750": (
+        # Rows A/B, 1 Nov: a seeded 500-unit npm sample (411 benign, 89 malware) scanned by this tree
+        # and by it without item 56's five commits; 0 differences in 500 on every verdict field and
+        # feature key, findings and exit (outer-layer scratchpad fsab/: base/, new/, compare.py).
+        "fs1-133be8fc1234279d": (
             "fs1-ea0fb02ccf3bb099",
             "tests/unit/decide/test_verdict_facts.py::TestTheVerdictIsIdentical",
         ),

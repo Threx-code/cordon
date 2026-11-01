@@ -488,43 +488,8 @@ class Detection:
                 produced = DetectorClock.timed(
                     detector.id, lambda: list(detector.inspect(unit, ctx))
                 )
-        except TimeoutError as exc:
-            # A detector's own time limit on this file (the rule engine's match timeout): the
-            # file's checks did not finish, which is a time budget, not a detector that broke on
-            # the file. Reported as one, so the report names the cause (item 58: a five-hour host
-            # stall had read as two detector crashes).
-            return [
-                acc.gap(
-                    OperationalFinding.build(
-                        path=getattr(unit, "path", "<graph>"),
-                        rule_id="OPERATIONAL.FILE.TIMEOUT",
-                        message=(
-                            f"Detector {detector.id!r} reached its time limit on this file, so its "
-                            f"checks did not finish: {exc}"
-                        ),
-                        remediation=(
-                            "Rescan with more time (--timeout), or on a less loaded machine; the "
-                            "file was not judged."
-                        ),
-                        severity=Severity.MEDIUM,
-                    )
-                )
-            ]
         except Exception as exc:  # noqa: BLE001
-            return [
-                acc.gap(
-                    OperationalFinding.build(
-                        path=getattr(unit, "path", "<graph>"),
-                        rule_id="OPERATIONAL.DETECTOR.FAILED",
-                        message=(
-                            f"Detector {detector.id!r} failed on this file, so its checks "
-                            f"did not run: {type(exc).__name__}: {exc}"
-                        ),
-                        remediation="Report this with the file that triggered it.",
-                        severity=Severity.MEDIUM,
-                    )
-                )
-            ]
+            return [acc.gap(Detection.failed(detector, unit, exc))]
 
         # The engine asserts that a file detector reports only about the file it
         # was given. A detector that reports about somewhere else is a bug, and
@@ -534,44 +499,7 @@ class Detection:
         # only where it is meaningful. Asserting `unit.path` unconditionally is
         # what made every graph detector crash the scan.
         if isinstance(unit, FileUnit):
-            kept: list[Finding] = []
-            stray: list[Finding] = []
-            for finding in produced:
-                if (
-                    finding.category is not Category.OPERATIONAL
-                    and finding.location.path != unit.path
-                ):
-                    stray.append(finding)
-                else:
-                    kept.append(finding)
-
-            if stray:
-                # Reported and dropped, not raised. This check sat outside the
-                # `try` above, so `DetectorError` propagated out of `scan()` and
-                # terminated the run -- meaning a detector that mislabelled one
-                # finding killed the entire scan on the first file it touched,
-                # inside the very method whose docstring says a broken detector
-                # must not abort anything.
-                kept.append(
-                    acc.gap(
-                        OperationalFinding.build(
-                            path=unit.path,
-                            rule_id="OPERATIONAL.DETECTOR.STRAY_FINDING",
-                            message=(
-                                f"Detector {detector.id!r} reported {len(stray)} finding(s) "
-                                f"about other paths while inspecting this file "
-                                f"({stray[0].location.path!r}). They were discarded."
-                            ),
-                            remediation=(
-                                "Report this. A file detector must report only about the "
-                                "file it was given, or findings cannot be traced to their "
-                                "source."
-                            ),
-                            severity=Severity.MEDIUM,
-                        )
-                    )
-                )
-            produced = kept
+            produced = Detection.kept_in_file(detector, unit, produced, acc)
 
         # A detector that hit a ceiling of its own knows something the engine
         # cannot observe from outside: that it answered fewer questions than it
@@ -580,6 +508,79 @@ class Detection:
         Detection.degraded(produced, acc)
 
         return self.drop_disabled(produced)
+
+    @staticmethod
+    def failed(detector: Detector, unit: Unit, exc: Exception) -> Finding:
+        """What a detector raising on a unit is reported as."""
+        if isinstance(exc, TimeoutError):
+            # A detector's own time limit on this file (the rule engine's match timeout): the
+            # file's checks did not finish, which is a time budget, not a detector that broke on
+            # the file. Reported as one, so the report names the cause (item 58: a five-hour host
+            # stall had read as two detector crashes).
+            return OperationalFinding.build(
+                path=getattr(unit, "path", "<graph>"),
+                rule_id="OPERATIONAL.FILE.TIMEOUT",
+                message=(
+                    f"Detector {detector.id!r} reached its time limit on this file, so its "
+                    f"checks did not finish: {exc}"
+                ),
+                remediation=(
+                    "Rescan with more time (--timeout), or on a less loaded machine; the "
+                    "file was not judged."
+                ),
+                severity=Severity.MEDIUM,
+            )
+        return OperationalFinding.build(
+            path=getattr(unit, "path", "<graph>"),
+            rule_id="OPERATIONAL.DETECTOR.FAILED",
+            message=(
+                f"Detector {detector.id!r} failed on this file, so its checks "
+                f"did not run: {type(exc).__name__}: {exc}"
+            ),
+            remediation="Report this with the file that triggered it.",
+            severity=Severity.MEDIUM,
+        )
+
+    @staticmethod
+    def kept_in_file(
+        detector: Detector, unit: FileUnit, produced: list[Finding], acc: Accumulator
+    ) -> list[Finding]:
+        """The findings about the file inspected, and one gap naming any about other paths."""
+        kept: list[Finding] = []
+        stray: list[Finding] = []
+        for finding in produced:
+            if finding.category is not Category.OPERATIONAL and finding.location.path != unit.path:
+                stray.append(finding)
+            else:
+                kept.append(finding)
+
+        if stray:
+            # Reported and dropped, not raised. This check sat outside the
+            # `try` above, so `DetectorError` propagated out of `scan()` and
+            # terminated the run -- meaning a detector that mislabelled one
+            # finding killed the entire scan on the first file it touched,
+            # inside the very method whose docstring says a broken detector
+            # must not abort anything.
+            kept.append(
+                acc.gap(
+                    OperationalFinding.build(
+                        path=unit.path,
+                        rule_id="OPERATIONAL.DETECTOR.STRAY_FINDING",
+                        message=(
+                            f"Detector {detector.id!r} reported {len(stray)} finding(s) "
+                            f"about other paths while inspecting this file "
+                            f"({stray[0].location.path!r}). They were discarded."
+                        ),
+                        remediation=(
+                            "Report this. A file detector must report only about the "
+                            "file it was given, or findings cannot be traced to their "
+                            "source."
+                        ),
+                        severity=Severity.MEDIUM,
+                    )
+                )
+            )
+        return kept
 
 
 __all__ = ["Detection"]

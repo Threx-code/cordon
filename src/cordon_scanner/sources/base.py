@@ -171,11 +171,11 @@ class Rejection:
     """A member named as an archive that no archive reader opens and that is text (`Dockerfile.conda`):
     scanned as the text it is, so nothing is left unread (item 27, class 7)."""
     COMPRESSED_TRUNCATED = "compressed_truncated"
+    """A lone compressed stream (`dump.sql.gz`, not a tar) that ends before its end marker: every
+    byte it holds was decompressed and read, so nothing is left unread (item 30)."""
     UNSUPPORTED_FORMAT = "unsupported_format"
     """An archive in a format no reader here opens (rar, 7z, cab, ar, cpio, xar, iso, lzip, lzma): its
     contents were not examined, whatever it is called (item 53)."""
-    """A lone compressed stream (`dump.sql.gz`, not a tar) that ends before its end marker: every
-    byte it holds was decompressed and read, so nothing is left unread (item 30)."""
     PADDED = "padded_expansion"
     """A budget reached while the archive expanded past `max_archive_ratio`: what follows the
     padding was not read, and padding is how a payload is put out of a scanner's reach."""
