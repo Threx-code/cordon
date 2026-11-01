@@ -698,6 +698,7 @@ class Units:
     _DEOBFUSCATION_MARKERS: ClassVar[re.Pattern[bytes]] = re.compile(
         rb"while\s*\(\s*!!\[\]\s*\)|\batob\s*\(|\bBuffer\s*\.\s*from\s*\(\s*['\"`][A-Za-z0-9+/=_\-]{16}"
         rb"|fromCharCode\s*\(\s*(?:0x[0-9a-fA-F]+|\d+)\s*,|\xf3\xa0[\x80-\x87]|\xef\xb8[\x80-\x8f]"
+        rb"|fromCharCode|\bBuffer\s*\.\s*from\s*\(\s*[A-Za-z_$]|\.\s*reverse\s*\(\s*\)\s*\.\s*join"
     )
     """Bytes without which no reversal in `core.deobfuscation` applies: most files pay one search."""
 
