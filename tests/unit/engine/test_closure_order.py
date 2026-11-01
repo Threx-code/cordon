@@ -107,10 +107,13 @@ class TestEveryEntryIsFollowed:
                     "version": "1.0.0",
                     "main": "index.js",
                     "bin": {"probe": "bin/cli.js"},
+                    "exports": {".": "./index.js", "./extra": "./extra/entry.js"},
                 }
             ),
             "package/index.js": 'import{a}from"./dist/chunk.js";\nexport default a;\n',
             "package/dist/chunk.js": "export const a = 1;\n",
+            "package/extra/entry.js": 'const x = require("./impl");\nmodule.exports = x;\n',
+            "package/extra/impl.js": "module.exports = 2;\n",
             "package/bin/cli.js": 'const h = require("../lib/helper");\nh();\n',
             "package/lib/helper.js": "module.exports = () => 0;\n",
         }
@@ -132,3 +135,4 @@ class TestEveryEntryIsFollowed:
         closure = {p.split("!", 1)[-1] for ctx in seen for p in ctx.library_closure_paths}
         assert "package/lib/helper.js" in closure  # a bin entry's relative require
         assert "package/dist/chunk.js" in closure  # the main's minified import
+        assert "package/extra/impl.js" in closure  # an exports target's relative require
