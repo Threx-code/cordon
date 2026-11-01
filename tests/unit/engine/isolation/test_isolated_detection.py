@@ -186,6 +186,17 @@ class TestAWorkerStartsNoProcessOfItsOwn:
         assert not starts.exists(), starts.read_text(encoding="utf-8")
 
 
+class TestNothingOutlivesTheScan:
+    def test_the_engine_the_workers_came_from_is_released(self, tmp_path) -> None:
+        from cordon_scanner.engine.parallel import ParallelScanner
+
+        Scanner(Config.default().with_overrides(use_cache=False)).scan(
+            Tree.make(tmp_path / "pkg", ["a.txt"])
+        )
+        # before: it still held the scan's engine, its rules and config, in this process
+        assert ParallelScanner._template_engine is None
+
+
 class TestNoWorkerCanStart:
     def test_it_is_a_scanner_error(self, tmp_path, monkeypatch) -> None:
         from cordon_scanner.engine import engine as engine_module

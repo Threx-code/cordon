@@ -164,6 +164,12 @@ class Engine:
         if self._template is not None:
             self._template.close()
             self._template = None
+        # The engine the template's workers were built from ends with the scan: kept, it held this
+        # engine (its rules and config) in a long-running process, and a later scan whose workers
+        # are spawned could read it.
+        from cordon_scanner.engine.parallel import ParallelScanner
+
+        ParallelScanner._template_engine = None
         # The progress line is a partial line with no newline, so leaving it puts a traceback or
         # an error message on the same row as a half-drawn progress bar.
         self.progress.finish()
