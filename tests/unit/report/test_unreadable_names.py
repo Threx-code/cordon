@@ -6,6 +6,7 @@ sequences into a terminal or a pull request."""
 from __future__ import annotations
 
 import io
+import json
 import tarfile
 import zipfile
 
@@ -49,6 +50,24 @@ class UnreadableNamesKit:
         return path
 
     @staticmethod
+    def links(tmp_path):
+        """A tar holding two link members, one that stays inside and one that climbs out, each name
+        and target with a byte that is not UTF-8 and an escape, beside the file one names."""
+        path = tmp_path / "links-1.0.tar"
+        with tarfile.open(path, "w", format=tarfile.GNU_FORMAT) as tar:
+            for member, target in (
+                ("pkg/in\udca7\x1b", "run.py"),
+                ("pkg/out\udca7", "../../\udcfe\x1bx"),
+            ):
+                info = tarfile.TarInfo(member)
+                info.type, info.linkname = tarfile.SYMTYPE, target
+                tar.addfile(info)
+            info = tarfile.TarInfo("pkg/run.py")
+            info.size = len(PLANT)
+            tar.addfile(info, io.BytesIO(PLANT))
+        return path
+
+    @staticmethod
     def scan(path):
         config = Config.default().with_overrides(use_cache=False)
         return Scanner(config).scan(path)
@@ -77,6 +96,28 @@ class TestANameThatIsNotText:
         assert lines and all(line.startswith("::") for line in lines)  # no line of log text
         assert not any(line.startswith("::error::pwned") for line in lines)  # and no new command
         assert any("a%0A%3A%3Aerror%3A%3Apwned.py" in line for line in lines)  # the name, encoded
+
+    @pytest.mark.parametrize("name", BUILTIN_REPORTERS)
+    def test_a_link_whose_name_and_target_are_not_text(self, tmp_path, name) -> None:
+        """A tar link member: one kept (it stays inside), one refused (it climbs out), each name
+        and target holding a byte that is not UTF-8 and an escape; every report is text."""
+        result = UnreadableNamesKit.scan(UnreadableNamesKit.links(tmp_path))
+        out = b"".join(Registry().reporter(name).render(result, ReportOptions(color=False)))
+        text = out.decode("utf-8")
+        for raw in RAW:
+            assert raw not in text, f"{name} wrote {raw!r} as it is"
+
+    def test_a_link_name_survives_the_fingerprint_the_cache_and_a_strict_encode(
+        self, tmp_path
+    ) -> None:
+        path = UnreadableNamesKit.links(tmp_path)
+        config = Config.default().with_overrides(cache_dir=str(tmp_path / "cache"), use_cache=True)
+        for _ in range(2):  # populate, then serve from the cache
+            result = Scanner(config).scan(path)
+            for finding in result.findings:
+                finding.fingerprint.encode("ascii")
+            json.dumps(result.to_dict(), ensure_ascii=False).encode("utf-8")  # strict
+        assert any(f.rule_id == "OPERATIONAL.ARCHIVE.MEMBER_REJECTED" for f in result.findings)
 
     @pytest.mark.parametrize("make", [UnreadableNamesKit.tarball, UnreadableNamesKit.zipped])
     @pytest.mark.parametrize("name", BUILTIN_REPORTERS)

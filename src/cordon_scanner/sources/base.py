@@ -182,6 +182,8 @@ class RejectedMember:
         # A refused member's name is reported as it came, before normalising, so it is made text
         # here, once, for every one of the places that refuse a member (item 34).
         object.__setattr__(self, "name", Names.text(self.name))
+        # and its detail, which can quote the archive's own text (a link's target)
+        object.__setattr__(self, "detail", Names.text(self.detail))
 
 
 # Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine

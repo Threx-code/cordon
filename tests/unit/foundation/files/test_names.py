@@ -63,6 +63,17 @@ class TestNamesAsText:
         assert ArchiveReader.safe_member_name("pkg/../../\udcff.js") is None
 
 
+class TestALinkIsMeasuredOnTheNormalisedName:
+    def test_an_escaped_byte_never_deepens_a_link(self) -> None:
+        """Measured on the escaped name, `a/b\\xff/l`'s backslash would be a separator: three
+        directories, and `../../../x` judged inside. On the normalised name it climbs out."""
+        name, target = "a/b\udcff/l", "../../../x"
+        normal = ArchiveReader.normalise_member_name(name)
+        assert normal is not None
+        assert not ArchiveReader.link_stays_inside(normal, target)
+        assert ArchiveReader.link_stays_inside(Names.text(normal), target)  # why the order matters
+
+
 @pytest.mark.skipif(
     sys.platform != "linux", reason="a filename that is not UTF-8: Linux file systems only"
 )

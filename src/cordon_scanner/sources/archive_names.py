@@ -12,6 +12,15 @@ from cordon_scanner.foundation.files.names import Names
 class MemberNames:
     @staticmethod
     def safe_member_name(name: str, *, collapse: bool = False) -> str | None:
+        """`normalise_member_name`, made text (`Names.text`): what a member is stored and reported
+        as. Made text after normalising, never before: the `\\` of a `\\xNN` is then never read
+        as a separator, and as no normalised name holds a backslash, no escaped name equals a real
+        one. A check on the path's shape (`link_stays_inside`) takes the normalised form."""
+        normal = MemberNames.normalise_member_name(name, collapse=collapse)
+        return None if normal is None else Names.text(normal)
+
+    @staticmethod
+    def normalise_member_name(name: str, *, collapse: bool = False) -> str | None:
         """Normalise a member name, or return None if it is unsafe.
 
         Rejected: absolute paths, drive letters, any traversal segment, and names
@@ -48,9 +57,7 @@ class MemberNames:
 
         normalised = PurePosixPath(*(p for p in parts if p not in {".", ""}))
         text = str(normalised)
-        # Made text after normalising, never before: the `\` of a `\xNN` is then never read as a
-        # separator, and no member name holds a backslash, so no escaped name equals a real one.
-        return None if text in {".", ""} else Names.text(text)
+        return None if text in {".", ""} else text
 
     @staticmethod
     def link_stays_inside(member: str, target: str, *, hard: bool = False) -> bool:

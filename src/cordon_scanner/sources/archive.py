@@ -35,6 +35,7 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.foundation.errors import ArchiveError
+from cordon_scanner.foundation.files.names import Names
 from cordon_scanner.foundation.files.spill import Spill, SpilledBytes
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS, Limits
 from cordon_scanner.sources.archive_names import MemberNames
@@ -161,6 +162,7 @@ class ArchiveReader:
         return any(lowered.endswith(suffix) for suffix in ARCHIVE_SUFFIXES)
 
     safe_member_name = staticmethod(MemberNames.safe_member_name)
+    normalise_member_name = staticmethod(MemberNames.normalise_member_name)
     link_stays_inside = staticmethod(MemberNames.link_stays_inside)
 
     @staticmethod
@@ -451,10 +453,11 @@ class ArchiveReader:
         if info.is_dir():
             return
 
-        safe = ArchiveReader.safe_member_name(
+        normal = ArchiveReader.normalise_member_name(
             info.filename, collapse=not ArchiveReader._links_seen(result)
         )
-        if safe is None:
+        safe = None if normal is None else Names.text(normal)
+        if normal is None or safe is None:
             result.rejected.append(
                 RejectedMember(
                     info.filename,
@@ -476,7 +479,9 @@ class ArchiveReader:
                     target = archive.read(info).decode("utf-8", "replace")
                 except (zipfile.BadZipFile, OSError, ValueError, RuntimeError):
                     target = ""
-            if ArchiveReader.link_stays_inside(safe, target):
+            # measured on the normalised name, not the escaped one: a `\\xNN`'s backslash read as a
+            # separator would deepen the link and let `../../../x` pass as inside
+            if ArchiveReader.link_stays_inside(normal, target):
                 result.links.append(safe)
                 return
             result.rejected.append(
@@ -558,7 +563,7 @@ class ArchiveReader:
         # can redirect it outside the archive entirely.
         if member.issym() or member.islnk():
             if ArchiveReader.link_stays_inside(member.name, member.linkname, hard=member.islnk()):
-                result.links.append(member.name)
+                result.links.append(Names.text(member.name))
                 return
             result.rejected.append(
                 RejectedMember(
