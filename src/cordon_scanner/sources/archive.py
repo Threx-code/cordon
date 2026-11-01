@@ -163,6 +163,7 @@ class ArchiveReader:
 
     safe_member_name = staticmethod(MemberNames.safe_member_name)
     normalise_member_name = staticmethod(MemberNames.normalise_member_name)
+    not_an_archive = staticmethod(MemberNames.not_an_archive)
     link_stays_inside = staticmethod(MemberNames.link_stays_inside)
 
     @staticmethod
@@ -621,6 +622,25 @@ class ArchiveReader:
         )
 
     @staticmethod
+    def _unopened(
+        member_path: str, inner: bytes, exc: ArchiveError, rejected: list[tuple[str, str, str]]
+    ) -> None:
+        """A nested member named as an archive that would not open, refused as unread; unless no
+        reader opens it and there is nothing to open: 0 bytes hold nothing (class 8, no refusal),
+        and text is scanned as the text it is (class 7, said, complete; item 27)."""
+        shape = ArchiveReader.not_an_archive(inner)
+        if shape == "empty":
+            return
+        if shape == "text":
+            reason, detail = (
+                Rejection.NOT_AN_ARCHIVE,
+                "named as an archive, it is text no reader opens",
+            )
+        else:
+            reason, detail = Rejection.UNREADABLE, f"a nested archive that would not open: {exc}"
+        rejected.append((member_path, reason, detail))
+
+    @staticmethod
     def member_limit(limits: Limits) -> int:
         """The largest member a declared size may be refused at, and the largest nested archive
         opened in memory. A member past it is not refused for its size: past `max_file_bytes` every
@@ -918,13 +938,7 @@ class ArchiveReader:
                     # (a cut stream, a corrupt index, zstd with a dictionary): only zstd was
                     # reported before, and a cut tgz passed as a scanned file.
                     if rejected is not None:
-                        rejected.append(
-                            (
-                                member_path,
-                                Rejection.UNREADABLE,
-                                f"a nested archive that would not open: {exc}",
-                            )
-                        )
+                        ArchiveReader._unopened(member_path, inner, exc, rejected)
 
             yield member_path, member.data
 

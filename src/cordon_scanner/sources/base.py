@@ -167,6 +167,9 @@ class Rejection:
     NAME = "unsafe_name"
     POLYGLOT = "polyglot_archive"
     HIDDEN = "hidden_zip_member"
+    NOT_AN_ARCHIVE = "not_an_archive"
+    """A member named as an archive that no archive reader opens and that is text (`Dockerfile.conda`):
+    scanned as the text it is, so nothing is left unread (item 27, class 7)."""
     PADDED = "padded_expansion"
     """A budget reached while the archive expanded past `max_archive_ratio`: what follows the
     padding was not read, and padding is how a payload is put out of a scanner's reach."""

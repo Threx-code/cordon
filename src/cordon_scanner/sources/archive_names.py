@@ -1,9 +1,12 @@
-"""An archive member's name, made safe and made text, and the shape of a link member: the
-name-level half of `sources/archive.py`'s `ArchiveReader`, which keeps them under their old names
-(moved for the module's length, item 34)."""
+"""An archive member's name, made safe and made text, the shape of a link member, and whether a
+member named as an archive is one: the name-level half of `sources/archive.py`'s `ArchiveReader`,
+which keeps them under their old names (items 34 and 27)."""
 
 from __future__ import annotations
 
+import io
+import tarfile
+import zipfile
 from pathlib import PurePosixPath
 
 from cordon_scanner.foundation.files.names import Names
@@ -58,6 +61,40 @@ class MemberNames:
         normalised = PurePosixPath(*(p for p in parts if p not in {".", ""}))
         text = str(normalised)
         return None if text in {".", ""} else text
+
+    #: Headers a reader decompresses or opens whatever the name says: gzip, bzip2, xz, zstd, lz4, 7z.
+    _OPENED_HEADERS: tuple[bytes, ...] = (
+        b"\x1f\x8b",
+        b"BZh",
+        b"\xfd7zXZ\x00",
+        b"\x28\xb5\x2f\xfd",
+        b"\x04\x22\x4d\x18",
+        b"7z\xbc\xaf\x27\x1c",
+    )
+
+    @staticmethod
+    def not_an_archive(data: bytes) -> str | None:
+        """ "empty" for 0 bytes, "text" for bytes that every archive reader declines and that are
+        text, else None (an archive that would not open, which stays refused). Declined by all
+        three, never by the first bytes alone: a zip's directory is at its end and a zip may carry
+        any prefix (a self-extracting stub, a polyglot), so `zipfile.is_zipfile` reads the tail."""
+        if not data:
+            return "empty"
+        if zipfile.is_zipfile(io.BytesIO(data)):
+            return None
+        if data[257:262] == b"ustar" or data.startswith(MemberNames._OPENED_HEADERS):
+            return None
+        try:
+            with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as tar:
+                if tar.next() is not None:
+                    return None  # an old-style tar header reads
+        except (tarfile.TarError, EOFError, OSError, ValueError):
+            pass
+        try:
+            data.decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+        return "text"
 
     @staticmethod
     def link_stays_inside(member: str, target: str, *, hard: bool = False) -> bool:

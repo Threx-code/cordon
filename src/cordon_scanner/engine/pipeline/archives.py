@@ -126,7 +126,23 @@ class ArchiveMembers:
         ):
             escape = reason != Rejection.DEPTH
             return ArchiveMembers.escape_or_nesting(path, reason, detail, escape)
+        if reason == Rejection.NOT_AN_ARCHIVE:
+            return ArchiveMembers.not_an_archive(path)
         return ArchiveMembers.not_examined(path, reason, detail)
+
+    @staticmethod
+    def not_an_archive(path: str) -> Finding:
+        """A member named as an archive that is text no archive reader opens, scanned as text."""
+        return OperationalFinding.build(
+            path=path,
+            rule_id="OPERATIONAL.ARCHIVE.NOT_AN_ARCHIVE",
+            message=(
+                "This member is named as an archive, but no archive reader opens it and it is "
+                "text, so it was scanned as the text it is."
+            ),
+            remediation="No action needed.",
+            severity=Severity.INFO,
+        )
 
     @staticmethod
     def not_examined(path: str, reason: str, detail: str) -> Finding:

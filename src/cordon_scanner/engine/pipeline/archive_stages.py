@@ -190,12 +190,19 @@ class ArchiveStages:
             # A link has no content of its own, and a hidden zip member is read from its local
             # header (`zip-local/`): neither refusal leaves anything unread. A hidden member that
             # could not be read carries a refusal of its own (unreadable, or past the size limit).
-            acc.complete = acc.complete and reason in (Rejection.LINK, Rejection.HIDDEN)
+            # Text named as an archive was scanned as text (item 27, class 7): nothing unread.
+            acc.complete = acc.complete and reason in (
+                Rejection.LINK,
+                Rejection.HIDDEN,
+                Rejection.NOT_AN_ARCHIVE,
+            )
             finding = ArchiveMembers.rejected(member_path, reason, detail, image=image is not None)
             acc.append(finding)
-            if reason not in (Rejection.LINK, Rejection.HIDDEN) and not finding.rule_id.startswith(
-                "OPERATIONAL."
-            ):
+            if reason not in (
+                Rejection.LINK,
+                Rejection.HIDDEN,
+                Rejection.NOT_AN_ARCHIVE,
+            ) and not finding.rule_id.startswith("OPERATIONAL."):
                 # The attack is reported; that the member went unread is said too.
                 acc.append(ArchiveMembers.not_examined(member_path, reason, detail))
 
