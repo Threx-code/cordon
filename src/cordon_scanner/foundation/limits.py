@@ -131,7 +131,14 @@ class Limits:
     """Wall clock for the entire scan. On expiry the engine emits a partial
     result with ``complete=False`` rather than aborting: a partial result a human
     can act on is worth more than a stack trace, and marking it partial is what
-    stops it being mistaken for a pass."""
+    stops it being mistaken for a pass.
+
+    A backstop, not a budget: it depends on the machine's load, so it is the one
+    place a scan's answer can, on a starved machine, change with load, and then
+    only to incomplete (``OPERATIONAL.SCAN.TIMEOUT``), never to a pass. Real scans
+    sit well inside it: the heaviest measured unit, Sifchain/sifnode (7,230
+    dependencies), takes 124 s quiet on one core, 14% of 900 s (2026-10-31); the
+    same unit took 1,369 s on a heavily loaded machine."""
 
     # -- Archives ----------------------------------------------------------
     max_archive_ratio: int = 200
