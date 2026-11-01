@@ -252,6 +252,21 @@ class Taint(Sinks):
                     if target is not None:
                         calls.append((k, target))
                         k = self.match[k + 1]
+                    elif what == "ref" and self.is_p(k + 1, ".") and self.is_name(k + 2):
+                        # A member read `x.g`: x's own labels and its field g's, never another
+                        # field's (item 59). `name.` marks x's own labels without its fields; a
+                        # parameter's field is its own label, resolved at each call (`Calls`).
+                        field = str(self.t[k + 2].value)
+                        root = self.canonical(resolved)
+                        param = self._param_index(root)
+                        if param is not None:
+                            labels.add(("Q", root[0], param, field))
+                            refs.append((root[0], root[1] + ".-"))
+                        else:
+                            refs.append((root[0], root[1] + "."))
+                        refs.append((root[0], f"{root[1]}.{field}"))
+                        if resolved != root:
+                            refs.append((resolved[0], resolved[1] + "."))
                     else:
                         refs.append(resolved)
             k += 1
@@ -288,9 +303,36 @@ class Taint(Sinks):
             raise _OverBudget
         out: set[Label] = set(labels)
         for ref in refs:
+            if ref[1].endswith(".-"):
+                # A parameter's own labels without its whole-parameter label: its field read
+                # carries ("Q", ...) instead.
+                own = (ref[0], ref[1][:-2])
+                got = self.vars.get(own)
+                if got:
+                    out |= {
+                        x
+                        for x in got
+                        if not (isinstance(x, tuple) and x[0] == "P" and x[1] == own[0])
+                    }
+                continue
+            if ref[1].endswith("."):
+                got = self.vars.get((ref[0], ref[1][:-1]))
+                if got:
+                    out |= got
+                continue
             got = self.vars.get(ref)
             if got:
                 out |= got
+            root = self.canonical(ref)
+            if root != ref:
+                got = self.vars.get(root)
+                if got:
+                    out |= got
+            for field in self.fields.get(root, ()):
+                # A whole use of x (`send(x)`, `JSON.stringify(x)`, `{...x}`) carries every field.
+                got = self.vars.get(field)
+                if got:
+                    out |= got
         for k, target in calls:
             out |= self._call_return(k, target, scope)
         for k, close in reads:
@@ -306,7 +348,10 @@ class Taint(Sinks):
         fn = self.fns[target - 1]
         out: set[Label] = set()
         for label in fn.ret:
-            if isinstance(label, tuple) and label[1] == fn.fid:
+            if isinstance(label, tuple) and label[0] == "Q" and label[1] == fn.fid:
+                if label[2] < len(args):
+                    out |= self.arg_field(args[label[2]], label[3], scope)
+            elif isinstance(label, tuple) and label[1] == fn.fid:
                 if label[2] < len(args):
                     s, e = args[label[2]]
                     value = self.taint(s, e, scope)
@@ -314,6 +359,33 @@ class Taint(Sinks):
             else:
                 out.add(label)
         return out
+
+    def _param_index(self, key: tuple[int, str]) -> int | None:
+        """The parameter position of `key` when it is a parameter of its own scope's function."""
+        if key[0] <= 0 or key[0] > len(self.fns):
+            return None
+        params = self.fns[key[0] - 1].params
+        return params.index(key[1]) if key[1] in params else None
+
+    def arg_field(self, arg: tuple[int, int], field: str, scope: int) -> set[Label]:
+        """What an argument's field `field` carries at a call: an object literal's key (nothing when
+        it has no such key), a variable's field and its own labels, or the whole argument when its
+        shape is unknown (item 59)."""
+        s, e = arg
+        if self.is_p(s, "{") and self.match[s] == e - 1:
+            entries = self.literal_entries(s, e)
+            if entries is not None:
+                out: set[Label] = set()
+                for key, vs, ve in entries:
+                    if key == field:
+                        out |= self.taint(vs, ve, scope)
+                return out
+        elif e - s == 1 and self.is_name(s):
+            root = self.canonical(self.resolve(str(self.t[s].value), scope))
+            out = set(self.vars.get(root, set()))
+            out |= self.vars.get((root[0], f"{root[1]}.{field}"), set())
+            return out
+        return self.taint(s, e, scope)
 
     def _registry_template(self, k: int) -> bool:
         """Whether the registry host at string `k` begins a package tarball URL: `/-/` and `.tgz`

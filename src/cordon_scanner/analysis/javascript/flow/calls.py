@@ -186,6 +186,15 @@ class Calls(Taint):
         if target is not None:
             fn = self.fns[target - 1]
             for (how, idx), sinks in list(fn.sinks.items()):
+                if how == "Q":
+                    # A parameter's field reaching a sink: this call's argument's field (item 59).
+                    position, field = idx
+                    if position >= len(args):
+                        continue
+                    value = self.arg_field(args[position], field, scope)
+                    for sink, host, dest, line in sinks:
+                        changed |= self._record(value, sink, host, dest, line, scope)
+                    continue
                 if idx >= len(args):
                     continue
                 value = self.taint(args[idx][0], args[idx][1], scope)
@@ -482,16 +491,27 @@ class Calls(Taint):
     ) -> bool:
         """`new C(a, b)` or `obj.m(a, b)`: the fields C's constructor (or method `m`) set from its
         parameters get `a` and `b`. One instance per class, as one `this` per class is."""
-        instance = self.vars.get((-c, "this"))
-        if method is None or not instance:
+        if method is None:
             return False
-        value: set[Label] = set()
-        for label in list(instance):
-            if isinstance(label, tuple) and label[1] == method and label[2] < len(args):
+        changed = False
+        # The instance itself and each field the class stores into (item 59): each gets what its
+        # own parameter labels stand for here, so `this.command = command` fills this.command only.
+        for key in ((-c, "this"), *self.fields.get((-c, "this"), ())):
+            held = self.vars.get(key)
+            if not held:
+                continue
+            value: set[Label] = set()
+            for label in list(held):
+                if not (isinstance(label, tuple) and label[1] == method and label[2] < len(args)):
+                    continue
+                if label[0] == "Q":
+                    value |= self.arg_field(args[label[2]], label[3], scope)
+                    continue
                 s, e = args[label[2]]
                 got = self.taint(s, e, scope)
                 value |= Taint.read_of(got) if label[0] == "R" else got
-        return self._grow(instance, value)
+            changed |= self._grow(held, value)
+        return changed
 
     def _receiver_taint(self, first: int, k: int, scope: int) -> set[Label]:
         """The taint of what a method is called on: `read(p)` in `read(p).then(...)`, `x` in `x.on(...)`."""
@@ -550,7 +570,8 @@ class Calls(Taint):
             if isinstance(x, tuple):
                 fn = self.fns[x[1] - 1]
                 entry = (sink, host, dest, line)
-                have = fn.sinks.setdefault((x[0], x[2]), set())
+                slot = (x[0], (x[2], x[3])) if x[0] == "Q" else (x[0], x[2])
+                have = fn.sinks.setdefault(slot, set())
                 if entry not in have:
                     have.add(entry)
                     changed = True

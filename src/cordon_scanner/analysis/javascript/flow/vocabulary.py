@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Final
+from typing import Any, Final
 
 #: Files above this are not analysed: bundles of that size are third-party code concatenated, and
 #: the analysis is linear but not free.
@@ -341,8 +341,9 @@ class _Fn:
     #: A method written in a class body (`load() {...}`): its `this` is that class's instance.
     method: bool = False
     ret: set[object] = field(default_factory=set)
-    #: ("P" | "R", parameter index) -> sinks it reaches: the parameter itself, or a file read at it.
-    sinks: dict[tuple[str, int], set[tuple[str, str | None, str, int]]] = field(
+    #: ("P" | "R", parameter index) -> sinks it reaches: the parameter itself, or a file read at it;
+    #: ("Q", (parameter index, field)) -> sinks one field of the parameter reaches (item 59).
+    sinks: dict[tuple[str, Any], set[tuple[str, str | None, str, int]]] = field(
         default_factory=dict
     )
 
@@ -352,5 +353,6 @@ class _OverBudget(Exception):
 
 
 Label = (
-    object  # a source kind (str), a parameter ("P", fid, i), or a file read at one ("R", fid, i)
+    object  # a source kind (str), a parameter ("P", fid, i), a file read at one ("R", fid, i), or
+    # one field of a parameter ("Q", fid, i, field) (item 59)
 )
