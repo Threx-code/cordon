@@ -21,7 +21,6 @@ from cordon_scanner.detect.registry import ComposerPluginHooks, ServerSources
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.engine.entries import PackageEntries
 from cordon_scanner.engine.package_format import PackageFormat
-from cordon_scanner.engine.parallel import ParallelScanner
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.archives import ArchiveMembers
 from cordon_scanner.engine.pipeline.ceilings import Ceilings
@@ -265,41 +264,37 @@ class ArchiveStages:
         content_detectors = [
             d for d in detectors if not (d.requires.dependencies and d.requires.content is False)
         ]
-        workers = ParallelScanner.worker_count(
-            self.config.limits.max_workers, len(units), sum(len(u.content.raw) for u in units)
-        )
-        if workers > 1:
-            from cordon_scanner.engine.cache import CacheSignature
+        # Always in supervised workers, one as readily as many (item 28): a member that kills or
+        # hangs its worker costs that member; this process never inspects one.
+        from cordon_scanner.engine.cache import CacheSignature
 
-            signature = CacheSignature.scan_signature(content_detectors, ctx, self.config)
-            for start in range(0, len(units), ARCHIVE_SLICE):
-                if self.config.limits.total_timeout > 0 and time.monotonic() > deadline:
-                    acc.incomplete(
-                        OperationalFinding.build(
-                            path=path.name,
-                            rule_id="OPERATIONAL.SCAN.TIMEOUT",
-                            message=f"The {self.config.limits.total_timeout:.0f}s budget was reached with members still unexamined.",
-                            remediation="Raise --timeout, or unpack and scan as a directory.",
-                            severity=Severity.MEDIUM,
-                        )
+        signature = CacheSignature.scan_signature(content_detectors, ctx, self.config)
+        for start in range(0, len(units), ARCHIVE_SLICE):
+            if self.config.limits.total_timeout > 0 and time.monotonic() > deadline:
+                acc.incomplete(
+                    OperationalFinding.build(
+                        path=path.name,
+                        rule_id="OPERATIONAL.SCAN.TIMEOUT",
+                        message=f"The {self.config.limits.total_timeout:.0f}s budget was reached with members still unexamined.",
+                        remediation="Raise --timeout, or unpack and scan as a directory.",
+                        severity=Severity.MEDIUM,
                     )
-                    break
-                found = self.engine.detection.parallel(
-                    units[start : start + ARCHIVE_SLICE],
-                    path.parent,
-                    ctx,
-                    acc,
-                    content_detectors,
-                    signature,
-                    carry_content=True,
-                    where=path.name,
                 )
-                acc.add(found)
-                if any(f.rule_id == "OPERATIONAL.SCAN.TIMEOUT" for f in found):
-                    break  # the pool stopped at the budget and said so; no slice after it
-            units_left: list[FileUnit] = []
-        else:
-            units_left = units
+                break
+            found = self.engine.detection.parallel(
+                units[start : start + ARCHIVE_SLICE],
+                path.parent,
+                ctx,
+                acc,
+                content_detectors,
+                signature,
+                carry_content=True,
+                where=path.name,
+            )
+            acc.add(found)
+            if any(f.rule_id == "OPERATIONAL.SCAN.TIMEOUT" for f in found):
+                break  # the pool stopped at the budget and said so; no slice after it
+        units_left: list[FileUnit] = []
         return detectors, units_left
 
     def serial(

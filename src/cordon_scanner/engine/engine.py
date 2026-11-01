@@ -122,6 +122,8 @@ class Engine:
         # True while the scan TARGET is an archive, where its members' lockfiles are
         # the package's own graph rather than a vendored artefact's.
         self._scanning_archive = False
+        #: The template this scan's workers are forked from (`scan`), while a scan runs.
+        self._template: Any = None
         self.coverage = Coverage(self)
         self.stages = ScanStages(self)
         self.archive_stages = ArchiveStages(self)
@@ -140,6 +142,8 @@ class Engine:
     def scan(self, target: str | Path) -> ScanResult:
         """Scan a target and return a complete, sorted result."""
         self._begin_scan()
+        # Before anything is read: the template every worker is forked from holds no scanned byte.
+        self._template = self._start_template()
         try:
             return Collector.during(self._scan, target)  # foundation/collector: GC relaxed
         finally:
@@ -156,6 +160,16 @@ class Engine:
 
     def _end_scan(self) -> None:
         """What one scan holds is let go when it ends, whether it returned or raised."""
+        # The template this scan's workers were forked from (a host scan starts none, so it is None).
+        if self._template is not None:
+            self._template.close()
+            self._template = None
+        # The engine the template's workers were built from ends with the scan: kept, it held this
+        # engine (its rules and config) in a long-running process, and a later scan whose workers
+        # are spawned could read it.
+        from cordon_scanner.engine.parallel import ParallelScanner
+
+        ParallelScanner._template_engine = None
         # The progress line is a partial line with no newline, so leaving it puts a traceback or
         # an error message on the same row as a half-drawn progress bar.
         self.progress.finish()
@@ -166,6 +180,21 @@ class Engine:
         # listed: cleared in place, since the units and dependency stages hold them.
         self._expansions.clear()
         self._sbom_listed.clear()
+
+    def _start_template(self) -> Any:
+        """The scan's template (`engine/isolation/template.py`), forked now, or None where workers
+        are spawned instead: a platform without fork, or a process not single-threaded here (a
+        fork can leave another thread's lock held for good in the child)."""
+        import threading
+
+        from cordon_scanner.engine.isolation.supervisor import WorkerMain
+        from cordon_scanner.engine.isolation.template import Template
+        from cordon_scanner.engine.parallel import ParallelScanner
+
+        if not Template.available() or threading.active_count() != 1:
+            return None
+        ParallelScanner._template_engine = self
+        return Template.start(WorkerMain.from_template)
 
     def scan_host(self, root: str | Path, home: str | Path | None = None) -> ScanResult:
         """What an installed system holds (advanced gap M7): its distribution's packages and the

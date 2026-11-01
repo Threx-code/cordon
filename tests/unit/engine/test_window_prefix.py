@@ -59,19 +59,26 @@ class WindowedKit:
     @staticmethod
     def parsed_sizes(tmp_path, monkeypatch: pytest.MonkeyPatch, text: str) -> list[int]:
         """The length of every text a scan actually parses (not withheld), the file named so no
-        ecosystem reads it as a manifest."""
-        sizes: list[int] = []
+        ecosystem reads it as a manifest. Parsing happens in the detection worker (item 28), so
+        each parse is recorded where this process can read it afterwards: a file outside the
+        scanned tree, one line per parse."""
+        record = tmp_path / "parsed.txt"
         parse = PythonSyntax.parse
 
         def counted(source, *a, **k):
             # (no store at all on a tree without withholding: every parse counts)
             if getattr(PythonSyntax, "_WITHHELD", {}).get(id(source)) is not source:
-                sizes.append(len(source))
+                with record.open("a", encoding="utf-8") as out:
+                    out.write(f"{len(source)}\n")
             return parse(source, *a, **k)
 
         monkeypatch.setattr(PythonSyntax, "parse", staticmethod(counted))
-        WindowedKit.scan(tmp_path, text, name="module.py")
-        return sizes
+        scanned = tmp_path / "scanned"
+        scanned.mkdir()
+        WindowedKit.scan(scanned, text, name="module.py")
+        return (
+            [int(n) for n in record.read_text(encoding="utf-8").split()] if record.exists() else []
+        )
 
 
 class TestTheWithholding:

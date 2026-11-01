@@ -21,7 +21,6 @@ from cordon_scanner.detect.base import (
 )
 from cordon_scanner.detect.registry import ComposerPluginHooks, ServerSources
 from cordon_scanner.engine.cache import CacheSignature
-from cordon_scanner.engine.parallel import MAX_CARRIED_BYTES, ParallelScanner
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.ceilings import Ceilings
 from cordon_scanner.engine.pipeline.constants import REPOSITORY_SCOPE
@@ -185,45 +184,26 @@ class ScanStages:
 
         # A source whose bytes are not what is on disk cannot have its files
         # re-read by a worker: a staged scan would examine the working tree
-        # instead of the index. Such a source is parallelised by sending the
-        # bytes the parent already read, so the worker reads nothing at all.
-        #
-        # Bounded by `MAX_CARRIED_BYTES`: above that the scan stays serial
-        # rather than pickling an unbounded amount of a repository into a pool.
+        # instead of the index. Such a source sends the worker the bytes the
+        # parent already read, so the worker reads nothing at all. Units go
+        # to a worker one at a time, so a file's bytes cross once and no batch
+        # holds a repository's worth of them.
         carry_content = not self.source.parallel_safe
-        carried_bytes = sum(len(u.content.raw) for u in units) if carry_content else 0
-        parallelisable = not carry_content or carried_bytes <= MAX_CARRIED_BYTES
-        workers = (
-            ParallelScanner.worker_count(
-                self.config.limits.max_workers,
-                len(units),
-                carried_bytes if carry_content else sum(u.content.size for u in units),
-            )
-            if parallelisable
-            else 1
-        )
         self.progress.phase("scanning", total=len(units))
         with self.engine._sealed_scan():
-            if workers > 1:
-                acc.add(
-                    self.engine.detection.parallel(
-                        units,
-                        root,
-                        ctx,
-                        acc,
-                        file_detectors,
-                        signature,
-                        carry_content=carry_content,
-                    )
+            # Always in supervised workers, one as readily as many (item 28): a file that kills or
+            # hangs its worker costs that file; this process never inspects one.
+            acc.add(
+                self.engine.detection.parallel(
+                    units,
+                    root,
+                    ctx,
+                    acc,
+                    file_detectors,
+                    signature,
+                    carry_content=carry_content,
                 )
-            else:
-                for unit in units:
-                    acc.add(
-                        self.engine.detection.inspect_file(
-                            unit, ctx, acc, file_detectors, signature
-                        )
-                    )
-                    self.progress.advance(unit.path)
+            )
             acc.add(ReleaseChecks.unexamined_install_code(acc.findings, ctx))
             acc.add(ReleaseChecks.native_code_in_a_pure_wheel(units, ctx))
             acc.add(ReleaseChecks.known_malicious_release(units, ctx))

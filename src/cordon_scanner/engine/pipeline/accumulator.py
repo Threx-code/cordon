@@ -109,6 +109,15 @@ class Accumulator:
         self.complete = False
         self._gap(rule, path)
 
+    def absorb(self, complete: bool, gaps: tuple[tuple[str, str], ...]) -> None:
+        """A worker's verdict on one unit, as this accumulator's own (item 28): the worker inspected
+        the unit through `Detection.run` into an accumulator of its own, and its completeness and
+        gaps cross back as data. One implementation, so the two processes cannot disagree."""
+        if not complete:
+            self.complete = False
+        for rule, path in gaps:
+            self._gap(rule, path)
+
     def _gap(self, rule: str, path: str) -> None:
         # Once per (rule, path): a finding both reported-incomplete and passed to `incomplete` is
         # one gap, not two.

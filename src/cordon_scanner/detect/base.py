@@ -301,6 +301,11 @@ class FileUnit:
     content: FileContent
     language: str | None = None
     project: str | None = None
+    opens: str | None = None
+    """The path that opens this file on disk, where it was read from one (a walked file); None for
+    content with no file of its own (an archive member, a hook's inline program). Never `path`: a
+    name that is not text is shown escaped (`Names.text`), and no file has the escaped name, so
+    anything that reads the file again (a supervised worker, item 28) opens it by this."""
 
     @property
     def path(self) -> str:
