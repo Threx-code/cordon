@@ -116,15 +116,19 @@ class StatementTrees:
     def each(text: str, spans: list[tuple[int, int]]) -> Iterator[tuple[ast.Module, TreeIndex]]:
         """Each statement's tree with its index, which the caller keeps alive while it reads the
         tree (the index is what makes the reading depth-first) and releases after. A piece's copy
-        is freed before the next is made."""
+        is freed before the next is made. Lines are counted as the spans advance, so the module is
+        scanned for newlines once, not once per statement (outer-layer review of 41560302)."""
+        counted, line = 0, 0
         for start, end in spans:
+            line += text.count("\n", counted, start)
+            counted = start
             piece = text[start:end]
             if not piece.strip():
                 continue
             tree = PythonSyntax.parse(piece)
             del piece
-            # Statements start at a line's start (`PythonStatements.starts`): only the line moves.
-            ast.increment_lineno(tree, text.count("\n", 0, start))
+            # Statements start at a line's start (`StatementScan.starts`): only the line moves.
+            ast.increment_lineno(tree, line)
             yield tree, TreeIndex.build(tree)
 
     @staticmethod

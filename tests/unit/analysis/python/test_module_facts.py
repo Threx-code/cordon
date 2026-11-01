@@ -9,6 +9,7 @@ import ast
 import gc
 import itertools
 import textwrap
+import time
 import tracemalloc
 from collections.abc import Callable
 from typing import ClassVar
@@ -220,6 +221,38 @@ class TestTheRoute:
     def test_a_module_that_does_not_parse_raises_as_the_whole_does(self) -> None:
         with pytest.raises(SyntaxError):
             ModuleFacts.build("x = 1\n" * 10 + "def (:\n")
+
+
+class TestCost:
+    def test_lines_are_counted_once_not_once_per_statement(self) -> None:
+        """Each statement's line was counted from the module's start: over k statements about n·k/2
+        characters (outer-layer review). Four times the statements must cost about four times the
+        CPU, not sixteen (process time as a ratio, never wall time)."""
+        small = "".join(f"v{i} = {i}\n" for i in range(10_000))
+        large = "".join(f"v{i} = {i}\n" for i in range(40_000))
+        spans_small, spans_large = StatementTrees.pieces(small), StatementTrees.pieces(large)
+        assert spans_small is not None and spans_large is not None
+
+        def cpu(text: str, spans: list[tuple[int, int]]) -> float:
+            best = float("inf")
+            for _ in range(3):
+                started = time.process_time()
+                for _tree, index in StatementTrees.each(text, spans):
+                    StatementTrees.release(index)
+                best = min(best, time.process_time() - started)
+            return best
+
+        assert cpu(large, spans_large) < 6 * max(cpu(small, spans_small), 0.002)
+
+    def test_lines_stay_the_file_s(self) -> None:
+        text = "x = 1\n\n\ny = 2\nz = [\n3]\nw = 4\n"
+        spans = StatementTrees.pieces(text)
+        assert spans is not None
+        lines = []
+        for tree, index in StatementTrees.each(text, spans):
+            lines.append(tree.body[0].lineno)
+            StatementTrees.release(index)
+        assert lines == [1, 4, 5, 7]
 
 
 class TestPeak:
