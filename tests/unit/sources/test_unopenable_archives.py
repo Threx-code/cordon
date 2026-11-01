@@ -30,11 +30,20 @@ class FormatKit:
         return bytes(block) + FILL
 
     @staticmethod
-    def ar() -> bytes:
-        header = (
-            b"debian-binary   " + b"0           " + b"0     0     100644  " + b"4         " + b"`\n"
-        )
-        return b"!<arch>\n" + header + b"2.0\n" + FILL
+    def ar(members: list[tuple[bytes, bytes]]) -> bytes:
+        """An ar archive: each member behind its 60-byte header, padded to an even offset."""
+        out = b"!<arch>\n"
+        for name, body in members:
+            out += (
+                name.ljust(16) + b"0".ljust(12) + b"0".ljust(6) + b"0".ljust(6) + b"100644".ljust(8)
+            )
+            out += (
+                str(len(body)).encode().ljust(10)
+                + b"`\n"
+                + body
+                + (b"\n" if len(body) % 2 else b"")
+            )
+        return out
 
     #: format -> (bytes, its usual name)
     BLOBS: ClassVar[dict[str, tuple[bytes, str]]] = {
@@ -49,7 +58,7 @@ class FormatKit:
 
     @classmethod
     def blobs(cls) -> dict[str, tuple[bytes, str]]:
-        return {**cls.BLOBS, "ar": (cls.ar(), "payload.deb"), "iso": (cls.iso(), "payload.iso")}
+        return {**cls.BLOBS, "iso": (cls.iso(), "payload.iso")}
 
     @staticmethod
     def package(tmp_path, members: dict[str, bytes]):
@@ -96,10 +105,9 @@ class TestEachFormatIsKnown:
             b"Rar! is how this line of text starts\n",
             b"7z is a format; this is a sentence about it\n",
             b"MSCF is an acronym in this text\n",
-            b"!<arch>\nno member header follows\n",
             b"LZIP is a name in this sentence\n",
         ],
-        ids=["rar", "7z", "cab", "ar", "lzip"],
+        ids=["rar", "7z", "cab", "lzip"],
     )
     def test_a_near_miss_is_not_an_archive(self, data: bytes) -> None:
         assert UnopenedFormats.format_of(data) is None
@@ -176,3 +184,76 @@ class TestNotExpandedIsTheOperatorsChoice:
         )
         result = Scanner(config).scan(root)
         assert not any(rule == GAP for rule, _ in result.content_gaps)
+
+
+class TestArIsRead:
+    """ar is read, not gapped: 22 of the 29 benign npm units with an unopenable-looking member ship a
+    static library (the benign cost, 1 Nov), and a .deb is ar around tars the readers open."""
+
+    PLANT = TestLzmaIsReadNotGapped.PLANT
+
+    def test_a_static_library_is_read_and_complete(self, tmp_path) -> None:
+        library = FormatKit.ar(
+            [
+                (b"/", b"\x00" * 8),
+                (b"a.o/", b"\x7fELF" + b"\x00" * 60),
+                (b"b.o/", b"\x7fELF" + b"\x00" * 61),
+            ]
+        )
+        result = FormatKit.package(tmp_path, {"package/lib/libdemo.a": library})
+        assert result.content_complete, result.content_gaps
+
+    def test_a_deb_s_data_tar_is_reached(self, tmp_path) -> None:
+        data = io.BytesIO()
+        with tarfile.open(fileobj=data, mode="w:gz") as tar:
+            info = tarfile.TarInfo("./usr/lib/demo/install.py")
+            info.size = len(self.PLANT)
+            tar.addfile(info, io.BytesIO(self.PLANT))
+        deb = FormatKit.ar([(b"debian-binary/", b"2.0\n"), (b"data.tar.gz/", data.getvalue())])
+        result = FormatKit.package(tmp_path, {"package/vendor/demo.deb": deb})
+        paths = sorted(
+            {f.location.path for f in result.findings if f.rule_id == "SUSPECT.DECODE_EXEC.001"}
+        )
+        assert any(p.endswith("demo.deb!data.tar.gz!usr/lib/demo/install.py") for p in paths), paths
+
+    def test_a_long_name_is_read(self, tmp_path) -> None:
+        table = b"a_member_name_longer_than_sixteen.py/\n"
+        archive = FormatKit.ar([(b"//", table), (b"/0", self.PLANT)])
+        result = FormatKit.package(tmp_path, {"package/lib/libdemo.a": archive})
+        paths = {f.location.path for f in result.findings}
+        assert any(p.endswith("libdemo.a!a_member_name_longer_than_sixteen.py") for p in paths), (
+            paths
+        )
+
+    def test_a_damaged_header_is_a_gap(self, tmp_path) -> None:
+        archive = FormatKit.ar([(b"a.o/", b"\x7fELF" + b"\x00" * 60)]) + b"broken member header" * 4
+        result = FormatKit.package(tmp_path, {"package/lib/libdemo.a": archive})
+        assert not result.content_complete
+
+
+class TestArKeepsTheBounds:
+    """The modelling team's review of note 53's ar change."""
+
+    def test_nesting_through_ar_meets_the_depth_limit(self, tmp_path) -> None:
+        inner = TestArIsRead.PLANT
+        for level in range(10):  # past max_archive_depth (8)
+            inner = FormatKit.ar([(f"l{level}.a/".encode(), inner)])
+        result = FormatKit.package(tmp_path, {"package/lib/deep.a": inner})
+        assert not result.content_complete
+        assert any(rule == "OPERATIONAL.ARCHIVE.MEMBER_REJECTED" for rule, _ in result.content_gaps)
+
+    def test_a_thin_archive_is_scanned_as_the_file_it_is(self, tmp_path) -> None:
+        """A thin archive holds only paths to object files elsewhere: no member to open and nothing
+        unread here; it is scanned as itself, never reported as an archive that opened."""
+        thin = (
+            b"!<thin>\n"
+            + b"/".ljust(16)
+            + b"0".ljust(12)
+            + b"0".ljust(6) * 2
+            + b"644".ljust(8)
+            + b"0".ljust(10)
+            + b"`\n"
+        )
+        result = FormatKit.package(tmp_path, {"package/lib/libthin.a": thin})
+        assert result.content_complete, result.content_gaps
+        assert not any("libthin.a!" in f.location.path for f in result.findings)

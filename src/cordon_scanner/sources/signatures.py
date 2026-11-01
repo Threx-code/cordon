@@ -98,6 +98,8 @@ class ArchiveSignatures:
             return False
         if data.startswith(b"PK\x03\x04"):
             return True
+        if data[:8] == b"!<arch>\n" and data[66:68] == b"`\n":  # ar: a static library, a .deb
+            return True
         if CompressedHeader.format_of(data) is not None:
             return True
         if ArchiveSignatures.tar_header(data):
@@ -145,15 +147,14 @@ class UnopenedFormats:
 
     @staticmethod
     def format_of(data: bytes) -> str | None:
-        """ "rar", "7z", "cab", "ar", "cpio", "xar", "iso", "lzip" or "lzma", or None."""
+        """ "rar", "7z", "cab", "cpio", "xar", "iso" or "lzip", or None. Not here: ar, which
+        `ArReader` reads, and lzma-alone, which the stdlib decodes (`CompressedHeader`)."""
         if data[:6] == b"Rar!\x1a\x07" and (data[6:7] == b"\x00" or data[6:8] == b"\x01\x00"):
             return "rar"
         if data[:6] == b"7z\xbc\xaf\x27\x1c" and data[6:7] == b"\x00":
             return "7z"
         if len(data) >= 12 and data[:8] == b"MSCF\x00\x00\x00\x00":
             return "cab" if struct.unpack("<I", data[8:12])[0] >= 36 else None
-        if data[:8] == b"!<arch>\n" and data[66:68] == b"`\n":
-            return "ar"
         if UnopenedFormats._cpio(data):
             return "cpio"
         if len(data) >= 6 and data[:4] == b"xar!" and struct.unpack(">H", data[4:6])[0] >= 28:

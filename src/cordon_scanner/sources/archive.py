@@ -38,6 +38,7 @@ from cordon_scanner.foundation.errors import ArchiveError
 from cordon_scanner.foundation.files.names import Names
 from cordon_scanner.foundation.files.spill import Spill, SpilledBytes
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS, Limits
+from cordon_scanner.sources.ar_reader import ArReader
 from cordon_scanner.sources.archive_names import MemberNames
 from cordon_scanner.sources.base import RejectedMember, Rejection
 from cordon_scanner.sources.budget import (
@@ -216,7 +217,10 @@ class ArchiveReader:
         zip_at_start = head.startswith((b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"))
         tar_at_start = head.startswith(_COMPRESSED_MAGIC) or head[257:262] == b"ustar"
         ends_as_zip = not zip_at_start and zipfile.is_zipfile(_BytesReader(data))
-        if zip_at_start:
+        if ArReader.is_ar(head):
+            # A static library or a Debian package (item 53): members behind fixed headers.
+            ArReader.extract(data, path, limits, result, deadline, member=ExtractedMember)
+        elif zip_at_start:
             ArchiveReader._extract_zip(data, path, limits, result, deadline)
         elif tar_at_start and ends_as_zip:
             result.rejected.append(
@@ -673,7 +677,11 @@ class ArchiveReader:
         shape = ArchiveReader.not_an_archive(inner)
         if shape == "empty" or ArchiveReader._unsupported(member_path, inner, rejected):
             return
-        if shape == "text":
+        # Bytes whose structure says archive (a whole header, `ArchiveSignatures.opens`) are a broken
+        # archive however they decode: an ar of object files is valid UTF-8, and was passed as text.
+        if shape == "text" and not ArchiveSignatures.opens(
+            bytes(inner[: ArchiveReader.UNOPENED_HEAD])
+        ):
             reason, detail = (
                 Rejection.NOT_AN_ARCHIVE,
                 "named as an archive, it is text no reader opens",
