@@ -88,4 +88,117 @@ class PythonStatements:
         return True
 
 
-__all__ = ["CONTINUATIONS", "PythonStatements"]
+# Whether a file Python 3 will not parse fails on a construct only Python 2 accepts (item 27).
+#
+# A `setup.py` written for Python 2 cannot run on Python 3: pip on Python 3 fails on the same line,
+# so its install hooks never run there, and reading it as "a manifest we could not read" blocked
+# benign packages (10 of 4,609 PyPI units in item 27's count). It is said instead: not Python 3,
+# naming the construct. Never from the SyntaxError alone, which is also what syntax newer than this
+# interpreter gives (a template string scanned on 3.12 runs on 3.14): only a construct no Python 3
+# accepts, found in the token stream on the very line the parse failed.
+#
+# ```
+#   print "x"        exec "code"        exec code in ns
+#   except A, e:     raise E, "msg"     `x`                a <> b
+#   0777             ur"text"
+# ```
+STATEMENT_WORDS = {"print": "a print statement", "exec": "an exec statement"}
+LEGACY_PREFIXES = frozenset({"ur", "UR", "Ur", "uR"})
+# the tokenizer's own refusals that only Python 2 source produces
+LEGACY_REFUSALS = {
+    "leading zeros in decimal integer literals": "an octal literal written 0777",
+    "`": "a backtick repr",
+}
+
+
+class PythonTwo:
+    @staticmethod
+    def construct(text: str, line: int | None) -> str | None:
+        """The Python 2 construct on `line` (1-based, the parse error's) that no Python 3 accepts,
+        or None when there is none there."""
+        if line is None:
+            return None
+        found: str | None = None
+        try:
+            tokens = tokenize.generate_tokens(io.StringIO(text).readline)
+            at_start, depth, statement = True, 0, ""
+            opener: tokenize.TokenInfo | None = None
+            previous: tokenize.TokenInfo | None = None
+            for token in tokens:
+                if token.start[0] > line:
+                    break
+                if token.type in (tokenize.NL, tokenize.COMMENT, tokenize.INDENT, tokenize.DEDENT):
+                    continue
+                if token.type == tokenize.NEWLINE:
+                    at_start, depth, statement, opener = True, 0, "", None
+                    previous = token
+                    continue
+                on_line = token.start[0] == line
+                if at_start:
+                    opener = token
+                    statement = token.string if token.type == tokenize.NAME else ""
+                if token.type == tokenize.OP and token.string in "([{":
+                    depth += 1
+                elif token.type == tokenize.OP and token.string in ")]}":
+                    depth -= 1
+                if on_line and found is None:
+                    found = PythonTwo._at(token, previous, previous is opener, depth, statement)
+                at_start = False
+                previous = token
+        except (tokenize.TokenError, IndentationError, SyntaxError) as exc:
+            where = getattr(exc, "lineno", None)
+            if found is None and where == line:
+                text_of = str(exc)
+                found = next(
+                    (what for key, what in LEGACY_REFUSALS.items() if key in text_of), None
+                )
+        return found
+
+    @staticmethod
+    def _at(
+        token: tokenize.TokenInfo,
+        previous: tokenize.TokenInfo | None,
+        after_opener: bool,
+        depth: int,
+        statement: str,
+    ) -> str | None:
+        if token.type == tokenize.OP and token.string == "<>":
+            return "the <> operator"
+        if token.string == "`" and token.type in (tokenize.OP, tokenize.ERRORTOKEN):
+            return "a backtick repr"
+        if (
+            token.type == tokenize.NUMBER
+            and len(token.string) > 1
+            and token.string[0] == "0"
+            and token.string.isdigit()
+            and token.string.strip("0")
+        ):
+            return "an octal literal written 0777"  # `00` is Python 3 too; `0777` is not
+        if (
+            token.type == tokenize.STRING
+            and previous is not None
+            and previous.type == tokenize.NAME
+            and previous.string in LEGACY_PREFIXES
+            and previous.end == token.start
+        ):
+            return "a ur'' string"
+        if (
+            previous is not None
+            and previous.type == tokenize.NAME
+            and previous.string in STATEMENT_WORDS
+            and after_opener  # the word opens the statement: `print "x"`, not `f(print)`
+            and (
+                token.type in (tokenize.STRING, tokenize.NAME, tokenize.NUMBER)
+                or (token.type == tokenize.OP and token.string == ">>")
+            )
+        ):
+            return STATEMENT_WORDS[previous.string]
+        if token.type == tokenize.OP and token.string == "," and depth == 0:
+            if statement == "except":
+                return "except A, e"
+            if statement == "raise":
+                return "raise E, value"
+        return None
+
+
+__all__ = ["CONTINUATIONS", "PythonStatements", "PythonTwo"]

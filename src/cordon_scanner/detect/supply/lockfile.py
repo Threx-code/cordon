@@ -214,6 +214,11 @@ class LockfileDetector(BaseDetector):
         ecosystem = EcosystemRegistry.get(ecosystem_id)
         if ecosystem is None:
             return ()
+        claims = getattr(ecosystem, "claims_lockfile", None)
+        if claims is not None and not claims(unit.content, ctx.tree_paths):
+            # a name two ecosystems use: not this one's here (Helm's requirements.lock beside no
+            # Chart.yaml is Rye's pip-format lockfile, item 27)
+            return ()
 
         graph = ecosystem.parse_lockfile(unit.content)
 

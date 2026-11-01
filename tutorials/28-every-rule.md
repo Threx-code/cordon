@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,491 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,492 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -653,10 +653,11 @@ rule's own samples.
 
 ## Format
 
-1 rules.
+2 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
+| `OPERATIONAL.FORMAT.NOT_A_PICKLE` | info | A file named as a pickle that no pickle loader opens |
 | `OPERATIONAL.FORMAT.UNREADABLE` | info | A model, document or image could not be read |
 
 ## Helm
