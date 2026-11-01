@@ -43,7 +43,9 @@ class TestRefusedAtOnce:
         [
             pickle.dumps({"a": [1, 2]}, protocol=0),
             pickle.dumps({"a": [1, 2]}, protocol=4),
-            gzip.compress(pickle.dumps({"a": 1}, protocol=4)),  # a loader decompresses it first
+            # mtime=0: the header's time is in the test's id, and two workers importing in
+            # different seconds collected different tests (xdist refused the session).
+            gzip.compress(pickle.dumps({"a": 1}, protocol=4), mtime=0),  # a loader decompresses it
             b"",
         ],
     )
