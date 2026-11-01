@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import shutil
 import socket
 import struct
 import tempfile
@@ -62,7 +64,16 @@ class FakeClamd:
                 connection.sendall(answer)
 
     def close(self) -> None:
+        """The server stopped and its thread ended. On Linux, closing a listening socket does not
+        wake an accept() blocked on it, so the thread outlived every test: a thread left running
+        makes every later scan in the process start its workers by spawn, not from the template
+        (item 28), and a spawned worker sees none of a test's patches. shutdown() wakes it."""
+        with contextlib.suppress(OSError):
+            self.server.shutdown(socket.SHUT_RDWR)
         self.server.close()
+        self.thread.join(timeout=10)
+        assert not self.thread.is_alive(), "the fake clamd's thread did not end"
+        shutil.rmtree(self.directory, ignore_errors=True)
 
 
 class ClamavFixtures:
