@@ -32,7 +32,10 @@ class PythonStatements:
         stops partway (a window's end) gives the starts found before the token stream broke."""
         line_starts = [0]
         line_starts.extend(i + 1 for i, ch in enumerate(text) if ch == "\n")
-        out, depth, at_start, decorated = [0], 0, False, False
+        # At a statement's start from the first token, so a decorator on the module's first statement
+        # is a decorator and what it decorates is the same statement; that first statement's start
+        # stays 0, after any header comment or shebang, so a one-statement module is never cut.
+        out, depth, at_start, decorated, first = [0], 0, True, False, True
         try:
             for token in tokenize.generate_tokens(io.StringIO(text).readline):
                 if token.type == tokenize.INDENT:
@@ -48,8 +51,9 @@ class PythonStatements:
                 if token.type in (tokenize.NL, tokenize.COMMENT, tokenize.ENDMARKER):
                     continue
                 if at_start and depth == 0 and token.string not in CONTINUATIONS:
-                    if not decorated:
+                    if not decorated and not first:
                         out.append(line_starts[token.start[0] - 1])
+                    first = False
                     decorated = token.string == "@"
                 at_start = False
         except (tokenize.TokenError, IndentationError, SyntaxError):
