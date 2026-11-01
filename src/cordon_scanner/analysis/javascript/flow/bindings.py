@@ -147,6 +147,11 @@ class Bindings(Structure):
         t, n = self.t, self.n
         in_loop = bytearray(n)
         for i in range(n):
+            if self.is_name(i, "do") and self.is_p(i + 1, "{") and self.match[i + 1] > 0:
+                # `do { ... } while (c)`: its body is a loop body too (outer-layer review).
+                end = self.match[i + 1]
+                in_loop[i + 1 : end] = b"\x01" * (end - i - 1)
+                continue
             if not (self.is_name(i, "for") or self.is_name(i, "while")):
                 continue
             if self.is_p(i + 1, "(") and self.match[i + 1] > 0:

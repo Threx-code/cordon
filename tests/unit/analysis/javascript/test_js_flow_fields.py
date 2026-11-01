@@ -200,6 +200,18 @@ class TestTheDiffReview:
         )
         assert FieldKit.sends(text)
 
+    @pytest.mark.parametrize(
+        "loop", ["do { var y = x; } while (go());", "while (go()) { var y = x; }"]
+    )
+    def test_a_binding_in_a_loop_body_is_no_alias(self, loop: str) -> None:
+        # The rule itself (outer-layer review of 387da425): a do-while body is a loop body, so a
+        # name bound there is never an alias, as in a while body.
+        from cordon_scanner.analysis.javascript.js_flow import _Analysis
+
+        a = _Analysis("const x = {};\n" + loop + "\n")
+        a.run()
+        assert not a.alias_of
+
     def test_a_computed_store_of_a_name_into_an_object_keeps_its_fields(self) -> None:
         # `info.extra[key] = value` was recorded as `info` aliasing `value` (quick signal, notes/60).
         text = (
