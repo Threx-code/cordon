@@ -35,10 +35,9 @@ from cordon_scanner.engine.pipeline.hooks import Hooks
 from cordon_scanner.engine.pipeline.images import Images
 from cordon_scanner.engine.pipeline.publisher import Publisher
 from cordon_scanner.engine.pipeline.releases import ReleaseChecks
-from cordon_scanner.engine.window_pass import WindowPass
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.errors import ArchiveError
-from cordon_scanner.foundation.models import Finding, Scope, Severity
+from cordon_scanner.foundation.models import Scope, Severity
 from cordon_scanner.foundation.results import Dependency, OperationalFinding
 from cordon_scanner.sources.registry import ArchiveReader
 
@@ -258,8 +257,8 @@ class ArchiveStages:
 
     def parallel(
         self, units: list[FileUnit], deadline: float, acc: Accumulator, path: Path, ctx: ScanContext
-    ) -> tuple[list[Detector], list[FileUnit]]:
-        """The members detectors read in parallel, when the archive is large enough to be worth it."""
+    ) -> list[Detector]:
+        """Every member, read by the detectors in supervised workers (item 28)."""
         detectors = [d for d in self.detectors if self.engine.detection.enabled(d, ctx)]
         self.progress.phase("scanning", total=len(units))
         # An image or a large archive is thousands of members (a Grafana image adds eleven
@@ -298,60 +297,12 @@ class ArchiveStages:
             acc.add(found)
             if any(f.rule_id == "OPERATIONAL.SCAN.TIMEOUT" for f in found):
                 break  # the pool stopped at the budget and said so; no slice after it
-        units_left: list[FileUnit] = []
-        return detectors, units_left
+        return detectors
 
-    def serial(
-        self,
-        units_left: list[FileUnit],
-        deadline: float,
-        acc: Accumulator,
-        path: Path,
-        detectors: list[Detector],
-        ctx: ScanContext,
-        units: list[FileUnit],
-    ) -> None:
-        """The members left for this process, then the checks on the release as a whole."""
-        for unit in units_left:
-            # The same budget the directory path applies between units. Most of
-            # the cost of a hostile archive is here rather than in extraction --
-            # a fifty-thousand-member archive expands in a second and then takes
-            # eight to match against -- so a deadline that only covered
-            # expansion bounded the wrong half.
-            if self.config.limits.total_timeout > 0 and time.monotonic() > deadline:
-                acc.incomplete(
-                    OperationalFinding.build(
-                        path=path.name,
-                        rule_id="OPERATIONAL.SCAN.TIMEOUT",
-                        message=(
-                            f"The {self.config.limits.total_timeout:.0f}s budget was reached "
-                            f"with members still unexamined."
-                        ),
-                        remediation="Raise --timeout, or unpack and scan as a directory.",
-                        severity=Severity.MEDIUM,
-                    )
-                )
-                break
-            member_detectors = [
-                d
-                for d in detectors
-                if not (d.requires.dependencies and d.requires.content is False)
-            ]
-            produced: list[Finding] = []
-            for detector in member_detectors:
-                produced.extend(self.engine.detection.run(detector, unit, ctx, acc))
-            # The rest of an oversized member, a window at a time, as `_inspect_file` reads one.
-            windowed, intact = WindowPass.run(
-                unit,
-                member_detectors,
-                lambda detector, part: self.engine.detection.run(detector, part, ctx, acc),
-                produced,
-            )
-            produced.extend(windowed)
-            if not intact:
-                produced.append(acc.gap(ArchiveMembers.changed_while_read(unit.path)))
-            acc.add(produced)
-            self.progress.advance(unit.path)
+    def release_checks(self, acc: Accumulator, ctx: ScanContext, units: list[FileUnit]) -> None:
+        """The checks on the release as a whole, after every member was read in the workers. There
+        is no per-member pass here: this process never inspects a member (item 28; item 55 deleted
+        the loop that was left for one, which no member reached)."""
         acc.add(ReleaseChecks.unexamined_install_code(acc.findings, ctx))
         acc.add(ReleaseChecks.native_code_in_a_pure_wheel(units, ctx))
         acc.add(ReleaseChecks.known_malicious_release(units, ctx))

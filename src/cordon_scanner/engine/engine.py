@@ -453,8 +453,8 @@ class Engine:
 
         ctx = self.archive_stages.context(units, acc, ctx, image)
 
-        detectors, units_left = self.archive_stages.parallel(units, deadline, acc, path, ctx)
-        self.archive_stages.serial(units_left, deadline, acc, path, detectors, ctx, units)
+        detectors = self.archive_stages.parallel(units, deadline, acc, path, ctx)
+        self.archive_stages.release_checks(acc, ctx, units)
         self.archive_stages.deferred(units, acc, path, detectors, ctx)
 
         dependencies, target_kind, ctx = self.archive_stages.dependencies(units, acc, image, ctx)
