@@ -176,9 +176,24 @@ class TestTheSupervisor:
         monkeypatch.setattr(Worker, "give", given_then_past)
         supervisor.on_result = lambda index, result: seen.append(index)
         outcome = supervisor.run(units)
-        assert outcome.results == {0: 0}  # the one running finished
-        assert sorted(outcome.unstarted) == [1, 2, 3]
-        assert seen == [0]
+        # The one running either finished before the deadline was seen, or was ended at it (item 64):
+        # never failed, never run again.
+        assert outcome.results in ({0: 0}, {})
+        assert sorted(outcome.unstarted) == ([1, 2, 3] if outcome.results else [0, 1, 2, 3])
+        assert seen == sorted(outcome.results)
+        assert not outcome.failed
+
+    def test_a_unit_running_at_the_deadline_is_ended_at_it(self) -> None:
+        """Item 64: under load a unit in flight ran on to its own wall backstop, ten times its CPU
+        budget, long past the scan's deadline (the long-line probe: a 60 s budget, 343 s). The
+        deadline holds for it too: it is ended, and its file is reported unexamined."""
+        supervisor = Harness.supervisor(Bounds(), workers=1)
+        supervisor.deadline = time.monotonic() + 3.0
+        outcome = supervisor.run([Unit(0, ("sleep", 60), 1)])
+        assert outcome.results == {}
+        assert outcome.unstarted == [0]
+        assert not outcome.failed
+        assert not supervisor.retry
 
     def test_no_worker_that_can_start_is_said_not_run_here(self) -> None:
         with pytest.raises(IsolationUnavailable):
