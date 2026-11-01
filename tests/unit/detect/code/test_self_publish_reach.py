@@ -231,3 +231,21 @@ class TestASelfRenamingPublishLoop:
         )
         found = PublishKit.severities(tmp_path, self.MANIFEST, {"package/tools/notes.py": source})
         assert Severity.HIGH not in found
+
+    def test_in_a_repository_scan_a_fixture_holding_the_loop_keeps_its_ceiling(
+        self, tmp_path: Path
+    ) -> None:
+        # The owner's decision is about a published package; a repository's test fixture is not one.
+        body = (
+            "for (let i = 0; i < 0; i++) {\n  data.name = 'example-renamed';\n"
+            + self.WRITE
+            + self.PUBLISH
+            + "}\n"
+        )
+        root = tmp_path / "repo"
+        (root / "tests" / "fixtures").mkdir(parents=True)
+        (root / "package.json").write_text(json.dumps({"name": "tool", "version": "1.0.0"}))
+        (root / "tests" / "fixtures" / "republish.js").write_text(self.HEAD + body)
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
+        found = [f.severity for f in result.findings if f.rule_id == RULE]
+        assert Severity.HIGH not in found, found

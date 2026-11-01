@@ -420,12 +420,15 @@ class CompositeGrading:
     def _self_propagating(self) -> bool:
         """The publishing rule on a file that rewrites its own package's name and republishes in a
         loop (`PublishReach.self_propagating`), computed once per finding."""
-        if self.compiled.rule.id != PublishReach.RULE or self.unit.language not in (
-            "javascript",
-            "typescript",
+        if (
+            self.compiled.rule.id != PublishReach.RULE
+            or self.unit.language not in ("javascript", "typescript")
+            or not self.ctx.package_distribution
         ):
             # JavaScript only: a Python or shell file's strings tokenised as JavaScript could
-            # satisfy the shape (outer-layer review of ba09ea52).
+            # satisfy the shape (outer-layer review of ba09ea52). And a published package only, as
+            # the owner's decision is worded: in a repository scan a security tool's fixture holding
+            # the loop keeps its test and fixture ceilings.
             return False
         if self._propagates is None:
             self._propagates = PublishReach.self_propagating(self.unit.content.text)
