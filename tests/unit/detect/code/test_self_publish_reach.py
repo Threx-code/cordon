@@ -12,6 +12,7 @@ import io
 import json
 import tarfile
 from pathlib import Path
+from typing import ClassVar
 
 from cordon_scanner import Scanner
 from cordon_scanner.foundation.config.settings import Config
@@ -83,3 +84,123 @@ class TestAPublishingScriptThatRuns:
         (tmp_path / "auto.js").write_text(PUBLISHER, encoding="utf-8")
         found = [f.severity for f in Scanner().scan(tmp_path).findings if f.rule_id == RULE]
         assert any(s >= Severity.HIGH for s in found)
+
+
+class TestASelfRenamingPublishLoop:
+    """Item 57, the owner's exception (notes/57-self-propagating-publish.md): a script that renames its own
+    package and republishes in a loop blocks, though only a person runs it. Keyed on
+    what the file does. Inert: the loop runs zero times, the publish is a dry run to a registry that
+    does not resolve, and the new name is a constant."""
+
+    HEAD = (
+        "const fs = require('fs');\n"
+        "const { execSync } = require('child_process');\n"
+        "const data = JSON.parse(fs.readFileSync('package.json'));\n"
+    )
+    PUBLISH = "  execSync('npm publish --dry-run --registry https://registry.invalid');\n"
+    WRITE = "  fs.writeFileSync('package.json', JSON.stringify(data));\n"
+    MANIFEST: ClassVar[dict[str, object]] = {"scripts": {"start": "node index.js"}}
+
+    def severities(self, tmp_path: Path, body: str) -> list[Severity]:
+        return PublishKit.severities(
+            tmp_path, self.MANIFEST, {"package/tools/republish.js": self.HEAD + body}
+        )
+
+    def test_renaming_itself_and_republishing_in_a_loop_blocks(self, tmp_path: Path) -> None:
+        body = (
+            "for (let i = 0; i < 0; i++) {\n  data.name = 'example-renamed';\n"
+            + self.WRITE
+            + self.PUBLISH
+            + "}\n"
+        )
+        assert Severity.HIGH in self.severities(tmp_path, body)
+
+    def test_a_rename_through_an_index_and_a_timer_blocks(self, tmp_path: Path) -> None:
+        body = (
+            "setInterval(() => {\n  data['name'] = 'example-renamed';\n"
+            + self.WRITE
+            + self.PUBLISH
+            + "}, 1e9);\n"
+        )
+        assert Severity.HIGH in self.severities(tmp_path, body)
+
+    def test_a_rename_by_object_assign_blocks(self, tmp_path: Path) -> None:
+        body = (
+            "for (let i = 0; i < 0; i++) {\n  Object.assign(data, { name: 'example-renamed' });\n"
+            + self.WRITE
+            + self.PUBLISH
+            + "}\n"
+        )
+        assert Severity.HIGH in self.severities(tmp_path, body)
+
+    def test_a_rename_by_a_spread_rebuild_blocks(self, tmp_path: Path) -> None:
+        body = (
+            "for (let i = 0; i < 0; i++) {\n"
+            "  fs.writeFileSync('package.json', JSON.stringify({ ...data, name: 'example-renamed' }));\n"
+            + self.PUBLISH
+            + "}\n"
+        )
+        assert Severity.HIGH in self.severities(tmp_path, body)
+
+    def test_a_manifest_path_built_by_path_join_still_counts(self, tmp_path: Path) -> None:
+        body = (
+            "const path = require('path');\n"
+            "for (let i = 0; i < 0; i++) {\n  data.name = 'example-renamed';\n"
+            "  fs.writeFileSync(path.join(__dirname, 'package.json'), JSON.stringify(data));\n"
+            + self.PUBLISH
+            + "}\n"
+        )
+        assert Severity.HIGH in self.severities(tmp_path, body)
+
+    def test_a_workspace_release_loop_that_bumps_versions_keeps_its_ceiling(
+        self, tmp_path: Path
+    ) -> None:
+        # Lerna- or changesets-style release tooling: a loop, versions bumped, each published. It never
+        # renames, so it is release tooling, not self-propagation (outer-layer review of note 57).
+        body = (
+            "const packages = [data];\n"
+            "for (const pkg of packages) {\n  pkg.version = '1.0.1';\n"
+            + self.WRITE
+            + self.PUBLISH
+            + "}\n"
+        )
+        found = self.severities(tmp_path, body)
+        assert found and all(s <= Severity.MEDIUM for s in found)
+
+    def test_moving_it_under_tools_does_not_lower_it(self, tmp_path: Path) -> None:
+        body = (
+            "for (let i = 0; i < 0; i++) {\n  data.name = 'example-renamed';\n"
+            + self.WRITE
+            + self.PUBLISH
+            + "}\n"
+        )
+        found = PublishKit.severities(
+            tmp_path, self.MANIFEST, {"package/scripts/build/republish.js": self.HEAD + body}
+        )
+        assert Severity.HIGH in found
+
+    def test_a_release_script_that_publishes_without_renaming_keeps_its_ceiling(
+        self, tmp_path: Path
+    ) -> None:
+        body = "for (let i = 0; i < 0; i++) {\n" + self.PUBLISH + "}\n"
+        found = self.severities(tmp_path, body)
+        assert found and all(s <= Severity.MEDIUM for s in found)
+
+    def test_the_same_rename_without_a_loop_or_timer_keeps_its_ceiling(
+        self, tmp_path: Path
+    ) -> None:
+        body = (
+            "data.name = 'example-renamed';\n"
+            + self.WRITE.strip()
+            + "\n"
+            + self.PUBLISH.strip()
+            + "\n"
+        )
+        found = self.severities(tmp_path, body)
+        assert found and all(s <= Severity.MEDIUM for s in found)
+
+    def test_a_version_bump_without_a_publish_is_not_a_publishing_script(
+        self, tmp_path: Path
+    ) -> None:
+        body = "for (let i = 0; i < 0; i++) {\n  data.version = '0.0.0';\n" + self.WRITE + "}\n"
+        assert Severity.HIGH not in self.severities(tmp_path, body)

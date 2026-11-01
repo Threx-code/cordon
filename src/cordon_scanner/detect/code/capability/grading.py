@@ -142,6 +142,7 @@ class CompositeGrading:
         self.verified, self.present, self.in_hook = verified, present, in_hook
         self.no_download_runs = no_download_runs
         self.hand_run_provisioning = self.own_credential_client = self.agent_tool_client = False
+        self._propagates: bool | None = None
 
     def finding(self) -> Finding | None:
         """The graded finding, or None where it is withdrawn."""
@@ -166,6 +167,13 @@ class CompositeGrading:
                     else ", where a pattern like this is usually written to be read rather than run"
                 )
             )
+
+        if self._self_propagating() and PublishReach.unreached(
+            rule.id, self.unit.content.path, self.ctx
+        ):
+            # The owner's exception to the reach ceiling (item 57): said, so the reader knows why an
+            # unreached script blocks.
+            escalations.append(PublishReach.SELF_PROPAGATING)
 
         if in_hook and not agent_tool_client:
             # This is the escalation that matters most in the whole engine. The
@@ -392,7 +400,9 @@ class CompositeGrading:
         # ceiling was found holding real malware below the line, after
         # `_is_minified` and the obfuscated Python it excused.
         smuggled = any(hit.rule_id == "CAP.INVISIBLE_SMUGGLING.001" for hit in hits)
-        if category is Category.MALICIOUS or smuggled:
+        if category is Category.MALICIOUS or smuggled or self._self_propagating():
+            # A self-renaming republish loop (item 57, the owner's exception) is lowered by no
+            # ceiling: neither the reach ceiling nor a path one, or moving it into tools/ would hide it.
             return "", FIXTURE_CEILING
         self._clients()
         for run in (
@@ -406,6 +416,15 @@ class CompositeGrading:
             if found is not None:
                 return found
         return "", FIXTURE_CEILING
+
+    def _self_propagating(self) -> bool:
+        """The publishing rule on a file that rewrites its own package's name and republishes in a
+        loop (`PublishReach.self_propagating`), computed once per finding."""
+        if self.compiled.rule.id != PublishReach.RULE:
+            return False
+        if self._propagates is None:
+            self._propagates = PublishReach.self_propagating(self.unit.content.text)
+        return self._propagates
 
     def _clients(self) -> None:
         """Whether this is hand-run provisioning, or a client calling its own credential's service --
