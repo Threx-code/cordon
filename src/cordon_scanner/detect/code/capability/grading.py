@@ -585,7 +585,7 @@ class CompositeGrading:
             # spawn, exec, sender or write. A MALICIOUS form never reaches this cascade.
             ceilinged = "a command-shaped string that reaches no sink"
             ceiling = Severity.LOW
-        elif SourcePaths.is_documentation(content.path):
+        elif SourcePaths.is_documentation_here(content.path, ctx):
             ceilinged = "documentation"
             if TextPosition.is_prose(content.path):
                 # Prose, which nothing runs: a README's `curl ... | sh` is an instruction to

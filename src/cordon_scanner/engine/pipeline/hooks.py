@@ -215,6 +215,23 @@ class Hooks:
                     break
         return implied
 
+    #: The languages an interpreter runs as itself: `node x.ts` (or bun, deno, tsx) runs TypeScript,
+    #: and reading it as JavaScript could only lose a parse, never gain a reader.
+    _FAMILIES: ClassVar[dict[str, frozenset[str]]] = {
+        "javascript": frozenset({"javascript", "typescript"}),
+    }
+
+    @staticmethod
+    def hook_language(implied: str | None, by_name: str | None) -> str | None:
+        """The language a hook-run file is read as: the interpreter's, unless the name's language is
+        in the interpreter's own family (then the name's, the more exact one). Outside it (.md,
+        .txt, none, .png) the interpreter decides: it is what runs the file."""
+        if implied is None:
+            return by_name
+        if by_name is not None and by_name in Hooks._FAMILIES.get(implied, frozenset({implied})):
+            return by_name
+        return implied
+
     @staticmethod
     def hooked_languages(units: list[FileUnit]) -> None:
         """Each member a manifest's hook runs takes the language the hook's interpreter gives it, in
@@ -236,8 +253,10 @@ class Hooks:
         if not implied:
             return
         for index, unit in enumerate(units):
-            language = implied.get(unit.path)
-            if language is not None and language != unit.language:
+            if unit.path not in implied:
+                continue
+            language = Hooks.hook_language(implied[unit.path], unit.language)
+            if language != unit.language:
                 units[index] = replace(unit, language=language)
 
     @staticmethod

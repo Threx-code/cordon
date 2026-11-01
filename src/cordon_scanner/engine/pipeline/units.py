@@ -333,9 +333,10 @@ class Units:
         and the file is inspected as what runs (item 36). The name answered first, so a payload named
         .md, .txt or nothing, run by a hook, was read by no language rule while the same bytes in
         run.js blocked (the evasion suite's text-type names; five npm misses on 3cad016d)."""
-        language = implied_languages.get(entry.rel_path)
-        if language is None:
-            language = LanguageRegistry.identify_language(entry.rel_path)
+        language = Hooks.hook_language(
+            implied_languages.get(entry.rel_path),
+            LanguageRegistry.identify_language(entry.rel_path),
+        )
         if language is None:
             # An extensionless script -- `install`, `preinstall`,
             # `configure` -- got `language=None` and therefore only the

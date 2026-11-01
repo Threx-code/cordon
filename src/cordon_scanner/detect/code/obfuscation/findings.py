@@ -116,7 +116,10 @@ class ObfuscationFinding:
             severity = min(severity, RULE_MATERIAL_CEILING)
         elif (
             SourcePaths.is_test_material_here(content.path, ctx)
-            or (SourcePaths.is_documentation(content.path) and hit.rule_id != TAG_SMUGGLING_RULE)
+            or (
+                SourcePaths.is_documentation_here(content.path, ctx)
+                and hit.rule_id != TAG_SMUGGLING_RULE
+            )
             or (
                 SourcePaths.is_generated_artefact(content.path)
                 and not ObfuscationText._obfuscator_io(hit)

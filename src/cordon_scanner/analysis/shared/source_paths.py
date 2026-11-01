@@ -276,6 +276,16 @@ class SourcePaths:
         return SourcePaths.is_test_material(path)
 
     @staticmethod
+    def is_documentation_here(path: str, ctx: EntryPaths) -> bool:
+        """`is_documentation`, except for a file something runs: a path ceiling applies to an
+        unreached file, and reached code is graded as code (item 36's rule, the modelling team's
+        ruling, 1 Nov). `node lib/run.md` in a lifecycle script runs the .md, so its findings are
+        not documentation's, whatever its name; nor is a published package's import entry."""
+        if path in ctx.install_hook_paths or path in ctx.import_entry_paths:
+            return False
+        return SourcePaths.is_documentation(path)
+
+    @staticmethod
     def is_documentation(path: str) -> bool:
         """Whether a path holds prose written to be read rather than executed."""
         return SourcePaths._names(path, DOCUMENTATION_PATHS)

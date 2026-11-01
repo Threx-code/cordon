@@ -754,7 +754,8 @@ class SecretDetector(BaseDetector):
             SourcePaths.is_test_material(content.path) or self._inside_test_module(unit, start)
         )
         documentation = not (rule_material or fixture) and (
-            SourcePaths.is_documentation(content.path) or self._inside_documentation(unit, start)
+            SourcePaths.is_documentation_here(content.path, ctx)
+            or self._inside_documentation(unit, start)
         )
         # Generated output, which this detector was the only one not to ceiling.
         # Jest vendors `.yarn/releases/yarn-4.18.0.cjs` -- five megabytes of bundled

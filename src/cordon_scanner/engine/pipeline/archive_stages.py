@@ -187,10 +187,13 @@ class ArchiveStages:
         """What runs at install, at import and when an agent calls it, among the archive's members."""
         # Manifests inside a package determine whether its code runs at install
         # time, which is the whole reason a package archive is worth scanning.
+        # What a hook runs is read as its interpreter runs it, before anything reads a unit's
+        # language: the deobfuscation lift takes only JavaScript, so an obfuscated payload at
+        # lib/run.md, run by `node`, was still Markdown when the lift ran (modelling team's review).
+        Hooks.hooked_languages(units)
         units.extend(self.engine.units.inline_hooks(units))
         units.extend(self.engine.units.deobfuscated(units))
         hook_paths, consumer_hooks, ci_scripts = Hooks.manifest_hook_paths(units, acc)
-        Hooks.hooked_languages(units)  # what a hook runs is read as its interpreter runs it
         # The same install-time picture a directory scan builds: filename hooks (`setup.py`, a
         # `.pth`), and everything the hooks import or run. A downloaded sdist or tarball is the
         # commonest thing to vet, and it was the one target that skipped all three.
@@ -416,7 +419,8 @@ class ArchiveStages:
                         )
                     ),
                     self.config.policy.advisory_domains,
-                )
+                ),
+                reached=ctx.install_hook_paths | ctx.import_entry_paths,
             )
             acc.findings[:] = PackageFormat.union(acc.findings, repository)
             honoured = HONOURED_PINS.get(package)
