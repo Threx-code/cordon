@@ -139,6 +139,8 @@ class Engine:
 
     def scan(self, target: str | Path) -> ScanResult:
         """Scan a target and return a complete, sorted result."""
+        # This scan's archive counts, from zero: in place, since the units stage holds the list.
+        self._archive_stats[:] = [0, 0, 0]
         try:
             return Collector.during(self._scan, target)  # foundation/collector: GC relaxed
         finally:
@@ -148,6 +150,10 @@ class Engine:
             # And the caches that hold this scan's files, emptied whether it returned or raised:
             # kept, they held the last files of every scan in a long-running process.
             ScanCaches.after_scan()
+            # The archives this scan expanded, members' bytes and all: kept, a long-running
+            # Scanner (the server, MCP) held every archive it ever opened. Cleared in place, since
+            # the units stage holds the dict.
+            self._expansions.clear()
 
     def scan_host(self, root: str | Path, home: str | Path | None = None) -> ScanResult:
         """What an installed system holds (advanced gap M7): its distribution's packages and the
