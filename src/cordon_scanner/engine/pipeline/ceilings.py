@@ -43,7 +43,7 @@ from cordon_scanner.foundation.paths import ContainerPaths
 from cordon_scanner.foundation.results import OperationalFinding
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Collection, Sequence
 
     from cordon_scanner.foundation.taxonomy import ThreatDomain
 
@@ -445,7 +445,9 @@ class Ceilings:
     _RUNS_DOWNLOADS: ClassVar[frozenset[str]] = frozenset({"SUSPECT.DROPPER.001"})
 
     @staticmethod
-    def impersonator_runs_downloads(findings: list[Finding]) -> list[Finding]:
+    def impersonator_runs_downloads(
+        findings: list[Finding], reached: Collection[str] = ()
+    ) -> list[Finding]:
         """A published package named one slip from a popular one that downloads and runs code.
 
         Each half is graded below the gate on its own: a typo-shaped name is common in the long
@@ -469,7 +471,8 @@ class Ceilings:
                 finding.rule_id in Ceilings._RUNS_DOWNLOADS
                 and finding.severity < Severity.HIGH
                 and not SourcePaths.is_test_material(path)
-                and not SourcePaths.is_documentation(path)
+                # a documentation path's ceiling holds only where nothing runs the file (item 36)
+                and not (SourcePaths.is_documentation(path) and path not in reached)
                 and not SourcePaths.is_generated_artefact(path)
             ):
                 finding = replace(

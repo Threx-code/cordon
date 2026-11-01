@@ -921,7 +921,7 @@ class Listed:
             "engine.pipeline.ceilings:image_start_ceiling:1",
             "engine.pipeline.graph:configured_sources:1",
             "engine.pipeline.hooks:hook_command_scripts:1",
-            "engine.pipeline.hooks:languages_from_hooks:1",
+            "engine.pipeline.hooks:languages_of:1",
             "foundation.formats.datayaml:_flow_pair:1",
             "foundation.models:_WHITESPACE",
             "foundation.samples:names_authentication:1",
