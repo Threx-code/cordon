@@ -314,6 +314,9 @@ class Supervisor:
         self.context, self.setup, self.work, self.bounds = context, setup, work, bounds
         self.workers = max(1, workers)
         self.deadline, self.on_result = deadline, on_result
+        #: What the deadline is read against: `time.monotonic`, the clock `deadline` is a reading
+        #: of. A test drives the deadline through it, never through the host's speed.
+        self.clock: Callable[[], float] = time.monotonic
         #: The scan's template (`template.Template`), forking each worker; None to spawn them.
         self.template: Template | None = None
         self.outcome = Outcome()
@@ -339,7 +342,7 @@ class Supervisor:
         unready_ends = 0
         try:
             while pool and (queue or any(w.unit is not None for w in pool)):
-                if self.deadline is not None and queue and time.monotonic() >= self.deadline:
+                if self.deadline is not None and queue and self.clock() >= self.deadline:
                     self.outcome.unstarted.extend(unit.index for unit in queue)
                     queue.clear()
                 for worker in pool:

@@ -18,6 +18,7 @@ from cordon_scanner.engine.isolation.supervisor import (
     Reason,
     Supervisor,
     Unit,
+    Worker,
 )
 
 
@@ -142,14 +143,26 @@ class TestTheSupervisor:
         assert outcome.results == {i: i for i in range(1, 5)}
         assert not supervisor.retry  # raised, not died: named at once, not run again
 
-    def test_no_unit_is_started_past_the_deadline(self) -> None:
+    def test_no_unit_is_started_past_the_deadline(self, monkeypatch) -> None:
+        """Driven by the supervisor's clock, never the host's speed: the deadline passes the moment
+        the first unit is given, so with one worker the other three are queued when it is checked
+        (a wall-clock deadline here failed whenever a spawned worker took longer to start)."""
         seen: list[int] = []
-        units = [Unit(0, ("sleep", 1.5), 1)] + [Unit(i, ("echo", i), 1) for i in range(1, 4)]
+        units = [Unit(i, ("echo", i), 1) for i in range(4)]
         supervisor = Harness.supervisor(Bounds(), workers=1)
-        supervisor.deadline = time.monotonic() + 0.5
+        now = [0.0]
+        supervisor.clock = lambda: now[0]
+        supervisor.deadline = 10.0
+        give = Worker.give
+
+        def given_then_past(worker: Worker, unit: Unit, bounds: Bounds) -> None:
+            give(worker, unit, bounds)
+            now[0] = 20.0
+
+        monkeypatch.setattr(Worker, "give", given_then_past)
         supervisor.on_result = lambda index, result: seen.append(index)
         outcome = supervisor.run(units)
-        assert outcome.results == {0: "woke"}  # the one running finished
+        assert outcome.results == {0: 0}  # the one running finished
         assert sorted(outcome.unstarted) == [1, 2, 3]
         assert seen == [0]
 
