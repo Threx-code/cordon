@@ -29,7 +29,9 @@ class IncludeKit:
 
 class TestAnIncludedFileIsNeverDroppedUnsaid:
     def test_an_include_whose_parse_raises_blocks(self, tmp_path, monkeypatch) -> None:
-        (tmp_path / "requirements.txt").write_text("-r extra.txt\nrequests==2.31.0\n", encoding="utf-8")
+        (tmp_path / "requirements.txt").write_text(
+            "-r extra.txt\nrequests==2.31.0\n", encoding="utf-8"
+        )
         (tmp_path / "extra.txt").write_text("leftpad==1.0\n", encoding="utf-8")
         real = PypiEcosystem.parse_included
 
@@ -60,14 +62,18 @@ class TestAnIncludedFileIsNeverDroppedUnsaid:
     def test_a_pinned_requirements_file_still_follows_its_includes(self, tmp_path) -> None:
         # Fully pinned, so read as a lockfile and its project counted as covered: its `-r` was
         # never followed, and base.txt's evilpkg went unchecked in a complete scan.
-        (tmp_path / "requirements.txt").write_text("-r base.txt\nrequests==2.31.0\n", encoding="utf-8")
+        (tmp_path / "requirements.txt").write_text(
+            "-r base.txt\nrequests==2.31.0\n", encoding="utf-8"
+        )
         (tmp_path / "base.txt").write_text("evilpkg==1.0\n", encoding="utf-8")
         result = IncludeKit.scan(tmp_path)
         names = {d.name for d in result.dependencies}
         assert {"requests", "evilpkg"} <= names
 
     def test_a_valid_chain_records_nothing_new(self, tmp_path) -> None:
-        (tmp_path / "requirements.txt").write_text("-r base.txt\nrequests==2.31.0\n", encoding="utf-8")
+        (tmp_path / "requirements.txt").write_text(
+            "-r base.txt\nrequests==2.31.0\n", encoding="utf-8"
+        )
         (tmp_path / "base.txt").write_text("-c constraints.txt\nurllib3==2.0.7\n", encoding="utf-8")
         (tmp_path / "constraints.txt").write_text("idna==3.6\n", encoding="utf-8")
         result = IncludeKit.scan(tmp_path)
