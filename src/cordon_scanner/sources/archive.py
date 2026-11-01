@@ -47,6 +47,8 @@ from cordon_scanner.sources.budget import (
     _BudgetedStream,
     _BytesReader,
 )
+from cordon_scanner.sources.lone_stream import LoneStream
+from cordon_scanner.sources.signatures import ArchiveSignatures, CompressedHeader
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -161,6 +163,9 @@ class ArchiveReader:
         lowered = path.lower()
         return any(lowered.endswith(suffix) for suffix in ARCHIVE_SUFFIXES)
 
+    #: Whether bytes are an archive a reader would open, whatever they are called (item 36).
+    opens_by_bytes = staticmethod(ArchiveSignatures.opens)
+
     safe_member_name = staticmethod(MemberNames.safe_member_name)
     normalise_member_name = staticmethod(MemberNames.normalise_member_name)
     not_an_archive = staticmethod(MemberNames.not_an_archive)
@@ -225,6 +230,19 @@ class ArchiveReader:
         elif ends_as_zip:
             # A zip with a stub in front (a self-extracting executable): the zip is what it holds.
             ArchiveReader._extract_zip(data, path, limits, result, deadline)
+        elif CompressedHeader.format_of(head) is not None and not LoneStream.holds_tar(
+            data, path=path, limits=limits, deadline=deadline
+        ):
+            # One compressed file, not a tar: `install.js.gz` holds `install.js` (item 30).
+            LoneStream.extract(
+                data,
+                path,
+                limits,
+                result,
+                deadline,
+                read=ArchiveReader._read_bounded,
+                member=ExtractedMember,
+            )
         else:
             ArchiveReader._extract_tar(data, path, limits, result, deadline)
 
@@ -858,6 +876,34 @@ class ArchiveReader:
                 rejected.extend(r for digest, r in walk.too_deep if digest not in walk.opened)
 
     @staticmethod
+    def _held_nested(
+        member: ExtractedMember,
+        member_path: str,
+        nested: bool,
+        limits: Limits,
+        rejected: list[tuple[str, str, str]] | None,
+    ) -> tuple[bytes, bool]:
+        """A nested archive's bytes, held to be opened in memory. One kept on disk is read back
+        within the size a member could always be held at; past it, it is not opened and its
+        contents are reported unexamined."""
+        inner = member.data
+        if not (nested and isinstance(inner, SpilledBytes)):
+            return inner, nested
+        if inner.size <= ArchiveReader.member_limit(limits):
+            return inner.read_whole(), True
+        if rejected is not None:
+            rejected.append(
+                (
+                    member_path,
+                    Rejection.SIZE,
+                    f"a nested archive of {inner.size} bytes, past the "
+                    f"{ArchiveReader.member_limit(limits)} bytes one is opened at; "
+                    "its contents were not examined",
+                )
+            )
+        return inner, False
+
+    @staticmethod
     def _walk_members(
         result: ExtractionResult,
         path: str,
@@ -870,25 +916,15 @@ class ArchiveReader:
         for member in result.members:
             member_path = f"{path}!{member.name}"
 
-            nested = ArchiveReader.is_archive(member.name)
-            # A nested archive is opened in memory. One kept on disk is read back within the size a
-            # member could always be held at; past it, its contents are reported unexamined.
-            inner = member.data
-            if nested and isinstance(inner, SpilledBytes):
-                if inner.size <= ArchiveReader.member_limit(limits):
-                    inner = inner.read_whole()
-                else:
-                    nested = False
-                    if rejected is not None:
-                        rejected.append(
-                            (
-                                member_path,
-                                Rejection.SIZE,
-                                f"a nested archive of {inner.size} bytes, past the "
-                                f"{ArchiveReader.member_limit(limits)} bytes one is opened at; "
-                                "its contents were not examined",
-                            )
-                        )
+            # Opened when its name says archive, or its bytes do (item 36): a zip named notes.txt
+            # or behind a PNG, a lone install.js.gz. The bytes' test reads a whole header, never a
+            # magic alone, so one that then fails to open is a broken archive, reported unread as a
+            # named one is: bytes appended past a gzip's end marker were never decompressed.
+            claimed = ArchiveReader.is_archive(member.name)
+            nested = claimed or ArchiveSignatures.opens(member.data)
+            inner, nested = ArchiveReader._held_nested(
+                member, member_path, nested, limits, rejected
+            )
             digest = hashlib.sha256(inner).digest() if nested else b""
             too_deep = nested and depth >= limits.max_archive_depth
             if too_deep and rejected is not None:
@@ -931,6 +967,13 @@ class ArchiveReader:
                         walk=walk,
                     )
                     walk.opened.add(digest)
+                    if claimed:
+                        continue
+                    # Opened by its bytes alone, it is also still the member it was: a gem's
+                    # `metadata.gz` is read by name, as the gzip it is, by the gem's own readers
+                    # (rubygems, hooks, releases). Opening by bytes adds what it holds, and takes
+                    # nothing away that was read before; a directory scan keeps the file too.
+                    yield member_path, member.data
                     continue
                 except ArchiveError as exc:
                     # Still scanned as bytes (a payload is a payload whatever its container),

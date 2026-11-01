@@ -222,11 +222,15 @@ class Units:
     ) -> list[FileUnit] | None:
         """An archive expanded (or noted unopened), a binary file and a Git LFS pointer recorded."""
         expanded: list[FileUnit] | None = None
-        if ArchiveReader.is_archive(entry.rel_path):
-            if self.config.expand_archives:
-                expanded = self.expand_members(entry.rel_path, loaded, acc, deadline)
-            else:
-                unopened.append(entry.rel_path)
+        claimed = ArchiveReader.is_archive(entry.rel_path)
+        if claimed and not self.config.expand_archives:
+            unopened.append(entry.rel_path)
+        elif self.config.expand_archives and (
+            # Its name says archive, or its bytes do (item 36): a zip named notes.txt. A whole
+            # header is read, never a magic alone, so one that fails to open is reported unread.
+            claimed or ArchiveReader.opens_by_bytes(loaded.raw)
+        ):
+            expanded = self.expand_members(entry.rel_path, loaded, acc, deadline)
 
         if loaded.is_binary and expanded is None:
             binary.append(entry.rel_path)
