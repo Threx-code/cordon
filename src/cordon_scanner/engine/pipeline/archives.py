@@ -6,6 +6,7 @@ reported as lost coverage rather than skipped silently.
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.engine.pipeline.constants import (
     ARCHIVE_ESCAPE_RULE,
@@ -26,9 +27,18 @@ from cordon_scanner.foundation.models import (
 from cordon_scanner.foundation.results import OperationalFinding
 from cordon_scanner.sources.base import Rejection
 
+if TYPE_CHECKING:
+    from cordon_scanner.engine.pipeline.accumulator import Accumulator
+
 
 class ArchiveMembers:
     """What happened to an archive's members on the way in."""
+
+    #: Refusals that leave nothing unread: a link has no content of its own, a hidden zip member is
+    #: read from its local header, and text named as an archive is scanned as text (item 27).
+    NOTHING_UNREAD: ClassVar[frozenset[str]] = frozenset(
+        {Rejection.LINK, Rejection.HIDDEN, Rejection.NOT_AN_ARCHIVE}
+    )
 
     @staticmethod
     def changed_while_read(path: str) -> Finding:
@@ -143,6 +153,26 @@ class ArchiveMembers:
             remediation="No action needed.",
             severity=Severity.INFO,
         )
+
+    @staticmethod
+    def refuse(
+        acc: Accumulator, path: str, reason: str, detail: str, *, image: bool = False
+    ) -> None:
+        """One refused member, recorded as both archive paths record it (an archive target's and a
+        directory's archives, one rule so the two cannot drift apart again). A link has no content
+        of its own, a hidden zip member is read from its local header (`zip-local/`), text named as
+        an archive is scanned as text: none leaves anything unread (`NOTHING_UNREAD`). An
+        operational refusal is the gap. An attack refusal is reported, and the note that the member
+        went unread is said beside it and is the gap: one graded low, a fixture's, must not leave it
+        unrecorded."""
+        finding = ArchiveMembers.rejected(path, reason, detail, image=image)
+        if reason in ArchiveMembers.NOTHING_UNREAD:
+            acc.append(finding)
+        elif finding.rule_id.startswith("OPERATIONAL."):
+            acc.incomplete(finding)
+        else:
+            acc.append(finding)
+            acc.incomplete(ArchiveMembers.not_examined(path, reason, detail))
 
     @staticmethod
     def not_examined(path: str, reason: str, detail: str) -> Finding:

@@ -378,6 +378,7 @@ class ParallelScanner:
             inventory = engine.inventory(ParallelScanner._to_path(root))
         wanted = set(detector_ids)
         detectors = tuple(d for d in engine.detectors if getattr(d, "id", "") in wanted)
+        missing = tuple(sorted(wanted - {getattr(d, "id", "") for d in detectors}))
 
         context = engine._context(inventory)
         context = ParallelScanner.worker_context(context, facts)
@@ -385,6 +386,7 @@ class ParallelScanner:
             engine=engine,
             context=context,
             detectors=detectors,
+            missing=missing,
         )
 
     @staticmethod
@@ -433,6 +435,10 @@ class ParallelScanner:
 
         from cordon_scanner.foundation.content import FileContent, Skipped
 
+        if getattr(ParallelScanner._worker, "missing", ()):  # (a test's stand-in state has none)
+            raise RuntimeError(
+                f"detectors no worker can build: {list(ParallelScanner._worker.missing)}"
+            )
         engine = ParallelScanner._worker.engine
         ctx = ParallelScanner._worker.context
         detectors = ParallelScanner._worker.detectors
@@ -821,6 +827,12 @@ class _WorkerState:
     engine: Any
     context: Any
     detectors: tuple[Any, ...] = ()
+    missing: tuple[str, ...] = ()
+    """Detectors the parent asked for that this worker's engine does not build: one handed to
+    `Scanner(detectors=...)` ran in no worker, so its findings and a failure of it went missing and
+    the scan said complete (item 27). Raised by the first batch (`_inspect_batch`), so the pool
+    fails without a traceback per worker and the caller inspects every file in the parent, where
+    every detector runs."""
 
 
 __all__ = [

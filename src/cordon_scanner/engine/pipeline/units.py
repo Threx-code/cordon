@@ -22,6 +22,7 @@ from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.archives import ArchiveMembers
 from cordon_scanner.engine.pipeline.constants import REPOSITORY_SCOPE
+from cordon_scanner.engine.pipeline.graph import ParsedManifests
 from cordon_scanner.engine.pipeline.hooks import Hooks
 from cordon_scanner.foundation.content import FileContent, Skipped
 from cordon_scanner.foundation.errors import ArchiveError
@@ -32,7 +33,6 @@ from cordon_scanner.foundation.files.walk import (
 )
 from cordon_scanner.foundation.models import AUTHOR_TIME_HOOKS, Category, Severity
 from cordon_scanner.foundation.results import OperationalFinding, Repository
-from cordon_scanner.sources.base import Rejection
 from cordon_scanner.sources.registry import ArchiveReader
 
 if TYPE_CHECKING:
@@ -206,8 +206,7 @@ class Units:
         """The scan's time budget ran out: the scan is incomplete, and says so."""
         # A partial result a human can act on beats a stack trace, and
         # marking it partial is what stops it being read as a pass.
-        acc.complete = False
-        acc.append(
+        acc.incomplete(
             OperationalFinding.build(
                 path=REPOSITORY_SCOPE,
                 rule_id="OPERATIONAL.SCAN.TIMEOUT",
@@ -240,8 +239,7 @@ class Units:
     def unreadable(acc: Accumulator, entry: WalkEntry, loaded: Skipped) -> None:
         """A file that could not be read: skipped, and the scan incomplete."""
         acc.files_skipped += 1
-        acc.complete = False
-        acc.append(
+        acc.incomplete(
             OperationalFinding.build(
                 path=entry.rel_path,
                 rule_id="OPERATIONAL.FILE.UNREADABLE",
@@ -252,8 +250,7 @@ class Units:
 
     def over_memory(self, acc: Accumulator) -> None:
         """Retained content reached the memory budget: the scan is incomplete, and says so."""
-        acc.complete = False
-        acc.append(
+        acc.incomplete(
             OperationalFinding.build(
                 path=REPOSITORY_SCOPE,
                 rule_id="OPERATIONAL.SCAN.MEMORY_LIMIT",
@@ -282,13 +279,15 @@ class Units:
             # config, which reads as ordinary tuning and pads a payload out
             # of reach. Unless the windows read it to its end: then every text rule saw
             # every byte, and only the whole-file parsers stopped at the limit.
-            acc.complete = acc.complete and ArchiveMembers.read_to_end(loaded)
             # Said here, for every such file. It was said by the capability detector, which
             # returns before it for a binary file and for one no rule applies to -- so a
             # repository with a 12 MB font was incomplete, failed the Action's default gate,
             # and gave no reason.
+            note = ArchiveMembers.truncated_note(entry.rel_path, loaded)
+            if not ArchiveMembers.read_to_end(loaded):
+                note = acc.gap(note)
             if entry.rel_path not in acc.rejected_archives:
-                acc.append(ArchiveMembers.truncated_note(entry.rel_path, loaded))
+                acc.append(note)
 
     @staticmethod
     def language_of(
@@ -318,8 +317,7 @@ class Units:
 
     def archive_over_memory(self, acc: Accumulator, entry: WalkEntry) -> None:
         """An archive's members reached the memory budget: the scan is incomplete, and says so."""
-        acc.complete = False
-        acc.append(
+        acc.incomplete(
             OperationalFinding.build(
                 path=entry.rel_path,
                 rule_id="OPERATIONAL.SCAN.MEMORY_LIMIT",
@@ -347,28 +345,26 @@ class Units:
     ) -> None:
         """Files the walk could not open, a file-count limit reached, directories too deep, and walk errors."""
         if unopened:
-            # An archive that was not opened is content that was not examined. Said
-            # once, with the paths, and it makes the scan incomplete: `--no-expand`
-            # buys speed, not a clean result.
-            acc.complete = False
-            sample = ", ".join(sorted(unopened)[:5])
-            more = f" and {len(unopened) - 5} more" if len(unopened) > 5 else ""
-            acc.append(
+            # An archive that was not opened is content that was not examined, and the scan says
+            # so: incomplete, with every archive named. The operator's own choice (`--no-expand`
+            # buys speed, not a clean result), which no package can make, so it blocks only with
+            # fail_on_incomplete (`NOT_CONTENT_GAPS`). An archive a limit left unread is refused
+            # (ARCHIVE.REJECTED, MEMBER_REJECTED), the package's doing, and blocks.
+            acc.incomplete(
                 OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.ARCHIVE.NOT_EXPANDED",
                     message=(
                         f"{len(unopened)} archive(s) were not opened because archive "
                         f"expansion is off, so their contents were not examined: "
-                        f"{sample}{more}."
+                        f"{', '.join(sorted(unopened))}."
                     ),
                     remediation="Scan without --no-expand, or set scan.expand_archives: true.",
                 )
             )
 
         if walker.stats.limit_hit:
-            acc.complete = False
-            acc.append(
+            acc.incomplete(
                 OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.SCAN.LIMIT",
@@ -421,7 +417,7 @@ class Units:
                 if len(walker.stats.too_deep) > 5
                 else ""
             )
-            acc.append(
+            acc.incomplete(
                 OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.WALK.TOO_DEEP",
@@ -438,29 +434,46 @@ class Units:
                     ),
                 )
             )
-            acc.complete = False
 
-        if walker.stats.errors:
-            sample = ", ".join(path for path, _ in walker.stats.errors[:5])
-            more = (
-                f" and {len(walker.stats.errors) - 5} more" if len(walker.stats.errors) > 5 else ""
-            )
+        # Every path the walk could not reach is a gap of its own, which blocks whatever its cause
+        # (item 27): a machine's cause can be provoked too, a mode-000 directory is EACCES. The
+        # cause, read from the errno or the walker's own reason and never from a message, decides
+        # only what the finding says to do.
+        for errors, rule, remediation in (
+            (
+                [e for e in walker.stats.errors if e.the_machines],
+                "OPERATIONAL.WALK.ERROR",
+                "The host refused or failed the read (a permission, I/O, the process's own limits): "
+                "retry where the scan can read the whole tree. A path the walker could not reach is "
+                "not a path that was found clean. If the tree's own permissions hide it, the package "
+                "is hiding content.",
+            ),
+            (
+                [e for e in walker.stats.errors if not e.the_machines],
+                "OPERATIONAL.WALK.SHAPE",
+                "The tree's own shape put these paths out of reach (a name too long, a loop of "
+                "links, a path past scan.limits.max_path_bytes): the package is hiding content from "
+                "the scan. Inspect them directly, or accept the gap for that path deliberately.",
+            ),
+        ):
+            if not errors:
+                continue
+            for error in errors:
+                acc.named_elsewhere(rule, error.path)
+            sample = ", ".join(e.path[:120] for e in errors[:5])
+            more = f" and {len(errors) - 5} more" if len(errors) > 5 else ""
             acc.append(
                 OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
-                    rule_id="OPERATIONAL.WALK.ERROR",
+                    rule_id=rule,
                     message=(
-                        f"{len(walker.stats.errors)} path(s) could not be traversed and were "
+                        f"{len(errors)} path(s) could not be traversed and were "
                         f"not examined: {sample}{more}."
                     ),
-                    remediation=(
-                        "Check permissions and path lengths. A path the walker could "
-                        "not reach is not a path that was found clean."
-                    ),
+                    remediation=remediation,
                     severity=Severity.MEDIUM,
                 )
             )
-            acc.complete = False
 
     def exclusions(self, acc: Accumulator, walker: Walker) -> None:
         """Plugins that tried to shadow a built-in, directories pruned, and exclusion patterns that matched nothing."""
@@ -520,25 +533,23 @@ class Units:
             names = sorted(walker.stats.pruned_dirs)
             sample = ", ".join(names[:6])
             more = f" and {len(names) - 6} more" if len(names) > 6 else ""
-            acc.append(
-                OperationalFinding.build(
-                    path=REPOSITORY_SCOPE,
-                    rule_id="POLICY.COVERAGE.PRUNED",
-                    category=Category.POLICY,
-                    severity=Severity.LOW,
-                    message=(
-                        f"{len(names)} director(ies) were skipped by the built-in prune "
-                        f"list and not examined: {sample}{more}. These normally hold "
-                        f"build output or an installed dependency tree, which is "
-                        f"reproducible from the manifests that were scanned -- but "
-                        f"installed dependency code is also where a malicious package's "
-                        f"payload actually runs from."
-                    ),
-                    remediation=(
-                        "Pass --include with a pattern covering the directory to scan "
-                        "it, for example --include 'node_modules/**'."
-                    ),
-                )
+            pruned = OperationalFinding.build(
+                path=REPOSITORY_SCOPE,
+                rule_id="POLICY.COVERAGE.PRUNED",
+                category=Category.POLICY,
+                severity=Severity.LOW,
+                message=(
+                    f"{len(names)} director(ies) were skipped by the built-in prune "
+                    f"list and not examined: {sample}{more}. These normally hold "
+                    f"build output or an installed dependency tree, which is "
+                    f"reproducible from the manifests that were scanned -- but "
+                    f"installed dependency code is also where a malicious package's "
+                    f"payload actually runs from."
+                ),
+                remediation=(
+                    "Pass --include with a pattern covering the directory to scan "
+                    "it, for example --include 'node_modules/**'."
+                ),
             )
             # An installed dependency tree or an editor execution vector was
             # skipped, so code that runs was not read. A default scan still only
@@ -561,7 +572,9 @@ class Units:
                     if any(name in path.split("/")[:-1] for path in narrowed_to)
                 }
             if skipped_code:
-                acc.complete = False
+                acc.incomplete(pruned)  # the operator's scope: blocks only with the flag
+            else:
+                acc.append(pruned)
 
     def expand_members(
         self, rel_path: str, loaded: FileContent, acc: Accumulator, deadline: float
@@ -587,9 +600,8 @@ class Units:
         else:
             if loaded.truncated:
                 members = None
-                acc.complete = False
                 acc.rejected_archives.add(rel_path)
-                acc.append(
+                acc.incomplete(
                     OperationalFinding.build(
                         path=rel_path,
                         rule_id="OPERATIONAL.ARCHIVE.REJECTED",
@@ -618,8 +630,7 @@ class Units:
                     members = collected
                 except ArchiveError as exc:
                     members = None
-                    acc.complete = False
-                    acc.append(
+                    acc.incomplete(
                         OperationalFinding.build(
                             path=rel_path,
                             rule_id="OPERATIONAL.ARCHIVE.REJECTED",
@@ -633,8 +644,7 @@ class Units:
                     )
                 directory = rel_path[: -len(prefix)]
                 for member_path, reason, detail in rejected:
-                    acc.complete = acc.complete and reason == Rejection.LINK
-                    acc.append(ArchiveMembers.rejected(directory + member_path, reason, detail))
+                    ArchiveMembers.refuse(acc, directory + member_path, reason, detail)
             cache[digest] = members
             if members is not None:
                 self._archive_stats[0] += 1
@@ -646,8 +656,8 @@ class Units:
             member_path = rel_path + suffix
             content = FileContent.from_member(member_path, data, self.config.limits)
             if content.truncated:
-                acc.complete = acc.complete and ArchiveMembers.read_to_end(content)
-                acc.append(ArchiveMembers.truncated_note(member_path, content))
+                note = ArchiveMembers.truncated_note(member_path, content)
+                acc.append(note if ArchiveMembers.read_to_end(content) else acc.gap(note))
             units.append(
                 FileUnit(content=content, language=LanguageRegistry.of_file(member_path, content))
             )
@@ -708,7 +718,9 @@ class Units:
             if ecosystem is None:
                 continue
             try:
-                hooks = ecosystem.parse_manifest(unit.content).hooks
+                hooks = ParsedManifests.manifest_alone(
+                    ecosystem, unit
+                ).hooks  # a raise, recorded once
             except Exception:  # noqa: BLE001, S112
                 continue
             for hook in hooks:

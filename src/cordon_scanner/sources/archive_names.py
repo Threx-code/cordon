@@ -72,14 +72,31 @@ class MemberNames:
         b"7z\xbc\xaf\x27\x1c",
     )
 
+    #: Every ZIP record's signature: local header, central directory, end of directory, its ZIP64
+    #: forms, and the spanning marker. Searched for anywhere, not at 0 alone: a zip may carry any
+    #: prefix, and a zip that Python's reader refuses can still open in pip, a JAR loader or unzip.
+    _ZIP_RECORDS: tuple[bytes, ...] = (
+        b"PK\x03\x04",
+        b"PK\x01\x02",
+        b"PK\x05\x06",
+        b"PK\x06\x06",
+        b"PK\x06\x07",
+        b"PK\x07\x08",
+    )
+
     @staticmethod
     def not_an_archive(data: bytes) -> str | None:
-        """ "empty" for 0 bytes, "text" for bytes that every archive reader declines and that are
-        text, else None (an archive that would not open, which stays refused). Declined by all
-        three, never by the first bytes alone: a zip's directory is at its end and a zip may carry
-        any prefix (a self-extracting stub, a polyglot), so `zipfile.is_zipfile` reads the tail."""
+        """ "empty" for 0 bytes, "text" for bytes that every archive reader declines, that are text,
+        and that carry no archive signature; else None (an archive that would not open, which stays
+        refused, a gap that blocks). Declined by all three, never by the first bytes alone: a zip's
+        directory is at its end and a zip may carry any prefix (a self-extracting stub, a polyglot),
+        so `zipfile.is_zipfile` reads the tail. And never by "it decodes" alone: a stored zip of
+        text entries is valid UTF-8, and one Python refuses while another extractor opens it would
+        be scanned as text with its members never read (basedpyright's zipfs/corrupt.* shape)."""
         if not data:
             return "empty"
+        if any(signature in data for signature in MemberNames._ZIP_RECORDS):
+            return None
         if zipfile.is_zipfile(io.BytesIO(data)):
             return None
         if data[257:262] == b"ustar" or data.startswith(MemberNames._OPENED_HEADERS):

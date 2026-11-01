@@ -415,6 +415,12 @@ class Config:
         policy = PolicyComparisons._stricter_policy(self.policy, Policy.default())
         if policy != self.policy:
             clamped.append("policy.fail_on")
+        # And no gap accepted: the merge above keeps a side's acceptances where the other is
+        # silent, so they are withheld by name. A package that could accept its own unread part
+        # would pass the one block written to stop it (item 27).
+        if policy.accepted_gaps is not None:
+            policy = replace(policy, accepted_gaps=None)
+            clamped.append("policy.accepted_gaps")
 
         offline, allow_plugins, expand_archives, intel_feed, max_intel_age, minified = (
             self._withheld_switches(clamped)

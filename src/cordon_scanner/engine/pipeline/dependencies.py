@@ -64,8 +64,7 @@ class Dependencies:
                     return None
         except (tarfile.TarError, OSError, ValueError, EOFError):
             if oci.ImageLayers.cut_short(data):
-                acc.complete = False
-                acc.append(
+                acc.incomplete(
                     OperationalFinding.build(
                         path=REPOSITORY_SCOPE,
                         rule_id="OPERATIONAL.IMAGE.UNREADABLE",
@@ -77,8 +76,7 @@ class Dependencies:
         try:
             inventory = oci.ImageLayers.read_image(data)
         except (tarfile.TarError, OSError, ValueError, KeyError, EOFError) as exc:
-            acc.complete = False
-            acc.append(
+            acc.incomplete(
                 OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.IMAGE.UNREADABLE",
@@ -109,8 +107,7 @@ class Dependencies:
                 f"has no advisory source Cordon reads (OSV, or Amazon's ALAS), so its packages cannot be matched"
             )
         for problem in inventory.problems:
-            acc.complete = False
-            acc.append(
+            acc.incomplete(
                 OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.IMAGE.PARTIAL",
@@ -156,8 +153,7 @@ class Dependencies:
         for unit in units:
             data, unreadable = SbomDocument.recognise(unit.content.text, unit.path)
             if unreadable:
-                acc.complete = False
-                acc.append(
+                acc.incomplete(
                     OperationalFinding.build(
                         path=unit.path,
                         rule_id="OPERATIONAL.SBOM.INVALID",
@@ -171,8 +167,7 @@ class Dependencies:
                 continue
             reading = SbomDocument.read(data)
             for problem in reading.problems[:20]:
-                acc.complete = False
-                acc.append(
+                acc.incomplete(
                     OperationalFinding.build(
                         path=unit.path,
                         rule_id="OPERATIONAL.SBOM.INVALID",
@@ -348,7 +343,8 @@ class Dependencies:
                 continue
             if graph.parse_error or not graph.entries:
                 # Unparsed (named by OPERATIONAL.LOCKFILE.UNPARSED): what it resolves is missing.
-                acc.complete = acc.complete and not graph.parse_error
+                if graph.parse_error:
+                    acc.named_elsewhere("OPERATIONAL.LOCKFILE.UNPARSED", unit.path)
                 continue
             project = Dependencies.lockfile_project(unit, graph)
             if graph.fragment:
@@ -391,8 +387,7 @@ class Dependencies:
         """Whether the graph has grown past `limits.max_dependencies`: reported, and incomplete."""
         if len(collected) <= limit:
             return False
-        acc.complete = False
-        acc.append(
+        acc.incomplete(
             OperationalFinding.build(
                 path=unit.path,
                 rule_id="OPERATIONAL.GRAPH.LIMIT",
@@ -435,8 +430,7 @@ class Dependencies:
     @staticmethod
     def parser_failed(acc: Accumulator, unit: FileUnit, ecosystem_id: str, exc: Exception) -> None:
         """A lockfile parser that raised: the file's dependencies are missing, and the scan says so."""
-        acc.complete = False
-        acc.append(
+        acc.incomplete(
             OperationalFinding.build(
                 path=unit.path,
                 rule_id="OPERATIONAL.PARSER.FAILED",
@@ -664,10 +658,10 @@ class Dependencies:
         try:
             manifest = Graph.manifest_of(ecosystem, unit, contents)
         except Exception:  # noqa: BLE001
-            acc.complete = False
+            acc.named_elsewhere("OPERATIONAL.PARSER.FAILED", unit.path)
             return None
         if manifest.parse_error:
-            acc.complete = False
+            acc.named_elsewhere("OPERATIONAL.MANIFEST.UNPARSED", unit.path)
             return None
         return manifest
 
