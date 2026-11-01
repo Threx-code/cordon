@@ -59,6 +59,39 @@ class TestAnIncludedFileIsNeverDroppedUnsaid:
         assert result.content_complete is False
         assert PolicyGate.evaluate(result, Policy.default()).exit_code is ExitCode.INCOMPLETE
 
+    @staticmethod
+    def chain(tmp_path, length: int, last: str | None) -> None:
+        """requirements.txt -> r1.txt -> ... -> r{length}.txt, the last including `last`."""
+        (tmp_path / "requirements.txt").write_text("-r r1.txt\n", encoding="utf-8")
+        for i in range(1, length + 1):
+            nested = f"-r r{i + 1}.txt\n" if i < length else (f"-r {last}\n" if last else "")
+            (tmp_path / f"r{i}.txt").write_text(f"{nested}pkg{i}==1.0\n", encoding="utf-8")
+
+    def test_a_cycle_at_the_bound_blocks_nothing(self, tmp_path) -> None:
+        # The last file at the bound includes one already read: nothing went unread.
+        self.chain(tmp_path, Graph.MAX_INCLUDE_DEPTH, "r1.txt")
+        result = IncludeKit.scan(tmp_path)
+        assert not IncludeKit.failed_at(result)
+        assert result.content_complete is True
+
+    def test_leaving_the_tree_at_the_bound_is_as_below_it(self, tmp_path) -> None:
+        deep, shallow = tmp_path / "deep", tmp_path / "shallow"
+        deep.mkdir()
+        shallow.mkdir()
+        self.chain(deep, Graph.MAX_INCLUDE_DEPTH, "../x.txt")
+        self.chain(shallow, 3, "../x.txt")
+        a, b = IncludeKit.scan(deep), IncludeKit.scan(shallow)
+        assert (IncludeKit.failed_at(a), a.content_complete) == (
+            IncludeKit.failed_at(b),
+            b.content_complete,
+        )
+
+    def test_a_real_file_past_the_bound_still_blocks(self, tmp_path) -> None:
+        self.chain(tmp_path, Graph.MAX_INCLUDE_DEPTH + 1, None)
+        result = IncludeKit.scan(tmp_path)
+        assert IncludeKit.failed_at(result)
+        assert PolicyGate.evaluate(result, Policy.default()).exit_code is ExitCode.INCOMPLETE
+
     def test_a_pinned_requirements_file_still_follows_its_includes(self, tmp_path) -> None:
         # Fully pinned, so read as a lockfile and its project counted as covered: its `-r` was
         # never followed, and base.txt's evilpkg went unchecked in a complete scan.
