@@ -140,3 +140,28 @@ class TestThroughTheWorkers:
         result, handed = FactsKit.scan(tmp_path, ["none.py", "other.py"], monkeypatch)
         assert handed == [] and not FactsKit.refused(result)
         assert result.content_complete
+
+
+class TestADeepPayloadIsRefusedNotRaised:
+    """cordon-47's review: CPython's json decoder raises RecursionError on a deeply nested payload far
+    inside FILE_BYTES; at the parent's trust boundary that must be a refusal, never an exception."""
+
+    def test_it_is_refused_before_it_is_decoded(self) -> None:
+        deep = "[" * 100_000 + "]" * 100_000
+        assert Facts.depth(deep) == 100_000
+        accepted, why = Facts.accept(deep, 0)
+        assert accepted is None and "nested" in why
+
+    def test_brackets_inside_strings_are_not_depth(self) -> None:
+        text = json.dumps({"js.require": ["./a[[[[[[{{{{.js"]})
+        assert Facts.depth(text) == 2
+        assert Facts.accept(text, 0)[0] == {"js.require": ["./a[[[[[[{{{{.js"]}
+
+    def test_through_absorb_it_is_a_gap_at_the_file_and_nothing_raises(self) -> None:
+        from cordon_scanner.engine.pipeline.accumulator import Accumulator
+        from cordon_scanner.engine.pipeline.detection import Detection
+
+        acc, results = Accumulator(), []
+        Detection.absorb_facts("deep.py", "[" * 100_000 + "]" * 100_000, acc, results)
+        assert [f.rule_id for f in results] == ["OPERATIONAL.WORKER.FACTS_REFUSED"]
+        assert results[0].location.path == "deep.py" and not acc.facts

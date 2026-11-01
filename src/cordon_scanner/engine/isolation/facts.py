@@ -27,6 +27,9 @@ FILE_BYTES = 2 << 20
 """The most bytes one file's encoded facts may take."""
 SCAN_BYTES = 64 << 20
 """The most bytes all files' facts may take in one scan."""
+MAX_DEPTH = 4
+"""The deepest a facts payload nests: a mapping of kinds, a list of facts, a fact's fields (3), and one
+level of slack. Each declared shape is at most 3 deep."""
 OVERSIZED = '{"__oversized__":[]}'
 """What a worker sends instead of a set past its bounds: refused by the parent as an undeclared kind."""
 UNENCODABLE = '{"__unencodable__":[]}'
@@ -72,6 +75,28 @@ class Facts:
     }
 
     @staticmethod
+    def depth(text: str) -> int:
+        """The deepest nesting of `[` and `{` outside JSON strings, in one linear pass."""
+        deepest = level = 0
+        quoted = escaped = False
+        for char in text:
+            if quoted:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    quoted = False
+            elif char == '"':
+                quoted = True
+            elif char in "[{":
+                level += 1
+                deepest = max(deepest, level)
+            elif char in "]}":
+                level -= 1
+        return deepest
+
+    @staticmethod
     def accept(text: str, spent: int) -> tuple[dict[str, list[Any]] | None, str]:
         """A file's facts, decoded and checked, or None with why they were refused. `spent` is the
         bytes earlier files' facts took in this scan. Plain data only: `json.loads` builds nothing
@@ -82,10 +107,14 @@ class Facts:
             return None, f"{len(text)} bytes of facts, past the {FILE_BYTES} a file may send"
         if spent + len(text) > SCAN_BYTES:
             return None, f"the scan's facts passed {SCAN_BYTES} bytes"
+        if Facts.depth(text) > MAX_DEPTH:
+            # Before decoding: CPython's decoder recurses per level and raises RecursionError on a
+            # deep payload a fraction of FILE_BYTES long (cordon-47's review).
+            return None, "facts nested past the declared shapes' depth"
         try:
             decoded = json.loads(text)
-        except ValueError:
-            return None, "facts that are not JSON"
+        except (ValueError, RecursionError, MemoryError):
+            return None, "facts that are not JSON within the decoder's limits"
         if not isinstance(decoded, dict):
             return None, "facts that are not a mapping of kinds"
         count = 0
