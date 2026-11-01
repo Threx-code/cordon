@@ -625,6 +625,7 @@
   "rules/tester": "rules/tester",
   "sources/archive": "sources/archive",
   "sources/archive_names": "sources/archive_names",
+  "sources/ar_reader": "sources/ar_reader",
   "sources/lone_stream": "sources/lone_stream",
   "sources/signatures": "sources/signatures",
   "sources/base": "sources/base",

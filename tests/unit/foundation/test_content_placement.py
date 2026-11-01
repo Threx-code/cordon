@@ -12,8 +12,8 @@ import pytest
 from cordon_scanner import Scanner
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
+from support import ROOT
 
-ROOT = Path(__file__).resolve().parents[3]
 SAMPLE = ROOT / "corpus" / "malicious" / "agent-rules-injection"
 MALICIOUS = ROOT / "corpus" / "malicious"
 
@@ -100,7 +100,7 @@ class TestTheNameLineStillDecides:
     def graded(tmp_path, text: str, name: str) -> list[tuple[str, str]]:
         root = tmp_path / name
         root.mkdir()
-        (root / "settings.js").write_text(text)
+        (root / "settings.js").write_text(text, encoding="utf-8")
         result = Scanner(Config.default().with_overrides(use_cache=False, offline=True)).scan(root)
         return sorted(
             (f.rule_id, f.severity.name) for f in result.findings if f.rule_id.startswith("SECRET.")

@@ -868,7 +868,7 @@ class Listed:
             "cloud.fixer:_normalise:1",
             "cloud.fixer:pypi:1",
             "decide.verdict_features:_dependencies_used:1",
-            "decide.verdict_features:package:7",
+            "decide.verdict_features:_manifest_facts:2",
             "detect.agents.configuration:lookalike_of:2",
             "detect.agents.extension_files:gitpod_extensions:1",
             "detect.agents.extension_files:gitpod_extensions:2",
