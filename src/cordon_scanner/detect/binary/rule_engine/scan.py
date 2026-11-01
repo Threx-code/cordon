@@ -311,7 +311,9 @@ class Search:
                 if gated is not None:
                     events.extend(gated)
                     continue
-                starts = seen[needle] = Search.occurrences(data, needle, Search.budget(seen))
+                starts = seen[needle] = Search.kept(seen, False, needle) or Search.occurrences(
+                    data, needle, Search.budget(seen)
+                )
             if starts:
                 Search._occurred(events, starts, length, owners)
         for folded, length, spellings in self.folds:
@@ -319,12 +321,13 @@ class Search:
             # finds them all; the bytes found say which spelling it was
             starts = seen.get(("folded", folded))
             if starts is None:
+                starts = Search.kept(seen, True, folded)
+            if starts is None:
                 lowered = seen.get(("lowered",))
                 if lowered is None:
                     lowered = seen[("lowered",)] = data.lower()
-                starts = seen[("folded", folded)] = Search.occurrences(
-                    lowered, folded, Search.budget(seen)
-                )
+                starts = Search.occurrences(lowered, folded, Search.budget(seen))
+            seen[("folded", folded)] = starts
             for s in starts:
                 Search._occurred(events, (s,), length, spellings[data[s : s + length]])
         hunt = _Hunt(self, data, fixed, deadline)
@@ -346,7 +349,9 @@ class Search:
         for needle, length, holders in self.needles:
             starts = seen.get(needle)
             if starts is None:
-                starts = seen[needle] = Search.occurrences(data, needle, Search.budget(seen))
+                starts = seen[needle] = Search.kept(seen, False, needle) or Search.occurrences(
+                    data, needle, Search.budget(seen)
+                )
             owners += [
                 (starts, length, length + a[1], order, len(a[0]) + a[1]) for order, _, a in holders
             ]
@@ -354,11 +359,14 @@ class Search:
             # a folded anchor's owners are those of how the data spells it at each occurrence
             starts = seen.get(("folded", folded))
             if starts is None:
+                starts = Search.kept(seen, True, folded)
+            if starts is None:
                 lowered = seen.get(("lowered",))
                 if lowered is None:
                     lowered = seen[("lowered",)] = data.lower()
                 budget = Search.budget(seen)
-                starts = seen[("folded", folded)] = Search.occurrences(lowered, folded, budget)
+                starts = Search.occurrences(lowered, folded, budget)
+            seen[("folded", folded)] = starts
             spelled: dict[bytes, list[int]] = {}
             for at in starts:
                 spelled.setdefault(data[at : at + length], []).append(at)
@@ -469,6 +477,20 @@ class Search:
                     (needle, len(needle), owners) for needle, owners in group.items()
                 )
         self.zeros = zeros
+
+    @staticmethod
+    def kept(seen: dict[Any, Any], folded: bool, needle: bytes) -> list[int] | None:
+        """A common anchor's places as the automaton's pass kept them (`AnchorIndex.place`), read
+        exactly as `Places.occurrences` reads them: past what the file's budget still holds they
+        refuse the file, and reading them spends it. None where the pass kept none."""
+        starts = seen.get(("kept", folded, needle))
+        if starts is None:
+            return None
+        budget = Search.budget(seen)
+        if len(starts) > min(Places.MOST, budget[0]):
+            raise Places.too_many()
+        budget[0] -= len(starts)
+        return list(starts)
 
     @staticmethod
     def occurrences(data: bytes, needle: bytes, budget: list[int] | None = None) -> list[int]:

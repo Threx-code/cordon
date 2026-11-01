@@ -1041,6 +1041,7 @@
   "test_manifest_cache.py": "engine/pipeline",
   "test_supervisor.py": "engine/isolation",
   "test_stream.py": "detect/binary/rule_engine",
+  "test_kept_positions.py": "detect/binary/rule_engine",
   "test_rule_file_fail_closed.py": "detect/binary",
   "test_builtin.py": "detect/binary/modules",
   "test_region_memo.py": "detect/binary/modules",
