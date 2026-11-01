@@ -33,6 +33,7 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 from cordon_scanner.foundation.paths import PackagePaths
+from support import ROOT as REPO
 
 
 class SchemaKit:
@@ -40,7 +41,7 @@ class SchemaKit:
 
     @staticmethod
     def tree(where: Path) -> Path:
-        for path, dotted in FeatureSchema.EXTRACTOR:
+        for path, dotted in (*FeatureSchema.EXTRACTOR, *FeatureSchema.ADDED):
             source = FeatureSchema.source(path, dotted)
             (where / source).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(PackagePaths.root() / source, where / source)
@@ -358,3 +359,34 @@ class TestFeatureScope:
         assert not FeatureScope.computed(
             FeatureFold.apply({"pkg:code_import_tok_517": 1.0}).popitem()[0]
         )
+
+
+class TestTheEquivalences:
+    """A version mapped to an earlier one (`FeatureSchema.SAME_AS`) is admitted only with its identity
+    test: item 56 moved reading a file into the workers, the extractor's code changed and no feature
+    value did, and rows on either side of the move pool only while that stays proven."""
+
+    def test_each_mapping_names_a_test_in_the_suite(self) -> None:
+        for computed, (earlier, test) in FeatureSchema.SAME_AS.items():
+            assert computed != earlier and earlier.startswith(FeatureSchema.PREFIX)
+            path, _, name = test.partition("::")
+            module = REPO / path
+            assert module.is_file(), f"{computed}: its identity test {path} is not in the suite"
+            assert f"class {name}" in module.read_text(encoding="utf-8"), (
+                f"{computed}: its identity test {name} is not in {path}"
+            )
+
+    def test_this_tree_computes_the_baseline_rows_features(self) -> None:
+        """The a3b9c5f1 baseline rows carry fs1-ea0fb02ccf3bb099: this tree's features pool with
+        them because its own hash is mapped there, never by accident."""
+        assert FeatureSchema.version() == "fs1-ea0fb02ccf3bb099"
+
+    def test_a_change_after_the_mapping_still_moves_it(self, tmp_path: Path) -> None:
+        root = SchemaKit.tree(tmp_path)
+        SchemaKit.edit(
+            root,
+            "detect/code/reached_flows.py",
+            '"closure": ctx.library_closure_paths - entries,',
+            '"closure": ctx.library_closure_paths,',
+        )
+        assert FeatureSchema.version(root, FeatureSchema.names()) != FeatureSchema.version()
