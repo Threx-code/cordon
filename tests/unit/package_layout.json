@@ -661,6 +661,7 @@
   "test_archive_bombs_are_refused_while_streaming.py": "sources",
   "test_not_an_archive.py": "sources",
   "test_archive_typed_by_bytes.py": "sources",
+  "test_unopenable_archives.py": "sources",
   "test_archive_inner_dotdot.py": "sources",
   "test_nested_repeats.py": "sources",
   "test_member_spill.py": "sources",

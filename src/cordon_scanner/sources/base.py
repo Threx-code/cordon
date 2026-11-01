@@ -171,6 +171,9 @@ class Rejection:
     """A member named as an archive that no archive reader opens and that is text (`Dockerfile.conda`):
     scanned as the text it is, so nothing is left unread (item 27, class 7)."""
     COMPRESSED_TRUNCATED = "compressed_truncated"
+    UNSUPPORTED_FORMAT = "unsupported_format"
+    """An archive in a format no reader here opens (rar, 7z, cab, ar, cpio, xar, iso, lzip, lzma): its
+    contents were not examined, whatever it is called (item 53)."""
     """A lone compressed stream (`dump.sql.gz`, not a tar) that ends before its end marker: every
     byte it holds was decompressed and read, so nothing is left unread (item 30)."""
     PADDED = "padded_expansion"
@@ -202,6 +205,7 @@ class ArchiveReading(Protocol):
 
     def is_archive(self, path: str) -> bool: ...
     def opens_by_bytes(self, data: bytes) -> bool: ...
+    def unsupported(self, path: str, data: bytes, rejected: list[tuple[str, str, str]]) -> bool: ...
     def safe_member_name(self, name: str, *, collapse: bool = ...) -> str | None: ...
     def walk_archive(
         self,

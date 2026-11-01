@@ -48,7 +48,7 @@ from cordon_scanner.sources.budget import (
     _BytesReader,
 )
 from cordon_scanner.sources.lone_stream import LoneStream
-from cordon_scanner.sources.signatures import ArchiveSignatures, CompressedHeader
+from cordon_scanner.sources.signatures import ArchiveSignatures, CompressedHeader, UnopenedFormats
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -165,6 +165,11 @@ class ArchiveReader:
 
     #: Whether bytes are an archive a reader would open, whatever they are called (item 36).
     opens_by_bytes = staticmethod(ArchiveSignatures.opens)
+
+    @staticmethod
+    def unsupported(path: str, data: bytes, rejected: list[tuple[str, str, str]]) -> bool:
+        """`_unsupported` for the directory walk, through the registry's port."""
+        return ArchiveReader._unsupported(path, data, rejected)
 
     safe_member_name = staticmethod(MemberNames.safe_member_name)
     normalise_member_name = staticmethod(MemberNames.normalise_member_name)
@@ -639,6 +644,25 @@ class ArchiveReader:
             )
         )
 
+    #: What `UnopenedFormats` reads of a member: an ISO's identifier sits at 0x8001.
+    UNOPENED_HEAD = 0x8806
+
+    @staticmethod
+    def _unsupported(member_path: str, data: bytes, rejected: list[tuple[str, str, str]]) -> bool:
+        """A member in an archive format no reader here opens, refused as unread at its path,
+        whatever it is called (item 53); False when it is no such format."""
+        found = UnopenedFormats.format_of(bytes(data[: ArchiveReader.UNOPENED_HEAD]))
+        if found is None:
+            return False
+        rejected.append(
+            (
+                member_path,
+                Rejection.UNSUPPORTED_FORMAT,
+                f"a {found} archive, a format no reader here opens; its contents were not examined",
+            )
+        )
+        return True
+
     @staticmethod
     def _unopened(
         member_path: str, inner: bytes, exc: ArchiveError, rejected: list[tuple[str, str, str]]
@@ -647,7 +671,7 @@ class ArchiveReader:
         reader opens it and there is nothing to open: 0 bytes hold nothing (class 8, no refusal),
         and text is scanned as the text it is (class 7, said, complete; item 27)."""
         shape = ArchiveReader.not_an_archive(inner)
-        if shape == "empty":
+        if shape == "empty" or ArchiveReader._unsupported(member_path, inner, rejected):
             return
         if shape == "text":
             reason, detail = (
@@ -983,6 +1007,8 @@ class ArchiveReader:
                     if rejected is not None:
                         ArchiveReader._unopened(member_path, inner, exc, rejected)
 
+            if not nested and rejected is not None:
+                ArchiveReader._unsupported(member_path, member.data, rejected)
             yield member_path, member.data
 
 

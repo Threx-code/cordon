@@ -78,6 +78,8 @@ class _Decompressing:
             return zlib.decompressobj(31)
         if self.kind == "bzip2":
             return bz2.BZ2Decompressor()
+        if self.kind == "lzma":
+            return lzma.LZMADecompressor(format=lzma.FORMAT_ALONE)
         return lzma.LZMADecompressor(format=lzma.FORMAT_XZ)
 
     def read(self, size: int = -1) -> bytes:
@@ -159,7 +161,7 @@ class LoneStream:
     ) -> tuple[Any, Any]:
         """The stream metered as a tar's is (`_BudgetedStream`), and what records a cut."""
         kind = CompressedHeader.format_of(data)
-        if kind in ("gzip", "bzip2", "xz"):
+        if kind in ("gzip", "bzip2", "xz", "lzma"):
             inner: Any = _Decompressing(data, kind)
             return _BudgetedStream(inner, _BytesReader(data), limits, deadline, path, cap), inner
         tolerant = _CutTolerant(

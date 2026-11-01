@@ -21,13 +21,14 @@ member that claims nothing is opened, so a chance `PK` or `\\x1f\\x8b` in an ima
 from __future__ import annotations
 
 import io
+import lzma
 import posixpath
 import struct
 import zipfile
 import zlib
 
 #: The suffixes a single compressed stream is named with; the inner name is the outer one without it.
-STREAM_SUFFIXES = (".gz", ".gzip", ".bz2", ".xz", ".zst", ".zstd")
+STREAM_SUFFIXES = (".gz", ".gzip", ".bz2", ".xz", ".zst", ".zstd", ".lzma")
 
 
 class CompressedHeader:
@@ -57,7 +58,31 @@ class CompressedHeader:
             return "xz" if valid else None
         if len(data) >= 5 and data[:4] == b"\x28\xb5\x2f\xfd":
             return "zstd" if data[4] & 0x08 == 0 else None
-        return None
+        return "lzma" if CompressedHeader.lzma_alone(data) else None
+
+    @staticmethod
+    def lzma_alone(data: bytes) -> bool:
+        """The .lzma header xz-utils and 7-Zip write: a properties byte encoding lc ≤ 8, lp ≤ 4 and
+        pb ≤ 4 (under 225), a dictionary of 2^n or 2^n + 2^(n-1) bytes between 4 KiB and 1.5 GiB, and
+        an uncompressed size that is unknown (all ones) or under 256 GiB. Text can't meet all three."""
+        if len(data) < 13 or data[0] >= 225:
+            return False
+        dictionary = struct.unpack("<I", data[1:5])[0]
+        if not 4096 <= dictionary <= 3 << 29:
+            return False
+        top = 1 << (dictionary.bit_length() - 1)
+        if dictionary not in (top, top + (top >> 1)):
+            return False
+        size = struct.unpack("<Q", data[5:13])[0]
+        if not (size == (1 << 64) - 1 or size < 1 << 38):
+            return False
+        # The header is only the candidate; a decode of the first block is the proof, so bytes that
+        # merely start like one are never taken for a stream (modelling team's review of note 53).
+        try:
+            lzma.LZMADecompressor(format=lzma.FORMAT_ALONE).decompress(data[:65536], 4096)
+        except lzma.LZMAError:
+            return False
+        return True
 
 
 class ArchiveSignatures:
@@ -110,4 +135,43 @@ class ArchiveSignatures:
         return base
 
 
-__all__ = ["STREAM_SUFFIXES", "ArchiveSignatures", "CompressedHeader"]
+class UnopenedFormats:
+    """Archive formats no reader here opens -- no stdlib reader exists and Cordon adds no dependency
+    (constraint C1) -- known by structure so each is said as unread, never passed (item 53). Each test
+    is a signature plus the field that makes it that format, never a magic alone."""
+
+    _CPIO_HEX = frozenset(b"0123456789abcdefABCDEF")
+    _CPIO_OCTAL = frozenset(b"01234567")
+
+    @staticmethod
+    def format_of(data: bytes) -> str | None:
+        """ "rar", "7z", "cab", "ar", "cpio", "xar", "iso", "lzip" or "lzma", or None."""
+        if data[:6] == b"Rar!\x1a\x07" and (data[6:7] == b"\x00" or data[6:8] == b"\x01\x00"):
+            return "rar"
+        if data[:6] == b"7z\xbc\xaf\x27\x1c" and data[6:7] == b"\x00":
+            return "7z"
+        if len(data) >= 12 and data[:8] == b"MSCF\x00\x00\x00\x00":
+            return "cab" if struct.unpack("<I", data[8:12])[0] >= 36 else None
+        if data[:8] == b"!<arch>\n" and data[66:68] == b"`\n":
+            return "ar"
+        if UnopenedFormats._cpio(data):
+            return "cpio"
+        if len(data) >= 6 and data[:4] == b"xar!" and struct.unpack(">H", data[4:6])[0] >= 28:
+            return "xar"
+        if data[0x8001:0x8006] == b"CD001":
+            return "iso"
+        if data[:4] == b"LZIP" and data[4:5] == b"\x01":
+            return "lzip"
+        return None
+
+    @staticmethod
+    def _cpio(data: bytes) -> bool:
+        """newc or crc ("070701"/"070702", then hex fields) or odc ("070707", then octal fields)."""
+        if data[:6] in (b"070701", b"070702"):
+            return len(data) >= 14 and all(b in UnopenedFormats._CPIO_HEX for b in data[6:14])
+        if data[:6] == b"070707":
+            return len(data) >= 12 and all(b in UnopenedFormats._CPIO_OCTAL for b in data[6:12])
+        return False
+
+
+__all__ = ["STREAM_SUFFIXES", "ArchiveSignatures", "CompressedHeader", "UnopenedFormats"]

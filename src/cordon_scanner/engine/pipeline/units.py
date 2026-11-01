@@ -232,12 +232,24 @@ class Units:
         ):
             expanded = self.expand_members(entry.rel_path, loaded, acc, deadline)
 
+        # A named archive's refusal is its expansion's; with archives not expanded, an unopenable
+        # format is the operator's choice as every archive is (NOT_EXPANDED), never both.
+        if expanded is None and not claimed and self.config.expand_archives:
+            Units.unsupported_archive(entry.rel_path, loaded, acc)
         if loaded.is_binary and expanded is None:
             binary.append(entry.rel_path)
 
         if loaded.is_lfs_pointer:
             lfs_pointers.append(entry.rel_path)
         return expanded
+
+    @staticmethod
+    def unsupported_archive(rel_path: str, loaded: FileContent, acc: Accumulator) -> None:
+        """A file in an archive format no reader here opens is a gap at its path (item 53)."""
+        refused: list[tuple[str, str, str]] = []
+        if ArchiveReader.unsupported(rel_path, loaded.raw, refused):
+            for path, reason, detail in refused:
+                ArchiveMembers.refuse(acc, path, reason, detail)
 
     def out_of_time(self, acc: Accumulator) -> None:
         """The scan's time budget ran out: the scan is incomplete, and says so."""

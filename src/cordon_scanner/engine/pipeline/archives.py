@@ -146,6 +146,16 @@ class ArchiveMembers:
             return ArchiveMembers.not_an_archive(path)
         if reason == Rejection.COMPRESSED_TRUNCATED:
             return ArchiveMembers.compressed_truncated(path, detail)
+        if reason == Rejection.UNSUPPORTED_FORMAT:
+            return OperationalFinding.build(
+                path=path,
+                rule_id="OPERATIONAL.ARCHIVE.UNSUPPORTED_FORMAT",
+                message=f"This file is {detail}: what it holds was not scanned.",
+                remediation=(
+                    "Ship the contents unpacked, or in a zip, tar or gzip, so they can be read; or "
+                    "accept this gap by path once the archive has been reviewed."
+                ),
+            )
         return ArchiveMembers.not_examined(path, reason, detail)
 
     @staticmethod
