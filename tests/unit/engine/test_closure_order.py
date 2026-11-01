@@ -90,7 +90,9 @@ class TestEveryEntryIsFollowed:
         found = Hooks.hook_js_closure(units, {"dist/index.js"})
         assert found == {"dist/chunk.js", "dist/side.js", "dist/more.js"}
 
-    def test_a_bin_entry_s_requires_are_in_the_library_closure(self, tmp_path, monkeypatch) -> None:
+    def test_the_main_and_bin_entries_requires_are_in_the_library_closure(
+        self, tmp_path, monkeypatch
+    ) -> None:
         import io
         import tarfile
 
@@ -107,7 +109,8 @@ class TestEveryEntryIsFollowed:
                     "bin": {"probe": "bin/cli.js"},
                 }
             ),
-            "package/index.js": "module.exports = 1;\n",
+            "package/index.js": 'import{a}from"./dist/chunk.js";\nexport default a;\n',
+            "package/dist/chunk.js": "export const a = 1;\n",
             "package/bin/cli.js": 'const h = require("../lib/helper");\nh();\n',
             "package/lib/helper.js": "module.exports = () => 0;\n",
         }
@@ -127,4 +130,5 @@ class TestEveryEntryIsFollowed:
         )
         Scanner(Config.default().with_overrides(use_cache=False, offline=True)).scan(archive)
         closure = {p.split("!", 1)[-1] for ctx in seen for p in ctx.library_closure_paths}
-        assert "package/lib/helper.js" in closure
+        assert "package/lib/helper.js" in closure  # a bin entry's relative require
+        assert "package/dist/chunk.js" in closure  # the main's minified import
