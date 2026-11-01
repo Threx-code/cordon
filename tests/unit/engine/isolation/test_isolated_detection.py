@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import textwrap
@@ -135,6 +136,35 @@ class TestTheTemplateHoldsNoScannedByte:
         assert made, "the scan read its files after the fork"
 
 
+class Seen:
+    """Where a planted finding was made, read exactly from its message (item 55): the check was a
+    substring match, so a worker whose pid begins with this process's digits (1234 against 12) read
+    as this process, and the gate's load, many processes, made such pids likely."""
+
+    PID = re.compile(r"seen in process (\d+)$")
+
+    @staticmethod
+    def pid(message: str) -> int | None:
+        found = Seen.PID.search(message)
+        return int(found.group(1)) if found else None
+
+    @staticmethod
+    def here(findings) -> list[tuple[str, int | None]]:
+        """The planted findings made in this process (or whose pid can't be read), by path and pid."""
+        return [
+            (f.location.path, Seen.pid(f.message))
+            for f in findings
+            if f.rule_id == "PLANTED.SEEN.001" and Seen.pid(f.message) in (None, os.getpid())
+        ]
+
+
+class TestTheCheckReadsThePidExactly:
+    def test_a_worker_pid_that_begins_with_this_one_is_not_this_one(self) -> None:
+        worker = int(f"{os.getpid()}34")
+        assert Seen.pid(f"seen in process {worker}") == worker != os.getpid()
+        assert Seen.pid(f"seen in process {os.getpid()}") == os.getpid()
+
+
 class TestADetectorGivenToTheScannerRunsInTheWorkers:
     def test_its_findings_come_from_a_worker_and_its_failure_is_a_gap(self, tmp_path) -> None:
         from cordon_scanner.engine.registry import Registry
@@ -143,10 +173,38 @@ class TestADetectorGivenToTheScannerRunsInTheWorkers:
         config = Config.default().with_overrides(use_cache=False)
         result = Scanner(config, detectors=(*Registry.default_detectors(), Planted())).scan(root)
         seen = [f for f in result.findings if f.rule_id == "PLANTED.SEEN.001"]
-        assert seen and all(f"process {os.getpid()}" not in f.message for f in seen)  # not here
+        assert seen
+        assert not Seen.here(seen), f"made in this process {os.getpid()}: {Seen.here(seen)}"
         failed = [f for f in result.findings if f.rule_id == "OPERATIONAL.DETECTOR.FAILED"]
         assert [f.location.path for f in failed] == ["raises.txt"]
         assert result.complete is False
+
+    def test_an_archive_s_members_are_read_in_the_workers_too(self, tmp_path) -> None:
+        """No member of an archive is inspected in this process: the loop left for that was deleted
+        (item 55), and this keeps one from coming back unnoticed."""
+        import io
+        import tarfile
+
+        from cordon_scanner.engine.registry import Registry
+
+        target = tmp_path / "pkg-1.0.0.tgz"
+        with tarfile.open(target, "w:gz") as tar:
+            for name in ("package/package.json", "package/a.txt", "package/b.txt"):
+                # distinct bytes: byte-identical copies fold into one finding (item 28)
+                data = (
+                    b'{"name":"pkg","version":"1.0.0"}' if name.endswith(".json") else name.encode()
+                )
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+        config = Config.default().with_overrides(use_cache=False)
+        result = Scanner(config, detectors=(*Registry.default_detectors(), Planted())).scan(target)
+        seen = [f for f in result.findings if f.rule_id == "PLANTED.SEEN.001"]
+        assert {f.location.path.rsplit("!", 1)[-1] for f in seen} >= {
+            "package/a.txt",
+            "package/b.txt",
+        }
+        assert not Seen.here(seen), f"made in this process {os.getpid()}: {Seen.here(seen)}"
 
 
 class TestAWorkerStartsNoProcessOfItsOwn:
