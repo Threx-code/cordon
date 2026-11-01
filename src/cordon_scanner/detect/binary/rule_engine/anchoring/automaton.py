@@ -36,6 +36,14 @@ from cordon_scanner.detect.binary.rule_engine.threads import REACH
 class Native:
     """The extension, or why it is not in use."""
 
+    #: The interface this side is written for: `anchors.c` exports the same number as `ABI`, and
+    #: it goes up whenever a function's name, arguments, or its result's shape or meaning changes
+    #: (`positions` returning packed offsets instead of a list is such a change) (item 17).
+    ABI: ClassVar[int] = 1
+    #: What this side calls, so a build missing one falls back here rather than raising mid-scan.
+    FUNCTIONS: ClassVar[tuple[str, ...]] = ("Automaton", "check_text", "text_hits", "hex_hits")
+    METHODS: ClassVar[tuple[str, ...]] = ("present", "positions")
+
     @staticmethod
     def load() -> tuple[Any, str]:
         if os.environ.get("CORDON_NO_NATIVE"):
@@ -44,6 +52,23 @@ class Native:
             from cordon_scanner._native import _anchors  # type: ignore[attr-defined]
         except ImportError as exc:
             return None, f"the native anchor matcher is not built ({exc})"
+        abi = getattr(_anchors, "ABI", None)
+        if abi != Native.ABI:
+            return None, (
+                f"the native anchor matcher is from another build (ABI {abi}, expected "
+                f"{Native.ABI}); using the Python one"
+            )
+        missing = [name for name in Native.FUNCTIONS if not hasattr(_anchors, name)]
+        missing += [
+            f"Automaton.{name}"
+            for name in Native.METHODS
+            if hasattr(_anchors, "Automaton") and not hasattr(_anchors.Automaton, name)
+        ]
+        if missing:
+            return None, (
+                f"the native anchor matcher is from another build (missing {', '.join(missing)}); "
+                "using the Python one"
+            )
         return _anchors, "native"
 
 
