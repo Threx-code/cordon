@@ -358,7 +358,7 @@ class Detection:
             # crash under --jobs left the scan "complete" (item 27). The same call as the serial
             # path's, so an advisory source's leaves the advisory side incomplete here too.
             for finding in findings:
-                if finding.rule_id == "OPERATIONAL.DETECTOR.FAILED":
+                if finding.rule_id in ("OPERATIONAL.DETECTOR.FAILED", "OPERATIONAL.FILE.TIMEOUT"):
                     acc.gap(finding)
             Detection.degraded(findings, acc)
             if acc.complete and cacheable and not any(f.degrades_coverage for f in findings):
@@ -454,6 +454,28 @@ class Detection:
                 produced = DetectorClock.timed(
                     detector.id, lambda: list(detector.inspect(unit, ctx))
                 )
+        except TimeoutError as exc:
+            # A detector's own time limit on this file (the rule engine's match timeout): the
+            # file's checks did not finish, which is a time budget, not a detector that broke on
+            # the file. Reported as one, so the report names the cause (item 58: a five-hour host
+            # stall had read as two detector crashes).
+            return [
+                acc.gap(
+                    OperationalFinding.build(
+                        path=getattr(unit, "path", "<graph>"),
+                        rule_id="OPERATIONAL.FILE.TIMEOUT",
+                        message=(
+                            f"Detector {detector.id!r} reached its time limit on this file, so its "
+                            f"checks did not finish: {exc}"
+                        ),
+                        remediation=(
+                            "Rescan with more time (--timeout), or on a less loaded machine; the "
+                            "file was not judged."
+                        ),
+                        severity=Severity.MEDIUM,
+                    )
+                )
+            ]
         except Exception as exc:  # noqa: BLE001
             return [
                 acc.gap(

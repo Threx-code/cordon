@@ -291,3 +291,40 @@ class TestNoWorkerCanStart:
                 Tree.make(tmp_path / "pkg", ["a.txt"])
             )
         assert raised.value.exit_code == ExitCode.SCANNER_ERROR
+
+
+class Slow(Planted):
+    """A detector that reaches its own time limit on one file and breaks on another (item 58)."""
+
+    id = "planted-slow"
+
+    def inspect(self, unit, ctx):
+        name = unit.path.rsplit("/", 1)[-1]
+        if name == "slow.txt":
+            raise TimeoutError("matching took longer than the time allowed")
+        if name == "broken.txt":
+            raise ValueError("planted: a detector that breaks on this file")
+        return ()
+
+
+class TestATimeLimitIsNotACrash:
+    """A detector's own time limit on a file is a time budget, reported as one: a host stall had made
+    the rule engine's match timeout read as OPERATIONAL.DETECTOR.FAILED on two benign units."""
+
+    def test_a_timeout_is_a_file_timeout_gap_and_a_crash_stays_a_failure(self, tmp_path) -> None:
+        from cordon_scanner.engine.registry import Registry
+
+        root = Tree.make(tmp_path / "pkg", ["slow.txt", "broken.txt", "fine.txt"])
+        config = Config.default().with_overrides(use_cache=False)
+        result = Scanner(config, detectors=(*Registry.default_detectors(), Slow())).scan(root)
+        by_rule = {}
+        for f in result.findings:
+            if f.rule_id in ("OPERATIONAL.FILE.TIMEOUT", "OPERATIONAL.DETECTOR.FAILED"):
+                by_rule.setdefault(f.rule_id, set()).add(f.location.path)
+        assert by_rule == {
+            "OPERATIONAL.FILE.TIMEOUT": {"slow.txt"},
+            "OPERATIONAL.DETECTOR.FAILED": {"broken.txt"},
+        }
+        gaps = dict(result.content_gaps)
+        assert gaps.get("OPERATIONAL.FILE.TIMEOUT") == "slow.txt"
+        assert result.content_complete is False
