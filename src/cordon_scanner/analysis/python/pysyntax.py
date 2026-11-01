@@ -69,6 +69,13 @@ class PythonSyntax:
         return tree
 
     @staticmethod
+    def span(node: Any) -> tuple[int, int, int, int]:
+        """Where `node` is, start and end: what names a node across parses of the same text, where
+        its `id` names only this parse's object (item 32). An enclosing node shares its start, never
+        its end."""
+        return (node.lineno, node.col_offset, node.end_lineno, node.end_col_offset)
+
+    @staticmethod
     def within(node: ast.AST, *types: type) -> list[Any]:
         """The nodes of `types` in `node`'s subtree, `node` included -- what filtering
         `ast.walk(node)` gives, in depth-first rather than breadth-first order.

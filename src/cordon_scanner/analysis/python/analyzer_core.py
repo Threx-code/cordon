@@ -5,6 +5,7 @@ through them, callees resolved through aliases, and hits recorded. Its flows bui
 from __future__ import annotations
 
 import ast
+from typing import ClassVar
 
 from cordon_scanner.analysis.python.py_identity import IDENTITY_COMMANDS, IdentityVariables
 from cordon_scanner.analysis.python.pyfacts import (
@@ -35,8 +36,14 @@ class AnalyzerCore:
         self._invoked: dict[int, ast.Call] = {}
         # Names whose every possible value is written in the file. See `_enumerated`.
         self._enumerated: set[str] = set()
-        # `__import__` calls that only ask whether a module is installed. See `_probes_of`.
-        self._probes: set[int] = set()
+        # `__import__` calls that only ask whether a module is installed, by span. See `_probes_of`.
+        self._probes: set[tuple[int, int, int, int]] = set()
+        # Whether the module takes a module back from `sys.modules` by a computed key, which voids
+        # every probe (`_names_complete`).
+        self._probes_vetoed = False
+        # Per name, how many assignments bind it, and how many of those to a plain string literal
+        # (`_names_complete` makes `_plain_literals` of them).
+        self._binding_counts: tuple[dict[str, int], dict[str, int]] = ({}, {})
         self._follow_literals = True
         # Name -> the string literal it is bound to, for names bound exactly once.
         self._strings: dict[str, str | None] = {}
@@ -52,6 +59,65 @@ class AnalyzerCore:
         self._excused_lines: set[int] = set()
         self._sketched: set[str] = set()
         self._hits: list[AstHit] = []
+
+    #: What a failed import raises.
+    _MISSING: ClassVar[frozenset[str]] = frozenset({"ImportError", "ModuleNotFoundError"})
+
+    @classmethod
+    def _probes_of(cls, tree: ast.AST) -> tuple[set[tuple[int, int, int, int]], bool]:
+        """`__import__(name)` calls that only ask whether a module is installed: a statement of its
+        own, its result dropped, in a `try` whose handler catches the failed import. Nothing is
+        reached through such a call, so the name it is handed is not a dispatch -- the dependency
+        checks real skills run (`check_module(name)`, review 98, anything-to-notebooklm). A name
+        handed whole (a variable), never a call building it; and none at all in a file that then
+        takes a module back from `sys.modules` by a computed key, which is how a probe's import
+        would be reached after all. Each probe by its span, never its node, so the set holds across
+        trees; and whether this tree takes a module back by a computed key (the veto), which
+        `_names_complete` applies to the whole module's probes."""
+        for node in PythonSyntax.of(tree, ast.Subscript):
+            target = node.value
+            if (
+                isinstance(target, ast.Attribute)
+                and target.attr == "modules"
+                and isinstance(target.value, ast.Name)
+                and target.value.id == "sys"
+                and not isinstance(node.slice, ast.Constant)
+            ):
+                return set(), True
+        found: set[tuple[int, int, int, int]] = set()
+        for node in PythonSyntax.of(tree, ast.Try):
+            caught: set[str] = set()
+            for handler in node.handlers:
+                kinds = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
+                caught |= {k.id for k in kinds if isinstance(k, ast.Name)}
+            if not caught & cls._MISSING:
+                continue
+            for statement in node.body:
+                call = statement.value if isinstance(statement, ast.Expr) else None
+                if (
+                    isinstance(call, ast.Call)
+                    and isinstance(call.func, ast.Name)
+                    and call.func.id == "__import__"
+                    and len(call.args) == 1
+                    and not call.keywords
+                    and isinstance(call.args[0], ast.Name)
+                ):
+                    found.add(PythonSyntax.span(call))
+        return found, False
+
+    def _names_complete(self) -> None:
+        """What only the whole module decides, once every statement is collected."""
+        counts, literal_counts = self._binding_counts
+        # Every binding of the name is a plain literal; a name reassigned from anything else
+        # could hold that instead.
+        self._plain_literals = {
+            bound for bound, count in literal_counts.items() if counts.get(bound) == count
+        }
+        if self._probes_vetoed:
+            # A computed `sys.modules[...]` anywhere, a later statement included (`_probes_of`).
+            self._probes = set()
+        # The tables are complete: from here a name resolves the same way every time it is asked.
+        self._dotted_cache: dict[int, str | None] = {}
 
     def _resolve_callee(self, node: ast.Call) -> tuple[str, ast.Call] | None:
         """This call's dotted name, and the call whose arguments belong to it.

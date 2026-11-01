@@ -320,49 +320,6 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, AnalyzerCore):
             # computed name. Six names, all of them legible.
             self._enumerated.add(node.target.id)
 
-    #: What a failed import raises.
-    _MISSING: ClassVar[frozenset[str]] = frozenset({"ImportError", "ModuleNotFoundError"})
-
-    @classmethod
-    def _probes_of(cls, tree: ast.AST) -> set[int]:
-        """`__import__(name)` calls that only ask whether a module is installed: a statement of its
-        own, its result dropped, in a `try` whose handler catches the failed import. Nothing is
-        reached through such a call, so the name it is handed is not a dispatch -- the dependency
-        checks real skills run (`check_module(name)`, review 98, anything-to-notebooklm). A name
-        handed whole (a variable), never a call building it; and none at all in a file that then
-        takes a module back from `sys.modules` by a computed key, which is how a probe's import
-        would be reached after all."""
-        for node in PythonSyntax.of(tree, ast.Subscript):
-            target = node.value
-            if (
-                isinstance(target, ast.Attribute)
-                and target.attr == "modules"
-                and isinstance(target.value, ast.Name)
-                and target.value.id == "sys"
-                and not isinstance(node.slice, ast.Constant)
-            ):
-                return set()
-        found: set[int] = set()
-        for node in PythonSyntax.of(tree, ast.Try):
-            caught: set[str] = set()
-            for handler in node.handlers:
-                kinds = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
-                caught |= {k.id for k in kinds if isinstance(k, ast.Name)}
-            if not caught & cls._MISSING:
-                continue
-            for statement in node.body:
-                call = statement.value if isinstance(statement, ast.Expr) else None
-                if (
-                    isinstance(call, ast.Call)
-                    and isinstance(call.func, ast.Name)
-                    and call.func.id == "__import__"
-                    and len(call.args) == 1
-                    and not call.keywords
-                    and isinstance(call.args[0], ast.Name)
-                ):
-                    found.add(id(call))
-        return found
-
     def _collect_names(self, tree: ast.AST) -> None:
         """Build the alias and binding maps before evaluating any call.
 
@@ -371,31 +328,33 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, AnalyzerCore):
         order of execution, and matching on the first would miss the ordinary
         case of a helper defined above its imports.
         """
-        bindings: dict[str, int] = {}
-        literal_bindings: dict[str, int] = {}
+        self._collect_statement(tree)
+        self._names_complete()
+
+    def _collect_statement(self, tree: ast.AST) -> None:
+        """What one tree binds, added to the tables: the whole module's, or one top-level statement
+        of it parsed alone (`ModuleFacts.build`, item 32). The same tables either way, because an
+        indexed tree is read depth-first, and a module's depth-first order is its statements' own,
+        one after the other; what needs the whole module waits for `_names_complete`."""
+        counts, literal_counts = self._binding_counts
         for node in PythonSyntax.of(tree, ast.Assign):
             names = [t.id for t in node.targets if isinstance(t, ast.Name)]
             plain = isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
             for bound in names:
-                bindings[bound] = bindings.get(bound, 0) + 1
+                counts[bound] = counts.get(bound, 0) + 1
                 if plain:
-                    literal_bindings[bound] = literal_bindings.get(bound, 0) + 1
-        # Every binding of the name is a plain literal; a name reassigned from anything else
-        # could hold that instead.
-        self._plain_literals = {
-            bound for bound, count in literal_bindings.items() if bindings.get(bound) == count
-        }
+                    literal_counts[bound] = literal_counts.get(bound, 0) + 1
         for node in PythonSyntax.nodes(tree):
             if isinstance(node, ast.Assign) and any(
                 n.id == "__file__" for n in PythonSyntax.within(node.value, ast.Name)
             ):
                 self._bundled_paths.update(t.id for t in node.targets if isinstance(t, ast.Name))
         self._collect_reads(tree)
-        self._probes = self._probes_of(tree)
+        found, vetoed = self._probes_of(tree)
+        self._probes |= found
+        self._probes_vetoed = self._probes_vetoed or vetoed
         for node in PythonSyntax.of(tree, *self._BIND):
             getattr(self, self._BIND[type(node)])(node)
-        # The tables are complete: from here a name resolves the same way every time it is asked.
-        self._dotted_cache: dict[int, str | None] = {}
 
     def _collect_reads(self, tree: ast.AST) -> None:
         """The names the tree reads from local files, and the paths it bundles."""
@@ -572,7 +531,7 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, AnalyzerCore):
             if isinstance(first, ast.Name) and first.id in self._enumerated:
                 # Enumerated rather than computed. See `_collect_names`.
                 return
-            if id(node) in self._probes:
+            if PythonSyntax.span(node) in self._probes:
                 # Asked whether it is installed, and nothing reached through it (`_probes_of`).
                 return
             if imported is None and first is not None and self._assembled_name(first):

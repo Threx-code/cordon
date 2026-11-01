@@ -15,6 +15,7 @@ megabytes of a 45 MB generated module are not a module, so the syntax-tree tier 
 from __future__ import annotations
 
 import io
+import re
 import tokenize
 from typing import ClassVar
 
@@ -90,6 +91,148 @@ class PythonStatements:
         except (tokenize.TokenError, IndentationError, SyntaxError):
             return False
         return True
+
+
+class StatementScan:
+    """Where a module's top-level statements start, read from its characters, with no tokens: what
+    item 32's pass 1 cuts a module at. `PythonStatements.starts` asks the tokenizer, which holds a
+    copy of the text and of each token: 95 MB for a 13.6 MB module that is one literal, more than
+    parsing the whole module (41 MB). This holds the list of starts and nothing else.
+
+    It tracks what decides a line's start: strings (prefixes, triple quotes, escapes, f-strings and
+    their nested fields), comments, brackets and backslash continuations. It needs no more than that
+    to be safe: a start is only ever a column-0 line, and a cut anywhere but between statements
+    leaves a piece that does not parse (inside a string, a bracket, a continued line, before what a
+    decorator decorates), which its caller takes as "parse the whole module" (`ModuleFacts.build`).
+    A missed start only makes a piece longer. Returns [0] where the text cannot be scanned."""
+
+    WORD_END: ClassVar[re.Pattern[str]] = re.compile(r"[A-Za-z_]\w*")
+    PREFIX: ClassVar[re.Pattern[str]] = re.compile(r"(?i)(?:rb|br|fr|rf|b|r|u|f)$")
+    #: What a scan has to stop at inside code: a string's quote, a comment, a bracket, a backslash,
+    #: a line's end.
+    STOPS: ClassVar[re.Pattern[str]] = re.compile(r"""['"#()\[\]{}\\\n]""")
+    #: Inside a string: an escape, a line's end, the quote, and in an f-string a field's `{`.
+    STRING_STOPS: ClassVar[dict[tuple[str, bool], re.Pattern[str]]] = {
+        (quote, formatted): re.compile("[\\\\\n" + quote + ("{" if formatted else "") + "]")
+        for quote in "'\""
+        for formatted in (False, True)
+    }
+    #: Inside an f-string's field: a nested string's quote, or a bracket.
+    FIELD_STOPS: ClassVar[re.Pattern[str]] = re.compile(r"""['"(\[{)\]}]""")
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.at = 0
+
+    @staticmethod
+    def starts(text: str) -> list[int]:
+        scan = StatementScan(text)
+        try:
+            return scan.run()
+        except ValueError:
+            return [0]  # an unterminated string or bracket: one piece, the whole module
+
+    def run(self) -> list[int]:
+        text, out = self.text, [0]
+        first, decorated = True, False
+        line = 0
+        while line < len(text):
+            head = self.statement_head(line)
+            if head is not None:
+                word = self.WORD_END.match(text, head)
+                keyword = word.group() if word else ""
+                if keyword not in CONTINUATIONS:
+                    if not first and not decorated:
+                        out.append(line)
+                    first = False
+                    decorated = text.startswith("@", head)
+            self.at = line
+            line = self.logical_line_end()
+        return out
+
+    def statement_head(self, line: int) -> int | None:
+        """Where a statement's first character is, if the line at `line` starts one at column 0."""
+        if line >= len(self.text):
+            return None
+        char = self.text[line]
+        if char in " \t\f\r\n#\\":
+            return None
+        return line
+
+    def logical_line_end(self) -> int:
+        """From `self.at`, the start of the next physical line that begins a new logical line:
+        past strings, brackets and backslash continuations."""
+        text, depth = self.text, 0
+        while True:
+            found = self.STOPS.search(text, self.at)
+            if found is None:
+                if depth:
+                    raise ValueError("a bracket left open")
+                return len(text)
+            char, self.at = found.group(), found.end()
+            if char == "\n":
+                if depth == 0:
+                    return self.at
+            elif char == "#":
+                end = text.find("\n", self.at)
+                self.at = len(text) if end == -1 else end
+            elif char == "\\":
+                self.at += 1  # a backslash continues the line, or escapes what follows it
+            elif char in "([{":
+                depth += 1
+            elif char in ")]}":
+                depth = max(depth - 1, 0)
+            else:
+                self.string(found.start())
+
+    def string(self, quote_at: int) -> None:
+        """Past the string whose opening quote is at `quote_at`, `self.at` left after its end."""
+        text = self.text
+        prefix = self.PREFIX.search(text, max(0, quote_at - 2), quote_at)
+        before = prefix.start() - 1 if prefix else quote_at - 1
+        if prefix and before >= 0 and (text[before].isalnum() or text[before] == "_"):
+            prefix = None  # `xr"..."`: the letters belong to a name, not a prefix
+        formatted = prefix is not None and "f" in prefix.group().lower()
+        quote = text[quote_at]
+        triple = text.startswith(quote * 3, quote_at)
+        closing = quote * 3 if triple else quote
+        self.at = quote_at + len(closing)
+        while True:
+            found = self.STRING_STOPS[quote, formatted].search(text, self.at)
+            if found is None:
+                raise ValueError("a string left open")
+            char, self.at = found.group(), found.end()
+            if char == "\\":
+                self.at += 1  # an escaped character, the quote and the line's end included
+            elif char == "\n":
+                if not triple:
+                    raise ValueError("a string left open at its line's end")
+            elif char == "{":
+                if text.startswith("{", self.at):
+                    self.at += 1  # `{{` is a brace, not a field
+                else:
+                    self.field()
+            elif text.startswith(closing, found.start()):
+                self.at = found.start() + len(closing)
+                return
+
+    def field(self) -> None:
+        """Past an f-string's replacement field, whose `{` was just read: code, with its own strings
+        and brackets, to the `}` that closes it (a format spec's nested fields balance)."""
+        text, depth = self.text, 0
+        while True:
+            found = self.FIELD_STOPS.search(text, self.at)
+            if found is None:
+                raise ValueError("an f-string field left open")
+            char, self.at = found.group(), found.end()
+            if char in "([{":
+                depth += 1
+            elif char in ")]}":
+                if depth == 0 and char == "}":
+                    return
+                depth = max(depth - 1, 0)
+            else:
+                self.string(found.start())
 
 
 # Whether a file Python 3 will not parse fails on a construct only Python 2 accepts (item 27).
@@ -205,4 +348,4 @@ class PythonTwo:
         return None
 
 
-__all__ = ["CONTINUATIONS", "PythonStatements", "PythonTwo"]
+__all__ = ["CONTINUATIONS", "PythonStatements", "PythonTwo", "StatementScan"]
