@@ -121,3 +121,35 @@ class TestTheVerdictIsIdentical:
         files["lib/m404.js"] = "require('child_process').exec(process.argv[2]);\n"  # past the cap
         Twice.scan(Twice.package(tmp_path, files))
         assert Twice.compared
+
+    @pytest.mark.parametrize("shallow", ["{ not json", "[1, 2, 3]"], ids=["unparseable", "a-list"])
+    def test_when_the_shallowest_manifest_does_not_parse(
+        self, tmp_path, monkeypatch, shallow
+    ) -> None:
+        """wanted_dependencies passes it by as the verdict's own loop does, so both read the deeper
+        one (modelling team's review of 1445a5c5)."""
+        Twice.install(monkeypatch)
+        deeper = {"name": "inner", "version": "1.0.0", "dependencies": {"left-pad": "1"}}
+        Twice.scan(
+            Twice.package(
+                tmp_path,
+                {
+                    "package.json": shallow,
+                    "lib/package.json": json.dumps(deeper),
+                    "lib/index.js": "require('left-pad');\n",
+                },
+            )
+        )
+        assert Twice.compared
+
+    @pytest.mark.parametrize("deps", [["left-pad"], "left-pad"], ids=["a-list", "a-string"])
+    def test_when_dependencies_is_not_a_mapping(self, tmp_path, monkeypatch, deps) -> None:
+        Twice.install(monkeypatch)
+        manifest = {"name": "p", "version": "1.0.0", "dependencies": deps}
+        Twice.scan(
+            Twice.package(
+                tmp_path,
+                {"package.json": json.dumps(manifest), "index.js": "require('left-pad');\n"},
+            )
+        )
+        assert Twice.compared
