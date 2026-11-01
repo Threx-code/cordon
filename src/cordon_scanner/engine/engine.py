@@ -139,21 +139,33 @@ class Engine:
 
     def scan(self, target: str | Path) -> ScanResult:
         """Scan a target and return a complete, sorted result."""
-        # This scan's archive counts, from zero: in place, since the units stage holds the list.
-        self._archive_stats[:] = [0, 0, 0]
+        self._begin_scan()
         try:
             return Collector.during(self._scan, target)  # foundation/collector: GC relaxed
         finally:
-            # In a `finally`: the progress line is a partial line with no newline, so leaving it
-            # puts a traceback or an error message on the same row as a half-drawn progress bar.
-            self.progress.finish()
-            # And the caches that hold this scan's files, emptied whether it returned or raised:
-            # kept, they held the last files of every scan in a long-running process.
-            ScanCaches.after_scan()
-            # The archives this scan expanded, members' bytes and all: kept, a long-running
-            # Scanner (the server, MCP) held every archive it ever opened. Cleared in place, since
-            # the units stage holds the dict.
-            self._expansions.clear()
+            self._end_scan()
+
+    def _begin_scan(self) -> None:
+        """What one scan sets is set afresh by the next: a long-running Scanner (the server, MCP)
+        carried it over. The archive counts start from zero, in place since the units stage holds
+        the list; and "the target is an archive" is false until the archive path says otherwise.
+        Kept True after one archive scan, it made every later directory scan graph a vendored
+        archive's lockfiles as the project's own installs."""
+        self._archive_stats[:] = [0, 0, 0]
+        self._scanning_archive = False
+
+    def _end_scan(self) -> None:
+        """What one scan holds is let go when it ends, whether it returned or raised."""
+        # The progress line is a partial line with no newline, so leaving it puts a traceback or
+        # an error message on the same row as a half-drawn progress bar.
+        self.progress.finish()
+        # The caches that hold this scan's files: kept, they held the last files of every scan in
+        # a long-running process.
+        ScanCaches.after_scan()
+        # The archives this scan expanded, members' bytes and all, and what an ingested SBOM
+        # listed: cleared in place, since the units and dependency stages hold them.
+        self._expansions.clear()
+        self._sbom_listed.clear()
 
     def scan_host(self, root: str | Path, home: str | Path | None = None) -> ScanResult:
         """What an installed system holds (advanced gap M7): its distribution's packages and the
@@ -161,10 +173,11 @@ class Engine:
         left (`images/host.py`), then matched as an image's are -- language packages against the
         advisory database, OS packages through OSV with `--online`. Files are not content-scanned:
         that is what `scan` of a directory is for."""
+        self._begin_scan()
         try:
             return self._scan_host(Path(root), Path(home) if home is not None else None)
         finally:
-            self.progress.finish()
+            self._end_scan()
 
     def _scan_host(self, root: Path, home: Path | None) -> ScanResult:
         from cordon_scanner.images.host import HostFilesystem
