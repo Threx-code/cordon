@@ -32,12 +32,13 @@ import time
 import zipfile
 import zlib
 from dataclasses import dataclass, field, replace
-from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.foundation.errors import ArchiveError
+from cordon_scanner.foundation.files.names import Names
 from cordon_scanner.foundation.files.spill import Spill, SpilledBytes
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS, Limits
+from cordon_scanner.sources.archive_names import MemberNames
 from cordon_scanner.sources.base import RejectedMember, Rejection
 from cordon_scanner.sources.budget import (
     READ_CHUNK,
@@ -160,79 +161,15 @@ class ArchiveReader:
         lowered = path.lower()
         return any(lowered.endswith(suffix) for suffix in ARCHIVE_SUFFIXES)
 
-    @staticmethod
-    def safe_member_name(name: str, *, collapse: bool = False) -> str | None:
-        """Normalise a member name, or return None if it is unsafe.
-
-        Rejected: absolute paths, drive letters, any traversal segment, and names
-        containing NUL. The check is on the *normalised* form, so ``a/../../b`` is
-        caught even though no single component looks wrong.
-
-        With `collapse`, a `..` that stays inside the archive is resolved instead
-        (`pkg-0.3.1/../README.md` is `README.md`, which some sdist builders write);
-        one that climbs above the archive's root is still refused. Callers pass it
-        only while no link member has come before this one: an extractor writes
-        `a/../x` through `a` once `a` is a symlink, so then the name is refused.
-        """
-        if not name or "\x00" in name:
-            return None
-
-        cleaned = name.replace("\\", "/")
-
-        if cleaned.startswith("/") or (len(cleaned) > 1 and cleaned[1] == ":"):
-            return None
-
-        parts = PurePosixPath(cleaned).parts
-        if any(part == ".." for part in parts):
-            if not collapse:
-                return None
-            kept: list[str] = []
-            for part in parts:
-                if part == "..":
-                    if not kept:
-                        return None
-                    kept.pop()
-                elif part not in {".", ""}:
-                    kept.append(part)
-            parts = tuple(kept)
-
-        normalised = PurePosixPath(*(p for p in parts if p not in {".", ""}))
-        text = str(normalised)
-        return None if text in {".", ""} else text
+    safe_member_name = staticmethod(MemberNames.safe_member_name)
+    normalise_member_name = staticmethod(MemberNames.normalise_member_name)
+    not_an_archive = staticmethod(MemberNames.not_an_archive)
+    link_stays_inside = staticmethod(MemberNames.link_stays_inside)
 
     @staticmethod
     def _links_seen(result: ExtractionResult) -> bool:
         """Whether a link member has been met yet, kept or refused (`safe_member_name`)."""
         return bool(result.links) or any(r.reason == Rejection.LINK for r in result.rejected)
-
-    @staticmethod
-    def link_stays_inside(member: str, target: str, *, hard: bool = False) -> bool:
-        """Whether a link member points at another path inside the same archive.
-
-        Such a link is never followed, and it carries no content of its own: what it names is a
-        member read in its own right. Refused, it marked the scan incomplete -- 470 of 3,000 nix
-        repositories and 504 of 3,000 bazel archives were scored "not fully examined" for symlinks
-        such as `include/alsa -> ../alsa` (review 98). A target that is absolute or climbs out of
-        the archive stays refused: that link is how an extractor is made to read or write outside.
-        """
-        if not target or "\x00" in target:
-            return False
-        cleaned = target.replace("\\", "/")
-        if cleaned.startswith("/") or (len(cleaned) > 1 and cleaned[1] == ":"):
-            return False
-        # A hard link names an archive path; a symbolic link is relative to its own directory.
-        base = () if hard else PurePosixPath(member.replace("\\", "/")).parent.parts
-        depth: list[str] = [p for p in base if p not in {".", ""}]
-        for part in PurePosixPath(cleaned).parts:
-            if part in {".", ""}:
-                continue
-            if part == "..":
-                if not depth:
-                    return False
-                depth.pop()
-            else:
-                depth.append(part)
-        return bool(depth)
 
     @staticmethod
     def extract(
@@ -517,10 +454,11 @@ class ArchiveReader:
         if info.is_dir():
             return
 
-        safe = ArchiveReader.safe_member_name(
+        normal = ArchiveReader.normalise_member_name(
             info.filename, collapse=not ArchiveReader._links_seen(result)
         )
-        if safe is None:
+        safe = None if normal is None else Names.text(normal)
+        if normal is None or safe is None:
             result.rejected.append(
                 RejectedMember(
                     info.filename,
@@ -542,7 +480,9 @@ class ArchiveReader:
                     target = archive.read(info).decode("utf-8", "replace")
                 except (zipfile.BadZipFile, OSError, ValueError, RuntimeError):
                     target = ""
-            if ArchiveReader.link_stays_inside(safe, target):
+            # measured on the normalised name, not the escaped one: a `\\xNN`'s backslash read as a
+            # separator would deepen the link and let `../../../x` pass as inside
+            if ArchiveReader.link_stays_inside(normal, target):
                 result.links.append(safe)
                 return
             result.rejected.append(
@@ -624,7 +564,7 @@ class ArchiveReader:
         # can redirect it outside the archive entirely.
         if member.issym() or member.islnk():
             if ArchiveReader.link_stays_inside(member.name, member.linkname, hard=member.islnk()):
-                result.links.append(member.name)
+                result.links.append(Names.text(member.name))
                 return
             result.rejected.append(
                 RejectedMember(
@@ -680,6 +620,25 @@ class ArchiveReader:
                 uncompressed_size=len(payload),
             )
         )
+
+    @staticmethod
+    def _unopened(
+        member_path: str, inner: bytes, exc: ArchiveError, rejected: list[tuple[str, str, str]]
+    ) -> None:
+        """A nested member named as an archive that would not open, refused as unread; unless no
+        reader opens it and there is nothing to open: 0 bytes hold nothing (class 8, no refusal),
+        and text is scanned as the text it is (class 7, said, complete; item 27)."""
+        shape = ArchiveReader.not_an_archive(inner)
+        if shape == "empty":
+            return
+        if shape == "text":
+            reason, detail = (
+                Rejection.NOT_AN_ARCHIVE,
+                "named as an archive, it is text no reader opens",
+            )
+        else:
+            reason, detail = Rejection.UNREADABLE, f"a nested archive that would not open: {exc}"
+        rejected.append((member_path, reason, detail))
 
     @staticmethod
     def member_limit(limits: Limits) -> int:
@@ -979,13 +938,7 @@ class ArchiveReader:
                     # (a cut stream, a corrupt index, zstd with a dictionary): only zstd was
                     # reported before, and a cut tgz passed as a scanned file.
                     if rejected is not None:
-                        rejected.append(
-                            (
-                                member_path,
-                                Rejection.UNREADABLE,
-                                f"a nested archive that would not open: {exc}",
-                            )
-                        )
+                        ArchiveReader._unopened(member_path, inner, exc, rejected)
 
             yield member_path, member.data
 

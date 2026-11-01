@@ -254,7 +254,10 @@ class TestPicklesInAScan:
         assert result.complete
 
     def test_an_unreadable_pickle_leaves_the_scan_incomplete(self, tmp_path) -> None:
-        result = FormatsHelpers._scan(tmp_path, {"weights.pkl": b"\xff\x00\x01 garbage"})
+        # a pickle (it reaches an import: a GLOBAL whose name has no closing newline, which
+        # pickle.load imports before it fails) that the reader cannot read. Bytes no loader runs
+        # (`\xff\x00\x01 garbage`) are no pickle, said and complete (test_not_a_pickle, item 27).
+        result = FormatsHelpers._scan(tmp_path, {"weights.pkl": b"ccollections\nOrderedDict"})
         assert "OPERATIONAL.FORMAT.UNREADABLE" in FormatsHelpers._rules(result)
         assert not result.complete
 

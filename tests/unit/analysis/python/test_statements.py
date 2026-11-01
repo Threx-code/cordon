@@ -102,6 +102,17 @@ class TestPythonStatements:
         assert data[at:] == b"b = 1\n"
         ast.parse(data[:at].decode())
 
+    def test_a_stray_byte_is_cut_past_and_never_raises(self) -> None:
+        """A byte that is not UTF-8 (pkqer 1's module: an internal error, no report) is a character
+        the cut counts and the tokenizer reads as U+FFFD; the cut is still a byte offset."""
+        data = b'x = "\xa7"\nclass A:\n    pass\nb = 1\n'
+        at = PythonStatements.last_cut(data)
+        assert data[at:] == b"b = 1\n"
+
+    def test_a_stray_byte_in_code_is_one_character_of_the_cut(self) -> None:
+        data = b"x = 1\ny = 2\n\xa7 = 3\nz = 4\n"
+        assert data[PythonStatements.last_cut(data) :] == b"z = 4\n"
+
     def test_one_statement_cannot_be_cut(self) -> None:
         assert PythonStatements.last_cut(b"x = [\n1,\n2]\n") == 0
 

@@ -107,6 +107,9 @@ class ManifestDetector(BaseDetector):
                 )
             ]
 
+        if manifest.not_python3:
+            return [ManifestFinding.not_python3(unit.path, manifest.not_python3)]
+
         findings: list[Finding] = []
         findings.extend(LifecycleFindings.lifecycle_findings(manifest, unit, ctx))
         findings.extend(IdentityFindings.confusion_findings(manifest, unit, ctx))

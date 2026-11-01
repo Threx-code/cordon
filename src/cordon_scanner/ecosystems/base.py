@@ -298,6 +298,11 @@ class Manifest:
     finding: a manifest that cannot be read is a manifest whose contents were
     not checked, and that must never look like a clean result."""
 
+    not_python3: str | None = None
+    """The Python 2 construct a `setup.py` Python 3 refuses fails on, when it fails on one
+    (`PythonTwo.construct`): not a parse error, as no Python 3 can run the file (pip on Python 3
+    fails on the same line), so its hooks never run there (item 27). Said at info."""
+
     includes: tuple[tuple[str, str], ...] = ()
     """Other files this one pulls in, as `(kind, relative path)`: `("requirements", ...)` for
     pip's `-r`, `("constraints", ...)` for `-c`. The engine reads each one the walk has, so a

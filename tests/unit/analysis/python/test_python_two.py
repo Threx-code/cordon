@@ -1,0 +1,61 @@
+"""A file Python 3 refuses is said to be Python 2 only for a construct no Python 3 accepts, found on
+the line the parse failed (`analysis/python/statements.py`'s PythonTwo, item 27)."""
+
+from __future__ import annotations
+
+import ast
+
+import pytest
+
+from cordon_scanner.analysis.python.statements import PythonTwo
+
+
+class PythonTwoKit:
+    @staticmethod
+    def construct(text: str) -> str | None:
+        try:
+            ast.parse(text)
+        except SyntaxError as exc:
+            return PythonTwo.construct(text, exc.lineno)
+        raise AssertionError("the fixture parses: it tests nothing")
+
+
+class TestAPythonTwoConstruct:
+    @pytest.mark.parametrize(
+        ("text", "named"),
+        [
+            ('import os\nprint "building"\n', "a print statement"),
+            ('exec "x = 1"\n', "an exec statement"),
+            ("try:\n    pass\nexcept ValueError, e:\n    pass\n", "except A, e"),
+            # argweaver 0.8.1's setup.py, line 109 (item 27's count)
+            (
+                "def f():\n    raise DistutilsSetupError, \\\n        ('in libraries')\n",
+                "raise E, value",
+            ),
+            ("if a <> b:\n    pass\n", "the <> operator"),
+            ("x = ur'text'\n", "a ur'' string"),
+            ("mode = 0777\n", "an octal literal written 0777"),
+            ("x = `y`\n", "a backtick repr"),
+        ],
+    )
+    def test_is_named(self, text: str, named: str) -> None:
+        assert PythonTwoKit.construct(text) == named
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            # newer than this interpreter, or merely broken: Python 3 syntax errors, not Python 2
+            "def f(:\n    pass\n",
+            "x = t'{name}'\nprint(x\n",
+            "match = [\n",
+            "x = 00\ny = (\n",  # `00` is Python 3
+            # a Python 2 construct on another line does not excuse this line's failure
+            'def broken(:\n    pass\nprint "ok"\n',
+        ],
+    )
+    def test_anything_else_is_not(self, text: str) -> None:
+        assert PythonTwoKit.construct(text) is None
+
+    def test_print_as_a_name_is_not_a_statement(self) -> None:
+        text = "def f(print):\n    return print\nx = (\n"
+        assert PythonTwoKit.construct(text) is None

@@ -158,5 +158,31 @@ class ManifestFinding:
             detector=cls.DETECTOR,
         )
 
+    @classmethod
+    def not_python3(cls, path: str, construct: str) -> Finding:
+        """A `setup.py` that only Python 2 runs: said, at info, and not a manifest left unread."""
+        rule = "OPERATIONAL.MANIFEST.NOT_PYTHON3"
+        return Finding(
+            rule_id=rule,
+            category=Category.OPERATIONAL,
+            severity=Severity.INFO,
+            confidence=Confidence.CONFIRMED,
+            message=(
+                f"This setup.py is Python 2 ({construct}): no Python 3 runs it, pip on Python 3 "
+                "fails on the same line, so its install hooks never run there. Its text was read "
+                "by every text rule."
+            ),
+            location=Location(path=path),
+            evidence=Evidence(
+                kind=EvidenceKind.METADATA,
+                match_hash=Evidence.hash_bytes(f"{rule}:{path}".encode()),
+                redaction=RedactionMode.NONE,
+            ),
+            remediation="Port it to Python 3, or drop the Python 2 release.",
+            explanation=Explanation(summary=f"Python 2 only: {construct}.", matched_rule=rule),
+            risk=RiskScore(value=0, base=0, confidence_multiplier=1.0),
+            detector=cls.DETECTOR,
+        )
+
 
 __all__ = ["ManifestFinding"]

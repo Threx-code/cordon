@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.foundation.models import Category, Severity
 from cordon_scanner.foundation.scoring import RiskScorer
-from cordon_scanner.report.base import BaseReporter, ReportOptions
+from cordon_scanner.report.base import BaseReporter, Escape, ReportOptions
 from cordon_scanner.version import __version__
 
 if TYPE_CHECKING:
@@ -155,7 +155,7 @@ class SarifReporter(BaseReporter):
         # of the format most likely to be large.
         encoder = json.JSONEncoder(indent=2, sort_keys=True, ensure_ascii=False)
         for piece in encoder.iterencode(document):
-            yield piece.encode("utf-8")
+            yield Escape.json(piece).encode("utf-8")  # as the JSON reporter writes its document
         yield b"\n"
 
     # -- Rule catalogue --------------------------------------------------

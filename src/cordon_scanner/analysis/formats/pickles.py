@@ -273,8 +273,74 @@ class PickleReport:
     pickles: int = 0
 
 
+COMPRESSED: Final = (
+    b"\x1f\x8b",  # gzip (joblib's .gz, .pkl.gz)
+    b"\x78\x01",
+    b"\x78\x5e",
+    b"\x78\x9c",
+    b"\x78\xda",  # zlib
+    b"ZF",  # joblib's own zlib container
+    b"BZh",  # bzip2
+    b"\xfd7zXZ\x00",  # xz
+    b"\x04\x22\x4d\x18",  # lz4 frame
+    b"\x28\xb5\x2f\xfd",  # zstd
+)
+"""Headers a loader decompresses before unpickling (`joblib.load`): such a file may hold a pickle."""
+
+
+#: The opcodes that import or call: once a stream reaches one, pickle.load may have run code.
+ACTS: Final = frozenset(
+    {
+        "GLOBAL",
+        "STACK_GLOBAL",
+        "INST",
+        "OBJ",
+        "REDUCE",
+        "NEWOBJ",
+        "NEWOBJ_EX",
+        "BUILD",
+        "EXT1",
+        "EXT2",
+        "EXT4",
+        "PERSID",
+        "BINPERSID",
+    }
+)
+ACT_CODES: Final = frozenset(op.code for op in pickletools.opcodes if op.name in ACTS)
+"""Their one-byte codes: where a stream breaks on one, it reached it."""
+
+
 class PickleReader:
     """The imports a pickle would perform when loaded, without loading it."""
+
+    ACTS: Final = ACTS
+
+    @staticmethod
+    def refused_at_once(raw: bytes) -> bool:
+        """Whether no pickle loader can run anything in `raw`: read as an opcode stream, it breaks
+        before any opcode that imports or calls (`ACTS`), so pickle.load, which executes as it
+        reads, would raise having only pushed data. An IDL `.sav` (`SR\x00\x04`: STRING without
+        its quotes), a text file named `.pkl` (item 27's count). Never a stream that reaches an
+        import or call: that is a pickle whatever follows it (bytes after STOP, which load ignores,
+        or garbage after a REDUCE that has already run), read by the reader as before. Nor a
+        compressed stream a loader opens first."""
+        if not raw or raw.startswith(COMPRESSED):
+            return False
+        stream = io.BytesIO(raw)
+        end = 0  # where the opcode being read starts
+        try:
+            for opcode, _arg, _pos in pickletools.genops(stream):
+                if opcode.name in PickleReader.ACTS:
+                    return False
+                if opcode.name == "STOP":
+                    return False  # a pickle of data alone, which the reader reads as it is
+                end = stream.tell()
+        except (ValueError, EOFError, struct.error, UnicodeDecodeError, IndexError):
+            # Broken while reading the argument of an import or call (a GLOBAL whose name has no
+            # closing newline): pickle.load does not need it, and imports the module before it
+            # fails, which runs the module's code. That stream reached one: a pickle.
+            return chr(raw[end]) not in ACT_CODES if end < len(raw) else True
+        return False
 
     @staticmethod
     def looks_like_pickle(raw: bytes) -> bool:

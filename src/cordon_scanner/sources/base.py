@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from cordon_scanner.foundation.content import FileContent
+from cordon_scanner.foundation.files.names import Names
 from cordon_scanner.foundation.limits import Limits
 
 if TYPE_CHECKING:
@@ -166,6 +167,9 @@ class Rejection:
     NAME = "unsafe_name"
     POLYGLOT = "polyglot_archive"
     HIDDEN = "hidden_zip_member"
+    NOT_AN_ARCHIVE = "not_an_archive"
+    """A member named as an archive that no archive reader opens and that is text (`Dockerfile.conda`):
+    scanned as the text it is, so nothing is left unread (item 27, class 7)."""
     PADDED = "padded_expansion"
     """A budget reached while the archive expanded past `max_archive_ratio`: what follows the
     padding was not read, and padding is how a payload is put out of a scanner's reach."""
@@ -176,6 +180,13 @@ class RejectedMember:
     name: str
     reason: str
     detail: str = ""
+
+    def __post_init__(self) -> None:
+        # A refused member's name is reported as it came, before normalising, so it is made text
+        # here, once, for every one of the places that refuse a member (item 34).
+        object.__setattr__(self, "name", Names.text(self.name))
+        # and its detail, which can quote the archive's own text (a link's target)
+        object.__setattr__(self, "detail", Names.text(self.detail))
 
 
 # Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine

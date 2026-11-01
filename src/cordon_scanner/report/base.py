@@ -137,7 +137,7 @@ class Escape:
             elif char == ">":
                 out.append("&gt;")
             else:
-                out.append(char)
+                out.append(cls._shown(char) or char)
         return "".join(out)
 
     @classmethod
@@ -164,7 +164,7 @@ class Escape:
             elif char in cls._MARKDOWN_SPECIAL:
                 out.append("\\" + char)
             else:
-                out.append(char)
+                out.append(cls._shown(char) or char)
         return "".join(out)
 
     _TERMINAL_UNSAFE = frozenset(
@@ -197,6 +197,32 @@ class Escape:
     )
 
     @classmethod
+    def _shown(cls, char: str) -> str | None:
+        """How a character no reader should meet raw is written, or None for any other: a control
+        character (C0, DEL, C1), a bidi control, a line or paragraph separator, or a lone surrogate
+        (a name's byte that is not UTF-8, which no report can even encode: item 34)."""
+        point = ord(char)
+        if point < 0x20 or 0x7F <= point <= 0x9F:
+            return f"\\x{point:02x}"
+        if char in cls._TERMINAL_UNSAFE or point in (0x2028, 0x2029) or 0xD800 <= point <= 0xDFFF:
+            return f"\\u{point:04x}"
+        return None
+
+    @classmethod
+    def json(cls, document: str) -> str:
+        """A JSON document with every character `_shown` names written as its JSON escape. Those
+        characters can only stand inside a JSON string, so the document means exactly what it did:
+        lossless for a program reading it, and nothing raw for a person reading it (`json.dumps`
+        escapes C0 itself; with `ensure_ascii=False` it writes a bidi override, a C1 control or a
+        lone surrogate as it is)."""
+        if document.isascii():
+            return document
+        return "".join(
+            f"\\u{ord(char):04x}" if not char.isascii() and cls._shown(char) else char
+            for char in document
+        )
+
+    @classmethod
     def terminal(cls, text: str) -> str:
         """Escape a value written to a live terminal.
 
@@ -213,24 +239,15 @@ class Escape:
         source technique as a finding; it should not be susceptible to the
         filename version of it.
         """
-        return "".join(
-            f"\\u{ord(char):04x}"
-            if char in cls._TERMINAL_UNSAFE
-            else f"\\x{ord(char):02x}"
-            if ord(char) < 0x20 or ord(char) == 0x7F
-            else char
-            for char in text
-        )
+        return "".join(cls._shown(char) or char for char in text)
 
-    @staticmethod
-    def control_characters(text: str) -> str:
-        """Remove C0 control characters other than tab.
+    @classmethod
+    def control_characters(cls, text: str) -> str:
+        """Escape control characters other than tab, bidi controls and lone surrogates.
 
         A filename may legally contain them on POSIX, and XML 1.0 may not: a
         path holding `\\x01` produced a JUnit document every conforming parser
         rejects, so the CI test tab showed nothing at all rather than the
-        finding.
+        finding. A lone surrogate cannot be encoded at all (item 34).
         """
-        return "".join(
-            char if char == "\t" or ord(char) >= 0x20 else f"\\x{ord(char):02x}" for char in text
-        )
+        return "".join(char if char == "\t" else cls._shown(char) or char for char in text)
