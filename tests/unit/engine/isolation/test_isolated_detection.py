@@ -197,6 +197,27 @@ class TestNothingOutlivesTheScan:
         assert ParallelScanner._template_engine is None
 
 
+class TestALossOfAnyKindBlocks:
+    def test_a_reason_the_table_does_not_list_still_names_the_file_and_blocks(self) -> None:
+        from cordon_scanner.decide.policy import PolicyGate
+        from cordon_scanner.detect.base import FileUnit
+        from cordon_scanner.engine.pipeline.accumulator import Accumulator
+        from cordon_scanner.engine.pipeline.detection import Detection
+        from cordon_scanner.foundation.content import FileContent
+        from cordon_scanner.foundation.errors import ExitCode
+        from cordon_scanner.foundation.results import ScanResult
+
+        unit = FileUnit(content=FileContent(path="x.py", raw=b"x = 1\n", size=6))
+        acc = Accumulator()
+        lost = Detection.worker_lost(unit, "unheard-of: a reason no table lists", acc)
+        assert (lost.rule_id, lost.location.path) == ("OPERATIONAL.FILE.WORKER_DIED", "x.py")
+        assert ("OPERATIONAL.FILE.WORKER_DIED", "x.py") in acc.content_gaps
+        result = ScanResult(findings=(lost,), **acc.coverage())
+        policy = Config.default().policy
+        assert not policy.fail_on_incomplete
+        assert PolicyGate.evaluate(result, policy).exit_code is not ExitCode.CLEAN
+
+
 class TestNoWorkerCanStart:
     def test_it_is_a_scanner_error(self, tmp_path, monkeypatch) -> None:
         from cordon_scanner.engine import engine as engine_module
