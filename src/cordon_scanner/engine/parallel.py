@@ -45,7 +45,6 @@ if TYPE_CHECKING:
 
     from cordon_scanner.detect.base import ScanContext
     from cordon_scanner.foundation.config.settings import Config
-    from cordon_scanner.foundation.content import FileContent
     from cordon_scanner.foundation.models import Finding
 
 MIN_FILES_FOR_PARALLEL = 400
@@ -56,9 +55,11 @@ On a few hundred files that is most of the runtime, so parallelism would make
 the common case slower while helping only the rare one.
 """
 
-WorkItem = tuple[int, str, int, str, "bytes | str | None"]
+WorkItem = tuple[int, str, int, str, "bytes | str | None", "str | None", "str | None"]
 """One file handed to a worker: its index, path, size, the parent's content
-hash, and -- for a source whose bytes are not on disk -- the bytes themselves,
+hash, the parent's language and project for it (never decided again in a worker: a hook-run
+payload.png is JavaScript only by the hook's interpreter, which the file alone does not show),
+and -- for a source whose bytes are not on disk -- the bytes themselves,
 or for an archive member kept on disk past `max_file_bytes` the path it was kept
 at (`FileContent.carried`). The hash travels so the worker can tell whether it
 read what the parent read; see `_inspect_batch`."""
@@ -433,6 +434,7 @@ class ParallelScanner:
 
         from pathlib import Path
 
+        from cordon_scanner.detect.base import FileUnit
         from cordon_scanner.foundation.content import FileContent, Skipped
 
         if getattr(ParallelScanner._worker, "missing", ()):  # (a test's stand-in state has none)
@@ -444,7 +446,7 @@ class ParallelScanner:
         detectors = ParallelScanner._worker.detectors
         out: list[tuple[int, list[dict[str, Any]], bool | None, bool]] = []
 
-        for index, relative, _size, expected, carried in batch:
+        for index, relative, _size, expected, carried, language, project in batch:
             if deadline is not None and time.monotonic() >= deadline:
                 out.append((index, [], None, False))  # not examined: the budget ran out first
                 continue
@@ -482,7 +484,11 @@ class ParallelScanner:
                 continue
 
             findings, intact, cacheable = ParallelScanner._inspected(
-                loaded, relative, root, ctx, detectors
+                FileUnit(content=loaded, language=language, project=project),
+                relative,
+                root,
+                ctx,
+                detectors,
             )
             out.append((index, findings, True, cacheable) if intact else (index, [], False, False))
 
@@ -517,7 +523,7 @@ class ParallelScanner:
 
     @staticmethod
     def _inspected(
-        loaded: FileContent, relative: str, root: str, ctx: Any, detectors: tuple[Any, ...]
+        unit: Any, relative: str, root: str, ctx: Any, detectors: tuple[Any, ...]
     ) -> tuple[list[dict[str, Any]], bool, bool]:
         """One file's findings as they cross back to the parent, whether the file stayed the same
         while it was read, and whether its inspection stayed within it (`ScanCache.watch`)."""
@@ -525,7 +531,7 @@ class ParallelScanner:
 
         with ScanCache.watch(root, relative) as watch:
             produced, failures, windowed, intact = ParallelScanner._inspect_unit(
-                loaded, relative, ctx, detectors
+                unit, relative, ctx, detectors
             )
         if not intact:
             return [], False, False
@@ -534,7 +540,7 @@ class ParallelScanner:
             # The same per-file hash the serial path records, and recorded
             # here too because `test_parallel_matches_serial_exactly` is
             # what this codebase has instead of hoping the two agree.
-            f.with_file_hash(loaded.sha256).to_dict()
+            f.with_file_hash(unit.content.sha256).to_dict()
             if f.location.path == relative
             else f.to_dict()
             for f in produced
@@ -544,14 +550,13 @@ class ParallelScanner:
 
     @staticmethod
     def _inspect_unit(
-        loaded: FileContent, relative: str, ctx: Any, detectors: tuple[Any, ...]
+        unit: Any, relative: str, ctx: Any, detectors: tuple[Any, ...]
     ) -> tuple[list[Any], list[dict[str, Any]], list[Finding], bool]:
-        """One unit inspected inside the worker: every detector, the judge last, then the windows past its prefix."""
-        from cordon_scanner.detect.base import FileUnit
+        """One unit inspected inside the worker, as the parent built it (its language and project
+        are the parent's): every detector, the judge last, then the windows past its prefix."""
         from cordon_scanner.engine.detector_clock import DetectorClock
         from cordon_scanner.engine.window_pass import WindowPass
 
-        unit = FileUnit(content=loaded, language=ParallelScanner._language(relative, loaded))
         produced: list[Any] = []
         failures: list[dict[str, Any]] = []
 
@@ -594,19 +599,6 @@ class ParallelScanner:
         # The rest of an oversized file, a window at a time: the call the serial path makes.
         windowed, intact = WindowPass.run(unit, active, inspect, produced)
         return produced, failures, windowed, intact
-
-    @staticmethod
-    def _language(relative: str, content: FileContent) -> str | None:
-        """Path first, then the shebang.
-
-        Kept identical to the engine's own choice: a worker that identified
-        languages differently from the parent would select different rules, and
-        the same scan would produce different findings depending on how many
-        files it happened to contain.
-        """
-        from cordon_scanner.analysis.shared.languages import LanguageRegistry
-
-        return LanguageRegistry.of_file(relative, content)
 
     @staticmethod
     def _operational_dict(*, path: str, detector: str, error: str) -> dict[str, Any]:
