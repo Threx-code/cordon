@@ -181,10 +181,32 @@ class BundleKeys(Protocol):
     def pinned_key_hex(self) -> str: ...
 
 
-class ReuseIndexes(Protocol):
-    """What the engine uses of the class `ReuseIndex`: whether the shipped index can be used."""
+class ReuseMatch(Protocol):
+    """A campaign group the reuse index's files come from (`ReuseGroup`)."""
 
-    def shipped(self, max_age_days: int = ...) -> tuple[Any, str]: ...
+    @property
+    def id(self) -> int: ...
+    @property
+    def packages(self) -> int: ...
+    @property
+    def earliest(self) -> int: ...
+    @property
+    def name(self) -> str: ...
+
+
+class ReuseLookup(Protocol):
+    """A loaded reuse index: the group whose file has a fingerprint."""
+
+    def lookup(self, digest: bytes, steps: list[int] | None = ...) -> ReuseMatch | None: ...
+
+
+class ReuseIndexes(Protocol):
+    """What the engine and the code-reuse detector use of the class `ReuseIndex`: the shipped index,
+    or why it can't be used, and the fingerprint it is keyed by."""
+
+    def shipped(self, max_age_days: int = ...) -> tuple[ReuseLookup | None, str]: ...
+    def fingerprint(self, data: bytes) -> bytes | None: ...
+    def fingerprint_chunks(self, chunks: Iterable[bytes]) -> bytes | None: ...
 
 
 class FeedStatus(Protocol):

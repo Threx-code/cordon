@@ -13,7 +13,6 @@ prefix is held.
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
@@ -31,11 +30,11 @@ from cordon_scanner.foundation.models import (
     RedactionMode,
     Severity,
 )
-from cordon_scanner.intel.malware.reuse_index import BOM, FLOOR, WHITESPACE, ReuseIndex
+from cordon_scanner.intel.registry import ReuseIndex
 
 if TYPE_CHECKING:
     from cordon_scanner.detect.base import ScanContext
-    from cordon_scanner.intel.malware.reuse_index import ReuseGroup
+    from cordon_scanner.intel.base import ReuseMatch
 
 REUSE_RULE = "MALWARE.CODE.REUSE.001"
 CHUNK = 1 << 20
@@ -111,18 +110,10 @@ class CodeReuseDetector(BaseDetector):
         source = content.spill.path if content.spill is not None else unit.opens
         if source is None:
             return None
-        digest, kept, first = hashlib.sha256(), 0, True
         try:
-            for chunk in CodeReuseDetector._chunks(source):
-                if first and chunk.startswith(BOM):
-                    chunk = chunk[len(BOM) :]
-                first = False
-                body = chunk.translate(None, WHITESPACE)
-                kept += len(body)
-                digest.update(body)
+            return ReuseIndex.fingerprint_chunks(CodeReuseDetector._chunks(source))
         except OSError:
             return None
-        return digest.digest()[:16] if kept >= FLOOR else None
 
     @staticmethod
     def _chunks(path: str) -> Iterator[bytes]:
@@ -130,7 +121,7 @@ class CodeReuseDetector(BaseDetector):
             while chunk := handle.read(CHUNK):
                 yield chunk
 
-    def _finding(self, unit: FileUnit, ctx: ScanContext, group: ReuseGroup) -> Finding:
+    def _finding(self, unit: FileUnit, ctx: ScanContext, group: ReuseMatch) -> Finding:
         return Finding(
             rule_id=REUSE_RULE,
             category=Category.MALICIOUS,
