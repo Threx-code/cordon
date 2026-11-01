@@ -168,3 +168,11 @@ class TestALoadDependentSplitIsRefused:
 
     def test_the_shipped_model_splits_on_none(self) -> None:
         AreaFit.refuse_load_dependent(VerdictModel.load(MODEL_PATH))
+
+
+class TestTheRowsManifest:
+    def test_a_pooling_fit_records_both_versions(self) -> None:
+        manifest = AreaFit.rows_manifest(["rows.jsonl"], "cordon", [], {1})
+        assert manifest["schema"] == FeatureSchema.current()
+        assert manifest["schema_computed"] == FeatureSchema.computed()
+        assert manifest["schema_computed"] in FeatureSchema.SAME_AS

@@ -36,7 +36,7 @@ import math
 import re
 import sys
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -115,6 +115,22 @@ class AreaFit:
                             f" ({FeatureSchema.current()}) or an accepted one: refused"
                         )
                     yield label, unit, features
+
+    @staticmethod
+    def rows_manifest(
+        files: list[str], producer: str, accepted: Any, required: Iterable[int]
+    ) -> dict[str, Any]:
+        """What the model records of the rows it was fitted on. A fit pooling rows through an
+        equivalence (`FeatureSchema.SAME_AS`) records both versions: the one the rows carry and
+        the one this tree's code hashes to."""
+        return {
+            "files": files,
+            "producer": producer,
+            "accepted": accepted,
+            "record_required_for_labels": sorted(required),
+            "schema": FeatureSchema.current(),
+            "schema_computed": FeatureSchema.computed(),
+        }
 
     @staticmethod
     def export(clf: Any, names: list[str]) -> dict[str, Any]:
@@ -364,12 +380,9 @@ class AreaFit:
         model["manifest"] = {
             **(model.get("manifest") or {}),
             "area_fits": fits,
-            "rows": {
-                "files": [str(path) for path, _, _ in sets],
-                "producer": a.producer,
-                "accepted": a.accept,
-                "record_required_for_labels": sorted(a.require_record),
-            },
+            "rows": AreaFit.rows_manifest(
+                [str(path) for path, _, _ in sets], a.producer, a.accept, a.require_record
+            ),
         }
         AreaFit.refuse_load_dependent(model)
         with gzip.open(a.out, "wt", encoding="utf-8") as handle:
