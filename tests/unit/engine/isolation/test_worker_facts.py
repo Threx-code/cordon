@@ -165,3 +165,40 @@ class TestADeepPayloadIsRefusedNotRaised:
         Detection.absorb_facts("deep.py", "[" * 100_000 + "]" * 100_000, acc, results)
         assert [f.rule_id for f in results] == ["OPERATIONAL.WORKER.FACTS_REFUSED"]
         assert results[0].location.path == "deep.py" and not acc.facts
+
+
+class TestACachedFileKeepsItsFacts:
+    """A warm scan joins the same closure as a cold one: a file served from the scan cache brings
+    back the facts its worker sent, kept beside its findings and re-checked as a worker's are."""
+
+    def test_warm_and_cold_hand_the_parent_the_same_facts(self, tmp_path, monkeypatch) -> None:
+        from cordon_scanner.engine.registry import Registry
+
+        root = tmp_path / "tree"
+        root.mkdir()
+        (root / "good.py").write_text("# plain text of good.py\n", encoding="utf-8")
+        accepted: list[dict] = []
+        real = Facts.accept
+
+        def accept(text, spent):
+            decoded, why = real(text, spent)
+            accepted.append(decoded)
+            return decoded, why
+
+        monkeypatch.setattr(Facts, "accept", staticmethod(accept))
+        config = Config.default().with_overrides(
+            cache_dir=str(tmp_path / "cache"), use_cache=True, offline=True
+        )
+        detectors = (*Registry.default_detectors(), Sends())
+        cold = Scanner(config, detectors=detectors).scan(root)
+        cold_facts = list(accepted)
+        accepted.clear()
+        warm = Scanner(config, detectors=detectors).scan(root)
+        assert cold_facts and accepted == cold_facts
+        assert sorted(f.rule_id for f in cold.findings) == sorted(f.rule_id for f in warm.findings)
+
+    def test_an_entry_s_facts_are_part_of_what_it_authenticates(self, tmp_path) -> None:
+        from cordon_scanner.engine.cache import ScanCache
+
+        body = [{"rule_id": "X"}]
+        assert ScanCache._authenticated(body, "") != ScanCache._authenticated(body, '{"a":[]}')

@@ -53,7 +53,7 @@ if TYPE_CHECKING:
     from cordon_scanner.detect.base import ScanContext
     from cordon_scanner.foundation.config.settings import Config
 
-CACHE_VERSION = 4
+CACHE_VERSION = 5
 """Bumped when the on-disk format changes.
 
 Version 2 added the MAC. Entries written by version 1 carry no `mac` field and
@@ -615,7 +615,14 @@ class ScanCache:
     # -- Lookup ----------------------------------------------------------
 
     def get(self, key: CacheKey) -> tuple[Finding, ...] | None:
-        """Return cached findings, or None.
+        """Return cached findings, or None (`get_entry`'s findings)."""
+        entry = self.get_entry(key)
+        return None if entry is None else entry[0]
+
+    def get_entry(self, key: CacheKey) -> tuple[tuple[Finding, ...], str] | None:
+        """Return cached findings and the file's worker facts (their JSON text, "" for none), or None.
+        The facts are kept beside the findings (item 56): a warm scan must join the same closure as
+        a cold one, and they are re-checked as a worker's are (`Detection.absorb_facts`).
 
         Any problem reading an entry is a miss rather than an error. A corrupt
         cache must degrade to a slower scan, never to a failed one: the cache is
@@ -668,6 +675,9 @@ class ScanCache:
                 self.misses += 1
                 return None
             findings = tuple(ScanCache.finding_from_dict(f) for f in payload["findings"])
+            facts = payload.get("facts", "")
+            if not isinstance(facts, str):
+                raise TypeError("cached facts are not text")
         except (json.JSONDecodeError, KeyError, TypeError, ValueError, RecursionError):
             # A corrupt entry is removed rather than left to fail repeatedly.
             path.unlink(missing_ok=True)
@@ -675,7 +685,7 @@ class ScanCache:
             return None
 
         self.hits += 1
-        return findings
+        return findings, facts
 
     # -- Authentication --------------------------------------------------
 
@@ -799,17 +809,23 @@ class ScanCache:
             return False
         recorded = payload.get("mac")
         body = payload.get("findings")
-        if not isinstance(recorded, str) or body is None:
+        facts = payload.get("facts", "")
+        if not isinstance(recorded, str) or body is None or not isinstance(facts, str):
             return False
-        expected = self._mac(
-            json.dumps(body, separators=(",", ":"), sort_keys=True).encode("utf-8"), key
-        )
+        expected = self._mac(ScanCache._authenticated(body, facts), key)
         if expected is None:
             return False
         return hmac.compare_digest(expected, recorded)
 
-    def put(self, key: CacheKey, findings: Sequence[Finding]) -> None:
-        """Store findings for a key.
+    @staticmethod
+    def _authenticated(body: Any, facts: str) -> bytes:
+        """What an entry's MAC covers: its findings and its facts together, so neither can be swapped."""
+        return json.dumps(
+            {"facts": facts, "findings": body}, separators=(",", ":"), sort_keys=True
+        ).encode("utf-8")
+
+    def put(self, key: CacheKey, findings: Sequence[Finding], facts: str = "") -> None:
+        """Store findings for a key, with the file's accepted worker facts (their JSON text).
 
         Written atomically through a temporary file and a rename, so a
         concurrent reader never observes a half-written entry. Two scans running
@@ -825,16 +841,14 @@ class ScanCache:
             return
 
         body = [f.to_dict() for f in findings]
-        mac = self._mac(
-            json.dumps(body, separators=(",", ":"), sort_keys=True).encode("utf-8"), key
-        )
+        mac = self._mac(ScanCache._authenticated(body, facts), key)
         if mac is None:
             # No key material means entries cannot be authenticated, and an
             # unauthenticated entry is worse than none at all.
             return
 
         payload = json.dumps(
-            {"version": CACHE_VERSION, "findings": body, "mac": mac},
+            {"version": CACHE_VERSION, "findings": body, "facts": facts, "mac": mac},
             separators=(",", ":"),
             sort_keys=True,
         ).encode("utf-8")

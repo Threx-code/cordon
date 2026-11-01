@@ -154,7 +154,10 @@ class Detection:
         pending: list[WorkItem] = []
         results: list[Finding] = []
 
-        self.work_items(units, ctx, signature, results, pending, carry_content)
+        cached_facts: dict[str, str] = {}
+        self.work_items(units, ctx, signature, results, pending, carry_content, cached_facts)
+        for path, text in cached_facts.items():  # re-checked as a worker's are
+            Detection.absorb_facts(path, text, acc, results)
 
         if not pending:
             return results
@@ -266,13 +269,17 @@ class Detection:
         results: list[Finding],
         pending: list[WorkItem],
         carry_content: bool,
+        cached_facts: dict[str, str] | None = None,
     ) -> None:
         """The units a worker can take, each with the bytes it must carry when the source cannot be re-read."""
         for index, unit in enumerate(units):
             key = self.cache_key(unit, ctx, signature)
-            cached = self.cache.get(key)
-            if cached is not None:
+            entry = self.cache.get_entry(key)
+            if entry is not None:
+                cached, facts = entry
                 results.extend(cached)
+                if facts and cached_facts is not None:
+                    cached_facts[unit.path] = facts
                 # A cache hit is a file accounted for. Counting only the misses
                 # made a warm scan appear to stall at zero and then finish.
                 self.progress.advance(unit.path)
@@ -353,8 +360,9 @@ class Detection:
             acc.absorb(*coverage)  # the worker's own accumulator's verdict and gaps, as its own
             unit = units[index]
             results.extend(findings)
-            if carried and carried[0]:
-                Detection.absorb_facts(unit.path, carried[0], acc, results)
+            facts = carried[0] if carried else ""
+            if facts:
+                Detection.absorb_facts(unit.path, facts, acc, results)
             if not trusted:
                 # The worker could not read the file, or read different bytes
                 # than the parent hashed. Reported exactly as the serial path
@@ -388,7 +396,7 @@ class Detection:
                     acc.gap(finding)
             Detection.degraded(findings, acc)
             if acc.complete and cacheable and not any(f.degrades_coverage for f in findings):
-                self.cache.put(self.cache_key(unit, ctx, signature), findings)
+                self.cache.put(self.cache_key(unit, ctx, signature), findings, facts)
 
     def cache_key(self, unit: FileUnit, ctx: ScanContext, signature: str) -> CacheKey:
         return CacheKey(

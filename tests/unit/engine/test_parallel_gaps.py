@@ -68,7 +68,7 @@ class ParallelGapsKit:
         """The keys the merge stored, for one trusted, cacheable worker result."""
         puts: list = []
         engine = SimpleNamespace(
-            cache=SimpleNamespace(put=lambda key, value: puts.append(key)),
+            cache=SimpleNamespace(put=lambda key, value, facts="": puts.append(key)),
             cache_key=lambda unit, ctx, signature: unit.path,
         )
         unit = FileUnit(content=FileContent.from_bytes("pkg/a.py", b"x = 1\n"))
