@@ -4,7 +4,7 @@ sink records."""
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.javascript.flow.sinks import Sinks
 from cordon_scanner.analysis.javascript.flow.taint import Taint
@@ -19,15 +19,19 @@ from cordon_scanner.analysis.javascript.flow.vocabulary import (
     _KEYWORDS,
     _OPENER,
     _RAW_SOCKET_MODULES,
-    _RUNS_ITS_ARGUMENT,
     _STORE_METHODS,
     _WALLET_PARAM,
+    DATA_ARGS,
     MAX_PARAMETER_LABELS,
     SOURCES,
     Flow,
     Label,
+    ProgramNames,
     _OverBudget,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class Calls(Taint):
@@ -221,7 +225,7 @@ class Calls(Taint):
         changed = False
         # A sink.
         kind = self._sink_kind(k, scope)
-        if kind == "process" and args and self._opener(*args[0], scope):
+        if kind == "process" and args and self._opens_a_link(parts[-1], args, scope):
             # The desktop opening what it is given -- a sign-in link the server sent, in the
             # browser -- runs none of it: an `open` sink, which only the send rules read.
             kind = "open"
@@ -273,30 +277,110 @@ class Calls(Taint):
                         out |= self.taint(a, b, scope)
             else:
                 out |= self.taint(s, e, scope)
-        if kind == "process" and self._argv_only(last, args):
-            # A fixed program given what a server sent as its arguments, with no shell: the
-            # reply is data to that program (a version to install, a file to convert), not code
-            # run. Anything else the arguments carry -- a secret handed to curl -- stays.
+        if kind == "process" and self._fixed_program(last, args, scope, self._carries_code):
+            # A DATA_ARGS program given what a server sent only where its rule says it is data,
+            # with no shell and nothing in its options (note 44): the reply is a pid, an archive, a
+            # URL to fetch, not code run. Anything else the arguments carry -- a secret handed to
+            # curl -- stays.
             out -= {"network_response", "decoded"}
         return out
 
-    def _argv_only(self, call: str, args: list[tuple[int, int]]) -> bool:
-        """Whether a process call runs a literal, non-interpreter program with an argument list and
-        no shell: `spawn("ffmpeg", [...])`, not `exec(cmd)`, `spawn(path)`, `spawn("node", ["-e",
-        x])` or `spawn("npx", [pkg])`, which run what they are given."""
+    #: What a spawn's argument may carry for the reply to be code run: `_fixed_program`'s question.
+    _CODE_LABELS: ClassVar[frozenset[str]] = frozenset({"network_response", "decoded"})
+
+    def _carries_code(self, a: int, b: int, scope: int) -> bool:
+        """Whether [a, b) carries what a server sent or a blob decoded."""
+        return bool(self.taint(a, b, scope) & self._CODE_LABELS)
+
+    def _not_literal(self, a: int, b: int, scope: int) -> bool:
+        """Whether [a, b) is anything but string literals: the co-occurrence composites' question,
+        which have no taint, so every value not written out counts as one a reply may set."""
+        for i in range(a, b):
+            tok = self.t[i]
+            if tok.kind in ("str", "punct", "num"):
+                continue
+            key = self.is_p(i + 1, ":") and (self.is_p(i - 1, "{") or self.is_p(i - 1, ","))
+            if tok.kind == "name" and (key or tok.value in self._WRITTEN_OUT):
+                continue  # an object's key (`{ stdio: "ignore" }`), `true`, `null`
+            return True
+        return False
+
+    #: Names that are values written out, not a variable a reply may set.
+    _WRITTEN_OUT: ClassVar[frozenset[str]] = frozenset({"true", "false", "null", "undefined"})
+
+    def _program(self, a: int, b: int, scope: int) -> str | None:
+        """The program a spawn's first argument names, as DATA_ARGS keys it: a literal, or a name
+        bound only to one literal; None for anything else (a property, a parameter, a call)."""
+        if b == a + 1 and self.is_name(a):
+            rhs = self.bound.get(self.resolve(str(self.t[a].value), scope)) or []
+            spans = {(s, e) for s, e in rhs}
+            if len(spans) != 1:
+                return None
+            a, b = next(iter(spans))
+        if b != a + 1 or self.t[a].kind != "str":
+            return None
+        return ProgramNames.of(str(self.t[a].value)) or None
+
+    def _fixed_program(
+        self,
+        call: str,
+        args: list[tuple[int, int]],
+        scope: int,
+        tainted: Callable[[int, int, int], bool],
+    ) -> bool:
+        """Whether an argv-form spawn runs a DATA_ARGS program whose every `tainted` argument meets
+        the program's rule, with no shell and nothing tainted in its options (note 44). `spawn(
+        "taskkill", ["/PID", v])` and `spawn("tar", ["x", "--", f])` are; `spawn("git", [v])`,
+        `spawn("tar", ["x", v])`, `spawn("x.cmd", [v])`, `spawn(p, [v], {env: {X: v}})` are not."""
         if call not in _ARGV_CALLS or len(args) < 2:
             return False
-        s, e = args[0]
-        if e != s + 1 or self.t[s].kind != "str":
-            return False
-        program = str(self.t[s].value).strip()
-        if not program or _RUNS_ITS_ARGUMENT.search(program):
+        program = self._program(*args[0], scope)
+        rule = DATA_ARGS.get(program or "")
+        if rule is None:
             return False
         options = args[2:] if call.startswith("spawn") else args[2:3]
-        return not any(
-            self.t[k].kind in ("name", "str") and str(self.t[k].value) == "shell"
-            for a, b in options
-            for k in range(a, b)
+        for a, b in options:
+            if any(
+                self.t[k].kind in ("name", "str") and str(self.t[k].value) == "shell"
+                for k in range(a, b)
+            ) or tainted(a, b, scope):
+                return False
+        s, e = args[1]
+        if not (self.is_p(s, "[") and self.match[s] == e - 1):
+            # Not written as a list: where a tainted part sits is unknown.
+            return rule == "any" or not tainted(s, e, scope)
+        dashes: int | None = None
+        for index, (a, b) in enumerate(self._split_args(s)):
+            if (
+                dashes is None
+                and b == a + 1
+                and self.t[a].kind == "str"
+                and self.t[a].value == "--"
+            ):
+                dashes = index
+            if not tainted(a, b, scope):
+                continue
+            if rule == "after --" and dashes is None:
+                return False
+            if rule == "link" and not self._starts_a_link(a, b):
+                return False
+        return True
+
+    def _starts_a_link(self, a: int, b: int) -> bool:
+        """Whether [a, b) begins with a literal http(s)://, a template's group included."""
+        while a < b and self.is_p(a, "("):
+            a += 1
+        return (
+            a < b and self.t[a].kind == "str" and ProgramNames.starts_a_link(str(self.t[a].value))
+        )
+
+    def _opens_a_link(self, call: str, args: list[tuple[int, int]], scope: int) -> bool:
+        """Whether a process call only opens a link in the desktop's handler: a command string
+        whose every branch is an opener followed by a literal http(s):// (`_opener`), or an argv
+        opener on DATA_ARGS whose every non-literal argument starts with one."""
+        return self._opener(*args[0], scope) or (
+            DATA_ARGS.get(self._program(*args[0], scope) or "") == "link"
+            and self._fixed_program(call, args, scope, self._not_literal)
         )
 
     def _opener(self, a: int, b: int, scope: int, follow: bool = True) -> bool:
@@ -328,7 +412,13 @@ class Calls(Taint):
                 before is not None and before.kind == "punct" and before.value in ("(", "?", ":")
             ):
                 heads.append(str(tok.value))
-        return bool(heads) and all(_OPENER.match(h) for h in heads)
+        # Each opener must be handed a link the code itself starts (note 44): what a reply names,
+        # opened, may be `file:`, an app or a scheme's handler.
+        return bool(heads) and all(
+            (opener := _OPENER.match(h)) is not None
+            and ProgramNames.starts_a_link(h[opener.end() :])
+            for h in heads
+        )
 
     #: Calls that pick out a value without joining anything to it (`_as_it_stands`).
     _PICKS: ClassVar[frozenset[str]] = frozenset(

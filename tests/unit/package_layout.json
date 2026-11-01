@@ -828,6 +828,7 @@
   "test_install_hooks_tools.py": "engine/pipeline",
   "test_install_payload.py": "detect/code",
   "test_install_persist_named.py": "detect/code/capability",
+  "test_fixed_program_arguments.py": "detect/code/capability",
   "test_intent.py": "decide",
   "test_intent_build.py": "decide",
   "test_grammar.py": "analysis/javascript/front",
