@@ -502,7 +502,7 @@ class Hooks:
         """The string literals of a `path.join` argument list, in order."""
         return re.findall(r"""['"`]([\w@./-]{1,200})['"`]""", arguments)
 
-    DEOBFUSCATED: ClassVar[str] = "#deobfuscated.js"
+    DEOBFUSCATED: ClassVar[str] = ContainerPaths.DEOBFUSCATED
     """Suffix of the unit an obfuscated file's recovered text is read as (`core.deobfuscation`)."""
 
     @staticmethod

@@ -39,6 +39,10 @@ class RuleDocumentationHelpers:
 #: that does not answer the question reads as authority and delivers nothing.
 NO_EXTERNAL_AUTHORITY = frozenset(
     {
+        # The code model's notes describe the scan (its weights unusable, a file past its cap), not a
+        # weakness anyone outside documents.
+        "OPERATIONAL.CODE_MODEL.CAPPED",
+        "OPERATIONAL.CODE_MODEL.UNAVAILABLE",
         "OPERATIONAL.REGISTRY.NOT_ASKED.001",
         "OPERATIONAL.REGISTRY.NO_SOURCE.001",
         "OPERATIONAL.REGISTRY.UNREACHABLE.001",

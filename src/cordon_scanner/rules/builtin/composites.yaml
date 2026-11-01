@@ -2195,7 +2195,8 @@ rules:
     title: Install-time code runs what a server sends it
     message: >
       Code that runs when the package is installed -- or, for an editor extension, when the
-      editor starts it -- executes the body of a network response: through eval, new Function,
+      editor starts it -- executes the body of a network response, or a blob it decodes: through
+      eval, new Function,
       the vm module or a child process. Followed from the request to the execution through
       callbacks, promise chains and helper functions (`analysis/javascript/js_flow.py`). What runs is whatever
       the server chose at that moment, on every machine that installs it.
@@ -2219,6 +2220,10 @@ rules:
             - rule: CAP.JS.FLOW.REMOTE_CODE.IP
             - rule: CAP.JS.FLOW.REMOTE_CODE.FIXED
             - rule: CAP.JS.FLOW.REMOTE_CODE.UNKNOWN
+            - rule: CAP.JS.FLOW.DECODED_RUN.DROP
+            - rule: CAP.JS.FLOW.DECODED_RUN.IP
+            - rule: CAP.JS.FLOW.DECODED_RUN.FIXED
+            - rule: CAP.JS.FLOW.DECODED_RUN.UNKNOWN
 
   - id: SUSPECT.DROPPER.REMOTE_CODE.001
     version: 1.0.0

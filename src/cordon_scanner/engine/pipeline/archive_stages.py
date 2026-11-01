@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.analysis.shared.languages import LanguageRegistry
+from cordon_scanner.decide.code_model import CodeModelPass
 from cordon_scanner.detect.base import (
     FileUnit,
     GraphUnit,
@@ -474,6 +475,7 @@ class ArchiveStages:
         # suppressions are the operator's config, never anything read from inside the archive.
         from cordon_scanner.engine.pipeline.results import ResultFolding
 
+        acc.findings[:], code_model = CodeModelPass.decide(self.engine, acc.findings, ctx)
         acc.findings[:] = ResultFolding.settled(self.config, acc)
         acc.findings[:], verdict = Ceilings.verdict(
             Ceilings.hardening_tier(
@@ -486,6 +488,7 @@ class ArchiveStages:
             repository=not ctx.package_distribution,
             facts=acc.facts,
         )
+        acc.findings.extend(code_model)
         dependencies = self.engine.detection.annotated(dependencies, acc.findings, ctx, units)
         return dependencies, verdict
 

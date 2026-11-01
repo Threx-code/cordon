@@ -61,6 +61,14 @@ class JsPersistence:
         }
     )  # fmt: skip
 
+    #: Calls that remove what they are given. Deleting a LaunchAgent or a unit file undoes a
+    #: foothold, it plants none: shelf-drive's uninstall removed its own LaunchAgent and was blocked as
+    #: persistence (cordon-a0's false-alarm read, 1 Nov). A process started with the path is still a
+    #: write: `_sink_kind` below keeps `process` and `execute` for these as for the reads.
+    REMOVES: ClassVar[frozenset[str]] = frozenset(
+        {"rm", "rmSync", "unlink", "unlinkSync", "rmdir", "rmdirSync", "remove", "removeSync"}
+    )
+
     #: Words a `(` follows that are not calls.
     KEYWORDS: ClassVar[frozenset[str]] = frozenset(
         {"if", "while", "for", "switch", "catch", "return", "typeof", "void", "await", "yield",
@@ -170,7 +178,10 @@ class JsPersistence:
             scope = a.scope_of(k)
             if a.fn_by_name.get(a.resolve(name, scope)) is not None:
                 continue  # the file's own function: followed by the propagation
-            if name in cls.READS and a._sink_kind(k, scope) not in ("process", "execute"):
+            if (name in cls.READS or name in cls.REMOVES) and a._sink_kind(k, scope) not in (
+                "process",
+                "execute",
+            ):
                 continue
             carried: set[object] = set()
             for s, e in a._args(k + 1):

@@ -13,6 +13,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from cordon_scanner.decide.code_model import CodeModelPass
 from cordon_scanner.detect.base import (
     FileUnit,
     GraphUnit,
@@ -299,6 +300,7 @@ class ScanStages:
         # A suppression that expired is reported, not merely inactive: the
         # finding it was hiding reappears at the same moment somebody is told
         # why, rather than as an unexplained new failure weeks later.
+        acc.findings[:], code_model = CodeModelPass.decide(self.engine, acc.findings, ctx)
         findings = ResultFolding.settled(self.config, acc)
 
         graded, verdict = Ceilings.verdict(
@@ -312,7 +314,7 @@ class ScanStages:
             repository=not ctx.package_distribution,
             facts=acc.facts,
         )
-        findings = tuple(graded)
+        findings = (*graded, *code_model)
         dependencies = self.engine.detection.annotated(dependencies, findings, ctx, units)
         return findings, verdict, dependencies
 
