@@ -195,7 +195,7 @@ class Units:
 
             language = Units.language_of(entry, implied_languages, loaded)
 
-            yield FileUnit(content=loaded, language=language)
+            yield FileUnit(content=loaded, language=language, opens=str(entry.real_path.absolute()))
 
             # Members after the archive itself, each budgeted like a file: an
             # archive is the cheapest way to put a lot of content in front of a

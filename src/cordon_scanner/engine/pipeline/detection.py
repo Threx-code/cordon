@@ -288,10 +288,12 @@ class Detection:
                         unit.content.sha256,
                         # An archive member has no path on disk to re-read. The whole of an
                         # oversized one travels, so the worker can sweep it as well. Nor does
-                        # a hook's inline program (`core.inline_programs`).
+                        # a hook's inline program (`core.inline_programs`). A walked file is
+                        # opened by its own path on disk (`FileUnit.opens`), never by its shown
+                        # name, which no file has when the name is not text.
                         unit.content.carried
                         if carry_content or "!" in unit.path or "#" in unit.path
-                        else None,
+                        else unit.opens,
                         # The parent's own decisions about the unit, never made again in a worker:
                         # its language (a hook's interpreter, which a worker reading the file
                         # alone cannot know: a hook-run payload.png was no language under --jobs)
