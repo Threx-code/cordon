@@ -9,7 +9,7 @@ A file whose checks did not all run is reported, never cached, and leaves the sc
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.detect.base import (
     FileUnit,
@@ -19,7 +19,7 @@ from cordon_scanner.detect.base import (
 from cordon_scanner.detect.registry import JudgeGate
 from cordon_scanner.engine.cache import CacheKey, ScanCache
 from cordon_scanner.engine.detector_clock import DetectorClock
-from cordon_scanner.engine.parallel import ParallelScanner, WorkItem
+from cordon_scanner.engine.parallel import Coverage, ParallelScanner, WorkItem
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.archives import ArchiveMembers
 from cordon_scanner.engine.pipeline.constants import (
@@ -151,7 +151,6 @@ class Detection:
         where processes cannot be spawned, a slower scan is the correct outcome;
         a failed one is not.
         """
-        by_path = {unit.path: unit for unit in units}
         pending: list[WorkItem] = []
         results: list[Finding] = []
 
@@ -163,10 +162,13 @@ class Detection:
         report = self.reporter(units)
         # The files of batches the pool never started because the scan's budget ran out first.
         unstarted: list[int] = []
+        # The files a worker died, hung or raised on (item 28): each named below, never read here.
+        lost: dict[int, str] = {}
         produced = ParallelScanner.run(
             config=self.config,
             engine_type=type(self.engine),
-            root=str(root),
+            # A worker reads a file at root / its path: for a scan of one file, its directory.
+            root=str(root.parent if root.is_file() else root),
             files=pending,
             workers=ParallelScanner.worker_count(
                 self.config.limits.max_workers, len(pending), sum(item[2] for item in pending)
@@ -185,13 +187,13 @@ class Detection:
             on_batch=report,
             deadline=ctx.deadline,
             unstarted=unstarted,
+            template=getattr(self.engine, "_template", None),
+            lost=lost,
         )
 
-        if produced is None:
-            self.inspect_here(pending, by_path, results, ctx, acc, detectors, signature)
-            return results
-
         self.merge_worker_results(produced, units, results, acc, ctx, signature)
+        for index, reason in sorted(lost.items()):
+            results.append(self.worker_lost(units[index], reason, acc))
         if unstarted:
             results.append(self.unexamined(len(unstarted), where, acc))
 
@@ -227,24 +229,34 @@ class Detection:
             )
         )
 
-    def inspect_here(
-        self,
-        pending: list[WorkItem],
-        by_path: dict[str, FileUnit],
-        results: list[Finding],
-        ctx: ScanContext,
-        acc: Accumulator,
-        detectors: list[Detector],
-        signature: str,
-    ) -> None:
-        """Every pending file inspected in this process: the pool did not run."""
-        # The pool did not run. Fall back rather than lose coverage. `None`
-        # rather than an empty list, so a pool that ran and legitimately
-        # found nothing is not re-scanned from scratch.
-        for _index, path, _size, _digest, _carried, _language, _project in pending:
-            unit = by_path[path]
-            results.extend(self.inspect_file(unit, ctx, acc, detectors, signature))
-            self.progress.advance(unit.path)
+    @staticmethod
+    def worker_lost(unit: FileUnit, reason: str, acc: Accumulator) -> Finding:
+        """A file whose worker died, hung or raised (item 28): reported by name, the scan incomplete.
+        The file is not read again in this process, which never parses scanned content: a file that
+        kills a worker would kill it here."""
+        kind, cause = Detection.WORKER_LOSSES.get(reason.split(":", 1)[0], ("DIED", "ended"))
+        detail = reason.split(": ", 1)[1] if ": " in reason else ""
+        # a gap like any other: no list names it, so it blocks (item 27's unread-bytes rule)
+        return acc.gap(
+            OperationalFinding.build(
+                path=unit.path,
+                rule_id=f"OPERATIONAL.FILE.WORKER_{kind}",
+                message=(
+                    f"The worker inspecting this file {cause}{f' ({detail})' if detail else ''}, so "
+                    "this file's checks did not finish; every other file was inspected."
+                ),
+                remediation="Report this with the file: it is an input that defeats the scanner.",
+            )
+        )
+
+    #: How a lost unit is named: the supervisor's reason -> (rule suffix, what happened).
+    WORKER_LOSSES: ClassVar[dict[str, tuple[str, str]]] = {
+        "memory": ("DIED", "ran out of its memory limit"),
+        "died": ("DIED", "ended"),
+        "cpu": ("HUNG", "used up its CPU budget"),
+        "wall": ("HUNG", "stopped answering"),
+        "failed": ("FAILED", "raised an error"),
+    }
 
     def work_items(
         self,
@@ -303,7 +315,7 @@ class Detection:
 
     def merge_worker_results(
         self,
-        produced: list[tuple[int, list[Finding], bool, bool]],
+        produced: list[tuple[int, list[Finding], bool, bool, Coverage]],
         units: list[FileUnit],
         results: list[Finding],
         acc: Accumulator,
@@ -311,7 +323,8 @@ class Detection:
         signature: str,
     ) -> None:
         """What the workers found, merged in the order of the units, and cached where trusted."""
-        for index, findings, trusted, cacheable in produced:
+        for index, findings, trusted, cacheable, coverage in produced:
+            acc.absorb(*coverage)  # the worker's own accumulator's verdict and gaps, as its own
             unit = units[index]
             results.extend(findings)
             if not trusted:

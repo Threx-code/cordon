@@ -329,10 +329,14 @@ class TestMcpPackagesOnline:
             info = tarfile.TarInfo("mcp_tool-1.0.0/setup.py")
             info.size = len(payload)
             archive.addfile(info, io.BytesIO(payload))
-        fetched: list[tuple] = []
+        # The fetch happens in the detection worker (item 28), so it is recorded where this
+        # process can read it after the worker has gone: a file, one line per fetch.
+        root = tmp_path / "scanned"  # the record sits outside the scanned tree
+        fetches = tmp_path / "fetches.txt"
 
         def fake(ecosystem, name, version):
-            fetched.append((ecosystem, name, version))
+            with fetches.open("a", encoding="utf-8") as record:
+                record.write(f"{ecosystem} {name} {version}\n")
             return registry_client.PackageArchive(
                 ecosystem, name, "1.0.0", "mcp_tool-1.0.0.tar.gz", buffer.getvalue()
             )
@@ -340,10 +344,10 @@ class TestMcpPackagesOnline:
         monkeypatch.setattr(registry_client.RegistryClient, "package_archive", fake)
         config = {"mcpServers": {"tool": {"command": "uvx", "args": ["mcp-tool==1.0.0"]}}}
         found = AgentsHelpers._rules(
-            AgentsHelpers._scan(tmp_path, {".mcp.json": json.dumps(config)}, offline=False)
+            AgentsHelpers._scan(root, {".mcp.json": json.dumps(config)}, offline=False)
         )
 
-        assert fetched == [("pypi", "mcp-tool", "1.0.0")]
+        assert fetches.read_text(encoding="utf-8").splitlines() == ["pypi mcp-tool 1.0.0"]
         [hit] = found["MALWARE.DROPPER.001"]
         assert hit.location.path == ".mcp.json"
         assert hit.location.package == "pkg:pypi/mcp-tool@1.0.0"

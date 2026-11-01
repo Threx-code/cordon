@@ -136,7 +136,7 @@ class TestTheTemplateLeavesNothingBehind(TemplateFixtures):
     @staticmethod
     def alive(pid: int) -> bool:
         try:
-            return Path(f"/proc/{pid}/stat").read_text().split()[2] != "Z"
+            return Path(f"/proc/{pid}/stat").read_text(encoding="ascii").split()[2] != "Z"
         except OSError:
             return False
 
@@ -149,7 +149,10 @@ class TestTheTemplateLeavesNothingBehind(TemplateFixtures):
             assert self.alive(template_pid) and self.alive(worker_pid)
             parent.send_signal(signal.SIGKILL)
             parent.wait()
-            time.sleep(1.0)
+            # gone within seconds, polled: a single fixed sleep raced a loaded host
+            until = time.monotonic() + 10.0
+            while time.monotonic() < until and (self.alive(template_pid) or self.alive(worker_pid)):
+                time.sleep(0.05)
             assert not self.alive(template_pid)
             assert not self.alive(worker_pid)
         finally:
@@ -181,7 +184,7 @@ class TestTheTemplateLeavesNothingBehind(TemplateFixtures):
         up to `within` seconds for it to be set."""
         until = time.monotonic() + within
         while time.monotonic() < until:
-            for line in Path(f"/proc/{pid}/status").read_text().splitlines():
+            for line in Path(f"/proc/{pid}/status").read_text(encoding="ascii").splitlines():
                 if line.startswith("SigIgn:") and int(line.split()[1], 16) & (
                     1 << (signal.SIGINT - 1)
                 ):

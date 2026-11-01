@@ -68,17 +68,24 @@ class TestNamedNotWritten:
                 info = tarfile.TarInfo(name)
                 info.size = len(data)
                 archive.addfile(info, io.BytesIO(data))
-        seen: dict[str, bool] = {}
+        # The detector runs in the detection worker (item 28), so what it saw is recorded where
+        # this process can read it afterwards: a file beside the sdist, one line per file.
+        sightings = tmp_path / "seen.txt"
         inspect = CapabilityDetector.inspect
 
         def record(self, unit, ctx):  # type: ignore[no-untyped-def]
-            seen[unit.path.rpartition("/")[2]] = ctx.in_install_hook(unit.path)
+            with sightings.open("a", encoding="utf-8") as out:
+                out.write(f"{unit.path.rpartition('/')[2]} {ctx.in_install_hook(unit.path)}\n")
             return inspect(self, unit, ctx)
 
         monkeypatch.setattr(CapabilityDetector, "inspect", record)
         config = Config.default()
         limits = config.limits.merged(max_workers=1)
         Scanner(config.with_overrides(use_cache=False, limits=limits)).scan(sdist)
+        seen = {
+            name: flag == "True"
+            for name, flag in (line.split() for line in sightings.read_text("utf-8").splitlines())
+        }
         # The package's own Dockerfile keeps its build-hook reading; the vendored one does not.
         assert seen == {"setup.py": True, "runner.Dockerfile": False, "Dockerfile": True}
 

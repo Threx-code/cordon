@@ -29,6 +29,8 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from cordon_scanner.foundation.errors import CordonError
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
     from multiprocessing.connection import Connection
@@ -88,8 +90,9 @@ class Outcome:
     unstarted: list[int] = field(default_factory=list)
 
 
-class IsolationUnavailable(RuntimeError):
-    """No worker could be started: the work was not run anywhere."""
+class IsolationUnavailable(CordonError):
+    """No worker could be started: the work was not run anywhere. A scanner error (exit 2), never a
+    note: a scan that examined nothing must not pass, and no content caused it (review 28)."""
 
 
 class TemplateProcess:
@@ -130,7 +133,10 @@ class Worker:
         if template is not None:
             sock, pid = template.fork_worker()
             self.conn: Connection = multiprocessing.connection.Connection(sock.detach())
-            self.conn.send((setup, work, bounds))  # forked before they existed: its first message
+            # forked before they existed: its first message. A worker already gone is seen as one
+            # that ended before it was ready, not as an error here.
+            with contextlib.suppress(OSError):
+                self.conn.send((setup, work, bounds))
             self.process = TemplateProcess(template, pid, self.conn)
         else:
             ours, theirs = context.Pipe()

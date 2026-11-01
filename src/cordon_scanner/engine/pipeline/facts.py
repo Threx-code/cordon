@@ -197,7 +197,6 @@ class ScanFactsGathering:
         the facts on the context -- across the worker pool where detection used one, since the
         context (facts included) is what a worker receives and what a file's cache key holds."""
         from cordon_scanner.engine.cache import CacheSignature
-        from cordon_scanner.engine.parallel import ParallelScanner
 
         later = [d for d in detectors if callable(getattr(d, "defers", None)) and d.defers(ctx)]
         if not later:
@@ -205,25 +204,12 @@ class ScanFactsGathering:
         acc.verdict_facts, facts = ScanFactsGathering.gather(engine, units, ctx, acc.labels)
         ctx = replace(ctx, scan_facts=facts)
         signature = CacheSignature.scan_signature(later, ctx, engine.config)
-        workers = ParallelScanner.worker_count(
-            engine.config.limits.max_workers, len(units), sum(u.content.size for u in units)
-        )
-        if workers > 1:
-            acc.add(
-                engine.detection.parallel(
-                    units,
-                    root,
-                    ctx,
-                    acc,
-                    later,
-                    signature,
-                    carry_content=carry_content,
-                    where=where,
-                )
+        # In supervised workers, one as readily as many (item 28), as the first pass is.
+        acc.add(
+            engine.detection.parallel(
+                units, root, ctx, acc, later, signature, carry_content=carry_content, where=where
             )
-            return
-        for unit in units:
-            acc.add(engine.detection.inspect_file(unit, ctx, acc, later, signature))
+        )
 
     @staticmethod
     def verdict_facts(
