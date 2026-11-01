@@ -34,6 +34,8 @@ if TYPE_CHECKING:
     from multiprocessing.connection import Connection
     from multiprocessing.context import BaseContext
 
+    from cordon_scanner.engine.isolation.template import Template
+
 #: A worker's exit status when an allocation past its memory limit raised MemoryError in a unit.
 MEMORY_EXIT = 86
 
@@ -90,18 +92,54 @@ class IsolationUnavailable(RuntimeError):
     """No worker could be started: the work was not run anywhere."""
 
 
+class TemplateProcess:
+    """A worker the template forked, seen as the supervisor sees a `multiprocessing.Process`: the
+    template is its parent, so it answers whether the worker lives, and how it ended, and kills it."""
+
+    def __init__(self, template: Template, pid: int, conn: Connection) -> None:
+        self.template, self.pid, self.conn = template, pid, conn
+        self.exitcode: int | None = None
+
+    @property
+    def sentinel(self) -> Connection:
+        return self.conn  # end-of-file when the worker ends
+
+    def is_alive(self) -> bool:
+        if self.exitcode is not None:
+            return False
+        alive, code = self.template.alive(self.pid)
+        if not alive:
+            self.exitcode = 0 if code is None else code
+        return alive
+
+    def kill(self) -> None:
+        self.template.kill(self.pid)
+
+    def join(self, timeout: float | None = None) -> None:
+        if self.exitcode is None:
+            code = self.template.wait(self.pid)
+            self.exitcode = 0 if code is None else code
+
+
 class Worker:
-    """One supervised process and the unit it holds."""
+    """One supervised process and the unit it holds: spawned, or forked by the scan's template."""
 
     def __init__(self, context: BaseContext, setup: tuple[str, tuple[Any, ...]], work: str,
-                 bounds: Bounds) -> None:  # fmt: skip
-        ours, theirs = context.Pipe()
-        self.conn: Connection = ours
-        self.process = context.Process(  # type: ignore[attr-defined]  # spawn and forkserver have it
-            target=WorkerMain.run, args=(theirs, setup, work, bounds), daemon=True
-        )
-        self.process.start()
-        theirs.close()
+                 bounds: Bounds, template: Template | None = None) -> None:  # fmt: skip
+        self.process: Any
+        if template is not None:
+            sock, pid = template.fork_worker()
+            self.conn: Connection = multiprocessing.connection.Connection(sock.detach())
+            self.conn.send((setup, work, bounds))  # forked before they existed: its first message
+            self.process = TemplateProcess(template, pid, self.conn)
+        else:
+            ours, theirs = context.Pipe()
+            self.conn = ours
+            self.process = context.Process(  # type: ignore[attr-defined]  # spawn and forkserver have it
+                target=WorkerMain.run, args=(theirs, setup, work, bounds), daemon=True
+            )
+            self.process.start()
+            theirs.close()
         self.ready = False
         self.unit: Unit | None = None
         self.given_at = 0.0
@@ -130,6 +168,13 @@ class Worker:
 
 class WorkerMain:
     """What runs inside a worker process."""
+
+    @staticmethod
+    def from_template(sock: Any) -> None:
+        """A worker the template forked: its setup, work and bounds arrive first on its socket."""
+        conn = multiprocessing.connection.Connection(sock.detach())
+        setup, work, bounds = conn.recv()
+        WorkerMain.run(conn, setup, work, bounds)
 
     @staticmethod
     def resolve(name: str) -> Callable[..., Any]:
@@ -257,6 +302,8 @@ class Supervisor:
         self.context, self.setup, self.work, self.bounds = context, setup, work, bounds
         self.workers = max(1, workers)
         self.deadline, self.on_result = deadline, on_result
+        #: The scan's template (`template.Template`), forking each worker; None to spawn them.
+        self.template: Template | None = None
         self.outcome = Outcome()
         self.retry: list[Unit] = []
 
@@ -272,7 +319,7 @@ class Supervisor:
         return self.outcome
 
     def _start(self) -> Worker:
-        return Worker(self.context, self.setup, self.work, self.bounds)
+        return Worker(self.context, self.setup, self.work, self.bounds, self.template)
 
     def _drain(self, pool: list[Worker], queue: deque[Unit], *, retried: bool) -> None:
         """Every unit of `queue` run on `pool`, a dead worker replaced while units remain."""
@@ -323,7 +370,9 @@ class Supervisor:
         now = time.monotonic()
         due = [w.given_at + self.bounds.wall_budget(w.unit.size) - now for w in pool if w.unit]
         timeout = max(0.0, min(due)) if due else None
-        waitable: list[Any] = [w.conn for w in pool] + [w.process.sentinel for w in pool]
+        waitable: list[Any] = [w.conn for w in pool]
+        # a template worker's sentinel is its connection: each object once, or the selector refuses it
+        waitable += [w.process.sentinel for w in pool if w.process.sentinel is not w.conn]
         for ready in multiprocessing.connection.wait(waitable, timeout):
             worker = next((w for w in pool if ready is w.conn or ready == w.process.sentinel), None)
             if worker is None or ready is not worker.conn:
