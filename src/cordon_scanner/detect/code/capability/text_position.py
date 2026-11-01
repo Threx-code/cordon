@@ -498,7 +498,7 @@ class TextPosition:
         # Both ends inside the same quoted run. `column_of` is one-based, matching
         # how a finding reports a column.
         first = content.column_of(start) - 1
-        last = content.column_of(end - 1) - 1
+        last = content.column_of(end - 1, place=False) - 1
         opening = TextPosition._quote_depth(line, first)
         closing = TextPosition._quote_depth(line, last)
         if opening is None or opening != closing:
@@ -582,7 +582,7 @@ class TextPosition:
             return False
 
         first = content.column_of(start) - 1
-        last = content.column_of(end - 1) - 1
+        last = content.column_of(end - 1, place=False) - 1
         opening = TextPosition._quote_depth(line, first)
         if opening is None or opening != TextPosition._quote_depth(line, last):
             return False
