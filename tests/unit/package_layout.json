@@ -876,6 +876,7 @@
   "test_named_secret_flow.py": "detect/code",
   "test_narrowed_environment.py": "detect/code/capability",
   "test_native_language_packs.py": "analysis/shared",
+  "test_native_stamp.py": "detect/binary/rule_engine",
   "test_netguard.py": "engine",
   "test_new_ecosystems.py": "ecosystems",
   "test_nix_code.py": "analysis/nix",
