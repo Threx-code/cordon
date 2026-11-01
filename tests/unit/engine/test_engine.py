@@ -466,3 +466,52 @@ class TestAnEcosystemWithNoAdvisoryFeed(EngineFixtures):
         (root / "requirements.txt").write_text("django==3.2\n", encoding="utf-8")
         result = Scanner(EngineHelpers.config()).scan(root)
         assert not [f for f in result.findings if f.rule_id == "OPERATIONAL.ADVISORY.NO_FEED.001"]
+
+
+class TestOneProviderSeenTwice:
+    """engine.registry (item 49): an editable install shows one distribution's entry points through
+    several metadata copies (site-packages' dist-info, src's dist-info and egg-info), and one entry
+    name seen twice refused every scan with "plugin 'advisory' is provided twice". The same provider
+    with the same value is one provider; two providers still refuse."""
+
+    class Entry:
+        def __init__(self, name: str, value: str, provider: str) -> None:
+            self.group, self.name, self.value, self.provider = "cordon.test", name, value, provider
+
+        def load(self):
+            return lambda: f"{self.name} from {self.provider}"
+
+    @staticmethod
+    def load(monkeypatch, entries):
+        from cordon_scanner.engine import registry
+
+        monkeypatch.setattr(registry, "entry_points", lambda group: list(entries))
+        monkeypatch.setattr(
+            registry.Registry, "_provider", staticmethod(lambda entry: entry.provider)
+        )
+        return registry.Registry(allow_third_party=True)._load("cordon.test", (), None)
+
+    def test_two_copies_of_one_distribution_load_it_once(self, monkeypatch) -> None:
+        copy = ("advisory", "pkg.detector:Advisory", "cordon-scanner")
+        loaded = self.load(monkeypatch, [self.Entry(*copy), self.Entry(*copy), self.Entry(*copy)])
+        assert loaded == ("advisory from cordon-scanner",)
+
+    def test_two_distributions_still_refuse(self, monkeypatch) -> None:
+        from cordon_scanner.foundation.errors import ConfigError
+
+        entries = [
+            self.Entry("advisory", "pkg.detector:Advisory", "cordon-scanner"),
+            self.Entry("advisory", "other.detector:Advisory", "someone-else"),
+        ]
+        with pytest.raises(ConfigError, match="provided twice"):
+            self.load(monkeypatch, entries)
+
+    def test_one_distribution_naming_two_values_still_refuses(self, monkeypatch) -> None:
+        from cordon_scanner.foundation.errors import ConfigError
+
+        entries = [
+            self.Entry("advisory", "pkg.detector:Advisory", "cordon-scanner"),
+            self.Entry("advisory", "pkg.other:Advisory", "cordon-scanner"),
+        ]
+        with pytest.raises(ConfigError, match="provided twice"):
+            self.load(monkeypatch, entries)
