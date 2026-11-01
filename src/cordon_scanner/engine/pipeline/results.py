@@ -81,14 +81,19 @@ class ResultFolding:
         answer for a code-scanning annotation, and the count in the message and the
         `copies` metadata are what a reader has instead.
         """
-        groups: dict[tuple[str, str], list[Finding]] = {}
+        # Suppressed copies fold apart from live ones: folded together, the copy kept (the first by
+        # path) could be one the operator suppressed, and every live copy went with it (a
+        # vendored fixture suppressed beside a shipped copy of the same bytes hid the shipped one).
+        groups: dict[tuple[str, str, bool], list[Finding]] = {}
         order: list[Finding] = []
         for finding in findings:
             file_hash = dict(finding.evidence.metadata).get(Finding.FILE_HASH_KEY)
             if not file_hash or finding.category is Category.OPERATIONAL:
                 order.append(finding)
                 continue
-            groups.setdefault((finding.rule_id, file_hash), []).append(finding)
+            groups.setdefault((finding.rule_id, file_hash, finding.is_suppressed), []).append(
+                finding
+            )
 
         for group in groups.values():
             paths = sorted({f.location.path for f in group})
