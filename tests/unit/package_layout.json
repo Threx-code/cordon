@@ -699,7 +699,7 @@
   "test_bun_and_deno_locks.py": "ecosystems",
   "test_bun_lockb.py": "ecosystems/javascript",
   "test_cache.py": "engine",
-  "test_coverage_ledger.py": "engine",
+  "test_coverage_ledger.py": "engine/coverage",
   "test_parallel_gaps.py": "engine",
   "test_archive_settles.py": "engine",
   "test_window_prefix.py": "engine",

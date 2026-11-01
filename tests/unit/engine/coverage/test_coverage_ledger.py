@@ -18,6 +18,7 @@ from cordon_scanner.engine.pipeline.coverage import CoverageLedger
 from cordon_scanner.engine.pipeline.stages import ScanStages
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Severity
+from cordon_scanner.foundation.results import OperationalFinding
 
 RULE = CoverageLedger.RULE
 
@@ -71,6 +72,29 @@ class TestAFileNoStepAccountsFor:
             return [u for u in original(self, *args, **kwargs) if u.path != "m1.py"]
 
         monkeypatch.setattr(ScanStages, "read_units", drops_one)
+        result = Scanner(LedgerKit.config()).scan(LedgerKit.tree(tmp_path / "t"))
+        assert LedgerKit.unaccounted(result) == ["m1.py"]
+
+    def test_an_unrelated_operational_note_at_its_path_does_not_account_for_it(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Outer-layer review: a note that says nothing about reading the file is no state.
+        original = ScanStages.read_units
+
+        def drops_one_with_a_note(self, root, inventory, acc, *rest):
+            acc.append(
+                OperationalFinding.build(
+                    path="m1.py",
+                    rule_id="OPERATIONAL.REFERENCE.NOT_FOUND",
+                    message="m",
+                    remediation="r",
+                    severity=Severity.INFO,
+                )
+            )
+            units = original(self, root, inventory, acc, *rest)
+            return [u for u in units if u.path != "m1.py"]
+
+        monkeypatch.setattr(ScanStages, "read_units", drops_one_with_a_note)
         result = Scanner(LedgerKit.config()).scan(LedgerKit.tree(tmp_path / "t"))
         assert LedgerKit.unaccounted(result) == ["m1.py"]
 

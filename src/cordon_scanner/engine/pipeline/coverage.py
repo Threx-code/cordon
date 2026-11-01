@@ -22,7 +22,7 @@ from cordon_scanner.foundation.models import (
     Finding,
     Severity,
 )
-from cordon_scanner.foundation.results import OperationalFinding
+from cordon_scanner.foundation.results import NOT_CONTENT_GAPS, OperationalFinding
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -438,13 +438,22 @@ class CoverageLedger:
     BLOCKING: ClassVar[bool] = False
     #: Each unaccounted file is named up to this many; past it, one finding gives the rest's count.
     NAMED: ClassVar[int] = 200
-    _NAMING: ClassVar[tuple[str, ...]] = ("OPERATIONAL.", "POLICY.COVERAGE.")
 
     @classmethod
     def unaccounted(cls, acc: Accumulator) -> list[str]:
-        """The tree's files no step accounted for, each once, in the order the walk presented them."""
+        """The tree's files no step accounted for, each once, in the order the walk presented them.
+
+        Only the four states account for a file, never any operational note at its path (a
+        reference note, a format note, a cap: none says whether the file was read; outer-layer
+        review): READ, recorded by the step that read it in full, including a link and the members
+        `ArchiveMembers.NOTHING_UNREAD` refuses with nothing unread; GAPPED, a content gap at its
+        path; SCOPED, the operator's choice (POLICY.COVERAGE.*, or another `NOT_CONTENT_GAPS` cause)."""
         named = {path for _, path in acc.content_gaps}
-        named.update(f.location.path for f in acc.findings if f.rule_id.startswith(cls._NAMING))
+        named.update(
+            f.location.path
+            for f in acc.findings
+            if f.rule_id.startswith("POLICY.COVERAGE.") or f.rule_id in NOT_CONTENT_GAPS
+        )
         return [
             path
             for path in dict.fromkeys(acc.ledger_tree)
