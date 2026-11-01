@@ -239,6 +239,19 @@ class TestParsing:
         # `opam lock` writes only exact versions: anything else is not its output.
         assert InfraHelpers.parse_lock("opam", "app.opam.locked", text).parse_error
 
+    @pytest.mark.parametrize("text", ["", "\n", "# nothing declared yet\n\n"])
+    def test_an_opam_file_with_no_fields_declares_nothing(self, text: str) -> None:
+        """An empty opam file is complete, not unparsed: @reason-native_console-0.1.0 ships eleven
+        0-byte .opam files, and each was a gap that blocked the package (item 27's count)."""
+        manifest = InfraHelpers.parse_manifest("opam", "pkg.opam", text)
+        assert manifest.parse_error is None
+        assert manifest.dependencies == () and manifest.hooks == ()
+
+    def test_an_opam_file_with_fields_but_neither_key_stays_refused(self) -> None:
+        """Its other fields can carry build: hooks, so it is not read as declaring nothing."""
+        manifest = InfraHelpers.parse_manifest("opam", "pkg.opam", 'build: [["sh" "x.sh"]]\n')
+        assert manifest.parse_error
+
     def test_homebrew_taps_are_sources(self) -> None:
         manifest = InfraHelpers.parse_manifest(
             "homebrew",

@@ -63,6 +63,11 @@ class OpamFile:
             document = OpamDocument.load(content)
         except OpamError as exc:
             return BaseEcosystem._err(content, ecosystem, f"not a readable opam file: {exc}")
+        if not document.fields:
+            # Empty, or comments only: a file that declares nothing has nothing left unread
+            # (@reason-native_console ships eleven 0-byte .opam files). One with other fields
+            # but neither key below stays refused: those fields can carry build: hooks.
+            return Manifest(path=content.path, ecosystem=ecosystem)
         if "opam-version" not in document.fields and "depends" not in document.fields:
             return BaseEcosystem._err(
                 content, ecosystem, "an opam file with neither opam-version nor depends"
