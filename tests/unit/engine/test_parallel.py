@@ -477,7 +477,7 @@ class TestThePoolStopsAtTheDeadline(ParallelFixtures):
             ParallelScanner, "_worker", SimpleNamespace(engine=None, context=None, detectors=())
         )
         out = ParallelScanner._inspect_batch(self.items(3, 4), "/nonexistent", deadline=0.0)
-        assert out == [(3, [], None, False, (True, ())), (4, [], None, False, (True, ()))]
+        assert out == [(3, [], None, False, (True, ()), ""), (4, [], None, False, (True, ()), "")]
 
     def test_the_scan_reports_what_the_pool_left_unexamined(self, repository, monkeypatch) -> None:
         def run(**kwargs):

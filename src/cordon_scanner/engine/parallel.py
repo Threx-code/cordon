@@ -55,7 +55,9 @@ taken by the parent with `Accumulator.absorb` so its verdict is the worker's (it
 FULL: Coverage = (True, ())
 """The coverage of a unit that left nothing unread, or that the parent reports itself."""
 
-WorkerResult = tuple[int, list[dict[str, Any]], bool | None, bool, Coverage]
+#: (index, findings, trusted, cacheable, coverage, facts): facts are the unit's JSON-encoded per-file
+#: facts (`engine/isolation/facts.py`), "" when it sent none.
+WorkerResult = tuple[int, list[dict[str, Any]], bool | None, bool, Coverage, str]
 """What a worker hands back for one file: its index, its findings, whether it read the bytes the
 parent hashed (None: not examined, the scan's budget had run out), whether the result may be
 cached, and its `Coverage`."""
@@ -403,6 +405,7 @@ class ParallelScanner:
         from pathlib import Path
 
         from cordon_scanner.detect.base import FileUnit
+        from cordon_scanner.engine.isolation.facts import WorkerFacts
         from cordon_scanner.foundation.content import FileContent, Skipped
 
         if getattr(ParallelScanner._worker, "missing", ()):  # (a test's stand-in state has none)
@@ -416,7 +419,9 @@ class ParallelScanner:
 
         for index, relative, _size, expected, carried, language, project in batch:
             if deadline is not None and time.monotonic() >= deadline:
-                out.append((index, [], None, False, FULL))  # not examined: the budget ran out first
+                out.append(
+                    (index, [], None, False, FULL, "")
+                )  # not examined: the budget ran out first
                 continue
             if isinstance(carried, str):
                 loaded = FileContent.load(Path(carried), relative, engine.config.limits)
@@ -431,7 +436,7 @@ class ParallelScanner:
                 # whether it did depended on the machine's core count. The
                 # `False` says the result is not trustworthy; the parent reports
                 # it exactly as the serial path would.
-                out.append((index, [], False, False, FULL))
+                out.append((index, [], False, False, FULL, ""))
                 continue
 
             if loaded.sha256 != expected:
@@ -448,20 +453,24 @@ class ParallelScanner:
                 # exact content on that machine is a silent hit. The engine's
                 # docstring claims a cache hit is provably identical to a cold
                 # run; this is where that stopped being true.
-                out.append((index, [], False, False, FULL))
+                out.append((index, [], False, False, FULL, ""))
                 continue
 
-            findings, intact, cacheable, coverage = ParallelScanner._inspected(
-                FileUnit(content=loaded, language=language, project=project),
-                relative,
-                root,
-                ctx,
-                detectors,
-            )
+            WorkerFacts.begin()  # what the unit's analysis learns for the parent (item 56)
+            try:
+                findings, intact, cacheable, coverage = ParallelScanner._inspected(
+                    FileUnit(content=loaded, language=language, project=project),
+                    relative,
+                    root,
+                    ctx,
+                    detectors,
+                )
+            finally:
+                facts = WorkerFacts.end()
             out.append(
-                (index, findings, True, cacheable and coverage[0], coverage)
+                (index, findings, True, cacheable and coverage[0], coverage, facts)
                 if intact
-                else (index, [], False, False, FULL)
+                else (index, [], False, False, FULL, "")
             )
 
         return out
@@ -507,7 +516,7 @@ class ParallelScanner:
         unstarted: list[int] | None = None,
         template: Any = None,
         lost: dict[int, str] | None = None,
-    ) -> list[tuple[int, list[Finding], bool, bool, Coverage]]:
+    ) -> list[tuple[int, list[Finding], bool, bool, Coverage, str]]:
         """Inspect files in supervised workers, returning results in input order (item 28).
 
         Each file is one unit, given to a worker at a time; a worker that dies, hangs or raises on
@@ -545,20 +554,20 @@ class ParallelScanner:
                 (engine_type, config.to_dict(), root, tuple(detector_ids), inventory, operator,
                  dict(facts or {})),
             )  # fmt: skip
-        collected: list[tuple[int, list[Finding], bool, bool, Coverage]] = []
+        collected: list[tuple[int, list[Finding], bool, bool, Coverage, str]] = []
 
         def arrived(_unit: int, result: Any) -> None:
             out, taken = result
             if taken:
                 DetectorClock.add(taken)
             done = []
-            for index, findings, trusted, cacheable, coverage in out:
+            for index, findings, trusted, cacheable, coverage, facts in out:
                 if trusted is None:  # reached after the deadline
                     if unstarted is not None:
                         unstarted.append(index)
                     continue
                 restored = [ScanCache.finding_from_dict(f) for f in findings]
-                collected.append((index, restored, trusted, cacheable, coverage))
+                collected.append((index, restored, trusted, cacheable, coverage, facts))
                 done.append(index)
             if on_batch is not None:
                 on_batch(done)

@@ -47,6 +47,11 @@ class Accumulator:
     bytes_scanned: int = 0
     rules_evaluated: int = 0
 
+    facts: dict[str, dict[str, list[Any]]] = field(default_factory=dict)
+    """Per-file facts the workers sent back (item 56, `engine/isolation/facts.py`), by path: plain data
+    the parent joins across files without parsing any of them."""
+    facts_bytes: int = 0
+    """The bytes those facts took, against the scan's bound."""
     verdict_facts: dict[str, float] | None = None
     """The facts the package verdict reads, when the rule file's deferred pass gathered them
     already (`engine/pipeline/facts`): the verdict reuses them instead of computing twice."""

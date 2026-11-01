@@ -9,7 +9,7 @@ A file whose checks did not all run is reported, never cached, and leaves the sc
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.detect.base import (
     FileUnit,
@@ -19,7 +19,7 @@ from cordon_scanner.detect.base import (
 from cordon_scanner.detect.registry import JudgeGate
 from cordon_scanner.engine.cache import CacheKey, ScanCache
 from cordon_scanner.engine.detector_clock import DetectorClock
-from cordon_scanner.engine.parallel import Coverage, ParallelScanner, WorkItem
+from cordon_scanner.engine.parallel import ParallelScanner, WorkItem
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.archives import ArchiveMembers
 from cordon_scanner.engine.pipeline.constants import (
@@ -315,9 +315,33 @@ class Detection:
             if finding.detector not in ADVISORY_DETECTORS:
                 acc.gap(finding)
 
+    @staticmethod
+    def absorb_facts(path: str, text: str, acc: Accumulator, results: list[Finding]) -> None:
+        """A file's facts from its worker, accepted only as plain data within their bounds and shapes
+        (`engine/isolation/facts.py`): refused, the file is a gap, and none of its facts are used."""
+        from cordon_scanner.engine.isolation.facts import Facts
+
+        accepted, why = Facts.accept(text, acc.facts_bytes)
+        if accepted is None:
+            results.append(
+                acc.gap(
+                    OperationalFinding.build(
+                        path=path,
+                        rule_id="OPERATIONAL.WORKER.FACTS_REFUSED",
+                        message=f"What a worker learned about this file was refused ({why}), so the "
+                        "analysis that joins files did not use it.",
+                        remediation="Report the file: a worker sends back only declared facts.",
+                    )
+                )
+            )
+            return
+        acc.facts_bytes += len(text)
+        if accepted:
+            acc.facts[path] = accepted
+
     def merge_worker_results(
         self,
-        produced: list[tuple[int, list[Finding], bool, bool, Coverage]],
+        produced: list[tuple[Any, ...]],
         units: list[FileUnit],
         results: list[Finding],
         acc: Accumulator,
@@ -325,10 +349,12 @@ class Detection:
         signature: str,
     ) -> None:
         """What the workers found, merged in the order of the units, and cached where trusted."""
-        for index, findings, trusted, cacheable, coverage in produced:
+        for index, findings, trusted, cacheable, coverage, *carried in produced:
             acc.absorb(*coverage)  # the worker's own accumulator's verdict and gaps, as its own
             unit = units[index]
             results.extend(findings)
+            if carried and carried[0]:
+                Detection.absorb_facts(unit.path, carried[0], acc, results)
             if not trusted:
                 # The worker could not read the file, or read different bytes
                 # than the parent hashed. Reported exactly as the serial path
