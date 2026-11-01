@@ -715,6 +715,7 @@
   "test_ci_templates.py": "repository/release",
   "test_clamav.py": "detect/binary",
   "test_class_based_architecture.py": "repository",
+  "test_committed_metadata.py": "repository",
   "test_completeness_one_call.py": "repository",
   "test_closure_order.py": "engine",
   "test_cloud.py": "cloud",

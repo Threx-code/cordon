@@ -10,6 +10,7 @@ not a package module.
 from __future__ import annotations
 
 import importlib.util
+import sys
 
 from cordon_scanner.intel.advisories.advisories import Advisory
 from support import ROOT as REPO
@@ -26,7 +27,14 @@ class BuildAdvisoryDbHelpers:
         )
         assert spec and spec.loader
         module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        # The script puts the repository's src first on sys.path, as a script run from a checkout
+        # must. Left there, it outlived this test and changed what every later test in the process
+        # imported and whose package metadata it read: 115 failures behind a new entry point.
+        saved = list(sys.path)
+        try:
+            spec.loader.exec_module(module)
+        finally:
+            sys.path[:] = saved
         return module
 
 
