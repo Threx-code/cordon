@@ -515,3 +515,55 @@ class TestOneProviderSeenTwice:
         ]
         with pytest.raises(ConfigError, match="provided twice"):
             self.load(monkeypatch, entries)
+
+
+class TestPastTheDeadline:
+    """Item 64. A scan past its deadline is never complete, and the costly steps after detection do
+    not run once it has passed (one probe ran nine times past its budget and exited 0, called
+    complete; another spent its last fifty seconds loading the advisory index)."""
+
+    @staticmethod
+    def late_scan(tmp_path, monkeypatch, files: dict[str, str]):  # type: ignore[no-untyped-def]
+        from cordon_scanner.detect.base import ScanContext
+
+        # Detection itself is unaffected: the Supervisor reads the deadline from its own clock.
+        # Every check made with the context after detection sees the budget spent.
+        monkeypatch.setattr(ScanContext, "out_of_time", lambda self: True)
+        root = tmp_path / "pkg"
+        root.mkdir()
+        for name, text in files.items():
+            (root / name).write_text(text, encoding="utf-8")
+        config = Config.default().with_overrides(use_cache=False, offline=True)
+        return Scanner(config).scan(root)
+
+    def test_a_scan_ending_past_its_deadline_is_incomplete(self, tmp_path, monkeypatch) -> None:
+        result = self.late_scan(tmp_path, monkeypatch, {"README.md": "nothing here\n"})
+        assert result.content_complete is False
+        timeouts = [f for f in result.findings if f.rule_id == "OPERATIONAL.SCAN.TIMEOUT"]
+        assert len(timeouts) == 1
+
+    def test_the_release_checks_do_not_run_past_it(self, tmp_path, monkeypatch) -> None:
+        from cordon_scanner.engine.pipeline.releases import ReleaseChecks
+
+        called: list[str] = []
+        monkeypatch.setattr(
+            ReleaseChecks,
+            "known_malicious_release",
+            staticmethod(lambda units, ctx: called.append("ran") or []),
+        )
+        self.late_scan(tmp_path, monkeypatch, {"package.json": '{"name": "p", "version": "1.0.0"}'})
+        assert called == []
+
+    def test_the_accumulator_rule(self) -> None:
+        from types import SimpleNamespace
+
+        from cordon_scanner.engine.pipeline.accumulator import Accumulator
+
+        acc = Accumulator()
+        acc.ended_late(SimpleNamespace(out_of_time=lambda: False), ".")
+        assert acc.complete
+        acc.ended_late(SimpleNamespace(out_of_time=lambda: True), ".")
+        assert not acc.complete
+        assert [f.rule_id for f in acc.findings] == ["OPERATIONAL.SCAN.TIMEOUT"]
+        acc.ended_late(SimpleNamespace(out_of_time=lambda: True), ".")
+        assert len(acc.findings) == 1  # once

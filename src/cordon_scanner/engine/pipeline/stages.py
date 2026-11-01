@@ -206,13 +206,17 @@ class ScanStages:
                     carry_content=carry_content,
                 )
             )
+            if acc.out_of_time(ctx, REPOSITORY_SCOPE, "the release checks"):
+                return
             acc.add(ReleaseChecks.unexamined_install_code(acc.findings, ctx))
             acc.add(ReleaseChecks.native_code_in_a_pure_wheel(units, ctx))
             acc.add(ReleaseChecks.known_malicious_release(units, ctx))
             acc.add(ReleaseChecks.placeholder_release(units, ctx))
             acc.add(ReleaseChecks.borrowed_server_name(units, ctx))
 
-            if dependencies:
+            if dependencies and not acc.out_of_time(
+                ctx, REPOSITORY_SCOPE, "the dependency graph's checks"
+            ):
                 self.progress.phase("graph")
                 graph_unit = GraphUnit(dependencies=Graph.packages(dependencies))
                 for detector in self.detectors:
@@ -224,6 +228,8 @@ class ScanStages:
             acc.add(self.engine.dependencies.sbom_listed_findings(acc.findings, ctx))
             # A rule file reading the scanner's facts is matched now that they exist, before
             # every step after detection (`engine/pipeline/facts`).
+            if acc.out_of_time(ctx, REPOSITORY_SCOPE, "the rule file's deferred pass"):
+                return
             ScanFactsGathering.deferred(
                 self.engine,
                 file_detectors,
