@@ -181,6 +181,12 @@ class BundleKeys(Protocol):
     def pinned_key_hex(self) -> str: ...
 
 
+class ReuseIndexes(Protocol):
+    """What the engine uses of the class `ReuseIndex`: whether the shipped index can be used."""
+
+    def shipped(self, max_age_days: int = ...) -> tuple[Any, str]: ...
+
+
 class FeedStatus(Protocol):
     """What the engine uses of the class `FeedClient`."""
 

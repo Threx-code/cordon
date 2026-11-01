@@ -60,6 +60,7 @@ BUILTIN_DETECTORS = (
     "attestation",
     "binary",
     "capability",
+    "code-reuse",
     "clamav",
     "config",
     "dependency",

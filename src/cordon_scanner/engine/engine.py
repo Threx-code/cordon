@@ -393,7 +393,39 @@ class Engine:
                     severity=Severity.MEDIUM,
                 )
             )
+        self._reuse_status(acc)
         return status.to_dict()
+
+    def _reuse_status(self, acc: Accumulator) -> None:
+        """The code-reuse index (item 54), when this build ships one: an index that is malformed,
+        unsorted or past its age is not used, and that is an advisory gap, as stale intel is. A build
+        with none has no reuse check and nothing to say, as a build with no feed has no age check."""
+        from cordon_scanner.intel.registry import ReuseIndex
+
+        if self.config.max_intel_age == 0:
+            return
+        _, problem = ReuseIndex.shipped()
+        if not problem:
+            return
+        acc.advisory_complete = False
+        stale = problem.startswith("stale")
+        acc.append(
+            OperationalFinding.build(
+                path=REPOSITORY_SCOPE,
+                rule_id="OPERATIONAL.INTEL.REUSE_STALE"
+                if stale
+                else "OPERATIONAL.INTEL.REUSE_UNAVAILABLE",
+                message=(
+                    f"The index of known malware code files was not used ({problem.split(': ', 1)[-1]}), "
+                    "so a file copied from an earlier campaign would not be matched."
+                ),
+                remediation=(
+                    "Run `cordon-scanner intel update` (the index refreshes daily with the feed), or "
+                    "reinstall Cordon to restore the bundled copy."
+                ),
+                severity=Severity.MEDIUM,
+            )
+        )
 
     # -- Archives ---------------------------------------------------------
 
