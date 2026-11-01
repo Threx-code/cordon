@@ -71,6 +71,49 @@ class Shapes:
         return isinstance(value, str) and value in VerdictFeatures.ABILITY
 
     @staticmethod
+    def capability(value: Any) -> bool:
+        from cordon_scanner.foundation.capabilities import Capability
+
+        return isinstance(value, str) and value in {c.value for c in Capability}
+
+    @staticmethod
+    def marker(value: Any) -> bool:
+        """A flag fact (`cap.error`, `cap.download`): present or absent, its value fixed."""
+        return value in ("raised", "runs")
+
+    @staticmethod
+    def intent_effect(value: Any) -> bool:
+        """[capability, deferred]: an effect the intent layer groups, and whether it is deferred."""
+        from cordon_scanner.decide.intent import IntentFacts
+
+        return (
+            isinstance(value, list)
+            and len(value) == 2
+            and isinstance(value[0], str)
+            and value[0] in IntentFacts.EFFECT_GROUP
+            and type(value[1]) is bool
+        )
+
+    @staticmethod
+    def intent_fact(value: Any) -> bool:
+        """A concealment or gate fact, as the intent layer names them."""
+        from cordon_scanner.decide.intent import IntentFacts
+
+        return (
+            isinstance(value, str) and len(value) <= 128 and IntentFacts.classify(value) is not None
+        )
+
+    @staticmethod
+    def reached_flow(value: Any) -> bool:
+        """A reached-flow fact without its place: `can_<name>` or `flow_<source>_<sink>_<dest>`."""
+        import re
+
+        return (
+            isinstance(value, str)
+            and re.fullmatch(r"(?:can|flow)_[a-z0-9_]{1,200}", value) is not None
+        )
+
+    @staticmethod
     def js_require(value: Any) -> bool:
         """A require's resolved literal path, or "dynamic" (an evasion signal, never an edge)."""
         return isinstance(value, str) and 0 < len(value) <= 4096
@@ -85,6 +128,12 @@ class Facts:
         "js.require": Shapes.js_require,
         "verdict.modules": Shapes.module_name,
         "verdict.abilities": Shapes.ability,
+        "cap.label": Shapes.capability,
+        "cap.error": Shapes.marker,
+        "cap.download": Shapes.marker,
+        "intent.effect": Shapes.intent_effect,
+        "intent.fact": Shapes.intent_fact,
+        "reached.flow": Shapes.reached_flow,
     }
 
     @staticmethod

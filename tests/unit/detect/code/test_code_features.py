@@ -146,7 +146,7 @@ class TestWhenMade:
             import_entry_paths=frozenset({"index.js"}),
             library_closure_paths=frozenset(),
         )
-        return ReachedFlows.of([unit], ctx)  # type: ignore[arg-type]
+        return ReachedFlows.of([unit], ctx, {})  # type: ignore[arg-type]
 
     def test_a_users_scan_does_not_make_them(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(ReachedFlows.MEASURE, raising=False)

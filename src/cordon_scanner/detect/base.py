@@ -694,9 +694,14 @@ class CampaignSiblingFacts(Protocol):
 
 
 class ReachedFlowFacts(Protocol):
-    """What the engine uses of the class `ReachedFlows`."""
+    """What the engine uses of the class `ReachedFlows`: the parent joins each file's flow facts
+    (`of`), a worker reads them (`reads`, `facts`; item 56)."""
 
-    def of(self, units: Sequence[FileUnit], ctx: ScanContext) -> dict[str, float]: ...
+    def of(
+        self, units: Sequence[FileUnit], ctx: ScanContext, facts: dict[str, dict[str, list[Any]]]
+    ) -> dict[str, float]: ...
+    def reads(self, unit: FileUnit, ctx: ScanContext) -> bool: ...
+    def facts(self, place: str, text: str, *, python: bool = ...) -> dict[str, float]: ...
 
 
 class ServerSourceFinding(Protocol):

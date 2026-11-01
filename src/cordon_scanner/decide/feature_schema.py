@@ -71,6 +71,9 @@ class FeatureSchema:
         ("engine/pipeline/ceilings.py", "Ceilings.verdict_dependency_names"),
         ("engine/pipeline/ceilings.py", "Ceilings.is_verdict_source"),
         ("engine/pipeline/ceilings.py", "Ceilings.verdict_manifests"),
+        # Sites 9 and 10: the profile's labels and download runs, and the reached-flow facts.
+        ("engine/isolation/analysis_facts.py", "WorkerAnalysis"),
+        ("engine/isolation/analysis_facts.py", "ParentAnalysis"),
     )
     PREFIX: ClassVar[str] = "fs1-"
     #: Where a piece now lives, when it moved after EXTRACTOR recorded it. The version hashes the
@@ -95,6 +98,14 @@ class FeatureSchema:
         "fs1-133be8fc1234279d": (
             "fs1-ea0fb02ccf3bb099",
             "tests/unit/decide/test_verdict_facts.py::TestTheVerdictIsIdentical",
+        ),
+        # 56 phase (a), sites 9 and 10: the profile's labels and download runs, the intent observer's
+        # per-file half and the reached-flow facts from the workers. Identity:
+        # tests/unit/engine/isolation/test_analysis_facts.py (profile and intent from the workers'
+        # facts equal to the same producer run on each unit's bytes, every malicious corpus sample).
+        "fs1-6c6f93207f6315c8": (
+            "fs1-ea0fb02ccf3bb099",
+            "tests/unit/engine/isolation/test_analysis_facts.py::TestTheParentReadsTheWorkersFacts",
         ),
     }
 
