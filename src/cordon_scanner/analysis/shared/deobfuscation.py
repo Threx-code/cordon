@@ -798,22 +798,3 @@ class Layers:
                 break
             frontier = next_frontier
         return text + "".join(added), len(added)
-
-
-class Deobfuscator:
-    """Every reversal this module knows, tried in turn: the string array first, then the layers
-    under it."""
-
-    @staticmethod
-    def recover(text: str, language: str | None) -> Recovery | None:
-        if language not in ("javascript", "typescript"):
-            return None
-        recovery = ObfuscatorIo.recover(text)
-        base = recovery.text if recovery is not None else text
-        peeled, layers = Layers.peel(base)
-        if recovery is None and not layers:
-            return None
-        if recovery is None:
-            # Only what was decoded is new: the file itself is read as it is.
-            return Recovery(peeled[len(base) :], "layers", layers, 0)
-        return Recovery(peeled, recovery.technique, recovery.resolved + layers, recovery.remaining)
