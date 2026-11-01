@@ -190,6 +190,7 @@ class ArchiveStages:
         units.extend(self.engine.units.inline_hooks(units))
         units.extend(self.engine.units.deobfuscated(units))
         hook_paths, consumer_hooks, ci_scripts = Hooks.manifest_hook_paths(units, acc)
+        Hooks.hooked_languages(units)  # what a hook runs is read as its interpreter runs it
         # The same install-time picture a directory scan builds: filename hooks (`setup.py`, a
         # `.pth`), and everything the hooks import or run. A downloaded sdist or tarball is the
         # commonest thing to vet, and it was the one target that skipped all three.

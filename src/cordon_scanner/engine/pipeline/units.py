@@ -326,10 +326,16 @@ class Units:
     def language_of(
         entry: WalkEntry, implied_languages: dict[str, str], loaded: FileContent
     ) -> str | None:
-        """A file's language: its name, then a hook's interpreter, then its shebang, then its content."""
-        language = LanguageRegistry.identify_language(entry.rel_path)
+        """A file's language: the interpreter a hook runs it with, then its name, then its shebang,
+        then its content.
+
+        The hook's interpreter first: `node lib/run.md` runs JavaScript whatever the file is called,
+        and the file is inspected as what runs (item 36). The name answered first, so a payload named
+        .md, .txt or nothing, run by a hook, was read by no language rule while the same bytes in
+        run.js blocked (the evasion suite's text-type names; five npm misses on 3cad016d)."""
+        language = implied_languages.get(entry.rel_path)
         if language is None:
-            language = implied_languages.get(entry.rel_path)
+            language = LanguageRegistry.identify_language(entry.rel_path)
         if language is None:
             # An extensionless script -- `install`, `preinstall`,
             # `configure` -- got `language=None` and therefore only the
