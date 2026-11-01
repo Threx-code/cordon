@@ -11,6 +11,7 @@ binary = cordon_scanner.detect.binary.detector:BinaryDetector
 campaign-sibling = cordon_scanner.detect.supply.campaign_sibling:CampaignSiblingDetector
 capability = cordon_scanner.detect.code.capability.detector:CapabilityDetector
 clamav = cordon_scanner.detect.binary.clamav:ClamavDetector
+code-model = cordon_scanner.detect.code.code_model_scores:CodeModelScores
 config = cordon_scanner.detect.infra.config_files:ConfigDetector
 dependency = cordon_scanner.detect.supply.dependency:DependencyDetector
 formats = cordon_scanner.detect.binary.formats:FormatDetector

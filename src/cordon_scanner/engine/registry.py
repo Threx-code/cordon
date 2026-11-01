@@ -61,6 +61,7 @@ BUILTIN_DETECTORS = (
     "binary",
     "capability",
     "clamav",
+    "code-model",
     "config",
     "dependency",
     "formats",
@@ -110,6 +111,8 @@ DETECTOR_RUN_ORDER = (
     # Tier 3: the full sweeps -- hundreds of patterns, and an AST pass.
     "secrets",
     "capability",
+    # The code model: a full lex of each reached JavaScript file, after the sweeps (item 47).
+    "code-model",
     # ClamAV reads every byte of every file, over a socket: after the sweeps, so a budget cuts it first.
     "clamav",
     # A rule file reads every byte too, with the operator's rules: beside ClamAV, for the same reason.

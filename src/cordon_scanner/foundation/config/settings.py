@@ -163,6 +163,13 @@ class Config:
     """Whether a malicious verdict from the judge is HIGH, inside the default gate (`--judge-blocks`).
     Off, it warns: a model's reading is weaker evidence than a rule's match."""
     judge_max_calls: int = 200
+    code_model_report_at: float | None = None
+    """The code model's operating point (item 47): the package score at which SUSPECT.CODE.MODEL.001 is
+    reported (MEDIUM). None keeps the shipped default. Set by the operator or the API only, never by a
+    repository's own configuration, which is part of the scan target."""
+    code_model_block_at: float | None = None
+    """The score at which it is raised to HIGH and blocks. None keeps the shipped default (off until
+    the joint operating point with code reuse is chosen). Operator or API only, like the above."""
     """The most model calls one scan may make; text past the budget is reported unjudged."""
     max_intel_age: int | None = None
     """Seconds after which the intel behind a scan is reported stale (`OPERATIONAL.INTEL.STALE`),

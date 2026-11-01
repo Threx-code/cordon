@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,492 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,495 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -444,6 +444,23 @@ rule's own samples.
 | `SUSPECT.CFN.PUBLIC_ACCESS.AWS_TIMESTREAM_INFLUXDBINSTANCE.001` | high | cfn:AWS::Timestream::InfluxDBInstance: reachable from the public internet |
 | `SUSPECT.CFN.PUBLIC_ACCESS.DBINSTANCE.001` | high | AWS::RDS::DBInstance: the database is reachable from the public internet |
 | `SUSPECT.CFN.PUBLIC_STORAGE.BUCKET.001` | high | AWS::S3::Bucket: the bucket is readable by anyone |
+
+## Code
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.CODE.MODEL.001` | high | The code itself reads as malicious to Cordon's code model |
+
+## Code Model
+
+2 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `OPERATIONAL.CODE_MODEL.CAPPED` | info | A reached file was past the code model's size cap |
+| `OPERATIONAL.CODE_MODEL.UNAVAILABLE` | info | The code model's weights could not be used |
 
 ## Compose files
 

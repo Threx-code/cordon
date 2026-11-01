@@ -98,6 +98,8 @@ CARRIED_SETTINGS: tuple[str, ...] = (
 #: ceiling already applied to the values it receives -- stays with the parent.
 PARENT_ONLY_SETTINGS: dict[str, str] = {
     "explicit_limits": "which limits the operator set by hand; the values themselves are carried",
+    "code_model_report_at": "the code model's package decision is the parent's; workers only score files",
+    "code_model_block_at": "the code model's package decision is the parent's; workers only score files",
     "notify_channels": "the parent posts the gate's outcome after the scan; a worker never notifies",
     "notify_on": "the parent decides whether to post, after the scan; a worker never notifies",
     "private_registries": "registries are asked by the parent, about the graph; a worker never reaches one",
