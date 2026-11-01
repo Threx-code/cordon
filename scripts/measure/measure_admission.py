@@ -31,8 +31,12 @@ import collections
 import json
 import math
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, ClassVar
+
+#: Scores a unit's feature values in its area, as decide/verdict.py does.
+Scorer = Callable[[dict[str, float], str | None], float]
 
 
 class Admission:
@@ -96,12 +100,77 @@ class Admission:
                 out[Admission.family(rule)].add(rule)
         return out
 
-    @staticmethod
-    def model_blocks(row: dict[str, Any]) -> bool:
-        """Whether the verdict model alone puts the unit over its line."""
+    #: Severity and confidence as the verdict features number them (foundation.models).
+    SEVERITY: ClassVar[dict[str, int]] = {
+        "info": 0,
+        "low": 1,
+        "medium": 2,
+        "high": 3,
+        "critical": 4,
+    }
+    CONFIDENCE: ClassVar[dict[str, int]] = {"low": 0, "medium": 1, "high": 2}
+
+    @classmethod
+    def without(
+        cls, values: dict[str, float], findings: list[list[Any]], rules: set[str]
+    ) -> dict[str, float]:
+        """The unit's recorded features with `rules`' own share taken out: their `r:` keys, the
+        family, place and category counts they added (each group's max recomputed from what is
+        left), and their part of `gate` (findings at high with medium confidence or more) and `max`.
+        Without the last two the model still sees the rule it is asked to corroborate, which is the
+        double count item 46 measured (120 of 131 benign solo blocks over the line fall under it)."""
+        from cordon_scanner.decide.verdict_features import VerdictFeatures
+
+        out = {
+            k: v for k, v in values.items() if not any(k.startswith(f"r:{rule}") for rule in rules)
+        }
+        own = [f for f in findings if f[0] in rules and VerdictFeatures.is_code(f[0])]
+        rest = [f for f in findings if f[0] not in rules]
+        for f in own:
+            family = ".".join(f[0].split(".")[:2])
+            place = VerdictFeatures.place(f[4] if len(f) > 4 and f[4] else "")
+            for key in (f"fam:{family}", f"w:{place}", f"cat:{f[3]}"):
+                if key + "#n" in out:
+                    out[key + "#n"] -= 1.0
+                    if out[key + "#n"] <= 0:
+                        out.pop(key + "#n")
+                        out.pop(key, None)
+            if (
+                cls.SEVERITY[f[1].lower()] >= cls.SEVERITY["high"]
+                and cls.CONFIDENCE[f[2].lower()] >= cls.CONFIDENCE["medium"]
+                and "gate" in out
+            ):
+                out["gate"] -= 1.0
+                if out["gate"] <= 0:
+                    out.pop("gate")
+        for family in {".".join(f[0].split(".")[:2]) for f in own}:
+            if f"fam:{family}" in out:  # the family's max, from the rules left in it
+                out[f"fam:{family}"] = max(
+                    (values.get(f"r:{f[0]}", 0.0) for f in rest if f[0].startswith(family + ".")),
+                    default=0.0,
+                )
+        if "max" in out:  # the highest of the code rules left, as their own `r:` values hold it
+            left = {f[0] for f in rest if VerdictFeatures.is_code(f[0])}
+            out["max"] = max((values.get(f"r:{rule}", 0.0) for rule in left), default=0.0)
+        return out
+
+    @classmethod
+    def model_blocks(cls, row: dict[str, Any], rules: set[str], scorer: Scorer | None) -> bool:
+        """Whether the verdict model puts the unit over its line on evidence OTHER than `rules`:
+        scored with their share taken out (`without`). With no scorer, the recorded score, which
+        includes the rules' own share, is all there is: a gate run always passes one."""
         verdict = row.get("verdict") or {}
-        score, block = verdict.get("score"), verdict.get("block")
-        return score is not None and block is not None and score >= block
+        block = verdict.get("block")
+        if block is None:
+            return False
+        if scorer is None:
+            score = verdict.get("score")
+            return score is not None and score >= block
+        values = (verdict.get("features") or {}).get("values") or {}
+        if not values:
+            return False
+        cut = cls.without(values, row.get("findings") or [], rules)
+        return bool(scorer(cut, verdict.get("area")) >= float(block))
 
     @staticmethod
     def kind(row: dict[str, Any]) -> str | None:
@@ -114,7 +183,7 @@ class Admission:
         return "malware" if row["set"].startswith("malware") else None
 
     @classmethod
-    def table(cls, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    def table(cls, rows: list[dict[str, Any]], scorer: Scorer | None = None) -> dict[str, Any]:
         pools: collections.Counter[tuple[str, str]] = collections.Counter()
         benign: collections.Counter[tuple[str, str]] = collections.Counter()
         benign_model: collections.Counter[tuple[str, str]] = collections.Counter()
@@ -129,14 +198,16 @@ class Admission:
             families = cls.gate_families(row)
             if len(families) != 1:
                 continue
-            for rule in next(iter(families.values())):
+            solo = next(iter(families.values()))
+            independent = cls.model_blocks(row, solo, scorer)
+            for rule in solo:
                 key = (rule, area)
                 if kind == "benign" and row.get("exit") in (1, 4):
                     benign[key] += 1
-                    benign_model[key] += cls.model_blocks(row)
+                    benign_model[key] += independent
                 elif kind == "malware":
                     malware[key] += 1
-                    if not cls.model_blocks(row):
+                    if not independent:
                         lost[key].append(row["path"].rsplit("/", 1)[-1])
         entries = [
             cls.entry(key, benign[key], benign_model[key], malware[key], lost[key], pools)
@@ -181,6 +252,25 @@ class Admission:
         }
 
 
+class ShippedModel:
+    """The verdict model the scanner ships, as a Scorer: the area's own trees where it has them."""
+
+    @staticmethod
+    def scorer() -> Scorer:
+        from cordon_scanner.decide.verdict import VerdictModel
+
+        loaded = VerdictModel.load()
+        if loaded is None:
+            raise SystemExit("no verdict model is shipped in this tree: the table needs one")
+        model = loaded
+
+        def score(values: dict[str, float], area: str | None) -> float:
+            section = model.get("by_area", {}).get(area, model)
+            return float(VerdictModel.score(section, VerdictModel.inputs(model, values)))
+
+        return score
+
+
 if __name__ == "__main__":
     out_path, sources = sys.argv[1], sys.argv[2:]
     rows = [
@@ -189,7 +279,7 @@ if __name__ == "__main__":
         for line in Path(src).read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    result = Admission.table(rows)
+    result = Admission.table(rows, ShippedModel.scorer())
     Path(out_path).write_text(json.dumps(result, indent=1), encoding="utf-8")
     qualifying = [e for e in result["table"] if e["qualifies"]]
     print(

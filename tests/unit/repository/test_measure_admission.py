@@ -76,3 +76,30 @@ class TestTheTable:
         (entry,) = admission.table(clean + noisy + malware + alone)["table"]
         assert entry["lost"] == ["malware-9000.tgz", "malware-9001.tgz", "malware-9002.tgz"]
         assert entry["k"] == 1 and not entry["qualifies"]
+
+
+class TestTheModelIsNotItsOwnCorroboration:
+    """Item 46's finding (120 of 131 benign solo blocks over the line fall under it without their own
+    rule): the model corroborates a rule only on the rest of the evidence."""
+
+    @staticmethod
+    def scorer(values: dict[str, float], area: str | None) -> float:
+        # A model that rides on the gate count, as the shipped one did on these units.
+        return 0.4 + 0.2 * values.get("gate", 0.0) + 0.3 * values.get("pkg:other_evidence", 0.0)
+
+    @staticmethod
+    def row(extra: dict[str, float]) -> dict[str, Any]:
+        row = AdmissionKit.row("benign", ["SUSPECT.DROPPER.001"], score=0.6)
+        row["verdict"]["features"] = {
+            "values": {"r:SUSPECT.DROPPER.001": 3.0, "gate": 1.0, "max": 3.0, **extra}
+        }
+        return row
+
+    def test_a_score_that_rides_on_the_rule_is_no_corroboration(self) -> None:
+        (entry,) = AdmissionKit.module().table([self.row({})], self.scorer)["table"]
+        assert entry["benign_removed"] == 1
+
+    def test_a_score_on_other_evidence_still_is(self) -> None:
+        rows = [self.row({"pkg:other_evidence": 1.0})]
+        (entry,) = AdmissionKit.module().table(rows, self.scorer)["table"]
+        assert entry["benign_removed"] == 0
