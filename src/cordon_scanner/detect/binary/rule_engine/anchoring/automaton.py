@@ -45,18 +45,24 @@ class Native:
     METHODS: ClassVar[tuple[str, ...]] = ("present", "positions")
 
     @staticmethod
-    def load() -> tuple[Any, str]:
+    def load() -> tuple[Any, str, str]:
+        """The module (or None), why, and which case it is: `native`, `off`, `absent` or `stale`. Callers
+        decide by the code, never by the wording of why (item 17; the outer-layer team's review)."""
         if os.environ.get("CORDON_NO_NATIVE"):
-            return None, "the native anchor matcher is turned off (CORDON_NO_NATIVE)"
+            return None, "the native anchor matcher is turned off (CORDON_NO_NATIVE)", "off"
         try:
             from cordon_scanner._native import _anchors  # type: ignore[attr-defined]
         except ImportError as exc:
-            return None, f"the native anchor matcher is not built ({exc})"
+            return None, f"the native anchor matcher is not built ({exc})", "absent"
         abi = getattr(_anchors, "ABI", None)
         if abi != Native.ABI:
-            return None, (
-                f"the native anchor matcher is from another build (ABI {abi}, expected "
-                f"{Native.ABI}); using the Python one"
+            return (
+                None,
+                (
+                    f"the native anchor matcher is from another build (ABI {abi}, expected "
+                    f"{Native.ABI}); using the Python one"
+                ),
+                "stale",
             )
         missing = [name for name in Native.FUNCTIONS if not hasattr(_anchors, name)]
         missing += [
@@ -65,15 +71,19 @@ class Native:
             if hasattr(_anchors, "Automaton") and not hasattr(_anchors.Automaton, name)
         ]
         if missing:
-            return None, (
-                f"the native anchor matcher is from another build (missing {', '.join(missing)}); "
-                "using the Python one"
+            return (
+                None,
+                (
+                    f"the native anchor matcher is from another build (missing {', '.join(missing)}); "
+                    "using the Python one"
+                ),
+                "stale",
             )
-        return _anchors, "native"
+        return _anchors, "native", "native"
 
 
 class Automaton:
-    MODULE, WHY = Native.load()
+    MODULE, WHY, REASON = Native.load()
     NATIVE: ClassVar[bool] = MODULE is not None
 
     @staticmethod

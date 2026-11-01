@@ -171,7 +171,7 @@ class Scanner:
 
         from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton
 
-        if Automaton.MODULE is None and "another build" in Automaton.WHY:
+        if Automaton.REASON == "stale":
             sys.stderr.write(f"cordon: warning: {Automaton.WHY}\n")
 
     def inventory(self, target: str | Path) -> Repository:

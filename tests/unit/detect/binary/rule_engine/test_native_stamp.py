@@ -40,20 +40,23 @@ class StampKit:
 class TestAModuleFromAnotherBuildIsNotUsed:
     def test_one_with_no_stamp_falls_back(self, monkeypatch) -> None:
         StampKit.stub(monkeypatch, abi=None)
-        module, why = Native.load()
+        module, why, reason = Native.load()
         assert module is None
+        assert reason == "stale"
         assert "another build" in why
 
     def test_one_with_another_stamp_falls_back(self, monkeypatch) -> None:
         StampKit.stub(monkeypatch, abi=Native.ABI + 1)
-        module, why = Native.load()
+        module, why, reason = Native.load()
         assert module is None
+        assert reason == "stale"
         assert f"expected {Native.ABI}" in why
 
     def test_one_missing_a_function_falls_back(self, monkeypatch) -> None:
         StampKit.stub(monkeypatch, abi=Native.ABI, drop=("hex_hits",))
-        module, why = Native.load()
+        module, why, reason = Native.load()
         assert module is None
+        assert reason == "stale"
         assert "hex_hits" in why
 
     def test_one_whose_automaton_lacks_a_method_falls_back(self, monkeypatch) -> None:
@@ -61,15 +64,16 @@ class TestAModuleFromAnotherBuildIsNotUsed:
         import cordon_scanner._native as package
 
         package._anchors.Automaton = type("Automaton", (), {})
-        module, why = Native.load()
+        module, why, reason = Native.load()
         assert module is None
+        assert reason == "stale"
         assert "positions" in why or "present" in why
 
     def test_a_matching_module_is_used(self, monkeypatch) -> None:
         StampKit.stub(monkeypatch, abi=Native.ABI)
-        module, why = Native.load()
+        module, why, reason = Native.load()
         assert module is not None
-        assert why == "native"
+        assert (why, reason) == ("native", "native")
 
 
 class TestAStaleBuildSaysSo:
@@ -91,18 +95,19 @@ class TestAStaleBuildSaysSo:
         from cordon_scanner import Scanner
         from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton
 
+        # Decided by the reason code alone: the wording of WHY doesn't matter.
         monkeypatch.setattr(Automaton, "MODULE", None)
-        monkeypatch.setattr(
-            Automaton, "WHY", "the native anchor matcher is from another build (ABI 0, expected 1)"
-        )
+        monkeypatch.setattr(Automaton, "REASON", "stale")
+        monkeypatch.setattr(Automaton, "WHY", "any wording at all")
         Scanner._say_a_stale_matcher()
-        assert capsys.readouterr().err.count("another build") == 1
+        assert capsys.readouterr().err.count("cordon: warning:") == 1
 
     def test_a_build_not_made_says_nothing(self, monkeypatch, capsys) -> None:
         from cordon_scanner import Scanner
         from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton
 
         monkeypatch.setattr(Automaton, "MODULE", None)
-        monkeypatch.setattr(Automaton, "WHY", "the native anchor matcher is not built (no module)")
+        monkeypatch.setattr(Automaton, "REASON", "absent")
+        monkeypatch.setattr(Automaton, "WHY", "words that say another build, which must not matter")
         Scanner._say_a_stale_matcher()
         assert capsys.readouterr().err == ""
