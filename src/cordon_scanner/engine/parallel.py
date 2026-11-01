@@ -661,7 +661,26 @@ class ParallelScanner:
             produced.extend(inspect(detector, unit))
         # The rest of an oversized file, a window at a time: the call the serial path makes.
         windowed, intact = WindowPass.run(unit, active, inspect, produced)
+        ParallelScanner._verdict_facts(unit, ctx)
         return produced, windowed, intact, (acc.complete, tuple(acc.content_gaps))
+
+    @staticmethod
+    def _verdict_facts(unit: Any, ctx: Any) -> None:
+        """What the package verdict reads of a source file, read here rather than in the parent
+        (item 56): the wanted modules it names and the abilities it shows, as facts."""
+        from cordon_scanner.decide.verdict_features import VerdictFeatures
+        from cordon_scanner.engine.isolation.facts import WorkerFacts
+        from cordon_scanner.engine.pipeline.ceilings import Ceilings
+
+        if not Ceilings.is_verdict_source(unit.path):
+            return
+        named, shows = VerdictFeatures.source_facts(
+            unit.content.raw, getattr(ctx, "verdict_dependency_names", frozenset())
+        )
+        for name in sorted(named):
+            WorkerFacts.add("verdict.modules", name)
+        for name in sorted(shows):
+            WorkerFacts.add("verdict.abilities", name)
 
 
 # ---------------------------------------------------------------------------

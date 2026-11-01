@@ -60,6 +60,17 @@ class Shapes:
         return isinstance(value, str) and 0 < len(value) <= 512
 
     @staticmethod
+    def module_name(value: Any) -> bool:
+        """A dependency name the verdict asked about (scoped or not)."""
+        return isinstance(value, str) and 0 < len(value) <= 214
+
+    @staticmethod
+    def ability(value: Any) -> bool:
+        from cordon_scanner.decide.verdict_features import VerdictFeatures
+
+        return isinstance(value, str) and value in VerdictFeatures.ABILITY
+
+    @staticmethod
     def js_require(value: Any) -> bool:
         """A require's resolved literal path, or "dynamic" (an evasion signal, never an edge)."""
         return isinstance(value, str) and 0 < len(value) <= 4096
@@ -72,6 +83,8 @@ class Facts:
         "python.import": Shapes.python_import,
         "python.dotted_path": Shapes.dotted_path,
         "js.require": Shapes.js_require,
+        "verdict.modules": Shapes.module_name,
+        "verdict.abilities": Shapes.ability,
     }
 
     @staticmethod

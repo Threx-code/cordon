@@ -122,6 +122,10 @@ class ScanContext:
     declared_dependencies: frozenset[str] = frozenset()
     """The runtime dependencies a published package's manifest declares, by name (npm
     `dependencies` and `optionalDependencies`): what installing it installs beside it."""
+    verdict_dependency_names: frozenset[str] = frozenset()
+    """The dependencies the package verdict asks the code to name (`VerdictFeatures.
+    wanted_dependencies`): each worker reports which of them its source file names (item 56), so
+    the parent reads no source bytes for the verdict."""
     install_entry_paths: frozenset[str] = frozenset()
     """The hook scripts themselves -- a `setup.py`, the file a lifecycle script names, a `.pth`
     -- as distinct from the modules they import, which `install_hook_paths` also holds. A

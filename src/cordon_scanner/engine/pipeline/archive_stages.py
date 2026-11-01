@@ -253,6 +253,7 @@ class ArchiveStages:
             declared_dependencies=EcosystemRegistry.declared_dependencies(units, early_format),
             package_repository=PackageEntries.repository(units, early_format),
         )
+        ctx = replace(ctx, verdict_dependency_names=Ceilings.verdict_dependency_names(units))
         return Hooks.lifted_inherit(ctx)
 
     def parallel(
@@ -482,6 +483,7 @@ class ArchiveStages:
             ScanFactsGathering.verdict_facts(self.engine, units, ctx, acc),
             self.engine._intent_observation(units, ctx, acc.labels),
             repository=not ctx.package_distribution,
+            facts=acc.facts,
         )
         dependencies = self.engine.detection.annotated(dependencies, acc.findings, ctx, units)
         return dependencies, verdict

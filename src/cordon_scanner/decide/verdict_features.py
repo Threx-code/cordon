@@ -198,6 +198,7 @@ class VerdictFeatures:
         paths_sizes: Sequence[tuple[str, int]],
         manifests: dict[str, bytes],
         sources: Sequence[tuple[str, bytes]] = (),
+        source_facts: Sequence[tuple[str, frozenset[str], frozenset[str]]] | None = None,
     ) -> dict[str, float]:
         names = [p.rsplit("!", 1)[-1] for p, _ in paths_sizes]
         sizes = [s for _, s in paths_sizes]
@@ -239,6 +240,15 @@ class VerdictFeatures:
                 )
             ),
         }
+        # What each source file says, as (path, wanted modules it names, abilities it shows): from the
+        # workers' facts when given (item 56: the parent reads no scanned bytes), else from the bytes
+        # by the same function, so the two cannot differ.
+        wanted = VerdictFeatures.wanted_dependencies(manifests)
+        read = (
+            list(source_facts)
+            if source_facts is not None
+            else [(p, *VerdictFeatures.source_facts(d, wanted)) for p, d in sources]
+        )
         for path, data in sorted(manifests.items(), key=lambda kv: kv[0].count("/")):
             base = path.rsplit("!", 1)[-1]
             if base.endswith("package.json"):
@@ -266,7 +276,7 @@ class VerdictFeatures:
                     bool(re.search(r"\d{2,}", str(manifest.get("name", ""))))
                 )
                 VerdictFeatures._purpose(features, manifest)
-                VerdictFeatures._dependencies_used(features, manifest, sources)
+                VerdictFeatures._dependencies_used(features, manifest, read)
                 break
             if base.endswith("setup.py"):
                 features["hook"] = max(
@@ -275,7 +285,7 @@ class VerdictFeatures:
                         bool(re.search(rb"cmdclass|class \w+\((?:install|develop|egg_info)", data))
                     ),
                 )
-        VerdictFeatures._ability(features, sources)
+        VerdictFeatures._ability(features, read)
         VerdictFeatures._skill_claim(features, manifests)
         return features
 
@@ -356,8 +366,45 @@ class VerdictFeatures:
     )
 
     @staticmethod
+    def wanted_dependencies(manifests: dict[str, bytes]) -> frozenset[str]:
+        """The runtime dependencies `_dependencies_used` looks for: the shallowest parseable
+        package.json's, type packages left out. Handed to the workers (`ScanContext`), so each
+        reports only which of them its file names."""
+        for path, data in sorted(manifests.items(), key=lambda kv: kv[0].count("/")):
+            if not path.rsplit("!", 1)[-1].endswith("package.json"):
+                continue
+            try:
+                manifest = ScannedJson.loads(data)
+            except (ValueError, RecursionError):
+                continue
+            if not isinstance(manifest, dict):
+                continue
+            deps = manifest.get("dependencies") or {}
+            if not isinstance(deps, dict):
+                return frozenset()
+            return frozenset(str(d) for d in deps if not str(d).startswith("@types/"))
+        return frozenset()
+
+    @staticmethod
+    def source_facts(data: bytes, wanted: frozenset[str]) -> tuple[frozenset[str], frozenset[str]]:
+        """What one source file contributes: the wanted modules it names in a quoted string, and the
+        ABILITY names whose pattern matches its first 2 MB. Computed in the worker (item 56)."""
+        head = data[:2_000_000]
+        named = frozenset(
+            name
+            for m in VerdictFeatures._QUOTED_MODULE.finditer(head)
+            if (name := m.group(1).decode("utf-8", "replace")) in wanted
+        )
+        shows = frozenset(
+            n for n, pattern in VerdictFeatures.ABILITY.items() if pattern.search(head)
+        )
+        return named, shows
+
+    @staticmethod
     def _dependencies_used(
-        features: dict[str, float], manifest: dict[str, Any], sources: Sequence[tuple[str, bytes]]
+        features: dict[str, float],
+        manifest: dict[str, Any],
+        read: Sequence[tuple[str, frozenset[str], frozenset[str]]],
     ) -> None:
         """Runtime dependencies the package's own code never names, and those that are not
         established packages either.
@@ -377,13 +424,10 @@ class VerdictFeatures:
         scripts = manifest.get("scripts") or {}
         for value in scripts.values() if isinstance(scripts, dict) else ():
             named.update(w for w in re.split(r"[\s;&|()]+", str(value)) if w in wanted)
-        for path, data in sources:
-            if "node_modules/" in path or len(named) == len(wanted):
+        for path, modules, _ in read:
+            if "node_modules/" in path:
                 continue
-            for m in VerdictFeatures._QUOTED_MODULE.finditer(data[:2_000_000]):
-                name = m.group(1).decode("utf-8", "replace")
-                if name in wanted:
-                    named.add(name)
+            named.update(m for m in modules if m in wanted)
         unused = wanted - named
         known = RealPackages.real_packages("npm")
         features["deps_unused"] = float(min(len(unused), 20))
@@ -391,19 +435,19 @@ class VerdictFeatures:
         features["deps_unknown"] = float(min(sum(d not in known for d in wanted), 20))
 
     @staticmethod
-    def _ability(features: dict[str, float], sources: Sequence[tuple[str, bytes]]) -> None:
+    def _ability(
+        features: dict[str, float], read: Sequence[tuple[str, frozenset[str], frozenset[str]]]
+    ) -> None:
         """What the package's own code can do, and the mismatch with what it claims."""
         own = [
-            data
-            for path, data in sources
+            shows
+            for path, _, shows in read
             if "node_modules/" not in path and "/test" not in path and "site-packages/" not in path
         ][:400]
         found = dict.fromkeys(VerdictFeatures.ABILITY, 0.0)
-        for data in own:
-            head = data[:2_000_000]
-            for name, pattern in VerdictFeatures.ABILITY.items():
-                if not found[name] and pattern.search(head):
-                    found[name] = 1.0
+        for shows in own:
+            for name in shows:
+                found[name] = 1.0
         features.update({f"can_{name}": value for name, value in found.items()})
         plain = any(features.get(f"purpose_{name}", 0.0) for name in VerdictFeatures._PLAIN)
         sensitive = (

@@ -163,6 +163,7 @@ class ScanStages:
             install_deferred_lines=deferred,
             ci_hook_paths=ctx.ci_hook_paths | frozenset(ci_scripts),
         )
+        ctx = replace(ctx, verdict_dependency_names=Ceilings.verdict_dependency_names(units))
         return Hooks.lifted_inherit(ctx)
 
     def detect(
@@ -309,6 +310,7 @@ class ScanStages:
             ScanFactsGathering.verdict_facts(self.engine, units, ctx, acc),
             self.engine._intent_observation(units, ctx, acc.labels),
             repository=not ctx.package_distribution,
+            facts=acc.facts,
         )
         findings = tuple(graded)
         dependencies = self.engine.detection.annotated(dependencies, findings, ctx, units)
