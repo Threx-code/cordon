@@ -819,6 +819,7 @@
   "test_image_start.py": "engine/pipeline",
   "test_images.py": "images",
   "test_import_closure_roots.py": "engine",
+  "test_included_files.py": "engine/pipeline",
   "test_incoming_code.py": "engine",
   "test_infra_ecosystems.py": "ecosystems",
   "test_infrastructure_noise.py": "detect/infra",
