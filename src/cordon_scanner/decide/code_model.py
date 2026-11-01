@@ -24,10 +24,13 @@ class CodePackageStep:
     finding never feeds the verdict model's features (no echo, item 46), and is its own evidence
     family (item 45)."""
 
-    #: The operating point. `block_at` is off (None) until the joint choice with reuse and the
-    #: false-alarm levers is made (notes/47); `report_at` reports at MEDIUM, below the gate.
-    REPORT_AT: ClassVar[float] = 0.9
-    BLOCK_AT: ClassVar[float | None] = None
+    #: The operating point (notes/47; cordon-47, 1 Nov): the 0.1% false-alarm budget of the shipped
+    #: weights' own test half, threshold 0.9964 -- 19 of 619 test misses for 2 of 13,462 benign
+    #: (+0.015 points), 133 of 619 jointly with code reuse (scratchpad i47/table-mil-r.txt). It
+    #: blocks there and says nothing below it, so it adds no warnings. If the A/B's benign cost
+    #: comes out above the test half's, the point moves up, never down.
+    REPORT_AT: ClassVar[float] = 0.9964
+    BLOCK_AT: ClassVar[float | None] = 0.9964
     MAX_FILES: ClassVar[int] = 64
 
     @classmethod

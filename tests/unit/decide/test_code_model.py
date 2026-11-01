@@ -10,12 +10,17 @@ import json
 import tarfile
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.analysis.javascript.code_model import CodeFeatures, FileScoreRecord
+from cordon_scanner.analysis.javascript.code_model import (
+    CodeFeatures,
+    CodeModelWeights,
+    FileScoreRecord,
+)
 from cordon_scanner.decide.code_model import CodePackageStep
 from cordon_scanner.detect.code.code_model_scores import MODEL_RULE, UNAVAILABLE, CodeModelScores
 from cordon_scanner.foundation.config.settings import Config
@@ -109,11 +114,24 @@ class TestTheOperatingPoint:
         ]
         assert [f.severity.name for f in found] == ["HIGH"]
 
-    def test_by_default_it_reports_below_the_gate(self, tmp_path) -> None:
-        result = CodeModelKit.scanner(CodeModelKit.weights(tmp_path)).scan(
-            CodeModelKit.package(tmp_path / "p")
-        )
-        assert [f.severity.name for f in result.findings if f.rule_id == MODEL_RULE] == ["MEDIUM"]
+    def test_by_default_it_blocks_at_the_shipped_point_and_says_nothing_below(self) -> None:
+        def record(score: float) -> Any:
+            return SimpleNamespace(
+                rule_id=FileScoreRecord.RULE,
+                message=FileScoreRecord.encode(score, []),
+                location=SimpleNamespace(path="package/index.js"),
+            )
+
+        def made(path, score, carriers, blocking):
+            return ("HIGH" if blocking else "MEDIUM", round(score, 4))
+
+        at = CodePackageStep.BLOCK_AT
+        assert at is not None and at == CodePackageStep.REPORT_AT
+        assert CodePackageStep.decide([record(at)], made)[1] == ("HIGH", at)
+        assert CodePackageStep.decide([record(at - 0.001)], made)[1] is None
+
+    def test_the_shipped_weights_load_for_the_shipped_features(self) -> None:
+        assert CodeModelWeights.load() is not None
 
 
 class TestWeights:
