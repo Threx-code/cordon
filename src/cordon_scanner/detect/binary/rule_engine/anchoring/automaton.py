@@ -114,6 +114,24 @@ class Automaton:
         )
         return [i for i, n in enumerate(self.needles) if n in found]
 
+    def packed(
+        self, data: bytes, ids: Iterable[int], cap: int, lowered: bytes | None = None
+    ) -> dict[int, Sequence[int] | None]:
+        """`positions`, each kept as the pass gives it natively (64-bit offsets, packed), not as a
+        list: a common anchor's places are many, and a list holds an object for each."""
+        if self._c is None:
+            return dict(self.positions(data, ids, cap, lowered))
+        wanted = sorted(set(ids))
+        out: dict[int, Sequence[int] | None] = {}
+        for i in wanted:
+            if not self.needles[i]:
+                out[i] = list(range(len(data) + 1)) if len(data) + 1 <= cap else None
+        back = {n: k for k, n in enumerate(self._ids)}
+        got = self._c.positions(data, [back[i] for i in wanted if self.needles[i]], cap)
+        for k, raw in got.items():
+            out[self._ids[k]] = None if raw is None else memoryview(raw).cast("q")
+        return out
+
     def positions(
         self, data: bytes, ids: Iterable[int], cap: int, lowered: bytes | None = None
     ) -> dict[int, list[int] | None]:
@@ -351,7 +369,9 @@ class HexFind:
         for needle, length, holders in search.needles:
             starts = seen.get(needle)
             if starts is None:
-                starts = seen[needle] = search.occurrences(data, needle, search.budget(seen))
+                starts = seen[needle] = search.kept(seen, False, needle) or search.occurrences(
+                    data, needle, search.budget(seen)
+                )
             owners += [
                 (starts, length, length + a[1], order, -1 if a[2] is None else a[2],
                  -1 if a[3] is None else a[3])

@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Any
 
 from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton
+from cordon_scanner.detect.binary.rule_engine.anchoring.places import Places
 from cordon_scanner.detect.binary.rule_engine.scan import Search
 
 
@@ -97,22 +98,74 @@ class AnchorIndex:
         budget[0] -= len(starts)
         return True
 
+    #: Positions of common anchors one file may keep, packed, from the automaton's pass (`common`).
+    KEEP_MOST = Places.MOST
+
     def prefill(self, data: bytes, seen: dict[Any, Any], searches: list[Search]) -> None:
         """Where each anchor of `searches` begins, found in one pass per automaton and kept in
         `seen` the way `Search.find` keeps what it finds: an anchor occurring more than
-        `Search.GATED` times is left for `Search.find`, which reads a common anchor its own way."""
-        exact = {self.exact_id[n] for s in searches for n, _, _ in s.needles or () if n not in seen}
-        for i, starts in self.exact_set.positions(data, exact, Search.GATED).items():
-            if starts is not None and AnchorIndex.afford(seen, starts):
-                seen[self.exact_keys[i]] = starts
+        `Search.GATED` times is left for `Search.find`, which reads a common anchor its own way
+        (`_gated`), and is kept aside, packed, for the reading that still wants its places
+        (`common`)."""
+        exact = {
+            self.exact_id[n]
+            for s in searches
+            for n, _, _ in s.needles or ()
+            if n not in seen and ("kept", False, n) not in seen
+        }
+        if exact:
+            cap = AnchorIndex.cap(self.exact_set)
+            for i, starts in self.exact_set.packed(data, exact, cap).items():
+                key = self.exact_keys[i]
+                self.place(seen, starts, key, ("kept", False, key), ("count", False, key))
         folded = {
-            self.folded_id[f] for s in searches for f, _, _ in s.folds if ("folded", f) not in seen
+            self.folded_id[f]
+            for s in searches
+            for f, _, _ in s.folds
+            if ("folded", f) not in seen and ("kept", True, f) not in seen
         }
         if folded:
             lowered = AnchorIndex.lowered(data, seen, self.folded_set)
-            for i, starts in self.folded_set.positions(data, folded, Search.GATED, lowered).items():
-                if starts is not None and AnchorIndex.afford(seen, starts):
-                    seen[("folded", self.folded_keys[i])] = starts
+            cap = AnchorIndex.cap(self.folded_set)
+            for i, starts in self.folded_set.packed(data, folded, cap, lowered).items():
+                key = self.folded_keys[i]
+                self.place(seen, starts, ("folded", key), ("kept", True, key), ("count", True, key))
+
+    @staticmethod
+    def cap(automaton: Automaton) -> int:
+        """How many places of one anchor the pass gives: past `Search.GATED`, only natively, where
+        the places come from the same pass in C. The Python reading would find a common anchor's
+        places by the very loop `find` runs only when it needs them, so it stops at `GATED`."""
+        return Places.MOST if automaton.native else Search.GATED
+
+    @staticmethod
+    def place(seen: dict[Any, Any], starts: Any, found: Any, kept: Any, counted: Any) -> None:
+        """One anchor's places from the pass: an uncommon anchor's kept as `find` keeps them, with
+        the file's budget spent; a common one's kept aside, packed, within `KEEP_MOST` for the
+        file and not spent until read (`Search.kept`), with its count taken from them."""
+        if starts is None:
+            return  # past the cap: `find` finds it its own way, as before
+        if len(starts) <= Search.GATED:
+            listed = list(starts)
+            if AnchorIndex.afford(seen, listed):
+                seen[found] = listed
+            return
+        total = seen.get(("kept total",), 0) + len(starts)
+        if total > AnchorIndex.KEEP_MOST:
+            return  # more than one file keeps: the loop and the count read it, as before
+        seen[("kept total",)] = total
+        seen[kept] = starts
+        seen[counted] = AnchorIndex.without_overlaps(starts, len(kept[2]))
+
+    @staticmethod
+    def without_overlaps(starts: Any, length: int) -> int:
+        """How many of `starts` an anchor of `length` occupies without overlapping, earliest first:
+        what `bytes.count` counts."""
+        count, free = 0, -1
+        for at in starts:
+            if at >= free:
+                count, free = count + 1, at + length
+        return count
 
 
 __all__ = ["AnchorIndex"]
