@@ -14,6 +14,8 @@ import tarfile
 from pathlib import Path
 from typing import ClassVar
 
+import pytest
+
 from cordon_scanner import Scanner
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Severity
@@ -96,6 +98,9 @@ class TestASelfRenamingPublishLoop:
         "const fs = require('fs');\n"
         "const { execSync } = require('child_process');\n"
         "const data = JSON.parse(fs.readFileSync('package.json'));\n"
+    )
+    HEAD_WITHOUT_READ = (
+        "const fs = require('fs');\nconst { execSync } = require('child_process');\n"
     )
     PUBLISH = "  execSync('npm publish --dry-run --registry https://registry.invalid');\n"
     WRITE = "  fs.writeFileSync('package.json', JSON.stringify(data));\n"
@@ -249,3 +254,39 @@ class TestASelfRenamingPublishLoop:
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
         found = [f.severity for f in result.findings if f.rule_id == RULE]
         assert Severity.HIGH not in found, found
+
+    @pytest.mark.parametrize(
+        "read",
+        [
+            "const data = await fse.readJson('package.json');\n",
+            "const data = fse.readJsonSync('package.json');\n",
+        ],
+        ids=["readJson", "readJsonSync"],
+    )
+    def test_a_manifest_read_by_fs_extra_counts(self, tmp_path: Path, read: str) -> None:
+        body = (
+            "const fse = require('fs-extra');\n"
+            + read
+            + "for (let i = 0; i < 0; i++) {\n  data.name = 'example-renamed';\n"
+            + self.WRITE
+            + self.PUBLISH
+            + "}\n"
+        )
+        found = PublishKit.severities(
+            tmp_path, self.MANIFEST, {"package/tools/republish.js": self.HEAD_WITHOUT_READ + body}
+        )
+        assert Severity.HIGH in found
+
+    def test_a_manifest_imported_as_a_module_counts(self, tmp_path: Path) -> None:
+        body = (
+            "import data from './package.json' with { type: 'json' };\n"
+            "import fs from 'fs';\nimport { execSync } from 'child_process';\n"
+            "for (let i = 0; i < 0; i++) {\n  data.name = 'example-renamed';\n"
+            + self.WRITE
+            + self.PUBLISH
+            + "}\n"
+        )
+        found = PublishKit.severities(
+            tmp_path, self.MANIFEST, {"package/tools/republish.mjs": body}
+        )
+        assert Severity.HIGH in found

@@ -90,16 +90,28 @@ class PublishReach:
 
     @staticmethod
     def _manifest_names(tokens: list[Any]) -> frozenset[str]:
-        """Names assigned from `JSON.parse(` or `require(` naming package.json: `const m = JSON.parse(`."""
+        """Names a manifest is read into: assigned from `JSON.parse(`, `require(` naming package.json,
+        or fs-extra's `readJson`/`readJsonSync` (awaited or not), or an ESM `import m from
+        '...package.json'`."""
         out: set[str] = set()
         for i in range(len(tokens) - 3):
+            if (
+                str(tokens[i].value) == "import"
+                and tokens[i + 1].kind == "name"
+                and str(tokens[i + 2].value) == "from"
+                and tokens[i + 3].kind == "str"
+                and "package.json" in str(tokens[i + 3].value)
+            ):
+                out.add(str(tokens[i + 1].value))
+                continue
             name, eq = tokens[i], tokens[i + 1]
             if name.kind != "name" or eq.kind != "punct" or eq.value != "=":
                 continue
             ahead = [str(t.value) for t in tokens[i + 2 : i + 8]]
             parsed = ahead[:2] == ["JSON", "."] and "parse" in ahead
             required = ahead[:1] == ["require"] and any("package.json" in a for a in ahead)
-            if parsed or required:
+            extra = any(a in ("readJson", "readJsonSync") for a in ahead[:5])
+            if parsed or required or extra:
                 out.add(str(name.value))
         return frozenset(out)
 
