@@ -22,7 +22,6 @@ parallelised or cached without disturbing its neighbours.
 from __future__ import annotations
 
 import contextlib
-import sys
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -137,25 +136,8 @@ class Engine:
 
     # -- Entry point -----------------------------------------------------
 
-    @staticmethod
-    def matcher() -> str:
-        """Which anchor matcher this scan used (Automaton.status), for the report."""
-        from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton
-
-        return Automaton.status()
-
-    @staticmethod
-    def say_a_stale_matcher() -> None:
-        """One line on stderr when the native matcher is from another build: the scan runs at the
-        Python matcher's speed, and a pipeline that never runs --version should still see why."""
-        from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton
-
-        if Automaton.MODULE is None and "another build" in Automaton.WHY:
-            sys.stderr.write(f"cordon: warning: {Automaton.WHY}\n")
-
     def scan(self, target: str | Path) -> ScanResult:
         """Scan a target and return a complete, sorted result."""
-        Engine.say_a_stale_matcher()
         try:
             return Collector.during(self._scan, target)  # foundation/collector: GC relaxed
         finally:
@@ -226,7 +208,6 @@ class Engine:
             **acc.coverage(),
             schema_version=SCHEMA_VERSION,
             engine_version=__version__,
-            matcher=Engine.matcher(),
             rulepack_version=self.rules.version,
             rulepack_hash=self.rules.content_hash,
             config_hash=self.config.fingerprint(),
@@ -296,7 +277,6 @@ class Engine:
             **acc.coverage(),
             schema_version=SCHEMA_VERSION,
             engine_version=__version__,
-            matcher=Engine.matcher(),
             rulepack_version=self.rules.version,
             rulepack_hash=self.rules.content_hash,
             config_hash=self.config.fingerprint(),
@@ -452,7 +432,6 @@ class Engine:
             **acc.coverage(),
             schema_version=SCHEMA_VERSION,
             engine_version=__version__,
-            matcher=Engine.matcher(),
             rulepack_version=self.rules.version,
             rulepack_hash=self.rules.content_hash,
             config_hash=self.config.fingerprint(),

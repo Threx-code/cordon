@@ -29,6 +29,11 @@ class StampKit:
         if abi is not None:
             module.ABI = abi
         monkeypatch.setitem(sys.modules, "cordon_scanner._native._anchors", module)
+        # `from cordon_scanner._native import _anchors` reads the package's attribute first, which a
+        # real build already set, so the stub replaces it there too
+        import cordon_scanner._native as package
+
+        monkeypatch.setattr(package, "_anchors", module, raising=False)
         monkeypatch.delenv("CORDON_NO_NATIVE", raising=False)
 
 
@@ -53,7 +58,9 @@ class TestAModuleFromAnotherBuildIsNotUsed:
 
     def test_one_whose_automaton_lacks_a_method_falls_back(self, monkeypatch) -> None:
         StampKit.stub(monkeypatch, abi=Native.ABI)
-        sys.modules["cordon_scanner._native._anchors"].Automaton = type("Automaton", (), {})
+        import cordon_scanner._native as package
+
+        package._anchors.Automaton = type("Automaton", (), {})
         module, why = Native.load()
         assert module is None
         assert "positions" in why or "present" in why
@@ -81,21 +88,21 @@ class TestAStaleBuildSaysSo:
         assert "anchor matcher" in result.to_dict()["matcher"]
 
     def test_a_stale_build_warns_once_per_scan(self, monkeypatch, capsys) -> None:
+        from cordon_scanner import Scanner
         from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton
-        from cordon_scanner.engine.engine import Engine
 
         monkeypatch.setattr(Automaton, "MODULE", None)
         monkeypatch.setattr(
             Automaton, "WHY", "the native anchor matcher is from another build (ABI 0, expected 1)"
         )
-        Engine.say_a_stale_matcher()
+        Scanner._say_a_stale_matcher()
         assert capsys.readouterr().err.count("another build") == 1
 
     def test_a_build_not_made_says_nothing(self, monkeypatch, capsys) -> None:
+        from cordon_scanner import Scanner
         from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton
-        from cordon_scanner.engine.engine import Engine
 
         monkeypatch.setattr(Automaton, "MODULE", None)
         monkeypatch.setattr(Automaton, "WHY", "the native anchor matcher is not built (no module)")
-        Engine.say_a_stale_matcher()
+        Scanner._say_a_stale_matcher()
         assert capsys.readouterr().err == ""

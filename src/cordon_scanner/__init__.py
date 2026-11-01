@@ -144,12 +144,35 @@ class Scanner:
 
     def scan(self, target: str | Path) -> ScanResult:
         """Scan a directory, file or archive."""
-        return self._engine.scan(target)
+        Scanner._say_a_stale_matcher()
+        return Scanner._with_matcher(self._engine.scan(target))
 
     def scan_host(self, root: str | Path = "/", home: str | Path | None = None) -> ScanResult:
         """Inventory an installed system -- its OS packages and global language installs -- and
         match them, as an image's are. `home` adds that user's own installs (pipx, ~/go/bin...)."""
-        return self._engine.scan_host(root, home)
+        Scanner._say_a_stale_matcher()
+        return Scanner._with_matcher(self._engine.scan_host(root, home))
+
+    @staticmethod
+    def _with_matcher(result: ScanResult) -> ScanResult:
+        """The result, saying which anchor matcher ran: a native build from another version falls
+        back to the Python one at about 9x the match time, and the report says so (item 17)."""
+        from dataclasses import replace
+
+        from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton
+
+        return replace(result, matcher=Automaton.status())
+
+    @staticmethod
+    def _say_a_stale_matcher() -> None:
+        """One stderr line when the native matcher is from another build, for a pipeline that never
+        runs --version; a build that simply isn't there says nothing extra."""
+        import sys
+
+        from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton
+
+        if Automaton.MODULE is None and "another build" in Automaton.WHY:
+            sys.stderr.write(f"cordon: warning: {Automaton.WHY}\n")
 
     def inventory(self, target: str | Path) -> Repository:
         """Determine what a target is, without scanning its contents."""
