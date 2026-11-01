@@ -499,7 +499,7 @@ class TestPathGlobMatchIsMemoised(ContentWalkerFixtures):
             relative = path.relative_to(root).as_posix()
             loaded = FileContent.load(path, relative, engine.config.limits)
             language = LanguageRegistry.of_file(relative, loaded)
-            items.append((i, relative, path.stat().st_size, loaded.sha256, None, language))
+            items.append((i, relative, path.stat().st_size, loaded.sha256, None, language, None))
         kept = ParallelScanner._worker
         ParallelScanner._worker = _WorkerState(
             engine=engine, context=context, detectors=engine.detectors
