@@ -618,6 +618,7 @@
   "rules/patterns": "rules/patterns",
   "rules/tester": "rules/tester",
   "sources/archive": "sources/archive",
+  "sources/archive_names": "sources/archive_names",
   "sources/base": "sources/base",
   "sources/budget": "sources/budget",
   "sources/git": "sources/git",

@@ -32,13 +32,12 @@ import time
 import zipfile
 import zlib
 from dataclasses import dataclass, field, replace
-from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.foundation.errors import ArchiveError
-from cordon_scanner.foundation.files.names import Names
 from cordon_scanner.foundation.files.spill import Spill, SpilledBytes
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS, Limits
+from cordon_scanner.sources.archive_names import MemberNames
 from cordon_scanner.sources.base import RejectedMember, Rejection
 from cordon_scanner.sources.budget import (
     READ_CHUNK,
@@ -161,81 +160,13 @@ class ArchiveReader:
         lowered = path.lower()
         return any(lowered.endswith(suffix) for suffix in ARCHIVE_SUFFIXES)
 
-    @staticmethod
-    def safe_member_name(name: str, *, collapse: bool = False) -> str | None:
-        """Normalise a member name, or return None if it is unsafe.
-
-        Rejected: absolute paths, drive letters, any traversal segment, and names
-        containing NUL. The check is on the *normalised* form, so ``a/../../b`` is
-        caught even though no single component looks wrong.
-
-        With `collapse`, a `..` that stays inside the archive is resolved instead
-        (`pkg-0.3.1/../README.md` is `README.md`, which some sdist builders write);
-        one that climbs above the archive's root is still refused. Callers pass it
-        only while no link member has come before this one: an extractor writes
-        `a/../x` through `a` once `a` is a symlink, so then the name is refused.
-        """
-        if not name or "\x00" in name:
-            return None
-
-        cleaned = name.replace("\\", "/")
-
-        if cleaned.startswith("/") or (len(cleaned) > 1 and cleaned[1] == ":"):
-            return None
-
-        parts = PurePosixPath(cleaned).parts
-        if any(part == ".." for part in parts):
-            if not collapse:
-                return None
-            kept: list[str] = []
-            for part in parts:
-                if part == "..":
-                    if not kept:
-                        return None
-                    kept.pop()
-                elif part not in {".", ""}:
-                    kept.append(part)
-            parts = tuple(kept)
-
-        normalised = PurePosixPath(*(p for p in parts if p not in {".", ""}))
-        text = str(normalised)
-        # Made text after normalising, never before: the `\` of a `\xNN` is then never read as a
-        # separator, and no member name holds a backslash, so no escaped name equals a real one.
-        return None if text in {".", ""} else Names.text(text)
+    safe_member_name = staticmethod(MemberNames.safe_member_name)
+    link_stays_inside = staticmethod(MemberNames.link_stays_inside)
 
     @staticmethod
     def _links_seen(result: ExtractionResult) -> bool:
         """Whether a link member has been met yet, kept or refused (`safe_member_name`)."""
         return bool(result.links) or any(r.reason == Rejection.LINK for r in result.rejected)
-
-    @staticmethod
-    def link_stays_inside(member: str, target: str, *, hard: bool = False) -> bool:
-        """Whether a link member points at another path inside the same archive.
-
-        Such a link is never followed, and it carries no content of its own: what it names is a
-        member read in its own right. Refused, it marked the scan incomplete -- 470 of 3,000 nix
-        repositories and 504 of 3,000 bazel archives were scored "not fully examined" for symlinks
-        such as `include/alsa -> ../alsa` (review 98). A target that is absolute or climbs out of
-        the archive stays refused: that link is how an extractor is made to read or write outside.
-        """
-        if not target or "\x00" in target:
-            return False
-        cleaned = target.replace("\\", "/")
-        if cleaned.startswith("/") or (len(cleaned) > 1 and cleaned[1] == ":"):
-            return False
-        # A hard link names an archive path; a symbolic link is relative to its own directory.
-        base = () if hard else PurePosixPath(member.replace("\\", "/")).parent.parts
-        depth: list[str] = [p for p in base if p not in {".", ""}]
-        for part in PurePosixPath(cleaned).parts:
-            if part in {".", ""}:
-                continue
-            if part == "..":
-                if not depth:
-                    return False
-                depth.pop()
-            else:
-                depth.append(part)
-        return bool(depth)
 
     @staticmethod
     def extract(
