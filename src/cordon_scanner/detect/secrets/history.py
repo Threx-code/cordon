@@ -73,15 +73,13 @@ class HistorySecretScan:
         # `xoxb-`): a printable run in a compiled file or a database page can look like anything
         # an entropy rule measures, and nothing like a fixed provider prefix by chance.
         provider = frozenset(p.rule_id for p in PROVIDER_PATTERNS)
-        budget = self.config.limits.per_file_timeout
-        over_budget = 0
         for blob in history.blobs():
             for path, data, from_binary in self._readable(blob.path, blob.data):
                 content = FileContent.from_bytes(path, data)
                 unit = FileUnit(content=content, language=LanguageRegistry.identify_language(path))
-                found, finished = DetectorRun.findings(detector, unit, ctx, budget)
-                over_budget += not finished
-                for finding in found:
+                # read to its end: each blob is bounded by its bytes (`MAX_BLOB_BYTES`, the readable
+                # filter), not by the clock, so a busy machine misses no historical secret
+                for finding in DetectorRun.findings(detector, unit, ctx):
                     if not finding.rule_id.startswith("SECRET."):
                         continue
                     if from_binary and finding.rule_id not in provider:
@@ -96,20 +94,6 @@ class HistorySecretScan:
         coverage = history.coverage
         if not coverage.complete:
             findings.append(self._incomplete(coverage))
-        if over_budget:
-            # Bounded per blob as a scan bounds each file: unbounded, one crafted blob in history
-            # held the whole history pass.
-            findings.append(
-                detector.operational(
-                    path=".git",
-                    rule_id=HISTORY_INCOMPLETE_RULE,
-                    message=(
-                        f"{over_budget} historical blob(s) ran past the {budget:g}s per-file "
-                        "budget; what they held past it was not read."
-                    ),
-                    degrades_coverage=True,
-                )
-            )
         return findings
 
     #: Media and font formats: compressed pixels and glyphs, nothing a credential is kept in.

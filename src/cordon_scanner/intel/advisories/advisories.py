@@ -250,6 +250,94 @@ class AdvisoryFiles:
                 return json.load(handle)
         return json.loads(path.read_text(encoding="utf-8"))
 
+    #: Characters of decompressed text read at a time by `stream_records`.
+    CHUNK: ClassVar[int] = 1 << 20
+
+    @staticmethod
+    def stream_records(path: Path, chunk: int = 0) -> Iterator[object]:
+        """One advisory file's top-level array, element by element, gzipped or plain.
+
+        What `_read_records` would give, one element at a time: each is parsed by `json`'s own
+        decoder (`raw_decode`), so an element is exactly the object `json.load` makes of it. The
+        whole file was text and objects at once, about 200 MB for npm, to build an index that
+        streams into SQLite anyway (`advisory_index`). Here only the elements not yet taken and a
+        window of text are held. An element is taken only once the ',' or ']' after it is in the
+        window, so a number cut by the window is never read short.
+
+        A file whose top level is not an array yields nothing, as `_parse` makes nothing of it.
+        Text that is not JSON, after any elements already yielded, raises ValueError: the build
+        then fails and the caller reads the file whole, as before. Reading on to find the error is
+        bounded by the file, the most `_read_records` held.
+        """
+        size = chunk or AdvisoryFiles.CHUNK
+        decoder = json.JSONDecoder()
+        space = re.compile(r"[ \t\n\r]*")
+        with (
+            gzip.open(path, "rt", encoding="utf-8")
+            if path.suffix == ".gz"
+            else path.open(encoding="utf-8")
+        ) as handle:
+            buffer, at, ended = "", 0, False
+
+            def more(wanted: int) -> bool:
+                nonlocal buffer, at, ended
+                if ended:
+                    return False
+                read = handle.read(wanted)
+                if not read:
+                    ended = True
+                    return False
+                buffer, at = buffer[at:] + read, 0
+                return True
+
+            def skip() -> None:
+                nonlocal at
+                while True:
+                    at = space.match(buffer, at).end()  # type: ignore[union-attr]
+                    if at < len(buffer) or not more(size):
+                        return
+
+            try:
+                skip()
+                if buffer[at : at + 1] != "[":
+                    return
+                at += 1
+                skip()
+                if buffer[at : at + 1] == "]":
+                    at += 1
+                else:
+                    wanted = size
+                    while True:
+                        try:
+                            element, end = decoder.raw_decode(buffer, at)
+                        except ValueError:
+                            if not more(wanted):
+                                raise
+                            wanted *= 2  # an element longer than the window: read it in doubling
+                            continue
+                        follow = space.match(buffer, end).end()  # type: ignore[union-attr]
+                        if (follow >= len(buffer) or buffer[follow] not in ",]") and more(wanted):
+                            # No ',' or ']' after it yet: a number may go on (`-0` of `-0.5`), so
+                            # read on and decode it again. Bounded by the file, as above.
+                            wanted *= 2
+                            continue
+                        wanted = size
+                        yield element
+                        at = end
+                        skip()
+                        mark = buffer[at : at + 1]
+                        at += 1
+                        if mark == "]":
+                            break
+                        if mark != ",":
+                            raise ValueError("expected ',' or ']' between advisory records")
+                        skip()
+                skip()
+                if at < len(buffer):
+                    raise ValueError("text after the advisory records")
+            except EOFError as exc:  # a gzip stream cut short: a file that cannot be read
+                raise ValueError("the advisory file ends early") from exc
+
     @staticmethod
     def _newer_root(ecosystem: str) -> tuple[Path, str] | None:
         """The path and manifest name of the freshest copy of one ecosystem's file.

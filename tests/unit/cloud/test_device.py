@@ -84,6 +84,43 @@ class TestCollect(DeviceFixtures):
         assert "SECRET.MCP.INLINE_CREDENTIAL.001" in rules
         assert "SUSPECT.MCP.UNPINNED.001" in rules
 
+    def test_no_time_budget_cuts_the_agent_findings(self, home, monkeypatch) -> None:
+        """However small per_file_timeout is, the detector runs to its end: a device scan's
+        answer does not depend on how busy the machine is (2026-10-31)."""
+        from cordon_scanner.foundation.config import settings
+
+        real = settings.Config.default
+
+        def tiny() -> settings.Config:
+            config = real()
+            return config.with_overrides(limits=config.limits.merged(per_file_timeout=1e-9))
+
+        # one file whose run yields several findings: a cut keeping only a run's first shows here
+        (home / ".cursor" / "mcp.json").write_text(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        name: {
+                            "command": "npx",
+                            "args": ["-y", f"@acme/{name}"],
+                            "env": {"API_KEY": SECRET},
+                        }
+                        for name in ("pay", "ledger", "audit")
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        def keyed(findings: list[dict]) -> list[tuple]:
+            return sorted((f["rule_id"], f["path"], f["line"]) for f in findings)
+
+        default = keyed(device.DeviceInventory.collect(home)["findings"])
+        monkeypatch.setattr(settings.Config, "default", staticmethod(tiny))
+        tight = keyed(device.DeviceInventory.collect(home)["findings"])
+        in_one = [k for k in default if k[1].endswith("mcp.json")]
+        assert len(in_one) >= 2 and tight == default  # every finding, not each run's first
+
     def test_no_secret_and_no_unlisted_file_leaves(self, home) -> None:
         payload = json.dumps(device.DeviceInventory.collect(home))
         assert SECRET not in payload

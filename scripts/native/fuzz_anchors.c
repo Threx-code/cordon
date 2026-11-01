@@ -145,8 +145,16 @@ static void check_hits(const uint8_t *d, size_t dn, PyObject *needles, PyObject 
 #define HX_REACH 60 /* every forward length fits one 64-bit set */
 typedef struct { int64_t op[9][3]; int n; } Layout;
 
+/* At most three skips a layout: a forward and a backward layout drawn apart (no one pattern
+ * compiles to the pair) with seven skips in a row made each input cost seconds in hex_hits
+ * and its twin alike, as Lanes does, and so 37 runs a second. Real patterns of many jumps run
+ * as fast as yara's (5, 7 and 9 jumps in a row over 20 KB: 0.22/0.47/0.64 s against
+ * 0.42/0.52/0.76 s, measured), and the time allowed bounds any run (TestHexHitsArguments). */
+#define HX_SKIPS 3
+
 static void draw_layout(Layout *l, const uint8_t *b, size_t nb) {
     l->n = 0;
+    int skips = 0;
     for (size_t i = 0; i + 1 < nb && l->n < 8; i += 2) {
         uint8_t k = b[i] % 6, v = b[i + 1];
         int64_t *o = l->op[l->n++];
@@ -156,7 +164,7 @@ static void draw_layout(Layout *l, const uint8_t *b, size_t nb) {
         else if (k == 2) { o[0] = L_MASK; o[1] = 0xF0; o[2] = 0x60; }
         else if (k == 3) { o[0] = L_NOT_MASK; o[1] = 0x0F; o[2] = v & 0x0F; }
         else if (k == 4) { o[0] = L_ANY; }
-        else if (l->n < 8) { o[0] = L_SKIP; o[1] = v % 3; o[2] = o[1] + v / 64; }
+        else if (l->n < 8 && skips < HX_SKIPS) { o[0] = L_SKIP; o[1] = v % 3; o[2] = o[1] + v / 64; skips++; }
         else { o[0] = L_ANY; }
         if (o[0] == L_SKIP && l->n == 8) o[0] = L_ANY;
     }
@@ -164,8 +172,21 @@ static void draw_layout(Layout *l, const uint8_t *b, size_t nb) {
     l->op[l->n][0] = L_DONE; l->op[l->n][1] = l->op[l->n][2] = 0; l->n++;
 }
 
+/* each search memoised on (pc, done) for one event: what it reaches from there depends on
+ * nothing else, so each state is worked out once and the search is linear in the layout */
+static uint64_t hx_fmemo[9][HX_REACH + 1];
+static uint8_t hx_fknown[9][HX_REACH + 1], hx_bseen[9][HX_REACH + 1];
+
 /* forwards: the set of lengths reachable from (pc, done), one bit each; as Lanes reads (reach) */
+static uint64_t hx_fwd_state(const Layout *l, int pc, int64_t done, const uint8_t *d, int64_t at, int64_t reach);
 static uint64_t hx_fwd(const Layout *l, int pc, int64_t done, const uint8_t *d, int64_t at, int64_t reach) {
+    if (hx_fknown[pc][done]) return hx_fmemo[pc][done];
+    uint64_t r = hx_fwd_state(l, pc, done, d, at, reach);
+    hx_fknown[pc][done] = 1; hx_fmemo[pc][done] = r;
+    return r;
+}
+
+static uint64_t hx_fwd_state(const Layout *l, int pc, int64_t done, const uint8_t *d, int64_t at, int64_t reach) {
     const int64_t *o = l->op[pc];
     if (o[0] == L_DONE) return (uint64_t)1 << done;
     if (o[0] == L_SKIP) {
@@ -186,6 +207,8 @@ static uint64_t hx_fwd(const Layout *l, int pc, int64_t done, const uint8_t *d, 
 
 /* backwards: marks each done reached at DONE (a start at - done) */
 static void hx_back(const Layout *l, int pc, int64_t done, const uint8_t *d, int64_t at, int64_t reach, uint8_t *got) {
+    if (hx_bseen[pc][done]) return; /* reached before: what it reaches is marked already */
+    hx_bseen[pc][done] = 1;
     const int64_t *o = l->op[pc];
     if (o[0] == L_DONE) { got[done < reach ? done : reach] = 1; return; }
     if (o[0] == L_SKIP) {
@@ -249,6 +272,7 @@ static void check_hex(const uint8_t *buf, size_t size, const uint8_t *d, size_t 
         (void)len;
         if (at >= (int64_t)dn) continue;
         int64_t reach = (int64_t)dn - at < HX_REACH ? (int64_t)dn - at : HX_REACH;
+        memset(hx_fknown, 0, sizeof hx_fknown); memset(hx_bseen, 0, sizeof hx_bseen);
         uint64_t lengths = hx_fwd(&fw, 0, 0, d, at, reach);
         if (!lengths) continue;
         if (be) {

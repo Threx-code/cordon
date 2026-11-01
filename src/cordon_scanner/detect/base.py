@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import functools
 import time
-from dataclasses import dataclass, field, fields, replace
+from dataclasses import dataclass, field, fields
 from typing import TYPE_CHECKING, Any, ClassVar, Protocol, runtime_checkable
 
 from cordon_scanner.foundation.collector import ScanCaches
@@ -711,29 +711,16 @@ class SubmoduleDependencies(Protocol):
 
 
 class DetectorRun:
-    """One detector over one unit, within the per-file time budget: the way every caller outside
-    the engine's own runners (`engine/pipeline/detection`, `engine/parallel`) runs a detector.
-
-    The budget is cooperative, as the engine's is: the context's deadline is set no later than the
-    budget allows, so a detector that checks `ScanContext.out_of_time` stops there, and findings
-    stop being taken once it has passed. The second value says whether the run finished within it;
-    a caller that gets False reports what it could not finish, as the engine reports a file that
-    exceeded its budget. A budget of 0 is no bound, as `limits.per_file_timeout = 0` is.
-    """
+    """One detector over one unit, run to its end: the way every caller outside the engine's own
+    runners (`engine/pipeline/detection`, `engine/parallel`) runs a detector. No time budget cuts
+    it, as none cuts a scan's files: a run cut on the wall clock left what a busy machine did not
+    reach unread (a historical secret reported unfinished for load, not for the blob), so its
+    answer depended on the load. Bounds that remain are decided from the input (the bytes read)
+    and the scan's own `total_timeout`."""
 
     @staticmethod
-    def findings(
-        detector: Detector, unit: Unit, ctx: ScanContext, budget: float
-    ) -> tuple[list[Finding], bool]:
-        deadline = time.monotonic() + budget if budget > 0 else None
-        if deadline is not None and (ctx.deadline is None or deadline < ctx.deadline):
-            ctx = replace(ctx, deadline=deadline)
-        found: list[Finding] = []
-        for finding in detector.inspect(unit, ctx):
-            found.append(finding)
-            if deadline is not None and time.monotonic() >= deadline:
-                return found, False
-        return found, deadline is None or time.monotonic() < deadline
+    def findings(detector: Detector, unit: Unit, ctx: ScanContext) -> list[Finding]:
+        return list(detector.inspect(unit, ctx))
 
 
 __all__ = [

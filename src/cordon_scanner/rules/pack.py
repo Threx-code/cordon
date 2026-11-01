@@ -91,6 +91,14 @@ class CompiledMatch:
             self.plans[regex] = AnchoredSearch.plan(regex)
         return AnchoredSearch.matches(regex, self.plans[regex], data, folded)
 
+    def search(
+        self, regex: re.Pattern[bytes], data: bytes, folded: bytes | None = None
+    ) -> re.Match[bytes] | None:
+        """`regex.search(data)`, exactly: the first of `matches`. Every run of a rule's regex goes
+        through here or `matches`, so the matcher's bounds hold for the whole rule set (the
+        architecture test `test_rule_regexes_run_only_through_the_matcher`)."""
+        return next(self.matches(regex, data, folded), None)
+
     def regex_for(self, data: bytes, folded: bytes | None = None) -> re.Pattern[bytes] | None:
         """The regex that finds exactly this rule's matches in `data`, cheapest first; None when
         nothing can match.

@@ -187,10 +187,23 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, AnalyzerCore):
         analyzer._downloaded_and_run(tree)
         analyzer._received_and_run(tree)
         analyzer._download_run_through_helpers(tree)
-        analyzer._identity_sent(tree)
-        analyzer._environment_sent(tree)
-        analyzer._secret_sent(tree)
+        if analyzer._sends(tree):
+            # Each of these records only at a call that sends (an egress primitive) or through a
+            # helper holding one (`_handed_to_a_sender`): a file that sends nothing has none of
+            # their findings, and was 4.7 s of azure_storage_blob's 8.8 s of Python analysis
+            # computing the flows that would have reached a send (measured 2026-10-31).
+            analyzer._identity_sent(tree)
+            analyzer._environment_sent(tree)
+            analyzer._secret_sent(tree)
         return analyzer._hits
+
+    def _sends(self, tree: ast.AST) -> bool:
+        """Whether any call in `tree` resolves to an egress primitive."""
+        for node in PythonSyntax.of(tree, ast.Call):
+            resolved = self._resolve_callee(node)
+            if resolved is not None and PRIMITIVES.get(resolved[0]) is Capability.EGRESS:
+                return True
+        return False
 
     DATA_PARSERS = frozenset({"ast.literal_eval", "literal_eval", "json.loads", "json.load"})
     """Parsers that turn text into values and cannot run any of it. `pickle` and `marshal` are

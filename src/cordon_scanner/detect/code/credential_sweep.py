@@ -40,6 +40,24 @@ class CredentialSweep:
             "azure": r"\.azure/(?:accessTokens|msal_token_cache)",
         }.items()
     }
+    #: The text every match of each store's pattern contains: a store whose text is absent from a
+    #: file cannot match there, so a file holding fewer than `SWEEP_MIN` of them is no sweep, found
+    #: by a substring test without running a pattern. Most of the patterns open with a lookbehind,
+    #: which the regular expression engine cannot skip ahead to, so each tested every character
+    #: of every file: 1.2 s of alembic's warm scan (measured 2026-10-31).
+    LITERALS: ClassVar[dict[str, str]] = {
+        "ssh": ".ssh/",
+        "aws": ".aws/credentials",
+        "npm": ".npmrc",
+        "netrc": ".netrc",
+        "kube": ".kube/config",
+        "docker": ".docker/config.json",
+        "gh": ".config/gh/hosts.y",
+        "git": ".git-credentials",
+        "pypi": ".pypirc",
+        "gcloud": ".config/gcloud/",
+        "azure": ".azure/",
+    }
     #: Distinct services' stores before reading them is a sweep rather than a tool's own login.
     SWEEP_MIN: ClassVar[int] = 3
 
@@ -50,9 +68,12 @@ class CredentialSweep:
         text = content.text
         if len(text) > 4_000_000:
             return []
+        present = [name for name, literal in cls.LITERALS.items() if literal in text]
+        if len(present) < cls.SWEEP_MIN:
+            return []
         found: list[tuple[int, str]] = []
-        for name, pattern in cls.STORES.items():
-            match = pattern.search(text)
+        for name in present:
+            match = cls.STORES[name].search(text)
             if match:
                 found.append((match.start(), name))
         if len({name for _, name in found}) < cls.SWEEP_MIN:

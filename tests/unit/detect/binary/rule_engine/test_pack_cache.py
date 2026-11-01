@@ -162,3 +162,25 @@ class TestTheSignature:
         Rules.compile(RULES, cache=fresh)
         assert fresh.refused == 1
         assert not key.stat().st_mode & 0o077
+
+
+class TestAKeptSearch:
+    """A kept pack's searches come back as they were: each kind of search, pickled and restored,
+    finds what the original finds."""
+
+    def test_a_search_round_trips(self) -> None:
+        import pickle
+
+        from cordon_scanner.detect.binary.rule_engine.scan import Search
+
+        for kind, value, modifiers in (
+            ("text", b"EVIL", {}),
+            ("text", b"ab", {"wide": True, "xor": (0, 255)}),
+            ("hex", "4D 5A ?? 00", {}),
+            ("regex", ("ev[i1]l", "i"), {}),
+        ):
+            search = Search(kind, value, modifiers)
+            kept = pickle.dumps(search, protocol=pickle.HIGHEST_PROTOCOL)
+            back = pickle.loads(kept)  # noqa: S301 -- this test's own pickle, made one line up
+            data = b"xx EVIL ev1l MZ\x01\x00 a\x00b\x00"
+            assert back.find(data) == search.find(data)

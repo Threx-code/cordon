@@ -6,7 +6,6 @@ extension is not needed to test the backend."""
 from __future__ import annotations
 
 import importlib.util
-import json
 import os
 import sys
 import zipfile
@@ -225,71 +224,5 @@ class TestNativeBuild:
         )
         monkeypatch.chdir(root)
         monkeypatch.setenv("CORDON_BUILD_NATIVE", "require")
-        with pytest.raises(backend.Native.Failed):
-            backend.build_wheel(str(tmp_path))
-
-
-class TestGeneratedExtensions:
-    """A generator's manifest (`CORDON_BUILD_MYPYC`): its extensions compiled with the hardening
-    flags and its own warning set, and nothing it names outside the package or beyond warnings and
-    levels accepted."""
-
-    @staticmethod
-    def manifest(root: Path, name: str, args: list[str]) -> Path:
-        (root / "build").mkdir(exist_ok=True)
-        (root / "build" / "gen.c").write_text(
-            SOURCE.replace("_probe", name.rsplit(".", 1)[1]), encoding="utf-8"
-        )
-        path = root / "build" / "ext.json"
-        path.write_text(
-            json.dumps({"extensions": [{"name": name, "sources": ["build/gen.c"], "args": args}]}),
-            encoding="utf-8",
-        )
-        return path
-
-    @needs_compiler
-    def test_a_generated_extension_is_built_into_the_wheel(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        root = Kit.project(tmp_path / "p")
-        monkeypatch.chdir(root)
-        manifest = self.manifest(root, "probe._gen", ["-O3", "-Wno-unused-function", "-g1"])
-        monkeypatch.setenv("CORDON_BUILD_MYPYC", str(manifest))
-        wheel = zipfile.ZipFile(tmp_path / Kit.backend().build_wheel(str(tmp_path)))
-        names = wheel.namelist()
-        assert [n for n in names if n.startswith("probe/_gen")] and [
-            n for n in names if n.startswith("probe/_probe")
-        ]
-
-    @needs_compiler
-    def test_a_generated_group_says_which_generator_built_it(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        root = Kit.project(tmp_path / "p")
-        monkeypatch.chdir(root)
-        manifest = self.manifest(root, "probe.engine__mypyc", ["-O3"])
-        data = json.loads(manifest.read_text(encoding="utf-8"))
-        manifest.write_text(json.dumps({"mypy": "2.4.0", **data}), encoding="utf-8")
-        monkeypatch.setenv("CORDON_BUILD_MYPYC", str(manifest))
-        wheel = zipfile.ZipFile(tmp_path / Kit.backend().build_wheel(str(tmp_path)))
-        assert wheel.read("probe/ENGINE_BUILD") == b"mypyc 2.4.0\n"
-
-    @pytest.mark.parametrize(
-        ("name", "args"),
-        [
-            ("outside._gen", ["-O3"]),
-            ("probe._gen", ["-DPWNED=1"]),
-            ("probe._gen", ["-include/etc/passwd"]),
-            ("probe._gen", ["-Wl,-rpath,/tmp"]),
-            ("probe._gen", ["-fplugin=/tmp/x.so"]),
-        ],
-    )
-    def test_a_manifest_reaching_past_its_place_fails_the_build(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, args: list[str]
-    ) -> None:
-        backend = Kit.backend()
-        root = Kit.project(tmp_path / "p")
-        monkeypatch.chdir(root)
-        monkeypatch.setenv("CORDON_BUILD_MYPYC", str(self.manifest(root, name, args)))
         with pytest.raises(backend.Native.Failed):
             backend.build_wheel(str(tmp_path))

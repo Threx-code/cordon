@@ -6,7 +6,7 @@ look-up by ecosystem and name.
 from __future__ import annotations
 
 import gzip
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import ClassVar
 
@@ -113,6 +113,13 @@ class ShippedAdvisories:
         return [raw for raw in data if isinstance(raw, dict) and raw.get("name")]
 
     @staticmethod
+    def _stream(path: Path) -> Iterator[dict[str, object]]:
+        """`_parse`'s records one at a time, for the index build: the file is never held whole."""
+        for raw in AdvisoryFiles.stream_records(path):
+            if isinstance(raw, dict) and raw.get("name"):
+                yield raw
+
+    @staticmethod
     @OneOff.cache
     def _shipped_raw(ecosystem: str) -> Mapping[str, tuple[dict[str, object], ...]]:
         """One ecosystem's generated records, grouped by normalised package name.
@@ -146,7 +153,7 @@ class ShippedAdvisories:
             from cordon_scanner.intel.advisories.advisory_index import AdvisoryIndex
 
             path, digest = verified
-            index = AdvisoryIndex.for_file(digest, lambda: ShippedAdvisories._parse(path))
+            index = AdvisoryIndex.for_file(digest, lambda: ShippedAdvisories._stream(path))
             if index is not None:
                 return IndexedRecords(index, upserts, frozenset(replaced))
         grouped: dict[str, list[dict[str, object]]] = {}

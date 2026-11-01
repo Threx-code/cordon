@@ -64,7 +64,7 @@ do, and each carries its own fix. The ones met most often:
 |---|---|---|
 | `OPERATIONAL.INTEL.STALE` | The threat intel is older than its limit (24 hours when Cordon can refresh it), so recent malware and advisories may not match | Let the scan reach OSV; or run `cordon-scanner advisories sync`, `cordon-scanner intel update`, or `cordon-scanner bundle install` |
 | `OPERATIONAL.SCAN.TIMEOUT` | The total time budget ran out | Raise `--timeout`, or unpack an archive and scan it as a directory |
-| `OPERATIONAL.FILE.TIMEOUT` | One file exceeded its budget; the malware, obfuscation, secret and binary detectors still ran on it | Raise `limits.per_file_timeout`, or exclude it if it is generated output |
+| `OPERATIONAL.FILE.TIMEOUT` | No longer raised by a scan: every detector now runs on every file, as on every member of a package, so whether a file was cut no longer depends on the machine's load. Kept here for reports from earlier versions | Nothing to do; `total_timeout` bounds the scan as a whole (`OPERATIONAL.SCAN.TIMEOUT`) |
 | `OPERATIONAL.SCAN.MEMORY_LIMIT` | Retained content reached its budget; later files were not examined | Raise `limits.max_memory_bytes`, exclude generated or vendored directories, or scan in parts |
 | `OPERATIONAL.SCAN.FINDING_LIMIT` | The finding cap was reached | Raise `limits.max_findings`; this many findings usually share one cause worth fixing first |
 | `OPERATIONAL.WALK.TOO_DEEP` | A tree went deeper than `max_path_depth` | Raise `scan.limits.max_path_depth`, or scan the deep tree directly |

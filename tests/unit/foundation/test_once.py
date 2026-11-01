@@ -1,6 +1,7 @@
-"""`OneOff.cache`: a cached loader whose first call is recorded as the process's cost, and the
-per-file budget that leaves that cost out. A two-line `.mcp.json` came back incomplete on a loaded
-machine because compiling the agent threat catalogue was charged to it."""
+"""`OneOff.cache`: a once-per-process loader, cached like `functools.cache`, and no per-file time
+budget for it to be charged to. A two-line `.mcp.json` once came back incomplete on a loaded machine
+because compiling the agent threat catalogue was charged to it; since 2026-10-31 no file is cut on
+the clock, so the loader keeps no clock either."""
 
 from __future__ import annotations
 
@@ -12,51 +13,33 @@ from cordon_scanner.foundation.once import OneOff
 
 
 class TestTheLoader:
-    def test_a_first_call_is_recorded_and_a_cached_one_is_not(self) -> None:
+    def test_a_first_call_loads_and_a_second_is_cached(self) -> None:
         calls = []
 
         @OneOff.cache
         def load() -> int:
             calls.append(1)
-            time.sleep(0.05)
             return 7
 
-        before = OneOff.spent()
-        assert load() == 7
-        first = OneOff.spent() - before
-        assert load() == 7
+        assert load() == 7 and load() == 7
         assert calls == [1]
-        assert first >= 0.05
-        assert OneOff.spent() - before == first
-
-    def test_a_load_inside_a_load_is_counted_once(self) -> None:
-        @OneOff.cache
-        def inner() -> int:
-            time.sleep(0.05)
-            return 1
-
-        @OneOff.cache
-        def outer() -> int:
-            time.sleep(0.05)
-            return inner() + 1
-
-        before = OneOff.spent()
-        started = time.perf_counter()
-        assert outer() == 2
-        wall = time.perf_counter() - started
-        assert OneOff.spent() - before <= wall
 
     def test_clearing_makes_the_next_call_a_load_again(self) -> None:
+        calls = []
+
         @OneOff.cache
         def load() -> int:
-            time.sleep(0.02)
+            calls.append(1)
             return 1
 
         load()
         load.cache_clear()
-        before = OneOff.spent()
         load()
-        assert OneOff.spent() - before >= 0.02
+        assert calls == [1, 1]
+
+    def test_the_loader_keeps_no_clock(self) -> None:
+        """Nothing reads a one-off load's time since the per-file cut went: none is kept."""
+        assert not hasattr(OneOff, "spent")
 
 
 class TestThePerFileBudget:
@@ -89,7 +72,9 @@ class TestThePerFileBudget:
         assert "OPERATIONAL.FILE.TIMEOUT" not in {f.rule_id for f in result.findings}
         assert result.complete is True
 
-    def test_the_file_s_own_time_is_still_charged(self, tmp_path, monkeypatch) -> None:
+    def test_the_file_s_own_time_cuts_nothing(self, tmp_path, monkeypatch) -> None:
+        """No per-file wall-clock cut (2026-10-31): a file whose own work outruns per_file_timeout
+        is read to its end, with the findings a quick run gives, and the scan stays complete."""
         from cordon_scanner.intel.malware.atr import AtrEngine
 
         real = AtrEngine.catalogue
@@ -98,6 +83,10 @@ class TestThePerFileBudget:
             time.sleep(1.0)
             return real()
 
+        quick = self._scan(tmp_path, monkeypatch, real)
         result = self._scan(tmp_path, monkeypatch, slow)
-        assert "OPERATIONAL.FILE.TIMEOUT" in {f.rule_id for f in result.findings}
-        assert result.complete is False
+        assert "OPERATIONAL.FILE.TIMEOUT" not in {f.rule_id for f in result.findings}
+        assert result.complete == quick.complete
+        assert sorted(f.rule_id for f in result.findings) == sorted(
+            f.rule_id for f in quick.findings
+        )

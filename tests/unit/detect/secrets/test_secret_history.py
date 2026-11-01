@@ -159,6 +159,18 @@ class TestHistorySecretScan:
         ]
         assert len(findings) == 1
 
+    def test_no_time_budget_leaves_a_blob_unfinished(self, tmp_path) -> None:
+        """However small per_file_timeout is, every historical blob is read to its end: a secret
+        is never missed because the machine was busy (2026-10-31)."""
+        HistoryKit.repository(tmp_path, HistoryKit.token("t"))
+        config = Config.default()
+        config = config.with_overrides(limits=config.limits.merged(per_file_timeout=1e-9))
+        findings = HistorySecretScan(tmp_path, config, RuleSet(RuleLoader.load_builtin())).run()
+        assert any(f.rule_id == "SECRET.GITHUB.TOKEN.001" for f in findings)
+        assert not any(
+            "per-file" in f.message for f in findings if f.rule_id == HISTORY_INCOMPLETE_RULE
+        )
+
     def test_not_a_repository_reads_nothing(self, tmp_path) -> None:
         assert HistoryKit.scan(tmp_path).run() == []
 

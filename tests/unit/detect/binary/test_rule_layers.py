@@ -94,6 +94,9 @@ class TestLayers:
         assert RuleLayers.of(b'atob("aGk=")') == []
         assert RuleLayers.of(b'atob("!!!!!!!!!!!!!!!!!!!!")') == []
         assert RuleLayers.of(b'bytes.fromhex("abc")') == []
+        # and a literal of the same forms, long and well formed, is peeled (not every one refused)
+        long_text = base64.b64encode(b"x" * 64)
+        assert [layer.how for layer in RuleLayers.of(b'atob("' + long_text + b'")')] == ["atob"]
 
     def test_the_built_in_pack_reads_raw_bytes_only(self) -> None:
         """No built-in rule asks for layers, so the pack's results stay the ones proven against
@@ -126,7 +129,7 @@ class TestALayerFailsClosed:
     def test_a_layer_past_the_bound_fails_the_scan(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The raw file is base64 text with no zero byte in it; its decoded layer is a megabyte of
+        """The raw file is base64 text with no zero byte in it; its decoded layer is 256 KB of
         zeros, past a lowered bound. The layer's refusal fails the scan as the raw file's would."""
         from cordon_scanner.detect.binary.rule_engine.anchoring.places import Places
 
@@ -138,7 +141,9 @@ class TestALayerFailsClosed:
             encoding="utf-8",
         )
         (tmp_path / "pkg").mkdir()
-        body = b'x = atob("' + base64.b64encode(bytes(1 << 20)) + b'");\n'
+        # 256 KB of zeros: 262,144 places against the lowered bound of 100,000, so the layer is
+        # refused by the bound, well inside the per-file time budget even on a loaded host.
+        body = b'x = atob("' + base64.b64encode(bytes(1 << 18)) + b'");\n'
         (tmp_path / "pkg" / "index.js").write_bytes(body)
         out = tmp_path / "out.json"
         argv = ["cordon-scanner", "scan", str(tmp_path / "pkg"), "--offline", "--no-color", "--quiet",
