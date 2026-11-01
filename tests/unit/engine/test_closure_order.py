@@ -58,3 +58,73 @@ class TestClosureOrder:
         assert len(runs[0]["js"]) >= 500
         assert len(runs[0]["py"]) >= 500
         assert all(run == runs[0] for run in runs[1:])
+
+
+class TestEveryEntryIsFollowed:
+    """5E-1 (programme 5E): the JS closure missed files a reached entry names (measured on a3b9c5f1:
+    13 blocked malware and 5 false alarms whose finding sat in such a file). A `bin` entry's relative
+    requires were never followed, since the closure was seeded from the library entries only, and a
+    minified `from"./x.js"` (no space) or a bare `import"./x.js"` did not match the reference."""
+
+    @staticmethod
+    def unit(path: str, text: str):  # type: ignore[no-untyped-def]
+        import types
+
+        return types.SimpleNamespace(
+            path=path, content=types.SimpleNamespace(text=text, is_binary=False)
+        )
+
+    def test_minified_imports_are_followed(self) -> None:
+        from cordon_scanner.engine.pipeline.hooks import Hooks
+
+        units = [
+            self.unit(
+                "dist/index.js",
+                'import{a}from"./chunk.js";import"./side.js";export*from"./more.js"',
+            ),
+            self.unit("dist/chunk.js", ""),
+            self.unit("dist/side.js", ""),
+            self.unit("dist/more.js", ""),
+            self.unit("dist/unnamed.js", ""),
+        ]
+        found = Hooks.hook_js_closure(units, {"dist/index.js"})
+        assert found == {"dist/chunk.js", "dist/side.js", "dist/more.js"}
+
+    def test_a_bin_entry_s_requires_are_in_the_library_closure(self, tmp_path, monkeypatch) -> None:
+        import io
+        import tarfile
+
+        from cordon_scanner import Scanner
+        from cordon_scanner.engine.pipeline import hooks
+        from cordon_scanner.foundation.config.settings import Config
+
+        files = {
+            "package/package.json": json.dumps(
+                {
+                    "name": "entry-probe",
+                    "version": "1.0.0",
+                    "main": "index.js",
+                    "bin": {"probe": "bin/cli.js"},
+                }
+            ),
+            "package/index.js": "module.exports = 1;\n",
+            "package/bin/cli.js": 'const h = require("../lib/helper");\nh();\n',
+            "package/lib/helper.js": "module.exports = () => 0;\n",
+        }
+        archive = tmp_path / "entry-probe-1.0.0.tgz"
+        with tarfile.open(archive, "w:gz") as tar:
+            for name, text in files.items():
+                data = text.encode()
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+        seen = []
+        original = hooks.Hooks.lifted_inherit
+        monkeypatch.setattr(
+            hooks.Hooks,
+            "lifted_inherit",
+            staticmethod(lambda ctx: seen.append(original(ctx)) or seen[-1]),
+        )
+        Scanner(Config.default().with_overrides(use_cache=False, offline=True)).scan(archive)
+        closure = {p.split("!", 1)[-1] for ctx in seen for p in ctx.library_closure_paths}
+        assert "package/lib/helper.js" in closure

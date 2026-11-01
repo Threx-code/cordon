@@ -310,10 +310,11 @@ which is maturin's job, and nothing in `pip install maturin` calls it. `build.rs
 exception: Cargo runs it during the build, so it is never in this set's reach."""
 
 JS_LOCAL_REFERENCE = re.compile(
-    r"""(?:\brequire\s{0,4}\(\s{0,4}|\bimport\s{0,4}\(\s{0,4}|\bfrom\s{1,4})['"`](?P<rel>\.{1,2}/[^'"`\s]{1,200})['"`]"""
+    r"""(?:\brequire\s{0,4}\(\s{0,4}|\bimport\s{0,4}\(?\s{0,4}|\bfrom\s{0,4})['"`](?P<rel>\.{1,2}/[^'"`\s]{1,200})['"`]"""
     r"""|__dirname\s{0,4},\s{0,4}['"`](?P<sib>[\w.-]{1,100}\.(?:js|cjs|mjs))['"`]"""
 )
-"""A relative module a script loads, or a sibling file it names beside `__dirname`."""
+"""A relative module a script loads, or a sibling file it names beside `__dirname`. Minified forms
+too: `from"./x.js"` and a bare `import"./x.js"` (5E-1: a bundle's entry wrote them with no space)."""
 
 JS_PATH_SEGMENTS = r"""((?:\s{0,4}['"`][\w@./-]{1,120}['"`]\s{0,4},?){1,8})"""
 JS_DIRECTORY_VARIABLE = re.compile(

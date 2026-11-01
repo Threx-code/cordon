@@ -245,10 +245,11 @@ class ArchiveStages:
             distribution=early_format,
             import_entry_paths=PackageEntries.of(units, early_format),
             library_entry_paths=PackageEntries.of(units, early_format, with_bin=False),
+            # Seeded from every entry, `bin` included: a command's relative requires run when it
+            # does (5E-1: the closure was seeded from the library entries only, so a bin script's
+            # helper was in no reach set).
             library_closure_paths=frozenset(
-                Hooks.hook_js_closure(
-                    units, set(PackageEntries.of(units, early_format, with_bin=False))
-                )
+                Hooks.hook_js_closure(units, set(PackageEntries.of(units, early_format)))
             ),
             declared_dependencies=EcosystemRegistry.declared_dependencies(units, early_format),
             package_repository=PackageEntries.repository(units, early_format),
