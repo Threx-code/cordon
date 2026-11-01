@@ -830,6 +830,7 @@
   "test_install_persist_named.py": "detect/code/capability",
   "test_fixed_program_arguments.py": "detect/code/capability",
   "test_measure_admission.py": "repository",
+  "test_install_time_factor.py": "foundation",
   "test_intent.py": "decide",
   "test_intent_build.py": "decide",
   "test_grammar.py": "analysis/javascript/front",
