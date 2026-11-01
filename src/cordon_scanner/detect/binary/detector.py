@@ -295,12 +295,25 @@ class BinaryDetector(BaseDetector):
         judged = raw if head is None else head
         named = found if head is None else self.identify(head)
         own_format = self.named_by_its_own_format(content.path, judged)
+        # The scan's own recovery of an obfuscated file is text this scan wrote under a name it chose:
+        # its bytes contradict no name the package gave (bcoin's `wsproxy.js#deobfuscated.js`, a
+        # benign npm block; cordon-a0's false-alarm read, 1 Nov). The shipped file is judged itself.
+        recovered = ContainerPaths.is_recovered(content.path)
         mismatch = (
             None
-            if content.is_lfs_pointer or own_format or self.damaged_in_transit(content.path, judged)
+            if content.is_lfs_pointer
+            or own_format
+            or recovered
+            or self.damaged_in_transit(content.path, judged)
             else self.mismatch(content.path, named)
         )
-        if mismatch is None and named is None and not content.is_lfs_pointer and not own_format:
+        if (
+            mismatch is None
+            and named is None
+            and not content.is_lfs_pointer
+            and not own_format
+            and not recovered
+        ):
             mismatch = self.binary_source(content.path, judged)
         self._mismatch_finding(content, ctx, findings, judged, mismatch, named, unit)
 
@@ -365,6 +378,23 @@ class BinaryDetector(BaseDetector):
                     "recorded rather than raised.",
                 )
             elif (
+                named is None
+                and self._names_a_native_program(content.path)
+                and self._is_a_note(judged)
+            ):
+                # A sentence where the program will go: `bin/tool.exe` holding "the native binary is
+                # installed here by install.cjs" (hypertask, a benign npm block; cordon-a0's
+                # false-alarm read, 1 Nov). Windows refuses to start a file that is not PE, and no
+                # interpreter is handed prose. An encrypted or encoded stage has no words and code
+                # reads as code, so both keep the declared grade.
+                finding = replace(
+                    finding,
+                    severity=min(finding.severity, Severity.LOW),
+                    message=finding.message
+                    + " It holds a short note in words and no code, so it is recorded rather than "
+                    "raised.",
+                )
+            elif (
                 named is not None
                 and named.name == "shell script"
                 and self._names_a_native_program(content.path)
@@ -404,6 +434,24 @@ class BinaryDetector(BaseDetector):
     @staticmethod
     def _reads_as_code(raw: bytes) -> bool:
         return BinaryDetector._CODE_MARKERS.search(raw[:8192]) is not None
+
+    #: A note in words: at most 4 KB of printable text, of which at least 3 runs are words of
+    #: letters separated by spaces. Base64, hex and ciphertext have no spaces between words.
+    _WORDS: ClassVar[re.Pattern[bytes]] = re.compile(
+        rb"[A-Za-z]{2,40} [A-Za-z]{2,40} [A-Za-z]{2,40}"
+    )
+
+    @staticmethod
+    def _is_a_note(raw: bytes) -> bool:
+        """Short printable text in words that does not read as code."""
+        if not raw or len(raw) > 4096 or BinaryDetector._reads_as_code(raw):
+            return False
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return False
+        printable = all(c.isprintable() or c in "\r\n\t" for c in text)
+        return printable and len(BinaryDetector._WORDS.findall(raw)) >= 3
 
     @staticmethod
     def _promises_a_binary_format(path: str) -> bool:

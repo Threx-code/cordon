@@ -10,9 +10,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from cordon_scanner import Scanner
+from cordon_scanner.detect.base import FileUnit, ScanContext
 from cordon_scanner.detect.binary.detector import BinaryDetector
 from cordon_scanner.foundation.config.settings import Config
+from cordon_scanner.foundation.content import FileContent
+from cordon_scanner.rules.loader import RuleLoader, RuleSet
 from kits.imagekit import DEBIAN_RELEASE, ImageKit
 
 RULE = "SUSPECT.POLYGLOT.MISMATCH.001"
@@ -70,3 +75,55 @@ class TestBinarySourceNames:
 
     def test_a_binary_py_is_still_reported(self) -> None:
         assert BinaryDetector.binary_source("pkg/__init__.py", b"\x7fELF\x00\x00") is not None
+
+
+class TestWhatTheScanWroteAndWhatHoldsAPlace:
+    """The scan's recovery of an obfuscated file, and a note where a program will go (cordon-a0's
+    false-alarm read, 1 Nov: bcoin's `wsproxy.js#deobfuscated.js`, hypertask's `bin/hypertask.exe`)."""
+
+    @staticmethod
+    def graded(tmp_path: Path, files: dict[str, bytes]) -> dict[str, str]:
+        for name, raw in files.items():
+            (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+            (tmp_path / name).write_bytes(raw)
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        return {
+            f.location.path.rsplit("/", 1)[-1]: f.severity.name
+            for f in result.findings
+            if f.rule_id == RULE
+        }
+
+    @pytest.mark.parametrize(
+        ("path", "reported"),
+        [
+            ("pkg.tgz!package/lib/x.js#deobfuscated.js", False),  # the scan's own recovery
+            ("pkg.tgz!package/lib/x.js", True),  # the same bytes shipped
+            ("pkg.tgz!package/lib/x#deobfuscated.py", True),  # a shipped name only like it
+        ],
+    )
+    def test_a_recovery_is_not_a_shipped_file(self, path: str, reported: bool) -> None:
+        raw = b"\x00\x01\x02\x03\x00\x00var a = 1;\x00\x00"
+        found = [f.rule_id for f in self.inspected(path, raw)]
+        assert (RULE in found) is reported, found
+
+    @staticmethod
+    def inspected(path: str, raw: bytes) -> list:
+        ctx = ScanContext(
+            config=Config.default(),
+            rules=RuleSet(RuleLoader.load_builtin()),
+            tree_paths=frozenset((path,)),
+        )
+        unit = FileUnit(content=FileContent.from_bytes(path, raw), language=None)
+        return list(BinaryDetector().inspect(unit, ctx))
+
+    def test_a_note_named_exe_is_recorded(self, tmp_path) -> None:
+        note = b"Native Example CLI binary is installed here by install.cjs.\n"
+        assert self.graded(tmp_path, {"bin/tool.exe": note}) == {"tool.exe": "LOW"}
+
+    def test_an_encoded_stage_named_exe_keeps_its_grade(self, tmp_path) -> None:
+        stage = b"TVqQAAMAAAAEAAAA//8AALgAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n"
+        assert self.graded(tmp_path, {"bin/tool.exe": stage}).get("tool.exe") not in (None, "LOW")
+
+    def test_code_named_exe_keeps_its_grade(self, tmp_path) -> None:
+        script = b"const { exec } = require('child_process');\nexec('echo installed');\n"
+        assert self.graded(tmp_path, {"bin/tool.exe": script}).get("tool.exe") not in (None, "LOW")
