@@ -402,11 +402,8 @@ class ParallelScanner:
         if ParallelScanner._worker is None:  # pragma: no cover - only reachable on a broken pool
             return []
 
-        from pathlib import Path
-
         from cordon_scanner.detect.base import FileUnit
         from cordon_scanner.engine.isolation.facts import WorkerFacts
-        from cordon_scanner.foundation.content import FileContent, Skipped
 
         if getattr(ParallelScanner._worker, "missing", ()):  # (a test's stand-in state has none)
             raise RuntimeError(
@@ -423,36 +420,9 @@ class ParallelScanner:
                     (index, [], None, False, FULL, "")
                 )  # not examined: the budget ran out first
                 continue
-            if isinstance(carried, str):
-                loaded = FileContent.load(Path(carried), relative, engine.config.limits)
-            elif carried is not None:
-                loaded = FileContent.from_bytes(relative, carried, limits=engine.config.limits)
-            else:
-                loaded = FileContent.load(Path(root) / relative, relative, engine.config.limits)
-            if isinstance(loaded, Skipped):
-                # An empty list used to be returned here with nothing said. The
-                # serial path turns a `Skipped` into OPERATIONAL.FILE.UNREADABLE
-                # and marks the scan incomplete, so coverage shrank silently and
-                # whether it did depended on the machine's core count. The
-                # `False` says the result is not trustworthy; the parent reports
-                # it exactly as the serial path would.
-                out.append((index, [], False, False, FULL, ""))
-                continue
-
-            if loaded.sha256 != expected:
-                # The parent read this file and computed its hash; the worker
-                # read it again and got something else. That happens when
-                # anything mutates the tree between the two reads -- a
-                # postinstall that has already run, a dev server, a concurrent
-                # job on a shared workspace, or a racer committed as part of the
-                # payload.
-                #
-                # Returning the findings anyway would have them cached under the
-                # parent's key, so `{}` becomes the permanent cached result for
-                # the malicious content's own hash and every later scan of that
-                # exact content on that machine is a silent hit. The engine's
-                # docstring claims a cache hit is provably identical to a cold
-                # run; this is where that stopped being true.
+            loaded = ParallelScanner._read_item(relative, expected, carried, engine, root)
+            if loaded is None:
+                # Not trustworthy: the parent reports it exactly as the serial path would.
                 out.append((index, [], False, False, FULL, ""))
                 continue
 
@@ -589,6 +559,45 @@ class ParallelScanner:
         # must produce identical output.
         collected.sort(key=lambda pair: pair[0])
         return collected
+
+    @staticmethod
+    def _read_item(relative: str, expected: str, carried: Any, engine: Any, root: str) -> Any:
+        """A work item's bytes as a `FileContent`: carried by the parent (bytes, or a spill's path)
+        or read here; None when they cannot be trusted."""
+        from pathlib import Path
+
+        from cordon_scanner.foundation.content import FileContent, Skipped
+
+        if isinstance(carried, str):
+            loaded = FileContent.load(Path(carried), relative, engine.config.limits)
+        elif carried is not None:
+            loaded = FileContent.from_bytes(relative, carried, limits=engine.config.limits)
+        else:
+            loaded = FileContent.load(Path(root) / relative, relative, engine.config.limits)
+        if isinstance(loaded, Skipped):
+            # An empty list used to be returned here with nothing said. The
+            # serial path turns a `Skipped` into OPERATIONAL.FILE.UNREADABLE
+            # and marks the scan incomplete, so coverage shrank silently and
+            # whether it did depended on the machine's core count. The
+            # `False` says the result is not trustworthy; the parent reports
+            # it exactly as the serial path would.
+            return None
+        if loaded.sha256 != expected:
+            # The parent read this file and computed its hash; the worker
+            # read it again and got something else. That happens when
+            # anything mutates the tree between the two reads -- a
+            # postinstall that has already run, a dev server, a concurrent
+            # job on a shared workspace, or a racer committed as part of the
+            # payload.
+            #
+            # Returning the findings anyway would have them cached under the
+            # parent's key, so `{}` becomes the permanent cached result for
+            # the malicious content's own hash and every later scan of that
+            # exact content on that machine is a silent hit. The engine's
+            # docstring claims a cache hit is provably identical to a cold
+            # run; this is where that stopped being true.
+            return None
+        return loaded
 
     @staticmethod
     def _inspect_batch_timed(
