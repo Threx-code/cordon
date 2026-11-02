@@ -80,20 +80,37 @@ class JsSummaries:
                 out["js.callsink"].append([f"C{k}", sink, dest, line])
         return out
 
+    @staticmethod
+    def _kind(label: Any) -> str:
+        """A label's kind: a source kind is its own; a symbolic label is tagged ("P", "Q", "R", "C")."""
+        return label if isinstance(label, str) else str(label[0])
+
+    @classmethod
+    def _name(cls, label: Any, fid: int) -> str | None:
+        """A label's name in the declared vocabulary, or None: source kinds, the parameters of the
+        function `fid` (P<i>), and local call results (C<k>). Dispatched on the label's kind by a
+        table, so a new kind is a new entry (the isinstance_chains rule)."""
+        kind = cls._kind(label)
+        if kind in SOURCES:
+            return kind
+        name = cls._NAMES.get(kind)
+        return name(label, fid, cls.MAX_PARAM) if name is not None else None
+
+    @staticmethod
+    def _parameter(label: Any, fid: int, most: int) -> str | None:
+        return f"P{label[2]}" if fid and label[1] == fid and label[2] <= most else None
+
+    @staticmethod
+    def _call(label: Any, _fid: int, _most: int) -> str | None:
+        return f"C{label[1]}"
+
+    _NAMES: ClassVar[dict[str, Any]] = {}
+
     @classmethod
     def _labels(cls, value: set[Any], fid: int) -> list[str]:
-        """A value's labels in the declared vocabulary: source kinds, the parameters of the
-        enclosing exported function (P<i>), and local call results (C<k>)."""
-        out: set[str] = set()
-        for x in value:
-            if isinstance(x, str) and x in SOURCES:
-                out.add(x)
-            elif isinstance(x, tuple) and x[0] in ("P", "Q") and x[1] == fid and fid:
-                if x[2] <= cls.MAX_PARAM:
-                    out.add(f"P{x[2]}")
-            elif isinstance(x, tuple) and x[0] == "C":
-                out.add(f"C{x[1]}")
-        return sorted(out)[: cls.MAX_LABELS]
+        """A value's labels in the declared vocabulary (`_name`), at most MAX_LABELS."""
+        names = {cls._name(x, fid) for x in value}
+        return sorted(n for n in names if n is not None)[: cls.MAX_LABELS]
 
     @classmethod
     def _summary(cls, name: str, fn: Any) -> list[list[Any]]:
@@ -107,13 +124,9 @@ class JsSummaries:
             for sink, _host, dest, _line in sinks:
                 out.append([name, f"P{position}", f"sink:{sink}:{dest}"])
         for label in fn.ret:
-            if isinstance(label, str) and label in SOURCES:
-                out.append([name, label, "return"])
-            elif isinstance(label, tuple) and label[0] in ("P", "Q") and label[1] == fn.fid:
-                if label[2] <= cls.MAX_PARAM:
-                    out.append([name, f"P{label[2]}", "return"])
-            elif isinstance(label, tuple) and label[0] == "C":
-                out.append([name, f"C{label[1]}", "return"])
+            frm = cls._name(label, fn.fid)
+            if frm is not None:
+                out.append([name, frm, "return"])
         return sorted({tuple(x): x for x in out}.values())
 
     @staticmethod
@@ -210,7 +223,7 @@ class CrossFile:
     @classmethod
     def compose(
         cls, files: dict[str, dict[str, list[list[Any]]]], tree: frozenset[str]
-    ) -> list[tuple[str, int, frozenset[str], str, str]]:
+    ) -> list[tuple[str, int, tuple[str, ...], str, str]]:
         """Every cross-file flow: (caller file, line, source kinds, sink, destination class)."""
         summaries: dict[tuple[str, str], set[tuple[str, str]]] = {}
         for path, facts in files.items():
@@ -218,7 +231,7 @@ class CrossFile:
                 summaries.setdefault((path, str(name)), set()).add((str(frm), str(to)))
         # (caller file, C<k>) -> what the call's result carries, from the callee's summaries.
         results: dict[tuple[str, str], set[str]] = {}
-        flows: set[tuple[str, int, frozenset[str], str, str]] = set()
+        flows: set[tuple[str, int, tuple[str, ...], str, str]] = set()
         for _ in range(cls.MAX_ROUNDS):
             changed = False
             for path, facts in files.items():
@@ -232,7 +245,7 @@ class CrossFile:
                     for frm, to in sorted(summaries.get((target, str(name)), ())):
                         if frm == f"P{i}" and to.startswith("sink:"):
                             _, sink, dest = to.split(":", 2)
-                            concrete = frozenset(x for x in held if x in SOURCES)
+                            concrete = tuple(sorted({x for x in held if x in SOURCES}))
                             if concrete:
                                 flows.add((path, int(line), concrete, sink, dest))
                             for p in (x for x in held if x.startswith("P") and caller):
@@ -244,8 +257,8 @@ class CrossFile:
                             changed |= len(results[(path, str(cid))]) != before
             for path, facts in files.items():
                 for cid, sink, dest, line in facts.get("js.callsink", ()):
-                    concrete = frozenset(
-                        x for x in results.get((path, str(cid)), ()) if x in SOURCES
+                    concrete = tuple(
+                        sorted({x for x in results.get((path, str(cid)), ()) if x in SOURCES})
                     )
                     if concrete:
                         flows.add((path, int(line), concrete, str(sink), str(dest)))
@@ -255,7 +268,9 @@ class CrossFile:
                             changed |= cls._grow(summaries, (path, str(name)), (lab, "return"))
             if not changed:
                 break
-        return sorted(flows, key=lambda f: (f[0], f[1], f[3]))
+        # Each flow is (file, line, sorted source kinds, sink, destination): plain tuples of strings and
+        # an int, so their natural order is total (test_total_sorts).
+        return sorted(flows)
 
     @classmethod
     def _exporter(
@@ -291,5 +306,9 @@ class CrossFile:
         held.add(entry)
         return True
 
+
+JsSummaries._NAMES.update(
+    {"P": JsSummaries._parameter, "Q": JsSummaries._parameter, "C": JsSummaries._call}
+)
 
 __all__ = ["CrossFile", "JsSummaries"]

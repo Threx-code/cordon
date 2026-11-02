@@ -50,6 +50,12 @@ class TestTheAdmittedRulesAreKept:
         # rule kept, a3b9c5f1's residual misses and unblocked benign pool (scratchpad i66b/exact-*.jsonl):
         "MALWARE.CI.RUNNER_SECRETS.001",  # 6 content misses in 5 groups newly blocked, 0 benign
         "SUSPECT.AGENT.API_REDIRECT.001",  # 3 content misses in 1 group newly blocked, 0 benign
+        # MCP, measured exactly (2 Nov) on item 7's design lists, finals excluded: the 40 mcp-area units
+        # carrying a lowered frozen rule, scanned with these three kept (scratchpad i66m/exact-v3.jsonl):
+        # 6 malicious MCP variants newly blocked (six attack types), 0 of 4 benign changed.
+        "SUSPECT.AGENT.HIDDEN_DIRECTIVE.001",
+        "SUSPECT.MCP.HANDLER_SHELL.001",
+        "SUSPECT.AGENT.TOOL_PRIORITY_CLAIM.001",
     )
 
     def test_each_is_in_keep(self) -> None:
@@ -105,7 +111,6 @@ class TestNoRuleIsLoweredUnseenByAccident:
             "SUSPECT.AGENT.CREDENTIAL_EXFIL.001",  # measured 2 Nov: 0 malware, 1 benign newly blocked if kept: stays
             "SUSPECT.AGENT.DROPPER_PROSE.001",
             "SUSPECT.AGENT.FRONT_MATTER_CODE.001",
-            "SUSPECT.AGENT.HIDDEN_DIRECTIVE.001",
             "SUSPECT.AGENT.HIDDEN_TEXT.001",
             "SUSPECT.AGENT.INSTALL_REDIRECT.001",  # measured 2 Nov: 0 malware, 1 benign newly blocked if kept: stays
             "SUSPECT.AGENT.INTENT_CHAINED.001",
@@ -116,7 +121,6 @@ class TestNoRuleIsLoweredUnseenByAccident:
             "SUSPECT.AGENT.SKILL_HOOK_FETCH.001",
             "SUSPECT.AGENT.SKILL_INSTALLS_LOOKALIKE.001",
             "SUSPECT.AGENT.SKILL_JAILBREAK_TEXT.001",
-            "SUSPECT.AGENT.TOOL_PRIORITY_CLAIM.001",
             "SUSPECT.ARCHIVE.PADDED.001",
             "SUSPECT.AZURE.NO_AUTH.CONTAINERREGISTRY_REGISTRIES_ANONYMOUSPULLENABLED.001",
             "SUSPECT.AZURE.OPEN_INGRESS.NETWORK_NETWORKSECURITYGROUPS_SOURCEADDRESSPREFIX.001",
@@ -158,7 +162,7 @@ class TestNoRuleIsLoweredUnseenByAccident:
             "SUSPECT.DOCUMENT.REMOTE_OBJECT.001",
             "SUSPECT.DOCUMENT.RTF_OBJECT.001",
             "SUSPECT.DROPPER.REMOTE_COMMAND.001",
-            "SUSPECT.EXFIL.BROWSER_SECRETS.001",
+            "SUSPECT.EXFIL.BROWSER_SECRETS.001",  # measured 2 Nov (MCP): 0 malware, 1 benign: stays
             "SUSPECT.EXTENSION.HIDDEN_NAME.001",
             "SUSPECT.EXTENSION.LOOKALIKE.001",
             "SUSPECT.HELM.UNTRUSTED_REPOSITORY.BUNDLED.001",
@@ -170,13 +174,12 @@ class TestNoRuleIsLoweredUnseenByAccident:
             "SUSPECT.MCP.BORROWED_NAME.001",
             "SUSPECT.MCP.CONTAINER_HOST_ACCESS.001",
             "SUSPECT.MCP.ENV_INJECTION.001",
-            "SUSPECT.MCP.HANDLER_SHELL.001",
             "SUSPECT.MCP.INPUT_FORWARDED.001",
-            "SUSPECT.MCP.INPUT_MIRROR.001",
+            "SUSPECT.MCP.INPUT_MIRROR.001",  # measured 2 Nov (MCP): 2 malware, 1 benign newly blocked if kept: stays
             "SUSPECT.MCP.LISTENER.001",
             "SUSPECT.MCP.LIVE_TOOL_DESCRIPTION.001",
             "SUSPECT.MCP.LOOKALIKE.001",
-            "SUSPECT.MCP.SCHEMA_POISONING.001",
+            "SUSPECT.MCP.SCHEMA_POISONING.001",  # measured 2 Nov (MCP): 0 malware, 1 benign: stays
             "SUSPECT.MCP.TIME_BOMB.001",
             "SUSPECT.MCP.TOOLS_CHANGED.001",
             "SUSPECT.MCP.TOOL_POISONING.001",

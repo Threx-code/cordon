@@ -24,7 +24,7 @@ class CrossKit:
     )
 
     @staticmethod
-    def flows(files: dict[str, str]) -> list[tuple[str, int, frozenset[str], str, str]]:
+    def flows(files: dict[str, str]) -> list[tuple[str, int, tuple[str, ...], str, str]]:
         facts = {path: JsSummaries.of(text) for path, text in files.items()}
         return CrossFile.compose(facts, frozenset(files))
 
