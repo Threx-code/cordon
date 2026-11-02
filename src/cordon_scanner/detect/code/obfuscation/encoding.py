@@ -15,7 +15,6 @@ from cordon_scanner.foundation.models import (
     Confidence,
     Severity,
 )
-from cordon_scanner.foundation.text.comments import SourceComments
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -270,12 +269,11 @@ class EncodingFindings:
         character-by-character loop over the whole file. On the ten-megabyte payload
         of the Shai-Hulud npm worm that is ten million iterations per match.
         """
-        if spans is None:
-            spans = SourceComments.block_comment_spans(content.text, language)
-        if SourceComments.inside_spans(spans, offset):
+        # The exact blocks, in bytes, indexed once per file (`FileContent.in_block_comment`); a
+        # caller's `spans` are the same blocks, kept in the signature for its callers.
+        if content.in_block_comment(offset, language):
             return True
-        start = content.comment_column(content.line_of(offset), language)
-        return start is not None and content.column_of(offset) >= start
+        return content.in_line_comment(offset, language, blocks_known=True)
 
 
 __all__ = [

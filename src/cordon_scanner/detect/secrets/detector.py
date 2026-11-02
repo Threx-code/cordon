@@ -62,7 +62,6 @@ from cordon_scanner.foundation.models import (
 from cordon_scanner.foundation.once import OneOff
 from cordon_scanner.foundation.samples import SampleKinds
 from cordon_scanner.foundation.scoring import ScoringContext
-from cordon_scanner.foundation.text.comments import SourceComments
 from cordon_scanner.foundation.text.literals import LiteralGate
 from cordon_scanner.foundation.text.prose import Prose
 from cordon_scanner.foundation.text.redact import Redactor
@@ -361,20 +360,16 @@ class SecretDetector(BaseDetector):
         line somebody commented out instead of rotating. See `core.comments`.
         """
         content = unit.content
-        line = content.line_text(content.line_of(offset))
-        if SourceComments.is_commented(line, content.column_of(offset) - 1, unit.language):
+        # In characters, both: a byte column measured against a character column read code
+        # after multibyte text as the comment that followed it.
+        if content.in_line_comment(offset, unit.language, blocks_known=True):
             return True
 
-        # And the block the per-line test cannot see. Its heuristic asks whether the
-        # line begins with `*`, which is what a documentation comment looks like and
-        # not what a paragraph of prose looks like. Cached per file for the reason
+        # And the block, from the exact spans (the per-line `*` heuristic is off above: a line
+        # starting with `*` is code unless a span holds it). Cached per file for the reason
         # `_inside_documentation` is: a file with a long comment usually has several
         # matches inside it, and the pass over the text is the expensive half.
-        cached = self._blocks.get(unit.path)
-        if cached is None:
-            cached = SourceComments.block_comment_spans(content.text, unit.language)
-            self._blocks[unit.path] = cached
-        return SourceComments.inside_spans(cached, offset)
+        return content.in_block_comment(offset, unit.language)
 
     @staticmethod
     def _is_example_line(content: FileContent, offset: int) -> bool:
