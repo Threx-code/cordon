@@ -116,7 +116,7 @@ class AgentText:
         if path.endswith(SERVER_SOURCE_SUFFIXES) and MCP_SDK.search(text):
             return [
                 ("MCP tool description", d)
-                for d in dict.fromkeys(McpServerSource._tool_descriptions(text))
+                for d in dict.fromkeys(McpServerSource._tool_descriptions(text, path))
             ]
         return []
 
