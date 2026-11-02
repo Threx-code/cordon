@@ -172,15 +172,9 @@ class LifecycleFindings:
         )
         tree_command = InlinePrograms.as_file_command(command, programs) if lifted else command
 
-        capabilities: list[Capability] = []
-        reasons: list[str] = []
-
-        for needle, capability in HOSTILE_IN_LIFECYCLE:
-            if lifted and needle in INLINE_INTERPRETER_NEEDLES:
-                continue
-            if needle in command:
-                capabilities.append(capability)
-                reasons.append(f"invokes {needle.strip()!r}")
+        capabilities, reasons = LifecycleFindings._hook_capabilities(
+            command, lifted, scripts, declared
+        )
         tool = LifecycleFindings.network_tool(command)
         if tool is not None and Capability.EGRESS not in capabilities:
             capabilities.append(Capability.EGRESS)
@@ -227,6 +221,28 @@ class LifecycleFindings:
         yield from LifecycleFindings._capability_findings(
             capabilities, command, ctx, fetch_and_run, hook, reasons, unit
         )
+
+    @staticmethod
+    def _hook_capabilities(
+        command: str, lifted: bool, scripts: dict[str, str], declared: dict[str, str]
+    ) -> tuple[list[Capability], list[str]]:
+        """What a hook's command can do, by the words it uses (`HOSTILE_IN_LIFECYCLE`), and why."""
+        capabilities: list[Capability] = []
+        reasons: list[str] = []
+        for needle, capability in HOSTILE_IN_LIFECYCLE:
+            if lifted and needle in INLINE_INTERPRETER_NEEDLES:
+                continue
+            if needle in command:
+                capabilities.append(capability)
+                reasons.append(f"invokes {needle.strip()!r}")
+        if reasons == ["invokes 'chmod +x'"] and ManifestScripts._is_safe_lifecycle(
+            command, scripts, declared
+        ):
+            # A mode change inside the package and nothing else (note 71 I1): every segment is a
+            # recognised step, so `chmod +x ./x && ./x` -- the step that runs what it marked --
+            # is not this.
+            return [], []
+        return capabilities, reasons
 
     @staticmethod
     def network_tool(command: str) -> str | None:

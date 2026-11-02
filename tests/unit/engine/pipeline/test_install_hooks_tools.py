@@ -55,6 +55,9 @@ class TestBuildStepsAreNotBlocked:
             ({"postinstall": "cd client && npm install && cd .."}, None),
             ({"install": "(cd node_modules/theme && npm install)"}, None),
             ({"postinstall": "chmod u+x ffmpeg"}, None),
+            # `chmod +x` on the package's own file (note 71 I1: auto-dep-install, bun-serve).
+            ({"postinstall": "chmod +x index.js"}, None),
+            ({"postinstall": "chmod +x bin/cli.js lib/run.sh"}, None),
             ({"postinstall": "touch ./node_modules/marker"}, None),
             ({"postinstall": "rm -rf dist/"}, None),
             ({"postinstall": "cat index.json"}, None),
@@ -87,6 +90,8 @@ STILL_BLOCKS = [
     ({"preinstall": "npm install some-helper"}, None),
     # A file made inside the package, then run.
     ({"postinstall": "chmod u+x tool && ./tool"}, None),
+    ({"postinstall": "chmod +x ./bin/x && ./bin/x"}, None),
+    ({"postinstall": "chmod +x /usr/local/bin/x"}, None),
     # A file operation outside it.
     ({"postinstall": "touch ~/.marker"}, None),
     ({"postinstall": "rm -rf ../../src"}, None),
