@@ -502,7 +502,12 @@ class Calls(Taint):
                 continue
             value: set[Label] = set()
             for label in list(held):
-                if not (isinstance(label, tuple) and label[1] == method and label[2] < len(args)):
+                if not (
+                    isinstance(label, tuple)
+                    and label[0] in ("P", "R", "Q")
+                    and label[1] == method
+                    and label[2] < len(args)
+                ):
                     continue
                 if label[0] == "Q":
                     value |= self.arg_field(args[label[2]], label[3], scope)
@@ -567,6 +572,14 @@ class Calls(Taint):
                 changed = True
         # A parameter of the enclosing function reaching the sink: that function's summary.
         for x in value:
+            if isinstance(x, tuple) and x[0] == "C":
+                # A local module call's result reaching the sink (item 60): the parent resolves it.
+                entry = (sink, host, dest, line)
+                have_c = self.c_sinks.setdefault(int(x[1]), set())
+                if entry not in have_c:
+                    have_c.add(entry)
+                    changed = True
+                continue
             if isinstance(x, tuple):
                 fn = self.fns[x[1] - 1]
                 entry = (sink, host, dest, line)
