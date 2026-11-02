@@ -13,16 +13,21 @@
 from __future__ import annotations
 
 import gzip
+import io
 import json
 import random
+import tarfile
 from pathlib import Path
 
 import pytest
 
-from cordon_scanner.intel.advisories import advisories, shipped
-from cordon_scanner.intel.advisories.advisories import AdvisoryFiles
+from cordon_scanner import Scanner
+from cordon_scanner.foundation.config.settings import Config
+from cordon_scanner.intel.advisories import advisories, shipped, shipped_table
+from cordon_scanner.intel.advisories.advisories import DATA_DIR, AdvisoryFiles
 from cordon_scanner.intel.advisories.advisory_index import AdvisoryIndex
 from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
+from cordon_scanner.intel.advisories.shipped_table import ShippedTable
 
 
 class IndexKit:
@@ -264,3 +269,130 @@ class TestTheStreamedBuild:
         values = [{"name": "a", "id": "1"}, {"id": "2"}, 3, {"name": ""}, {"name": "B", "id": "4"}]
         path = StreamKit.write(tmp_path, json.dumps(values), zipped=True)
         assert list(ShippedAdvisories._stream(path)) == ShippedAdvisories._parse(path)
+
+
+# Item 74 cut 1: the release-built table (intel/advisories/shipped_table).
+DIGEST = "ab" * 32
+
+
+class TableKit:
+    @staticmethod
+    def records(n: int) -> list[dict[str, object]]:
+        """Inert advisory-shaped records: names repeat so a name holds several, in file order."""
+        return [
+            {"name": f"Pkg-{i % (n // 3 + 1)}", "id": f"ADV-{i}", "versions": [f"1.0.{i}"]}
+            for i in range(n)
+        ]
+
+    @staticmethod
+    def table(tmp_path: Path, records: list[dict[str, object]], digest: str = DIGEST) -> Path:
+        path = tmp_path / "advisories-npm.tbl"
+        path.write_bytes(ShippedTable.build(records, digest))
+        return path
+
+
+class TestTheTableAnswersWhatTheRecordsSay:
+    def test_every_name_returns_its_records_in_file_order(self, tmp_path: Path) -> None:
+        records = TableKit.records(300)
+        table = ShippedTable.open(TableKit.table(tmp_path, records), DIGEST)
+        assert table is not None and table.count == 300
+        expected: dict[str, list[dict[str, object]]] = {}
+        for raw in records:
+            expected.setdefault(str(raw["name"]).lower(), []).append(raw)
+        assert sorted(table.names()) == sorted(expected)
+        for name, rows in expected.items():
+            assert list(table.get(name)) == rows
+
+    def test_a_name_never_spans_two_blocks(self, tmp_path: Path, monkeypatch) -> None:
+        monkeypatch.setattr(shipped_table, "BLOCK_BYTES", 64)
+        records = [{"name": "one", "id": f"A-{i}"} for i in range(50)] + [
+            {"name": "two", "id": "B"}
+        ]
+        table = ShippedTable.open(TableKit.table(tmp_path, records), DIGEST)
+        assert table is not None
+        assert [r["id"] for r in table.get("one")] == [f"A-{i}" for i in range(50)]
+        assert [r["id"] for r in table.get("two")] == ["B"]
+
+    @pytest.mark.parametrize("name", ["", "0", "pkg-999", "zzzz", "pkg-1-extra"])
+    def test_an_absent_name_is_empty(self, tmp_path: Path, name: str) -> None:
+        table = ShippedTable.open(TableKit.table(tmp_path, TableKit.records(30)), DIGEST)
+        assert table is not None and table.get(name) == ()
+
+    def test_count_except_removes_exactly_the_named_records(self, tmp_path: Path) -> None:
+        table = ShippedTable.open(TableKit.table(tmp_path, TableKit.records(30)), DIGEST)
+        assert table is not None
+        assert table.count_except(frozenset({"ADV-1", "ADV-2", "NOT-THERE"})) == 28
+
+
+class TestATableThatIsNotThisFilesIsRefused:
+    def test_another_files_digest(self, tmp_path: Path) -> None:
+        assert ShippedTable.open(TableKit.table(tmp_path, TableKit.records(9)), "cd" * 32) is None
+
+    def test_a_wrong_magic_or_a_cut_file(self, tmp_path: Path) -> None:
+        path = TableKit.table(tmp_path, TableKit.records(9))
+        data = path.read_bytes()
+        path.write_bytes(b"XXXX" + data[4:])
+        assert ShippedTable.open(path, DIGEST) is None
+        path.write_bytes(data[:-5])
+        assert ShippedTable.open(path, DIGEST) is None
+
+    def test_every_shipped_table_is_its_data_files(self) -> None:
+        # A data refresh without the release step would leave a stale table: refused at read time,
+        # and caught here first.
+        sources = sorted(DATA_DIR.glob("advisories-*.json.gz"))
+        assert sources
+        for source in sources:
+            table = source.with_name(source.name.removesuffix(".json.gz") + ".tbl")
+            assert ShippedTable.open(table, AdvisoryFiles.digest_of(source)) is not None, table.name
+
+
+class TestOnlyThePackagesOwnTableIsRead:
+    def test_a_table_beside_a_synced_copy_is_not_read(self, tmp_path: Path, monkeypatch) -> None:
+        from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
+
+        source = tmp_path / "advisories-npm.json.gz"
+        import gzip
+
+        source.write_bytes(gzip.compress(json.dumps(TableKit.records(9)).encode()))
+        digest = AdvisoryFiles.digest_of(source)
+        TableKit.table(tmp_path, TableKit.records(9), digest)
+        opened: list[Path] = []
+        real_open = ShippedTable.open
+        monkeypatch.setattr(
+            ShippedTable,
+            "open",
+            classmethod(lambda cls, path, d: opened.append(path) or real_open(path, d)),
+        )
+        monkeypatch.setattr(
+            ShippedAdvisories, "_verified_file", staticmethod(lambda e: (source, digest))
+        )
+        ShippedAdvisories.reset_caches()
+        try:
+            ShippedAdvisories.records("npm")
+        finally:
+            ShippedAdvisories.reset_caches()
+        assert opened == []
+
+
+class TestAnEmptyPackageBuildsNoIndex:
+    def test_no_sqlite_index_is_built(self, tmp_path: Path, monkeypatch) -> None:
+        from cordon_scanner.intel.advisories.advisory_index import AdvisoryIndex
+        from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
+
+        def refuse(*args: object, **kwargs: object) -> bool:
+            raise AssertionError("an advisory index was built for an empty package")
+
+        monkeypatch.setattr(AdvisoryIndex, "_build", staticmethod(refuse))
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+            data = json.dumps({"name": "empty-probe", "version": "1.0.0"}).encode()
+            info = tarfile.TarInfo("package/package.json")
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+        target = tmp_path / "empty-probe-1.0.0.tgz"
+        target.write_bytes(buffer.getvalue())
+        ShippedAdvisories.reset_caches()
+        try:
+            Scanner(Config.default().with_overrides(use_cache=False, offline=True)).scan(target)
+        finally:
+            ShippedAdvisories.reset_caches()

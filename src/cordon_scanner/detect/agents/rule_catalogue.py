@@ -801,9 +801,11 @@ RULES.update(
             Severity.MEDIUM,
             Confidence.LOW,
             "Text an agent reads from this repository matches the Agent Threat Rules catalogue: "
-            f"{title[0].lower()}{title[1:]}. Wording is weak evidence alone, so this is reported "
-            "below the default gate unless the matching rule is one ATR marks stable; read the "
-            "passage.",
+            f"{title[0].lower()}{title[1:]}. Wording is weak evidence alone. The grade: HIGH when "
+            "the matching ATR rule is production-grade and stable at high or critical, and the "
+            "file is not one the project wrote for its own agent unless Cordon's evidence backs "
+            "it, and (in a skill) the skill model does not disagree; MEDIUM for any other "
+            "production-grade match; LOW otherwise. Read the passage.",
             "Remove the passage, or confirm it was written by someone the repository trusts. "
             "Agents act on what they read.",
             (ref.AGENT_THREAT_RULES, ref.OWASP_LLM_PROMPT_INJECTION),

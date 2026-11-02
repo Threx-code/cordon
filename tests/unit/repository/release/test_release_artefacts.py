@@ -275,3 +275,31 @@ class TestBuildToolchainIsPinned:
         assert lock.count("--hash=sha256:") >= len(pins)
         ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
         assert "--require-hashes -r ci/dev-requirements.txt" in ci and ".[dev]" not in ci
+
+
+@requires_workflows
+class TestTheSignedOfflineBundle:
+    """Release item 75, finding 3: once the advisory database's signing key exists, a release without
+    its signed offline bundle fails; until then the release notes say there is none."""
+
+    def test_a_required_bundle_without_its_key_fails_the_release(self) -> None:
+        text = RELEASE.read_text(encoding="utf-8")
+        step = text[
+            text.index("name: Build and sign the bundle") : text.index("name: Upload the bundle")
+        ]
+        assert "BUNDLE_REQUIRED: ${{ vars.CORDON_DB_BUNDLE_REQUIRED }}" in step
+        required = step.index('if [ "${BUNDLE_REQUIRED:-}" = "true" ]; then')
+        assert "exit 1" in step[required : step.index("fi", required)]
+        assert step.index("exit 1") < step.index('echo "skip=true"')
+
+    def test_the_notes_say_so_when_there_is_no_signing_key(self) -> None:
+        text = RELEASE.read_text(encoding="utf-8")
+        step = text[
+            text.index("name: Take the notes from the release page") : text.index(
+                "name: Publish it"
+            )
+        ]
+        assert "HAS_DB_KEY: ${{ secrets.CORDON_DB_SIGNING_KEY != '' }}" in step
+        assert "No signed offline advisory bundle ships with this release." in step
+        # The secret's value is never placed in the notes step's environment.
+        assert "${{ secrets.CORDON_DB_SIGNING_KEY }}" not in step

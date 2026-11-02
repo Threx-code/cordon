@@ -2592,18 +2592,18 @@ class TestAnotherAnalysersRuleCorpusIsNotAFinding:
         config = Config.default().with_overrides(severity_threshold=Severity.INFO)
         return Scanner(config).scan(root)
 
-    def test_a_sample_credential_is_ceilinged(self, tmp_path) -> None:
+    def test_a_sample_credential_is_reported_in_full(self, tmp_path) -> None:
+        """A secret is an attack finding, so rule material no longer lowers it (fail-open audit,
+        2 Nov, option B): the annotation is text the file's author writes, and the same line would
+        talk down a real key. semgrep-rules' sample keys reporting is the decided cost."""
         from cordon_scanner.foundation.models import Severity
 
         corpus = tmp_path / "generic" / "secrets" / "gitleaks"
         corpus.mkdir(parents=True)
         (corpus / "adafruit-api-key.go").write_bytes(self.ANNOTATED)
-        assert not Scanner().scan(tmp_path).findings, "nothing at the default threshold"
-        result = self.everything(tmp_path)
-        secrets = [f for f in result.findings if f.rule_id.startswith("SECRET.")]
-        assert secrets, "the rule still runs and the finding is still made"
-        assert all(f.severity is Severity.INFO for f in secrets)
-        assert "rule material" in secrets[0].message
+        secrets = [f for f in Scanner().scan(tmp_path).findings if f.rule_id.startswith("SECRET.")]
+        assert secrets and all(f.severity >= Severity.HIGH for f in secrets)
+        assert all("rule material" not in f.message for f in secrets)
 
     def test_an_infrastructure_sample_is_ceilinged(self, tmp_path) -> None:
         from cordon_scanner.foundation.models import Severity
@@ -10008,16 +10008,25 @@ class TestAPublishedExploitIsPublishedToBeRun:
         from cordon_scanner.foundation.config.settings import Config
 
         config = Config.default().with_overrides(severity_threshold=Severity.INFO)
-        found = [
-            f
-            for f in Scanner(config).scan(tmp_path).findings
-            if f.rule_id == "SECRET.PRIVATE_KEY.001"
-        ]
+
+        def graded() -> list:
+            return sorted(
+                (f.severity, f.message)
+                for f in Scanner(config).scan(tmp_path).findings
+                if f.rule_id == "SECRET.PRIVATE_KEY.001"
+            )
+
+        found = graded()
         assert found, "the key is still reported"
-        assert all(f.severity <= Severity.LOW for f in found)
-        assert "SECRET.PRIVATE_KEY.001" not in ReviewDefectsHelpers.flagged(tmp_path), (
-            "and it does not block"
-        )
+        # A secret is an attack finding, so the exploit module's rule-material judgement no longer
+        # lowers it (fail-open audit, 2 Nov, option B): the module header is text its author writes.
+        # The key is graded exactly as it is with that judgement off, by the file's other ceilings.
+        assert all("rule material" not in message for _, message in found)
+        from cordon_scanner.foundation.samples import SampleKinds
+
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(SampleKinds, "is_rule_material", staticmethod(lambda raw, path="": False))
+            assert graded() == found
 
     def test_the_same_key_in_ordinary_source_is_not(self, tmp_path) -> None:
         """The control. What excuses the module is its own declaration, and an application

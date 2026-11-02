@@ -622,7 +622,11 @@ class Ceilings:
 
     #: Form findings the recovered text repeats, because it keeps the obfuscator's variable names.
     RECOVERED_FORM: ClassVar[frozenset[str]] = frozenset(
-        {"SUSPECT.OBFUSCATION.PACKED.001", "SUSPECT.OBFUSCATION.LONGLINE.001"}
+        {
+            "SUSPECT.OBFUSCATION.PACKED.001",
+            "SUSPECT.OBFUSCATION.MANGLED.001",
+            "SUSPECT.OBFUSCATION.LONGLINE.001",
+        }
     )
 
     #: Where an image's init systems, schedulers and shells keep what they start on their own.

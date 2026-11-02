@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.analysis.shared.destinations import Destinations
 from cordon_scanner.analysis.shared.inline_programs import InlinePrograms
 from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.detect.base import FileUnit, ScanContext
@@ -74,6 +75,11 @@ _SEGMENTS = re.compile(r"&&|\|\||;|\||\$\(|`|\(|\)")
 _PREFIXES = frozenset({"sudo", "env", "exec", "command", "nohup", "time"})
 
 NETWORK_PROBE_HOOKS = frozenset({"preinstall", "install", "postinstall"})
+
+#: A host name in a script's text: dotted labels ending in a letters-only top-level label, bounded.
+SCRIPT_HOST = re.compile(
+    r"(?<![\w-])((?:[a-z0-9-]{1,63}\.){1,8}[a-z]{2,24})(?![\w-])", re.IGNORECASE
+)
 """The hooks npm runs on every install from the registry, where NETWORK_TOOLS is an act."""
 
 INLINE_INTERPRETER_NEEDLES = frozenset({"node -e", "python -c"})
@@ -131,6 +137,7 @@ class LifecycleFindings:
             yield from LifecycleFindings._hook_findings(
                 ctx, declared, hook, manifest, scripts, unit
             )
+        yield from LifecycleFindings._script_callback(scripts, unit, ctx)
 
     @staticmethod
     def _hook_findings(
@@ -165,15 +172,9 @@ class LifecycleFindings:
         )
         tree_command = InlinePrograms.as_file_command(command, programs) if lifted else command
 
-        capabilities: list[Capability] = []
-        reasons: list[str] = []
-
-        for needle, capability in HOSTILE_IN_LIFECYCLE:
-            if lifted and needle in INLINE_INTERPRETER_NEEDLES:
-                continue
-            if needle in command:
-                capabilities.append(capability)
-                reasons.append(f"invokes {needle.strip()!r}")
+        capabilities, reasons = LifecycleFindings._hook_capabilities(
+            command, lifted, scripts, declared
+        )
         tool = LifecycleFindings.network_tool(command)
         if tool is not None and Capability.EGRESS not in capabilities:
             capabilities.append(Capability.EGRESS)
@@ -220,6 +221,28 @@ class LifecycleFindings:
         yield from LifecycleFindings._capability_findings(
             capabilities, command, ctx, fetch_and_run, hook, reasons, unit
         )
+
+    @staticmethod
+    def _hook_capabilities(
+        command: str, lifted: bool, scripts: dict[str, str], declared: dict[str, str]
+    ) -> tuple[list[Capability], list[str]]:
+        """What a hook's command can do, by the words it uses (`HOSTILE_IN_LIFECYCLE`), and why."""
+        capabilities: list[Capability] = []
+        reasons: list[str] = []
+        for needle, capability in HOSTILE_IN_LIFECYCLE:
+            if lifted and needle in INLINE_INTERPRETER_NEEDLES:
+                continue
+            if needle in command:
+                capabilities.append(capability)
+                reasons.append(f"invokes {needle.strip()!r}")
+        if reasons == ["invokes 'chmod +x'"] and ManifestScripts._is_safe_lifecycle(
+            command, scripts, declared
+        ):
+            # A mode change inside the package and nothing else (note 71 I1): every segment is a
+            # recognised step, so `chmod +x ./x && ./x` -- the step that runs what it marked --
+            # is not this.
+            return [], []
+        return capabilities, reasons
 
     @staticmethod
     def network_tool(command: str) -> str | None:
@@ -269,6 +292,44 @@ class LifecycleFindings:
             capabilities=[Capability.EGRESS],
             reasons=[f"invokes {tool!r}"],
         )
+
+    @staticmethod
+    def _script_callback(
+        scripts: dict[str, str], unit: FileUnit, ctx: ScanContext
+    ) -> Iterator[Finding]:
+        """MALWARE.EXFIL.SCRIPT_CALLBACK.001: a script of the package's own package.json names an
+        interaction host (`Destinations.is_interaction_host`: a service whose only use is recording
+        that something reached it). Measured before it shipped, on the root manifest of every npm
+        unit of rows a3b9c5f1: in an install hook, 6 content misses in 2 groups and 0 benign; in any
+        script, 8 in 4, 0 benign newly blocked. A script a person runs (`test`) is reported below the
+        gate, as every person-run script is. One finding per manifest; the host is not printed."""
+        member = unit.path.rpartition("!")[2]
+        if member.count("/") > 1 or "node_modules/" in member:
+            return  # the package's own manifest, as measured: not a bundled dependency's
+        for name, command in sorted(scripts.items()):
+            if any(Destinations.is_interaction_host(h) for h in SCRIPT_HOST.findall(command)):
+                yield ManifestFinding.finding(
+                    rule_id="MALWARE.EXFIL.SCRIPT_CALLBACK.001",
+                    category=Category.MALICIOUS,
+                    severity=Severity.HIGH,
+                    confidence=Confidence.HIGH,
+                    title="Package script calls back to an interaction service",
+                    message=(
+                        f"The {name!r} script names a webhook, interaction or canary service: a host "
+                        "whose only purpose is to record that something reached it. That is how a "
+                        "dependency-confusion probe confirms which machines ran the package."
+                    ),
+                    remediation=(
+                        "Do not install or run this package's scripts. Treat a machine that ran one "
+                        "as known to whoever published it."
+                    ),
+                    unit=unit,
+                    ctx=ctx,
+                    detail=f"{name}: an interaction host",
+                    capabilities=[Capability.EGRESS],
+                    reasons=["names an interaction host"],
+                )
+                return
 
     @staticmethod
     def _script_standing(

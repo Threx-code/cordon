@@ -220,7 +220,8 @@ class Labelling:
         # Once per file, not once per match: the per-line comment test cannot see a
         # `/* ... */` whose continuation lines are indented prose rather than starting
         # with `*`. See `core.comments.block_comment_spans`.
-        blocks = SourceComments.block_comment_spans(content.text, language)
+        # In bytes, as the matches are (the spans are over the decoded text).
+        blocks = content.byte_spans(SourceComments.block_comment_spans(content.text, language))
         # And the Rust test modules, for the same reason and on the same schedule. A
         # `#[cfg(test)]` block is live code, so none of the comment tests above sees it,
         # and it is where a Rust crate's sample credentials and sample hosts live.
@@ -230,7 +231,11 @@ class Labelling:
         #
         # Only for Rust. Every other language keeps its tests in a separate file, which
         # the path globs already answer.
-        tests = SourceSpans.test_module_spans(content.text) if language == "rust" else ()
+        tests = (
+            content.byte_spans(SourceSpans.test_module_spans(content.text))
+            if language == "rust"
+            else ()
+        )
         # And Python's docstrings, which are prose in a string and so invisible to every
         # comment test above. `NousResearch/hermes-agent` opens
         # `gateway/shutdown_forensics.py` with a summary of what it collects -- "/proc
@@ -240,7 +245,11 @@ class Labelling:
         #
         # The secrets detector has parsed these since it measured them. The same parse,
         # the same cache-once-per-file schedule.
-        prose = SourceSpans.documentation_spans(content.text) if language == "python" else ()
+        prose = (
+            content.byte_spans(SourceSpans.documentation_spans(content.text))
+            if language == "python"
+            else ()
+        )
         # And the lines where a sleep sits inside a loop, which is a heartbeat rather
         # than a delay before a payload. `CAP.ANTI.DELAY.001` records in its own comment
         # that this belongs in the Python tier and not in a pattern; see
@@ -325,7 +334,7 @@ class Labelling:
                 # A CI read beside a user's opt-out or a terminal test. See
                 # `_courtesy_gate`.
                 continue
-            if SourceComments.inside_spans(blocks, match.start()) or TextPosition.is_comment(
+            if content.in_block_comment(match.start(), language) or TextPosition.is_comment(
                 content, match.start(), language
             ):
                 # A comment does not run. `misc/error_handler.func` in

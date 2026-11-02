@@ -583,7 +583,13 @@ class CompositeGrading:
             # lines on. Where code runs on its own -- a hook, an agent's tool -- reading
             # somebody's keys is the act, and this does not apply.
             ceilinged = "a credential store read with nothing it reads sent anywhere"
-        elif content.is_rule_material:
+        elif SourcePaths.is_rule_material_here(
+            content,
+            ctx,
+            compiled.rule.id,
+            compiled.rule.category,
+            () if compiled.rule.capability is None else (compiled.rule.capability,),
+        ):
             # A rule set, or a test case annotated for one. `semgrep/semgrep-rules`
             # supplies `bash/curl/security/curl-eval.bash`, whose whole content is
             # the capability pair the rule next to it matches. See `core.samples`.

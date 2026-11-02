@@ -1,20 +1,23 @@
 """Obfuscation by concealment: content placed where a reader does not see it.
 
 Bidirectional controls that make code read differently from how it runs (Trojan Source), text spelled
-in Unicode Tag characters, code pushed past the right edge of the screen by padding, and code placed
-after hundreds of empty lines so a file opens on a screen that looks finished."""
+in Unicode Tag characters, code pushed past the right edge of the screen by padding, code placed
+after hundreds of empty lines so a file opens on a screen that looks finished, and `require` hidden
+behind a short global name so no call to it is written."""
 
 from __future__ import annotations
 
 import re
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.detect.code.obfuscation.encoding import EncodingFindings
 from cordon_scanner.detect.code.obfuscation.text import Hit, ObfuscationText
 from cordon_scanner.foundation.files.globs import PathGlob
 from cordon_scanner.foundation.models import (
     Confidence,
     Severity,
 )
+from cordon_scanner.foundation.text.comments import SourceComments
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -115,6 +118,14 @@ TRANSLATION_PATHS = ("**/*.po", "**/*.mo", "**/*.pot", "**/LC_MESSAGES/**")
 """Message catalogues, which hold display text rather than code."""
 
 MINIFIED_LINE_FOR_BIDI = 5_000
+
+#: `global['x'] = require`: Node's loader stored under a short global name, so the code that loads a
+#: module calls `x(...)` and no `require(` names what it loads (GuardDog's hidden-code rule, our own
+#: form: notes/js-mangling.md's narrow rules, 7 content misses in 7 groups, 0 of 35,876 benign).
+REQUIRE_ALIAS = re.compile(
+    rb"\bglobal(?:This)?[ \t]{0,8}\[[ \t]{0,8}['\"][\w$]{1,12}['\"][ \t]{0,8}\][ \t]{0,8}=[ \t]{0,8}require\b"
+)
+JAVASCRIPT_FAMILY = frozenset({"javascript", "typescript", "jsx", "tsx", "vue", "svelte"})
 """A line this long is generated output, as the long-line rule reads it."""
 
 
@@ -210,6 +221,37 @@ class ConcealmentFindings:
             end=min(found.end(), found.start() + 200),
             offscreen=True,
         )
+
+    @staticmethod
+    def require_alias(content: FileContent, language: str | None) -> Iterable[Hit]:
+        """SUSPECT.OBFUSCATION.REQUIRE_ALIAS.001: Node's `require` assigned to a short global
+        name, in code (not a comment or a string)."""
+        if language not in JAVASCRIPT_FAMILY:
+            return
+        raw = content.raw
+        spans: tuple[tuple[int, int], ...] | None = None
+        for match in REQUIRE_ALIAS.finditer(raw):
+            if spans is None:
+                spans = SourceComments.block_comment_spans(content.text, language)
+            if ObfuscationText.inside_quotes(raw, match.start()) or EncodingFindings.is_remark(
+                content, match.start(), language, spans
+            ):
+                continue
+            yield Hit(
+                rule_id="SUSPECT.OBFUSCATION.REQUIRE_ALIAS.001",
+                title="Node's require hidden behind a global name",
+                message=(
+                    f"Line {content.line_of(match.start())} stores `require` under a short global "
+                    "name, so the modules this code loads are loaded by a call that never names "
+                    "`require`. Code that wants its imports read has no use for it."
+                ),
+                remediation="Read every call of the alias: each is a module load.",
+                severity=Severity.HIGH,
+                confidence=Confidence.MEDIUM,
+                start=match.start(),
+                end=match.end(),
+            )
+            return
 
     @classmethod
     def tag_smuggling(cls, content: FileContent) -> Iterable[Hit]:

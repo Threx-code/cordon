@@ -236,7 +236,9 @@ class ObfuscationText:
         are someone choosing to hide the code, and in a published bundle that is how the September
         2025 npm compromise of `@duckdb/duckdb-wasm` spliced a wallet drainer into `dist/*.worker.js`.
         """
-        return hit.rule_id == "SUSPECT.OBFUSCATION.PACKED.001" and "obfuscator.io" in hit.title
+        return hit.rule_id == "SUSPECT.OBFUSCATION.MANGLED.001" or (
+            hit.rule_id == "SUSPECT.OBFUSCATION.PACKED.001" and "obfuscator.io" in hit.title
+        )
 
 
 @dataclass(frozen=True, slots=True)

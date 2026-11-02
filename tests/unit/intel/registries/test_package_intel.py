@@ -202,7 +202,7 @@ class TestPackaging:
             pytest.skip("pyproject.toml is not shipped in the sdist")
         text = pyproject.read_text(encoding="utf-8")
         assert (
-            '"cordon_scanner.intel.data" = ["*.txt", "*.json", "*.json.gz", "*.csv.gz", "reuse-index.bin"]'
+            '"cordon_scanner.intel.data" = ["*.txt", "*.json", "*.json.gz", "*.csv.gz", "reuse-index.bin", "*.tbl"]'
             in text
         )
 

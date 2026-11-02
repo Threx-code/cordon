@@ -457,3 +457,37 @@ class TestH13EvidenceCacheLeak:
         base = Config.default()
         strict = base.with_overrides(evidence=RedactionMode.HASH_ONLY)
         assert base.fingerprint() != strict.fingerprint()
+
+
+@requires_malicious_corpus
+class TestRuleMaterialNeverLowersAttacks:
+    """Fail-open audit (2 Nov): whether a file is "rule material" is read from text its own author
+    writes, so the judgement must never lower what a malicious sample is reported as. Forced true
+    for every file, in memory, every sample that blocks still blocks: every way of earning the
+    judgement is covered at once, and no sample is edited."""
+
+    @staticmethod
+    def blocking(path: Path) -> bool:
+        """Whether the sample blocks on a content finding. A detector that raised is a failure of
+        the test, not a block: it would hide that the forced judgement broke a detector."""
+        from cordon_scanner.foundation.models import Severity
+
+        result = Scanner(Config.default().with_overrides(use_cache=False, offline=True)).scan(path)
+        failed = [f.detector for f in result.findings if f.rule_id == "OPERATIONAL.DETECTOR.FAILED"]
+        assert failed == [], f"{path.name}: {failed}"
+        return any(
+            f.severity >= Severity.HIGH and not f.rule_id.startswith("OPERATIONAL")
+            for f in result.findings
+        )
+
+    def test_every_blocking_sample_still_blocks(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from cordon_scanner.foundation.samples import SampleKinds
+
+        samples = sorted(p for p in (ROOT / "corpus" / "malicious").iterdir() if p.is_dir())
+        blocking = [s for s in samples if self.blocking(s)]
+        assert len(blocking) >= 30
+        monkeypatch.setattr(
+            SampleKinds, "is_rule_material", staticmethod(lambda raw, path="": True)
+        )
+        lost = [s.name for s in blocking if not self.blocking(s)]
+        assert lost == []

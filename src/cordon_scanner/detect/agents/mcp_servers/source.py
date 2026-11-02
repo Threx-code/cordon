@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, ClassVar, Final
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.detect.agents import configuration
+from cordon_scanner.detect.agents.mcp_servers.registrations import ToolRegistrations
 from cordon_scanner.detect.agents.text_patterns import (
     AGENT_CHANNEL,
     EXFIL_PATHS,
@@ -44,6 +45,20 @@ _DOCSTRING_TOOL: Final = re.compile(
 
 _CONCATENATION: Final = re.compile(r"[ \t]*(?:[+.\\][ \t]*)?(?:\r?\n[ \t]*)?(?:[+.][ \t]*)?")
 """What sits between two literals that are concatenated: an operator and at most one line break."""
+
+#: The languages whose tool registrations `ToolRegistrations` reads.
+_SCOPED_SUFFIXES: Final = (".js", ".mjs", ".cjs", ".ts", ".mts", ".py")
+
+_POSITIONAL_DESCRIPTION: Final = re.compile(
+    r"""\.(?:tool|registerTool)[ \t]{0,8}\([ \t\n]{0,40}(?:"[^"\n]{1,120}"|'[^'\n]{1,120}'|`[^`]{1,120}`)"""
+    r"""[ \t\n]{0,40},[ \t\n]{0,40}(?P<arg>["'`]|[A-Za-z_$][\w$]{0,60}\b(?![ \t]{0,4}[(.]))"""
+)
+"""`.tool(name, description, ...)`: the description as the second argument, a literal or a name."""
+
+_NAMED_DESCRIPTION: Final = re.compile(
+    r"\bdescription\b[ \t]{0,8}:[ \t]{0,8}(?P<name>[A-Za-z_$][\w$]{0,60})\b[ \t]{0,8}[,}\n]"
+)
+"""`description: NAME`: a description held in a constant."""
 
 _GO_PACKAGE: Final = re.compile(r"(?m)^package[ \t]+[A-Za-z_]\w{0,60}[ \t]*$")
 
@@ -465,11 +480,21 @@ class McpServerSource:
         return named_file or bool(AGENT_CHANNEL.search(sentence) or SEND.search(sentence))
 
     @staticmethod
-    def _tool_descriptions(text: str) -> Iterator[str]:
-        """The tool descriptions a server source declares: quoted `description` values (JS, TS and
-        JSON manifests) and the docstrings of decorated Python tool functions (FastMCP and kin)."""
+    def _tool_descriptions(text: str, path: str | None = None) -> Iterator[str]:
+        """The tool descriptions a server source declares: quoted `description` values inside a
+        tool's registration (JS, TS; a JSON manifest's anywhere), the second argument of
+        `.tool(name, description, ...)` and a constant either names, and the docstrings of
+        decorated Python tool functions (FastMCP and kin). Note 68 fix 1: in JavaScript, TypeScript
+        and Python (`path`), what no registration hands the agent -- an agent CLI's own prompts, a
+        library's strings -- is not read here; other languages' registrations (Rust's
+        `#[tool(description = ...)]`, Go's options) are read from the whole file, as before."""
+        data = not McpServerSource._scoped(text, path)
+        spans = [] if data else ToolRegistrations.spans(text)
         for match in _QUOTED_DESCRIPTION.finditer(text):
-            yield match.group("dq") or match.group("sq") or match.group("bq") or ""
+            if data or ToolRegistrations.inside(spans, match.start()):
+                yield match.group("dq") or match.group("sq") or match.group("bq") or ""
+        if not data:
+            yield from McpServerSource._named_descriptions(text, spans)
         for match in _DOCSTRING_TOOL.finditer(text):
             yield match.group("doc")[3:-3]
         # Go (mcp-go, the official go-sdk): `mcp.WithDescription("..." + "...")` for a tool and
@@ -520,13 +545,16 @@ class McpServerSource:
             pending = []
 
     @staticmethod
-    def _tool_returns(text: str) -> Iterator[str]:
+    def _tool_returns(text: str, path: str | None = None) -> Iterator[str]:
         """The prose a server hands back to the agent as a tool's result: every string literal in
         a `return` statement (Python, JS), concatenations included, or the `text` of an MCP
         content part. Whatever a tool returns is read by the model as context, so an instruction
         written there steers it as a description does -- MCP-SafetyBench's Function Return
         Injection (review 98). Only literals long enough to be a sentence."""
+        handlers = ToolRegistrations.spans(text) if McpServerSource._scoped(text, path) else None
         for start in _RETURN_START.finditer(text):
+            if handlers is not None and not ToolRegistrations.inside(handlers, start.start()):
+                continue  # no registration's handler: an agent CLI's prompt, a library's text
             single = start.group(0).startswith("text")
             spans = McpServerSource._statement_spans(text, start.end(), single=single)
             for at, literal in spans:
@@ -535,6 +563,48 @@ class McpServerSource:
                 if McpServerSource._in_a_message(text, at):
                     continue  # a prompt's or a sampling request's message, not a tool's result
                 yield literal
+
+    @staticmethod
+    def _scoped(text: str, path: str | None) -> bool:
+        """Whether this source is read through its registrations (`ToolRegistrations`): JavaScript,
+        TypeScript or Python by name, not a JSON document. Anything else, or no name, is read whole."""
+        return (
+            path is not None
+            and path.lower().endswith(_SCOPED_SUFFIXES)
+            and text.lstrip()[:1] not in ("{", "[")
+        )
+
+    @staticmethod
+    def _named_descriptions(text: str, spans: list[tuple[int, int]]) -> Iterator[str]:
+        """A description handed to a registration other than as a `description: "..."` literal:
+        `.tool(name, "text", ...)`, or a constant -- `.tool(name, TEXT, ...)`,
+        `description: TEXT` -- read from its definition, concatenations included."""
+        for match in _POSITIONAL_DESCRIPTION.finditer(text):
+            if not ToolRegistrations.inside(spans, match.start()):
+                continue
+            literal = "".join(
+                McpServerSource._statement_literals(text, match.start("arg"), single=False)
+            )
+            if match.group("arg")[0] not in "'\"`":
+                literal = McpServerSource._constant(text, match.group("arg"))
+            if len(literal) >= 8:
+                yield literal
+        for match in _NAMED_DESCRIPTION.finditer(text):
+            if ToolRegistrations.inside(spans, match.start()):
+                literal = McpServerSource._constant(text, match.group("name"))
+                if len(literal) >= 8:
+                    yield literal
+
+    @staticmethod
+    def _constant(text: str, name: str) -> str:
+        """The string a constant is defined as in this file: `const NAME = "..." + "..."`."""
+        definition = re.search(
+            rf"\b(?:const|let|var)[ \t]{{1,4}}{re.escape(name)}[ \t]{{0,8}}(?::[^=\n]{{1,200}})?=[ \t]{{0,8}}",
+            text,
+        )
+        if definition is None:
+            return ""
+        return "".join(McpServerSource._statement_literals(text, definition.end(), single=False))
 
     @staticmethod
     def _in_a_message(text: str, at: int) -> bool:

@@ -515,6 +515,21 @@ _DECLARED: tuple[DeclaredRule, ...] = (
         remediation="Do not install this package.",
     ),
     DeclaredRule(
+        id="MALWARE.EXFIL.SCRIPT_CALLBACK.001",
+        title="Package script calls back to an interaction service",
+        severity=Severity.HIGH,
+        confidence=Confidence.HIGH,
+        category=Category.MALICIOUS,
+        detector=ManifestFinding.DETECTOR,
+        message=(
+            "A script in the package's own package.json names a webhook, interaction or canary "
+            "service, a host whose only purpose is recording that something reached it: the "
+            "confirmation step of a dependency-confusion probe."
+        ),
+        references=(references.DEPENDENCY_CONFUSION, references.NPM_LIFECYCLE),
+        remediation="Do not install this package or run its scripts.",
+    ),
+    DeclaredRule(
         id="MALWARE.INSTALL.FETCH_EXEC.001",
         title="Install script fetches and executes remote content",
         severity=Severity.CRITICAL,

@@ -35,6 +35,7 @@ from cordon_scanner.foundation.once import OneOff
 from cordon_scanner.foundation.paths import PackagePaths
 from cordon_scanner.foundation.rule_model import Rule, RuleProvenance, RuleTests
 from cordon_scanner.foundation.text.literals import LiteralGate
+from cordon_scanner.rules.derivations import PatternDerivations
 from cordon_scanner.rules.pack import CompiledMatch, CompiledRule, RulePack
 from cordon_scanner.rules.patterns import PatternCompiler
 from cordon_scanner.version import ENGINE_API_VERSION
@@ -539,18 +540,18 @@ class RuleLoader:
         # Multiple patterns become one alternation, compiled once. Matching
         # cost is then independent of how many alternatives a rule declares.
         combined = "|".join(f"(?:{p})" for p in patterns)
-        regex = PatternCompiler.validate_pattern(combined, rule_id=rule_id)
+        regex = PatternDerivations.validated(combined, rule_id=rule_id)
         # Extract from the individual patterns rather than the combined one:
         # wrapping each in (?:...) puts every literal inside a group, where
         # the conservative walker will not read it.
         prefilter: tuple[bytes, ...] = ()
-        per_pattern = [PatternCompiler._extract_prefilter(p.encode("utf-8")) for p in patterns]
+        per_pattern = [PatternDerivations.prefilter(p) for p in patterns]
         if all(per_pattern):
             prefilter = tuple(sorted({lit for group in per_pattern for lit in group}))
         # Where the scanner above found none, the parsed derivation may: every pattern must
         # yield a requirement, or the rule keeps no prefilter at all.
         folded: tuple[bytes, ...] = ()
-        required = [PatternCompiler.required_literals(p) for p in patterns]
+        required = [PatternDerivations.literals(p, "required") for p in patterns]
         if not prefilter and all(required):
             folded = tuple(sorted({lit for group in required for lit in group}))
         # And per pattern, for `regex_for`: its required literals, lower-cased, else two-byte
@@ -558,12 +559,12 @@ class RuleLoader:
         # pattern gates share; the exact-case prefilter above is the same derivation.
         branches: list[tuple[LiteralGate | None, LiteralGate | None]] = []
         for pattern, needed in zip(patterns, required, strict=True):
-            coarse = needed or PatternCompiler.required_literals(pattern, shortest=2)
+            coarse = needed or PatternDerivations.literals(pattern, "coarse")
             # And a second, sharper gate where the adjacent-set derivation finds longer
             # literals: `rm\\s+-rf` also needs whitespace then `-rf`, not only `rm`, which half
             # of all English prose contains. Tested only once the coarse gate passes, so a
             # file without `rm` pays for one substring search, not twelve.
-            sharper = PatternCompiler.required_literals(pattern, shortest=3, adjacent=True)
+            sharper = PatternDerivations.literals(pattern, "sharper")
             if not (sharper and (not coarse or min(map(len, sharper)) > min(map(len, coarse)))):
                 sharper = ()
             branches.append(
@@ -781,6 +782,21 @@ class RuleLoader:
         bundled = cls._builtin_once(str(cls.builtin_pack_dir()))
         ids = {compiled.rule.id for pack in bundled for compiled in pack.rules}
         return FeedPacks.loaded(cls(), ids, shadow=shadow)
+
+    @staticmethod
+    def bundled_patterns() -> tuple[list[str], list[str]]:
+        """(each single pattern, each rule's combined alternation) of the bundled packs, as compiled:
+        what `PatternDerivations` stores at release (`scripts/build/build_rule_derivations.py`)."""
+        singles: list[str] = []
+        combined: list[str] = []
+        for pack in RuleLoader._load_builtin(RuleLoader(), RuleLoader.builtin_pack_dir()):
+            for compiled in pack.rules:
+                match = compiled.match
+                if match.regex is None or not match.sources:
+                    continue
+                singles.extend(match.sources)
+                combined.append(match.regex.pattern.decode("utf-8"))
+        return singles, combined
 
     @staticmethod
     @OneOff.cache
