@@ -122,6 +122,10 @@ class ScanContext:
     declared_dependencies: frozenset[str] = frozenset()
     """The runtime dependencies a published package's manifest declares, by name (npm
     `dependencies` and `optionalDependencies`): what installing it installs beside it."""
+    verdict_dependency_names: frozenset[str] = frozenset()
+    """The dependencies the package verdict asks the code to name (`VerdictFeatures.
+    wanted_dependencies`): each worker reports which of them its source file names (item 56), so
+    the parent reads no source bytes for the verdict."""
     install_entry_paths: frozenset[str] = frozenset()
     """The hook scripts themselves -- a `setup.py`, the file a lifecycle script names, a `.pth`
     -- as distinct from the modules they import, which `install_hook_paths` also holds. A
@@ -301,6 +305,11 @@ class FileUnit:
     content: FileContent
     language: str | None = None
     project: str | None = None
+    opens: str | None = None
+    """The path that opens this file on disk, where it was read from one (a walked file); None for
+    content with no file of its own (an archive member, a hook's inline program). Never `path`: a
+    name that is not text is shown escaped (`Names.text`), and no file has the escaped name, so
+    anything that reads the file again (a supervised worker, item 28) opens it by this."""
 
     @property
     def path(self) -> str:
@@ -685,9 +694,14 @@ class CampaignSiblingFacts(Protocol):
 
 
 class ReachedFlowFacts(Protocol):
-    """What the engine uses of the class `ReachedFlows`."""
+    """What the engine uses of the class `ReachedFlows`: the parent joins each file's flow facts
+    (`of`), a worker reads them (`reads`, `facts`; item 56)."""
 
-    def of(self, units: Sequence[FileUnit], ctx: ScanContext) -> dict[str, float]: ...
+    def of(
+        self, units: Sequence[FileUnit], ctx: ScanContext, facts: dict[str, dict[str, list[Any]]]
+    ) -> dict[str, float]: ...
+    def reads(self, unit: FileUnit, ctx: ScanContext) -> bool: ...
+    def facts(self, place: str, text: str, *, python: bool = ...) -> dict[str, float]: ...
 
 
 class ServerSourceFinding(Protocol):

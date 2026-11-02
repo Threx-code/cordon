@@ -60,6 +60,7 @@ BUILTIN_DETECTORS = (
     "attestation",
     "binary",
     "capability",
+    "code-reuse",
     "clamav",
     "code-model",
     "config",
@@ -243,7 +244,7 @@ class Registry:
     ) -> tuple[Any, ...]:
         selected: list[Any] = []
         wanted = set(only) if only is not None else None
-        seen: dict[str, str] = {}
+        seen: dict[str, tuple[str, str]] = {}
 
         # Sorted so that load order, and anything that depends on it, is
         # reproducible across machines and Python versions.
@@ -286,15 +287,21 @@ class Registry:
                 continue
 
             if entry.name in seen:
+                # One distribution seen through two metadata copies -- an editable install shows
+                # site-packages' dist-info beside src's dist-info and egg-info (item 49: "plugin
+                # 'advisory' is provided twice") -- is one provider: the same name and value import
+                # the same module, so it is loaded once. Two providers still refuse.
+                if seen[entry.name] == (provider, str(entry.value)):
+                    continue
                 raise ConfigError(
                     f"{group} plugin {entry.name!r} is provided twice, by "
-                    f"{seen[entry.name]!r} and {provider!r}",
+                    f"{seen[entry.name][0]!r} and {provider!r}",
                     hint=(
                         "Two providers of the same id means which one runs depends on "
                         "import order. Uninstall one."
                     ),
                 )
-            seen[entry.name] = provider
+            seen[entry.name] = (provider, str(entry.value))
 
             try:
                 selected.append(entry.load()())

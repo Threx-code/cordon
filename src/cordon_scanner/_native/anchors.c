@@ -923,5 +923,8 @@ PyMODINIT_FUNC PyInit__anchors(void) {
     if (!m) return NULL;
     Py_INCREF(&AutomatonType);
     if (PyModule_AddObject(m, "Automaton", (PyObject *)&AutomatonType) < 0) { Py_DECREF(&AutomatonType); Py_DECREF(m); return NULL; }
+    /* The interface's number, checked by Native.load: raise it with any change to a function's
+       name or arguments, or to its result's shape or meaning, and Native.ABI with it (item 17). */
+    if (PyModule_AddIntConstant(m, "ABI", 1) < 0) { Py_DECREF(m); return NULL; }
     return m;
 }

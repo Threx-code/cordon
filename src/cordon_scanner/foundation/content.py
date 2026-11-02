@@ -300,16 +300,30 @@ class LineIndex:
             tail -= 1
         return max(longest, tail - previous)
 
-    def line_of(self, byte_offset: int) -> int:
-        """1-indexed line number containing a byte offset."""
+    def placed(self, byte_offset: int) -> int:
+        """Where a match starting at `byte_offset` is shown: its first byte that is not a line
+        terminator (item 48). A pattern may begin with `\\s` or `\\n`, so a match can start on the
+        newline that ends the line before it; placed there, it was reported on that line, at the
+        newline's column, with that line's text as its evidence (SUSPECT.AGENT.ATR.PROMPT_INJECTION at
+        .cursorrules:1:28, the injection on line 2). The offset itself when only terminators follow."""
+        raw, offset = self.raw, byte_offset
+        while 0 <= offset < len(raw) and raw[offset] in (0x0A, 0x0D):
+            offset += 1
+        return offset if offset < len(raw) else byte_offset
+
+    def line_of(self, byte_offset: int, *, place: bool = True) -> int:
+        """1-indexed line number of a match starting at a byte offset (`placed`). `place=False` for
+        an offset that is a match's last byte, where a terminator is the match's own."""
         from bisect import bisect_right
 
-        return bisect_right(self.line_starts, byte_offset)
+        offset = self.placed(byte_offset) if place else byte_offset
+        return bisect_right(self.line_starts, offset)
 
-    def column_of(self, byte_offset: int) -> int:
-        """1-indexed column, in bytes, of an offset within its line."""
-        line = self.line_of(byte_offset)
-        return byte_offset - self.line_starts[line - 1] + 1
+    def column_of(self, byte_offset: int, *, place: bool = True) -> int:
+        """1-indexed column, in bytes, of an offset within its line (placed as `line_of` places it)."""
+        offset = self.placed(byte_offset) if place else byte_offset
+        line = self.line_of(offset, place=False)
+        return offset - self.line_starts[line - 1] + 1
 
     def comment_column(self, line_number: int, language: str | None) -> int | None:
         """Where a comment begins on this line, memoised for the file.

@@ -188,6 +188,8 @@ _DOMAIN_BY_PREFIX: tuple[tuple[str, ThreatDomain], ...] = (
     ("SUSPECT.EXTENSION.", ThreatDomain.AGENT),
     ("OPERATIONAL.MCP.", ThreatDomain.SCANNER),
     ("MALWARE.MODEL.", ThreatDomain.MALWARE),
+    # A shipped code file of an earlier malware campaign (item 54): malware by what it is.
+    ("MALWARE.CODE.", ThreatDomain.MALWARE),
     ("MALWARE.CLAMAV.", ThreatDomain.MALWARE),
     ("MALWARE.RULEFILE.", ThreatDomain.MALWARE),
     ("SUSPECT.RULEFILE.", ThreatDomain.MALWARE),

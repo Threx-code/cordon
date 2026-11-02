@@ -118,6 +118,10 @@
       "items": {
         "$ref": "#/$defs/finding"
       }
+    },
+    "matcher": {
+      "type": "string",
+      "description": "Which anchor matcher ran, and why if it was the Python one (a native build from another version falls back)."
     }
   },
   "$defs": {

@@ -50,6 +50,32 @@ HOSTILE_IN_LIFECYCLE = (
     ("chmod +x", Capability.PERSIST),
 )
 
+NETWORK_TOOLS = frozenset(
+    {
+        "nslookup",
+        "dig",
+        "host",
+        "ping",
+        "ncat",
+        "powershell",
+        "pwsh",
+        "iwr",
+        "certutil",
+        "bitsadmin",
+    }
+)
+"""Network tools a lifecycle hook has no build use for, beside `HOSTILE_IN_LIFECYCLE`'s fetchers: a DNS
+lookup or a ping is how a dependency-confusion probe reports the install to its author, and powershell,
+certutil and bitsadmin fetch on Windows (GuardDog's install-hook rule, measured as a pair on the study
+set; external-mechanisms E1). A tool counts only as a command a segment of the hook runs
+(`LifecycleFindings.network_tool`), never as a word in a message or an argument."""
+
+_SEGMENTS = re.compile(r"&&|\|\||;|\||\$\(|`|\(|\)")
+_PREFIXES = frozenset({"sudo", "env", "exec", "command", "nohup", "time"})
+
+NETWORK_PROBE_HOOKS = frozenset({"preinstall", "install", "postinstall"})
+"""The hooks npm runs on every install from the registry, where NETWORK_TOOLS is an act."""
+
 INLINE_INTERPRETER_NEEDLES = frozenset({"node -e", "python -c"})
 """The `HOSTILE_IN_LIFECYCLE` entries that stand for an inline program, which a lifted program's
 own unit answers for."""
@@ -148,6 +174,14 @@ class LifecycleFindings:
             if needle in command:
                 capabilities.append(capability)
                 reasons.append(f"invokes {needle.strip()!r}")
+        tool = LifecycleFindings.network_tool(command)
+        if tool is not None and Capability.EGRESS not in capabilities:
+            capabilities.append(Capability.EGRESS)
+            reasons.append(f"invokes {tool!r}")
+        if tool is not None and hook.name.lower() in NETWORK_PROBE_HOOKS:
+            # Running the tool is the act, whatever its argument says (`powershell -c Get-Date` is a
+            # one-liner the talk-only check below would excuse): decided before that check.
+            yield LifecycleFindings._network_probe(command, ctx, hook, tool, unit)
 
         if capabilities and ManifestScripts._prints_only(command):
             # A one-liner whose whole effect is a message or an exit. See
@@ -185,6 +219,55 @@ class LifecycleFindings:
 
         yield from LifecycleFindings._capability_findings(
             capabilities, command, ctx, fetch_and_run, hook, reasons, unit
+        )
+
+    @staticmethod
+    def network_tool(command: str) -> str | None:
+        """The first `NETWORK_TOOLS` program a segment of `command` runs: each segment between shell
+        operators (`&&`, `||`, `;`, `|`, `$(`, a backtick, a parenthesis), its first word after any
+        `NAME=value` assignments and `sudo`/`env`/`exec`-style prefixes, a path's last part, any
+        `.exe` dropped. `echo ping me` runs echo; `node-gyp rebuild && ping x` runs ping."""
+        for segment in _SEGMENTS.split(command):
+            words = segment.split()
+            while words and (
+                ("=" in words[0] and not words[0].startswith("=")) or words[0] in _PREFIXES
+            ):
+                words = words[1:]
+            if not words:
+                continue
+            program = words[0].strip("'\"").rsplit("/", 1)[-1].rsplit("\\", 1)[-1].lower()
+            program = program.removesuffix(".exe")
+            if program in NETWORK_TOOLS:
+                return program
+        return None
+
+    @staticmethod
+    def _network_probe(
+        command: str, ctx: ScanContext, hook: Hook, tool: str, unit: FileUnit
+    ) -> Finding:
+        """MALWARE.INSTALL.NETWORK_PROBE.001: a hook that runs on install calls a network-probing tool.
+        Measured before it shipped: 0 of 36,231 benign packages' install hooks (every baseline
+        manifest of a3b9c5f1) name one, so it is graded as an act, not a suspicion."""
+        return ManifestFinding.finding(
+            rule_id="MALWARE.INSTALL.NETWORK_PROBE.001",
+            category=Category.MALICIOUS,
+            severity=Severity.HIGH,
+            confidence=Confidence.HIGH,
+            title="Install script calls a network-probing tool",
+            message=(
+                f"The {hook.name!r} script runs {tool!r} automatically on every install. A build step has "
+                "no use for a DNS lookup, a ping or a Windows fetcher; reporting each install to an "
+                "outside host is how a dependency-confusion probe or a staged payload begins."
+            ),
+            remediation=(
+                "Do not install this package. If it was installed, check what the host it contacted "
+                "could learn: the machine's name, user and network."
+            ),
+            unit=unit,
+            ctx=ctx,
+            detail=f"{hook.name}: {tool}",
+            capabilities=[Capability.EGRESS],
+            reasons=[f"invokes {tool!r}"],
         )
 
     @staticmethod

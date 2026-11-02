@@ -619,16 +619,23 @@ class Dependencies:
 
             project = unit.path.rpartition("/")[0] or None
             if (project, ecosystem_id) in covered:
-                continue
-
-            manifest = Dependencies.readable_manifest(ecosystem, unit, contents, acc)
-            if manifest is None:
-                continue
+                # A lockfile read this project, but a file it covers may still include others: a
+                # fully pinned requirements.txt is read as a lockfile, and its `-r base.txt` was
+                # never followed, so whatever base.txt declares went unchecked (item 26). The
+                # file's own lines are in the lock graph; only what it includes is added.
+                manifest = Dependencies.included_only(ecosystem, unit, contents)
+                if manifest is None:
+                    continue
+                declarations: list[tuple[str, Any]] = []
+            else:
+                manifest = Dependencies.readable_manifest(ecosystem, unit, contents, acc)
+                if manifest is None:
+                    continue
+                declarations = [(unit.path, d) for d in manifest.dependencies]
 
             # What the file includes: pip's `-r` adds another file's requirements to this one,
             # and `-c` pins whatever they resolve to. An included file the walk would not graph
             # on its own (`-r common.txt`) is read here; one it would is left to its own pass.
-            declarations = [(unit.path, d) for d in manifest.dependencies]
             pins: dict[str, tuple[str, str]] = {}
             Dependencies.included_declarations(
                 manifest, unit, by_path, ecosystem, declarations, pins
@@ -664,6 +671,16 @@ class Dependencies:
             acc.named_elsewhere("OPERATIONAL.MANIFEST.UNPARSED", unit.path)
             return None
         return manifest
+
+    @staticmethod
+    def included_only(ecosystem: Ecosystem, unit: FileUnit, contents: Mapping[str, Any]) -> Any:
+        """The manifest of a file a lockfile already covers, when it includes others, else None.
+        Its own parse failure is the lockfile pass's to report, so nothing is said here."""
+        try:
+            manifest = Graph.manifest_of(ecosystem, unit, contents)
+        except Exception:  # noqa: BLE001 -- said once (ParsedManifests.report_raised)
+            return None
+        return manifest if getattr(manifest, "includes", ()) else None
 
     @staticmethod
     def included_declarations(

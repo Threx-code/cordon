@@ -500,6 +500,21 @@ _DECLARED: tuple[DeclaredRule, ...] = (
         remediation="Install the package that was meant, and report this one.",
     ),
     DeclaredRule(
+        id="MALWARE.INSTALL.NETWORK_PROBE.001",
+        title="Install script calls a network-probing tool",
+        severity=Severity.HIGH,
+        confidence=Confidence.HIGH,
+        category=Category.MALICIOUS,
+        detector=ManifestFinding.DETECTOR,
+        message=(
+            "A preinstall, install or postinstall script runs a DNS lookup, a ping or a Windows "
+            "fetcher (nslookup, dig, host, ping, ncat, powershell, certutil, bitsadmin). A build step has "
+            "no use for one; it is how a dependency-confusion probe reports the install to its author."
+        ),
+        references=(references.NPM_LIFECYCLE,),
+        remediation="Do not install this package.",
+    ),
+    DeclaredRule(
         id="MALWARE.INSTALL.FETCH_EXEC.001",
         title="Install script fetches and executes remote content",
         severity=Severity.CRITICAL,

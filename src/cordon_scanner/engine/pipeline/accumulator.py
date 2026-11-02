@@ -47,6 +47,11 @@ class Accumulator:
     bytes_scanned: int = 0
     rules_evaluated: int = 0
 
+    facts: dict[str, dict[str, list[Any]]] = field(default_factory=dict)
+    """Per-file facts the workers sent back (item 56, `engine/isolation/facts.py`), by path: plain data
+    the parent joins across files without parsing any of them."""
+    facts_bytes: int = 0
+    """The bytes those facts took, against the scan's bound."""
     verdict_facts: dict[str, float] | None = None
     """The facts the package verdict reads, when the rule file's deferred pass gathered them
     already (`engine/pipeline/facts`): the verdict reuses them instead of computing twice."""
@@ -77,6 +82,9 @@ class Accumulator:
     """Findings a member detector made about a file outside the inventory's scope, held out of the
     verdict at their info twins (`NotInstalledFiles`) and added after it."""
 
+    late: bool = False
+    """Whether `out_of_time` has reported the spent budget."""
+
     def incomplete(self, finding: Finding) -> bool:
         """The one way a scan stops being complete: `finding` says what went unread and why, and
         its rule is the cause the gate reads (every cause but `NOT_CONTENT_GAPS`, item 27). Retained as `append`."""
@@ -91,6 +99,33 @@ class Accumulator:
         self.complete = False
         self._gap(finding.rule_id, finding.location.path)
         return finding
+
+    def out_of_time(self, ctx: Any, where: str, step: str) -> bool:
+        """Whether the scan's budget is spent (`ScanContext.out_of_time`), checked before work after
+        detection: then `step` does not run, and the scan says so, once, as a blocking gap (item 64:
+        past the deadline the release checks loaded the whole advisory index, tens of seconds under
+        load, while the scan was already over its budget)."""
+        if ctx is None or not ctx.out_of_time():
+            return False
+        if not self.late:
+            self.late = True
+            self.incomplete(
+                OperationalFinding.build(
+                    path=where,
+                    rule_id="OPERATIONAL.SCAN.TIMEOUT",
+                    message=f"The scan's budget was spent before {step}, which did not run, nor did "
+                    "any later step after detection.",
+                    remediation="Rescan with more time (--timeout), or on a less loaded machine.",
+                    severity=Severity.MEDIUM,
+                )
+            )
+        return True
+
+    def ended_late(self, ctx: Any, where: str) -> None:
+        """A scan that ends past its deadline is never complete, whatever it finished (item 64: one ran
+        nine times past its budget and exited 0, called complete)."""
+        if ctx is not None and ctx.out_of_time() and self.complete:
+            self.out_of_time(ctx, where, "the end of the scan")
 
     def coverage(self) -> dict[str, Any]:
         """The result's coverage fields, as `ScanResult` takes them."""
@@ -108,6 +143,15 @@ class Accumulator:
         finding saying it again."""
         self.complete = False
         self._gap(rule, path)
+
+    def absorb(self, complete: bool, gaps: tuple[tuple[str, str], ...]) -> None:
+        """A worker's verdict on one unit, as this accumulator's own (item 28): the worker inspected
+        the unit through `Detection.run` into an accumulator of its own, and its completeness and
+        gaps cross back as data. One implementation, so the two processes cannot disagree."""
+        if not complete:
+            self.complete = False
+        for rule, path in gaps:
+            self._gap(rule, path)
 
     def _gap(self, rule: str, path: str) -> None:
         # Once per (rule, path): a finding both reported-incomplete and passed to `incomplete` is

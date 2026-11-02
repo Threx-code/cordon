@@ -61,12 +61,55 @@ class FeatureSchema:
         ("detect/code/reached_flows.py", "ReachedFlows"),
         ("engine/pipeline/history.py", "History.registry_facts"),
     )
+    #: Pieces that produce feature values and were written after EXTRACTOR: item 56's worker side
+    #: (the verdict's source facts read in the worker, the shapes the parent accepts them by, and the
+    #: parent's selection of what a worker reads). Hashed where a tree has them, and adding nothing
+    #: where it does not, so a tree from before them keeps the version its rows carry.
+    ADDED: ClassVar[tuple[tuple[str, str], ...]] = (
+        ("engine/parallel.py", "ParallelScanner._verdict_facts"),
+        ("engine/isolation/facts.py", "Shapes"),
+        ("engine/pipeline/ceilings.py", "Ceilings.verdict_dependency_names"),
+        ("engine/pipeline/ceilings.py", "Ceilings.is_verdict_source"),
+        ("engine/pipeline/ceilings.py", "Ceilings.verdict_manifests"),
+        # Sites 9 and 10: the profile's labels and download runs, and the reached-flow facts.
+        ("engine/isolation/analysis_facts.py", "WorkerAnalysis"),
+        ("engine/isolation/analysis_facts.py", "ParentAnalysis"),
+    )
     PREFIX: ClassVar[str] = "fs1-"
     #: Where a piece now lives, when it moved after EXTRACTOR recorded it. The version hashes the
     #: recorded location, not the file: moving code is not a change to the features, so a move must
     #: not refuse every row computed before it. The code itself is still read and hashed.
     MOVED: ClassVar[dict[str, str]] = {
         "decide/verdict.py:VerdictFeatures": "decide/verdict_features.py",
+    }
+
+    #: A version the code hashes to, mapped to the earlier version whose features it computes
+    #: identically, and the identity test that proves it. Item 56 moves reading a file into the
+    #: workers: the extractor's code changes and no feature value does, so a row written after the
+    #: move pools with rows written before it. Admitted only with its test: the suite fails for an
+    #: entry whose test is missing (`test_feature_schema.py::TestTheEquivalences`), and the test
+    #: itself compares the record, vector and score computed both ways.
+    SAME_AS: ClassVar[dict[str, tuple[str, str]]] = {
+        # 56 phase (a), producer 1: the verdict's source facts from the workers (b2d0711f).
+        # Identity: test_verdict_facts.py::TestTheVerdictIsIdentical (record, vector, score ==).
+        # Rows A/B, 1 Nov: a seeded 500-unit npm sample (411 benign, 89 malware) scanned by this tree
+        # and by it without item 56's five commits; 0 differences in 500 on every verdict field and
+        # feature key, findings and exit (outer-layer scratchpad fsab/: base/, new/, compare.py).
+        "fs1-133be8fc1234279d": (
+            "fs1-ea0fb02ccf3bb099",
+            "tests/unit/decide/test_verdict_facts.py::TestTheVerdictIsIdentical",
+        ),
+        # 56 phase (a), sites 9 and 10: the profile's labels and download runs, the intent observer's
+        # per-file half and the reached-flow facts from the workers. Identity:
+        # tests/unit/engine/isolation/test_analysis_facts.py (profile and intent from the workers'
+        # facts equal to the same producer run on each unit's bytes, every malicious corpus sample).
+        # Rows A/B, 2 Nov: the same seeded 500 units scanned by 295b785f and by this tree; 0
+        # differences in 500 on every verdict field and feature key, findings and exit (outer-layer
+        # scratchpad fsab2/).
+        "fs1-6c6f93207f6315c8": (
+            "fs1-ea0fb02ccf3bb099",
+            "tests/unit/engine/isolation/test_analysis_facts.py::TestTheParentReadsTheWorkersFacts",
+        ),
     }
 
     @staticmethod
@@ -87,9 +130,34 @@ class FeatureSchema:
             node = FeatureSchema._node(moved if moved.is_file() else root / path, dotted)
             digest.update(f"{path}:{dotted}\n".encode())
             digest.update(ast.dump(FeatureSchema._without_docstrings(node)).encode())
+        for path, dotted in FeatureSchema.ADDED:
+            if not (root / path).is_file():
+                continue
+            try:
+                node = FeatureSchema._node(root / path, dotted)
+            except LookupError:
+                continue  # a tree from before the piece was written
+            digest.update(f"{path}:{dotted}\n".encode())
+            digest.update(ast.dump(FeatureSchema._without_docstrings(node)).encode())
         listed = FeatureSchema.names() if names is None else names
         digest.update(json.dumps(sorted(listed)).encode())
-        return FeatureSchema.PREFIX + digest.hexdigest()[:16]
+        return FeatureSchema.equivalent(FeatureSchema.PREFIX + digest.hexdigest()[:16])
+
+    @staticmethod
+    def equivalent(computed: str) -> str:
+        """The version a computed one stands for: its `SAME_AS` pin, one step, or itself."""
+        pinned = FeatureSchema.SAME_AS.get(computed)
+        return pinned[0] if pinned is not None else computed
+
+    @staticmethod
+    def computed(root: Path | None = None) -> str:
+        """The version the tree's code hashes to before any `SAME_AS` pin: what a pooling fit
+        records beside the version it pooled under."""
+        held, FeatureSchema.SAME_AS = FeatureSchema.SAME_AS, {}
+        try:
+            return FeatureSchema.version(root)
+        finally:
+            FeatureSchema.SAME_AS = held
 
     @staticmethod
     @functools.cache

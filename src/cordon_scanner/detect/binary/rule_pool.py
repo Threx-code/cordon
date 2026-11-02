@@ -23,6 +23,7 @@ same on every platform, and stopped when the engine is.
 from __future__ import annotations
 
 import multiprocessing
+import os
 from array import array
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
@@ -100,11 +101,17 @@ class RulePool:
 
     @staticmethod
     def wanted(rules: Rules, workers: int) -> bool:
-        """Whether a pool pays: several workers, a large rule set, and this the main process."""
+        """Whether a pool pays: several workers, a large rule set, and this the main process. Never
+        inside a supervised detection worker (item 28; `WorkerMain.INSIDE` in its environment): the
+        pool's processes would be the worker's own, outside the bounds, the kill and the reaping
+        that make a worker's failure cost only its file, and the supervisor already spreads files
+        across workers. The process made by a plain fork has no `parent_process()`, so that check
+        alone let every forked worker start one."""
         return (
             workers > 1
             and len(rules.rules) >= RulePool.MIN_RULES
             and multiprocessing.parent_process() is None
+            and not os.environ.get("CORDON_ISOLATED_WORKER")
         )
 
     def executor(self) -> ProcessPoolExecutor:

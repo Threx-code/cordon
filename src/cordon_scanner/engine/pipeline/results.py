@@ -81,14 +81,19 @@ class ResultFolding:
         answer for a code-scanning annotation, and the count in the message and the
         `copies` metadata are what a reader has instead.
         """
-        groups: dict[tuple[str, str], list[Finding]] = {}
+        # Suppressed copies fold apart from live ones: folded together, the copy kept (the first by
+        # path) could be one the operator suppressed, and every live copy went with it (a
+        # vendored fixture suppressed beside a shipped copy of the same bytes hid the shipped one).
+        groups: dict[tuple[str, str, bool], list[Finding]] = {}
         order: list[Finding] = []
         for finding in findings:
             file_hash = dict(finding.evidence.metadata).get(Finding.FILE_HASH_KEY)
             if not file_hash or finding.category is Category.OPERATIONAL:
                 order.append(finding)
                 continue
-            groups.setdefault((finding.rule_id, file_hash), []).append(finding)
+            groups.setdefault((finding.rule_id, file_hash, finding.is_suppressed), []).append(
+                finding
+            )
 
         for group in groups.values():
             paths = sorted({f.location.path for f in group})
@@ -536,6 +541,25 @@ class ResultFolding:
         return tuple(out)
 
     @staticmethod
+    def read_with_container(findings: Sequence[Finding]) -> tuple[Finding, ...]:
+        """A document part's format finding that its container's own reading reported too: the same
+        rule from the format detector at `container!part` and at `container` is one finding, kept at
+        the container (item 36 opens a zip by its bytes, so an Office file's `word/vbaProject.bin` is
+        read as a member and inside the document). Folded only where the container's finding exists:
+        a part whose container nothing read keeps its own (C-02: a skip inferred from the container's
+        `[Content_Types].xml` hid a prefixed .docm's macro from both readings)."""
+        at = {(f.rule_id, f.location.path) for f in findings if f.detector == "formats"}
+        return tuple(
+            f
+            for f in findings
+            if not (
+                f.detector == "formats"
+                and "!" in f.location.path
+                and (f.rule_id, f.location.path.rpartition("!")[0]) in at
+            )
+        )
+
+    @staticmethod
     def settled(config: Any, acc: Any) -> tuple[Finding, ...]:
         """Suppression expiry, the operator's suppressions, and the folds over repeated findings:
         what every scan, of a directory or an archive, does to its findings before the verdict.
@@ -554,7 +578,11 @@ class ResultFolding:
                         ResultFolding.key_corpus(
                             ResultFolding.idiom(
                                 ResultFolding.repeats(
-                                    ResultFolding.graded_pair(matcher.apply(acc.findings))
+                                    ResultFolding.graded_pair(
+                                        ResultFolding.read_with_container(
+                                            matcher.apply(acc.findings)
+                                        )
+                                    )
                                 )
                             )
                         )

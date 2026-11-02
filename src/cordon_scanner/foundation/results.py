@@ -486,6 +486,9 @@ class ScanResult:
     `fail_on_incomplete` says (item 27)."""
     schema_version: int = 1
     engine_version: str = "0.0.0"
+    matcher: str = ""
+    """Which anchor matcher ran, and why if it was the Python one: a build from another version falls
+    back at about 9x the match time, and a scan that slow says why in its own report (item 17)."""
     rulepack_version: str = "0.0.0"
     rulepack_hash: str = ""
     config_hash: str = ""
@@ -561,6 +564,7 @@ class ScanResult:
             {
                 "schema_version": self.schema_version,
                 "engine_version": self.engine_version,
+                "matcher": self.matcher,
                 "rulepack_version": self.rulepack_version,
                 "rulepack_hash": self.rulepack_hash,
                 "config_hash": self.config_hash,

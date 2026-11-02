@@ -282,6 +282,7 @@ class Verdict:
         profile: dict[str, float] | None = None,
         *,
         repository: bool = False,
+        source_facts: Sequence[tuple[str, frozenset[str], frozenset[str]]] | None = None,
     ) -> tuple[list[Finding], dict[str, Any]]:
         """Findings re-graded by the package verdict, and the verdict to report.
 
@@ -289,7 +290,10 @@ class Verdict:
         read as package facts beside the rest. `repository` is a scan of no published-package
         format, where a MALICIOUS finding is never lowered (`_lowers`)."""
         rules = VerdictFeatures.rules(findings)
-        package = {**VerdictFeatures.package(paths_sizes, manifests, sources), **(profile or {})}
+        package = {
+            **VerdictFeatures.package(paths_sizes, manifests, sources, source_facts=source_facts),
+            **(profile or {}),
+        }
         Verdict._skill_claim(package)
         area = Verdict.area([p for p, _ in paths_sizes], manifests, package, rules)
         # The one record the model reads, versioned (`decide/feature_schema`): every input a score

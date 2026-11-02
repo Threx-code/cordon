@@ -36,19 +36,54 @@ from cordon_scanner.detect.binary.rule_engine.threads import REACH
 class Native:
     """The extension, or why it is not in use."""
 
+    #: The interface this side is written for: `anchors.c` exports the same number as `ABI`, and
+    #: it goes up whenever a function's name, arguments, or its result's shape or meaning changes
+    #: (`positions` returning packed offsets instead of a list is such a change) (item 17).
+    ABI: ClassVar[int] = 1
+    #: What this side calls, so a build missing one falls back here rather than raising mid-scan.
+    FUNCTIONS: ClassVar[tuple[str, ...]] = ("Automaton", "check_text", "text_hits", "hex_hits")
+    METHODS: ClassVar[tuple[str, ...]] = ("present", "positions")
+
     @staticmethod
-    def load() -> tuple[Any, str]:
+    def load() -> tuple[Any, str, str]:
+        """The module (or None), why, and which case it is: `native`, `off`, `absent` or `stale`. Callers
+        decide by the code, never by the wording of why (item 17; the outer-layer team's review)."""
         if os.environ.get("CORDON_NO_NATIVE"):
-            return None, "the native anchor matcher is turned off (CORDON_NO_NATIVE)"
+            return None, "the native anchor matcher is turned off (CORDON_NO_NATIVE)", "off"
         try:
             from cordon_scanner._native import _anchors  # type: ignore[attr-defined]
         except ImportError as exc:
-            return None, f"the native anchor matcher is not built ({exc})"
-        return _anchors, "native"
+            return None, f"the native anchor matcher is not built ({exc})", "absent"
+        abi = getattr(_anchors, "ABI", None)
+        if abi != Native.ABI:
+            return (
+                None,
+                (
+                    f"the native anchor matcher is from another build (ABI {abi}, expected "
+                    f"{Native.ABI}); using the Python one"
+                ),
+                "stale",
+            )
+        missing = [name for name in Native.FUNCTIONS if not hasattr(_anchors, name)]
+        missing += [
+            f"Automaton.{name}"
+            for name in Native.METHODS
+            if hasattr(_anchors, "Automaton") and not hasattr(_anchors.Automaton, name)
+        ]
+        if missing:
+            return (
+                None,
+                (
+                    f"the native anchor matcher is from another build (missing {', '.join(missing)}); "
+                    "using the Python one"
+                ),
+                "stale",
+            )
+        return _anchors, "native", "native"
 
 
 class Automaton:
-    MODULE, WHY = Native.load()
+    MODULE, WHY, REASON = Native.load()
     NATIVE: ClassVar[bool] = MODULE is not None
 
     @staticmethod
@@ -113,6 +148,24 @@ class Automaton:
             lowered if self.fold and lowered is not None else self._view(data)
         )
         return [i for i, n in enumerate(self.needles) if n in found]
+
+    def packed(
+        self, data: bytes, ids: Iterable[int], cap: int, lowered: bytes | None = None
+    ) -> dict[int, Sequence[int] | None]:
+        """`positions`, each kept as the pass gives it natively (64-bit offsets, packed), not as a
+        list: a common anchor's places are many, and a list holds an object for each."""
+        if self._c is None:
+            return dict(self.positions(data, ids, cap, lowered))
+        wanted = sorted(set(ids))
+        out: dict[int, Sequence[int] | None] = {}
+        for i in wanted:
+            if not self.needles[i]:
+                out[i] = list(range(len(data) + 1)) if len(data) + 1 <= cap else None
+        back = {n: k for k, n in enumerate(self._ids)}
+        got = self._c.positions(data, [back[i] for i in wanted if self.needles[i]], cap)
+        for k, raw in got.items():
+            out[self._ids[k]] = None if raw is None else memoryview(raw).cast("q")
+        return out
 
     def positions(
         self, data: bytes, ids: Iterable[int], cap: int, lowered: bytes | None = None
@@ -351,7 +404,9 @@ class HexFind:
         for needle, length, holders in search.needles:
             starts = seen.get(needle)
             if starts is None:
-                starts = seen[needle] = search.occurrences(data, needle, search.budget(seen))
+                starts = seen[needle] = search.kept(seen, False, needle) or search.occurrences(
+                    data, needle, search.budget(seen)
+                )
             owners += [
                 (starts, length, length + a[1], order, -1 if a[2] is None else a[2],
                  -1 if a[3] is None else a[3])

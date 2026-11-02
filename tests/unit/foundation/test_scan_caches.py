@@ -56,22 +56,86 @@ class CacheKit:
 
 class TestEmptiedAfterEveryScan:
     def test_a_scan_leaves_every_registered_cache_empty(self, tmp_path: Path) -> None:
-        config = Config.default().with_overrides(use_cache=False)
-        engine = Engine(config)
-        held_during: dict[str, int] = {}
-        scan = engine._scan
+        """The parent's side. Since item 56 its scan of a directory or an archive fills no cache
+        itself (detection runs in the workers: the next test), so what the parent holds is put
+        there first -- as an in-process caller would leave it -- and the scan's end must empty it."""
+        from cordon_scanner.detect.base import RuleSelector
+        from cordon_scanner.foundation.text.comments import SourceComments
 
-        def watched(target: Any) -> Any:
-            result = scan(target)
-            held_during.update(CacheKit.held())
-            return result
-
-        engine._scan = watched  # type: ignore[method-assign]
+        engine = Engine(Config.default().with_overrides(use_cache=False))
+        LiteralGate((b"needle",)).present(b"a haystack with a needle")
+        RuleSelector._pattern_matches("src/app.py", "**/*.py")
+        SourceComments.block_comment_spans("/* a */ x", "javascript")
+        held_before = {k: v for k, v in CacheKit.held().items() if v}
+        assert len(held_before) >= 3, f"nothing was cached, so this proves nothing: {held_before}"
         engine.scan(CacheKit.project(tmp_path / "p"))
+        assert not any(CacheKit.held().values()), CacheKit.held()
+
+    def test_a_worker_leaves_every_registered_cache_empty_after_its_batch(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Where the caches fill since item 56: in the worker, by the worker's own batch code. They
+        are full while its files are inspected and empty when the batch returns."""
+        from cordon_scanner.analysis.shared.languages import LanguageRegistry
+        from cordon_scanner.engine.parallel import ParallelScanner, _WorkerState
+        from cordon_scanner.foundation.content import FileContent
+
+        root = CacheKit.project(tmp_path / "p")
+        engine = Scanner(Config.default().with_overrides(use_cache=False))._engine
+        context = engine._context(engine.inventory(root))
+        items = []
+        for i, path in enumerate(sorted(p for p in root.rglob("*") if p.is_file())):
+            relative = path.relative_to(root).as_posix()
+            loaded = FileContent.load(path, relative, engine.config.limits)
+            language = LanguageRegistry.of_file(relative, loaded)
+            items.append((i, relative, path.stat().st_size, loaded.sha256, None, language, None))
+        held_during: dict[str, int] = {}
+        results = ParallelScanner._batch_results
+
+        def watched(*args: Any) -> Any:
+            out = results(*args)
+            held_during.update(CacheKit.held())
+            return out
+
+        monkeypatch.setattr(ParallelScanner, "_batch_results", staticmethod(watched))
+        monkeypatch.setattr(
+            ParallelScanner,
+            "_worker",
+            _WorkerState(engine=engine, context=context, detectors=engine.detectors),
+        )
+        ScanCaches.after_scan()
+        ParallelScanner._inspect_batch(items, str(root))
         assert sum(held_during.values()) > 0, (
             f"nothing was cached, so this proves nothing: {held_during}"
         )
         assert not any(CacheKit.held().values()), CacheKit.held()
+
+    def test_the_timed_batch_reads_its_clock_before_it_empties(self, tmp_path: Path) -> None:
+        """The detector clock's totals are a registered cache: the timed batch must read them, then
+        empty, or every parallel scan's `detector_cpu_ms` is blank."""
+        from cordon_scanner.engine.detector_clock import DetectorClock
+        from cordon_scanner.engine.parallel import ParallelScanner, _WorkerState
+
+        root = CacheKit.project(tmp_path / "p")
+        engine = Scanner(Config.default().with_overrides(use_cache=False))._engine
+        context = engine._context(engine.inventory(root))
+        kept = ParallelScanner._worker
+        ParallelScanner._worker = _WorkerState(
+            engine=engine, context=context, detectors=engine.detectors
+        )
+        try:
+            from cordon_scanner.analysis.shared.languages import LanguageRegistry
+            from cordon_scanner.foundation.content import FileContent
+
+            path = root / "index.js"
+            loaded = FileContent.load(path, "index.js", engine.config.limits)
+            item = (0, "index.js", path.stat().st_size, loaded.sha256, None,
+                    LanguageRegistry.of_file("index.js", loaded), None)  # fmt: skip
+            _, taken = ParallelScanner._inspect_batch_timed([item], str(root))
+        finally:
+            ParallelScanner._worker = kept
+        assert taken, "the clock was emptied before it was read"
+        assert not DetectorClock.taken() and not any(CacheKit.held().values())
 
     def test_they_are_emptied_when_the_scan_raises(self, tmp_path: Path) -> None:
         LiteralGate((b"needle",)).present(b"a haystack with a needle")

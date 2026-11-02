@@ -31,13 +31,20 @@ RAW = ("\udca7", "\x1b", "‮")
 
 class UnreadableNamesKit:
     @staticmethod
+    def planted(index: int) -> bytes:
+        """The planted payload, with bytes of its own per member: identical copies are reported
+        once, naming every copy (`ResultFolding.repeats`), and this tests each name, not folding."""
+        return PLANT + f"# member {index}\n".encode()
+
+    @staticmethod
     def tarball(tmp_path):
         path = tmp_path / "names-1.0.tar"
         with tarfile.open(path, "w", format=tarfile.GNU_FORMAT) as tar:
-            for name in NAMES:
+            for index, name in enumerate(NAMES):
+                data = UnreadableNamesKit.planted(index)
                 info = tarfile.TarInfo(name)
-                info.size = len(PLANT)
-                tar.addfile(info, io.BytesIO(PLANT))
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
         return path
 
     @staticmethod
@@ -45,8 +52,8 @@ class UnreadableNamesKit:
         # zip names are UTF-8 or cp437, so never a lone surrogate: the other three
         path = tmp_path / "names-1.0.zip"
         with zipfile.ZipFile(path, "w") as archive:
-            for name in NAMES[1:]:
-                archive.writestr(name, PLANT)
+            for index, name in enumerate(NAMES[1:], start=1):
+                archive.writestr(name, UnreadableNamesKit.planted(index))
         return path
 
     @staticmethod

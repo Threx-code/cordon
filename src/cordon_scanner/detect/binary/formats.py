@@ -341,6 +341,9 @@ class FormatDetector(BaseDetector):
             ):
                 return self._pickle(unit, ctx)
             if documents.DocumentReader.kind_of(raw, path) is not None:
+                # Every part is read as itself; a part's finding the container's own reading also
+                # reported is folded after detection (`ResultFolding.read_with_container`), from the
+                # findings both made, never assumed from the container's names (C-02).
                 return self._document(unit, ctx)
             if media.ImageTrailers.image_format(raw) is not None and not content.truncated:
                 # A broken image is common (placeholders, partial downloads) and nothing reads

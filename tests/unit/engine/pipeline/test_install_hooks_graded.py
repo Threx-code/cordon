@@ -193,3 +193,116 @@ class TestAModuleNamedTheWayNodeResolvesIt:
             if f.location.path.endswith("setup.js")
         }
         assert "MALWARE.EXFIL.CREDENTIAL_STORE.001" in rules
+
+
+class TestAFileAHookRunsIsReadAsTheHookRunsIt:
+    """A hook runs a file by its interpreter, whatever the file is called: `node lib/run.md` runs
+    JavaScript, and the file is inspected as JavaScript. Its name answered first, so a payload named
+    .md, .txt or nothing was never read by a language rule (item 36; the evasion suite's text-type
+    names, five npm misses on 3cad016d)."""
+
+    #: Inert: the decoded name is never defined, so nothing would run even if this were executed.
+    JS = "const p = atob(B);\neval(p);\n"
+    DECODE = "b64" + "decode"  # spelled apart so this file is not itself a decode-then-run
+    PY = f"import base64\nexec(base64.{DECODE}(B))\n"
+
+    @staticmethod
+    def scan(tmp_path: Path, command: str, name: str, body: str):
+        manifest = {"name": "p", "version": "1.0.0", "scripts": {"postinstall": command}}
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+            for member, text in (
+                ("package/package.json", json.dumps(manifest)),
+                (f"package/{name}", body),
+            ):
+                data = text.encode()
+                info = tarfile.TarInfo(member)
+                info.size = len(data)
+                archive.addfile(info, io.BytesIO(data))
+        target = tmp_path / "p-1.0.0.tgz"
+        target.write_bytes(buffer.getvalue())
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(target)
+        return {f.location.path for f in result.findings if f.rule_id == "SUSPECT.DECODE_EXEC.001"}
+
+    @pytest.mark.parametrize("name", ["lib/run.md", "lib/run.txt", "lib/run"])
+    def test_a_node_hook_s_file_is_javascript(self, tmp_path: Path, name: str) -> None:
+        found = self.scan(tmp_path, f"node {name}", name, self.JS)
+        assert found == {f"p-1.0.0.tgz!package/{name}"}
+
+    def test_a_python_hook_s_file_is_python(self, tmp_path: Path) -> None:
+        found = self.scan(tmp_path, "python3 lib/run.txt", "lib/run.txt", self.PY)
+        assert found == {"p-1.0.0.tgz!package/lib/run.txt"}
+
+    def test_in_a_directory_too(self, tmp_path: Path) -> None:
+        """The walk's own path (`Units.language_of`), not only an archive's."""
+        root = tmp_path / "pkg"
+        (root / "lib").mkdir(parents=True)
+        manifest = {"name": "p", "version": "1.0.0", "scripts": {"postinstall": "node lib/run.md"}}
+        (root / "package.json").write_text(json.dumps(manifest), encoding="utf-8")
+        (root / "lib" / "run.md").write_text(self.JS, encoding="utf-8")
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
+        found = {f.location.path for f in result.findings if f.rule_id == "SUSPECT.DECODE_EXEC.001"}
+        assert found == {"lib/run.md"}
+
+    #: The deobfuscation tests' own recovered-code body (tests/unit/analysis/shared/test_deobfuscation).
+    RECOVERED = "require('child_process').execSync(process.env.HOME_CMD);"
+
+    @pytest.mark.parametrize(
+        "with_body",
+        [
+            True,
+            pytest.param(
+                False,
+                marks=pytest.mark.xfail(
+                    strict=True,
+                    reason="the package verdict places a finding by its name "
+                    "(VerdictFeatures.place: .md is 'text'), so it lowers the hook-run .md's "
+                    "packed code from HIGH to MEDIUM and not the .js's; the model's input, the "
+                    "modelling team's to change with a re-fit",
+                ),
+            ),
+        ],
+    )
+    def test_an_obfuscated_file_a_hook_runs_is_read_as_the_same_bytes_in_a_js_file(
+        self, tmp_path: Path, with_body: bool
+    ) -> None:
+        """A hook-run lib/run.md is read exactly as lib/run.js: the same rules at the same grades.
+        Two things kept them apart (modelling team's review): the deobfuscation lift took
+        JavaScript only and ran before the hook's language was known, and the documentation
+        ceiling, keyed on the .md name, held the packed code down although a hook runs it."""
+        from unit.analysis.shared.test_deobfuscation import ObfuscatedKit
+
+        body = ObfuscatedKit.program(body=self.RECOVERED) if with_body else ObfuscatedKit.program()
+
+        def graded(name: str) -> list[tuple[str, str]]:
+            manifest = {"name": "p", "version": "1.0.0", "scripts": {"postinstall": f"node {name}"}}
+            result = self.scan_archive(tmp_path / name.replace("/", "-"), manifest, {name: body})
+            return sorted(
+                (f.rule_id, f.severity.name) for f in result.findings if "INTEL" not in f.rule_id
+            )
+
+        assert graded("lib/run.md") == graded("lib/run.js")
+
+    def test_the_interpreter_s_own_family_keeps_the_name_s_language(self) -> None:
+        """`node x.ts` runs TypeScript: read as JavaScript it could only lose a parse."""
+        from cordon_scanner.engine.pipeline.hooks import Hooks
+
+        assert Hooks.hook_language("javascript", "typescript") == "typescript"
+        assert Hooks.hook_language("javascript", "markdown") == "javascript"
+        assert Hooks.hook_language("javascript", None) == "javascript"
+        assert Hooks.hook_language(None, "markdown") == "markdown"
+
+    @staticmethod
+    def scan_archive(tmp_path: Path, manifest: dict, files: dict[str, str]):
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+            for member, text in (("package/package.json", json.dumps(manifest)), *files.items()):
+                name = member if member.startswith("package/") else f"package/{member}"
+                data = text.encode()
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                archive.addfile(info, io.BytesIO(data))
+        tmp_path.mkdir(parents=True, exist_ok=True)
+        target = tmp_path / "p-1.0.0.tgz"
+        target.write_bytes(buffer.getvalue())
+        return Scanner(Config.default().with_overrides(use_cache=False)).scan(target)

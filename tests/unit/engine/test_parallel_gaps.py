@@ -52,7 +52,7 @@ class ParallelGapsKit:
         unit = FileUnit(content=FileContent.from_bytes("pkg/a.py", b"x = 1\n"))
         # the merge reads `self` only to cache a result, which `cacheable=False` skips
         Detection.merge_worker_results(
-            SimpleNamespace(), [(0, findings, True, False)], [unit], [], acc, None, ""
+            SimpleNamespace(), [(0, findings, True, False, (True, ()))], [unit], [], acc, None, ""
         )
         return acc
 
@@ -68,12 +68,12 @@ class ParallelGapsKit:
         """The keys the merge stored, for one trusted, cacheable worker result."""
         puts: list = []
         engine = SimpleNamespace(
-            cache=SimpleNamespace(put=lambda key, value: puts.append(key)),
+            cache=SimpleNamespace(put=lambda key, value, facts="": puts.append(key)),
             cache_key=lambda unit, ctx, signature: unit.path,
         )
         unit = FileUnit(content=FileContent.from_bytes("pkg/a.py", b"x = 1\n"))
         Detection.merge_worker_results(
-            engine, [(0, findings, True, True)], [unit], [], Accumulator(), None, ""
+            engine, [(0, findings, True, True, (True, ()))], [unit], [], Accumulator(), None, ""
         )
         return puts
 

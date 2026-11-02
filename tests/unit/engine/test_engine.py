@@ -466,3 +466,104 @@ class TestAnEcosystemWithNoAdvisoryFeed(EngineFixtures):
         (root / "requirements.txt").write_text("django==3.2\n", encoding="utf-8")
         result = Scanner(EngineHelpers.config()).scan(root)
         assert not [f for f in result.findings if f.rule_id == "OPERATIONAL.ADVISORY.NO_FEED.001"]
+
+
+class TestOneProviderSeenTwice:
+    """engine.registry (item 49): an editable install shows one distribution's entry points through
+    several metadata copies (site-packages' dist-info, src's dist-info and egg-info), and one entry
+    name seen twice refused every scan with "plugin 'advisory' is provided twice". The same provider
+    with the same value is one provider; two providers still refuse."""
+
+    class Entry:
+        def __init__(self, name: str, value: str, provider: str) -> None:
+            self.group, self.name, self.value, self.provider = "cordon.test", name, value, provider
+
+        def load(self):
+            return lambda: f"{self.name} from {self.provider}"
+
+    @staticmethod
+    def load(monkeypatch, entries):
+        from cordon_scanner.engine import registry
+
+        monkeypatch.setattr(registry, "entry_points", lambda group: list(entries))
+        monkeypatch.setattr(
+            registry.Registry, "_provider", staticmethod(lambda entry: entry.provider)
+        )
+        return registry.Registry(allow_third_party=True)._load("cordon.test", (), None)
+
+    def test_two_copies_of_one_distribution_load_it_once(self, monkeypatch) -> None:
+        copy = ("advisory", "pkg.detector:Advisory", "cordon-scanner")
+        loaded = self.load(monkeypatch, [self.Entry(*copy), self.Entry(*copy), self.Entry(*copy)])
+        assert loaded == ("advisory from cordon-scanner",)
+
+    def test_two_distributions_still_refuse(self, monkeypatch) -> None:
+        from cordon_scanner.foundation.errors import ConfigError
+
+        entries = [
+            self.Entry("advisory", "pkg.detector:Advisory", "cordon-scanner"),
+            self.Entry("advisory", "other.detector:Advisory", "someone-else"),
+        ]
+        with pytest.raises(ConfigError, match="provided twice"):
+            self.load(monkeypatch, entries)
+
+    def test_one_distribution_naming_two_values_still_refuses(self, monkeypatch) -> None:
+        from cordon_scanner.foundation.errors import ConfigError
+
+        entries = [
+            self.Entry("advisory", "pkg.detector:Advisory", "cordon-scanner"),
+            self.Entry("advisory", "pkg.other:Advisory", "cordon-scanner"),
+        ]
+        with pytest.raises(ConfigError, match="provided twice"):
+            self.load(monkeypatch, entries)
+
+
+class TestPastTheDeadline:
+    """Item 64. A scan past its deadline is never complete, and the costly steps after detection do
+    not run once it has passed (one probe ran nine times past its budget and exited 0, called
+    complete; another spent its last fifty seconds loading the advisory index)."""
+
+    @staticmethod
+    def late_scan(tmp_path, monkeypatch, files: dict[str, str]):  # type: ignore[no-untyped-def]
+        from cordon_scanner.detect.base import ScanContext
+
+        # Detection itself is unaffected: the Supervisor reads the deadline from its own clock.
+        # Every check made with the context after detection sees the budget spent.
+        monkeypatch.setattr(ScanContext, "out_of_time", lambda self: True)
+        root = tmp_path / "pkg"
+        root.mkdir()
+        for name, text in files.items():
+            (root / name).write_text(text, encoding="utf-8")
+        config = Config.default().with_overrides(use_cache=False, offline=True)
+        return Scanner(config).scan(root)
+
+    def test_a_scan_ending_past_its_deadline_is_incomplete(self, tmp_path, monkeypatch) -> None:
+        result = self.late_scan(tmp_path, monkeypatch, {"README.md": "nothing here\n"})
+        assert result.content_complete is False
+        timeouts = [f for f in result.findings if f.rule_id == "OPERATIONAL.SCAN.TIMEOUT"]
+        assert len(timeouts) == 1
+
+    def test_the_release_checks_do_not_run_past_it(self, tmp_path, monkeypatch) -> None:
+        from cordon_scanner.engine.pipeline.releases import ReleaseChecks
+
+        called: list[str] = []
+        monkeypatch.setattr(
+            ReleaseChecks,
+            "known_malicious_release",
+            staticmethod(lambda units, ctx: called.append("ran") or []),
+        )
+        self.late_scan(tmp_path, monkeypatch, {"package.json": '{"name": "p", "version": "1.0.0"}'})
+        assert called == []
+
+    def test_the_accumulator_rule(self) -> None:
+        from types import SimpleNamespace
+
+        from cordon_scanner.engine.pipeline.accumulator import Accumulator
+
+        acc = Accumulator()
+        acc.ended_late(SimpleNamespace(out_of_time=lambda: False), ".")
+        assert acc.complete
+        acc.ended_late(SimpleNamespace(out_of_time=lambda: True), ".")
+        assert not acc.complete
+        assert [f.rule_id for f in acc.findings] == ["OPERATIONAL.SCAN.TIMEOUT"]
+        acc.ended_late(SimpleNamespace(out_of_time=lambda: True), ".")
+        assert len(acc.findings) == 1  # once

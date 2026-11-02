@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
@@ -39,6 +40,38 @@ if TYPE_CHECKING:
     from collections.abc import Generator, Iterable, Iterator, Sequence
 
     from cordon_scanner.engine.engine import Engine
+
+
+@dataclass(frozen=True, slots=True)
+class Expansion:
+    """An archive found in a directory scan, opened once per distinct content (`Units.opened`): its
+    members (None where it was refused), why it was refused, and the members it refused, each
+    relative to the archive's own path, so every copy of the bytes is recorded at its own."""
+
+    members: list[tuple[str, bytes]] | None
+    refused: tuple[str, str] | None = None
+    """(message, remediation) of the refusal, where the archive was not opened."""
+    rejected: tuple[tuple[str, str, str], ...] = ()
+    """(suffix after the archive's path, reason, detail) of each member the reader refused."""
+    truncated: bool = False
+
+    def record(self, rel_path: str, acc: Accumulator) -> None:
+        """The outcome, at this copy's own path: its refusal and every refused member's."""
+        if self.refused is not None:
+            if self.truncated:
+                acc.rejected_archives.add(rel_path)
+            message, remediation = self.refused
+            acc.incomplete(
+                OperationalFinding.build(
+                    path=rel_path,
+                    rule_id="OPERATIONAL.ARCHIVE.REJECTED",
+                    message=message,
+                    remediation=remediation,
+                    severity=Severity.MEDIUM,
+                )
+            )
+        for suffix, reason, detail in self.rejected:
+            ArchiveMembers.refuse(acc, rel_path + suffix, reason, detail)
 
 
 class Units:
@@ -162,7 +195,7 @@ class Units:
 
             language = Units.language_of(entry, implied_languages, loaded)
 
-            yield FileUnit(content=loaded, language=language)
+            yield FileUnit(content=loaded, language=language, opens=str(entry.real_path.absolute()))
 
             # Members after the archive itself, each budgeted like a file: an
             # archive is the cheapest way to put a lot of content in front of a
@@ -189,18 +222,34 @@ class Units:
     ) -> list[FileUnit] | None:
         """An archive expanded (or noted unopened), a binary file and a Git LFS pointer recorded."""
         expanded: list[FileUnit] | None = None
-        if ArchiveReader.is_archive(entry.rel_path):
-            if self.config.expand_archives:
-                expanded = self.expand_members(entry.rel_path, loaded, acc, deadline)
-            else:
-                unopened.append(entry.rel_path)
+        claimed = ArchiveReader.is_archive(entry.rel_path)
+        if claimed and not self.config.expand_archives:
+            unopened.append(entry.rel_path)
+        elif self.config.expand_archives and (
+            # Its name says archive, or its bytes do (item 36): a zip named notes.txt. A whole
+            # header is read, never a magic alone, so one that fails to open is reported unread.
+            claimed or ArchiveReader.opens_by_bytes(loaded.raw)
+        ):
+            expanded = self.expand_members(entry.rel_path, loaded, acc, deadline)
 
+        # A named archive's refusal is its expansion's; with archives not expanded, an unopenable
+        # format is the operator's choice as every archive is (NOT_EXPANDED), never both.
+        if expanded is None and not claimed and self.config.expand_archives:
+            Units.unsupported_archive(entry.rel_path, loaded, acc)
         if loaded.is_binary and expanded is None:
             binary.append(entry.rel_path)
 
         if loaded.is_lfs_pointer:
             lfs_pointers.append(entry.rel_path)
         return expanded
+
+    @staticmethod
+    def unsupported_archive(rel_path: str, loaded: FileContent, acc: Accumulator) -> None:
+        """A file in an archive format no reader here opens is a gap at its path (item 53)."""
+        refused: list[tuple[str, str, str]] = []
+        if ArchiveReader.unsupported(rel_path, loaded.raw, refused):
+            for path, reason, detail in refused:
+                ArchiveMembers.refuse(acc, path, reason, detail)
 
     def out_of_time(self, acc: Accumulator) -> None:
         """The scan's time budget ran out: the scan is incomplete, and says so."""
@@ -293,10 +342,17 @@ class Units:
     def language_of(
         entry: WalkEntry, implied_languages: dict[str, str], loaded: FileContent
     ) -> str | None:
-        """A file's language: its name, then a hook's interpreter, then its shebang, then its content."""
-        language = LanguageRegistry.identify_language(entry.rel_path)
-        if language is None:
-            language = implied_languages.get(entry.rel_path)
+        """A file's language: the interpreter a hook runs it with, then its name, then its shebang,
+        then its content.
+
+        The hook's interpreter first: `node lib/run.md` runs JavaScript whatever the file is called,
+        and the file is inspected as what runs (item 36). The name answered first, so a payload named
+        .md, .txt or nothing, run by a hook, was read by no language rule while the same bytes in
+        run.js blocked (the evasion suite's text-type names; five npm misses on 3cad016d)."""
+        language = Hooks.hook_language(
+            implied_languages.get(entry.rel_path),
+            LanguageRegistry.identify_language(entry.rel_path),
+        )
         if language is None:
             # An extensionless script -- `install`, `preinstall`,
             # `configure` -- got `language=None` and therefore only the
@@ -576,6 +632,41 @@ class Units:
             else:
                 acc.append(pruned)
 
+    def opened(self, rel_path: str, loaded: FileContent, deadline: float) -> Expansion:
+        """An archive's bytes opened by the bounded reader: its members, or why it was refused, and
+        the members it refused, each relative to the archive's own name. Records nothing: every
+        copy records the outcome at its own path (`Expansion.record`)."""
+        refusal = "Treat a refused archive as unexamined. If the limits are wrong for this input, raise them deliberately."
+        if loaded.truncated:
+            return Expansion(
+                None,
+                (
+                    "The archive is larger than limits.max_file_bytes, so it was read in part and "
+                    "could not be opened. Its contents were not examined.",
+                    "Raise limits.max_file_bytes, or scan the archive directly.",
+                ),
+                truncated=True,
+            )
+        rejected: list[tuple[str, str, str]] = []
+        collected: list[tuple[str, bytes]] = []
+        prefix = rel_path.rsplit("/", 1)[-1]
+        members: list[tuple[str, bytes]] | None = collected
+        refused: tuple[str, str] | None = None
+        try:
+            for member_path, member_data in ArchiveReader.walk_archive(
+                loaded.raw,
+                path=prefix,
+                limits=self.config.limits,
+                rejected=rejected,
+                deadline=deadline if self.config.limits.total_timeout > 0 else None,
+            ):
+                collected.append((member_path[len(prefix) :], member_data))
+        except ArchiveError as exc:
+            members = None
+            refused = (f"The archive was refused and not scanned: {exc.message}", refusal)
+        relative = tuple((path[len(prefix) :], reason, detail) for path, reason, detail in rejected)
+        return Expansion(members, refused, rejected=relative)
+
     def expand_members(
         self, rel_path: str, loaded: FileContent, acc: Accumulator, deadline: float
     ) -> list[FileUnit] | None:
@@ -593,62 +684,18 @@ class Units:
         opened.
         """
         started = time.monotonic()
-        digest = loaded.sha256
-        cache = self._expansions
-        if digest in cache:
-            members = cache[digest]
-        else:
-            if loaded.truncated:
-                members = None
-                acc.rejected_archives.add(rel_path)
-                acc.incomplete(
-                    OperationalFinding.build(
-                        path=rel_path,
-                        rule_id="OPERATIONAL.ARCHIVE.REJECTED",
-                        message=(
-                            "The archive is larger than limits.max_file_bytes, so it was "
-                            "read in part and could not be opened. Its contents were not "
-                            "examined."
-                        ),
-                        remediation="Raise limits.max_file_bytes, or scan the archive directly.",
-                        severity=Severity.MEDIUM,
-                    )
-                )
-            else:
-                rejected: list[tuple[str, str, str]] = []
-                collected: list[tuple[str, bytes]] = []
-                prefix = rel_path.rsplit("/", 1)[-1]
-                try:
-                    for member_path, member_data in ArchiveReader.walk_archive(
-                        loaded.raw,
-                        path=prefix,
-                        limits=self.config.limits,
-                        rejected=rejected,
-                        deadline=deadline if self.config.limits.total_timeout > 0 else None,
-                    ):
-                        collected.append((member_path[len(prefix) :], member_data))
-                    members = collected
-                except ArchiveError as exc:
-                    members = None
-                    acc.incomplete(
-                        OperationalFinding.build(
-                            path=rel_path,
-                            rule_id="OPERATIONAL.ARCHIVE.REJECTED",
-                            message=f"The archive was refused and not scanned: {exc.message}",
-                            remediation=(
-                                "Treat a refused archive as unexamined. If the limits are "
-                                "wrong for this input, raise them deliberately."
-                            ),
-                            severity=Severity.MEDIUM,
-                        )
-                    )
-                directory = rel_path[: -len(prefix)]
-                for member_path, reason, detail in rejected:
-                    ArchiveMembers.refuse(acc, directory + member_path, reason, detail)
-            cache[digest] = members
-            if members is not None:
+        expansion = self._expansions.get(loaded.sha256)
+        if expansion is None:
+            expansion = self.opened(rel_path, loaded, deadline)
+            self._expansions[loaded.sha256] = expansion
+            if expansion.members is not None:
                 self._archive_stats[0] += 1
+        # Every copy answers for itself, at its own path, whether its bytes were opened here or
+        # before: a refusal recorded only at the first copy let accepting that copy's gap pass every
+        # other copy unread.
+        expansion.record(rel_path, acc)
         self._archive_stats[2] += int((time.monotonic() - started) * 1000)
+        members = expansion.members
         if members is None:
             return None
         units: list[FileUnit] = []
@@ -667,6 +714,7 @@ class Units:
     _DEOBFUSCATION_MARKERS: ClassVar[re.Pattern[bytes]] = re.compile(
         rb"while\s*\(\s*!!\[\]\s*\)|\batob\s*\(|\bBuffer\s*\.\s*from\s*\(\s*['\"`][A-Za-z0-9+/=_\-]{16}"
         rb"|fromCharCode\s*\(\s*(?:0x[0-9a-fA-F]+|\d+)\s*,|\xf3\xa0[\x80-\x87]|\xef\xb8[\x80-\x8f]"
+        rb"|fromCharCode|\bBuffer\s*\.\s*from\s*\(\s*[A-Za-z_$]|\.\s*reverse\s*\(\s*\)\s*\.\s*join"
     )
     """Bytes without which no reversal in `core.deobfuscation` applies: most files pay one search."""
 
@@ -677,7 +725,7 @@ class Units:
         what the code does is graded rather than that it was hidden. A file that cannot be
         reversed, or only in part, is not lifted, and its obfuscation finding keeps its grade.
         """
-        from cordon_scanner.analysis.shared.deobfuscation import Deobfuscator
+        from cordon_scanner.analysis.shared.deobfuscator import Deobfuscator
 
         lifted: list[FileUnit] = []
         for unit in units:

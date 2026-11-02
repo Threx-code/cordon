@@ -35,9 +35,15 @@ class ArchiveMembers:
     """What happened to an archive's members on the way in."""
 
     #: Refusals that leave nothing unread: a link has no content of its own, a hidden zip member is
-    #: read from its local header, and text named as an archive is scanned as text (item 27).
+    #: read from its local header, text named as an archive is scanned as text (item 27), and a lone
+    #: compressed stream that ends early was read to its last byte (item 30).
     NOTHING_UNREAD: ClassVar[frozenset[str]] = frozenset(
-        {Rejection.LINK, Rejection.HIDDEN, Rejection.NOT_AN_ARCHIVE}
+        {
+            Rejection.LINK,
+            Rejection.HIDDEN,
+            Rejection.NOT_AN_ARCHIVE,
+            Rejection.COMPRESSED_TRUNCATED,
+        }
     )
 
     @staticmethod
@@ -138,6 +144,18 @@ class ArchiveMembers:
             return ArchiveMembers.escape_or_nesting(path, reason, detail, escape)
         if reason == Rejection.NOT_AN_ARCHIVE:
             return ArchiveMembers.not_an_archive(path)
+        if reason == Rejection.COMPRESSED_TRUNCATED:
+            return ArchiveMembers.compressed_truncated(path, detail)
+        if reason == Rejection.UNSUPPORTED_FORMAT:
+            return OperationalFinding.build(
+                path=path,
+                rule_id="OPERATIONAL.ARCHIVE.UNSUPPORTED_FORMAT",
+                message=f"This file is {detail}: what it holds was not scanned.",
+                remediation=(
+                    "Ship the contents unpacked, or in a zip, tar or gzip, so they can be read; or "
+                    "accept this gap by path once the archive has been reviewed."
+                ),
+            )
         return ArchiveMembers.not_examined(path, reason, detail)
 
     @staticmethod
@@ -151,6 +169,20 @@ class ArchiveMembers:
                 "text, so it was scanned as the text it is."
             ),
             remediation="No action needed.",
+            severity=Severity.INFO,
+        )
+
+    @staticmethod
+    def compressed_truncated(path: str, detail: str) -> Finding:
+        """A lone compressed stream cut before its end marker: what it holds was read, to its end."""
+        return OperationalFinding.build(
+            path=path,
+            rule_id="OPERATIONAL.ARCHIVE.COMPRESSED_TRUNCATED",
+            message=(
+                "This compressed file ends before its end marker, as a cut download does; "
+                f"everything it holds was decompressed and scanned ({detail})."
+            ),
+            remediation="No action needed, unless the file is expected to be whole.",
             severity=Severity.INFO,
         )
 

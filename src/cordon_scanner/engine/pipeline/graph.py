@@ -391,10 +391,29 @@ class Graph:
                     if parse
                     else ecosystem.parse_manifest(by_path[resolved].content)
                 )
-            except Exception:  # noqa: BLE001, S112
+            except Exception as exc:  # noqa: BLE001 -- said once as PARSER.FAILED, so it blocks (item 26)
+                ParsedManifests.record_raised(resolved, exc)
                 continue
             out.append((kind, resolved, included))
-            if depth + 1 < Graph.MAX_INCLUDE_DEPTH:
+            if depth + 1 >= Graph.MAX_INCLUDE_DEPTH:
+                # The bound keeps the work finite; past it the scan blocks, so nesting can't hide
+                # what an installer would still read (item 26).
+                # Named at the file not followed, so an accepted gap names what went unread, and
+                # only a file the loop would have read: one in the tree, a unit, not yet seen. A
+                # cycle, a path leaving the tree or an absent one is handled as below the bound.
+                here = resolved.rpartition("/")[0]
+                for _kind, nested in getattr(included, "includes", ()):
+                    target = posixpath.normpath(posixpath.join(here, nested) if here else nested)
+                    if target.startswith("..") or target in seen or target not in by_path:
+                        continue
+                    ParsedManifests.record_raised(
+                        target,
+                        RecursionError(
+                            f"included past {Graph.MAX_INCLUDE_DEPTH} levels of includes, so "
+                            f"it was not followed"
+                        ),
+                    )
+            else:
                 # A constraints file's own `-r` lines are constraints too.
                 pending.extend(
                     (kind if kind == "constraints" else nested_kind, nested, resolved, depth + 1)
