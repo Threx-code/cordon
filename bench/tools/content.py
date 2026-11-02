@@ -28,6 +28,9 @@ CONTENT_DETECTORS = frozenset(
         "agents",
         "binary",
         "capability",
+        # Item 47's learned code model: it reads only the package's own reached files; its weights are
+        # shipped data fitted offline, not a feed of known samples.
+        "code-model",
         "config",
         "formats",
         "iac",
