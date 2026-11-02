@@ -197,7 +197,9 @@ class ReuseMatch(Protocol):
 class ReuseLookup(Protocol):
     """A loaded reuse index: the group whose file has a fingerprint."""
 
-    def lookup(self, digest: bytes, steps: list[int] | None = ...) -> ReuseMatch | None: ...
+    def lookup(
+        self, digest: bytes, steps: list[int] | None = ..., *, space: str = ...
+    ) -> ReuseMatch | None: ...
 
 
 class ReuseIndexes(Protocol):

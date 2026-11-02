@@ -346,6 +346,12 @@ class _Fn:
     sinks: dict[tuple[str, Any], set[tuple[str, str | None, str, int]]] = field(
         default_factory=dict
     )
+    #: The same, for a DATA_ARGS spawn that holds its program's rule (note 69): what reaches it
+    #: through the parameter is data, so a call site applies the argument less what a server sent
+    #: or a blob decoded, as it would were the spawn written in place.
+    data_sinks: dict[tuple[str, Any], set[tuple[str, str | None, str, int]]] = field(
+        default_factory=dict
+    )
 
 
 class _OverBudget(Exception):

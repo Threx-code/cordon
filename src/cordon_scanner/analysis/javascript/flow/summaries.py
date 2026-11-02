@@ -115,7 +115,9 @@ class JsSummaries:
     @classmethod
     def _summary(cls, name: str, fn: Any) -> list[list[Any]]:
         out: list[list[Any]] = []
-        for (how, idx), sinks in fn.sinks.items():
+        # A DATA_ARGS spawn's data sinks are exported as plain ones: across files the summary has
+        # no label kinds to strip, so it keeps today's conservative reading (note 69).
+        for (how, idx), sinks in [*fn.sinks.items(), *fn.data_sinks.items()]:
             if how == "R":
                 continue  # a file read at a parameter's path: judged where the path is known
             position = idx[0] if how == "Q" else idx  # a field of the parameter: conservatively it

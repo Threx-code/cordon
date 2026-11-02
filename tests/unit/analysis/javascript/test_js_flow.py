@@ -172,6 +172,47 @@ class TestAFixedProgramsArguments:
         assert not [f for f in flows if "network_response" in f[0] and f[1] == "process"], flows
 
 
+class TestAFixedProgramInAHelper:
+    """Note 69: a DATA_ARGS spawn inside a helper clears or fires exactly as the same call written
+    in place, with the reply reaching it through the helper's parameter. Inert: placeholder host."""
+
+    HEAD = 'const cp = require("child_process");\n'
+    CALL = (
+        "async function go() {\n"
+        '  const r = await fetch("https://api.invalid/latest");\n'
+        "  k(await r.text());\n"
+        "}\n"
+    )
+    RUN: ClassVar[dict[str, str]] = {
+        "the reply as the program": "function k(v) { cp.spawn(v, []); }\n",
+        "a program not listed": 'function k(v) { cp.spawn("ffmpeg", ["-i", v]); }\n',
+        "a shell option": 'function k(v) { cp.spawn("taskkill", ["/PID", v], { shell: true }); }\n',
+        "an opener on what the reply names": 'function k(v) { cp.spawn("open", [v]); }\n',
+    }
+    DATA: ClassVar[dict[str, str]] = {
+        "taskkill and a pid": 'function k(v) { cp.spawn("taskkill", ["/pid", v, "/t", "/f"]); }\n',
+        "tar after --": 'function k(v) { cp.spawn("tar", ["xf", "--", v]); }\n',
+        "a child's pid": (
+            "function k(v) {\n"
+            '  const child = cp.spawn("x", ["a"]);\n'
+            '  cp.spawn("taskkill", ["/pid", String(v), "/t", "/f"], { stdio: "ignore" });\n'
+            "}\n"
+        ),
+    }
+
+    @pytest.mark.parametrize("name", sorted(RUN))
+    def test_run(self, name: str) -> None:
+        flows = FlowKit.flows(self.HEAD + self.RUN[name] + self.CALL)
+        assert ("network_response", "process") in [
+            (src, sink) for sources, sink, _ in flows for src in sources
+        ], flows
+
+    @pytest.mark.parametrize("name", sorted(DATA))
+    def test_data(self, name: str) -> None:
+        flows = FlowKit.flows(self.HEAD + self.DATA[name] + self.CALL)
+        assert not [f for f in flows if "network_response" in f[0] and f[1] == "process"], flows
+
+
 class TestAFixedSpawnForTheComposites:
     """Note 44: the co-occurrence composites see no taint, so a spawn is fixed (CapabilityHit.fixed)
     only for a DATA_ARGS program whose every non-literal argument meets its rule."""
