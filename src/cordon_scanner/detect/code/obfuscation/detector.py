@@ -136,6 +136,20 @@ class ObfuscationDetector(BaseDetector):
                 remediation="Obtain the original source and review that.",
             ),
             DeclaredRule(
+                id="SUSPECT.OBFUSCATION.REQUIRE_ALIAS.001",
+                title="Node's require hidden behind a global name",
+                severity=Severity.HIGH,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=ObfuscationFinding.DETECTOR,
+                message=(
+                    "`require` is stored under a short global name, so the modules the code loads "
+                    "are loaded by calls that never name it."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Read every call of the alias: each is a module load.",
+            ),
+            DeclaredRule(
                 id="SUSPECT.OBFUSCATION.ENCODED.001",
                 title="Large encoded blob embedded in source",
                 severity=Severity.MEDIUM,
@@ -181,6 +195,7 @@ class ObfuscationDetector(BaseDetector):
         hits: list[Hit] = []
         hits.extend(ConcealmentFindings.bidi(content, unit.language))
         hits.extend(ConcealmentFindings.tag_smuggling(content))
+        hits.extend(ConcealmentFindings.require_alias(content, unit.language))
         hits.extend(EncodingFindings.escapes(content))
         hits.extend(PackingFindings.packers(content, unit.language))
         hits.extend(PackingFindings.mangled(content, ctx, unit.language))
