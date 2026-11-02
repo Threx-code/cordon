@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,494 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,497 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -447,11 +447,21 @@ rule's own samples.
 
 ## Code
 
-1 rules.
+2 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.CODE.REUSE.001` | high | Code file of an earlier malware campaign |
+| `SUSPECT.CODE.MODEL.001` | high | The code itself reads as malicious to Cordon's code model |
+
+## Code Model
+
+2 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `OPERATIONAL.CODE_MODEL.CAPPED` | info | A reached file was past the code model's size cap |
+| `OPERATIONAL.CODE_MODEL.UNAVAILABLE` | info | The code model's weights could not be used |
 
 ## Compose files
 
