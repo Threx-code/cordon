@@ -43,11 +43,17 @@ class JsonTooDeep(RecursionError):
 
 
 class ScannedJson:
-    """JSON read from scanned content. Stateless; call the static methods."""
+    """JSON read from scanned content. Call the static methods."""
+
+    #: While a scan's parent judges the package (`ServedJson.serving`), what serves a scanned document
+    #: in place of decoding it (item 56 (b)): the context worker's value, or a gap. None elsewhere.
+    serve: ClassVar[Callable[[str | bytes | bytearray], Any] | None] = None
 
     @staticmethod
     def loads(text: str | bytes | bytearray, **options: Any) -> Any:
         """`json.loads(text, **options)`, at any depth."""
+        if ScannedJson.serve is not None and not options:
+            return ScannedJson.serve(text)
         try:
             return json.loads(text, **options)
         except RecursionError:

@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from cordon_scanner.detect.base import FileUnit
 from cordon_scanner.ecosystems.base import WORKSPACE_INHERITED, Coordinate, LockEntry, LockGraph
 from cordon_scanner.ecosystems.registry import EcosystemRegistry, RegistryFacts
+from cordon_scanner.engine.isolation.documents import Documents
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.foundation.collector import ScanCaches
 from cordon_scanner.foundation.models import Scope, Severity
@@ -311,6 +312,9 @@ class Graph:
         (`raised`, a content cause, item 27). A setup.py was parsed six times a scan, and a
         parse that raised was dropped unmarked at eight of those asks (item 26)."""
         in_tree = getattr(ecosystem, "parse_in_tree", None)
+        if Documents.active():
+            # In a scan's parent, the context worker's record (item 56 (b)): never a parse here.
+            return Documents.manifest(ecosystem, unit, files if in_tree is not None else None)
         key = (
             ScanCaches.identity(ecosystem),
             ScanCaches.identity(unit.content),
@@ -935,6 +939,8 @@ class ParsedManifests:
         """`ecosystem.parse_manifest(unit.content)`, the file read on its own, once a scan: kept
         as `manifest_of` keeps a parse (its outcome, a raise included, recorded once), under its
         own key, so a step that read the file alone reads exactly that still."""
+        if Documents.active():
+            return Documents.manifest(ecosystem, unit, None)
         key = (ScanCaches.identity(ecosystem), ScanCaches.identity(unit.content), -2)
         kept = Graph._parsed.get(key)
         if kept is not None and kept[0] is unit.content:
@@ -949,6 +955,11 @@ class ParsedManifests:
             raise
         Graph._parsed[key] = (unit.content, manifest)
         return manifest
+
+    @staticmethod
+    def absorb_raised(path: str, why: str) -> None:
+        """A manifest whose parse raised in the context worker (item 56 (b)), reported here."""
+        ParsedManifests._raised.setdefault(path, why)
 
     @staticmethod
     def raised() -> dict[str, str]:

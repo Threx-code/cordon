@@ -27,7 +27,7 @@ from cordon_scanner.engine.pipeline.constants import (
     SWEPT_NOTE,
     UNEXAMINED_INSTALL_RULE,
 )
-from cordon_scanner.foundation.formats.scanned_json import ScannedJson
+from cordon_scanner.foundation.formats.served_json import ServedJson
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -243,7 +243,7 @@ class ReleaseChecks:
             parent, name = (parts[-2] if len(parts) >= 2 else ""), parts[-1]
             try:
                 if name == "package.json" and parent == "package":
-                    document = ScannedJson.loads(unit.content.text)
+                    document = ServedJson.loads(unit.content.text, unit.path)
                     if (
                         isinstance(document, dict)
                         and document.get("name")
@@ -260,7 +260,7 @@ class ReleaseChecks:
                 elif name == "package.json" and parent == "extension":
                     # A VS Code / Open VSX extension package (.vsix): the Marketplace names it
                     # `publisher.name`, and that is the key OSV's VSCode records use.
-                    document = ScannedJson.loads(unit.content.text)
+                    document = ServedJson.loads(unit.content.text, unit.path)
                     if (
                         isinstance(document, dict)
                         and document.get("publisher")

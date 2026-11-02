@@ -48,6 +48,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
+from cordon_scanner.foundation.formats.served_json import ServedJson
 from cordon_scanner.foundation.paths import PackagePaths
 
 if TYPE_CHECKING:
@@ -384,7 +385,7 @@ class IntentObserver:
         if manifest is None:
             return set(), set()
         try:
-            document = ScannedJson.loads(manifest.content.text)
+            document = ServedJson.loads(manifest.content.text, manifest.path)
         except (ValueError, RecursionError):  # malformed, or nested past ScannedJson's limit
             return set(), set()
         if not isinstance(document, dict):

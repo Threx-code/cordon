@@ -39,6 +39,7 @@ from cordon_scanner.engine.pipeline.publisher import Publisher
 from cordon_scanner.engine.pipeline.releases import ReleaseChecks
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.errors import ArchiveError
+from cordon_scanner.foundation.formats.served_json import ServedJson
 from cordon_scanner.foundation.models import Scope, Severity
 from cordon_scanner.foundation.results import Dependency, OperationalFinding
 from cordon_scanner.sources.registry import ArchiveReader
@@ -348,9 +349,10 @@ class ArchiveStages:
         # archive silently skipped every check about its dependencies.
         self.progress.phase("dependencies")
         package = PackageFormat.of(units)
-        # A published package's inventory is its root manifest and lockfile (`DependencyScope`).
-        published = package if image is None else ""
-        dependencies = self.engine.dependencies.build(units, acc, published=published)
+        # A published package's inventory is its root manifest and lockfile (`DependencyScope`):
+        # built in the context worker with the rest of what the archive's manifests say (item 56
+        # (b)), and applied here, where it was built before, so its findings keep their place.
+        dependencies = self.engine.context_stage.archive_dependencies(acc)
         self._hold_not_installed_files(acc, dependencies, ctx)
         if image is not None:
             Images.report_image_contents(image, acc)
@@ -484,17 +486,19 @@ class ArchiveStages:
 
         acc.findings[:], code_model = CodeModelPass.decide(self.engine, acc.findings, ctx)
         acc.findings[:] = ResultFolding.settled(self.config, acc)
-        acc.findings[:], verdict = Ceilings.verdict(
-            Ceilings.hardening_tier(
-                Hooks.onto_manifest(Publisher.test_identity_keys(acc.findings, units), units),
-                self.config.policy,
-            ),
-            units,
-            ScanFactsGathering.verdict_facts(self.engine, units, ctx, acc),
-            self.engine._intent_observation(units, ctx, acc.facts),
-            repository=not ctx.package_distribution,
-            facts=acc.facts,
-        )
+        # The package's JSON these read is the context worker's (item 56 (b)), never decoded here.
+        with ServedJson.serving(REPOSITORY_SCOPE):
+            acc.findings[:], verdict = Ceilings.verdict(
+                Ceilings.hardening_tier(
+                    Hooks.onto_manifest(Publisher.test_identity_keys(acc.findings, units), units),
+                    self.config.policy,
+                ),
+                units,
+                ScanFactsGathering.verdict_facts(self.engine, units, ctx, acc),
+                self.engine._intent_observation(units, ctx, acc.facts),
+                repository=not ctx.package_distribution,
+                facts=acc.facts,
+            )
         acc.findings.extend(code_model)
         dependencies = self.engine.detection.annotated(dependencies, acc.findings, ctx, units)
         return dependencies, verdict

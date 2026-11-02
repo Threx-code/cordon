@@ -20,7 +20,7 @@ from cordon_scanner.ecosystems.registry import RegistryFacts
 from cordon_scanner.engine.package_format import PackageFormat
 from cordon_scanner.engine.pipeline.constants import YOUNG_DEPENDENCY_RULE
 from cordon_scanner.engine.pipeline.releases import ReleaseChecks
-from cordon_scanner.foundation.formats.scanned_json import ScannedJson
+from cordon_scanner.foundation.formats.served_json import ServedJson
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -72,7 +72,9 @@ class History:
             manifest = next((u for u in units if u.path.endswith("!extension/package.json")), None)
             try:
                 document = (
-                    ScannedJson.loads(manifest.content.text) if manifest is not None else None
+                    ServedJson.loads(manifest.content.text, manifest.path)
+                    if manifest is not None
+                    else None
                 )
             except (ValueError, RecursionError):
                 return None

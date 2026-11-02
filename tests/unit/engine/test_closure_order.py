@@ -97,7 +97,7 @@ class TestEveryEntryIsFollowed:
         import tarfile
 
         from cordon_scanner import Scanner
-        from cordon_scanner.engine.pipeline import hooks
+        from cordon_scanner.engine.isolation.context import ContextStage
         from cordon_scanner.foundation.config.settings import Config
 
         files = {
@@ -124,12 +124,13 @@ class TestEveryEntryIsFollowed:
                 info = tarfile.TarInfo(name)
                 info.size = len(data)
                 tar.addfile(info, io.BytesIO(data))
+        # The context is built in the context worker (item 56 (b)): read here as it comes back.
         seen = []
-        original = hooks.Hooks.lifted_inherit
+        original = ContextStage.build
         monkeypatch.setattr(
-            hooks.Hooks,
-            "lifted_inherit",
-            staticmethod(lambda ctx: seen.append(original(ctx)) or seen[-1]),
+            ContextStage,
+            "build",
+            lambda self, *a, **kw: (out := original(self, *a, **kw), seen.append(out[0]))[0],
         )
         Scanner(Config.default().with_overrides(use_cache=False, offline=True)).scan(archive)
         closure = {p.split("!", 1)[-1] for ctx in seen for p in ctx.library_closure_paths}

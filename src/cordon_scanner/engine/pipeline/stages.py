@@ -35,6 +35,7 @@ from cordon_scanner.foundation.files.walk import (
     WalkEntry,
     Walker,
 )
+from cordon_scanner.foundation.formats.served_json import ServedJson
 from cordon_scanner.foundation.models import Finding, Severity
 from cordon_scanner.foundation.results import Dependency, OperationalFinding, Repository
 
@@ -61,7 +62,8 @@ class ScanStages:
         walked: list[WalkEntry] | None,
         walker: Walker,
     ) -> list[FileUnit]:
-        """Every file the scan reads, with the install hooks written inline and deobfuscated forms."""
+        """Every file the scan reads. The hooks written inline and the deobfuscated forms are derived
+        in the context worker (`engine/isolation/context.py`, item 56 (b)), never here."""
         # Manifest hooks are discovered while scanning, and they change the
         # context every later finding is scored against: the same capability
         # pair means something different inside a lifecycle script. So files are
@@ -74,8 +76,6 @@ class ScanStages:
         ):
             units.append(unit)
             self.progress.advance(unit.path)
-        units.extend(self.engine.units.inline_hooks(units))
-        units.extend(self.engine.units.deobfuscated(units))
         return units
 
     def dependencies(
@@ -309,17 +309,19 @@ class ScanStages:
         acc.findings[:], code_model = CodeModelPass.decide(self.engine, acc.findings, ctx)
         findings = ResultFolding.settled(self.config, acc)
 
-        graded, verdict = Ceilings.verdict(
-            Ceilings.hardening_tier(
-                Hooks.onto_manifest(Publisher.test_identity_keys(list(findings), units), units),
-                self.config.policy,
-            ),
-            units,
-            ScanFactsGathering.verdict_facts(self.engine, units, ctx, acc),
-            self.engine._intent_observation(units, ctx, acc.facts),
-            repository=not ctx.package_distribution,
-            facts=acc.facts,
-        )
+        # The package's JSON these read is the context worker's (item 56 (b)), never decoded here.
+        with ServedJson.serving(REPOSITORY_SCOPE):
+            graded, verdict = Ceilings.verdict(
+                Ceilings.hardening_tier(
+                    Hooks.onto_manifest(Publisher.test_identity_keys(list(findings), units), units),
+                    self.config.policy,
+                ),
+                units,
+                ScanFactsGathering.verdict_facts(self.engine, units, ctx, acc),
+                self.engine._intent_observation(units, ctx, acc.facts),
+                repository=not ctx.package_distribution,
+                facts=acc.facts,
+            )
         findings = (*graded, *code_model)
         dependencies = self.engine.detection.annotated(dependencies, findings, ctx, units)
         return findings, verdict, dependencies

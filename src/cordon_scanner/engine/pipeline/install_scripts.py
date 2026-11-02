@@ -24,7 +24,6 @@ scope reads it: one that spells a package-manager install anywhere in it (`execS
 
 from __future__ import annotations
 
-import json
 import posixpath
 import re
 import shlex
@@ -65,12 +64,16 @@ class InstallScripts:
         return _INSTALL_IN_PROGRAM.search(program) is not None
 
     @staticmethod
-    def of(manifest: bytes) -> InstallScripts:
-        """The install-time scripts of one `package.json`; nothing for one that does not parse."""
+    def of(manifest: bytes, path: str = "") -> InstallScripts:
+        """The install-time scripts of one `package.json`; nothing for one that does not parse.
+        Decoded by the context worker in a scan's parent (`Documents`, item 56 (b)), at any depth:
+        `json.loads` here raised RecursionError, uncaught, on a manifest nested past its limit."""
+        from cordon_scanner.foundation.formats.served_json import ServedJson
+
         found = InstallScripts()
         try:
-            scripts = json.loads(manifest.decode("utf-8", "replace")).get("scripts")
-        except (ValueError, AttributeError):
+            scripts = ServedJson.loads(manifest.decode("utf-8", "replace"), path).get("scripts")
+        except (ValueError, AttributeError, RecursionError):
             return found
         if not isinstance(scripts, dict):
             return found

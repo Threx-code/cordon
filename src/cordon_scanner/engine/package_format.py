@@ -10,7 +10,7 @@ import re
 from typing import TYPE_CHECKING, Final
 
 from cordon_scanner.ecosystems.registry import RegistryFacts
-from cordon_scanner.foundation.formats.scanned_json import ScannedJson
+from cordon_scanner.foundation.formats.served_json import ServedJson
 
 if TYPE_CHECKING:
     from cordon_scanner.detect.base import FileUnit
@@ -140,7 +140,7 @@ class PackageFormat:
                 if not archive.endswith((".tgz", ".tar.gz")):
                     return False
                 try:
-                    manifest = ScannedJson.loads(unit.content.text)
+                    manifest = ServedJson.loads(unit.content.text, unit.path)
                 except (ValueError, RecursionError):
                     return False
                 return (

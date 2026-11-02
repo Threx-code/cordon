@@ -37,6 +37,9 @@ from cordon_scanner.detect.base import (
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.engine.cache import ScanCache
 from cordon_scanner.engine.detector_clock import DetectorClock
+from cordon_scanner.engine.isolation.context import ContextStage
+from cordon_scanner.engine.isolation.documents import Documents, PendingHooks
+from cordon_scanner.engine.isolation.expander import ArchiveExpander
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.archive_stages import ArchiveStages
 from cordon_scanner.engine.pipeline.constants import REPOSITORY_SCOPE
@@ -130,6 +133,11 @@ class Engine:
         self.units = Units(self)
         self.detection = Detection(self)
         self.dependencies = Dependencies(self)
+        self.context_stage = ContextStage(self)
+        self.expansion = ArchiveExpander(self)
+        #: The inventory's held manifest-hook places, for the context worker (`inventory`).
+        self.pending_hooks: Any = None
+        self._deferring_hooks = False
 
     @staticmethod
     def _default_detectors() -> tuple[Detector, ...]:
@@ -170,6 +178,10 @@ class Engine:
         from cordon_scanner.engine.parallel import ParallelScanner
 
         ParallelScanner._template_engine = None
+        # The context worker's decoded manifests and documents (item 56 (b)) are this scan's only.
+        Documents.end()
+        # Expanded members' spill files (item 56 (c)), whatever the scan's outcome.
+        self.expansion.end()
         # The progress line is a partial line with no newline, so leaving it puts a traceback or
         # an error message on the same row as a half-drawn progress bar.
         self.progress.finish()
@@ -239,7 +251,7 @@ class Engine:
                     if detector.requires.dependencies and self.detection.enabled(detector, ctx):
                         acc.add(self.detection.run(detector, graph_unit, ctx, acc))
         dependencies = self.detection.annotated(dependencies, acc.findings, ctx, [])
-        ParsedManifests.report_raised(acc)
+        ContextStage.report_unread(acc)
         acc.ended_late(ctx, REPOSITORY_SCOPE)
         acc.explain_incomplete()
         result = ScanResult(
@@ -286,21 +298,31 @@ class Engine:
             if self.config.limits.total_timeout > 0
             else float("inf")
         )
-        inventory = self.inventory(root, acc, walked=walked, walker=walker)
+        inventory = self.inventory(
+            root, acc, walked=walked, walker=walker, defer_manifest_hooks=True
+        )
         ctx = self._context(
             inventory, deadline=deadline if self.config.limits.total_timeout > 0 else None
         )
 
         units = self.stages.read_units(root, inventory, acc, deadline, walked, walker)
 
-        dependencies, ingested = self.stages.dependencies(units, acc, root)
-        ctx = self.stages.install_context(units, acc, ctx, dependencies)
+        # The parent parses no manifest, lockfile, hook or closure (item 56 (b)): the context worker
+        # derives the inline and lifted units, the dependency graph and what runs.
+        self.progress.phase("dependencies")
+        ctx, dependencies, ingested = self.context_stage.build(
+            "tree", units, acc, ctx, root,
+            carry_content=not self.source.parallel_safe, where=REPOSITORY_SCOPE,
+            pending_hooks=self.pending_hooks,
+        )  # fmt: skip
+        # With the manifests' hooks the worker read: what the result reports and later steps read.
+        inventory = ctx.repository if ctx.repository is not None else inventory
 
         self.stages.detect(units, acc, root, ctx, dependencies)
 
         self.stages.after_detection(dependencies, acc, units, ctx, inventory)
 
-        ParsedManifests.report_raised(acc)
+        ContextStage.report_unread(acc)
         acc.ended_late(ctx, REPOSITORY_SCOPE)
         acc.explain_incomplete()
         findings, verdict, dependencies = self.stages.fold_and_judge(acc, units, ctx, dependencies)
@@ -444,7 +466,7 @@ class Engine:
         """
         self._scanning_archive = True
         try:
-            data = path.read_bytes()
+            path.stat()
         except OSError as exc:
             raise SourceError(f"cannot read {path}: {exc}") from exc
 
@@ -479,13 +501,13 @@ class Engine:
         ctx = replace(ctx, deadline=deadline if self.config.limits.total_timeout > 0 else None)
         retained = 0
 
-        image, members = self.archive_stages.source(data, acc, path, rejected, deadline)
+        image, members = self.expansion.source(path, acc, rejected, deadline)  # item 56 (c)
 
         self.archive_stages.read_members(
             members, deadline, acc, path, retained, units, rejected, image
         )
 
-        ctx = self.archive_stages.context(units, acc, ctx, image)
+        ctx = self.context_stage.archive(units, acc, ctx, path, image)
 
         detectors = self.archive_stages.parallel(units, deadline, acc, path, ctx)
         self.archive_stages.release_checks(acc, ctx, units)
@@ -494,7 +516,7 @@ class Engine:
         dependencies, target_kind, ctx = self.archive_stages.dependencies(units, acc, image, ctx)
         dependencies, verdict = self.archive_stages.verdict(acc, ctx, image, units, dependencies)
         self.archive_stages.not_installed(acc, ctx)
-        ParsedManifests.report_raised(acc)
+        ContextStage.report_unread(acc)
         acc.ended_late(ctx, path.name)
         acc.explain_incomplete()
         result = ScanResult(
@@ -531,8 +553,13 @@ class Engine:
         *,
         walked: Sequence[WalkEntry] | None = None,
         walker: Walker | None = None,
+        defer_manifest_hooks: bool = False,
     ) -> Repository:
         """Determine what the target is.
+
+        With `defer_manifest_hooks` (a scan, item 56 (b)) no manifest is parsed here: each place a
+        manifest's hooks would go is held, in order, in `pending_hooks`, for the context worker to
+        read (`ContextWork.inventory_hooks`), and the inventory returned has the filename hooks only.
 
         Consumed by every detector's applicability check, which is what makes
         detector selection automatic rather than configured. A user should not
@@ -545,6 +572,7 @@ class Engine:
         # had walked with: a source that selected nothing then produced no
         # NOTHING_SCANNED finding, because as far as those stats were concerned
         # the tree was empty rather than unexamined.
+        self._deferring_hooks = defer_manifest_hooks
         walker = walker if walker is not None else self._walker()
         # Materialised once by `_scan` and handed to both phases when the source
         # yields the walker's own output, which is the default and the case a
@@ -582,13 +610,8 @@ class Engine:
             lockfiles,
         )
 
-        frozen = frozenset(seen_paths)
-        for real_path, rel_path, eco in deferred:
-            hooks.extend(self._manifest_hooks(real_path, rel_path, eco, frozen))
-
+        hooks = self._tree_hooks(hooks, deferred, frozenset(seen_paths), package_directories)
         stats = Engine.inventory_stats(languages, total_bytes, evidence)
-
-        hooks = [hook for hook in hooks if Hooks.hook_executes(hook, package_directories)]
 
         if acc is not None and walker.stats.limit_hit:
             acc.named_elsewhere("OPERATIONAL.SCAN.LIMIT", REPOSITORY_SCOPE)
@@ -613,6 +636,26 @@ class Engine:
             revision=revision,
             remote=remote,
         )
+
+    def _tree_hooks(
+        self,
+        hooks: list[Any],
+        deferred: list[tuple[Path, str, str]],
+        frozen: frozenset[str],
+        package_directories: set[str],
+    ) -> list[Hook]:
+        """The hooks of manifests read with the walked tree in view, then those that execute. For
+        a scan (`defer_manifest_hooks`) each manifest's place is held, in order, for the context
+        worker (`pending_hooks`), and only the filename hooks are kept here."""
+        for real_path, rel_path, eco in deferred:
+            if self._deferring_hooks:
+                hooks.append(PendingHooks(str(real_path), rel_path, eco, True))
+            else:
+                hooks.extend(self._manifest_hooks(real_path, rel_path, eco, frozen))
+        if self._deferring_hooks:
+            self.pending_hooks = (list(hooks), frozenset(package_directories), frozen)
+            hooks = [hook for hook in hooks if isinstance(hook, Hook)]
+        return [hook for hook in hooks if Hooks.hook_executes(hook, package_directories)]
 
     @staticmethod
     def inventory_stats(
@@ -680,6 +723,8 @@ class Engine:
                     # Its install-time code is a file beside the manifest: read once the whole
                     # tree has been walked, as the manifest detector reads it.
                     deferred.append((entry.real_path, entry.rel_path, eco))
+                elif self._deferring_hooks:
+                    hooks.append(PendingHooks(str(entry.real_path), entry.rel_path, eco, False))  # type: ignore[arg-type]
                 else:
                     hooks.extend(self._manifest_hooks(entry.real_path, entry.rel_path, eco))
             lock = EcosystemRegistry.lockfile_ecosystem(entry.rel_path)
@@ -822,7 +867,10 @@ class Engine:
             return effects, {str(fact) for fact in held.get("intent.fact", ())}
 
         return IntentObserver.observe(
-            files, ctx, file_facts, lambda seeds: Hooks.hook_js_closure(files, seeds)
+            files,
+            ctx,
+            file_facts,
+            lambda seeds: Documents.js_closure(files, seeds, Hooks.hook_js_closure),
         )
 
     def _capability_profile(
