@@ -39,6 +39,14 @@ class Structure:
         self.declared: dict[int, set[str]] = {}
         self.parent: dict[int, int] = {}
         self.vars: dict[tuple[int, str], set[Label]] = {}
+        #: name -> the field keys stored into it (`x.f = v` binds (scope, "x.f"), item 59).
+        self.fields: dict[tuple[int, str], set[tuple[int, str]]] = {}
+        #: `y = x`: y -> x, so a field written through either lands on one object (item 59).
+        self.alias_of: dict[tuple[int, str], tuple[int, str]] = {}
+        #: Objects past `MAX_FIELDS` fields: whole-object again.
+        self.collapsed: set[tuple[int, str]] = set()
+        #: A local module call's token -> the sinks its result reaches (item 60's js.callsink).
+        self.c_sinks: dict[int, set[tuple[str, str | None, str, int]]] = {}
         self.aliases: dict[str, str] = {}  # local name -> "module" or "module.member"
         self.connections: set[tuple[int, str]] = set()  # names bound to an open connection
         self.raw_connections: set[tuple[int, str]] = set()  # ... to a raw socket among them

@@ -33,7 +33,8 @@ class CapabilityHit:
     fixed: bool = False
     """Whether this is a spawn whose entire argv was written out in the source.
 
-    Set only by the Python AST tier, which is the only tier that can answer it.
+    Set by the Python AST tier (`PythonFacts.fixed_command`) and, for JavaScript, from
+    `JsFlow.fixed_spawn_lines` (note 44: a DATA_ARGS program with its arguments as data).
     See `CompositeEvaluator._evaluate_over`, which is the one place it is read."""
 
     variants: int = 1

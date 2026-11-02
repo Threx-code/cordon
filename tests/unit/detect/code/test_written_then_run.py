@@ -105,22 +105,26 @@ class TestWrittenThenRun:
         found = self._scan(tmp_path, VERIFIED_BINARY)
         assert not [r for r, _ in found if r == REMOTE_CODE], found
 
-    def test_a_decoded_command_run_is_remote_code(self, tmp_path: Path) -> None:
-        # The decoded value reaches spawn and require; the `decoded` source makes that a
-        # REMOTE_CODE flow, caught without the written-to-disk step.
+    def test_a_decoded_command_run_at_install_blocks(self, tmp_path: Path) -> None:
+        # The decoded value reaches spawn and require in a postinstall: a decode-then-run at
+        # install, hostile whatever the data's source, so the install-time critical reads it.
         found = self._scan(tmp_path, DECODED_RUN)
-        assert [r for r, _ in found if r == REMOTE_CODE], found
+        assert ("MALWARE.INSTALL.REMOTE_CODE.001", "critical") in found, found
+        # Nothing a server sent is involved, so it is not "runs what a server sends it".
+        assert not [r for r, _ in found if r == REMOTE_CODE], found
 
 
 class TestACommandAPersonRuns:
     """The same fetch-and-run, from a `bin` command and from the package's `main`."""
 
     @staticmethod
-    def _scan(tmp_path: Path, manifest_extra: dict[str, object], path: str) -> set[str]:
+    def _scan(
+        tmp_path: Path, manifest_extra: dict[str, object], path: str, code: str = RUN_FETCHED
+    ) -> set[str]:
         manifest = {"name": "example-cli", "version": "1.0.0", **manifest_extra}
         members = {
             "package/package.json": json.dumps(manifest).encode(),
-            f"package/{path}": RUN_FETCHED.encode(),
+            f"package/{path}": code.encode(),
         }
         buffer = io.BytesIO()
         with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
@@ -141,3 +145,9 @@ class TestACommandAPersonRuns:
         severities = self._scan(tmp_path, {"main": "index.js"}, "index.js")
         assert severities
         assert severities <= {"high", "critical"}
+
+    def test_a_decoded_command_in_the_entry_is_not_server_sent_code(self, tmp_path: Path) -> None:
+        """A decoded blob run at load is the decode-then-run class (SUSPECT.DECODE_EXEC and its
+        readers), not REMOTE_CODE: no response is involved (cordon-a0's REMOTE_CODE read, 1 Nov:
+        3 of 8 benign REMOTE_CODE blocks were decoded flows, 0 of 11 such malware relied on it)."""
+        assert self._scan(tmp_path, {"main": "index.js"}, "index.js", DECODED_RUN) == set()

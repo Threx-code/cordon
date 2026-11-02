@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Final
+from typing import Any, Final
 
 #: Files above this are not analysed: bundles of that size are third-party code concatenated, and
 #: the analysis is linear but not free.
@@ -151,7 +151,7 @@ _HOST_OBJECTS: Final = frozenset(
 _OPENER: Final = re.compile(
     r"\s*(?:open(?!\s+-[ab]\s+\"?(?:Terminal|iTerm|Script\s?Editor|Automator|Warp|Alacritty"
     r"|kitty|Hyper|Ghostty|osascript)\b)|xdg-open|gio\s+open|wslview|sensible-browser|x-www-browser"
-    r'|start\s+""|cmd(?:\.exe)?\s+/c\s+start\s+""|rundll32(?:\.exe)?\s+url\.dll,FileProtocolHandler'
+    r"|rundll32(?:\.exe)?\s+url\.dll,FileProtocolHandler"
     r"|explorer(?:\.exe)?)(?:\s|\"|$)",
     re.I,
 )
@@ -183,14 +183,50 @@ _PROCESS_CALL: Final = frozenset(
 )
 #: The calls that take a program and an argument list rather than a shell command line.
 _ARGV_CALLS: Final = frozenset({"spawn", "spawnSync", "execFile", "execFileSync"})
-#: Programs whose arguments are code or a package to run: an interpreter (`node -e`, `sh -c`), a
-#: shell, or a package runner (`npx <pkg>`).
-_RUNS_ITS_ARGUMENT: Final = re.compile(
-    r"(?:^|[/\\])(?:node|nodejs|deno|bun|bunx|npx|pnpx|npm|pnpm|yarn|uvx|pipx|python[\d.]*|py"
-    r"|ruby|perl|php|lua|sh|bash|zsh|dash|ksh|fish|cmd|powershell|pwsh|osascript|wscript|cscript"
-    r"|mshta|rundll32|regsvr32|env|sudo|xargs|eval)(?:\.exe)?$",
-    re.I,
-)
+#: Programs whose arguments are data, each with the rule a tainted argument must meet (note 44):
+#: `any` (a pid, a name to look up, an archive or URL to fetch or unpack), `after --` (a program
+#: with options that take a command: only an argument after a literal `--` is data, since GNU
+#: getopt reads an option anywhere), `link` (an opener: only an argument the code itself starts
+#: with http(s):// -- what a reply names may be `file:`, an app or a scheme's handler). An
+#: ALLOWLIST: every program not here runs, or may run, what it is given (LOLBins, wrappers, package
+#: runners, git's `--upload-pack`), so the default is code. A row is added with a measured benign
+#: case and a test. Writing where curl, wget, tar or unzip put a file is the write rules' to judge.
+DATA_ARGS: Final[dict[str, str]] = {
+    "taskkill": "any",
+    "kill": "any",
+    "which": "any",
+    "where": "any",
+    "curl": "any",
+    "unzip": "any",
+    "tar": "after --",
+    "wget": "after --",
+    "open": "link",
+    "xdg-open": "link",
+}
+#: Windows executable suffixes a program's name drops for DATA_ARGS. `.bat` and `.cmd` are not
+#: dropped: Windows runs them through cmd.exe, which parses the arguments (the BatBadBut class), so
+#: they never match a row.
+_EXE_SUFFIXES: Final = (".exe", ".com")
+#: What a link the code opens starts with.
+_LINK_SCHEMES: Final = ("http://", "https://")
+
+
+class ProgramNames:
+    """How a spawn's program and an opener's operand are read for DATA_ARGS (note 44)."""
+
+    @staticmethod
+    def of(value: str) -> str:
+        """A program's name as DATA_ARGS keys it: the last path part, lowercased, `.exe`/`.com`
+        dropped (`C:\\Windows\\System32\\TASKKILL.EXE` and `/usr/bin/taskkill` are `taskkill`)."""
+        name = value.strip().replace("\\", "/").rsplit("/", 1)[-1].lower()
+        return name[:-4] if name.endswith(_EXE_SUFFIXES) else name
+
+    @staticmethod
+    def starts_a_link(text: str) -> bool:
+        """Whether `text`, past blanks and an opening quote, starts with http(s)://."""
+        return text.lstrip(" \t\"'").lower().startswith(_LINK_SCHEMES)
+
+
 #: Decompressors whose output is bytes a server or a blob chose: running that output is the
 #: decoded-content dropper. `Buffer.from(x, "base64"|"hex")` and `atob(x)` are handled by name.
 _DECODERS: Final = frozenset(
@@ -305,8 +341,9 @@ class _Fn:
     #: A method written in a class body (`load() {...}`): its `this` is that class's instance.
     method: bool = False
     ret: set[object] = field(default_factory=set)
-    #: ("P" | "R", parameter index) -> sinks it reaches: the parameter itself, or a file read at it.
-    sinks: dict[tuple[str, int], set[tuple[str, str | None, str, int]]] = field(
+    #: ("P" | "R", parameter index) -> sinks it reaches: the parameter itself, or a file read at it;
+    #: ("Q", (parameter index, field)) -> sinks one field of the parameter reaches (item 59).
+    sinks: dict[tuple[str, Any], set[tuple[str, str | None, str, int]]] = field(
         default_factory=dict
     )
 
@@ -316,5 +353,6 @@ class _OverBudget(Exception):
 
 
 Label = (
-    object  # a source kind (str), a parameter ("P", fid, i), or a file read at one ("R", fid, i)
+    object  # a source kind (str), a parameter ("P", fid, i), a file read at one ("R", fid, i), or
+    # one field of a parameter ("Q", fid, i, field) (item 59)
 )

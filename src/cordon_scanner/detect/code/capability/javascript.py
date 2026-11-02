@@ -188,7 +188,10 @@ class JavaScriptCapabilities:
         # a command and run, or decoded into a module name and required (review 98 shape A,
         # rollup-plugins-polyfills-rode). The decoded label is followed through .split, array
         # destructuring and bindings by js_flow, so the pairing is a dataflow fact, not proximity.
-        ("decoded", "CAP.JS.FLOW.REMOTE_CODE", frozenset({"execute", "process"})),
+        # A mark of its own: nothing a server sent is involved, so the runtime REMOTE_CODE composite
+        # ("runs what a server sends it") does not read it; the install-time one does, since a
+        # decode-then-run in an install hook is hostile whatever the data's source.
+        ("decoded", "CAP.JS.FLOW.DECODED_RUN", frozenset({"execute", "process"})),
         # Sent over a raw socket or inside a DNS name rather than a request: what a command
         # printed, a home-directory file, a credential store. A client library speaks HTTP to its
         # service; a channel of its own is how a payload reports what it found.
@@ -275,7 +278,7 @@ class JavaScriptCapabilities:
                 offset = starts[min(flow.line, len(starts)) - 1]
                 if (
                     glue
-                    and rule_id == "CAP.JS.FLOW.REMOTE_CODE"
+                    and rule_id in ("CAP.JS.FLOW.REMOTE_CODE", "CAP.JS.FLOW.DECODED_RUN")
                     and WasmBindgenGlue.shim_at(text, offset)
                 ):
                     continue  # the crate's own code, by its own module (`wasm_glue`)

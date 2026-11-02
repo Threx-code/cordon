@@ -685,7 +685,11 @@ class ScanCache:
             return None
 
         self.hits += 1
-        return findings, facts
+        # A code model record from another build's format is never replayed (item 47): the parent
+        # would refuse it anyway, and dropping it here keeps an old entry from reaching a new scorer.
+        from cordon_scanner.analysis.javascript.code_model import FileScoreRecord
+
+        return FileScoreRecord.current(findings), facts
 
     # -- Authentication --------------------------------------------------
 

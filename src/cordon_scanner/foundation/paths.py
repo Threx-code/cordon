@@ -31,6 +31,7 @@ import functools
 import os
 import sys
 from pathlib import Path
+from typing import ClassVar
 
 CONTAINER = "!"
 """Separates a container from the path inside it, as `walk_archive` writes it."""
@@ -38,6 +39,15 @@ CONTAINER = "!"
 
 class ContainerPaths:
     """Paths inside archives and images, compared as files on disk are."""
+
+    #: Suffix of the unit an obfuscated file's recovered text is read as (`core.deobfuscation`):
+    #: text the scan wrote, never bytes the package ships.
+    DEOBFUSCATED: ClassVar[str] = "#deobfuscated.js"
+
+    @staticmethod
+    def is_recovered(path: str) -> bool:
+        """Whether a unit is the scan's own recovery of an obfuscated file, not a shipped file."""
+        return path.endswith(ContainerPaths.DEOBFUSCATED)
 
     @staticmethod
     def within_container(path: str) -> str:

@@ -448,6 +448,12 @@ class ScanStats:
         }
 
 
+#: Rules a detector uses to carry data to the parent, never a finding a reader sees (the code model's
+#: per-file score, item 47). `ScanResult` strips them as the last guard: whatever path assembled the
+#: result, and whether or not the step that consumes them ran, none reaches a report.
+INTERNAL_PREFIX = "INTERNAL."
+
+
 @dataclass(frozen=True, slots=True)
 class ScanResult:
     """Everything a scan produced. The aggregate root of the domain.
@@ -504,6 +510,14 @@ class ScanResult:
     verdict: dict[str, Any] | None = None
     """The package verdict (`core/verdict.py`): the features it read and, with a model shipped, its
     score and thresholds."""
+
+    def __post_init__(self) -> None:
+        if any(f.rule_id.startswith(INTERNAL_PREFIX) for f in self.findings):
+            object.__setattr__(
+                self,
+                "findings",
+                tuple(f for f in self.findings if not f.rule_id.startswith(INTERNAL_PREFIX)),
+            )
 
     @property
     def active(self) -> tuple[Finding, ...]:
