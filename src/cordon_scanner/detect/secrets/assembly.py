@@ -17,6 +17,7 @@ from cordon_scanner.detect.secrets.patterns import (
     MIN_KEY_BODY,
     PROVIDER_PATTERNS,
     ROTATE,
+    SecretClass,
     SecretPattern,
 )
 from cordon_scanner.detect.secrets.values import SecretValues
@@ -178,6 +179,7 @@ class SecretAssembly:
                 severity=Severity.HIGH,
                 confidence=Confidence.HIGH,
                 remediation=ROTATE,
+                secret_class=SecretClass.LEAK,
             )
 
         if not assembled:
@@ -229,6 +231,7 @@ class SecretAssembly:
             # written, and it is exactly how a credential is hidden.
             confidence=Confidence.MEDIUM,
             remediation=ROTATE,
+            secret_class=SecretClass.LEAK,
         )
 
     @staticmethod

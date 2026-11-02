@@ -39,6 +39,7 @@ from cordon_scanner.detect.secrets.patterns import (
     PEM_ARMOUR_ONLY,
     PROVIDER_PATTERNS,
     ROTATE,
+    SecretClass,
     SecretPattern,
 )
 from cordon_scanner.detect.secrets.secrets import (
@@ -587,6 +588,7 @@ class SecretDetector(BaseDetector):
                 severity=Severity.HIGH,
                 confidence=Confidence.MEDIUM,
                 remediation=ROTATE,
+                secret_class=SecretClass.LEAK,
             )
             yield self._finding(spec, unit, ctx, match.start(), match.end(), value)
 
@@ -729,6 +731,7 @@ class SecretDetector(BaseDetector):
             # not worth failing a build on its own.
             confidence=Confidence.MEDIUM,
             remediation=ROTATE,
+            secret_class=SecretClass.LEAK,
         )
 
     def _finding(
@@ -766,7 +769,14 @@ class SecretDetector(BaseDetector):
         extractor = not (
             rule_material or fixture or documentation
         ) and SampleKinds.is_media_extractor(content.raw)
-        generated = not (rule_material or fixture or documentation or extractor) and (
+        # An exfiltration channel's credential (item 68's policy) is how stolen data leaves, and
+        # malware ships it in minified `dist/` bundles: where it sits in code never lowers it
+        # (24 bar-1 misses in 2 groups were held at MEDIUM this way, 0 benign; note 68).
+        # Documentation, fixtures and rule material still do.
+        exfiltration = spec.secret_class is SecretClass.EXFILTRATION_CHANNEL
+        generated = not (
+            rule_material or fixture or documentation or extractor or exfiltration
+        ) and (
             SourcePaths.is_generated_artefact(content.path)
             or SourcePaths.is_vendored(content.path)
             # Or a dataset: twenty thousand rows of scraped web pages is not source

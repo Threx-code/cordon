@@ -6,12 +6,25 @@ machine.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import Enum
 
 from cordon_scanner.foundation.models import (
     Confidence,
     Severity,
 )
+
+
+class SecretClass(Enum):
+    """What a credential is for, which decides how a package scan grades it (item 68's policy)."""
+
+    EXFILTRATION_CHANNEL = "exfiltration channel"
+    """Somewhere code sends data to (a Telegram bot, a Discord, Slack or Teams webhook, a Slack
+    token): in a package it is how stolen data leaves, so it keeps its grade wherever it sits in
+    code (`engine/pipeline/constants.DROP_POINT_SECRETS` is exactly this class)."""
+    LEAK = "leak"
+    """A credential its author exposed (a cloud key, a private key, a token): the publisher's to
+    rotate, which a package scan reports below the gate (`Publisher.publisher_secrets`)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +49,8 @@ class SecretPattern:
     heuristic. Without it the detector ran every provider regex over every file,
     which profiling showed to be the single largest cost in a scan.
     """
+    secret_class: SecretClass = field(kw_only=True)
+    """Required, with no default: a pattern cannot be added without saying what it is for."""
 
 
 ROTATE = (
@@ -56,6 +71,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"AKIA", b"ASIA", b"ABIA", b"ACCA"),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.GITHUB.TOKEN.001",
@@ -83,6 +99,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"ghp_", b"gho_", b"ghu_", b"ghs_", b"ghr_", b"github_pat_"),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.SLACK.TOKEN.001",
@@ -92,6 +109,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"xox",),
+        secret_class=SecretClass.EXFILTRATION_CHANNEL,
     ),
     SecretPattern(
         "SECRET.STRIPE.KEY.001",
@@ -101,6 +119,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"sk_live_", b"sk_test_", b"rk_live_", b"rk_test_"),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.GOOGLE.API_KEY.001",
@@ -110,6 +129,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"AIza",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.NPM.TOKEN.001",
@@ -120,6 +140,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         "Revoke the token immediately. An npm publish token turns one leak into "
         "poisoned releases of every package the account maintains.",
         (b"npm_",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.PYPI.TOKEN.001",
@@ -130,6 +151,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         "Revoke the token immediately. A PyPI token turns one leak into poisoned "
         "releases of every project the account maintains.",
         (b"pypi-AgEIcHlwaS5vcmc",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.PRIVATE_KEY.001",
@@ -175,6 +197,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         "Treat the key as compromised. Generate a replacement, distribute it, "
         "and revoke the old one before removing it from the tree.",
         (b"PRIVATE KEY-----",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.JWT.001",
@@ -187,6 +210,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         "If this token is live, revoke it. A committed JWT is often an expired "
         "example, which is why this is reported at medium confidence.",
         (b"eyJ",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.SLACK.WEBHOOK.001",
@@ -196,6 +220,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         "Delete the webhook in Slack. Anyone holding the URL can post as it.",
         (b"hooks.slack.com/services/",),
+        secret_class=SecretClass.EXFILTRATION_CHANNEL,
     ),
     # ---------------------------------------------------------------------
     # Provider credentials with a fixed, distinctive prefix.
@@ -253,6 +278,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
             b"glffct-",
             b"glagent-",
         ),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.DOCKERHUB.TOKEN.001",
@@ -262,6 +288,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"dckr_pat_",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.RUBYGEMS.TOKEN.001",
@@ -271,6 +298,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"rubygems_",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.NUGET.KEY.001",
@@ -280,6 +308,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"oy2",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.JFROG.TOKEN.001",
@@ -289,6 +318,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"AKCp8",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.SONAR.TOKEN.001",
@@ -298,6 +328,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"sqp_", b"sqa_", b"squ_"),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.TERRAFORM.TOKEN.001",
@@ -307,6 +338,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b".atlasv1.",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.VAULT.TOKEN.001",
@@ -316,6 +348,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"hvs.", b"hvb."),
+        secret_class=SecretClass.LEAK,
     ),
     # -- Cloud platforms --------------------------------------------------
     SecretPattern(
@@ -326,6 +359,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"ya29.",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.AZURE.STORAGE_KEY.001",
@@ -335,6 +369,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"AccountKey=",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.DIGITALOCEAN.TOKEN.001",
@@ -344,6 +379,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"dop_v1_", b"doo_v1_", b"dor_v1_", b"dot_v1_"),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.ALIBABA.ACCESS_KEY.001",
@@ -357,6 +393,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"LTAI",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.TENCENT.SECRET_ID.001",
@@ -368,6 +405,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"AKID",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.FLYIO.TOKEN.001",
@@ -377,6 +415,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"fm2_",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.NETLIFY.TOKEN.001",
@@ -386,6 +425,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"nfp_",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.DATABRICKS.TOKEN.001",
@@ -395,6 +435,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"dapi",),
+        secret_class=SecretClass.LEAK,
     ),
     # -- Communication and messaging --------------------------------------
     SecretPattern(
@@ -405,6 +446,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"xapp-",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.DISCORD.WEBHOOK.001",
@@ -416,6 +458,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         "Delete the webhook in the channel settings. Anyone holding the URL can post to it.",
         (b"discord.com/api/webhooks/", b"discordapp.com/api/webhooks/"),
+        secret_class=SecretClass.EXFILTRATION_CHANNEL,
     ),
     SecretPattern(
         "SECRET.TELEGRAM.BOT_TOKEN.001",
@@ -425,6 +468,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b":AA",),
+        secret_class=SecretClass.EXFILTRATION_CHANNEL,
     ),
     SecretPattern(
         "SECRET.SENDGRID.KEY.001",
@@ -434,6 +478,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"SG.",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.TWILIO.KEY.001",
@@ -443,6 +488,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.MEDIUM,
         ROTATE,
         (b"SK",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.MAILGUN.KEY.001",
@@ -452,6 +498,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"key-",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.MICROSOFT.TEAMS_WEBHOOK.001",
@@ -463,6 +510,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         "Delete the connector. Anyone holding the URL can post into the channel.",
         (b".webhook.office.com/webhookb2/",),
+        secret_class=SecretClass.EXFILTRATION_CHANNEL,
     ),
     # -- AI and machine learning ------------------------------------------
     SecretPattern(
@@ -473,6 +521,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"sk-",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.ANTHROPIC.KEY.001",
@@ -482,6 +531,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"sk-ant-",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.HUGGINGFACE.TOKEN.001",
@@ -491,6 +541,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"hf_",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.REPLICATE.TOKEN.001",
@@ -500,6 +551,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"r8_",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.GROQ.KEY.001",
@@ -509,6 +561,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"gsk_",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.LANGCHAIN.KEY.001",
@@ -518,6 +571,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"lsv2_",),
+        secret_class=SecretClass.LEAK,
     ),
     # -- Commerce and payments --------------------------------------------
     SecretPattern(
@@ -528,6 +582,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"whsec_",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.SHOPIFY.TOKEN.001",
@@ -537,6 +592,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"shpat_", b"shpca_", b"shppa_", b"shpss_"),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.SQUARE.TOKEN.001",
@@ -556,6 +612,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"sq0atp-", b"sq0csp-"),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.PAYPAL.TOKEN.001",
@@ -565,6 +622,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"access_token$production$", b"access_token$sandbox$"),
+        secret_class=SecretClass.LEAK,
     ),
     # -- Observability and operations --------------------------------------
     SecretPattern(
@@ -575,6 +633,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"NRAK-", b"NRJS-", b"NRII-", b"NRAA-", b"NRBR-", b"NRRA-"),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.GRAFANA.TOKEN.001",
@@ -584,6 +643,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"glc_", b"glsa_"),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.SENTRY.TOKEN.001",
@@ -593,6 +653,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"sntrys_",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.PAGERDUTY.TOKEN.001",
@@ -602,6 +663,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"pdus_", b"pdvs_"),
+        secret_class=SecretClass.LEAK,
     ),
     # -- Developer platforms -----------------------------------------------
     SecretPattern(
@@ -612,6 +674,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"ATATT3",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.LINEAR.KEY.001",
@@ -621,6 +684,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"lin_api_",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.FIGMA.TOKEN.001",
@@ -630,6 +694,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"figd_",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.NOTION.TOKEN.001",
@@ -639,6 +704,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"secret_", b"ntn_"),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.SUPABASE.TOKEN.001",
@@ -648,6 +714,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"sbp_",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.PLANETSCALE.TOKEN.001",
@@ -657,6 +724,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"pscale_tkn_", b"pscale_pw_", b"pscale_oauth_"),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.RESEND.KEY.001",
@@ -666,6 +734,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"re_",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.DOPPLER.TOKEN.001",
@@ -675,6 +744,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"dp.pt.", b"dp.st.", b"dp.sa.", b"dp.scim.", b"dp.audit."),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.AIRTABLE.TOKEN.001",
@@ -684,6 +754,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"pat",),
+        secret_class=SecretClass.LEAK,
     ),
     SecretPattern(
         "SECRET.DROPBOX.TOKEN.001",
@@ -693,6 +764,7 @@ PROVIDER_PATTERNS: tuple[SecretPattern, ...] = (
         Confidence.HIGH,
         ROTATE,
         (b"sl.",),
+        secret_class=SecretClass.LEAK,
     ),
     # SECRET.CRATES.TOKEN.001 was here and is gone. A crates.io token is `cio`
     # followed by thirty-two alphanumerics, and a three-character lowercase prefix in
