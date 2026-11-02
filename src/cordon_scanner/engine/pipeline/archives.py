@@ -35,14 +35,16 @@ class ArchiveMembers:
     """What happened to an archive's members on the way in."""
 
     #: Refusals that leave nothing unread: a link has no content of its own, a hidden zip member is
-    #: read from its local header, text named as an archive is scanned as text (item 27), and a lone
-    #: compressed stream that ends early was read to its last byte (item 30).
+    #: read from its local header, text named as an archive is scanned as text (item 27), a lone
+    #: compressed stream that ends early was read to its last byte (item 30), and a zip whose
+    #: directory would not open was read by its local headers (item 76).
     NOTHING_UNREAD: ClassVar[frozenset[str]] = frozenset(
         {
             Rejection.LINK,
             Rejection.HIDDEN,
             Rejection.NOT_AN_ARCHIVE,
             Rejection.COMPRESSED_TRUNCATED,
+            Rejection.DIRECTORY_REBUILT,
         }
     )
 
@@ -146,6 +148,14 @@ class ArchiveMembers:
             return ArchiveMembers.not_an_archive(path)
         if reason == Rejection.COMPRESSED_TRUNCATED:
             return ArchiveMembers.compressed_truncated(path, detail)
+        if reason == Rejection.DIRECTORY_REBUILT:
+            return OperationalFinding.build(
+                path=path,
+                rule_id="OPERATIONAL.ARCHIVE.DIRECTORY_REBUILT",
+                message=f"This zip was read by its local headers: {detail}.",
+                remediation="No action needed, unless the archive is expected to be whole.",
+                severity=Severity.INFO,
+            )
         if reason == Rejection.UNSUPPORTED_FORMAT:
             return OperationalFinding.build(
                 path=path,

@@ -176,6 +176,9 @@ class Rejection:
     UNSUPPORTED_FORMAT = "unsupported_format"
     """An archive in a format no reader here opens (rar, 7z, cab, ar, cpio, xar, iso, lzip, lzma): its
     contents were not examined, whatever it is called (item 53)."""
+    DIRECTORY_REBUILT = "directory_rebuilt"
+    """A zip whose central directory would not open, every member read by its local header as a
+    streaming extractor installs it (`ZipRepair`, item 76): nothing is left unread."""
     PADDED = "padded_expansion"
     """A budget reached while the archive expanded past `max_archive_ratio`: what follows the
     padding was not read, and padding is how a payload is put out of a scanner's reach."""

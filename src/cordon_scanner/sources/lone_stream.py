@@ -170,6 +170,11 @@ class LoneStream:
         return tolerant, tolerant
 
     @staticmethod
+    def bare_header(data: bytes) -> bool:
+        """A gzip member's fixed ten-byte header (deflate, no optional fields) and nothing after it."""
+        return len(data) == 10 and data[:3] == b"\x1f\x8b\x08" and data[3] == 0
+
+    @staticmethod
     def holds_tar(data: bytes, *, path: str, limits: Limits, deadline: float | None) -> bool:
         """Whether a compressed stream is a tar: its name says so, or its first decompressed block
         is a tar header (`ArchiveSignatures.tar_header`). A stream that cannot be read at all is
@@ -221,6 +226,17 @@ class LoneStream:
         except (OSError, ValueError) as exc:
             raise ArchiveError(f"{path}: not a readable compressed stream: {exc}") from exc
         if payload is None:
+            return
+        if cut.cut and not payload and LoneStream.bare_header(data):
+            # Nothing past the header at all (npm's cache leaves `package.tgz.<n>` so when a write
+            # is cut): no compressed byte exists, so none is unread (item 76).
+            result.rejected.append(
+                RejectedMember(
+                    path,
+                    Rejection.COMPRESSED_TRUNCATED,
+                    "the stream ends at its header; it holds no byte",
+                )
+            )
             return
         if cut.cut and not payload:
             # A stream cut before its first byte holds nothing anyone read: not a file read to its
