@@ -36,6 +36,7 @@ from cordon_scanner.ecosystems.packages.go import GoEcosystem
 from cordon_scanner.ecosystems.packages.jvm.maven import MavenEcosystem
 from cordon_scanner.ecosystems.packages.npm import NpmEcosystem
 from cordon_scanner.ecosystems.packages.pypi import PypiEcosystem
+from cordon_scanner.ecosystems.workspace_members import NpmWorkspaces, WorkspaceMembers
 from cordon_scanner.foundation.files.globs import PathGlob
 from cordon_scanner.foundation.paths import ContainerPaths
 
@@ -485,7 +486,9 @@ __all__ = [
     "ROLES",
     "EcosystemRegistry",
     "ImageReference",
+    "NpmWorkspaces",
     "RegistryFacts",
+    "WorkspaceMembers",
 ]
 
 if TYPE_CHECKING:
