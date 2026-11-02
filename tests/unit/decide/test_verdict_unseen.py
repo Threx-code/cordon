@@ -56,6 +56,10 @@ class TestTheAdmittedRulesAreKept:
         "SUSPECT.AGENT.HIDDEN_DIRECTIVE.001",
         "SUSPECT.MCP.HANDLER_SHELL.001",
         "SUSPECT.AGENT.TOOL_PRIORITY_CLAIM.001",
+        # New outer-layer rules, kept from the start so the verdict never lowers them unseen (item 67),
+        # by their pairs on a3b9c5f1's rows (outer-layer scratchpad jsm/):
+        "SUSPECT.OBFUSCATION.MANGLED.001",  # 31 content misses in 16 groups for 3 benign (pair4.txt)
+        "SUSPECT.OBFUSCATION.REQUIRE_ALIAS.001",  # 7 content misses in 7 groups, 0 benign (pairn.txt)
     )
 
     def test_each_is_in_keep(self) -> None:
