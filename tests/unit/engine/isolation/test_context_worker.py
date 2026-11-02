@@ -684,10 +684,12 @@ class TestTwoScansInOneProcess:
             (root / "package.json").write_text(
                 json.dumps(
                     {"name": f"two-scans-{side}", "version": "1.0.0", "scripts": {"test": "x"}}
-                )
+                ),
+                encoding="utf-8",
             )
             (root / "data.json").write_text(
-                json.dumps({"two-scans-data": side, "rows": list(range(50))})
+                json.dumps({"two-scans-data": side, "rows": list(range(50))}),
+                encoding="utf-8",
             )
             roots.append(root)
         start, results, errors = threading.Barrier(2), {}, []
@@ -827,7 +829,7 @@ class TestTheParentOpensNoArchive:
         )
         child.start()
         child.join(30)
-        left = (tmp_path / "left").read_text()
+        left = (tmp_path / "left").read_text(encoding="utf-8")
         assert Path(left).exists()  # killed: nothing removed it
         fresh = SpillDirectory()
         try:
@@ -940,7 +942,7 @@ class SpillKit:
 
         tempfile.tempdir = str(root)
         held = SpillDirectory()
-        (root / "left").write_text(str(held.path))
+        (root / "left").write_text(str(held.path), encoding="utf-8")
         os._exit(9)
 
 

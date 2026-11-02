@@ -309,10 +309,9 @@ class ArchiveExpander:
         }:  # fmt: skip
             return None, "an answer whose sections are not the declared ones"
         members = doc["members"]
-        # Independent of the reader's own caps and of every optional limit (review, condition 2):
-        # the whole walk's members never past what the scan reads at all (its file limit, and its
-        # total-bytes budget below), whatever `max_memory_bytes` says. Not one archive's cap: a walk
-        # holds every nested archive's members, each archive up to that cap.
+        # Independent of the reader's caps and of every optional limit (review, condition 2): never
+        # past what the scan reads at all (its file limit; its total-bytes budget below). Not one
+        # archive's cap: a walk holds every nested archive's members, each up to that cap.
         entries = min(limits.max_files or DEFAULT_LIMITS.max_files, LIST_ENTRIES)
         if not isinstance(members, list) or len(members) > entries:
             return None, "more members than an archive may hold"

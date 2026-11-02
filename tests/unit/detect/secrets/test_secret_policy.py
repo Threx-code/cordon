@@ -71,7 +71,11 @@ class TestEveryRuleSaysWhatItIsFor:
 
     def test_every_secret_rule_the_detector_names_has_a_pattern_class(self) -> None:
         source = Path(SecretDetector.__module__.replace(".", "/") + ".py")
-        named = set(re.findall(r'"(SECRET\.[A-Z_.]+\.\d{3})"', (Path("src") / source).read_text()))
+        named = set(
+            re.findall(
+                r'"(SECRET\.[A-Z_.]+\.\d{3})"', (Path("src") / source).read_text(encoding="utf-8")
+            )
+        )
         assert named <= {p.rule_id for p in PROVIDER_PATTERNS} | {
             "SECRET.GENERIC.ASSIGNMENT.001",
             "SECRET.URL.CREDENTIAL.001",
@@ -113,6 +117,6 @@ class TestInARepository:
     def test_a_leaked_key_keeps_its_grade(self, tmp_path: Path) -> None:
         root = tmp_path / "repo"
         (root / "tools").mkdir(parents=True)
-        (root / "tools" / "notes.js").write_text(f'const k = "{TOKEN}";\n')
+        (root / "tools" / "notes.js").write_text(f'const k = "{TOKEN}";\n', encoding="utf-8")
         grades = PolicyKit.grades(root, "SECRET.GITHUB.TOKEN.001")
         assert grades and all(severity >= Severity.HIGH for severity, _ in grades)

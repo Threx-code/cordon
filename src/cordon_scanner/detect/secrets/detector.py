@@ -30,12 +30,11 @@ from cordon_scanner.analysis.shared.source_paths import FIXTURE_CEILING, SourceP
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.secrets.assembly import MIN_CHARACTER_CLASSES, SecretAssembly
+from cordon_scanner.detect.secrets.connections import CONNECTION_STRING, LOCAL_OR_RESERVED_HOST
 from cordon_scanner.detect.secrets.literal_search import LiteralSearch
 from cordon_scanner.detect.secrets.names import NOT_A_SECRET, SecretNames
 from cordon_scanner.detect.secrets.patterns import (
     ASSIGNMENT,
-    CONNECTION_STRING,
-    LOCAL_OR_RESERVED_HOST,
     PEM_ARMOUR_ONLY,
     PROVIDER_PATTERNS,
     ROTATE,

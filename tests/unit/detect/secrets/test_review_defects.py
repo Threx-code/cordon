@@ -11092,7 +11092,7 @@ class TestAHostEndsWhereTheStringEndsIt:
 
     @staticmethod
     def _host(line: bytes) -> str | None:
-        from cordon_scanner.detect.secrets.patterns import CONNECTION_STRING
+        from cordon_scanner.detect.secrets.connections import CONNECTION_STRING
 
         match = CONNECTION_STRING.search(line)
         return None if match is None else match.group(2).decode()
@@ -11125,14 +11125,14 @@ class TestAHostEndsWhereTheStringEndsIt:
         ],
     )
     def test_a_quoted_reserved_host_is_now_recognised(self, line: bytes) -> None:
-        from cordon_scanner.detect.secrets.patterns import LOCAL_OR_RESERVED_HOST
+        from cordon_scanner.detect.secrets.connections import LOCAL_OR_RESERVED_HOST
 
         host = self._host(line)
         assert host is not None
         assert LOCAL_OR_RESERVED_HOST.match(host.encode())
 
     def test_a_real_host_is_still_a_real_host(self) -> None:
-        from cordon_scanner.detect.secrets.patterns import LOCAL_OR_RESERVED_HOST
+        from cordon_scanner.detect.secrets.connections import LOCAL_OR_RESERVED_HOST
 
         host = self._host(b'u = "postgres://admin:S3cr3tPa55@db.prod.example-corp.io:5432/x"')
         assert host is not None
