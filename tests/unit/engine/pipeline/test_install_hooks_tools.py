@@ -102,7 +102,7 @@ STILL_BLOCKS = [
     # A popular tool not declared at all: whatever is on PATH under that name runs.
     ({"postinstall": "webpack"}, None),
     # A popular tool whose output leaves the package.
-    ({"postinstall": "gulp > ~/.profile"}, {"gulp": "^4.0.0"}),
+    ({"postinstall": "gulp > /tmp/gulp.log"}, {"gulp": "^4.0.0"}),
     # Installing a named package is not the package's own install.
     ({"preinstall": "npm install some-helper"}, None),
     # Pinned, but undeclared, at another version, or beside an undeclared one: a hidden dependency.
