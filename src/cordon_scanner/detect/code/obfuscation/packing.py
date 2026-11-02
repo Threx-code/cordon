@@ -82,9 +82,13 @@ PACKERS: tuple[tuple[str, re.Pattern[bytes], frozenset[str], int], ...] = (
         JAVASCRIPT_LANGUAGES,
         8,
     ),
+    # An empty `[]` that is indexed is an array literal, and an array literal never follows a name,
+    # a `>`, a `]` or a `)`: there `[]` is TypeScript's array type (`Parameters<F<any>[]["filter"]>`
+    # in a declaration, note 70 P1), which the suffix alone must not excuse -- `require` loads a
+    # `.d.ts` as code.
     (
         "JSFuck",
-        re.compile(rb"\[\]\[\s*(?:[\"'@]\s*)?(?:filter|constructor)"),
+        re.compile(rb"(?<![\w$>\])])\[\]\[\s*(?:[\"'@]\s*)?(?:filter|constructor)"),
         JAVASCRIPT_LANGUAGES,
         1,
     ),
