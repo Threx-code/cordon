@@ -298,10 +298,17 @@ jobs:
         # pinned in `intel/dbsync.PUBLIC_KEY_HEX`.
         env:
           CORDON_DB_SIGNING_KEY: ${{ secrets.CORDON_DB_SIGNING_KEY }}
+          # Set to "true" once the signing key exists (after the key ceremony): from then on a release
+          # without its signed offline bundle fails rather than shipping without one.
+          BUNDLE_REQUIRED: ${{ vars.CORDON_DB_BUNDLE_REQUIRED }}
         run: |
           set -euo pipefail
           if [ -z "${CORDON_DB_SIGNING_KEY:-}" ]; then
-            echo "::notice::CORDON_DB_SIGNING_KEY is not set; skipping the advisory bundle"
+            if [ "${BUNDLE_REQUIRED:-}" = "true" ]; then
+              echo "::error::CORDON_DB_SIGNING_KEY is not set but the signed offline bundle is required"
+              exit 1
+            fi
+            echo "::notice::CORDON_DB_SIGNING_KEY is not set; skipping the advisory bundle (the release notes say so)"
             echo "skip=true" >> "$GITHUB_ENV"
             exit 0
           fi
@@ -564,6 +571,9 @@ jobs:
           npx --yes @vscode/vsce@3.6.0 package --no-dependencies -o "../../artefacts/cordon-${GITHUB_REF_NAME#v}.vsix"
 
       - name: Take the notes from the release page
+        env:
+          # Whether the bundle signing key is configured, as true/false: the secret itself is not read.
+          HAS_DB_KEY: ${{ secrets.CORDON_DB_SIGNING_KEY != '' }}
         # docs/releases/<version>.md is the release written for a reader: the
         # same ASCII-diagram form as the READMEs, linking the full CHANGELOG
         # section for every change. tests/unit/repository/test_release_notes.py holds CI
@@ -578,6 +588,10 @@ jobs:
             exit 1
           fi
           cp "$page" notes.md
+          if [ "${HAS_DB_KEY}" != "true" ]; then
+            # Said plainly, so an air-gapped user does not look for a bundle that was never signed.
+            printf '\n%s\n' "**No signed offline advisory bundle ships with this release.** The advisory database's signing key is not configured yet, so offline installs sync only from what the wheel carries." >> notes.md
+          fi
           head -8 notes.md
 
       - name: Publish it
