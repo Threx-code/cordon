@@ -103,6 +103,9 @@ class FeatureSchema:
         # per-file half and the reached-flow facts from the workers. Identity:
         # tests/unit/engine/isolation/test_analysis_facts.py (profile and intent from the workers'
         # facts equal to the same producer run on each unit's bytes, every malicious corpus sample).
+        # Rows A/B, 2 Nov: the same seeded 500 units scanned by 295b785f and by this tree; 0
+        # differences in 500 on every verdict field and feature key, findings and exit (outer-layer
+        # scratchpad fsab2/).
         "fs1-6c6f93207f6315c8": (
             "fs1-ea0fb02ccf3bb099",
             "tests/unit/engine/isolation/test_analysis_facts.py::TestTheParentReadsTheWorkersFacts",
