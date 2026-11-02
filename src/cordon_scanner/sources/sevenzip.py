@@ -237,7 +237,7 @@ class SevenZipReader:
                 raise ArchiveError(f"{path}: the time budget ran out while reading the archive")
             out = SevenZipReader._decode(data, folder, packs, pack_pos, index, path, budget)
             at = 0
-            for size, crc in zip(streams[index], folder.stream_crcs, strict=False):
+            for size, crc in zip(streams[index], folder.stream_crcs, strict=True):
                 body = out[at : at + size]
                 name = next(outputs)
                 if crc is not None and zlib.crc32(body) != crc:

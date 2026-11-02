@@ -186,3 +186,15 @@ class TestRar5:
         packed = RarKit.stream(ops)
         with pytest.raises(ArchiveError, match="time budget"):
             unpack.run(packed, 4)
+
+    def test_many_tiny_blocks_still_meet_the_deadline(self) -> None:
+        """The deadline is read per block too, and the symbol count spans blocks: a stream of
+        blocks each far under the check interval is still a timeout (modelling review, item 5)."""
+        from cordon_scanner.sources import rar
+
+        block = RarKit.stream([("lit", ord("a"), 0)])
+        flags = block[0] & ~0x40  # not the last block
+        tiny = bytes([flags, (0x5A ^ flags ^ block[2] ^ block[3]) & 0xFF]) + block[2:]
+        unpack = rar._Unpack(1 << 20, deadline=0.0)
+        with pytest.raises(ArchiveError, match="time budget"):
+            unpack.run(tiny * 50 + block, 51)

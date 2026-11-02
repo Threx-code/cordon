@@ -145,16 +145,7 @@ BUILD_RULES: tuple[ConfigRule, ...] = (
             # Not inside make's own messages: `$(warning "... run: curl -sfL <url> | sh")` tells a
             # person what to run, and make runs nothing of it (review 98 G6: cobra's Makefile,
             # vendored).
-            #
-            # Nor in an `echo`/`printf` argument (release item 68, fix 4: agentql-mcp prints the
-            # install command and never runs it). The exempt line is only the printer: quoted or
-            # plain words and an optional redirect. A shell operator, a pipe into a shell, a
-            # backtick or a `$(` inside double quotes leaves the line unexempt, so
-            # `echo x; curl ... | sh` and `echo "curl ..." | sh` still fire.
-            r"(?m)^(?![^\n]{0,400}?\$[({](?:warning|info|error)\b)"
-            r"(?![ \t@+-]{0,8}(?:echo|printf)\b"
-            r"(?:[ \t]+(?:\"(?:[^\"\n$`\\]|\\[^\n]|\$(?!\())*\"|'[^'\n]*'|[\w%.:/=,-]+)){0,8}"
-            r"[ \t]*(?:>>?[ \t]*[\w./-]+[ \t]*)?(?:#[^\n]*)?$)[^\n]{0,400}?"
+            r"(?m)^(?![^\n]{0,400}?\$[({](?:warning|info|error)\b)[^\n]{0,400}?"
             r"(?:(?:curl|wget)[^\n|]{0,200}\|[ \t]{0,32}(?:sudo[ \t]{1,8})?(?:ba)?sh"
             r"|(?:curl|wget)[^\n]{0,200}?(?:-o|--output|-O)\s{1,4}[^\s]{1,200}"
             r"[\s\S]{0,240}?chmod\s{1,4}(?:\+x|[0-7]?(?:[1357][0-7][0-7]|[0-7][1357][0-7]|[0-7][0-7][1357])))"

