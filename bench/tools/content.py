@@ -28,6 +28,9 @@ CONTENT_DETECTORS = frozenset(
         "agents",
         "binary",
         "capability",
+        # Item 47's learned code model: it reads only the package's own reached files; its weights are
+        # shipped data fitted offline, not a feed of known samples.
+        "code-model",
         "config",
         "formats",
         "iac",
@@ -59,6 +62,9 @@ INTEL_DETECTORS = frozenset(
         "attestation",
         # Matches a package's campaign fingerprints against releases already condemned: known samples.
         "campaign-sibling",
+        # Matches code files and install-hook shapes against an index built from earlier malware
+        # (intel/malware/reuse_index.py): known samples, so items 54 and 65 count in the intel bar.
+        "code-reuse",
         # Its signature database is largely known samples' signatures and hashes: known malware.
         "clamav",
         "dependency",

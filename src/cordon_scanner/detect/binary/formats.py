@@ -262,6 +262,18 @@ RULES: Final = {
             "Examine the file by other means; a malformed file of this kind is itself unusual.",
             (ref.ATTACK_MALICIOUS_FILE,),
         ),
+        FormatRules._rule(
+            "OPERATIONAL.FORMAT.NOT_A_PICKLE",
+            "A file named as a pickle that no pickle loader opens",
+            Category.OPERATIONAL,
+            Severity.INFO,
+            Confidence.HIGH,
+            "This file is named as a pickle, but its first opcode is not one any pickle protocol "
+            "has, and it is not compressed: pickle.load refuses it at its first byte, so nothing in "
+            "it can run as a pickle. Its bytes were read by every rule that reads bytes.",
+            "No action needed. If it should be a model, re-export it.",
+            (ref.ATTACK_MALICIOUS_FILE,),
+        ),
     )
 }
 
@@ -329,6 +341,9 @@ class FormatDetector(BaseDetector):
             ):
                 return self._pickle(unit, ctx)
             if documents.DocumentReader.kind_of(raw, path) is not None:
+                # Every part is read as itself; a part's finding the container's own reading also
+                # reported is folded after detection (`ResultFolding.read_with_container`), from the
+                # findings both made, never assumed from the container's names (C-02).
                 return self._document(unit, ctx)
             if media.ImageTrailers.image_format(raw) is not None and not content.truncated:
                 # A broken image is common (placeholders, partial downloads) and nothing reads
@@ -343,6 +358,9 @@ class FormatDetector(BaseDetector):
     def _pickle(self, unit: FileUnit, ctx: ScanContext) -> list[Finding]:
         report = self._pickle_report(unit)
         if report is None:
+            if pickles.PickleReader.refused_at_once(unit.content.raw):
+                # nothing in it can run as a pickle: said, and the file is not left unexamined
+                return [self._finding("OPERATIONAL.FORMAT.NOT_A_PICKLE", unit, ctx)]
             raise FormatError("not a readable pickle")
         # The reader stopped keeping what it read (the memo's names past their bound): the file
         # was read in part, and the scan says so beside whatever the part it kept shows.

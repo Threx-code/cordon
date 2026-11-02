@@ -25,7 +25,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from re import _parser as sre_parse  # type: ignore[attr-defined]
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import cordon_scanner
 
@@ -227,7 +227,9 @@ class Sources:
 
     @staticmethod
     def rules() -> list[Found]:
-        """Every built-in rule's regex and each of its branches, run the way the matcher runs them."""
+        """Every built-in rule's regex and each of its branches, run the way the matcher runs them:
+        through `AnchoredSearch` (`rules/pack.py`), never `search` on the raw regex, which the
+        scanner never calls. A branch is planned and run on its own the same way."""
         from cordon_scanner.rules.loader import RuleLoader
 
         out: list[Found] = []
@@ -236,18 +238,46 @@ class Sources:
                 regex = rule.match.regex
                 if regex is None:
                     continue
-                out.append(Found(f"rule:{rule.id}", regex, frozenset({"search"}), True))
+                out.append(Found(f"rule:{rule.id}", ViaMatcher(regex), frozenset({"search"}), True))
                 for index, source in enumerate(rule.match.sources):
                     with contextlib.suppress(re.error, UnicodeEncodeError):
                         branch = re.compile(source.encode("latin-1"), regex.flags)
                         out.append(
-                            Found(f"rule:{rule.id}:{index}", branch, frozenset({"search"}), True)
+                            Found(
+                                f"rule:{rule.id}:{index}",
+                                ViaMatcher(branch),
+                                frozenset({"search"}),
+                                True,
+                            )
                         )
         return out
 
     @staticmethod
     def by_label() -> dict[str, Found]:
         return {found.label: found for found in Sources.patterns()}
+
+
+class ViaMatcher:
+    """A rule's regex as the scanner runs it: `search` and `finditer` through `AnchoredSearch`
+    with the regex's plan, every other attribute the regex's own (`pattern`, `flags`, `groups`)."""
+
+    def __init__(self, regex: re.Pattern[bytes]) -> None:
+        from cordon_scanner.rules.anchored import AnchoredSearch
+
+        self.regex = regex
+        self.pattern = regex.pattern
+        self.flags = regex.flags
+        self.plan = AnchoredSearch.plan(regex)
+        self._matches = AnchoredSearch.matches
+
+    def finditer(self, data: bytes) -> Any:
+        return self._matches(self.regex, self.plan, data, None)
+
+    def search(self, data: bytes) -> Any:
+        return next(self.finditer(data), None)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.regex, name)
 
 
 class Parsed:
@@ -798,7 +828,6 @@ class Listed:
 
     #: Superlinear today and being rewritten, with who owns the fix; each fix removes its own line.
     OPEN: ClassVar[dict[str, str]] = {
-        "rule:CAP.SH.PERSIST.001": "data-and-measurement team: line-monotone starts in rules/anchored (after the benchmark start)",
         "decide.verdict_features:VerdictFeatures._FRONT_FIELD": (
             "modelling team, after the P8 fits: VerdictFeatures is hashed by FeatureSchema, so its fix moves the version"
         ),
@@ -839,7 +868,8 @@ class Listed:
             "cloud.fixer:_normalise:1",
             "cloud.fixer:pypi:1",
             "decide.verdict_features:_dependencies_used:1",
-            "decide.verdict_features:package:7",
+            "decide.verdict_features:_manifest_facts:2",
+            "intel.malware.reuse_index:shape:1",
             "detect.agents.configuration:lookalike_of:2",
             "detect.agents.extension_files:gitpod_extensions:1",
             "detect.agents.extension_files:gitpod_extensions:2",
@@ -892,7 +922,7 @@ class Listed:
             "engine.pipeline.ceilings:image_start_ceiling:1",
             "engine.pipeline.graph:configured_sources:1",
             "engine.pipeline.hooks:hook_command_scripts:1",
-            "engine.pipeline.hooks:languages_from_hooks:1",
+            "engine.pipeline.hooks:languages_of:1",
             "foundation.formats.datayaml:_flow_pair:1",
             "foundation.models:_WHITESPACE",
             "foundation.samples:names_authentication:1",
@@ -974,6 +1004,7 @@ class Listed:
             "rule:CAP.SH.EGRESS.001:2",
             "rule:CAP.SH.FETCH_EXEC.001",
             "rule:CAP.SH.FETCH_EXEC.001:1",
+            "rule:CAP.SH.PERSIST.001",
             "rule:CAP.SH.PERSIST.001:2",
             "rule:CAP.SH.SOCKET_LITERAL.001",
             "rule:CAP.SH.SOCKET_LITERAL.001:1",

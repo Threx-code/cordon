@@ -916,9 +916,10 @@ class ConfigDetector(BaseDetector):
                 rule.severity,
                 rule.confidence,
                 ScoringContext(
-                    # CI and build configuration executes before and around
-                    # everything else, with the pipeline's own credentials.
-                    in_install_hook=True,
+                    # Install-time only where an install hook runs this file (item 51, the ONE
+                    # RULE): a CI workflow runs in the pipeline, not at a user's install, so a
+                    # release.yml is not "executes during install" by being configuration.
+                    in_install_hook=ctx.in_install_hook(content.path),
                     capabilities=frozenset(rule.capabilities),
                 ),
             ),

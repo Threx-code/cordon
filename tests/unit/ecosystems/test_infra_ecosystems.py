@@ -6,6 +6,8 @@ per-chart hash, a chart comes from its own repository, a Galaxy role from the Ga
 
 from __future__ import annotations
 
+import io
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -237,6 +239,19 @@ class TestParsing:
         # `opam lock` writes only exact versions: anything else is not its output.
         assert InfraHelpers.parse_lock("opam", "app.opam.locked", text).parse_error
 
+    @pytest.mark.parametrize("text", ["", "\n", "# nothing declared yet\n\n"])
+    def test_an_opam_file_with_no_fields_declares_nothing(self, text: str) -> None:
+        """An empty opam file is complete, not unparsed: @reason-native_console-0.1.0 ships eleven
+        0-byte .opam files, and each was a gap that blocked the package (item 27's count)."""
+        manifest = InfraHelpers.parse_manifest("opam", "pkg.opam", text)
+        assert manifest.parse_error is None
+        assert manifest.dependencies == () and manifest.hooks == ()
+
+    def test_an_opam_file_with_fields_but_neither_key_stays_refused(self) -> None:
+        """Its other fields can carry build: hooks, so it is not read as declaring nothing."""
+        manifest = InfraHelpers.parse_manifest("opam", "pkg.opam", 'build: [["sh" "x.sh"]]\n')
+        assert manifest.parse_error
+
     def test_homebrew_taps_are_sources(self) -> None:
         manifest = InfraHelpers.parse_manifest(
             "homebrew",
@@ -291,3 +306,141 @@ class TestNoFormatNoise:
         result = InfraHelpers.scan(tmp_path, {name: 'brew "jq"\nvscode "ellacrity.recoil"\n'})
         assert any(f.rule_id == "MALWARE.EXTENSION.KNOWN.001" for f in result.findings)
         assert "jq" in {d.name for d in result.dependencies}
+
+
+class TestTerraformParsedOnce:
+    """A file's configuration is parsed once a scan (`TerraformConfiguration.blocks`): asked again
+    it answers as a fresh parse would, a parse that fails included."""
+
+    MAIN = 'terraform {\n  required_providers {\n    aws = { source = "hashicorp/aws", version = "~> 5.0" }\n  }\n}\nresource "google_storage_bucket" "b" {\n  name = "x"\n}\n'
+
+    @staticmethod
+    def content(path: str, text: str) -> FileContent:
+        raw = text.encode()
+        return FileContent(path=path, raw=raw, size=len(raw))
+
+    def test_an_unreadable_tf_json_fails_alike_each_time_and_spares_its_siblings(self) -> None:
+        from cordon_scanner.ecosystems.infra.terraform import TerraformConfiguration
+        from cordon_scanner.foundation.collector import ScanCaches
+
+        ecosystem = EcosystemRegistry.get("terraform")
+        broken = self.content("mod/broken.tf.json", "{not json")
+        main = self.content("mod/main.tf", self.MAIN)
+        files = {c.path: c for c in (broken, main)}
+        ScanCaches.after_scan()
+        first = [ecosystem.parse_in_tree(c, files) for c in (main, broken)]
+        again = [ecosystem.parse_in_tree(c, files) for c in (main, broken)]
+        assert again == first  # the second read of each, from the kept parses, is the first's
+        assert first[1].parse_error and not first[0].parse_error
+        assert {d.name for d in first[0].dependencies} == {"hashicorp/aws", "hashicorp/google"}
+        ScanCaches.after_scan()
+        assert not TerraformConfiguration._parsed
+
+
+class TestTerraformExpressionKeys:
+    """An object's key may be an expression (HCL: a bare identifier is a literal name, anything
+    else is evaluated). `local.suppliers[count.index] = ...` in a `data = { ... }` map made three
+    files of ministryofjustice/cloud-platform-environments unreadable, and the scan incomplete
+    (2026-10-31). A key's expression is read under the same bounds as a value's."""
+
+    @staticmethod
+    def blocks(text: str):
+        from cordon_scanner.ecosystems.infra.terraform import TerraformConfiguration
+
+        raw = text.encode()
+        return TerraformConfiguration._blocks(FileContent(path="main.tf", raw=raw, size=len(raw)))
+
+    @staticmethod
+    def keys_of(text: str) -> set[str]:
+        root = TestTerraformExpressionKeys.blocks(text)
+        return set(root.blocks[0].attributes["data"])
+
+    def test_a_traversal_key_with_an_index_parses(self) -> None:
+        text = (
+            'resource "kubernetes_secret" "apikeys" {\n'
+            "  count = length(local.suppliers)\n"
+            "  data = {\n"
+            "    local.suppliers[count.index] = aws_api_gateway_api_key.api_keys[count.index].value\n"
+            "  }\n"
+            "}\n"
+        )
+        assert self.keys_of(text) == set()  # an evaluated key is not a name, as `(local.k)` is not
+
+    @pytest.mark.parametrize(
+        ("key", "stored"),
+        [
+            ("a", {"a"}),
+            ('"a"', {"a"}),
+            ("(var.k)", set()),
+            ("local.m[0]", set()),
+            ("a.b", set()),
+        ],
+    )
+    def test_spec_shaped_keys(self, key: str, stored: set[str]) -> None:
+        text = f'resource "x" "y" {{\n  data = {{\n    {key} = 1\n  }}\n}}\n'
+        assert self.keys_of(text) == stored
+
+    def test_a_name_at_the_end_of_the_file_fails_as_before(self) -> None:
+        """A key name with nothing after it is not read as an expression key: the reader fails as
+        it did before expression keys were read, from the same place and with the same words."""
+        from cordon_scanner.ecosystems.infra.terraform import HclError
+
+        with pytest.raises(HclError, match=r"^the file ends inside a block$"):
+            self.blocks('resource "x" "y" {\n  data = {\n    a')
+
+    def test_a_deep_parenthesised_key_never_recurses(self) -> None:
+        from cordon_scanner.ecosystems.infra.terraform import HclError
+
+        key = "(" * 10_000 + "x" + ")" * 10_000
+        text = f'resource "x" "y" {{\n  data = {{\n    {key} = 1\n  }}\n}}\n'
+        try:
+            keys = self.keys_of(text)
+        except HclError:
+            return  # refused within the reader's bounds, by name
+        assert keys == set()
+
+    def test_a_deep_braced_key_is_refused_by_name(self) -> None:
+        """Pins the bound a key shares with a value: a key opening with `{` recurses through
+        `object` under MAX_DEPTH (64), refused by name, never a RecursionError. It holds before the
+        change too: a bound kept, not a defect fixed."""
+        from cordon_scanner.ecosystems.infra.terraform import HclError
+
+        key = "{" * 100 + "}" * 100
+        text = f'resource "x" "y" {{\n  data = {{\n    {key} = 1\n  }}\n}}\n'
+        with pytest.raises(HclError, match="nested too deeply"):
+            self.blocks(text)
+
+
+# `requirements.lock` is Helm v2's lock only beside its chart's Chart.yaml; elsewhere it is Rye's
+# pip-format lockfile, which Helm does not claim (item 27: faust-cchardet 3.2, stratos_lib 0.1).
+PIP_LOCK = b"# generated by rye\n-e file:.\ncchardet==2.1.7\n"
+UNPARSED = {"OPERATIONAL.LOCKFILE.UNPARSED", "OPERATIONAL.MANIFEST.UNPARSED"}
+
+
+class HelmLockKit:
+    @staticmethod
+    def sdist(tmp_path, files: dict[str, bytes]):
+        path = tmp_path / "pkg-1.0.tar.gz"
+        with tarfile.open(path, "w:gz") as tar:
+            for name, data in files.items():
+                info = tarfile.TarInfo(f"pkg-1.0/{name}")
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+        return Scanner(Config.default().with_overrides(use_cache=False, offline=True)).scan(path)
+
+
+class TestRequirementsLock:
+    def test_a_pip_lockfile_is_not_read_as_a_chart_lock(self, tmp_path) -> None:
+        result = HelmLockKit.sdist(
+            tmp_path, {"requirements.lock": PIP_LOCK, "setup.py": b"from setuptools import setup\n"}
+        )
+        assert not UNPARSED & {f.rule_id for f in result.findings}
+        assert result.content_complete
+
+    def test_a_chart_s_lock_that_does_not_read_still_fails_closed(self, tmp_path) -> None:
+        chart = b"apiVersion: v1\nname: demo\nversion: 0.1.0\n"
+        result = HelmLockKit.sdist(
+            tmp_path, {"chart/Chart.yaml": chart, "chart/requirements.lock": PIP_LOCK}
+        )
+        assert UNPARSED & {f.rule_id for f in result.findings}
+        assert not result.content_complete

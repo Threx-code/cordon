@@ -29,6 +29,7 @@ import re
 from dataclasses import replace
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.analysis.javascript.js_flow import JsFlow
 from cordon_scanner.analysis.javascript.js_persist import JsPersistence
 from cordon_scanner.analysis.nix.nix_code import NixCode
 from cordon_scanner.analysis.shared import embedded
@@ -122,6 +123,26 @@ class ScriptFetchedThenEvaluated:
                 )
             ]
         return []
+
+
+class FixedJsSpawns:
+    """JavaScript spawns that run a program with its arguments as data (note 44)."""
+
+    @staticmethod
+    def mark(content: FileContent, hits: list[CapabilityHit]) -> list[CapabilityHit]:
+        """The spawn hits on lines whose call runs a DATA_ARGS program with its arguments where
+        its rule says they are data, marked `fixed` (note 44): the JavaScript twin of Python's
+        `fixed_command`, read by `CompositeEvaluator.fixed_lines`, which still keeps a spawn whose
+        command carries a shell capability of its own."""
+        if not any(h.capability is Capability.SPAWN for h in hits):
+            return hits
+        lines = JsFlow.fixed_spawn_lines(content.text)
+        if not lines:
+            return hits
+        return [
+            replace(h, fixed=True) if h.capability is Capability.SPAWN and h.line in lines else h
+            for h in hits
+        ]
 
 
 class CapabilityDetector(BaseDetector):
@@ -317,6 +338,7 @@ class CapabilityDetector(BaseDetector):
             hits = Labelling.drop_excused_pattern_hits(content, hits)
         if unit.language in ("javascript", "typescript"):
             hits = JsPersistence.drop_named_only(content, hits)
+            hits = FixedJsSpawns.mark(content, hits)
         if GradleBuildAuth.is_build_script(content.path) and any(
             h.capability is Capability.CREDENTIAL for h in hits
         ):
@@ -435,7 +457,9 @@ class CapabilityDetector(BaseDetector):
             ):
                 continue
             matched = matched_capabilities
-            anchor = FindingAnchor.anchor(matched, local_by_capability, window)
+            anchor = FindingAnchor.anchor(
+                matched, local_by_capability, window, CompositeEvaluator.rules_of(compiled)
+            )
 
             finding = CompositeGrading(
                 compiled,

@@ -80,20 +80,34 @@ class CampaignSiblingDetector(BaseDetector):
         )
 
     def inspect(self, unit: Unit, ctx: ScanContext) -> Iterable[Finding]:
-        if not isinstance(unit, FileUnit) or ctx.distribution not in self.APPLIES_TO:
+        if not isinstance(unit, FileUnit):
             return ()
+        found = CampaignSiblingDetector.siblings_of(unit, ctx)
+        if found is None or not found[1]:
+            return ()
+        return (self._finding(unit, ctx, *found),)
+
+    @staticmethod
+    def siblings_of(
+        unit: FileUnit, ctx: ScanContext
+    ) -> tuple[dict[str, str | None], list[dict[str, Any]]] | None:
+        """For an npm package's manifest: its facets and the condemned releases sharing two of
+        them, itself excluded; None for any other file. The `package` rule module reads the same
+        answer (`modules.scanner_facts`)."""
+        if ctx.distribution not in CampaignSiblingDetector.APPLIES_TO:
+            return None
         content = unit.content
         archive, bang, member = content.path.rpartition("!")
         if not bang or member.count("/") != 1 or not member.endswith("/package.json"):
-            return ()
+            return None
         if content.truncated or len(content.raw) > MAX_MANIFEST:
-            return ()
+            return None
         try:
             manifest = ScannedJson.loads(content.text)
         except ValueError:
-            return ()
+            return None
         if not isinstance(manifest, dict):
-            return ()
+            return None
         prefix = archive + "!"
         paths = [
             p[len(prefix) :]
@@ -107,9 +121,16 @@ class CampaignSiblingDetector(BaseDetector):
             for r in CampaignIndex.shipped().siblings(facets)
             if (str(r.get("name", "")), str(r.get("version", ""))) != own
         ]
-        if not siblings:
-            return ()
-        return (self._finding(unit, ctx, facets, siblings),)
+        return facets, siblings
+
+    @staticmethod
+    def shared(facets: dict[str, str | None], sibling: dict[str, Any]) -> list[str]:
+        """The facets a sibling shares with these."""
+        return [
+            f
+            for f in CAMPAIGN_FACETS
+            if facets.get(f) and facets.get(f) == sibling["facets"].get(f)
+        ]
 
     def _finding(
         self,
@@ -119,9 +140,7 @@ class CampaignSiblingDetector(BaseDetector):
         siblings: list[dict[str, Any]],
     ) -> Finding:
         first = siblings[0]
-        shared = [
-            f for f in CAMPAIGN_FACETS if facets.get(f) and facets.get(f) == first["facets"].get(f)
-        ]
+        shared = CampaignSiblingDetector.shared(facets, first)
         named = ", ".join(
             f"{r.get('name', '')}@{r.get('version', '')} ({r.get('id', '')})" for r in siblings[:3]
         )

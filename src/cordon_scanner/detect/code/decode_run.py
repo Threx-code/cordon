@@ -39,7 +39,10 @@ class DecodeRun:
     _WRITTEN_LITERAL_PATH: ClassVar[re.Pattern[str]] = re.compile(
         r"""(?:writeFile(?:Sync)?|appendFile(?:Sync)?|outputFile(?:Sync)?|write_bytes|write_text)"""
         r"""\s*\(\s*["'`]([^"'`\n]{1,200})["'`]"""
-        r"""|open\s*\(\s*["'`]([^"'`\n]{1,200})["'`]\s*,\s*["'`][wax+b]{1,3}["'`]""",
+        r"""|open\s*\(\s*["'`]([^"'`\n]{1,200})["'`]\s*,\s*["'`][wax+b]{1,3}["'`]"""
+        # A file given a new name or place: what runs is the destination (`renameSync(p, "x.js")`).
+        r"""|(?:rename|replace|move|copy(?:File|file|2)?|cp|symlink|link)(?:Sync)?\s*\("""
+        r"""[^,()\n]{1,200},\s*["'`]([^"'`\n]{1,200})["'`]""",
         re.I,
     )
 
@@ -61,8 +64,9 @@ class DecodeRun:
         so a `fixed` spawn naming one is kept: it may run a decoded payload written there."""
         out: set[str] = set()
         for m in cls._WRITTEN_LITERAL_PATH.finditer(content.text):
-            if m.group(1) or m.group(2):
-                out.add(m.group(1) or m.group(2))
+            found = m.group(1) or m.group(2) or m.group(3)
+            if found:
+                out.add(found)
         return frozenset(out)
 
     @classmethod
@@ -92,6 +96,18 @@ class DecodeRun:
                 content.text
             ) | PythonDecodedRun.unreached_runs(content.text)
         written = cls._written_literal_paths(content) if hits else frozenset()
+        if written and safe_spawn:
+            # A run naming a file this unit writes may run what was written there, however literal
+            # its argv: `writeFileSync("x.js", decoded)` then `spawn("node", ["x.js"])` (both
+            # analyses read only the argv's own flow). Kept, as a `fixed` spawn naming one is.
+            lines = content.text.splitlines()
+            names = written | {w.replace("\\", "/").rsplit("/", 1)[-1] for w in written}
+            safe_spawn = frozenset(
+                n
+                for n in safe_spawn
+                # the call's line and the four after it, where its arguments may continue
+                if not any(w in "\n".join(lines[n - 1 : n + 4]) for w in names if len(w) > 1)
+            )
         fixed: set[int] = set()
         for h in hits:
             if h.capability is Capability.SPAWN and h.fixed:

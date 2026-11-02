@@ -260,6 +260,7 @@ rather than a document.
 | `MALWARE.ACCOUNT.CHANNEL_FOLLOW.001` | critical | `composites` | malicious_code |
 | `MALWARE.ANTI_ANALYSIS.001` | critical | `composites` | malicious_code |
 | `MALWARE.CLAMAV.SIGNATURE.001` | critical | `clamav` | malicious_code |
+| `MALWARE.CODE.REUSE.001` | high | `code-reuse` | malicious_code |
 | `MALWARE.CRYPTOMINER.001` | critical | `composites` | cryptomining |
 | `MALWARE.DROPPER.001` | critical | `composites` | dropper |
 | `MALWARE.DROPPER.SHIPPED_PAYLOAD.001` | critical | `composites` | dropper |
@@ -270,6 +271,7 @@ rather than a document.
 | `MALWARE.INSTALL.FETCH_EXEC.001` | critical | `manifest` | install_hook |
 | `MALWARE.INSTALL.GYP_COMMAND.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.HIDDEN_ACTION.001` | critical | `composites` | install_hook |
+| `MALWARE.INSTALL.NETWORK_PROBE.001` | high | `manifest` | install_hook |
 | `MALWARE.INSTALL.OPAQUE_CODE.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.PERSIST.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.REMOTE_CODE.001` | critical | `composites` | install_hook |
@@ -282,6 +284,7 @@ rather than a document.
 | `MALWARE.REVERSE_SHELL.001` | critical | `composites` | malicious_code |
 | `MALWARE.REVERSE_SHELL.002` | critical | `composites` | malicious_code |
 | `MALWARE.RULEFILE.MATCH.001` | critical | `rule-file` | malicious_code |
+| `SUSPECT.CODE.MODEL.001` | high | `code-model` | malicious_code |
 | `SUSPECT.CRYPTOMINER.001` | high | `composites` | cryptomining |
 | `SUSPECT.DECODE_CHAIN.001` | critical | `composites` | malicious_code |
 | `SUSPECT.DESTROY.HOME_OR_ROOT.001` | high | `composites` | malicious_code |
@@ -315,7 +318,7 @@ rather than a document.
 | `SUSPECT.PERSIST.001` | high | `composites` | persistence |
 | `SUSPECT.REGISTRY.SELF_PUBLISH.001` | high | `composites` | malicious_code |
 | `SUSPECT.RULEFILE.MATCH.001` | high | `rule-file` | malicious_code |
-| `SUSPECT.RULEFILE.UNBOUNDED.001` | high | `rule-file` | malicious_code |
+| `SUSPECT.RULEFILE.UNMATCHED.001` | high | `rule-file` | malicious_code |
 | `SUSPECT.TARGETED_PAYLOAD.001` | high | `composites` | malicious_code |
 | `SUSPECT.VERDICT.MODEL.001` | high | `manifest` | malicious_code |
 
@@ -719,6 +722,8 @@ rather than a document.
 |---|---|---|---|
 | `OPERATIONAL.CLAMAV.STATUS` | info | `clamav` | coverage |
 | `OPERATIONAL.CLAMAV.UNAVAILABLE` | info | `clamav` | coverage |
+| `OPERATIONAL.CODE_MODEL.UNAVAILABLE` | info | `code-model` | coverage |
+| `OPERATIONAL.FORMAT.NOT_A_PICKLE` | info | `formats` | coverage |
 | `OPERATIONAL.FORMAT.UNREADABLE` | info | `formats` | coverage |
 | `OPERATIONAL.IMAGE.UNMATCHED` | info | `os-packages` | coverage |
 | `OPERATIONAL.JUDGE.BUDGET` | info | `agent-judge` | coverage |

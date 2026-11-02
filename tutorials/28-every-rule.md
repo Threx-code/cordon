@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,491 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,496 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -445,6 +445,23 @@ rule's own samples.
 | `SUSPECT.CFN.PUBLIC_ACCESS.DBINSTANCE.001` | high | AWS::RDS::DBInstance: the database is reachable from the public internet |
 | `SUSPECT.CFN.PUBLIC_STORAGE.BUCKET.001` | high | AWS::S3::Bucket: the bucket is readable by anyone |
 
+## Code
+
+2 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.CODE.REUSE.001` | high | Code file of an earlier malware campaign |
+| `SUSPECT.CODE.MODEL.001` | high | The code itself reads as malicious to Cordon's code model |
+
+## Code Model
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `OPERATIONAL.CODE_MODEL.UNAVAILABLE` | info | The code model's weights could not be used |
+
 ## Compose files
 
 2 rules.
@@ -653,10 +670,11 @@ rule's own samples.
 
 ## Format
 
-1 rules.
+2 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
+| `OPERATIONAL.FORMAT.NOT_A_PICKLE` | info | A file named as a pickle that no pickle loader opens |
 | `OPERATIONAL.FORMAT.UNREADABLE` | info | A model, document or image could not be read |
 
 ## Helm
@@ -1506,7 +1524,7 @@ rule's own samples.
 
 ## Install-time code
 
-19 rules.
+20 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -1517,6 +1535,7 @@ rule's own samples.
 | `MALWARE.INSTALL.FETCH_EXEC.001` | critical | Install script fetches and executes remote content |
 | `MALWARE.INSTALL.GYP_COMMAND.001` | critical | Native-build file runs a script at install |
 | `MALWARE.INSTALL.HIDDEN_ACTION.001` | critical | An install script hides a process, request or credential read inside a string it executes |
+| `MALWARE.INSTALL.NETWORK_PROBE.001` | high | Install script calls a network-probing tool |
 | `MALWARE.INSTALL.OPAQUE_CODE.001` | critical | Install script runs code that cannot be read |
 | `MALWARE.INSTALL.PERSIST.001` | critical | Install script plants code that runs again later |
 | `MALWARE.INSTALL.REMOTE_CODE.001` | critical | Install-time code runs what a server sends it |
@@ -1781,7 +1800,7 @@ rule's own samples.
 | `OPERATIONAL.RULEFILE.STATUS` | info | The rule file examined the scan's files |
 | `OPERATIONAL.RULEFILE.UNAVAILABLE` | info | A rule file was asked for and could not be used |
 | `SUSPECT.RULEFILE.MATCH.001` | high | An operator's rule matched this file |
-| `SUSPECT.RULEFILE.UNBOUNDED.001` | high | A file could not be matched against the rule file within its bounds |
+| `SUSPECT.RULEFILE.UNMATCHED.001` | high | A file could not be matched against the rule file |
 
 ## SBOMs
 

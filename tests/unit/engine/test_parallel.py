@@ -111,51 +111,6 @@ class TestThePoolIsSizedByTheWork:
             ParallelScanner.worker_count(16, file_count=500, total_bytes=4 * WORK_PER_WORKER) == 4
         )
 
-    def test_each_worker_gets_several_batches_so_none_waits_on_one(self) -> None:
-        from cordon_scanner.engine.parallel import BATCHES_PER_WORKER
-
-        items = [(i, f"m{i}.go", 7_000, "", None) for i in range(1_346)]
-        total = sum(item[2] for item in items)
-        batches = ParallelScanner.batch_by_bytes(items, ParallelScanner.batch_target(total, 4))
-        assert len(batches) >= 4 * BATCHES_PER_WORKER - 1
-        assert sorted(i for batch in batches for i, *_ in batch) == list(range(1_346))
-
-    def test_batches_stay_within_their_bounds(self) -> None:
-        from cordon_scanner.engine.parallel import BATCH_TARGET_BYTES, MIN_BATCH_BYTES
-
-        assert ParallelScanner.batch_target(1_000, 8) == MIN_BATCH_BYTES
-        assert ParallelScanner.batch_target(10 << 30, 2) == BATCH_TARGET_BYTES
-
-
-class TestBatching(ParallelFixtures):
-    def test_batches_are_balanced_by_bytes(self) -> None:
-        """One large file and a thousand small ones are not the same work.
-        Sizing by count leaves a worker holding the large file while the others
-        idle, which is the usual reason a parallel scan is barely faster."""
-        items = [(i, f"f{i}", 1000) for i in range(10)]
-        batches = ParallelScanner.batch_by_bytes(items, target=3000)
-        assert len(batches) > 1
-        for batch in batches:
-            assert sum(size for _, _, size in batch) <= 4000
-
-    def test_a_huge_file_gets_its_own_batch(self) -> None:
-        items = [(0, "small", 10), (1, "huge", 50_000_000), (2, "small2", 10)]
-        batches = ParallelScanner.batch_by_bytes(items, target=1000)
-        huge = [b for b in batches if any(name == "huge" for _, name, _ in b)]
-        assert len(huge) == 1
-        assert len(huge[0]) == 1
-
-    def test_every_item_appears_exactly_once(self) -> None:
-        """A batching bug that drops a file is a silent false negative across
-        that file, which nothing downstream can detect."""
-        items = [(i, f"f{i}", i * 137 % 9000) for i in range(500)]
-        batches = ParallelScanner.batch_by_bytes(items, target=10_000)
-        flat = [item for batch in batches for item in batch]
-        assert sorted(flat) == sorted(items)
-
-    def test_empty_input(self) -> None:
-        assert ParallelScanner.batch_by_bytes([]) == []
-
 
 #: Files in the fixture. Sized so `worker_count` actually returns more than one.
 #:
@@ -511,8 +466,8 @@ class TestThePoolStopsAtTheDeadline(ParallelFixtures):
     already past, so the outcome cannot depend on how loaded the machine is."""
 
     @staticmethod
-    def items(*indices: int) -> list[tuple[int, str, int, str, None]]:
-        return [(index, f"m{index}.js", 10, "", None) for index in indices]
+    def items(*indices: int) -> list[tuple[int, str, int, str, None, str, None]]:
+        return [(index, f"m{index}.js", 10, "", None, "javascript", None) for index in indices]
 
     def test_a_worker_past_the_deadline_reads_nothing(self, monkeypatch) -> None:
         from types import SimpleNamespace
@@ -522,28 +477,7 @@ class TestThePoolStopsAtTheDeadline(ParallelFixtures):
             ParallelScanner, "_worker", SimpleNamespace(engine=None, context=None, detectors=())
         )
         out = ParallelScanner._inspect_batch(self.items(3, 4), "/nonexistent", deadline=0.0)
-        assert out == [(3, [], None, False), (4, [], None, False)]
-
-    def test_batches_not_started_are_cancelled_and_listed(self) -> None:
-        from concurrent.futures import Future
-
-        finished: Future = Future()
-        finished.set_result(
-            [(0, [], True, True), (1, [], None, False)]
-        )  # 1 was reached after the deadline
-        never_started: Future = Future()
-        collected: list = []
-        unstarted: list[int] = []
-        ParallelScanner._collect_until(
-            {finished: self.items(0, 1), never_started: self.items(2, 3)},
-            collected,
-            None,
-            0.0,
-            unstarted,
-        )
-        assert [index for index, _findings, _trusted, _cacheable in collected] == [0]
-        assert sorted(unstarted) == [1, 2, 3]
-        assert never_started.cancelled()
+        assert out == [(3, [], None, False, (True, ()), ""), (4, [], None, False, (True, ()), "")]
 
     def test_the_scan_reports_what_the_pool_left_unexamined(self, repository, monkeypatch) -> None:
         def run(**kwargs):

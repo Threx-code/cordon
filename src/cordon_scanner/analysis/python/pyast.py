@@ -187,10 +187,23 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, AnalyzerCore):
         analyzer._downloaded_and_run(tree)
         analyzer._received_and_run(tree)
         analyzer._download_run_through_helpers(tree)
-        analyzer._identity_sent(tree)
-        analyzer._environment_sent(tree)
-        analyzer._secret_sent(tree)
+        if analyzer._sends(tree):
+            # Each of these records only at a call that sends (an egress primitive) or through a
+            # helper holding one (`_handed_to_a_sender`): a file that sends nothing has none of
+            # their findings, and was 4.7 s of azure_storage_blob's 8.8 s of Python analysis
+            # computing the flows that would have reached a send (measured 2026-10-31).
+            analyzer._identity_sent(tree)
+            analyzer._environment_sent(tree)
+            analyzer._secret_sent(tree)
         return analyzer._hits
+
+    def _sends(self, tree: ast.AST) -> bool:
+        """Whether any call in `tree` resolves to an egress primitive."""
+        for node in PythonSyntax.of(tree, ast.Call):
+            resolved = self._resolve_callee(node)
+            if resolved is not None and PRIMITIVES.get(resolved[0]) is Capability.EGRESS:
+                return True
+        return False
 
     DATA_PARSERS = frozenset({"ast.literal_eval", "literal_eval", "json.loads", "json.load"})
     """Parsers that turn text into values and cannot run any of it. `pickle` and `marshal` are
@@ -315,30 +328,33 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, AnalyzerCore):
         order of execution, and matching on the first would miss the ordinary
         case of a helper defined above its imports.
         """
-        bindings: dict[str, int] = {}
-        literal_bindings: dict[str, int] = {}
+        self._collect_statement(tree)
+        self._names_complete()
+
+    def _collect_statement(self, tree: ast.AST) -> None:
+        """What one tree binds, added to the tables: the whole module's, or one top-level statement
+        of it parsed alone (`ModuleFacts.build`, item 32). The same tables either way, because an
+        indexed tree is read depth-first, and a module's depth-first order is its statements' own,
+        one after the other; what needs the whole module waits for `_names_complete`."""
+        counts, literal_counts = self._binding_counts
         for node in PythonSyntax.of(tree, ast.Assign):
             names = [t.id for t in node.targets if isinstance(t, ast.Name)]
             plain = isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
             for bound in names:
-                bindings[bound] = bindings.get(bound, 0) + 1
+                counts[bound] = counts.get(bound, 0) + 1
                 if plain:
-                    literal_bindings[bound] = literal_bindings.get(bound, 0) + 1
-        # Every binding of the name is a plain literal; a name reassigned from anything else
-        # could hold that instead.
-        self._plain_literals = {
-            bound for bound, count in literal_bindings.items() if bindings.get(bound) == count
-        }
+                    literal_counts[bound] = literal_counts.get(bound, 0) + 1
         for node in PythonSyntax.nodes(tree):
             if isinstance(node, ast.Assign) and any(
                 n.id == "__file__" for n in PythonSyntax.within(node.value, ast.Name)
             ):
                 self._bundled_paths.update(t.id for t in node.targets if isinstance(t, ast.Name))
         self._collect_reads(tree)
+        found, vetoed = self._probes_of(tree)
+        self._probes |= found
+        self._probes_vetoed = self._probes_vetoed or vetoed
         for node in PythonSyntax.of(tree, *self._BIND):
             getattr(self, self._BIND[type(node)])(node)
-        # The tables are complete: from here a name resolves the same way every time it is asked.
-        self._dotted_cache: dict[int, str | None] = {}
 
     def _collect_reads(self, tree: ast.AST) -> None:
         """The names the tree reads from local files, and the paths it bundles."""
@@ -514,6 +530,9 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, AnalyzerCore):
             first = node.args[0] if node.args else None
             if isinstance(first, ast.Name) and first.id in self._enumerated:
                 # Enumerated rather than computed. See `_collect_names`.
+                return
+            if PythonSyntax.span(node) in self._probes:
+                # Asked whether it is installed, and nothing reached through it (`_probes_of`).
                 return
             if imported is None and first is not None and self._assembled_name(first):
                 self._dynamic(node, "__import__ with a computed module name")

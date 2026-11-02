@@ -79,6 +79,7 @@ _POLICY_KEYS = frozenset(
         "packages",
         "licenses",
         "accept_no_feed",
+        "accepted_gaps",
     }
 )
 
@@ -392,7 +393,9 @@ class ConfigParser:
 
         accepted: frozenset[str] | None = None
         accepted = ConfigParser._accept_no_feed(raw, source, accepted)
+        gaps = ConfigParser._accepted_gaps(raw, source)
         return Policy(
+            accepted_gaps=gaps,
             fail_on_severity=severity,
             fail_on_categories=frozenset(categories),
             fail_on_incomplete=bool(raw.get("fail_on_incomplete", False)),
@@ -484,6 +487,21 @@ class ConfigParser:
                 )
             accepted = frozenset(ecosystems)
         return accepted
+
+    @staticmethod
+    def _accepted_gaps(raw: Mapping[str, Any], source: str) -> tuple[Suppression, ...] | None:
+        """`policy.accepted_gaps`: a suppression's shape, an approver required as well (item 27)."""
+        if "accepted_gaps" not in raw:
+            return None
+        where = f"{source}: policy.accepted_gaps"
+        gaps = ConfigParser._parse_suppressions(raw["accepted_gaps"], source=where)
+        for gap in gaps:
+            if not gap.approved_by:
+                raise ConfigError(
+                    f"{where}: `approved_by` is required for {gap.rule} at {gap.path}",
+                    hint="A part of the content accepted unread is a decision somebody owns.",
+                )
+        return gaps
 
     @staticmethod
     def _parse_suppressions(raw: Any, *, source: str) -> tuple[Suppression, ...]:

@@ -39,6 +39,7 @@ from cordon_scanner.engine.pipeline.constants import (
     PRINTING_COMMANDS,
     PROJECT_BUILD_FILENAMES,
 )
+from cordon_scanner.engine.pipeline.graph import ParsedManifests
 from cordon_scanner.foundation.dependencies import HookKinds
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import AUTHOR_TIME_HOOKS, Finding, Hook, Severity
@@ -46,7 +47,7 @@ from cordon_scanner.foundation.paths import ContainerPaths
 from cordon_scanner.foundation.results import OperationalFinding, Repository
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Iterable, Iterator, Sequence
 
     from cordon_scanner.ecosystems.base import Manifest
 
@@ -186,8 +187,14 @@ class Hooks:
         shell parser: the aim is to stop a rename hiding executed code, not to
         model every command line.
         """
+        return Hooks.languages_of(inventory.hooks)
+
+    @staticmethod
+    def languages_of(hooks: Iterable[Hook]) -> dict[str, str]:
+        """`languages_from_hooks` over any hooks: a directory's inventory's, or an archive's
+        manifests' (`hooked_languages`). One rule for both, so a member and a file are read alike."""
         implied: dict[str, str] = {}
-        for hook in inventory.hooks:
+        for hook in hooks:
             if not hook.command:
                 continue
 
@@ -207,6 +214,50 @@ class Hooks:
                     implied.setdefault(resolved, language)
                     break
         return implied
+
+    #: The languages an interpreter runs as itself: `node x.ts` (or bun, deno, tsx) runs TypeScript,
+    #: and reading it as JavaScript could only lose a parse, never gain a reader.
+    _FAMILIES: ClassVar[dict[str, frozenset[str]]] = {
+        "javascript": frozenset({"javascript", "typescript"}),
+    }
+
+    @staticmethod
+    def hook_language(implied: str | None, by_name: str | None) -> str | None:
+        """The language a hook-run file is read as: the interpreter's, unless the name's language is
+        in the interpreter's own family (then the name's, the more exact one). Outside it (.md,
+        .txt, none, .png) the interpreter decides: it is what runs the file."""
+        if implied is None:
+            return by_name
+        if by_name is not None and by_name in Hooks._FAMILIES.get(implied, frozenset({implied})):
+            return by_name
+        return implied
+
+    @staticmethod
+    def hooked_languages(units: list[FileUnit]) -> None:
+        """Each member a manifest's hook runs takes the language the hook's interpreter gives it, in
+        place: an archive's units were typed by name and content alone before its manifests were
+        read (`ArchiveStages.read_members`), so `node lib/run.md` left the payload a Markdown file
+        (item 36). The manifests are those `manifest_hook_paths` read (parsed once a scan); one that
+        did not parse is reported there, and gives no language here."""
+        hooks: list[Hook] = []
+        for unit in units:
+            ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
+            ecosystem = EcosystemRegistry.get(ecosystem_id) if ecosystem_id else None
+            if ecosystem is None:
+                continue
+            try:
+                hooks.extend(ParsedManifests.manifest_alone(ecosystem, unit).hooks)
+            except Exception:  # noqa: BLE001, S112 -- reported by manifest_hook_paths
+                continue
+        implied = Hooks.languages_of(hooks)
+        if not implied:
+            return
+        for index, unit in enumerate(units):
+            if unit.path not in implied:
+                continue
+            language = Hooks.hook_language(implied[unit.path], unit.language)
+            if language != unit.language:
+                units[index] = replace(unit, language=language)
 
     @staticmethod
     def nuget_hooks(units: Sequence[FileUnit]) -> set[str]:
@@ -451,7 +502,7 @@ class Hooks:
         """The string literals of a `path.join` argument list, in order."""
         return re.findall(r"""['"`]([\w@./-]{1,200})['"`]""", arguments)
 
-    DEOBFUSCATED: ClassVar[str] = "#deobfuscated.js"
+    DEOBFUSCATED: ClassVar[str] = ContainerPaths.DEOBFUSCATED
     """Suffix of the unit an obfuscated file's recovered text is read as (`core.deobfuscation`)."""
 
     @staticmethod
@@ -688,7 +739,7 @@ class Hooks:
             if ecosystem is None:
                 continue
             try:
-                manifest = ecosystem.parse_manifest(unit.content)
+                manifest = ParsedManifests.manifest_alone(ecosystem, unit)
                 # And the hooks only the tree shows: a CRAN source package's `configure` and
                 # `cleanup` beside its DESCRIPTION. The manifest detector and the inventory
                 # already ask; without it here those scripts were never install-time code.
@@ -727,8 +778,7 @@ class Hooks:
         # was never read and nothing says so), which is the trade this
         # whole audit is about.
         if acc is not None:
-            acc.complete = False
-            acc.append(
+            acc.incomplete(
                 OperationalFinding.build(
                     path=unit.path,
                     rule_id="OPERATIONAL.PARSER.FAILED",

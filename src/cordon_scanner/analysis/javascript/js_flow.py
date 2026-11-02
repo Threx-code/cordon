@@ -148,6 +148,27 @@ class JsFlow:
         except (RecursionError, _OverBudget):
             return frozenset()
 
+    @classmethod
+    def fixed_spawn_lines(cls, text: str) -> frozenset[int]:
+        """Lines whose spawn runs a DATA_ARGS program with every value not written out where the
+        program's rule says it is data, no shell and nothing but literals in its options (note 44):
+        `spawnSync("taskkill", ["/PID", String(pid)])`, `spawn("tar", ["x", "--", f])`. The
+        co-occurrence composites see no taint, so this is their `CapabilityHit.fixed`, the
+        JavaScript twin of Python's `fixed_command`. Empty when the file is too large or did not
+        parse, so nothing is discounted (fail-closed)."""
+        if len(text) > MAX_BYTES:
+            return frozenset()
+        return frozenset(JsFlow.MEMO.get("fixed_spawns", text, lambda: JsFlow._fixed_spawns(text)))
+
+    @staticmethod
+    def _fixed_spawns(text: str) -> list[int]:
+        try:
+            analysis = _Analysis(text)
+            analysis.run()
+            return sorted(analysis.fixed_spawns())
+        except (RecursionError, _OverBudget):
+            return []
+
 
 class _Analysis(Calls):
     # -- the fixpoint ----------------------------------------------------------------------------
@@ -469,9 +490,24 @@ class _Analysis(Calls):
             if self._sink_kind(k, scope) != "process":
                 continue
             args = self._args(k + 1)
-            if not args or self._opener(*args[0], scope):
+            if not args or self._opens_a_link(self._chain(k)[0][-1], args, scope):
                 continue
             if not self._sent(k, "process", args, scope):
+                out.add(self.line(k))
+        return frozenset(out)
+
+    def fixed_spawns(self) -> frozenset[int]:
+        """See `JsFlow.fixed_spawn_lines`: lines of argv-form process calls `_fixed_program`
+        accepts when every value not written out counts as one a reply may set."""
+        out: set[int] = set()
+        for k in range(self.n - 1):
+            if not self._called(k):
+                continue
+            scope = self.scope_of(k)
+            if self._sink_kind(k, scope) != "process":
+                continue
+            args = self._args(k + 1)
+            if args and self._fixed_program(self._chain(k)[0][-1], args, scope, self._not_literal):
                 out.add(self.line(k))
         return frozenset(out)
 

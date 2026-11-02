@@ -127,7 +127,13 @@ class AgentFinding:
             ),
             remediation=rule.remediation,
             explanation=Explanation(summary=rule.title, matched_rule=rule.rule_id),
-            risk=ctx.scorer.score(chosen, rule.confidence, ScoringContext(in_install_hook=True)),
+            # Install-time only where an install hook runs the file (item 51): an agent reads
+            # AGENTS.md or .cursorrules when it works in the tree, no install runs them.
+            risk=ctx.scorer.score(
+                chosen,
+                rule.confidence,
+                ScoringContext(in_install_hook=ctx.in_install_hook(unit.content.path)),
+            ),
             detector=cls.DETECTOR,
             references=rule.references,
         )

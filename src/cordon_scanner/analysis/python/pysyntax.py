@@ -12,20 +12,46 @@ from __future__ import annotations
 import ast
 import bisect
 import collections
+import contextlib
 import functools
 import warnings
 import weakref
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Any, ClassVar
 
 from cordon_scanner.foundation.collector import ScanCaches
 
 
 class PythonSyntax:
+    #: The texts not parsed while a reader that does not need them reads (`withholding`): each by
+    #: its identity, kept with the text itself and checked with `is`.
+    _WITHHELD: ClassVar[dict[int, str]] = {}
+
+    @staticmethod
+    @contextlib.contextmanager
+    def withholding(text: str) -> Iterator[None]:
+        """`text` is not parsed while this lasts: a parse of that very object raises `SyntaxError`,
+        which every reader already takes as "no tree". For the structural detectors' first pass over
+        a piece of a windowed Python file that ends inside a statement (`engine/window_pass.py`),
+        which cannot parse: its failed parse costs most of a whole one, about 233 MB per MB, once per
+        reader, and the statement-aligned pass reads the same bytes as whole statements anyway."""
+        key = ScanCaches.identity(text)
+        PythonSyntax._WITHHELD[key] = text
+        try:
+            yield
+        finally:
+            if PythonSyntax._WITHHELD.get(key) is text:
+                del PythonSyntax._WITHHELD[key]
+
     @staticmethod
     def parse(source: str | bytes, filename: str = "<unknown>", mode: str = "exec") -> Any:
         """`ast.parse`, without the warnings it raises about the source. Raises what it raises:
         a `SyntaxError` (or `ValueError` for a NUL byte) is still the caller's to handle."""
+        if (
+            PythonSyntax._WITHHELD
+            and PythonSyntax._WITHHELD.get(ScanCaches.identity(source)) is source
+        ):
+            raise SyntaxError("a windowed piece cut inside a statement: read by the aligned pass")
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", SyntaxWarning)
             warnings.simplefilter("ignore", DeprecationWarning)
@@ -41,6 +67,13 @@ class PythonSyntax:
         tree = PythonSyntax.parse(source)
         TreeIndex.build(tree)
         return tree
+
+    @staticmethod
+    def span(node: Any) -> tuple[int, int, int, int]:
+        """Where `node` is, start and end: what names a node across parses of the same text, where
+        its `id` names only this parse's object (item 32). An enclosing node shares its start, never
+        its end."""
+        return (node.lineno, node.col_offset, node.end_lineno, node.end_col_offset)
 
     @staticmethod
     def within(node: ast.AST, *types: type) -> list[Any]:
@@ -292,5 +325,7 @@ class TreeIndex:
 
 # The last trees' indexes (and through them the trees), emptied after each scan.
 ScanCaches.register(TreeIndex.RECENT)
+
+ScanCaches.register(PythonSyntax._WITHHELD)
 
 __all__ = ["PythonSyntax", "TreeIndex"]

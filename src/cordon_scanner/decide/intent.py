@@ -407,14 +407,16 @@ class IntentObserver:
     def observe(
         units: Sequence[FileUnit],
         ctx: ScanContext,
-        label: Callable[[FileUnit], Iterable[tuple[str, int]] | None],
+        file_facts: Callable[[FileUnit], tuple[list[tuple[str, bool]], set[str]]],
         closure: Callable[[set[str]], set[str]],
     ) -> Observation:
         """The trigger, concealment and gate facts of a package.
 
-        `label(unit)` gives each effect the file has, as `(capability, byte offset)` (it may raise:
-        that file is then unexamined); `closure(seeds)` is the first-party files the seeds load,
-        whose top level runs when they do.
+        `file_facts(unit)` gives a file's effects, each `(capability, deferred)`, and its
+        concealment and gate facts: what `IntentObserver.file_facts` computes in the worker from the
+        file's bytes (item 56); it raises when the file's labelling raised, and the file is then
+        unexamined. `closure(seeds)` is the first-party files the seeds load, whose top level runs
+        when they do.
         """
         install = set(ctx.install_hook_paths | ctx.install_entry_paths)
         imported, bins = IntentObserver.entries(units)
@@ -452,43 +454,79 @@ class IntentObserver:
                     out.unexamined.append(f"{name}: {why}")
                 continue
             try:
-                effects = list(label(unit) or ())
+                effects, extra = file_facts(unit)
             except Exception:  # a file not read is reported, never a scan failure  # noqa: BLE001
                 if running:
                     out.unexamined.append(f"{name}: could not be analysed")
                 continue
             out.files += 1
             roles = IntentObserver._roles(unit.path, name, install, imported, bins)
-            text = content.text
-            js = name.lower().endswith(IntentObserver._JS)
-            spans = _Spans(IntentObserver._deferred(text) if js else [])
-            offsets = [(cap, IntentObserver._char(content.raw, at)) for cap, at in effects]
-            for cap, at in offsets:
-                if cap not in IntentFacts.EFFECT_GROUP:
-                    continue
-                # Where a module is imported is not where it is used: the effect runs where its
-                # binding does, so it is deferred only when every use is.
-                places = (IntentObserver._uses(text, at) if js else None) or [at]
-                deferred = all(
-                    spans.covers(p)
-                    or (
-                        unit.path in install
-                        and not ctx.install_hook_reaches(unit.path, text.count("\n", 0, p) + 1)
-                    )
-                    for p in places
-                )
+            for cap, deferred in effects:
                 for role in roles:
                     out.facts.add(f"t:{IntentObserver._trigger(role, deferred)}:{cap}")
-            if running and js:
-                out.facts |= IntentObserver._concealment(text)
-                # The checks themselves (`anti_analysis`, `delay`, `targeting`) are not what
-                # they guard.
-                guarded = [
-                    at
-                    for cap, at in offsets
-                    if IntentFacts.EFFECT_GROUP.get(cap, "evasion") != "evasion"
-                ]
-                out.facts |= IntentObserver._gates(text, guarded)
+            if running and name.lower().endswith(IntentObserver._JS):
+                out.facts |= extra
+        return out
+
+    @staticmethod
+    def reads(unit: FileUnit) -> bool:
+        """Whether `observe` reads this file's effects: first-party code within the byte limit, not
+        truncated or binary (before the file-count limit, which only the parent's order decides)."""
+        name = IntentObserver.member(unit.path)
+        content = unit.content
+        return (
+            "node_modules/" not in name
+            and name.lower().endswith(IntentObserver._CODE)
+            and not (
+                content.size > IntentObserver.MAX_BYTES or content.truncated or content.is_binary
+            )
+        )
+
+    @staticmethod
+    def file_facts(unit: FileUnit, ctx: ScanContext, labelled: Any) -> list[tuple[str, Any]]:
+        """One file's half of `observe`, from its own bytes and the context: each effect with whether
+        it is deferred (`("intent.effect", [capability, deferred])`), and for JavaScript its
+        concealment and gate facts (`("intent.fact", name)`). `labelled` is the capability
+        labelling's result for the file. Computed in the worker (item 56)."""
+        from cordon_scanner.detect.registry import DownloadFlow
+
+        content = unit.content
+        effects = [(hit.capability.value, hit.byte_start) for hit in (labelled or ((),))[0]]
+        lines = DownloadFlow.runs_download(content.text, unit.language)
+        if lines:
+            raw = content.raw
+            starts = [0, *(i + 1 for i, b in enumerate(raw) if b == 10)]
+            effects += [("runs_download", starts[min(n, len(starts)) - 1]) for n in lines]
+        install = set(ctx.install_hook_paths | ctx.install_entry_paths)
+        text = content.text
+        js = IntentObserver.member(unit.path).lower().endswith(IntentObserver._JS)
+        spans = _Spans(IntentObserver._deferred(text) if js else [])
+        offsets = [(cap, IntentObserver._char(content.raw, at)) for cap, at in effects]
+        out: list[tuple[str, Any]] = []
+        for cap, at in offsets:
+            if cap not in IntentFacts.EFFECT_GROUP:
+                continue
+            # Where a module is imported is not where it is used: the effect runs where its
+            # binding does, so it is deferred only when every use is.
+            places = (IntentObserver._uses(text, at) if js else None) or [at]
+            deferred = all(
+                spans.covers(p)
+                or (
+                    unit.path in install
+                    and not ctx.install_hook_reaches(unit.path, text.count("\n", 0, p) + 1)
+                )
+                for p in places
+            )
+            out.append(("intent.effect", [cap, deferred]))
+        if js:
+            out += [("intent.fact", fact) for fact in sorted(IntentObserver._concealment(text))]
+            # The checks themselves (`anti_analysis`, `delay`, `targeting`) are not what they guard.
+            guarded = [
+                at
+                for cap, at in offsets
+                if IntentFacts.EFFECT_GROUP.get(cap, "evasion") != "evasion"
+            ]
+            out += [("intent.fact", fact) for fact in sorted(IntentObserver._gates(text, guarded))]
         return out
 
     _REQUIRE_SITE: ClassVar[re.Pattern[str]] = re.compile(r"(?:require|import)\s*\(")

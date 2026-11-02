@@ -58,6 +58,13 @@ reads nothing."""
 
 _RETURN_REACH: Final = 6_000
 
+#: A conversation message's role key, as MCP's prompts and sampling messages spell it.
+_ROLE_KEY: Final = re.compile(
+    r"""\brole["']?[ \t]{0,8}:[ \t]{0,8}["'](?:user|assistant|system)["']"""
+)
+_MESSAGE_REACH: Final = 2_000
+_CLOSED_OBJECT: Final = re.compile(r"\{[^{}]*\}")
+
 _ESCAPES: Final = {"n": "\n", "t": "\t", "r": "", "'": "'", '"': '"', "`": "`", "\\": "\\"}
 
 _SOURCE_SUFFIXES: Final = (".js", ".mjs", ".cjs", ".ts", ".mts", ".py", ".json")
@@ -521,15 +528,59 @@ class McpServerSource:
         Injection (review 98). Only literals long enough to be a sentence."""
         for start in _RETURN_START.finditer(text):
             single = start.group(0).startswith("text")
-            for literal in McpServerSource._statement_literals(text, start.end(), single=single):
-                if len(literal) >= 40 and " " in literal:
-                    yield literal
+            spans = McpServerSource._statement_spans(text, start.end(), single=single)
+            for at, literal in spans:
+                if len(literal) < 40 or " " not in literal:
+                    continue
+                if McpServerSource._in_a_message(text, at):
+                    continue  # a prompt's or a sampling request's message, not a tool's result
+                yield literal
+
+    @staticmethod
+    def _in_a_message(text: str, at: int) -> bool:
+        """Whether the content part holding the literal at `at` belongs to a message with a `role`:
+        a prompt template's or a sampling request's `{role: "user", content: {type: "text", text}}`.
+        A tool's result (`CallToolResult.content`) is parts with no role, read as context the server
+        supplies; a message is what the user's chosen prompt says to the agent, written to instruct
+        it (iflow-mcp's research prompt, a benign npm block; cordon-a0's false-alarm read, 1 Nov).
+        Reads back at most two unclosed braces and `_MESSAGE_REACH` characters."""
+        floor, depth, opened = max(0, at - _MESSAGE_REACH), 0, []
+        for index in range(at - 1, floor - 1, -1):
+            char = text[index]
+            if char == "}":
+                depth += 1
+            elif char == "{":
+                if depth:
+                    depth -= 1
+                    continue
+                opened.append(index)
+                if len(opened) == 2:
+                    break
+        if not opened:
+            return False
+        # The role sits beside `content` in the message, or beside `text` when content is inline:
+        # in the message's own keys, so objects nested and closed inside it are blanked first.
+        keys = text[opened[-1] + 1 : at]
+        while True:
+            flat = _CLOSED_OBJECT.sub(" ", keys)
+            if flat == keys:
+                break
+            keys = flat
+        return _ROLE_KEY.search(keys) is not None
 
     @staticmethod
     def _statement_literals(text: str, index: int, *, single: bool) -> Iterator[str]:
-        """String literals from `index` to the end of the statement, escapes decoded. The
-        statement ends at a newline or `;` outside brackets, or after the first literal when
-        `single`; never more than `_RETURN_REACH` characters on."""
+        """String literals from `index` to the end of the statement, escapes decoded
+        (`_statement_spans` without the positions)."""
+        return (
+            literal for _, literal in McpServerSource._statement_spans(text, index, single=single)
+        )
+
+    @staticmethod
+    def _statement_spans(text: str, index: int, *, single: bool) -> Iterator[tuple[int, str]]:
+        """Each string literal from `index` to the end of the statement, with the offset of its
+        opening quote, escapes decoded. The statement ends at a newline or `;` outside brackets,
+        or after the first literal when `single`; never more than `_RETURN_REACH` characters on."""
         end = min(len(text), index + _RETURN_REACH)
         depth = 0
         while index < end:
@@ -546,7 +597,7 @@ class McpServerSource:
                         break
                     buffer.append(text[cursor])
                     cursor += 1
-                yield "".join(buffer)
+                yield index, "".join(buffer)
                 if single:
                     return
                 index = cursor + 1

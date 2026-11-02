@@ -11,6 +11,13 @@ are read; a non-minimal integer, a misplaced field, a name value of a type no st
 exactly where OpenSSL's templates refuse them, with the same effect on what a rule sees. ``verified``
 means the signature signs the file's bytes; it is not trust, and no root is consulted. The reference
 engine's recorded output is what the tests hold this to.
+
+Named difference from the reference's reading: a timestamp countersignature whose signature, message
+imprint and content digest all check is reported verified even when an element of its certificate set
+that CMS declares opaque (a CertificateChoices other than a certificate) is damaged inside; the
+reference empties that countersignature. On the 14,292-file malformed set this is the only difference
+left: 43 values, all on one file; on 1,964 real PEs every value is the reference's
+(`TestCountersignCertSetOpacity`).
 """
 
 from __future__ import annotations

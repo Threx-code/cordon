@@ -8011,6 +8011,48 @@ class TestSixNamesAreNotAComputedName:
         assert self._dispatch(source)
 
 
+class TestAnInstalledCheckIsNotADispatch:
+    """`anything-to-notebooklm`'s `check_env.py` (review 98, a public skill) asks whether each
+    dependency is installed through a helper, `check_module(name)`: `try: __import__(name)`,
+    the result dropped, `except ImportError`. Its name is a parameter, so it is not enumerated,
+    but nothing is reached through the call -- it is a probe, and a probe is not a dispatch.
+    The import's result used, a name built in the call, a module taken back from `sys.modules`
+    by a computed key, or a handler that does not catch the failed import each keep it."""
+
+    _dispatch = staticmethod(TestSixNamesAreNotAComputedName._dispatch)
+
+    PROBE: ClassVar[str] = (
+        "def check_module(module_name, import_name=None):\n"
+        "    if import_name is None:\n"
+        "        import_name = module_name\n"
+        "    try:\n"
+        "        __import__(import_name)\n"
+        "        return True\n"
+        "    except ImportError:\n"
+        "        return False\n"
+    )
+
+    def test_a_probe_through_a_helper_is_not_dynamic(self) -> None:
+        assert self._dispatch(self.PROBE) == []
+
+    def test_the_whole_file_is_silent_about_it(self, tmp_path) -> None:
+        (tmp_path / "setup.py").write_text("import os\n\n" + self.PROBE, encoding="utf-8")
+        assert "MALWARE.DYNAMIC_DISPATCH.001" not in ReviewDefectsHelpers.flagged(tmp_path)
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            PROBE.replace("__import__(import_name)\n", "__import__(import_name).run()\n"),
+            PROBE.replace("__import__(import_name)", "__import__(import_name + '.x')"),
+            PROBE.replace("except ImportError", "except ValueError"),
+            PROBE + "def go(n):\n    return sys.modules[n]\n",
+        ],
+        ids=["result-used", "built-name", "other-handler", "sys-modules"],
+    )
+    def test_a_probe_that_reaches_something_still_is(self, source: str) -> None:
+        assert self._dispatch(source)
+
+
 class TestACommentedOutPackerIsNotPackedCode:
     """`binary-husky/gpt_academic` keeps a Dean Edwards packer preamble behind a `//` in
     `themes/waifu_plugin/waifu-tips.js`, where an author left the packed form of a widget
@@ -13452,6 +13494,21 @@ class TestAPublishedPackagesHookIsGradedByWhatItRuns:
     def test_a_binary_target_blocks(self, tmp_path, verdict_off) -> None:
         # The rule's grade, with the package verdict off (this minimal fixture is one the verdict
         # holds as a warning -- pinned in test_verdict_features.py).
+        manifest = b'{"name":"tool","version":"1.0.0","scripts":{"postinstall":"./bin/helper"}}'
+        files = {"package.json": manifest, "bin/helper": b"\x7fELF\x02\x01\x01" + b"\x00" * 64}
+        assert self._severity(tmp_path, files) == ["HIGH"]
+
+    # What the user sees, with the verdict on: both shapes are held as a warning on this fixture.
+    @pytest.mark.xfail(
+        strict=True, reason="held as a warning by the package verdict (measured 2 Nov)"
+    )
+    def test_a_target_that_is_not_there_blocks_as_the_user_sees_it(self, tmp_path) -> None:
+        assert self._severity(tmp_path, {"package.json": self.MANIFEST}) == ["HIGH"]
+
+    @pytest.mark.xfail(
+        strict=True, reason="held as a warning by the package verdict (measured 2 Nov)"
+    )
+    def test_a_binary_target_blocks_as_the_user_sees_it(self, tmp_path) -> None:
         manifest = b'{"name":"tool","version":"1.0.0","scripts":{"postinstall":"./bin/helper"}}'
         files = {"package.json": manifest, "bin/helper": b"\x7fELF\x02\x01\x01" + b"\x00" * 64}
         assert self._severity(tmp_path, files) == ["HIGH"]

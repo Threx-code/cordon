@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
@@ -22,6 +23,7 @@ from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.archives import ArchiveMembers
 from cordon_scanner.engine.pipeline.constants import REPOSITORY_SCOPE
+from cordon_scanner.engine.pipeline.graph import ParsedManifests
 from cordon_scanner.engine.pipeline.hooks import Hooks
 from cordon_scanner.foundation.content import FileContent, Skipped
 from cordon_scanner.foundation.errors import ArchiveError
@@ -32,13 +34,44 @@ from cordon_scanner.foundation.files.walk import (
 )
 from cordon_scanner.foundation.models import AUTHOR_TIME_HOOKS, Category, Severity
 from cordon_scanner.foundation.results import OperationalFinding, Repository
-from cordon_scanner.sources.base import Rejection
 from cordon_scanner.sources.registry import ArchiveReader
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Iterable, Iterator, Sequence
 
     from cordon_scanner.engine.engine import Engine
+
+
+@dataclass(frozen=True, slots=True)
+class Expansion:
+    """An archive found in a directory scan, opened once per distinct content (`Units.opened`): its
+    members (None where it was refused), why it was refused, and the members it refused, each
+    relative to the archive's own path, so every copy of the bytes is recorded at its own."""
+
+    members: list[tuple[str, bytes]] | None
+    refused: tuple[str, str] | None = None
+    """(message, remediation) of the refusal, where the archive was not opened."""
+    rejected: tuple[tuple[str, str, str], ...] = ()
+    """(suffix after the archive's path, reason, detail) of each member the reader refused."""
+    truncated: bool = False
+
+    def record(self, rel_path: str, acc: Accumulator) -> None:
+        """The outcome, at this copy's own path: its refusal and every refused member's."""
+        if self.refused is not None:
+            if self.truncated:
+                acc.rejected_archives.add(rel_path)
+            message, remediation = self.refused
+            acc.incomplete(
+                OperationalFinding.build(
+                    path=rel_path,
+                    rule_id="OPERATIONAL.ARCHIVE.REJECTED",
+                    message=message,
+                    remediation=remediation,
+                    severity=Severity.MEDIUM,
+                )
+            )
+        for suffix, reason, detail in self.rejected:
+            ArchiveMembers.refuse(acc, rel_path + suffix, reason, detail)
 
 
 class Units:
@@ -162,7 +195,7 @@ class Units:
 
             language = Units.language_of(entry, implied_languages, loaded)
 
-            yield FileUnit(content=loaded, language=language)
+            yield FileUnit(content=loaded, language=language, opens=str(entry.real_path.absolute()))
 
             # Members after the archive itself, each budgeted like a file: an
             # archive is the cheapest way to put a lot of content in front of a
@@ -189,12 +222,20 @@ class Units:
     ) -> list[FileUnit] | None:
         """An archive expanded (or noted unopened), a binary file and a Git LFS pointer recorded."""
         expanded: list[FileUnit] | None = None
-        if ArchiveReader.is_archive(entry.rel_path):
-            if self.config.expand_archives:
-                expanded = self.expand_members(entry.rel_path, loaded, acc, deadline)
-            else:
-                unopened.append(entry.rel_path)
+        claimed = ArchiveReader.is_archive(entry.rel_path)
+        if claimed and not self.config.expand_archives:
+            unopened.append(entry.rel_path)
+        elif self.config.expand_archives and (
+            # Its name says archive, or its bytes do (item 36): a zip named notes.txt. A whole
+            # header is read, never a magic alone, so one that fails to open is reported unread.
+            claimed or ArchiveReader.opens_by_bytes(loaded.raw)
+        ):
+            expanded = self.expand_members(entry.rel_path, loaded, acc, deadline)
 
+        # A named archive's refusal is its expansion's; with archives not expanded, an unopenable
+        # format is the operator's choice as every archive is (NOT_EXPANDED), never both.
+        if expanded is None and not claimed and self.config.expand_archives:
+            Units.unsupported_archive(entry.rel_path, loaded, acc)
         if loaded.is_binary and expanded is None:
             binary.append(entry.rel_path)
 
@@ -202,12 +243,19 @@ class Units:
             lfs_pointers.append(entry.rel_path)
         return expanded
 
+    @staticmethod
+    def unsupported_archive(rel_path: str, loaded: FileContent, acc: Accumulator) -> None:
+        """A file in an archive format no reader here opens is a gap at its path (item 53)."""
+        refused: list[tuple[str, str, str]] = []
+        if ArchiveReader.unsupported(rel_path, loaded.raw, refused):
+            for path, reason, detail in refused:
+                ArchiveMembers.refuse(acc, path, reason, detail)
+
     def out_of_time(self, acc: Accumulator) -> None:
         """The scan's time budget ran out: the scan is incomplete, and says so."""
         # A partial result a human can act on beats a stack trace, and
         # marking it partial is what stops it being read as a pass.
-        acc.complete = False
-        acc.append(
+        acc.incomplete(
             OperationalFinding.build(
                 path=REPOSITORY_SCOPE,
                 rule_id="OPERATIONAL.SCAN.TIMEOUT",
@@ -240,8 +288,7 @@ class Units:
     def unreadable(acc: Accumulator, entry: WalkEntry, loaded: Skipped) -> None:
         """A file that could not be read: skipped, and the scan incomplete."""
         acc.files_skipped += 1
-        acc.complete = False
-        acc.append(
+        acc.incomplete(
             OperationalFinding.build(
                 path=entry.rel_path,
                 rule_id="OPERATIONAL.FILE.UNREADABLE",
@@ -252,8 +299,7 @@ class Units:
 
     def over_memory(self, acc: Accumulator) -> None:
         """Retained content reached the memory budget: the scan is incomplete, and says so."""
-        acc.complete = False
-        acc.append(
+        acc.incomplete(
             OperationalFinding.build(
                 path=REPOSITORY_SCOPE,
                 rule_id="OPERATIONAL.SCAN.MEMORY_LIMIT",
@@ -282,22 +328,31 @@ class Units:
             # config, which reads as ordinary tuning and pads a payload out
             # of reach. Unless the windows read it to its end: then every text rule saw
             # every byte, and only the whole-file parsers stopped at the limit.
-            acc.complete = acc.complete and ArchiveMembers.read_to_end(loaded)
             # Said here, for every such file. It was said by the capability detector, which
             # returns before it for a binary file and for one no rule applies to -- so a
             # repository with a 12 MB font was incomplete, failed the Action's default gate,
             # and gave no reason.
+            note = ArchiveMembers.truncated_note(entry.rel_path, loaded)
+            if not ArchiveMembers.read_to_end(loaded):
+                note = acc.gap(note)
             if entry.rel_path not in acc.rejected_archives:
-                acc.append(ArchiveMembers.truncated_note(entry.rel_path, loaded))
+                acc.append(note)
 
     @staticmethod
     def language_of(
         entry: WalkEntry, implied_languages: dict[str, str], loaded: FileContent
     ) -> str | None:
-        """A file's language: its name, then a hook's interpreter, then its shebang, then its content."""
-        language = LanguageRegistry.identify_language(entry.rel_path)
-        if language is None:
-            language = implied_languages.get(entry.rel_path)
+        """A file's language: the interpreter a hook runs it with, then its name, then its shebang,
+        then its content.
+
+        The hook's interpreter first: `node lib/run.md` runs JavaScript whatever the file is called,
+        and the file is inspected as what runs (item 36). The name answered first, so a payload named
+        .md, .txt or nothing, run by a hook, was read by no language rule while the same bytes in
+        run.js blocked (the evasion suite's text-type names; five npm misses on 3cad016d)."""
+        language = Hooks.hook_language(
+            implied_languages.get(entry.rel_path),
+            LanguageRegistry.identify_language(entry.rel_path),
+        )
         if language is None:
             # An extensionless script -- `install`, `preinstall`,
             # `configure` -- got `language=None` and therefore only the
@@ -318,8 +373,7 @@ class Units:
 
     def archive_over_memory(self, acc: Accumulator, entry: WalkEntry) -> None:
         """An archive's members reached the memory budget: the scan is incomplete, and says so."""
-        acc.complete = False
-        acc.append(
+        acc.incomplete(
             OperationalFinding.build(
                 path=entry.rel_path,
                 rule_id="OPERATIONAL.SCAN.MEMORY_LIMIT",
@@ -347,28 +401,26 @@ class Units:
     ) -> None:
         """Files the walk could not open, a file-count limit reached, directories too deep, and walk errors."""
         if unopened:
-            # An archive that was not opened is content that was not examined. Said
-            # once, with the paths, and it makes the scan incomplete: `--no-expand`
-            # buys speed, not a clean result.
-            acc.complete = False
-            sample = ", ".join(sorted(unopened)[:5])
-            more = f" and {len(unopened) - 5} more" if len(unopened) > 5 else ""
-            acc.append(
+            # An archive that was not opened is content that was not examined, and the scan says
+            # so: incomplete, with every archive named. The operator's own choice (`--no-expand`
+            # buys speed, not a clean result), which no package can make, so it blocks only with
+            # fail_on_incomplete (`NOT_CONTENT_GAPS`). An archive a limit left unread is refused
+            # (ARCHIVE.REJECTED, MEMBER_REJECTED), the package's doing, and blocks.
+            acc.incomplete(
                 OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.ARCHIVE.NOT_EXPANDED",
                     message=(
                         f"{len(unopened)} archive(s) were not opened because archive "
                         f"expansion is off, so their contents were not examined: "
-                        f"{sample}{more}."
+                        f"{', '.join(sorted(unopened))}."
                     ),
                     remediation="Scan without --no-expand, or set scan.expand_archives: true.",
                 )
             )
 
         if walker.stats.limit_hit:
-            acc.complete = False
-            acc.append(
+            acc.incomplete(
                 OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.SCAN.LIMIT",
@@ -421,7 +473,7 @@ class Units:
                 if len(walker.stats.too_deep) > 5
                 else ""
             )
-            acc.append(
+            acc.incomplete(
                 OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.WALK.TOO_DEEP",
@@ -438,29 +490,46 @@ class Units:
                     ),
                 )
             )
-            acc.complete = False
 
-        if walker.stats.errors:
-            sample = ", ".join(path for path, _ in walker.stats.errors[:5])
-            more = (
-                f" and {len(walker.stats.errors) - 5} more" if len(walker.stats.errors) > 5 else ""
-            )
+        # Every path the walk could not reach is a gap of its own, which blocks whatever its cause
+        # (item 27): a machine's cause can be provoked too, a mode-000 directory is EACCES. The
+        # cause, read from the errno or the walker's own reason and never from a message, decides
+        # only what the finding says to do.
+        for errors, rule, remediation in (
+            (
+                [e for e in walker.stats.errors if e.the_machines],
+                "OPERATIONAL.WALK.ERROR",
+                "The host refused or failed the read (a permission, I/O, the process's own limits): "
+                "retry where the scan can read the whole tree. A path the walker could not reach is "
+                "not a path that was found clean. If the tree's own permissions hide it, the package "
+                "is hiding content.",
+            ),
+            (
+                [e for e in walker.stats.errors if not e.the_machines],
+                "OPERATIONAL.WALK.SHAPE",
+                "The tree's own shape put these paths out of reach (a name too long, a loop of "
+                "links, a path past scan.limits.max_path_bytes): the package is hiding content from "
+                "the scan. Inspect them directly, or accept the gap for that path deliberately.",
+            ),
+        ):
+            if not errors:
+                continue
+            for error in errors:
+                acc.named_elsewhere(rule, error.path)
+            sample = ", ".join(e.path[:120] for e in errors[:5])
+            more = f" and {len(errors) - 5} more" if len(errors) > 5 else ""
             acc.append(
                 OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
-                    rule_id="OPERATIONAL.WALK.ERROR",
+                    rule_id=rule,
                     message=(
-                        f"{len(walker.stats.errors)} path(s) could not be traversed and were "
+                        f"{len(errors)} path(s) could not be traversed and were "
                         f"not examined: {sample}{more}."
                     ),
-                    remediation=(
-                        "Check permissions and path lengths. A path the walker could "
-                        "not reach is not a path that was found clean."
-                    ),
+                    remediation=remediation,
                     severity=Severity.MEDIUM,
                 )
             )
-            acc.complete = False
 
     def exclusions(self, acc: Accumulator, walker: Walker) -> None:
         """Plugins that tried to shadow a built-in, directories pruned, and exclusion patterns that matched nothing."""
@@ -520,25 +589,23 @@ class Units:
             names = sorted(walker.stats.pruned_dirs)
             sample = ", ".join(names[:6])
             more = f" and {len(names) - 6} more" if len(names) > 6 else ""
-            acc.append(
-                OperationalFinding.build(
-                    path=REPOSITORY_SCOPE,
-                    rule_id="POLICY.COVERAGE.PRUNED",
-                    category=Category.POLICY,
-                    severity=Severity.LOW,
-                    message=(
-                        f"{len(names)} director(ies) were skipped by the built-in prune "
-                        f"list and not examined: {sample}{more}. These normally hold "
-                        f"build output or an installed dependency tree, which is "
-                        f"reproducible from the manifests that were scanned -- but "
-                        f"installed dependency code is also where a malicious package's "
-                        f"payload actually runs from."
-                    ),
-                    remediation=(
-                        "Pass --include with a pattern covering the directory to scan "
-                        "it, for example --include 'node_modules/**'."
-                    ),
-                )
+            pruned = OperationalFinding.build(
+                path=REPOSITORY_SCOPE,
+                rule_id="POLICY.COVERAGE.PRUNED",
+                category=Category.POLICY,
+                severity=Severity.LOW,
+                message=(
+                    f"{len(names)} director(ies) were skipped by the built-in prune "
+                    f"list and not examined: {sample}{more}. These normally hold "
+                    f"build output or an installed dependency tree, which is "
+                    f"reproducible from the manifests that were scanned -- but "
+                    f"installed dependency code is also where a malicious package's "
+                    f"payload actually runs from."
+                ),
+                remediation=(
+                    "Pass --include with a pattern covering the directory to scan "
+                    "it, for example --include 'node_modules/**'."
+                ),
             )
             # An installed dependency tree or an editor execution vector was
             # skipped, so code that runs was not read. A default scan still only
@@ -561,7 +628,44 @@ class Units:
                     if any(name in path.split("/")[:-1] for path in narrowed_to)
                 }
             if skipped_code:
-                acc.complete = False
+                acc.incomplete(pruned)  # the operator's scope: blocks only with the flag
+            else:
+                acc.append(pruned)
+
+    def opened(self, rel_path: str, loaded: FileContent, deadline: float) -> Expansion:
+        """An archive's bytes opened by the bounded reader: its members, or why it was refused, and
+        the members it refused, each relative to the archive's own name. Records nothing: every
+        copy records the outcome at its own path (`Expansion.record`)."""
+        refusal = "Treat a refused archive as unexamined. If the limits are wrong for this input, raise them deliberately."
+        if loaded.truncated:
+            return Expansion(
+                None,
+                (
+                    "The archive is larger than limits.max_file_bytes, so it was read in part and "
+                    "could not be opened. Its contents were not examined.",
+                    "Raise limits.max_file_bytes, or scan the archive directly.",
+                ),
+                truncated=True,
+            )
+        rejected: list[tuple[str, str, str]] = []
+        collected: list[tuple[str, bytes]] = []
+        prefix = rel_path.rsplit("/", 1)[-1]
+        members: list[tuple[str, bytes]] | None = collected
+        refused: tuple[str, str] | None = None
+        try:
+            for member_path, member_data in ArchiveReader.walk_archive(
+                loaded.raw,
+                path=prefix,
+                limits=self.config.limits,
+                rejected=rejected,
+                deadline=deadline if self.config.limits.total_timeout > 0 else None,
+            ):
+                collected.append((member_path[len(prefix) :], member_data))
+        except ArchiveError as exc:
+            members = None
+            refused = (f"The archive was refused and not scanned: {exc.message}", refusal)
+        relative = tuple((path[len(prefix) :], reason, detail) for path, reason, detail in rejected)
+        return Expansion(members, refused, rejected=relative)
 
     def expand_members(
         self, rel_path: str, loaded: FileContent, acc: Accumulator, deadline: float
@@ -580,65 +684,18 @@ class Units:
         opened.
         """
         started = time.monotonic()
-        digest = loaded.sha256
-        cache = self._expansions
-        if digest in cache:
-            members = cache[digest]
-        else:
-            if loaded.truncated:
-                members = None
-                acc.complete = False
-                acc.rejected_archives.add(rel_path)
-                acc.append(
-                    OperationalFinding.build(
-                        path=rel_path,
-                        rule_id="OPERATIONAL.ARCHIVE.REJECTED",
-                        message=(
-                            "The archive is larger than limits.max_file_bytes, so it was "
-                            "read in part and could not be opened. Its contents were not "
-                            "examined."
-                        ),
-                        remediation="Raise limits.max_file_bytes, or scan the archive directly.",
-                        severity=Severity.MEDIUM,
-                    )
-                )
-            else:
-                rejected: list[tuple[str, str, str]] = []
-                collected: list[tuple[str, bytes]] = []
-                prefix = rel_path.rsplit("/", 1)[-1]
-                try:
-                    for member_path, member_data in ArchiveReader.walk_archive(
-                        loaded.raw,
-                        path=prefix,
-                        limits=self.config.limits,
-                        rejected=rejected,
-                        deadline=deadline if self.config.limits.total_timeout > 0 else None,
-                    ):
-                        collected.append((member_path[len(prefix) :], member_data))
-                    members = collected
-                except ArchiveError as exc:
-                    members = None
-                    acc.complete = False
-                    acc.append(
-                        OperationalFinding.build(
-                            path=rel_path,
-                            rule_id="OPERATIONAL.ARCHIVE.REJECTED",
-                            message=f"The archive was refused and not scanned: {exc.message}",
-                            remediation=(
-                                "Treat a refused archive as unexamined. If the limits are "
-                                "wrong for this input, raise them deliberately."
-                            ),
-                            severity=Severity.MEDIUM,
-                        )
-                    )
-                directory = rel_path[: -len(prefix)]
-                for member_path, reason, detail in rejected:
-                    acc.complete = acc.complete and reason == Rejection.LINK
-                    acc.append(ArchiveMembers.rejected(directory + member_path, reason, detail))
-            cache[digest] = members
-            if members is not None:
+        expansion = self._expansions.get(loaded.sha256)
+        if expansion is None:
+            expansion = self.opened(rel_path, loaded, deadline)
+            self._expansions[loaded.sha256] = expansion
+            if expansion.members is not None:
                 self._archive_stats[0] += 1
+        # Every copy answers for itself, at its own path, whether its bytes were opened here or
+        # before: a refusal recorded only at the first copy let accepting that copy's gap pass every
+        # other copy unread.
+        expansion.record(rel_path, acc)
         self._archive_stats[2] += int((time.monotonic() - started) * 1000)
+        members = expansion.members
         if members is None:
             return None
         units: list[FileUnit] = []
@@ -646,8 +703,8 @@ class Units:
             member_path = rel_path + suffix
             content = FileContent.from_member(member_path, data, self.config.limits)
             if content.truncated:
-                acc.complete = acc.complete and ArchiveMembers.read_to_end(content)
-                acc.append(ArchiveMembers.truncated_note(member_path, content))
+                note = ArchiveMembers.truncated_note(member_path, content)
+                acc.append(note if ArchiveMembers.read_to_end(content) else acc.gap(note))
             units.append(
                 FileUnit(content=content, language=LanguageRegistry.of_file(member_path, content))
             )
@@ -657,6 +714,7 @@ class Units:
     _DEOBFUSCATION_MARKERS: ClassVar[re.Pattern[bytes]] = re.compile(
         rb"while\s*\(\s*!!\[\]\s*\)|\batob\s*\(|\bBuffer\s*\.\s*from\s*\(\s*['\"`][A-Za-z0-9+/=_\-]{16}"
         rb"|fromCharCode\s*\(\s*(?:0x[0-9a-fA-F]+|\d+)\s*,|\xf3\xa0[\x80-\x87]|\xef\xb8[\x80-\x8f]"
+        rb"|fromCharCode|\bBuffer\s*\.\s*from\s*\(\s*[A-Za-z_$]|\.\s*reverse\s*\(\s*\)\s*\.\s*join"
     )
     """Bytes without which no reversal in `core.deobfuscation` applies: most files pay one search."""
 
@@ -667,7 +725,7 @@ class Units:
         what the code does is graded rather than that it was hidden. A file that cannot be
         reversed, or only in part, is not lifted, and its obfuscation finding keeps its grade.
         """
-        from cordon_scanner.analysis.shared.deobfuscation import Deobfuscator
+        from cordon_scanner.analysis.shared.deobfuscator import Deobfuscator
 
         lifted: list[FileUnit] = []
         for unit in units:
@@ -708,7 +766,9 @@ class Units:
             if ecosystem is None:
                 continue
             try:
-                hooks = ecosystem.parse_manifest(unit.content).hooks
+                hooks = ParsedManifests.manifest_alone(
+                    ecosystem, unit
+                ).hooks  # a raise, recorded once
             except Exception:  # noqa: BLE001, S112
                 continue
             for hook in hooks:

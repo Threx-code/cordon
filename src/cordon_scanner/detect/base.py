@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import functools
 import time
-from dataclasses import dataclass, field, fields, replace
+from dataclasses import dataclass, field, fields
 from typing import TYPE_CHECKING, Any, ClassVar, Protocol, runtime_checkable
 
 from cordon_scanner.foundation.collector import ScanCaches
@@ -41,7 +41,7 @@ from cordon_scanner.foundation.models import (
 from cordon_scanner.foundation.scoring import RiskScorer, ScoringContext
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Sequence
+    from collections.abc import Callable, Iterable, Mapping, Sequence
     from pathlib import Path
     from typing import Any
 
@@ -122,6 +122,10 @@ class ScanContext:
     declared_dependencies: frozenset[str] = frozenset()
     """The runtime dependencies a published package's manifest declares, by name (npm
     `dependencies` and `optionalDependencies`): what installing it installs beside it."""
+    verdict_dependency_names: frozenset[str] = frozenset()
+    """The dependencies the package verdict asks the code to name (`VerdictFeatures.
+    wanted_dependencies`): each worker reports which of them its source file names (item 56), so
+    the parent reads no source bytes for the verdict."""
     install_entry_paths: frozenset[str] = frozenset()
     """The hook scripts themselves -- a `setup.py`, the file a lifecycle script names, a `.pth`
     -- as distinct from the modules they import, which `install_hook_paths` also holds. A
@@ -238,6 +242,13 @@ class ScanContext:
     container image tarball, else None. Carried whole because matching needs what a purl cannot
     hold faithfully: Debian's source-package version and the distribution's advisory namespace."""
 
+    scan_facts: Mapping[str, Any] | None = None
+    """The facts the package verdict reads -- the capability profile's capabilities, the reached
+    files' flows, the registry record, the campaign siblings -- gathered once after detection
+    (`engine/pipeline/facts`) for the rule file's deferred pass (`modules.scanner_facts`).
+    None during detection, before they exist. A fact like the others: carried to a worker and
+    part of a file's cache key, so a file is never served findings made under other facts."""
+
     #: The fields that belong to the process holding the context rather than to the scan target,
     #: each with where its effect is accounted for. Everything else is a fact about the target:
     #: `facts()` carries all of it to a worker, and the scan cache keys on all of it. Named
@@ -294,6 +305,11 @@ class FileUnit:
     content: FileContent
     language: str | None = None
     project: str | None = None
+    opens: str | None = None
+    """The path that opens this file on disk, where it was read from one (a walked file); None for
+    content with no file of its own (an archive member, a hook's inline program). Never `path`: a
+    name that is not text is shown escaped (`Names.text`), and no file has the escaped name, so
+    anything that reads the file again (a supervised worker, item 28) opens it by this."""
 
     @property
     def path(self) -> str:
@@ -667,10 +683,25 @@ class PackerSignatures(Protocol):
     def packers(self, content: FileContent, language: str | None = ...) -> Iterable[object]: ...
 
 
-class ReachedFlowFacts(Protocol):
-    """What the engine uses of the class `ReachedFlows`."""
+class CampaignSiblingFacts(Protocol):
+    """What the engine uses of the class `CampaignSiblingDetector`: an npm manifest's campaign
+    facets and the condemned releases sharing two of them, for the `package` rule module."""
 
-    def of(self, units: Sequence[FileUnit], ctx: ScanContext) -> dict[str, float]: ...
+    def siblings_of(
+        self, unit: FileUnit, ctx: ScanContext
+    ) -> tuple[dict[str, str | None], list[dict[str, Any]]] | None: ...
+    def shared(self, facets: dict[str, str | None], sibling: dict[str, Any]) -> list[str]: ...
+
+
+class ReachedFlowFacts(Protocol):
+    """What the engine uses of the class `ReachedFlows`: the parent joins each file's flow facts
+    (`of`), a worker reads them (`reads`, `facts`; item 56)."""
+
+    def of(
+        self, units: Sequence[FileUnit], ctx: ScanContext, facts: dict[str, dict[str, list[Any]]]
+    ) -> dict[str, float]: ...
+    def reads(self, unit: FileUnit, ctx: ScanContext) -> bool: ...
+    def facts(self, place: str, text: str, *, python: bool = ...) -> dict[str, float]: ...
 
 
 class ServerSourceFinding(Protocol):
@@ -694,29 +725,16 @@ class SubmoduleDependencies(Protocol):
 
 
 class DetectorRun:
-    """One detector over one unit, within the per-file time budget: the way every caller outside
-    the engine's own runners (`engine/pipeline/detection`, `engine/parallel`) runs a detector.
-
-    The budget is cooperative, as the engine's is: the context's deadline is set no later than the
-    budget allows, so a detector that checks `ScanContext.out_of_time` stops there, and findings
-    stop being taken once it has passed. The second value says whether the run finished within it;
-    a caller that gets False reports what it could not finish, as the engine reports a file that
-    exceeded its budget. A budget of 0 is no bound, as `limits.per_file_timeout = 0` is.
-    """
+    """One detector over one unit, run to its end: the way every caller outside the engine's own
+    runners (`engine/pipeline/detection`, `engine/parallel`) runs a detector. No time budget cuts
+    it, as none cuts a scan's files: a run cut on the wall clock left what a busy machine did not
+    reach unread (a historical secret reported unfinished for load, not for the blob), so its
+    answer depended on the load. Bounds that remain are decided from the input (the bytes read)
+    and the scan's own `total_timeout`."""
 
     @staticmethod
-    def findings(
-        detector: Detector, unit: Unit, ctx: ScanContext, budget: float
-    ) -> tuple[list[Finding], bool]:
-        deadline = time.monotonic() + budget if budget > 0 else None
-        if deadline is not None and (ctx.deadline is None or deadline < ctx.deadline):
-            ctx = replace(ctx, deadline=deadline)
-        found: list[Finding] = []
-        for finding in detector.inspect(unit, ctx):
-            found.append(finding)
-            if deadline is not None and time.monotonic() >= deadline:
-                return found, False
-        return found, deadline is None or time.monotonic() < deadline
+    def findings(detector: Detector, unit: Unit, ctx: ScanContext) -> list[Finding]:
+        return list(detector.inspect(unit, ctx))
 
 
 __all__ = [

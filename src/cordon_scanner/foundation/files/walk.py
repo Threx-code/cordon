@@ -26,12 +26,14 @@ vendored dependencies.
 
 from __future__ import annotations
 
+import errno
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.foundation.files.globs import PathGlob
+from cordon_scanner.foundation.files.names import Names
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS, Limits
 
 if TYPE_CHECKING:
@@ -144,6 +146,53 @@ that is deep everywhere would otherwise put thousands of paths in one finding,
 which is a finding nobody reads."""
 
 
+@dataclass(frozen=True, slots=True)
+class WalkError:
+    """A path the walk could not reach, and why: `cause` is an OSError's errno name ("EIO",
+    "ENAMETOOLONG"), the walker's own reason (`PATH_TOO_LONG`), or `UNKNOWN`. Never the message,
+    which a platform or a locale words its own way."""
+
+    path: str
+    detail: str
+    cause: str
+
+    PATH_TOO_LONG: ClassVar[str] = "path_exceeds_max_path_bytes"
+    UNKNOWN: ClassVar[str] = "unknown"
+
+    #: The causes the machine is positively known to own: the scan's own process or disk. Every
+    #: other cause, a new or an unknown one included, is the tree's (a content gap, item 27), so a
+    #: reason added later blocks rather than passes.
+    MACHINE: ClassVar[frozenset[str]] = frozenset(
+        {
+            "EACCES",
+            "EPERM",
+            "EIO",
+            "ENOMEM",
+            "EMFILE",
+            "ENFILE",
+            "ENOSPC",
+            "EAGAIN",
+            "EINTR",
+            "EBUSY",
+            "ESTALE",
+            "ETIMEDOUT",
+            "ENXIO",
+            "ENODEV",
+        }
+    )
+
+    @staticmethod
+    def of(path: str, exc: OSError) -> WalkError:
+        cause = (
+            errno.errorcode.get(exc.errno, WalkError.UNKNOWN) if exc.errno else WalkError.UNKNOWN
+        )
+        return WalkError(path, str(exc), cause)
+
+    @property
+    def the_machines(self) -> bool:
+        return self.cause in WalkError.MACHINE
+
+
 @dataclass
 class WalkStats:
     """What the traversal did. Reported, never silently discarded."""
@@ -155,7 +204,7 @@ class WalkStats:
     excluded_by_pattern: dict[str, int] = field(default_factory=dict)
     unmatched_patterns: tuple[str, ...] = ()
     limit_hit: str | None = None
-    errors: list[tuple[str, str]] = field(default_factory=list)
+    errors: list[WalkError] = field(default_factory=list)
 
     # Files dropped by configuration, counted separately from `excluded_by_pattern`
     # because that dict also counts pruned *directories*. Mixing the two makes the
@@ -285,7 +334,13 @@ class Walker:
         total_bytes = 0
         visited: set[tuple[int, int]] = set()
 
-        for dirpath, dirnames, filenames in os.walk(root_path, followlinks=False):
+        # A directory os.walk cannot list (a mode-000 directory in an extracted tree: EACCES) was
+        # skipped with nothing said, which made its files neither read nor reported.
+        def unlisted(exc: OSError) -> None:
+            where = Path(exc.filename) if exc.filename else root_path
+            self.stats.errors.append(WalkError.of(self._relative(where, root_path) or ".", exc))
+
+        for dirpath, dirnames, filenames in os.walk(root_path, onerror=unlisted, followlinks=False):
             current = Path(dirpath)
 
             # Loop protection. A directory hardlink or a bind mount can make a
@@ -298,7 +353,9 @@ class Walker:
                     continue
                 visited.add(key)
             except OSError as exc:
-                self.stats.errors.append((str(current), str(exc)))
+                self.stats.errors.append(
+                    WalkError.of(self._relative(current, root_path) or ".", exc)
+                )
                 dirnames[:] = []
                 continue
 
@@ -341,7 +398,9 @@ class Walker:
             # is not a normal repository, and every downstream consumer --
             # the cache key, SARIF, a terminal -- carries it.
             if len(rel.encode("utf-8", "surrogateescape")) > self.limits.max_path_bytes:
-                self.stats.errors.append((rel[:120], "path exceeds max_path_bytes"))
+                self.stats.errors.append(
+                    WalkError(rel, "path exceeds max_path_bytes", WalkError.PATH_TOO_LONG)
+                )
                 continue
 
             if self.stats.files_yielded >= self.limits.max_files:
@@ -384,14 +443,14 @@ class Walker:
             try:
                 stat = full.lstat()
             except OSError as exc:
-                self.stats.errors.append((rel, str(exc)))
+                self.stats.errors.append(WalkError.of(rel, exc))
                 continue
 
             import stat as stat_module
 
             if stat_module.S_ISLNK(stat.st_mode) and not self.follow_symlinks:
                 self.stats.symlinks_skipped += 1
-                yield WalkEntry(full, rel, 0, is_symlink=True)
+                yield WalkEntry(full, Names.text(rel, backslash=True), 0, is_symlink=True)
                 continue
 
             if not stat_module.S_ISREG(stat.st_mode):
@@ -406,7 +465,7 @@ class Walker:
                 return True, total_bytes
 
             self.stats.files_yielded += 1
-            yield WalkEntry(full, rel, stat.st_size)
+            yield WalkEntry(full, Names.text(rel, backslash=True), stat.st_size)
         return False, total_bytes
 
     def _keep_directories(
@@ -466,7 +525,7 @@ class Walker:
             self.stats.files_excluded += 1
             return
         self.stats.files_yielded = 1
-        yield WalkEntry(path, rel, path.stat().st_size)
+        yield WalkEntry(path, Names.text(rel, backslash=True), path.stat().st_size)
 
     @staticmethod
     def _relative(path: Path, root: Path) -> str:

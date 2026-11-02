@@ -12,6 +12,9 @@ import io
 import json
 import tarfile
 from pathlib import Path
+from typing import ClassVar
+
+import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.foundation.config.settings import Config
@@ -83,3 +86,211 @@ class TestAPublishingScriptThatRuns:
         (tmp_path / "auto.js").write_text(PUBLISHER, encoding="utf-8")
         found = [f.severity for f in Scanner().scan(tmp_path).findings if f.rule_id == RULE]
         assert any(s >= Severity.HIGH for s in found)
+
+
+class TestASelfRenamingPublishLoop:
+    """Item 57, the owner's exception (notes/57-self-propagating-publish.md): a script that renames its own
+    package and republishes in a loop blocks, though only a person runs it. Keyed on
+    what the file does. Inert: the loop runs zero times, the publish is a dry run to a registry that
+    does not resolve, and the new name is a constant."""
+
+    HEAD = (
+        "const fs = require('fs');\n"
+        "const { execSync } = require('child_process');\n"
+        "const data = JSON.parse(fs.readFileSync('package.json'));\n"
+    )
+    HEAD_WITHOUT_READ = (
+        "const fs = require('fs');\nconst { execSync } = require('child_process');\n"
+    )
+    PUBLISH = "  execSync('npm publish --dry-run --registry https://registry.invalid');\n"
+    WRITE = "  fs.writeFileSync('package.json', JSON.stringify(data));\n"
+    MANIFEST: ClassVar[dict[str, object]] = {"scripts": {"start": "node index.js"}}
+
+    def severities(self, tmp_path: Path, body: str) -> list[Severity]:
+        return PublishKit.severities(
+            tmp_path, self.MANIFEST, {"package/tools/republish.js": self.HEAD + body}
+        )
+
+    def test_renaming_itself_and_republishing_in_a_loop_blocks(self, tmp_path: Path) -> None:
+        body = (
+            "for (let i = 0; i < 0; i++) {\n  data.name = 'example-renamed';\n"
+            + self.WRITE
+            + self.PUBLISH
+            + "}\n"
+        )
+        assert Severity.HIGH in self.severities(tmp_path, body)
+
+    def test_a_rename_through_an_index_and_a_timer_blocks(self, tmp_path: Path) -> None:
+        body = (
+            "setInterval(() => {\n  data['name'] = 'example-renamed';\n"
+            + self.WRITE
+            + self.PUBLISH
+            + "}, 1e9);\n"
+        )
+        assert Severity.HIGH in self.severities(tmp_path, body)
+
+    def test_a_rename_by_object_assign_blocks(self, tmp_path: Path) -> None:
+        body = (
+            "for (let i = 0; i < 0; i++) {\n  Object.assign(data, { name: 'example-renamed' });\n"
+            + self.WRITE
+            + self.PUBLISH
+            + "}\n"
+        )
+        assert Severity.HIGH in self.severities(tmp_path, body)
+
+    def test_a_rename_by_a_spread_rebuild_blocks(self, tmp_path: Path) -> None:
+        body = (
+            "for (let i = 0; i < 0; i++) {\n"
+            "  fs.writeFileSync('package.json', JSON.stringify({ ...data, name: 'example-renamed' }));\n"
+            + self.PUBLISH
+            + "}\n"
+        )
+        assert Severity.HIGH in self.severities(tmp_path, body)
+
+    def test_a_manifest_path_built_by_path_join_still_counts(self, tmp_path: Path) -> None:
+        body = (
+            "const path = require('path');\n"
+            "for (let i = 0; i < 0; i++) {\n  data.name = 'example-renamed';\n"
+            "  fs.writeFileSync(path.join(__dirname, 'package.json'), JSON.stringify(data));\n"
+            + self.PUBLISH
+            + "}\n"
+        )
+        assert Severity.HIGH in self.severities(tmp_path, body)
+
+    def test_a_workspace_release_loop_that_bumps_versions_keeps_its_ceiling(
+        self, tmp_path: Path
+    ) -> None:
+        # Lerna- or changesets-style release tooling: a loop, versions bumped, each published. It never
+        # renames, so it is release tooling, not self-propagation (outer-layer review of note 57).
+        body = (
+            "const packages = [data];\n"
+            "for (const pkg of packages) {\n  pkg.version = '1.0.1';\n"
+            + self.WRITE
+            + self.PUBLISH
+            + "}\n"
+        )
+        found = self.severities(tmp_path, body)
+        assert found and all(s <= Severity.MEDIUM for s in found)
+
+    def test_moving_it_under_tools_does_not_lower_it(self, tmp_path: Path) -> None:
+        body = (
+            "for (let i = 0; i < 0; i++) {\n  data.name = 'example-renamed';\n"
+            + self.WRITE
+            + self.PUBLISH
+            + "}\n"
+        )
+        found = PublishKit.severities(
+            tmp_path, self.MANIFEST, {"package/scripts/build/republish.js": self.HEAD + body}
+        )
+        assert Severity.HIGH in found
+
+    def test_a_release_script_that_publishes_without_renaming_keeps_its_ceiling(
+        self, tmp_path: Path
+    ) -> None:
+        body = "for (let i = 0; i < 0; i++) {\n" + self.PUBLISH + "}\n"
+        found = self.severities(tmp_path, body)
+        assert found and all(s <= Severity.MEDIUM for s in found)
+
+    def test_the_same_rename_without_a_loop_or_timer_keeps_its_ceiling(
+        self, tmp_path: Path
+    ) -> None:
+        body = (
+            "data.name = 'example-renamed';\n"
+            + self.WRITE.strip()
+            + "\n"
+            + self.PUBLISH.strip()
+            + "\n"
+        )
+        found = self.severities(tmp_path, body)
+        assert found and all(s <= Severity.MEDIUM for s in found)
+
+    def test_a_version_bump_without_a_publish_is_not_a_publishing_script(
+        self, tmp_path: Path
+    ) -> None:
+        body = "for (let i = 0; i < 0; i++) {\n  data.version = '0.0.0';\n" + self.WRITE + "}\n"
+        assert Severity.HIGH not in self.severities(tmp_path, body)
+
+    def test_a_class_property_named_name_is_no_rename(self, tmp_path: Path) -> None:
+        # `this.name = ...` in a release loop that publishes: not the manifest's own name.
+        body = (
+            "class Job { constructor(n) { this.name = n; } }\n"
+            "for (let i = 0; i < 0; i++) {\n  new Job('x');\n" + self.WRITE + self.PUBLISH + "}\n"
+        )
+        found = self.severities(tmp_path, body)
+        assert found and all(s <= Severity.MEDIUM for s in found)
+
+    def test_the_same_loop_as_python_source_text_keeps_its_ceiling(self, tmp_path: Path) -> None:
+        # A Python file whose strings hold the JavaScript loop (as this test file does): the shape is
+        # read from JavaScript only.
+        loop = (
+            "for (let i = 0; i < 0; i++) { data.name = 'example-renamed'; "
+            + self.WRITE.strip()
+            + " "
+            + self.PUBLISH.strip()
+            + " }"
+        )
+        source = (
+            "import subprocess\n"
+            f"SNIPPET = {(self.HEAD + loop)!r}\n"
+            "subprocess.run(['npm', 'publish'])\n"
+        )
+        found = PublishKit.severities(tmp_path, self.MANIFEST, {"package/tools/notes.py": source})
+        assert Severity.HIGH not in found
+
+    def test_in_a_repository_scan_a_fixture_holding_the_loop_keeps_its_ceiling(
+        self, tmp_path: Path
+    ) -> None:
+        # The owner's decision is about a published package; a repository's test fixture is not one.
+        body = (
+            "for (let i = 0; i < 0; i++) {\n  data.name = 'example-renamed';\n"
+            + self.WRITE
+            + self.PUBLISH
+            + "}\n"
+        )
+        root = tmp_path / "repo"
+        (root / "tests" / "fixtures").mkdir(parents=True)
+        (root / "package.json").write_text(
+            json.dumps({"name": "tool", "version": "1.0.0"}), encoding="utf-8"
+        )
+        (root / "tests" / "fixtures" / "republish.js").write_text(
+            self.HEAD + body, encoding="utf-8"
+        )
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
+        found = [f.severity for f in result.findings if f.rule_id == RULE]
+        assert Severity.HIGH not in found, found
+
+    @pytest.mark.parametrize(
+        "read",
+        [
+            "const data = await fse.readJson('package.json');\n",
+            "const data = fse.readJsonSync('package.json');\n",
+        ],
+        ids=["readJson", "readJsonSync"],
+    )
+    def test_a_manifest_read_by_fs_extra_counts(self, tmp_path: Path, read: str) -> None:
+        body = (
+            "const fse = require('fs-extra');\n"
+            + read
+            + "for (let i = 0; i < 0; i++) {\n  data.name = 'example-renamed';\n"
+            + self.WRITE
+            + self.PUBLISH
+            + "}\n"
+        )
+        found = PublishKit.severities(
+            tmp_path, self.MANIFEST, {"package/tools/republish.js": self.HEAD_WITHOUT_READ + body}
+        )
+        assert Severity.HIGH in found
+
+    def test_a_manifest_imported_as_a_module_counts(self, tmp_path: Path) -> None:
+        body = (
+            "import data from './package.json' with { type: 'json' };\n"
+            "import fs from 'fs';\nimport { execSync } from 'child_process';\n"
+            "for (let i = 0; i < 0; i++) {\n  data.name = 'example-renamed';\n"
+            + self.WRITE
+            + self.PUBLISH
+            + "}\n"
+        )
+        found = PublishKit.severities(
+            tmp_path, self.MANIFEST, {"package/tools/republish.mjs": body}
+        )
+        assert Severity.HIGH in found

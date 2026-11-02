@@ -1,4 +1,5 @@
-"""DetectorRun: one detector over one unit within the per-file budget (review 27, the budget rule)."""
+"""DetectorRun: one detector over one unit, run to its end. No time budget cuts it, however small
+`per_file_timeout` is set (2026-10-31: a run cut on the wall clock gave a load-dependent answer)."""
 
 from __future__ import annotations
 
@@ -12,23 +13,16 @@ from cordon_scanner.rules.loader import RuleSet
 
 
 class Slow:
-    """Yields a marker every 50 ms for as long as it is let run, and records the deadline it saw."""
+    """Yields a marker every 20 ms, ten times, and records the deadline it saw."""
 
     id = "slow"
     seen_deadline: float | None = None
 
     def inspect(self, unit: FileUnit, ctx: ScanContext) -> Iterator[str]:
         Slow.seen_deadline = ctx.deadline
-        for _ in range(100):
-            time.sleep(0.05)
+        for _ in range(10):
+            time.sleep(0.02)
             yield "found"
-
-
-class Quick:
-    id = "quick"
-
-    def inspect(self, unit: FileUnit, ctx: ScanContext) -> Iterator[str]:
-        yield "found"
 
 
 class DetectorRunKit:
@@ -37,43 +31,19 @@ class DetectorRunKit:
         return FileUnit(content=FileContent(path="a.txt", raw=b"x", size=1))
 
     @staticmethod
-    def ctx() -> ScanContext:
-        return ScanContext(config=Config.default(), rules=RuleSet(()))
+    def ctx(per_file_timeout: float = 5.0) -> ScanContext:
+        config = Config.default()
+        config = config.with_overrides(
+            limits=config.limits.merged(per_file_timeout=per_file_timeout)
+        )
+        return ScanContext(config=config, rules=RuleSet(()))
 
 
 class TestDetectorRun:
-    def test_a_detector_past_its_budget_is_stopped_and_says_so(self) -> None:
-        started = time.monotonic()
-        found, finished = DetectorRun.findings(
-            Slow(), DetectorRunKit.unit(), DetectorRunKit.ctx(), 0.2
-        )
-        assert not finished
-        assert 1 <= len(found) < 100
-        assert time.monotonic() - started < 2.0
+    def test_a_slow_detector_runs_to_its_end_whatever_the_setting(self) -> None:
+        found = DetectorRun.findings(Slow(), DetectorRunKit.unit(), DetectorRunKit.ctx(1e-9))
+        assert found == ["found"] * 10
 
-    def test_the_context_carries_the_budget_s_deadline(self) -> None:
-        before = time.monotonic()
-        DetectorRun.findings(Slow(), DetectorRunKit.unit(), DetectorRunKit.ctx(), 0.1)
-        assert Slow.seen_deadline is not None
-        assert before < Slow.seen_deadline <= time.monotonic() + 0.1
-
-    def test_an_earlier_scan_deadline_is_kept(self) -> None:
-        earlier = time.monotonic() + 0.05
-        ctx = DetectorRunKit.ctx()
-        ctx = ScanContext(config=ctx.config, rules=ctx.rules, deadline=earlier)
-        DetectorRun.findings(Slow(), DetectorRunKit.unit(), ctx, 10.0)
-        assert Slow.seen_deadline == earlier
-
-    def test_a_quick_detector_finishes(self) -> None:
-        found, finished = DetectorRun.findings(
-            Quick(), DetectorRunKit.unit(), DetectorRunKit.ctx(), 5.0
-        )
-        assert finished
-        assert found == ["found"]
-
-    def test_a_zero_budget_is_no_bound(self) -> None:
-        found, finished = DetectorRun.findings(
-            Quick(), DetectorRunKit.unit(), DetectorRunKit.ctx(), 0
-        )
-        assert finished
-        assert found == ["found"]
+    def test_it_adds_no_deadline_of_its_own(self) -> None:
+        DetectorRun.findings(Slow(), DetectorRunKit.unit(), DetectorRunKit.ctx(1e-9))
+        assert Slow.seen_deadline is None

@@ -164,6 +164,13 @@ class Config:
     Off, it warns: a model's reading is weaker evidence than a rule's match."""
     judge_max_calls: int = 200
     """The most model calls one scan may make; text past the budget is reported unjudged."""
+    code_model_report_at: float | None = None
+    """The code model's operating point (item 47): the package score at which SUSPECT.CODE.MODEL.001 is
+    reported (MEDIUM). None keeps the shipped default. Set by the operator or the API only, never by a
+    repository's own configuration, which is part of the scan target."""
+    code_model_block_at: float | None = None
+    """The score at which it is raised to HIGH and blocks. None keeps the shipped default (off until
+    the joint operating point with code reuse is chosen). Operator or API only, like the above."""
     max_intel_age: int | None = None
     """Seconds after which the intel behind a scan is reported stale (`OPERATIONAL.INTEL.STALE`),
     which marks the scan incomplete. `None` means 24 hours when this build has a feed, and no
@@ -415,6 +422,12 @@ class Config:
         policy = PolicyComparisons._stricter_policy(self.policy, Policy.default())
         if policy != self.policy:
             clamped.append("policy.fail_on")
+        # And no gap accepted: the merge above keeps a side's acceptances where the other is
+        # silent, so they are withheld by name. A package that could accept its own unread part
+        # would pass the one block written to stop it (item 27).
+        if policy.accepted_gaps is not None:
+            policy = replace(policy, accepted_gaps=None)
+            clamped.append("policy.accepted_gaps")
 
         offline, allow_plugins, expand_archives, intel_feed, max_intel_age, minified = (
             self._withheld_switches(clamped)

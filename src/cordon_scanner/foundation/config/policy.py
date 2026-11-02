@@ -214,6 +214,13 @@ class Policy:
     merge with an organisation policy that does say leaves to that policy; two that both say keep
     only what both accept."""
 
+    accepted_gaps: tuple[Suppression, ...] | None = None
+    """Parts of the content this project accepts going unexamined, each one rule at one path with
+    a justification, an approver and an expiry (the suppression's shape): the only way past the
+    gate's block on a content gap (`ScanResult.content_gaps`, item 27), never a global switch.
+    The finding still reports. Withheld from a configuration found inside the scan target, so a
+    package cannot accept its own gap. `None` is "not said"; merged as `accept_no_feed` is."""
+
     @classmethod
     def default(cls) -> Policy:
         return cls()
@@ -230,6 +237,11 @@ class Policy:
             "packages": {"deny": list(self.package_deny), "allow": list(self.package_allow)},
             "accept_no_feed": sorted(self.accept_no_feed)
             if self.accept_no_feed is not None
+            else None,
+            "accepted_gaps": [
+                {"rule": g.rule, "path": g.path, "expires": g.expires} for g in self.accepted_gaps
+            ]
+            if self.accepted_gaps is not None
             else None,
             "licenses": {
                 "deny": list(self.license_deny),
@@ -325,6 +337,19 @@ class PolicyComparisons:
                 else a.accept_no_feed
                 if b.accept_no_feed is None
                 else a.accept_no_feed & b.accept_no_feed
+            ),
+            # The same for accepted gaps: unsaid, the other side's; said on both, only those both
+            # accept (by rule and path), so a merge never ends weaker than either side.
+            accepted_gaps=(
+                b.accepted_gaps
+                if a.accepted_gaps is None
+                else a.accepted_gaps
+                if b.accepted_gaps is None
+                else tuple(
+                    g
+                    for g in a.accepted_gaps
+                    if any((g.rule, g.path) == (h.rule, h.path) for h in b.accepted_gaps)
+                )
             ),
             # Deny lists add up; allow lists narrow (an empty one allows everything, so the other
             # side's applies); unknown licences take the stricter handling. A repository's own file

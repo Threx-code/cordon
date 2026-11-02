@@ -8,9 +8,8 @@ A file whose checks did not all run is reported, never cached, and leaves the sc
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.detect.base import (
     FileUnit,
@@ -25,12 +24,10 @@ from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.archives import ArchiveMembers
 from cordon_scanner.engine.pipeline.constants import (
     ADVISORY_DETECTORS,
-    ALWAYS_RUN,
     REPOSITORY_SCOPE,
 )
 from cordon_scanner.engine.window_pass import WindowPass
 from cordon_scanner.foundation.models import Category, Finding, Severity
-from cordon_scanner.foundation.once import OneOff
 from cordon_scanner.foundation.results import Dependency, OperationalFinding
 
 if TYPE_CHECKING:
@@ -73,51 +70,26 @@ class Detection:
             return list(cached)
 
         produced: list[Finding] = []
-        budget = self.config.limits.per_file_timeout
-        # `perf_counter`, not `monotonic`. Windows' monotonic clock ticks about
-        # every 15 milliseconds, so a per-file budget smaller than one tick
-        # measured zero elapsed time and never tripped -- the same coarse-clock
-        # failure that made `--timeout 0` a no-op there. perf_counter is the
-        # high-resolution timer and is what a sub-second budget needs.
-        started = time.perf_counter()
-        # A catalogue loaded for the first time while this file was inspected is the process's
-        # cost, not the file's (`foundation/once.py`): left out, a loaded machine no longer turns a
-        # two-line agent configuration into an incomplete scan.
-        loads = OneOff.spent()
-
-        def elapsed() -> float:
-            return time.perf_counter() - started - (OneOff.spent() - loads)
-
-        skipped: list[str] = []
-        skipped_judge = False
-
+        # Every detector runs on every file, as it does on every member of a package
+        # (`ArchiveStages.serial`): a per-file cut on the wall clock made a directory's result
+        # depend on the machine's load (one 1 MB main.tf came out with and without its
+        # OPERATIONAL.FILE.TIMEOUT note), and a package and its unpacked directory decide alike
+        # now. The scan's own `total_timeout` still bounds the whole.
         root = ctx.repository.root if ctx.repository is not None else None
         with ScanCache.watch(root, unit.path) as watch:
-            skipped_judge = self.each_detector(
-                detectors, budget, elapsed, skipped, produced, unit, ctx, acc, skipped_judge
-            )
+            skipped_judge = self.each_detector(detectors, produced, unit, ctx, acc)
 
             # The rest of an oversized file, a window at a time (`core/windows.py`). The workers
             # make the same call (`ParallelScanner._inspect_batch`), so a parallel scan reads as far.
             windowed, intact = WindowPass.run(
                 unit,
-                [
-                    d
-                    for d in detectors
-                    if d.id not in skipped and not (d.id == JudgeGate.ID and skipped_judge)
-                ],
+                [d for d in detectors if not (d.id == JudgeGate.ID and skipped_judge)],
                 lambda detector, part: self.run(detector, part, ctx, acc),
                 produced,
             )
         produced.extend(windowed)
         if not intact:
-            acc.complete = False
-            produced.append(ArchiveMembers.changed_while_read(unit.path))
-
-        if skipped:
-            Detection.over_budget(acc, produced, unit, budget, skipped)
-            # Not cached below, because acc.complete is now False.
-            return produced
+            produced.append(acc.gap(ArchiveMembers.changed_while_read(unit.path)))
 
         # Every finding carries the hash of the file it came from, recorded once here
         # rather than in each of eleven detectors. `_collapse_repeats` is the only
@@ -130,8 +102,11 @@ class Detection:
 
         # Only a complete result is cached. Caching the output of a run that hit
         # a limit would make the degradation permanent and invisible. Nor one whose
-        # inspection read past the file (`Watch`): what it read is in no key.
-        if acc.complete and not watch.reached:
+        # inspection read past the file (`Watch`): what it read is in no key. Nor one holding a
+        # finding that degrades coverage, which is checked on the file's own findings rather
+        # than the scan's flag: an advisory source's sets only `advisory_complete`, and a warm
+        # hit returning it would not set that again.
+        if acc.complete and not watch.reached and not any(f.degrades_coverage for f in produced):
             self.cache.put(key, produced)
 
         return produced
@@ -139,68 +114,20 @@ class Detection:
     def each_detector(
         self,
         detectors: list[Detector],
-        budget: float,
-        elapsed: Callable[[], float],
-        skipped: list[str],
         produced: list[Finding],
         unit: FileUnit,
         ctx: ScanContext,
         acc: Accumulator,
-        skipped_judge: bool,
     ) -> bool:
-        """Every detector over the unit, each under the file's time budget, the judge last."""
+        """Every detector over the unit, the judge last; whether the judge was left out (it reads
+        the grey band only, after every other detector: review 98, AG-5)."""
+        skipped_judge = False
         for detector in JudgeGate.last(detectors):
-            # Checked between detectors rather than inside one. Python's `re`
-            # cannot be interrupted mid-match -- a single call holds the
-            # interpreter until it returns -- so nothing in this process can
-            # bound one pathological regex. What this does bound is
-            # accumulation: fifty detectors and several hundred rules over a
-            # very large file. The single-regex case is prevented at load time
-            # instead, by PatternCompiler rejecting the shapes that backtrack.
-            #
-            # Stating the division plainly because the previous docstring did
-            # not: it named this timeout as the backstop for catastrophic
-            # regexes, the timeout was never implemented, and had it been it
-            # could not have stopped the case it was named for.
-            #
-            # The budget never cuts the detectors that find malware and secrets. It did, and that
-            # was a way to hide a payload: pad a file with near-miss credentials so an earlier
-            # detector spends the budget, and `capability` never ran on it -- an INFO note and a
-            # passing scan. Those detectors' patterns are validated linear at load and the file is
-            # capped in size, so their cost is bounded without the budget; the total timeout still
-            # ends the scan. What the budget cuts now is everything else, and it says which.
-            if budget > 0 and elapsed() >= budget and detector.id not in ALWAYS_RUN:
-                skipped.append(detector.id)
-                continue
-
-            # The judge reads the grey band only, after every other detector (review 98, AG-5).
             if detector.id == JudgeGate.ID and not JudgeGate.wants(produced):
                 skipped_judge = True
                 continue
             produced.extend(self.run(detector, unit, ctx, acc))
         return skipped_judge
-
-    @staticmethod
-    def over_budget(
-        acc: Accumulator, produced: list[Finding], unit: FileUnit, budget: float, skipped: list[str]
-    ) -> None:
-        """Detectors skipped on this file because its time budget ran out: the scan is incomplete, and says so."""
-        acc.complete = False
-        produced.append(
-            OperationalFinding.build(
-                path=unit.path,
-                rule_id="OPERATIONAL.FILE.TIMEOUT",
-                message=(
-                    f"This file exceeded its {budget:.0f}s budget, so these detectors did not "
-                    f"run on it: {', '.join(skipped)}. The malware, obfuscation, secret and "
-                    f"binary detectors ran in full."
-                ),
-                remediation=(
-                    "Raise limits.per_file_timeout, or exclude the file if it "
-                    "is generated output rather than source."
-                ),
-            )
-        )
 
     def parallel(
         self,
@@ -224,11 +151,13 @@ class Detection:
         where processes cannot be spawned, a slower scan is the correct outcome;
         a failed one is not.
         """
-        by_path = {unit.path: unit for unit in units}
         pending: list[WorkItem] = []
         results: list[Finding] = []
 
-        self.work_items(units, ctx, signature, results, pending, carry_content)
+        cached_facts: dict[str, str] = {}
+        self.work_items(units, ctx, signature, results, pending, carry_content, cached_facts)
+        for path, text in cached_facts.items():  # re-checked as a worker's are
+            Detection.absorb_facts(path, text, acc, results)
 
         if not pending:
             return results
@@ -236,10 +165,13 @@ class Detection:
         report = self.reporter(units)
         # The files of batches the pool never started because the scan's budget ran out first.
         unstarted: list[int] = []
+        # The files a worker died, hung or raised on (item 28): each named below, never read here.
+        lost: dict[int, str] = {}
         produced = ParallelScanner.run(
             config=self.config,
             engine_type=type(self.engine),
-            root=str(root),
+            # A worker reads a file at root / its path: for a scan of one file, its directory.
+            root=str(root.parent if root.is_file() else root),
             files=pending,
             workers=ParallelScanner.worker_count(
                 self.config.limits.max_workers, len(pending), sum(item[2] for item in pending)
@@ -258,13 +190,13 @@ class Detection:
             on_batch=report,
             deadline=ctx.deadline,
             unstarted=unstarted,
+            template=getattr(self.engine, "_template", None),
+            lost=lost,
         )
 
-        if produced is None:
-            self.inspect_here(pending, by_path, results, ctx, acc, detectors, signature)
-            return results
-
         self.merge_worker_results(produced, units, results, acc, ctx, signature)
+        for index, reason in sorted(lost.items()):
+            results.append(self.worker_lost(units[index], reason, acc))
         if unstarted:
             results.append(self.unexamined(len(unstarted), where, acc))
 
@@ -287,36 +219,47 @@ class Detection:
         """The pool stopped at the scan's budget with `count` files not reached. As the serial
         loops report it: the scan is partial, and says so, rather than matching on past its
         budget with nothing to show the budget was passed."""
-        acc.complete = False
-        return OperationalFinding.build(
-            path=where,
-            rule_id="OPERATIONAL.SCAN.TIMEOUT",
-            message=(
-                f"The {self.config.limits.total_timeout:.0f}s budget was reached with "
-                f"{count} file(s) still unexamined."
-            ),
-            remediation="Raise --timeout, or scan a smaller part at a time.",
-            severity=Severity.MEDIUM,
+        return acc.gap(
+            OperationalFinding.build(
+                path=where,
+                rule_id="OPERATIONAL.SCAN.TIMEOUT",
+                message=(
+                    f"The {self.config.limits.total_timeout:.0f}s budget was reached with "
+                    f"{count} file(s) still unexamined."
+                ),
+                remediation="Raise --timeout, or scan a smaller part at a time.",
+                severity=Severity.MEDIUM,
+            )
         )
 
-    def inspect_here(
-        self,
-        pending: list[tuple[int, str, int, str, bytes | str | None]],
-        by_path: dict[str, FileUnit],
-        results: list[Finding],
-        ctx: ScanContext,
-        acc: Accumulator,
-        detectors: list[Detector],
-        signature: str,
-    ) -> None:
-        """Every pending file inspected in this process: the pool did not run."""
-        # The pool did not run. Fall back rather than lose coverage. `None`
-        # rather than an empty list, so a pool that ran and legitimately
-        # found nothing is not re-scanned from scratch.
-        for _index, path, _size, _digest, _carried in pending:
-            unit = by_path[path]
-            results.extend(self.inspect_file(unit, ctx, acc, detectors, signature))
-            self.progress.advance(unit.path)
+    @staticmethod
+    def worker_lost(unit: FileUnit, reason: str, acc: Accumulator) -> Finding:
+        """A file whose worker died, hung or raised (item 28): reported by name, the scan incomplete.
+        The file is not read again in this process, which never parses scanned content: a file that
+        kills a worker would kill it here."""
+        kind, cause = Detection.WORKER_LOSSES.get(reason.split(":", 1)[0], ("DIED", "ended"))
+        detail = reason.split(": ", 1)[1] if ": " in reason else ""
+        # a gap like any other: no list names it, so it blocks (item 27's unread-bytes rule)
+        return acc.gap(
+            OperationalFinding.build(
+                path=unit.path,
+                rule_id=f"OPERATIONAL.FILE.WORKER_{kind}",
+                message=(
+                    f"The worker inspecting this file {cause}{f' ({detail})' if detail else ''}, so "
+                    "this file's checks did not finish; every other file was inspected."
+                ),
+                remediation="Report this with the file: it is an input that defeats the scanner.",
+            )
+        )
+
+    #: How a lost unit is named: the supervisor's reason -> (rule suffix, what happened).
+    WORKER_LOSSES: ClassVar[dict[str, tuple[str, str]]] = {
+        "memory": ("DIED", "ran out of its memory limit"),
+        "died": ("DIED", "ended"),
+        "cpu": ("HUNG", "used up its CPU budget"),
+        "wall": ("HUNG", "stopped answering"),
+        "failed": ("FAILED", "raised an error"),
+    }
 
     def work_items(
         self,
@@ -324,15 +267,19 @@ class Detection:
         ctx: ScanContext,
         signature: str,
         results: list[Finding],
-        pending: list[tuple[int, str, int, str, bytes | str | None]],
+        pending: list[WorkItem],
         carry_content: bool,
+        cached_facts: dict[str, str] | None = None,
     ) -> None:
         """The units a worker can take, each with the bytes it must carry when the source cannot be re-read."""
         for index, unit in enumerate(units):
             key = self.cache_key(unit, ctx, signature)
-            cached = self.cache.get(key)
-            if cached is not None:
+            entry = self.cache.get_entry(key)
+            if entry is not None:
+                cached, facts = entry
                 results.extend(cached)
+                if facts and cached_facts is not None:
+                    cached_facts[unit.path] = facts
                 # A cache hit is a file accounted for. Counting only the misses
                 # made a warm scan appear to stall at zero and then finish.
                 self.progress.advance(unit.path)
@@ -348,16 +295,60 @@ class Detection:
                         unit.content.sha256,
                         # An archive member has no path on disk to re-read. The whole of an
                         # oversized one travels, so the worker can sweep it as well. Nor does
-                        # a hook's inline program (`core.inline_programs`).
+                        # a hook's inline program (`core.inline_programs`). A walked file is
+                        # opened by its own path on disk (`FileUnit.opens`), never by its shown
+                        # name, which no file has when the name is not text.
                         unit.content.carried
                         if carry_content or "!" in unit.path or "#" in unit.path
-                        else None,
+                        else unit.opens,
+                        # The parent's own decisions about the unit, never made again in a worker:
+                        # its language (a hook's interpreter, which a worker reading the file
+                        # alone cannot know: a hook-run payload.png was no language under --jobs)
+                        # and its project.
+                        unit.language,
+                        unit.project,
                     )
                 )
 
+    @staticmethod
+    def degraded(produced: list[Finding], acc: Accumulator) -> None:
+        """The findings that say their detector answered fewer questions than it was asked: an
+        advisory source's leave the advisory side incomplete, any other's the content (kept in
+        `produced`, its cause recorded)."""
+        degrading = [f for f in produced if f.degrades_coverage]
+        if any(f.detector in ADVISORY_DETECTORS for f in degrading):
+            acc.advisory_complete = False
+        for finding in degrading:
+            if finding.detector not in ADVISORY_DETECTORS:
+                acc.gap(finding)
+
+    @staticmethod
+    def absorb_facts(path: str, text: str, acc: Accumulator, results: list[Finding]) -> None:
+        """A file's facts from its worker, accepted only as plain data within their bounds and shapes
+        (`engine/isolation/facts.py`): refused, the file is a gap, and none of its facts are used."""
+        from cordon_scanner.engine.isolation.facts import Facts
+
+        accepted, why = Facts.accept(text, acc.facts_bytes)
+        if accepted is None:
+            results.append(
+                acc.gap(
+                    OperationalFinding.build(
+                        path=path,
+                        rule_id="OPERATIONAL.WORKER.FACTS_REFUSED",
+                        message=f"What a worker learned about this file was refused ({why}), so the "
+                        "analysis that joins files did not use it.",
+                        remediation="Report the file: a worker sends back only declared facts.",
+                    )
+                )
+            )
+            return
+        acc.facts_bytes += len(text)
+        if accepted:
+            acc.facts[path] = accepted
+
     def merge_worker_results(
         self,
-        produced: list[tuple[int, list[Finding], bool, bool]],
+        produced: list[tuple[Any, ...]],
         units: list[FileUnit],
         results: list[Finding],
         acc: Accumulator,
@@ -365,33 +356,47 @@ class Detection:
         signature: str,
     ) -> None:
         """What the workers found, merged in the order of the units, and cached where trusted."""
-        for index, findings, trusted, cacheable in produced:
+        for index, findings, trusted, cacheable, coverage, *carried in produced:
+            acc.absorb(*coverage)  # the worker's own accumulator's verdict and gaps, as its own
             unit = units[index]
             results.extend(findings)
+            facts = carried[0] if carried else ""
+            if facts:
+                Detection.absorb_facts(unit.path, facts, acc, results)
             if not trusted:
                 # The worker could not read the file, or read different bytes
                 # than the parent hashed. Reported exactly as the serial path
                 # reports an unreadable file, and never cached: storing it would
                 # file a result under a key describing content the result was
                 # not produced from.
-                acc.complete = False
                 results.append(
-                    OperationalFinding.build(
-                        path=unit.path,
-                        rule_id="OPERATIONAL.FILE.UNREADABLE",
-                        message=(
-                            "A worker could not read this file, or read different "
-                            "content than the scan had already hashed, so its checks "
-                            "did not run on the content being reported."
-                        ),
-                        remediation=(
-                            "Re-run the scan on a tree nothing else is writing to, or pass -j 1."
-                        ),
+                    acc.gap(
+                        OperationalFinding.build(
+                            path=unit.path,
+                            rule_id="OPERATIONAL.FILE.UNREADABLE",
+                            message=(
+                                "A worker could not read this file, or read different "
+                                "content than the scan had already hashed, so its checks "
+                                "did not run on the content being reported."
+                            ),
+                            remediation=(
+                                "Re-run the scan on a tree nothing else is writing to, or pass -j 1."
+                            ),
+                        )
                     )
                 )
                 continue
-            if acc.complete and cacheable:
-                self.cache.put(self.cache_key(unit, ctx, signature), findings)
+            # As the serial path (`run`): a detector that failed on the file, or a finding that
+            # says its detector answered fewer questions than it was asked, left part of it
+            # unread. The worker returns them as findings; their cause is recorded here, or a
+            # crash under --jobs left the scan "complete" (item 27). The same call as the serial
+            # path's, so an advisory source's leaves the advisory side incomplete here too.
+            for finding in findings:
+                if finding.rule_id in ("OPERATIONAL.DETECTOR.FAILED", "OPERATIONAL.FILE.TIMEOUT"):
+                    acc.gap(finding)
+            Detection.degraded(findings, acc)
+            if acc.complete and cacheable and not any(f.degrades_coverage for f in findings):
+                self.cache.put(self.cache_key(unit, ctx, signature), findings, facts)
 
     def cache_key(self, unit: FileUnit, ctx: ScanContext, signature: str) -> CacheKey:
         return CacheKey(
@@ -477,21 +482,14 @@ class Detection:
         as incomplete.
         """
         try:
-            produced = DetectorClock.timed(detector.id, lambda: list(detector.inspect(unit, ctx)))
-        except Exception as exc:  # noqa: BLE001
-            acc.complete = False
-            return [
-                OperationalFinding.build(
-                    path=getattr(unit, "path", "<graph>"),
-                    rule_id="OPERATIONAL.DETECTOR.FAILED",
-                    message=(
-                        f"Detector {detector.id!r} failed on this file, so its checks "
-                        f"did not run: {type(exc).__name__}: {exc}"
-                    ),
-                    remediation="Report this with the file that triggered it.",
-                    severity=Severity.MEDIUM,
+            # a structural detector does not parse a windowed Python prefix that cannot parse
+            # (`WindowPass.withheld`): the statement-aligned pass reads those bytes
+            with WindowPass.withheld(detector.id, unit):
+                produced = DetectorClock.timed(
+                    detector.id, lambda: list(detector.inspect(unit, ctx))
                 )
-            ]
+        except Exception as exc:  # noqa: BLE001
+            return [acc.gap(Detection.failed(detector, unit, exc))]
 
         # The engine asserts that a file detector reports only about the file it
         # was given. A detector that reports about somewhere else is a bug, and
@@ -501,26 +499,70 @@ class Detection:
         # only where it is meaningful. Asserting `unit.path` unconditionally is
         # what made every graph detector crash the scan.
         if isinstance(unit, FileUnit):
-            kept: list[Finding] = []
-            stray: list[Finding] = []
-            for finding in produced:
-                if (
-                    finding.category is not Category.OPERATIONAL
-                    and finding.location.path != unit.path
-                ):
-                    stray.append(finding)
-                else:
-                    kept.append(finding)
+            produced = Detection.kept_in_file(detector, unit, produced, acc)
 
-            if stray:
-                # Reported and dropped, not raised. This check sat outside the
-                # `try` above, so `DetectorError` propagated out of `scan()` and
-                # terminated the run -- meaning a detector that mislabelled one
-                # finding killed the entire scan on the first file it touched,
-                # inside the very method whose docstring says a broken detector
-                # must not abort anything.
-                acc.complete = False
-                kept.append(
+        # A detector that hit a ceiling of its own knows something the engine
+        # cannot observe from outside: that it answered fewer questions than it
+        # was asked. Reading it here keeps `complete` meaning the same thing
+        # whether the coverage was lost in the walk or inside a detector.
+        Detection.degraded(produced, acc)
+
+        return self.drop_disabled(produced)
+
+    @staticmethod
+    def failed(detector: Detector, unit: Unit, exc: Exception) -> Finding:
+        """What a detector raising on a unit is reported as."""
+        if isinstance(exc, TimeoutError):
+            # A detector's own time limit on this file (the rule engine's match timeout): the
+            # file's checks did not finish, which is a time budget, not a detector that broke on
+            # the file. Reported as one, so the report names the cause (item 58: a five-hour host
+            # stall had read as two detector crashes).
+            return OperationalFinding.build(
+                path=getattr(unit, "path", "<graph>"),
+                rule_id="OPERATIONAL.FILE.TIMEOUT",
+                message=(
+                    f"Detector {detector.id!r} reached its time limit on this file, so its "
+                    f"checks did not finish: {exc}"
+                ),
+                remediation=(
+                    "Rescan with more time (--timeout), or on a less loaded machine; the "
+                    "file was not judged."
+                ),
+                severity=Severity.MEDIUM,
+            )
+        return OperationalFinding.build(
+            path=getattr(unit, "path", "<graph>"),
+            rule_id="OPERATIONAL.DETECTOR.FAILED",
+            message=(
+                f"Detector {detector.id!r} failed on this file, so its checks "
+                f"did not run: {type(exc).__name__}: {exc}"
+            ),
+            remediation="Report this with the file that triggered it.",
+            severity=Severity.MEDIUM,
+        )
+
+    @staticmethod
+    def kept_in_file(
+        detector: Detector, unit: FileUnit, produced: list[Finding], acc: Accumulator
+    ) -> list[Finding]:
+        """The findings about the file inspected, and one gap naming any about other paths."""
+        kept: list[Finding] = []
+        stray: list[Finding] = []
+        for finding in produced:
+            if finding.category is not Category.OPERATIONAL and finding.location.path != unit.path:
+                stray.append(finding)
+            else:
+                kept.append(finding)
+
+        if stray:
+            # Reported and dropped, not raised. This check sat outside the
+            # `try` above, so `DetectorError` propagated out of `scan()` and
+            # terminated the run -- meaning a detector that mislabelled one
+            # finding killed the entire scan on the first file it touched,
+            # inside the very method whose docstring says a broken detector
+            # must not abort anything.
+            kept.append(
+                acc.gap(
                     OperationalFinding.build(
                         path=unit.path,
                         rule_id="OPERATIONAL.DETECTOR.STRAY_FINDING",
@@ -537,19 +579,8 @@ class Detection:
                         severity=Severity.MEDIUM,
                     )
                 )
-            produced = kept
-
-        # A detector that hit a ceiling of its own knows something the engine
-        # cannot observe from outside: that it answered fewer questions than it
-        # was asked. Reading it here keeps `complete` meaning the same thing
-        # whether the coverage was lost in the walk or inside a detector.
-        degrading = [f for f in produced if f.degrades_coverage]
-        if any(f.detector in ADVISORY_DETECTORS for f in degrading):
-            acc.advisory_complete = False
-        if any(f.detector not in ADVISORY_DETECTORS for f in degrading):
-            acc.complete = False
-
-        return self.drop_disabled(produced)
+            )
+        return kept
 
 
 __all__ = ["Detection"]

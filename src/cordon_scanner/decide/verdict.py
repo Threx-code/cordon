@@ -254,13 +254,18 @@ class Verdict:
         liftable: bool,
         floor: frozenset[str],
         keep: frozenset[str],
+        repository: bool = False,
     ) -> bool:
         """Whether the package verdict lowers this finding below the gate. The one lowering
         decision the scanner (`decide`) and the trainer (`bench/model/verdict_train.py`) both make,
         so what is measured is what ships. A finding is lowered only in a liftable area whose score
         clears the line, and never when it is kept as untrained (`keep`), floored, or is not a code
-        finding already at or below a warning."""
+        finding already at or below a warning. In a repository scan (no published-package format)
+        a MALICIOUS finding is never lowered: the model was fitted on packages, and a repository
+        that also holds a `.mcp.json` is scored in area `mcp` (found 2026-10-28)."""
         if score >= block or not liftable:
+            return False
+        if repository and category is Category.MALICIOUS:
             return False
         if rule_id in keep or not VerdictFeatures.is_code(rule_id):
             return False
@@ -275,13 +280,20 @@ class Verdict:
         manifests: dict[str, bytes],
         sources: Sequence[tuple[str, bytes]] = (),
         profile: dict[str, float] | None = None,
+        *,
+        repository: bool = False,
+        source_facts: Sequence[tuple[str, frozenset[str], frozenset[str]]] | None = None,
     ) -> tuple[list[Finding], dict[str, Any]]:
         """Findings re-graded by the package verdict, and the verdict to report.
 
         `profile` is what the code that runs on its own can do (`Engine._capability_profile`),
-        read as package facts beside the rest."""
+        read as package facts beside the rest. `repository` is a scan of no published-package
+        format, where a MALICIOUS finding is never lowered (`_lowers`)."""
         rules = VerdictFeatures.rules(findings)
-        package = {**VerdictFeatures.package(paths_sizes, manifests, sources), **(profile or {})}
+        package = {
+            **VerdictFeatures.package(paths_sizes, manifests, sources, source_facts=source_facts),
+            **(profile or {}),
+        }
         Verdict._skill_claim(package)
         area = Verdict.area([p for p, _ in paths_sizes], manifests, package, rules)
         # The one record the model reads, versioned (`decide/feature_schema`): every input a score
@@ -335,7 +347,9 @@ class Verdict:
         floor = frozenset(model["floor"])
         keep = frozenset(model.get("keep", ()))
         out: list[Finding] = []
-        Verdict._graded_findings(findings, score, block, liftable, floor, keep, area, out)
+        Verdict._graded_findings(
+            findings, score, block, liftable, floor, keep, area, out, repository=repository
+        )
         return out, summary
 
     @staticmethod
@@ -369,6 +383,8 @@ class Verdict:
         keep: frozenset[Any],
         area: str,
         out: list[Finding],
+        *,
+        repository: bool = False,
     ) -> None:
         """The findings that decide the verdict, each with what it contributes."""
         for finding in findings:
@@ -382,6 +398,7 @@ class Verdict:
                 liftable=liftable,
                 floor=floor,
                 keep=keep,
+                repository=repository,
             ):
                 finding = replace(
                     finding,

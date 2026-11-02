@@ -9,6 +9,7 @@ starts is one pass of the tokenizer, so its time grows with the module, not fast
 from __future__ import annotations
 
 import ast
+import itertools
 import time
 
 from cordon_scanner.analysis.python.statements import PythonStatements
@@ -101,6 +102,39 @@ class TestPythonStatements:
         at = PythonStatements.last_cut(data)
         assert data[at:] == b"b = 1\n"
         ast.parse(data[:at].decode())
+
+    def test_a_stray_byte_is_cut_past_and_never_raises(self) -> None:
+        """A byte that is not UTF-8 (pkqer 1's module: an internal error, no report) is a character
+        the cut counts and the tokenizer reads as U+FFFD; the cut is still a byte offset."""
+        data = b'x = "\xa7"\nclass A:\n    pass\nb = 1\n'
+        at = PythonStatements.last_cut(data)
+        assert data[at:] == b"b = 1\n"
+
+    def test_a_stray_byte_in_code_is_one_character_of_the_cut(self) -> None:
+        data = b"x = 1\ny = 2\n\xa7 = 3\nz = 4\n"
+        assert data[PythonStatements.last_cut(data) :] == b"z = 4\n"
+
+    def test_a_decorated_first_statement_is_one_statement(self) -> None:
+        """The module's first statement's decorator was not read as one (nothing came before it to
+        start a statement), so `@d` and the function it decorates were cut apart: a piece that is
+        a decorator alone does not parse (found building item 32's statement pass)."""
+        for source in (
+            "@d\ndef f():\n    pass\nx = 1\n",
+            "\n# a comment\n@d\n@e(1)\nclass K:\n    pass\n",
+        ):
+            starts = [*PythonStatements.starts(source), len(source)]
+            for at, end in itertools.pairwise(starts):
+                ast.parse(source[at:end])
+        assert PythonStatements.last_cut(b"@d\ndef f():\n    pass\n") == 0
+
+    def test_a_header_before_the_first_statement_is_part_of_it(self) -> None:
+        """A licence header, a shebang or a coding line before the module's first statement starts
+        no run of its own: 0 stands for that statement (outer-layer review of c7e18e3d)."""
+        assert PythonStatements.starts("# header\nimport os\n") == [0]
+        shebang = "#!/usr/bin/env python\n# -*- coding: utf-8 -*-\nx = 1\n"
+        assert PythonStatements.starts(shebang) == [0]
+        assert PythonStatements.starts("# header\nx = 1\ny = 2\n") == [0, 15]
+        assert PythonStatements.last_cut(b"# header\nimport os\n") == 0
 
     def test_one_statement_cannot_be_cut(self) -> None:
         assert PythonStatements.last_cut(b"x = [\n1,\n2]\n") == 0

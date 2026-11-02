@@ -32,12 +32,14 @@ import time
 import zipfile
 import zlib
 from dataclasses import dataclass, field, replace
-from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.foundation.errors import ArchiveError
+from cordon_scanner.foundation.files.names import Names
 from cordon_scanner.foundation.files.spill import Spill, SpilledBytes
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS, Limits
+from cordon_scanner.sources.ar_reader import ArReader
+from cordon_scanner.sources.archive_names import MemberNames
 from cordon_scanner.sources.base import RejectedMember, Rejection
 from cordon_scanner.sources.budget import (
     READ_CHUNK,
@@ -46,6 +48,8 @@ from cordon_scanner.sources.budget import (
     _BudgetedStream,
     _BytesReader,
 )
+from cordon_scanner.sources.lone_stream import LoneStream
+from cordon_scanner.sources.signatures import ArchiveSignatures, CompressedHeader, UnopenedFormats
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -160,79 +164,23 @@ class ArchiveReader:
         lowered = path.lower()
         return any(lowered.endswith(suffix) for suffix in ARCHIVE_SUFFIXES)
 
+    #: Whether bytes are an archive a reader would open, whatever they are called (item 36).
+    opens_by_bytes = staticmethod(ArchiveSignatures.opens)
+
     @staticmethod
-    def safe_member_name(name: str, *, collapse: bool = False) -> str | None:
-        """Normalise a member name, or return None if it is unsafe.
+    def unsupported(path: str, data: bytes, rejected: list[tuple[str, str, str]]) -> bool:
+        """`UnopenedFormats.refused` for the directory walk, through the registry's port."""
+        return UnopenedFormats.refused(path, data, rejected)
 
-        Rejected: absolute paths, drive letters, any traversal segment, and names
-        containing NUL. The check is on the *normalised* form, so ``a/../../b`` is
-        caught even though no single component looks wrong.
-
-        With `collapse`, a `..` that stays inside the archive is resolved instead
-        (`pkg-0.3.1/../README.md` is `README.md`, which some sdist builders write);
-        one that climbs above the archive's root is still refused. Callers pass it
-        only while no link member has come before this one: an extractor writes
-        `a/../x` through `a` once `a` is a symlink, so then the name is refused.
-        """
-        if not name or "\x00" in name:
-            return None
-
-        cleaned = name.replace("\\", "/")
-
-        if cleaned.startswith("/") or (len(cleaned) > 1 and cleaned[1] == ":"):
-            return None
-
-        parts = PurePosixPath(cleaned).parts
-        if any(part == ".." for part in parts):
-            if not collapse:
-                return None
-            kept: list[str] = []
-            for part in parts:
-                if part == "..":
-                    if not kept:
-                        return None
-                    kept.pop()
-                elif part not in {".", ""}:
-                    kept.append(part)
-            parts = tuple(kept)
-
-        normalised = PurePosixPath(*(p for p in parts if p not in {".", ""}))
-        text = str(normalised)
-        return None if text in {".", ""} else text
+    safe_member_name = staticmethod(MemberNames.safe_member_name)
+    normalise_member_name = staticmethod(MemberNames.normalise_member_name)
+    not_an_archive = staticmethod(MemberNames.not_an_archive)
+    link_stays_inside = staticmethod(MemberNames.link_stays_inside)
 
     @staticmethod
     def _links_seen(result: ExtractionResult) -> bool:
         """Whether a link member has been met yet, kept or refused (`safe_member_name`)."""
         return bool(result.links) or any(r.reason == Rejection.LINK for r in result.rejected)
-
-    @staticmethod
-    def link_stays_inside(member: str, target: str, *, hard: bool = False) -> bool:
-        """Whether a link member points at another path inside the same archive.
-
-        Such a link is never followed, and it carries no content of its own: what it names is a
-        member read in its own right. Refused, it marked the scan incomplete -- 470 of 3,000 nix
-        repositories and 504 of 3,000 bazel archives were scored "not fully examined" for symlinks
-        such as `include/alsa -> ../alsa` (review 98). A target that is absolute or climbs out of
-        the archive stays refused: that link is how an extractor is made to read or write outside.
-        """
-        if not target or "\x00" in target:
-            return False
-        cleaned = target.replace("\\", "/")
-        if cleaned.startswith("/") or (len(cleaned) > 1 and cleaned[1] == ":"):
-            return False
-        # A hard link names an archive path; a symbolic link is relative to its own directory.
-        base = () if hard else PurePosixPath(member.replace("\\", "/")).parent.parts
-        depth: list[str] = [p for p in base if p not in {".", ""}]
-        for part in PurePosixPath(cleaned).parts:
-            if part in {".", ""}:
-                continue
-            if part == "..":
-                if not depth:
-                    return False
-                depth.pop()
-            else:
-                depth.append(part)
-        return bool(depth)
 
     @staticmethod
     def extract(
@@ -269,7 +217,10 @@ class ArchiveReader:
         zip_at_start = head.startswith((b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"))
         tar_at_start = head.startswith(_COMPRESSED_MAGIC) or head[257:262] == b"ustar"
         ends_as_zip = not zip_at_start and zipfile.is_zipfile(_BytesReader(data))
-        if zip_at_start:
+        if ArReader.is_ar(head):
+            # A static library or a Debian package (item 53): members behind fixed headers.
+            ArReader.extract(data, path, limits, result, deadline, member=ExtractedMember)
+        elif zip_at_start:
             ArchiveReader._extract_zip(data, path, limits, result, deadline)
         elif tar_at_start and ends_as_zip:
             result.rejected.append(
@@ -288,6 +239,19 @@ class ArchiveReader:
         elif ends_as_zip:
             # A zip with a stub in front (a self-extracting executable): the zip is what it holds.
             ArchiveReader._extract_zip(data, path, limits, result, deadline)
+        elif CompressedHeader.format_of(head) is not None and not LoneStream.holds_tar(
+            data, path=path, limits=limits, deadline=deadline
+        ):
+            # One compressed file, not a tar: `install.js.gz` holds `install.js` (item 30).
+            LoneStream.extract(
+                data,
+                path,
+                limits,
+                result,
+                deadline,
+                read=ArchiveReader._read_bounded,
+                member=ExtractedMember,
+            )
         else:
             ArchiveReader._extract_tar(data, path, limits, result, deadline)
 
@@ -517,10 +481,11 @@ class ArchiveReader:
         if info.is_dir():
             return
 
-        safe = ArchiveReader.safe_member_name(
+        normal = ArchiveReader.normalise_member_name(
             info.filename, collapse=not ArchiveReader._links_seen(result)
         )
-        if safe is None:
+        safe = None if normal is None else Names.text(normal)
+        if normal is None or safe is None:
             result.rejected.append(
                 RejectedMember(
                     info.filename,
@@ -542,7 +507,9 @@ class ArchiveReader:
                     target = archive.read(info).decode("utf-8", "replace")
                 except (zipfile.BadZipFile, OSError, ValueError, RuntimeError):
                     target = ""
-            if ArchiveReader.link_stays_inside(safe, target):
+            # measured on the normalised name, not the escaped one: a `\\xNN`'s backslash read as a
+            # separator would deepen the link and let `../../../x` pass as inside
+            if ArchiveReader.link_stays_inside(normal, target):
                 result.links.append(safe)
                 return
             result.rejected.append(
@@ -624,7 +591,7 @@ class ArchiveReader:
         # can redirect it outside the archive entirely.
         if member.issym() or member.islnk():
             if ArchiveReader.link_stays_inside(member.name, member.linkname, hard=member.islnk()):
-                result.links.append(member.name)
+                result.links.append(Names.text(member.name))
                 return
             result.rejected.append(
                 RejectedMember(
@@ -899,6 +866,34 @@ class ArchiveReader:
                 rejected.extend(r for digest, r in walk.too_deep if digest not in walk.opened)
 
     @staticmethod
+    def _held_nested(
+        member: ExtractedMember,
+        member_path: str,
+        nested: bool,
+        limits: Limits,
+        rejected: list[tuple[str, str, str]] | None,
+    ) -> tuple[bytes, bool]:
+        """A nested archive's bytes, held to be opened in memory. One kept on disk is read back
+        within the size a member could always be held at; past it, it is not opened and its
+        contents are reported unexamined."""
+        inner = member.data
+        if not (nested and isinstance(inner, SpilledBytes)):
+            return inner, nested
+        if inner.size <= ArchiveReader.member_limit(limits):
+            return inner.read_whole(), True
+        if rejected is not None:
+            rejected.append(
+                (
+                    member_path,
+                    Rejection.SIZE,
+                    f"a nested archive of {inner.size} bytes, past the "
+                    f"{ArchiveReader.member_limit(limits)} bytes one is opened at; "
+                    "its contents were not examined",
+                )
+            )
+        return inner, False
+
+    @staticmethod
     def _walk_members(
         result: ExtractionResult,
         path: str,
@@ -911,25 +906,15 @@ class ArchiveReader:
         for member in result.members:
             member_path = f"{path}!{member.name}"
 
-            nested = ArchiveReader.is_archive(member.name)
-            # A nested archive is opened in memory. One kept on disk is read back within the size a
-            # member could always be held at; past it, its contents are reported unexamined.
-            inner = member.data
-            if nested and isinstance(inner, SpilledBytes):
-                if inner.size <= ArchiveReader.member_limit(limits):
-                    inner = inner.read_whole()
-                else:
-                    nested = False
-                    if rejected is not None:
-                        rejected.append(
-                            (
-                                member_path,
-                                Rejection.SIZE,
-                                f"a nested archive of {inner.size} bytes, past the "
-                                f"{ArchiveReader.member_limit(limits)} bytes one is opened at; "
-                                "its contents were not examined",
-                            )
-                        )
+            # Opened when its name says archive, or its bytes do (item 36): a zip named notes.txt
+            # or behind a PNG, a lone install.js.gz. The bytes' test reads a whole header, never a
+            # magic alone, so one that then fails to open is a broken archive, reported unread as a
+            # named one is: bytes appended past a gzip's end marker were never decompressed.
+            claimed = ArchiveReader.is_archive(member.name)
+            nested = claimed or ArchiveSignatures.opens(member.data)
+            inner, nested = ArchiveReader._held_nested(
+                member, member_path, nested, limits, rejected
+            )
             digest = hashlib.sha256(inner).digest() if nested else b""
             too_deep = nested and depth >= limits.max_archive_depth
             if too_deep and rejected is not None:
@@ -972,6 +957,13 @@ class ArchiveReader:
                         walk=walk,
                     )
                     walk.opened.add(digest)
+                    if claimed:
+                        continue
+                    # Opened by its bytes alone, it is also still the member it was: a gem's
+                    # `metadata.gz` is read by name, as the gzip it is, by the gem's own readers
+                    # (rubygems, hooks, releases). Opening by bytes adds what it holds, and takes
+                    # nothing away that was read before; a directory scan keeps the file too.
+                    yield member_path, member.data
                     continue
                 except ArchiveError as exc:
                     # Still scanned as bytes (a payload is a payload whatever its container),
@@ -979,14 +971,10 @@ class ArchiveReader:
                     # (a cut stream, a corrupt index, zstd with a dictionary): only zstd was
                     # reported before, and a cut tgz passed as a scanned file.
                     if rejected is not None:
-                        rejected.append(
-                            (
-                                member_path,
-                                Rejection.UNREADABLE,
-                                f"a nested archive that would not open: {exc}",
-                            )
-                        )
+                        UnopenedFormats.nested(member_path, inner, exc, rejected)
 
+            if not nested and rejected is not None:
+                UnopenedFormats.refused(member_path, member.data, rejected)
             yield member_path, member.data
 
 

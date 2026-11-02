@@ -133,3 +133,46 @@ class TestTheRows:
         assert [label for label, _, _ in AreaFit.rows(sets, "fs1-p", set(), "npm", {"fs1-p"})] == [
             1
         ]
+
+
+class TestALoadDependentSplitIsRefused:
+    """No model is written whose trees split on a feature that depends on how loaded the machine
+    was (`AreaFit.LOAD_DEPENDENT`, `cov:capped` today): load would move a block score."""
+
+    @staticmethod
+    def section(feature: str) -> dict[str, Any]:
+        return {
+            "features": ["r:SUSPECT.X.001", feature],
+            "baseline": 0.0,
+            "trees": [
+                [
+                    {"leaf": False, "feature": 1, "threshold": 0.5, "left": 1, "right": 2,
+                     "missing_left": True},
+                    {"leaf": True, "value": -1.0},
+                    {"leaf": True, "value": 1.0},
+                ]
+            ],
+        }  # fmt: skip
+
+    def test_a_split_on_it_anywhere_is_refused(self) -> None:
+        for model in (
+            self.section("cov:capped"),
+            {"by_area": {"npm": self.section("cov:capped")}},
+            {"area_fits": [{"section": self.section("cov:capped")}]},
+        ):
+            with pytest.raises(ValueError, match="cov:capped"):
+                AreaFit.refuse_load_dependent(model)
+
+    def test_a_split_on_another_feature_is_written(self) -> None:
+        AreaFit.refuse_load_dependent({"by_area": {"npm": self.section("cov:parse")}})
+
+    def test_the_shipped_model_splits_on_none(self) -> None:
+        AreaFit.refuse_load_dependent(VerdictModel.load(MODEL_PATH))
+
+
+class TestTheRowsManifest:
+    def test_a_pooling_fit_records_both_versions(self) -> None:
+        manifest = AreaFit.rows_manifest(["rows.jsonl"], "cordon", [], {1})
+        assert manifest["schema"] == FeatureSchema.current()
+        assert manifest["schema_computed"] == FeatureSchema.computed()
+        assert manifest["schema_computed"] in FeatureSchema.SAME_AS

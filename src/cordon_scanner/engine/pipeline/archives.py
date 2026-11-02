@@ -6,6 +6,7 @@ reported as lost coverage rather than skipped silently.
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.engine.pipeline.constants import (
     ARCHIVE_ESCAPE_RULE,
@@ -26,9 +27,24 @@ from cordon_scanner.foundation.models import (
 from cordon_scanner.foundation.results import OperationalFinding
 from cordon_scanner.sources.base import Rejection
 
+if TYPE_CHECKING:
+    from cordon_scanner.engine.pipeline.accumulator import Accumulator
+
 
 class ArchiveMembers:
     """What happened to an archive's members on the way in."""
+
+    #: Refusals that leave nothing unread: a link has no content of its own, a hidden zip member is
+    #: read from its local header, text named as an archive is scanned as text (item 27), and a lone
+    #: compressed stream that ends early was read to its last byte (item 30).
+    NOTHING_UNREAD: ClassVar[frozenset[str]] = frozenset(
+        {
+            Rejection.LINK,
+            Rejection.HIDDEN,
+            Rejection.NOT_AN_ARCHIVE,
+            Rejection.COMPRESSED_TRUNCATED,
+        }
+    )
 
     @staticmethod
     def changed_while_read(path: str) -> Finding:
@@ -126,7 +142,69 @@ class ArchiveMembers:
         ):
             escape = reason != Rejection.DEPTH
             return ArchiveMembers.escape_or_nesting(path, reason, detail, escape)
+        if reason == Rejection.NOT_AN_ARCHIVE:
+            return ArchiveMembers.not_an_archive(path)
+        if reason == Rejection.COMPRESSED_TRUNCATED:
+            return ArchiveMembers.compressed_truncated(path, detail)
+        if reason == Rejection.UNSUPPORTED_FORMAT:
+            return OperationalFinding.build(
+                path=path,
+                rule_id="OPERATIONAL.ARCHIVE.UNSUPPORTED_FORMAT",
+                message=f"This file is {detail}: what it holds was not scanned.",
+                remediation=(
+                    "Ship the contents unpacked, or in a zip, tar or gzip, so they can be read; or "
+                    "accept this gap by path once the archive has been reviewed."
+                ),
+            )
         return ArchiveMembers.not_examined(path, reason, detail)
+
+    @staticmethod
+    def not_an_archive(path: str) -> Finding:
+        """A member named as an archive that is text no archive reader opens, scanned as text."""
+        return OperationalFinding.build(
+            path=path,
+            rule_id="OPERATIONAL.ARCHIVE.NOT_AN_ARCHIVE",
+            message=(
+                "This member is named as an archive, but no archive reader opens it and it is "
+                "text, so it was scanned as the text it is."
+            ),
+            remediation="No action needed.",
+            severity=Severity.INFO,
+        )
+
+    @staticmethod
+    def compressed_truncated(path: str, detail: str) -> Finding:
+        """A lone compressed stream cut before its end marker: what it holds was read, to its end."""
+        return OperationalFinding.build(
+            path=path,
+            rule_id="OPERATIONAL.ARCHIVE.COMPRESSED_TRUNCATED",
+            message=(
+                "This compressed file ends before its end marker, as a cut download does; "
+                f"everything it holds was decompressed and scanned ({detail})."
+            ),
+            remediation="No action needed, unless the file is expected to be whole.",
+            severity=Severity.INFO,
+        )
+
+    @staticmethod
+    def refuse(
+        acc: Accumulator, path: str, reason: str, detail: str, *, image: bool = False
+    ) -> None:
+        """One refused member, recorded as both archive paths record it (an archive target's and a
+        directory's archives, one rule so the two cannot drift apart again). A link has no content
+        of its own, a hidden zip member is read from its local header (`zip-local/`), text named as
+        an archive is scanned as text: none leaves anything unread (`NOTHING_UNREAD`). An
+        operational refusal is the gap. An attack refusal is reported, and the note that the member
+        went unread is said beside it and is the gap: one graded low, a fixture's, must not leave it
+        unrecorded."""
+        finding = ArchiveMembers.rejected(path, reason, detail, image=image)
+        if reason in ArchiveMembers.NOTHING_UNREAD:
+            acc.append(finding)
+        elif finding.rule_id.startswith("OPERATIONAL."):
+            acc.incomplete(finding)
+        else:
+            acc.append(finding)
+            acc.incomplete(ArchiveMembers.not_examined(path, reason, detail))
 
     @staticmethod
     def not_examined(path: str, reason: str, detail: str) -> Finding:

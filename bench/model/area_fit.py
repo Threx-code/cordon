@@ -36,9 +36,9 @@ import math
 import re
 import sys
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from cordon_scanner.decide.feature_schema import (
     FeatureFold,
@@ -117,6 +117,22 @@ class AreaFit:
                     yield label, unit, features
 
     @staticmethod
+    def rows_manifest(
+        files: list[str], producer: str, accepted: Any, required: Iterable[int]
+    ) -> dict[str, Any]:
+        """What the model records of the rows it was fitted on. A fit pooling rows through an
+        equivalence (`FeatureSchema.SAME_AS`) records both versions: the one the rows carry and
+        the one this tree's code hashes to."""
+        return {
+            "files": files,
+            "producer": producer,
+            "accepted": accepted,
+            "record_required_for_labels": sorted(required),
+            "schema": FeatureSchema.current(),
+            "schema_computed": FeatureSchema.computed(),
+        }
+
+    @staticmethod
     def export(clf: Any, names: list[str]) -> dict[str, Any]:
         """HistGradientBoosting trees as `VerdictModel.score` walks them."""
         trees = []
@@ -141,6 +157,36 @@ class AreaFit:
             "baseline": float(clf._baseline_prediction.ravel()[0]),
             "trees": trees,
         }
+
+    #: Features whose value depends on how loaded the machine was, not on the package: a model
+    #: splitting on one would let load move a block score. `cov:capped` is the per-file wall-clock
+    #: budget (OPERATIONAL.FILE.TIMEOUT, `VerdictFeatures.COVERAGE_RULES`); it leaves this list when
+    #: the outer-layer team's deterministic work budget makes it a property of the file. Measured
+    #: 2026-10-31 on the 93488958 reference rows: 437 rows carry it and no shipped tree splits on it.
+    LOAD_DEPENDENT: ClassVar[frozenset[str]] = frozenset({"cov:capped"})
+
+    @staticmethod
+    def refuse_load_dependent(model: Any, where: str = "model") -> None:
+        """Raise unless no scoring section anywhere in `model` (the main trees, `by_area`, a carried
+        section) splits on a `LOAD_DEPENDENT` feature. Called before any model is written."""
+        if isinstance(model, dict):
+            names, trees = model.get("features"), model.get("trees")
+            if isinstance(names, list) and isinstance(trees, list):
+                for tree in trees:
+                    for node in tree:
+                        if (
+                            not node.get("leaf")
+                            and names[int(node["feature"])] in AreaFit.LOAD_DEPENDENT
+                        ):
+                            raise ValueError(
+                                f"{where} splits on {names[int(node['feature'])]}, which depends on "
+                                "machine load: not written"
+                            )
+            for key, value in model.items():
+                AreaFit.refuse_load_dependent(value, f"{where}.{key}")
+        elif isinstance(model, list):
+            for i, value in enumerate(model):
+                AreaFit.refuse_load_dependent(value, f"{where}[{i}]")
 
     @staticmethod
     def check(
@@ -334,13 +380,11 @@ class AreaFit:
         model["manifest"] = {
             **(model.get("manifest") or {}),
             "area_fits": fits,
-            "rows": {
-                "files": [str(path) for path, _, _ in sets],
-                "producer": a.producer,
-                "accepted": a.accept,
-                "record_required_for_labels": sorted(a.require_record),
-            },
+            "rows": AreaFit.rows_manifest(
+                [str(path) for path, _, _ in sets], a.producer, a.accept, a.require_record
+            ),
         }
+        AreaFit.refuse_load_dependent(model)
         with gzip.open(a.out, "wt", encoding="utf-8") as handle:
             json.dump(model, handle)
         print(f"written {a.out}", file=sys.stderr)

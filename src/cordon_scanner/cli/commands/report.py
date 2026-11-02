@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.foundation.errors import ConfigError, ExitCode
 from cordon_scanner.version import PROGRAM
@@ -21,6 +21,11 @@ class ReportCommand:
     The command is pointed at a file by a human, but that file may have come
     from a scan of somebody else's repository, so it is not trusted to be
     well-formed or small."""
+
+    @staticmethod
+    def gaps(payload: dict[str, Any]) -> tuple[tuple[str, str], ...]:
+        """A result document's content gaps (item 27), as the result holds them."""
+        return tuple((str(g["rule"]), str(g["path"])) for g in payload.get("content_gaps", ()))
 
     @staticmethod
     def add_parser(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
@@ -106,6 +111,7 @@ class ReportCommand:
             repository=Repository(root=str(repository.get("root", "."))),
             stats=ScanStats(files_scanned=int(payload.get("stats", {}).get("files_scanned", 0))),
             complete=bool(payload.get("complete", True)),
+            content_gaps=ReportCommand.gaps(payload),
             schema_version=int(payload.get("schema_version", 1)),
             engine_version=str(payload.get("engine_version", "")),
             rulepack_version=str(payload.get("rulepack_version", "")),

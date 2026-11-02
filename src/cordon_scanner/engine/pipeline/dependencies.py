@@ -12,6 +12,7 @@ from __future__ import annotations
 import io
 import posixpath
 from dataclasses import replace
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.detect.base import (
@@ -28,7 +29,7 @@ from cordon_scanner.foundation.models import Category, Confidence, Finding, Seve
 from cordon_scanner.foundation.results import Dependency, OperationalFinding
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
     from cordon_scanner.ecosystems.base import Ecosystem
     from cordon_scanner.engine.engine import Engine
@@ -63,8 +64,7 @@ class Dependencies:
                     return None
         except (tarfile.TarError, OSError, ValueError, EOFError):
             if oci.ImageLayers.cut_short(data):
-                acc.complete = False
-                acc.append(
+                acc.incomplete(
                     OperationalFinding.build(
                         path=REPOSITORY_SCOPE,
                         rule_id="OPERATIONAL.IMAGE.UNREADABLE",
@@ -76,8 +76,7 @@ class Dependencies:
         try:
             inventory = oci.ImageLayers.read_image(data)
         except (tarfile.TarError, OSError, ValueError, KeyError, EOFError) as exc:
-            acc.complete = False
-            acc.append(
+            acc.incomplete(
                 OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.IMAGE.UNREADABLE",
@@ -108,8 +107,7 @@ class Dependencies:
                 f"has no advisory source Cordon reads (OSV, or Amazon's ALAS), so its packages cannot be matched"
             )
         for problem in inventory.problems:
-            acc.complete = False
-            acc.append(
+            acc.incomplete(
                 OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.IMAGE.PARTIAL",
@@ -155,8 +153,7 @@ class Dependencies:
         for unit in units:
             data, unreadable = SbomDocument.recognise(unit.content.text, unit.path)
             if unreadable:
-                acc.complete = False
-                acc.append(
+                acc.incomplete(
                     OperationalFinding.build(
                         path=unit.path,
                         rule_id="OPERATIONAL.SBOM.INVALID",
@@ -170,8 +167,7 @@ class Dependencies:
                 continue
             reading = SbomDocument.read(data)
             for problem in reading.problems[:20]:
-                acc.complete = False
-                acc.append(
+                acc.incomplete(
                     OperationalFinding.build(
                         path=unit.path,
                         rule_id="OPERATIONAL.SBOM.INVALID",
@@ -347,7 +343,8 @@ class Dependencies:
                 continue
             if graph.parse_error or not graph.entries:
                 # Unparsed (named by OPERATIONAL.LOCKFILE.UNPARSED): what it resolves is missing.
-                acc.complete = acc.complete and not graph.parse_error
+                if graph.parse_error:
+                    acc.named_elsewhere("OPERATIONAL.LOCKFILE.UNPARSED", unit.path)
                 continue
             project = Dependencies.lockfile_project(unit, graph)
             if graph.fragment:
@@ -390,8 +387,7 @@ class Dependencies:
         """Whether the graph has grown past `limits.max_dependencies`: reported, and incomplete."""
         if len(collected) <= limit:
             return False
-        acc.complete = False
-        acc.append(
+        acc.incomplete(
             OperationalFinding.build(
                 path=unit.path,
                 rule_id="OPERATIONAL.GRAPH.LIMIT",
@@ -434,8 +430,7 @@ class Dependencies:
     @staticmethod
     def parser_failed(acc: Accumulator, unit: FileUnit, ecosystem_id: str, exc: Exception) -> None:
         """A lockfile parser that raised: the file's dependencies are missing, and the scan says so."""
-        acc.complete = False
-        acc.append(
+        acc.incomplete(
             OperationalFinding.build(
                 path=unit.path,
                 rule_id="OPERATIONAL.PARSER.FAILED",
@@ -612,7 +607,7 @@ class Dependencies:
         collected: list[Dependency] = []
         members = Graph.workspace_members(units)
         by_path = {u.path: u for u in units}
-        contents = {u.path: u.content for u in units}
+        contents = MappingProxyType({u.path: u.content for u in units})  # Graph.view_of
 
         for unit in units:
             ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
@@ -624,16 +619,23 @@ class Dependencies:
 
             project = unit.path.rpartition("/")[0] or None
             if (project, ecosystem_id) in covered:
-                continue
-
-            manifest = Dependencies.readable_manifest(ecosystem, unit, contents, acc)
-            if manifest is None:
-                continue
+                # A lockfile read this project, but a file it covers may still include others: a
+                # fully pinned requirements.txt is read as a lockfile, and its `-r base.txt` was
+                # never followed, so whatever base.txt declares went unchecked (item 26). The
+                # file's own lines are in the lock graph; only what it includes is added.
+                manifest = Dependencies.included_only(ecosystem, unit, contents)
+                if manifest is None:
+                    continue
+                declarations: list[tuple[str, Any]] = []
+            else:
+                manifest = Dependencies.readable_manifest(ecosystem, unit, contents, acc)
+                if manifest is None:
+                    continue
+                declarations = [(unit.path, d) for d in manifest.dependencies]
 
             # What the file includes: pip's `-r` adds another file's requirements to this one,
             # and `-c` pins whatever they resolve to. An included file the walk would not graph
             # on its own (`-r common.txt`) is read here; one it would is left to its own pass.
-            declarations = [(unit.path, d) for d in manifest.dependencies]
             pins: dict[str, tuple[str, str]] = {}
             Dependencies.included_declarations(
                 manifest, unit, by_path, ecosystem, declarations, pins
@@ -650,7 +652,7 @@ class Dependencies:
 
     @staticmethod
     def readable_manifest(
-        ecosystem: Ecosystem, unit: FileUnit, contents: dict[str, Any], acc: Accumulator
+        ecosystem: Ecosystem, unit: FileUnit, contents: Mapping[str, Any], acc: Accumulator
     ) -> Any:
         """The manifest the inventory is about to read, or None: one it cannot read leaves its
         dependencies out of the graph, so the scan is incomplete.
@@ -663,12 +665,22 @@ class Dependencies:
         try:
             manifest = Graph.manifest_of(ecosystem, unit, contents)
         except Exception:  # noqa: BLE001
-            acc.complete = False
+            acc.named_elsewhere("OPERATIONAL.PARSER.FAILED", unit.path)
             return None
         if manifest.parse_error:
-            acc.complete = False
+            acc.named_elsewhere("OPERATIONAL.MANIFEST.UNPARSED", unit.path)
             return None
         return manifest
+
+    @staticmethod
+    def included_only(ecosystem: Ecosystem, unit: FileUnit, contents: Mapping[str, Any]) -> Any:
+        """The manifest of a file a lockfile already covers, when it includes others, else None.
+        Its own parse failure is the lockfile pass's to report, so nothing is said here."""
+        try:
+            manifest = Graph.manifest_of(ecosystem, unit, contents)
+        except Exception:  # noqa: BLE001 -- said once (ParsedManifests.report_raised)
+            return None
+        return manifest if getattr(manifest, "includes", ()) else None
 
     @staticmethod
     def included_declarations(

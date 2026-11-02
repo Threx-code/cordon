@@ -106,7 +106,13 @@ class Limits:
 
     # -- Time --------------------------------------------------------------
     per_file_timeout: float = 5.0
-    """Ceiling on the time one file's detectors may accumulate.
+    """Deprecated: nothing is cut on it. Every detector runs on every file of a scan, a directory's
+    as a package's, every historical blob of the git-history secret sweep, and every detector run of
+    a device scan (a cut on the wall clock made findings, the complete flag and the exit code depend
+    on the machine's load). Read for one more release. The scan as a whole is bounded by
+    `total_timeout`.
+
+    What it bounded, when it bounded a file: the time one file's detectors may accumulate.
 
     Not a backstop against catastrophic regex backtracking, which is what this
     docstring used to claim. Python's `re` cannot be interrupted mid-match: a
@@ -125,7 +131,14 @@ class Limits:
     """Wall clock for the entire scan. On expiry the engine emits a partial
     result with ``complete=False`` rather than aborting: a partial result a human
     can act on is worth more than a stack trace, and marking it partial is what
-    stops it being mistaken for a pass."""
+    stops it being mistaken for a pass.
+
+    A backstop, not a budget: it depends on the machine's load, so it is the one
+    place a scan's answer can, on a starved machine, change with load, and then
+    only to incomplete (``OPERATIONAL.SCAN.TIMEOUT``), never to a pass. Real scans
+    sit well inside it: the heaviest measured unit, Sifchain/sifnode (7,230
+    dependencies), takes 124 s quiet on one core, 14% of 900 s (2026-10-31); the
+    same unit took 1,369 s on a heavily loaded machine."""
 
     # -- Archives ----------------------------------------------------------
     max_archive_ratio: int = 200

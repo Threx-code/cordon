@@ -638,6 +638,9 @@ class Finding:
             out["suppressed"] = self.suppressed.to_dict()
         if self.always_report:
             out["always_report"] = True
+        if self.degrades_coverage:
+            # carried across a worker's boundary, so the parent sees what left the file unread
+            out["degrades_coverage"] = True
         return out
 
     def sort_key(self) -> tuple[Any, ...]:

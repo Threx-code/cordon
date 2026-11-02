@@ -117,8 +117,11 @@ regex. Especially dangerous because organisations write their own rules.
   backreferences, lookbehind of unbounded width, and nested unbounded quantifiers
   (`(a+)+`, `(a*)*`, `(a|aa)+`). The validator walks the parsed pattern rather
   than pattern-matching the source string.
-- `per_file_timeout` (default 5 s) enforced by the worker; a timeout is an
-  `OPERATIONAL` finding naming the file and the rule that was running.
+- No per-file cut: every detector runs on every file, in a directory as on every member of a
+  package. A cut on the wall clock made a scan's findings, its complete flag and its exit code
+  depend on the machine's load, and a package and its unpacked directory decided differently.
+  `total_timeout` bounds the scan as a whole, the same in both; a scan that reaches it is
+  incomplete (`OPERATIONAL.SCAN.TIMEOUT`). `per_file_timeout` is deprecated for a scan's files.
 - A worker that exceeds `max_memory` is killed and restarted; its unit is reported
   as unscanned.
 - Regex matching runs against **bytes**, with input length capped at
@@ -126,9 +129,8 @@ regex. Especially dangerous because organisations write their own rules.
   (literal and entropy only) plus an `OPERATIONAL` note.
 
 **Known gap (2026-10-29): the scanner's own patterns.** The load-time validator covers rule
-packs, not the regular expressions in the scanner's own detectors and analysers, and
-`per_file_timeout` is checked between detectors: it cannot interrupt a regex already running,
-and the detectors that always run are not budgeted. A measured probe found patterns there that
+packs, not the regular expressions in the scanner's own detectors and analysers, and no per-file
+budget interrupts a detector (none ever could interrupt a regex already running). A measured probe found patterns there that
 grow superlinearly on long crafted lines (one, in the config detector, with two adjacent
 `[ \t]*` runs). A file built for one stalls the scan until `total_timeout`, which ends it
 incomplete rather than clean (exit code 4 with `--fail-on-incomplete`). The fix in progress: a

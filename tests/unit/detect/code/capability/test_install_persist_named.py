@@ -68,17 +68,24 @@ class TestNamedNotWritten:
                 info = tarfile.TarInfo(name)
                 info.size = len(data)
                 archive.addfile(info, io.BytesIO(data))
-        seen: dict[str, bool] = {}
+        # The detector runs in the detection worker (item 28), so what it saw is recorded where
+        # this process can read it afterwards: a file beside the sdist, one line per file.
+        sightings = tmp_path / "seen.txt"
         inspect = CapabilityDetector.inspect
 
         def record(self, unit, ctx):  # type: ignore[no-untyped-def]
-            seen[unit.path.rpartition("/")[2]] = ctx.in_install_hook(unit.path)
+            with sightings.open("a", encoding="utf-8") as out:
+                out.write(f"{unit.path.rpartition('/')[2]} {ctx.in_install_hook(unit.path)}\n")
             return inspect(self, unit, ctx)
 
         monkeypatch.setattr(CapabilityDetector, "inspect", record)
         config = Config.default()
         limits = config.limits.merged(max_workers=1)
         Scanner(config.with_overrides(use_cache=False, limits=limits)).scan(sdist)
+        seen = {
+            name: flag == "True"
+            for name, flag in (line.split() for line in sightings.read_text("utf-8").splitlines())
+        }
         # The package's own Dockerfile keeps its build-hook reading; the vendored one does not.
         assert seen == {"setup.py": True, "runner.Dockerfile": False, "Dockerfile": True}
 
@@ -175,3 +182,28 @@ class TestNamedInCodeNotWritten:
             f"import os, shutil, subprocess\nfrom setuptools import setup\n{body}setup(name='x')\n"
         )
         assert RULE in PersistHelpers.rules(tmp_path, {"setup.py": setup})
+
+
+class TestAProcessManagerAtInstall:
+    """A postinstall handing its own script to a process manager keeps it running past the install
+    and starts it again: pm2 restarts what it runs. The npm work half's crypto-encrypt-ts did this
+    and passed on content, blocked only by intel (cordon-a0's miss read, 1 Nov). Inert fixtures."""
+
+    @staticmethod
+    def files(command: str) -> dict[str, str]:
+        return {
+            "package.json": '{"name": "x", "version": "1.0.0", "scripts": {"postinstall": "node setup.js"}}',
+            "setup.js": "const { exec } = require('child_process');\n"
+            "const path = require('path');\n"
+            "const target = path.join(__dirname, 'start.js');\n"
+            f"exec('{command} ' + target, () => {{}});\n",
+            "start.js": "console.log('started');\n",
+        }
+
+    @pytest.mark.parametrize("command", ["pm2 start", "forever start"])
+    def test_handing_itself_to_a_process_manager_is_planting(self, tmp_path, command) -> None:
+        assert RULE in PersistHelpers.rules(tmp_path, self.files(command))
+
+    @pytest.mark.parametrize("command", ["pm2 list", "pm2 logs"])
+    def test_only_asking_the_process_manager_is_not(self, tmp_path, command) -> None:
+        assert RULE not in PersistHelpers.rules(tmp_path, self.files(command))

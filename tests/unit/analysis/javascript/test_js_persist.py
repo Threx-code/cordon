@@ -51,6 +51,16 @@ class TestNamedOnly:
             ),
             # A form field's type, kept in the page's configuration.
             ("this.config = { columns: [{ type: 'crontab', name: 'schedule' }] };\n", "crontab"),
+            # An uninstall removing the agent it registered (shelf-drive): a foothold undone.
+            (
+                "const fs = require('fs');\nconst os = require('os');\nconst path = require('path');\n"
+                "fs.rmSync(path.join(os.homedir(), 'Library', 'LaunchAgents', 'x.plist'), { force: true });\n",
+                "LaunchAgents",
+            ),
+            (
+                "const fs = require('fs');\nfs.unlinkSync('/etc/systemd/system/agent.service');\n",
+                "systemd",
+            ),
             # A tip printed for a person.
             ("console.log(`Tip: add it to ~/.bashrc`);\n", "bashrc"),
         ],

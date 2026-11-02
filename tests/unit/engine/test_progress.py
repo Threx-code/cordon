@@ -300,7 +300,7 @@ class TestColour:
         row."""
         import shutil
 
-        monkeypatch.setattr(shutil, "get_terminal_size", lambda *a: os.terminal_size((40, 24)))
+        monkeypatch.setattr(shutil, "get_terminal_size", lambda *a, **k: os.terminal_size((40, 24)))
         stream = io.StringIO()
         progress = TerminalProgress(stream, color=True, min_redraw=0.0)
         progress.phase("scanning", total=1000)
@@ -388,7 +388,9 @@ class TestDisplayWidth:
     ) -> None:
         import shutil
 
-        monkeypatch.setattr(shutil, "get_terminal_size", lambda *a: os.terminal_size((columns, 24)))
+        monkeypatch.setattr(
+            shutil, "get_terminal_size", lambda *a, **k: os.terminal_size((columns, 24))
+        )
         stream = io.StringIO()
         progress = TerminalProgress(stream, color=color, min_redraw=0.0)
         progress.phase("scanning", total=999)

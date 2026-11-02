@@ -13,11 +13,21 @@ from __future__ import annotations
 import bisect
 import re
 import time
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from typing import Any, ClassVar
 
+from cordon_scanner.detect.binary.rule_engine.anchoring.along import Along
+from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Compare as _Compare
+from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import (
+    HexFind,
+    TextCheck,
+    TextFind,
+)
+from cordon_scanner.detect.binary.rule_engine.anchoring.places import Places
+from cordon_scanner.detect.binary.rule_engine.anchoring.stream import Streams
 from cordon_scanner.detect.binary.rule_engine.anchors import Anchor, Anchors
 from cordon_scanner.detect.binary.rule_engine.chain import Chain
+from cordon_scanner.detect.binary.rule_engine.hits import Hits
 from cordon_scanner.detect.binary.rule_engine.pattern import (
     GAP,
     LIT,
@@ -25,8 +35,8 @@ from cordon_scanner.detect.binary.rule_engine.pattern import (
     Bytes,
     PatternError,
     Program,
-    RunError,
     Term,
+    Unbounded,
 )
 from cordon_scanner.detect.binary.rule_engine.pattern_readers import (
     LINK_GAP,
@@ -38,12 +48,6 @@ from cordon_scanner.detect.binary.rule_engine.threads import REACH, Lanes, Threa
 
 #: The most matches one string records; past this it is not searched further in that data.
 MAX_HITS = 1_000_000
-
-
-class Unbounded(RunError):
-    """A string with more places to try in one file than `Search.MOST`: the file is refused for the
-    rule file, and the scan reports it at a severity that fails the gate (`rule_files`), since a file
-    can be padded to pass the bound on purpose."""
 
 
 class Search:
@@ -59,6 +63,9 @@ class Search:
         self.needles: list[tuple[bytes, int, list[tuple[int, int, AnchorAt]]]] | None = None
         self.folds: list[tuple[bytes, int, dict[bytes, list[tuple[int, int, AnchorAt]]]]] = []
         self.zeros: list[tuple[int, int, AnchorAt]] = []
+        #: A plain hex part's layouts for the native find (`HexFind`): None until worked out,
+        #: False where it does not apply.
+        self.hex_layouts: tuple[bytes, bytes] | bool | None = None
         f = self.flags
         if kind == "regex":
             source, marks = value
@@ -245,7 +252,7 @@ class Search:
         fixed: int | None = None,
         deadline: float | None = None,
         seen: dict[Any, Any] | None = None,
-    ) -> list[tuple[int, int]]:
+    ) -> Sequence[tuple[int, int]]:
         """(offset, length) of each match, by offset. With `fixed`, only a match there counts.
         `seen` holds where each anchor occurs in `data`, shared by every string searched there,
         so each distinct anchor is looked for once per piece of data."""
@@ -255,15 +262,27 @@ class Search:
         seen = {} if seen is None else seen
         if not self._holds_required(data, seen):
             return []
+        if Streams.wanted(self, data, seen):
+            hunt = _Hunt(self, data, fixed, deadline)
+            hunt.budget = Search.budget(seen)
+            streamed = hunt.run_streamed(Streams.sources(self, data, seen, hunt))
+            if streamed is not None:
+                return streamed
+        if TextFind.usable(self):
+            return self._text_find(data, fixed, seen, deadline)
+        if HexFind.layouts(self) is not None:
+            return HexFind.hits(self, data, seen, fixed, MAX_HITS, deadline)
         events: list[Event] = []
         for needle, length, owners in self.needles:
             starts = seen.get(needle)
             if starts is None:
-                gated = self._gated(data, needle, length, owners, Search.budget(seen))
+                gated = self._gated(data, needle, length, owners, seen)
                 if gated is not None:
                     events.extend(gated)
                     continue
-                starts = seen[needle] = Search.occurrences(data, needle, Search.budget(seen))
+                starts = seen[needle] = Search.kept(seen, False, needle) or Search.occurrences(
+                    data, needle, Search.budget(seen)
+                )
             if starts:
                 Search._occurred(events, starts, length, owners)
         for folded, length, spellings in self.folds:
@@ -271,12 +290,13 @@ class Search:
             # finds them all; the bytes found say which spelling it was
             starts = seen.get(("folded", folded))
             if starts is None:
+                starts = Search.kept(seen, True, folded)
+            if starts is None:
                 lowered = seen.get(("lowered",))
                 if lowered is None:
                     lowered = seen[("lowered",)] = data.lower()
-                starts = seen[("folded", folded)] = Search.occurrences(
-                    lowered, folded, Search.budget(seen)
-                )
+                starts = Search.occurrences(lowered, folded, Search.budget(seen))
+            seen[("folded", folded)] = starts
             for s in starts:
                 Search._occurred(events, (s,), length, spellings[data[s : s + length]])
         hunt = _Hunt(self, data, fixed, deadline)
@@ -288,6 +308,44 @@ class Search:
         events.sort(key=lambda e: (e[0], e[1], e[2]))
         return hunt.run(events)
 
+    def _text_find(
+        self, data: bytes, fixed: int | None, seen: dict[Any, Any], deadline: float | None
+    ) -> Hits:
+        """A text string's matches in one native call (`TextFind`), from each anchor's
+        occurrences, found and kept in `seen` as `find` keeps them."""
+        assert self.needles is not None  # noqa: S101 - set by _index
+        owners = []
+        for needle, length, holders in self.needles:
+            starts = seen.get(needle)
+            if starts is None:
+                starts = seen[needle] = Search.kept(seen, False, needle) or Search.occurrences(
+                    data, needle, Search.budget(seen)
+                )
+            owners += [
+                (starts, length, length + a[1], order, len(a[0]) + a[1]) for order, _, a in holders
+            ]
+        for folded, length, spellings in self.folds:
+            # a folded anchor's owners are those of how the data spells it at each occurrence
+            starts = seen.get(("folded", folded))
+            if starts is None:
+                starts = Search.kept(seen, True, folded)
+            if starts is None:
+                lowered = seen.get(("lowered",))
+                if lowered is None:
+                    lowered = seen[("lowered",)] = data.lower()
+                budget = Search.budget(seen)
+                starts = Search.occurrences(lowered, folded, budget)
+            seen[("folded", folded)] = starts
+            spelled: dict[bytes, list[int]] = {}
+            for at in starts:
+                spelled.setdefault(data[at : at + length], []).append(at)
+            for spelling, found in spelled.items():
+                owners += [
+                    (found, length, length + a[1], order, len(a[0]) + a[1])
+                    for order, _, a in spellings[spelling]
+                ]
+        return TextFind.hits(self, data, owners, fixed, MAX_HITS, deadline)
+
     #: An anchor occurring more often than this has its forward gate run over the whole data at
     #: once (`_gated`) rather than tested at each occurrence.
     GATED: ClassVar[int] = 256
@@ -298,33 +356,22 @@ class Search:
         needle: bytes,
         length: int,
         owners: list[tuple[int, int, AnchorAt]],
-        budget: list[int],
+        seen: dict[Any, Any],
     ) -> list[Event] | None:
         """The events of a common anchor, from its parts' forward gates run once over the data in
         C, rather than from every occurrence: an occurrence whose gate fails is one `_Hunt._check`
         turns away unread, so leaving it out changes no match. Only where that holds -- a pattern
         part, not `plain`, read one byte wide (no `wide`, `xor` or `base64`) -- and each gated
         position still has the anchor's bytes where it should. None to take every occurrence."""
-        f = self.flags
-        if "wide" in f or "xor" in f or "base64" in f or "base64wide" in f or f.get("plain"):
+        gates = Streams.gates(self, data, needle, owners, seen)
+        budget = Search.budget(seen)
+        if gates is None:
             return None
-        if data.count(needle) <= Search.GATED:
-            return None
-        nocase, dotall = "nocase" in f, "dotall" in f
-        gates = []
-        for _, p, anchor in owners:
-            part = self.parts[p]
-            if part.text is not None or anchor[2] is None:
-                return None
-            gate = part.gate(anchor[2], nocase, dotall)
-            if gate is None:
-                return None
-            gates.append(gate)
         events: list[Event] = []
         for (order, p, anchor), gate in zip(owners, gates, strict=True):
             lead = anchor[1]
             for found in gate.finditer(data):
-                if len(events) >= min(Search.MOST, budget[0]):
+                if len(events) >= min(Places.MOST, budget[0]):
                     raise Search.too_many()
                 offset = found.start()
                 at = offset + lead
@@ -401,40 +448,31 @@ class Search:
         self.zeros = zeros
 
     @staticmethod
+    def kept(seen: dict[Any, Any], folded: bool, needle: bytes) -> list[int] | None:
+        """A common anchor's places as the automaton's pass kept them (`AnchorIndex.place`), read
+        exactly as `Places.occurrences` reads them: past what the file's budget still holds they
+        refuse the file, and reading them spends it. None where the pass kept none."""
+        starts = seen.get(("kept", folded, needle))
+        if starts is None:
+            return None
+        budget = Search.budget(seen)
+        if len(starts) > min(Places.MOST, budget[0]):
+            raise Places.too_many()
+        budget[0] -= len(starts)
+        return list(starts)
+
+    @staticmethod
     def occurrences(data: bytes, needle: bytes, budget: list[int] | None = None) -> list[int]:
-        """Every offset `needle` begins at, overlapping ones included; an `Unbounded` past
-        `Search.MOST` of them, or past what is left of the file's `budget` (`Search.budget`),
-        which this spends."""
-        out: list[int] = []
-        at = data.find(needle)
-        most = Search.MOST if budget is None else min(Search.MOST, budget[0])
-        while at >= 0:
-            if len(out) >= most:
-                raise Search.too_many()
-            out.append(at)
-            at = data.find(needle, at + 1)
-        if budget is not None:
-            budget[0] -= len(out)
-        return out
+        """Every offset `needle` begins at (`Places.occurrences`, which bounds them)."""
+        return Places.occurrences(data, needle, budget)
 
     @staticmethod
     def budget(seen: dict[Any, Any]) -> list[int]:
-        """What one file may still hold of anchor occurrences and places to try, across every
-        string searched in it (`Search.MOST` in all): the bound is the whole match's, not each
-        string's."""
-        held: list[int] = seen.setdefault(("budget",), [Search.MOST])
-        return held
-
-    #: The most anchor occurrences, or places to run an anchorless part from, one string reads in
-    #: one file. Past it the file is refused for the rule file (a `RunError`, which the scan reports
-    #: as the rule file being unavailable for that file) instead of being built in memory: one
-    #: hostile file of a common anchor (100 MB of zeros for `{ 00 00 00 00 }`) cannot exhaust the
-    #: scan's memory. Below it every answer is the one an unbounded search gives.
-    MOST: ClassVar[int] = 8_000_000
+        return Places.budget(seen)
 
     @staticmethod
     def too_many() -> Unbounded:
-        return Unbounded(f"more than {Search.MOST:,} places to try in one file")
+        return Places.too_many()
 
 
 class _Hunt:
@@ -461,14 +499,15 @@ class _Hunt:
         self.masks: dict[bytes, bytes] = {}
         #: Per (part, entries), where an anchor's runs can find anything (`_viable`), or None.
         self.feasible: dict[tuple[int, Any, Any], Any] = {}
-        #: The data as an integer of 0/1 bytes, for each set of bytes a path step reads.
-        self.masks_int: dict[bytes, int] = {}
         #: Per part, where each of its factors' runs starts, with its length (`_factor_near`).
         self.factor_runs: dict[int, list[tuple[list[int], int]]] = {}
         #: Per part, how many anchor occurrences the data has.
         self.busy: dict[int, int] = {}
         #: What the file may still hold of places to try (`Search.budget`); None outside a match.
         self.budget: list[int] | None = None
+        #: Per text part, each candidate offset's match length, worked out for all of them at once
+        #: (`anchoring.automaton.TextCheck`) before the events are run.
+        self.texts: dict[int, dict[int, int]] = {}
 
     def run(self, events: list[Event]) -> list[tuple[int, int]]:
         """Checks each anchor occurrence, in the order `events` gives."""
@@ -483,14 +522,61 @@ class _Hunt:
                     break
                 self._found(0, start, length, False)
             return sorted(self.hits.items())
+        self._texts(events)
         self._run_events(events, n)
         return sorted(self.hits.items())
 
-    def _run_events(self, events: list[Event], n: int) -> None:
+    #: Text-part candidates of one string above which they are checked all at once.
+    BATCH: ClassVar[int] = 16
+
+    def _texts(self, events: list[Event]) -> None:
+        """Each text part's candidates checked in one call (natively where it can) instead of one
+        `_check_text` comparison each; the answers `_check_text` then reads are the same."""
+        parts, n = self.s.parts, len(self.data)
+        wanted = {p for p, part in enumerate(parts) if part.text is not None and not part.fits}
+        if not wanted:
+            return
+        offsets: dict[int, set[int]] = {}
+        for e in events:
+            if e[3] in wanted and e[5] < n:
+                offsets.setdefault(e[3], set()).add(e[5])
+        mode = TextCheck.mode(self.s.flags)
+        for p, found in offsets.items():
+            if len(found) >= _Hunt.BATCH:
+                ordered = sorted(found)
+                text = parts[p].text
+                assert text is not None  # noqa: S101 - a text part
+                self.texts[p] = dict(
+                    zip(ordered, TextCheck.lengths(self.data, ordered, text, mode), strict=True)
+                )
+
+    def run_streamed(self, sources: list[Any]) -> list[tuple[int, int]] | None:
+        """`run` over sorted event streams (`rule_engine.anchoring.stream`), pulling only until full; None
+        where the string's matches are worked out from all its offsets at once (a chain)."""
+        busy, total = Streams.busy(sources, _Hunt.BUSY + 1)
+        self.busy = busy
+        backward = self._chain_ready() if total > _Hunt.BUSY else None
+        if backward is not None:
+            chain, lag = self.s.parts[0].chain, Streams.lag(self.s)
+            anchors = Streams.offsets(Streams.merged(sources), lag, len(self.data))
+            for start, length in Streams.chained(
+                chain, self.data, anchors, backward=backward, nocase=self.nocase,
+                dotall=self.dotall, deadline=self.deadline,
+            ):  # fmt: skip
+                if self.full:
+                    break
+                self._found(0, start, length, False)
+            return sorted(self.hits.items())
+        self._run_events(Streams.merged(sources), len(self.data))
+        return sorted(self.hits.items())
+
+    def _run_events(self, events: Iterable[Event], n: int) -> None:
         for count, (_, _, _, part, anchor, offset) in enumerate(events):
             if count % 4096 == 0 and self.deadline is not None and time.monotonic() > self.deadline:
                 raise TimeoutError("matching took longer than the time allowed")
-            if offset >= n or self.full:
+            if self.full:
+                break
+            if offset >= n:
                 continue
             if self.fixed is not None and part == 0 and offset != self.fixed:
                 continue
@@ -500,15 +586,10 @@ class _Hunt:
         """Every match of a string that is one chain of class repeats (`rule_engine.chain`), worked out
         directly from its anchors' offsets when they occur often enough to make running them
         dear; None to run them as usual (as for an anchor outside the chain's first term)."""
-        parts, f = self.s.parts, self.s.flags
-        part = parts[0]
-        if len(parts) != 1 or part.chain is None or len(events) <= _Hunt.BUSY:
+        part = self.s.parts[0]
+        backward = self._chain_ready() if len(events) > _Hunt.BUSY else None
+        if backward is None or part.chain is None:
             return None
-        if f.get("plain") or "fullword" in f or self._widths() != [False] or self.fixed is not None:
-            return None
-        if any(anchor[2] != part.root_entry for anchor in part.anchors):
-            return None
-        backward = any(anchor[3] is not None for anchor in part.anchors)
         n = len(self.data)
         offsets = sorted({e[5] for e in events if e[5] < n})
         return part.chain.matches(
@@ -520,17 +601,32 @@ class _Hunt:
             deadline=self.deadline,
         )
 
-    def starts(self, p: int) -> list[int]:
+    def _chain_ready(self) -> bool | None:
+        """Whether this string's matches come from its chain's matcher (`_chained`), and if so
+        whether a match may start back over the first term (True or False); None when not."""
+        parts, f = self.s.parts, self.s.flags
+        part = parts[0]
+        if len(parts) != 1 or part.chain is None:
+            return None
+        if f.get("plain") or "fullword" in f or self._widths() != [False] or self.fixed is not None:
+            return None
+        if any(anchor[2] != part.root_entry for anchor in part.anchors):
+            return None
+        return any(anchor[3] is not None for anchor in part.anchors)
+
+    def starts(self, p: int, *, lazy: bool = False) -> Iterable[int]:
         """Where a part with no anchor is run from: every position, less those no run from
-        there can do anything at."""
+        there can do anything at. `lazy`: one at a time, holding none of them."""
         data = self.data
-        along = self._along(p)
+        along = self._along(p, lazy=lazy)
         if along is not None:
             return along
         ahead = self._ahead(p)
+        if ahead is not None and lazy:
+            return (m.start() for m in ahead.finditer(data))
         if ahead is not None:
             found: list[int] = []
-            most = min(Search.MOST, self.budget[0]) if self.budget is not None else Search.MOST
+            most = min(Places.MOST, self.budget[0]) if self.budget is not None else Places.MOST
             for m in ahead.finditer(data):
                 if len(found) >= most:
                     raise Search.too_many()
@@ -539,67 +635,36 @@ class _Hunt:
                 self.budget[0] -= len(found)
             return found
         firsts = self._firsts(p)
+        if firsts is None and lazy:
+            return iter(range(len(data)))
         if firsts is None:
-            most = min(Search.MOST, self.budget[0]) if self.budget is not None else Search.MOST
+            most = min(Places.MOST, self.budget[0]) if self.budget is not None else Places.MOST
             if len(data) > most:
                 raise Search.too_many()
             if self.budget is not None:
                 self.budget[0] -= len(data)
             return list(range(len(data)))
         mask = data.translate(bytes(1 if b in firsts else 0 for b in range(256)))
+        if lazy:
+            return Streams.finds(mask, b"\x01")
         return Search.occurrences(mask, b"\x01", self.budget)
 
-    def _along(self, p: int, segments: int | None = None) -> list[int] | None:
-        """The starts whose bytes follow a part's single starting path, found for the whole data
-        at once: each step's bytes become a 0/1 mask, the masks are shifted into line and ANDed
-        as integers (in C), and what survives is every position the path runs on from. None
-        when the part starts along no path of two steps or more. With `segments`, only that many
-        runs of one byte class from the path's start are used: fewer starts are ruled out, at a
-        bounded cost."""
+    def _along(
+        self, p: int, segments: int | None = None, *, lazy: bool = False
+    ) -> Iterable[int] | None:
+        """The starts whose bytes follow a part's single starting path (`Along`), found a window
+        at a time; None when the part starts along no path of two steps or more. With
+        `segments`, only that many runs of one byte class from the path's start are used: fewer
+        starts are ruled out, at a bounded cost."""
         part = self.s.parts[p]
         if self.s.flags.get("plain") or part.root_entry is None or self._widths() != [False]:
             return None
         steps = part.runners()[0].path(part.root_entry, nocase=self.nocase, dotall=self.dotall)
         if len(steps) < 2:
             return None
-        data, n = self.data, len(self.data)
-        if n == 0:
-            return []
-        masks: dict[bytes, int] = {}
-
-        def mask(table: bytes) -> int:
-            m = masks.get(table)
-            if m is None:
-                m = masks[table] = int.from_bytes(data.translate(table), "little")
-            return m
-
-        alive = mask(steps[0])
-        i, used = 1, 1
-        while i < len(steps) and alive:
-            if segments is not None and used >= segments:
-                break
-            used += 1
-            same = 1  # how many steps from i ask for the same bytes
-            while i + same < len(steps) and steps[i + same] == steps[i]:
-                same += 1
-            if same >= 4:
-                # one byte class `same` times over: AND windows that double in length until one
-                # covers half the run, then close it with one more, overlapping
-                run, covered = mask(steps[i]), 1
-                while covered * 2 <= same:
-                    run &= run >> (8 * covered)
-                    covered *= 2
-                if covered < same:
-                    run &= run >> (8 * (same - covered))
-                alive &= run >> (8 * i)
-                i += same
-            else:
-                alive &= mask(steps[i]) >> (8 * i)
-                i += 1
-        if not alive:
-            return []
-        found = alive.to_bytes(n, "little")
-        return Search.occurrences(found, b"\x01", self.budget)
+        if lazy:
+            return Along.lazy(steps, self.data, segments)
+        return Along.listed(steps, self.data, segments, self.budget)
 
     def _ahead(self, p: int) -> re.Pattern[bytes] | None:
         """For a part searched for only one byte wide, `Threads.prefilter` of its start."""
@@ -670,15 +735,32 @@ class _Hunt:
     def _viable(self, p: int, anchor: AnchorAt, offset: int) -> bool:
         """Whether the runs `_check` makes from an anchor at `offset` can find anything: the
         bytes from the anchor must follow its forward run's starting path, and the bytes before
-        it its backward run's. Both are worked out for the whole data at once, for each pair of
-        entries, and only for a part whose anchors occur often enough to repay it."""
+        it its backward run's, each step's byte in its class (a byte outside the data is in
+        none). Read at `offset` alone, the path worked out once for each pair of entries."""
         key = (p, anchor[2], anchor[3])
-        ok = self.feasible.get(key, False)
-        if ok is False:
-            ok = self.feasible[key] = self._viable_at(p, anchor[2], anchor[3])
-        return ok is None or bool(ok[offset])
+        reads = self.feasible.get(key, False)
+        if reads is False:
+            reads = self.feasible[key] = self._viable_reads(p, anchor[2], anchor[3])
+        if reads is None:
+            return True
+        data, n = self.data, len(self.data)
+        ahead, behind = reads
+        for k, table in ahead:
+            q = offset + k
+            if q >= n or not table[data[q]]:
+                return False
+        for k, table in behind:
+            q = offset - k - 1
+            if q < 0 or not table[data[q]]:
+                return False
+        return True
 
-    def _viable_at(self, p: int, fwd: int | None, back: int | None) -> bytearray | None:
+    def _viable_reads(
+        self, p: int, fwd: int | None, back: int | None
+    ) -> tuple[list[tuple[int, bytes]], list[tuple[int, bytes]]] | None:
+        """The steps `_viable` reads, as (how far from the anchor, the step's 0/1 class table),
+        forwards and backwards; None when the part is not tested so (plain, wide, no forward
+        entry, or paths of one step)."""
         part = self.s.parts[p]
         if self.s.flags.get("plain") or self._widths() != [False] or fwd is None:
             return None
@@ -691,50 +773,25 @@ class _Hunt:
         )
         if len(ahead) < 2 and len(behind) < 2:
             return None
-        n = len(self.data)
-        alive = (1 << (8 * (n + 1))) - 1  # one byte for each position, 0 to n
-        if len(ahead) >= 2:
-            alive &= self._path_mask(ahead, backwards=False)
-        if len(behind) >= 2:
-            alive &= self._path_mask(behind, backwards=True)
-        return bytearray(alive.to_bytes(n + 1, "little"))
+        return (
+            _Hunt._reads(ahead) if len(ahead) >= 2 else [],
+            _Hunt._reads(behind) if len(behind) >= 2 else [],
+        )
 
-    def _path_mask(self, steps: list[bytes], *, backwards: bool) -> int:
-        """Positions (as one byte each of an integer, 1 for yes) where a run reading `steps`
-        survives: forwards, step i reads the byte i after the position; backwards, the byte
-        i + 1 before it. Only the first `_Hunt.SEGMENTS` runs of one byte class are used."""
-        data = self.data
-        cache = self.masks_int
-
-        def mask(table: bytes) -> int:
-            m = cache.get(table)
-            if m is None:
-                m = cache[table] = int.from_bytes(data.translate(table), "little")
-            return m
-
-        def placed(m: int, i: int) -> int:
-            return m << (8 * (i + 1)) if backwards else m >> (8 * i)
-
-        alive = placed(mask(steps[0]), 0)
+    @staticmethod
+    def _reads(steps: list[bytes]) -> list[tuple[int, bytes]]:
+        """The steps of a path a viability test reads: the first, then the runs of one byte class
+        after it, `_Hunt.SEGMENTS` runs in all, each step of a run read."""
+        out = [(0, steps[0])]
         i, used = 1, 1
-        while i < len(steps) and alive and used < _Hunt.SEGMENTS:
+        while i < len(steps) and used < _Hunt.SEGMENTS:
             used += 1
             same = 1
             while i + same < len(steps) and steps[i + same] == steps[i]:
                 same += 1
-            run, covered = mask(steps[i]), 1
-            # one byte class `same` times over: windows doubled until one covers half the run,
-            # then one more, overlapping, closes it (forwards a window reaches on from the
-            # position, backwards it reaches back)
-            while covered * 2 <= same:
-                run &= (run << (8 * covered)) if backwards else (run >> (8 * covered))
-                covered *= 2
-            if covered < same:
-                extra = 8 * (same - covered)
-                run &= (run << extra) if backwards else (run >> extra)
-            alive &= placed(run, i)  # the window starts at the run's first step
+            out += [(k, steps[k]) for k in range(i, i + same)]
             i += same
-        return alive
+        return out
 
     def _check(self, p: int, anchor: AnchorAt, offset: int) -> None:
         part = self.s.parts[p]
@@ -753,7 +810,7 @@ class _Hunt:
             return  # a run from the anchor dies on the bytes around it, or no match fits there
         for wide in self._widths():
             if f.get("plain"):
-                length = Lanes(part.forward).run(fwd, self.data, offset)
+                length = Lanes(part.forward).run(fwd, self.data, offset, deadline=self.deadline)
             elif not wide and not part.can_start(fwd, self.data, offset, self.nocase, self.dotall):
                 length = -1  # every thread dies within the gate's reach having matched nothing
             else:
@@ -772,7 +829,9 @@ class _Hunt:
                     self._found(p, start, before + length, wide)
 
                 if f.get("plain"):
-                    Lanes(part.backward).run(back, self.data, offset, backwards=True, every=found)
+                    Lanes(part.backward).run(
+                        back, self.data, offset, backwards=True, every=found, deadline=self.deadline
+                    )
                 else:
                     part.runners()[1].run(
                         back, self.data, offset, backwards=True, wide=wide, nocase=self.nocase,
@@ -799,6 +858,8 @@ class _Hunt:
         data, n = self.data, len(self.data)
         if part.fits:
             length = len(anchor[0]) + anchor[1]
+        elif p in self.texts:
+            length = self.texts[p].get(offset, 0)
         elif "nocase" in f:
             length = 0
             if "ascii" in f:
@@ -903,61 +964,4 @@ class _Hunt:
                 self._lengthen(p - 1, other, links + 1)
 
 
-class _Compare:
-    """Text compared at an offset: as is, every other byte zero (wide), or xored with a key."""
-
-    @staticmethod
-    def same(data: bytes, at: int, text: bytes, fold: bytes | None) -> int:
-        if len(data) - at < len(text):
-            return 0
-        piece = data[at : at + len(text)]
-        if fold is not None:
-            return len(text) if piece.translate(fold) == text.translate(fold) else 0
-        return len(text) if piece == text else 0
-
-    @staticmethod
-    def same_wide(data: bytes, at: int, text: bytes, fold: bytes | None) -> int:
-        if len(data) - at < 2 * len(text):
-            return 0
-        piece = data[at : at + 2 * len(text)]
-        if piece[1::2].count(0) != len(text):
-            return 0
-        low = piece[0::2]
-        if fold is not None:
-            return 2 * len(text) if low.translate(fold) == text.translate(fold) else 0
-        return 2 * len(text) if low == text else 0
-
-    @staticmethod
-    def xored(data: bytes, at: int, text: bytes) -> int:
-        if len(data) - at < len(text):
-            return 0
-        key = data[at] ^ text[0]
-        piece = data[at : at + len(text)]
-        return len(text) if all(a == b ^ key for a, b in zip(piece, text, strict=True)) else 0
-
-    @staticmethod
-    def xored_wide(data: bytes, at: int, text: bytes) -> int:
-        if len(data) - at < 2 * len(text):
-            return 0
-        key = data[at] ^ text[0]
-        for i, b in enumerate(text):
-            if data[at + 2 * i] != b ^ key or data[at + 2 * i + 1] ^ key != 0:
-                return 0
-        return 2 * len(text)
-
-    @staticmethod
-    def whole(data: bytes, start: int, length: int, wide: bool) -> bool:
-        """No letter or digit joins the match on either side (a zero byte between, if wide)."""
-        alnum = Bytes.ALNUM
-        n = len(data)
-        if wide:
-            if start >= 2 and data[start - 1] == 0 and data[start - 2] in alnum:
-                return False
-            end = start + length
-            return not (end + 1 < n and data[end + 1] == 0 and data[end] in alnum)
-        if start >= 1 and data[start - 1] in alnum:
-            return False
-        return not (start + length < n and data[start + length] in alnum)
-
-
-__all__ = ["MAX_HITS", "Search", "_Compare", "_Hunt"]
+__all__ = ["MAX_HITS", "Search", "_Hunt"]

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.analysis.shared.languages import LanguageRegistry
+from cordon_scanner.decide.code_model import CodeModelPass
 from cordon_scanner.detect.base import (
     FileUnit,
     GraphUnit,
@@ -21,13 +22,13 @@ from cordon_scanner.detect.registry import ComposerPluginHooks, ServerSources
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.engine.entries import PackageEntries
 from cordon_scanner.engine.package_format import PackageFormat
-from cordon_scanner.engine.parallel import ParallelScanner
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.archives import ArchiveMembers
 from cordon_scanner.engine.pipeline.ceilings import Ceilings
 from cordon_scanner.engine.pipeline.constants import (
     ARCHIVE_SLICE,
     HONOURED_PINS,
+    REPOSITORY_SCOPE,
 )
 from cordon_scanner.engine.pipeline.facts import TreeFacts
 from cordon_scanner.engine.pipeline.graph import Graph
@@ -36,12 +37,10 @@ from cordon_scanner.engine.pipeline.hooks import Hooks
 from cordon_scanner.engine.pipeline.images import Images
 from cordon_scanner.engine.pipeline.publisher import Publisher
 from cordon_scanner.engine.pipeline.releases import ReleaseChecks
-from cordon_scanner.engine.window_pass import WindowPass
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.errors import ArchiveError
-from cordon_scanner.foundation.models import Finding, Scope, Severity
+from cordon_scanner.foundation.models import Scope, Severity
 from cordon_scanner.foundation.results import Dependency, OperationalFinding
-from cordon_scanner.sources.base import Rejection
 from cordon_scanner.sources.registry import ArchiveReader
 
 if TYPE_CHECKING:
@@ -111,8 +110,7 @@ class ArchiveStages:
         try:
             for member_path, member_data in members:
                 if self.config.limits.total_timeout > 0 and time.monotonic() > deadline:
-                    acc.complete = False
-                    acc.append(
+                    acc.incomplete(
                         OperationalFinding.build(
                             path=path.name,
                             rule_id="OPERATIONAL.SCAN.TIMEOUT",
@@ -135,8 +133,7 @@ class ArchiveStages:
                     self.config.limits.max_memory_bytes > 0
                     and retained > self.config.limits.max_memory_bytes
                 ):
-                    acc.complete = False
-                    acc.append(
+                    acc.incomplete(
                         OperationalFinding.build(
                             path=path.name,
                             rule_id="OPERATIONAL.SCAN.MEMORY_LIMIT",
@@ -155,8 +152,10 @@ class ArchiveStages:
                     member_path, member_data, self.config.limits
                 )
                 if member_content.truncated:
-                    acc.complete = acc.complete and ArchiveMembers.read_to_end(member_content)
-                    acc.append(ArchiveMembers.truncated_note(member_path, member_content))
+                    note = ArchiveMembers.truncated_note(member_path, member_content)
+                    acc.append(
+                        note if ArchiveMembers.read_to_end(member_content) else acc.gap(note)
+                    )
                 units.append(
                     FileUnit(
                         content=member_content,
@@ -166,8 +165,7 @@ class ArchiveStages:
                 acc.files_scanned += 1
                 acc.bytes_scanned += len(member_data)
         except ArchiveError as exc:
-            acc.complete = False
-            acc.append(
+            acc.incomplete(
                 OperationalFinding.build(
                     path=path.name,
                     rule_id="OPERATIONAL.ARCHIVE.REJECTED",
@@ -181,23 +179,8 @@ class ArchiveStages:
                 )
             )
 
-        ArchiveStages.refused(rejected, acc, image)
-
-    @staticmethod
-    def refused(rejected: list[tuple[str, str, str]], acc: Accumulator, image: Any) -> None:
-        """Each member the archive reader refused, as a finding."""
         for member_path, reason, detail in rejected:
-            # A link has no content of its own, and a hidden zip member is read from its local
-            # header (`zip-local/`): neither refusal leaves anything unread. A hidden member that
-            # could not be read carries a refusal of its own (unreadable, or past the size limit).
-            acc.complete = acc.complete and reason in (Rejection.LINK, Rejection.HIDDEN)
-            finding = ArchiveMembers.rejected(member_path, reason, detail, image=image is not None)
-            acc.append(finding)
-            if reason not in (Rejection.LINK, Rejection.HIDDEN) and not finding.rule_id.startswith(
-                "OPERATIONAL."
-            ):
-                # The attack is reported; that the member went unread is said too.
-                acc.append(ArchiveMembers.not_examined(member_path, reason, detail))
+            ArchiveMembers.refuse(acc, member_path, reason, detail, image=image is not None)
 
     def context(
         self, units: list[FileUnit], acc: Accumulator, ctx: ScanContext, image: Any
@@ -205,6 +188,10 @@ class ArchiveStages:
         """What runs at install, at import and when an agent calls it, among the archive's members."""
         # Manifests inside a package determine whether its code runs at install
         # time, which is the whole reason a package archive is worth scanning.
+        # What a hook runs is read as its interpreter runs it, before anything reads a unit's
+        # language: the deobfuscation lift takes only JavaScript, so an obfuscated payload at
+        # lib/run.md, run by `node`, was still Markdown when the lift ran (modelling team's review).
+        Hooks.hooked_languages(units)
         units.extend(self.engine.units.inline_hooks(units))
         units.extend(self.engine.units.deobfuscated(units))
         hook_paths, consumer_hooks, ci_scripts = Hooks.manifest_hook_paths(units, acc)
@@ -260,20 +247,22 @@ class ArchiveStages:
             distribution=early_format,
             import_entry_paths=PackageEntries.of(units, early_format),
             library_entry_paths=PackageEntries.of(units, early_format, with_bin=False),
+            # Seeded from every entry, `bin` included: a command's relative requires run when it
+            # does (5E-1: the closure was seeded from the library entries only, so a bin script's
+            # helper was in no reach set).
             library_closure_paths=frozenset(
-                Hooks.hook_js_closure(
-                    units, set(PackageEntries.of(units, early_format, with_bin=False))
-                )
+                Hooks.hook_js_closure(units, set(PackageEntries.of(units, early_format)))
             ),
             declared_dependencies=EcosystemRegistry.declared_dependencies(units, early_format),
             package_repository=PackageEntries.repository(units, early_format),
         )
+        ctx = replace(ctx, verdict_dependency_names=Ceilings.verdict_dependency_names(units))
         return Hooks.lifted_inherit(ctx)
 
     def parallel(
         self, units: list[FileUnit], deadline: float, acc: Accumulator, path: Path, ctx: ScanContext
-    ) -> tuple[list[Detector], list[FileUnit]]:
-        """The members detectors read in parallel, when the archive is large enough to be worth it."""
+    ) -> list[Detector]:
+        """Every member, read by the detectors in supervised workers (item 28)."""
         detectors = [d for d in self.detectors if self.engine.detection.enabled(d, ctx)]
         self.progress.phase("scanning", total=len(units))
         # An image or a large archive is thousands of members (a Grafana image adds eleven
@@ -282,102 +271,70 @@ class ArchiveStages:
         content_detectors = [
             d for d in detectors if not (d.requires.dependencies and d.requires.content is False)
         ]
-        workers = ParallelScanner.worker_count(
-            self.config.limits.max_workers, len(units), sum(len(u.content.raw) for u in units)
-        )
-        if workers > 1:
-            from cordon_scanner.engine.cache import CacheSignature
+        # Always in supervised workers, one as readily as many (item 28): a member that kills or
+        # hangs its worker costs that member; this process never inspects one.
+        from cordon_scanner.engine.cache import CacheSignature
 
-            signature = CacheSignature.scan_signature(content_detectors, ctx, self.config)
-            for start in range(0, len(units), ARCHIVE_SLICE):
-                if self.config.limits.total_timeout > 0 and time.monotonic() > deadline:
-                    acc.complete = False
-                    acc.append(
-                        OperationalFinding.build(
-                            path=path.name,
-                            rule_id="OPERATIONAL.SCAN.TIMEOUT",
-                            message=f"The {self.config.limits.total_timeout:.0f}s budget was reached with members still unexamined.",
-                            remediation="Raise --timeout, or unpack and scan as a directory.",
-                            severity=Severity.MEDIUM,
-                        )
-                    )
-                    break
-                found = self.engine.detection.parallel(
-                    units[start : start + ARCHIVE_SLICE],
-                    path.parent,
-                    ctx,
-                    acc,
-                    content_detectors,
-                    signature,
-                    carry_content=True,
-                    where=path.name,
-                )
-                acc.add(found)
-                if any(f.rule_id == "OPERATIONAL.SCAN.TIMEOUT" for f in found):
-                    break  # the pool stopped at the budget and said so; no slice after it
-            units_left: list[FileUnit] = []
-        else:
-            units_left = units
-        return detectors, units_left
-
-    def serial(
-        self,
-        units_left: list[FileUnit],
-        deadline: float,
-        acc: Accumulator,
-        path: Path,
-        detectors: list[Detector],
-        ctx: ScanContext,
-        units: list[FileUnit],
-    ) -> None:
-        """The members left for this process, then the checks on the release as a whole."""
-        for unit in units_left:
-            # The same budget the directory path applies between units. Most of
-            # the cost of a hostile archive is here rather than in extraction --
-            # a fifty-thousand-member archive expands in a second and then takes
-            # eight to match against -- so a deadline that only covered
-            # expansion bounded the wrong half.
+        signature = CacheSignature.scan_signature(content_detectors, ctx, self.config)
+        for start in range(0, len(units), ARCHIVE_SLICE):
             if self.config.limits.total_timeout > 0 and time.monotonic() > deadline:
-                acc.complete = False
-                acc.append(
+                acc.incomplete(
                     OperationalFinding.build(
                         path=path.name,
                         rule_id="OPERATIONAL.SCAN.TIMEOUT",
-                        message=(
-                            f"The {self.config.limits.total_timeout:.0f}s budget was reached "
-                            f"with members still unexamined."
-                        ),
+                        message=f"The {self.config.limits.total_timeout:.0f}s budget was reached with members still unexamined.",
                         remediation="Raise --timeout, or unpack and scan as a directory.",
                         severity=Severity.MEDIUM,
                     )
                 )
                 break
-            member_detectors = [
-                d
-                for d in detectors
-                if not (d.requires.dependencies and d.requires.content is False)
-            ]
-            produced: list[Finding] = []
-            for detector in member_detectors:
-                produced.extend(self.engine.detection.run(detector, unit, ctx, acc))
-            # The rest of an oversized member, a window at a time, as `_inspect_file` reads one.
-            windowed, intact = WindowPass.run(
-                unit,
-                member_detectors,
-                lambda detector, part: self.engine.detection.run(detector, part, ctx, acc),
-                produced,
+            found = self.engine.detection.parallel(
+                units[start : start + ARCHIVE_SLICE],
+                path.parent,
+                ctx,
+                acc,
+                content_detectors,
+                signature,
+                carry_content=True,
+                where=path.name,
             )
-            produced.extend(windowed)
-            if not intact:
-                acc.complete = False
-                produced.append(ArchiveMembers.changed_while_read(unit.path))
-            acc.add(produced)
-            self.progress.advance(unit.path)
+            acc.add(found)
+            if any(f.rule_id == "OPERATIONAL.SCAN.TIMEOUT" for f in found):
+                break  # the pool stopped at the budget and said so; no slice after it
+        return detectors
+
+    def release_checks(self, acc: Accumulator, ctx: ScanContext, units: list[FileUnit]) -> None:
+        """The checks on the release as a whole, after every member was read in the workers. There
+        is no per-member pass here: this process never inspects a member (item 28; item 55 deleted
+        the loop that was left for one, which no member reached)."""
+        if acc.out_of_time(ctx, REPOSITORY_SCOPE, "the release checks"):
+            return
         acc.add(ReleaseChecks.unexamined_install_code(acc.findings, ctx))
         acc.add(ReleaseChecks.native_code_in_a_pure_wheel(units, ctx))
         acc.add(ReleaseChecks.known_malicious_release(units, ctx))
         acc.add(ReleaseChecks.placeholder_release(units, ctx))
         acc.add(ReleaseChecks.borrowed_server_name(units, ctx))
+
+    def deferred(
+        self,
+        units: list[FileUnit],
+        acc: Accumulator,
+        path: Path,
+        detectors: list[Detector],
+        ctx: ScanContext,
+    ) -> None:
+        """A rule file reading the scanner's facts, matched over the members now that they exist,
+        before every step after detection (`engine/pipeline/facts`)."""
+        from cordon_scanner.engine.pipeline.facts import ScanFactsGathering
+
+        if acc.out_of_time(ctx, REPOSITORY_SCOPE, "the rule file's deferred pass"):
+            return
+        content = [
+            d for d in detectors if not (d.requires.dependencies and d.requires.content is False)
+        ]
+        ScanFactsGathering.deferred(
+            self.engine, content, units, acc, path.parent, ctx, carry_content=True, where=path.name
+        )
 
     def dependencies(
         self, units: list[FileUnit], acc: Accumulator, image: Any, ctx: ScanContext
@@ -421,7 +378,8 @@ class ArchiveStages:
                         )
                     ),
                     self.config.policy.advisory_domains,
-                )
+                ),
+                reached=ctx.install_hook_paths | ctx.import_entry_paths,
             )
             acc.findings[:] = PackageFormat.union(acc.findings, repository)
             honoured = HONOURED_PINS.get(package)
@@ -505,7 +463,9 @@ class ArchiveStages:
                 *(d for d in dependencies if (d.ecosystem, d.name.lower(), d.version) in present),
                 *installed,
             )
-        if dependencies:
+        if dependencies and not acc.out_of_time(
+            ctx, REPOSITORY_SCOPE, "the dependency graph's checks"
+        ):
             ctx = replace(ctx, dependencies=Graph.packages(dependencies))
             graph_unit = GraphUnit(dependencies=Graph.packages(dependencies))
             for detector in self.detectors:
@@ -515,19 +475,27 @@ class ArchiveStages:
                     continue
                 acc.add(self.engine.detection.run(detector, graph_unit, ctx, acc))
 
-        labels: dict[str, Any] = {}
+        from cordon_scanner.engine.pipeline.facts import ScanFactsGathering
+
+        # The operator's suppressions and the folds, as a directory scan applies them (they were
+        # missing here, so a package was graded differently packed and unpacked); the
+        # suppressions are the operator's config, never anything read from inside the archive.
+        from cordon_scanner.engine.pipeline.results import ResultFolding
+
+        acc.findings[:], code_model = CodeModelPass.decide(self.engine, acc.findings, ctx)
+        acc.findings[:] = ResultFolding.settled(self.config, acc)
         acc.findings[:], verdict = Ceilings.verdict(
             Ceilings.hardening_tier(
                 Hooks.onto_manifest(Publisher.test_identity_keys(acc.findings, units), units),
                 self.config.policy,
             ),
             units,
-            {
-                **self.engine._capability_profile(units, ctx, labels),
-                **History.registry_facts(units),
-            },
-            self.engine._intent_observation(units, ctx, labels),
+            ScanFactsGathering.verdict_facts(self.engine, units, ctx, acc),
+            self.engine._intent_observation(units, ctx, acc.facts),
+            repository=not ctx.package_distribution,
+            facts=acc.facts,
         )
+        acc.findings.extend(code_model)
         dependencies = self.engine.detection.annotated(dependencies, acc.findings, ctx, units)
         return dependencies, verdict
 

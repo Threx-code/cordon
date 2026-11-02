@@ -5,16 +5,22 @@
   tampering     a changed byte, a forged or missing seal, another file's index -> never opened
   injection     a name is bound as a parameter, never written into SQL
   read-only     a write through the index's connection fails
+  streaming     the build reads the file element by element (`AdvisoryFiles.stream_records`):
+                what `json.load` makes of it, at every window size; non-JSON refused
 ```
 """
 
 from __future__ import annotations
 
+import gzip
 import json
+import random
+from pathlib import Path
 
 import pytest
 
 from cordon_scanner.intel.advisories import advisories, shipped
+from cordon_scanner.intel.advisories.advisories import AdvisoryFiles
 from cordon_scanner.intel.advisories.advisory_index import AdvisoryIndex
 from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
 
@@ -158,3 +164,103 @@ class TestQueries:
         assert [r["id"] for r in records["left-pad"]] == ["GHSA-2", "GHSA-9"]
         assert records.record_count == 3
         assert "other" in records and "missing" not in records
+
+
+WINDOWS = (1, 2, 3, 5, 7, 16, 64, 1 << 20)
+
+
+class StreamKit:
+    @staticmethod
+    def record(rng: random.Random, i: int) -> object:
+        text = "".join(rng.choice('ab ,:[]{}"\\\n\té💥\u2028') for _ in range(rng.randint(0, 12)))
+        return {
+            "name": f"pkg-{i}",
+            "id": f"GHSA-{i:04d}",
+            "summary": text,
+            "ranges": [[rng.randint(-5, 10**12), rng.random(), None, True]],
+            "nested": {"deep": [{"x": text}] * rng.randint(0, 3)},
+        }
+
+    @staticmethod
+    def write(tmp_path: Path, text: str, zipped: bool) -> Path:
+        path = tmp_path / ("a.json.gz" if zipped else "a.json")
+        if zipped:
+            with gzip.open(path, "wt", encoding="utf-8") as handle:
+                handle.write(text)
+        else:
+            path.write_text(text, encoding="utf-8")
+        return path
+
+    @staticmethod
+    def streamed(path: Path, window: int) -> list[object]:
+        return list(AdvisoryFiles.stream_records(path, chunk=window))
+
+
+class TestStreamedElements:
+    @pytest.mark.parametrize("zipped", [True, False])
+    def test_random_arrays_stream_as_json_load_reads_them(
+        self, tmp_path: Path, zipped: bool
+    ) -> None:
+        rng = random.Random(20261031)  # noqa: S311 -- a fixture, not key material
+        for trial in range(40):
+            values: list[object] = [StreamKit.record(rng, i) for i in range(rng.randint(0, 25))]
+            values += [rng.randint(-(10**15), 10**15), 1.5e300, "s", None, False, [], {}]
+            rng.shuffle(values)
+            gap = rng.choice(["", " ", "\n", " \t\r\n "])
+            text = gap + "[" + gap + ("," + gap).join(json.dumps(v) for v in values) + gap + "]"
+            path = StreamKit.write(tmp_path, text + gap, zipped)
+            whole = AdvisoryFiles._read_records(path)
+            for window in WINDOWS:
+                assert StreamKit.streamed(path, window) == whole, (trial, window)
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "[]",
+            " [ ] ",
+            "[\n]\n",
+            "[1, 23, 456, 7890]",
+            "[-0.5e-3]",
+            "[1.25 ,-0.5E+3,10e2 ]",
+            "[0 ]",
+        ],
+    )
+    def test_short_arrays_and_numbers_cut_by_the_window(self, tmp_path: Path, text: str) -> None:
+        """A number cut by the window (`-0` of `-0.5e-3`) is taken only once its ',' or ']' is read."""
+        path = StreamKit.write(tmp_path, text, zipped=False)
+        for window in WINDOWS:
+            assert StreamKit.streamed(path, window) == json.loads(text)
+
+    @pytest.mark.parametrize("text", ['{"a": [1]}', '"[1, 2]"', "", "  ", "7"])
+    def test_a_top_level_that_is_not_an_array_yields_nothing(
+        self, tmp_path: Path, text: str
+    ) -> None:
+        path = StreamKit.write(tmp_path, text, zipped=False)
+        assert StreamKit.streamed(path, 3) == []
+
+
+class TestStreamedTextThatIsNotJson:
+    @pytest.mark.parametrize(
+        "text", ["[1,]", "[1 2]", "[1]x", "[1", '[{"a": ', "[,1]", "[1,,2]", '["a]', "[1]]"]
+    )
+    def test_it_is_refused(self, tmp_path: Path, text: str) -> None:
+        with pytest.raises(ValueError):
+            json.loads(text)
+        path = StreamKit.write(tmp_path, text, zipped=False)
+        for window in WINDOWS:
+            with pytest.raises(ValueError):
+                StreamKit.streamed(path, window)
+
+    def test_a_gzip_stream_cut_short_is_refused(self, tmp_path: Path) -> None:
+        path = StreamKit.write(tmp_path, json.dumps([{"name": "a"}] * 2_000), zipped=True)
+        path.write_bytes(path.read_bytes()[:-40])
+        with pytest.raises(ValueError):
+            StreamKit.streamed(path, 64)
+
+
+class TestTheStreamedBuild:
+    def test_the_stream_keeps_what_parse_keeps(self, tmp_path: Path) -> None:
+        """Records without a name, and elements that are not records, are left out alike."""
+        values = [{"name": "a", "id": "1"}, {"id": "2"}, 3, {"name": ""}, {"name": "B", "id": "4"}]
+        path = StreamKit.write(tmp_path, json.dumps(values), zipped=True)
+        assert list(ShippedAdvisories._stream(path)) == ShippedAdvisories._parse(path)

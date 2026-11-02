@@ -44,7 +44,7 @@ from cordon_scanner.engine.pipeline.coverage import Coverage
 from cordon_scanner.engine.pipeline.dependencies import Dependencies
 from cordon_scanner.engine.pipeline.detection import Detection
 from cordon_scanner.engine.pipeline.facts import TreeFacts
-from cordon_scanner.engine.pipeline.graph import Graph
+from cordon_scanner.engine.pipeline.graph import Graph, ParsedManifests
 from cordon_scanner.engine.pipeline.hooks import Hooks
 from cordon_scanner.engine.pipeline.images import Images
 from cordon_scanner.engine.pipeline.stages import ScanStages
@@ -78,6 +78,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Sequence
 
     from cordon_scanner.detect.base import Detector
+    from cordon_scanner.engine.pipeline.units import Expansion
     from cordon_scanner.foundation.models import Finding
 
 
@@ -113,7 +114,7 @@ class Engine:
         self.progress: Progress = progress if progress is not None else NullProgress()
         # Archives opened during a directory scan, by content hash, and the
         # counters reported in `ScanStats`: opened, members, milliseconds.
-        self._expansions: dict[str, list[tuple[str, bytes]] | None] = {}
+        self._expansions: dict[str, Expansion] = {}
         self._archive_stats = [0, 0, 0]
         # What an ingested SBOM itself lists as vulnerable: `(document, vulnerability, purl,
         # name, version, tool)`, reported once the scan's own matching has run.
@@ -121,6 +122,8 @@ class Engine:
         # True while the scan TARGET is an archive, where its members' lockfiles are
         # the package's own graph rather than a vendored artefact's.
         self._scanning_archive = False
+        #: The template this scan's workers are forked from (`scan`), while a scan runs.
+        self._template: Any = None
         self.coverage = Coverage(self)
         self.stages = ScanStages(self)
         self.archive_stages = ArchiveStages(self)
@@ -138,15 +141,60 @@ class Engine:
 
     def scan(self, target: str | Path) -> ScanResult:
         """Scan a target and return a complete, sorted result."""
+        self._begin_scan()
+        # Before anything is read: the template every worker is forked from holds no scanned byte.
+        self._template = self._start_template()
         try:
             return Collector.during(self._scan, target)  # foundation/collector: GC relaxed
         finally:
-            # In a `finally`: the progress line is a partial line with no newline, so leaving it
-            # puts a traceback or an error message on the same row as a half-drawn progress bar.
-            self.progress.finish()
-            # And the caches that hold this scan's files, emptied whether it returned or raised:
-            # kept, they held the last files of every scan in a long-running process.
-            ScanCaches.after_scan()
+            self._end_scan()
+
+    def _begin_scan(self) -> None:
+        """What one scan sets is set afresh by the next: a long-running Scanner (the server, MCP)
+        carried it over. The archive counts start from zero, in place since the units stage holds
+        the list; and "the target is an archive" is false until the archive path says otherwise.
+        Kept True after one archive scan, it made every later directory scan graph a vendored
+        archive's lockfiles as the project's own installs."""
+        self._archive_stats[:] = [0, 0, 0]
+        self._scanning_archive = False
+
+    def _end_scan(self) -> None:
+        """What one scan holds is let go when it ends, whether it returned or raised."""
+        # The template this scan's workers were forked from (a host scan starts none, so it is None).
+        if self._template is not None:
+            self._template.close()
+            self._template = None
+        # The engine the template's workers were built from ends with the scan: kept, it held this
+        # engine (its rules and config) in a long-running process, and a later scan whose workers
+        # are spawned could read it.
+        from cordon_scanner.engine.parallel import ParallelScanner
+
+        ParallelScanner._template_engine = None
+        # The progress line is a partial line with no newline, so leaving it puts a traceback or
+        # an error message on the same row as a half-drawn progress bar.
+        self.progress.finish()
+        # The caches that hold this scan's files: kept, they held the last files of every scan in
+        # a long-running process.
+        ScanCaches.after_scan()
+        # The archives this scan expanded, members' bytes and all, and what an ingested SBOM
+        # listed: cleared in place, since the units and dependency stages hold them.
+        self._expansions.clear()
+        self._sbom_listed.clear()
+
+    def _start_template(self) -> Any:
+        """The scan's template (`engine/isolation/template.py`), forked now, or None where workers
+        are spawned instead: a platform without fork, or a process not single-threaded here (a
+        fork can leave another thread's lock held for good in the child)."""
+        import threading
+
+        from cordon_scanner.engine.isolation.supervisor import WorkerMain
+        from cordon_scanner.engine.isolation.template import Template
+        from cordon_scanner.engine.parallel import ParallelScanner
+
+        if not Template.available() or threading.active_count() != 1:
+            return None
+        ParallelScanner._template_engine = self
+        return Template.start(WorkerMain.from_template)
 
     def scan_host(self, root: str | Path, home: str | Path | None = None) -> ScanResult:
         """What an installed system holds (advanced gap M7): its distribution's packages and the
@@ -154,10 +202,11 @@ class Engine:
         left (`images/host.py`), then matched as an image's are -- language packages against the
         advisory database, OS packages through OSV with `--online`. Files are not content-scanned:
         that is what `scan` of a directory is for."""
+        self._begin_scan()
         try:
             return self._scan_host(Path(root), Path(home) if home is not None else None)
         finally:
-            self.progress.finish()
+            self._end_scan()
 
     def _scan_host(self, root: Path, home: Path | None) -> ScanResult:
         from cordon_scanner.images.host import HostFilesystem
@@ -170,8 +219,7 @@ class Engine:
         self.progress.phase("inventory")
         inventory = HostFilesystem(root, home).inventory()
         for problem in inventory.problems:
-            acc.complete = False
-            acc.append(
+            acc.incomplete(
                 OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.HOST.PARTIAL",
@@ -191,6 +239,8 @@ class Engine:
                     if detector.requires.dependencies and self.detection.enabled(detector, ctx):
                         acc.add(self.detection.run(detector, graph_unit, ctx, acc))
         dependencies = self.detection.annotated(dependencies, acc.findings, ctx, [])
+        ParsedManifests.report_raised(acc)
+        acc.ended_late(ctx, REPOSITORY_SCOPE)
         acc.explain_incomplete()
         result = ScanResult(
             findings=tuple(acc.findings),
@@ -205,9 +255,7 @@ class Engine:
                 duration_ms=int((time.monotonic() - started) * 1000),
                 detector_cpu_ms=DetectorClock.milliseconds(),
             ),
-            complete=acc.complete and acc.advisory_complete,
-            content_complete=acc.complete,
-            advisory_complete=acc.advisory_complete,
+            **acc.coverage(),
             schema_version=SCHEMA_VERSION,
             engine_version=__version__,
             rulepack_version=self.rules.version,
@@ -252,6 +300,8 @@ class Engine:
 
         self.stages.after_detection(dependencies, acc, units, ctx, inventory)
 
+        ParsedManifests.report_raised(acc)
+        acc.ended_late(ctx, REPOSITORY_SCOPE)
         acc.explain_incomplete()
         findings, verdict, dependencies = self.stages.fold_and_judge(acc, units, ctx, dependencies)
         result = ScanResult(
@@ -275,9 +325,7 @@ class Engine:
                 duration_ms=int((time.monotonic() - started) * 1000),
                 detector_cpu_ms=DetectorClock.milliseconds(),
             ),
-            complete=acc.complete and acc.advisory_complete,
-            content_complete=acc.complete,
-            advisory_complete=acc.advisory_complete,
+            **acc.coverage(),
             schema_version=SCHEMA_VERSION,
             engine_version=__version__,
             rulepack_version=self.rules.version,
@@ -347,7 +395,39 @@ class Engine:
                     severity=Severity.MEDIUM,
                 )
             )
+        self._reuse_status(acc)
         return status.to_dict()
+
+    def _reuse_status(self, acc: Accumulator) -> None:
+        """The code-reuse index (item 54), when this build ships one: an index that is malformed,
+        unsorted or past its age is not used, and that is an advisory gap, as stale intel is. A build
+        with none has no reuse check and nothing to say, as a build with no feed has no age check."""
+        from cordon_scanner.intel.registry import ReuseIndex
+
+        if self.config.max_intel_age == 0:
+            return
+        _, problem = ReuseIndex.shipped()
+        if not problem:
+            return
+        acc.advisory_complete = False
+        stale = problem.startswith("stale")
+        acc.append(
+            OperationalFinding.build(
+                path=REPOSITORY_SCOPE,
+                rule_id="OPERATIONAL.INTEL.REUSE_STALE"
+                if stale
+                else "OPERATIONAL.INTEL.REUSE_UNAVAILABLE",
+                message=(
+                    f"The index of known malware code files was not used ({problem.split(': ', 1)[-1]}), "
+                    "so a file copied from an earlier campaign would not be matched."
+                ),
+                remediation=(
+                    "Run `cordon-scanner intel update` (the index refreshes daily with the feed), or "
+                    "reinstall Cordon to restore the bundled copy."
+                ),
+                severity=Severity.MEDIUM,
+            )
+        )
 
     # -- Archives ---------------------------------------------------------
 
@@ -407,12 +487,15 @@ class Engine:
 
         ctx = self.archive_stages.context(units, acc, ctx, image)
 
-        detectors, units_left = self.archive_stages.parallel(units, deadline, acc, path, ctx)
-        self.archive_stages.serial(units_left, deadline, acc, path, detectors, ctx, units)
+        detectors = self.archive_stages.parallel(units, deadline, acc, path, ctx)
+        self.archive_stages.release_checks(acc, ctx, units)
+        self.archive_stages.deferred(units, acc, path, detectors, ctx)
 
         dependencies, target_kind, ctx = self.archive_stages.dependencies(units, acc, image, ctx)
         dependencies, verdict = self.archive_stages.verdict(acc, ctx, image, units, dependencies)
         self.archive_stages.not_installed(acc, ctx)
+        ParsedManifests.report_raised(acc)
+        acc.ended_late(ctx, path.name)
         acc.explain_incomplete()
         result = ScanResult(
             findings=tuple(acc.findings),
@@ -430,9 +513,7 @@ class Engine:
                 duration_ms=int((time.monotonic() - started) * 1000),
                 detector_cpu_ms=DetectorClock.milliseconds(),
             ),
-            complete=acc.complete and acc.advisory_complete,
-            content_complete=acc.complete,
-            advisory_complete=acc.advisory_complete,
+            **acc.coverage(),
             schema_version=SCHEMA_VERSION,
             engine_version=__version__,
             rulepack_version=self.rules.version,
@@ -510,7 +591,7 @@ class Engine:
         hooks = [hook for hook in hooks if Hooks.hook_executes(hook, package_directories)]
 
         if acc is not None and walker.stats.limit_hit:
-            acc.complete = False
+            acc.named_elsewhere("OPERATIONAL.SCAN.LIMIT", REPOSITORY_SCOPE)
 
         # A project is a subtree with its own manifest. Modelling a monorepo as
         # N projects is what keeps detector selection correct: without it, a
@@ -653,7 +734,8 @@ class Engine:
             if tree is not None and hooks_from_tree is not None:
                 manifest = hooks_from_tree(manifest, tree)
             return list(manifest.hooks)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 -- said once (ParsedManifests.report_raised)
+            ParsedManifests.record_raised(rel_path, exc)
             return []
 
     # -- Phase 1: planning and unit production ---------------------------
@@ -716,35 +798,35 @@ class Engine:
     _PROFILE_FILES: ClassVar[int] = 50
 
     def _intent_observation(
-        self, units: Sequence[FileUnit], ctx: ScanContext, labels: dict[str, Any]
+        self, units: Sequence[FileUnit], ctx: ScanContext, facts: dict[str, dict[str, list[Any]]]
     ) -> Any:
         """When each effect of the package runs, and what hides it (`core/intent.py`); None for a
-        package the intent layer does not read."""
+        package the intent layer does not read. Each file's half is its worker's
+        (`IntentObserver.file_facts`, item 56): read here from `facts`, never from the file."""
         from cordon_scanner.decide.intent import IntentObserver
         from cordon_scanner.detect.base import CapabilityLabelling
-        from cordon_scanner.detect.registry import DownloadFlow
+        from cordon_scanner.engine.isolation.analysis_facts import ParentAnalysis
 
         detector = next((d for d in self.detectors if isinstance(d, CapabilityLabelling)), None)
         if detector is None or not IntentObserver.applies(ctx):
             return None
         files = [u for u in units if isinstance(u, FileUnit)]
 
-        def label(unit: FileUnit) -> list[tuple[str, int]]:
-            labelled = TreeFacts.labelled_once(detector, unit, ctx, labels)
-            out = [(hit.capability.value, hit.byte_start) for hit in (labelled or ((),))[0]]
-            lines = DownloadFlow.runs_download(unit.content.text, unit.language)
-            if lines:
-                raw = unit.content.raw
-                starts = [0, *(i + 1 for i, b in enumerate(raw) if b == 10)]
-                out += [("runs_download", starts[min(n, len(starts)) - 1]) for n in lines]
-            return out
+        def file_facts(unit: FileUnit) -> tuple[list[tuple[str, bool]], set[str]]:
+            if ParentAnalysis.raised(facts, unit.path):
+                raise ValueError("the file's labelling raised in its worker")
+            held = ParentAnalysis.of(facts, unit.path)
+            effects = [
+                (str(cap), bool(deferred)) for cap, deferred in held.get("intent.effect", ())
+            ]
+            return effects, {str(fact) for fact in held.get("intent.fact", ())}
 
         return IntentObserver.observe(
-            files, ctx, label, lambda seeds: Hooks.hook_js_closure(files, seeds)
+            files, ctx, file_facts, lambda seeds: Hooks.hook_js_closure(files, seeds)
         )
 
     def _capability_profile(
-        self, units: Sequence[FileUnit], ctx: ScanContext, labels: dict[str, Any] | None = None
+        self, units: Sequence[FileUnit], ctx: ScanContext, facts: dict[str, dict[str, list[Any]]]
     ) -> dict[str, float]:
         """What the code that runs on its own can do: the capabilities of the files an install
         runs, of the files importing the package runs first, and of the scripts an agent runs.
@@ -756,7 +838,8 @@ class Engine:
         everything else; on its own it blocks nothing.
         """
         from cordon_scanner.detect.base import CapabilityLabelling
-        from cordon_scanner.detect.registry import DownloadFlow, ReachedFlows
+        from cordon_scanner.detect.registry import ReachedFlows
+        from cordon_scanner.engine.isolation.analysis_facts import PROFILE_BYTES, ParentAnalysis
 
         detector = next((d for d in self.detectors if isinstance(d, CapabilityLabelling)), None)
         if detector is None:
@@ -771,25 +854,23 @@ class Engine:
             held: set[str] = set()
             read = 0
             for unit in units:
-                if unit.path not in paths or unit.content.size > 1_000_000:
+                if unit.path not in paths or unit.content.size > PROFILE_BYTES:
                     continue
                 if read >= Engine._PROFILE_FILES:
                     break
                 read += 1
-                try:
-                    labelled = TreeFacts.labelled_once(detector, unit, ctx, labels)
-                except Exception:  # noqa: BLE001, S112
+                # The file's labels and download runs, as its worker read them (item 56): a
+                # labelling that raised there is skipped here, as the call raising here was.
+                labels = ParentAnalysis.labels(facts, unit.path)
+                if labels is None:
                     continue
-                if labelled is not None:
-                    held |= {hit.capability.value for hit in labelled[0]}
-                if "runs_download" not in held and DownloadFlow.runs_download(
-                    unit.content.text, unit.language
-                ):
+                held |= labels
+                if ParentAnalysis.runs_download(facts, unit.path):
                     held.add("runs_download")
             out[f"{place}_files"] = float(read)
             out[f"{place}_capabilities"] = float(len(held))
             out.update({f"{place}_can_{name}": 1.0 for name in held})
-        return out | ReachedFlows.of(units, ctx)  # what the reached code does with what it reads
+        return out | ReachedFlows.of(units, ctx, facts)  # what the reached code does with it
 
     # -- Phase 2: execution ----------------------------------------------
 

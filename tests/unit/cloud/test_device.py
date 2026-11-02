@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from pathlib import Path
 
@@ -84,6 +85,43 @@ class TestCollect(DeviceFixtures):
         assert "SECRET.MCP.INLINE_CREDENTIAL.001" in rules
         assert "SUSPECT.MCP.UNPINNED.001" in rules
 
+    def test_no_time_budget_cuts_the_agent_findings(self, home, monkeypatch) -> None:
+        """However small per_file_timeout is, the detector runs to its end: a device scan's
+        answer does not depend on how busy the machine is (2026-10-31)."""
+        from cordon_scanner.foundation.config import settings
+
+        real = settings.Config.default
+
+        def tiny() -> settings.Config:
+            config = real()
+            return config.with_overrides(limits=config.limits.merged(per_file_timeout=1e-9))
+
+        # one file whose run yields several findings: a cut keeping only a run's first shows here
+        (home / ".cursor" / "mcp.json").write_text(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        name: {
+                            "command": "npx",
+                            "args": ["-y", f"@acme/{name}"],
+                            "env": {"API_KEY": SECRET},
+                        }
+                        for name in ("pay", "ledger", "audit")
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        def keyed(findings: list[dict]) -> list[tuple]:
+            return sorted((f["rule_id"], f["path"], f["line"]) for f in findings)
+
+        default = keyed(device.DeviceInventory.collect(home)["findings"])
+        monkeypatch.setattr(settings.Config, "default", staticmethod(tiny))
+        tight = keyed(device.DeviceInventory.collect(home)["findings"])
+        in_one = [k for k in default if k[1].endswith("mcp.json")]
+        assert len(in_one) >= 2 and tight == default  # every finding, not each run's first
+
     def test_no_secret_and_no_unlisted_file_leaves(self, home) -> None:
         payload = json.dumps(device.DeviceInventory.collect(home))
         assert SECRET not in payload
@@ -127,6 +165,25 @@ class TestExtensionFolderBound:
         def match(self, text: str) -> None:
             raise AssertionError(f"the pattern was called on {len(text)} characters")
 
+    #: The names a backtracking pattern works hardest on, each repeated up to the bound.
+    WORST = ("0.--0.0.0", "0.-0.0.0-", "a.-1.1.1", "-1", ".-", "0.0.0-", "a-a-")
+    #: Worst case over an ordinary name of the same length, in CPU time. Measured at the bound under
+    #: load (1 Nov): the pattern's worst cases 46-97x (quadratic, bounded by NAME_BYTES); the
+    #: exponential mutant at 21 characters 8,299-8,598x. The line sits about 10x above the one and 8x
+    #: below the other.
+    WORST_LINE = 1000
+
+    @staticmethod
+    def cpu(probe, calls: int = 300) -> float:
+        """`probe`'s CPU time over `calls` calls, the best of three, floored at 0.1 ms."""
+        best = float("inf")
+        for _ in range(3):
+            start = time.process_time()
+            for _ in range(calls):
+                probe()
+            best = min(best, time.process_time() - start)
+        return max(best, 1e-4)
+
     def test_a_256_byte_name_is_unrecognised_without_the_pattern(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -146,10 +203,22 @@ class TestExtensionFolderBound:
             "ms-python.python",
             "2024.1.0",
         )
-        worst = 0.0
-        for unit in ("0.--0.0.0", "0.-0.0.0-", "a.-1.1.1", "-1", ".-", "0.0.0-", "a-a-"):
-            name = ("a." + unit * 255)[:254] + "\x01"
-            start = time.perf_counter()
-            device.DeviceInventory._extension_identity(tmp_path / name)
-            worst = max(worst, time.perf_counter() - start)
-        assert worst < 0.001
+        # The pattern is superlinear on these names (each grows about 100x for 10x the length), which is
+        # why only NAME_BYTES of a name reach it: the claim is that at the bound its worst case stays a
+        # modest multiple of an ordinary name of the same length, in CPU time, never wall time.
+        pattern, bound = device.DeviceInventory.EXTENSION_FOLDER, device.DeviceInventory.NAME_BYTES
+        ordinary = TestExtensionFolderBound.cpu(
+            lambda: pattern.match("a." + "x" * (bound - 3) + "\x01")
+        )
+        for unit in TestExtensionFolderBound.WORST:
+            name = ("a." + unit * bound)[: bound - 1] + "\x01"
+            ratio = TestExtensionFolderBound.cpu(lambda name=name: pattern.match(name)) / ordinary
+            assert ratio < TestExtensionFolderBound.WORST_LINE, (unit, ratio)
+
+    def test_the_measure_catches_a_catastrophic_pattern(self) -> None:
+        """An exponential pattern exceeds the line by orders of magnitude, so the measure tells a
+        bounded worst case from a catastrophic one."""
+        exponential = re.compile(r"^(a|a?)+$")
+        ordinary = TestExtensionFolderBound.cpu(lambda: exponential.match("a" * 21), calls=3)
+        worst = TestExtensionFolderBound.cpu(lambda: exponential.match("a" * 20 + "b"), calls=3)
+        assert worst / ordinary > TestExtensionFolderBound.WORST_LINE

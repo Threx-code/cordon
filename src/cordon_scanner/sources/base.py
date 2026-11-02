@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from cordon_scanner.foundation.content import FileContent
+from cordon_scanner.foundation.files.names import Names
 from cordon_scanner.foundation.limits import Limits
 
 if TYPE_CHECKING:
@@ -166,6 +167,15 @@ class Rejection:
     NAME = "unsafe_name"
     POLYGLOT = "polyglot_archive"
     HIDDEN = "hidden_zip_member"
+    NOT_AN_ARCHIVE = "not_an_archive"
+    """A member named as an archive that no archive reader opens and that is text (`Dockerfile.conda`):
+    scanned as the text it is, so nothing is left unread (item 27, class 7)."""
+    COMPRESSED_TRUNCATED = "compressed_truncated"
+    """A lone compressed stream (`dump.sql.gz`, not a tar) that ends before its end marker: every
+    byte it holds was decompressed and read, so nothing is left unread (item 30)."""
+    UNSUPPORTED_FORMAT = "unsupported_format"
+    """An archive in a format no reader here opens (rar, 7z, cab, ar, cpio, xar, iso, lzip, lzma): its
+    contents were not examined, whatever it is called (item 53)."""
     PADDED = "padded_expansion"
     """A budget reached while the archive expanded past `max_archive_ratio`: what follows the
     padding was not read, and padding is how a payload is put out of a scanner's reach."""
@@ -177,6 +187,13 @@ class RejectedMember:
     reason: str
     detail: str = ""
 
+    def __post_init__(self) -> None:
+        # A refused member's name is reported as it came, before normalising, so it is made text
+        # here, once, for every one of the places that refuse a member (item 34).
+        object.__setattr__(self, "name", Names.text(self.name))
+        # and its detail, which can quote the archive's own text (a link's target)
+        object.__setattr__(self, "detail", Names.text(self.detail))
+
 
 # Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine
 # each implementation typed by one of these, and the type checker proves the implementation
@@ -187,6 +204,8 @@ class ArchiveReading(Protocol):
     """What the engine uses of the class `ArchiveReader`."""
 
     def is_archive(self, path: str) -> bool: ...
+    def opens_by_bytes(self, data: bytes) -> bool: ...
+    def unsupported(self, path: str, data: bytes, rejected: list[tuple[str, str, str]]) -> bool: ...
     def safe_member_name(self, name: str, *, collapse: bool = ...) -> str | None: ...
     def walk_archive(
         self,

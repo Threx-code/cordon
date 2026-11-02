@@ -17,6 +17,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+from cordon_scanner.analysis.python.statements import PythonTwo
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -321,11 +322,15 @@ class PypiEcosystem(PypiLockfiles, BaseEcosystem):
         try:
             tree = PythonSyntax.parse(content.text, filename=content.path)
         except SyntaxError as exc:
+            # Python 2, on the very line Python 3 refused: a file no Python 3 runs, said as such
+            # (item 27); anything else, newer syntax included, stays a parse error
+            legacy = PythonTwo.construct(content.text, exc.lineno)
             return Manifest(
                 path=content.path,
                 ecosystem=self.id,
                 hooks=tuple(hooks),
-                parse_error=f"could not parse: {exc}",
+                parse_error=None if legacy else f"could not parse: {exc}",
+                not_python3=legacy,
             )
 
         override = self._install_override_hook(tree, content.path)

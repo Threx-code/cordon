@@ -28,7 +28,8 @@ for every list to be.
   deliberate process state; a table only ever read is a constant and is left.
 
 Rules that already hold have their own tests, unlisted: inner layers construct no adapter, no
-override refuses its base's method, no unannotated mutable module-level store.
+override refuses its base's method, no unannotated mutable module-level store, a rule's regex runs
+only through the matcher (rules/anchored), whose time bounds the ladder measures.
 """
 
 from __future__ import annotations
@@ -530,7 +531,7 @@ class Rules:
             "one interned tuple of field names per node shape, a fixed set the grammar decides"
         ),
         "cordon_scanner.foundation.collector:ScanCaches._clearers": "the registry itself",
-        "cordon_scanner.detect.binary.rule_engine.automaton:Automaton.DIGEST": (
+        "cordon_scanner.detect.binary.rule_engine.anchoring.automaton:Automaton.DIGEST": (
             "the sha256 of the one native binary the process loaded: one value, worked out once"
         ),
         "cordon_scanner.detect.binary.modules.der:Hash._BY_NAME": "filled once per hash OID name",
@@ -707,6 +708,49 @@ class TestDesignRules:
         assert not found, (
             "a detector run outside a budgeted runner (use DetectorRun):\n" + "\n".join(found)
         )
+
+    def test_rule_regexes_run_only_through_the_matcher(self) -> None:
+        """A rule's regex (`CompiledMatch.regex`, or what `regex_for` returns) is run only by
+        `AnchoredSearch`, through `CompiledMatch.matches` and `.search`. The regex ladder measures
+        the rules as the matcher runs them (tests/kits/regexkit's ViaMatcher), so its verdicts
+        hold for a rule only while nothing calls the regex's own `search`, `match`, `finditer` or
+        `fullmatch`. Three detectors did, and a rule the matcher bounds would still have run
+        unbounded there."""
+        allowed = {"cordon_scanner.rules.anchored", "cordon_scanner.rules.pack"}
+        runs = {"search", "match", "finditer", "fullmatch"}
+        found: set[str] = set()
+        for module, tree in Modules.trees().items():
+            if module in allowed:
+                continue
+            for _name, scope in Modules.scoped(tree):
+                held = {
+                    ast.unparse(target)
+                    for node in ast.walk(scope)
+                    if isinstance(node, ast.Assign | ast.AnnAssign | ast.NamedExpr)
+                    and node.value is not None
+                    and self._rule_regex(ast.unparse(node.value))
+                    for target in (node.targets if isinstance(node, ast.Assign) else [node.target])
+                }
+                for node in ast.walk(scope):
+                    if not (
+                        isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Attribute)
+                        and node.func.attr in runs
+                    ):
+                        continue
+                    receiver = ast.unparse(node.func.value)
+                    if receiver in held or self._rule_regex(receiver):
+                        found.add(f"{module}:{node.lineno} {ast.unparse(node.func)}")
+        assert not found, (
+            "a rule's regex run outside the matcher (use CompiledMatch.matches or .search):\n"
+            + "\n".join(sorted(found))
+        )
+
+    @staticmethod
+    def _rule_regex(expression: str) -> bool:
+        """Whether an expression is a rule's regex: read from a compiled match, or chosen for a
+        file by `regex_for`."""
+        return ".regex_for(" in expression or expression.endswith(".match.regex")
 
     def test_no_override_refuses_its_base(self) -> None:
         classes: dict[str, list[ast.ClassDef]] = defaultdict(list)

@@ -187,22 +187,32 @@ class TestStatementWindows:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         import ast
+        import hashlib
 
         from cordon_scanner.analysis.python import pysyntax
 
-        parsed: dict[int, int] = {}  # each parsed source, by its hash: its length
+        # Parsing happens in the detection worker (item 28), so each parse is recorded where this
+        # process can read it afterwards: a file outside the scanned tree, one line per parse, its
+        # source's digest and length (a digest, not hash(): equal in every process).
+        record = tmp_path / "parsed.txt"
         original = pysyntax.PythonSyntax.parse
 
         def counting(source: str | bytes, *args: object, **kwargs: object) -> object:
             tree = original(source, *args, **kwargs)  # type: ignore[arg-type]
             if isinstance(tree, ast.Module) and len(source) > 30_000:
-                parsed[hash(source)] = len(source)
+                raw = source.encode() if isinstance(source, str) else source
+                with record.open("a", encoding="utf-8") as out:
+                    out.write(f"{hashlib.sha256(raw).hexdigest()} {len(source)}\n")
             return tree
 
         monkeypatch.setattr(pysyntax.PythonSyntax, "parse", staticmethod(counting))
         body = self.module(3_000)
-        (tmp_path / "generated.py").write_text(body, encoding="utf-8")
-        WindowKit.findings(tmp_path, WindowKit.config(max_file_bytes=65_536))
+        scanned = tmp_path / "scanned"
+        scanned.mkdir()
+        (scanned / "generated.py").write_text(body, encoding="utf-8")
+        WindowKit.findings(scanned, WindowKit.config(max_file_bytes=65_536))
+        lines = record.read_text(encoding="utf-8").split() if record.exists() else []
+        parsed = dict(zip(lines[::2], map(int, lines[1::2]), strict=True))
         # The prefix, cut mid-statement, does not parse; the aligned windows each do, and
         # together they are the whole module.
         assert sum(parsed.values()) >= len(body.encode()) * 0.99, (

@@ -33,6 +33,7 @@ ROLES: dict[str, tuple[str, str]] = {
     "KEV_PAGE": ("cordon_scanner.intel.advisories.exploited", "KEV_PAGE"),
     "Ed25519": ("cordon_scanner.intel.provenance._ed25519", "Ed25519"),
     "FeedClient": ("cordon_scanner.intel.malware.feed", "FeedClient"),
+    "ReuseIndex": ("cordon_scanner.intel.malware.reuse_index", "ReuseIndex"),
     "LICENSE_UNKNOWN": ("cordon_scanner.intel.store.licenses", "LicenseCategory.UNKNOWN"),
     "LicenseClassifier": ("cordon_scanner.intel.store.licenses", "LicenseClassifier"),
     "MoreRegistries": ("cordon_scanner.intel.registries.more_registries", "MoreRegistries"),
@@ -138,6 +139,7 @@ if TYPE_CHECKING:
         ReleaseHistories,
         RemovedNameList,
         RepositoryHeads,
+        ReuseIndexes,
         RuleAddresses,
         SignatureCheck,
         ToolApprovals,
@@ -148,6 +150,7 @@ if TYPE_CHECKING:
     from cordon_scanner.intel.malware import campaign as _intel_malware_campaign
     from cordon_scanner.intel.malware import feed as _intel_malware_feed
     from cordon_scanner.intel.malware import hallucinated as _intel_malware_hallucinated
+    from cordon_scanner.intel.malware import reuse_index as _intel_malware_reuse_index
     from cordon_scanner.intel.provenance import _ed25519 as _intel_provenance__ed25519
     from cordon_scanner.intel.provenance import (
         ansible_signatures as _intel_provenance_ansible_signatures,
@@ -192,6 +195,7 @@ if TYPE_CHECKING:
     KEV_PAGE: str = _intel_advisories_exploited.KEV_PAGE
     Ed25519: SignatureCheck = _intel_provenance__ed25519.Ed25519
     FeedClient: FeedStatus = _intel_malware_feed.FeedClient
+    ReuseIndex: ReuseIndexes = _intel_malware_reuse_index.ReuseIndex
     LICENSE_UNKNOWN: enum.Enum = _intel_store_licenses.LicenseCategory.UNKNOWN
     LicenseClassifier: LicenseExpressions = _intel_store_licenses.LicenseClassifier
     MoreRegistries: RegistryVersions = _intel_registries_more_registries.MoreRegistries

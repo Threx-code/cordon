@@ -28,7 +28,6 @@ from __future__ import annotations
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 from cordon_scanner.foundation.config.settings import Config
 from unit.detect.code.capability.test_npm_payload_execution import Npm
 
@@ -146,17 +145,20 @@ PRELUDE = "const fs = require('fs'); const path = require('path'); const os = re
 class TestSpellingMatrix:
     @staticmethod
     def capabilities(tmp_path, monkeypatch, snippet: str) -> set[str]:
-        """The capabilities the detector gives `x.js` when a postinstall runs it."""
-        seen: set[str] = set()
-        labelled = CapabilityDetector.labelled
+        """The capabilities the scan gives `x.js` when a postinstall runs it: what the parent reads
+        of its labelling, which runs in the file's worker (item 56)."""
+        from cordon_scanner.engine.isolation.analysis_facts import ParentAnalysis
 
-        def spy(self, unit, ctx, *args, **kwargs):
-            out = labelled(self, unit, ctx, *args, **kwargs)
-            if unit.path.endswith("/x.js") and out:
-                seen.update(hit.capability.value for hit in out[0])
+        seen: set[str] = set()
+        labels = ParentAnalysis.labels
+
+        def spy(facts, path):
+            out = labels(facts, path)
+            if path.endswith("/x.js") and out:
+                seen.update(out)
             return out
 
-        monkeypatch.setattr(CapabilityDetector, "labelled", spy)
+        monkeypatch.setattr(ParentAnalysis, "labels", staticmethod(spy))
         target = Npm.build(
             tmp_path,
             "matrix",

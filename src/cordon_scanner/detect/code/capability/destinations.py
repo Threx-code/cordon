@@ -68,11 +68,19 @@ class DestinationLabels:
         # later occurrences are still considered, because the first being prose
         # says nothing about the rest of the file.
 
-        ignore = DocumentationSpans.of(raw, language)
-        blocks = SourceComments.block_comment_spans(content.text, language)
+        # The spans are worked out at the first candidate, not before: the prefilter passes far
+        # more files than the matcher finds a host in, and on those the spans were most of the
+        # time (a 4 MB API model: 1.6 s of spans, then no candidate; measured 2026-10-31).
+        spans: tuple[tuple[tuple[int, int], ...], tuple[tuple[int, int], ...]] | None = None
 
         match = None
-        for candidate in Destinations.destination_matcher().finditer(raw):
+        for candidate in Destinations.candidates(raw):
+            if spans is None:
+                spans = (
+                    DocumentationSpans.of(raw, language),
+                    SourceComments.block_comment_spans(content.text, language),
+                )
+            ignore, blocks = spans
             offset = candidate.start()
             if SourceComments.inside_spans(ignore, offset) or SourceComments.inside_spans(
                 blocks, offset

@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.analysis.javascript.js_flow import JsFlow
 from cordon_scanner.analysis.python.py_flow_facts import PythonFlowFacts
@@ -68,23 +68,37 @@ class ReachedFlows:
         }
 
     @staticmethod
-    def of(units: Sequence[FileUnit], ctx: ScanContext) -> dict[str, float]:
+    def readable(unit: FileUnit) -> bool:
+        """A code file within the size this reads."""
+        return unit.content.size <= ReachedFlows.MAX_SIZE and unit.path.rsplit("!", 1)[
+            -1
+        ].lower().endswith(ReachedFlows.CODE)
+
+    @staticmethod
+    def reads(unit: FileUnit, ctx: ScanContext) -> bool:
+        """Whether `of` could read this file: in a place, and readable (the per-place file count is
+        the parent's to apply, in its unit order)."""
+        return ReachedFlows.readable(unit) and any(
+            unit.path in paths for paths in ReachedFlows.places(ctx).values()
+        )
+
+    @staticmethod
+    def of(
+        units: Sequence[FileUnit], ctx: ScanContext, facts: dict[str, dict[str, list[Any]]]
+    ) -> dict[str, float]:
+        """`facts` holds each file's flow facts as its worker read them (`reached.flow`, item 56):
+        the place is joined here, so nothing in this process reads a file."""
         out: dict[str, float] = {}
         for place, paths in ReachedFlows.places(ctx).items():
             read = 0
             for unit in units:
                 if read >= ReachedFlows.FILES:
                     break
-                path = unit.path
-                if (
-                    path not in paths
-                    or unit.content.size > ReachedFlows.MAX_SIZE
-                    or not path.rsplit("!", 1)[-1].lower().endswith(ReachedFlows.CODE)
-                ):
+                if unit.path not in paths or not ReachedFlows.readable(unit):
                     continue
                 read += 1
-                python = path.lower().endswith(".py")
-                out.update(ReachedFlows.facts(place, unit.content.text, python=python))
+                for suffix in facts.get(unit.path, {}).get("reached.flow", ()):
+                    out[f"{place}_{suffix}"] = 1.0
         if os.environ.get(ReachedFlows.MEASURE) == "1":
             out.update(CodeFeatures.of(ReachedFlows.sources(units, ctx)))
             out.update(BinaryFeatures.of(ReachedFlows.executables(units)))
@@ -187,6 +201,21 @@ class ReachedFlows:
         interpreter = match.group(1).decode()
         suffix = ".js" if interpreter == "node" else ".py" if interpreter[:2] == "py" else ".sh"
         return path + "#" + suffix
+
+    @staticmethod
+    def language(path: str, head: bytes) -> str | None:
+        """Which flow reader a file is read with, as `of` reads it: "py", "js", or None; an
+        extensionless script by its `#!` line (the rule modules `js` and `python` use this)."""
+        name = path.rsplit("!", 1)[-1].lower()
+        if name.endswith(".py"):
+            return "py"
+        if name.endswith(ReachedFlows.CODE):
+            return "js"
+        if "." not in name.rsplit("/", 1)[-1]:
+            named = ReachedFlows._interpreted(path, head[:128])
+            if named is not None and named.endswith((".js", ".py")):
+                return named[-2:]
+        return None
 
     @staticmethod
     def facts(place: str, text: str, *, python: bool = False) -> dict[str, float]:

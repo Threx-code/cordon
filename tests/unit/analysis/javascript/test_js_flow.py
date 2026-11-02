@@ -100,9 +100,15 @@ class TestAReplyAsAFixedProgramsArgument:
         "  const v = await r.text();\n"
     )
 
-    def test_a_version_handed_to_ffmpeg_is_not_run(self) -> None:
-        text = self.PREFIX + '  cp.spawnSync("ffmpeg", ["-i", v, "out.mp4"]);\n}\n'
+    def test_a_pid_handed_to_taskkill_is_not_run(self) -> None:
+        text = self.PREFIX + '  cp.spawnSync("taskkill", ["/PID", v, "/T", "/F"]);\n}\n'
         assert not [f for f in FlowKit.flows(text) if "network_response" in f[0]]
+
+    def test_a_reply_handed_to_a_program_not_listed_is_run(self) -> None:
+        # Note 44: only DATA_ARGS programs are trusted with data; ffmpeg reads `-f lavfi`, git
+        # `--upload-pack`, tar `--to-command`: the default is code.
+        text = self.PREFIX + '  cp.spawnSync("ffmpeg", ["-i", v, "out.mp4"]);\n}\n'
+        assert (["network_response"], "process", "unknown") in FlowKit.flows(text)
 
     def test_the_same_reply_through_a_shell_option_is_run(self) -> None:
         text = self.PREFIX + '  cp.spawn("ffmpeg", ["-i", v], { shell: true });\n}\n'
@@ -119,6 +125,71 @@ class TestAReplyAsAFixedProgramsArgument:
     def test_a_program_named_by_the_reply_is_run(self) -> None:
         text = self.PREFIX + "  cp.spawnSync(v, []);\n}\n"
         assert (["network_response"], "process", "unknown") in FlowKit.flows(text)
+
+
+class TestAFixedProgramsArguments:
+    """Note 44: a reply reaching only the arguments of a DATA_ARGS program, under that program's
+    rule, is data; anything else is run. Inert: the reply is from a placeholder host, nothing runs."""
+
+    PREFIX = TestAReplyAsAFixedProgramsArgument.PREFIX
+    RUN: ClassVar[dict[str, str]] = {
+        "git takes a command in an option": 'cp.spawn("git", ["clone", "--upload-pack", v, "r"]);',
+        "tar takes one without --": 'cp.spawn("tar", ["xf", "a.tar", v]);',
+        "tar told outright": 'cp.spawn("tar", ["x", "--to-command", v]);',
+        "wget takes one without --": 'cp.spawn("wget", [v]);',
+        "a batch file runs through cmd": 'cp.spawn("setup.cmd", [v]);',
+        "the reply in the environment": (
+            'cp.spawn("tar", ["x", "--", "a.tar"], { env: { NODE_OPTIONS: v } });'
+        ),
+        "the reply as the directory": 'cp.spawn("taskkill", ["/PID", "1"], { cwd: v });',
+        "a shell option": 'cp.spawn("taskkill", ["/PID", v], { shell: true });',
+        "env runs its argument": 'cp.spawn("/usr/bin/env", ["sh", v]);',
+        "a shell however spelt": 'cp.spawn("C:\\\\Windows\\\\System32\\\\SH.EXE", [v]);',
+        "an opener on what the reply names": 'cp.spawn("open", [v]);',
+        "cmd parses what start is given": 'cp.exec(`cmd /c start "" https://h.invalid/${v}`);',
+        "a shell string with the reply": "cp.exec(`tar xf ${v}`);",
+        "a program from a property": 'const cfg = { prog: "taskkill" };\ncp.spawn(cfg.prog, [v]);',
+    }
+    DATA: ClassVar[dict[str, str]] = {
+        "taskkill and a pid": 'cp.spawn("taskkill", ["/PID", v, "/F"]);',
+        "tar after --": 'cp.spawn("tar", ["xf", "--", v]);',
+        "curl writes what it fetches": 'cp.spawn("curl", ["-fsSL", "-o", "out.bin", v]);',
+        "a const program": 'const p = "taskkill";\ncp.spawn(p, ["/PID", v]);',
+        "a bundler's call form": '(0, cp.spawn)("taskkill", ["/PID", v, "/T", "/F"], { stdio: "ignore" });',
+        "a link opened": 'cp.spawn("xdg-open", ["https://h.invalid/a?v=" + v]);',
+    }
+
+    @pytest.mark.parametrize("name", sorted(RUN))
+    def test_run(self, name: str) -> None:
+        flows = FlowKit.flows(self.PREFIX + "  " + self.RUN[name] + "\n}\n")
+        assert ("network_response", "process") in [
+            (src, sink) for sources, sink, _ in flows for src in sources
+        ], flows
+
+    @pytest.mark.parametrize("name", sorted(DATA))
+    def test_data(self, name: str) -> None:
+        flows = FlowKit.flows(self.PREFIX + "  " + self.DATA[name] + "\n}\n")
+        assert not [f for f in flows if "network_response" in f[0] and f[1] == "process"], flows
+
+
+class TestAFixedSpawnForTheComposites:
+    """Note 44: the co-occurrence composites see no taint, so a spawn is fixed (CapabilityHit.fixed)
+    only for a DATA_ARGS program whose every non-literal argument meets its rule."""
+
+    @pytest.mark.parametrize(
+        ("line", "fixed"),
+        [
+            ('cp.spawnSync("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"]);', True),
+            ('cp.spawnSync("tar", ["x", "--", f]);', True),
+            ('cp.spawnSync("tar", ["x", f, "-C", dir]);', False),
+            ('cp.spawnSync("taskkill", ["/PID", pid], { cwd: dir });', False),
+            ('cp.spawnSync("node", ["-e", "1"]);', False),
+            ("cp.execSync(`tar xf ${f}`);", False),
+        ],
+    )
+    def test_fixed(self, line: str, fixed: bool) -> None:
+        text = 'const cp = require("child_process");\n' + line + "\n"
+        assert (2 in JsFlow.fixed_spawn_lines(text)) is fixed
 
 
 class TestADecodedValueRun:
@@ -525,18 +596,25 @@ class TestOpeners:
     OPENS: ClassVar[dict[str, str]] = {
         "a platform choice": (
             "const p = process.platform;\n"
-            'exec(p === "darwin" ? `open "${url}"` : p === "win32" ? `start "" "${url}"`'
-            ' : `xdg-open "${url}"`);\n'
+            'exec(p === "darwin" ? `open "https://h.invalid/s?${url}"`'
+            ' : `xdg-open "https://h.invalid/s?${url}"`);\n'
         ),
+        "spawned": 'spawn("xdg-open", ["https://h.invalid/s?" + url], { stdio: "ignore" });\n',
+        "rundll32": "exec(`rundll32 url.dll,FileProtocolHandler https://h.invalid/s?${url}`);\n",
+        "through a helper": (
+            'function ob(u) { exec(`open "https://h.invalid/s?${u}"`); }\nob(url);\n'
+        ),
+    }
+    RUNS: ClassVar[dict[str, str]] = {
+        # Note 44: what the reply names, opened, may be `file:`, an app or a scheme's handler; only a
+        # link the code itself starts with http(s):// is opened as a link.
+        "the reply opened as it is": 'exec(`open "${url}"`);\n',
+        "the reply spawned to an opener": 'spawn("xdg-open", [url], { stdio: "ignore" });\n',
+        "start, which cmd parses": 'exec(`start "" "https://h.invalid/s?${url}"`);\n',
         "a command built first": (
             'const cmd = process.platform === "darwin" ? `open -a "${app}" "${url}"`'
             ' : `xdg-open "${url}"`;\nexec(cmd, () => {});\n'
         ),
-        "spawned": 'spawn("xdg-open", [url], { stdio: "ignore" });\n',
-        "rundll32": "exec(`rundll32 url.dll,FileProtocolHandler ${url}`);\n",
-        "through a helper": ('function ob(u) { exec(`open "${u}"`); }\nob(url);\n'),
-    }
-    RUNS: ClassVar[dict[str, str]] = {
         "open in a terminal": 'exec(`open -a Terminal "${url}"`);\n',
         "one branch a shell": (
             'exec(process.platform === "darwin" ? `open "${url}"` : `sh -c "${url}"`);\n'

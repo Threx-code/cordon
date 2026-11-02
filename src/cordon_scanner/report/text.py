@@ -18,10 +18,11 @@ from __future__ import annotations
 
 import re
 import shutil
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from cordon_scanner.foundation.models import Category, Severity
-from cordon_scanner.report.base import BaseReporter, ReportOptions
+from cordon_scanner.report.base import BaseReporter, Escape, ReportOptions
 from cordon_scanner.version import __version__
 
 if TYPE_CHECKING:
@@ -165,6 +166,37 @@ class TextReporter(BaseReporter):
 
     # -- Findings --------------------------------------------------------
 
+    @staticmethod
+    def _shown(f: Finding) -> Finding:
+        """`f` with every field the scanned content can choose through `Escape.terminal`: a path,
+        a message that quotes one, a snippet. Made where a finding is printed, after the gate's
+        split (`_tiered`), which matches fingerprints computed from the unescaped fields."""
+        t = Escape.terminal
+        where = f.location
+        return replace(
+            f,
+            rule_id=t(f.rule_id),
+            message=t(f.message),
+            remediation=t(f.remediation),
+            location=replace(
+                where,
+                path=t(where.path),
+                symbol=t(where.symbol) if where.symbol else where.symbol,
+                project=t(where.project) if where.project else where.project,
+                package=t(where.package) if where.package else where.package,
+            ),
+            evidence=replace(
+                f.evidence,
+                snippet=t(f.evidence.snippet) if f.evidence.snippet else f.evidence.snippet,
+            ),
+            explanation=replace(
+                f.explanation,
+                contributing=tuple(map(t, f.explanation.contributing)),
+                escalations=tuple(map(t, f.explanation.escalations)),
+            ),
+            references=tuple(map(t, f.references)),
+        )
+
     def _tiered(self, findings: list[Finding], opts: ReportOptions, color: bool) -> Iterator[bytes]:
         """The default view once the gate is known: what fails it, in full; the rest, counted.
 
@@ -210,6 +242,7 @@ class TextReporter(BaseReporter):
         per finding: three composites firing on one line is three findings
         about one place, and repeating `22:1` down the margin says otherwise.
         """
+        findings = [self._shown(f) for f in findings]
         if not findings:
             # The common case, and the one the column measurement below cannot
             # survive: `max()` over nothing raises, so a clean scan crashed and
@@ -309,6 +342,7 @@ class TextReporter(BaseReporter):
         return f"{text[: room - 4].rsplit(' ', 1)[0]} ..."
 
     def _finding(self, f: Finding, color: bool, verbose: bool) -> Iterator[bytes]:
+        f = self._shown(f)
         tint = SEVERITY_COLOR.get(f.severity, "")
         header = f"{tint}{str(f.severity).upper():<9}{RESET}{BOLD}{f.rule_id}{RESET}"
         suffix = f"{DIM}risk {f.risk.value}/100{RESET}"
@@ -385,7 +419,7 @@ class TextReporter(BaseReporter):
             f"{DIM}scan coverage{RESET}  {len(findings)} note(s) about the scan itself",
             color,
         )
-        for f in findings[:10]:
+        for f in map(self._shown, findings[:10]):
             yield self._line(f"  {DIM}{f.location.path}{RESET}  {f.message}", color)
         if len(findings) > 10:
             yield self._line(f"  {DIM}... and {len(findings) - 10} more{RESET}", color)

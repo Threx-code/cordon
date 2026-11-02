@@ -477,7 +477,38 @@ class TestPathGlobMatchIsMemoised(ContentWalkerFixtures):
     emptied (`foundation.collector.ScanCaches`): emptying an lru_cache
     also resets its counts, and the hits that matter are the ones inside
     the scan.
+
+    Detection runs in supervised workers (item 28), so the memo works inside
+    a worker and its counts live there. The files are inspected here by the
+    worker's own code (`ParallelScanner._inspect_batch`), as one worker does.
     """
+
+    @staticmethod
+    def inspect_as_a_worker(root) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.analysis.shared.languages import LanguageRegistry
+        from cordon_scanner.engine.parallel import ParallelScanner, _WorkerState
+        from cordon_scanner.foundation.collector import ScanCaches
+        from cordon_scanner.foundation.config.settings import Config
+        from cordon_scanner.foundation.content import FileContent
+
+        engine = Scanner(Config.default().with_overrides(use_cache=False))._engine
+        context = engine._context(engine.inventory(root))
+        items = []
+        for i, path in enumerate(sorted(p for p in root.rglob("*") if p.is_file())):
+            relative = path.relative_to(root).as_posix()
+            loaded = FileContent.load(path, relative, engine.config.limits)
+            language = LanguageRegistry.of_file(relative, loaded)
+            items.append((i, relative, path.stat().st_size, loaded.sha256, None, language, None))
+        kept = ParallelScanner._worker
+        ParallelScanner._worker = _WorkerState(
+            engine=engine, context=context, detectors=engine.detectors
+        )
+        try:
+            ParallelScanner._inspect_batch(items, str(root))
+        finally:
+            ParallelScanner._worker = kept
+        ScanCaches.after_scan()
 
     @staticmethod
     def hits_inside_the_scan(cache, monkeypatch, scan) -> int:
@@ -494,14 +525,14 @@ class TestPathGlobMatchIsMemoised(ContentWalkerFixtures):
         cache.cache_clear()
         scan()
         assert seen, "the scan never reached its end"
-        return seen[-1]
+        # Read at each emptying: a worker empties its caches when its batch is done, which resets
+        # the counts before the scan's own end.
+        return max(seen)
 
     def test_config_detector_pattern_cache_gets_hits_across_files(
         self, tmp_path, monkeypatch
     ) -> None:
-        from cordon_scanner import Scanner
         from cordon_scanner.detect.infra.config_files import ConfigDetector
-        from cordon_scanner.foundation.config.settings import Config
 
         root = tmp_path / "repo"
         for i in range(50):
@@ -513,16 +544,14 @@ class TestPathGlobMatchIsMemoised(ContentWalkerFixtures):
         hits = self.hits_inside_the_scan(
             ConfigDetector._pattern_matches,
             monkeypatch,
-            lambda: Scanner(Config.default().with_overrides(use_cache=False)).scan(root),
+            lambda: self.inspect_as_a_worker(root),
         )
         assert hits > 0, "fifty CI-shaped files sharing CI_PATHS produced no cache hits"
 
     def test_rule_selector_pattern_cache_gets_hits_across_files(
         self, tmp_path, monkeypatch
     ) -> None:
-        from cordon_scanner import Scanner
         from cordon_scanner.detect.base import RuleSelector
-        from cordon_scanner.foundation.config.settings import Config
 
         root = tmp_path / "repo"
         root.mkdir()
@@ -532,7 +561,7 @@ class TestPathGlobMatchIsMemoised(ContentWalkerFixtures):
         hits = self.hits_inside_the_scan(
             RuleSelector._pattern_matches,
             monkeypatch,
-            lambda: Scanner(Config.default().with_overrides(use_cache=False)).scan(root),
+            lambda: self.inspect_as_a_worker(root),
         )
         assert hits > 0, "fifty similarly-shaped files produced no rule-pack cache hits"
 

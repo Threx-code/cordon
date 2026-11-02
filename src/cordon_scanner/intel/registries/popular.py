@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from typing import ClassVar, Final
 
-from cordon_scanner.intel.registries.real import REAL_PACKAGES
+from cordon_scanner.intel.registries.real import RealPackages
 
 # The most-installed packages per ecosystem, plus the names most commonly
 # targeted in published squatting incidents.
@@ -809,25 +809,46 @@ class PackageIntel:
         that now, and the severity reflects what a name comparison can actually
         support.
         """
-        candidates = (
-            cls.POPULAR_PACKAGES.get(ecosystem, frozenset())
-            | REAL_PACKAGES.get(ecosystem, frozenset())
-            | cls._KNOWN_NEIGHBOURS.get(ecosystem, frozenset())
-        )
-        if normalized_name in candidates:
-            return True
+        return normalized_name in cls._known(ecosystem)
 
-        # Under the ecosystem's own normalisation, because the sets are written
-        # as each project spells itself and the argument arrives normalised.
-        # Cargo folds `_` to `-`, so `serde_json` in this set never matched the
-        # `serde-json` it was asked about -- and the caller then went looking
-        # for a typosquat target and found the same package.
+    #: Per ecosystem: the three sets it was built from, and every name in them as spelled and as
+    #: the ecosystem normalises it (`_known`).
+    _KNOWN: ClassVar[dict[str, tuple[tuple[frozenset[str], ...], frozenset[str]]]] = {}
+
+    #: The empty set a lookup takes for a list that has no entry for its ecosystem (`_known`).
+    _NONE: ClassVar[frozenset[str]] = frozenset()
+
+    @classmethod
+    def _known(cls, ecosystem: str) -> frozenset[str]:
+        """Every known name of an ecosystem, as written and under the ecosystem's own
+        normalisation, worked out once per set of lists. The sets are written as each project
+        spells itself and a name arrives normalised: Cargo folds `_` to `-`, so `serde_json` in
+        the set never matched the `serde-json` it was asked about, and the caller then went looking
+        for a typosquat target and found the same package. Normalising every candidate on every
+        lookup cost 17.7 M calls for the 1,020 names of one package-lock (34 s of a 35 s scan)."""
+        # One empty set for every ecosystem a list lacks: a new `frozenset()` per call is a new
+        # object, so the `is` check below never matched and the set was rebuilt on every lookup.
+        # `REAL_PACKAGES[eco]` is a new union on every ask, so its two stable parts are held instead
+        sets = (
+            cls.POPULAR_PACKAGES.get(ecosystem, cls._NONE),
+            *RealPackages.parts(ecosystem),
+            cls._KNOWN_NEIGHBOURS.get(ecosystem, cls._NONE),
+        )
+        kept = cls._KNOWN.get(ecosystem)
+        # The very sets, held, not their ids: a set replaced (a test, a refresh) is rebuilt.
+        if kept is not None and all(a is b for a, b in zip(kept[0], sets, strict=True)):
+            return kept[1]
+        candidates = frozenset().union(*sets)
         from cordon_scanner.ecosystems.registry import EcosystemRegistry
 
         implementation = EcosystemRegistry.get(ecosystem)
-        if implementation is None:
-            return False
-        return any(implementation.normalize_name(name) == normalized_name for name in candidates)
+        known = frozenset(candidates) | (
+            frozenset(implementation.normalize_name(name) for name in candidates)
+            if implementation is not None
+            else frozenset()
+        )
+        cls._KNOWN[ecosystem] = (sets, known)
+        return known
 
 
 __all__ = ["PackageIntel"]

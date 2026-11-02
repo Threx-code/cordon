@@ -43,7 +43,7 @@ from cordon_scanner.foundation.paths import ContainerPaths
 from cordon_scanner.foundation.results import OperationalFinding
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Collection, Mapping, Sequence
 
     from cordon_scanner.foundation.taxonomy import ThreatDomain
 
@@ -61,31 +61,70 @@ class Ceilings:
         "SKILL.md",
     )
 
+    #: The files the package verdict reads as code, by name.
+    _VERDICT_SOURCES: ClassVar[tuple[str, ...]] = (".js", ".mjs", ".cjs", ".ts", ".py")
+
+    @staticmethod
+    def is_verdict_source(path: str) -> bool:
+        return path.rsplit("!", 1)[-1].lower().endswith(Ceilings._VERDICT_SOURCES)
+
+    @staticmethod
+    def verdict_manifests(units: Sequence[FileUnit]) -> dict[str, bytes]:
+        """The manifests the package verdict reads, by path."""
+        return {
+            u.path: u.content.raw[:1_000_000]
+            for u in units
+            if u.path.rsplit("!", 1)[-1].rsplit("/", 1)[-1] in Ceilings._VERDICT_MANIFESTS
+        }
+
+    @staticmethod
+    def verdict_dependency_names(units: Sequence[FileUnit]) -> frozenset[str]:
+        """What the workers report naming, for the verdict (`ScanContext.verdict_dependency_names`)."""
+        from cordon_scanner.decide.verdict_features import VerdictFeatures
+
+        return VerdictFeatures.wanted_dependencies(Ceilings.verdict_manifests(units))
+
     @staticmethod
     def verdict(
         findings: list[Finding],
         units: Sequence[FileUnit],
         profile: dict[str, float] | None = None,
         intent: Any = None,
+        *,
+        repository: bool = False,
+        facts: Mapping[str, dict[str, list[Any]]] | None = None,
     ) -> tuple[list[Finding], dict[str, Any]]:
         """The package verdict over everything this scan found (`core/verdict.py`), then the
-        intent layer over what the package's code does (`core/intent.py`)."""
+        intent layer over what the package's code does (`core/intent.py`). `repository`: the
+        target is no published package, so a MALICIOUS finding keeps its grade."""
         from cordon_scanner.decide.intent import Intent
         from cordon_scanner.decide.verdict import Verdict
 
         paths_sizes = [(u.path, u.content.size) for u in units]
-        manifests = {
-            u.path: u.content.raw[:1_000_000]
-            for u in units
-            if u.path.rsplit("!", 1)[-1].rsplit("/", 1)[-1] in Ceilings._VERDICT_MANIFESTS
-        }
-        sources = [
-            (u.path, u.content.raw)
-            for u in units
-            if u.path.rsplit("!", 1)[-1].lower().endswith((".js", ".mjs", ".cjs", ".ts", ".py"))
-        ]
+        manifests = Ceilings.verdict_manifests(units)
+        source_units = [u for u in units if Ceilings.is_verdict_source(u.path)]
+        if facts is None:
+            sources = [(u.path, u.content.raw) for u in source_units]
+            source_facts = None
+        else:
+            # The workers' facts, in the units' order (item 56): the parent reads no source bytes.
+            sources = []
+            source_facts = [
+                (
+                    u.path,
+                    frozenset(facts.get(u.path, {}).get("verdict.modules", ())),
+                    frozenset(facts.get(u.path, {}).get("verdict.abilities", ())),
+                )
+                for u in source_units
+            ]
         graded, verdict = Verdict.decide(
-            list(findings), paths_sizes, manifests, sources, profile or {}
+            list(findings),
+            paths_sizes,
+            manifests,
+            sources,
+            profile or {},
+            repository=repository,
+            source_facts=source_facts,
         )
         second, line = verdict.get("registry_score"), verdict.get("registry_block")
         Ceilings.second_opinion(second, line, graded, verdict)
@@ -442,7 +481,9 @@ class Ceilings:
     _RUNS_DOWNLOADS: ClassVar[frozenset[str]] = frozenset({"SUSPECT.DROPPER.001"})
 
     @staticmethod
-    def impersonator_runs_downloads(findings: list[Finding]) -> list[Finding]:
+    def impersonator_runs_downloads(
+        findings: list[Finding], reached: Collection[str] = ()
+    ) -> list[Finding]:
         """A published package named one slip from a popular one that downloads and runs code.
 
         Each half is graded below the gate on its own: a typo-shaped name is common in the long
@@ -466,7 +507,8 @@ class Ceilings:
                 finding.rule_id in Ceilings._RUNS_DOWNLOADS
                 and finding.severity < Severity.HIGH
                 and not SourcePaths.is_test_material(path)
-                and not SourcePaths.is_documentation(path)
+                # a documentation path's ceiling holds only where nothing runs the file (item 36)
+                and not (SourcePaths.is_documentation(path) and path not in reached)
                 and not SourcePaths.is_generated_artefact(path)
             ):
                 finding = replace(

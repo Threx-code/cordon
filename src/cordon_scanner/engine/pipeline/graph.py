@@ -9,12 +9,14 @@ from __future__ import annotations
 import posixpath
 import re
 from dataclasses import replace
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.detect.base import FileUnit
 from cordon_scanner.ecosystems.base import WORKSPACE_INHERITED, Coordinate, LockEntry, LockGraph
 from cordon_scanner.ecosystems.registry import EcosystemRegistry, RegistryFacts
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
+from cordon_scanner.foundation.collector import ScanCaches
 from cordon_scanner.foundation.models import Scope, Severity
 from cordon_scanner.foundation.results import Dependency, OperationalFinding
 
@@ -51,8 +53,7 @@ class Graph:
             replacement, why = known
             if (f"{directory}/{replacement}" if directory else replacement) in present:
                 continue  # the readable lockfile is beside it and is what was read
-            acc.complete = False
-            acc.append(
+            acc.incomplete(
                 OperationalFinding.build(
                     path=unit.path,
                     rule_id="OPERATIONAL.LOCKFILE.UNSUPPORTED",
@@ -197,7 +198,7 @@ class Graph:
         """Manifests that name the lockfile resolving them (`lockfile: "../../mix.lock"` in an
         umbrella app): members of the project that lockfile belongs to, when it was read."""
         locked = {(d.project or "", d.ecosystem) for d in collected}
-        contents = {u.path: u.content for u in units}
+        contents = MappingProxyType({u.path: u.content for u in units})  # Graph.view_of
         out: dict[tuple[str, str], str | None] = {}
         for unit in units:
             ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
@@ -247,7 +248,9 @@ class Graph:
                     continue
                 ecosystem = EcosystemRegistry.get(ecosystem_id)
                 try:
-                    manifest = ecosystem.parse_manifest(unit.content) if ecosystem else None
+                    manifest = (
+                        ParsedManifests.manifest_alone(ecosystem, unit) if ecosystem else None
+                    )
                 except Exception:  # noqa: BLE001, S112
                     continue
                 if manifest is not None and manifest.name and manifest.name.lower() in names:
@@ -267,8 +270,8 @@ class Graph:
             if ecosystem is None or ecosystem_id is None:
                 continue
             try:
-                manifest = ecosystem.parse_manifest(unit.content)
-            except Exception:  # noqa: BLE001, S112
+                manifest = ParsedManifests.manifest_alone(ecosystem, unit)
+            except Exception:  # noqa: BLE001, S112 -- recorded once by manifest_alone
                 continue
             for source in manifest.sources:
                 # A URL inside the description loses its userinfo and query: a token in an
@@ -295,11 +298,70 @@ class Graph:
     def manifest_of(ecosystem: Any, unit: FileUnit, files: Mapping[str, Any]) -> Any:
         """A manifest parsed with the rest of its build in view, where the ecosystem needs it:
         a Maven module inherits from a parent POM elsewhere in the tree, a .NET project from
-        `Directory.Packages.props` above it. Other ecosystems read one file on its own."""
+        `Directory.Packages.props` above it. Other ecosystems read one file on its own.
+
+        A manifest parsed in view of its tree is kept for the scan (`_parsed`), by the file and
+        the very files in view (`view_of`): five steps ask for each one, and a repository of a
+        hundred POMs resolving parents against thousands of files paid seconds for each ask. The
+        same file with the same files in view parses the same, and a parsed `Manifest` is never
+        changed.
+
+        A manifest read on its own is kept the same way, by the file alone, and so is a parse that
+        raised: every step that asks gets the one outcome, and the failure is recorded once
+        (`raised`, a content cause, item 27). A setup.py was parsed six times a scan, and a
+        parse that raised was dropped unmarked at eight of those asks (item 26)."""
         in_tree = getattr(ecosystem, "parse_in_tree", None)
-        if in_tree is not None:
-            return in_tree(unit.content, files)
-        return ecosystem.parse_manifest(unit.content)
+        key = (
+            ScanCaches.identity(ecosystem),
+            ScanCaches.identity(unit.content),
+            Graph.view_of(files) if in_tree is not None else -1,
+        )
+        kept = Graph._parsed.get(key)
+        if kept is not None and kept[0] is unit.content:
+            if isinstance(kept[1], BaseException):
+                raise kept[1]
+            return kept[1]
+        try:
+            manifest = (
+                in_tree(unit.content, files)
+                if in_tree is not None
+                else ecosystem.parse_manifest(unit.content)
+            )
+        except Exception as exc:
+            Graph._parsed[key] = (unit.content, exc)
+            ParsedManifests._raised.setdefault(unit.path, f"{type(exc).__name__}: {exc}")
+            raise
+        Graph._parsed[key] = (unit.content, manifest)
+        return manifest
+
+    @staticmethod
+    def view_of(files: Mapping[str, Any]) -> int:
+        """A small id for the files a manifest is parsed in view of: equal for two mappings of the
+        same paths to the very same contents. Worked out once for each mapping object (a step
+        builds one and asks for every manifest with it), the signature kept once for each distinct
+        view: an entry of `_parsed` holds the id, not the view. Holding each view in every entry
+        kept 18,543 paths and contents for each of 10,475 Terraform manifests in one repository,
+        and ended the scan at 8 GB (2026-10-31). The mapping is kept with its id, so the contents
+        it names stay alive and no id is reused within the scan.
+
+        Relied on: a mapping is not changed once asked about, since its view is answered from its
+        id. Callers pass a read-only `MappingProxyType`, so a change raises where it would be
+        made; and a mapping whose size has moved since is worked out again, never answered from
+        the old view."""
+        seen = Graph._views.get(ScanCaches.identity(files))
+        if seen is not None and seen[0] is files and seen[2] == len(files):
+            return seen[1]
+        signature = tuple((path, ScanCaches.identity(content)) for path, content in files.items())
+        view = Graph._signatures.setdefault(signature, len(Graph._signatures))
+        Graph._views[ScanCaches.identity(files)] = (files, view, len(files))
+        return view
+
+    #: Manifests parsed this scan (`manifest_of`), or what their parse raised, emptied after it.
+    _parsed: ClassVar[dict[tuple[int, int, int], tuple[Any, Any]]] = {}
+    #: Each files mapping asked about this scan, with its view's id (`view_of`).
+    _views: ClassVar[dict[int, tuple[Mapping[str, Any], int, int]]] = {}
+    #: Each distinct view's signature, once, with its id.
+    _signatures: ClassVar[dict[tuple[tuple[str, int], ...], int]] = {}
 
     MAX_INCLUDE_DEPTH: ClassVar[int] = 8
 
@@ -329,10 +391,29 @@ class Graph:
                     if parse
                     else ecosystem.parse_manifest(by_path[resolved].content)
                 )
-            except Exception:  # noqa: BLE001, S112
+            except Exception as exc:  # noqa: BLE001 -- said once as PARSER.FAILED, so it blocks (item 26)
+                ParsedManifests.record_raised(resolved, exc)
                 continue
             out.append((kind, resolved, included))
-            if depth + 1 < Graph.MAX_INCLUDE_DEPTH:
+            if depth + 1 >= Graph.MAX_INCLUDE_DEPTH:
+                # The bound keeps the work finite; past it the scan blocks, so nesting can't hide
+                # what an installer would still read (item 26).
+                # Named at the file not followed, so an accepted gap names what went unread, and
+                # only a file the loop would have read: one in the tree, a unit, not yet seen. A
+                # cycle, a path leaving the tree or an absent one is handled as below the bound.
+                here = resolved.rpartition("/")[0]
+                for _kind, nested in getattr(included, "includes", ()):
+                    target = posixpath.normpath(posixpath.join(here, nested) if here else nested)
+                    if target.startswith("..") or target in seen or target not in by_path:
+                        continue
+                    ParsedManifests.record_raised(
+                        target,
+                        RecursionError(
+                            f"included past {Graph.MAX_INCLUDE_DEPTH} levels of includes, so "
+                            f"it was not followed"
+                        ),
+                    )
+            else:
                 # A constraints file's own `-r` lines are constraints too.
                 pending.extend(
                     (kind if kind == "constraints" else nested_kind, nested, resolved, depth + 1)
@@ -482,7 +563,7 @@ class Graph:
         shared: dict[tuple[str | None, str, str], str] = {}
         forced: dict[tuple[str | None, str, str], tuple[str, str, str | None]] = {}
         routed: dict[tuple[str | None, str], dict[str, str]] = {}
-        contents = {u.path: u.content for u in units}
+        contents = MappingProxyType({u.path: u.content for u in units})  # Graph.view_of
         Graph.manifest_declarations(
             units, covered, members, contents, shared, routed, declared, declared_from_lock, forced
         )
@@ -510,7 +591,7 @@ class Graph:
         units: list[FileUnit],
         covered: set[tuple[str | None, str]],
         members: dict[tuple[str, str], str | None] | None,
-        contents: dict[str, FileContent],
+        contents: Mapping[str, FileContent],
         shared: dict[tuple[str | None, str, str], str],
         routed: dict[tuple[str | None, str], dict[str, str]],
         declared: dict[tuple[str | None, str, str], tuple[str, DeclaredDependency]],
@@ -812,7 +893,7 @@ class Graph:
         these names is resolved to the member by the workspace, not fetched from the registry.
         """
         members: set[tuple[str, str]] = set()
-        contents = {u.path: u.content for u in units}
+        contents = MappingProxyType({u.path: u.content for u in units})  # Graph.view_of
         for unit in units:
             if "node_modules/" in f"/{unit.path}" or "site-packages/" in unit.path:
                 continue
@@ -838,4 +919,71 @@ class Graph:
         return frozenset(members)
 
 
-__all__ = ["Graph"]
+__all__ = ["Graph", "ParsedManifests"]
+
+
+class ParsedManifests:
+    """What a scan's manifest parses came to, beside `Graph.manifest_of`'s own cache: a manifest
+    read on its own once a scan (`manifest_alone`), and every parse that raised, said once
+    (`report_raised`; items 26 and 27)."""
+
+    #: The paths of manifests whose parse raised this scan, with what it raised (`raised`).
+    _raised: ClassVar[dict[str, str]] = {}
+
+    @staticmethod
+    def manifest_alone(ecosystem: Any, unit: FileUnit) -> Any:
+        """`ecosystem.parse_manifest(unit.content)`, the file read on its own, once a scan: kept
+        as `manifest_of` keeps a parse (its outcome, a raise included, recorded once), under its
+        own key, so a step that read the file alone reads exactly that still."""
+        key = (ScanCaches.identity(ecosystem), ScanCaches.identity(unit.content), -2)
+        kept = Graph._parsed.get(key)
+        if kept is not None and kept[0] is unit.content:
+            if isinstance(kept[1], BaseException):
+                raise kept[1]
+            return kept[1]
+        try:
+            manifest = ecosystem.parse_manifest(unit.content)
+        except Exception as exc:
+            Graph._parsed[key] = (unit.content, exc)
+            ParsedManifests._raised.setdefault(unit.path, f"{type(exc).__name__}: {exc}")
+            raise
+        Graph._parsed[key] = (unit.content, manifest)
+        return manifest
+
+    @staticmethod
+    def raised() -> dict[str, str]:
+        """The manifests whose parse raised this scan, by path, with what it raised."""
+        return dict(ParsedManifests._raised)
+
+    @staticmethod
+    def record_raised(path: str, exc: BaseException) -> None:
+        """A manifest parse that raised outside `manifest_of` (one read from disk on its own)."""
+        ParsedManifests._raised.setdefault(path, f"{type(exc).__name__}: {exc}")
+
+    @staticmethod
+    def report_raised(acc: Any) -> None:
+        """Each manifest whose parse raised this scan, said once (OPERATIONAL.PARSER.FAILED, a
+        content cause), wherever it was asked: eight steps dropped such a manifest unmarked, its
+        install hooks with it (item 26, item 27)."""
+        said = {f.location.path for f in acc.findings if f.rule_id == "OPERATIONAL.PARSER.FAILED"}
+        for path, why in sorted(ParsedManifests._raised.items()):
+            if path in said:
+                continue
+            acc.incomplete(
+                OperationalFinding.build(
+                    path=path,
+                    rule_id="OPERATIONAL.PARSER.FAILED",
+                    message=(
+                        "This manifest's parser failed, so its dependencies and install hooks "
+                        f"were not read: {why}"
+                    ),
+                    remediation="Report this with the file that triggered it.",
+                    severity=Severity.MEDIUM,
+                )
+            )
+
+
+ScanCaches.register(Graph._parsed)
+ScanCaches.register(ParsedManifests._raised)
+ScanCaches.register(Graph._views)
+ScanCaches.register(Graph._signatures)

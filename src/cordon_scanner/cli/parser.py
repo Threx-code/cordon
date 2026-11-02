@@ -39,7 +39,7 @@ class VersionAction(argparse.Action):
         values: object,
         option: str | None = None,
     ) -> None:
-        from cordon_scanner.detect.binary.rule_engine.automaton import Automaton
+        from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton
 
         native = "yes" if Automaton.NATIVE else "no"
         # On stdout, as argparse's own version action prints, so `--version | head -1` still works.

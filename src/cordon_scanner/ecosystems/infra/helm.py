@@ -38,7 +38,7 @@ from cordon_scanner.foundation.formats.datayaml import DataYaml
 from cordon_scanner.foundation.models import Scope
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Container, Mapping
 
     from cordon_scanner.foundation.content import FileContent
 
@@ -315,6 +315,12 @@ class HelmEcosystem(BaseEcosystem):
         return self.parse_in_tree(content, {content.path: content})
 
     def parse_in_tree(self, content: FileContent, files: Mapping[str, FileContent]) -> Manifest:
+        if content.basename == "requirements.lock" and not HelmEcosystem.chart_beside(
+            content, files
+        ):
+            # Helm v2's name, and Rye's pip-format lockfile's: Helm's only beside its Chart.yaml
+            # (faust-cchardet 3.2's was read as a chart lock and blocked a benign sdist, item 27)
+            return Manifest(path=content.path, ecosystem=self.id)
         if content.basename in ("Chart.lock", "requirements.lock"):
             return ChartLock.digest(content, self.id)
         return ChartFile.parse(content, self.id, files)
@@ -323,6 +329,31 @@ class HelmEcosystem(BaseEcosystem):
         if content.basename.endswith(".tgz"):
             return ChartArchive.parse(content, self.id)
         return ChartLock.parse(content, self.id)
+
+    def parse_lockfile_in_tree(
+        self, content: FileContent, tree: Mapping[str, FileContent]
+    ) -> LockGraph:
+        """A lockfile read with the files beside it: a `requirements.lock` with no Chart.yaml in
+        its directory is not a chart's, and is not read as one; beside one, a lock that does not
+        read stays a parse error, as a chart's always was."""
+        if content.basename == "requirements.lock" and not HelmEcosystem.chart_beside(
+            content, tree
+        ):
+            return LockGraph(path=content.path, ecosystem=self.id)
+        return self.parse_lockfile(content)
+
+    def claims_lockfile(self, content: FileContent, paths: Container[str]) -> bool:
+        """Whether this lockfile is Helm's, from the tree's paths alone (the lockfile detector
+        has no contents): a `requirements.lock` only beside its Chart.yaml. With no paths given,
+        claimed as before, so a chart's broken lock is never dropped for want of a tree."""
+        if content.basename != "requirements.lock" or not paths:
+            return True
+        return HelmEcosystem.chart_beside(content, paths)
+
+    @staticmethod
+    def chart_beside(content: FileContent, files: Container[str]) -> bool:
+        directory = content.path.rpartition("/")[0]
+        return (f"{directory}/Chart.yaml" if directory else "Chart.yaml") in files
 
 
 __all__ = ["ChartArchive", "ChartFile", "ChartLock", "ChartRepository", "HelmEcosystem"]

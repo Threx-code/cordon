@@ -23,7 +23,7 @@ A rule whose condition reaches `console` is never gated: its messages are part o
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from cordon_scanner.detect.binary.rule_engine.syntax import (
@@ -34,6 +34,7 @@ from cordon_scanner.detect.binary.rule_engine.syntax import (
     Either,
     Found,
     Literal,
+    Name,
     Node,
     Of,
     Path,
@@ -138,11 +139,40 @@ class Gates:
             return
         names = [s.name for s in rule.strings]
         parts = Gates.conjuncts(rule.condition)
-        rule.gates = (
-            [build(p) for p in parts if not Gates.reads_strings(p)] if len(parts) > 1 else []
-        )
+        kept = [p for p in parts if not Gates.reads_strings(p)] if len(parts) > 1 else []
+        rule.gates = [build(p) for p in kept]
+        rule.gate_keys = [Gates.key(p) for p in kept]
         rule.clauses = [c for c in Gates.clauses(rule.condition, names) if c <= set(names)]
         rule.magic = frozenset(m for p in parts if rule.gates and (m := Gates.magic(p)) is not None)
+
+    @staticmethod
+    def key(node: Node) -> str | None:
+        """A gate's structure, which its result on one file depends on alone: the condition part
+        written out field by field. None where it names a bare identifier (another rule's result,
+        or a loop variable), whose value is not the file's alone."""
+        if Gates.reaches(node, lambda n: isinstance(n, Name)):
+            return None
+        return repr(node)
+
+    @staticmethod
+    def hold(rule: RuleDef, frame: Any, memo: dict[str, bool]) -> bool:
+        """Whether every gate of the rule holds on the frame's file, each distinct gate run once
+        per file (`memo`, one per match): a gate is a function of the file, so the thousands of
+        rules gated on `uint16(0) == 0x5A4D` or `pe.is_pe` ask it once."""
+        keys = (
+            rule.gate_keys if len(rule.gate_keys) == len(rule.gates) else [None] * len(rule.gates)
+        )
+        for gate, key in zip(rule.gates, keys, strict=True):
+            if key is None:
+                if not gate(frame):
+                    return False
+                continue
+            held = memo.get(key)
+            if held is None:
+                held = memo[key] = bool(gate(frame))
+            if not held:
+                return False
+        return True
 
     @staticmethod
     def magic(node: Node) -> Magic | None:
@@ -169,14 +199,14 @@ class Gates:
 
     @staticmethod
     def search(
-        rule: RuleDef, live: set[int], find: Callable[[Any], list[tuple[int, int]]]
-    ) -> tuple[dict[str, list[tuple[int, int]]], bool]:
+        rule: RuleDef, live: set[int], find: Callable[[Any], Sequence[tuple[int, int]]]
+    ) -> tuple[dict[str, Sequence[tuple[int, int]]], bool]:
         """The rule's strings searched as its clauses allow: (what was found, whether the rule may
         hold). A string not searched is reported as no match."""
         alive = {s.name for s in rule.strings if id(s) in live}
         if any(clause.isdisjoint(alive) for clause in rule.clauses):
             return {s.name: [] for s in rule.strings}, False
-        found: dict[str, list[tuple[int, int]]] = {
+        found: dict[str, Sequence[tuple[int, int]]] = {
             s.name: [] for s in rule.strings if s.name not in alive
         }
         if rule.clauses:

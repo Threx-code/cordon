@@ -43,7 +43,7 @@ the wording of SUSPECT.DEPENDENCY.TYPOSQUAT.001, both of which changed with this
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Final
+from typing import ClassVar, Final
 
 from cordon_scanner.foundation.once import OneOff
 from cordon_scanner.foundation.paths import PackagePaths
@@ -180,10 +180,21 @@ class RealPackages:
             line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#")
         )
 
+    #: The empty curated set of an ecosystem with none, one object for every ask (`parts`).
+    _NONE: ClassVar[frozenset[str]] = frozenset()
+
     @staticmethod
     def real_packages(ecosystem: str) -> frozenset[str]:
         """Every name known to be an established package in this ecosystem."""
-        return RealPackages._shipped(ecosystem) | _CURATED.get(ecosystem, frozenset())
+        shipped, curated = RealPackages.parts(ecosystem)
+        return shipped | curated
+
+    @staticmethod
+    def parts(ecosystem: str) -> tuple[frozenset[str], frozenset[str]]:
+        """The shipped allowlist and the curated set `real_packages` joins, each the same object
+        on every ask while its source is unchanged: what a cache built from them (`PackageIntel._known`)
+        compares with `is`. `real_packages` itself is a new union on every call."""
+        return RealPackages._shipped(ecosystem), _CURATED.get(ecosystem, RealPackages._NONE)
 
 
 class _Mapping:
