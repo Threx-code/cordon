@@ -30,6 +30,7 @@ import hashlib
 import json
 import math
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar, Final
@@ -225,10 +226,39 @@ class CodeFeatures:
 
     @classmethod
     def tokens(cls, text: str) -> list[str]:
+        """The first MAX_TOKENS normalised tokens: one window, as the model was trained on."""
+        return cls._normalised(text)[: cls.MAX_TOKENS]
+
+    #: A file is read in text chunks of this many characters, overlapping by CHUNK_OVERLAP, each cut
+    #: into windows of MAX_TOKENS tokens: no size is too large to score (the owner's no-caps rule;
+    #: cordon-47, 2 Nov). A file within one window is scored exactly as before.
+    CHUNK: ClassVar[int] = 2_000_000
+    CHUNK_OVERLAP: ClassVar[int] = 65_536
+
+    @classmethod
+    def windows(cls, text: str) -> Iterator[tuple[set[int], dict[int, str]]]:
+        """Each window's buckets and its platform n-grams by bucket, in bounded memory: the file's
+        score is the highest window's, the max the model already takes over a package's files."""
+        start = 0
+        while True:
+            chunk = text[start : start + cls.CHUNK]
+            tokens = cls._normalised(chunk)
+            step = max(1, cls.MAX_TOKENS - cls.K - cls.WINDOW)
+            for w in range(0, max(1, len(tokens) - cls.K - cls.WINDOW + 1), step):
+                part = tokens[w : w + cls.MAX_TOKENS]
+                yield cls._buckets_of(part), cls._ngrams_of(part)
+                if w + cls.MAX_TOKENS >= len(tokens):
+                    break
+            if start + cls.CHUNK >= len(text):
+                return
+            start += cls.CHUNK - cls.CHUNK_OVERLAP
+
+    @classmethod
+    def _normalised(cls, text: str) -> list[str]:
         from cordon_scanner.analysis.javascript.js_eval import JsEval
 
         out: list[str] = []
-        for tok in JsEval.tokens(text, templates=True)[: cls.MAX_TOKENS]:
+        for tok in JsEval.tokens(text, templates=True):
             kind, value = tok.kind, str(tok.value)
             if kind == "str":
                 out.append("S:" + value if value in cls.PLATFORM else cls.literal_class(value))
@@ -246,8 +276,11 @@ class CodeFeatures:
 
     @classmethod
     def buckets(cls, text: str) -> set[int]:
-        """The file's shingle and platform n-gram buckets."""
-        tokens = cls.tokens(text)
+        """The file's shingle and platform n-gram buckets (its first window)."""
+        return cls._buckets_of(cls.tokens(text))
+
+    @classmethod
+    def _buckets_of(cls, tokens: list[str]) -> set[int]:
         hashes = [
             cls._hash("\x1f".join(tokens[i : i + cls.K]))
             for i in range(max(0, len(tokens) - cls.K + 1))
@@ -267,7 +300,10 @@ class CodeFeatures:
     @classmethod
     def ngrams(cls, text: str) -> dict[int, str]:
         """The platform n-grams of a file by bucket, to name what carried a score."""
-        tokens = cls.tokens(text)
+        return cls._ngrams_of(cls.tokens(text))
+
+    @classmethod
+    def _ngrams_of(cls, tokens: list[str]) -> dict[int, str]:
         sequence = [t for t in tokens if t in cls.PLATFORM]
         out: dict[int, str] = {}
         for n in (2, 3):
