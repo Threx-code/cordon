@@ -381,6 +381,13 @@ class TestSelfScan(CorpusFixtures):
             # encoded `rm -rf /` -- as arguments, by construction, like the agent benchmark.
             and f.location.path != "tests/unit/judge/test_tool_call_guard.py"
             and f.location.path != "tests/unit/analysis/python/test_pattern_literals.py"
+            # Cordon's own rule material, reported at MEDIUM since rule material no longer lowers a
+            # secret or attack finding (1c00b353, the outer layer's fail-open fix): the secrets
+            # tests' credential-shaped fixtures, one rule pack and the rule-material markers. The
+            # decided cost of that fix, as on other rule corpora; listed here, file by file.
+            and f.location.path != "tests/unit/detect/secrets/test_review_defects.py"
+            and f.location.path != "src/cordon_scanner/rules/builtin/capabilities-javascript.yaml"
+            and f.location.path != "src/cordon_scanner/foundation/samples.py"
             # Recovered malware shapes, rebuilt as minimal fixtures to keep them caught.
             and f.location.path
             != "tests/unit/detect/code/capability/test_recovered_malware_shapes.py"
