@@ -506,6 +506,7 @@
   "intel/advisories/ranges": "intel/advisories/ranges",
   "intel/advisories/rubysec": "intel/advisories/rubysec",
   "intel/advisories/shipped": "intel/advisories/shipped",
+  "intel/advisories/shipped_table": "intel/advisories/shipped_table",
   "intel/advisories/upstream/base": "intel/advisories/upstream/base",
   "intel/advisories/upstream/cocoapods": "intel/advisories/upstream/cocoapods",
   "intel/advisories/upstream/conan": "intel/advisories/upstream/conan",

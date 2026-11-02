@@ -16,6 +16,7 @@ from cordon_scanner.intel.advisories.advisories import (
     _SHARED_DATA,
     _TAMPERED,
     ADVISORY_ECOSYSTEMS,
+    DATA_DIR,
     Advisory,
     AdvisoryDatabase,
     AdvisoryFiles,
@@ -149,6 +150,24 @@ class ShippedAdvisories:
         # On disk when it can be: a sealed SQLite index of the verified file, read by name
         # (`intel/advisory_index`). In memory otherwise -- no SQLite, or no writable cache.
         verified = ShippedAdvisories._verified_file(ecosystem)
+        if (
+            verified is not None
+            and not upserts
+            and not replaced
+            and verified[0].parent.resolve() == DATA_DIR.resolve()
+        ):
+            # No overlay, and the package's own file: the release-built table beside it, which
+            # needs no build and no seal (`intel/advisories/shipped_table`), when it names this
+            # file's own digest. Never one beside a synced copy in the cache: a table carries no
+            # seal, and the cache is not trusted (`core.local_seal`).
+            from cordon_scanner.intel.advisories.shipped_table import ShippedTable
+
+            table_path = verified[0].with_name(
+                verified[0].name.removesuffix(".json.gz").removesuffix(".json") + ".tbl"
+            )
+            table = ShippedTable.open(table_path, verified[1])
+            if table is not None:
+                return IndexedRecords(table, [], frozenset())
         if verified is not None:
             from cordon_scanner.intel.advisories.advisory_index import AdvisoryIndex
 
