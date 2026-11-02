@@ -728,6 +728,12 @@ NOT_A_SECRET = re.compile(
       # /text|hard_line_break|soft_line_break/` in `marktext` is a pattern, and the
       # alternation inside it is what makes it one.
       | /[^/\n]{1,120}/[gimsuyxd]{0,6}
+      # A REDACTED KEY (release item 68, fix 5): some characters of a key and a run of asterisks
+      # at the END of the value. langchain's config files carry nineteen, `sk-` and lowercase
+      # runs and then `******`: the mask replaces the part that makes the key usable. Anchored at
+      # both ends and only the asterisk (the one mask measured), so a mask in the middle, text after
+      # the run, or a full-format key with a word beside it is not excused.
+      | [A-Za-z0-9_-]{0,64}\*{4,64}
     )$
     """
 )
