@@ -29,9 +29,12 @@ class MangledKit:
         return "".join(f"var _0x{0xA000 + i:04x} = 0;\n" for i in range(count))
 
     @staticmethod
-    def package(tmp_path: Path, files: dict[str, str]) -> Path:
+    def package(
+        tmp_path: Path, files: dict[str, str], scripts: dict[str, str] | None = None
+    ) -> Path:
         buffer = io.BytesIO()
-        members = {"package/package.json": json.dumps({"name": "p", "version": "1.0.0"})}
+        manifest = {"name": "p", "version": "1.0.0", "scripts": scripts or {}}
+        members = {"package/package.json": json.dumps(manifest)}
         members.update({f"package/{name}": text for name, text in files.items()})
         with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
             for name, text in members.items():
@@ -44,9 +47,11 @@ class MangledKit:
         return target
 
     @staticmethod
-    def found(tmp_path: Path, files: dict[str, str]) -> list:  # type: ignore[type-arg]
+    def found(  # type: ignore[type-arg]
+        tmp_path: Path, files: dict[str, str], scripts: dict[str, str] | None = None
+    ) -> list:
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(
-            MangledKit.package(tmp_path, files)
+            MangledKit.package(tmp_path, files, scripts)
         )
         return [f for f in result.findings if f.rule_id == RULE]
 
@@ -120,6 +125,23 @@ class TestTheBuildRoots:
     )
     def test_the_root_is_read_inside_the_package(self, path: str, inside: bool) -> None:
         assert PackingFindings.build_root(path) is inside
+
+
+class TestBuildOutputAnInstallHookRuns:
+    """The exemption is for bundles nobody runs on install: moving the payload under dist/ and
+    running it from postinstall keeps the finding (0 benign, 0 misses on rows a3b9c5f1:
+    jsm/pair-cprime.txt)."""
+
+    def test_a_hook_run_file_under_dist_blocks_with_the_verdict_on(self, tmp_path: Path) -> None:
+        found = MangledKit.found(
+            tmp_path, {"dist/app.js": MangledKit.names(20)}, {"postinstall": "node dist/app.js"}
+        )
+        assert found and all(f.severity >= Severity.HIGH for f in found)
+
+    def test_a_dist_main_nothing_installs_is_not(self, tmp_path: Path, verdict_off: None) -> None:
+        assert not MangledKit.found(
+            tmp_path, {"dist/app.js": MangledKit.names(20)}, {"build": "node dist/app.js"}
+        )
 
 
 class TestTheCountIsBounded:

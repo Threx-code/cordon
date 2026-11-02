@@ -130,7 +130,7 @@ class ObfuscationDetector(BaseDetector):
                 detector=ObfuscationFinding.DETECTOR,
                 message=(
                     "A file carries obfuscator.io's `_0x` naming throughout and is not the "
-                    "package's build output."
+                    "package's build output, or is build output an install hook runs."
                 ),
                 references=(references.OBSCURED_SECURITY_DATA,),
                 remediation="Obtain the original source and review that.",

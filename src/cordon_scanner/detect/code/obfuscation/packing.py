@@ -105,7 +105,7 @@ MANGLED_NAME = re.compile(rb"\b_0x[0-9a-f]{4,6}\b")
 MANGLED_NAMES = 20
 
 #: A package's own build output, by its first directory (GuardDog's js-mangling exclusions). A bundle
-#: there is obfuscated by a build step the package's source is reviewed in.
+#: there is obfuscated by a build step the package's source is reviewed in, unless installing runs it.
 BUILD_ROOTS = frozenset({"dist", "build", "vendor", "node_modules"})
 
 # Minified output is legitimately long-lined, so length alone must not fire on
@@ -306,7 +306,7 @@ class PackingFindings:
     @staticmethod
     def mangled(content: FileContent, ctx: ScanContext, language: str | None) -> Iterable[Hit]:
         """SUSPECT.OBFUSCATION.MANGLED.001: obfuscator.io's naming, 20 distinct `_0x` names, in a
-        file the package does not keep as build output.
+        file the package does not keep as build output -- or in build output an install hook runs.
 
         Beside PACKED, from the same output shape: PACKED is graded by the package verdict, which
         held it below the gate on 34 of 36 such misses ("0.44 against a blocking line of 0.45"). This
@@ -328,7 +328,9 @@ class PackingFindings:
                 break
         if first is None or len(names) < MANGLED_NAMES:
             return
-        if PackingFindings.build_root(content.path):
+        # Build output an install hook runs is not a bundle somebody reviews the source of: it runs
+        # on every install, unread (moving the payload to dist/ and running it from postinstall).
+        if PackingFindings.build_root(content.path) and not ctx.in_install_hook(content.path):
             return
         yield Hit(
             rule_id="SUSPECT.OBFUSCATION.MANGLED.001",
