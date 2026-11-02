@@ -7,6 +7,8 @@ import json
 import tarfile
 import zipfile
 
+import pytest
+
 from cordon_scanner import Scanner
 from cordon_scanner.detect.code.capability.javascript import JavaScriptCapabilities
 from cordon_scanner.foundation.config.settings import Config
@@ -95,6 +97,14 @@ class TestWalletSecretThroughHelper:
 
 
 class TestCaseVariantHook:
+    @pytest.mark.xfail(
+        strict=True, reason="held as a warning by the package verdict (measured 2 Nov)"
+    )
+    def test_a_postinstall_spelled_in_another_case_as_the_user_sees_it(self, tmp_path) -> None:
+        """With the verdict on: a token sent out by a `postInstall` on this minimal fixture ends below
+        HIGH (measured 2 Nov). Strict, so lifting it fails here and the mark comes off."""
+        self.test_a_postinstall_spelled_in_another_case_is_install_code(tmp_path, None)
+
     def test_a_postinstall_spelled_in_another_case_is_install_code(
         self, tmp_path, verdict_off
     ) -> None:
