@@ -138,25 +138,10 @@ class Facts:
 
     @staticmethod
     def depth(text: str) -> int:
-        """The deepest nesting of `[` and `{` outside JSON strings, in one linear pass."""
-        deepest = level = 0
-        quoted = escaped = False
-        for char in text:
-            if quoted:
-                if escaped:
-                    escaped = False
-                elif char == "\\":
-                    escaped = True
-                elif char == '"':
-                    quoted = False
-            elif char == '"':
-                quoted = True
-            elif char in "[{":
-                level += 1
-                deepest = max(deepest, level)
-            elif char in "]}":
-                level -= 1
-        return deepest
+        """The deepest nesting of `[` and `{` outside JSON strings (`ServedJson.depth`)."""
+        from cordon_scanner.foundation.formats.served_json import ServedJson
+
+        return ServedJson.depth(text)
 
     @staticmethod
     def accept(text: str, spent: int) -> tuple[dict[str, list[Any]] | None, str]:

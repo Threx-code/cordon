@@ -95,7 +95,14 @@ class TestASignatureIsAnArchive:
         assert ArchiveReader.not_an_archive(data) is None
 
     def test_a_directory_record_anywhere_is_an_archive(self) -> None:
-        assert ArchiveReader.not_an_archive(b"some text\nPK\x05\x06 and more text\n") is None
+        """A directory that points at a local header, anywhere (item 76 keeps it): the archive."""
+        data = b"some text\n" + NotAnArchiveKit.stored_text_zip()
+        assert ArchiveReader.not_an_archive(data) is None
+
+    def test_an_end_record_alone_in_text_is_text(self) -> None:
+        """An end record with no local header anywhere holds no entry any extractor reaches (item
+        76): a zip library's source carries the signature as a constant (`jszip.min.js`)."""
+        assert ArchiveReader.not_an_archive(b"some text\nPK\x05\x06 and more text\n") == "text"
 
     def test_plain_text_named_as_a_zip_stays_text(self) -> None:
         """basedpyright's bad.{egg,jar,zip}."""

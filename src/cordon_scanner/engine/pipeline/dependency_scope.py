@@ -82,6 +82,11 @@ class DependencyScope:
             if u.path.rsplit("/", 1)[-1] == "package.json" and not DependencyScope._pruned(u.path)
         }
         files = {u.path: u for u in units}
+        manifest_paths = {
+            DependencyScope.directory(u.path): u.path
+            for u in units
+            if u.path.rsplit("/", 1)[-1] == "package.json" and not DependencyScope._pruned(u.path)
+        }
         todo = [self.root] if self.root in manifests else []
         seen: set[str] = set()
         while todo:
@@ -89,7 +94,7 @@ class DependencyScope:
             if directory in seen:
                 continue
             seen.add(directory)
-            scripts = InstallScripts.of(manifests[directory])
+            scripts = InstallScripts.of(manifests[directory], manifest_paths[directory])
             self.scripted_unresolved = (
                 self.scripted_unresolved
                 or scripts.unresolved

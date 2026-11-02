@@ -250,7 +250,9 @@ class SourceComments:
         return any(start <= offset < end for start, end in spans)
 
     @staticmethod
-    def comment_column(line: str, language: str | None) -> int | None:
+    def comment_column(
+        line: str, language: str | None, *, blocks_known: bool = False
+    ) -> int | None:
         """The column at which a comment begins on this line, or `None` for none.
 
         A property of the line alone, which is the point: the answer does not depend
@@ -271,9 +273,25 @@ class SourceComments:
             return None
 
         stripped = line.lstrip()
-        if language in BLOCK_COMMENT_LANGUAGES and stripped.startswith(("*", "*/")):
-            # Inside a `/* ... */`, or closing one. The whole line is comment.
-            return 0
+        if (
+            not blocks_known
+            and language in BLOCK_COMMENT_LANGUAGES
+            and stripped.startswith(("*", "*/"))
+        ):
+            # `blocks_known`: the caller has the file's exact block spans
+            # (`block_comment_spans`), so a line starting with `*` is code unless a span holds
+            # it -- a generator method `*gen() {...}`, an expression continued `* eval(x)`.
+            # Inside a `/* ... */`, or closing one: comment to the close. What follows a close on
+            # the same line is code, read as any line is (the epxreso/epxresso npm campaign put
+            # 40 KB of obfuscator.io output after ` */` and every rule read it as a remark).
+            close = line.find("*/")
+            rest = line[close + 2 :] if close >= 0 else ""
+            if not rest.strip():
+                return 0
+            after = SourceComments.comment_column(
+                " " * (close + 2) + rest, language, blocks_known=True
+            )
+            return None if after is None else max(after, close + 2)
         if stripped.startswith("#!"):
             # A shebang is not a comment about code, it is how the file is run, and a
             # capability named in it is real.

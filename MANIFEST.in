@@ -36,7 +36,7 @@ recursive-include action *.yml
 # regenerate the bill of materials for their own build.
 recursive-include scripts *.py
 
-recursive-include src/cordon_scanner/rules/builtin *.yaml
+recursive-include src/cordon_scanner/rules/builtin *.yaml derivations.json
 recursive-include src/cordon_scanner/rules/rule_files *.yar *.json COMMIT
 recursive-include src/cordon_scanner/detect/data *.json *.json.gz
 recursive-include src/cordon_scanner/images/data *.json
@@ -54,7 +54,7 @@ recursive-include src/cordon_scanner/intel/data *.txt
 # that predates this or has not run the sync script; `intel/advisories.py`
 # falls back to the small hand-curated BUNDLED set either way.
 recursive-include src/cordon_scanner/intel/data *.json
-recursive-include src/cordon_scanner/intel/data *.json.gz *.csv.gz
+recursive-include src/cordon_scanner/intel/data *.json.gz *.csv.gz reuse-index.bin *.tbl
 include src/cordon_scanner/py.typed
 
 # Never shipped: caches, build output and editor state carry nothing a consumer

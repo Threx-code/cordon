@@ -49,7 +49,10 @@ from cordon_scanner.sources.budget import (
     _BytesReader,
 )
 from cordon_scanner.sources.lone_stream import LoneStream
+from cordon_scanner.sources.rar import RarReader
+from cordon_scanner.sources.sevenzip import SevenZipReader
 from cordon_scanner.sources.signatures import ArchiveSignatures, CompressedHeader, UnopenedFormats
+from cordon_scanner.sources.zip_entries import ZipEntries, ZipNames, ZipRepair
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -216,10 +219,17 @@ class ArchiveReader:
         head = bytes(data[:512])
         zip_at_start = head.startswith((b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"))
         tar_at_start = head.startswith(_COMPRESSED_MAGIC) or head[257:262] == b"ustar"
-        ends_as_zip = not zip_at_start and zipfile.is_zipfile(_BytesReader(data))
+        # A zip only where an extractor finds an entry in it (`ZipEntries.present`, item 76).
+        ends_as_zip = (
+            not zip_at_start and zipfile.is_zipfile(_BytesReader(data)) and ZipEntries.present(data)
+        )
         if ArReader.is_ar(head):
             # A static library or a Debian package (item 53): members behind fixed headers.
             ArReader.extract(data, path, limits, result, deadline, member=ExtractedMember)
+        elif SevenZipReader.is_7z(head):  # 7z, on the stdlib's lzma (item 76)
+            SevenZipReader.extract(data, path, limits, result, deadline, member=ExtractedMember)
+        elif RarReader.is_rar5(head):  # RAR 5, our own decoder (item 76)
+            RarReader.extract(data, path, limits, result, deadline, member=ExtractedMember)
         elif zip_at_start:
             ArchiveReader._extract_zip(data, path, limits, result, deadline)
         elif tar_at_start and ends_as_zip:
@@ -374,7 +384,16 @@ class ArchiveReader:
         try:
             archive = zipfile.ZipFile(_BytesReader(data))
         except (zipfile.BadZipFile, OSError, ValueError) as exc:
-            raise ArchiveError(f"{path}: not a readable zip archive: {exc}") from exc
+            # A directory that will not open, in front of local headers that account for every
+            # byte (an Adobe XFL `.fla`, a hand-built APK): read as a streaming extractor installs
+            # it, by those headers, through a directory rebuilt from them (item 76). Headers that
+            # do not account for the bytes leave it refused, the gap it was.
+            rebuilt = ZipRepair.rebuild(data, limits)
+            if rebuilt is None:
+                raise ArchiveError(f"{path}: not a readable zip archive: {exc}") from exc
+            result.rejected.append(ZipRepair.rebuilt(path, exc))
+            data = rebuilt
+            archive = zipfile.ZipFile(_BytesReader(data))
 
         with archive:
             infos = archive.infolist()
@@ -527,7 +546,7 @@ class ArchiveReader:
             return
 
         try:
-            with archive.open(info) as handle:
+            with ZipNames.open_member(archive, info) as handle:
                 payload = ArchiveReader._read_bounded(
                     handle, limits, info.compress_size, result, safe
                 )

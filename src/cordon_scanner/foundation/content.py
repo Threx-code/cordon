@@ -33,6 +33,7 @@ from cordon_scanner.foundation.files.windows import BytesWindows, DiskWindows, W
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS, Limits
 from cordon_scanner.foundation.paths import ContainerPaths
 from cordon_scanner.foundation.samples import SampleKinds
+from cordon_scanner.foundation.text.columns import TextColumns
 from cordon_scanner.foundation.text.comments import SourceComments
 
 if TYPE_CHECKING:
@@ -247,7 +248,7 @@ class LineIndex:
 
     raw: bytes
     limits: Limits
-    _comment_columns: dict[tuple[int, str | None], int | None]
+    _comment_columns: dict[tuple[int, str | None, bool], int | None]
     _per_line: dict[tuple[str, int], Any]
 
     @cached_property
@@ -325,7 +326,39 @@ class LineIndex:
         line = self.line_of(offset, place=False)
         return offset - self.line_starts[line - 1] + 1
 
-    def comment_column(self, line_number: int, language: str | None) -> int | None:
+    def char_column(self, byte_offset: int) -> int:
+        """0-indexed column, in characters, of an offset within its line (`TextColumns`)."""
+        return TextColumns.char_column(self, byte_offset)
+
+    def byte_spans(self, spans: tuple[tuple[int, int], ...]) -> tuple[tuple[int, int], ...]:
+        """Spans over the decoded text as byte spans (`TextColumns`)."""
+        return TextColumns.byte_spans(self, spans)
+
+    @cached_property
+    def _ascii(self) -> bool:
+        """Whether every byte is ASCII, so characters and bytes agree: once per file, not per match."""
+        return self.raw.isascii()
+
+    @cached_property
+    def _line_char_starts(self) -> tuple[int, ...]:
+        """Character offset of the start of each line, in step with `line_starts`."""
+        starts, total = [], 0
+        for raw_line in self.raw.split(b"\n"):
+            starts.append(total)
+            total += len(raw_line.decode("utf-8", "replace")) + 1
+        return tuple(starts)
+
+    def in_line_comment(
+        self, byte_offset: int, language: str | None, *, blocks_known: bool = False
+    ) -> bool:
+        """Whether the offset sits in a comment its own line shows (`SourceComments.comment_column`),
+        compared in characters. `blocks_known`: the caller checks the exact block spans itself."""
+        start = self.comment_column(self.line_of(byte_offset), language, blocks_known=blocks_known)
+        return start is not None and self.char_column(byte_offset) >= start
+
+    def comment_column(
+        self, line_number: int, language: str | None, *, blocks_known: bool = False
+    ) -> int | None:
         """Where a comment begins on this line, memoised for the file.
 
         The computation is a scan of the line, and the answer does not depend on
@@ -337,10 +370,12 @@ class LineIndex:
         five-second budget here and then exceeded it, so the detectors that would
         have named it as obfuscated never ran.
         """
-        key = (line_number, language)
+        key = (line_number, language, blocks_known)
         memo = self._comment_columns
         if key not in memo:
-            memo[key] = SourceComments.comment_column(self.line_text(line_number), language)
+            memo[key] = SourceComments.comment_column(
+                self.line_text(line_number), language, blocks_known=blocks_known
+            )
         return memo[key]
 
     def line_text(self, line_number: int) -> str:
@@ -716,13 +751,17 @@ class FileContent(LineIndex, ContentKind):
     """For a window of a larger file (`WindowPass`): that file's source and the window's byte
     offset in it."""
 
-    _comment_columns: dict[tuple[int, str | None], int | None] = field(
+    _comment_columns: dict[tuple[int, str | None, bool], int | None] = field(
         default_factory=dict, repr=False, compare=False
     )
     """Memo for `comment_column`. See that method for what it cost without one."""
 
     _per_line: dict[tuple[str, int], Any] = field(default_factory=dict, repr=False, compare=False)
     """Memo for `once_per_line`."""
+
+    def in_block_comment(self, byte_offset: int, language: str | None) -> bool:
+        """Whether a byte offset lies in one of the file's `/* ... */` blocks (`TextColumns`)."""
+        return TextColumns.in_block_comment(self, byte_offset, language)
 
     # -- Construction ----------------------------------------------------
 

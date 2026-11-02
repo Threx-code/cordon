@@ -24,6 +24,7 @@ from cordon_scanner.detect.base import (
     RuleSelector,
     Unit,
 )
+from cordon_scanner.detect.secrets.secrets import RULE_MATERIAL_CEILING
 from cordon_scanner.foundation.capabilities import MatchKind
 from cordon_scanner.foundation.models import Category, Explanation, Finding, Location, Severity
 from cordon_scanner.foundation.text.redact import Redactor
@@ -56,8 +57,9 @@ class PackRuleDetector(BaseDetector):
         if not isinstance(unit, FileUnit):
             return ()
         content = unit.content
-        if content.is_binary or content.is_rule_material:
+        if content.is_binary:
             return ()
+        # Rule material is a ceiling, never a skip, and only where `is_rule_material_here` allows it.
         findings: list[Finding] = []
         for compiled in RuleSelector.select_rules(
             ctx.rules, language=unit.language, path=content.path
@@ -70,7 +72,9 @@ class PackRuleDetector(BaseDetector):
                 continue
             rule = compiled.rule
             severity = ctx.scorer.apply_category_floor(rule.category, rule.severity)
-            if rule.category is not Category.MALICIOUS and SourcePaths.is_test_material(
+            if SourcePaths.is_rule_material_here(content, ctx, rule.id, rule.category):
+                severity = min(severity, RULE_MATERIAL_CEILING)
+            elif rule.category is not Category.MALICIOUS and SourcePaths.is_test_material(
                 content.path
             ):
                 severity = min(severity, Severity.LOW)

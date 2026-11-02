@@ -254,7 +254,7 @@ sources = ["src/cordon_scanner/_native/anchors.c"]
 [tool.cordon-build.package-data]
 "cordon_scanner" = ["py.typed"]
 "cordon_sandbox" = ["py.typed"]
-"cordon_scanner.rules.builtin" = ["*.yaml"]
+"cordon_scanner.rules.builtin" = ["*.yaml", "derivations.json"]
 # The built-in rule pack (`--rule-file builtin`, detect/binary/rule_files.py) and the records of where
 # its rules came from and how they measured. Missing from the wheel before 2026-10-20: an install
 # from PyPI had no pack to load.
@@ -279,7 +279,11 @@ sources = ["src/cordon_scanner/_native/anchors.c"]
 # and nine records. The advisory sets are compressed because they are the
 # largest thing in the wheel and they are JSON; the sidecars are not, because
 # they are read to decide whether the sets can be trusted at all.
-"cordon_scanner.intel.data" = ["*.txt", "*.json", "*.json.gz", "*.csv.gz"]
+# `reuse-index.bin` is the code-reuse index (item 54, `intel/malware/reuse_index.py`), refreshed
+# daily through the feed (item 3B); a wheel without it has no reuse check at all.
+# `*.tbl` is each advisory file's look-up table (scripts/build/build_advisory_tables.py, item 74):
+# read by name with no per-process build, and refused unless it names its data file's digest.
+"cordon_scanner.intel.data" = ["*.txt", "*.json", "*.json.gz", "*.csv.gz", "reuse-index.bin", "*.tbl"]
 # The schema-generated infrastructure policies and the sidecar recording which
 # provider versions produced them. A wheel without them is the curated table
 # alone, which is a working scanner with a fifth of the coverage -- so the

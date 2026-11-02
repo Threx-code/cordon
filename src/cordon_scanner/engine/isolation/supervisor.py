@@ -55,18 +55,21 @@ class Reason:
 @dataclass(frozen=True, slots=True)
 class Bounds:
     """What one worker may use. `memory_bytes` 0 sets no address-space limit; a unit's CPU budget is
-    `max(cpu_floor, cpu_per_byte * size)` seconds, and its wall backstop `wall_factor` times that."""
+    `max(cpu_floor, cpu_per_byte * size)` seconds, and its wall backstop `wall_factor` times that,
+    never past `wall_ceiling`: with no scan deadline, a 300 MB archive's backstop was many hours, and a
+    hung expander must be a gap in bounded time (outer-layer review of 6b441f3a)."""
 
     memory_bytes: int = 0
     cpu_floor: float = 30.0
     cpu_per_byte: float = 0.0
     wall_factor: float = 10.0
+    wall_ceiling: float = 4 * 3600.0
 
     def cpu_budget(self, size: int) -> float:
         return max(self.cpu_floor, self.cpu_per_byte * size)
 
     def wall_budget(self, size: int) -> float:
-        return self.wall_factor * self.cpu_budget(size)
+        return min(self.wall_factor * self.cpu_budget(size), max(self.wall_ceiling, self.cpu_floor))
 
 
 @dataclass(frozen=True, slots=True)
@@ -306,6 +309,9 @@ class Supervisor:
     """Runs units across up to `workers` supervised processes: each unit's result, or why it has
     none, by its index."""
 
+    #: The longest one wait for a worker's answer lasts before the backstops are read again.
+    MAX_WAIT: ClassVar[float] = 3600.0
+
     def __init__(self, context: BaseContext, setup: tuple[str, tuple[Any, ...]], work: str,
                  bounds: Bounds, workers: int, *, deadline: float | None = None,
                  on_result: Callable[[int, Any], None] | None = None) -> None:  # fmt: skip
@@ -402,6 +408,11 @@ class Supervisor:
         if self.deadline is not None and due:
             due.append(self.deadline - self.clock())
         timeout = max(0.0, min(due)) if due else None
+        if timeout is not None:
+            # A unit the size of a whole scan (the context worker's, the expander's) has a backstop
+            # past what the selector takes (2**31 ms: "timeout is too large", exit 2 on a 300 MB
+            # archive): wait at most an hour at a time; `overdue` still reads the whole backstop.
+            timeout = min(timeout, Supervisor.MAX_WAIT)
         waitable: list[Any] = [w.conn for w in pool]
         # a template worker's sentinel is its connection: each object once, or the selector refuses it
         waitable += [w.process.sentinel for w in pool if w.process.sentinel is not w.conn]

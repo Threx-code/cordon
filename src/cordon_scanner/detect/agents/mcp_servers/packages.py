@@ -282,7 +282,7 @@ class McpPackageDetector(BaseDetector):
         """Hidden characters or agent-directed instructions in the text a server gives the agent."""
         start = self._anchor(unit, spec)
         for member, text in sources:
-            for description in McpServerSource._tool_descriptions(text):
+            for description in McpServerSource._tool_descriptions(text, member):
                 hidden = HIDDEN.search(description.encode("utf-8"))
                 injected = (
                     INJECTION.search(description)

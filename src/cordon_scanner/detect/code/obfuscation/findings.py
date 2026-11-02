@@ -108,7 +108,7 @@ class ObfuscationFinding:
     @staticmethod
     def _ceiling(content: FileContent, ctx: ScanContext, hit: Hit, severity: Severity) -> Severity:
         """The ceiling a hit's place puts on it: rule material, test material, documentation or generated output."""
-        if content.is_rule_material:
+        if SourcePaths.is_rule_material_here(content, ctx, hit.rule_id, Category.SUSPICIOUS):
             # Bandit's pair is the canonical case and is in this detector's own history:
             # `plugins/trojansource.py` finds Trojan Source attacks and
             # `examples/trojansource.py` is the example it matches. Any repository that

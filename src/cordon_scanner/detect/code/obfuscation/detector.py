@@ -76,6 +76,11 @@ class ObfuscationDetector(BaseDetector):
 
     @staticmethod
     def declared_rules() -> tuple[DeclaredRule, ...]:
+        return (*ObfuscationDetector._concealment_rules(), *ObfuscationDetector._packing_rules())
+
+    @staticmethod
+    def _concealment_rules() -> tuple[DeclaredRule, ...]:
+        """What hides text from a reader: bidirectional and invisible characters, and Unicode tags."""
         return (
             DeclaredRule(
                 id="SUSPECT.OBFUSCATION.BIDI.001",
@@ -106,6 +111,13 @@ class ObfuscationDetector(BaseDetector):
                 references=(references.HOMOGLYPH,),
                 remediation="Remove the characters, and find out how they were introduced.",
             ),
+        )
+
+    @staticmethod
+    def _packing_rules() -> tuple[DeclaredRule, ...]:
+        """What makes code unreadable: packers, obfuscator naming, a loader behind an alias, encoded
+        blobs, long lines."""
+        return (
             DeclaredRule(
                 id="SUSPECT.OBFUSCATION.PACKED.001",
                 title="Packer or minifier signature in hand-written source",
@@ -120,6 +132,34 @@ class ObfuscationDetector(BaseDetector):
                 ),
                 references=(references.OBSCURED_SECURITY_DATA,),
                 remediation="Ship the readable source and generate the packed form at build time.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.OBFUSCATION.MANGLED.001",
+                title="Output of obfuscator.io outside the package's build output",
+                severity=Severity.HIGH,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=ObfuscationFinding.DETECTOR,
+                message=(
+                    "A file carries obfuscator.io's `_0x` naming throughout and is not the "
+                    "package's build output, or is build output an install hook runs."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Obtain the original source and review that.",
+            ),
+            DeclaredRule(
+                id="SUSPECT.OBFUSCATION.REQUIRE_ALIAS.001",
+                title="Node's require hidden behind a global name",
+                severity=Severity.HIGH,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=ObfuscationFinding.DETECTOR,
+                message=(
+                    "`require` is stored under a short global name, so the modules the code loads "
+                    "are loaded by calls that never name it."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Read every call of the alias: each is a module load.",
             ),
             DeclaredRule(
                 id="SUSPECT.OBFUSCATION.ENCODED.001",
@@ -167,8 +207,10 @@ class ObfuscationDetector(BaseDetector):
         hits: list[Hit] = []
         hits.extend(ConcealmentFindings.bidi(content, unit.language))
         hits.extend(ConcealmentFindings.tag_smuggling(content))
+        hits.extend(ConcealmentFindings.require_alias(content, unit.language))
         hits.extend(EncodingFindings.escapes(content))
         hits.extend(PackingFindings.packers(content, unit.language))
+        hits.extend(PackingFindings.mangled(content, ctx, unit.language))
         long_lines = list(PackingFindings.long_lines(content, ctx, unit.language))
         # Padding is the stronger reading of the same line: a long line is often a bundle, code
         # after six hundred spaces never is. When both fire the padded one is reported, so the

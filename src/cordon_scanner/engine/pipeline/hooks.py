@@ -23,6 +23,7 @@ from cordon_scanner.detect.base import (
     ScanContext,
 )
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
+from cordon_scanner.engine.isolation.documents import Documents
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.constants import (
     CI_HOOK_FILENAMES,
@@ -30,7 +31,6 @@ from cordon_scanner.engine.pipeline.constants import (
     DEPENDENCY_BUILD_FILENAMES,
     DEPENDENCY_BUILD_SUFFIXES,
     INLINE_REQUIRE,
-    JS_CLOSURE_LIMIT,
     JS_DIRECTORY_VARIABLE,
     JS_JOINED_PATH,
     JS_LOCAL_REFERENCE,
@@ -41,7 +41,7 @@ from cordon_scanner.engine.pipeline.constants import (
 )
 from cordon_scanner.engine.pipeline.graph import ParsedManifests
 from cordon_scanner.foundation.dependencies import HookKinds
-from cordon_scanner.foundation.formats.scanned_json import ScannedJson
+from cordon_scanner.foundation.formats.served_json import ServedJson
 from cordon_scanner.foundation.models import AUTHOR_TIME_HOOKS, Finding, Hook, Severity
 from cordon_scanner.foundation.paths import ContainerPaths
 from cordon_scanner.foundation.results import OperationalFinding, Repository
@@ -142,7 +142,7 @@ class Hooks:
             if not (root.endswith(".vsix!extension/") or re.search(r"/extensions/[^/]+/$", root)):
                 continue
             try:
-                manifest = ScannedJson.loads(unit.content.raw)
+                manifest = ServedJson.loads(unit.content.raw, unit.path)
             except (ValueError, UnicodeDecodeError, RecursionError):
                 continue
             if not isinstance(manifest, dict) or not isinstance(manifest.get("engines"), dict):
@@ -439,47 +439,7 @@ class Hooks:
         `setup_bun.js` hands its obfuscated payload to Bun. Followed transitively within the
         files of this scan, never out of it, and bounded.
         """
-        sources = {
-            unit.path: unit.content.text
-            for unit in units
-            if unit.path.endswith((".js", ".cjs", ".mjs")) and not unit.content.is_binary
-        }
-        pending = sorted(path for path in hooks if path in sources)  # a set: fixed order (#23)
-        found: set[str] = set()
-        while pending and len(found) < JS_CLOSURE_LIMIT:
-            current = pending.pop()
-            directory = current.rpartition("/")[0]
-            text = sources[current]
-            relatives = [
-                match.group("rel") or match.group("sib")
-                for match in JS_LOCAL_REFERENCE.finditer(text)
-            ]
-            # A path built in steps from `__dirname`: a directory variable, then a file under it.
-            folders = {"__dirname": ""} | {
-                found_dir["name"]: "/".join(Hooks._js_segments(found_dir.group(2)))
-                for found_dir in JS_DIRECTORY_VARIABLE.finditer(text)
-            }
-            # Only a path the script loads -- `require(...)` or `import(...)` of it, directly or
-            # through a variable holding it. A path it copies to or writes is not code it runs.
-            for joined in JS_JOINED_PATH.finditer(text):
-                if joined["base"] not in folders or not Hooks._js_loaded(text, joined):
-                    continue
-                tail = "/".join(Hooks._js_segments(joined.group(2)))
-                relatives.append(f"{folders[joined['base']]}/{tail}".lstrip("/"))
-            for relative in relatives:
-                stem = posixpath.normpath(f"{directory}/{relative}" if directory else relative)
-                for candidate in (
-                    stem,
-                    f"{stem}.js",
-                    f"{stem}.cjs",
-                    f"{stem}.mjs",
-                    f"{stem}/index.js",
-                ):
-                    if candidate in sources and candidate not in found and candidate not in hooks:
-                        found.add(candidate)
-                        pending.append(candidate)
-                        break
-        return found
+        return Documents.closure_over(JsReferences.of(units), hooks)
 
     @staticmethod
     def _js_loaded(text: str, joined: re.Match[str]) -> bool:
@@ -835,4 +795,44 @@ class Hooks:
         return ci_scripts, paths, consumer
 
 
-__all__ = ["Hooks"]
+class JsReferences:
+    """What each first-party JavaScript file loads: the per-file half of the hook closure, the half
+    that reads content (item 56 (b): the context worker's), apart from the join over it
+    (`Documents.closure_over`), which the parent may run."""
+
+    @staticmethod
+    def of(units: Sequence[FileUnit]) -> dict[str, list[str]]:
+        """Each JavaScript unit's references (`file`), by path."""
+        return {
+            unit.path: JsReferences.file(unit.path, unit.content.text)
+            for unit in units
+            if unit.path.endswith((".js", ".cjs", ".mjs")) and not unit.content.is_binary
+        }
+
+    @staticmethod
+    def file(path: str, text: str) -> list[str]:
+        """The paths one JavaScript file loads, in its own order, each before the extensions and
+        `index.js` a resolver tries (`Documents.closure_over`)."""
+        directory = path.rpartition("/")[0]
+        relatives = [
+            match.group("rel") or match.group("sib") for match in JS_LOCAL_REFERENCE.finditer(text)
+        ]
+        # A path built in steps from `__dirname`: a directory variable, then a file under it.
+        folders = {"__dirname": ""} | {
+            found_dir["name"]: "/".join(Hooks._js_segments(found_dir.group(2)))
+            for found_dir in JS_DIRECTORY_VARIABLE.finditer(text)
+        }
+        # Only a path the script loads -- `require(...)` or `import(...)` of it, directly or
+        # through a variable holding it. A path it copies to or writes is not code it runs.
+        for joined in JS_JOINED_PATH.finditer(text):
+            if joined["base"] not in folders or not Hooks._js_loaded(text, joined):
+                continue
+            tail = "/".join(Hooks._js_segments(joined.group(2)))
+            relatives.append(f"{folders[joined['base']]}/{tail}".lstrip("/"))
+        return [
+            posixpath.normpath(f"{directory}/{relative}" if directory else relative)
+            for relative in relatives
+        ]
+
+
+__all__ = ["Hooks", "JsReferences"]

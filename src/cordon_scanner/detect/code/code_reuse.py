@@ -121,7 +121,7 @@ class CodeReuseDetector(BaseDetector):
         for hook in CodeReuseDetector.INSTALL_HOOKS:
             command = scripts.get(hook)
             key = ReuseIndex.hook_key(command) if isinstance(command, str) else None
-            group = index.lookup(key) if key is not None else None
+            group = index.lookup(key, space="hook") if key is not None else None
             if group is not None:
                 out.append(self._finding(unit, ctx, group, hook=hook))
         return out

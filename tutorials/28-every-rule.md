@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,496 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,499 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -616,7 +616,7 @@ rule's own samples.
 
 ## Exfiltration
 
-26 rules.
+27 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -630,6 +630,7 @@ rule's own samples.
 | `MALWARE.EXFIL.FLOW_TO_DROP.001` | critical | Sends this machine's secrets or identity to a drop point |
 | `MALWARE.EXFIL.HIDDEN_DESTINATION.001` | critical | Install script contacts an address it spells out in character codes |
 | `MALWARE.EXFIL.INSTALL_CALLBACK.001` | critical | Install script calls back to a drop point |
+| `MALWARE.EXFIL.SCRIPT_CALLBACK.001` | high | Package script calls back to an interaction service |
 | `MALWARE.EXFIL.TRACKING_CALLBACK.001` | critical | Install script reports to a host named for this install |
 | `SUSPECT.EXFIL.001` | medium | Credential access combined with network egress and execution |
 | `SUSPECT.EXFIL.BEACON.001` | high | Code reports the machine it runs on |
@@ -1684,14 +1685,16 @@ rule's own samples.
 
 ## Obfuscation
 
-5 rules.
+7 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `SUSPECT.OBFUSCATION.BIDI.001` | high | Bidirectional or invisible Unicode in source |
 | `SUSPECT.OBFUSCATION.ENCODED.001` | medium | Large encoded blob embedded in source |
 | `SUSPECT.OBFUSCATION.LONGLINE.001` | low | Line far longer than any hand-written source |
+| `SUSPECT.OBFUSCATION.MANGLED.001` | high | Output of obfuscator.io outside the package's build output |
 | `SUSPECT.OBFUSCATION.PACKED.001` | medium | Packer or minifier signature in hand-written source |
+| `SUSPECT.OBFUSCATION.REQUIRE_ALIAS.001` | high | Node's require hidden behind a global name |
 | `SUSPECT.OBFUSCATION.TAG_SMUGGLING.001` | high | Invisible text written in Unicode Tag characters |
 
 ## Package

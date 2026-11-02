@@ -30,15 +30,15 @@ from cordon_scanner.analysis.shared.source_paths import FIXTURE_CEILING, SourceP
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.secrets.assembly import MIN_CHARACTER_CLASSES, SecretAssembly
+from cordon_scanner.detect.secrets.connections import CONNECTION_STRING, LOCAL_OR_RESERVED_HOST
 from cordon_scanner.detect.secrets.literal_search import LiteralSearch
 from cordon_scanner.detect.secrets.names import NOT_A_SECRET, SecretNames
 from cordon_scanner.detect.secrets.patterns import (
     ASSIGNMENT,
-    CONNECTION_STRING,
-    LOCAL_OR_RESERVED_HOST,
     PEM_ARMOUR_ONLY,
     PROVIDER_PATTERNS,
     ROTATE,
+    SecretClass,
     SecretPattern,
 )
 from cordon_scanner.detect.secrets.secrets import (
@@ -62,7 +62,6 @@ from cordon_scanner.foundation.models import (
 from cordon_scanner.foundation.once import OneOff
 from cordon_scanner.foundation.samples import SampleKinds
 from cordon_scanner.foundation.scoring import ScoringContext
-from cordon_scanner.foundation.text.comments import SourceComments
 from cordon_scanner.foundation.text.literals import LiteralGate
 from cordon_scanner.foundation.text.prose import Prose
 from cordon_scanner.foundation.text.redact import Redactor
@@ -361,20 +360,16 @@ class SecretDetector(BaseDetector):
         line somebody commented out instead of rotating. See `core.comments`.
         """
         content = unit.content
-        line = content.line_text(content.line_of(offset))
-        if SourceComments.is_commented(line, content.column_of(offset) - 1, unit.language):
+        # In characters, both: a byte column measured against a character column read code
+        # after multibyte text as the comment that followed it.
+        if content.in_line_comment(offset, unit.language, blocks_known=True):
             return True
 
-        # And the block the per-line test cannot see. Its heuristic asks whether the
-        # line begins with `*`, which is what a documentation comment looks like and
-        # not what a paragraph of prose looks like. Cached per file for the reason
+        # And the block, from the exact spans (the per-line `*` heuristic is off above: a line
+        # starting with `*` is code unless a span holds it). Cached per file for the reason
         # `_inside_documentation` is: a file with a long comment usually has several
         # matches inside it, and the pass over the text is the expensive half.
-        cached = self._blocks.get(unit.path)
-        if cached is None:
-            cached = SourceComments.block_comment_spans(content.text, unit.language)
-            self._blocks[unit.path] = cached
-        return SourceComments.inside_spans(cached, offset)
+        return content.in_block_comment(offset, unit.language)
 
     @staticmethod
     def _is_example_line(content: FileContent, offset: int) -> bool:
@@ -592,6 +587,7 @@ class SecretDetector(BaseDetector):
                 severity=Severity.HIGH,
                 confidence=Confidence.MEDIUM,
                 remediation=ROTATE,
+                secret_class=SecretClass.LEAK,
             )
             yield self._finding(spec, unit, ctx, match.start(), match.end(), value)
 
@@ -734,6 +730,7 @@ class SecretDetector(BaseDetector):
             # not worth failing a build on its own.
             confidence=Confidence.MEDIUM,
             remediation=ROTATE,
+            secret_class=SecretClass.LEAK,
         )
 
     def _finding(
@@ -749,7 +746,9 @@ class SecretDetector(BaseDetector):
     ) -> Finding:
         content = unit.content
         line = content.line_of(start)
-        rule_material = content.is_rule_material
+        rule_material = SourcePaths.is_rule_material_here(
+            content, ctx, spec.rule_id, Category.SUSPICIOUS
+        )
         fixture = not rule_material and (
             SourcePaths.is_test_material(content.path) or self._inside_test_module(unit, start)
         )
@@ -769,7 +768,14 @@ class SecretDetector(BaseDetector):
         extractor = not (
             rule_material or fixture or documentation
         ) and SampleKinds.is_media_extractor(content.raw)
-        generated = not (rule_material or fixture or documentation or extractor) and (
+        # An exfiltration channel's credential (item 68's policy) is how stolen data leaves, and
+        # malware ships it in minified `dist/` bundles: where it sits in code never lowers it
+        # (24 bar-1 misses in 2 groups were held at MEDIUM this way, 0 benign; note 68).
+        # Documentation, fixtures and rule material still do.
+        exfiltration = spec.secret_class is SecretClass.EXFILTRATION_CHANNEL
+        generated = not (
+            rule_material or fixture or documentation or extractor or exfiltration
+        ) and (
             SourcePaths.is_generated_artefact(content.path)
             or SourcePaths.is_vendored(content.path)
             # Or a dataset: twenty thousand rows of scraped web pages is not source

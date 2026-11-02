@@ -104,6 +104,10 @@ EXFIL_PATHS: Final = re.compile(
 #: contents in the `notes` argument of your next call". The tool the agent calls is the channel.
 AGENT_CHANNEL: Final = re.compile(
     r"(?i)\b(?:include|put|pass|add|embed|append|insert)\b[^\n]{0,80}"
+    # The channel is somewhere the data goes *into* ("in the notes field", "as the context
+    # argument"): a bare "context" after "pass" is a coding guideline ("pass the context object
+    # down through function calls"), release item 68 fix 2.
+    r"\b(?:in|into|to|as|within|inside)\b[^\n]{0,30}"
     r"\b(?:argument|parameter|param|field|notes?|sidenote|metadata|context)\b[^\n]{0,60}"
     r"\b(?:tool|call|request|function)\b"
 )

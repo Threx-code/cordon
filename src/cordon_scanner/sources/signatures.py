@@ -27,6 +27,10 @@ import struct
 import zipfile
 import zlib
 
+from cordon_scanner.sources.rar import RarReader
+from cordon_scanner.sources.sevenzip import SevenZipReader
+from cordon_scanner.sources.zip_entries import ZipEntries
+
 #: The suffixes a single compressed stream is named with; the inner name is the outer one without it.
 STREAM_SUFFIXES = (".gz", ".gzip", ".bz2", ".xz", ".zst", ".zstd", ".lzma")
 
@@ -100,14 +104,25 @@ class ArchiveSignatures:
             return True
         if data[:8] == b"!<arch>\n" and data[66:68] == b"`\n":  # ar: a static library, a .deb
             return True
+        if SevenZipReader.is_7z(data):  # 7z: its start header's CRC holds (item 76)
+            return True
+        if RarReader.is_rar5(data):  # RAR 5: its main header's CRC holds (item 76)
+            return True
         if CompressedHeader.format_of(data) is not None:
             return True
         if ArchiveSignatures.tar_header(data):
             return True
         # Every member passes here: one byte search of the tail (the end record lies in its last
         # 65,557 bytes) before `is_zipfile` builds a reader to check the record it found.
+        # An end record alone is not a zip: a bundled zip library carries the signatures as constants
+        # (`jszip.min.js`, a Mach-O `Zip.framework`), and bytes holding no entry any extractor finds
+        # hold nothing to open (`ZipEntries`, item 76); what they are is scanned as what it is.
         tail = data[-65_557:]
-        return b"PK\x05\x06" in tail and zipfile.is_zipfile(io.BytesIO(data))
+        return (
+            b"PK\x05\x06" in tail
+            and zipfile.is_zipfile(io.BytesIO(data))
+            and ZipEntries.present(data)
+        )
 
     @staticmethod
     def tar_header(data: bytes) -> bool:
@@ -190,7 +205,9 @@ class UnopenedFormats:
             (
                 member_path,
                 Rejection.UNSUPPORTED_FORMAT,
-                f"a {found} archive, a format no reader here opens; its contents were not examined",
+                f"a {found} archive, a format no reader here opens; its contents were not examined"
+                if found not in ("7z", "rar") or (found == "rar" and not RarReader.is_rar5(data))
+                else f"a {found} archive that would not open here; its contents were not examined",
             )
         )
         return True
@@ -216,7 +233,10 @@ class UnopenedFormats:
                 "named as an archive, it is text no reader opens",
             )
         else:
-            reason, detail = Rejection.UNREADABLE, f"a nested archive that would not open: {exc}"
+            reason, detail = (
+                Rejection.UNREADABLE,
+                f"a nested archive that would not open: {exc}",
+            )
         rejected.append((member_path, reason, detail))
 
 

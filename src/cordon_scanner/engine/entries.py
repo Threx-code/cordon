@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.ecosystems.registry import RegistryFacts
-from cordon_scanner.foundation.formats.scanned_json import ScannedJson
+from cordon_scanner.foundation.formats.served_json import ServedJson
 
 if TYPE_CHECKING:
     from cordon_scanner.detect.base import FileUnit
@@ -39,7 +39,11 @@ class PackageEntries:
             return {}
         manifest = next((u for u in units if u.path.endswith(f"!{place}")), None)
         try:
-            document = ScannedJson.loads(manifest.content.text) if manifest is not None else {}
+            document = (
+                ServedJson.loads(manifest.content.text, manifest.path)
+                if manifest is not None
+                else {}
+            )
         except (ValueError, RecursionError):
             return {}
         return document if isinstance(document, dict) else {}
