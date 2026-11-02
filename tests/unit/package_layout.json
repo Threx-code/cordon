@@ -696,6 +696,7 @@
   "test_bench_longtail_scan.py": "bench",
   "test_bench_mcp_poisoning.py": "bench",
   "test_bidi_bundles.py": "detect/code/obfuscation",
+  "test_mangled.py": "detect/code/obfuscation",
   "test_binary.py": "detect/binary",
   "test_binary_facts.py": "images",
   "test_binary_features.py": "detect/binary",

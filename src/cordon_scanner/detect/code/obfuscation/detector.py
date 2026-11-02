@@ -122,6 +122,20 @@ class ObfuscationDetector(BaseDetector):
                 remediation="Ship the readable source and generate the packed form at build time.",
             ),
             DeclaredRule(
+                id="SUSPECT.OBFUSCATION.MANGLED.001",
+                title="Output of obfuscator.io outside the package's build output",
+                severity=Severity.HIGH,
+                confidence=Confidence.MEDIUM,
+                category=Category.SUSPICIOUS,
+                detector=ObfuscationFinding.DETECTOR,
+                message=(
+                    "A file carries obfuscator.io's `_0x` naming throughout and is not the "
+                    "package's build output."
+                ),
+                references=(references.OBSCURED_SECURITY_DATA,),
+                remediation="Obtain the original source and review that.",
+            ),
+            DeclaredRule(
                 id="SUSPECT.OBFUSCATION.ENCODED.001",
                 title="Large encoded blob embedded in source",
                 severity=Severity.MEDIUM,
@@ -169,6 +183,7 @@ class ObfuscationDetector(BaseDetector):
         hits.extend(ConcealmentFindings.tag_smuggling(content))
         hits.extend(EncodingFindings.escapes(content))
         hits.extend(PackingFindings.packers(content, unit.language))
+        hits.extend(PackingFindings.mangled(content, ctx, unit.language))
         long_lines = list(PackingFindings.long_lines(content, ctx, unit.language))
         # Padding is the stronger reading of the same line: a long line is often a bundle, code
         # after six hundred spaces never is. When both fire the padded one is reported, so the

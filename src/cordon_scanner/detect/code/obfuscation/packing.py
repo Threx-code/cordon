@@ -96,6 +96,18 @@ PACKERS: tuple[tuple[str, re.Pattern[bytes], frozenset[str], int], ...] = (
     ),
 )
 
+#: obfuscator.io's identifier scheme, a name and not a use: `_0x4f2a` as a whole word.
+MANGLED_NAME = re.compile(rb"\b_0x[0-9a-f]{4,6}\b")
+
+#: Distinct mangled names that make a file obfuscator output and not a file naming the scheme
+#: (notes/js-mangling.md: >= 20 in a file outside the build roots, 31 content misses in 16 groups for
+#: 3 benign blocks over every npm unit of rows a3b9c5f1). The count stops here: bounded.
+MANGLED_NAMES = 20
+
+#: A package's own build output, by its first directory (GuardDog's js-mangling exclusions). A bundle
+#: there is obfuscated by a build step the package's source is reviewed in.
+BUILD_ROOTS = frozenset({"dist", "build", "vendor", "node_modules"})
+
 # Minified output is legitimately long-lined, so length alone must not fire on
 # it. These paths are exempt from the length rule only; every other rule still
 # applies, because a payload committed inside a vendored bundle is exactly the
@@ -290,6 +302,61 @@ class PackingFindings:
                 end=found.end(),
             )
             return
+
+    @staticmethod
+    def mangled(content: FileContent, ctx: ScanContext, language: str | None) -> Iterable[Hit]:
+        """SUSPECT.OBFUSCATION.MANGLED.001: obfuscator.io's naming, 20 distinct `_0x` names, in a
+        file the package does not keep as build output.
+
+        Beside PACKED, from the same output shape: PACKED is graded by the package verdict, which
+        held it below the gate on 34 of 36 such misses ("0.44 against a blocking line of 0.45"). This
+        is the narrower claim the measure supports on its own, so it is kept by the verdict."""
+        if language not in JAVASCRIPT_LANGUAGES:
+            return
+        names: set[bytes] = set()
+        first: re.Match[bytes] | None = None
+        spans: tuple[tuple[int, int], ...] | None = None
+        for match in MANGLED_NAME.finditer(content.raw):
+            if first is None:
+                if spans is None:
+                    spans = SourceComments.block_comment_spans(content.text, language)
+                if EncodingFindings.is_remark(content, match.start(), language, spans):
+                    continue
+                first = match
+            names.add(match.group())
+            if len(names) >= MANGLED_NAMES:
+                break
+        if first is None or len(names) < MANGLED_NAMES:
+            return
+        if PackingFindings.build_root(content.path):
+            return
+        yield Hit(
+            rule_id="SUSPECT.OBFUSCATION.MANGLED.001",
+            title="Output of obfuscator.io outside the package's build output",
+            message=(
+                f"This file carries at least {MANGLED_NAMES} distinct names in obfuscator.io's "
+                "`_0x` scheme and is not kept as build output. Obfuscated code cannot be reviewed, "
+                "and in a package's own files nothing explains why it would need to be."
+            ),
+            remediation=(
+                "Obtain the original source and review that; do not install a release whose "
+                "own code arrives obfuscated."
+            ),
+            severity=Severity.HIGH,
+            confidence=Confidence.MEDIUM,
+            start=first.start(),
+            end=first.end(),
+        )
+
+    @staticmethod
+    def build_root(path: str) -> bool:
+        """Whether a file is under one of the package's build roots: its first directory, inside
+        the package (an archive's member less the archive's top directory, `package/` in npm)."""
+        _, bang, member = path.rpartition("!")
+        if bang:
+            member = member.partition("/")[2]
+        first, slash, _ = member.partition("/")
+        return bool(slash) and first.lower() in BUILD_ROOTS
 
     @classmethod
     def long_lines(
