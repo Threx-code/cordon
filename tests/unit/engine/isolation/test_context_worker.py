@@ -575,6 +575,20 @@ class TestEveryReadersRecordIsTheInProcessOne:
         monkeypatch.setattr(DeclaredDependency, "__post_init__", refuse)
         assert Codec.decode(DeclaredDependency, data) is None
 
+    def test_any_exception_a_constructor_raises_refuses_the_record(self, monkeypatch) -> None:
+        """Not only the usual ones: a worker's answer is untrusted (modelling review, must-fix 3)."""
+        import re as re_module
+
+        from cordon_scanner.ecosystems.base import DeclaredDependency
+
+        data = Codec.encode(DeclaredDependency(name="left-pad", spec="^1.0.0"))
+
+        def refuse(self: Any) -> None:
+            raise re_module.error("a validator's own error")
+
+        monkeypatch.setattr(DeclaredDependency, "__post_init__", refuse)
+        assert Codec.decode(DeclaredDependency, data) is None
+
     def test_bytes_that_are_not_base64_are_refused(self) -> None:
         assert Codec._decode_field("dict[str, bytes]", {"k": "not base64!"}) == (False, None)
         assert Codec._decode_field("dict[str, bytes]", {"k": "aGk="}) == (True, {"k": b"hi"})
@@ -713,6 +727,29 @@ class TestTwoScansInOneProcess:
             assert not any(
                 f.rule_id == "OPERATIONAL.WORKER.DOCUMENT_UNAVAILABLE" for f in result.findings
             )
+
+    def test_a_pool_thread_sees_the_scans_store_only_when_given_its_context(self) -> None:
+        """The stores are the scan's context, not the process's (outer-layer review, condition 3).
+        A pool thread a step starts inside a serving scan (images/osv.py's lookups, which decode an
+        API's JSON, not scanned content) sees none, so it decodes its own JSON; a step that must
+        read the scan's documents from a pool thread passes `contextvars.copy_context()` and sees
+        them (modelling review of 58664d36, must-fix 4)."""
+        import contextvars
+        from concurrent.futures import ThreadPoolExecutor
+
+        from cordon_scanner.engine.isolation.documents import Documents
+
+        Documents.end()
+        Documents.activate([])
+        try:
+            with ServedJson.serving("package/package.json"), ThreadPoolExecutor(1) as pool:
+                fresh = pool.submit(ServedJson.active).result()
+                decoded = pool.submit(ServedJson.loads, '{"a": 1}', "osv").result()
+                given = pool.submit(contextvars.copy_context().run, ServedJson.active).result()
+        finally:
+            Documents.end()
+        assert fresh is False and decoded == {"a": 1}
+        assert given is True
 
 
 class TestTheParentOpensNoArchive:

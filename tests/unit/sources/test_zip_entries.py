@@ -151,6 +151,28 @@ class TestADirectoryThatWillNotOpen:
         members, _ = ZipKit.read(broken)
         assert members == TEXT
 
+    def test_a_directory_naming_an_entry_the_walk_never_read_is_refused(self) -> None:
+        """Two views: a lenient extractor may open the directory Python refused and install what it
+        points at. A record pointing past the walked entries refuses the rebuild (modelling review
+        of 2a006ecf, must-fix 2)."""
+        good = ZipKit.zipped(TEXT)
+        cd = good.index(b"PK\x01\x02")
+        record = bytearray(good[cd : cd + 46 + len(b"a/readme.txt")])
+        struct.pack_into("<L", record, 42, cd - 7)  # a local offset no walked entry starts at
+        forged = (
+            good[: good.rindex(b"PK\x05\x06")] + bytes(record) + good[good.rindex(b"PK\x05\x06") :]
+        )
+        broken = ZipKit.directory_broken(forged)
+        assert ZipRepair.rebuild(broken, DEFAULT_LIMITS) is None
+
+    def test_a_signing_block_holding_a_local_header_is_refused(self) -> None:
+        good = ZipKit.zipped(TEXT)
+        cd = good.index(b"PK\x01\x02")
+        body = b"PK\x03\x04" + b"\x00" * 20 + b"APK Sig Block 42"
+        block = struct.pack("<Q", len(body)) + body
+        broken = ZipKit.directory_broken(good[:cd] + block + good[cd:])
+        assert ZipRepair.rebuild(broken, DEFAULT_LIMITS) is None
+
 
 class TestANameDifferingOnlyInItsSeparator:
     @staticmethod

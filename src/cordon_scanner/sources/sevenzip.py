@@ -93,6 +93,10 @@ class _Cursor:
         """An "all defined" byte, else a bit vector."""
         return [True] * count if self.byte() else self.bits(count)
 
+    def digests(self, count: int) -> list[int | None]:
+        """`count` CRC32s, each stated or None: the defined vector, then a UINT32 per stated one."""
+        return [self.uint32() if stated else None for stated in self.defined(count)]
+
 
 class _Folder:
     def __init__(self) -> None:
@@ -100,7 +104,9 @@ class _Folder:
         self.binds: list[tuple[int, int]] = []  # in index, out index
         self.packed: list[int] = []
         self.sizes: list[int] = []
-        self.crc = False  # whether the folder's own CRC is stated (its one substream's, then)
+        self.crc: int | None = None  # the folder's own CRC32, where stated
+        self.pack_crc: int | None = None  # its packed stream's CRC32, where stated
+        self.stream_crcs: list[int | None] = []  # each substream's CRC32, where stated
 
     def size(self) -> int:
         """The folder's output size: the out stream no bind pair consumes."""
@@ -231,8 +237,12 @@ class SevenZipReader:
                 raise ArchiveError(f"{path}: the time budget ran out while reading the archive")
             out = SevenZipReader._decode(data, folder, packs, pack_pos, index, path, budget)
             at = 0
-            for size in streams[index]:
-                SevenZipReader._keep(next(outputs), out[at : at + size], result, member)
+            for size, crc in zip(streams[index], folder.stream_crcs, strict=False):
+                body = out[at : at + size]
+                name = next(outputs)
+                if crc is not None and zlib.crc32(body) != crc:
+                    raise ArchiveError(f"{path}: {name}: a 7z CRC that does not hold")
+                SevenZipReader._keep(name, body, result, member)
                 at += size
         result.total_compressed = max(result.total_compressed, len(data))
 
@@ -243,6 +253,7 @@ class SevenZipReader:
         """StreamsInfo: pack sizes, folders, and each folder's split into files."""
         folders: list[_Folder] = []
         packs: list[int] = []
+        pack_crcs: list[int | None] = []
         pack_pos = 0
         kind = cursor.byte()
         if kind == 0x06:
@@ -253,8 +264,7 @@ class SevenZipReader:
                 if kind == 0x09:
                     packs = [cursor.number() for _ in range(count)]
                 elif kind == 0x0A:
-                    flags = cursor.defined(count)
-                    cursor.take(4 * sum(flags))
+                    pack_crcs = cursor.digests(count)
                 else:
                     raise cursor.fail(f"property {kind} in the pack info")
                 kind = cursor.byte()
@@ -262,6 +272,10 @@ class SevenZipReader:
         if kind == 0x07:
             folders = SevenZipReader._folders(cursor, limits)
             kind = cursor.byte()
+        for folder, crc in zip(folders, pack_crcs, strict=False):
+            folder.pack_crc = crc
+        for folder in folders:
+            folder.stream_crcs = [folder.crc]
         streams = [[folder.size()] for folder in folders]
         if kind == 0x08:
             streams = SevenZipReader._substreams(cursor, folders, limits)
@@ -285,10 +299,8 @@ class SevenZipReader:
             folder.sizes = [cursor.number() for _ in range(outs)]
         kind = cursor.byte()
         if kind == 0x0A:
-            flags = cursor.defined(count)
-            cursor.take(4 * sum(flags))
-            for folder, flag in zip(folders, flags, strict=True):
-                folder.crc = flag
+            for folder, crc in zip(folders, cursor.digests(count), strict=True):
+                folder.crc = crc
             kind = cursor.byte()
         if kind != 0x00:
             raise cursor.fail(f"property {kind} in the unpack info")
@@ -335,11 +347,24 @@ class SevenZipReader:
             streams.append([*sizes, last])
         if kind == 0x09:
             kind = cursor.byte()
+        # A folder of one substream whose own CRC is stated takes that one; every other substream
+        # takes the next digest listed here, in order.
+        for folder, count in zip(folders, counts, strict=True):
+            folder.stream_crcs = (
+                [folder.crc] if count == 1 and folder.crc is not None else [None] * count
+            )
         while kind != 0x00:
             if kind != 0x0A:
                 raise cursor.fail(f"property {kind} in the substreams info")
-            unknown = sum(c for f, c in zip(folders, counts, strict=True) if not (c == 1 and f.crc))
-            cursor.take(4 * sum(cursor.defined(unknown)))
+            unknown = sum(
+                c
+                for f, c in zip(folders, counts, strict=True)
+                if not (c == 1 and f.crc is not None)
+            )
+            listed = iter(cursor.digests(unknown))
+            for folder, count in zip(folders, counts, strict=True):
+                if not (count == 1 and folder.crc is not None):
+                    folder.stream_crcs = [next(listed) for _ in range(count)]
             kind = cursor.byte()
         return streams
 
@@ -380,10 +405,14 @@ class SevenZipReader:
             raise ArchiveError(f"{path}: a 7z folder of several packed streams (BCJ2), not read")
         start = 32 + pack_pos + sum(packs[:index])
         packed = bytes(data[start : start + (packs[index] if index < len(packs) else 0)])
+        if folder.pack_crc is not None and zlib.crc32(packed) != folder.pack_crc:
+            raise ArchiveError(f"{path}: a 7z packed stream whose CRC does not hold")
         chain = SevenZipReader._chain(folder, path)
         out = SevenZipReader._run(chain, packed, size, path)
         if len(out) != size:
             raise ArchiveError(f"{path}: a 7z folder that decoded to {len(out)} of {size} bytes")
+        if folder.crc is not None and zlib.crc32(out) != folder.crc:
+            raise ArchiveError(f"{path}: a 7z folder whose CRC does not hold")
         return out
 
     @staticmethod
@@ -397,16 +426,30 @@ class SevenZipReader:
                 raise ArchiveError(f"{path}: a 7z folder using {name}, not read")
             if method not in SevenZipReader.FILTERS and method not in SevenZipReader.ALONE:
                 raise ArchiveError(f"{path}: a 7z coder {method.hex()} no reader here decodes")
-        order, at = (
-            [],
-            next(i for i in range(len(folder.coders)) if i not in {o for _, o in folder.binds}),
-        )
-        while True:
+        count = len(folder.coders)
+        outs = [o for _, o in folder.binds]
+        ins = [i for i, _ in folder.binds]
+        if (
+            len(set(outs)) != len(outs)
+            or len(set(ins)) != len(ins)
+            or any(not 0 <= x < count for x in outs + ins)
+        ):
+            raise ArchiveError(f"{path}: a 7z folder whose bind pairs do not hold")
+        free = [i for i in range(count) if i not in set(outs)]
+        if len(free) != 1:
+            raise ArchiveError(f"{path}: a 7z folder without one output")
+        order: list[tuple[bytes, bytes]] = []
+        seen: set[int] = set()
+        at: int | None = free[0]
+        while at is not None:
+            if at in seen:
+                raise ArchiveError(f"{path}: a 7z folder whose coders loop")
+            seen.add(at)
             order.append(folder.coders[at][::3])
-            nxt = next((o for i, o in folder.binds if i == at), None)
-            if nxt is None:
-                return [(m, p) for m, p in order]
-            at = nxt
+            at = next((o for i, o in folder.binds if i == at), None)
+        if len(order) != count:
+            raise ArchiveError(f"{path}: a 7z folder with coders no chain reaches")
+        return order
 
     @staticmethod
     def _run(chain: list[tuple[bytes, bytes]], packed: bytes, size: int, path: str) -> bytes:

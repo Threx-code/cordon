@@ -180,7 +180,7 @@ class Codec:
         # hashes an already-malformed value a second time), so the constructed record is not kept.
         try:
             kind(**values)
-        except (TypeError, ValueError, KeyError, AttributeError, AssertionError):
+        except Exception:  # noqa: BLE001 - any refusal by the constructor refuses the worker's record
             return None
         record: Any = object.__new__(kind)
         for name, value in values.items():

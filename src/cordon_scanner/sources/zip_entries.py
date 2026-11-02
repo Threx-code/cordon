@@ -165,7 +165,36 @@ class ZipRepair:
             offset = end
         if not entries or not ZipRepair._accounted(data, offset):
             return None
+        if not ZipRepair._directory_agrees(data, offset, entries):
+            return None
         return bytes(data[:offset]) + ZipRepair._directory(data, entries, offset)
+
+    @staticmethod
+    def _directory_agrees(
+        data: bytes, offset: int, entries: list[tuple[int, int, int, int, int, int, bytes]]
+    ) -> bool:
+        """Whether the original directory, read by hand past the last entry, names only entries the
+        walk read: an extractor more lenient than Python's may open the directory Python refused,
+        and install what it points at (outer review of item 76: an entry inside a signing block or
+        inside another entry's data). Every record found must point at a walked entry, under the
+        same name less separators; with no record found at all, the directory is unreadable and so
+        is the zip."""
+        walked = {at: name.replace(b"\\", b"/") for at, *_, name in entries}
+        found, at = 0, data.find(b"PK\x01\x02", offset)
+        while at != -1:
+            if at + 46 > len(data):
+                return False
+            name_len = struct.unpack_from("<H", data, at + 28)[0]
+            local = struct.unpack_from("<L", data, at + 42)[0]
+            name = bytes(data[at + 46 : at + 46 + name_len]).replace(b"\\", b"/")
+            # A nameless record pointing at a nameless stub the walk left out is the one shape that
+            # names nothing: an APK's leading stub.
+            stub = name_len == 0 and local < entries[0][0]
+            if (local not in walked or walked[local] != name) and not stub:
+                return False
+            found += 1
+            at = data.find(b"PK\x01\x02", at + 46 + name_len)
+        return found > 0
 
     @staticmethod
     def rebuilt(path: str, exc: Exception) -> RejectedMember:
@@ -225,6 +254,9 @@ class ZipRepair:
             block_end <= len(data)
             and data[block_end - len(ZipRepair.APK_MAGIC) : block_end] == ZipRepair.APK_MAGIC
             and (block_end == len(data) or data.startswith(ZipRepair.ENDINGS, block_end))
+            # A signing block is checked only by its size and magic: one holding a local header is
+            # where an entry the walk never reads would hide.
+            and ZipEntries.LOCAL not in data[offset:block_end]
         )
 
     @staticmethod

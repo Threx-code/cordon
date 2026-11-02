@@ -174,3 +174,15 @@ class TestRar5:
         assert UnopenedFormats.refused("pkg.tgz!old.rar", old, rejected)
         assert [r[1] for r in rejected] == [Rejection.UNSUPPORTED_FORMAT]
         assert "no reader here opens" in rejected[0][2]
+
+    def test_a_stream_past_its_deadline_is_a_timeout(self, monkeypatch) -> None:
+        """The deadline is read inside the decoder, not only between headers (modelling review,
+        should-fix 5): a large member at Python speed is a timeout gap, never a worker kill."""
+        from cordon_scanner.sources import rar
+
+        monkeypatch.setattr(rar._Unpack, "CHECK_EVERY", 1)
+        unpack = rar._Unpack(1 << 20, deadline=0.0)
+        ops = [("lit", ord("a"), 0)] * 4
+        packed = RarKit.stream(ops)
+        with pytest.raises(ArchiveError, match="time budget"):
+            unpack.run(packed, 4)

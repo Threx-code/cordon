@@ -36,7 +36,11 @@ class SevenZipKit:
 
     @staticmethod
     def streams(
-        packed: bytes, coders: list[tuple[bytes, bytes]], sizes: list[int], files: list[int]
+        packed: bytes,
+        coders: list[tuple[bytes, bytes]],
+        sizes: list[int],
+        files: list[int],
+        crc: int | None = None,
     ) -> bytes:
         """StreamsInfo for one folder of chained coders, the first coder's output the folder's."""
         n = SevenZipKit.number
@@ -50,6 +54,7 @@ class SevenZipKit:
             + folder
             + b"\x0c"
             + b"".join(n(s) for s in sizes)
+            + (b"\x0a\x01" + struct.pack("<I", crc) if crc is not None else b"")
             + b"\x00"
         )
         out += b"\x08\x0d" + n(len(files)) + b"\x09" + b"".join(n(s) for s in files[:-1]) + b"\x00"
@@ -62,6 +67,7 @@ class SevenZipKit:
         *,
         encoded_header: bool = False,
         declared: int | None = None,
+        folder_crc: int | None = None,
     ) -> bytes:
         body = b"".join(entries.values())
         size = len(body) if declared is None else declared
@@ -92,7 +98,9 @@ class SevenZipKit:
         files = b"\x05" + n(len(entries)) + b"\x11" + n(len(names) + 1) + b"\x00" + names + b"\x00"
         header = (
             b"\x01\x04"
-            + SevenZipKit.streams(packed, coders, sizes, [len(v) for v in entries.values()])
+            + SevenZipKit.streams(
+                packed, coders, sizes, [len(v) for v in entries.values()], folder_crc
+            )
             + files
             + b"\x00"
         )
@@ -161,3 +169,29 @@ class TestSevenZip:
             "pkg.tgz!a.7z", SevenZipKit.archive(FILES, "aes"), ArchiveError("x"), rejected
         )
         assert [r[1] for r in rejected] == [Rejection.UNSUPPORTED_FORMAT]
+
+    def test_coders_that_loop_are_refused(self) -> None:
+        """Binds (0, 1), (1, 2), (2, 1): the chain from the output would loop 1 to 2 forever
+        (modelling review of 2a006ecf, must-fix 1)."""
+        from cordon_scanner.sources.sevenzip import SevenZipReader, _Folder
+
+        folder = _Folder()
+        folder.coders = [(LZMA2, 1, 1, b"")] * 4
+        folder.binds = [(0, 1), (1, 2), (2, 1)]
+        with pytest.raises(ArchiveError):
+            SevenZipReader._chain(folder, "pkg.7z")
+
+    def test_a_coder_no_chain_reaches_is_refused(self) -> None:
+        from cordon_scanner.sources.sevenzip import SevenZipReader, _Folder
+
+        folder = _Folder()
+        folder.coders = [(DELTA, 1, 1, b"\x01"), (LZMA2, 1, 1, b"\x10"), (LZMA2, 1, 1, b"\x10")]
+        folder.binds = [(0, 1), (2, 2)]
+        with pytest.raises(ArchiveError):
+            SevenZipReader._chain(folder, "pkg.7z")
+
+    def test_a_stated_crc_that_does_not_hold_is_refused(self) -> None:
+        """A folder CRC is checked against the decoded bytes (review, should-fix 6)."""
+        data = SevenZipKit.archive(FILES, "lzma2", folder_crc=0xDEADBEEF)
+        with pytest.raises(ArchiveError, match="CRC"):
+            SevenZipKit.read(data)

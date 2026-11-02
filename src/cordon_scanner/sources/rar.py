@@ -178,9 +178,14 @@ class _Unpack:
 
     NC, DC, LDC, RC = 306, 64, 16, 44
 
-    def __init__(self, budget: int) -> None:
+    #: Symbols decoded between deadline checks: a large member at Python speed is a timeout gap,
+    #: never a worker killed at its CPU budget.
+    CHECK_EVERY = 1 << 16
+
+    def __init__(self, budget: int, deadline: float | None = None) -> None:
         self.out = bytearray()
         self.budget = budget
+        self.deadline = deadline
         self.old = [0, 0, 0, 0]
         self.last_length = 0
         self.tables: tuple[_Huffman, _Huffman, _Huffman, _Huffman] | None = None
@@ -267,7 +272,15 @@ class _Unpack:
             raise _Fail("a block with no tables before it")
         ld, dd, ldd, rd = self.tables
         out = self.out
+        count = 0
         while bits.pos < end and len(out) < goal:
+            count += 1
+            if (
+                not count % _Unpack.CHECK_EVERY
+                and self.deadline is not None
+                and time.monotonic() > self.deadline
+            ):
+                raise ArchiveError("the time budget ran out while reading the archive")
             slot = ld.decode(bits)
             if slot < 256:
                 out.append(slot)
@@ -440,7 +453,7 @@ class RarReader:
     ) -> None:
         cap = getattr(result, "expansion_cap", 0) or limits.max_uncompressed_bytes
         budget = min(limits.max_uncompressed_bytes, cap)
-        at, count, stream = 8, 0, _Unpack(budget)
+        at, count, stream = 8, 0, _Unpack(budget, deadline)
         while at < len(data):
             if deadline is not None and time.monotonic() > deadline:
                 raise ArchiveError(f"{path}: the time budget ran out while reading the archive")
@@ -469,7 +482,9 @@ class RarReader:
                         )
                     )
                     return
-                stream = RarReader._file(header, data[body:at], stream, budget, result, member)
+                stream = RarReader._file(
+                    header, data[body:at], stream, budget, result, member, deadline
+                )
         result.total_compressed = max(result.total_compressed, len(data))
 
     @staticmethod
@@ -480,6 +495,7 @@ class RarReader:
         budget: int,
         result: ExtractionResult,
         member: Callable[..., Any],
+        deadline: float | None,
     ) -> _Unpack:
         flags = header.next()
         size = header.next()
@@ -507,7 +523,11 @@ class RarReader:
         version, solid, method = info & 0x3F, bool(info & 0x40), (info >> 7) & 7
         if version != 0:
             raise _Fail(f"compression version {version} (RAR 7), not read")
-        if size > budget or sum(len(m.data) for m in result.members) + size > budget:
+        held = sum(len(m.data) for m in result.members)
+        # A solid run's whole output stays in the decoder for the next file: it counts too, so the
+        # run's buffer and the members copied out of it never pass the budget together.
+        run = len(stream.out) if solid and method else 0
+        if size > budget or held + run + size > budget:
             raise _Fail("files past the archive budget")
         if method == 0:
             body = packed[:size]
@@ -515,7 +535,7 @@ class RarReader:
                 raise _Fail("a stored file shorter than its size")
         else:
             if not solid:
-                stream = _Unpack(budget)
+                stream = _Unpack(budget, deadline)
             body = stream.run(packed, size)
         if crc is not None and zlib.crc32(body) != crc:
             raise _Fail(f"{name}: a CRC that does not hold")
