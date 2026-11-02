@@ -279,7 +279,9 @@ sources = ["src/cordon_scanner/_native/anchors.c"]
 # and nine records. The advisory sets are compressed because they are the
 # largest thing in the wheel and they are JSON; the sidecars are not, because
 # they are read to decide whether the sets can be trusted at all.
-"cordon_scanner.intel.data" = ["*.txt", "*.json", "*.json.gz", "*.csv.gz"]
+# `reuse-index.bin` is the code-reuse index (item 54, `intel/malware/reuse_index.py`), refreshed
+# daily through the feed (item 3B); a wheel without it has no reuse check at all.
+"cordon_scanner.intel.data" = ["*.txt", "*.json", "*.json.gz", "*.csv.gz", "reuse-index.bin"]
 # The schema-generated infrastructure policies and the sidecar recording which
 # provider versions produced them. A wheel without them is the curated table
 # alone, which is a working scanner with a fifth of the coverage -- so the
