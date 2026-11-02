@@ -338,7 +338,9 @@ rather than a document.
 | `SUSPECT.OBFUSCATION.BIDI.001` | high | `obfuscation` | obfuscation |
 | `SUSPECT.OBFUSCATION.ENCODED.001` | medium | `obfuscation` | obfuscation |
 | `SUSPECT.OBFUSCATION.LONGLINE.001` | low | `obfuscation` | obfuscation |
+| `SUSPECT.OBFUSCATION.MANGLED.001` | high | `obfuscation` | obfuscation |
 | `SUSPECT.OBFUSCATION.PACKED.001` | medium | `obfuscation` | obfuscation |
+| `SUSPECT.OBFUSCATION.REQUIRE_ALIAS.001` | high | `obfuscation` | obfuscation |
 | `SUSPECT.OBFUSCATION.TAG_SMUGGLING.001` | high | `obfuscation` | obfuscation |
 
 ### Domain 8 — Credentials and secret stores
@@ -421,6 +423,7 @@ rather than a document.
 | `MALWARE.EXFIL.FLOW_TO_DROP.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.HIDDEN_DESTINATION.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.INSTALL_CALLBACK.001` | critical | `composites` | exfiltration |
+| `MALWARE.EXFIL.SCRIPT_CALLBACK.001` | high | `manifest` | exfiltration |
 | `MALWARE.EXFIL.TRACKING_CALLBACK.001` | critical | `composites` | exfiltration |
 | `SUSPECT.EXFIL.001` | medium | `composites` | exfiltration |
 | `SUSPECT.EXFIL.BEACON.001` | high | `composites` | exfiltration |
