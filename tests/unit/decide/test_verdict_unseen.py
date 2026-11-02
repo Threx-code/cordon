@@ -60,7 +60,8 @@ class TestTheAdmittedRulesAreKept:
         # by their pairs on a3b9c5f1's rows (outer-layer scratchpad jsm/):
         "SUSPECT.OBFUSCATION.MANGLED.001",  # 31 content misses in 16 groups for 3 benign (pair4.txt)
         "SUSPECT.OBFUSCATION.REQUIRE_ALIAS.001",  # 7 content misses in 7 groups, 0 benign (pairn.txt)
-        # 8 content misses in 4 groups, 0 newly blocked benign (jsm/out4, pairn-hosts.txt)
+        # 6 content misses in 2 groups blocked, 0 benign: an interaction host in an install-hook
+        # script (jsm/pairn-hosts.txt, row hook_interaction); in a person-run script it warns
         "MALWARE.EXFIL.SCRIPT_CALLBACK.001",
     )
 
