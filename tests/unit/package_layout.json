@@ -652,6 +652,7 @@
   "test_accept_no_feed.py": "foundation/config",
   "test_adversarial_package.py": "cloud",
   "test_credential_sweep.py": "detect/code",
+  "test_rule_material_here.py": "analysis/shared",
   "test_destination_candidates.py": "analysis/shared",
   "test_scanner_facts.py": "detect/binary/modules",
   "test_upstream_port.py": "intel/ports",

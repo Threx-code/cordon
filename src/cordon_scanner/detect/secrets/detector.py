@@ -744,7 +744,9 @@ class SecretDetector(BaseDetector):
     ) -> Finding:
         content = unit.content
         line = content.line_of(start)
-        rule_material = content.is_rule_material
+        rule_material = SourcePaths.is_rule_material_here(
+            content, ctx, spec.rule_id, Category.SUSPICIOUS
+        )
         fixture = not rule_material and (
             SourcePaths.is_test_material(content.path) or self._inside_test_module(unit, start)
         )

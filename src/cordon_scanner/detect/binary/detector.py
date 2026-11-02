@@ -857,7 +857,7 @@ class BinaryDetector(BaseDetector):
         # deliberately malformed files fails its build.
         severity = declared.severity
         if declared.category is not Category.MALICIOUS:
-            if content.is_rule_material:
+            if SourcePaths.is_rule_material_here(content, ctx, rule_id, declared.category):
                 severity = min(severity, RULE_MATERIAL_CEILING)
             elif (
                 SourcePaths.is_test_material_here(content.path, ctx)

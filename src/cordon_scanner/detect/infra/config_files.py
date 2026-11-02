@@ -780,7 +780,7 @@ class ConfigDetector(BaseDetector):
         severity = rule.severity
         message = rule.message
         message, severity = ConfigDetector._ceiling(
-            content, match, message, mitigated, rule, severity
+            content, ctx, match, message, mitigated, rule, severity
         )
 
         return self._scored(content, ctx, line, match, message, rule, severity, unit)
@@ -788,6 +788,7 @@ class ConfigDetector(BaseDetector):
     @staticmethod
     def _ceiling(
         content: FileContent,
+        ctx: ScanContext,
         match: re.Match[bytes],
         message: str,
         mitigated: bool,
@@ -835,7 +836,9 @@ class ConfigDetector(BaseDetector):
                 f"{rule.message} It sits in generated output rather than in source "
                 f"somebody wrote, so it is reported below its usual severity."
             )
-        elif rule.category is not Category.MALICIOUS and content.is_rule_material:
+        elif rule.category is not Category.MALICIOUS and SourcePaths.is_rule_material_here(
+            content, ctx, rule.rule_id, rule.category, rule.capabilities
+        ):
             # `semgrep/semgrep-rules` holds `terraform/aws/security/aws-iam-admin-policy.tf`
             # with an IAM wildcard in it, and `yaml/kubernetes/security/privileged-container.yaml`
             # whose `privileged: true` is a PATTERN rather than a deployment. Neither

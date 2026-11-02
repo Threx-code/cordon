@@ -15,9 +15,11 @@ from typing import Protocol
 from cordon_scanner.analysis.shared.test_material import SCANNER_CONFIG_PATHS, TEST_MATERIAL_PATHS
 from cordon_scanner.foundation.files.globs import PathGlob
 from cordon_scanner.foundation.models import (
+    Category,
     Severity,
 )
 from cordon_scanner.foundation.paths import ContainerPaths
+from cordon_scanner.foundation.taxonomy import AttackCategory, Taxonomy
 
 
 class EntryPaths(Protocol):
@@ -29,6 +31,49 @@ class EntryPaths(Protocol):
 
     @property
     def import_entry_paths(self) -> Collection[str]: ...
+
+
+POSTURE = frozenset(
+    {
+        AttackCategory.MISCONFIGURATION,
+        AttackCategory.VULNERABILITY,
+        AttackCategory.INTEGRITY,
+        AttackCategory.COVERAGE,
+        AttackCategory.POLICY,
+    }
+)
+"""What rule material may lower: how something is configured, never an attempt. Every other attack
+category, UNSPECIFIED and any added later included, is an attack finding and is never lowered."""
+
+
+class RunPaths(EntryPaths, Protocol):
+    """Every file a scan knows runs, and whether it is a published package: what
+    `is_rule_material_here` reads. A detector's `ScanContext` is one."""
+
+    @property
+    def install_entry_paths(self) -> Collection[str]: ...
+
+    @property
+    def library_closure_paths(self) -> Collection[str]: ...
+
+    @property
+    def consumer_install_paths(self) -> Collection[str]: ...
+
+    @property
+    def agent_run_paths(self) -> Collection[str]: ...
+
+    @property
+    def package_distribution(self) -> bool: ...
+
+
+class RuleMaterialContent(Protocol):
+    """What `is_rule_material_here` reads of a file: its path and the content judgement."""
+
+    @property
+    def path(self) -> str: ...
+
+    @property
+    def is_rule_material(self) -> bool: ...
 
 
 #: Paths whose content is written to be read by a person, not executed.
@@ -274,6 +319,48 @@ class SourcePaths:
         if path in ctx.install_hook_paths or path in ctx.import_entry_paths:
             return ContainerPaths.under_fixture_directory(path)
         return SourcePaths.is_test_material(path)
+
+    @staticmethod
+    def is_rule_material_here(
+        content: RuleMaterialContent,
+        ctx: RunPaths,
+        rule_id: str,
+        category: Category,
+        capabilities: Collection[object] = (),
+    ) -> bool:
+        """`is_rule_material`, where it may lower this rule's finding: a configuration or posture
+        finding (`POSTURE`, by the rule's attack category, declaring no capability) in a repository file
+        nothing runs. Never an attack finding -- an exfiltration, a dropper, a secret, anything
+        MALICIOUS, or a posture rule that names an act (`curl | sh` in a Makefile declares egress and
+        spawn, and is a dropper however it is filed) -- never in a
+        published package, and never in a file an install hook, an entry point, their closures or an
+        agent runs (fail-open audit, 2 Nov, option B): the judgement is read from text the file's
+        author writes, so an attacker's own file could otherwise lower its own findings. Rule
+        corpora's false alarms on attack findings are the known cost; they are handled, if at all,
+        by a mechanism the scanned text cannot supply."""
+        if (
+            category is Category.MALICIOUS
+            or capabilities
+            or Taxonomy.category_of(rule_id) not in POSTURE
+        ):
+            return False
+        if not content.is_rule_material or ctx.package_distribution:
+            return False
+        return not SourcePaths.runs_here(content.path, ctx)
+
+    @staticmethod
+    def runs_here(path: str, ctx: RunPaths) -> bool:
+        """Whether something runs this file without a person choosing to: an install hook, a
+        published package's import or install entry, their closures, a consumer's install, or an
+        agent's tool. A judgement read from the file's own text never lowers a finding here."""
+        return (
+            path in ctx.install_hook_paths
+            or path in ctx.import_entry_paths
+            or path in ctx.install_entry_paths
+            or path in ctx.library_closure_paths
+            or path in ctx.consumer_install_paths
+            or path in ctx.agent_run_paths
+        )
 
     @staticmethod
     def is_documentation_here(path: str, ctx: EntryPaths) -> bool:
