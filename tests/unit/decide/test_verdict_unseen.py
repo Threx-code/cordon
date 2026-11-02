@@ -3,7 +3,7 @@
 `Verdict._lowers` spares a finding only if its rule is in the model's keep or floor. A rule added after
 the fit has no `r:` feature, so the model's score never saw it, yet it is lowered as if trained. Each
 such rule leaves the lowered set by one of two doors: its own measured pair admits it to keep, or a
-refit gives it a feature. This file holds both doors shut against accidents: the two admitted rules
+refit gives it a feature. This file holds both doors shut against accidents: the admitted rules
 stay kept, and every code rule in the catalogue is either seen, kept, floored, or on the frozen list
 below, so a new rule cannot be lowered silently.
 """
@@ -46,6 +46,10 @@ class TestTheAdmittedRulesAreKept:
     ADMITTED: ClassVar[tuple[str, ...]] = (
         "MALWARE.INSTALL.NETWORK_PROBE.001",
         "MALWARE.CODE.REUSE.001",
+        # Measured exactly (2 Nov): each candidate unit scanned with the shipped model and with the
+        # rule kept, a3b9c5f1's residual misses and unblocked benign pool (scratchpad i66b/exact-*.jsonl):
+        "MALWARE.CI.RUNNER_SECRETS.001",  # 6 content misses in 5 groups newly blocked, 0 benign
+        "SUSPECT.AGENT.API_REDIRECT.001",  # 3 content misses in 1 group newly blocked, 0 benign
     )
 
     def test_each_is_in_keep(self) -> None:
@@ -81,7 +85,6 @@ class TestNoRuleIsLoweredUnseenByAccident:
             "MALWARE.AGENT.HOOK_EXFIL.001",
             "MALWARE.CI.CREDENTIAL_HARVEST.001",
             "MALWARE.CI.DECODED_PROGRAM.001",
-            "MALWARE.CI.RUNNER_SECRETS.001",
             "MALWARE.CI.SCHEDULED_FETCH_EXEC.001",
             "MALWARE.CI.SECRET_DUMP.001",
             "MALWARE.CI.SECRET_TO_DROP_POINT.001",
@@ -97,15 +100,14 @@ class TestNoRuleIsLoweredUnseenByAccident:
             "MALWARE.MODEL.PICKLE_EXEC.001",
             "MALWARE.PROTESTWARE.001",
             "MALWARE.RULEFILE.MATCH.001",
-            "SUSPECT.AGENT.API_REDIRECT.001",
             "SUSPECT.AGENT.ATR.MODEL_SECURITY.001",
             "SUSPECT.AGENT.AUTH_BYPASS_EDIT.001",
-            "SUSPECT.AGENT.CREDENTIAL_EXFIL.001",
+            "SUSPECT.AGENT.CREDENTIAL_EXFIL.001",  # measured 2 Nov: 0 malware, 1 benign newly blocked if kept: stays
             "SUSPECT.AGENT.DROPPER_PROSE.001",
             "SUSPECT.AGENT.FRONT_MATTER_CODE.001",
             "SUSPECT.AGENT.HIDDEN_DIRECTIVE.001",
             "SUSPECT.AGENT.HIDDEN_TEXT.001",
-            "SUSPECT.AGENT.INSTALL_REDIRECT.001",
+            "SUSPECT.AGENT.INSTALL_REDIRECT.001",  # measured 2 Nov: 0 malware, 1 benign newly blocked if kept: stays
             "SUSPECT.AGENT.INTENT_CHAINED.001",
             "SUSPECT.AGENT.JUDGED.001",
             "SUSPECT.AGENT.PHANTOM_PREREQUISITE.001",
@@ -182,7 +184,7 @@ class TestNoRuleIsLoweredUnseenByAccident:
             "SUSPECT.MEDIA.APPENDED_PAYLOAD.001",
             "SUSPECT.MODEL.LOADED_ON_IMPORT.001",
             "SUSPECT.MODEL.MALICIOUS_PACKAGE.001",
-            "SUSPECT.OBFUSCATION.TAG_SMUGGLING.001",
+            "SUSPECT.OBFUSCATION.TAG_SMUGGLING.001",  # measured 2 Nov: 0 malware, 1 benign newly blocked if kept: stays
             "SUSPECT.PACKAGE.REPOSITORY.001",
             "SUSPECT.RECIPE.PROVISIONAL.001",
             "SUSPECT.REGISTRY.REVIEW.001",
