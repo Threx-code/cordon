@@ -102,3 +102,49 @@ class TestWhatStillBlocks:
         # rule still grades the hook HIGH, so a regression to MEDIUM cannot pass silently.
         found = HookKit.findings(tmp_path, scripts, deps)
         assert any(f.severity >= Severity.HIGH for f in found)
+
+
+class TestNetworkToolsInAnInstallHook:
+    """MALWARE.INSTALL.NETWORK_PROBE.001 (external-mechanisms E1, GuardDog's install-hook rule in our own
+    design): a network-probing tool a hook that runs on install invokes is an act, graded with the
+    verdict on, as a user sees it. 0 of 36,231 benign packages' install hooks name one (every baseline
+    manifest of a3b9c5f1). No build-runner exemption: `node-gyp rebuild && ping ...` is one prefix away."""
+
+    PROBE = "MALWARE.INSTALL.NETWORK_PROBE.001"
+
+    @staticmethod
+    def scan(tmp_path: Path, scripts: dict[str, str]):  # type: ignore[no-untyped-def]
+        HookKit.findings(tmp_path, scripts)  # writes the package
+        return Scanner(Config.default().with_overrides(use_cache=False)).scan(
+            tmp_path / "p-1.0.0.tgz"
+        )
+
+    @pytest.mark.parametrize(
+        "scripts",
+        [
+            {"preinstall": "ping 10.0.0.1"},
+            {"postinstall": "nslookup probe.example.test"},
+            {"install": "dig probe.example.test"},
+            {"postinstall": "powershell -c Get-Date"},
+            {"postinstall": "certutil -urlcache -f u out.bin"},
+            {"postinstall": "node-gyp rebuild && ping probe.example.test"},
+        ],
+    )
+    def test_blocks_with_the_verdict_on(self, tmp_path: Path, scripts: dict) -> None:
+        result = self.scan(tmp_path, scripts)
+        probes = [f for f in result.findings if f.rule_id == self.PROBE]
+        assert probes and all(f.severity >= Severity.HIGH for f in probes)
+
+    @pytest.mark.parametrize(
+        "scripts",
+        [
+            # The arcgis-rest-api-ts-d shape, the one benign the measure found: a publish-time hook.
+            {"prepublish": "ping probe.example.test"},
+            {"postinstall": "node index.js --host 0.0.0.0"},
+            {"postinstall": "node index.js localhost"},
+            {"postinstall": "echo ping the maintainers if this fails"},
+        ],
+    )
+    def test_does_not_fire(self, tmp_path: Path, scripts: dict) -> None:
+        result = self.scan(tmp_path, scripts)
+        assert not [f for f in result.findings if f.rule_id == self.PROBE]
