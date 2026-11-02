@@ -147,3 +147,19 @@ class TestBounds:
         monkeypatch.setattr(RoleNormaliser, "_name", classmethod(counted))
         RoleKit.tokens("x = y; " * copies)
         assert calls == 2 * copies
+
+
+class TestShellStringsInOnePass:
+    """`_shell` reads its string once (test_regex_scaling): long runs of pipes, redirections and
+    semicolons are answered, and a target after a run is still found."""
+
+    def test_a_long_run_of_pipes_then_a_command(self) -> None:
+        assert RoleNormaliser._literal("x " + "|" * 200_000 + " sh") == "S:SHELL"
+
+    def test_a_long_run_of_semicolons_without_a_command_is_not_shell(self) -> None:
+        # `;;` is a chain marker, as the regex form read it; a shell string also needs a command word.
+        assert RoleNormaliser._literal(";" * 200_000) != "S:SHELL"
+        assert RoleNormaliser._literal(";" * 200_000 + " curl x") == "S:SHELL"
+
+    def test_pipe_targets(self) -> None:
+        assert RoleNormaliser._pipe_targets("a | b >> /dev/null ||sh") == ["b", "/dev/null", "sh"]
