@@ -87,8 +87,8 @@ class InProcess:
         engine = stage.engine
         acc = Accumulator(finding_cap=engine.config.limits.max_findings)
         engine._sbom_listed = []
-        active = Documents.active()
-        Documents._state["active"] = ServedJson._active = False
+        active, served = Documents.active(), ServedJson.active()
+        Documents._scan().state["active"] = ServedJson._scan().active = False
         try:
             if kind == "tree":
                 walker = engine._walker()
@@ -114,7 +114,8 @@ class InProcess:
                 dependencies, ingested = (), ()
                 ctx = engine.archive_stages.context(units, acc, ctx, None)
         finally:
-            Documents._state["active"] = ServedJson._active = active
+            Documents._scan().state["active"] = active
+            ServedJson._scan().active = served
         return units, ctx, dependencies, ingested, acc, list(engine._sbom_listed)
 
     @staticmethod
@@ -502,8 +503,8 @@ class TestEveryReadersRecordIsTheInProcessOne:
 
         def both(self: ContextStage, kind: str, units: list[Any], *args: Any, **kw: Any) -> Any:
             out = build(self, kind, units, *args, **kw)
-            served = dict(Documents._manifests)
-            Documents._state["active"] = False  # the reader itself, in this test's process
+            served = dict(Documents._scan().manifests)
+            Documents._scan().state["active"] = False  # the reader itself, in this test's process
             try:
                 view = MappingProxyType({u.path: u.content for u in units})
                 for unit in units:
@@ -529,7 +530,7 @@ class TestEveryReadersRecordIsTheInProcessOne:
                             assert held == own, (unit.path, how)
                         compared.append(f"{ecosystem.id}:{how}")
             finally:
-                Documents._state["active"] = True
+                Documents._scan().state["active"] = True
             return out
 
         monkeypatch.setattr(ContextStage, "build", both)
@@ -558,6 +559,25 @@ class TestEveryReadersRecordIsTheInProcessOne:
         back = Codec.decode(Manifest, json.loads(json.dumps(Codec.encode(record))))
         assert back == record
         assert back.dependencies[0].integrity == dependency.integrity
+
+    def test_a_record_its_constructor_refuses_is_refused(self, monkeypatch) -> None:
+        """A worker's record is held exactly, never re-normalised, but any validation its type's
+        constructor does still runs (outer-layer review, condition 4)."""
+        from cordon_scanner.ecosystems.base import DeclaredDependency
+
+        good = DeclaredDependency(name="left-pad", spec="^1.0.0")
+        data = Codec.encode(good)
+        assert Codec.decode(DeclaredDependency, data) is not None
+
+        def refuse(self: Any) -> None:
+            raise ValueError("a constructor that validates")
+
+        monkeypatch.setattr(DeclaredDependency, "__post_init__", refuse)
+        assert Codec.decode(DeclaredDependency, data) is None
+
+    def test_bytes_that_are_not_base64_are_refused(self) -> None:
+        assert Codec._decode_field("dict[str, bytes]", {"k": "not base64!"}) == (False, None)
+        assert Codec._decode_field("dict[str, bytes]", {"k": "aGk="}) == (True, {"k": b"hi"})
 
     def test_every_record_type_is_plain_data(self) -> None:
         """Condition 2: every field of every record type the codec carries has a declared shape, so
@@ -623,7 +643,74 @@ class TestAStoreMissIsAGapNeverAParse:
                 tmp_path, {"package.json": MANIFESTS["npm/package.json"], "setup.js": "1;\n"}
             )
         )
+        # The 28th reader, the image's: a saved image whose layer holds an OS package database
+        # and an application manifest (outer-layer review, condition 5).
+        from kits.imagekit import ImageKit
+
+        layer = ImageKit.layer(
+            {
+                "var/lib/dpkg/status": ImageKit.dpkg_stanza("bash", "5.2-1").encode(),
+                "app/package.json": MANIFESTS["npm/package.json"].encode(),
+            }
+        )
+        image = tmp_path / "image.tar"
+        image.write_bytes(ImageKit.docker_save([layer]))
+        Fixture.scan(image)
         assert calls == []
+
+
+class TestTwoScansInOneProcess:
+    def test_neither_scans_parent_decodes_scanned_json(self, tmp_path: Path, monkeypatch) -> None:
+        """Two scans at once in one process's threads (a library user's, the MCP server's, the cloud
+        runner's): each serves its own documents. With the store process-global, one scan's end
+        left the other decoding in its parent, or missing (outer-layer review, condition 3)."""
+        import threading
+
+        from cordon_scanner.foundation.formats.scanned_json import ScannedJson
+
+        parent, decoded, original = os.getpid(), [], ScannedJson.loads
+
+        def counting(text: Any, **options: Any) -> Any:
+            raw = text.encode() if isinstance(text, str) else bytes(text)
+            if os.getpid() == parent and b"two-scans-" in raw and ScannedJson.SERVE.get() is None:
+                decoded.append(raw[:60])
+            return original(text, **options)
+
+        monkeypatch.setattr(ScannedJson, "loads", staticmethod(counting))
+        roots = []
+        for side in ("a", "b"):
+            root = tmp_path / side
+            root.mkdir()
+            (root / "package.json").write_text(
+                json.dumps(
+                    {"name": f"two-scans-{side}", "version": "1.0.0", "scripts": {"test": "x"}}
+                )
+            )
+            (root / "data.json").write_text(
+                json.dumps({"two-scans-data": side, "rows": list(range(50))})
+            )
+            roots.append(root)
+        start, results, errors = threading.Barrier(2), {}, []
+
+        def run(root: Path) -> None:
+            try:
+                start.wait(30)
+                for _ in range(3):
+                    results[root.name] = Fixture.scan(root)
+            except BaseException as exc:  # noqa: BLE001 - reported below
+                errors.append(exc)
+
+        threads = [threading.Thread(target=run, args=(r,)) for r in roots]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(300)
+        assert not errors, errors
+        assert decoded == []
+        for result in results.values():
+            assert not any(
+                f.rule_id == "OPERATIONAL.WORKER.DOCUMENT_UNAVAILABLE" for f in result.findings
+            )
 
 
 class TestTheParentOpensNoArchive:
@@ -724,6 +811,44 @@ class TestTheParentOpensNoArchive:
         assert not (tmp_path / "escape.js").exists()
         assert SpillDirectory.sweep(now=float("inf")) == 0  # the scan removed its own directory
 
+    def test_a_killed_scans_directory_is_swept_at_once_whatever_its_age(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """A scan killed mid-walk leaves its directory with a current mtime: the next start removes
+        it at once, by its free lock, never after a day (outer-layer review, condition 1)."""
+        import multiprocessing
+        import tempfile
+
+        from cordon_scanner.engine.isolation.expander import SpillDirectory
+
+        monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+        child = multiprocessing.get_context("fork").Process(
+            target=SpillKit.die_holding, args=(tmp_path,)
+        )
+        child.start()
+        child.join(30)
+        left = (tmp_path / "left").read_text()
+        assert Path(left).exists()  # killed: nothing removed it
+        fresh = SpillDirectory()
+        try:
+            assert not Path(left).exists()
+        finally:
+            fresh.remove()
+
+    def test_a_live_scans_directory_is_never_swept(self, tmp_path: Path, monkeypatch) -> None:
+        import tempfile
+
+        from cordon_scanner.engine.isolation.expander import SpillDirectory
+
+        monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+        live = SpillDirectory()
+        try:
+            os.utime(live.path, (0, 0))  # however old it looks
+            assert SpillDirectory.sweep(now=float("inf")) == 0
+            assert live.path.exists()
+        finally:
+            live.remove()
+
     def test_a_killed_scans_spills_are_swept(self, tmp_path: Path, monkeypatch) -> None:
         import tempfile
 
@@ -746,7 +871,7 @@ class TestTheParentOpensNoArchive:
         from cordon_scanner.engine.isolation.expander import ArchiveExpander
 
         expander = ArchiveExpander(Engine(Config.default()))
-        member = ["m", "0" * 32, 1, "0" * 64, 0]
+        member = ["m", "0" * 32, 1, "0" * 64, -1, 0]
         answer = json.dumps(
             {
                 "members": [[*member[:1], f"{i:032x}", *member[2:]] for i in range(300_000)],
@@ -759,7 +884,64 @@ class TestTheParentOpensNoArchive:
             }
         )
         accepted, why = expander.accept(answer, "t.tgz")
-        assert accepted is None and "members" in why
+        assert accepted is None and why == "more members than an archive may hold"
+
+    @staticmethod
+    def answer(members: list[list[Any]]) -> str:
+        return json.dumps(
+            {"members": members, "rejected": [], "error": None, "image": None,
+             "findings": [], "complete": True, "gaps": []}
+        )  # fmt: skip
+
+    @pytest.mark.parametrize("memory", [0, 1 << 30])
+    def test_the_byte_bound_holds_whatever_the_memory_limit(self, memory: int) -> None:
+        """With `max_memory_bytes` 0 (no limit) the parent still refuses members past the scan's
+        byte budget (outer-layer review, condition 2)."""
+        import dataclasses
+
+        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.engine.isolation.expander import ArchiveExpander
+
+        config = Config.default()
+        config = dataclasses.replace(
+            config, limits=dataclasses.replace(config.limits, max_memory_bytes=memory)
+        )
+        expander = ArchiveExpander(Engine(config))
+        size = config.limits.max_total_bytes // 2 + 1
+        members = [
+            ["a", f"{1:032x}", size, "0" * 64, -1, 0],
+            ["b", f"{2:032x}", size, "0" * 64, -1, 0],
+        ]
+        accepted, why = expander.accept(self.answer(members), "t.tgz")
+        assert accepted is None and why == "members past the scan's byte budget"
+
+    def test_one_member_past_the_file_limit_is_refused(self) -> None:
+        import dataclasses
+
+        from cordon_scanner.engine.engine import Engine
+        from cordon_scanner.engine.isolation.expander import ArchiveExpander
+
+        config = Config.default()
+        config = dataclasses.replace(config, limits=dataclasses.replace(config.limits, max_files=3))
+        expander = ArchiveExpander(Engine(config))
+        members = [[f"m{i}", f"{i:032x}", 1, "0" * 64, -1, 0] for i in range(4)]
+        accepted, why = expander.accept(self.answer(members), "t.tgz")
+        assert accepted is None and why == "more members than an archive may hold"
+        assert expander.accept(self.answer(members[:3]), "t.tgz")[1] != why
+
+
+class SpillKit:
+    @staticmethod
+    def die_holding(root: Path) -> None:
+        """In a child: a scan's spill directory made and held, then the process killed."""
+        import tempfile
+
+        from cordon_scanner.engine.isolation.expander import SpillDirectory
+
+        tempfile.tempdir = str(root)
+        held = SpillDirectory()
+        (root / "left").write_text(str(held.path))
+        os._exit(9)
 
 
 class TestALargeMemberCrossesWhole:

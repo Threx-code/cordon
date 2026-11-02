@@ -21,7 +21,9 @@ The expander dying, hanging, overrunning or answering a refused document leaves 
 OPERATIONAL.ARCHIVE.REJECTED at the archive's path, as a refused archive is today. Never a read here.
 
 The spill directory (`SpillDirectory`) is per scan, mode 0700 under a random name, and gone when the scan
-ends; one left by a scan that was killed is swept at the next scan's start.
+ends. It holds a lock file the scan keeps locked while it lives, so one left by a scan that was killed
+is swept at the next scan's start, at once, whatever its age (outer-layer review: a loop of killed scans
+must not fill the disk).
 """
 
 from __future__ import annotations
@@ -38,6 +40,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.foundation.errors import ArchiveError
+from cordon_scanner.foundation.limits import DEFAULT_LIMITS
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -52,20 +55,55 @@ PREFIX = "cordon-expand-"
 
 
 class SpillDirectory:
-    """One scan's directory for expanded members' bytes."""
+    """One scan's directory for expanded members' bytes, held by a lock for the scan's life."""
 
-    #: A directory of this user's whose scan ended without removing it (killed) is swept once it is
-    #: older than this: no scan runs longer than a day.
+    LOCK: ClassVar[str] = ".scan.lock"
+    #: A directory without a lock to test (a platform with no `flock`, or one caught between its
+    #: creation and its lock) is swept once it is older than this: no scan runs longer than a day.
     STALE_SECONDS: ClassVar[float] = 24 * 3600.0
 
     def __init__(self) -> None:
         SpillDirectory.sweep()
         self.path = Path(tempfile.mkdtemp(prefix=PREFIX))
         self.path.chmod(0o700)
+        self._lock = SpillDirectory._hold(self.path / SpillDirectory.LOCK)
+
+    @staticmethod
+    def _hold(lock: Path) -> int | None:
+        """The lock file, opened and locked for as long as this process (or a worker it forks)
+        lives: a killed scan's lock is free the moment it dies, whatever the directory's age."""
+        try:
+            import fcntl
+        except ImportError:
+            return None
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(lock, flags, 0o600)
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return fd
+
+    @staticmethod
+    def _abandoned(entry: Path, age: float) -> bool:
+        """Whether no scan holds `entry`: its lock is free (by liveness, at once), or it has no lock
+        and is past `STALE_SECONDS` (by age, the fallback)."""
+        try:
+            import fcntl
+        except ImportError:
+            return age > SpillDirectory.STALE_SECONDS
+        try:
+            fd = os.open(entry / SpillDirectory.LOCK, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        except OSError:
+            return age > SpillDirectory.STALE_SECONDS
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return False  # a live scan holds it
+        finally:
+            os.close(fd)
+        return True
 
     @staticmethod
     def sweep(now: float | None = None) -> int:
-        """Remove stale spill directories this user owns; the count removed."""
+        """Remove the spill directories this user owns that no scan holds; the count removed."""
         now = time.time() if now is None else now
         removed = 0
         root = Path(tempfile.gettempdir())
@@ -78,13 +116,16 @@ class SpillDirectory:
                 entry.is_dir()
                 and not entry.is_symlink()
                 and st.st_uid == os.getuid()
-                and now - st.st_mtime > SpillDirectory.STALE_SECONDS
+                and SpillDirectory._abandoned(entry, now - st.st_mtime)
             ):
                 shutil.rmtree(entry, ignore_errors=True)
                 removed += 1
         return removed
 
     def remove(self) -> None:
+        if self._lock is not None:
+            os.close(self._lock)
+            self._lock = None
         shutil.rmtree(self.path, ignore_errors=True)
 
 
@@ -268,10 +309,12 @@ class ArchiveExpander:
         }:  # fmt: skip
             return None, "an answer whose sections are not the declared ones"
         members = doc["members"]
-        # Independent of the reader's own caps (review, condition 2): nested archives' members count
-        # towards the scan's file limit, never past it.
-        entries = max(limits.max_files, limits.max_archive_entries)
-        if not isinstance(members, list) or len(members) > min(entries, LIST_ENTRIES):
+        # Independent of the reader's own caps and of every optional limit (review, condition 2):
+        # the whole walk's members never past what the scan reads at all (its file limit, and its
+        # total-bytes budget below), whatever `max_memory_bytes` says. Not one archive's cap: a walk
+        # holds every nested archive's members, each archive up to that cap.
+        entries = min(limits.max_files or DEFAULT_LIMITS.max_files, LIST_ENTRIES)
+        if not isinstance(members, list) or len(members) > entries:
             return None, "more members than an archive may hold"
         total = 0
         names: set[str] = set()
@@ -296,8 +339,8 @@ class ArchiveExpander:
                 return None, "a member of the wrong shape"
             names.add(m[1])
             total += m[2]
-        if limits.max_memory_bytes and total > 4 * limits.max_memory_bytes:
-            return None, "members past the archive's byte budget"
+        if total > (limits.max_total_bytes or DEFAULT_LIMITS.max_total_bytes):
+            return None, "members past the scan's byte budget"
         rejected = doc["rejected"]
         if not isinstance(rejected, list) or len(rejected) > LIST_ENTRIES or not all(
             isinstance(r, list) and len(r) == 3 and all(isinstance(x, str) and len(x) <= 8192 for x in r)

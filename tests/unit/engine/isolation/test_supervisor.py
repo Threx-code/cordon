@@ -107,6 +107,12 @@ class TestTheSupervisor:
         outcome = Harness.supervisor(Bounds(cpu_per_byte=1.1e-3), workers=1).run(units)
         assert outcome.results == {0: "whole"}
 
+    def test_no_unit_waits_past_the_wall_ceiling(self) -> None:
+        """However large the unit, a hang is a gap within `wall_ceiling` (outer-layer review)."""
+        bounds = Bounds(cpu_per_byte=1.0)
+        assert bounds.wall_budget(10**9) == bounds.wall_ceiling == 4 * 3600.0
+        assert Bounds().wall_budget(1) == 300.0  # an ordinary unit's backstop is unchanged
+
     def test_every_result_comes_back_by_its_index(self) -> None:
         units = [Unit(i, ("echo", i * i), 1) for i in range(12)]
         outcome = Harness.supervisor(Bounds(), workers=3).run(units)

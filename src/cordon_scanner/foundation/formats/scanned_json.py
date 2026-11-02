@@ -25,6 +25,7 @@ failed and the scan incomplete. It is deliberately not a `ValueError`, which man
 
 from __future__ import annotations
 
+import contextvars
 import json
 import re
 from collections.abc import Callable
@@ -46,14 +47,18 @@ class ScannedJson:
     """JSON read from scanned content. Call the static methods."""
 
     #: While a scan's parent judges the package (`ServedJson.serving`), what serves a scanned document
-    #: in place of decoding it (item 56 (b)): the context worker's value, or a gap. None elsewhere.
-    serve: ClassVar[Callable[[str | bytes | bytearray], Any] | None] = None
+    #: in place of decoding it (item 56 (b)): the context worker's value, or a gap. None elsewhere,
+    #: and per scan (a context variable), so another scan in the same process is never served it.
+    SERVE: ClassVar[contextvars.ContextVar[Callable[[str | bytes | bytearray], Any] | None]] = (
+        contextvars.ContextVar("cordon_scanned_json_serve", default=None)
+    )
 
     @staticmethod
     def loads(text: str | bytes | bytearray, **options: Any) -> Any:
         """`json.loads(text, **options)`, at any depth."""
-        if ScannedJson.serve is not None and not options:
-            return ScannedJson.serve(text)
+        serve = ScannedJson.SERVE.get()
+        if serve is not None and not options:
+            return serve(text)
         try:
             return json.loads(text, **options)
         except RecursionError:

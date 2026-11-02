@@ -129,7 +129,7 @@ class Codec:
     }
     FROM_DATA: ClassVar[dict[str, Any]] = {
         "tuple[tuple[str, str], ...]": lambda v: tuple((a, b) for a, b in v),
-        "dict[str, bytes]": lambda v: {k: base64.b64decode(x) for k, x in v.items()},
+        "dict[str, bytes]": lambda v: {k: base64.b64decode(x, validate=True) for k, x in v.items()},
         "Mapping[str, str]": dict,
         "dict[str, int]": dict,
         "tuple[str, ...]": tuple,
@@ -174,9 +174,14 @@ class Codec:
             if not ok:
                 return None
             values[name] = value
-        # The worker's values exactly, never normalised again: a record's `__post_init__` is not
-        # idempotent (`Coordinate.integrity` hashes an already-malformed value a second time), so
-        # constructing it here would hold a different record from the one the worker built.
+        # A record its own constructor would refuse is refused: every `__post_init__` that validates
+        # runs, on a throwaway (outer-layer review, condition 4). What is held is the worker's values
+        # exactly, never normalised again: a `__post_init__` is not idempotent (`Coordinate.integrity`
+        # hashes an already-malformed value a second time), so the constructed record is not kept.
+        try:
+            kind(**values)
+        except (TypeError, ValueError, KeyError, AttributeError, AssertionError):
+            return None
         record: Any = object.__new__(kind)
         for name, value in values.items():
             object.__setattr__(record, name, value)
@@ -201,7 +206,10 @@ class Codec:
         check = Codec.CHECKS.get(annotation)
         if check is None or not check(value):
             return False, None
-        return True, Codec.FROM_DATA.get(annotation, lambda v: v)(value)
+        try:
+            return True, Codec.FROM_DATA.get(annotation, lambda v: v)(value)
+        except ValueError:  # base64 that is not (binascii.Error), a value its type refuses
+            return False, None
 
 
 __all__ = ["LIST_ENTRIES", "Codec"]

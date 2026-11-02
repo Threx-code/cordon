@@ -21,10 +21,10 @@ parent (a worker, a test, the CLI's own files) the store is inactive and every c
 
 from __future__ import annotations
 
+import contextvars
 import dataclasses
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from cordon_scanner.foundation.collector import ScanCaches
 from cordon_scanner.foundation.formats.served_json import DocumentUnavailable, ServedJson
 from cordon_scanner.foundation.models import Severity
 from cordon_scanner.foundation.results import OperationalFinding
@@ -50,19 +50,39 @@ class PendingHooks:
     in_tree: bool
 
 
+class _Held:
+    """One scan's store, per scan and never per process: two scans in one process (a library user's
+    threads, the MCP server, the cloud runner) each read their own (outer-layer review of item 56)."""
+
+    __slots__ = ("manifests", "missing", "references", "state")
+
+    def __init__(self) -> None:
+        self.manifests: dict[tuple[str, str, str], Any] = {}
+        """(ecosystem id, path, "alone" or "tree") → the Manifest record, or the error text it raised."""
+        self.references: dict[str, list[str]] = {}
+        """Each JavaScript file's references (`JsReferences.file`), read in the worker."""
+        self.missing: dict[str, str] = {}
+        """Paths asked for and not held (manifests and references), with what was asked."""
+        self.state: dict[str, Any] = {}
+        """`view`: the (path, sha256) set the worker parsed in-tree manifests in view of; `failed`: the
+        context worker failed, and OPERATIONAL.WORKER.CONTEXT_FAILED already says nothing it would
+        have decoded is known, so a later ask is not reported again, file by file."""
+
+
 class Documents:
     """The parent's store of what the context worker decoded, active for one scan."""
 
-    _manifests: ClassVar[dict[tuple[str, str, str], Any]] = ScanCaches.register({})
-    """(ecosystem id, path, "alone" or "tree") → the Manifest record, or the error text it raised."""
-    _references: ClassVar[dict[str, list[str]]] = ScanCaches.register({})
-    """Each JavaScript file's references (`JsReferences.file`), read in the worker."""
-    _missing: ClassVar[dict[str, str]] = ScanCaches.register({})
-    """Paths asked for and not held (manifests and references), with what was asked."""
-    _state: ClassVar[dict[str, Any]] = ScanCaches.register({})
-    """`view`: the (path, sha256) set the worker parsed in-tree manifests in view of; `failed`: the
-    context worker failed, and OPERATIONAL.WORKER.CONTEXT_FAILED already says nothing it would have
-    decoded is known, so a later ask is not reported again, file by file."""
+    _current: ClassVar[contextvars.ContextVar[_Held | None]] = contextvars.ContextVar(
+        "cordon_documents", default=None
+    )
+
+    @staticmethod
+    def _scan() -> _Held:
+        held = Documents._current.get()
+        if held is None:
+            held = _Held()
+            Documents._current.set(held)
+        return held
 
     @staticmethod
     def accept(manifests: Any, documents: Any, references: Any, known: set[str]) -> str:
@@ -91,8 +111,8 @@ class Documents:
         why = Documents._accept_references(references, known) or ServedJson.hold(documents, known)
         if why:
             return why
-        Documents._manifests.clear()
-        Documents._manifests.update(held)
+        Documents._scan().manifests.clear()
+        Documents._scan().manifests.update(held)
         return ""
 
     @staticmethod
@@ -104,29 +124,28 @@ class Documents:
                 return "JavaScript references of the wrong shape"
             if not all(isinstance(s, str) and len(s) <= 4096 for s in stems):
                 return "a JavaScript reference of the wrong shape"
-        Documents._references.clear()
-        Documents._references.update(references)
+        Documents._scan().references.clear()
+        Documents._scan().references.update(references)
         return ""
 
     @staticmethod
     def activate(units: list[FileUnit], *, failed: bool = False) -> None:
         """The store serves this scan from now on, its in-tree records in view of these units."""
-        Documents._missing.clear()
-        Documents._state.update(
+        Documents._scan().missing.clear()
+        Documents._scan().state.update(
             view=frozenset((u.path, u.content.sha256) for u in units), failed=failed, active=True
         )
         ServedJson.activate()
 
     @staticmethod
     def end() -> None:
-        for held in (Documents._manifests, Documents._references, Documents._missing):
-            held.clear()
-        Documents._state.clear()
+        Documents._current.set(None)
         ServedJson.end()
 
     @staticmethod
     def active() -> bool:
-        return bool(Documents._state.get("active"))
+        held = Documents._current.get()
+        return held is not None and bool(held.state.get("active"))
 
     @staticmethod
     def manifest(ecosystem: Any, unit: FileUnit, files: Any | None) -> Any:
@@ -137,9 +156,9 @@ class Documents:
         if files is not None and getattr(ecosystem, "parse_in_tree", None) is not None:
             kind = "tree"
             seen = frozenset((path, content.sha256) for path, content in files.items())
-            if seen != Documents._state.get("view"):
+            if seen != Documents._scan().state.get("view"):
                 return Documents._miss(unit.path, f"{ecosystem_id} manifest, in another view")
-        held = Documents._manifests.get((ecosystem_id, unit.path, kind))
+        held = Documents._scan().manifests.get((ecosystem_id, unit.path, kind))
         if held is None:
             return Documents._miss(unit.path, f"{ecosystem_id} manifest")
         if isinstance(held, str):
@@ -158,9 +177,9 @@ class Documents:
         for unit in units:
             if not unit.path.endswith((".js", ".cjs", ".mjs")) or unit.content.is_binary:
                 continue
-            stems = Documents._references.get(unit.path)
+            stems = Documents._scan().references.get(unit.path)
             if stems is None:
-                Documents._missing.setdefault(unit.path, "JavaScript references")
+                Documents._scan().missing.setdefault(unit.path, "JavaScript references")
             else:
                 held[unit.path] = stems
         return Documents.closure_over(held, seeds)
@@ -195,15 +214,15 @@ class Documents:
 
     @staticmethod
     def _miss(path: str, what: str) -> Any:
-        Documents._missing.setdefault(path, what)
+        Documents._scan().missing.setdefault(path, what)
         raise DocumentUnavailable(f"the context worker returned no {what} for this file")
 
     @staticmethod
     def report_missing(acc: Any) -> None:
         """Each file a step asked for and the store did not hold: a blocking gap, never a parse."""
-        missing = {**ServedJson.missing(), **Documents._missing}
-        Documents._missing.clear()
-        if Documents._state.get("failed"):
+        missing = {**ServedJson.missing(), **Documents._scan().missing}
+        Documents._scan().missing.clear()
+        if Documents._scan().state.get("failed"):
             return
         for path, what in sorted(missing.items()):
             acc.incomplete(

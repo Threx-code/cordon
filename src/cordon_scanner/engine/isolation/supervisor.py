@@ -55,18 +55,21 @@ class Reason:
 @dataclass(frozen=True, slots=True)
 class Bounds:
     """What one worker may use. `memory_bytes` 0 sets no address-space limit; a unit's CPU budget is
-    `max(cpu_floor, cpu_per_byte * size)` seconds, and its wall backstop `wall_factor` times that."""
+    `max(cpu_floor, cpu_per_byte * size)` seconds, and its wall backstop `wall_factor` times that,
+    never past `wall_ceiling`: with no scan deadline, a 300 MB archive's backstop was many hours, and a
+    hung expander must be a gap in bounded time (outer-layer review of 6b441f3a)."""
 
     memory_bytes: int = 0
     cpu_floor: float = 30.0
     cpu_per_byte: float = 0.0
     wall_factor: float = 10.0
+    wall_ceiling: float = 4 * 3600.0
 
     def cpu_budget(self, size: int) -> float:
         return max(self.cpu_floor, self.cpu_per_byte * size)
 
     def wall_budget(self, size: int) -> float:
-        return self.wall_factor * self.cpu_budget(size)
+        return min(self.wall_factor * self.cpu_budget(size), max(self.wall_ceiling, self.cpu_floor))
 
 
 @dataclass(frozen=True, slots=True)

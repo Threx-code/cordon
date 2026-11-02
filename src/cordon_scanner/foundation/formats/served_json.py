@@ -15,12 +15,11 @@ engine to report as a blocking gap.
 from __future__ import annotations
 
 import contextlib
+import contextvars
 import hashlib
 import json
 from collections.abc import Iterator
 from typing import Any, ClassVar
-
-from cordon_scanner.foundation.collector import ScanCaches
 
 DOCUMENT_DEPTH = 512
 """The deepest a document crosses as JSON text. Past it (a manifest nested twenty thousand deep, which
@@ -31,14 +30,34 @@ class DocumentUnavailable(ValueError):
     """A manifest or JSON document the context worker did not return."""
 
 
+class _Served:
+    """One scan's store. Per scan, never per process: two scans in one process (a library user's
+    threads, the MCP server, the cloud runner) each serve their own (outer-layer review of item 56)."""
+
+    __slots__ = ("active", "held", "missing")
+
+    def __init__(self) -> None:
+        self.active = False
+        self.held: dict[str, tuple[str | list[Any] | None, str]] = {}
+        """sha256 of the input → (the worker's JSON text, or None, and the error type it raised)."""
+        self.missing: dict[str, str] = {}
+        """Paths asked for and not held, with what was asked."""
+
+
 class ServedJson:
     """The parent's store of the scanned JSON the context worker decoded, active for one scan."""
 
-    _active: ClassVar[bool] = False
-    _held: ClassVar[dict[str, tuple[str | list[Any] | None, str]]] = ScanCaches.register({})
-    """sha256 of the input → (the worker's JSON text, or None, and the error type it raised)."""
-    _missing: ClassVar[dict[str, str]] = ScanCaches.register({})
-    """Paths asked for and not held, with what was asked."""
+    _current: ClassVar[contextvars.ContextVar[_Served | None]] = contextvars.ContextVar(
+        "cordon_served_json", default=None
+    )
+
+    @staticmethod
+    def _scan() -> _Served:
+        store = ServedJson._current.get()
+        if store is None:
+            store = _Served()
+            ServedJson._current.set(store)
+        return store
 
     @staticmethod
     def key(data: str | bytes | bytearray) -> str:
@@ -85,24 +104,25 @@ class ServedJson:
             ):
                 return "a document entry of the wrong shape"
             held[entry[0]] = (entry[2], entry[3])
-        ServedJson._held.clear()
-        ServedJson._held.update(held)
+        store = ServedJson._scan()
+        store.held.clear()
+        store.held.update(held)
         return ""
 
     @staticmethod
     def activate() -> None:
-        ServedJson._missing.clear()
-        ServedJson._active = True
+        store = ServedJson._scan()
+        store.missing.clear()
+        store.active = True
 
     @staticmethod
     def end() -> None:
-        ServedJson._active = False
-        ServedJson._held.clear()
-        ServedJson._missing.clear()
+        ServedJson._current.set(None)
 
     @staticmethod
     def active() -> bool:
-        return ServedJson._active
+        store = ServedJson._current.get()
+        return store is not None and store.active
 
     @staticmethod
     def loads(data: str | bytes | bytearray, path: str) -> Any:
@@ -111,9 +131,9 @@ class ServedJson:
         DocumentUnavailable; anywhere else, the decoder itself."""
         from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 
-        if not ServedJson._active:
+        if not ServedJson.active():
             return ScannedJson.loads(data)
-        held = ServedJson._held.get(ServedJson.key(data))
+        held = ServedJson._scan().held.get(ServedJson.key(data))
         if held is None:
             return ServedJson.miss(path, "JSON document")
         form, error = held
@@ -256,25 +276,26 @@ class ServedJson:
         in a worker, the block reads as before."""
         from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 
-        if not ServedJson._active:
+        if not ServedJson.active():
             yield
             return
-        ScannedJson.serve = lambda data: ServedJson.loads(data, where)
+        token = ScannedJson.SERVE.set(lambda data: ServedJson.loads(data, where))
         try:
             yield
         finally:
-            ScannedJson.serve = None
+            ScannedJson.SERVE.reset(token)
 
     @staticmethod
     def miss(path: str, what: str) -> Any:
-        ServedJson._missing.setdefault(path, what)
+        ServedJson._scan().missing.setdefault(path, what)
         raise DocumentUnavailable(f"the context worker returned no {what} for this file")
 
     @staticmethod
     def missing() -> dict[str, str]:
         """The paths asked for and not held since the last call, with what was asked."""
-        out = dict(ServedJson._missing)
-        ServedJson._missing.clear()
+        store = ServedJson._scan()
+        out = dict(store.missing)
+        store.missing.clear()
         return out
 
 
