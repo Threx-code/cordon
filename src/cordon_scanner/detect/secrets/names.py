@@ -734,9 +734,6 @@ NOT_A_SECRET = re.compile(
       # both ends and only the asterisk (the one mask measured), so a mask in the middle, text after
       # the run, or a full-format key with a word beside it is not excused.
       | [A-Za-z0-9_-]{0,64}\*{4,64}
-      # ONE CHARACTER REPEATED, as the whole value: `description = "aaaaaaaaaaaaa"`. Eight or more
-      # of one character and nothing else; `glpat-AAAAAAAAAAAAAAAA` has a prefix and is not it.
-      | (?P<repeated>[A-Za-z0-9])(?P=repeated){7,63}
     )$
     """
 )

@@ -1,14 +1,12 @@
-"""Release item 68, fix 5: a redacted key and a one-character filler are not credentials.
+"""Release item 68, fix 5: a redacted key is not a credential.
 
-Two whole-value shapes, each measured on the MCP reference servers (modelling scratchpad mcpv/):
+A REDACTED KEY is some characters of a key, then a run of asterisks, measured on the MCP reference
+servers (modelling scratchpad mcpv/): langchain's `config.yaml` and `docker_config.yaml` ship nineteen
+("sk-" and lowercase runs, then `******`); the part that would make the key usable is the part the mask
+replaced. (A one-character-repeated shape was tried and reverted: no measured case.)
 
-* A REDACTED KEY: some characters of a key, then a run of asterisks. langchain's `config.yaml` and
-  `docker_config.yaml` ship nineteen of these ("sk-" and lowercase runs, then `******`); the part
-  that would make the key usable is the part the mask replaced.
-* ONE CHARACTER REPEATED, as the whole value: `description = "aaaaaaaaaaaaa"`.
-
-Both go in `NOT_A_SECRET`, which is anchored at both ends, so a real key that merely contains or sits
-beside such text is still a credential. Fixtures are synthetic: no value here is, or was derived from,
+The shape goes in `NOT_A_SECRET`, which is anchored at both ends, so a real key that merely contains or
+sits beside such text is still a credential. Fixtures are synthetic: no value here is, or was derived from,
 a working credential.
 """
 
@@ -73,21 +71,3 @@ class TestARedactedKeyIsNotACredential:
         text = f'API_KEY = "sk-{HEAD}Zq9Lw8Xc5Vb"  # example of the format\n'
         found = RedactedHelpers.rules(tmp_path, "settings.py", text)
         assert {r for r in found if r.startswith("SECRET.")}
-
-
-class TestOneRepeatedCharacterIsNotACredential:
-    @pytest.mark.parametrize("value", ["aaaaaaaaaaaaa", "0" * 16, "Z" * 12])
-    def test_a_value_that_is_one_character_repeated_is_excused(self, value: str) -> None:
-        assert NOT_A_SECRET.match(value.encode())
-
-    @pytest.mark.parametrize(
-        "value",
-        [
-            # A prefix makes it a different value: this is a padded key (glpat-AAAA...).
-            "glpat-" + "A" * 16,
-            # Too short to say anything.
-            "aaaa",
-        ],
-    )
-    def test_a_padded_or_mixed_value_is_not_excused_by_this_shape(self, value: str) -> None:
-        assert not NOT_A_SECRET.match(value.encode())
