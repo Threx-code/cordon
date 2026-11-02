@@ -137,7 +137,8 @@ class LifecycleFindings:
             yield from LifecycleFindings._hook_findings(
                 ctx, declared, hook, manifest, scripts, unit
             )
-        yield from LifecycleFindings._script_callback(scripts, unit, ctx)
+        installs = frozenset(hook.name for hook in manifest.hooks)
+        yield from LifecycleFindings._script_callback(scripts, unit, ctx, installs)
 
     @staticmethod
     def _hook_findings(
@@ -295,14 +296,16 @@ class LifecycleFindings:
 
     @staticmethod
     def _script_callback(
-        scripts: dict[str, str], unit: FileUnit, ctx: ScanContext
+        scripts: dict[str, str], unit: FileUnit, ctx: ScanContext, installs: frozenset[str]
     ) -> Iterator[Finding]:
         """MALWARE.EXFIL.SCRIPT_CALLBACK.001: a script of the package's own package.json names an
         interaction host (`Destinations.is_interaction_host`: a service whose only use is recording
         that something reached it). Measured before it shipped, on the root manifest of every npm
         unit of rows a3b9c5f1: in an install hook, 6 content misses in 2 groups and 0 benign; in any
         script, 8 in 4, 0 benign newly blocked. A script a person runs (`test`) is reported below the
-        gate, as every person-run script is. One finding per manifest; the host is not printed."""
+        gate, graded here by whether installing runs it (`installs`, the manifest's own lifecycle
+        hooks), never left to the package verdict, which keeps this rule as it is graded (item 67's
+        keep list). One finding per manifest; the host is not printed."""
         member = unit.path.rpartition("!")[2]
         if member.count("/") > 1 or "node_modules/" in member:
             return  # the package's own manifest, as measured: not a bundled dependency's
@@ -311,13 +314,19 @@ class LifecycleFindings:
                 yield ManifestFinding.finding(
                     rule_id="MALWARE.EXFIL.SCRIPT_CALLBACK.001",
                     category=Category.MALICIOUS,
-                    severity=Severity.HIGH,
+                    severity=Severity.HIGH if name in installs else Severity.MEDIUM,
                     confidence=Confidence.HIGH,
                     title="Package script calls back to an interaction service",
                     message=(
                         f"The {name!r} script names a webhook, interaction or canary service: a host "
                         "whose only purpose is to record that something reached it. That is how a "
                         "dependency-confusion probe confirms which machines ran the package."
+                        + (
+                            ""
+                            if name in installs
+                            else " Installing does not run this script, so it is reported below "
+                            "the gate: it runs when a person runs it."
+                        )
                     ),
                     remediation=(
                         "Do not install or run this package's scripts. Treat a machine that ran one "

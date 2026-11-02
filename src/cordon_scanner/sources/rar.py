@@ -186,6 +186,7 @@ class _Unpack:
         self.out = bytearray()
         self.budget = budget
         self.deadline = deadline
+        self.symbols = 0
         self.old = [0, 0, 0, 0]
         self.last_length = 0
         self.tables: tuple[_Huffman, _Huffman, _Huffman, _Huffman] | None = None
@@ -199,6 +200,8 @@ class _Unpack:
             raise _Fail("output past the archive budget")
         bits = _Bits(packed)
         while len(self.out) < goal:
+            if self.deadline is not None and time.monotonic() > self.deadline:
+                raise ArchiveError("the time budget ran out while reading the archive")
             if bits.pos >= bits.limit:
                 raise _Fail("a stream that ends before its declared size")
             last = self._block(bits, goal)
@@ -272,11 +275,10 @@ class _Unpack:
             raise _Fail("a block with no tables before it")
         ld, dd, ldd, rd = self.tables
         out = self.out
-        count = 0
         while bits.pos < end and len(out) < goal:
-            count += 1
+            self.symbols += 1  # across blocks: a stream of many tiny blocks still meets the check
             if (
-                not count % _Unpack.CHECK_EVERY
+                not self.symbols % _Unpack.CHECK_EVERY
                 and self.deadline is not None
                 and time.monotonic() > self.deadline
             ):
