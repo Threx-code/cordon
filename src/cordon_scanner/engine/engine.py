@@ -798,35 +798,35 @@ class Engine:
     _PROFILE_FILES: ClassVar[int] = 50
 
     def _intent_observation(
-        self, units: Sequence[FileUnit], ctx: ScanContext, labels: dict[str, Any]
+        self, units: Sequence[FileUnit], ctx: ScanContext, facts: dict[str, dict[str, list[Any]]]
     ) -> Any:
         """When each effect of the package runs, and what hides it (`core/intent.py`); None for a
-        package the intent layer does not read."""
+        package the intent layer does not read. Each file's half is its worker's
+        (`IntentObserver.file_facts`, item 56): read here from `facts`, never from the file."""
         from cordon_scanner.decide.intent import IntentObserver
         from cordon_scanner.detect.base import CapabilityLabelling
-        from cordon_scanner.detect.registry import DownloadFlow
+        from cordon_scanner.engine.isolation.analysis_facts import ParentAnalysis
 
         detector = next((d for d in self.detectors if isinstance(d, CapabilityLabelling)), None)
         if detector is None or not IntentObserver.applies(ctx):
             return None
         files = [u for u in units if isinstance(u, FileUnit)]
 
-        def label(unit: FileUnit) -> list[tuple[str, int]]:
-            labelled = TreeFacts.labelled_once(detector, unit, ctx, labels)
-            out = [(hit.capability.value, hit.byte_start) for hit in (labelled or ((),))[0]]
-            lines = DownloadFlow.runs_download(unit.content.text, unit.language)
-            if lines:
-                raw = unit.content.raw
-                starts = [0, *(i + 1 for i, b in enumerate(raw) if b == 10)]
-                out += [("runs_download", starts[min(n, len(starts)) - 1]) for n in lines]
-            return out
+        def file_facts(unit: FileUnit) -> tuple[list[tuple[str, bool]], set[str]]:
+            if ParentAnalysis.raised(facts, unit.path):
+                raise ValueError("the file's labelling raised in its worker")
+            held = ParentAnalysis.of(facts, unit.path)
+            effects = [
+                (str(cap), bool(deferred)) for cap, deferred in held.get("intent.effect", ())
+            ]
+            return effects, {str(fact) for fact in held.get("intent.fact", ())}
 
         return IntentObserver.observe(
-            files, ctx, label, lambda seeds: Hooks.hook_js_closure(files, seeds)
+            files, ctx, file_facts, lambda seeds: Hooks.hook_js_closure(files, seeds)
         )
 
     def _capability_profile(
-        self, units: Sequence[FileUnit], ctx: ScanContext, labels: dict[str, Any] | None = None
+        self, units: Sequence[FileUnit], ctx: ScanContext, facts: dict[str, dict[str, list[Any]]]
     ) -> dict[str, float]:
         """What the code that runs on its own can do: the capabilities of the files an install
         runs, of the files importing the package runs first, and of the scripts an agent runs.
@@ -838,7 +838,8 @@ class Engine:
         everything else; on its own it blocks nothing.
         """
         from cordon_scanner.detect.base import CapabilityLabelling
-        from cordon_scanner.detect.registry import DownloadFlow, ReachedFlows
+        from cordon_scanner.detect.registry import ReachedFlows
+        from cordon_scanner.engine.isolation.analysis_facts import PROFILE_BYTES, ParentAnalysis
 
         detector = next((d for d in self.detectors if isinstance(d, CapabilityLabelling)), None)
         if detector is None:
@@ -853,25 +854,23 @@ class Engine:
             held: set[str] = set()
             read = 0
             for unit in units:
-                if unit.path not in paths or unit.content.size > 1_000_000:
+                if unit.path not in paths or unit.content.size > PROFILE_BYTES:
                     continue
                 if read >= Engine._PROFILE_FILES:
                     break
                 read += 1
-                try:
-                    labelled = TreeFacts.labelled_once(detector, unit, ctx, labels)
-                except Exception:  # noqa: BLE001, S112
+                # The file's labels and download runs, as its worker read them (item 56): a
+                # labelling that raised there is skipped here, as the call raising here was.
+                labels = ParentAnalysis.labels(facts, unit.path)
+                if labels is None:
                     continue
-                if labelled is not None:
-                    held |= {hit.capability.value for hit in labelled[0]}
-                if "runs_download" not in held and DownloadFlow.runs_download(
-                    unit.content.text, unit.language
-                ):
+                held |= labels
+                if ParentAnalysis.runs_download(facts, unit.path):
                     held.add("runs_download")
             out[f"{place}_files"] = float(read)
             out[f"{place}_capabilities"] = float(len(held))
             out.update({f"{place}_can_{name}": 1.0 for name in held})
-        return out | ReachedFlows.of(units, ctx)  # what the reached code does with what it reads
+        return out | ReachedFlows.of(units, ctx, facts)  # what the reached code does with it
 
     # -- Phase 2: execution ----------------------------------------------
 

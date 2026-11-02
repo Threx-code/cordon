@@ -13498,6 +13498,21 @@ class TestAPublishedPackagesHookIsGradedByWhatItRuns:
         files = {"package.json": manifest, "bin/helper": b"\x7fELF\x02\x01\x01" + b"\x00" * 64}
         assert self._severity(tmp_path, files) == ["HIGH"]
 
+    # What the user sees, with the verdict on: both shapes are held as a warning on this fixture.
+    @pytest.mark.xfail(
+        strict=True, reason="held as a warning by the package verdict (measured 2 Nov)"
+    )
+    def test_a_target_that_is_not_there_blocks_as_the_user_sees_it(self, tmp_path) -> None:
+        assert self._severity(tmp_path, {"package.json": self.MANIFEST}) == ["HIGH"]
+
+    @pytest.mark.xfail(
+        strict=True, reason="held as a warning by the package verdict (measured 2 Nov)"
+    )
+    def test_a_binary_target_blocks_as_the_user_sees_it(self, tmp_path) -> None:
+        manifest = b'{"name":"tool","version":"1.0.0","scripts":{"postinstall":"./bin/helper"}}'
+        files = {"package.json": manifest, "bin/helper": b"\x7fELF\x02\x01\x01" + b"\x00" * 64}
+        assert self._severity(tmp_path, files) == ["HIGH"]
+
 
 class TestBeaconsOutsideAHook:
     SOURCE = (

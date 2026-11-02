@@ -316,7 +316,7 @@ class ScanStages:
             ),
             units,
             ScanFactsGathering.verdict_facts(self.engine, units, ctx, acc),
-            self.engine._intent_observation(units, ctx, acc.labels),
+            self.engine._intent_observation(units, ctx, acc.facts),
             repository=not ctx.package_distribution,
             facts=acc.facts,
         )

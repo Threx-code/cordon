@@ -156,20 +156,26 @@ class ScanFactsGathering:
 
     @staticmethod
     def verdict(
-        engine: Engine, units: Sequence[FileUnit], ctx: ScanContext, labels: dict[str, Any]
+        engine: Engine,
+        units: Sequence[FileUnit],
+        ctx: ScanContext,
+        facts: dict[str, dict[str, list[Any]]],
     ) -> dict[str, float]:
         """The facts the package verdict reads (`Stages.fold_and_judge`)."""
         return {
-            **engine._capability_profile(units, ctx, labels),
+            **engine._capability_profile(units, ctx, facts),
             **History.registry_facts(units),
         }
 
     @staticmethod
     def gather(
-        engine: Engine, units: Sequence[FileUnit], ctx: ScanContext, labels: dict[str, Any]
+        engine: Engine,
+        units: Sequence[FileUnit],
+        ctx: ScanContext,
+        facts: dict[str, dict[str, list[Any]]],
     ) -> tuple[dict[str, float], dict[str, Any]]:
-        """(the verdict's facts, the modules' facts)."""
-        verdict = ScanFactsGathering.verdict(engine, units, ctx, labels)
+        """(the verdict's facts, the modules' facts). `facts` is the workers' (`Accumulator.facts`)."""
+        verdict = ScanFactsGathering.verdict(engine, units, ctx, facts)
         return verdict, {
             "identity": ScanFactsGathering.identity(units),
             "can": ScanFactsGathering.capabilities(verdict),
@@ -201,7 +207,7 @@ class ScanFactsGathering:
         later = [d for d in detectors if callable(getattr(d, "defers", None)) and d.defers(ctx)]
         if not later:
             return
-        acc.verdict_facts, facts = ScanFactsGathering.gather(engine, units, ctx, acc.labels)
+        acc.verdict_facts, facts = ScanFactsGathering.gather(engine, units, ctx, acc.facts)
         ctx = replace(ctx, scan_facts=facts)
         signature = CacheSignature.scan_signature(later, ctx, engine.config)
         # In supervised workers, one as readily as many (item 28), as the first pass is.
@@ -218,7 +224,7 @@ class ScanFactsGathering:
         """The verdict's facts: those the deferred pass gathered, else computed now."""
         if acc.verdict_facts is not None:
             return acc.verdict_facts
-        return ScanFactsGathering.verdict(engine, units, ctx, acc.labels)
+        return ScanFactsGathering.verdict(engine, units, ctx, acc.facts)
 
     @staticmethod
     def identity(units: Sequence[FileUnit]) -> list[str] | None:
