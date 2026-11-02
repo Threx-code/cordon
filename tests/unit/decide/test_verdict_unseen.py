@@ -60,6 +60,8 @@ class TestTheAdmittedRulesAreKept:
         # by their pairs on a3b9c5f1's rows (outer-layer scratchpad jsm/):
         "SUSPECT.OBFUSCATION.MANGLED.001",  # 31 content misses in 16 groups for 3 benign (pair4.txt)
         "SUSPECT.OBFUSCATION.REQUIRE_ALIAS.001",  # 7 content misses in 7 groups, 0 benign (pairn.txt)
+        # 8 content misses in 4 groups, 0 newly blocked benign (jsm/out4, pairn-hosts.txt)
+        "MALWARE.EXFIL.SCRIPT_CALLBACK.001",
     )
 
     def test_each_is_in_keep(self) -> None:
