@@ -99,6 +99,14 @@ class Harness:
 
 
 class TestTheSupervisor:
+    def test_a_unit_the_size_of_a_whole_scan_is_waited_for(self) -> None:
+        """The context worker and the expander run one unit sized as the whole scan: its wall
+        backstop (10 times a per-byte CPU budget) passed the selector's 2**31 ms and the scan ended
+        "timeout is too large", exit 2, on a 300 MB archive (the merge gate's cdktn unit)."""
+        units = [Unit(0, ("echo", "whole"), 400 << 20)]
+        outcome = Harness.supervisor(Bounds(cpu_per_byte=1.1e-3), workers=1).run(units)
+        assert outcome.results == {0: "whole"}
+
     def test_every_result_comes_back_by_its_index(self) -> None:
         units = [Unit(i, ("echo", i * i), 1) for i in range(12)]
         outcome = Harness.supervisor(Bounds(), workers=3).run(units)
