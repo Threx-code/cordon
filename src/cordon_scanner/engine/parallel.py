@@ -380,7 +380,7 @@ class ParallelScanner:
 
     @staticmethod
     def _inspect_batch(
-        batch: list[WorkItem], root: str, deadline: float | None = None
+        batch: list[WorkItem], root: str, deadline: float | None = None, *, empty: bool = True
     ) -> list[WorkerResult]:
         """Scan one batch inside a worker.
 
@@ -402,9 +402,6 @@ class ParallelScanner:
         if ParallelScanner._worker is None:  # pragma: no cover - only reachable on a broken pool
             return []
 
-        from cordon_scanner.detect.base import FileUnit
-        from cordon_scanner.engine.isolation.facts import WorkerFacts
-
         if getattr(ParallelScanner._worker, "missing", ()):  # (a test's stand-in state has none)
             raise RuntimeError(
                 f"detectors no worker can build: {list(ParallelScanner._worker.missing)}"
@@ -412,8 +409,33 @@ class ParallelScanner:
         engine = ParallelScanner._worker.engine
         ctx = ParallelScanner._worker.context
         detectors = ParallelScanner._worker.detectors
-        out: list[WorkerResult] = []
+        try:
+            return ParallelScanner._batch_results(batch, root, deadline, engine, ctx, detectors)
+        finally:
+            # The caches that hold files fill here now that detection runs in the workers (item 56),
+            # and a warm pool's worker outlives the scan: emptied when its batch is done, as the
+            # parent's are after a scan (`ScanCaches.after_scan`), or a worker keeps every file it
+            # read. `empty=False` is the timed batch's, which reads the clock (a registered cache
+            # too) first and empties after.
+            if empty:
+                from cordon_scanner.foundation.collector import ScanCaches
 
+                ScanCaches.after_scan()
+
+    @staticmethod
+    def _batch_results(
+        batch: list[WorkItem],
+        root: str,
+        deadline: float | None,
+        engine: Any,
+        ctx: Any,
+        detectors: tuple[Any, ...],
+    ) -> list[WorkerResult]:
+        """Each item of a batch, read and inspected in turn (`_inspect_batch`)."""
+        from cordon_scanner.detect.base import FileUnit
+        from cordon_scanner.engine.isolation.facts import WorkerFacts
+
+        out: list[WorkerResult] = []
         for index, relative, _size, expected, carried, language, project in batch:
             if deadline is not None and time.monotonic() >= deadline:
                 out.append(
@@ -608,9 +630,14 @@ class ParallelScanner:
 
         # The clock follows the scan that asked for it, not this worker's environment: a warm pool's
         # workers may have started before the scan turned the clock on.
-        with DetectorClock.on():
-            out = ParallelScanner._inspect_batch(batch, root, deadline)
-        return out, DetectorClock.taken()
+        from cordon_scanner.foundation.collector import ScanCaches
+
+        try:
+            with DetectorClock.on():
+                out = ParallelScanner._inspect_batch(batch, root, deadline, empty=False)
+            return out, DetectorClock.taken()
+        finally:
+            ScanCaches.after_scan()
 
     @staticmethod
     def _inspected(
