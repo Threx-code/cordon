@@ -42,7 +42,6 @@ if TYPE_CHECKING:
 
 MODEL_RULE = "SUSPECT.CODE.MODEL.001"
 UNAVAILABLE = "OPERATIONAL.CODE_MODEL.UNAVAILABLE"
-CAPPED = "OPERATIONAL.CODE_MODEL.CAPPED"
 
 
 class CodeModelScores(BaseDetector):
@@ -51,7 +50,6 @@ class CodeModelScores(BaseDetector):
     categories = frozenset({Category.OPERATIONAL, Category.SUSPICIOUS})
     requires = DetectorRequirements()
     LANGUAGES: ClassVar[frozenset[str]] = frozenset({"javascript", "typescript"})
-    MAX_FILE: ClassVar[int] = 2_000_000
 
     def __init__(self, weights_path: Path | None = None) -> None:
         self.unavailable: str | None = None
@@ -86,20 +84,14 @@ class CodeModelScores(BaseDetector):
             or not self.reached(unit.path, ctx)
         ):
             return ()
-        content = unit.content
-        if content.size > self.MAX_FILE:
-            return (
-                self.operational(
-                    path=unit.path,
-                    rule_id=CAPPED,
-                    message="A reached file is past the code model's size cap and was not scored.",
-                    detail=f"{content.size} bytes",
-                ),
-            )
-        text = content.text
-        buckets = CodeFeatures.buckets(text)
-        score = weights.score(buckets)
-        carriers = weights.carriers(buckets, CodeFeatures.ngrams(text))
+        # Every window of the file, however large: no size escapes the model (the owner's no-caps
+        # rule). The file's score is its highest window's; a file within one window scores as trained.
+        score: float = 0.0
+        carriers: list[str] = []
+        for buckets, names in CodeFeatures.windows(unit.content.text):
+            window_score = weights.score(buckets)
+            if window_score > score or not carriers:
+                score, carriers = window_score, weights.carriers(buckets, names)
         return (self.record(unit.path, score, carriers),)
 
     def record(self, path: str, score: float, carriers: list[str]) -> Finding:
@@ -193,17 +185,6 @@ class CodeModelScores(BaseDetector):
                 detector=CodeModelScores.id,
                 message="The shipped code model is damaged or was made for other features, so no package was scored by it.",
                 remediation="Reinstall Cordon, or report the build: the weights ship with it.",
-                references=(),
-            ),
-            DeclaredRule(
-                id=CAPPED,
-                title="A reached file was past the code model's size cap",
-                severity=Severity.INFO,
-                confidence=Confidence.CONFIRMED,
-                category=Category.OPERATIONAL,
-                detector=CodeModelScores.id,
-                message="A file this package runs was too large for the code model and was not scored; every other check read it.",
-                remediation="No action required; the cap bounds the model's cost per file.",
                 references=(),
             ),
         )

@@ -222,3 +222,34 @@ class TestTheRecordFormat:
         message = FileScoreRecord.encode(0.5, ["x" * 500, "b", "c", "d"])
         decoded = FileScoreRecord.decode(message)
         assert decoded is not None and len(decoded[1]) == FileScoreRecord.MAX_CARRIERS
+
+
+class TestNoSizeEscapesTheModel:
+    """No cap a file's size can defeat (the owner's no-caps rule; cordon-47, 2 Nov): a file is scored
+    window by window, and its score is its highest window's."""
+
+    @staticmethod
+    def best(path: Path, text: str) -> float:
+        weights = CodeModelWeights.load(path)
+        assert weights is not None
+        return max(weights.score(buckets) for buckets, _names in CodeFeatures.windows(text))
+
+    def test_the_shape_after_padding_past_the_token_window_is_scored(self, tmp_path) -> None:
+        path = CodeModelKit.weights(tmp_path)
+        padded = "a;\n" * 210_000 + FIXTURE  # 420,000 tokens before the learned shape
+        weights = CodeModelWeights.load(path)
+        assert weights is not None
+        assert weights.score(CodeFeatures.buckets(padded)) < 0.2  # the first window alone misses it
+        assert self.best(path, padded) > 0.9
+
+    def test_a_file_past_two_megabytes_is_scored(self, tmp_path) -> None:
+        path = CodeModelKit.weights(tmp_path)
+        large = "/*" + "x" * 2_100_000 + "*/\n" + FIXTURE
+        assert len(large) > CodeFeatures.CHUNK
+        assert self.best(path, large) > 0.9
+
+    def test_a_file_within_one_window_scores_as_trained(self, tmp_path) -> None:
+        path = CodeModelKit.weights(tmp_path)
+        weights = CodeModelWeights.load(path)
+        assert weights is not None
+        assert self.best(path, FIXTURE) == weights.score(CodeFeatures.buckets(FIXTURE))

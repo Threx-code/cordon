@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.analysis.javascript.code_model import CodeFeatures
@@ -71,8 +70,8 @@ class RoleNormaliser:
             "certutil", "bitsadmin", "mshta", "rundll32", "regsvr32", "wscript", "cscript",
         }
     )  # fmt: skip
-    _CHAIN: ClassVar[re.Pattern[str]] = re.compile(r"&&|;\s*\S|`|\$\(")
-    _PIPED: ClassVar[re.Pattern[str]] = re.compile(r"(?:\||>{1,2})\s*(\S+)")
+    #: Characters a command chain or a word list splits on, for `_shell`'s linear scans.
+    _SEPARATORS: ClassVar[dict[int, str]] = str.maketrans(dict.fromkeys(" \t\r\n;&|`$()", " "))
 
     @classmethod
     def vocabulary(cls) -> tuple[str, ...]:
@@ -248,13 +247,46 @@ class RoleNormaliser:
             return False
         if words[0].lower() in cls._COMMANDS and len(words) > 1:
             return True
-        for piped in cls._PIPED.finditer(value):
-            target = piped.group(1).lower()
-            if target in cls._COMMANDS or target.startswith(("/dev/", "/", "./", "~/", "%")):
-                return True
-        return bool(cls._CHAIN.search(value)) and any(
-            w.lower() in cls._COMMANDS for w in re.split(r"[\s;&|`$()]+", value)
+        if any(cls._piped_into(target) for target in cls._pipe_targets(value)):
+            return True
+        return cls._chained(value) and any(
+            w.lower() in cls._COMMANDS for w in value.translate(cls._SEPARATORS).split()
         )
+
+    @classmethod
+    def _piped_into(cls, target: str) -> bool:
+        target = target.lower()
+        return target in cls._COMMANDS or target.startswith(("/dev/", "/", "./", "~/", "%"))
+
+    @staticmethod
+    def _pipe_targets(value: str) -> list[str]:
+        """What each pipe or redirection hands to: the next run of non-blank characters after a run
+        of `|` and `>`. One pass: each character is read once, and a target's run is never re-read
+        (the regex form could restart inside a run an earlier attempt read: test_regex_scaling)."""
+        out, i, n = [], 0, len(value)
+        while i < n:
+            if value[i] not in "|>":
+                i += 1
+                continue
+            while i < n and value[i] in "|>":
+                i += 1
+            while i < n and value[i].isspace():
+                i += 1
+            start = i
+            while i < n and not value[i].isspace():
+                i += 1
+            if i > start:
+                out.append(value[start:i])
+        return out
+
+    @staticmethod
+    def _chained(value: str) -> bool:
+        """A command chain: `&&`, a backtick, `$(`, or a `;` followed by more than blanks."""
+        if "&&" in value or "`" in value or "$(" in value:
+            return True
+        # A non-blank after some `;` exists exactly when one exists after the first: one pass.
+        cut = value.find(";")
+        return cut >= 0 and bool(value[cut + 1 :].strip())
 
 
 __all__ = ["RoleNormaliser"]
