@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any
 from cordon_scanner.foundation.errors import ArchiveError
 from cordon_scanner.sources.archive_names import MemberNames
 from cordon_scanner.sources.base import RejectedMember, Rejection
+from cordon_scanner.sources.import_library import ImportLibrary
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -94,6 +95,7 @@ class ArReader:
             ArReader._keep(name, body, result, member)
         if position < len(data) and data[position:].strip(b"\n"):
             raise ArchiveError(f"{path}: bytes after the last ar member that are no member")
+        result.import_library = not result.truncated and ImportLibrary.verify(data, limits)
 
     @staticmethod
     def _size(header: bytes, path: str, position: int) -> int:

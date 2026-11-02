@@ -49,6 +49,7 @@ from cordon_scanner.sources.budget import (
     _BytesReader,
 )
 from cordon_scanner.sources.lone_stream import LoneStream
+from cordon_scanner.sources.nested_walk import NestedWalk
 from cordon_scanner.sources.rar import RarReader
 from cordon_scanner.sources.sevenzip import SevenZipReader
 from cordon_scanner.sources.signatures import ArchiveSignatures, CompressedHeader, UnopenedFormats
@@ -106,20 +107,6 @@ class ExtractedMember:
 
 
 @dataclass
-class NestedWalk:
-    """What one `walk_archive` has opened, and what it met past the depth limit.
-
-    A package that ships its own earlier `npm pack` tarballs carries each one at several depths;
-    the copy past the limit holds the same bytes as one opened higher up, so its contents were
-    examined. Only an archive no copy of which was opened is reported as unexamined."""
-
-    opened: set[bytes] = field(default_factory=set)
-    """sha256 of every nested archive opened and walked."""
-    too_deep: list[tuple[bytes, tuple[str, str, str]]] = field(default_factory=list)
-    """(sha256, rejection) for every nested archive met past the limit."""
-
-
-@dataclass
 class ExtractionResult:
     members: list[ExtractedMember] = field(default_factory=list)
     rejected: list[RejectedMember] = field(default_factory=list)
@@ -128,6 +115,9 @@ class ExtractionResult:
     coverage gap, because the content they name is read as that member (`link_stays_inside`)."""
     total_uncompressed: int = 0
     total_compressed: int = 0
+    import_library: bool = False
+    """The `ar` reader's whole-archive test (`ImportLibrary.verify`, notes/75): every member is an
+    import library's stub or descriptor object. Never set on a partial read."""
     truncated: bool = False
     """True when a limit stopped extraction early. The caller must report it:
     a partial extraction that looks complete is a false negative."""
@@ -833,8 +823,10 @@ class ArchiveReader:
         rejected: list[tuple[str, str, str]] | None = None,
         deadline: float | None = None,
         walk: NestedWalk | None = None,
+        import_library: set[str] | None = None,
     ) -> Iterator[tuple[str, bytes]]:
-        """Yield every member, descending into nested archives.
+        """Yield every member, descending into nested archives. Where `import_library` is given, the
+        paths of members of an import library are added to it (`NestedWalk.import_library`).
 
         A nested archive met past the depth limit whose exact bytes this walk also opened at a
         shallower depth has had its contents examined, so it is not reported as unexamined
@@ -873,7 +865,7 @@ class ArchiveReader:
                 rejected.append((path, Rejection.ENTRIES, "extraction stopped early at a limit"))
 
         root = walk is None
-        walk = NestedWalk() if walk is None else walk
+        walk = NestedWalk(import_library=import_library) if walk is None else walk
         try:
             yield from ArchiveReader._walk_members(
                 result, path, limits, depth, rejected, deadline, walk
@@ -924,6 +916,8 @@ class ArchiveReader:
     ) -> Iterator[tuple[str, bytes]]:
         for member in result.members:
             member_path = f"{path}!{member.name}"
+            if result.import_library and walk.import_library is not None:
+                walk.import_library.add(member_path)
 
             # Opened when its name says archive, or its bytes do (item 36): a zip named notes.txt
             # or behind a PNG, a lone install.js.gz. The bytes' test reads a whole header, never a

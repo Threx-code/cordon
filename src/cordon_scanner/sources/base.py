@@ -219,6 +219,7 @@ class ArchiveReading(Protocol):
         depth: int = ...,
         rejected: list[tuple[str, str, str]] | None = ...,
         deadline: float | None = ...,
+        import_library: set[str] | None = ...,
     ) -> Iterator[tuple[str, bytes]]: ...
 
 
