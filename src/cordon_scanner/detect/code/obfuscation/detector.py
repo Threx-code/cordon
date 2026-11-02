@@ -76,6 +76,11 @@ class ObfuscationDetector(BaseDetector):
 
     @staticmethod
     def declared_rules() -> tuple[DeclaredRule, ...]:
+        return (*ObfuscationDetector._concealment_rules(), *ObfuscationDetector._packing_rules())
+
+    @staticmethod
+    def _concealment_rules() -> tuple[DeclaredRule, ...]:
+        """What hides text from a reader: bidirectional and invisible characters, and Unicode tags."""
         return (
             DeclaredRule(
                 id="SUSPECT.OBFUSCATION.BIDI.001",
@@ -106,6 +111,13 @@ class ObfuscationDetector(BaseDetector):
                 references=(references.HOMOGLYPH,),
                 remediation="Remove the characters, and find out how they were introduced.",
             ),
+        )
+
+    @staticmethod
+    def _packing_rules() -> tuple[DeclaredRule, ...]:
+        """What makes code unreadable: packers, obfuscator naming, a loader behind an alias, encoded
+        blobs, long lines."""
+        return (
             DeclaredRule(
                 id="SUSPECT.OBFUSCATION.PACKED.001",
                 title="Packer or minifier signature in hand-written source",
