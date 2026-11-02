@@ -249,8 +249,12 @@ class TestASelfRenamingPublishLoop:
         )
         root = tmp_path / "repo"
         (root / "tests" / "fixtures").mkdir(parents=True)
-        (root / "package.json").write_text(json.dumps({"name": "tool", "version": "1.0.0"}))
-        (root / "tests" / "fixtures" / "republish.js").write_text(self.HEAD + body)
+        (root / "package.json").write_text(
+            json.dumps({"name": "tool", "version": "1.0.0"}), encoding="utf-8"
+        )
+        (root / "tests" / "fixtures" / "republish.js").write_text(
+            self.HEAD + body, encoding="utf-8"
+        )
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
         found = [f.severity for f in result.findings if f.rule_id == RULE]
         assert Severity.HIGH not in found, found
