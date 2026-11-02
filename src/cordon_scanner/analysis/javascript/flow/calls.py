@@ -33,6 +33,10 @@ from cordon_scanner.analysis.javascript.flow.vocabulary import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+#: A parameter's label wrapped as (_DATA, label) on its way from a DATA_ARGS spawn to `_record`:
+#: the summary keeps it in `_Fn.data_sinks` (note 69). It never enters a binding.
+_DATA = "D"
+
 
 class Calls(Taint):
     """The calls layer of `js_flow._Analysis`: one call applied to the bindings, and the flows its
@@ -185,23 +189,27 @@ class Calls(Taint):
             target = None
         if target is not None:
             fn = self.fns[target - 1]
-            for (how, idx), sinks in list(fn.sinks.items()):
-                if how == "Q":
-                    # A parameter's field reaching a sink: this call's argument's field (item 59).
-                    position, field = idx
-                    if position >= len(args):
+            for data, summary in ((False, fn.sinks), (True, fn.data_sinks)):
+                for (how, idx), sinks in list(summary.items()):
+                    if how == "Q":
+                        # A parameter's field reaching a sink: this call's argument's field
+                        # (item 59).
+                        position, field = idx
+                        if position >= len(args):
+                            continue
+                        value = self.arg_field(args[position], field, scope)
+                    elif idx >= len(args):
                         continue
-                    value = self.arg_field(args[position], field, scope)
+                    else:
+                        value = self.taint(args[idx][0], args[idx][1], scope)
+                        if how == "R":
+                            value = Taint.read_of(value)
+                    if data:
+                        # A DATA_ARGS spawn's data argument (note 69): as written in place.
+                        value = {(_DATA, x) if self._deferred(x) else x for x in value}
+                        value -= self._CODE_LABELS
                     for sink, host, dest, line in sinks:
                         changed |= self._record(value, sink, host, dest, line, scope)
-                    continue
-                if idx >= len(args):
-                    continue
-                value = self.taint(args[idx][0], args[idx][1], scope)
-                if how == "R":
-                    value = Taint.read_of(value)
-                for sink, host, dest, line in sinks:
-                    changed |= self._record(value, sink, host, dest, line, scope)
         if len(parts) == 1 and args:
             settles = self.resolvers.get(self.resolve(name, scope))
             if settles is not None:
@@ -286,12 +294,14 @@ class Calls(Taint):
                         out |= self.taint(a, b, scope)
             else:
                 out |= self.taint(s, e, scope)
-        if kind == "process" and self._fixed_program(last, args, scope, self._carries_code):
+        if kind == "process" and self._fixed_program(last, args, scope, self._may_carry_code):
             # A DATA_ARGS program given what a server sent only where its rule says it is data,
             # with no shell and nothing in its options (note 44): the reply is a pid, an archive, a
             # URL to fetch, not code run. Anything else the arguments carry -- a secret handed to
-            # curl -- stays.
-            out -= {"network_response", "decoded"}
+            # curl -- stays. A parameter's label is marked data, so the call site applies its
+            # argument the same way (note 69).
+            out -= self._CODE_LABELS
+            out = {(_DATA, x) if self._deferred(x) else x for x in out}
         return out
 
     #: What a spawn's argument may carry for the reply to be code run: `_fixed_program`'s question.
@@ -300,6 +310,17 @@ class Calls(Taint):
     def _carries_code(self, a: int, b: int, scope: int) -> bool:
         """Whether [a, b) carries what a server sent or a blob decoded."""
         return bool(self.taint(a, b, scope) & self._CODE_LABELS)
+
+    def _may_carry_code(self, a: int, b: int, scope: int) -> bool:
+        """Whether [a, b) carries what a server sent or a blob decoded, or a parameter's value,
+        which a call site may fill with either (note 69)."""
+        labels = self.taint(a, b, scope)
+        return bool(labels & self._CODE_LABELS) or any(self._deferred(x) for x in labels)
+
+    @staticmethod
+    def _deferred(label: Label) -> bool:
+        """A parameter's value, or a file read at its path: resolved at each call site."""
+        return isinstance(label, tuple) and label[0] in ("P", "Q", "R")
 
     def _not_literal(self, a: int, b: int, scope: int) -> bool:
         """Whether [a, b) is anything but string literals: the co-occurrence composites' question,
@@ -581,10 +602,13 @@ class Calls(Taint):
                     changed = True
                 continue
             if isinstance(x, tuple):
+                data = x[0] == _DATA
+                if data:
+                    x = x[1]
                 fn = self.fns[x[1] - 1]
                 entry = (sink, host, dest, line)
                 slot = (x[0], (x[2], x[3])) if x[0] == "Q" else (x[0], x[2])
-                have = fn.sinks.setdefault(slot, set())
+                have = (fn.data_sinks if data else fn.sinks).setdefault(slot, set())
                 if entry not in have:
                     have.add(entry)
                     changed = True
