@@ -525,7 +525,9 @@ class TestPathGlobMatchIsMemoised(ContentWalkerFixtures):
         cache.cache_clear()
         scan()
         assert seen, "the scan never reached its end"
-        return seen[-1]
+        # Read at each emptying: a worker empties its caches when its batch is done, which resets
+        # the counts before the scan's own end.
+        return max(seen)
 
     def test_config_detector_pattern_cache_gets_hits_across_files(
         self, tmp_path, monkeypatch
