@@ -294,3 +294,76 @@ class TestASelfRenamingPublishLoop:
             tmp_path, self.MANIFEST, {"package/tools/republish.mjs": body}
         )
         assert Severity.HIGH in found
+
+
+class TestAPublishingFunctionALibraryExports:
+    """A library's entry that exports a publishing routine publishes when its caller asks, as a
+    release CLI's `publish` command does (xupd-cli's `lib/command/npm/login.js`, webappwiz's
+    `ship/index.js`: 4 benign units blocked on it alone, no self-propagating unit among them). It
+    warns. The same call at the module's top level, or run by the module itself, publishes on
+    import and blocks; a self-renaming republish loop blocks wherever it sits (item 57)."""
+
+    EXPORTED: ClassVar[str] = (
+        "const { exec } = require('child_process');\n"
+        "async function publish(dir) {\n"
+        "  const fs = require('fs');\n"
+        "  const data = JSON.parse(fs.readFileSync(dir + '/package.json'));\n"
+        "  fs.writeFileSync(dir + '/package.json', JSON.stringify(data));\n"
+        "  exec('npm publish --access public', { cwd: dir });\n"
+        "}\n"
+        "module.exports = { publish };\n"
+    )
+
+    def test_as_the_main_entry_it_is_reported_below_the_gate(self, tmp_path: Path) -> None:
+        found = PublishKit.severities(
+            tmp_path, {"main": "index.js"}, {"package/index.js": self.EXPORTED}
+        )
+        assert found and all(s <= Severity.MEDIUM for s in found)
+
+    def test_loaded_by_the_entry_it_is_reported_below_the_gate(self, tmp_path: Path) -> None:
+        files = {
+            "package/index.js": "module.exports = require('./lib/ship');\n",
+            "package/lib/ship.js": self.EXPORTED,
+        }
+        found = PublishKit.severities(tmp_path, {"main": "index.js"}, files)
+        assert found and all(s <= Severity.MEDIUM for s in found)
+
+    def test_called_at_the_top_level_it_blocks(self, tmp_path: Path) -> None:
+        text = self.EXPORTED + "publish(__dirname);\n"
+        found = PublishKit.severities(tmp_path, {"main": "index.js"}, {"package/index.js": text})
+        assert any(s >= Severity.HIGH for s in found)
+
+    def test_inside_an_immediately_invoked_function_it_blocks(self, tmp_path: Path) -> None:
+        text = (
+            "(function () {\n"
+            + "".join("  " + line + "\n" for line in PUBLISHER.splitlines())
+            + "})();\n"
+        )
+        found = PublishKit.severities(tmp_path, {"main": "index.js"}, {"package/index.js": text})
+        assert any(s >= Severity.HIGH for s in found)
+
+    def test_run_by_an_install_hook_it_blocks(self, tmp_path: Path) -> None:
+        text = self.EXPORTED + "publish(__dirname);\n"
+        found = PublishKit.severities(
+            tmp_path,
+            {"main": "index.js", "scripts": {"postinstall": "node index.js"}},
+            {"package/index.js": text},
+        )
+        assert any(s >= Severity.HIGH for s in found)
+
+    def test_a_self_renaming_loop_in_an_exported_function_blocks(self, tmp_path: Path) -> None:
+        text = (
+            "const fs = require('fs');\n"
+            "const { exec } = require('child_process');\n"
+            "function spread() {\n"
+            "  setInterval(() => {\n"
+            "    const data = JSON.parse(fs.readFileSync('package.json'));\n"
+            "    data.name = 'pkg-' + Math.random().toString(36).slice(2);\n"
+            "    fs.writeFileSync('package.json', JSON.stringify(data));\n"
+            "    exec('npm publish --access public');\n"
+            "  }, 1000);\n"
+            "}\n"
+            "module.exports = { spread };\n"
+        )
+        found = PublishKit.severities(tmp_path, {"main": "index.js"}, {"package/index.js": text})
+        assert any(s >= Severity.HIGH for s in found)

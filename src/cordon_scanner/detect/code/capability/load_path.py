@@ -166,6 +166,8 @@ class LoadPath:
                 "FLOW.JS.SECRET_SENT",
                 "FLOW.JS.IDENTITY_SENT",
                 "FLOW.JS.ENVIRONMENT_SENT",
+                # The publishing composite's one term is this rule, not a capability.
+                "CAP.JS.PUBLISH.001",
             )
         ]
         if not offsets:
