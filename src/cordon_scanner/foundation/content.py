@@ -23,7 +23,6 @@ import contextlib
 import errno
 import hashlib
 import os
-from array import array
 from dataclasses import dataclass, field, replace
 from functools import cached_property
 from pathlib import Path
@@ -34,6 +33,7 @@ from cordon_scanner.foundation.files.windows import BytesWindows, DiskWindows, W
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS, Limits
 from cordon_scanner.foundation.paths import ContainerPaths
 from cordon_scanner.foundation.samples import SampleKinds
+from cordon_scanner.foundation.text.columns import TextColumns
 from cordon_scanner.foundation.text.comments import SourceComments
 
 if TYPE_CHECKING:
@@ -242,12 +242,6 @@ class TextEncoding:
             return raw
 
 
-#: Every byte that is not a UTF-8 continuation byte (`translate` deletes these, leaving the
-#: continuations to count), and the stride of `char_column`'s per-line checkpoints.
-_NOT_CONTINUATION = bytes(b for b in range(256) if not 0x80 <= b <= 0xBF)
-_STRIDE = 64
-
-
 class LineIndex:
     """Where things are in a file's bytes: its lines, their lengths and offsets, a line's text, and
     answers worked out once per line. Read by a `FileContent`, which holds what this reads."""
@@ -333,85 +327,12 @@ class LineIndex:
         return offset - self.line_starts[line - 1] + 1
 
     def char_column(self, byte_offset: int) -> int:
-        """0-indexed column, in characters, of an offset within its line: the unit
-        `SourceComments.comment_column` answers in, so a comparison is never bytes against
-        characters (a run of multibyte text early on a line moved a byte column past a later `//`
-        and read the code before it as a comment)."""
-        offset = self.placed(byte_offset)
-        line = self.line_of(offset, place=False)
-        start = self.line_starts[line - 1]
-        if self._ascii:
-            return offset - start
-        # Characters are the bytes that are not UTF-8 continuation bytes. Counted from checkpoints
-        # made once per line (every `_STRIDE` bytes, so a 10 MB line holds 160 k of them), plus at
-        # most one stride counted per call: a bundle's one long line is one pass, not one decode
-        # per match.
-        checkpoints = self._checkpoints(line)
-        block = (offset - start) // _STRIDE
-        base = start + block * _STRIDE
-        continued = checkpoints[block] + len(
-            self.raw[base:offset].translate(None, _NOT_CONTINUATION)
-        )
-        return (offset - start) - continued
+        """0-indexed column, in characters, of an offset within its line (`TextColumns`)."""
+        return TextColumns.char_column(self, byte_offset)
 
     def byte_spans(self, spans: tuple[tuple[int, int], ...]) -> tuple[tuple[int, int], ...]:
-        """Spans over the decoded text (`block_comment_spans`, docstrings, test modules) as byte
-        spans, so a match's byte offset is compared in its own unit. Equal to `spans` in an ASCII
-        file; in one with multibyte text the character spans sit earlier than the bytes they cover."""
-        if self._ascii:
-            return spans  # characters and bytes agree
-        return tuple((self._byte_of(start), self._byte_of(end)) for start, end in spans)
-
-    def _checkpoints(self, line: int) -> array[int]:
-        """Continuation bytes counted at every `_STRIDE` bytes of a line, made once per line."""
-        key = ("continuation", line)
-        checkpoints = self._per_line.get(key)
-        if checkpoints is None:
-            start, stop = self.line_starts[line - 1], self._line_stop(line)
-            checkpoints, total = array("I"), 0
-            for at in range(start, stop + 1, _STRIDE):
-                checkpoints.append(total)
-                block = self.raw[at : min(at + _STRIDE, stop)]
-                total += len(block.translate(None, _NOT_CONTINUATION))
-            self._per_line[key] = checkpoints
-        return checkpoints
-
-    def _line_stop(self, line: int) -> int:
-        """The byte offset where a line ends, its newline excluded: from `line_starts`, never a
-        search (a `find` per call scanned a 10 MB line to its end each time)."""
-        if line < len(self.line_starts):
-            return self.line_starts[line] - 1
-        return len(self.raw)
-
-    def _byte_of(self, char_offset: int) -> int:
-        """The byte offset of a character offset: its line by bisect, its stride by bisect over the
-        line's checkpoints, then at most one stride walked (never a decode of the line)."""
-        from bisect import bisect_right
-
-        starts = self._line_char_starts
-        line = max(1, bisect_right(starts, char_offset))
-        within = char_offset - starts[line - 1]
-        first = self.line_starts[line - 1]
-        stop = self._line_stop(line)
-        checkpoints = self._checkpoints(line)
-        # Characters before stride k: k * _STRIDE bytes less the continuations among them.
-        low, high = 0, len(checkpoints) - 1
-        while low < high:
-            mid = (low + high + 1) // 2
-            if mid * _STRIDE - checkpoints[mid] <= within:
-                low = mid
-            else:
-                high = mid - 1
-        at, chars = first + low * _STRIDE, low * _STRIDE - checkpoints[low]
-        # A stride can start inside a character: its continuation bytes were counted with it.
-        while at < stop and 0x80 <= self.raw[at] <= 0xBF:
-            at += 1
-        while at < stop and chars < within:
-            at += 1
-            while at < stop and 0x80 <= self.raw[at] <= 0xBF:
-                at += 1
-            chars += 1
-        return at + max(0, within - chars)
+        """Spans over the decoded text as byte spans (`TextColumns`)."""
+        return TextColumns.byte_spans(self, spans)
 
     @cached_property
     def _ascii(self) -> bool:
@@ -839,22 +760,8 @@ class FileContent(LineIndex, ContentKind):
     """Memo for `once_per_line`."""
 
     def in_block_comment(self, byte_offset: int, language: str | None) -> bool:
-        """Whether a byte offset lies in one of the file's `/* ... */` blocks: the exact spans
-        (`SourceComments.block_comment_spans`), in bytes, indexed once per file and asked by bisect,
-        so a file of 200,000 blocks costs one pass, not a scan of every span per match."""
-        from bisect import bisect_right
-
-        key = (f"blocks:{language}", -1)
-        index = self._per_line.get(key)
-        if index is None:
-            from cordon_scanner.foundation.text.comments import SourceComments
-
-            spans = self.byte_spans(SourceComments.block_comment_spans(self.text, language))
-            index = ([start for start, _ in spans], [end for _, end in spans])
-            self._per_line[key] = index
-        starts, ends = index
-        at = bisect_right(starts, byte_offset) - 1
-        return at >= 0 and byte_offset < ends[at]
+        """Whether a byte offset lies in one of the file's `/* ... */` blocks (`TextColumns`)."""
+        return TextColumns.in_block_comment(self, byte_offset, language)
 
     # -- Construction ----------------------------------------------------
 

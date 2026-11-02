@@ -477,6 +477,7 @@
   "foundation/signatures/ecdsa": "foundation/signatures/ecdsa",
   "foundation/targets": "foundation/targets",
   "foundation/taxonomy": "foundation/taxonomy",
+  "foundation/text/columns": "foundation/text/columns",
   "foundation/text/comments": "foundation/text/comments",
   "foundation/text/delimited": "foundation/text/delimited",
   "foundation/text/literals": "foundation/text/literals",
