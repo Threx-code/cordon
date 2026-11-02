@@ -367,3 +367,25 @@ class TestAPublishingFunctionALibraryExports:
         )
         found = PublishKit.severities(tmp_path, {"main": "index.js"}, {"package/index.js": text})
         assert any(s >= Severity.HIGH for s in found)
+
+    def test_a_non_ascii_comment_does_not_keep_it_blocking(self, tmp_path: Path) -> None:
+        # Function bodies were found only in ASCII source: one comment in another script left a
+        # release CLI's exported routine at the top level (xupd-cli, undue, webappwiz).
+        text = "// 发布到注册表 — publish ✓\n" + self.EXPORTED
+        found = PublishKit.severities(tmp_path, {"main": "index.js"}, {"package/index.js": text})
+        assert found and all(s <= Severity.MEDIUM for s in found)
+
+    def test_a_non_ascii_comment_before_a_top_level_call_still_blocks(
+        self, tmp_path: Path
+    ) -> None:
+        text = "// 发布到注册表 — publish ✓\n" + self.EXPORTED + "publish(__dirname); // ✓\n"
+        found = PublishKit.severities(tmp_path, {"main": "index.js"}, {"package/index.js": text})
+        assert any(s >= Severity.HIGH for s in found)
+
+    def test_in_a_source_tree_an_uncalled_publishing_function_still_blocks(
+        self, tmp_path: Path
+    ) -> None:
+        # Entry points are known only in a published package; a source tree keeps the grade.
+        (tmp_path / "ship.js").write_text(self.EXPORTED, encoding="utf-8")
+        found = [f.severity for f in Scanner().scan(tmp_path).findings if f.rule_id == RULE]
+        assert any(s >= Severity.HIGH for s in found)

@@ -468,11 +468,19 @@ class LoadPath:
 
     @staticmethod
     def _js_deferred_spans(content: FileContent) -> list[tuple[int, int]]:
-        # The pattern runs over text and the hits are byte offsets, which agree only on ASCII
-        # source. Anything else finds no bodies, and the finding keeps its severity.
-        if not content.raw.isascii():
-            return []
-        text = content.raw
+        # The pattern runs over text and the hits are byte offsets. On ASCII source they agree; on
+        # other UTF-8 the spans are converted to bytes at the end (one Chinese comment or emoji
+        # used to find no bodies, so a release CLI's exported publish routine blocked). Text that
+        # is not the raw bytes' own UTF-8 decoding finds no bodies, and the finding keeps its
+        # severity.
+        text = content.text
+        ascii_source = content.raw.isascii()
+        if not ascii_source:
+            try:
+                if content.raw.decode("utf-8") != text:
+                    return []
+            except UnicodeDecodeError:
+                return []
         bodies: list[tuple[int, int, str]] = []
         for match in LoadPath._JS_BODY_OPENER.finditer(content.text):
             open_brace = match.end() - 1
@@ -482,18 +490,18 @@ class LoadPath:
             name = named.group(1) if named and named.group(1) != "function" else ""
             depth = 0
             for index in range(open_brace, min(len(text), open_brace + 200_000)):
-                byte = text[index]
-                if byte == 0x7B:
+                char = text[index]
+                if char == "{":
                     depth += 1
-                elif byte == 0x7D:
+                elif char == "}":
                     depth -= 1
                     if depth == 0:
                         # `(async function go() { ... })()` and `(() => { ... })()` run as the
                         # file loads: an immediately-invoked body is top-level code.
                         after = text[index + 1 : index + 16].lstrip()
                         if not (
-                            after.startswith(b"(")
-                            or (after[:1] == b")" and after[1:].lstrip().startswith(b"("))
+                            after.startswith("(")
+                            or (after[:1] == ")" and after[1:].lstrip().startswith("("))
                         ):
                             bodies.append((open_brace, index, name))
                         break
@@ -518,7 +526,21 @@ class LoadPath:
                         unreached.remove(body)
                         changed = True
                         break
-        return [(start, end) for start, end, _ in unreached]
+        spans = [(start, end) for start, end, _ in unreached]
+        return spans if ascii_source else LoadPath._as_byte_spans(text, spans)
+
+    @staticmethod
+    def _as_byte_spans(text: str, spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
+        """Character spans of `text` as UTF-8 byte spans, encoding each stretch between consecutive
+        endpoints once, so a file with thousands of bodies is still read in one pass."""
+        points = sorted({at for span in spans for at in span})
+        byte_at: dict[int, int] = {}
+        previous = offset = 0
+        for at in points:
+            offset += len(text[previous:at].encode("utf-8"))
+            byte_at[at] = offset
+            previous = at
+        return [(byte_at[start], byte_at[end]) for start, end in spans]
 
     @staticmethod
     def agent_run(content: FileContent, ctx: ScanContext | None) -> bool:
