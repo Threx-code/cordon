@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, Unit
 from cordon_scanner.detect.catalogue import DeclaredRule
+from cordon_scanner.foundation import references
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import (
     Category,
@@ -71,6 +72,7 @@ class CodeReuseDetector(BaseDetector):
                     "Do not install it; compare it with the campaign the finding names, and report the "
                     "package to its registry."
                 ),
+                references=(references.ATTACK_SUPPLY_CHAIN_SOFTWARE,),
             ),
         )
 

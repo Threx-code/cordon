@@ -88,6 +88,8 @@ PACKAGE_HALLUCINATION: Final = "https://arxiv.org/abs/2406.10279"
 """Spracklen et al., "We Have a Package for You! A Comprehensive Analysis of Package Hallucinations
 by Code Generating LLMs" (USENIX Security 2025): the measurement behind slopsquatting."""
 ATTACK_MALICIOUS_FILE: Final = "https://attack.mitre.org/techniques/T1204/002/"
+ATTACK_SUPPLY_CHAIN_SOFTWARE: Final = "https://attack.mitre.org/techniques/T1195/002/"
+"""MITRE ATT&CK, Compromise Software Supply Chain: malicious code shipped inside a software package."""
 ATTACK_TEMPLATE_INJECTION: Final = "https://attack.mitre.org/techniques/T1221/"
 ATTACK_DDE: Final = "https://attack.mitre.org/techniques/T1559/002/"
 ATTACK_STEGANOGRAPHY: Final = "https://attack.mitre.org/techniques/T1027/003/"

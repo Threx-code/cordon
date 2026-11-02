@@ -341,8 +341,9 @@ class FormatDetector(BaseDetector):
             ):
                 return self._pickle(unit, ctx)
             if documents.DocumentReader.kind_of(raw, path) is not None:
-                if FormatDetector._part_of_a_read_document(content.path, ctx):
-                    return ()
+                # Every part is read as itself; a part's finding the container's own reading also
+                # reported is folded after detection (`ResultFolding.read_with_container`), from the
+                # findings both made, never assumed from the container's names (C-02).
                 return self._document(unit, ctx)
             if media.ImageTrailers.image_format(raw) is not None and not content.truncated:
                 # A broken image is common (placeholders, partial downloads) and nothing reads
@@ -353,20 +354,6 @@ class FormatDetector(BaseDetector):
         except FormatError as exc:
             return [self._finding("OPERATIONAL.FORMAT.UNREADABLE", unit, ctx, detail=str(exc))]
         return ()
-
-    @staticmethod
-    def _part_of_a_read_document(path: str, ctx: ScanContext) -> bool:
-        """A part of an Office Open XML or OpenDocument file that the walk also opened as a zip (item
-        36 opens a zip by its bytes): the document reader read the whole document at its own path, so
-        its `word/vbaProject.bin` read again as a member is one macro reported twice. Known by the
-        container's structure, its `[Content_Types].xml` or `mimetype` part, never by its name."""
-        container, bang, _ = path.rpartition("!")
-        if not bang:
-            return False
-        return (
-            f"{container}![Content_Types].xml" in ctx.tree_paths
-            or f"{container}!mimetype" in ctx.tree_paths
-        )
 
     def _pickle(self, unit: FileUnit, ctx: ScanContext) -> list[Finding]:
         report = self._pickle_report(unit)

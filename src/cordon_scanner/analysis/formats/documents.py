@@ -98,14 +98,24 @@ class DocumentReader:
         lowered = path.lower()
         if raw[:8] == OLE_MAGIC:
             return "ole"
-        # By suffix: NuGet and VSIX packages are OPC zips with `[Content_Types].xml` too.
-        if raw[:4] == b"PK\x03\x04" and lowered.endswith(OFFICE_SUFFIXES):
+        # By suffix: NuGet and VSIX packages are OPC zips with `[Content_Types].xml` too. A zip by
+        # structure, as `zipfile` reads one: its end record, so bytes put before it (a NUL, a stub)
+        # leave it the document it is (C-02: a prefixed .docm was read by nothing).
+        if lowered.endswith(OFFICE_SUFFIXES) and DocumentReader.is_zip(raw):
             return "ooxml"
         if b"%PDF-" in raw[:1024]:
             return "pdf"
         if raw[:5] == b"{\\rtf" or raw[:4] == b"{\\rt":
             return "rtf"
         return None
+
+    @staticmethod
+    def is_zip(raw: bytes) -> bool:
+        """A zip by its structure: a local header first, or an end-of-directory record in the last
+        65,557 bytes that `zipfile` accepts (any prefix leaves a zip a zip)."""
+        if raw[:4] == b"PK\x03\x04":
+            return True
+        return b"PK\x05\x06" in raw[-65_557:] and zipfile.is_zipfile(io.BytesIO(raw))
 
     @staticmethod
     @FormatBounds.bounded

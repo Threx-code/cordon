@@ -11,6 +11,7 @@ import io
 import lzma
 import tarfile
 import zipfile
+from pathlib import Path
 
 import pytest
 
@@ -20,6 +21,7 @@ from cordon_scanner.foundation.config.policy import Policy
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.errors import ExitCode
 from cordon_scanner.sources.signatures import ArchiveSignatures, CompressedHeader
+from support import ROOT
 
 DECODE = "b64" + "decode"  # spelled apart so this file is not itself a decode-then-run
 PLANT = (
@@ -172,6 +174,15 @@ class TestACutStream:
         assert "OPERATIONAL.ARCHIVE.COMPRESSED_TRUNCATED" in rules
         assert result.content_complete, result.content_gaps
 
+    def test_a_stream_cut_before_its_first_byte_is_an_error_not_a_file(self) -> None:
+        """A gzip header and nothing it can inflate (tests/integration/test_hostile.py's garbage case):
+        no byte was read, so it is an archive that would not open, never an empty member read whole."""
+        from cordon_scanner.foundation.errors import ArchiveError
+        from cordon_scanner.sources.archive import ArchiveReader
+
+        with pytest.raises(ArchiveError):
+            ArchiveReader.extract(b"\x1f\x8b\x08" + b"\x00" * 10, path="junk.gz")
+
     def test_a_cut_tar_inside_still_blocks(self, tmp_path) -> None:
         big = b"".join(b"%08d some member text that is long enough\n" % i for i in range(4000))
         whole = TypedKit.tarred({"a.txt": big, "run.py": PLANT}, "w:gz")
@@ -211,3 +222,62 @@ class TestOpeningByBytesTakesNothingAway:
         assert "demo-0.1.0.gem!metadata.gz" in names
         assert "demo-0.1.0.gem!metadata.gz!metadata" in names
         assert "demo-0.1.0.gem!notes.txt" in names and "demo-0.1.0.gem!notes.txt!a" in names
+
+
+class TestADocumentUnderAPrefix:
+    """C-02 against the archive slice: a .docm with bytes put before it is still a zip (its end record),
+    so it must still be read as the document it is, and a part is skipped as already read only when its
+    container is one the document reader reads."""
+
+    SAMPLE = ROOT / "corpus" / "malicious" / "document-macro-dropper" / "invoice.docm"
+    RULE = "SUSPECT.DOCUMENT.AUTO_EXEC.001"
+
+    @staticmethod
+    def rules(path: Path) -> set[str]:
+        result = Scanner(Config.default().with_overrides(use_cache=False, offline=True)).scan(path)
+        return {f.rule_id for f in result.findings}
+
+    def test_a_prefixed_docm_is_still_a_document(self, tmp_path) -> None:
+        from cordon_scanner.analysis.formats.documents import DocumentReader
+
+        prefixed = b"/* \x00 */\n" + self.SAMPLE.read_bytes()
+        assert DocumentReader.kind_of(prefixed, "invoice.docm") == "ooxml"
+        target = tmp_path / "invoice.docm"
+        target.write_bytes(prefixed)
+        assert self.RULE in self.rules(target)
+
+    def test_a_document_s_parts_under_another_name_are_read(self, tmp_path) -> None:
+        with zipfile.ZipFile(io.BytesIO(self.SAMPLE.read_bytes())) as source:
+            parts = {info.filename: source.read(info) for info in source.infolist()}
+        target = tmp_path / "bundle.zip"
+        target.write_bytes(TypedKit.zipped(parts))
+        assert self.RULE in self.rules(target)
+
+    @staticmethod
+    def macro_part() -> bytes:
+        """The sample's own VBA project (an OLE file whose macro runs on open)."""
+        with zipfile.ZipFile(io.BytesIO(TestADocumentUnderAPrefix.SAMPLE.read_bytes())) as source:
+            return source.read("word/vbaProject.bin")
+
+    def test_an_opendocument_file_with_junk_before_it_keeps_its_macro_part(self, tmp_path) -> None:
+        # OpenDocument is no document the Office reader reads: its parts are read as themselves.
+        odf = TypedKit.zipped(
+            {
+                "mimetype": b"application/vnd.oasis.opendocument.text",
+                "content.xml": b"<office:document-content/>",
+                "Object 1/payload.bin": self.macro_part(),
+            }
+        )
+        target = tmp_path / "letter.odt"
+        target.write_bytes(b"/* \x00 */\n" + odf)
+        assert self.RULE in self.rules(target)
+
+    def test_a_docm_reports_its_macro_once(self, tmp_path) -> None:
+        target = tmp_path / "invoice.docm"
+        target.write_bytes(self.SAMPLE.read_bytes())
+        result = Scanner(Config.default().with_overrides(use_cache=False, offline=True)).scan(
+            target
+        )
+        assert [f.location.path for f in result.findings if f.rule_id == self.RULE] == [
+            "invoice.docm"
+        ]

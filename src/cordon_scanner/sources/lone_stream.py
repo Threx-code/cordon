@@ -222,6 +222,11 @@ class LoneStream:
             raise ArchiveError(f"{path}: not a readable compressed stream: {exc}") from exc
         if payload is None:
             return
+        if cut.cut and not payload:
+            # A stream cut before its first byte holds nothing anyone read: not a file read to its
+            # end but a compressed stream that would not open, so a typed error (and a blocking gap
+            # where the scan reads it), never an empty member marked complete.
+            raise ArchiveError(f"{path}: a compressed stream cut before its first byte")
         if cut.cut:
             result.rejected.append(
                 RejectedMember(

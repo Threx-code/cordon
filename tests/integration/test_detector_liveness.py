@@ -28,6 +28,12 @@ from support import ROOT, requires_malicious_corpus
 CORPUS = ROOT / "corpus"
 
 NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD = {
+    # Fires only on a file whose fingerprint the shipped reuse index holds: a code file, or an install
+    # hook's shape, of earlier real malware. A corpus sample that fired would have to BE that malware's
+    # code, which this repository does not ship and never authors. Exercised against a synthetic index
+    # built in the test from inert bytes (tests/unit/intel/malware/test_reuse_index.py: a code file and
+    # an install hook, in a directory and a package).
+    "code-reuse",
     # Requires an advisory database, which is supplied by the operator rather
     # than committed. Exercised in the advisory unit tests.
     "advisory",
@@ -119,7 +125,9 @@ class TestEveryDetectorRuns(DetectorLivenessFixtures):
         stay short enough to read."""
         registered = {d.id for d in Registry().detectors()}
         assert registered >= NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD
-        assert len(NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD) <= 4
+        # Five: the four that need input the repository cannot commit, and code-reuse, whose only
+        # trigger is earlier real malware's code, which the corpus must never hold.
+        assert len(NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD) <= 5
 
     def test_it_is_not_vacuous(self, findings_by_detector) -> None:
         assert sum(findings_by_detector.values()) > 40
