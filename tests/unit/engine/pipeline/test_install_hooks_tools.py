@@ -58,6 +58,8 @@ class TestBuildStepsAreNotBlocked:
             # `chmod +x` on the package's own file (note 71 I1: auto-dep-install, bun-serve).
             ({"postinstall": "chmod +x index.js"}, None),
             ({"postinstall": "chmod +x bin/cli.js lib/run.sh"}, None),
+            # A pinned install of a declared dependency at its declared version (note 71 I2).
+            ({"postinstall": "npm install toastr@2.1.4"}, {"toastr": "^2.1.4"}),
             ({"postinstall": "touch ./node_modules/marker"}, None),
             ({"postinstall": "rm -rf dist/"}, None),
             ({"postinstall": "cat index.json"}, None),
@@ -65,6 +67,21 @@ class TestBuildStepsAreNotBlocked:
         ],
     )
     def test_nothing_blocks(self, tmp_path: Path, scripts: dict, deps: dict | None) -> None:
+        found = HookKit.findings(tmp_path, scripts, deps)
+        assert all(f.severity < Severity.HIGH for f in found), [f.severity for f in found]
+
+    @pytest.mark.parametrize(
+        ("scripts", "deps"),
+        [
+            ({"postinstall": "npm install toastr@2.1.4"}, {"toastr": "^2.1.4"}),
+            ({"postinstall": "chmod +x index.js"}, None),
+        ],
+    )
+    def test_the_rule_itself_does_not_grade_it_high(
+        self, tmp_path: Path, scripts: dict, deps: dict | None, verdict_off: None
+    ) -> None:
+        # The rule's own grade: with the verdict on, this minimal fixture is held as a warning
+        # whatever the rule says, so only this form can fail (note 71 I1, I2).
         found = HookKit.findings(tmp_path, scripts, deps)
         assert all(f.severity < Severity.HIGH for f in found), [f.severity for f in found]
 
@@ -88,6 +105,10 @@ STILL_BLOCKS = [
     ({"postinstall": "gulp > ~/.profile"}, {"gulp": "^4.0.0"}),
     # Installing a named package is not the package's own install.
     ({"preinstall": "npm install some-helper"}, None),
+    # Pinned, but undeclared, at another version, or beside an undeclared one: a hidden dependency.
+    ({"postinstall": "npm install toastr@2.1.4"}, None),
+    ({"postinstall": "npm install toastr@2.1.5"}, {"toastr": "^2.1.4"}),
+    ({"postinstall": "npm install toastr@2.1.4 helper@1.0.0"}, {"toastr": "^2.1.4"}),
     # A file made inside the package, then run.
     ({"postinstall": "chmod u+x tool && ./tool"}, None),
     ({"postinstall": "chmod +x ./bin/x && ./bin/x"}, None),
@@ -99,9 +120,10 @@ STILL_BLOCKS = [
 ]
 """Hook shapes the rule grades HIGH; `TestWhatStillBlocks` asserts the rule's grade and the user's."""
 
-HELD_BY_THE_VERDICT = {0}
+HELD_BY_THE_VERDICT = {0, 8, 9}
 """Cases the package verdict holds as a warning on this minimal fixture (measured 2 Nov, verdict on): a
-declared, non-established dependency's command. Marked strict, so a change that lifts it fails here
+declared, non-established dependency's command, and a pinned install beside a declared dependency (at
+another version, or with an undeclared package too; the undeclared pin alone, 7, blocks). Marked strict, so a change that lifts it fails here
 and the mark comes off (cordon-47: tests assert what the user sees)."""
 
 

@@ -200,6 +200,14 @@ OWN_INSTALL = re.compile(
 """Installing the package's own declared dependencies, with flags only: what it fetches is what
 the manifest already declares, each graded as a dependency. `npm install <name>` is not this."""
 
+PINNED_INSTALL = re.compile(
+    r"(?:npm\s+(?:install|i)|pnpm\s+(?:install|i|add)|yarn\s+add)(?:\s+--?[\w-]{1,40}){0,4}"
+    r"(?P<specs>(?:\s+(?:@[\w.-]{1,60}/)?[\w.-]{1,80}@\d{1,6}\.\d{1,6}\.\d{1,6}){1,10})"
+)
+"""`npm install toastr@2.1.4`: named packages at exact versions (note 71 I2). The package's own install
+only when the manifest declares each at that version (`ManifestScripts._declared_pins`): otherwise
+it is a dependency no manifest names, outside every dependency reading."""
+
 INSIDE_PATH = r"(?![/~$\\])(?!.*\.\.)[\w./@-]{1,90}"
 
 FILE_OP_INSIDE = re.compile(
@@ -448,6 +456,19 @@ class ManifestScripts:
         )
 
     @staticmethod
+    def _declared_pins(part: str, declared: dict[str, str]) -> bool:
+        """Whether `part` installs only packages the manifest declares, each at the declared base
+        version (`toastr@2.1.4` beside `"toastr": "^2.1.4"`): nothing it fetches is hidden."""
+        match = PINNED_INSTALL.fullmatch(part)
+        if match is None:
+            return False
+        for spec in match.group("specs").split():
+            name, _, version = spec.rpartition("@")
+            if declared.get(name, "").strip().lstrip("^~=v") != version:
+                return False
+        return True
+
+    @staticmethod
     def _safe_part(
         part: str, scripts: dict[str, str], declared: dict[str, str], depth: int
     ) -> bool:
@@ -466,6 +487,7 @@ class ManifestScripts:
                 return ManifestScripts._safe_part(rest, scripts, declared, depth)
         if (
             OWN_INSTALL.fullmatch(part)
+            or ManifestScripts._declared_pins(part, declared)
             or FILE_OP_INSIDE.fullmatch(part)
             or INERT_ONE_LINER.fullmatch(part)
             or ManifestScripts._popular_tool(part, declared)
@@ -804,6 +826,7 @@ __all__ = [
     "ONE_LINER_PROGRAM",
     "OWN_INSTALL",
     "OWN_MODULE",
+    "PINNED_INSTALL",
     "RAW_IP_HOST",
     "REDIRECT_OUTSIDE",
     "RUNNERS",
