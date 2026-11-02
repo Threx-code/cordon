@@ -197,7 +197,11 @@ rules:
     match:
       kind: regex
       patterns:
-        - '\beval\s*\('
+        # Not `eval('import(\'pkg\')')`: a literal that is exactly a dynamic import of a package
+        # name, the bundler idiom that hides `import()` from a CommonJS build (note 70 D2: three
+        # Baileys forks). Any other literal is read as code here -- one that fetches and evals
+        # still matches.
+        - '\beval\s*\((?!\s*(?:''import\(\s*\\?["''][\w@./-]{1,200}\\?["'']\s*\)''|"import\(\s*\\?["''][\w@./-]{1,200}\\?["'']\s*\)")\s*\))'
         # `.constructor` between the name and the parenthesis, because
         # `Function.constructor` IS `Function` -- every function's constructor
         # is the `Function` constructor -- so `new Function.constructor(a, b)`
@@ -237,6 +241,8 @@ rules:
     tests:
       positive:
         - "eval(decoded);"
+        - "eval('fetch(u).then(r => r.text()).then(eval)');"
+        - "eval('import(' + name + ')');"
         - "Function(src)();"
         - "(0, eval)(src);"
         - "globalThis['eval'](src);"
@@ -249,6 +255,7 @@ rules:
         - "vm.runInNewContext(src, sandbox);"
       negative:
         - "// eval is not used here"
+        - "const m = await eval('import(\\'audio-decode\\')');"
         - "const evaluate = (x) => x * 2;"
         - "if (typeof cb === 'function') isFunction(cb);"
         - "var g = Function('return this')();"
