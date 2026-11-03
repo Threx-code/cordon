@@ -482,12 +482,17 @@ class LoadPath:
             except UnicodeDecodeError:
                 return []
         bodies: list[tuple[int, int, str]] = []
+        # Where each named body is declared: its name there is a declaration, not a call
+        # (`async publish(dir) {` in a class read as `publish(`).
+        declared: list[tuple[int, int, str]] = []
         for match in LoadPath._JS_BODY_OPENER.finditer(content.text):
             open_brace = match.end() - 1
             named = re.search(
                 r"([A-Za-z_$][\w$]{0,80})[ \t]{0,8}(?:=[^=>]{0,80}|\()", match.group(0)
             )
             name = named.group(1) if named and named.group(1) != "function" else ""
+            if name:
+                declared.append((match.start(), open_brace, name))
             depth = 0
             for index in range(open_brace, min(len(text), open_brace + 200_000)):
                 char = text[index]
@@ -522,12 +527,35 @@ class LoadPath:
                     used = following.startswith("(") or (
                         preceding.endswith(("(", ",")) and following.startswith((")", ","))
                     )
-                    if not inside and used and not preceding.endswith("function"):
+                    declaration = any(
+                        start <= at < end and name == body[2] for start, end, name in declared
+                    )
+                    if (
+                        not inside
+                        and used
+                        and not preceding.endswith("function")
+                        and not declaration
+                        and not LoadPath._in_export_list(content.text, at)
+                    ):
                         unreached.remove(body)
                         changed = True
                         break
         spans = [(start, end) for start, end, _ in unreached]
         return spans if ascii_source else LoadPath._as_byte_spans(text, spans)
+
+    @staticmethod
+    def _in_export_list(text: str, at: int) -> bool:
+        """Whether `at` is a name in `export { a, b }` or `module.exports = { a, b }`: a list that
+        runs nothing, though its commas read like a call's arguments."""
+        window = text[max(0, at - 4_000) : at]
+        brace = window.rfind("{")
+        if brace < 0 or any(c in window[brace + 1 :] for c in "{}();"):
+            return False
+        before = window[:brace].rstrip()
+        return (
+            before.endswith("export")
+            or re.search(r"\b(?:module\.)?exports\s*=$", before) is not None
+        )
 
     @staticmethod
     def _as_byte_spans(text: str, spans: list[tuple[int, int]]) -> list[tuple[int, int]]:

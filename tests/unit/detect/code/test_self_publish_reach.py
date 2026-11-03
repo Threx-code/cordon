@@ -375,9 +375,7 @@ class TestAPublishingFunctionALibraryExports:
         found = PublishKit.severities(tmp_path, {"main": "index.js"}, {"package/index.js": text})
         assert found and all(s <= Severity.MEDIUM for s in found)
 
-    def test_a_non_ascii_comment_before_a_top_level_call_still_blocks(
-        self, tmp_path: Path
-    ) -> None:
+    def test_a_non_ascii_comment_before_a_top_level_call_still_blocks(self, tmp_path: Path) -> None:
         text = "// 发布到注册表 — publish ✓\n" + self.EXPORTED + "publish(__dirname); // ✓\n"
         found = PublishKit.severities(tmp_path, {"main": "index.js"}, {"package/index.js": text})
         assert any(s >= Severity.HIGH for s in found)
@@ -389,3 +387,45 @@ class TestAPublishingFunctionALibraryExports:
         (tmp_path / "ship.js").write_text(self.EXPORTED, encoding="utf-8")
         found = [f.severity for f in Scanner().scan(tmp_path).findings if f.rule_id == RULE]
         assert any(s >= Severity.HIGH for s in found)
+
+    CLASS: ClassVar[str] = (
+        "import { exec } from 'child_process';\n"
+        "class Registry {\n"
+        "  constructor(dir) {\n"
+        "    this.dir = dir;\n"
+        "  }\n"
+        "  async publish(tag) {\n"
+        "    exec('npm publish --tag ' + tag, { cwd: this.dir });\n"
+        "  }\n"
+        "  async release(tag) {\n"
+        "    await this.publish(tag);\n"
+        "  }\n"
+        "}\n"
+    )
+
+    def test_a_class_method_in_an_exported_class_is_reported_below_the_gate(
+        self, tmp_path: Path
+    ) -> None:
+        # A method's own declaration (`async publish(tag) {`) read as a call, and a name in
+        # `export { ... }` read as a call's argument: every body in a class-based bundle was
+        # reached, so nothing in one was ever lowered (webappwiz's `ship/index.js`).
+        text = self.CLASS + "export { Registry };\n"
+        manifest = {"type": "module", "exports": {".": "./index.js"}}
+        found = PublishKit.severities(tmp_path, manifest, {"package/index.js": text})
+        assert found and all(s <= Severity.MEDIUM for s in found)
+
+    def test_the_same_class_used_at_the_top_level_still_blocks(self, tmp_path: Path) -> None:
+        text = self.CLASS + "new Registry('.').release('latest');\nexport { Registry };\n"
+        manifest = {"type": "module", "exports": {".": "./index.js"}}
+        found = PublishKit.severities(tmp_path, manifest, {"package/index.js": text})
+        assert any(s >= Severity.HIGH for s in found)
+
+    def test_a_function_in_an_export_list_is_reported_below_the_gate(self, tmp_path: Path) -> None:
+        text = self.EXPORTED.replace(
+            "module.exports = { publish };\n", "export { other, publish, more };\n"
+        )
+        text = text.replace("require('child_process')", "await import('child_process')")
+        text += "function other() {}\nfunction more() {}\n"
+        manifest = {"type": "module", "exports": {".": "./index.js"}}
+        found = PublishKit.severities(tmp_path, manifest, {"package/index.js": text})
+        assert found and all(s <= Severity.MEDIUM for s in found)
