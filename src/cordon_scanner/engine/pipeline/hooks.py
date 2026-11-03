@@ -580,9 +580,17 @@ class Hooks:
                     # its extension. Exact membership only.
                     found.add(candidate)
                     continue
-                if "." not in PurePosixPath(candidate).name:
-                    # No extension: a program name such as `node` or `make`,
-                    # not a file in the repository.
+                if (
+                    "." not in PurePosixPath(candidate).name
+                    and "/" not in candidate
+                    and LanguageRegistry.language_from_interpreter(runner) is None
+                ):
+                    # No extension, no path and no interpreter before it: a program name such as
+                    # `node` or `make`, not a file in the repository. What an interpreter is handed
+                    # is its script (`sh ./tools/prepare`), and a path names a file, extension or
+                    # not: `languages_of` already reads both as the interpreter's language, and the
+                    # file must run at install as well (item 37: a payload in an extensionless
+                    # `tools/prepare` was a shell script that never counted as install-time code).
                     continue
                 resolved = posixpath.normpath(str(base / candidate))
                 if resolved.startswith(".."):

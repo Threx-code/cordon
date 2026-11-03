@@ -1159,7 +1159,8 @@
   "test_native_build.py": "repository/release",
   "test_cross_file_flows.py": "engine/isolation",
   "test_parameter_command.py": "detect/code",
-  "test_network_failures.py": "foundation/network"
+  "test_network_failures.py": "foundation/network",
+  "test_references_followed.py": "detect/supply"
  },
  "shims": {
   "intel/provenance/_der": {
