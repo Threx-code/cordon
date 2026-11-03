@@ -703,10 +703,13 @@ class ContextStage:
         accepted, why = self._answer(
             kind, units, ctx, root, carry_content, where, image is not None, pending_hooks
         )
+        # Members of an import library, marked in this process (the worker's units are rebuilt from
+        # paths and bytes, so it cannot know them): only the polyglot name check reads it (notes/75).
+        marked = frozenset(u.path for u in units if u.import_library)
         if accepted is None:
-            ctx = self._failed(units, acc, ctx, where, why)
+            ctx = replace(self._failed(units, acc, ctx, where, why), import_library_paths=marked)
             return (replace(ctx, image=image) if image is not None else ctx), (), ()
-        ctx = self._apply(accepted, units, acc, ctx)
+        ctx = replace(self._apply(accepted, units, acc, ctx), import_library_paths=marked)
         return (
             replace(ctx, image=image) if image is not None else ctx,
             accepted.dependencies,

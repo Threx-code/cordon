@@ -910,7 +910,7 @@ class TestTheParentOpensNoArchive:
         from cordon_scanner.engine.isolation.expander import ArchiveExpander
 
         expander = ArchiveExpander(Engine(Config.default()))
-        member = ["m", "0" * 32, 1, "0" * 64, -1, 0]
+        member = ["m", "0" * 32, 1, "0" * 64, -1, 0, False]
         answer = json.dumps(
             {
                 "members": [[*member[:1], f"{i:032x}", *member[2:]] for i in range(300_000)],
@@ -948,8 +948,8 @@ class TestTheParentOpensNoArchive:
         expander = ArchiveExpander(Engine(config))
         size = config.limits.max_total_bytes // 2 + 1
         members = [
-            ["a", f"{1:032x}", size, "0" * 64, -1, 0],
-            ["b", f"{2:032x}", size, "0" * 64, -1, 0],
+            ["a", f"{1:032x}", size, "0" * 64, -1, 0, False],
+            ["b", f"{2:032x}", size, "0" * 64, -1, 0, False],
         ]
         accepted, why = expander.accept(self.answer(members), "t.tgz")
         assert accepted is None and why == "members past the scan's byte budget"
@@ -963,7 +963,7 @@ class TestTheParentOpensNoArchive:
         config = Config.default()
         config = dataclasses.replace(config, limits=dataclasses.replace(config.limits, max_files=3))
         expander = ArchiveExpander(Engine(config))
-        members = [[f"m{i}", f"{i:032x}", 1, "0" * 64, -1, 0] for i in range(4)]
+        members = [[f"m{i}", f"{i:032x}", 1, "0" * 64, -1, 0, False] for i in range(4)]
         accepted, why = expander.accept(self.answer(members), "t.tgz")
         assert accepted is None and why == "more members than an archive may hold"
         assert expander.accept(self.answer(members[:3]), "t.tgz")[1] != why

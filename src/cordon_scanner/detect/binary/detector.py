@@ -356,6 +356,11 @@ class BinaryDetector(BaseDetector):
         unit: FileUnit,
     ) -> None:
         """The finding for a file whose bytes say one format and whose name says another, graded down where the pair is a known benign one."""
+        if mismatch is not None and content.path in ctx.import_library_paths:
+            # A member of an import library, verified whole (`sources/import_library.py`): it is
+            # named for the DLL it imports from, so its name claims nothing about its bytes
+            # (notes/75 fix 2). Every other reader still reads it.
+            return
         if mismatch is not None:
             finding = self._finding("SUSPECT.POLYGLOT.MISMATCH.001", unit, ctx, mismatch)
             if (

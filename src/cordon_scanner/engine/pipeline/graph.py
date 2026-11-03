@@ -14,8 +14,9 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.detect.base import FileUnit
 from cordon_scanner.ecosystems.base import WORKSPACE_INHERITED, Coordinate, LockEntry, LockGraph
-from cordon_scanner.ecosystems.registry import EcosystemRegistry, RegistryFacts
+from cordon_scanner.ecosystems.registry import EcosystemRegistry, RegistryFacts, WorkspaceMembers
 from cordon_scanner.engine.isolation.documents import Documents
+from cordon_scanner.engine.package_format import PackageFormat
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.foundation.collector import ScanCaches
 from cordon_scanner.foundation.models import Scope, Severity
@@ -743,7 +744,7 @@ class Graph:
         # Declared beside a lockfile that does not resolve it: the two have drifted, and what
         # installs is whatever the range resolves to on the day. Kept in the inventory, unresolved,
         # with the reason -- dropping it hid a dependency the project really asks for.
-        defined: frozenset[tuple[str, str]] | None = None
+        defined: WorkspaceMembers | None = None
         for key, (path, entry) in sorted(
             declared.items(), key=lambda item: (str(item[0]), item[1][0])
         ):
@@ -757,7 +758,9 @@ class Graph:
             if defined is None:
                 defined = Graph.workspace_members(units)
             purl_type = implementation.purl_type if implementation else ecosystem_id
-            if Graph.declared_inside(entry.spec, path) or (ecosystem_id, name) in defined:
+            if Graph.declared_inside(entry.spec, path) or defined.resolves(
+                ecosystem_id, name, entry.spec
+            ):
                 # Another project of this build (Gradle's `project(":lib")`), or a module this
                 # repository builds (an included build substituting `shared-util`): built from
                 # its source here, which no lockfile lists because nothing is fetched for it.
@@ -882,45 +885,28 @@ class Graph:
         return found.group(1) if found else None
 
     @staticmethod
-    def defined_member(dependency: Dependency, defined: frozenset[tuple[str, str]]) -> bool:
-        """Whether a dependency names a module this checkout defines, by its ecosystem's own
-        name normalisation."""
+    def defined_member(dependency: Dependency, defined: WorkspaceMembers) -> bool:
+        """Whether a dependency resolves to a module this checkout defines, by its ecosystem's own
+        name normalisation and, for npm, by the member satisfying its range (notes/77)."""
         ecosystem = EcosystemRegistry.get(dependency.ecosystem)
         name = ecosystem.normalize_name(dependency.name) if ecosystem else dependency.name
-        return (dependency.ecosystem, name) in defined
+        return defined.resolves(dependency.ecosystem, name, dependency.declared_spec)
 
     @staticmethod
-    def workspace_members(units: list[FileUnit]) -> frozenset[tuple[str, str]]:
-        """The packages this repository itself defines, as `(ecosystem, normalized name)`.
+    def workspace_members(units: list[FileUnit]) -> WorkspaceMembers:
+        """What this tree defines itself, where its ecosystem would resolve a dependency to it
+        (`ecosystems/workspace_members.py`, notes/77); a published package defines nothing."""
+        if PackageFormat.of(units):
+            return WorkspaceMembers()
+        from cordon_scanner.intel.registry import VersionRanges
 
-        A manifest's own `name` outside any installed-dependency tree. A dependency on one of
-        these names is resolved to the member by the workspace, not fetched from the registry.
-        """
-        members: set[tuple[str, str]] = set()
-        contents = MappingProxyType({u.path: u.content for u in units})  # Graph.view_of
-        for unit in units:
-            if "node_modules/" in f"/{unit.path}" or "site-packages/" in unit.path:
-                continue
-            ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
-            ecosystem = EcosystemRegistry.get(ecosystem_id) if ecosystem_id else None
-            if ecosystem is None or ecosystem_id is None:
-                continue
-            # Whether a manifest in the tree names one of the project's own packages: for most
-            # ecosystems always; never for Homebrew; for Conan only a workspace's members.
-            defines = getattr(ecosystem, "defines_members", True)
-            if callable(defines):
-                defines = defines(unit.path, contents)
-            if not defines:
-                continue
-            try:
-                # With the build in view: a Gradle project's name is in its settings script, a
-                # Maven module's group in its parent POM.
-                manifest = Graph.manifest_of(ecosystem, unit, contents)
-            except Exception:  # noqa: BLE001, S112
-                continue
-            if manifest.name:
-                members.add((ecosystem_id, ecosystem.normalize_name(manifest.name)))
-        return frozenset(members)
+        return WorkspaceMembers.collect(
+            units,
+            EcosystemRegistry.manifest_ecosystem,
+            EcosystemRegistry.get,
+            Graph.manifest_of,
+            VersionRanges.admits,
+        )
 
 
 __all__ = ["Graph", "ParsedManifests"]
