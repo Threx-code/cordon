@@ -27,6 +27,7 @@ import signal
 import time
 from collections import deque
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.foundation.errors import CordonError
@@ -263,7 +264,24 @@ class Limits:
             resource.setrlimit(
                 resource.RLIMIT_CORE, (0, resource.getrlimit(resource.RLIMIT_CORE)[1])
             )
+        recorded["oom_first"] = Limits.killed_first()
         return recorded
+
+    #: Where Linux reads how readily the out-of-memory killer picks this process (-1000 to 1000).
+    OOM_SCORE: ClassVar[str] = "/proc/self/oom_score_adj"
+
+    @staticmethod
+    def killed_first() -> str:
+        """This worker made the out-of-memory killer's first choice (note 80): when the memory the
+        scan is given runs out, the kernel ends a worker -- whose unit the supervisor runs again
+        alone, then reports as a named gap -- never the scan's own process, which held every result
+        and was killed with no report (exit 137). Raising one's own score needs no privilege.
+        "enforced" where Linux has the knob, else "not_enforced"."""
+        try:
+            Path(Limits.OOM_SCORE).write_text("1000", encoding="ascii")
+        except OSError:
+            return "not_enforced"
+        return "enforced"
 
     @staticmethod
     def cpu_for_next(budget: float) -> None:
