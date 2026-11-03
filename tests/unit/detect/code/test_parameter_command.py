@@ -168,6 +168,30 @@ class TestTheGrade:
         result = CommandKit.scan(CommandKit.package(tmp_path / "p", files))
         assert any(f.severity >= Severity.HIGH for f in CommandKit.dropper(result, "index.js"))
 
+    def test_a_reexport_of_a_large_file_with_no_call_through_it_leaves_it_lowered(
+        self, tmp_path
+    ) -> None:
+        # Baileys 6.7.19 on: lib/index.js re-exports the 5 MB WAProto; nothing calls through it.
+        files = {
+            "index.js": CommandKit.THUMB,
+            "proto/index.js": self.BIG,
+            "lib/index.js": 'export * from "../proto";\n',
+        }
+        result = CommandKit.scan(CommandKit.package(tmp_path / "p", files))
+        found = CommandKit.dropper(result, "index.js")
+        assert found
+        assert all(f.severity == Severity.MEDIUM for f in found)
+
+    def test_a_call_through_a_reexport_into_a_large_file_withdraws_it(self, tmp_path) -> None:
+        files = {
+            "index.js": CommandKit.THUMB,
+            "proto/index.js": self.BIG,
+            "lib/index.js": 'export * from "../proto";\n',
+            "run.js": 'const l = require("./lib");\nl.m(1);\n',
+        }
+        result = CommandKit.scan(CommandKit.package(tmp_path / "p", files))
+        assert any(f.severity >= Severity.HIGH for f in CommandKit.dropper(result, "index.js"))
+
     def test_a_large_file_another_calls_into_withdraws_it(self, tmp_path) -> None:
         caller = 'const p = require("./proto");\np.m(1);\n'
         files = {"index.js": CommandKit.THUMB, "proto/index.js": self.BIG, "run.js": caller}
