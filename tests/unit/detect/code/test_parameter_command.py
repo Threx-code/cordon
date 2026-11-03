@@ -139,6 +139,28 @@ class TestTheGrade:
         )
         assert any(f.severity >= Severity.HIGH for f in CommandKit.dropper(result, "index.js"))
 
+    #: A generated module past the analysis's size limit (Baileys ships a 5 MB WAProto/index.js).
+    BIG: ClassVar[str] = "var $root = {};\n" + "$root.m = function (w) { return w; };\n" * 45_000
+
+    def test_a_large_file_reaching_nothing_leaves_it_lowered(self, tmp_path) -> None:
+        files = {"index.js": CommandKit.THUMB, "proto/index.js": self.BIG}
+        result = CommandKit.scan(CommandKit.package(tmp_path / "p", files))
+        found = CommandKit.dropper(result, "index.js")
+        assert found
+        assert all(f.severity == Severity.MEDIUM for f in found)
+
+    def test_a_large_file_that_reaches_the_package_withdraws_it(self, tmp_path) -> None:
+        big = 'const t = require("../index");\n' + self.BIG
+        files = {"index.js": CommandKit.THUMB, "proto/index.js": big}
+        result = CommandKit.scan(CommandKit.package(tmp_path / "p", files))
+        assert any(f.severity >= Severity.HIGH for f in CommandKit.dropper(result, "index.js"))
+
+    def test_a_large_file_another_calls_into_withdraws_it(self, tmp_path) -> None:
+        caller = 'const p = require("./proto");\np.m(1);\n'
+        files = {"index.js": CommandKit.THUMB, "proto/index.js": self.BIG, "run.js": caller}
+        result = CommandKit.scan(CommandKit.package(tmp_path / "p", files))
+        assert any(f.severity >= Severity.HIGH for f in CommandKit.dropper(result, "index.js"))
+
     def test_called_only_with_literals_stays_lowered(self, tmp_path) -> None:
         caller = 'const { thumb } = require("./index");\nthumb("/tmp/a.mp4", "/tmp/o.jpg", 1, { width: 8 });\n'
         result = CommandKit.scan(

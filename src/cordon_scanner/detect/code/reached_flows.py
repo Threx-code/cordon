@@ -277,15 +277,33 @@ class CrossFileJoin:
 
     @staticmethod
     def unresolved(
-        facts: Mapping[str, Mapping[str, list[Any]]], findings: Sequence[Finding]
+        units: Sequence[FileUnit],
+        facts: Mapping[str, Mapping[str, list[Any]]],
+        findings: Sequence[Finding],
     ) -> bool:
         """Whether some file's calls into the package are not all known: a computed require, a file
-        the analysis could not read whole, or a file whose facts were refused."""
-        from cordon_scanner.analysis.javascript.flow.summaries import JsSummaries
+        the analysis could not read whole that reaches out, a call into or a re-export of a file not
+        read whole, or a file whose facts were refused."""
+        from cordon_scanner.analysis.javascript.flow.summaries import CrossFile, JsSummaries
 
-        return any(
-            JsSummaries.UNRESOLVED in held.get("js.require", ()) for held in facts.values()
-        ) or any(f.rule_id == "OPERATIONAL.WORKER.FACTS_REFUSED" for f in findings)
+        if any(f.rule_id == "OPERATIONAL.WORKER.FACTS_REFUSED" for f in findings):
+            return True
+        unread = set()
+        for path, held in facts.items():
+            markers = held.get("js.require", ())
+            if JsSummaries.UNRESOLVED in markers:
+                return True
+            if JsSummaries.UNREAD in markers:
+                unread.add(path)
+        if not unread:
+            return False
+        tree = frozenset(u.path for u in units)
+        for path, held in facts.items():
+            modules = [str(c[0]) for c in held.get("js.callout", ())]
+            modules += [str(r[0]) for r in held.get("js.reexport", ())]
+            if any(CrossFile.resolve(m, path, tree) in unread for m in modules):
+                return True
+        return False
 
     @staticmethod
     def lowered(findings: Sequence[Finding]) -> set[str]:

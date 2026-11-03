@@ -210,6 +210,23 @@ class TestTheChannel:
         assert accepted is not None, why
         assert all(c[1] for c in facts.get("js.callout", ()))
 
+    def test_a_file_past_the_limit_says_whether_it_reaches_out(self) -> None:
+        from cordon_scanner.analysis.javascript.flow.summaries import JsSummaries
+        from cordon_scanner.analysis.javascript.js_flow import JsFlow
+
+        body = "x = 1;\n" * 250_000
+        assert JsFlow.summaries(body) == {"js.require": [JsSummaries.UNREAD]}
+        for edge in (
+            'require("./a");',
+            "require(name);",
+            'import { a } from "../a";',
+            "import(x);",
+        ):
+            assert JsFlow.summaries(edge + "\n" + body) == {"js.require": [JsSummaries.UNRESOLVED]}
+        assert JsFlow.summaries('require("lodash");\n' + body) == {
+            "js.require": [JsSummaries.UNREAD]
+        }
+
     def test_a_file_joining_nothing_sends_nothing(self) -> None:
         from cordon_scanner.analysis.javascript.js_flow import JsFlow
 
