@@ -774,6 +774,9 @@ class CompositeGrading:
             compiled.rule.id in CompositeRuleIds.ON_REQUEST_RULES
             and not in_hook
             and not ctx.in_ci_hook(content.path)
+            # The publishing rule is lowered for this only in a published package, as its reach
+            # ceiling is: in a source tree no entry point is known, so nothing says who calls it.
+            and (compiled.rule.id != PublishReach.RULE or ctx.package_distribution)
             # A shell script that decodes on the way to running is the encoded-dropper shape
             # and is never lowered. In Python or JavaScript the decode is one of the hits
             # being placed, and it is lowered only if it too sits in a body nothing on the

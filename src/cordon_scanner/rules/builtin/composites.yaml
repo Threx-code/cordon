@@ -1505,7 +1505,9 @@ rules:
         - rule: CAP.JS.FLOW.HOME_FILE_RAW.DROP
         - rule: CAP.JS.FLOW.HOME_FILE_RAW.IP
         - rule: CAP.JS.FLOW.HOME_FILE_RAW.FIXED
-        - rule: CAP.JS.FLOW.HOME_FILE_RAW.UNKNOWN
+        # No HOME_FILE_RAW.UNKNOWN: a home file to a host the code does not name is an SSH tool's
+        # or a sync client's work, as FLOW_TO_DROP leaves HOME_FILE_SENT.UNKNOWN out over HTTP (9
+        # benign npm units, 0 of 92 malware without a secret, identity, environment or wallet flow).
         - rule: CAP.JS.FLOW.SECRET_FILE_RAW.DROP
         - rule: CAP.JS.FLOW.SECRET_FILE_RAW.IP
         - rule: CAP.JS.FLOW.SECRET_FILE_RAW.FIXED

@@ -166,11 +166,17 @@ class LoadPath:
                 "FLOW.JS.SECRET_SENT",
                 "FLOW.JS.IDENTITY_SENT",
                 "FLOW.JS.ENVIRONMENT_SENT",
+                # The publishing composite's one term is this rule, not a capability.
+                "CAP.JS.PUBLISH.001",
             )
         ]
         if not offsets:
             return ""
-        spans = LoadPath._function_body_spans(content, language)
+        # A decoded payload keeps the strict reading of what is called: a method a framework calls
+        # (a webpack plugin's `apply`) is where one hides, and the declaration-and-export reading
+        # lowered 12 malware decode-exec findings for 2 benign (pair on 2,297 on-request units).
+        decodes = any(h.capability is Capability.DECODE for h in hits)
+        spans = LoadPath._function_body_spans(content, language, strict=decodes)
         if spans and all(any(start <= at < end for start, end in spans) for at in offsets):
             return LoadPath.ON_REQUEST_REASONS[1]
         return ""
@@ -275,7 +281,9 @@ class LoadPath:
         return False
 
     @staticmethod
-    def _function_body_spans(content: FileContent, language: str | None) -> list[tuple[int, int]]:
+    def _function_body_spans(
+        content: FileContent, language: str | None, *, strict: bool = False
+    ) -> list[tuple[int, int]]:
         """Byte spans of the function bodies nothing on this file's load path reaches.
 
         A body counts as run on load when code that runs on load names its function -- called,
@@ -287,7 +295,7 @@ class LoadPath:
         if language == "python":
             return LoadPath._python_deferred_spans(content)
         if language in ("javascript", "typescript"):
-            return LoadPath._js_deferred_spans(content)
+            return LoadPath._js_deferred_spans(content, strict=strict)
         return []
 
     @staticmethod
@@ -465,33 +473,46 @@ class LoadPath:
         return found
 
     @staticmethod
-    def _js_deferred_spans(content: FileContent) -> list[tuple[int, int]]:
-        # The pattern runs over text and the hits are byte offsets, which agree only on ASCII
-        # source. Anything else finds no bodies, and the finding keeps its severity.
-        if not content.raw.isascii():
-            return []
-        text = content.raw
+    def _js_deferred_spans(content: FileContent, *, strict: bool = False) -> list[tuple[int, int]]:
+        # The pattern runs over text and the hits are byte offsets. On ASCII source they agree; on
+        # other UTF-8 the spans are converted to bytes at the end (one Chinese comment or emoji
+        # used to find no bodies, so a release CLI's exported publish routine blocked). Text that
+        # is not the raw bytes' own UTF-8 decoding finds no bodies, and the finding keeps its
+        # severity.
+        text = content.text
+        ascii_source = content.raw.isascii()
+        if not ascii_source:
+            try:
+                if content.raw.decode("utf-8") != text:
+                    return []
+            except UnicodeDecodeError:
+                return []
         bodies: list[tuple[int, int, str]] = []
+        # Where each named body is declared: its name there is a declaration, not a call
+        # (`async publish(dir) {` in a class read as `publish(`).
+        declared: list[tuple[int, int, str]] = []
         for match in LoadPath._JS_BODY_OPENER.finditer(content.text):
             open_brace = match.end() - 1
             named = re.search(
                 r"([A-Za-z_$][\w$]{0,80})[ \t]{0,8}(?:=[^=>]{0,80}|\()", match.group(0)
             )
             name = named.group(1) if named and named.group(1) != "function" else ""
+            if name:
+                declared.append((match.start(), open_brace, name))
             depth = 0
             for index in range(open_brace, min(len(text), open_brace + 200_000)):
-                byte = text[index]
-                if byte == 0x7B:
+                char = text[index]
+                if char == "{":
                     depth += 1
-                elif byte == 0x7D:
+                elif char == "}":
                     depth -= 1
                     if depth == 0:
                         # `(async function go() { ... })()` and `(() => { ... })()` run as the
                         # file loads: an immediately-invoked body is top-level code.
                         after = text[index + 1 : index + 16].lstrip()
                         if not (
-                            after.startswith(b"(")
-                            or (after[:1] == b")" and after[1:].lstrip().startswith(b"("))
+                            after.startswith("(")
+                            or (after[:1] == ")" and after[1:].lstrip().startswith("("))
                         ):
                             bodies.append((open_brace, index, name))
                         break
@@ -512,11 +533,49 @@ class LoadPath:
                     used = following.startswith("(") or (
                         preceding.endswith(("(", ",")) and following.startswith((")", ","))
                     )
-                    if not inside and used and not preceding.endswith("function"):
+                    # Strict: every use counts, as before declarations and export lists were read.
+                    declaration = not strict and any(
+                        start <= at < end and name == body[2] for start, end, name in declared
+                    )
+                    if (
+                        not inside
+                        and used
+                        and not preceding.endswith("function")
+                        and not declaration
+                        and (strict or not LoadPath._in_export_list(content.text, at))
+                    ):
                         unreached.remove(body)
                         changed = True
                         break
-        return [(start, end) for start, end, _ in unreached]
+        spans = [(start, end) for start, end, _ in unreached]
+        return spans if ascii_source else LoadPath._as_byte_spans(text, spans)
+
+    @staticmethod
+    def _in_export_list(text: str, at: int) -> bool:
+        """Whether `at` is a name in `export { a, b }` or `module.exports = { a, b }`: a list that
+        runs nothing, though its commas read like a call's arguments."""
+        window = text[max(0, at - 4_000) : at]
+        brace = window.rfind("{")
+        if brace < 0 or any(c in window[brace + 1 :] for c in "{}();"):
+            return False
+        before = window[:brace].rstrip()
+        return (
+            before.endswith("export")
+            or re.search(r"\b(?:module\.)?exports\s*=$", before) is not None
+        )
+
+    @staticmethod
+    def _as_byte_spans(text: str, spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
+        """Character spans of `text` as UTF-8 byte spans, encoding each stretch between consecutive
+        endpoints once, so a file with thousands of bodies is still read in one pass."""
+        points = sorted({at for span in spans for at in span})
+        byte_at: dict[int, int] = {}
+        previous = offset = 0
+        for at in points:
+            offset += len(text[previous:at].encode("utf-8"))
+            byte_at[at] = offset
+            previous = at
+        return [(byte_at[start], byte_at[end]) for start, end in spans]
 
     @staticmethod
     def agent_run(content: FileContent, ctx: ScanContext | None) -> bool:

