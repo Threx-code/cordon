@@ -26,6 +26,12 @@ _DIR_CONTROLS = frozenset(
     map(chr, (0x202A, 0x202B, 0x202C, 0x202D, 0x202E, 0x2066, 0x2067, 0x2068, 0x2069))
 )  # all directional controls
 
+#: The directional controls that cannot make left-to-right text display reversed: the left-to-right
+#: embedding and isolate, and the two pops. Not LRO: an override is the Trojan Source primitive.
+_LTR_SAFE = frozenset(map(chr, (0x202A, 0x202C, 0x2066, 0x2069)))  # LRE PDF LRI PDI
+
+_DIR_CONTROL = re.compile("[\u202a-\u202e\u2066-\u2069]")
+
 #: The overrides, as UTF-8 bytes: the Trojan Source primitive. Their presence anywhere in a file
 #: keeps every directional finding in it at full severity.
 _OVERRIDE_BYTES = (b"\xe2\x80\xad", b"\xe2\x80\xae")  # LRO, RLO
@@ -158,6 +164,31 @@ class ObfuscationText:
             return False
         before = raw[start - 1 : start]
         return before in (b'"', b"'", b"`") and before == raw[end : end + 1]
+
+    @staticmethod
+    def is_ltr_range_table(raw: bytes) -> bool:
+        r"""Whether every directional control in the file is the endpoint of a character range in a
+        table of codepoints, and one that cannot reverse left-to-right text (`_LTR_SAFE`).
+
+        A Unicode table written with the characters themselves: KaTeX's tokenizer ranges
+        (a range from U+2027 through U+202A to U+D7FF) and a locale library's unassigned-codepoint
+        ranges (U+2065 to U+2069) name a control as a bound, a value, not a reorder of code anyone reads.
+        Every control in the file must be one -- the detector judges the first, and a harmless table
+        put first must not lower a file that also carries an override -- and the range's other end
+        must itself be outside ASCII: `a-` or `-z` beside a control is code, not a table.
+        """
+        text = raw.decode("utf-8", "replace")
+        found = False
+        for match in _DIR_CONTROL.finditer(text):
+            found = True
+            i = match.start()
+            if text[i] not in _LTR_SAFE:
+                return False
+            low = i >= 2 and text[i - 1] == "-" and not text[i - 2].isascii()
+            high = i + 2 < len(text) and text[i + 1] == "-" and not text[i + 2].isascii()
+            if not (low or high):
+                return False
+        return found
 
     @staticmethod
     def _is_inert_embedded_data(raw: bytes, start: int) -> bool:

@@ -411,8 +411,11 @@ class ConcealmentFindings:
         # The fourth case: a balanced embedding around inert text inside a string literal, in a
         # file with no override -- data laid out for display, not a reorder of code the reviewer
         # reads. See `_is_inert_embedded_data`.
-        inert_data = directional and ObfuscationText._is_inert_embedded_data(
-            content.raw, match.start()
+        inert_data = directional and (
+            ObfuscationText._is_inert_embedded_data(content.raw, match.start())
+            # Or every control in the file is a bound in a table of codepoints, one that cannot
+            # reverse left-to-right text. See `is_ltr_range_table`.
+            or ObfuscationText.is_ltr_range_table(content.raw)
         )
         return documented, inert_data, ordering_text
 

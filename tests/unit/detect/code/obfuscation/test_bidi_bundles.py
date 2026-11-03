@@ -62,3 +62,28 @@ class TestBidi:
         text = f"label = '{LRE}158 8020{PDF}'\nrole = \"user{RLO} // admin\"\n"
         found = BidiKit.severities(tmp_path, "src/app.py", text)
         assert Severity.HIGH in found, found
+
+
+class TestARangeTable:
+    """A control written as a bound in a table of codepoints (QUALITY-DAYS item 1: KaTeX's tokenizer ranges
+    and Infragistics' locale ranges blocked two packages). Only controls that cannot reverse
+    left-to-right text, and only when every control in the file is one."""
+
+    def test_a_left_to_right_embedding_as_a_range_bound_is_data(self, tmp_path: Path) -> None:
+        table = f"var r = /[\u2000-\u2027{LRE}-\ud7ff\uf900-\uffff]/;\n"
+        assert BidiKit.severities(tmp_path, "src/tok.js", table) == {Severity.INFO}
+
+    def test_a_pop_isolate_as_a_range_bound_is_data(self, tmp_path: Path) -> None:
+        table = f'var unassigned = "\u1ff5\u1fff\u2065-{PDI}\u2072\u2073";\n'
+        assert BidiKit.severities(tmp_path, "src/locale.js", table) == {Severity.INFO}
+
+    def test_a_right_to_left_isolate_as_a_range_bound_stays_high(self, tmp_path: Path) -> None:
+        table = f'var r = "\u2065-{RLI}\u2072";\n'
+        assert BidiKit.severities(tmp_path, "src/locale.js", table) == {Severity.HIGH}
+
+    def test_a_table_first_does_not_lower_an_override_later(self, tmp_path: Path) -> None:
+        text = f'var r = /[\u2027{LRE}-\ud7ff]/;\nvar role = "user{RLO} // admin";\n'
+        assert BidiKit.severities(tmp_path, "src/app.js", text) == {Severity.HIGH}
+
+    def test_a_control_beside_ascii_is_not_a_table(self, tmp_path: Path) -> None:
+        assert BidiKit.severities(tmp_path, "src/app.js", f"var a = x-{LRE}y;\n") == {Severity.HIGH}
