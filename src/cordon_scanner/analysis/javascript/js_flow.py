@@ -177,7 +177,8 @@ class JsFlow:
         the file joins no other. A file the analysis cannot read whole -- past its size limit, or
         failing -- says so (`JsSummaries.UNRESOLVED`): its calls into the package are not known."""
         if len(text) > MAX_BYTES:
-            return {"js.require": [JsSummaries.UNRESOLVED]}
+            marker = JsSummaries.UNRESOLVED if JsSummaries.reaches_out(text) else JsSummaries.UNREAD
+            return {"js.require": [marker]}
         return JsFlow.MEMO.get("summaries", text, lambda: [JsFlow._summaries(text)])[0]
 
     @staticmethod

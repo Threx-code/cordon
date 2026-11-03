@@ -24,6 +24,7 @@ A dynamic require or computed export name gives no edge (rule 3: no flow is inve
 from __future__ import annotations
 
 import posixpath
+import re
 from typing import Any, ClassVar
 
 from cordon_scanner.analysis.javascript.flow.vocabulary import SOURCES
@@ -55,6 +56,22 @@ class JsSummaries:
     #: not read whole. Composition is incomplete wherever one is (rule 3), and what needs it to be
     #: complete -- note 78's lowering -- is withdrawn.
     UNRESOLVED: ClassVar[str] = "dynamic"
+    #: The `js.require` fact of a file past the analysis's size limit that reaches no other file: no
+    #: local or computed require or import anywhere in its whole text (`reaches_out`). Composition is
+    #: incomplete only if another file calls into it or re-exports it (`CrossFileJoin.unresolved`): a
+    #: 5 MB generated protobuf module made every Baileys release unknown (note 78's pair).
+    UNREAD: ClassVar[str] = "unread"
+    #: A require or import of a local path, or of anything but one literal; an ES import or re-export
+    #: from a local path. Read over the whole text, linearly: one bounded alternative per position.
+    _REACHES_OUT: ClassVar[re.Pattern[str]] = re.compile(
+        r"""\b(?:require|import)\s{0,64}\(\s{0,64}(?:['"](?:\.{1,2}/|/)|[^'"\s)])"""
+        r"""|\bfrom\s{0,64}['"](?:\.{1,2}/|/)|\bimport\s{0,64}['"](?:\.{1,2}/|/)"""
+    )
+
+    @classmethod
+    def reaches_out(cls, text: str) -> bool:
+        """Whether a file calls into, or loads, any other file by a local or a computed name."""
+        return cls._REACHES_OUT.search(text) is not None
 
     @classmethod
     def shared(cls, a: Any) -> dict[str, list[Any]]:

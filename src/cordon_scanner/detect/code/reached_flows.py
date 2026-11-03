@@ -277,15 +277,66 @@ class CrossFileJoin:
 
     @staticmethod
     def unresolved(
-        facts: Mapping[str, Mapping[str, list[Any]]], findings: Sequence[Finding]
+        units: Sequence[FileUnit],
+        facts: Mapping[str, Mapping[str, list[Any]]],
+        findings: Sequence[Finding],
     ) -> bool:
         """Whether some file's calls into the package are not all known: a computed require, a file
-        the analysis could not read whole, or a file whose facts were refused."""
+        the analysis could not read whole that reaches out, a call that may land in a file not read
+        whole (`_reaches`), or a file whose facts were refused."""
         from cordon_scanner.analysis.javascript.flow.summaries import JsSummaries
 
+        if any(f.rule_id == "OPERATIONAL.WORKER.FACTS_REFUSED" for f in findings):
+            return True
+        unread = set()
+        for path, held in facts.items():
+            markers = held.get("js.require", ())
+            if JsSummaries.UNRESOLVED in markers:
+                return True
+            if JsSummaries.UNREAD in markers:
+                unread.add(path)
+        if not unread:
+            return False
+        tree = frozenset(u.path for u in units)
         return any(
-            JsSummaries.UNRESOLVED in held.get("js.require", ()) for held in facts.values()
-        ) or any(f.rule_id == "OPERATIONAL.WORKER.FACTS_REFUSED" for f in findings)
+            CrossFileJoin._reaches(str(c[0]), str(c[1]), path, tree, facts, unread)
+            for path, held in facts.items()
+            for c in held.get("js.callout", ())
+        )
+
+    @staticmethod
+    def _reaches(
+        module: str,
+        name: str,
+        from_path: str,
+        tree: frozenset[str],
+        facts: Mapping[str, Mapping[str, list[Any]]],
+        unread: set[str],
+        depth: int = 0,
+    ) -> bool:
+        """Whether a call of `name` from `module` may land in a file not read whole: the module is
+        one, or it does not define `name` and one of the modules it re-exports whole may supply it
+        (followed MAX_REEXPORT_DEPTH deep; deeper is not known, so it may). A re-export alone calls
+        nothing: Baileys 6.7.19 on re-exports its 5 MB generated WAProto, and no call reaches it."""
+        from cordon_scanner.analysis.javascript.flow.summaries import CrossFile
+
+        target = CrossFile.resolve(module, from_path, tree)
+        if target is None:
+            return False
+        if target in unread:
+            return True
+        held = facts.get(target, {})
+        if any(str(e[0]) == name for e in held.get("js.export", ())):
+            return False  # defined here, by a file the join reads
+        if depth >= CrossFileJoin.MAX_REEXPORT_DEPTH:
+            return bool(held.get("js.reexport"))
+        return any(
+            CrossFileJoin._reaches(str(r[0]), name, target, tree, facts, unread, depth + 1)
+            for r in held.get("js.reexport", ())
+        )
+
+    #: How deep a re-export chain is followed before it counts as not known (`CrossFile` follows 4).
+    MAX_REEXPORT_DEPTH: ClassVar[int] = 4
 
     @staticmethod
     def lowered(findings: Sequence[Finding]) -> set[str]:

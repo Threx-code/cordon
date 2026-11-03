@@ -734,7 +734,10 @@ class CrossFileJoining(Protocol):
         self, units: Sequence[FileUnit], facts: Mapping[str, Mapping[str, list[Any]]]
     ) -> dict[str, tuple[tuple[int, tuple[str, ...], str, str], ...]]: ...
     def unresolved(
-        self, facts: Mapping[str, Mapping[str, list[Any]]], findings: Sequence[Finding]
+        self,
+        units: Sequence[FileUnit],
+        facts: Mapping[str, Mapping[str, list[Any]]],
+        findings: Sequence[Finding],
     ) -> bool: ...
     def lowered(self, findings: Sequence[Finding]) -> set[str]: ...
 

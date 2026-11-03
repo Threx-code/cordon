@@ -25,7 +25,7 @@ the file and the intent observer reports it unexamined, as when the parent's cal
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 if TYPE_CHECKING:
     from cordon_scanner.detect.base import ScanContext
@@ -89,6 +89,14 @@ class WorkerSummaries:
     """The worker's cross-file summaries of one unit (item 60), into `WorkerFacts`. Not a verdict
     feature: kept out of `WorkerAnalysis`, whose code the feature schema hashes."""
 
+    #: TypeScript declaration files: `export * from "../x"` in one is a type's re-export, and read
+    #: as the module's it made every Baileys release's join incomplete (lib/index.d.ts).
+    DECLARATIONS: ClassVar[tuple[str, ...]] = (".d.ts", ".d.mts", ".d.cts")
+
+    @staticmethod
+    def declaration(path: str) -> bool:
+        return path.rsplit("!", 1)[-1].lower().endswith(WorkerSummaries.DECLARATIONS)
+
     @staticmethod
     def produce(unit: Any) -> None:
         """A JavaScript file's cross-file summaries (item 60): what its exports do with their
@@ -99,6 +107,8 @@ class WorkerSummaries:
 
         if unit.language not in ("javascript", "typescript") or unit.content.is_binary:
             return
+        if WorkerSummaries.declaration(unit.path):
+            return  # types only: nothing in it runs, so it calls and re-exports nothing at run time
         facts = JsFlow.summaries(unit.content.text)
         for kind in JsSummaries.KINDS:
             for value in facts.get(kind, ()):

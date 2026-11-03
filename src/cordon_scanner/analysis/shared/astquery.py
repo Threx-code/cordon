@@ -12,7 +12,7 @@ So the vocabulary declared `kind: ast` and the loader refused it, on the correct
 grounds that a rule which silently never fires is worse than one that fails to
 load. This is that kind, implemented.
 
-**What a query says.** Deliberately small -- three keys, and the same argument
+**What a query says.** Deliberately small -- a handful of keys, and the same argument
 that the composite language makes for staying small applies here with more
 force: a rule is read by somebody deciding whether a security finding is
 justified, and a query language rich enough to be clever is one nobody can
@@ -23,6 +23,7 @@ review.
       calls: [os.system, subprocess.run]     # resolved names, not written ones
       argument_matches: 'curl|wget'          # over the folded arguments
       argument_index: 0                      # optional, narrows to one argument
+      argument_excludes: 'a pattern'         # optional: not when the argument matches it
 
 **What it does not do.** It does not replace the regex tier: Python is the only
 language with a parser here, so every other language keeps byte matching and
@@ -70,6 +71,14 @@ class AstQuery:
     """Which argument the pattern applies to. `None` means any of them,
     including keywords, which is what most rules want."""
 
+    argument_excludes: re.Pattern[str] | None = None
+    """An optional pattern the argument must NOT match: the call matches unless its argument (the
+    one `argument_index` names, else all of them) matches this. An argument not passed, or with no
+    folded text (a name), does not match it, so the call still matches. For an exception written
+    down exactly -- `eval('import("pkg")')`, a fixed module load (note 70 D2) -- where a lookahead
+    in `argument_matches` would also drop every call whose argument has no text. Validated as
+    every pattern is."""
+
     argument_constructed: bool = False
     """When true, the call matches only if an argument is a BUILT expression --
     a concatenation, an f-string, a slice, a nested call -- rather than a plain
@@ -91,6 +100,15 @@ class AstQuery:
                 continue
             if self.argument_constructed and not call.has_constructed_argument:
                 continue
+            if self.argument_excludes is not None:
+                if self.argument_index is None:
+                    excluded = call.argument_text
+                elif self.argument_index < len(call.arguments):
+                    excluded = call.arguments[self.argument_index]
+                else:
+                    excluded = ""
+                if excluded and self.argument_excludes.search(excluded):
+                    continue
             if self.argument_matches is None:
                 found.append(call)
                 continue

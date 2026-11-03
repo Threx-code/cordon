@@ -102,6 +102,7 @@ _MATCH_KEYS = frozenset(
         "calls",
         "argument_matches",
         "argument_index",
+        "argument_excludes",
         "argument_constructed",
     }
 )
@@ -621,14 +622,23 @@ class RuleLoader:
             PatternCompiler.validate_pattern(raw_pattern, rule_id=where)
             pattern = re.compile(raw_pattern)
 
+        excludes: re.Pattern[str] | None = None
+        raw_excludes = raw.get("argument_excludes")
+        if raw_excludes is not None:
+            if not isinstance(raw_excludes, str) or not raw_excludes:
+                raise RulePackError(f"{where}: `argument_excludes` must be a non-empty string")
+            PatternCompiler.validate_pattern(raw_excludes, rule_id=where)
+            excludes = re.compile(raw_excludes)
+
         index = raw.get("argument_index")
         if index is not None and (
             not isinstance(index, int) or isinstance(index, bool) or index < 0
         ):
             raise RulePackError(f"{where}: `argument_index` must be a non-negative integer")
-        if index is not None and pattern is None:
+        if index is not None and pattern is None and excludes is None:
             raise RulePackError(
-                f"{where}: `argument_index` narrows `argument_matches`, which is absent"
+                f"{where}: `argument_index` narrows `argument_matches` or `argument_excludes`, "
+                "and neither is present"
             )
 
         constructed = raw.get("argument_constructed", False)
@@ -641,6 +651,7 @@ class RuleLoader:
                 calls=frozenset(calls),
                 argument_matches=pattern,
                 argument_index=index,
+                argument_excludes=excludes,
                 argument_constructed=constructed,
             ),
             raw=dict(raw),

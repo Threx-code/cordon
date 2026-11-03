@@ -172,7 +172,7 @@ class CrossFileFlows:
         if not capability:
             return
         flows = CrossFileJoin.cross_file(units, acc.facts)
-        unresolved = CrossFileJoin.unresolved(acc.facts, acc.findings)
+        unresolved = CrossFileJoin.unresolved(units, acc.facts, acc.findings)
         # Where the join is incomplete, a finding lowered on the join's word is graded again
         # without it (note 78; rule 3: unknown is never "no caller passes a reply").
         lowered = CrossFileJoin.lowered(acc.findings) if unresolved else set()
