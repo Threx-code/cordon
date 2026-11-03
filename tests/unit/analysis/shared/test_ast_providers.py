@@ -7,6 +7,8 @@ own code in the core install, so no language depends on an extra being present.
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
 
 from cordon_scanner.analysis.shared import ast_providers
@@ -104,3 +106,47 @@ class TestTheCoreInstall:
                 for c in provider.resolve_calls("const cp = require('child_process');\ncp.exec(x);")
             }
             assert "child_process.exec" in names
+
+
+class TestArgumentExcludes:
+    """`argument_excludes`: the call matches unless its argument matches the pattern (note 70 D2:
+    `eval('import("pkg")')` is a fixed module load). An argument with no folded text -- a name --
+    does not match it, so the call still matches; `argument_matches` could not say this."""
+
+    IMPORT: ClassVar[str] = r"""^\s*['"`]?import\(\s*\\?['"][\w@./-]{1,200}\\?['"]\s*\)['"`]?\s*$"""
+
+    @staticmethod
+    def matched(source: str) -> bool:
+        import re
+
+        from cordon_scanner.analysis.shared.astquery import AstQuery
+
+        js = ast_providers.AstProviders.ast_provider_for("javascript")
+        query = AstQuery(
+            calls=frozenset({"eval"}),
+            argument_index=0,
+            argument_excludes=re.compile(TestArgumentExcludes.IMPORT),
+        )
+        return bool(query.matching(js.resolve_calls(source)))
+
+    def test_a_name_still_matches(self) -> None:
+        assert self.matched("eval(payload);")
+
+    def test_a_literal_that_fetches_still_matches(self) -> None:
+        assert self.matched("eval('fetch(u).then(r => r.text()).then(eval)');")
+
+    def test_a_built_import_still_matches(self) -> None:
+        assert self.matched("eval('import(' + name + ')');")
+
+    def test_a_literal_import_of_a_package_does_not(self) -> None:
+        assert not self.matched("const { default: d } = await eval('import(\\'audio-decode\\')');")
+        assert not self.matched("eval(\"import('@scope/pkg')\");")
+
+    def test_the_loader_refuses_an_empty_pattern(self) -> None:
+        from cordon_scanner.foundation.errors import RulePackError
+        from cordon_scanner.rules.loader import RuleLoader
+
+        with pytest.raises(RulePackError, match="argument_excludes"):
+            RuleLoader._compile_ast(
+                {"kind": "ast", "calls": ["eval"], "argument_excludes": ""}, where="t"
+            )
