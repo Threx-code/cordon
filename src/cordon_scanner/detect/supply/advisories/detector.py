@@ -97,6 +97,8 @@ class AdvisoryDetector(BaseDetector):
         "gomod": "{name}",
     }
     """Ecosystems whose package name is a repository address, and how it is spelled as one."""
+    PATH_SPECS: ClassVar[tuple[str, ...]] = ("workspace:", "link:", "file:", "portal:")
+    """Spec prefixes a package manager resolves inside the tree and never from the registry."""
 
     id = AdvisoryFinding.DETECTOR
     version = "0.1.0"
@@ -117,6 +119,11 @@ class AdvisoryDetector(BaseDetector):
     @staticmethod
     def declared_rules() -> tuple[DeclaredRule, ...]:
         return DECLARED_RULES
+
+    @staticmethod
+    def declared_by_path(spec: str | None) -> bool:
+        """Whether a spec names a path (`PATH_SPECS`): a URL, git, alias or range spec does not."""
+        return bool(spec) and str(spec).startswith(AdvisoryDetector.PATH_SPECS)
 
     def applicable(self, ctx: ScanContext) -> bool:
         """Always applicable, even with nothing to match against.
@@ -225,7 +232,14 @@ class AdvisoryDetector(BaseDetector):
                 # scanned as source. An advisory about a registry package that shares its name
                 # describes someone else's bytes -- React's `eslint-plugin-react-internal@link:`
                 # is not the npm package squatted under that name. Local is a judgement read from
-                # the scanned files, though, so a known-malicious namesake is said (notes/77).
+                # the scanned files, though, so a known-malicious namesake is said (notes/77) --
+                # except, in a repository, for a dependency declared by path: it resolves inside
+                # the tree and never from the registry, so the namesake cannot be what installs. A
+                # published package's path spec is its author's text and stays said.
+                if not ctx.package_distribution and AdvisoryDetector.declared_by_path(
+                    dependency.declared_spec or dependency.version
+                ):
+                    continue
                 shadowed = next(
                     (
                         a

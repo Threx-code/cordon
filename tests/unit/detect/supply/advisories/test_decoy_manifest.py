@@ -15,6 +15,8 @@ import json
 import tarfile
 from pathlib import Path
 
+import pytest
+
 from cordon_scanner import Scanner
 from cordon_scanner.detect.supply.advisories.detector import AdvisoryDetector
 from cordon_scanner.foundation.config.settings import Config
@@ -182,6 +184,19 @@ class TestInARepository:
         )
         assert KNOWN in DecoyKit.rules(tmp_path)
 
+    def test_a_nested_root_with_its_own_lockfile_does_not_silence_it(self, tmp_path) -> None:
+        # A directory with its own lockfile is a standalone workspace to its package manager, but
+        # nothing at the root resolves to it: the range is still fetched from the registry.
+        DecoyKit.tree(
+            tmp_path,
+            {
+                "package.json": DecoyKit.root(),
+                "examples/demo/package.json": DecoyKit.manifest(EVIL, "100.0.2"),
+                "examples/demo/pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+            },
+        )
+        assert KNOWN in DecoyKit.rules(tmp_path)
+
     def test_an_ordinary_workspace_stays_quiet(self, tmp_path) -> None:
         DecoyKit.tree(
             tmp_path,
@@ -194,3 +209,58 @@ class TestInARepository:
         )
         rules = DecoyKit.rules(tmp_path)
         assert KNOWN not in rules and SHADOW not in rules
+
+
+class TestAPathSpecInARepository:
+    """A repository's dependency declared by path resolves inside the tree and never from the
+    registry, so its malicious namesake cannot be what installs: no shadow warning (rushstack's
+    `workspace:*`, nx's `link:`, measured 194 of 195 on the 31-repo pair). Any other spec stays said."""
+
+    @staticmethod
+    def member_tree(root: Path, spec: str) -> Path:
+        return DecoyKit.tree(
+            root,
+            {
+                "package.json": DecoyKit.root(spec, workspaces=["packages/*"]),
+                "packages/calc/package.json": DecoyKit.manifest(EVIL, "100.0.2"),
+            },
+        )
+
+    @pytest.mark.parametrize(
+        "spec", ["workspace:*", "link:./packages/calc", "file:./packages/calc"]
+    )
+    def test_a_path_declared_member_is_not_warned(self, tmp_path, spec) -> None:
+        rules = DecoyKit.rules(TestAPathSpecInARepository.member_tree(tmp_path, spec))
+        assert KNOWN not in rules and SHADOW not in rules
+
+    # A URL or git spec names no registry release, so the registry record raises nothing on it before
+    # or after this change; the predicate test below keeps it outside the quieting.
+    @pytest.mark.parametrize("spec", [f"npm:{EVIL}@100.0.2", "catalog:", "^100.0.0"])
+    def test_a_spec_that_resolves_from_the_registry_is_still_said(self, tmp_path, spec) -> None:
+        rules = DecoyKit.rules(TestAPathSpecInARepository.member_tree(tmp_path, spec))
+        assert rules & {KNOWN, SHADOW}
+
+    @pytest.mark.parametrize(
+        ("spec", "by_path"),
+        [
+            ("workspace:*", True),
+            ("workspace:^1.0.0", True),
+            ("link:../x", True),
+            ("file:./x", True),
+            ("portal:./x", True),
+            ("https://example.invalid/x.tgz", False),
+            ("http://example.invalid/x.tgz", False),
+            ("git+ssh://example.invalid/x.git", False),
+            ("git://example.invalid/x.git", False),
+            ("github:o/r", False),
+            ("npm:other@1.0.0", False),
+            ("catalog:", False),
+            ("^1.0.0", False),
+            ("", False),
+            (None, False),
+            ("  workspace:*", False),
+            ("filed:x", False),
+        ],
+    )
+    def test_the_predicate_matches_only_the_four_path_prefixes(self, spec, by_path) -> None:
+        assert AdvisoryDetector.declared_by_path(spec) is by_path
