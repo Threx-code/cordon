@@ -34,6 +34,7 @@ from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+from cordon_scanner.foundation.paths import ContainerPaths
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -297,6 +298,7 @@ class ImportClosure:
         roots = sorted({str(PurePosixPath(path).parent) for path in hooks if path in sources})
 
         texts = dict(sources)
+        hidden = cls.hidden_modules(sources)
         while frontier and len(seen) < MAX_FILES:
             path, depth = frontier.pop()
             if depth >= MAX_DEPTH:
@@ -327,12 +329,49 @@ class ImportClosure:
                     if root != "."
                     for suffix in (".py", "/__init__.py")
                 ]
+                found = False
                 for candidate in [*cls.candidates(module, path), *rooted]:
                     normalised = re.sub(r"^(?:\./)+", "", candidate)
-                    if normalised in texts and normalised not in seen:
-                        seen.add(normalised)
-                        frontier.append((normalised, depth + 1))
+                    if normalised in texts:
+                        found = True
+                        if normalised not in seen:
+                            seen.add(normalised)
+                            frontier.append((normalised, depth + 1))
+                if not found:
+                    for reading in hidden.get(module, ()):
+                        if reading not in seen:
+                            seen.add(reading)
+                            frontier.append((reading, depth + 1))
         return seen
+
+    @staticmethod
+    def hidden_modules(sources: Iterable[str]) -> dict[str, list[str]]:
+        """The modules Python is shipped as under another name, by the module name they would be
+        imported as: `run.js#as-python.py`, a reading of Python bytes named `run.js`
+        (`ContentLanguage`), is module `run`, and inside `tools/` module `tools.run`.
+
+        An import resolving to no `.py` file of the scan resolves to one of these: `setup.py`'s
+        `import run` beside Python named `run.js`, in a zip in the package, was install-time code
+        the scan never linked (evasion suite B). Only readings, so a missing import is otherwise
+        still a third-party package: 306 of 42,000 PyPI sdists import a module they do not ship
+        (`imp`, `ez_setup`, `skbuild`), and none of them is this.
+        """
+        hidden: dict[str, list[str]] = {}
+        for path in sorted(sources):
+            original = ContainerPaths.read_from(path)
+            if original is None:
+                continue
+            inside = ContainerPaths.within_container(original)
+            directory, _, name = inside.rpartition("/")
+            stem = name.split(".", 1)[0]
+            if not stem.isidentifier():
+                continue
+            parts = [p for p in directory.split("/") if p]
+            for depth in range(len(parts) + 1):
+                prefix = parts[len(parts) - depth :]
+                if all(p.isidentifier() for p in prefix):
+                    hidden.setdefault(".".join([*prefix, stem]), []).append(path)
+        return hidden
 
 
 __all__ = ["ImportClosure"]

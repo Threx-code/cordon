@@ -800,20 +800,24 @@ class Ceilings:
         on_original = {
             (f.location.path, f.rule_id)
             for f in findings
-            if f.location.path and not f.location.path.endswith(Hooks.DEOBFUSCATED)
+            if f.location.path
+            and not f.location.path.endswith(Hooks.DEOBFUSCATED)
+            and ContainerPaths.read_from(f.location.path) is None
         }
-        return [
-            f
-            for f in findings
-            if not (
-                (f.location.path or "").endswith(Hooks.DEOBFUSCATED)
-                and (
+
+        def repeated(f: Finding) -> bool:
+            path = f.location.path or ""
+            if path.endswith(Hooks.DEOBFUSCATED):
+                return (
                     f.rule_id in Ceilings.RECOVERED_FORM
-                    or ((f.location.path or "")[: -len(Hooks.DEOBFUSCATED)], f.rule_id)
-                    in on_original
+                    or (path[: -len(Hooks.DEOBFUSCATED)], f.rule_id) in on_original
                 )
-            )
-        ]
+            # A second reading of a file's bytes (`Units.content_readings`) adds what the other
+            # language's rules see; what the file's own reading already says is said once.
+            original = ContainerPaths.read_from(path)
+            return original is not None and (original, f.rule_id) in on_original
+
+        return [f for f in findings if not repeated(f)]
 
 
 __all__ = ["Ceilings"]

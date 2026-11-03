@@ -489,11 +489,18 @@ class Hooks:
     @staticmethod
     def lifted_inherit(ctx: ScanContext) -> ScanContext:
         """A recovered unit runs when the file it came from runs: install hook, entry point,
-        consumer install, agent tool, or a published package's import entry."""
+        consumer install, agent tool, or a published package's import entry. So does a second
+        reading of a file's bytes as another language (`Units.content_readings`)."""
         tree = ctx.tree_paths
+        readings: dict[str, list[str]] = {}
+        for path in tree:
+            original = ContainerPaths.read_from(path)
+            if original is not None:
+                readings.setdefault(original, []).append(path)
 
         def grown(paths: frozenset[str]) -> frozenset[str]:
             more = {p + Hooks.DEOBFUSCATED for p in paths if p + Hooks.DEOBFUSCATED in tree}
+            more.update(r for p in paths for r in readings.get(p, ()))
             return paths | more if more else paths
 
         return replace(

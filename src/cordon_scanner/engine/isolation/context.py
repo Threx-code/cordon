@@ -300,6 +300,9 @@ class ContextRun:
 
         engine, units, acc = self.engine, self.units, self.acc
         units.extend(self.guarded("inline hooks", lambda: engine.units.inline_hooks(units), []))
+        units.extend(
+            self.guarded("content language", lambda: engine.units.content_readings(units), [])
+        )
         units.extend(self.guarded("deobfuscation", lambda: engine.units.deobfuscated(units), []))
         ctx = self.ctx
         self.ctx = self.guarded(

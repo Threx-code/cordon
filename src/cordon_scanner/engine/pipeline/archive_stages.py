@@ -201,6 +201,7 @@ class ArchiveStages:
         # lib/run.md, run by `node`, was still Markdown when the lift ran (modelling team's review).
         Hooks.hooked_languages(units)
         units.extend(self.engine.units.inline_hooks(units))
+        units.extend(self.engine.units.content_readings(units))
         units.extend(self.engine.units.deobfuscated(units))
         hook_paths, consumer_hooks, ci_scripts = Hooks.manifest_hook_paths(units, acc)
         # The same install-time picture a directory scan builds: filename hooks (`setup.py`, a
