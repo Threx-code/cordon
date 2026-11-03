@@ -6368,6 +6368,39 @@ class TestABundleWithoutABundleName:
         ]
 
 
+class TestOneLongLineDoesNotLowerTheFile:
+    """The fail-open audit (3 Nov): the minified judgement read the file's longest line, so one
+    long line appended anywhere -- a comment, a data blob -- took every credential in the file
+    below the gate (corpus/malicious/secret-split-literal's three tokens, with the judgement
+    forced). It reads the credential's own line now: in a bundle the credential is inside it."""
+
+    def test_a_credential_on_its_own_line_keeps_its_grade_beside_a_long_line(
+        self, tmp_path
+    ) -> None:
+        (tmp_path / "app.js").write_text(
+            'const TOKEN = "Xk9mQ2vB7wRtY4uZp1LsDy3Fz6Hj";\n' + "// " + "x" * 5000 + "\n",
+            encoding="utf-8",
+        )
+        assert [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001" and f.severity >= Severity.HIGH
+        ]
+
+    def test_a_credential_inside_the_long_line_is_still_build_output(self, tmp_path) -> None:
+        static = tmp_path / "static" / "js"
+        static.mkdir(parents=True)
+        (static / "main.js").write_text(
+            "// built\n" + TestABundleWithoutABundleName.LONG, encoding="utf-8"
+        )
+        hits = [
+            f
+            for f in Scanner().scan(tmp_path).findings
+            if f.rule_id == "SECRET.GENERIC.ASSIGNMENT.001"
+        ]
+        assert hits and all(f.severity <= Severity.MEDIUM for f in hits)
+
+
 class TestARouteIsNotAKey:
     """`Stirling-Tools/Stirling-PDF` declares its API surface as constants --
     `REMOVE_PASSWORD = "/api/v1/security/remove-password"` -- and `v1` was the only

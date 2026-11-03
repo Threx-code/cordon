@@ -171,6 +171,7 @@ class ArchiveStages:
                 )
                 acc.files_scanned += 1
                 acc.bytes_scanned += len(member_data)
+                acc.ledger_tree.append(member_path)
         except ArchiveError as exc:
             acc.incomplete(
                 OperationalFinding.build(
@@ -294,6 +295,8 @@ class ArchiveStages:
                         severity=Severity.MEDIUM,
                     )
                 )
+                # Every member of the slices never started, by path (item 38's review, change 2).
+                acc.ledger_unstarted.update(unit.path for unit in units[start:])
                 break
             found = self.engine.detection.parallel(
                 units[start : start + ARCHIVE_SLICE],
@@ -307,6 +310,7 @@ class ArchiveStages:
             )
             acc.add(found)
             if any(f.rule_id == "OPERATIONAL.SCAN.TIMEOUT" for f in found):
+                acc.ledger_unstarted.update(unit.path for unit in units[start + ARCHIVE_SLICE :])
                 break  # the pool stopped at the budget and said so; no slice after it
         return detectors
 

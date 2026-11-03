@@ -145,7 +145,17 @@ BUILD_RULES: tuple[ConfigRule, ...] = (
             # Not inside make's own messages: `$(warning "... run: curl -sfL <url> | sh")` tells a
             # person what to run, and make runs nothing of it (review 98 G6: cobra's Makefile,
             # vendored).
-            r"(?m)^(?![^\n]{0,400}?\$[({](?:warning|info|error)\b)[^\n]{0,400}?"
+            #
+            # Nor in what `echo` or `printf` prints (release item 68, fix 4: agentql-mcp's Makefile
+            # prints `curl ... | sh` for a person to read). Only a line that is nothing but the
+            # command and its words: quoted words with no `$` or backtick in double quotes, plain
+            # words with no shell operator, an optional redirect. At most 8 words of 120 characters,
+            # inside the pattern validator's bound on nested repeats; a longer line stays reported.
+            r"(?m)^(?![^\n]{0,400}?\$[({](?:warning|info|error)\b)"
+            r"(?![ \t]{0,40}@?-?(?:echo|printf)\b"
+            r"(?:[ \t]{1,8}(?:\"[^\"\n$`]{0,120}\"|'[^'\n]{0,120}'|[^\s;&|`$'\"<>]{1,120})){0,8}"
+            r"(?:[ \t]{0,8}>>?[ \t]{0,8}[^\s;&|`$]{1,200})?[ \t]{0,40}$)"
+            r"[^\n]{0,400}?"
             r"(?:(?:curl|wget)[^\n|]{0,200}\|[ \t]{0,32}(?:sudo[ \t]{1,8})?(?:ba)?sh"
             r"|(?:curl|wget)[^\n]{0,200}?(?:-o|--output|-O)\s{1,4}[^\s]{1,200}"
             r"[\s\S]{0,240}?chmod\s{1,4}(?:\+x|[0-7]?(?:[1357][0-7][0-7]|[0-7][1357][0-7]|[0-7][0-7][1357])))"

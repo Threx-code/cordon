@@ -43,7 +43,7 @@ from cordon_scanner.engine.isolation.expander import ArchiveExpander
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.archive_stages import ArchiveStages
 from cordon_scanner.engine.pipeline.constants import REPOSITORY_SCOPE
-from cordon_scanner.engine.pipeline.coverage import Coverage
+from cordon_scanner.engine.pipeline.coverage import Coverage, CoverageLedger
 from cordon_scanner.engine.pipeline.dependencies import Dependencies
 from cordon_scanner.engine.pipeline.detection import Detection
 from cordon_scanner.engine.pipeline.facts import TreeFacts
@@ -165,6 +165,11 @@ class Engine:
         archive's lockfiles as the project's own installs."""
         self._archive_stats[:] = [0, 0, 0]
         self._scanning_archive = False
+        # The binary readers' copy budget for this scan (notes/74): a locked directory its
+        # workers share, swept by liveness at the next start if this scan is killed.
+        from cordon_scanner.engine.isolation.expander import SpillDirectory
+
+        self._budget: SpillDirectory | None = SpillDirectory()
 
     def _end_scan(self) -> None:
         """What one scan holds is let go when it ends, whether it returned or raised."""
@@ -182,6 +187,10 @@ class Engine:
         Documents.end()
         # Expanded members' spill files (item 56 (c)), whatever the scan's outcome.
         self.expansion.end()
+        budget = getattr(self, "_budget", None)
+        if budget is not None:
+            budget.remove()
+            self._budget = None
         # The progress line is a partial line with no newline, so leaving it puts a traceback or
         # an error message on the same row as a half-drawn progress bar.
         self.progress.finish()
@@ -321,6 +330,7 @@ class Engine:
         self.stages.detect(units, acc, root, ctx, dependencies)
 
         self.stages.after_detection(dependencies, acc, units, ctx, inventory)
+        acc.add(CoverageLedger.findings(acc))
 
         ContextStage.report_unread(acc)
         acc.ended_late(ctx, REPOSITORY_SCOPE)
@@ -499,10 +509,8 @@ class Engine:
         # The context carries it too, as the directory path's does: the worker pool and the
         # detectors read the budget from there, and an archive's had none.
         ctx = replace(ctx, deadline=deadline if self.config.limits.total_timeout > 0 else None)
-        stubs: set[str] = set()  # members of an import library (sources/import_library.py)
-        image, members = self.expansion.source(  # item 56 (c)
-            path, acc, rejected, deadline, import_library=stubs
-        )
+        stubs: set[str] = set()  # sources/import_library.py's members; item 56 (c)
+        image, members = self.expansion.source(path, acc, rejected, deadline, import_library=stubs)
         self.archive_stages.read_members(
             members, deadline, acc, path, 0, units, rejected, image, import_library=stubs
         )
@@ -516,6 +524,7 @@ class Engine:
         dependencies, target_kind, ctx = self.archive_stages.dependencies(units, acc, image, ctx)
         dependencies, verdict = self.archive_stages.verdict(acc, ctx, image, units, dependencies)
         self.archive_stages.not_installed(acc, ctx)
+        acc.add(CoverageLedger.findings(acc))
         ContextStage.report_unread(acc)
         acc.ended_late(ctx, path.name)
         acc.explain_incomplete()
@@ -798,6 +807,8 @@ class Engine:
             rules=self.rules,
             repository=inventory,
             deadline=deadline,
+            # This scan's copy-budget directory (notes/74), or None outside a scan.
+            copy_budget=str(budget.path) if (budget := getattr(self, "_budget", None)) else None,
             # `projectbuild` is in neither. A Makefile is not an install hook -- see
             # `PROJECT_BUILD_FILENAMES` -- and it is not a pipeline either, so it gets
             # no context multiplier and is scored on what it actually contains.

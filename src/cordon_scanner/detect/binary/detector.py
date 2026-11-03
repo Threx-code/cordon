@@ -747,36 +747,50 @@ class BinaryDetector(BaseDetector):
     ) -> Iterable[Finding]:
         """What the binary can do, from the calls its own import table names (G12)."""
         from cordon_scanner.detect.binary.imports import ImportCapabilities, ImportReader
+        from cordon_scanner.detect.binary.whole_bytes import WholeBytes
 
-        table = ImportReader.read(content.raw)
-        if table is None:
-            return
-        binding = ImportCapabilities.is_binding(table)
-        # Cygwin's and MSYS2's POSIX layer builds `fork()` from another process's memory and
-        # threads, so it imports what an injector does (review 98, CDI: two PyPI packages ship it).
-        # Its name alone is free to take; its own `cygwin_internal` export is what makes it one.
-        runtime = (
-            content.path.rsplit("/", 1)[-1].lower() in {"cygwin1.dll", "msys-2.0.dll"}
-            and b"cygwin_internal" in content.raw
-        )
-        profile = ImportCapabilities.profile(table)
-        for rule_id, detail in ImportCapabilities.verdicts(profile, content.raw):
-            finding = self._finding(
-                rule_id, unit, ctx, f"{Prose.article(found.name)} {found.name} that {detail}"
+        # The whole binary, not its first max_file_bytes: an import table placed past a padding
+        # hid from this reader (note 74). Taken here, per member, and released when this returns.
+        with WholeBytes.held(unit, ctx.copy_budget, ctx.deadline) as whole:
+            if whole.gap:
+                yield WholeBytes.gap_finding(unit, "import reader", whole.gap)
+            data = whole.data
+            try:
+                table = ImportReader.read(data)
+            except Exception:  # a reader failing on the long copy reads the prefix, as before
+                if data is content.raw:
+                    raise
+                yield WholeBytes.gap_finding(unit, "import reader", "it could not be parsed whole")
+                data = content.raw
+                table = ImportReader.read(data)
+            if table is None:
+                return
+            binding = ImportCapabilities.is_binding(table)
+            # Cygwin's and MSYS2's POSIX layer builds `fork()` from another process's memory and
+            # threads, so it imports what an injector does (review 98, CDI: two PyPI packages ship it).
+            # Its name alone is free to take; its own `cygwin_internal` export is what makes it one.
+            runtime = (
+                content.path.rsplit("/", 1)[-1].lower() in {"cygwin1.dll", "msys-2.0.dll"}
+                and b"cygwin_internal" in data
             )
-            if (binding or runtime) and rule_id == "SUSPECT.BINARY.PROCESS_INJECTION.001":
-                # A language binding imports the API it wraps (FP-10): reported, not blocking.
-                because = (
-                    " It is a Python or Node binding, which imports the calls it exposes."
-                    if binding
-                    else " It is the Cygwin POSIX runtime, whose fork() is built from these calls."
+            profile = ImportCapabilities.profile(table)
+            for rule_id, detail in ImportCapabilities.verdicts(profile, data):
+                finding = self._finding(
+                    rule_id, unit, ctx, f"{Prose.article(found.name)} {found.name} that {detail}"
                 )
-                finding = replace(
-                    finding,
-                    severity=min(finding.severity, Severity.MEDIUM),
-                    message=finding.message + because,
-                )
-            yield finding
+                if (binding or runtime) and rule_id == "SUSPECT.BINARY.PROCESS_INJECTION.001":
+                    # A language binding imports the API it wraps (FP-10): reported, not blocking.
+                    because = (
+                        " It is a Python or Node binding, which imports the calls it exposes."
+                        if binding
+                        else " It is the Cygwin POSIX runtime, whose fork() is built from these calls."
+                    )
+                    finding = replace(
+                        finding,
+                        severity=min(finding.severity, Severity.MEDIUM),
+                        message=finding.message + because,
+                    )
+                yield finding
 
     def _content_findings(
         self, unit: FileUnit, ctx: ScanContext, content: FileContent, *, executable: bool = False

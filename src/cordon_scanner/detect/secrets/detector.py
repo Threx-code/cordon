@@ -787,7 +787,12 @@ class SecretDetector(BaseDetector):
             # js/main.js`, a bundle on one line of 300KB, and `**/*.min.js` cannot see
             # it. The capability detector has ceilinged on this since it measured the
             # same thing; this detector was comparing names only.
-            or content.longest_line > MINIFIED_LINE
+            #
+            # The credential's own line, not the file's longest: one long line anywhere,
+            # written by whoever wrote the file, lowered every credential in it (the fail-open
+            # audit, 3 Nov: an appended line takes corpus/malicious/secret-split-literal's three
+            # tokens below the gate). In a bundle the credential sits inside the long line.
+            or SecretDetector._line_length(content, line) > MINIFIED_LINE
         )
         ceilinged = rule_material or fixture or documentation or generated or extractor
         ceiling = RULE_MATERIAL_CEILING if rule_material else FIXTURE_CEILING
@@ -806,6 +811,16 @@ class SecretDetector(BaseDetector):
         return self._scored(
             caveat, confidence, content, ctx, end, line, note, raw, severity, spec, start, unit
         )
+
+    @staticmethod
+    def _line_length(content: FileContent, line: int) -> int:
+        """Bytes on this 1-based line, its newline and a CRLF's carriage return left out."""
+        starts = content.line_starts
+        first = starts[min(max(line, 1), len(starts)) - 1]
+        end = starts[line] - 1 if line < len(starts) else len(content.raw)
+        if end > first and content.raw[end - 1 : end] == b"\r":
+            end -= 1
+        return max(0, end - first)
 
     @staticmethod
     def _caveat(

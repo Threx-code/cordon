@@ -297,6 +297,14 @@ class TestVerdicts:
         ]
         assert self.rules(["GetAsyncKeyState", *[f"f{i}" for i in range(20)]]) == []
 
+    def test_keylogging_with_the_network_blocks(self) -> None:
+        # MEDIUM until 3 Nov: 12 bar-1 misses carried it, no benign npm unit carried it at all.
+        from cordon_scanner.detect.binary.rule_declarations import DECLARED_RULES
+        from cordon_scanner.foundation.models import Severity
+
+        rule = next(r for r in DECLARED_RULES if r.id == "SUSPECT.BINARY.KEYLOGGER.001")
+        assert rule.severity is Severity.HIGH
+
     def test_an_ordinary_program_draws_nothing(self) -> None:
         assert (
             self.rules(

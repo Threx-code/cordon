@@ -393,6 +393,9 @@ class CacheSignature:
         left out: it is where this run unpacked or found the tree, a temporary directory for an
         archive, and what is under it is the files' own business."""
         facts = ctx.facts()
+        facts.pop(
+            "copy_budget", None
+        )  # where this run keeps its budget slots, not a fact of the files
         repository = facts.get("repository")
         if repository is not None and is_dataclass(repository):
             facts["repository"] = replace(cast("Any", repository), root="")
