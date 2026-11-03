@@ -21,6 +21,7 @@ reported as verified. The strong form runs this from a separate, trusted copy ag
 from __future__ import annotations
 
 import base64
+import contextlib
 import csv
 import hashlib
 import io
@@ -490,4 +491,69 @@ class ReleaseCheck:
         )
 
 
-__all__ = ["DISTRIBUTION", "InstallRecord", "InstallReport", "InstallState", "ReleaseCheck"]
+class VerifiedRecord:
+    """What a scan says about the installation: only what `verify` found, sealed in this install's key
+    directory (`StatePaths.key_dir`, which no environment variable moves), and only while the version
+    and the location it verified are the ones running. A scan never claims a check it did not do."""
+
+    LABEL: Final = "install-verified"
+    NAME: Final = "install-verified.json"
+
+    @classmethod
+    def path(cls) -> Path:
+        from cordon_scanner.foundation.paths import StatePaths
+
+        return StatePaths.key_dir() / cls.NAME
+
+    @classmethod
+    def write(cls, report: InstallReport, at: str) -> None:
+        """Seal a VERIFIED result; any other result removes an earlier record."""
+        import json
+
+        from cordon_scanner.foundation.files.seal import LocalSeal
+
+        target = cls.path()
+        if report.state is not InstallState.VERIFIED:
+            with contextlib.suppress(OSError):
+                target.unlink()
+            return
+        document = {
+            "version": report.version,
+            "root": report.root,
+            "reason": report.reason,
+            "at": at,
+        }
+        with contextlib.suppress(OSError):
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(json.dumps(LocalSeal.sealed(cls.LABEL, document)), encoding="utf-8")
+
+    @classmethod
+    def line(cls) -> str | None:
+        """'installation verified at <time> (...)', or None: no record, a seal that does not hold, or
+        a version or location other than the running installation's."""
+        import json
+
+        from cordon_scanner.foundation.files.seal import LocalSeal
+
+        try:
+            document = json.loads(cls.path().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        if not LocalSeal.valid(cls.LABEL, document):
+            return None
+        dist = InstallRecord.find(None)
+        if dist is None or document.get("version") != dist.version:
+            return None
+        if document.get("root") != str(Path(str(dist.locate_file("")))):
+            return None
+        return f"installation verified at {document.get('at')} ({document.get('reason')})"
+
+
+__all__ = [
+    "DISTRIBUTION",
+    "InstallRecord",
+    "InstallReport",
+    "InstallState",
+    "ReleaseCheck",
+    "VerifiedRecord",
+]

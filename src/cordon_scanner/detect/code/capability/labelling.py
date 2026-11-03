@@ -672,8 +672,8 @@ class Labelling:
             content.path.lower().endswith((".yaml", ".yml"))
             and not content.is_binary
             and (
-                cls._DETECTION_RULES.search(content.text[:20_000]) is not None
-                or all(p.search(content.text[:20_000]) for p in cls._SIGMA)
+                cls._DETECTION_RULES.search(content.text_head(20_000)) is not None
+                or all(p.search(content.text_head(20_000)) for p in cls._SIGMA)
             )
         )
 

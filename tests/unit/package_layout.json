@@ -490,6 +490,7 @@
   "foundation/text/columns": "foundation/text/columns",
   "foundation/text/comments": "foundation/text/comments",
   "foundation/text/delimited": "foundation/text/delimited",
+  "foundation/text/encoding": "foundation/text/encoding",
   "foundation/text/literals": "foundation/text/literals",
   "foundation/text/prose": "foundation/text/prose",
   "foundation/text/redact": "foundation/text/redact",
@@ -1153,7 +1154,9 @@
   "test_zip_views_agree.py": "sources",
   "test_zstd.py": "intel/store",
   "test_build_backend.py": "repository/release",
-  "test_native_build.py": "repository/release"
+  "test_native_build.py": "repository/release",
+  "test_cross_file_flows.py": "engine/isolation",
+  "test_parameter_command.py": "detect/code"
  },
  "shims": {
   "intel/provenance/_der": {

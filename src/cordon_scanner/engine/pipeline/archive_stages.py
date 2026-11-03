@@ -336,13 +336,18 @@ class ArchiveStages:
     ) -> None:
         """A rule file reading the scanner's facts, matched over the members now that they exist,
         before every step after detection (`engine/pipeline/facts`)."""
-        from cordon_scanner.engine.pipeline.facts import ScanFactsGathering
+        from cordon_scanner.engine.pipeline.facts import CrossFileFlows, ScanFactsGathering
 
-        if acc.out_of_time(ctx, REPOSITORY_SCOPE, "the rule file's deferred pass"):
+        if acc.out_of_time(ctx, REPOSITORY_SCOPE, "the cross-file flows"):
             return
         content = [
             d for d in detectors if not (d.requires.dependencies and d.requires.content is False)
         ]
+        CrossFileFlows.regrade(
+            self.engine, content, units, acc, path.parent, ctx, carry_content=True, where=path.name
+        )
+        if acc.out_of_time(ctx, REPOSITORY_SCOPE, "the rule file's deferred pass"):
+            return
         ScanFactsGathering.deferred(
             self.engine, content, units, acc, path.parent, ctx, carry_content=True, where=path.name
         )

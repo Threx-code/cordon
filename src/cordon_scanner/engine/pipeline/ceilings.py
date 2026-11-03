@@ -381,7 +381,7 @@ class Ceilings:
             if name == "SKILL.md" or SourcePaths.is_editor_extension(unit.path):
                 return True
             if name in ("package.json", "pyproject.toml", "requirements.txt", "Cargo.toml") and (
-                Ceilings._MCP_SDK_DECLARED.search(unit.content.text[:100_000])
+                Ceilings._MCP_SDK_DECLARED.search(unit.content.text_head(100_000))
             ):
                 return True
         return False

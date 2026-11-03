@@ -96,7 +96,7 @@ class History:
             found = pattern.search(unit.path)
             if not found:
                 continue
-            text = unit.content.text[:20000]
+            text = unit.content.text_head(20000)
             if unit.path.endswith(".gz"):
                 # A gem's `metadata.gz`: the gemspec as YAML, gzipped, read bounded.
                 import gzip

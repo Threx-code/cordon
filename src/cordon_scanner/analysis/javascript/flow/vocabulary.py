@@ -191,7 +191,15 @@ _ARGV_CALLS: Final = frozenset({"spawn", "spawnSync", "execFile", "execFileSync"
 #: ALLOWLIST: every program not here runs, or may run, what it is given (LOLBins, wrappers, package
 #: runners, git's `--upload-pack`), so the default is code. A row is added with a measured benign
 #: case and a test. Writing where curl, wget, tar or unzip put a file is the write rules' to judge.
+#: `local` (note 78: ffmpeg, ffprobe; the Baileys thumbnailer, 38 of 59 benign releases blocked):
+#: arguments are data only while no server or decoded value reaches them. Unlike `any`, a reply in
+#: an argument stays a flow: ffmpeg's output path is a file-write primitive (`-y`, a caller-chosen
+#: output, `-f data`), and concat:, subfile:, file:, movie= and HLS playlists read local files
+#: (exfiltration-adjacent, accepted by the outer layer's review); no ffmpeg option or protocol is
+#: known to run a shell command, and one found must be excluded here by name.
 DATA_ARGS: Final[dict[str, str]] = {
+    "ffmpeg": "local",
+    "ffprobe": "local",
     "taskkill": "any",
     "kill": "any",
     "which": "any",
@@ -203,6 +211,12 @@ DATA_ARGS: Final[dict[str, str]] = {
     "open": "link",
     "xdg-open": "link",
 }
+#: What the literal parts of a shell command string must not hold for its interpolations to be one
+#: word each (note 78's shell-string arm): sh's and cmd's separators, substitutions, redirections,
+#: grouping, escapes, quotes and globs.
+SHELL_META: Final = frozenset(";&|`$()<>\n\r\\^%!\"'{}*?[]~#")
+#: The process calls that take a shell command line.
+SHELL_CALLS: Final = frozenset({"exec", "execSync"})
 #: Windows executable suffixes a program's name drops for DATA_ARGS. `.bat` and `.cmd` are not
 #: dropped: Windows runs them through cmd.exe, which parses the arguments (the BatBadBut class), so
 #: they never match a row.

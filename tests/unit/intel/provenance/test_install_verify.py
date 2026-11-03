@@ -13,7 +13,13 @@ import py_compile
 from pathlib import Path
 from typing import ClassVar
 
-from cordon_scanner.intel.provenance.install_verify import InstallRecord, InstallState, ReleaseCheck
+from cordon_scanner.intel.provenance.install_verify import (
+    InstallRecord,
+    InstallReport,
+    InstallState,
+    ReleaseCheck,
+    VerifiedRecord,
+)
 from support import ROOT as REPO
 
 
@@ -210,3 +216,68 @@ class TestTheReleaseCheck:
             ReleaseCheck.fetch("https://example.invalid/x.whl")
         with pytest.raises(OSError):
             ReleaseCheck.fetch("http://pypi.org/x")
+
+
+class TestWhatAScanSays:
+    """A scan says 'installation verified' only from a sealed record `verify` wrote for the running
+    version and location, never otherwise (item 75)."""
+
+    @staticmethod
+    def running(monkeypatch, tmp_path, version: str = "9.9.9"):
+        root = InstallKit.install(tmp_path / "sp")
+        monkeypatch.setattr(
+            InstallRecord, "find", staticmethod(lambda target: _Dist(root, version))
+        )
+        monkeypatch.setattr(
+            VerifiedRecord, "path", classmethod(lambda cls: tmp_path / "key" / cls.NAME)
+        )
+        return root
+
+    def test_a_verified_check_is_said(self, monkeypatch, tmp_path) -> None:
+        root = self.running(monkeypatch, tmp_path)
+        report = InstallReport(
+            InstallState.VERIFIED, version="9.9.9", root=str(root), reason="signed"
+        )
+        VerifiedRecord.write(report, "2026-11-03 11:30 UTC")
+        assert VerifiedRecord.line() == "installation verified at 2026-11-03 11:30 UTC (signed)"
+
+    def test_nothing_is_said_without_a_check(self, monkeypatch, tmp_path) -> None:
+        self.running(monkeypatch, tmp_path)
+        assert VerifiedRecord.line() is None
+
+    def test_a_forged_record_is_not_said(self, monkeypatch, tmp_path) -> None:
+        import json
+
+        root = self.running(monkeypatch, tmp_path)
+        path = VerifiedRecord.path()
+        path.parent.mkdir(parents=True)
+        forged = {
+            "version": "9.9.9",
+            "root": str(root),
+            "reason": "x",
+            "at": "now",
+            "_seal": "0" * 64,
+        }
+        path.write_text(json.dumps(forged), encoding="utf-8")
+        assert VerifiedRecord.line() is None
+
+    def test_another_version_is_not_said(self, monkeypatch, tmp_path) -> None:
+        root = self.running(monkeypatch, tmp_path)
+        report = InstallReport(InstallState.VERIFIED, version="9.9.8", root=str(root), reason="s")
+        VerifiedRecord.write(report, "t")
+        assert VerifiedRecord.line() is None
+
+    def test_a_later_failed_check_withdraws_the_record(self, monkeypatch, tmp_path) -> None:
+        root = self.running(monkeypatch, tmp_path)
+        good = InstallReport(InstallState.VERIFIED, version="9.9.9", root=str(root), reason="s")
+        VerifiedRecord.write(good, "t")
+        VerifiedRecord.write(InstallReport(InstallState.MODIFIED, version="9.9.9"), "t")
+        assert VerifiedRecord.line() is None
+
+
+class _Dist:
+    def __init__(self, root: Path, version: str) -> None:
+        self.root, self.version = root, version
+
+    def locate_file(self, name: str) -> Path:
+        return self.root / name

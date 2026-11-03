@@ -180,11 +180,14 @@ class ParallelScanner:
     #: and every worker it forks have it without building one (`_prepare`).
     _template_engine: ClassVar[Any] = None
 
-    #: What each worker may use (item 28). The memory limit is 0 (not set) until it is measured as
-    #: a constant on the heavy units (review 28: never a share of the machine). The CPU budget is
-    #: ten times the worst measured rate (106 us a byte, the chain matcher) with a floor: a backstop
-    #: that a benign unit on a two to three times slower machine does not reach.
-    BOUNDS: ClassVar[Bounds] = Bounds(memory_bytes=0, cpu_floor=300.0, cpu_per_byte=1.1e-3)
+    #: What each worker may use (item 28). The memory limit is a constant, never a share of the
+    #: machine (review 28), measured on the seven gate heavy units and the 13,551-member package
+    #: (note 80, 3 Nov): the largest worker's address-space peak was 1,691 MB (cdktn), then 1,108,
+    #: 726, 586, 490, 408, 319 and 214 MB; 4 GiB is 2.4 times the worst. A unit past it raises
+    #: MemoryError in its own worker and ends as a named gap. The CPU budget is ten times the worst
+    #: measured rate (106 us a byte, the chain matcher) with a floor: a backstop that a benign unit
+    #: on a two to three times slower machine does not reach.
+    BOUNDS: ClassVar[Bounds] = Bounds(memory_bytes=4 << 30, cpu_floor=300.0, cpu_per_byte=1.1e-3)
 
     @staticmethod
     def worker_count(requested: int, file_count: int, total_bytes: int = 0) -> int:
@@ -205,7 +208,11 @@ class ParallelScanner:
         if file_count < 2 or estimate < MIN_FILES_FOR_PARALLEL * AVERAGE_FILE_BYTES:
             return 1
 
-        available = requested if requested > 0 else ParallelScanner.available_cpus()
+        available = (
+            requested
+            if requested > 0
+            else min(ParallelScanner.available_cpus(), ParallelScanner.memory_workers())
+        )
         # Never more workers than the work pays for, and never more than files. The comment
         # claimed this and the code did not do it, so a repository just over the threshold
         # started a process per core to share one batch.
@@ -230,6 +237,52 @@ class ParallelScanner:
         if quota is not None:
             count = min(count, max(1, math.ceil(quota)))
         return max(1, count)
+
+    #: What the scan's own process is counted at beside its workers (note 80): its resident peak on
+    #: the heavy units was at most 718 MB (cdktn) once it stopped decoding members, so 1 GiB.
+    PARENT_RESERVE: ClassVar[int] = 1 << 30
+    #: What one worker is counted at: 1 GiB, above six of the eight measured units' largest worker
+    #: (at most 710 MB resident) and below two (1,089 and 1,668 MB). Counted at its 4 GiB limit a
+    #: 16 GB machine would start three workers. A heavier package that runs the memory out loses a
+    #: worker, never the scan (`Limits.killed_first`), and its unit runs again alone.
+    WORKER_BUDGET: ClassVar[int] = 1 << 30
+
+    @staticmethod
+    def memory_workers(cgroup: str = "/sys/fs/cgroup") -> int:
+        """How many workers the memory this process may use holds (note 80): (limit - the parent's
+        reserve) / a worker's budget, at least one. Without the count the kernel's out-of-memory
+        killer chose: under a 2 GB container eight workers and the parent took 5.8 GB, and the largest
+        process, the parent, was killed with no report (exit 137) rather than the scan ending
+        incomplete. Unlimited (no budget set, or no limit found) is no bound."""
+        budget = ParallelScanner.WORKER_BUDGET
+        limit = ParallelScanner.available_memory(cgroup)
+        if budget <= 0 or limit is None:
+            return MAX_WORKERS
+        return max(1, (limit - ParallelScanner.PARENT_RESERVE) // budget)
+
+    @staticmethod
+    def available_memory(cgroup: str = "/sys/fs/cgroup") -> int | None:
+        """The bytes this process may use: the cgroup's limit (v2 `memory.max`, v1
+        `memory.limit_in_bytes`), else the machine's physical memory; None when neither is known."""
+        root = Path(cgroup)
+        for name in ("memory.max", "memory/memory.limit_in_bytes"):
+            try:
+                value = (root / name).read_text(encoding="ascii").strip()
+            except OSError:
+                continue
+            if value == "max":
+                break
+            try:
+                limit = int(value)
+            except ValueError:
+                continue
+            if 0 < limit < 1 << 60:  # v1 writes "no limit" as a huge number, not "max"
+                return limit
+            break
+        try:
+            return int(os.sysconf("SC_PHYS_PAGES")) * int(os.sysconf("SC_PAGE_SIZE"))
+        except (AttributeError, ValueError, OSError):
+            return None
 
     @staticmethod
     def _cgroup_quota(cgroup: str) -> float | None:
@@ -702,9 +755,10 @@ class ParallelScanner:
         ParallelScanner._verdict_facts(unit, ctx)
         # What the parent's profile, intent and reached-flow steps read of the file (item 56, sites
         # 9 and 10), with the engine's labelling detector as the parent picks it, enabled or not.
-        from cordon_scanner.engine.isolation.analysis_facts import WorkerAnalysis
+        from cordon_scanner.engine.isolation.analysis_facts import WorkerAnalysis, WorkerSummaries
 
         WorkerAnalysis.produce(unit, ctx, tuple(engine.detectors))
+        WorkerSummaries.produce(unit)
         return produced, windowed, intact, (acc.complete, tuple(acc.content_gaps))
 
     @staticmethod

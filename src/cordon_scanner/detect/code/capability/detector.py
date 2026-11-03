@@ -133,14 +133,25 @@ class FixedJsSpawns:
         """The spawn hits on lines whose call runs a DATA_ARGS program with its arguments where
         its rule says they are data, marked `fixed` (note 44): the JavaScript twin of Python's
         `fixed_command`, read by `CompositeEvaluator.fixed_lines`, which still keeps a spawn whose
-        command carries a shell capability of its own."""
+        command carries a shell capability of its own. A shell-string spawn built from its
+        function's parameters is marked `parameter_command` (note 78), for grading to lower."""
         if not any(h.capability is Capability.SPAWN for h in hits):
             return hits
         lines = JsFlow.fixed_spawn_lines(content.text)
-        if not lines:
+        if lines:
+            hits = [
+                replace(h, fixed=True)
+                if h.capability is Capability.SPAWN and h.line in lines
+                else h
+                for h in hits
+            ]
+        commands = JsFlow.parameter_command_lines(content.text)
+        if not commands:
             return hits
         return [
-            replace(h, fixed=True) if h.capability is Capability.SPAWN and h.line in lines else h
+            replace(h, parameter_command=True)
+            if h.capability is Capability.SPAWN and h.line in commands and not h.fixed
+            else h
             for h in hits
         ]
 
@@ -349,6 +360,14 @@ class CapabilityDetector(BaseDetector):
         hits.extend(JavaScriptCapabilities.js_downloaded_and_run(content, unit.language))
         hits.extend(JavaScriptCapabilities.js_wallet_secret_sent(content, unit.language))
         hits.extend(JavaScriptCapabilities.js_flows(content, unit.language))
+        crossing = (ctx.cross_file_flows or {}).get(unit.path)
+        if crossing:
+            held = {(h.rule_id, h.line) for h in hits}
+            hits.extend(
+                h
+                for h in JavaScriptCapabilities.js_cross_file_flows(content, crossing)
+                if (h.rule_id, h.line) not in held
+            )
         from cordon_scanner.detect.code.js_campaigns import JsCampaigns
 
         hits.extend(JsCampaigns.channel_follow(content, unit.language))

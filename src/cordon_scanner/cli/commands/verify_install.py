@@ -56,6 +56,7 @@ class VerifyInstallCommand:
             InstallRecord,
             InstallState,
             ReleaseCheck,
+            VerifiedRecord,
         )
 
         target = Path(args.target) if getattr(args, "target", None) else None
@@ -72,6 +73,12 @@ class VerifyInstallCommand:
             except (OSError, ValueError) as exc:
                 raise ConfigError(f"cannot read the release files: {exc}") from exc
             report = ReleaseCheck.check(report, target, provenance=provenance, wheel=wheel_bytes)
+        if target is None:
+            # Only a check of the running installation speaks for later scans of it.
+            import datetime as dt
+
+            stamp = dt.datetime.now(dt.UTC).strftime("%Y-%m-%d %H:%M UTC")
+            VerifiedRecord.write(report, stamp)
         code = {
             InstallState.VERIFIED: ExitCode.CLEAN,
             InstallState.MODIFIED: ExitCode.FINDINGS,

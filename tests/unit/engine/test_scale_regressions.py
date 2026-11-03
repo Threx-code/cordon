@@ -62,6 +62,89 @@ class TestOneLanguageEverywhere:
         )
         assert LanguageRegistry.of_file("pkg.tgz!package/bin/run", script) == "javascript"
 
+    def test_identifying_a_member_never_holds_its_whole_text(self) -> None:
+        # Note 80: the parent identified every member of a 13,551-member package by decoding it
+        # whole, and `text` kept all 590 MB of it for the scan.
+        for path in ("pkg.tgz!package/a.js", "pkg.tgz!package/README", "pkg.tgz!package/x.txt"):
+            content = FileContent.from_bytes(path, b"import os\nprint(os.name)\n" * 50_000)
+            LanguageRegistry.of_file(path, content)
+            assert "text" not in content.__dict__
+
+    @pytest.mark.parametrize("kind", ["npm", "wheel"])
+    def test_the_scan_s_own_process_decodes_no_member_whole(
+        self, tmp_path, monkeypatch, kind
+    ) -> None:
+        # Note 80: what the parent decodes, it holds for the scan; a package of 13,551 members held
+        # 590 MB in language detection, then 532 MB in the MCP server-source check (both prefix
+        # reads). The workers decode; the parent reads names, bytes' starts and facts.
+        import io
+        import tarfile
+        import zipfile
+        from functools import cached_property
+
+        if kind == "npm":
+            archive = tmp_path / "pkg.tgz"
+            members = {"package/package.json": b'{"name":"p","version":"1.0.0","main":"index.js"}'}
+            members |= {
+                f"package/lib/m{i}.js": b"module.exports = %d;\n" % i * 300 for i in range(80)
+            }
+            members["package/README"] = b"plain words\n" * 400
+            with tarfile.open(archive, "w:gz") as tar:
+                for name, data in members.items():
+                    info = tarfile.TarInfo(name)
+                    info.size = len(data)
+                    tar.addfile(info, io.BytesIO(data))
+        else:
+            archive = tmp_path / "p-1.0.0-py3-none-any.whl"
+            members = {
+                "p-1.0.0.dist-info/METADATA": b"Metadata-Version: 2.1\nName: p\nVersion: 1.0.0\n\n"
+                + b"words\n" * 900,
+                "p-1.0.0.dist-info/WHEEL": b"Wheel-Version: 1.0\nRoot-Is-Purelib: true\n",
+            }
+            members |= {f"p/m{i}.py": b"VALUE = %d\n" % i * 400 for i in range(80)}
+            with zipfile.ZipFile(archive, "w") as whl:
+                for name, data in members.items():
+                    whl.writestr(name, data)
+        decoded: list[str] = []
+        owner = next(c for c in FileContent.__mro__ if "text" in c.__dict__)
+        original = owner.__dict__["text"]
+
+        def counting(self):
+            if self.size > 4096:
+                decoded.append(self.path)
+            return original.func(self)
+
+        watched = cached_property(counting)
+        watched.__set_name__(owner, "text")
+        monkeypatch.setattr(owner, "text", watched)
+        ScaleHelpers.scan(archive, limits=Config.default().limits.merged(max_workers=2))
+        assert not decoded, decoded[:5]
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "\u00e9".encode() * 9000,  # two-byte characters across the sniff's end
+            "\U0001f600".encode() * 9000,  # four-byte characters
+            b"\xef\xbb\xbf" + b"def f():\n    return 1\n" * 900,  # a byte-order mark
+            "def f():\n    return 1\n".encode("utf-16") * 900,  # UTF-16
+            b"\xff\xfe" + b"no NULs here " * 900,  # a mark UTF-16 does not bear out
+            b"ok \xff\xfe bad \xc3 bytes\n" * 900,  # invalid UTF-8
+        ],
+    )
+    def test_the_sniff_reads_what_the_whole_text_starts_with(self, raw: bytes) -> None:
+        content = FileContent.from_bytes("x", raw)
+        head = content.text_head(LanguageRegistry.MAX_SNIFF_BYTES)
+        assert head == content.text[: LanguageRegistry.MAX_SNIFF_BYTES]
+
+    def test_the_answer_is_identify_s(self) -> None:
+        for raw in (b"#!/bin/sh\necho hi\n", b"import os\nimport sys\ndef f():\n    pass\n" * 40):
+            for path in ("bin/run", "a.py", "notes"):
+                content = FileContent.from_bytes(path, raw)
+                expected = LanguageRegistry.identify(
+                    path, shebang=content.shebang, text=content.text
+                )
+                assert LanguageRegistry.of_file(path, FileContent.from_bytes(path, raw)) == expected
+
     def test_a_parallel_image_scan_is_the_serial_one(self, tmp_path) -> None:
         files: dict[str, bytes | None] = {
             f"app/module{i}.js": f"module.exports = {i};\n".encode() * 200 for i in range(600)

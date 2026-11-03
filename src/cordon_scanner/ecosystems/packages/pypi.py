@@ -107,7 +107,9 @@ class PypiEcosystem(PypiLockfiles, BaseEcosystem):
             if member.endswith(("/PKG-INFO", ".dist-info/METADATA")) and member.count("/") == 1:
                 return frozenset(
                     re.sub(r"[-_.]+", "-", found.group(1)).lower()
-                    for found in PypiEcosystem._REQUIRES_DIST.finditer(file.content.text[:200_000])
+                    for found in PypiEcosystem._REQUIRES_DIST.finditer(
+                        file.content.text_head(200_000)
+                    )
                     if "extra ==" not in found.group(2)
                 )
         return frozenset()

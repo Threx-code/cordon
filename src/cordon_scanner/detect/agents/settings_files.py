@@ -312,7 +312,7 @@ class SettingsFileFindings:
     @classmethod
     def command_permissions(cls, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
         """A slash command, subagent or skill that pre-approves any shell command."""
-        head = unit.content.text[:4000]
+        head = unit.content.text_head(4000)
         if not head.startswith("---"):
             return
         found = cls._ANY_BASH.search(head.split("\n---", 1)[0])

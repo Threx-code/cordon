@@ -12,6 +12,8 @@ hardware is a flaky test rather than a useful one.
 from __future__ import annotations
 
 import os
+from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -459,6 +461,83 @@ class TestAvailableCpus:
 
     def test_unreadable_cgroup_files_fall_back(self, tmp_path) -> None:
         assert ParallelScanner.available_cpus(self.cgroup(tmp_path, "garbage")) >= 1
+
+
+class TestTheMemoryAPoolMayUse:
+    """Note 80: an automatic pool is sized to the memory the process may use as well as its cores, so
+    the parent and its workers fit the limit and a unit past its own ends as a named gap."""
+
+    GB: ClassVar[int] = 1 << 30
+
+    @staticmethod
+    def cgroup(tmp_path, v2: str | None = None, v1: str | None = None) -> str:
+        if v2 is not None:
+            (tmp_path / "memory.max").write_text(v2 + "\n", encoding="ascii")
+        if v1 is not None:
+            (tmp_path / "memory").mkdir()
+            (tmp_path / "memory" / "memory.limit_in_bytes").write_text(v1 + "\n", encoding="ascii")
+        return str(tmp_path)
+
+    def test_a_container_limit_is_read(self, tmp_path) -> None:
+        assert (
+            ParallelScanner.available_memory(self.cgroup(tmp_path, v2=str(2 * self.GB)))
+            == 2 * self.GB
+        )
+        (tmp_path / "v1").mkdir()
+        assert (
+            ParallelScanner.available_memory(self.cgroup(tmp_path / "v1", v1=str(self.GB)))
+            == self.GB
+        )
+
+    def test_no_limit_is_the_machine(self, tmp_path) -> None:
+        for spec in ({"v2": "max"}, {"v1": str(1 << 62)}, {}):
+            root = tmp_path / str(len(spec)) / (next(iter(spec)) if spec else "none")
+            root.mkdir(parents=True)
+            found = ParallelScanner.available_memory(self.cgroup(root, **spec))
+            assert found is None or found > self.GB
+
+    def test_two_gigabytes_hold_fewer_workers_than_the_cores(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setattr(ParallelScanner, "PARENT_RESERVE", self.GB)
+        monkeypatch.setattr(ParallelScanner, "WORKER_BUDGET", self.GB // 2)
+        root = self.cgroup(tmp_path, v2=str(2 * self.GB))
+        assert ParallelScanner.memory_workers(root) == 2
+        monkeypatch.setattr(ParallelScanner, "available_cpus", staticmethod(lambda: 12))
+        monkeypatch.setattr(ParallelScanner, "memory_workers", staticmethod(lambda: 2))
+        assert ParallelScanner.worker_count(0, 10_000, 1 << 34) == 2
+
+    def test_less_than_the_reserve_still_starts_one(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setattr(ParallelScanner, "PARENT_RESERVE", 4 * self.GB)
+        monkeypatch.setattr(ParallelScanner, "WORKER_BUDGET", self.GB)
+        assert ParallelScanner.memory_workers(self.cgroup(tmp_path, v2=str(self.GB))) == 1
+
+    def test_an_explicit_worker_count_is_kept(self, monkeypatch) -> None:
+        monkeypatch.setattr(ParallelScanner, "memory_workers", staticmethod(lambda: 1))
+        assert ParallelScanner.worker_count(6, 10_000, 1 << 34) == 6
+
+    def test_the_constants_are_measured(self) -> None:
+        # Set from the heavy units' measurement (notes/80): never left unbounded.
+        assert ParallelScanner.WORKER_BUDGET > 0
+        assert ParallelScanner.PARENT_RESERVE > 0
+        assert ParallelScanner.BOUNDS.memory_bytes >= 2 * 1691 << 20  # twice the worst measured
+        assert ParallelScanner.BOUNDS.memory_bytes >= ParallelScanner.WORKER_BUDGET
+
+    def test_a_worker_is_the_out_of_memory_killer_s_first_choice(self) -> None:
+        import subprocess
+        import sys
+
+        from cordon_scanner.engine.isolation.supervisor import Limits
+
+        if not Path("/proc/self/oom_score_adj").exists():
+            pytest.skip("Linux's out-of-memory score")
+        code = (
+            "from cordon_scanner.engine.isolation.supervisor import Limits\n"
+            "print(Limits.killed_first(), open('/proc/self/oom_score_adj').read().strip())\n"
+        )
+        out = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True, check=True
+        )
+        assert out.stdout.split() == ["enforced", "1000"]
+        assert Limits.OOM_SCORE == "/proc/self/oom_score_adj"
 
 
 class TestThePoolStopsAtTheDeadline(ParallelFixtures):

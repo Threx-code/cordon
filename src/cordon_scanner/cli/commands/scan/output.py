@@ -164,5 +164,14 @@ class ScanOutput:
                     buffer.write(chunk)
                 buffer.flush()
 
+        if not quiet:
+            # What `verify` found about this installation, if it checked it (item 75); stderr, so a
+            # report on stdout is unchanged, and nothing at all when no check holds.
+            from cordon_scanner.intel.provenance.install_verify import VerifiedRecord
+
+            verified = VerifiedRecord.line()
+            if verified:
+                print(f"{PROGRAM}: {verified}", file=sys.stderr)
+
 
 __all__ = ["ScanOutput"]

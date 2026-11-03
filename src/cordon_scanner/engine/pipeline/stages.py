@@ -25,7 +25,7 @@ from cordon_scanner.engine.cache import CacheSignature
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.ceilings import Ceilings
 from cordon_scanner.engine.pipeline.constants import REPOSITORY_SCOPE
-from cordon_scanner.engine.pipeline.facts import ScanFactsGathering, TreeFacts
+from cordon_scanner.engine.pipeline.facts import CrossFileFlows, ScanFactsGathering, TreeFacts
 from cordon_scanner.engine.pipeline.graph import Graph
 from cordon_scanner.engine.pipeline.hooks import Hooks
 from cordon_scanner.engine.pipeline.publisher import Publisher
@@ -205,6 +205,18 @@ class ScanStages:
                     signature,
                     carry_content=carry_content,
                 )
+            )
+            if acc.out_of_time(ctx, REPOSITORY_SCOPE, "the cross-file flows"):
+                return
+            CrossFileFlows.regrade(
+                self.engine,
+                file_detectors,
+                units,
+                acc,
+                root,
+                ctx,
+                carry_content=carry_content,
+                where=REPOSITORY_SCOPE,
             )
             if acc.out_of_time(ctx, REPOSITORY_SCOPE, "the release checks"):
                 return
