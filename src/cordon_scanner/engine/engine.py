@@ -801,19 +801,14 @@ class Engine:
             limits=self.config.limits,
         )
 
-    @staticmethod
-    def _budget_path(engine: Engine) -> str | None:
-        """This scan's copy-budget directory (notes/74), or None outside a scan."""
-        budget = getattr(engine, "_budget", None)
-        return str(budget.path) if budget is not None else None
-
     def _context(self, inventory: Repository, deadline: float | None = None) -> ScanContext:
         return ScanContext(
             config=self.config,
             rules=self.rules,
             repository=inventory,
             deadline=deadline,
-            copy_budget=Engine._budget_path(self),
+            # This scan's copy-budget directory (notes/74), or None outside a scan.
+            copy_budget=str(budget.path) if (budget := getattr(self, "_budget", None)) else None,
             # `projectbuild` is in neither. A Makefile is not an install hook -- see
             # `PROJECT_BUILD_FILENAMES` -- and it is not a pipeline either, so it gets
             # no context multiplier and is scored on what it actually contains.

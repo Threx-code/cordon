@@ -136,7 +136,7 @@ rule's own samples.
 | `SUSPECT.BINARY.EXECUTABLE_PATH.001` | high | Executable committed where a lifecycle step will run it |
 | `SUSPECT.BINARY.HIDDEN_IMPORTS.001` | medium | Committed binary resolves its imports at run time |
 | `SUSPECT.BINARY.IMPLANT.001` | high | Committed binary imports download-and-run calls |
-| `SUSPECT.BINARY.KEYLOGGER.001` | medium | Committed binary imports keyboard-capture and network calls |
+| `SUSPECT.BINARY.KEYLOGGER.001` | high | Committed binary imports keyboard-capture and network calls |
 | `SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001` | high | A pure-Python wheel loads a native library it carries |
 | `SUSPECT.BINARY.PACKED.001` | medium | Committed binary is packed |
 | `SUSPECT.BINARY.PROCESS_INJECTION.001` | high | Committed binary imports process-injection calls |
