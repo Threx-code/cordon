@@ -20,6 +20,7 @@ from cordon_scanner.detect.base import (
 )
 from cordon_scanner.detect.registry import ComposerPluginHooks, ServerSources
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
+from cordon_scanner.engine.closure import ImportClosure
 from cordon_scanner.engine.entries import PackageEntries
 from cordon_scanner.engine.package_format import PackageFormat
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
@@ -230,7 +231,9 @@ class ArchiveStages:
         # every argument, a gate that turns the tool later, secrets gathered by name.
         hook_paths |= skill_scripts
         entries = frozenset(hook_paths)
-        python_closure = Hooks.hook_import_closure(units, hook_paths)
+        unshipped: list[tuple[str, str]] = []
+        python_closure = Hooks.hook_import_closure(units, hook_paths, unshipped)
+        ImportClosure.unshipped_gaps(acc, unshipped)
         # A file that closure runs by its path is Python whatever its name (item 39's suite).
         Hooks.executed_as_python(units, python_closure)
         hook_paths |= python_closure

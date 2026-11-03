@@ -411,7 +411,11 @@ class Hooks:
         return out
 
     @staticmethod
-    def hook_import_closure(units: Sequence[FileUnit], hooks: set[str]) -> set[str]:
+    def hook_import_closure(
+        units: Sequence[FileUnit],
+        hooks: set[str],
+        unshipped: list[tuple[str, str]] | None = None,
+    ) -> set[str]:
         """First-party Python files reachable by import from an install hook.
 
         Read, never executed. Only files present in this scan are followed: a
@@ -434,7 +438,7 @@ class Hooks:
             unit = by_path.get(path)
             return None if unit is None or unit.content.is_binary else unit.content.text
 
-        return ImportClosure.resolve(hooks, sources, other)
+        return ImportClosure.resolve(hooks, sources, other, shipped=by_path, unshipped=unshipped)
 
     @staticmethod
     def executed_as_python(units: list[FileUnit], closure: set[str]) -> None:

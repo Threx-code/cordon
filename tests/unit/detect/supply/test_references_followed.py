@@ -107,3 +107,44 @@ class TestSetupPyRunsAFileByItsPath:
 
     def test_a_file_nothing_runs_is_not_python(self, tmp_path) -> None:
         assert not self.blocking_at(tmp_path, "", "run.txt")
+
+
+class TestAFileSetupPyRunsThatIsNotWhereItSays:
+    """A literal that is not at the root is still found (`os.path.join(here, "pkg", "_version.py")`, read as
+    `_version.py`); one the package does not ship at all is a blocking gap, never passed: the evasion
+    suite's `setup.py` ran `run.txt` while the payload was Python named `run.js` inside a nested archive."""
+
+    SETUP = TestSetupPyRunsAFileByItsPath.SETUP
+    PAYLOAD = TestSetupPyRunsAFileByItsPath.PAYLOAD
+    GAP = "OPERATIONAL.INSTALL.CODE_NOT_SHIPPED"
+
+    @staticmethod
+    def scan(tmp_path: Path, files: dict[str, str]) -> list[tuple[str, str, str]]:
+        for rel, text in files.items():
+            (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+            (tmp_path / rel).write_text(text, encoding="utf-8")
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        return [(f.location.path or "", f.rule_id, f.severity.name) for f in result.findings]
+
+    def test_a_file_shipped_under_a_deeper_path_is_found_by_its_name(self, tmp_path) -> None:
+        runner = "import os\nexec(open(os.path.join(os.path.dirname(__file__), 'pkg', 'run.txt')).read())\n"
+        found = self.scan(tmp_path, {"setup.py": self.SETUP + runner, "pkg/run.txt": self.PAYLOAD})
+        assert any(p == "pkg/run.txt" and s in ("HIGH", "CRITICAL") for p, _, s in found), found
+        assert not any(rule == self.GAP for _, rule, _ in found)
+
+    def test_a_file_the_package_does_not_ship_is_a_blocking_gap(self, tmp_path) -> None:
+        found = self.scan(tmp_path, {"setup.py": self.SETUP + "exec(open('run.txt').read())\n"})
+        assert ("setup.py", self.GAP, "HIGH") in found, found
+
+    def test_python_hidden_under_the_name_is_what_runs(self, tmp_path) -> None:
+        found = self.scan(
+            tmp_path,
+            {
+                "setup.py": self.SETUP + "exec(open('run.txt').read())\n",
+                "vendor/run.js": self.PAYLOAD,
+            },
+        )
+        assert any(
+            p == "vendor/run.js#as-python.py" and s in ("HIGH", "CRITICAL") for p, _, s in found
+        ), found
+        assert not any(rule == self.GAP for _, rule, _ in found)

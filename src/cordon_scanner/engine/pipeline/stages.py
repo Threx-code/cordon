@@ -22,6 +22,7 @@ from cordon_scanner.detect.base import (
 )
 from cordon_scanner.detect.registry import ComposerPluginHooks, ServerSources
 from cordon_scanner.engine.cache import CacheSignature
+from cordon_scanner.engine.closure import ImportClosure
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.ceilings import Ceilings
 from cordon_scanner.engine.pipeline.constants import REPOSITORY_SCOPE
@@ -140,7 +141,9 @@ class ScanStages:
         # module -- no obfuscation, just ordinary package structure -- avoided
         # the escalation entirely.
         entries = frozenset(hook_paths)
-        python_closure = Hooks.hook_import_closure(units, hook_paths)
+        unshipped: list[tuple[str, str]] = []
+        python_closure = Hooks.hook_import_closure(units, hook_paths, unshipped)
+        ImportClosure.unshipped_gaps(acc, unshipped)
         # A file that closure runs by its path is Python whatever its name (item 39's suite).
         Hooks.executed_as_python(units, python_closure)
         hook_paths |= python_closure

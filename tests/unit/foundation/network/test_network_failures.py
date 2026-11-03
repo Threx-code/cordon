@@ -43,16 +43,34 @@ class TestTheReason:
             assert NetworkFailure.certificate(outer)
 
     @pytest.mark.parametrize(
-        "exc",
+        ("exc", "said"),
         [
-            urllib.error.URLError("Name or service not known"),
-            TimeoutError(),
-            ConnectionRefusedError(),
-            ssl.SSLError("wrong version number"),
+            (
+                urllib.error.URLError(OSError(-3, "Temporary failure in name resolution")),
+                "URLError: Temporary failure in name resolution",
+            ),
+            (
+                urllib.error.URLError("Name or service not known"),
+                "URLError: Name or service not known",
+            ),
+            (
+                ConnectionRefusedError(111, "Connection refused"),
+                "ConnectionRefusedError: Connection refused",
+            ),
+            (ssl.SSLError("wrong version number"), "SSLError: wrong version number"),
         ],
     )
-    def test_any_other_failure_keeps_its_type_name(self, exc: BaseException) -> None:
-        assert NetworkFailure.reason(exc) == type(exc).__name__
+    def test_any_other_failure_says_its_cause(self, exc: BaseException, said: str) -> None:
+        # `advisories sync` offline said only "URLError" (item 52's sweep): not why.
+        assert NetworkFailure.reason(exc) == said
+
+    def test_a_failure_with_nothing_to_say_keeps_its_type_name(self) -> None:
+        assert NetworkFailure.reason(TimeoutError()) == "TimeoutError"
+
+    def test_the_cause_is_one_bounded_line(self) -> None:
+        said = NetworkFailure.reason(urllib.error.URLError("a\nb" + "x" * 500))
+        assert "\n" not in said
+        assert len(said) <= len("URLError: ") + NetworkFailure.MAX_CAUSE
 
 
 class TestTheFeedSaysIt:

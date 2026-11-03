@@ -37,7 +37,9 @@ from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.foundation.paths import ContainerPaths
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Mapping
+    from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+
+    from cordon_scanner.engine.pipeline.accumulator import Accumulator
 
 MAX_DEPTH = 4
 """How far to follow imports from a hook.
@@ -277,6 +279,9 @@ class ImportClosure:
         hooks: Iterable[str],
         sources: Mapping[str, str],
         others: Callable[[str], str | None] | None = None,
+        *,
+        shipped: Iterable[str] = (),
+        unshipped: list[tuple[str, str]] | None = None,
     ) -> set[str]:
         """Every first-party file reachable by import from a hook.
 
@@ -299,6 +304,12 @@ class ImportClosure:
 
         texts = dict(sources)
         hidden = cls.hidden_modules(sources)
+        # Every file of the scan by its name: a path built with `os.path.join(here, "pkg",
+        # "_version.py")` is read as its last literal, `_version.py`, and is the shipped file of
+        # that name (8 of 10 PyPI sdists whose literal was not at the root, 3 Nov).
+        by_name: dict[str, list[str]] = {}
+        for known in sorted({*sources, *shipped}):
+            by_name.setdefault(PurePosixPath(known).name, []).append(known)
         while frontier and len(seen) < MAX_FILES:
             path, depth = frontier.pop()
             if depth >= MAX_DEPTH:
@@ -307,21 +318,15 @@ class ImportClosure:
             # name; read only when named, so no other file's text is decoded for this (note 80).
             here = str(PurePosixPath(path).parent)
             for target in cls.executed_by(texts[path]):
-                for candidate in (
-                    f"{here}/{target}" if here != "." else target,
-                    *(f"{r}/{target}" for r in roots if r != "."),
+                found = cls._run_target(
+                    target, (here, roots), (by_name, hidden), texts, others, seen
+                )
+                if found is not None:
+                    frontier.append((found, depth + 1))
+                elif unshipped is not None and not cls._already_run(
+                    target, (here, roots), (by_name, hidden), seen
                 ):
-                    normalised = re.sub(r"^(?:\./)+", "", str(PurePosixPath(candidate)))
-                    if normalised in seen:
-                        continue
-                    text = texts.get(normalised)
-                    if text is None and others is not None:
-                        text = others(normalised)
-                    if text is not None:
-                        texts[normalised] = text
-                        seen.add(normalised)
-                        frontier.append((normalised, depth + 1))
-                        break
+                    unshipped.append((path, target))
             for module in cls.imported_by(texts[path], path):
                 rooted = [
                     f"{root}/{'/'.join(module.split('.'))}{suffix}"
@@ -329,20 +334,99 @@ class ImportClosure:
                     if root != "."
                     for suffix in (".py", "/__init__.py")
                 ]
-                found = False
+                shipped_here = False
                 for candidate in [*cls.candidates(module, path), *rooted]:
                     normalised = re.sub(r"^(?:\./)+", "", candidate)
                     if normalised in texts:
-                        found = True
+                        shipped_here = True
                         if normalised not in seen:
                             seen.add(normalised)
                             frontier.append((normalised, depth + 1))
-                if not found:
+                if not shipped_here:
                     for reading in hidden.get(module, ()):
                         if reading not in seen:
                             seen.add(reading)
                             frontier.append((reading, depth + 1))
         return seen
+
+    @classmethod
+    def _tiers(
+        cls,
+        target: str,
+        where: tuple[str, list[str]],
+        names: tuple[dict[str, list[str]], dict[str, list[str]]],
+    ) -> Iterator[str]:
+        """Where a file run by its path is looked for, in order: the literal path from the running
+        file and each hook's directory; the shipped file of that name; Python shipped under that
+        name as something else (`hidden_modules`)."""
+        here, roots = where
+        by_name, hidden = names
+        name = PurePosixPath(target).name
+        for candidate in (
+            f"{here}/{target}" if here != "." else target,
+            *(f"{r}/{target}" for r in roots if r != "."),
+            *by_name.get(name, ()),
+            *hidden.get(name.split(".", 1)[0], ()),
+        ):
+            yield re.sub(r"^(?:\./)+", "", str(PurePosixPath(candidate)))
+
+    @classmethod
+    def _already_run(
+        cls,
+        target: str,
+        where: tuple[str, list[str]],
+        names: tuple[dict[str, list[str]], dict[str, list[str]]],
+        seen: set[str],
+    ) -> bool:
+        return any(c in seen for c in cls._tiers(target, where, names))
+
+    @classmethod
+    def _run_target(
+        cls,
+        target: str,
+        where: tuple[str, list[str]],
+        names: tuple[dict[str, list[str]], dict[str, list[str]]],
+        texts: dict[str, str],
+        others: Callable[[str], str | None] | None,
+        seen: set[str],
+    ) -> str | None:
+        """The file a literal path runs, newly reached, read into `texts`; None when it was
+        already reached or the package ships nothing it could be (the caller tells the two
+        apart with `_already_run`: the second is said, never dropped)."""
+        for candidate in cls._tiers(target, where, names):
+            if candidate in seen:
+                return None
+            text = texts.get(candidate)
+            if text is None and others is not None:
+                text = others(candidate)
+            if text is not None:
+                texts[candidate] = text
+                seen.add(candidate)
+                return candidate
+        return None
+
+    @staticmethod
+    def unshipped_gaps(acc: Accumulator, unshipped: Sequence[tuple[str, str]]) -> None:
+        """Each file install-time Python runs by its path that the package does not ship, as a
+        blocking gap at the file that runs it: what would run is unknown, and an unknown at install
+        is not passed (fail closed). Measured on 42,000 PyPI sdists, 3 Nov: 2, both 0.0.0
+        placeholders whose setup.py runs a file they do not carry."""
+        from cordon_scanner.foundation.models import Severity
+        from cordon_scanner.foundation.results import OperationalFinding
+
+        for path, target in dict.fromkeys(unshipped):
+            acc.incomplete(
+                OperationalFinding.build(
+                    path=path,
+                    rule_id="OPERATIONAL.INSTALL.CODE_NOT_SHIPPED",
+                    message=(
+                        f"{path} runs {target!r} at install by its path, and the package ships "
+                        "no file of that name: what would run is not in what was scanned."
+                    ),
+                    remediation="Vet where that file comes from before installing.",
+                    severity=Severity.HIGH,
+                )
+            )
 
     @staticmethod
     def hidden_modules(sources: Iterable[str]) -> dict[str, list[str]]:
