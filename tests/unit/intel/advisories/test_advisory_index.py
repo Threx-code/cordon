@@ -163,6 +163,22 @@ class TestAnotherInstallsCache:
         assert LocalSeal.valid("advisory-index", json.loads(seal.read_text(encoding="utf-8")))
 
 
+class TestAnEmptyScanBuildsNoIndex:
+    """Item 74 cut 3's guard: a scan with no dependency to look up never builds an advisory index
+    (a build is a full read of an ecosystem's records into SQLite)."""
+
+    def test_an_empty_directory_scan_builds_none(self, monkeypatch, tmp_path) -> None:
+        IndexKit.isolate(monkeypatch, tmp_path)
+        built: list[object] = []
+        monkeypatch.setattr(
+            AdvisoryIndex, "_build", staticmethod(lambda *a, **k: built.append(a) or False)
+        )
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        Scanner(Config.default().with_overrides(use_cache=False, offline=True)).scan(empty)
+        assert built == []
+
+
 class TestQueries:
     def test_a_name_is_data_not_sql(self, monkeypatch, tmp_path) -> None:
         IndexKit.isolate(monkeypatch, tmp_path)
