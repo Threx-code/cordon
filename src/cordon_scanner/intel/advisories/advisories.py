@@ -842,13 +842,19 @@ class AdvisoryDatabase:
         """Every record covering this exact package and version."""
         return tuple(a for a in self.for_package(ecosystem, name) if a.affects(version))
 
-    def for_package(self, ecosystem: str, name: str) -> tuple[Advisory, ...]:
+    def for_package(
+        self, ecosystem: str, name: str, *, open_ranges: bool = False
+    ) -> tuple[Advisory, ...]:
         """Every record about a package, whatever version it names.
 
         What `matching` filters. Asked separately because the useful half of a
         vulnerability finding is the version to move to, and deciding that means
         looking at the advisories the current version does *not* match: a fix for
         one of them is not a fix if the next advisory names it too.
+
+        `open_ranges` keeps a malicious record's open range beside its listed versions (see
+        `_as_named`): for a declared range with no resolved version, where what installs is not
+        known and a record calling every version malicious is taken at its word.
         """
         self._load(ecosystem)
         # Equal records under two spellings are one record, kept in first-seen order. A dict, not
@@ -860,7 +866,7 @@ class AdvisoryDatabase:
             key = (ecosystem, spelling)
             self._materialise(key)
             found.update(dict.fromkeys(self._by_key.get(key, ())))
-        return AdvisoryDatabase._as_named(ecosystem, name, tuple(found))
+        return AdvisoryDatabase._as_named(ecosystem, name, tuple(found), open_ranges=open_ranges)
 
     WHOLE_ITEM_RECORDS: Final = frozenset({"vscode"})
     """Marketplaces whose malicious records condemn the item, not some of its uploads: an editor
@@ -872,7 +878,9 @@ class AdvisoryDatabase:
     `orchestrator` (gulp 3's task runner), and MAL-2025-28475 is about the first one only."""
 
     @staticmethod
-    def _as_named(ecosystem: str, name: str, records: tuple[Advisory, ...]) -> tuple[Advisory, ...]:
+    def _as_named(
+        ecosystem: str, name: str, records: tuple[Advisory, ...], *, open_ranges: bool = False
+    ) -> tuple[Advisory, ...]:
         """The records about this package as the registry names it, and as each record claims it.
 
         Two corrections to the lowercased index, both about what a record says rather than how it
@@ -891,7 +899,7 @@ class AdvisoryDatabase:
         if ecosystem in AdvisoryDatabase.CASE_SENSITIVE_NAMES:
             exact = name.strip()
             records = tuple(a for a in records if a.name == exact)
-        if ecosystem in AdvisoryDatabase.WHOLE_ITEM_RECORDS:
+        if ecosystem in AdvisoryDatabase.WHOLE_ITEM_RECORDS or open_ranges:
             return records
         listed = {a.identifier for a in records if a.malicious and a.versions and a.identifier}
         if not listed:

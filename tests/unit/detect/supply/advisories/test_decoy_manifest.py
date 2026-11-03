@@ -264,3 +264,55 @@ class TestAPathSpecInARepository:
     )
     def test_the_predicate_matches_only_the_four_path_prefixes(self, spec, by_path) -> None:
         assert AdvisoryDetector.declared_by_path(spec) is by_path
+
+
+class TestTwoRecordsUnderOneId:
+    """The bundled intel holds node-calculator-x7k9 as two records under MAL-2025-190547: the releases OSV
+    saw (3.1.0, 3.4.0) and introduced 0 with no fix, every version. The evasion suite's decoy probes declare
+    `^100.0.0`, which admits none of the listed releases and passed."""
+
+    @staticmethod
+    def rules(target: Path) -> set[str]:
+        listed = Advisory(
+            ecosystem="npm",
+            name=EVIL,
+            versions=("3.1.0", "3.4.0"),
+            summary="Malicious code",
+            identifier="MAL-2026-0077",
+            severity="critical",
+            malicious=True,
+        )
+        every = Advisory(
+            ecosystem="npm",
+            name=EVIL,
+            versions=(),
+            summary="Malicious code",
+            identifier="MAL-2026-0077",
+            severity="critical",
+            malicious=True,
+            introduced="0",
+        )
+        config = Config.default().with_overrides(use_cache=False, offline=True)
+        scanner = Scanner(
+            config,
+            detectors=(
+                AdvisoryDetector(
+                    AdvisoryDatabase((listed, every)),
+                ),
+            ),
+        )
+        return {f.rule_id for f in scanner.scan(target).findings}
+
+    def test_a_range_outside_the_listed_releases_is_still_every_version(self, tmp_path) -> None:
+        tgz = DecoyKit.package(tmp_path, {"package.json": DecoyKit.root()})
+        assert KNOWN in self.rules(tgz)
+
+    def test_with_the_decoy_beside_it(self, tmp_path) -> None:
+        tgz = DecoyKit.package(
+            tmp_path,
+            {
+                "package.json": DecoyKit.root(),
+                "test-package/package.json": DecoyKit.manifest(EVIL, "100.0.2"),
+            },
+        )
+        assert KNOWN in self.rules(tgz)
