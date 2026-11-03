@@ -149,6 +149,19 @@ class TestTheGrade:
         assert found
         assert all(f.severity == Severity.MEDIUM for f in found)
 
+    def test_a_declaration_file_s_reexport_is_no_call(self, tmp_path) -> None:
+        # Baileys: lib/index.d.ts says `export * from "../WAProto"`, a type's re-export of the large
+        # generated module. Types never run, so the join stays complete and the thumbnailer lowered.
+        files = {
+            "index.js": CommandKit.THUMB,
+            "proto/index.js": self.BIG,
+            "lib/index.d.ts": 'export * from "../proto";\nexport declare const x: number;\n',
+        }
+        result = CommandKit.scan(CommandKit.package(tmp_path / "p", files))
+        found = CommandKit.dropper(result, "index.js")
+        assert found
+        assert all(f.severity == Severity.MEDIUM for f in found)
+
     def test_a_large_file_that_reaches_the_package_withdraws_it(self, tmp_path) -> None:
         big = 'const t = require("../index");\n' + self.BIG
         files = {"index.js": CommandKit.THUMB, "proto/index.js": big}
