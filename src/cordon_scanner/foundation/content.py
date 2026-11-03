@@ -597,15 +597,30 @@ class ContentKind:
         is why :class:`Location` carries both, and why evidence extraction works
         from ``raw``.
         """
+        return self._decoded(self.raw)
+
+    def text_head(self, chars: int) -> str:
+        """`text[:chars]`, decoded from a bounded prefix of the bytes and not kept (note 80): a step
+        that reads only a file's start -- the language sniff -- never holds the whole decoded file.
+        Held for every member of a 13,551-member package, `text` was 590 MB of the parent's 1.4 GB.
+        A character is at most four bytes in every encoding `text` chooses, so the prefix holds the
+        first `chars` characters whole and they decode exactly as the whole file's do."""
+        held = self.__dict__.get("text")
+        if held is not None:
+            return str(held)[:chars]
+        return self._decoded(self.raw[: chars * 4 + 4])[:chars]
+
+    def _decoded(self, data: bytes) -> str:
+        """`data`, a prefix of `raw` or all of it, decoded as `text` decodes the file."""
         encoding = "utf-8"
         if self.raw.startswith(b"\xef\xbb\xbf"):
             encoding = "utf-8-sig"
         elif self.raw.startswith((b"\xff\xfe", b"\xfe\xff")) and self._looks_utf16():
             encoding = "utf-16"
         try:
-            return self.raw.decode(encoding, errors="replace")
+            return data.decode(encoding, errors="replace")
         except (UnicodeDecodeError, LookupError):
-            return self.raw.decode("latin-1", errors="replace")
+            return data.decode("latin-1", errors="replace")
 
     def _looks_utf16(self) -> bool:
         """Corroborate a UTF-16 byte-order mark before trusting it.

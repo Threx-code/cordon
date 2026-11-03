@@ -62,6 +62,39 @@ class TestOneLanguageEverywhere:
         )
         assert LanguageRegistry.of_file("pkg.tgz!package/bin/run", script) == "javascript"
 
+    def test_identifying_a_member_never_holds_its_whole_text(self) -> None:
+        # Note 80: the parent identified every member of a 13,551-member package by decoding it
+        # whole, and `text` kept all 590 MB of it for the scan.
+        for path in ("pkg.tgz!package/a.js", "pkg.tgz!package/README", "pkg.tgz!package/x.txt"):
+            content = FileContent.from_bytes(path, b"import os\nprint(os.name)\n" * 50_000)
+            LanguageRegistry.of_file(path, content)
+            assert "text" not in content.__dict__
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "\u00e9".encode() * 9000,  # two-byte characters across the sniff's end
+            "\U0001f600".encode() * 9000,  # four-byte characters
+            b"\xef\xbb\xbf" + b"def f():\n    return 1\n" * 900,  # a byte-order mark
+            "def f():\n    return 1\n".encode("utf-16") * 900,  # UTF-16
+            b"\xff\xfe" + b"no NULs here " * 900,  # a mark UTF-16 does not bear out
+            b"ok \xff\xfe bad \xc3 bytes\n" * 900,  # invalid UTF-8
+        ],
+    )
+    def test_the_sniff_reads_what_the_whole_text_starts_with(self, raw: bytes) -> None:
+        content = FileContent.from_bytes("x", raw)
+        head = content.text_head(LanguageRegistry.MAX_SNIFF_BYTES)
+        assert head == content.text[: LanguageRegistry.MAX_SNIFF_BYTES]
+
+    def test_the_answer_is_identify_s(self) -> None:
+        for raw in (b"#!/bin/sh\necho hi\n", b"import os\nimport sys\ndef f():\n    pass\n" * 40):
+            for path in ("bin/run", "a.py", "notes"):
+                content = FileContent.from_bytes(path, raw)
+                expected = LanguageRegistry.identify(
+                    path, shebang=content.shebang, text=content.text
+                )
+                assert LanguageRegistry.of_file(path, FileContent.from_bytes(path, raw)) == expected
+
     def test_a_parallel_image_scan_is_the_serial_one(self, tmp_path) -> None:
         files: dict[str, bytes | None] = {
             f"app/module{i}.js": f"module.exports = {i};\n".encode() * 200 for i in range(600)

@@ -353,9 +353,17 @@ class LanguageRegistry:
         member = path.rpartition("!")[2]
         if "!" in path and member.startswith("image-config/"):
             return None
-        return cls.identify(
-            member, shebang=content.shebang, text=None if content.is_binary else content.text
-        )
+        # `identify`'s chain, with the text decoded only when the name and the shebang say nothing,
+        # and then only the start it sniffs: never the whole file, held (note 80).
+        by_path = cls.identify_language(member)
+        if by_path is not None:
+            return by_path
+        by_shebang = cls.language_from_interpreter(content.shebang or "")
+        if by_shebang is not None:
+            return by_shebang
+        if content.is_binary:
+            return None
+        return cls.identify_from_content(content.text_head(cls.MAX_SNIFF_BYTES))
 
     @classmethod
     def language_from_interpreter(cls, interpreter: str) -> str | None:
