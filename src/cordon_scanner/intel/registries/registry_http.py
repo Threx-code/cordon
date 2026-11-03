@@ -16,6 +16,7 @@ import urllib.request
 from typing import Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.intel.registries import registry_request as base
 from cordon_scanner.intel.registries.challenge import Challenge
@@ -63,7 +64,9 @@ class RegistryHttp:
                 time.sleep(base.RETRY_BACKOFF_SECONDS * (2**attempt))
             except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
                 if attempt == base.RETRY_ATTEMPTS - 1:
-                    raise RegistryError(f"{type(exc).__name__} asking {parsed.netloc}") from exc
+                    raise RegistryError(
+                        f"{NetworkFailure.reason(exc)} asking {parsed.netloc}"
+                    ) from exc
                 time.sleep(base.RETRY_BACKOFF_SECONDS * (2**attempt))
         if len(body) > base.MAX_RESPONSE_BYTES:
             raise RegistryError(
@@ -145,7 +148,7 @@ class RegistryHttp:
             if not challenge.startswith("Bearer "):
                 raise RegistryError(f"HTTP {exc.code} from an OCI registry") from exc
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
-            raise RegistryError(f"{type(exc).__name__} asking an OCI registry") from exc
+            raise RegistryError(f"{NetworkFailure.reason(exc)} asking an OCI registry") from exc
         fields = Challenge.fields(challenge)
         realm = fields.get("realm", "")
         if not realm.startswith("https://"):
@@ -168,7 +171,7 @@ class RegistryHttp:
                 return RegistryHttp.redirected(exc)
             raise RegistryError(f"HTTP {exc.code} from an OCI registry") from exc
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
-            raise RegistryError(f"{type(exc).__name__} asking an OCI registry") from exc
+            raise RegistryError(f"{NetworkFailure.reason(exc)} asking an OCI registry") from exc
 
     MAX_PLATFORMS: Final = 32
 

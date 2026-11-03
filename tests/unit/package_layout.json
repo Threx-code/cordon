@@ -472,6 +472,7 @@
   "foundation/limits": "foundation/limits",
   "foundation/models": "foundation/models",
   "foundation/network/downloads": "foundation/network/downloads",
+  "foundation/network/failures": "foundation/network/failures",
   "foundation/network/redirects": "foundation/network/redirects",
   "foundation/once": "foundation/once",
   "foundation/paths": "foundation/paths",
@@ -539,6 +540,7 @@
   "intel/malware/campaign": "intel/malware/campaign",
   "intel/malware/datadog_malware": "intel/malware/datadog_malware",
   "intel/malware/feed": "intel/malware/feed",
+  "intel/malware/feed_roles": "intel/malware/feed_roles",
   "intel/malware/feed_lock": "intel/malware/feed_lock",
   "intel/malware/feed_rules": "intel/malware/feed_rules",
   "intel/malware/hallucinated": "intel/malware/hallucinated",
@@ -1156,7 +1158,8 @@
   "test_build_backend.py": "repository/release",
   "test_native_build.py": "repository/release",
   "test_cross_file_flows.py": "engine/isolation",
-  "test_parameter_command.py": "detect/code"
+  "test_parameter_command.py": "detect/code",
+  "test_network_failures.py": "foundation/network"
  },
  "shims": {
   "intel/provenance/_der": {

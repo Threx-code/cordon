@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.intel.advisories.advisories import (
     DIGESTS_NAME,
@@ -51,6 +52,7 @@ from cordon_scanner.intel.advisories.advisories import (
 from cordon_scanner.intel.advisories.advisory_text import AdvisoryTextSymbols
 
 OSV_HOST = "osv-vulnerabilities.storage.googleapis.com"
+
 """The one host this will talk to. Fixed, not derived from any input this
 module takes -- the same reasoning as `registry_client.REGISTRY_HOSTS`: naming
 the host is a decision an operator makes by invoking this at all, never a
@@ -150,7 +152,7 @@ class OsvImport:
                         raise OsvImportError(f"{url}: exceeded {limit} bytes, aborted")
                     out.write(chunk)
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
-            raise OsvImportError(f"{type(exc).__name__} fetching {url}") from exc
+            raise OsvImportError(f"{NetworkFailure.reason(exc)} fetching {url}") from exc
 
     @staticmethod
     def _severity_of(record: dict[str, Any]) -> str:

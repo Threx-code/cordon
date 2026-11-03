@@ -37,9 +37,11 @@ from datetime import UTC, datetime
 from typing import Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
-from cordon_scanner.intel.provenance import openpgp
+from cordon_scanner.foundation.network.failures import NetworkFailure
 
 #: helm `pkg/registry/constants.go`: ProvLayerMediaType, and ChartLayerMediaType with the
+from cordon_scanner.intel.provenance import openpgp
+
 #: LegacyChartLayerMediaType older charts were pushed with.
 PROVENANCE_LAYER: Final = "application/vnd.cncf.helm.chart.provenance.v1.prov"
 CHART_LAYERS: Final = frozenset(
@@ -258,7 +260,8 @@ class HelmProvenance:
                 archive = HelmProvenance._get(located, MAX_CHART_BYTES)
             except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
                 return ChartCheck(
-                    "unverifiable", f"{located} could not be downloaded ({type(exc).__name__})"
+                    "unverifiable",
+                    f"{located} could not be downloaded ({NetworkFailure.reason(exc)})",
                 )
             if archive is None:
                 return ChartCheck("unverifiable", f"{located} could not be downloaded")

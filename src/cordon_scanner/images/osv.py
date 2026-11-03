@@ -26,9 +26,11 @@ from typing import Any, Final
 
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.version import __version__
 
 API: Final = "https://api.osv.dev/v1"
+
 BATCH: Final = 500
 MAX_DETAILS: Final = 3000
 WORKERS: Final = 8
@@ -185,7 +187,7 @@ class OsvClient:
             try:
                 answer = post(f"{API}/querybatch", body)
             except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
-                raise OsvError(f"OSV could not be asked ({type(exc).__name__})") from exc
+                raise OsvError(f"OSV could not be asked ({NetworkFailure.reason(exc)})") from exc
             for query, result in zip(chunk, answer.get("results") or (), strict=False):
                 ids_by_query[query] = [
                     str(v.get("id")) for v in (result or {}).get("vulns") or () if v.get("id")

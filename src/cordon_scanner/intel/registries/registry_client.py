@@ -39,6 +39,7 @@ import urllib.request
 from typing import Any, ClassVar
 
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.intel.base import PackageArchive, PackageFacts
 from cordon_scanner.intel.registries.registry_request import (
@@ -138,7 +139,9 @@ class RegistryClient:
                 time.sleep(RETRY_BACKOFF_SECONDS * (2**attempt))
             except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
                 if attempt == RETRY_ATTEMPTS - 1:
-                    raise RegistryError(f"{type(exc).__name__} asking {parsed.netloc}") from exc
+                    raise RegistryError(
+                        f"{NetworkFailure.reason(exc)} asking {parsed.netloc}"
+                    ) from exc
                 time.sleep(RETRY_BACKOFF_SECONDS * (2**attempt))
 
         if len(body) > MAX_RESPONSE_BYTES:

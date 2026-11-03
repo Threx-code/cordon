@@ -40,9 +40,11 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.intel.provenance import attest
 
 REGISTRY: Final = "https://bcr.bazel.build"
+
 MEDIA_TYPE: Final = "application/vnd.build.bazel.registry.attestation+json"
 TIMEOUT: Final = 15.0
 MAX_BYTES: Final = 4 << 20
@@ -145,7 +147,8 @@ class BazelProvenance:
             body = BazelProvenance._get(url)
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             return ModuleCheck(
-                "unverifiable", f"the bundle for {file} could not be read ({type(exc).__name__})"
+                "unverifiable",
+                f"the bundle for {file} could not be read ({NetworkFailure.reason(exc)})",
             )
         if hashlib.sha256(body).hexdigest() != pinned[1]:
             return ModuleCheck(
@@ -190,7 +193,7 @@ class BazelProvenance:
             metadata = BazelProvenance._module_file(name, "metadata.json")
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             return ModuleCheck(
-                "unverifiable", f"the registry could not be read ({type(exc).__name__})"
+                "unverifiable", f"the registry could not be read ({NetworkFailure.reason(exc)})"
             )
         try:
             document = json.loads(listed)

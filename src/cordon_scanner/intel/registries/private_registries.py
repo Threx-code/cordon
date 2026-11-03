@@ -30,6 +30,7 @@ import urllib.request
 from typing import TYPE_CHECKING, Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.intel.base import PrivateRegistry
 from cordon_scanner.intel.registries.challenge import Challenge
@@ -153,7 +154,7 @@ class PrivateRegistries:
                 ) from exc
             raise RegistryError(f"HTTP {exc.code} from {registry.host}") from exc
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
-            raise RegistryError(f"{type(exc).__name__} asking {registry.host}") from exc
+            raise RegistryError(f"{NetworkFailure.reason(exc)} asking {registry.host}") from exc
         if len(body) > MAX_BYTES:
             raise RegistryError(f"a response from {registry.host} exceeded {MAX_BYTES} bytes")
         return body
@@ -347,7 +348,7 @@ class PrivateRegistries:
                     ) from exc
                 return direct
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
-            raise RegistryError(f"{type(exc).__name__} asking {registry.host}") from exc
+            raise RegistryError(f"{NetworkFailure.reason(exc)} asking {registry.host}") from exc
         fields = Challenge.fields(challenge)
         realm = urllib.parse.urlsplit(fields.get("realm", ""))
         if realm.scheme != "https" or realm.netloc.lower() != registry.host:

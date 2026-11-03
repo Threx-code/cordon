@@ -12,10 +12,12 @@ from typing import Any, Final, Protocol
 
 from cordon_scanner.cloud import CloudError
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.version import __version__
 
 TIMEOUT_SECONDS: Final = 15.0
+
 MAX_RESPONSE_BYTES: Final = 8 << 20
 USER_AGENT: Final = f"cordon-scanner/{__version__}"
 
@@ -48,7 +50,7 @@ class CloudTransport:
             return int(exc.code), Download.read(exc, MAX_RESPONSE_BYTES + 1)
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             host = urllib.parse.urlsplit(url).hostname
-            raise CloudError(f"could not reach {host} ({type(exc).__name__})") from exc
+            raise CloudError(f"could not reach {host} ({NetworkFailure.reason(exc)})") from exc
 
     @staticmethod
     def request(

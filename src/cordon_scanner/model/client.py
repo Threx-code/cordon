@@ -28,10 +28,12 @@ from pathlib import Path
 from typing import Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.model.features import FileFeatures, PackageArchive, PackageFeatures
 
 TOKEN_ENV: Final = "CORDON_MODEL_TOKEN"  # noqa: S105 - the variable's name, never a value
+
 BATCH: Final = 100
 #: About this many bytes per request: under the 16 MB a model server (and Cordon Cloud) accepts.
 MAX_REQUEST: Final = 12 << 20
@@ -250,7 +252,9 @@ class ModelClient:
             hint = " (check the token)" if exc.code in (401, 403) else ""
             raise ModelError(f"the model server answered HTTP {exc.code}{hint}") from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            raise ModelError(f"could not reach the model server: {type(exc).__name__}") from exc
+            raise ModelError(
+                f"could not reach the model server: {NetworkFailure.reason(exc)}"
+            ) from exc
         if len(raw) > MAX_REPLY:
             raise ModelError("the model server's reply was larger than 8 MB")
         try:

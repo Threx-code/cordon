@@ -35,6 +35,7 @@ from dataclasses import dataclass, field
 from typing import IO, Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.intel.registries.challenge import Challenge
 
 MEDIA_INDEX: Final = (
@@ -131,7 +132,7 @@ class RegistryImage:
                 raise RegistryImageError(f"{self.host} answered HTTP {exc.code}") from exc
             except (urllib.error.URLError, http.client.HTTPException, OSError) as exc:
                 raise RegistryImageError(
-                    f"{self.host} could not be reached ({type(exc).__name__})"
+                    f"{self.host} could not be reached ({NetworkFailure.reason(exc)})"
                 ) from exc
         raise RegistryImageError(f"{self.host} refused the anonymous token it issued")
 

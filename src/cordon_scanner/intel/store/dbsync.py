@@ -34,10 +34,12 @@ import urllib.request
 from pathlib import Path
 
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
+
+#: The release pipeline's Ed25519 public key, hex, 64 characters. Empty until a
 from cordon_scanner.foundation.paths import PackagePaths
 from cordon_scanner.intel.provenance import _ed25519
 
-#: The release pipeline's Ed25519 public key, hex, 64 characters. Empty until a
 #: maintainer pins it: bundle sync is an opt-in feature that cannot be safe
 #: without a key to verify against, so an unset key disables it with a clear
 #: message rather than trusting an unsigned download. The matching private key
@@ -148,7 +150,9 @@ class AdvisoryBundle:
             with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tar:
                 AdvisoryBundle._safe_extract(tar, dest)
         except (tarfile.TarError, OSError) as exc:
-            raise BundleError(f"the bundle could not be unpacked: {type(exc).__name__}") from exc
+            raise BundleError(
+                f"the bundle could not be unpacked: {NetworkFailure.reason(exc)}"
+            ) from exc
 
         from cordon_scanner.intel.advisories.advisories import AdvisoryFiles
 
@@ -226,7 +230,7 @@ class AdvisoryBundle:
             with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:  # noqa: S310
                 body = Download.read(response, MAX_BUNDLE_BYTES + 1)
         except (urllib.error.URLError, http.client.HTTPException, OSError) as exc:
-            raise BundleError(f"could not fetch {url}: {type(exc).__name__}") from exc
+            raise BundleError(f"could not fetch {url}: {NetworkFailure.reason(exc)}") from exc
         if len(body) > MAX_BUNDLE_BYTES:
             raise BundleError(f"{url} exceeded {MAX_BUNDLE_BYTES} bytes and was not downloaded")
         return bytes(body)

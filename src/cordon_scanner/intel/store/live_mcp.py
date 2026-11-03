@@ -33,9 +33,11 @@ from pathlib import Path
 from typing import Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import NoRedirects
 
 PROTOCOL_VERSION: Final = "2025-06-18"
+
 MAX_RESPONSE_BYTES: Final = 4 << 20
 MAX_PAGES: Final = 20
 MAX_TOOLS: Final = 2_000
@@ -107,7 +109,7 @@ class LiveMcp:
             raise LiveMcpError(f"HTTP {exc.code} from {urllib.parse.urlsplit(url).netloc}") from exc
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             raise LiveMcpError(
-                f"{type(exc).__name__} reaching {urllib.parse.urlsplit(url).netloc}"
+                f"{NetworkFailure.reason(exc)} reaching {urllib.parse.urlsplit(url).netloc}"
             ) from exc
         if len(body) > MAX_RESPONSE_BYTES:
             raise LiveMcpError(f"the response exceeded {MAX_RESPONSE_BYTES} bytes")

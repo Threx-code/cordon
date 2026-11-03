@@ -26,10 +26,12 @@ from pathlib import Path
 from typing import Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.intel.advisories.advisories import Advisory
 from cordon_scanner.intel.advisories.versions import Versions
 
 HOST: Final = "codeload.github.com"
+
 ARCHIVE_URL: Final = f"https://{HOST}/rubysec/ruby-advisory-db/tar.gz/refs/heads/master"
 MAX_DOWNLOAD_BYTES: Final = 64 << 20
 MAX_FILE_BYTES: Final = 256 << 10
@@ -232,7 +234,9 @@ class Rubysec:
             with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:  # noqa: S310
                 body = Download.read(response, MAX_DOWNLOAD_BYTES + 1)
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
-            raise RubysecError(f"{HOST} could not be reached ({type(exc).__name__})") from exc
+            raise RubysecError(
+                f"{HOST} could not be reached ({NetworkFailure.reason(exc)})"
+            ) from exc
         if len(body) > MAX_DOWNLOAD_BYTES:
             raise RubysecError("the rubysec archive is larger than the reader accepts")
         return bytes(body)
@@ -263,7 +267,9 @@ class Rubysec:
                         )
                     )
         except (tarfile.TarError, OSError, EOFError) as exc:
-            raise RubysecError(f"the rubysec archive did not read ({type(exc).__name__})") from exc
+            raise RubysecError(
+                f"the rubysec archive did not read ({NetworkFailure.reason(exc)})"
+            ) from exc
         return tuple(out)
 
     @staticmethod

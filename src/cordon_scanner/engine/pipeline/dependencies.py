@@ -26,6 +26,7 @@ from cordon_scanner.engine.pipeline.constants import REPOSITORY_SCOPE
 from cordon_scanner.engine.pipeline.dependency_scope import DependencyScope
 from cordon_scanner.engine.pipeline.graph import Graph
 from cordon_scanner.foundation.models import Category, Confidence, Finding, Severity
+from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.results import Dependency, OperationalFinding
 
 if TYPE_CHECKING:
@@ -81,7 +82,7 @@ class Dependencies:
                 OperationalFinding.build(
                     path=REPOSITORY_SCOPE,
                     rule_id="OPERATIONAL.IMAGE.UNREADABLE",
-                    message=f"The target looks like a container image and its layers could not be read ({type(exc).__name__}), so its operating-system packages were not inventoried.",
+                    message=f"The target looks like a container image and its layers could not be read ({NetworkFailure.reason(exc)}), so its operating-system packages were not inventoried.",
                     remediation="Export the image again with `docker save` or `skopeo copy ... oci-archive:` and rescan.",
                 )
             )
@@ -96,7 +97,7 @@ class Dependencies:
                     other = oci.ImageLayers.read_image(data, index)
                 except (tarfile.TarError, OSError, ValueError, KeyError, EOFError) as exc:
                     inventory.problems.append(
-                        f"the {label} image could not be read ({type(exc).__name__})"
+                        f"the {label} image could not be read ({NetworkFailure.reason(exc)})"
                     )
                     continue
                 other.platform = label

@@ -34,6 +34,7 @@ from cordon_scanner.foundation.models import (
     RedactionMode,
     Severity,
 )
+from cordon_scanner.foundation.network.failures import NetworkFailure
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -71,7 +72,7 @@ class Clamd:
                 return socket.create_connection((host, parsed.port), timeout=TIMEOUT_SECONDS)
             except OSError as exc:
                 raise ClamdError(
-                    f"clamd at {host}:{parsed.port} could not be reached ({type(exc).__name__})"
+                    f"clamd at {host}:{parsed.port} could not be reached ({NetworkFailure.reason(exc)})"
                 ) from exc
         if not hasattr(socket, "AF_UNIX"):
             raise ClamdError("Unix sockets are not available here; use tcp://127.0.0.1:3310")
@@ -82,7 +83,7 @@ class Clamd:
         except OSError as exc:
             connection.close()
             raise ClamdError(
-                f"clamd at {address} could not be reached ({type(exc).__name__})"
+                f"clamd at {address} could not be reached ({NetworkFailure.reason(exc)})"
             ) from exc
         return connection
 

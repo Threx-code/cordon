@@ -28,6 +28,7 @@ from dataclasses import replace
 from typing import IO, TYPE_CHECKING, Any, ClassVar, Final
 
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
+from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.images import langpkgs
 from cordon_scanner.images import packages as pkgdb
 from cordon_scanner.images.members import ImageArchive
@@ -36,6 +37,7 @@ if TYPE_CHECKING:
     from cordon_scanner.images.identity import ImageInventory
 
 MAX_LAYERS: Final = 256
+
 MAX_WANTED_BYTES: Final = 256 << 20
 MAX_MEMBERS_PER_LAYER: Final = 2_000_000
 
@@ -460,7 +462,7 @@ class ImageLayers:
             inventory.identity = ImageIdentity.read(data)
         except (KeyError, ValueError, tarfile.TarError, OSError) as exc:
             inventory.problems.append(
-                f"the image's manifest and configuration were not read ({type(exc).__name__})"
+                f"the image's manifest and configuration were not read ({NetworkFailure.reason(exc)})"
             )
         return ImageLayers.databases(files, inventory)
 

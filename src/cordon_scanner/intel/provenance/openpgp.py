@@ -31,6 +31,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final
 
+from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.intel.base import KeyInfo, Keyring
 from cordon_scanner.intel.provenance.pgp import (
     Algorithms,
@@ -214,7 +215,7 @@ class OpenPgp:
             try:
                 data = Path(path).expanduser().read_bytes()
             except OSError as exc:
-                problems.append(f"{path}: {exc.strerror or type(exc).__name__}")
+                problems.append(f"{path}: {exc.strerror or NetworkFailure.reason(exc)}")
                 continue
             if len(data) > MAX_KEYRING_BYTES:
                 problems.append(f"{path}: larger than a keyring")
