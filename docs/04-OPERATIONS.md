@@ -440,6 +440,12 @@ The product cannot be the next incident. Concretely:
   pip refuses anything else. A ref with no pin refuses to install rather than
   installing unverified; `allow-unverified-install: true` overrides that, in
   the workflow file where it is reviewable, and says loudly what it costs.
+- **The installation checked after install** with `verify-install: true` (the Action) or
+  `cordon-scanner verify --online`: the wheel's PEP 740 provenance must be signed by Cordon's
+  release workflow for that version, and every installed file must match the attested wheel's
+  RECORD. Offline, `cordon-scanner verify` checks the files against their own RECORD and says it is
+  only consistent, never verified, since whoever can edit Cordon can edit its RECORD too. For the
+  strong form, run it from a separate trusted copy with `--target <site-packages>`.
 - **Reproducible builds** with `SOURCE_DATE_EPOCH`; CI rebuilds each release
   independently and compares digests.
 - **SBOM** (CycloneDX + SPDX) generated and signed per release.

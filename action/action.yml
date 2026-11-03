@@ -17,6 +17,14 @@ inputs:
       supply-chain scanner cannot afford to take on trust.
     required: false
     default: "false"
+  verify-install:
+    description: >
+      After installing, check the installation against the release that built it
+      (`cordon-scanner verify --online`): the wheel's PEP 740 provenance, signed by
+      Cordon's release workflow for that version, and every installed file against
+      the attested wheel. The job fails unless it verifies. Needs network to PyPI.
+    required: false
+    default: "false"
   target:
     description: "Path or archive to scan."
     required: false
@@ -190,6 +198,16 @@ runs:
         fi
         python -m pip install --disable-pip-version-check --quiet \
           "cordon-scanner==${CORDON_VERSION}"
+
+    - name: Verify the installation
+      if: inputs.verify-install == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Exit 0 only when verified against the release workflow's signature; 1 modified, 4 not
+        # verified. The step fails on either: a scanner that cannot show it is the release's is
+        # not one to trust with the verdict.
+        cordon-scanner verify --online
 
     - name: Scan
       id: scan
