@@ -755,9 +755,10 @@ class ParallelScanner:
         ParallelScanner._verdict_facts(unit, ctx)
         # What the parent's profile, intent and reached-flow steps read of the file (item 56, sites
         # 9 and 10), with the engine's labelling detector as the parent picks it, enabled or not.
-        from cordon_scanner.engine.isolation.analysis_facts import WorkerAnalysis
+        from cordon_scanner.engine.isolation.analysis_facts import WorkerAnalysis, WorkerSummaries
 
         WorkerAnalysis.produce(unit, ctx, tuple(engine.detectors))
+        WorkerSummaries.produce(unit)
         return produced, windowed, intact, (acc.complete, tuple(acc.content_gaps))
 
     @staticmethod

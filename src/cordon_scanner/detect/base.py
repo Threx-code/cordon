@@ -716,14 +716,20 @@ class CampaignSiblingFacts(Protocol):
 
 class ReachedFlowFacts(Protocol):
     """What the engine uses of the class `ReachedFlows`: the parent joins each file's flow facts
-    (`of`), a worker reads them (`reads`, `facts`; item 56), and the parent joins the files'
-    summaries across the package (`cross_file`, `unresolved`, `lowered`; item 60, note 78)."""
+    (`of`), a worker reads them (`reads`, `facts`; item 56)."""
 
     def of(
         self, units: Sequence[FileUnit], ctx: ScanContext, facts: dict[str, dict[str, list[Any]]]
     ) -> dict[str, float]: ...
     def reads(self, unit: FileUnit, ctx: ScanContext) -> bool: ...
     def facts(self, place: str, text: str, *, python: bool = ...) -> dict[str, float]: ...
+
+
+class CrossFileJoining(Protocol):
+    """What the engine uses of the class `CrossFileJoin`: the parent joins the files' summaries
+    across the package (`cross_file`), and asks what the re-grade needs (`unresolved`, `lowered`;
+    item 60, note 78)."""
+
     def cross_file(
         self, units: Sequence[FileUnit], facts: Mapping[str, Mapping[str, list[Any]]]
     ) -> dict[str, tuple[tuple[int, tuple[str, ...], str, str], ...]]: ...

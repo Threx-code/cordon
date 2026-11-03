@@ -35,6 +35,7 @@ from cordon_scanner.foundation.paths import ContainerPaths
 from cordon_scanner.foundation.samples import SampleKinds
 from cordon_scanner.foundation.text.columns import TextColumns
 from cordon_scanner.foundation.text.comments import SourceComments
+from cordon_scanner.foundation.text.encoding import TextEncoding
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -218,28 +219,6 @@ class Skipped:
 
 BYTE_ORDER_MARK = b"\xef\xbb\xbf"
 """UTF-8's encoding preamble. Not content, and never part of what a rule matches."""
-
-
-class TextEncoding:
-    """Text re-encoded as UTF-8 for reading."""
-
-    @staticmethod
-    def as_utf8(raw: bytes) -> bytes:
-        """UTF-16 text, re-encoded as UTF-8; anything else unchanged.
-
-        Every detector matches bytes, and a UTF-16 file interleaves each ASCII character with a NUL:
-        `curl ... | sh` written to a PowerShell script saved as UTF-16 -- Windows PowerShell 5's
-        default -- matched no pattern and was then filed as binary for its NULs, so it was never
-        read at all. Transcoded once here, it is read like any other script. Only with a byte-order
-        mark, NULs where UTF-16 over a mostly-ASCII alphabet puts them, and a clean decode: a binary
-        that happens to start `FF FE` stays as it is.
-        """
-        if not raw.startswith((b"\xff\xfe", b"\xfe\xff")) or b"\x00" not in raw[2:66]:
-            return raw
-        try:
-            return raw.decode("utf-16").encode("utf-8")
-        except UnicodeDecodeError:
-            return raw
 
 
 class LineIndex:
@@ -597,41 +576,15 @@ class ContentKind:
         is why :class:`Location` carries both, and why evidence extraction works
         from ``raw``.
         """
-        return self._decoded(self.raw)
+        return TextEncoding.decoded(self.raw, self.raw)
 
     def text_head(self, chars: int) -> str:
-        """`text[:chars]`, decoded from a bounded prefix of the bytes and not kept (note 80): a step
-        that reads only a file's start -- the language sniff -- never holds the whole decoded file.
-        Held for every member of a 13,551-member package, `text` was 590 MB of the parent's 1.4 GB.
-        A character is at most four bytes in every encoding `text` chooses, so the prefix holds the
-        first `chars` characters whole and they decode exactly as the whole file's do."""
+        """`text[:chars]`, decoded from a bounded prefix and not kept (note 80: `text` held for each
+        member was 590 MB of the parent's 1.4 GB). Four bytes a character covers every encoding."""
         held = self.__dict__.get("text")
         if held is not None:
             return str(held)[:chars]
-        return self._decoded(self.raw[: chars * 4 + 4])[:chars]
-
-    def _decoded(self, data: bytes) -> str:
-        """`data`, a prefix of `raw` or all of it, decoded as `text` decodes the file."""
-        encoding = "utf-8"
-        if self.raw.startswith(b"\xef\xbb\xbf"):
-            encoding = "utf-8-sig"
-        elif self.raw.startswith((b"\xff\xfe", b"\xfe\xff")) and self._looks_utf16():
-            encoding = "utf-16"
-        try:
-            return data.decode(encoding, errors="replace")
-        except (UnicodeDecodeError, LookupError):
-            return data.decode("latin-1", errors="replace")
-
-    def _looks_utf16(self) -> bool:
-        """Corroborate a UTF-16 byte-order mark before trusting it.
-
-        Those two bytes are not rare, and any file whose content happens to
-        begin with them was previously decoded as UTF-16 and turned into noise.
-        Real UTF-16 text over a mostly-ASCII alphabet is half NUL bytes, so
-        their absence is decisive.
-        """
-        window = self.raw[2:66]
-        return b"\x00" in window
+        return TextEncoding.decoded(self.raw, self.raw[: chars * 4 + 4])[:chars]
 
     @property
     def extension(self) -> str:

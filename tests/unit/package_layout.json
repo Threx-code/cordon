@@ -490,6 +490,7 @@
   "foundation/text/columns": "foundation/text/columns",
   "foundation/text/comments": "foundation/text/comments",
   "foundation/text/delimited": "foundation/text/delimited",
+  "foundation/text/encoding": "foundation/text/encoding",
   "foundation/text/literals": "foundation/text/literals",
   "foundation/text/prose": "foundation/text/prose",
   "foundation/text/redact": "foundation/text/redact",

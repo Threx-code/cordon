@@ -165,17 +165,17 @@ class CrossFileFlows:
         where: str,
     ) -> None:
         """Re-grade the calling files; the steps after keep the scan's own context."""
-        from cordon_scanner.detect.registry import ReachedFlows
+        from cordon_scanner.detect.registry import CrossFileJoin
         from cordon_scanner.engine.cache import CacheSignature
 
         capability = [d for d in detectors if getattr(d, "id", "") == CrossFileFlows.DETECTOR]
         if not capability:
             return
-        flows = ReachedFlows.cross_file(units, acc.facts)
-        unresolved = ReachedFlows.unresolved(acc.facts, acc.findings)
+        flows = CrossFileJoin.cross_file(units, acc.facts)
+        unresolved = CrossFileJoin.unresolved(acc.facts, acc.findings)
         # Where the join is incomplete, a finding lowered on the join's word is graded again
         # without it (note 78; rule 3: unknown is never "no caller passes a reply").
-        lowered = ReachedFlows.lowered(acc.findings) if unresolved else set()
+        lowered = CrossFileJoin.lowered(acc.findings) if unresolved else set()
         if not flows and not lowered:
             return
         callers = [u for u in units if u.path in flows or u.path in lowered]

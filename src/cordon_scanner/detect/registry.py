@@ -20,6 +20,7 @@ ROLES: dict[str, tuple[str, str]] = {
     ),
     "ComposerPluginHooks": ("cordon_scanner.detect.supply.composer_plugins", "ComposerPluginHooks"),
     "DeclaredSource": ("cordon_scanner.detect.supply.manifests.sources", "DeclaredSource"),
+    "CrossFileJoin": ("cordon_scanner.detect.code.reached_flows", "CrossFileJoin"),
     "DownloadFlow": ("cordon_scanner.detect.code.download_flow", "DownloadFlow"),
     "ImportReachability": ("cordon_scanner.detect.supply.reachability", "ImportReachability"),
     "JudgeGate": ("cordon_scanner.detect.agents.language_model.detector", "JudgeGate"),
@@ -43,6 +44,7 @@ if TYPE_CHECKING:
         BinaryIdentification,
         CampaignSiblingFacts,
         ComposerPluginPaths,
+        CrossFileJoining,
         DeclaredSourceKinds,
         DownloadRunning,
         ImportReachabilityNotes,
@@ -73,6 +75,7 @@ if TYPE_CHECKING:
     CampaignSiblings: CampaignSiblingFacts = _detect_supply_campaign_sibling.CampaignSiblingDetector
     ComposerPluginHooks: ComposerPluginPaths = _detect_supply_composer_plugins.ComposerPluginHooks
     DeclaredSource: DeclaredSourceKinds = _detect_supply_manifests_sources.DeclaredSource
+    CrossFileJoin: CrossFileJoining = _detect_code_reached_flows.CrossFileJoin
     DownloadFlow: DownloadRunning = _detect_code_download_flow.DownloadFlow
     ImportReachability: ImportReachabilityNotes = _detect_supply_reachability.ImportReachability
     JudgeGate: JudgeScheduling = _detect_agents_language_model_detector.JudgeGate
@@ -107,6 +110,7 @@ __all__ = [
     "BinaryDetector",
     "CampaignSiblings",
     "ComposerPluginHooks",
+    "CrossFileJoin",
     "DeclaredSource",
     "DownloadFlow",
     "ImportReachability",
