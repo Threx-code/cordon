@@ -1153,7 +1153,9 @@
   "test_zip_views_agree.py": "sources",
   "test_zstd.py": "intel/store",
   "test_build_backend.py": "repository/release",
-  "test_native_build.py": "repository/release"
+  "test_native_build.py": "repository/release",
+  "test_cross_file_flows.py": "engine/isolation",
+  "test_parameter_command.py": "detect/code"
  },
  "shims": {
   "intel/provenance/_der": {

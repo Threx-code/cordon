@@ -37,6 +37,12 @@ class CapabilityHit:
     `JsFlow.fixed_spawn_lines` (note 44: a DATA_ARGS program with its arguments as data).
     See `CompositeEvaluator._evaluate_over`, which is the one place it is read."""
 
+    parameter_command: bool = False
+    """Whether this is a shell-string spawn of a `local` DATA_ARGS program (ffmpeg, ffprobe) built
+    only from literals and its function's parameters, nothing a server sent reaching it in the file
+    (`JsFlow.parameter_command_lines`, note 78). Read by `CompositeGrading`, which LOWERS a dropper
+    pairing such a spawn, never drops it: a caller elsewhere could pass one."""
+
     variants: int = 1
     """How many distinct operations of this capability the rule matched.
 

@@ -5,7 +5,7 @@ it hands to the package's other modules; the parent joins those statements acros
 with set arithmetic, never reading a file (item 56's rule):
 
 ```
-  WORKER  JsSummaries.of(text)                     PARENT  CrossFile.compose(files, tree)
+  WORKER  JsFlow.summaries(text)                   PARENT  CrossFile.compose(files, tree)
   ───────────────────────────                      ─────────────────────────────────────────
   js.export   [name, params]                       callouts resolved to (file, export) by path
   js.summary  [name, from, to]                     fixpoint over summaries and callouts:
@@ -37,27 +37,61 @@ class JsSummaries:
     MAX_LABELS: ClassVar[int] = 16
     MAX_PARAM: ClassVar[int] = 63
 
-    @classmethod
-    def of(cls, text: str) -> dict[str, list[list[Any]]]:
-        """The file's facts, by kind (item 56's channel shapes)."""
-        from cordon_scanner.analysis.javascript.js_flow import _Analysis
+    #: At most this many summaries and call-site sinks a file sends: with MAX_EXPORTS and the callouts'
+    #: cap (each call adds at most 8), a file's set stays under the channel's FILE_COUNT.
+    MAX_SUMMARIES: ClassVar[int] = 4096
+    MAX_CALLSINKS: ClassVar[int] = 2048
+    MAX_REEXPORTS: ClassVar[int] = 64
+    KINDS: ClassVar[tuple[str, ...]] = (
+        "js.export",
+        "js.summary",
+        "js.callout",
+        "js.callsink",
+        "js.reexport",
+        "js.require",
+    )
+    #: The `js.require` fact of a file whose calls into the package are not all known: a module
+    #: named by a computed value (`require("./" + name)`, `import(x)`), or a file the analysis could
+    #: not read whole. Composition is incomplete wherever one is (rule 3), and what needs it to be
+    #: complete -- note 78's lowering -- is withdrawn.
+    UNRESOLVED: ClassVar[str] = "dynamic"
 
-        a = _Analysis(text)
-        a.run()
+    @classmethod
+    def shared(cls, a: Any) -> dict[str, list[Any]]:
+        """`facts` from an analysis another caller ran, under the same guard."""
+        from cordon_scanner.analysis.javascript.flow.vocabulary import _OverBudget
+
+        try:
+            return cls.joined(cls.of_analysis(a))
+        except (RecursionError, _OverBudget, IndexError, KeyError, ValueError, TypeError):
+            return {"js.require": [cls.UNRESOLVED]}
+
+    @classmethod
+    def joined(cls, facts: dict[str, list[Any]]) -> dict[str, list[Any]]:
+        """`facts`, or nothing when they join no file to another."""
+        if not any(facts.get(k) for k in ("js.summary", "js.callout", "js.reexport", "js.require")):
+            return {}
+        return {k: v for k, v in facts.items() if v}
+
+    @classmethod
+    def of_analysis(cls, a: Any) -> dict[str, list[Any]]:
+        """The facts of a file whose analysis has run (`JsFlow._flows` shares its own)."""
         exports = cls._exports(a)
         by_fid = {fid: name for name, fid in exports.items() if fid}
-        out: dict[str, list[list[Any]]] = {
+        out: dict[str, list[Any]] = {
             "js.export": [],
             "js.summary": [],
             "js.callout": [],
             "js.callsink": [],
-            "js.reexport": [[m] for m in cls._reexports(a)],
+            "js.reexport": [[m] for m in cls._reexports(a)][: cls.MAX_REEXPORTS],
+            "js.require": [cls.UNRESOLVED] if cls._computed_require(a) else [],
         }
         for name, fid in list(exports.items())[: cls.MAX_EXPORTS]:
             fn = a.fns[fid - 1] if fid else None
             out["js.export"].append([name, len(fn.params) if fn else 0])
             if fn is not None:
-                out["js.summary"].extend(cls._summary(name, fn))
+                room = cls.MAX_SUMMARIES - len(out["js.summary"])
+                out["js.summary"].extend(cls._summary(name, fn)[: max(room, 0)])
         for k in range(a.n - 1):
             if len(out["js.callout"]) >= cls.MAX_CALLOUTS:
                 break
@@ -77,7 +111,8 @@ class JsSummaries:
                 )
         for k, sinks in a.c_sinks.items():
             for sink, _host, dest, line in sorted(sinks, key=lambda x: (x[3], x[0])):
-                out["js.callsink"].append([f"C{k}", sink, dest, line])
+                if len(out["js.callsink"]) < cls.MAX_CALLSINKS:
+                    out["js.callsink"].append([f"C{k}", sink, dest, line])
         return out
 
     @staticmethod
@@ -130,6 +165,18 @@ class JsSummaries:
             if frm is not None:
                 out.append([name, frm, "return"])
         return sorted({tuple(x): x for x in out}.values())
+
+    @staticmethod
+    def _computed_require(a: Any) -> bool:
+        """Whether a `require(...)` or `import(...)` names its module by anything but one literal."""
+        for i in range(a.n - 2):
+            if not (a.is_name(i, "require") or a.is_name(i, "import")) or not a.is_p(i + 1, "("):
+                continue
+            if a.is_p(i - 1, ".") or a.match[i + 1] <= 0:
+                continue  # a method of that name (`x.require(...)`), or an unclosed call
+            if not (a.match[i + 1] == i + 3 and a.t[i + 2].kind == "str"):
+                return True
+        return False
 
     @staticmethod
     def _reexports(a: Any) -> list[str]:
@@ -224,7 +271,7 @@ class CrossFile:
 
     @classmethod
     def compose(
-        cls, files: dict[str, dict[str, list[list[Any]]]], tree: frozenset[str]
+        cls, files: dict[str, dict[str, list[Any]]], tree: frozenset[str]
     ) -> list[tuple[str, int, tuple[str, ...], str, str]]:
         """Every cross-file flow: (caller file, line, source kinds, sink, destination class)."""
         summaries: dict[tuple[str, str], set[tuple[str, str]]] = {}
@@ -281,7 +328,7 @@ class CrossFile:
         name: str,
         from_path: str,
         tree: frozenset[str],
-        files: dict[str, dict[str, list[list[Any]]]],
+        files: dict[str, dict[str, list[Any]]],
         summaries: dict[tuple[str, str], set[tuple[str, str]]],
     ) -> str | None:
         """The file whose summary answers for `name` from `module`: the module itself, or the module it

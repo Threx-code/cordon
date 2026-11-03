@@ -119,6 +119,104 @@ class Shapes:
         return isinstance(value, str) and 0 < len(value) <= 4096
 
 
+class JsShapes:
+    """The cross-file summaries' shapes (item 60, `flow/summaries.py`): names and module paths bounded
+    in length, labels from the declared vocabulary (a source kind, P<0..63>, C<k>), a destination its
+    class, never a host."""
+
+    NAME: ClassVar[int] = 256
+    LABEL: ClassVar[str] = r"P(?:[0-9]|[1-5][0-9]|6[0-3])|C[0-9]{1,9}"
+    DESTINATIONS: ClassVar[frozenset[str]] = frozenset({"drop", "ip", "fixed", "unknown"})
+
+    @staticmethod
+    def _name(value: Any, most: int = NAME) -> bool:
+        return isinstance(value, str) and 0 < len(value) <= most
+
+    @staticmethod
+    def _int(value: Any, lowest: int = 0) -> bool:
+        return type(value) is int and lowest <= value < 1 << 31
+
+    @staticmethod
+    def label(value: Any) -> bool:
+        import re
+
+        from cordon_scanner.analysis.javascript.flow.vocabulary import SOURCES
+
+        return isinstance(value, str) and (
+            value in SOURCES or re.fullmatch(JsShapes.LABEL, value) is not None
+        )
+
+    @staticmethod
+    def sink(value: Any) -> bool:
+        return isinstance(value, str) and 0 < len(value) <= 32 and value.isidentifier()
+
+    @staticmethod
+    def export(value: Any) -> bool:
+        """[name, param_count]."""
+        return (
+            isinstance(value, list)
+            and len(value) == 2
+            and JsShapes._name(value[0])
+            and JsShapes._int(value[1])
+            and value[1] <= 1024
+        )
+
+    @staticmethod
+    def summary(value: Any) -> bool:
+        """[name, from, to]: from a label, to "return" or "sink:<kind>:<destination class>"."""
+        if not (isinstance(value, list) and len(value) == 3 and JsShapes._name(value[0])):
+            return False
+        if not JsShapes.label(value[1]) or not isinstance(value[2], str):
+            return False
+        if value[2] == "return":
+            return True
+        parts = value[2].split(":")
+        return (
+            len(parts) == 3
+            and parts[0] == "sink"
+            and JsShapes.sink(parts[1])
+            and parts[2] in JsShapes.DESTINATIONS
+        )
+
+    @staticmethod
+    def callout(value: Any) -> bool:
+        """[module, name, arg_index, labels, line, caller, "C<k>"]."""
+        return (
+            isinstance(value, list)
+            and len(value) == 7
+            and JsShapes._name(value[0], 4096)
+            and JsShapes._name(value[1])
+            and JsShapes._int(value[2], -1)
+            and value[2] < 8
+            and isinstance(value[3], list)
+            and len(value[3]) <= 16
+            and all(JsShapes.label(x) for x in value[3])
+            and JsShapes._int(value[4])
+            and isinstance(value[5], str)
+            and len(value[5]) <= JsShapes.NAME
+            and JsShapes.label(value[6])
+            and value[6].startswith("C")
+        )
+
+    @staticmethod
+    def callsink(value: Any) -> bool:
+        """["C<k>", sink, destination class, line]."""
+        return (
+            isinstance(value, list)
+            and len(value) == 4
+            and JsShapes.label(value[0])
+            and value[0].startswith("C")
+            and JsShapes.sink(value[1])
+            and value[2] in JsShapes.DESTINATIONS
+            and JsShapes._int(value[3])
+        )
+
+    @staticmethod
+    def reexport(value: Any) -> bool:
+        """[module]: a local path the file hands on whole."""
+        return isinstance(value, list) and len(value) == 1 and JsShapes._name(value[0], 4096)
+
+
 class Facts:
     """The parent's side of the channel: what it accepts from a worker, and nothing else."""
 
@@ -134,6 +232,11 @@ class Facts:
         "intent.effect": Shapes.intent_effect,
         "intent.fact": Shapes.intent_fact,
         "reached.flow": Shapes.reached_flow,
+        "js.export": JsShapes.export,
+        "js.summary": JsShapes.summary,
+        "js.callout": JsShapes.callout,
+        "js.callsink": JsShapes.callsink,
+        "js.reexport": JsShapes.reexport,
     }
 
     @staticmethod
@@ -223,4 +326,4 @@ class WorkerFacts:
         return OVERSIZED if len(text) > FILE_BYTES else text
 
 
-__all__ = ["FILE_BYTES", "FILE_COUNT", "SCAN_BYTES", "Facts", "Shapes", "WorkerFacts"]
+__all__ = ["FILE_BYTES", "FILE_COUNT", "SCAN_BYTES", "Facts", "JsShapes", "Shapes", "WorkerFacts"]

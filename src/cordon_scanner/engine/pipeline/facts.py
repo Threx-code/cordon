@@ -140,6 +140,65 @@ class TreeFacts:
         return held
 
 
+class CrossFileFlows:
+    """Item 60's join: the workers' summaries (`js.*` facts) composed across the package's require
+    graph (`CrossFile.compose`, facts only, never a file read here), then each calling file with a
+    flow re-graded by the capability detector with its flows on the context, in supervised workers
+    as detection runs. The capability detector's first-pass findings for those files are replaced,
+    so a flow is reported once, graded at the caller (rule 5).
+
+        detection ─► acc.facts[js.*] ─► compose ─► callers ─► capability detector again ─► replace
+    """
+
+    DETECTOR: ClassVar[str] = "capability"
+
+    @staticmethod
+    def regrade(
+        engine: Engine,
+        detectors: Sequence[Any],
+        units: list[FileUnit],
+        acc: Accumulator,
+        root: Path,
+        ctx: ScanContext,
+        *,
+        carry_content: bool,
+        where: str,
+    ) -> None:
+        """Re-grade the calling files; the steps after keep the scan's own context."""
+        from cordon_scanner.detect.registry import ReachedFlows
+        from cordon_scanner.engine.cache import CacheSignature
+
+        capability = [d for d in detectors if getattr(d, "id", "") == CrossFileFlows.DETECTOR]
+        if not capability:
+            return
+        flows = ReachedFlows.cross_file(units, acc.facts)
+        unresolved = ReachedFlows.unresolved(acc.facts, acc.findings)
+        # Where the join is incomplete, a finding lowered on the join's word is graded again
+        # without it (note 78; rule 3: unknown is never "no caller passes a reply").
+        lowered = ReachedFlows.lowered(acc.findings) if unresolved else set()
+        if not flows and not lowered:
+            return
+        callers = [u for u in units if u.path in flows or u.path in lowered]
+        graded = replace(ctx, cross_file_flows=flows, cross_file_unresolved=unresolved)
+        signature = CacheSignature.scan_signature(capability, graded, engine.config)
+        again = engine.detection.parallel(
+            callers, root, graded, acc, capability, signature, carry_content=carry_content,
+            where=where,
+        )  # fmt: skip
+        if any(f.rule_id.startswith("OPERATIONAL.") for f in again):
+            # A re-grade that did not finish keeps the first pass's findings beside its own gap:
+            # nothing already found is lost to a worker that died the second time.
+            acc.add(again)
+            return
+        paths = {u.path for u in callers}
+        acc.findings[:] = [
+            f
+            for f in acc.findings
+            if not (f.detector == CrossFileFlows.DETECTOR and f.location.path in paths)
+        ]
+        acc.add(again)
+
+
 class ScanFactsGathering:
     """`gather`: the verdict's facts and the rule modules' facts, from one computation; and
     `deferred`, the rule file's pass over them."""

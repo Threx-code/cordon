@@ -13,6 +13,8 @@ order, how many) and reads these instead of running a detector over the file.
   intent.effect [capability, deferred]            limits as today; per file, these facts
   intent.fact   concealment and gate facts        ReachedFlows.of: per place, `{place}_{suffix}`
   reached.flow  a reached-flow fact's suffix
+  js.*          a JavaScript file's cross-file      CrossFileFlows: joined across the package's
+                summaries (item 60)                 require graph, the callers re-graded
 ```
 
 A file is labelled in the worker when the parent could ask for it: in an install, import or agent
@@ -62,6 +64,22 @@ class WorkerAnalysis:
                         kind, value = fact
                         WorkerFacts.add(kind, value)
         WorkerAnalysis._reached(unit, ctx)
+        WorkerAnalysis._summaries(unit)
+
+    @staticmethod
+    def _summaries(unit: Any) -> None:
+        """A JavaScript file's cross-file summaries (item 60): what its exports do with their
+        parameters and what it hands to the package's other modules, for the parent to join."""
+        from cordon_scanner.analysis.javascript.flow.summaries import JsSummaries
+        from cordon_scanner.analysis.javascript.js_flow import JsFlow
+        from cordon_scanner.engine.isolation.facts import WorkerFacts
+
+        if unit.language not in ("javascript", "typescript") or unit.content.is_binary:
+            return
+        facts = JsFlow.summaries(unit.content.text)
+        for kind in JsSummaries.KINDS:
+            for value in facts.get(kind, ()):
+                WorkerFacts.add(kind, value)
 
     @staticmethod
     def _download(unit: Any) -> None:

@@ -16,6 +16,8 @@ from cordon_scanner.detect.code.wasm_glue import WasmBindgenGlue
 from cordon_scanner.foundation.capabilities import Capability
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from cordon_scanner.foundation.content import FileContent
 
 
@@ -290,6 +292,37 @@ class JavaScriptCapabilities:
                         byte_start=start,
                         byte_end=start + 1,
                         line=flow.line,
+                    )
+                )
+        return hits
+
+    @classmethod
+    def js_cross_file_flows(
+        cls, content: FileContent, flows: Sequence[tuple[int, tuple[str, ...], str, str]]
+    ) -> list[CapabilityHit]:
+        """The flows that leave this file through a helper another of the package's files exports
+        (item 60): each at the caller's line, through the same rules as a same-file flow, so its
+        grading (reach, ceilings, composites) is a same-file flow's. `flows` are the parent's join
+        (`ScanContext.cross_file_flows`)."""
+        text = content.text
+        starts = [0]
+        for index, char in enumerate(text):
+            if char == "\n":
+                starts.append(index + 1)
+        hits: list[CapabilityHit] = []
+        for line, sources, sink, destination in flows:
+            for kind, rule_id, sinks in cls.JS_FLOW_RULES:
+                if kind not in sources or sink not in sinks:
+                    continue
+                offset = starts[min(max(line, 1), len(starts)) - 1]
+                start = len(text[:offset].encode("utf-8"))
+                hits.append(
+                    CapabilityHit(
+                        capability=Capability.FLOW,
+                        rule_id=f"{rule_id}.{destination.upper()}",
+                        byte_start=start,
+                        byte_end=start + 1,
+                        line=line,
                     )
                 )
         return hits

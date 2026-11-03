@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import re
 from contextlib import suppress
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from cordon_scanner.analysis.javascript.flow.calls import Calls
 from cordon_scanner.analysis.javascript.flow.taint import Taint
@@ -47,14 +47,19 @@ from cordon_scanner.analysis.javascript.flow.vocabulary import (
     _OPEN,
     _RAW_SOCKET_MODULES,
     _SECRET_PATH,
+    DATA_ARGS,
     MAX_BYTES,
     MAX_ROUNDS,
+    SHELL_CALLS,
+    SHELL_META,
     SOURCES,
     Flow,
     Label,
+    ProgramNames,
     Request,
     _OverBudget,
 )
+from cordon_scanner.analysis.javascript.flow.summaries import JsSummaries
 from cordon_scanner.analysis.shared.content_memo import ContentMemo
 
 
@@ -90,9 +95,14 @@ class JsFlow:
     @staticmethod
     def _flows(text: str) -> list[Flow]:
         try:
-            return _Analysis(text).run()
+            analysis = _Analysis(text)
+            flows = analysis.run()
         except RecursionError:
             return []
+        # The cross-file summaries (item 60) come from this same analysis: kept beside the flows so
+        # the worker's facts never run it a second time for a file the flow rules read.
+        JsFlow.MEMO.get("summaries", text, lambda: [JsSummaries.shared(analysis)])
+        return flows
 
     @classmethod
     def requests(cls, text: str) -> list[Request]:
@@ -159,6 +169,55 @@ class JsFlow:
         if len(text) > MAX_BYTES:
             return frozenset()
         return frozenset(JsFlow.MEMO.get("fixed_spawns", text, lambda: JsFlow._fixed_spawns(text)))
+
+    @classmethod
+    def summaries(cls, text: str) -> dict[str, list[Any]]:
+        """The file's cross-file summaries (item 60, `flow/summaries.py`) as the scan sends them:
+        worked out once per text, beside the flows by the same analysis (`_flows`), and nothing when
+        the file joins no other. A file the analysis cannot read whole -- past its size limit, or
+        failing -- says so (`JsSummaries.UNRESOLVED`): its calls into the package are not known."""
+        if len(text) > MAX_BYTES:
+            return {"js.require": [JsSummaries.UNRESOLVED]}
+        return JsFlow.MEMO.get("summaries", text, lambda: [JsFlow._summaries(text)])[0]
+
+    @staticmethod
+    def summaries_raw(text: str) -> dict[str, list[Any]]:
+        """Every kind's facts, empty ones too, unmemoised: for the summaries' own tests."""
+        analysis = _Analysis(text)
+        analysis.run()
+        return JsSummaries.of_analysis(analysis)
+
+    @staticmethod
+    def _summaries(text: str) -> dict[str, list[Any]]:
+        try:
+            analysis = _Analysis(text)
+            analysis.run()
+        except (RecursionError, _OverBudget):
+            return {"js.require": [JsSummaries.UNRESOLVED]}
+        return JsSummaries.shared(analysis)
+
+    @classmethod
+    def parameter_command_lines(cls, text: str) -> frozenset[int]:
+        """Lines of shell-string process calls whose command runs a `local` DATA_ARGS program
+        (ffmpeg, ffprobe) built only from literals and its function's parameters, with no
+        server-sent or decoded value reaching it in the file (note 78). A caller elsewhere could
+        still pass one, so these are LOWERED, never dropped (`CompositeGrading`); a caller in the
+        package that does is a cross-file flow at its own line (item 60). Empty when the file is too
+        large or did not parse, so nothing is lowered (fail-closed)."""
+        if len(text) > MAX_BYTES:
+            return frozenset()
+        return frozenset(
+            JsFlow.MEMO.get("parameter_commands", text, lambda: JsFlow._parameter_commands(text))
+        )
+
+    @staticmethod
+    def _parameter_commands(text: str) -> list[int]:
+        try:
+            analysis = _Analysis(text)
+            flows = analysis.run()
+            return sorted(analysis.parameter_commands(flows))
+        except (RecursionError, _OverBudget):
+            return []
 
     @staticmethod
     def _fixed_spawns(text: str) -> list[int]:
@@ -510,6 +569,95 @@ class _Analysis(Calls):
             if args and self._fixed_program(self._chain(k)[0][-1], args, scope, self._not_literal):
                 out.add(self.line(k))
         return frozenset(out)
+
+    def parameter_commands(self, flows: list[Flow]) -> frozenset[int]:
+        """See `JsFlow.parameter_command_lines`: shell-string process calls (`exec`, `execSync`)
+        whose command, written in place or bound to one name, starts with a literal `local` row
+        program (`DATA_ARGS`) as its own word, whose literal parts hold no `SHELL_META` character,
+        and whose every interpolation is a parameter of its function (or a member of one) or a
+        literal; with no server-sent or decoded value reaching the call (`flows`)."""
+        served = {
+            f.line for f in flows if f.sink == "process" and set(f.sources) & self._CODE_LABELS
+        }
+        out: set[int] = set()
+        for k in range(self.n - 1):
+            if not self._called(k) or self.line(k) in served:
+                continue
+            scope = self.scope_of(k)
+            if self._chain(k)[0][-1] not in SHELL_CALLS or self._sink_kind(k, scope) != "process":
+                continue
+            args = self._args(k + 1)
+            if not args:
+                continue
+            spans = [args[0]]
+            a, b = args[0]
+            if b == a + 1 and self.is_name(a):
+                spans = sorted(set(self.bound.get(self.resolve(str(self.t[a].value), scope)) or ()))
+            if spans and all(self._parameter_command(s, e, self.scope_of(s)) for s, e in spans):
+                out.add(self.line(k))
+        return frozenset(out)
+
+    def _parameter_command(self, a: int, b: int, scope: int) -> bool:
+        """Whether [a, b) is a command `parameter_commands` accepts."""
+        while self.is_p(a, "(") and self.match[a] == b - 1:
+            a, b = a + 1, b - 1
+        if a >= b or self._carries_code(a, b, scope):
+            return False
+        parts: list[tuple[int, int]] = []
+        start, i = a, a
+        while i < b:
+            if (
+                self.t[i].kind == "punct"
+                and self.t[i].value in ("(", "[", "{")
+                and self.match[i] > 0
+            ):
+                i = self.match[i] + 1
+                continue
+            if self.is_p(i, "+"):
+                parts.append((start, i))
+                start = i + 1
+            i += 1
+        parts.append((start, b))
+        first = self.t[parts[0][0]]
+        if parts[0][1] != parts[0][0] + 1 or first.kind != "str":
+            return False
+        head = str(first.value).lstrip()
+        word = head.split(None, 1)[0] if head else ""
+        if not word or (len(head) == len(word) and len(parts) > 1):
+            return False  # the program's name runs into an interpolation
+        if DATA_ARGS.get(ProgramNames.of(word)) != "local":
+            return False
+        return all(self._command_part(s, e, scope) for s, e in parts)
+
+    def _command_part(self, a: int, b: int, scope: int) -> bool:
+        """A literal with no shell metacharacter, or one interpolated parameter or literal."""
+        while self.is_p(a, "(") and self.match[a] == b - 1:
+            a, b = a + 1, b - 1
+        if b == a + 1 and self.t[a].kind == "str":
+            return not (set(str(self.t[a].value)) & SHELL_META)
+        if b == a + 1 and self.t[a].kind == "num":
+            return True
+        if a >= b or not self.is_name(a):
+            return False
+        for i in range(a + 1, b):  # a name and its members only: `size.width`, never a call
+            if (i - a) % 2 == 1 and not self.is_p(i, "."):
+                return False
+            if (i - a) % 2 == 0 and not self.is_name(i):
+                return False
+        labels = self.taint(a, b, scope)
+        if labels:
+            return all(isinstance(x, tuple) and x[0] in ("P", "Q") for x in labels)
+        rhs = self.bound.get(self.resolve(str(self.t[a].value), scope)) or []
+        return (
+            b == a + 1
+            and bool(rhs)
+            and all(
+                e == s + 1
+                and self.t[s].kind in ("str", "num")
+                and not (set(str(self.t[s].value)) & SHELL_META)
+                for s, e in rhs
+            )
+        )
 
     def _called(self, k: int) -> bool:
         """Whether name token `k` is called here, not declared (`function fetch(url) {`, a

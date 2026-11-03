@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import ClassVar
 
 from cordon_scanner.analysis.javascript.flow.summaries import CrossFile, JsSummaries
+from cordon_scanner.analysis.javascript.js_flow import JsFlow
 
 
 class CrossKit:
@@ -25,7 +26,7 @@ class CrossKit:
 
     @staticmethod
     def flows(files: dict[str, str]) -> list[tuple[str, int, tuple[str, ...], str, str]]:
-        facts = {path: JsSummaries.of(text) for path, text in files.items()}
+        facts = {path: JsFlow.summaries_raw(text) for path, text in files.items()}
         return CrossFile.compose(facts, frozenset(files))
 
     @staticmethod
@@ -112,14 +113,16 @@ class TestNoFlowIsInvented:
 
 class TestTheFactsAreBounded:
     def test_every_label_is_from_the_declared_vocabulary(self) -> None:
-        facts = JsSummaries.of(CrossKit.READ + 'const h = require("./h");\nh.send(secret, 1);\n')
+        facts = JsFlow.summaries_raw(
+            CrossKit.READ + 'const h = require("./h");\nh.send(secret, 1);\n'
+        )
         for _module, _name, _i, labels, _line, _caller, cid in facts["js.callout"]:
             assert len(labels) <= JsSummaries.MAX_LABELS
             assert all(lab.startswith(("P", "C")) or lab.isidentifier() for lab in labels)
             assert cid.startswith("C")
 
     def test_no_raw_destination_crosses(self) -> None:
-        facts = JsSummaries.of(CrossKit.SENDER)
+        facts = JsFlow.summaries_raw(CrossKit.SENDER)
         for _name, _frm, to in facts["js.summary"]:
             if to.startswith("sink:"):
                 assert to.rsplit(":", 1)[-1] in ("drop", "ip", "fixed", "unknown")

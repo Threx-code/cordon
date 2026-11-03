@@ -12,7 +12,7 @@ each step is now its own method, its statements and comments unchanged.
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.python.inert_literals import InertLiterals
 from cordon_scanner.analysis.shared.source_paths import FIXTURE_CEILING, SourcePaths
@@ -48,6 +48,16 @@ class CompositeGrading:
     VERIFIED_DOWNLOAD_REASON = (
         "a checksum-verified download of the package's own release; whoever owns the release "
         "also owns the checksum, so the binary itself is not vouched for"
+    )
+    #: Note 78's lowering, said in the finding: the reviewers' wording.
+    PARAMETER_COMMAND_REASON = (
+        "a shell command string built from parameters, running a program whose arguments are data, "
+        "with nothing fetched or decoded reaching it in this file; a caller in another file could "
+        "inject"
+    )
+    #: What else completes the dropper's pairing: each makes the window a dropper on its own.
+    _RUNS_CODE: ClassVar[frozenset[Capability]] = frozenset(
+        {Capability.EXECUTE, Capability.FETCH_EXEC, Capability.DESERIALIZE}
     )
 
     #: A fetch whose target is identified by something immutable.
@@ -164,6 +174,7 @@ class CompositeGrading:
                     if ceilinged in LoadPath.ON_REQUEST_REASONS
                     or ceilinged in ("the tool's own official installer", PublishReach.REASON)
                     or ceilinged == CompositeGrading.VERIFIED_DOWNLOAD_REASON
+                    or ceilinged == CompositeGrading.PARAMETER_COMMAND_REASON
                     else ", where a pattern like this is usually written to be read rather than run"
                 )
             )
@@ -406,6 +417,7 @@ class CompositeGrading:
             return "", FIXTURE_CEILING
         self._clients()
         for run in (
+            self._ceiling_for_parameter_command,
             self._ceiling_for_provisioning,
             self._ceiling_for_credentials_and_material,
             self._ceiling_for_build_and_tooling,
@@ -501,6 +513,22 @@ class CompositeGrading:
             own_credential_client,
         )
         self.agent_tool_client = agent_tool_client
+
+    def _ceiling_for_parameter_command(self) -> tuple[str, Severity] | None:
+        """`SUSPECT.DROPPER.001` whose every spawn is a parameter-built shell command of a data
+        program (`CapabilityHit.parameter_command`, note 78), and nothing else in the window runs
+        code: reported at MEDIUM with the reason, never dropped (the outer layer's review). An
+        install hook still escalates it after this ceiling; a caller in the package that hands it a
+        reply is a cross-file flow at the caller's line, graded on its own (item 60); and where the
+        package's calls are not all known (`ScanContext.cross_file_unresolved`), nothing is lowered."""
+        if self.compiled.rule.id != CompositeRuleIds.DROPPER_RULE or self.ctx.cross_file_unresolved:
+            return None
+        spawns = [h for h in self.hits if h.capability is Capability.SPAWN]
+        if not spawns or not all(h.parameter_command for h in spawns):
+            return None
+        if any(h.capability in self._RUNS_CODE for h in self.hits):
+            return None
+        return CompositeGrading.PARAMETER_COMMAND_REASON, Severity.MEDIUM
 
     def _ceiling_for_provisioning(self) -> tuple[str, Severity] | None:
         """Machine provisioning, hand-run provisioning, an own-credential client."""

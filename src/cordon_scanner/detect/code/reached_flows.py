@@ -37,10 +37,11 @@ from cordon_scanner.foundation.dependencies import HookKinds
 from cordon_scanner.foundation.files.windows import BytesWindows, WindowSourceChanged
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Sequence
+    from collections.abc import Callable, Iterator, Mapping, Sequence
 
     from cordon_scanner.detect.base import FileUnit, ScanContext
     from cordon_scanner.detect.code.features import Source
+    from cordon_scanner.foundation.models import Finding
 
 
 class ReachedFlows:
@@ -103,6 +104,57 @@ class ReachedFlows:
             out.update(CodeFeatures.of(ReachedFlows.sources(units, ctx)))
             out.update(BinaryFeatures.of(ReachedFlows.executables(units)))
         return out
+
+    @staticmethod
+    def cross_file(
+        units: Sequence[FileUnit], facts: Mapping[str, Mapping[str, list[Any]]]
+    ) -> dict[str, tuple[tuple[int, tuple[str, ...], str, str], ...]]:
+        """Item 60's join: per calling file, the flows into another of the package's files that a
+        flow rule reports (`JS_FLOW_RULES`), composed from the workers' summaries (`js.*` facts,
+        `CrossFile.compose`): set arithmetic over facts, never a file read here."""
+        from cordon_scanner.analysis.javascript.flow.summaries import CrossFile, JsSummaries
+        from cordon_scanner.detect.code.capability.javascript import JavaScriptCapabilities
+
+        joined = {
+            path: dict(held)
+            for path, held in facts.items()
+            if any(kind in held for kind in JsSummaries.KINDS)
+        }
+        if not joined:
+            return {}
+        rules = JavaScriptCapabilities.JS_FLOW_RULES
+        out: dict[str, list[tuple[int, tuple[str, ...], str, str]]] = {}
+        for path, line, sources, sink, dest in CrossFile.compose(
+            joined, frozenset(u.path for u in units)
+        ):
+            if any(kind in sources and sink in sinks for kind, _rule, sinks in rules):
+                out.setdefault(path, []).append((line, sources, sink, dest))
+        return {path: tuple(found) for path, found in sorted(out.items())}
+
+    @staticmethod
+    def unresolved(
+        facts: Mapping[str, Mapping[str, list[Any]]], findings: Sequence[Finding]
+    ) -> bool:
+        """Whether some file's calls into the package are not all known: a computed require, a file
+        the analysis could not read whole, or a file whose facts were refused."""
+        from cordon_scanner.analysis.javascript.flow.summaries import JsSummaries
+
+        return any(
+            JsSummaries.UNRESOLVED in held.get("js.require", ()) for held in facts.values()
+        ) or any(f.rule_id == "OPERATIONAL.WORKER.FACTS_REFUSED" for f in findings)
+
+    @staticmethod
+    def lowered(findings: Sequence[Finding]) -> set[str]:
+        """The files with a capability finding lowered as a parameter-built command (note 78)."""
+        from cordon_scanner.detect.code.capability.grading import CompositeGrading
+
+        reason = CompositeGrading.PARAMETER_COMMAND_REASON
+        return {
+            f.location.path
+            for f in findings
+            if f.detector == "capability"
+            and any(reason in step for step in f.explanation.escalations)
+        }
 
     @staticmethod
     def executables(units: Sequence[FileUnit]) -> Iterator[tuple[int, Callable[[int, int], bytes]]]:

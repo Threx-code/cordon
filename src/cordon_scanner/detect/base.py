@@ -256,6 +256,17 @@ class ScanContext:
     None during detection, before they exist. A fact like the others: carried to a worker and
     part of a file's cache key, so a file is never served findings made under other facts."""
 
+    cross_file_flows: Mapping[str, tuple[tuple[int, tuple[str, ...], str, str], ...]] | None = None
+    """Per calling file, the flows that cross into another of the package's files (item 60):
+    (line, source kinds, sink, destination class), joined by the parent from the workers' summaries
+    (`CrossFileFlows`). Set only for the re-grade of those files, after detection; None before. A
+    fact like the others: carried to a worker and part of the file's cache key."""
+
+    cross_file_unresolved: bool = False
+    """Whether some file of the package calls into it in a way the join cannot follow (a computed
+    `require`, a file not read whole, facts refused): set for the re-grade only. What needs the join
+    to be complete -- note 78's lowering of a parameter-built command -- is then not applied."""
+
     #: The fields that belong to the process holding the context rather than to the scan target,
     #: each with where its effect is accounted for. Everything else is a fact about the target:
     #: `facts()` carries all of it to a worker, and the scan cache keys on all of it. Named
@@ -705,13 +716,21 @@ class CampaignSiblingFacts(Protocol):
 
 class ReachedFlowFacts(Protocol):
     """What the engine uses of the class `ReachedFlows`: the parent joins each file's flow facts
-    (`of`), a worker reads them (`reads`, `facts`; item 56)."""
+    (`of`), a worker reads them (`reads`, `facts`; item 56), and the parent joins the files'
+    summaries across the package (`cross_file`, `unresolved`, `lowered`; item 60, note 78)."""
 
     def of(
         self, units: Sequence[FileUnit], ctx: ScanContext, facts: dict[str, dict[str, list[Any]]]
     ) -> dict[str, float]: ...
     def reads(self, unit: FileUnit, ctx: ScanContext) -> bool: ...
     def facts(self, place: str, text: str, *, python: bool = ...) -> dict[str, float]: ...
+    def cross_file(
+        self, units: Sequence[FileUnit], facts: Mapping[str, Mapping[str, list[Any]]]
+    ) -> dict[str, tuple[tuple[int, tuple[str, ...], str, str], ...]]: ...
+    def unresolved(
+        self, facts: Mapping[str, Mapping[str, list[Any]]], findings: Sequence[Finding]
+    ) -> bool: ...
+    def lowered(self, findings: Sequence[Finding]) -> set[str]: ...
 
 
 class ServerSourceFinding(Protocol):

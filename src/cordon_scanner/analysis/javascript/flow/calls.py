@@ -294,7 +294,12 @@ class Calls(Taint):
                         out |= self.taint(a, b, scope)
             else:
                 out |= self.taint(s, e, scope)
-        if kind == "process" and self._fixed_program(last, args, scope, self._may_carry_code):
+        local = bool(args) and DATA_ARGS.get(self._program(*args[0], scope) or "") == "local"
+        if (
+            kind == "process"
+            and not local  # a `local` row's arguments stay a sink: a reply at the call site is a flow
+            and self._fixed_program(last, args, scope, self._may_carry_code)
+        ):
             # A DATA_ARGS program given what a server sent only where its rule says it is data,
             # with no shell and nothing in its options (note 44): the reply is a pid, an archive, a
             # URL to fetch, not code run. Anything else the arguments carry -- a secret handed to
@@ -368,6 +373,18 @@ class Calls(Taint):
         rule = DATA_ARGS.get(program or "")
         if rule is None:
             return False
+        if rule == "local":
+            # For the composites' marking only (`fixed_spawns`; `_sent` keeps a `local` row's
+            # arguments a sink, so a reply handed to a helper is a flow at its call site): fixed
+            # while nothing a server sent or a blob decoded reaches any argument or option (note 78).
+            return not any(
+                self._carries_code(a, b, scope)
+                or any(
+                    self.t[k].kind in ("name", "str") and str(self.t[k].value) == "shell"
+                    for k in range(a, b)
+                )
+                for a, b in args[1:]
+            )
         options = args[2:] if call.startswith("spawn") else args[2:3]
         for a, b in options:
             if any(
