@@ -137,6 +137,32 @@ class TestTampering:
         assert AdvisoryIndex._verified(database, seal, "c" * 64) is None
 
 
+class TestAnotherInstallsCache:
+    """A CI job restores a cache another job wrote: the bytes are identical, the key is not.
+    The seal is a MAC under this install's key (`StatePaths.key_dir`, never movable by the
+    environment), so the copy is refused and the index rebuilt from the verified source
+    (release item 74, cut 3: the seal-key behaviour pinned, never moved)."""
+
+    def test_a_byte_identical_index_under_another_key_is_refused_and_rebuilt(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        from cordon_scanner.foundation.evidence_key import EvidenceKey
+        from cordon_scanner.foundation.files.seal import LocalSeal
+
+        IndexKit.isolate(monkeypatch, tmp_path)
+        monkeypatch.setattr(EvidenceKey, "_key", b"\x01" * 32)
+        assert AdvisoryIndex.for_file("9" * 64, IndexKit.records) is not None
+        database, seal = IndexKit.files("9" * 64)
+        written = seal.read_bytes()
+
+        monkeypatch.setattr(EvidenceKey, "_key", b"\x02" * 32)
+        assert AdvisoryIndex._verified(database, seal, "9" * 64) is None
+        index = AdvisoryIndex.for_file("9" * 64, IndexKit.records)
+        assert index is not None and len(index.get("left-pad")) == 2
+        assert seal.read_bytes() != written
+        assert LocalSeal.valid("advisory-index", json.loads(seal.read_text(encoding="utf-8")))
+
+
 class TestQueries:
     def test_a_name_is_data_not_sql(self, monkeypatch, tmp_path) -> None:
         IndexKit.isolate(monkeypatch, tmp_path)
