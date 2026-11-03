@@ -756,7 +756,7 @@ class ServerSources:
             and "/node_modules/" not in u.path
             and "site-packages/" not in u.path
             and not ServerSources.NOT_A_SERVER_PATH.search(u.path.rpartition("!")[2])
-            and ServerSources.MCP_SDK_IMPORT.search(u.content.text[:200_000]) is not None
+            and ServerSources.MCP_SDK_IMPORT.search(u.content.text_head(200_000)) is not None
         }
 
     #: An import statement of an MCP server SDK at the start of a line -- not the same words in a

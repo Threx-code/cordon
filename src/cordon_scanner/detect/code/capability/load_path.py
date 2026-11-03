@@ -590,7 +590,7 @@ class LoadPath:
         return (
             member.endswith((".js", ".mjs", ".cjs", ".ts", ".mts", ".py"))
             and not ServerSources.NOT_A_SERVER_PATH.search(member)
-            and ServerSources.MCP_SDK_IMPORT.search(content.text[:200_000]) is not None
+            and ServerSources.MCP_SDK_IMPORT.search(content.text_head(200_000)) is not None
         )
 
     #: A compiled language's own test that a hit runs at load, beyond its initialisers: Go's

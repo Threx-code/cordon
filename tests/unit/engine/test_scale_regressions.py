@@ -70,6 +70,56 @@ class TestOneLanguageEverywhere:
             LanguageRegistry.of_file(path, content)
             assert "text" not in content.__dict__
 
+    @pytest.mark.parametrize("kind", ["npm", "wheel"])
+    def test_the_scan_s_own_process_decodes_no_member_whole(
+        self, tmp_path, monkeypatch, kind
+    ) -> None:
+        # Note 80: what the parent decodes, it holds for the scan; a package of 13,551 members held
+        # 590 MB in language detection, then 532 MB in the MCP server-source check (both prefix
+        # reads). The workers decode; the parent reads names, bytes' starts and facts.
+        import io
+        import tarfile
+        import zipfile
+        from functools import cached_property
+
+        if kind == "npm":
+            archive = tmp_path / "pkg.tgz"
+            members = {"package/package.json": b'{"name":"p","version":"1.0.0","main":"index.js"}'}
+            members |= {
+                f"package/lib/m{i}.js": b"module.exports = %d;\n" % i * 300 for i in range(80)
+            }
+            members["package/README"] = b"plain words\n" * 400
+            with tarfile.open(archive, "w:gz") as tar:
+                for name, data in members.items():
+                    info = tarfile.TarInfo(name)
+                    info.size = len(data)
+                    tar.addfile(info, io.BytesIO(data))
+        else:
+            archive = tmp_path / "p-1.0.0-py3-none-any.whl"
+            members = {
+                "p-1.0.0.dist-info/METADATA": b"Metadata-Version: 2.1\nName: p\nVersion: 1.0.0\n\n"
+                + b"words\n" * 900,
+                "p-1.0.0.dist-info/WHEEL": b"Wheel-Version: 1.0\nRoot-Is-Purelib: true\n",
+            }
+            members |= {f"p/m{i}.py": b"VALUE = %d\n" % i * 400 for i in range(80)}
+            with zipfile.ZipFile(archive, "w") as whl:
+                for name, data in members.items():
+                    whl.writestr(name, data)
+        decoded: list[str] = []
+        owner = next(c for c in FileContent.__mro__ if "text" in c.__dict__)
+        original = owner.__dict__["text"]
+
+        def counting(self):
+            if self.size > 4096:
+                decoded.append(self.path)
+            return original.func(self)
+
+        watched = cached_property(counting)
+        watched.__set_name__(owner, "text")
+        monkeypatch.setattr(owner, "text", watched)
+        ScaleHelpers.scan(archive, limits=Config.default().limits.merged(max_workers=2))
+        assert not decoded, decoded[:5]
+
     @pytest.mark.parametrize(
         "raw",
         [

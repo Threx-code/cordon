@@ -244,7 +244,7 @@ class PackageIdentities:
 
     @classmethod
     def _nuget(cls, unit: FileUnit, ctx: ScanContext) -> PackageIdentity | None:
-        text = unit.content.text[:200_000]
+        text = unit.content.text_head(200_000)
         name = cls._xml_text(text, "id")
         if not name:
             return None
@@ -363,7 +363,7 @@ class PackageIdentities:
     def _pypi(cls, unit: FileUnit, ctx: ScanContext) -> PackageIdentity | None:
         from cordon_scanner.ecosystems.registry import EcosystemRegistry
 
-        head = unit.content.text[:20000].split("\n\n", 1)[0]
+        head = unit.content.text_head(20000).split("\n\n", 1)[0]
         fields: dict[str, list[str]] = {}
         for line in head.splitlines():
             key, sep, value = line.partition(":")

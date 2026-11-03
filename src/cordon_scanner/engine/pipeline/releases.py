@@ -278,7 +278,7 @@ class ReleaseChecks:
                 elif name == "Cargo.toml" and re.search(r"-\d", parent):
                     # A published crate (.crate): `<name>-<version>/Cargo.toml`, normalised by
                     # cargo at publish time, so `[package]` holds the release's own name.
-                    text = unit.content.text[:20000]
+                    text = unit.content.text_head(20000)
                     package = re.search(r"(?ms)^\[package\](.*?)(?:^\[|\Z)", text)
                     if package:
                         found_name = re.search(r'(?m)^name\s*=\s*"([^"]+)"', package.group(1))
@@ -289,7 +289,7 @@ class ReleaseChecks:
                             )
                 elif name.endswith(".nuspec") and len(parts) == 1:
                     # A NuGet package (.nupkg): its `<id>.nuspec` sits at the package root.
-                    text = unit.content.text[:20000]
+                    text = unit.content.text_head(20000)
                     found_name = re.search(r"<id>\s*([^<\s]+)\s*</id>", text)
                     found_version = re.search(r"<version>\s*([^<\s]+)\s*</version>", text)
                     if found_name and found_version:
@@ -299,7 +299,7 @@ class ReleaseChecks:
                 elif (name == "PKG-INFO" and re.search(r"-\d", parent)) or (
                     name == "METADATA" and parent.endswith(".dist-info")
                 ):
-                    text = unit.content.text[:20000]
+                    text = unit.content.text_head(20000)
                     found_name = re.search(r"(?m)^Name:\s*(\S+)", text)
                     found_version = re.search(r"(?m)^Version:\s*(\S+)", text)
                     if found_name and found_version:
