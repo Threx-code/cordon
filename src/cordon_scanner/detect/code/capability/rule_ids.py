@@ -35,12 +35,15 @@ class CompositeRuleIds:
             "SUSPECT.DECODE_EXEC.001",
             "SUSPECT.MODEL.LOADED_ON_IMPORT.001",
             "SUSPECT.PERSIST.001",
+            "SUSPECT.REGISTRY.SELF_PUBLISH.001",
         }
     )
     """Composites lowered when nothing on the load path runs them. A dynamic import in the method
     of a YAML library that resolves `!!python/name:` tags is that library's feature, and a
     function that checks for GitHub Actions before minting its OIDC token is doing its job; the
-    same code at a module's top level, or in a hook, is not lowered."""
+    same code at a module's top level, or in a hook, is not lowered. A library that exports a publishing
+    routine publishes when its caller asks, as a release CLI does (4 benign units on c9e1a4d0's rows, no
+    malware); a self-renaming republish loop takes no ceiling at all (item 57)."""
 
     DROPPER_RULE = "SUSPECT.DROPPER.001"
 
