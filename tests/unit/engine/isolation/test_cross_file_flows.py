@@ -119,6 +119,43 @@ class TestAHelperInAnotherFile:
         assert not CrossScanKit.flows_at(result, "index.js")
 
 
+class TestAsTheSameFileJudgesIt:
+    """Note 60 rule 5: a helper in another file is judged as the same helper written in place. The
+    pair of 3 Nov found a data argument (note 69) read as code across files only."""
+
+    CALLER: ClassVar[str] = (
+        'const { k } = require("./kill");\n'
+        "(async () => {\n"
+        '  const r = await fetch("https://api.invalid/latest");\n'
+        "  k(await r.text());\n"
+        "})();\n"
+    )
+
+    @staticmethod
+    def remote(helper: str) -> bool:
+        from cordon_scanner.analysis.javascript.flow.summaries import CrossFile
+        from cordon_scanner.analysis.javascript.js_flow import JsFlow
+
+        files = {"index.js": TestAsTheSameFileJudgesIt.CALLER, "kill.js": helper}
+        facts = {p: JsFlow.summaries(x) for p, x in files.items()}
+        return any(
+            "network_response" in f[2] and f[3] == "process"
+            for f in CrossFile.compose(facts, frozenset(files))
+        )
+
+    def test_a_reply_as_a_data_argument_is_no_flow(self) -> None:
+        helper = 'const cp = require("child_process");\nmodule.exports.k = (v) => cp.spawn("taskkill", ["/pid", v, "/t", "/f"]);\n'
+        assert not self.remote(helper)
+
+    def test_a_reply_as_an_argument_that_is_code_is_a_flow(self) -> None:
+        helper = 'const cp = require("child_process");\nmodule.exports.k = (v) => cp.spawn("git", [v]);\n'
+        assert self.remote(helper)
+
+    def test_a_reply_into_a_local_row_stays_a_flow(self) -> None:
+        helper = 'const cp = require("child_process");\nmodule.exports.k = (v) => cp.spawn("ffmpeg", ["-i", v]);\n'
+        assert self.remote(helper)
+
+
 class TestTheChannel:
     """The summaries cross as declared facts: anything else refuses the file's set (a gap)."""
 
@@ -151,6 +188,27 @@ class TestTheChannel:
             assert facts
             accepted, why = Facts.accept(json.dumps(facts), 0)
             assert accepted is not None, why
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            'const h = require("../..");\nh.go(process.env.X);\nh(1);\n',
+            'const h = require(".");\nh.go(1);\nrequire("./")(2);\n',
+            'const { go } = require("../../lib");\ngo(1);\n',
+            'const h = require("./lib.v2");\nh.run(1);\n',
+        ],
+    )
+    def test_a_relative_path_of_dots_is_accepted(self, text) -> None:
+        # zcash-easy-miner's examples call `require("../..")`: its dots were read as a member, an empty
+        # export name was sent, and the file's facts were refused, a gap (the pair, 3 Nov).
+        import json
+
+        from cordon_scanner.analysis.javascript.js_flow import JsFlow
+
+        facts = JsFlow.summaries(text)
+        accepted, why = Facts.accept(json.dumps(facts), 0)
+        assert accepted is not None, why
+        assert all(c[1] for c in facts.get("js.callout", ()))
 
     def test_a_file_joining_nothing_sends_nothing(self) -> None:
         from cordon_scanner.analysis.javascript.js_flow import JsFlow

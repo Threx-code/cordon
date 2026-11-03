@@ -163,7 +163,8 @@ class JsShapes:
 
     @staticmethod
     def summary(value: Any) -> bool:
-        """[name, from, to]: from a label, to "return" or "sink:<kind>:<destination class>"."""
+        """[name, from, to]: from a label, to "return", "sink:<kind>:<destination class>" or a data
+        argument's "data:<kind>:<destination class>"."""
         if not (isinstance(value, list) and len(value) == 3 and JsShapes._name(value[0])):
             return False
         if not JsShapes.label(value[1]) or not isinstance(value[2], str):
@@ -173,7 +174,7 @@ class JsShapes:
         parts = value[2].split(":")
         return (
             len(parts) == 3
-            and parts[0] == "sink"
+            and parts[0] in ("sink", "data")
             and JsShapes.sink(parts[1])
             and parts[2] in JsShapes.DESTINATIONS
         )

@@ -410,9 +410,15 @@ class Taint(Sinks):
 
     @staticmethod
     def _member_alias(module: str) -> bool:
-        """`./h.send` (a destructured member) as against `./h` or `../lib/h.js` (a path)."""
+        """`./h.send` (a destructured member) as against `./h`, `../lib/h.js` or `../..` (a path): the
+        member is a name after the last segment's last dot, with a module name before it."""
         tail = module.rsplit("/", 1)[-1]
-        return "." in tail and not tail.endswith((".js", ".cjs", ".mjs", ".ts", ".json"))
+        head, dot, member = tail.rpartition(".")
+        return (
+            bool(dot and head and member.isidentifier())
+            and head not in (".", "..")
+            and not tail.endswith((".js", ".cjs", ".mjs", ".ts", ".json"))
+        )
 
     def _member_at(self, k: int) -> int | None:
         """The member name's token after the name at `k`: `x.g` or `x?.g`; None otherwise."""

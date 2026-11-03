@@ -10,7 +10,7 @@ with set arithmetic, never reading a file (item 56's rule):
   js.export   [name, params]                       callouts resolved to (file, export) by path
   js.summary  [name, from, to]                     fixpoint over summaries and callouts:
      from: "P<i>" | a source kind | "C<k>"            labels L into B.f's P<i> -> sink  ⇒ a flow
-     to:   "return" | "sink:<kind>:<dest>"            B.f returns S, A's C<k> reaches a sink ⇒ a flow
+     to:   "return" | "sink:<kind>:<dest>" | "data:<kind>:<dest>" (a data argument)            B.f returns S, A's C<k> reaches a sink ⇒ a flow
   js.callout  [module, name, i, labels, line,          a P<j> of A's export g in L ⇒ g's summary grows
                caller, "C<k>"]
   js.callsink ["C<k>", kind, dest, line]           each flow: (caller file, line, sources, sink, dest)
@@ -101,6 +101,8 @@ class JsSummaries:
             if callee is None:
                 continue
             module, export = callee
+            if not module or not export:
+                continue  # a call into a module by no name the join can match: no edge (rule 3)
             scope = a.scope_of(k)
             caller = by_fid.get(scope, "")
             args = a._args(k + 1) or []
@@ -150,16 +152,18 @@ class JsSummaries:
     @classmethod
     def _summary(cls, name: str, fn: Any) -> list[list[Any]]:
         out: list[list[Any]] = []
-        # A DATA_ARGS spawn's data sinks are exported as plain ones: across files the summary has
-        # no label kinds to strip, so it keeps today's conservative reading (note 69).
-        for (how, idx), sinks in [*fn.sinks.items(), *fn.data_sinks.items()]:
-            if how == "R":
-                continue  # a file read at a parameter's path: judged where the path is known
-            position = idx[0] if how == "Q" else idx  # a field of the parameter: conservatively it
-            if position > cls.MAX_PARAM:
-                continue
-            for sink, _host, dest, _line in sinks:
-                out.append([name, f"P{position}", f"sink:{sink}:{dest}"])
+        # A DATA_ARGS spawn's data argument (note 69) is its own kind, `data:`: the join strips what a
+        # server sent or a blob decoded from it, as the same-file call site does (`Calls`), so a
+        # cross-file flow is judged exactly as a same-file one (note 60, rule 5).
+        for kind, items in (("sink", fn.sinks.items()), ("data", fn.data_sinks.items())):
+            for (how, idx), sinks in items:
+                if how == "R":
+                    continue  # a file read at a parameter's path: judged where the path is known
+                position = idx[0] if how == "Q" else idx  # a field of the parameter: the parameter
+                if position > cls.MAX_PARAM:
+                    continue
+                for sink, _host, dest, _line in sinks:
+                    out.append([name, f"P{position}", f"{kind}:{sink}:{dest}"])
         for label in fn.ret:
             frm = cls._name(label, fn.fid)
             if frm is not None:
@@ -257,6 +261,8 @@ class CrossFile:
     """The parent's half: per-file facts joined across the package's require graph."""
 
     MAX_ROUNDS: ClassVar[int] = 8
+    #: What a data argument does not carry as code (`Calls._CODE_LABELS`): a reply or a decoded blob.
+    CODE_LABELS: ClassVar[frozenset[str]] = frozenset({"network_response", "decoded"})
     _EXTENSIONS: ClassVar[tuple[str, ...]] = ("", ".js", ".cjs", ".mjs", ".ts", "/index.js")
 
     @classmethod
@@ -292,9 +298,10 @@ class CrossFile:
                         *(results.get((path, lab), set()) for lab in labels if lab.startswith("C"))
                     )
                     for frm, to in sorted(summaries.get((target, str(name)), ())):
-                        if frm == f"P{i}" and to.startswith("sink:"):
-                            _, sink, dest = to.split(":", 2)
-                            concrete = tuple(sorted({x for x in held if x in SOURCES}))
+                        if frm == f"P{i}" and to.startswith(("sink:", "data:")):
+                            how, sink, dest = to.split(":", 2)
+                            strip = cls.CODE_LABELS if how == "data" else frozenset()
+                            concrete = tuple(sorted({x for x in held if x in SOURCES} - strip))
                             if concrete:
                                 flows.add((path, int(line), concrete, sink, dest))
                             for p in (x for x in held if x.startswith("P") and caller):
