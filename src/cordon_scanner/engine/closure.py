@@ -424,7 +424,9 @@ class ImportClosure:
                         "no file of that name: what would run is not in what was scanned."
                     ),
                     remediation="Vet where that file comes from before installing.",
-                    severity=Severity.HIGH,
+                    # The scan is incomplete, and says so by its exit (4), as every gap does: a
+                    # HIGH finding here made it a findings exit (1) and hid that it is a gap.
+                    severity=Severity.MEDIUM,
                 )
             )
 

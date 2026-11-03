@@ -133,8 +133,12 @@ class TestAFileSetupPyRunsThatIsNotWhereItSays:
         assert not any(rule == self.GAP for _, rule, _ in found)
 
     def test_a_file_the_package_does_not_ship_is_a_blocking_gap(self, tmp_path) -> None:
-        found = self.scan(tmp_path, {"setup.py": self.SETUP + "exec(open('run.txt').read())\n"})
-        assert ("setup.py", self.GAP, "HIGH") in found, found
+        (tmp_path / "setup.py").write_text(
+            self.SETUP + "exec(open('run.txt').read())\n", encoding="utf-8"
+        )
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        assert (self.GAP, "setup.py") in result.content_gaps, result.content_gaps
+        assert not result.content_complete
 
     def test_python_hidden_under_the_name_is_what_runs(self, tmp_path) -> None:
         found = self.scan(
