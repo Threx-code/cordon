@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
     from cordon_scanner.ecosystems.base import Ecosystem
+    from cordon_scanner.ecosystems.registry import WorkspaceMembers
     from cordon_scanner.engine.engine import Engine
     from cordon_scanner.images.identity import ImageInventory
 
@@ -710,7 +711,7 @@ class Dependencies:
         manifest: Any,
         collected: list[Dependency],
         project: str | None,
-        members: frozenset[tuple[str, str]],
+        members: WorkspaceMembers,
     ) -> None:
         """Each declaration of one manifest as a dependency: its name normalised, its pin, its constraint and its source."""
         for source_path, declared in declarations:
@@ -783,7 +784,7 @@ class Dependencies:
                     # Strapi's `packages/cli/cloud` declares `"vitest-config": "5.56.0"`, and
                     # `packages/utils/vitest-config` is that package: the workspace resolves
                     # it locally. Squatters register exactly these names on the registry.
-                    local=(declared_id, name) in members
+                    local=members.resolves(declared_id, name, declared.spec)
                     or Graph.declared_inside(declared.spec, source_path)
                     or bool(routed and Graph.declared_inside(routed, source_path)),
                 )

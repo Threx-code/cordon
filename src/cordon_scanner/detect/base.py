@@ -99,6 +99,9 @@ class ScanContext:
     checks: CheckLog = field(default_factory=CheckLog)
     """Positive results a detector reaches without a finding -- a registry hash that matched,
     provenance that verified -- read into each dependency's record (`core/inventory.py`)."""
+    import_library_paths: frozenset[str] = frozenset()
+    """Members of an `ar` archive that is an import library whole (`FileUnit.import_library`,
+    notes/75): carried here because the workers rebuild each unit from its path and bytes."""
     install_hook_paths: frozenset[str] = frozenset()
     """Paths that execute during install or build.
 
@@ -310,6 +313,9 @@ class FileUnit:
     content with no file of its own (an archive member, a hook's inline program). Never `path`: a
     name that is not text is shown escaped (`Names.text`), and no file has the escaped name, so
     anything that reads the file again (a supervised worker, item 28) opens it by this."""
+    import_library: bool = False
+    """A member of an `ar` archive that is an import library whole (`ImportLibrary`, notes/75):
+    named for the DLL it imports from, so its name is no claim about its contents."""
 
     @property
     def path(self) -> str:

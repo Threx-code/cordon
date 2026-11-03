@@ -67,6 +67,8 @@ class ArchiveStages:
         path: Path,
         rejected: list[tuple[str, str, str]],
         deadline: float,
+        *,
+        import_library: set[str] | None = None,
     ) -> tuple[Any, Iterator[tuple[str, bytes]]]:
         """An image's layers or a plain archive's members, as one stream of members."""
         # A container image is read the way a runtime assembles it -- layers squashed, whiteouts
@@ -93,6 +95,7 @@ class ArchiveStages:
                 limits=self.config.limits,
                 rejected=rejected,
                 deadline=deadline if self.config.limits.total_timeout > 0 else None,
+                import_library=import_library,
             )
         return image, members
 
@@ -106,6 +109,8 @@ class ArchiveStages:
         units: list[FileUnit],
         rejected: list[tuple[str, str, str]],
         image: Any,
+        *,
+        import_library: set[str] | None = None,
     ) -> None:
         """Every member the archive reader gives, as a unit, and every one it refused, as a finding."""
         try:
@@ -161,6 +166,7 @@ class ArchiveStages:
                     FileUnit(
                         content=member_content,
                         language=LanguageRegistry.of_file(member_path, member_content),
+                        import_library=member_path in (import_library or ()),
                     )
                 )
                 acc.files_scanned += 1

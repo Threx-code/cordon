@@ -49,6 +49,11 @@ MALICIOUS_RULE = "MALWARE.DEPENDENCY.KNOWN.001"
 
 PLACEHOLDER_RULE = "POLICY.DEPENDENCY.SECURITY_PLACEHOLDER.001"
 
+LOCAL_SHADOW_RULE = "SUSPECT.DEPENDENCY.LOCAL_SHADOW.001"
+"""A dependency resolved to a package the scanned tree defines itself, whose name an advisory records as
+malicious (notes/77, condition 3): that it is local is a judgement read from the scanned files, so
+it is said rather than silently skipping the advisory check. Medium: a review, not a block."""
+
 REMOVED_RULE = "SUSPECT.DEPENDENCY.REMOVED_NAME.001"
 """A range over a name whose every version is malicious, and which the registry no longer serves
 (`RemovedNameList.removed`): an install fails rather than installing the malware, and a re-registration of the
@@ -112,6 +117,47 @@ class AdvisoryFinding:
 
     #: The id every advisory finding carries, wherever in the package it is built.
     DETECTOR: ClassVar[str] = "advisory"
+
+    @classmethod
+    def local_shadow_finding(
+        cls, dependency: Dependency, advisory: AdvisoryRecord, ctx: ScanContext
+    ) -> Finding:
+        """A dependency judged local whose name is recorded as malicious (`LOCAL_SHADOW_RULE`)."""
+        spec = dependency.declared_spec or dependency.version or ""
+        return Finding(
+            rule_id=LOCAL_SHADOW_RULE,
+            category=Category.SUSPICIOUS,
+            severity=Severity.MEDIUM,
+            confidence=Confidence.MEDIUM,
+            message=(
+                f"{dependency.name}{f' ({spec})' if spec else ''} resolved to a package this tree "
+                f"defines itself, and a package of the same name is recorded as malicious "
+                f"({advisory.summary.strip()}). Cordon judged it local from the scanned files, so "
+                f"the advisory was not applied to it; if that judgement is wrong, the malicious "
+                f"package is what installs."
+            ),
+            remediation=(
+                f"Check that {dependency.name} is the local package and not the registry one: "
+                f"declare it by path (file:, link: or workspace:), or rename the local package."
+            ),
+            location=Location(
+                path=dependency.declared_in or dependency.project or ".",
+                package=dependency.purl,
+                project=dependency.project,
+            ),
+            evidence=Evidence(
+                kind=EvidenceKind.GRAPH,
+                match_hash=Evidence.hash_bytes(f"{LOCAL_SHADOW_RULE}:{dependency.purl}".encode()),
+                redaction=RedactionMode.NONE,
+            ),
+            explanation=Explanation(
+                summary=f"{dependency.name} resolved locally, but its name is recorded as malicious",
+                matched_rule=LOCAL_SHADOW_RULE,
+            ),
+            risk=ctx.scorer.score(Severity.MEDIUM, Confidence.MEDIUM),
+            detector=cls.DETECTOR,
+            references=(references.OSV,),
+        )
 
     @classmethod
     def removed_finding(

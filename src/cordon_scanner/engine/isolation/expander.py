@@ -164,16 +164,21 @@ class ExpandWork:
         data = Path(archive).read_bytes()
         acc = Accumulator(finding_cap=engine.config.limits.max_findings)
         rejected: list[tuple[str, str, str]] = []
+        marked: set[str] = set()
         image, members = engine.archive_stages.source(
-            data, acc, Path(name), rejected, deadline if deadline is not None else float("inf")
+            data,
+            acc,
+            Path(name),
+            rejected,
+            deadline if deadline is not None else float("inf"),
+            import_library=marked,
         )
         out: list[list[Any]] = []
         error: str | None = None
         try:
             for member_path, member_data in members:
-                out.append(
-                    [member_path, *ExpandWork.spill(member_data, Path(spill)), len(rejected)]
-                )
+                spilled = ExpandWork.spill(member_data, Path(spill))
+                out.append([member_path, *spilled, len(rejected), member_path in marked])
         except ArchiveError as exc:
             error = exc.message
         document = {
@@ -224,9 +229,13 @@ class ArchiveExpander:
         acc: Accumulator,
         rejected: list[tuple[str, str, str]],
         deadline: float,
+        *,
+        import_library: set[str] | None = None,
     ) -> tuple[Any, Iterator[tuple[str, bytes]]]:
         """`ArchiveStages.source` for an archive target, run in the expander: the image inventory
-        (None for a plain archive) and the members, as the same stream."""
+        (None for a plain archive) and the members, as the same stream. Where `import_library` is
+        given, the paths of the members the reader marked as an import library's (notes/75) are
+        added to it as they are replayed."""
         from cordon_scanner.engine.isolation.supervisor import Supervisor, Unit
         from cordon_scanner.engine.parallel import CARRIED_SETTINGS, ParallelScanner
         from cordon_scanner.foundation.results import Repository
@@ -286,7 +295,7 @@ class ArchiveExpander:
         for finding in findings:
             acc.append(finding)
         acc.absorb(complete, tuple(gaps))
-        return image, self._replay(members, reader_rejected, error, rejected)
+        return image, self._replay(members, reader_rejected, error, rejected, import_library)
 
     def accept(self, text: str, name: str) -> tuple[Any, str]:
         from cordon_scanner.engine.cache import ScanCache
@@ -309,9 +318,8 @@ class ArchiveExpander:
         }:  # fmt: skip
             return None, "an answer whose sections are not the declared ones"
         members = doc["members"]
-        # Independent of the reader's caps and of every optional limit (review, condition 2): never
-        # past what the scan reads at all (its file limit; its total-bytes budget below). Not one
-        # archive's cap: a walk holds every nested archive's members, each up to that cap.
+        # Never past what the scan reads at all, whatever the reader's caps or optional limits say
+        # (review, condition 2): the walk's file limit and total-bytes budget, not one archive's cap.
         entries = min(limits.max_files or DEFAULT_LIMITS.max_files, LIST_ENTRIES)
         if not isinstance(members, list) or len(members) > entries:
             return None, "more members than an archive may hold"
@@ -320,7 +328,7 @@ class ArchiveExpander:
         for m in members:
             if not (
                 isinstance(m, list)
-                and len(m) == 6
+                and len(m) == 7
                 and isinstance(m[0], str)
                 and 0 < len(m[0]) <= 8192
                 and isinstance(m[1], str)
@@ -334,6 +342,7 @@ class ArchiveExpander:
                 and -1 <= m[4] <= limits.max_file_bytes
                 and type(m[5]) is int
                 and 0 <= m[5] <= LIST_ENTRIES
+                and type(m[6]) is bool
             ):
                 return None, "a member of the wrong shape"
             names.add(m[1])
@@ -412,15 +421,18 @@ class ArchiveExpander:
         reader_rejected: list[tuple[str, str, str]],
         error: str | None,
         rejected: list[tuple[str, str, str]],
+        import_library: set[str] | None = None,
     ) -> Iterator[tuple[str, bytes]]:
         """The members as the reader yielded them: each refusal added before the member the reader
         yielded after it, its error raised where it stopped, each member's bytes read back from its
         spill file and held to the size and digest the expander gave."""
         assert self.spill is not None  # noqa: S101 - set in `source`
         directory = self.spill.path
-        for member_path, spill_name, size, digest, prefix, refused_so_far in members:
+        for member_path, spill_name, size, digest, prefix, refused_so_far, marked in members:
             while len(rejected) < refused_so_far:
                 rejected.append(reader_rejected[len(rejected)])
+            if marked and import_library is not None:
+                import_library.add(member_path)
             yield (
                 member_path,
                 ArchiveExpander._read_back(directory / spill_name, size, digest, prefix),

@@ -224,7 +224,18 @@ class AdvisoryDetector(BaseDetector):
                 # A workspace member or a linked path: its code is in the repository and is
                 # scanned as source. An advisory about a registry package that shares its name
                 # describes someone else's bytes -- React's `eslint-plugin-react-internal@link:`
-                # is not the npm package squatted under that name.
+                # is not the npm package squatted under that name. Local is a judgement read from
+                # the scanned files, though, so a known-malicious namesake is said (notes/77).
+                shadowed = next(
+                    (
+                        a
+                        for a in self._database.for_package(dependency.ecosystem, dependency.name)
+                        if a.malicious
+                    ),
+                    None,
+                )
+                if shadowed is not None:
+                    findings.append(AdvisoryFinding.local_shadow_finding(dependency, shadowed, ctx))
                 continue
             # One finding per fact: two sources' records of one malicious release or one CVE
             # are one finding, naming every identifier (`distinct.py`).

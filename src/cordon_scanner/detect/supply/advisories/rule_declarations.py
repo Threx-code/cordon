@@ -7,6 +7,7 @@ from cordon_scanner.detect.supply.advisories.findings import (
     BUNDLED_MALWARE_RULE,
     BUNDLED_RULE,
     EXPLOITED_RULE,
+    LOCAL_SHADOW_RULE,
     MALICIOUS_RULE,
     PLACEHOLDER_RULE,
     PROVISIONAL_RULE,
@@ -76,6 +77,25 @@ DECLARED_RULES: tuple[DeclaredRule, ...] = (
         remediation=(
             "Remove the dependency, or replace it with the package it was meant to be "
             "(a removed malicious name is usually a squat of a real one)."
+        ),
+        references=(references.OSV,),
+    ),
+    DeclaredRule(
+        id=LOCAL_SHADOW_RULE,
+        title="Dependency resolved locally shares a known-malicious name",
+        severity=Severity.MEDIUM,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        detector=AdvisoryFinding.DETECTOR,
+        message=(
+            "A dependency resolved to a package the scanned tree defines itself, and a "
+            "package of the same name is recorded as malicious. Cordon judged it local from "
+            "the scanned files and did not apply the advisory; if that judgement is wrong, "
+            "the malicious package is what installs."
+        ),
+        remediation=(
+            "Confirm the dependency is the local package: declare it by path (file:, link: "
+            "or workspace:), or rename the local package."
         ),
         references=(references.OSV,),
     ),

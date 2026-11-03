@@ -54,6 +54,8 @@ class Expansion:
     rejected: tuple[tuple[str, str, str], ...] = ()
     """(suffix after the archive's path, reason, detail) of each member the reader refused."""
     truncated: bool = False
+    import_library: frozenset[str] = frozenset()
+    """Suffixes of the members of an import library (`ImportLibrary`, notes/75)."""
 
     def record(self, rel_path: str, acc: Accumulator) -> None:
         """The outcome, at this copy's own path: its refusal and every refused member's."""
@@ -652,6 +654,7 @@ class Units:
         prefix = rel_path.rsplit("/", 1)[-1]
         members: list[tuple[str, bytes]] | None = collected
         refused: tuple[str, str] | None = None
+        stubs: set[str] = set()
         try:
             for member_path, member_data in ArchiveReader.walk_archive(
                 loaded.raw,
@@ -659,13 +662,15 @@ class Units:
                 limits=self.config.limits,
                 rejected=rejected,
                 deadline=deadline if self.config.limits.total_timeout > 0 else None,
+                import_library=stubs,
             ):
                 collected.append((member_path[len(prefix) :], member_data))
         except ArchiveError as exc:
             members = None
             refused = (f"The archive was refused and not scanned: {exc.message}", refusal)
         relative = tuple((path[len(prefix) :], reason, detail) for path, reason, detail in rejected)
-        return Expansion(members, refused, rejected=relative)
+        marked = frozenset(path[len(prefix) :] for path in stubs)
+        return Expansion(members, refused, rejected=relative, import_library=marked)
 
     def expand_members(
         self, rel_path: str, loaded: FileContent, acc: Accumulator, deadline: float
@@ -706,7 +711,11 @@ class Units:
                 note = ArchiveMembers.truncated_note(member_path, content)
                 acc.append(note if ArchiveMembers.read_to_end(content) else acc.gap(note))
             units.append(
-                FileUnit(content=content, language=LanguageRegistry.of_file(member_path, content))
+                FileUnit(
+                    content=content,
+                    language=LanguageRegistry.of_file(member_path, content),
+                    import_library=suffix in expansion.import_library,
+                )
             )
         self._archive_stats[1] += len(units)
         return units

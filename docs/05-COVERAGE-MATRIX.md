@@ -161,6 +161,7 @@ rather than a document.
 | `SUSPECT.DEPENDENCY.FOREIGN_COMMIT.BUNDLED.001` | info | `manifest` | policy |
 | `SUSPECT.DEPENDENCY.HALLUCINATED.001` | high | `slopsquat` | typosquat |
 | `SUSPECT.DEPENDENCY.HALLUCINATED.BUNDLED.001` | info | `slopsquat` | typosquat |
+| `SUSPECT.DEPENDENCY.LOCAL_SHADOW.001` | medium | `advisory` | policy |
 | `SUSPECT.DEPENDENCY.PROVISIONAL.001` | high | `advisory` | policy |
 | `SUSPECT.DEPENDENCY.REMOTE_TARBALL.001` | high | `manifest` | policy |
 | `SUSPECT.DEPENDENCY.REMOTE_TARBALL.BUNDLED.001` | info | `manifest` | policy |
