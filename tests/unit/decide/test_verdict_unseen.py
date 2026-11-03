@@ -63,6 +63,9 @@ class TestTheAdmittedRulesAreKept:
         # 6 content misses in 2 groups blocked, 0 benign: an interaction host in an install-hook
         # script (jsm/pairn-hosts.txt, row hook_interaction); in a person-run script it warns
         "MALWARE.EXFIL.SCRIPT_CALLBACK.001",
+        # Declared HIGH (cordon-47, 3 Nov): 12 content misses in 3 groups, 0 of 36,231 benign units carry it
+        # (full-b9bd rows; npmbase/kl-units.jsonl)
+        "SUSPECT.BINARY.KEYLOGGER.001",
     )
 
     def test_each_is_in_keep(self) -> None:
@@ -81,7 +84,7 @@ class TestTheAdmittedRulesAreKept:
     def test_an_unadmitted_unseen_rule_is_still_lowered(self) -> None:
         keep = frozenset(UnseenKit.model()["keep"])
         assert Verdict._lowers(
-            "SUSPECT.BINARY.KEYLOGGER.001", Severity.HIGH, Confidence.HIGH, Category.SUSPICIOUS,
+            "SUSPECT.BINARY.IMPLANT.001", Severity.HIGH, Confidence.HIGH, Category.SUSPICIOUS,
             score=0.0909, block=0.4502, liftable=True, floor=frozenset(), keep=keep,
         )  # fmt: skip
 
@@ -139,7 +142,6 @@ class TestNoRuleIsLoweredUnseenByAccident:
             "SUSPECT.BINARY.CREDENTIAL_THEFT.001",
             "SUSPECT.BINARY.HIDDEN_IMPORTS.001",
             "SUSPECT.BINARY.IMPLANT.001",
-            "SUSPECT.BINARY.KEYLOGGER.001",
             "SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001",
             "SUSPECT.BINARY.PACKED.001",
             "SUSPECT.BINARY.PROCESS_INJECTION.001",

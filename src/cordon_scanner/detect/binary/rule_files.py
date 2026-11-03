@@ -343,28 +343,47 @@ class RuleFileDetector(BaseDetector):
         if engine.facts and ctx.scan_facts is None:
             return ()  # matched in the deferred pass, with the scanner's facts (`defers`)
         facts = engine.fact_modules(unit, ctx) if engine.facts else None
-        try:
-            matches = engine.match(unit.content.raw, facts)
-        except Exception as exc:  # noqa: BLE001
-            refused = [
-                self._operational(
-                    UNAVAILABLE_RULE,
-                    f"The rule file could not be matched against {unit.content.path}: {type(exc).__name__}.",
-                    ctx,
-                )
+        from cordon_scanner.detect.binary.whole_bytes import WholeBytes
+
+        # The whole binary, not its first max_file_bytes (note 74): taken per member, released on
+        # return. A match that fails on the whole copy is matched on the prefix, as before, and the
+        # file carries the gap; only a prefix that fails too is the unmatched file below.
+        with WholeBytes.held(unit, ctx.copy_budget, ctx.deadline) as whole:
+            gaps = [WholeBytes.gap_finding(unit, "rule engine", whole.gap)] if whole.gap else []
+            data = whole.data
+            try:
+                try:
+                    matches = engine.match(data, facts)
+                except Exception:  # a match failing on the long copy is matched on the prefix
+                    if data is unit.content.raw:
+                        raise
+                    gaps.append(
+                        WholeBytes.gap_finding(unit, "rule engine", "it could not be matched whole")
+                    )
+                    data = unit.content.raw
+                    matches = engine.match(data, facts)
+            except Exception as exc:  # noqa: BLE001
+                refused = [
+                    self._operational(
+                        UNAVAILABLE_RULE,
+                        f"The rule file could not be matched against {unit.content.path}: {type(exc).__name__}.",
+                        ctx,
+                    )
+                ]
+                # every failure here comes from the file being matched (the rule file compiled when the
+                # engine was built): one an attacker can cause, so it fails the gate, never passes clean
+                refused.append(self._unmatched(unit, exc, ctx))
+                return gaps + refused
+            found = gaps + [
+                self._finding(unit, match, ctx)
+                for match in matches
+                if RuleFileEngine.applies(match, unit.content.path)
             ]
-            # every failure here comes from the file being matched (the rule file compiled when the
-            # engine was built): one an attacker can cause, so it fails the gate, never passes clean
-            refused.append(self._unmatched(unit, exc, ctx))
-            return refused
-        found = [
-            self._finding(unit, match, ctx)
-            for match in matches
-            if RuleFileEngine.applies(match, unit.content.path)
-        ]
-        if engine.layered and "#" not in unit.path:
-            found += self._layered(engine, unit, {str(m.rule) for m in matches}, ctx, facts)
-        return found
+            if engine.layered and "#" not in unit.path:
+                found += self._layered(
+                    engine, unit, {str(m.rule) for m in matches}, ctx, facts, data
+                )
+            return found
 
     def defers(self, ctx: ScanContext) -> bool:
         """Whether this scan's files are matched after detection, in the engine's deferred pass:
@@ -381,6 +400,7 @@ class RuleFileDetector(BaseDetector):
         matched: set[str],
         ctx: ScanContext,
         facts: dict[str, Any] | None = None,
+        data: bytes | None = None,
     ) -> list[Finding]:
         """The rules that ask for decoded layers, over each layer under the file's bytes
         (`rule_layers`), each match naming its layer. A rule that matched the raw bytes is not
@@ -388,7 +408,7 @@ class RuleFileDetector(BaseDetector):
         from cordon_scanner.detect.binary.rule_layers import RuleLayers
 
         out: list[Finding] = []
-        for layer in RuleLayers.of(unit.content.raw):
+        for layer in RuleLayers.of(unit.content.raw if data is None else data):
             try:
                 matches = engine.match(layer.data, facts)
             except Exception as exc:  # noqa: BLE001

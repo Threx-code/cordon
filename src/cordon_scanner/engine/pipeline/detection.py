@@ -158,6 +158,9 @@ class Detection:
         self.work_items(units, ctx, signature, results, pending, carry_content, cached_facts)
         for path, text in cached_facts.items():  # re-checked as a worker's are
             Detection.absorb_facts(path, text, acc, results)
+        # A cache hit is READ by its path, as a cold scan's would be (item 38's review, change 3).
+        started = {item[0] for item in pending}
+        acc.ledger_read.update(unit.path for i, unit in enumerate(units) if i not in started)
 
         if not pending:
             return results
@@ -195,8 +198,11 @@ class Detection:
         )
 
         self.merge_worker_results(produced, units, results, acc, ctx, signature)
+        acc.ledger_read.update(units[index].path for index, *_ in produced)
         for index, reason in sorted(lost.items()):
             results.append(self.worker_lost(units[index], reason, acc))
+        # Each file never started, by path, beside the one finding at the scan's scope (item 38).
+        acc.ledger_unstarted.update(units[index].path for index in unstarted)
         if unstarted:
             results.append(self.unexamined(len(unstarted), where, acc))
 

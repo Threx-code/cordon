@@ -195,42 +195,48 @@ class ClamavDetector(BaseDetector):
             ]
         if not isinstance(unit, FileUnit) or self._failed:
             return ()
-        try:
-            signature = Clamd.scan_bytes(address, unit.content.raw)
-        except (ClamdError, OSError) as exc:
-            self._failed = True
+        from cordon_scanner.detect.binary.whole_bytes import WholeBytes
+
+        # The whole binary to ClamAV, not its first max_file_bytes (note 74), per member.
+        with WholeBytes.held(unit, ctx.copy_budget, ctx.deadline) as whole:
+            try:
+                signature = Clamd.scan_bytes(address, whole.data)
+            except (ClamdError, OSError) as exc:
+                self._failed = True
+                return [
+                    self._operational(
+                        UNAVAILABLE_RULE, f"ClamAV stopped answering during the scan: {exc}.", ctx
+                    )
+                ]
+            gaps = [WholeBytes.gap_finding(unit, "ClamAV check", whole.gap)] if whole.gap else []
+            if signature is None:
+                return gaps
             return [
-                self._operational(
-                    UNAVAILABLE_RULE, f"ClamAV stopped answering during the scan: {exc}.", ctx
-                )
-            ]
-        if signature is None:
-            return ()
-        return [
-            Finding(
-                rule_id=SIGNATURE_RULE,
-                category=Category.MALICIOUS,
-                severity=Severity.CRITICAL,
-                confidence=Confidence.HIGH,
-                message=f"ClamAV identifies this file as {signature}.",
-                location=Location(path=unit.content.path, project=unit.project),
-                evidence=Evidence(
-                    kind=EvidenceKind.HASH,
-                    match_hash=Evidence.hash_bytes(
-                        f"{signature}:".encode() + unit.content.raw[:65536]
+                *gaps,
+                Finding(
+                    rule_id=SIGNATURE_RULE,
+                    category=Category.MALICIOUS,
+                    severity=Severity.CRITICAL,
+                    confidence=Confidence.HIGH,
+                    message=f"ClamAV identifies this file as {signature}.",
+                    location=Location(path=unit.content.path, project=unit.project),
+                    evidence=Evidence(
+                        kind=EvidenceKind.HASH,
+                        match_hash=Evidence.hash_bytes(
+                            f"{signature}:".encode() + unit.content.raw[:65536]
+                        ),
+                        redaction=RedactionMode.HASH_ONLY,
+                        metadata=(("clamav_signature", signature),),
                     ),
-                    redaction=RedactionMode.HASH_ONLY,
-                    metadata=(("clamav_signature", signature),),
+                    remediation="Remove the file and find out how it entered the repository.",
+                    explanation=Explanation(
+                        summary=f"clamd INSTREAM: {signature} FOUND", matched_rule=SIGNATURE_RULE
+                    ),
+                    risk=ctx.scorer.score(Severity.CRITICAL, Confidence.HIGH),
+                    detector=self.id,
+                    references=(REFERENCE,),
                 ),
-                remediation="Remove the file and find out how it entered the repository.",
-                explanation=Explanation(
-                    summary=f"clamd INSTREAM: {signature} FOUND", matched_rule=SIGNATURE_RULE
-                ),
-                risk=ctx.scorer.score(Severity.CRITICAL, Confidence.HIGH),
-                detector=self.id,
-                references=(REFERENCE,),
-            )
-        ]
+            ]
 
     def _operational(self, rule_id: str, message: str, ctx: ScanContext) -> Finding:
         return Finding(
