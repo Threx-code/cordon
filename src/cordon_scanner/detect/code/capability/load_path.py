@@ -172,7 +172,11 @@ class LoadPath:
         ]
         if not offsets:
             return ""
-        spans = LoadPath._function_body_spans(content, language)
+        # A decoded payload keeps the strict reading of what is called: a method a framework calls
+        # (a webpack plugin's `apply`) is where one hides, and the declaration-and-export reading
+        # lowered 12 malware decode-exec findings for 2 benign (pair on 2,297 on-request units).
+        decodes = any(h.capability is Capability.DECODE for h in hits)
+        spans = LoadPath._function_body_spans(content, language, strict=decodes)
         if spans and all(any(start <= at < end for start, end in spans) for at in offsets):
             return LoadPath.ON_REQUEST_REASONS[1]
         return ""
@@ -277,7 +281,9 @@ class LoadPath:
         return False
 
     @staticmethod
-    def _function_body_spans(content: FileContent, language: str | None) -> list[tuple[int, int]]:
+    def _function_body_spans(
+        content: FileContent, language: str | None, *, strict: bool = False
+    ) -> list[tuple[int, int]]:
         """Byte spans of the function bodies nothing on this file's load path reaches.
 
         A body counts as run on load when code that runs on load names its function -- called,
@@ -289,7 +295,7 @@ class LoadPath:
         if language == "python":
             return LoadPath._python_deferred_spans(content)
         if language in ("javascript", "typescript"):
-            return LoadPath._js_deferred_spans(content)
+            return LoadPath._js_deferred_spans(content, strict=strict)
         return []
 
     @staticmethod
@@ -467,7 +473,7 @@ class LoadPath:
         return found
 
     @staticmethod
-    def _js_deferred_spans(content: FileContent) -> list[tuple[int, int]]:
+    def _js_deferred_spans(content: FileContent, *, strict: bool = False) -> list[tuple[int, int]]:
         # The pattern runs over text and the hits are byte offsets. On ASCII source they agree; on
         # other UTF-8 the spans are converted to bytes at the end (one Chinese comment or emoji
         # used to find no bodies, so a release CLI's exported publish routine blocked). Text that
@@ -527,7 +533,8 @@ class LoadPath:
                     used = following.startswith("(") or (
                         preceding.endswith(("(", ",")) and following.startswith((")", ","))
                     )
-                    declaration = any(
+                    # Strict: every use counts, as before declarations and export lists were read.
+                    declaration = not strict and any(
                         start <= at < end and name == body[2] for start, end, name in declared
                     )
                     if (
@@ -535,7 +542,7 @@ class LoadPath:
                         and used
                         and not preceding.endswith("function")
                         and not declaration
-                        and not LoadPath._in_export_list(content.text, at)
+                        and (strict or not LoadPath._in_export_list(content.text, at))
                     ):
                         unreached.remove(body)
                         changed = True

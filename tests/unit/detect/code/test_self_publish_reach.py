@@ -429,3 +429,43 @@ class TestAPublishingFunctionALibraryExports:
         manifest = {"type": "module", "exports": {".": "./index.js"}}
         found = PublishKit.severities(tmp_path, manifest, {"package/index.js": text})
         assert found and all(s <= Severity.MEDIUM for s in found)
+
+
+class TestADecodedPayloadInAMethodAFrameworkCalls:
+    """A webpack plugin's `apply` is called by webpack, not by this file: reading declarations and
+    export lists as non-calls lowered 12 malware decode-exec findings for 2 benign units
+    (vue2-script-ext-html-webpack-plugin lost its content block). Where the code decodes, the strict
+    reading stands and the finding keeps its grade."""
+
+    PLUGIN: ClassVar[str] = (
+        "const BLOB = 'Y29uc29sZS5sb2coMSk=';\n"
+        "class Plugin {\n"
+        "  constructor(options) {\n"
+        "    this.options = options;\n"
+        "  }\n"
+        "  apply(compiler) {\n"
+        "    eval(Buffer.from(BLOB, 'base' + '64').toString());\n"
+        "  }\n"
+        "}\n"
+        "function other() {}\n"
+        "module.exports = { other, Plugin, more: other };\n"
+    )
+
+    def test_it_keeps_its_grade(self, tmp_path: Path) -> None:
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+            for name, text in {
+                "package/package.json": json.dumps(
+                    {"name": "p", "version": "1.0.0", "main": "index.js"}
+                ),
+                "package/index.js": self.PLUGIN,
+            }.items():
+                data = text.encode()
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                archive.addfile(info, io.BytesIO(data))
+        target = tmp_path / "p-1.0.0.tgz"
+        target.write_bytes(buffer.getvalue())
+        found = Scanner(Config.default().with_overrides(use_cache=False)).scan(target).findings
+        decode = [f.severity for f in found if f.rule_id == "SUSPECT.DECODE_EXEC.001"]
+        assert decode and any(s >= Severity.HIGH for s in decode)
