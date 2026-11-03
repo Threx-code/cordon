@@ -362,6 +362,7 @@ Re-render a saved JSON result in another format.
 - `baseline`: record findings, adopt gradually
 - `suppress`: reviewed, expiring exceptions
 - `guard`: git hooks and self-integrity
+- `verify`: check this install is genuine
 - `notify`: test the notification channels
 
 ## rules
@@ -586,6 +587,24 @@ Scanner self-integrity and git hook installation.
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ path                                                                       │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## verify
+
+Check this Cordon installation against the release that built it.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ --target SITE_PACKAGES    verify the installation in this site-packages    │
+│                           directory, not the running one                   │
+│ --online                  fetch this wheel's PEP 740 provenance and the    │
+│                           wheel from PyPI, and verify both                 │
+│ --attestation PROVENANCE_JSON                                              │
+│                           PyPI's integrity response for the installed      │
+│                           wheel, instead of fetching it                    │
+│ --wheel WHEEL             the released wheel file, instead of fetching it  │
+│ --format {text,json}                                                       │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 

@@ -9,5 +9,8 @@ Public attestations, unmodified, one per shape the verifier reads, fetched in Oc
   Maven Central, with the jar's SHA-256.
 - `pypi-pep740.json`: urllib3 2.5.0's PEP 740 provenance from `https://pypi.org/integrity/`,
   with the wheel's SHA-256.
+- `pypi-cordon-scanner-0.6.0-provenance.json`: Cordon's own 0.6.0 wheel's PEP 740 provenance from
+  `https://pypi.org/integrity/` (fetched 3 November 2026), with the wheel's SHA-256: what `verify`'s
+  online step checks against the release workflow's identity.
 
 The verifier's tests check each verifies, and that each tampered form does not.
