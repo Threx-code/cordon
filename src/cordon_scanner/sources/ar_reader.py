@@ -116,8 +116,14 @@ class ArReader:
             return body[:length].rstrip(b"\x00").decode("utf-8", "replace"), body[length:]
         if raw.startswith(b"/") and raw[1:].isdigit():
             offset = int(raw[1:])
-            stop = long_names.find(b"/\n", offset)
-            named = long_names[offset : stop if stop != -1 else len(long_names)]
+            # GNU ends a long name with "/\n"; Microsoft's lib.exe with a NUL. The first of them
+            # ends this one.
+            ends = [
+                at
+                for at in (long_names.find(b"/\n", offset), long_names.find(b"\x00", offset))
+                if at != -1
+            ]
+            named = long_names[offset : min(ends) if ends else len(long_names)]
             return named.decode("utf-8", "replace"), body
         return raw.rstrip(b"/").decode("utf-8", "replace"), body
 
