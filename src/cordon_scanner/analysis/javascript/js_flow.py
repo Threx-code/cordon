@@ -37,6 +37,7 @@ from contextlib import suppress
 from typing import Any, ClassVar
 
 from cordon_scanner.analysis.javascript.flow.calls import Calls
+from cordon_scanner.analysis.javascript.flow.summaries import JsSummaries
 from cordon_scanner.analysis.javascript.flow.taint import Taint
 from cordon_scanner.analysis.javascript.flow.vocabulary import (
     _ARCHIVE_CLASSES,
@@ -59,7 +60,6 @@ from cordon_scanner.analysis.javascript.flow.vocabulary import (
     Request,
     _OverBudget,
 )
-from cordon_scanner.analysis.javascript.flow.summaries import JsSummaries
 from cordon_scanner.analysis.shared.content_memo import ContentMemo
 
 
