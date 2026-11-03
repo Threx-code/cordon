@@ -225,6 +225,23 @@ class TestArIsRead:
             paths
         )
 
+    def test_an_msvc_long_name_table_is_read_to_its_nul(self, tmp_path) -> None:
+        # Microsoft's lib.exe ends each long name with a NUL, not GNU's "/\n": read to "/\n", a
+        # static library's members were named with the NUL and the next name, and the NUL made a
+        # path escape (4 benign npm units: logitech-led, wasapi-audio-capture, getkeystate,
+        # v8-heap-info).
+        first, second = b"x64\\Release\\stdafx.obj", b"x64\\Release\\long_member_name.py"
+        table = first + b"\x00" + second + b"\x00"
+        offset = str(len(first) + 1).encode()
+        archive = FormatKit.ar(
+            [(b"//", table), (b"/0", b"\x7fELF" + b"\x00" * 60), (b"/" + offset, self.PLANT)]
+        )
+        result = FormatKit.package(tmp_path, {"package/lib/demo.lib": archive})
+        rules = {f.rule_id for f in result.findings}
+        assert "SUSPECT.ARCHIVE.PATH_ESCAPE.001" not in rules
+        paths = {f.location.path for f in result.findings if f.rule_id == "SUSPECT.DECODE_EXEC.001"}
+        assert any(p.endswith("long_member_name.py") and "\x00" not in p for p in paths), paths
+
     def test_a_damaged_header_is_a_gap(self, tmp_path) -> None:
         archive = FormatKit.ar([(b"a.o/", b"\x7fELF" + b"\x00" * 60)]) + b"broken member header" * 4
         result = FormatKit.package(tmp_path, {"package/lib/libdemo.a": archive})
