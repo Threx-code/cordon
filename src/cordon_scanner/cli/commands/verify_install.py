@@ -29,6 +29,14 @@ class VerifyInstallCommand:
         command = sub.add_parser(
             "verify",
             help="check this Cordon installation against the release that built it",
+            # A wheel install consistent with its RECORD exits 4, which looked like a failure with
+            # nothing saying why (item 52's sweep): the codes are said where the command is.
+            epilog=(
+                "exit codes: 0 verified (only with --online, or --attestation and --wheel); "
+                "1 modified; 4 not verified -- offline, the installation is at most consistent "
+                "with its own RECORD, which whoever can edit its files can edit too; 3 a "
+                "--target that is not a site-packages directory"
+            ),
         )
         command.add_argument(
             "--target",

@@ -458,3 +458,17 @@ class TestTheCommandIsNamedRight(NeutralColour):
                 ):
                     offenders.append(f"{path.relative_to(SRC)}:{node.lineno}: {node.value[:80]}")
         assert not offenders, offenders
+
+
+class TestVerifySaysItsExitCodes:
+    """A wheel install consistent with its own RECORD exits 4, which looked like a failure with nothing
+    saying why (item 52's sweep): `verify --help` says what each code means."""
+
+    def test_the_help_names_every_exit_code(self, capsys: pytest.CaptureFixture[str]) -> None:
+        with pytest.raises(SystemExit):
+            CommandParser.build().parse_args(["verify", "--help"])
+        said = " ".join(capsys.readouterr().out.split())
+        assert "0 verified" in said
+        assert "1 modified" in said
+        assert "4 not verified" in said
+        assert "consistent with its own RECORD" in said
