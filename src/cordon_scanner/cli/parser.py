@@ -24,6 +24,7 @@ from cordon_scanner.cli.commands.rules import RulesCommand
 from cordon_scanner.cli.commands.runner import RunnerCommand
 from cordon_scanner.cli.commands.sbom import SbomCommand
 from cordon_scanner.cli.commands.scan.command import ScanCommand
+from cordon_scanner.cli.commands.verify_install import VerifyInstallCommand
 from cordon_scanner.cli.help import ColourArgumentParser
 from cordon_scanner.version import PROGRAM, __version__
 
@@ -120,6 +121,7 @@ tutorials for this version ({__version__}):
         IntelCommand.add_parser(sub)
         NotifyCommand.add_parser(sub)
         SbomCommand.add_parser(sub)
+        VerifyInstallCommand.add_parser(sub)
 
         from cordon_scanner.cli.commands.completion import CompletionCommand
         from cordon_scanner.cli.commands.deps import DepsCommand

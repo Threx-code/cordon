@@ -41,6 +41,7 @@ from cordon_scanner.cli.commands.rules import RulesCommand
 from cordon_scanner.cli.commands.runner import RunnerCommand
 from cordon_scanner.cli.commands.sbom import SbomCommand
 from cordon_scanner.cli.commands.scan.command import ScanCommand
+from cordon_scanner.cli.commands.verify_install import VerifyInstallCommand
 from cordon_scanner.cli.help import GroupHelp, HelpCommand
 from cordon_scanner.cli.parser import CommandParser
 from cordon_scanner.foundation.errors import CordonError, ExitCode
@@ -125,6 +126,7 @@ class CommandLine:
             "agent": AgentCommand.run,
             "whoami": WhoamiCommand.run,
             "sbom": SbomCommand.run,
+            "verify": VerifyInstallCommand.run,
             "deps": DepsCommand.run,
             "review": ReviewCommand.run,
             "clone": IncomingCommand.run_clone,

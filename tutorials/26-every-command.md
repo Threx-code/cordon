@@ -362,6 +362,7 @@ Re-render a saved JSON result in another format.
 - `baseline`: record findings, adopt gradually
 - `suppress`: reviewed, expiring exceptions
 - `guard`: git hooks and self-integrity
+- `verify`: check this install is genuine
 - `notify`: test the notification channels
 
 ## rules
@@ -586,6 +587,18 @@ Scanner self-integrity and git hook installation.
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ path                                                                       │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## verify
+
+Check this Cordon installation against the release that built it.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ --target SITE_PACKAGES    verify the installation in this site-packages    │
+│                           directory, not the running one                   │
+│ --format {text,json}                                                       │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 

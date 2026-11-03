@@ -705,7 +705,7 @@ rather than a document.
 | `SUSPECT.BINARY.EXECUTABLE_PATH.001` | high | `binary` | integrity |
 | `SUSPECT.BINARY.HIDDEN_IMPORTS.001` | medium | `binary` | integrity |
 | `SUSPECT.BINARY.IMPLANT.001` | high | `binary` | integrity |
-| `SUSPECT.BINARY.KEYLOGGER.001` | medium | `binary` | integrity |
+| `SUSPECT.BINARY.KEYLOGGER.001` | high | `binary` | integrity |
 | `SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001` | high | `binary` | integrity |
 | `SUSPECT.BINARY.PACKED.001` | medium | `binary` | integrity |
 | `SUSPECT.BINARY.PROCESS_INJECTION.001` | high | `binary` | integrity |
