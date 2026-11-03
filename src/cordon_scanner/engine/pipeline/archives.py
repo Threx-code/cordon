@@ -209,6 +209,7 @@ class ArchiveMembers:
         unrecorded."""
         finding = ArchiveMembers.rejected(path, reason, detail, image=image)
         if reason in ArchiveMembers.NOTHING_UNREAD:
+            acc.ledger_read.add(path)  # nothing of it unread: READ for the coverage ledger
             acc.append(finding)
         elif finding.rule_id.startswith("OPERATIONAL."):
             acc.incomplete(finding)
