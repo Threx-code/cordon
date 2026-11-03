@@ -172,6 +172,7 @@ class Units:
                 self.out_of_time(acc)
                 return True, selected
 
+            acc.ledger_tree.append(entry.rel_path)
             if entry.is_symlink:
                 Units.symlink_skipped(acc, entry)
                 continue
@@ -209,6 +210,7 @@ class Units:
                     return True, selected
                 acc.files_scanned += 1
                 acc.bytes_scanned += len(member.content.raw)
+                acc.ledger_tree.append(member.path)
                 yield member
         return False, selected
 
@@ -274,8 +276,10 @@ class Units:
 
     @staticmethod
     def symlink_skipped(acc: Accumulator, entry: WalkEntry) -> None:
-        """A symbolic link: recorded, never followed."""
+        """A symbolic link: recorded, never followed. It has no content of its own, so the coverage
+        ledger counts it read (its target, if in the tree, is its own entry)."""
         acc.files_skipped += 1
+        acc.ledger_read.add(entry.rel_path)
         acc.append(
             OperationalFinding.build(
                 path=entry.rel_path,
