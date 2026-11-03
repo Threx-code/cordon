@@ -131,7 +131,9 @@ DECLARED_RULES: tuple[DeclaredRule, ...] = (
     DeclaredRule(
         id="SUSPECT.BINARY.KEYLOGGER.001",
         title="Committed binary imports keyboard-capture and network calls",
-        severity=Severity.MEDIUM,
+        # HIGH from 3 Nov: 12 bar-1 misses carried it at MEDIUM (3 families), 0 benign units of
+        # 36,231 carried it at all.
+        severity=Severity.HIGH,
         confidence=Confidence.MEDIUM,
         category=Category.SUSPICIOUS,
         detector=DETECTOR,
