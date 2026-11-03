@@ -226,6 +226,10 @@ class ScanContext:
     incomplete -- but it does mean the budget is advisory for that detector.
     """
 
+    copy_budget: str | None = None
+    """The scan's copy-budget directory (`detect/binary/copy_budget.py`, notes/74): every worker of the
+    scan holds slots there before a binary reader's owned whole copy. None: no budget."""
+
     package_distribution: bool = False
     """The target is a published package (an sdist, a wheel, an npm tarball, a crate, a gem, ...).
     Its lockfiles then describe its maintainers' development environment, not what installing it

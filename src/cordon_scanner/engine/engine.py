@@ -165,6 +165,11 @@ class Engine:
         archive's lockfiles as the project's own installs."""
         self._archive_stats[:] = [0, 0, 0]
         self._scanning_archive = False
+        # The binary readers' copy budget for this scan (notes/74): a locked directory its
+        # workers share, swept by liveness at the next start if this scan is killed.
+        from cordon_scanner.engine.isolation.expander import SpillDirectory
+
+        self._budget: SpillDirectory | None = SpillDirectory()
 
     def _end_scan(self) -> None:
         """What one scan holds is let go when it ends, whether it returned or raised."""
@@ -182,6 +187,10 @@ class Engine:
         Documents.end()
         # Expanded members' spill files (item 56 (c)), whatever the scan's outcome.
         self.expansion.end()
+        budget = getattr(self, "_budget", None)
+        if budget is not None:
+            budget.remove()
+            self._budget = None
         # The progress line is a partial line with no newline, so leaving it puts a traceback or
         # an error message on the same row as a half-drawn progress bar.
         self.progress.finish()
@@ -792,12 +801,19 @@ class Engine:
             limits=self.config.limits,
         )
 
+    @staticmethod
+    def _budget_path(engine: Engine) -> str | None:
+        """This scan's copy-budget directory (notes/74), or None outside a scan."""
+        budget = getattr(engine, "_budget", None)
+        return str(budget.path) if budget is not None else None
+
     def _context(self, inventory: Repository, deadline: float | None = None) -> ScanContext:
         return ScanContext(
             config=self.config,
             rules=self.rules,
             repository=inventory,
             deadline=deadline,
+            copy_budget=Engine._budget_path(self),
             # `projectbuild` is in neither. A Makefile is not an install hook -- see
             # `PROJECT_BUILD_FILENAMES` -- and it is not a pipeline either, so it gets
             # no context multiplier and is scored on what it actually contains.
