@@ -229,7 +229,10 @@ class ArchiveStages:
         # every argument, a gate that turns the tool later, secrets gathered by name.
         hook_paths |= skill_scripts
         entries = frozenset(hook_paths)
-        hook_paths |= Hooks.hook_import_closure(units, hook_paths)
+        python_closure = Hooks.hook_import_closure(units, hook_paths)
+        # A file that closure runs by its path is Python whatever its name (item 39's suite).
+        Hooks.executed_as_python(units, python_closure)
+        hook_paths |= python_closure
         hook_paths |= Hooks.hook_js_closure(units, hook_paths)
         hook_paths, entries, consumer_hooks = Hooks.outside_extensions(
             units, hook_paths, entries, consumer_hooks

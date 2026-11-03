@@ -31,12 +31,12 @@ from __future__ import annotations
 import ast
 import re
 from pathlib import PurePosixPath
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Callable, Iterable, Mapping
 
 MAX_DEPTH = 4
 """How far to follow imports from a hook.
@@ -184,8 +184,99 @@ class ImportClosure:
                         wired[value.id] = key.value
         return {name for name, command in wired.items() if command not in cls.INSTALL_TIME_COMMANDS}
 
+    #: Calls that run a file's text as Python, the argument holding its path:
+    #: `runpy.run_path(p)`, `execfile(p)` (Python 2), `spec_from_file_location(name, p)`,
+    #: `SourceFileLoader(name, p)`. `exec`/`compile` of a file's text are read separately.
+    _RUNS_A_PATH: ClassVar[dict[str, int]] = {
+        "run_path": 0,
+        "execfile": 0,
+        "spec_from_file_location": 1,
+        "SourceFileLoader": 1,
+    }
+
+    @staticmethod
+    def _literal_path(node: ast.AST) -> str | None:
+        """A path written as a literal: `"x.txt"`, or `os.path.join(<anything>, "d", "x.txt")`
+        (the trailing literal parts; a `dirname(__file__)` base is the importer's directory)."""
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "join"
+            and node.args
+        ):
+            tail: list[str] = []
+            for arg in reversed(node.args):
+                if not (isinstance(arg, ast.Constant) and isinstance(arg.value, str)):
+                    break
+                tail.insert(0, arg.value)
+            return "/".join(tail) if tail else None
+        return None
+
     @classmethod
-    def resolve(cls, hooks: Iterable[str], sources: Mapping[str, str]) -> set[str]:
+    def _read_text_of(cls, node: ast.AST) -> str | None:
+        """The literal path whose text `node` is: `open(p).read()`, `open(p, ...).read()`,
+        `io.open(p).read()`, `Path(p).read_text()`."""
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+            return None
+        inner = node.func.value
+        if node.func.attr == "read" and isinstance(inner, ast.Call) and inner.args:
+            name = (
+                inner.func.attr
+                if isinstance(inner.func, ast.Attribute)
+                else getattr(inner.func, "id", "")
+            )
+            return cls._literal_path(inner.args[0]) if name == "open" else None
+        if node.func.attr == "read_text" and isinstance(inner, ast.Call) and inner.args:
+            name = (
+                inner.func.attr
+                if isinstance(inner.func, ast.Attribute)
+                else getattr(inner.func, "id", "")
+            )
+            return cls._literal_path(inner.args[0]) if name in ("Path", "PurePath") else None
+        return None
+
+    @classmethod
+    def executed_by(cls, source: str) -> list[str]:
+        """Literal paths a Python file runs as Python, whatever their names (item 39's evasion
+        suite: `setup.py` running `exec(open("run.txt").read())` ran a payload no rule read as
+        install-time Python). Parsed, never executed; a computed path is not followed here, and
+        is what the dynamic-execution rules are for."""
+        try:
+            tree = PythonSyntax.parse(source)
+        except (SyntaxError, ValueError, RecursionError):
+            return []
+        found: list[str] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not node.args:
+                continue
+            func = node.func
+            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+            if name in ("exec", "eval"):
+                first = node.args[0]
+                if (
+                    isinstance(first, ast.Call)
+                    and getattr(first.func, "id", "") == "compile"
+                    and first.args
+                ):
+                    first = first.args[0]
+                path = cls._read_text_of(first)
+            elif name in cls._RUNS_A_PATH and len(node.args) > cls._RUNS_A_PATH[name]:
+                path = cls._literal_path(node.args[cls._RUNS_A_PATH[name]])
+            else:
+                continue
+            if path:
+                found.append(path)
+        return found
+
+    @classmethod
+    def resolve(
+        cls,
+        hooks: Iterable[str],
+        sources: Mapping[str, str],
+        others: Callable[[str], str | None] | None = None,
+    ) -> set[str]:
         """Every first-party file reachable by import from a hook.
 
         `sources` is the repository's Python files by path, so "first-party"
@@ -205,11 +296,31 @@ class ImportClosure:
         # randrange, whose command sends the environment away).
         roots = sorted({str(PurePosixPath(path).parent) for path in hooks if path in sources})
 
+        texts = dict(sources)
         while frontier and len(seen) < MAX_FILES:
             path, depth = frontier.pop()
             if depth >= MAX_DEPTH:
                 continue
-            for module in cls.imported_by(sources[path], path):
+            # A file this one runs by its literal path is install-time Python too, whatever its
+            # name; read only when named, so no other file's text is decoded for this (note 80).
+            here = str(PurePosixPath(path).parent)
+            for target in cls.executed_by(texts[path]):
+                for candidate in (
+                    f"{here}/{target}" if here != "." else target,
+                    *(f"{r}/{target}" for r in roots if r != "."),
+                ):
+                    normalised = re.sub(r"^(?:\./)+", "", str(PurePosixPath(candidate)))
+                    if normalised in seen:
+                        continue
+                    text = texts.get(normalised)
+                    if text is None and others is not None:
+                        text = others(normalised)
+                    if text is not None:
+                        texts[normalised] = text
+                        seen.add(normalised)
+                        frontier.append((normalised, depth + 1))
+                        break
+            for module in cls.imported_by(texts[path], path):
                 rooted = [
                     f"{root}/{'/'.join(module.split('.'))}{suffix}"
                     for root in roots
@@ -218,7 +329,7 @@ class ImportClosure:
                 ]
                 for candidate in [*cls.candidates(module, path), *rooted]:
                     normalised = re.sub(r"^(?:\./)+", "", candidate)
-                    if normalised in sources and normalised not in seen:
+                    if normalised in texts and normalised not in seen:
                         seen.add(normalised)
                         frontier.append((normalised, depth + 1))
         return seen

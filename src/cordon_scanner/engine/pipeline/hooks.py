@@ -428,7 +428,28 @@ class Hooks:
         }
         if not sources:
             return set()
-        return ImportClosure.resolve(hooks, sources)
+        by_path = {unit.path: unit for unit in units}
+
+        def other(path: str) -> str | None:
+            unit = by_path.get(path)
+            return None if unit is None or unit.content.is_binary else unit.content.text
+
+        return ImportClosure.resolve(hooks, sources, other)
+
+    @staticmethod
+    def executed_as_python(units: list[FileUnit], closure: set[str]) -> None:
+        """A file the install-time Python closure runs by its path, read as Python, in place:
+        `exec(open("run.txt").read())` makes `run.txt` Python whatever its name, as `node
+        lib/run.md` makes `run.md` JavaScript (`hooked_languages`). Only files the closure holds
+        that are not named `.py` and not already Python."""
+        for index, unit in enumerate(units):
+            if (
+                unit.path in closure
+                and unit.language != "python"
+                and not unit.path.endswith(".py")
+                and not unit.content.is_binary
+            ):
+                units[index] = replace(unit, language="python")
 
     @staticmethod
     def hook_js_closure(units: Sequence[FileUnit], hooks: set[str]) -> set[str]:
