@@ -509,10 +509,8 @@ class Engine:
         # The context carries it too, as the directory path's does: the worker pool and the
         # detectors read the budget from there, and an archive's had none.
         ctx = replace(ctx, deadline=deadline if self.config.limits.total_timeout > 0 else None)
-        stubs: set[str] = set()  # members of an import library (sources/import_library.py)
-        image, members = self.expansion.source(  # item 56 (c)
-            path, acc, rejected, deadline, import_library=stubs
-        )
+        stubs: set[str] = set()  # sources/import_library.py's members; item 56 (c)
+        image, members = self.expansion.source(path, acc, rejected, deadline, import_library=stubs)
         self.archive_stages.read_members(
             members, deadline, acc, path, 0, units, rejected, image, import_library=stubs
         )
