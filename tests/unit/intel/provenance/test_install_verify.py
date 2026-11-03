@@ -13,7 +13,8 @@ import py_compile
 from pathlib import Path
 from typing import ClassVar
 
-from cordon_scanner.intel.provenance.install_verify import InstallRecord, InstallState
+from cordon_scanner.intel.provenance.install_verify import InstallRecord, InstallState, ReleaseCheck
+from support import ROOT as REPO
 
 
 class InstallKit:
@@ -118,3 +119,94 @@ class TestOffline:
         root = InstallKit.install(tmp_path)
         (root / "cordon_scanner-9.9.9.dist-info/RECORD").write_text("a,b\n", encoding="utf-8")
         assert InstallRecord.check(root).state is InstallState.MODIFIED
+
+
+class ReleaseKit:
+    FIXTURE = REPO / "tests" / "unit" / "data" / "sigstore"
+
+    @classmethod
+    def real(cls) -> dict[str, object]:
+        """Cordon 0.6.0's own wheel's PEP 740 provenance, as PyPI serves it (see the README there)."""
+        import json
+
+        return json.loads(
+            (cls.FIXTURE / "pypi-cordon-scanner-0.6.0-provenance.json").read_text(encoding="utf-8")
+        )
+
+    @staticmethod
+    def wheel(root: Path) -> bytes:
+        """A wheel built from the fixture installation's own files and RECORD."""
+        import io
+        import zipfile
+
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            for path in (*InstallKit.FILES, "cordon_scanner-9.9.9.dist-info/METADATA"):
+                archive.writestr(path, (root / path).read_bytes())
+            archive.writestr(
+                "cordon_scanner-9.9.9.dist-info/RECORD",
+                (root / "cordon_scanner-9.9.9.dist-info/RECORD").read_bytes(),
+            )
+        return buffer.getvalue()
+
+
+class TestTheReleaseCheck:
+    def test_the_real_release_attestation_verifies_for_its_own_wheel(self) -> None:
+        real = ReleaseKit.real()
+        refusal = ReleaseCheck.provenance_refusal(real["provenance"], str(real["sha256"]), "0.6.0")
+        assert refusal is None, refusal
+
+    def test_another_wheels_digest_is_refused(self) -> None:
+        real = ReleaseKit.real()
+        assert ReleaseCheck.provenance_refusal(real["provenance"], "0" * 64, "0.6.0") is not None
+
+    def test_the_same_wheel_claimed_for_another_release_is_refused(self) -> None:
+        # Signed by release.yml at v0.6.0: an installation claiming 0.5.0 is not that release.
+        real = ReleaseKit.real()
+        refusal = ReleaseCheck.provenance_refusal(real["provenance"], str(real["sha256"]), "0.5.0")
+        assert refusal is not None and "v0.5.0" in refusal
+
+    def test_nothing_readable_is_refused(self) -> None:
+        assert ReleaseCheck.provenance_refusal({}, "0" * 64, "0.6.0") is not None
+
+    def test_a_wheel_the_attestation_is_not_for_is_never_verified(self, tmp_path) -> None:
+        root = InstallKit.install(tmp_path)
+        (root / "cordon_scanner-9.9.9.dist-info" / "WHEEL").write_text(
+            "Wheel-Version: 1.0\nTag: py3-none-any\n", encoding="utf-8"
+        )
+        offline = InstallRecord.check(root)
+        report = ReleaseCheck.check(
+            offline, root, provenance=ReleaseKit.real()["provenance"], wheel=ReleaseKit.wheel(root)
+        )
+        assert report.state is InstallState.UNVERIFIED
+
+    def test_the_wheels_record_against_the_installed_one(self, tmp_path) -> None:
+        root = InstallKit.install(tmp_path)
+        record = (root / "cordon_scanner-9.9.9.dist-info/RECORD").read_text(encoding="utf-8")
+        installed = InstallRecord.check(root).record
+        assert ReleaseCheck.record_differences(record, installed) == []
+        installer = (
+            *installed,
+            ("cordon_scanner-9.9.9.dist-info/INSTALLER", "a" * 64, 4),
+            ("cordon_scanner/__pycache__/core.cpython-312.pyc", "b" * 64, 9),
+            ("../../../bin/cordon-scanner", "c" * 64, 9),
+        )
+        assert ReleaseCheck.record_differences(record, installer) == []
+        changed = tuple(
+            (p, "d" * 64, s) if p.endswith("core.py") else (p, d, s) for p, d, s in installed
+        )
+        assert ReleaseCheck.record_differences(record, changed) == [
+            "cordon_scanner/engine/core.py: not as the release built it"
+        ]
+        extra = (*installed, ("cordon_scanner/backdoor.py", "e" * 64, 5))
+        assert ReleaseCheck.record_differences(record, extra) == [
+            "cordon_scanner/backdoor.py: installed, but not in the release's wheel"
+        ]
+
+    def test_fetching_from_anywhere_but_pypi_is_refused(self) -> None:
+        import pytest
+
+        with pytest.raises(OSError):
+            ReleaseCheck.fetch("https://example.invalid/x.whl")
+        with pytest.raises(OSError):
+            ReleaseCheck.fetch("http://pypi.org/x")

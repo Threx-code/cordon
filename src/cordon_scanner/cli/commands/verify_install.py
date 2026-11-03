@@ -35,16 +35,43 @@ class VerifyInstallCommand:
             metavar="SITE_PACKAGES",
             help="verify the installation in this site-packages directory, not the running one",
         )
+        command.add_argument(
+            "--online",
+            action="store_true",
+            help="fetch this wheel's PEP 740 provenance and the wheel from PyPI, and verify both",
+        )
+        command.add_argument(
+            "--attestation",
+            metavar="PROVENANCE_JSON",
+            help="PyPI's integrity response for the installed wheel, instead of fetching it",
+        )
+        command.add_argument(
+            "--wheel", metavar="WHEEL", help="the released wheel file, instead of fetching it"
+        )
         command.add_argument("--format", choices=("text", "json"), default="text")
 
     @staticmethod
     def run(args: argparse.Namespace) -> int:
-        from cordon_scanner.intel.provenance.install_verify import InstallRecord, InstallState
+        from cordon_scanner.intel.provenance.install_verify import (
+            InstallRecord,
+            InstallState,
+            ReleaseCheck,
+        )
 
         target = Path(args.target) if getattr(args, "target", None) else None
         if target is not None and not target.is_dir():
             raise ConfigError(f"{target} is not a directory")
         report = InstallRecord.check(target)
+        attestation, wheel = getattr(args, "attestation", None), getattr(args, "wheel", None)
+        if getattr(args, "online", False) or attestation or wheel:
+            if not getattr(args, "online", False) and not (attestation and wheel):
+                raise ConfigError("give --attestation and --wheel together, or --online")
+            try:
+                provenance = json.loads(Path(attestation).read_bytes()) if attestation else None
+                wheel_bytes = Path(wheel).read_bytes() if wheel else None
+            except (OSError, ValueError) as exc:
+                raise ConfigError(f"cannot read the release files: {exc}") from exc
+            report = ReleaseCheck.check(report, target, provenance=provenance, wheel=wheel_bytes)
         code = {
             InstallState.VERIFIED: ExitCode.CLEAN,
             InstallState.MODIFIED: ExitCode.FINDINGS,
