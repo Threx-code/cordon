@@ -180,9 +180,15 @@ class Watch:
             # The per-machine evidence key, loaded once per process on first use -- which was
             # inside the first file inspected, keeping that file out of the cache for a read
             # that is not about it. Loaded here instead, before anything is watched.
+            from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
             from cordon_scanner.foundation.evidence_key import EvidenceKey
 
             EvidenceKey.key()
+            # The ecosystem facts, found through an entry point: `entry_points()` lists every
+            # directory on sys.path (the working directory under `python -m`, the script's own
+            # directory, site-packages), a read outside the package that kept each worker's first
+            # file out of the cache (4 Nov; a one-file scan never hit). Loaded here, once, too.
+            EcosystemFactsProvider.facts()
             sys.addaudithook(cls._audit)
             cls._installed = True
 

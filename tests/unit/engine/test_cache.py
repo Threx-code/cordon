@@ -418,6 +418,47 @@ class TestCacheCorrectnessEndToEnd:
         second = scanner.scan(project)
         assert second.stats.cache_hits > 0
 
+    def test_a_second_command_line_scan_of_one_file_hits(self, tmp_path) -> None:
+        """Two `cordon-scanner scan` runs, each a fresh process started from an ordinary working
+        directory. The first file a worker inspected was never cached: finding the ecosystem facts
+        called `entry_points()`, which lists every directory on sys.path, a read outside the
+        package (4 Nov). In-process scans missed it, because the test runner had already read the
+        entry points."""
+        import os
+        import subprocess
+        import sys
+
+        project = tmp_path / "repo"
+        project.mkdir()
+        (project / "a.js").write_text("const x = 1;\n", encoding="utf-8")
+        env = {
+            **os.environ,
+            "HOME": str(tmp_path / "home"),
+            "XDG_CACHE_HOME": str(tmp_path / "xdg"),
+        }
+        hits = []
+        for run in range(2):
+            out = tmp_path / f"result-{run}.json"
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "cordon_scanner",
+                    "scan",
+                    str(project),
+                    "--offline",
+                    "--format",
+                    f"json:{out}",
+                ],
+                cwd=tmp_path,
+                env=env,
+                check=False,
+                capture_output=True,
+                timeout=300,
+            )
+            hits.append(json.loads(out.read_text(encoding="utf-8"))["stats"]["cache_hits"])
+        assert hits == [0, 1]
+
 
 class TestEverythingAFileDependsOnIsInTheKey:
     """The key held the file's bytes, path and language, the rule pack, the configuration and the
