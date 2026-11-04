@@ -19,7 +19,7 @@ def call(Map options = [:]) {
 
     if (!(version ==~ /^[0-9]+\.[0-9]+\.[0-9]+$/)) { error("cordonScan: version is not a version: ${version}") }
     if (!(severity in ['info', 'low', 'medium', 'high', 'critical'])) { error("cordonScan: bad severity") }
-    if (!(failOn in ['info', 'low', 'medium', 'high', 'critical', 'none'])) { error("cordonScan: bad failOn") }
+    if (!(failOn in ['info', 'low', 'medium', 'high', 'critical'])) { error("cordonScan: bad failOn") }
 
     withEnv(["CORDON_VERSION=${version}", "CORDON_SEVERITY=${severity}", "CORDON_FAIL_ON=${failOn}", "CORDON_UPLOAD=${upload}"]) {
         sh '''

@@ -40,6 +40,22 @@ class TestEveryTemplate:
         if "pip install" in text:
             assert "--require-hashes" in text and "--no-deps" in text
 
+    def test_every_severity_it_offers_is_one_the_scanner_reads(self, template: Path) -> None:
+        """The CircleCI orb, the Bitbucket pipe and the Jenkins library offered `fail-on: none`,
+        which the scanner refuses with exit 3: a pipeline that chose it failed every run."""
+        from cordon_scanner.foundation.models import Severity
+
+        valid = {s.name.lower() for s in Severity}
+        text = template.read_text(encoding="utf-8")
+        offered: set[str] = set()
+        for group in re.findall(r"enum:\s*\[([^\]]*)\]", text):  # an orb parameter
+            offered.update(v.strip() for v in group.split(","))
+        for group in re.findall(r"in \[([^\]]*)\]", text):  # a groovy list
+            offered.update(v.strip(" '\"") for v in group.split(","))
+        for group in re.findall(r'case "\$\{\w+:-\w+\}" in ([\w|]+)\)', text):  # a shell case
+            offered.update(group.split("|"))
+        assert offered <= valid, f"{template.name} offers {sorted(offered - valid)}"
+
     def test_any_pin_it_reads_is_the_one_the_release_writes(self, template: Path) -> None:
         """A template that fetches a pin file the release never generates fails at install, on
         every customer's first run, and nothing in this repository would notice."""

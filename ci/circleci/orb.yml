@@ -32,7 +32,7 @@ commands:
         default: low
       fail-on:
         type: enum
-        enum: [info, low, medium, high, critical, none]
+        enum: [info, low, medium, high, critical]
         default: high
       upload:
         type: boolean
@@ -91,7 +91,7 @@ jobs:
         default: "0.6.0"
       fail-on:
         type: enum
-        enum: [info, low, medium, high, critical, none]
+        enum: [info, low, medium, high, critical]
         default: high
       upload:
         type: boolean
