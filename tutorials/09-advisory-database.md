@@ -2,14 +2,17 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-The malicious/vulnerable-package lists (tutorial 03) ship *with* the tool and are
-used offline at scan time. This is how you keep them fresh.
+The malicious/vulnerable-package lists (tutorial 03) ship *with* the tool. A scan reads
+them locally, and by default first asks OSV for what changed since they were built: the same
+requests for everyone, naming nothing you scan (`--offline` makes no request at all). Intel
+older than a week without that refresh makes the scan incomplete. This is how you keep the
+local data fresh.
 
 ```
-   SCAN TIME                         REFRESH TIME (separate, deliberate)
-   ─────────                         ──────────────────────────────────
-   read the bundled data, offline    cordon-scanner advisories sync
-   no network, reproducible          cordon-scanner advisories sync --bundle <url>
+   SCAN TIME                              REFRESH TIME (separate, deliberate)
+   ─────────                              ──────────────────────────────────
+   the local data, plus OSV's changes     cordon-scanner advisories sync
+   since it was built (unless --offline)  cordon-scanner advisories sync --bundle <url|dir>
 ```
 
 ## Two ways to refresh
@@ -17,10 +20,11 @@ used offline at scan time. This is how you keep them fresh.
 ```
    A) BUILD FROM OSV                         B) INSTALL A SIGNED BUNDLE
    ─────────────────                         ──────────────────────────
-   advisories sync                           advisories sync --bundle <url>
+   advisories sync                           advisories sync --bundle <url|dir>
         │                                          │
         ▼                                          ▼
-   pull OSV's bulk export                     download a pre-built bundle
+   pull OSV's bulk export                     fetch a pre-built bundle, or read
+                                              one carried in a folder (tutorial 40)
         │                                          │
         ▼                                     ┌────┴───────────────────────────┐
    rank + normalise per ecosystem             │ verify Ed25519 signature       │
@@ -52,9 +56,20 @@ carry is kept once. Nothing about the code you scan is sent to either.
 
 ## Point a scan at your own data
 
+`--advisories` replaces the database for one scan with a single JSON file: a list of records
+in the shipped format (`ecosystem`, `name`, `versions` or `introduced`/`fixed`, `severity`,
+`malicious`, `id`). An organisation's own list of banned releases works the same way:
+
 ```
-   cordon-scanner scan .  --advisories path/to/advisories/     # air-gapped sites
+   cordon-scanner scan .  --advisories org-advisories.json
 ```
+
+```json
+[{"id": "ACME-1", "ecosystem": "npm", "name": "left-pad", "versions": ["1.3.0"],
+  "severity": "high", "summary": "banned by the security team", "malicious": false}]
+```
+
+For an air-gapped site, carry the signed bundle instead (tutorial 40).
 
 ```
    --only npm pypi        sync just these ecosystems
