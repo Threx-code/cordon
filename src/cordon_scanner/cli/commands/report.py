@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from cordon_scanner.engine.registry import BUILTIN_REPORTERS
 from cordon_scanner.foundation.errors import ConfigError, ExitCode
 from cordon_scanner.version import PROGRAM
 
@@ -38,7 +39,7 @@ class ReportCommand:
             "--format",
             "-f",
             default="text",
-            help="text|json|sarif|junit|markdown|github",
+            help="|".join(BUILTIN_REPORTERS),
         )
         convert.add_argument("--output", "-o", default=None, help="write to a file")
 

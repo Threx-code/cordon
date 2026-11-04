@@ -55,7 +55,7 @@ scan:
 ```
 
 ```bash
-cordon-scanner sbom . --format cyclonedx --output sbom.cdx.json
+cordon-scanner sbom generate . --format cyclonedx --output sbom.cdx.json
 cordon-scanner scan . --reachability --format vex --output sbom.vex.json
 ```
 

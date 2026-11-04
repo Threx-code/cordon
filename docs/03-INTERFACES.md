@@ -25,7 +25,7 @@ cordon-scanner config validate|explain|fetch-policy|policy-drift
 cordon-scanner baseline create|compare       baseline management
 cordon-scanner suppress list|add|prune       suppression lifecycle
 cordon-scanner guard verify|install|update   scanner self-integrity and git hooks (--global)
-cordon-scanner advisories sync|status        the advisory database
+cordon-scanner advisories sync               the advisory database (its age: intel status)
 cordon-scanner intel status|update           the signed threat-intel feed
 cordon-scanner bundle create|install         offline bundle for air-gapped use
 cordon-scanner login|logout|whoami           Cordon Cloud sign-in

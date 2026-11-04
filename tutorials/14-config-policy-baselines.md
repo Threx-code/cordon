@@ -20,7 +20,7 @@ Three layers, from most local to most binding:
 
 ```
    cordon-scanner scan .  --config cordon.toml  --policy org-policy.toml
-   cordon-scanner config  --config cordon.toml           # validate without scanning
+   cordon-scanner config validate cordon.toml            # validate without scanning
 ```
 
 ## Baselines — adopt on a messy codebase

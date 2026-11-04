@@ -757,3 +757,101 @@ class TestRuleIdentifiers:
 
     def test_the_check_sees_rule_ids(self) -> None:
         assert len(self.known()) > 500 and len(self.cited()) > 100
+
+
+class DocumentedCommandKit:
+    """Every `cordon-scanner` line in a code block of the README, docs/, tutorials/ and the action's
+    README, as the CLI would read it: a document that shows `sbom . --format cyclonedx` (no `generate`)
+    or `config --config x` taught a command that does not run (both were in the tutorials, 4 Nov)."""
+
+    DIAGRAM = frozenset("─│┌┐└┘├┤┬┴┼►▼▶◀")
+
+    @staticmethod
+    def documents() -> list[Path]:
+        return [
+            REPO / "README.md",
+            *sorted((REPO / "docs").glob("*.md")),
+            *sorted((REPO / "tutorials").glob("*.md")),
+            REPO / "action" / "README.md",
+        ]
+
+    @staticmethod
+    def commands(text: str) -> list[list[str]]:
+        """Each command line's arguments, alternatives (`list|show`) expanded, a trailing description
+        column, a pipe or a redirect cut off; lines with placeholders are not commands."""
+        import itertools
+        import shlex
+
+        found: list[list[str]] = []
+        for block in re.findall(r"```[a-z]*\n(.*?)```", text, re.S):
+            for line in block.replace("\\\n", " ").split("\n"):
+                s = line.strip().removeprefix("$ ")
+                if not s.startswith("cordon-scanner ") or DocumentedCommandKit.DIAGRAM & set(s):
+                    continue
+                s = re.split(r"\s(?:\||&&|;|>|2>|\|\|)\s", s)[0].split(" #")[0]
+                s = re.split(r"\s{2,}(?=[A-Za-z(])", s)[0].rstrip(" \\")
+                if any(mark in s for mark in ("<", "...", "…", "[")):
+                    continue
+                try:
+                    words = shlex.split(s)[1:]
+                except ValueError:
+                    continue
+                found.extend(
+                    list(c)
+                    for c in itertools.product(
+                        *([w] if "|" not in w else w.split("|") for w in words)
+                    )
+                )
+        return found
+
+    @staticmethod
+    def refusal(argv: list[str]) -> str | None:
+        """Why the CLI refuses these arguments, or None. A summary table that leaves out a required
+        argument is a listing, not a command, and is not refused here."""
+        import contextlib
+        import io
+
+        err = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+                args = CommandParser.build().parse_args(argv)
+        except SystemExit as exit_:
+            said = err.getvalue().strip().splitlines()
+            if exit_.code in (0, None) or (said and "arguments are required" in said[-1]):
+                return None
+            return said[-1] if said else f"exit {exit_.code}"
+        from cordon_scanner.engine.registry import BUILTIN_REPORTERS
+
+        if getattr(args, "command", None) in ("scan", "report"):
+            for value in getattr(args, "format", None) or []:
+                name = str(value).split(":", 1)[0]
+                if name not in BUILTIN_REPORTERS:
+                    return (
+                        f"--format {name}: no such output format ({', '.join(BUILTIN_REPORTERS)})"
+                    )
+        return None
+
+
+class TestEveryDocumentedCommandRuns:
+    def test_every_command_in_a_code_block_is_one_the_cli_reads(self) -> None:
+        refused = [
+            f"{path.relative_to(REPO)}: cordon-scanner {' '.join(argv)} -> {why}"
+            for path in DocumentedCommandKit.documents()
+            for argv in DocumentedCommandKit.commands(path.read_text(encoding="utf-8"))
+            if (why := DocumentedCommandKit.refusal(argv))
+        ]
+        assert refused == []
+
+    def test_the_check_reads_commands_and_refuses_a_wrong_one(self) -> None:
+        sample = "```\ncordon-scanner sbom . --format cyclonedx\ncordon-scanner scan . --format html\n```\n"
+        argvs = DocumentedCommandKit.commands(sample)
+        assert len(argvs) == 2
+        assert all(DocumentedCommandKit.refusal(a) for a in argvs)
+        assert (
+            len(
+                DocumentedCommandKit.commands(
+                    Path(REPO / "tutorials" / "01-first-scan.md").read_text()
+                )
+            )
+            > 3
+        )

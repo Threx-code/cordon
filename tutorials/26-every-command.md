@@ -78,9 +78,10 @@ Scan a directory, file or archive.
 │                           with its justification                           │
 │ --config PATH             repository configuration file                    │
 │ --policy PATH             organisation policy file                         │
-│ --format, -f FMT[:PATH]   text|json|sarif|junit|markdown|github.           │
-│                           Repeatable. Append :PATH to write that format to │
-│                           a file, for example --format sarif:cordon.sarif  │
+│ --format, -f FMT[:PATH]   text|json|sarif|junit|markdown|github|codeclimat │
+│                           e|vex. Repeatable. Append :PATH to write that    │
+│                           format to a file, for example --format           │
+│                           sarif:cordon.sarif                               │
 │ --output, -o PATH         write to a file (only valid with a single        │
 │                           --format)                                        │
 │ --evidence MODE           none|masked|hash_only (default: masked). The     │
@@ -351,7 +352,8 @@ Re-render a saved JSON result in another format.
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ path                      a result written with --format json              │
-│ --format, -f FORMAT       text|json|sarif|junit|markdown|github            │
+│ --format, -f FORMAT       text|json|sarif|junit|markdown|github|codeclimat │
+│                           e|vex                                            │
 │ --output, -o OUTPUT       write to a file                                  │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
