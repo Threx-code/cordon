@@ -36,6 +36,7 @@ from typing import IO, Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
+from cordon_scanner.foundation.network.redirects import ClosedErrors
 from cordon_scanner.intel.registries.challenge import Challenge
 
 MEDIA_INDEX: Final = (
@@ -99,7 +100,7 @@ class RegistryImage:
         )
         self.scheme = "http" if bare in LOCAL_HOSTS else "https"
         self.token: str | None = None
-        self.opener = urllib.request.build_opener(_AuthOnlyToRegistry)
+        self.opener = urllib.request.build_opener(_AuthOnlyToRegistry, ClosedErrors)
 
     # -- HTTP ----------------------------------------------------------------------------
 

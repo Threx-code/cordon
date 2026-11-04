@@ -36,6 +36,7 @@ from cordon_scanner.cloud import CloudError, JobRefused
 from cordon_scanner.cloud.transport import CloudTransport, Response, Transport
 from cordon_scanner.foundation.files.trees import Trees
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.redirects import ClosedErrors
 from cordon_scanner.version import PROGRAM
 
 MAX_ARTIFACT_BYTES: Final = 2 << 30
@@ -106,7 +107,7 @@ class CheckedRedirects(urllib.request.HTTPRedirectHandler):
 
     @classmethod
     def opener(cls, config: RunnerConfig) -> urllib.request.OpenerDirector:
-        return urllib.request.build_opener(cls(config))
+        return urllib.request.build_opener(cls(config), ClosedErrors)
 
 
 class CloudRunner:

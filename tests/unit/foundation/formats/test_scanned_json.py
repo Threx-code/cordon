@@ -230,3 +230,36 @@ class TestScannedJson:
         # must not skip the file: the guard is a RecursionError, as such a document always raised.
         assert issubclass(JsonTooDeep, RecursionError)
         assert not issubclass(JsonTooDeep, ValueError)
+
+
+class TestDeeperThan:
+    """`ServedJson.deeper_than`: the same answer as `depth(text) > limit` on every Python, without
+    walking a string character by character (4 Nov: 3.14's decoder read a 50,000-deep document
+    that 3.11 to 3.13 refused, so `report convert` gave one file two outcomes)."""
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "[]",
+            '{"a": [1, {"b": []}]}',
+            '"[[[[[["',
+            '["\\"[[[[", [[]]]',
+            '{"k": "\\\\", "v": [[[]]]}',
+            "[" * 6 + "]" * 6,
+            "[" * 7,
+            '[{"x": "]]]]"}, [[[[]]]]]',
+        ],
+    )
+    def test_it_agrees_with_depth(self, text: str) -> None:
+        from cordon_scanner.foundation.formats.served_json import ServedJson
+
+        for limit in range(8):
+            assert ServedJson.deeper_than(text, limit) == (ServedJson.depth(text) > limit), (
+                text,
+                limit,
+            )
+
+    def test_it_stops_at_the_first_level_past_the_limit(self) -> None:
+        from cordon_scanner.foundation.formats.served_json import ServedJson
+
+        assert ServedJson.deeper_than("[" * 5_000_000, 512)

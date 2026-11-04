@@ -38,6 +38,7 @@ from typing import Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
+from cordon_scanner.foundation.network.redirects import ClosedErrors
 
 #: helm `pkg/registry/constants.go`: ProvLayerMediaType, and ChartLayerMediaType with the
 from cordon_scanner.intel.provenance import openpgp
@@ -83,7 +84,7 @@ class HelmProvenance:
         if urllib.parse.urlsplit(url).scheme != "https":
             raise ValueError("not https")
         request = urllib.request.Request(url, headers={"User-Agent": "cordon-scanner"})  # noqa: S310 - https only
-        opener = urllib.request.build_opener(_HttpsRedirects)
+        opener = urllib.request.build_opener(_HttpsRedirects, ClosedErrors)
         try:
             with opener.open(request, timeout=TIMEOUT) as response:
                 body: bytes = Download.read(response, limit + 1)

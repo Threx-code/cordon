@@ -41,6 +41,7 @@ from typing import Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
+from cordon_scanner.foundation.network.redirects import ClosedErrors
 from cordon_scanner.intel.provenance import attest
 
 REGISTRY: Final = "https://bcr.bazel.build"
@@ -84,7 +85,7 @@ class BazelProvenance:
         if parts.scheme != "https":
             raise ValueError("not https")
         request = urllib.request.Request(url, headers={"User-Agent": "cordon-scanner"})  # noqa: S310 - https only, hosts checked
-        opener = urllib.request.build_opener(_GitHubRedirects)
+        opener = urllib.request.build_opener(_GitHubRedirects, ClosedErrors)
         with opener.open(request, timeout=TIMEOUT) as response:
             body: bytes = Download.read(response, MAX_BYTES + 1)
         if len(body) > MAX_BYTES:

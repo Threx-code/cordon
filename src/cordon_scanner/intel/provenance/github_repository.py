@@ -25,6 +25,7 @@ from typing import Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
+from cordon_scanner.foundation.network.redirects import ClosedErrors
 
 API: Final = "https://api.github.com"
 TIMEOUT: Final = 15.0
@@ -52,7 +53,9 @@ class GitHubRepository:
             headers["Authorization"] = f"Bearer {token}"
         request = urllib.request.Request(f"{API}/repos/{quoted}", headers=headers)  # noqa: S310 - fixed https host
         try:
-            with urllib.request.build_opener(_ApiRedirects).open(request, timeout=TIMEOUT) as r:
+            with urllib.request.build_opener(_ApiRedirects, ClosedErrors).open(
+                request, timeout=TIMEOUT
+            ) as r:
                 document = json.loads(Download.read(r, MAX_BYTES))
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             NetworkFailure.release(exc)
