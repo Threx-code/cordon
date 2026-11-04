@@ -24,7 +24,8 @@ gh attestation verify cordon_scanner-<version>-py3-none-any.whl --repo Threx-cod
 
 **Not pinned in this build.** The feed root is created at the key ceremony
 (`scripts/release/key_ceremony.py`) and committed as `src/cordon_scanner/intel/data/feed-root.json`.
-Until then the feed is off: a scan makes no request and uses the installed advisory database.
+Until then the feed is off: a scan makes no feed request and uses the installed advisory database,
+refreshed from OSV's public export as every default scan is (`--offline` makes no request at all).
 
 ## Advisory database bundle
 

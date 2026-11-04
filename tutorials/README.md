@@ -86,9 +86,10 @@ picture, run the command, move on. They assume nothing beyond a terminal.
 
 ```
   Cordon READS. It never runs the code it is scanning, and it never sends anything
-  about your code or dependencies anywhere unless you ask. By default it makes
-  no network request at all; --offline (or CORDON_OFFLINE=1) guarantees it.
-  A scan is safe to point at hostile packages and safe to run in an air-gap.
+  about your code or dependencies anywhere unless you ask. By default it asks OSV
+  only what advisories changed, the same requests for everyone, naming nothing;
+  --offline (or CORDON_OFFLINE=1) makes no request at all. A scan is safe to
+  point at hostile packages and safe to run in an air-gap.
 ```
 
 ## Install
