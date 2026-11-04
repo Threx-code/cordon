@@ -91,7 +91,8 @@ which). Registry-answered checks (withdrawal, published-hash) need `--online`.
 
 Each line is a choice about one kind of disclosure. A dependency's name is the one thing a scan
 of a private repository would leak by asking about it, so every check that asks is behind
-`--online`; the feed is on by default because pulling it leaks nothing.
+`--online`; the feed is on by default, once a release pins its root (0.7.0 does not), because
+pulling it leaks nothing.
 
 ### Why exploited is its own rule
 

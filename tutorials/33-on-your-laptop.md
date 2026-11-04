@@ -98,7 +98,7 @@ hooks again after you change them on purpose.
 ## Keep the intel current
 
 Every scan asks OSV for advisories published since this release, so new advisories reach
-you without an upgrade. Without that, or the signed feed, intel older than a week makes
+you without an upgrade. Without that refresh, intel older than a week makes
 the scan incomplete rather than quietly out of date. On a machine that is often offline:
 
 ```bash

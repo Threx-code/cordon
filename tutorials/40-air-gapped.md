@@ -57,11 +57,12 @@ Intel older than a week makes a scan incomplete (exit 4) instead of quietly out 
 an isolated machine needs a way in for fresh intel. There are two, depending on how isolated
 it is.
 
-### If the site has an internal mirror
+### If the site has an internal mirror (once the signed feed is on)
 
-Most air-gapped networks run an internal HTTPS mirror for packages. Mirror Cordon's signed
-feed there and point the scanner at it; every byte is still verified against the root key
-pinned in the scanner, so the mirror itself needs no trust:
+0.7.0 ships with Cordon's signed feed off: no feed root is pinned in this release, so until
+one is, use the carried bundle below. When a release pins it, most air-gapped networks can
+mirror the feed on their internal HTTPS mirror and point the scanner at it; every byte is
+still verified against the root key pinned in the scanner, so the mirror needs no trust:
 
 ```bash
 export CORDON_FEED_URL=https://mirror.internal.example/cordon-feed/v1

@@ -52,8 +52,9 @@ carried to it, verified on arrival:
                     scanner before a single byte is unpacked)
 ```
 
-A site with an internal HTTPS mirror can mirror Cordon's signed feed instead and set
-`CORDON_FEED_URL`; every byte is still verified against the pinned root. Do not copy one
+Once a release pins the signed feed's root (0.7.0 does not), a site with an internal HTTPS
+mirror can mirror the feed instead and set `CORDON_FEED_URL`; every byte is still verified
+against the pinned root. Do not copy one
 machine's synced cache to another: it is sealed by the install that wrote it, and copied files
 are reported as `OPERATIONAL.ADVISORY.TAMPERED` and ignored. Tutorial 40 is the full procedure,
 the hash-pinned install included.
