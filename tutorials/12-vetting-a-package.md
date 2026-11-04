@@ -72,7 +72,7 @@ jq '.findings[] | select(.rule_id | test("INSTALL|MALWARE")) |
 ### 2. Is the release itself known-bad, or withdrawn?
 
 ```bash
-# offline: 335,121 bundled advisories, malicious + high/critical
+# offline: 336,908 bundled advisories, malicious + high/critical
 cordon-scanner scan pkg.tgz
 
 # online: also ask the registry what it says right now
