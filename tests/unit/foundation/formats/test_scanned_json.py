@@ -263,3 +263,42 @@ class TestDeeperThan:
         from cordon_scanner.foundation.formats.served_json import ServedJson
 
         assert ServedJson.deeper_than("[" * 5_000_000, 512)
+
+
+class TestDepthMatchesTheCharacterWalk:
+    """`ServedJson.depth` skips strings with `str.find` (4 Nov: the character-by-character walk was
+    1.9 s of a warm 20,000-file scan). It must give exactly what the walk gave, on every input."""
+
+    @staticmethod
+    def walk(text: str) -> int:
+        deepest = level = 0
+        quoted = escaped = False
+        for char in text:
+            if quoted:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    quoted = False
+            elif char == '"':
+                quoted = True
+            elif char in "[{":
+                level += 1
+                deepest = max(deepest, level)
+            elif char in "]}":
+                level -= 1
+        return deepest
+
+    def test_ten_thousand_generated_texts_agree(self) -> None:
+        import random
+
+        from cordon_scanner.foundation.formats.served_json import ServedJson
+
+        rng = random.Random(4)  # noqa: S311 - generated test inputs, not secrets
+        alphabet = '[]{}"\\ab:,'
+        for _ in range(10_000):
+            text = "".join(rng.choice(alphabet) for _ in range(rng.randint(0, 40)))
+            assert ServedJson.depth(text) == self.walk(text), repr(text)
+            for limit in range(4):
+                assert ServedJson.deeper_than(text, limit) == (self.walk(text) > limit), repr(text)

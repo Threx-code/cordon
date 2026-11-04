@@ -1,10 +1,9 @@
-"""Windows line endings are not an evasion (4 Nov).
+"""Windows line endings are not an evasion in the detectors (4 Nov).
 
-The rules are written for `\\n`. A malicious MCP server saved with CRLF drew none of the six findings
-the same file drew with LF: a Go server's `^package main$` never matched before a `\\r`, so the file
-was not read as a server at all. `TextEncoding.lines` reads each CRLF as a space and a newline, which
-keeps every offset where it was. Each case here must give the same findings, on the same lines,
-whichever ending it was saved with.
+A malicious MCP server saved with CRLF drew none of the six findings the same file drew with LF: a Go
+server's `^package main[ \\t]*$` never matched before a `\\r`, so the file was not read as a server.
+The parsers' CRLF reading is tests/conformance/test_line_endings.py's; this is the detectors'. Each
+case must give the same findings, on the same lines, whichever ending it was saved with.
 """
 
 from __future__ import annotations
@@ -16,7 +15,6 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.foundation.config.settings import Config
-from cordon_scanner.foundation.text.encoding import TextEncoding
 
 GO_SERVER = (
     'package main\n\nimport "github.com/mark3labs/mcp-go/mcp"\n\n'
@@ -76,8 +74,3 @@ class TestWindowsLineEndings:
         crlf = LineEndingKit.findings(tmp_path / "crlf", CASES[case], "\r\n")
         assert lf, f"{case}: the LF case must draw findings for this to test anything"
         assert crlf == lf
-
-    def test_the_text_keeps_its_length(self) -> None:
-        text = "a\r\nbb\r\n\r\nc\rd\n"
-        assert len(TextEncoding.lines(text)) == len(text)
-        assert TextEncoding.lines(text) == "a \nbb \n \nc\rd\n"

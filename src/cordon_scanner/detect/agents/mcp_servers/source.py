@@ -60,7 +60,9 @@ _NAMED_DESCRIPTION: Final = re.compile(
 )
 """`description: NAME`: a description held in a constant."""
 
-_GO_PACKAGE: Final = re.compile(r"(?m)^package[ \t]+[A-Za-z_]\w{0,60}[ \t]*$")
+# `\r?` before the end: a Go server saved with Windows line endings was not read as a server at
+# all, and its poisoned tool descriptions drew nothing (4 Nov).
+_GO_PACKAGE: Final = re.compile(r"(?m)^package[ \t]+[A-Za-z_]\w{0,60}[ \t]*\r?$")
 
 _GO_DESCRIPTION: Final = re.compile(r"\b(?:mcp\.)?(?:WithDescription|Description)[ \t]*\(")
 """A Go MCP SDK's description option: what the agent is told about a tool or an argument."""
