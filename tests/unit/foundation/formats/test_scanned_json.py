@@ -266,8 +266,8 @@ class TestDeeperThan:
 
 
 class TestDepthMatchesTheCharacterWalk:
-    """`ServedJson.depth` skips strings with `str.find` (4 Nov: the character-by-character walk was
-    1.9 s of a warm 20,000-file scan). It must give exactly what the walk gave, on every input."""
+    """`ServedJson.deeper_than` skips strings with `str.find`; it must answer exactly as the character
+    walk (`depth`) does, on every input (4 Nov)."""
 
     @staticmethod
     def walk(text: str) -> int:

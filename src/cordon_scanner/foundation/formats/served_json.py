@@ -68,20 +68,26 @@ class ServedJson:
     @staticmethod
     def depth(text: str) -> int:
         """The deepest nesting of `[` and `{` outside JSON strings, in one linear pass: checked before
-        a worker's answer is decoded, since CPython's decoder recurses per level. Only quotes and
-        brackets are visited (`_TOKEN`), and a string is skipped by `str.find`: the character-by-
-        character walk was 1.9 s of a warm 20,000-file scan's 24.6 s (4 Nov)."""
-        deepest = level = position = 0
-        while match := ServedJson._TOKEN.search(text, position):
-            char, position = match.group(), match.end()
-            if char == '"':
-                position = ServedJson._string_end(text, position)
-                if position < 0:
-                    break  # an unterminated string: nothing after it is structure
+        a worker's answer is decoded, since CPython's decoder recurses per level. A character walk:
+        on the facts a worker returns, dense with short strings, it measured 0.81 s per 20,000 against
+        1.35 s for visiting only quotes and brackets (`deeper_than`'s way, kept where stopping early
+        on hostile nesting is the point), 4 Nov."""
+        deepest = level = 0
+        quoted = escaped = False
+        for char in text:
+            if quoted:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    quoted = False
+            elif char == '"':
+                quoted = True
             elif char in "[{":
                 level += 1
                 deepest = max(deepest, level)
-            else:
+            elif char in "]}":
                 level -= 1
         return deepest
 

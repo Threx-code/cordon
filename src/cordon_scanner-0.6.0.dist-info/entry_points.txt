@@ -54,7 +54,7 @@ builtin = cordon_scanner.ecosystems.registry:RegistryFacts
 builtin = cordon_scanner.judge.providers:ProviderFactory
 
 [cordon_scanner.commands]
-mcp = cordon_scanner.mcp.server:Server
+mcp = cordon_scanner.mcp.command:McpCommand
 
 [cordon_scanner.notifiers]
 slack = cordon_scanner.notify.channels.slack:SlackChannel

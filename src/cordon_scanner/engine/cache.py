@@ -634,7 +634,9 @@ class ScanCache:
         entry = self.get_entry(key)
         return None if entry is None else entry[0]
 
-    def get_entry(self, key: CacheKey) -> tuple[tuple[Finding, ...], str] | None:
+    def get_entry(
+        self, key: CacheKey, *, limit: int = MAX_ENTRY_BYTES
+    ) -> tuple[tuple[Finding, ...], str] | None:
         """Return cached findings and the file's worker facts (their JSON text, "" for none), or None.
         The facts are kept beside the findings (item 56): a warm scan must join the same closure as
         a cold one, and they are re-checked as a worker's are (`Detection.absorb_facts`).
@@ -661,7 +663,7 @@ class ScanCache:
             # Bounded before reading. MAX_ENTRY_BYTES was enforced on write
             # only, so a planted multi-gigabyte entry was pulled entirely into
             # memory before anything verified it.
-            if info.st_size > MAX_ENTRY_BYTES:
+            if info.st_size > limit:
                 self.misses += 1
                 return None
             # Age checked on read, not only by the manual `prune` command. An
@@ -841,7 +843,14 @@ class ScanCache:
             {"facts": facts, "findings": body}, separators=(",", ":"), sort_keys=True
         ).encode("utf-8")
 
-    def put(self, key: CacheKey, findings: Sequence[Finding], facts: str = "") -> None:
+    def put(
+        self,
+        key: CacheKey,
+        findings: Sequence[Finding],
+        facts: str = "",
+        *,
+        limit: int = MAX_ENTRY_BYTES,
+    ) -> None:
         """Store findings for a key, with the file's accepted worker facts (their JSON text).
 
         Written atomically through a temporary file and a rename, so a
@@ -870,7 +879,7 @@ class ScanCache:
             sort_keys=True,
         ).encode("utf-8")
 
-        if len(payload) > MAX_ENTRY_BYTES:
+        if len(payload) > limit:
             return
 
         path = self._path(key)

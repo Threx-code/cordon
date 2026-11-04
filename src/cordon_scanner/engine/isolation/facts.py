@@ -19,6 +19,7 @@ is held to three rules on the way in (cordon-47, 1 Nov):
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, ClassVar
 
 FILE_COUNT = 20_000
@@ -136,14 +137,19 @@ class JsShapes:
     def _int(value: Any, lowest: int = 0) -> bool:
         return type(value) is int and lowest <= value < 1 << 31
 
+    _LABEL: ClassVar[re.Pattern[str] | None] = None
+    _SOURCES: ClassVar[frozenset[str] | None] = None
+
     @staticmethod
     def label(value: Any) -> bool:
-        import re
+        # Compiled and loaded once: called for every summary of every file, 1.2 million times on
+        # a warm 20,000-file scan, it re-ran two imports and a pattern-cache lookup each time (4 Nov).
+        if JsShapes._LABEL is None or JsShapes._SOURCES is None:
+            from cordon_scanner.analysis.javascript.flow.vocabulary import SOURCES
 
-        from cordon_scanner.analysis.javascript.flow.vocabulary import SOURCES
-
+            JsShapes._LABEL, JsShapes._SOURCES = re.compile(JsShapes.LABEL), frozenset(SOURCES)
         return isinstance(value, str) and (
-            value in SOURCES or re.fullmatch(JsShapes.LABEL, value) is not None
+            value in JsShapes._SOURCES or JsShapes._LABEL.fullmatch(value) is not None
         )
 
     @staticmethod
