@@ -74,7 +74,7 @@ a rule pack committed to the target.
 **Realised by:** a 42 KB zip expanding to 4.5 PB; a nested archive 20 levels deep;
 a tar with a billion 1-byte entries.
 
-**Controls** — all in `archive/safe.py`, the only code allowed to expand anything:
+**Controls** — all in `sources/archive.py`, the only code that expands an archive into files a scan reads (format readers that open their own container in memory read a bounded number of members, each to a byte limit):
 - `max_archive_ratio` (default 200:1) checked **incrementally during the stream**,
   not after extraction. Extraction aborts the moment the running ratio is exceeded.
 - `max_archive_entries` (default 50,000).

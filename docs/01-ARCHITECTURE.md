@@ -765,11 +765,16 @@ Full treatment in `02-THREAT-MODEL.md`. The architectural hooks:
 - `Limits` is passed to every source and detector and is not optional.
 - Reaching a limit produces an `OPERATIONAL` finding, never a silent skip, and
   `ScanResult.complete` records whether the scan was whole.
-- `archive/safe.py` is the only code permitted to expand an archive. It enforces
-  an incremental compression-ratio ceiling, rejects absolute and traversing
-  paths, refuses links, and caps entry count and nesting depth.
-- No path from the scan target reaches a shell. `subprocess` appears in exactly
-  one module, wrapped with fixed argv, separators and timeouts.
+- `sources/archive.py` is the only code that expands an archive into files a scan
+  reads. It enforces an incremental compression-ratio ceiling, rejects absolute and
+  traversing paths, refuses links, and caps entry count and nesting depth. Format
+  readers that open their own container in memory (Office documents, APKs, VBA
+  projects, model pickles, Helm charts, a JAR's manifest) each read a bounded
+  number of members, each to a byte limit.
+- No path from the scan target reaches a shell. No call anywhere passes
+  `shell=True` or uses `os.system` or `os.popen`; the modules that start a process
+  (git, the scanner's own workers, the sandbox's container runtime) pass a fixed
+  argument list, with separators and timeouts.
 
 ---
 
