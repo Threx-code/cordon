@@ -176,6 +176,11 @@ class Watch:
             for name in ("stdlib", "platstdlib"):
                 with contextlib.suppress(KeyError):
                     places.add(sysconfig.get_paths()[name])
+            # Each place under its real path too: Homebrew's Python names its standard library
+            # through a symlink (/opt/homebrew/opt/...) while its modules load from the Cellar, so a
+            # module imported during a file's inspection read as outside the package and that file
+            # was never cached on macOS (4 Nov). Resolved once, here, not on every audited open.
+            places |= {os.path.realpath(place) for place in places}
             cls._allowed = tuple(Watch.absolute(place) + os.sep for place in sorted(places))
             # The per-machine evidence key, loaded once per process on first use -- which was
             # inside the first file inspected, keeping that file out of the cache for a read
