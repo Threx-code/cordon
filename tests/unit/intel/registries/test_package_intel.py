@@ -424,6 +424,8 @@ class TestAThrottledRegistryIsNotAnEmptyOne:
         # The date form is not parsed; the caller's backoff covers it, which errs
         # towards waiting longer rather than not at all.
         assert script.PackageIntelRefresh.retry_delay(http_date) is None
+        for error in (with_header, without, http_date):
+            error.close()  # each is a response, and closed by whoever holds it
 
     def test_pub_returns_every_name_even_when_the_registry_throttles(
         self, script, monkeypatch

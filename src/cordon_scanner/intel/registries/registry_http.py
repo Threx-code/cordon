@@ -51,6 +51,7 @@ class RegistryHttp:
                     encoding = str(response.headers.get("Content-Encoding", "")).lower()
                 break
             except urllib.error.HTTPError as exc:
+                NetworkFailure.release(exc)
                 if exc.code in (404, 410):
                     # The Go proxy answers 410 Gone for a module it will not serve.
                     raise PackageNotFound(f"{parsed.netloc} has no package by that name") from exc
@@ -140,6 +141,7 @@ class RegistryHttp:
             with opener.open(request, timeout=base.TIMEOUT_SECONDS) as response:
                 return bytes(Download.read(response, base.MAX_RESPONSE_BYTES))
         except urllib.error.HTTPError as exc:
+            NetworkFailure.release(exc)
             if exc.code == 404:
                 raise PackageNotFound("the registry has no such artefact") from exc
             if follow and exc.code in (301, 302, 303, 307, 308):
@@ -165,6 +167,7 @@ class RegistryHttp:
             with opener.open(authorised, timeout=base.TIMEOUT_SECONDS) as response:
                 return bytes(Download.read(response, base.MAX_RESPONSE_BYTES))
         except urllib.error.HTTPError as exc:
+            NetworkFailure.release(exc)
             if exc.code == 404:
                 raise PackageNotFound("the registry has no such artefact") from exc
             if follow and exc.code in (301, 302, 303, 307, 308):

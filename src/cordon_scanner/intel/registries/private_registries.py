@@ -146,6 +146,7 @@ class PrivateRegistries:
             with opener.open(request, timeout=base.TIMEOUT_SECONDS) as response:
                 body = bytes(Download.read(response, MAX_BYTES + 1))
         except urllib.error.HTTPError as exc:
+            NetworkFailure.release(exc)
             if exc.code == 404:
                 raise PackageNotFound(f"{registry.host} has no such package") from exc
             if exc.code in (401, 403):
@@ -340,6 +341,7 @@ class PrivateRegistries:
             ):
                 return direct
         except urllib.error.HTTPError as exc:
+            NetworkFailure.release(exc)
             challenge = str(exc.headers.get("WWW-Authenticate", "")) if exc.code == 401 else ""
             if not challenge.startswith("Bearer "):
                 if exc.code in (401, 403):

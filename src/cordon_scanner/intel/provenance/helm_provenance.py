@@ -88,6 +88,7 @@ class HelmProvenance:
             with opener.open(request, timeout=TIMEOUT) as response:
                 body: bytes = Download.read(response, limit + 1)
         except urllib.error.HTTPError as exc:
+            NetworkFailure.release(exc)
             if exc.code in (403, 404, 410):
                 # A bucket without public listing answers 403 for a file it does not hold
                 # (charts.bitnami.com and charts.gitlab.io do, for a .prov).

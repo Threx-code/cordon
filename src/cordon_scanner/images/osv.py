@@ -206,7 +206,8 @@ class OsvClient:
         def detail(identifier: str) -> tuple[str, dict[str, Any] | None]:
             try:
                 return identifier, get(f"{API}/vulns/{identifier}")
-            except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError):
+            except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
+                NetworkFailure.release(exc)
                 return identifier, None
 
         with ThreadPoolExecutor(max_workers=WORKERS) as pool:

@@ -36,6 +36,7 @@ import json
 import os
 import threading
 import urllib.parse
+import weakref
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any, Final
@@ -49,6 +50,9 @@ class AdvisoryIndex:
 
     def __init__(self, connection: Any, count: int) -> None:
         self._connection = connection
+        # Closed with the index: a dropped index left its database open until the interpreter
+        # ended (Python 3.14 says so: "unclosed database"), one per ecosystem read.
+        weakref.finalize(self, connection.close)
         self._lock = threading.Lock()
         self.count = count
 
@@ -135,6 +139,7 @@ class AdvisoryIndex:
         except OSError:
             return None
         address = f"file:{urllib.parse.quote(str(database))}?mode=ro"
+        connection = None
         try:
             connection = sqlite3.connect(address, uri=True, check_same_thread=False)
             if hasattr(connection, "enable_load_extension"):
@@ -146,6 +151,10 @@ class AdvisoryIndex:
                 connection.execute("SELECT value FROM meta WHERE key = 'count'").fetchone()[0]
             )
         except (sqlite3.Error, TypeError, ValueError):
+            # A database that opened and then failed a read is closed here, not left to the
+            # collector.
+            if connection is not None:
+                connection.close()
             return None
         return AdvisoryIndex(connection, count)
 

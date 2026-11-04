@@ -10,6 +10,7 @@ caller's and is unchanged.
 
 from __future__ import annotations
 
+import contextlib
 import ssl
 from typing import ClassVar
 
@@ -59,9 +60,24 @@ class NetworkFailure:
         return " ".join(str(text).split())[: NetworkFailure.MAX_CAUSE]
 
     @staticmethod
+    def release(exc: BaseException) -> None:
+        """Close what a caught `HTTPError` holds: the error is the server's response, open until
+        closed, so every 4xx and 5xx a fetch caught kept a socket until the collector found it
+        (Python 3.14 says so: "Implicitly cleaning up <HTTPError 404>"). Its code and headers stay
+        readable after; an error built with no response has nothing to close."""
+        close = getattr(exc, "close", None)
+        if callable(close):
+            with contextlib.suppress(Exception):
+                close()
+
+    @staticmethod
     def reason(exc: BaseException) -> str:
         """The certificate's cause and fix; otherwise the exception's type name with its cause, so
-        an offline `advisories sync` says why it failed, not only `URLError` (item 52)."""
+        an offline `advisories sync` says why it failed, not only `URLError` (item 52).
+
+        Saying it also releases it: an `HTTPError` caught as a `URLError` or `OSError` (it is
+        both) is reported here, and was never closed where it was caught."""
+        NetworkFailure.release(exc)
         if NetworkFailure.certificate(exc):
             return NetworkFailure.CERTIFICATE
         cause = NetworkFailure.cause(exc)

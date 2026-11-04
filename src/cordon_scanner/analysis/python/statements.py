@@ -336,6 +336,16 @@ class PythonTwo:
         ):
             return "an octal literal written 0777"  # `00` is Python 3 too; `0777` is not
         if (
+            # Python 3.11 tokenizes `0777` as `0` then `777`, touching, and does not refuse it.
+            token.type == tokenize.NUMBER
+            and token.string.isdigit()
+            and previous is not None
+            and previous.type == tokenize.NUMBER
+            and previous.string == "0"
+            and previous.end == token.start
+        ):
+            return "an octal literal written 0777"
+        if (
             token.type == tokenize.STRING
             and previous is not None
             and previous.type == tokenize.NAME

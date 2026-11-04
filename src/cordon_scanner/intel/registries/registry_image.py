@@ -117,6 +117,7 @@ class RegistryImage:
             try:
                 return self.opener.open(request, timeout=TIMEOUT)
             except urllib.error.HTTPError as exc:
+                NetworkFailure.release(exc)
                 exc.close()
                 if exc.code == 401 and attempt == 0 and self._authenticate(exc.headers):
                     continue
@@ -157,7 +158,8 @@ class RegistryImage:
             request = urllib.request.Request(url, headers={"User-Agent": "cordon-scanner"})  # noqa: S310
             with urllib.request.urlopen(request, timeout=TIMEOUT) as response:  # noqa: S310
                 body = json.loads(Download.read(response, 1 << 20))
-        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError):
+        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
+            NetworkFailure.release(exc)
             return False
         token = body.get("token") or body.get("access_token")
         self.token = str(token) if token else None

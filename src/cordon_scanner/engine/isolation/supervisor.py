@@ -246,11 +246,12 @@ class Limits:
         if bounds.memory_bytes > 0:
             try:
                 _, hard = resource.getrlimit(resource.RLIMIT_AS)
-                limit = (
-                    bounds.memory_bytes
-                    if hard == resource.RLIM_INFINITY
-                    else min(bounds.memory_bytes, hard)
-                )
+                # The budget is what the worker may add to the address space it was forked with:
+                # RLIMIT_AS counts every mapping, the parent's included, so a host process over the
+                # budget (an MCP server, a library caller, a test runner grown large) had every
+                # worker fail at once and every scan end incomplete, whatever it read.
+                wanted = Limits.address_space() + bounds.memory_bytes
+                limit = wanted if hard == resource.RLIM_INFINITY else min(wanted, hard)
                 resource.setrlimit(resource.RLIMIT_AS, (limit, hard))
                 if resource.getrlimit(resource.RLIMIT_AS)[0] == limit:
                     recorded["memory_limit"] = "enforced"
@@ -266,6 +267,15 @@ class Limits:
             )
         recorded["oom_first"] = Limits.killed_first()
         return recorded
+
+    @staticmethod
+    def address_space() -> int:
+        """This process's address space in bytes (Linux's /proc/self/statm), or 0 where unknown."""
+        try:
+            pages = int(Path("/proc/self/statm").read_text(encoding="ascii").split()[0])
+        except (OSError, ValueError, IndexError):
+            return 0
+        return pages * os.sysconf("SC_PAGE_SIZE")
 
     #: Where Linux reads how readily the out-of-memory killer picks this process (-1000 to 1000).
     OOM_SCORE: ClassVar[str] = "/proc/self/oom_score_adj"

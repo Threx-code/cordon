@@ -76,6 +76,7 @@ class HomebrewProvenance:
         try:
             record = HomebrewProvenance._get(FORMULA_API.format(name=quoted))
         except urllib.error.HTTPError as exc:
+            NetworkFailure.release(exc)
             if exc.code == 404:
                 return None
             raise
@@ -92,6 +93,7 @@ class HomebrewProvenance:
         try:
             body = HomebrewProvenance._get(ATTESTATIONS_API.format(digest=digest))
         except urllib.error.HTTPError as exc:
+            NetworkFailure.release(exc)
             if exc.code == 404:
                 return []
             raise
@@ -147,6 +149,7 @@ class HomebrewProvenance:
             try:
                 bundles = HomebrewProvenance.bundles(digest)
             except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
+                NetworkFailure.release(exc)
                 return BottleCheck(
                     "unverifiable",
                     f"GitHub's attestation API could not be read ({HomebrewProvenance._why(exc)})",

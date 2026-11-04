@@ -254,7 +254,7 @@ sources = ["src/cordon_scanner/_native/anchors.c"]
 [tool.cordon-build.package-data]
 "cordon_scanner" = ["py.typed"]
 "cordon_sandbox" = ["py.typed"]
-"cordon_scanner.rules.builtin" = ["*.yaml", "derivations.json"]
+"cordon_scanner.rules.builtin" = ["*.yaml", "derivations-*.json"]
 # The built-in rule pack (`--rule-file builtin`, detect/binary/rule_files.py) and the records of where
 # its rules came from and how they measured. Missing from the wheel before 2026-10-20: an install
 # from PyPI had no pack to load.

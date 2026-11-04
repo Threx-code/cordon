@@ -33,6 +33,11 @@ from typing import Any, Final
 from cordon_scanner.foundation.once import OneOff
 
 TABLE: Final = "derivations.json"
+"""The 3.12 table's name before the tables were per Python; `PatternDerivations.table()` names them now."""
+SUPPORTED: Final = ("3.11", "3.12", "3.13", "3.14")
+"""The Pythons a table is shipped for: one each, since a derivation reads `re`'s parser, which a
+release may change. On one without a table every pattern takes the full safety walk at load
+(measured on 3.14 before its table: a one-file scan 0.9 s against 3.12's 0.7 s)."""
 VERSION: Final = 1
 
 #: The ways `RuleLoader._compile_regex` asks for required literals, by name: (shortest, adjacent).
@@ -69,11 +74,20 @@ class PatternDerivations:
         return f"{sys.version_info[0]}.{sys.version_info[1]}"
 
     @staticmethod
+    def table(python: str | None = None) -> str:
+        """The table's file name for `python` (this interpreter's by default)."""
+        return f"derivations-{python or PatternDerivations.python()}.json"
+
+    @staticmethod
     @OneOff.cache
     def shipped() -> dict[str, Any]:
         """The table's entries, or {} when it is absent, unreadable, or from other code or Python."""
         try:
-            doc = json.loads((PatternDerivations.directory() / TABLE).read_text(encoding="utf-8"))
+            doc = json.loads(
+                (PatternDerivations.directory() / PatternDerivations.table()).read_text(
+                    encoding="utf-8"
+                )
+            )
         except (OSError, ValueError):
             return {}
         if (
@@ -172,4 +186,4 @@ class PatternDerivations:
         }
 
 
-__all__ = ["LITERAL_FORMS", "TABLE", "VERSION", "PatternDerivations"]
+__all__ = ["LITERAL_FORMS", "SUPPORTED", "TABLE", "VERSION", "PatternDerivations"]

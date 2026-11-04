@@ -155,6 +155,7 @@ class OsvDelta:
             with opener.open(request, timeout=TIMEOUT) as response:
                 body = Download.read(response, limit + 1, budget=TIMEOUT * 4)
         except urllib.error.HTTPError as exc:
+            NetworkFailure.release(exc)
             if exc.code == 416:  # a range past the end: the list was shorter than one chunk more
                 return b""
             raise OsvDeltaError(f"HTTP {exc.code} from OSV") from exc

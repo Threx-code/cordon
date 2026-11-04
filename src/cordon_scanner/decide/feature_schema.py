@@ -38,7 +38,6 @@ from __future__ import annotations
 import ast
 import functools
 import hashlib
-import inspect
 import json
 import re
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -201,17 +200,40 @@ class FeatureSchema:
             node = found
         return node
 
-    #: `ast.dump`'s keywords that keep its text the same on every Python: 3.13 began leaving out
-    #: fields that are None or empty unless `show_empty` is set, which moved the version of an
-    #: unchanged tree (fs1-ea0fb02ccf3bb099 on 3.12, fs1-5b52138d82821d4a on 3.13 and 3.14).
-    DUMP: ClassVar[dict[str, bool]] = (
-        {"show_empty": True} if "show_empty" in inspect.signature(ast.dump).parameters else {}
-    )
+    #: Fields Python 3.12 added to nodes the hashed code has, written as 3.12 writes them where an
+    #: older Python has no such field.
+    ADDED_IN_312: ClassVar[dict[str, str]] = {
+        "FunctionDef": "type_params",
+        "AsyncFunctionDef": "type_params",
+        "ClassDef": "type_params",
+    }
 
     @staticmethod
     def dump(node: ast.AST) -> str:
-        """`ast.dump` as 3.11 and 3.12 write it, on every supported Python."""
-        return ast.dump(node, **FeatureSchema.DUMP)
+        """`ast.dump` as Python 3.12 writes it, on every supported Python: 3.13 began leaving out
+        empty fields and 3.11 has no `type_params`, which moved the version of an unchanged tree
+        (fs1-ea0fb02ccf3bb099 on 3.12, fs1-5b52138d82821d4a on 3.13 and 3.14, fs1-0ecd42e235e9719e
+        on 3.11). Byte-identical to 3.12's `ast.dump` on 3.11 to 3.14 for every hashed piece."""
+
+        def text(value: object) -> str:
+            if isinstance(value, ast.AST):
+                kind = type(value)
+                fields = list(value._fields)
+                added = FeatureSchema.ADDED_IN_312.get(kind.__name__)
+                if added and added not in fields:
+                    fields.append(added)
+                parts = []
+                for name in fields:
+                    field = getattr(value, name, [])
+                    if field is None and getattr(kind, name, ...) is None:
+                        continue  # an optional field left out, as 3.12 leaves it out
+                    parts.append(f"{name}={text(field)}")
+                return f"{kind.__name__}({', '.join(parts)})"
+            if isinstance(value, list):
+                return f"[{', '.join(text(item) for item in value)}]"
+            return repr(value)
+
+        return text(node)
 
     @staticmethod
     def _without_docstrings(node: ast.AST) -> ast.AST:

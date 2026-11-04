@@ -1569,9 +1569,14 @@ class TestContainerImages:
             )
 
         monkeypatch.setattr(RegistryHttp, "get", staticmethod(lambda url, accept="": b"blob"))
-        assert RegistryHttp.redirected(redirect("https://pkg-containers.example/blob")) == b"blob"
-        with pytest.raises(RegistryError, match="HTTPS"):
-            RegistryHttp.redirected(redirect("http://pkg-containers.example/blob"))
+        # Each error is the server's response and is closed by whoever holds it: here, the test.
+        with redirect("https://pkg-containers.example/blob") as followed:
+            assert RegistryHttp.redirected(followed) == b"blob"
+        with (
+            redirect("http://pkg-containers.example/blob") as refused,
+            pytest.raises(RegistryError, match="HTTPS"),
+        ):
+            RegistryHttp.redirected(refused)
 
 
 class TestHomebrewApi(RegistryFixtures):

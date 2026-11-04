@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import multiprocessing
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -212,3 +213,45 @@ class TestTheSupervisor:
     def test_no_worker_that_can_start_is_said_not_run_here(self) -> None:
         with pytest.raises(IsolationUnavailable):
             Harness.supervisor(Bounds(), setup="setup_that_raises").run([Unit(0, ("echo", 1), 1)])
+
+
+class TestTheBudgetIsOnTopOfWhatTheWorkerInherits:
+    """RLIMIT_AS counts every mapping, the parent's included: a host whose address space was past the
+    budget (a 4 GB reservation, never touched) had every worker fail and every scan end incomplete,
+    on 3.12 as on 3.14. The budget is now what a worker may add to what it was forked with."""
+
+    SCRIPT = (
+        "import mmap, sys\n"
+        "from pathlib import Path\n"
+        "held = mmap.mmap(-1, 4 << 30)\n"
+        "from cordon_scanner import Scanner\n"
+        "from cordon_scanner.foundation.config.settings import Config\n"
+        "root = Path(sys.argv[1])\n"
+        "(root / 'index.js').write_text('module.exports = 1;\\n')\n"
+        "result = Scanner(Config.default().with_overrides(use_cache=False, offline=True)).scan(root)\n"
+        "print('complete' if result.content_complete else 'incomplete')\n"
+    )
+
+    @pytest.mark.skipif(
+        not sys.platform.startswith("linux"), reason="RLIMIT_AS is enforced on Linux"
+    )
+    def test_a_large_host_still_scans_complete(self, tmp_path) -> None:
+        done = subprocess.run(
+            [sys.executable, "-c", self.SCRIPT, str(tmp_path)],
+            capture_output=True,
+            text=True,
+            timeout=600,
+            env={**os.environ, "HOME": str(tmp_path)},
+        )
+        assert done.stdout.strip().endswith("complete") and "incomplete" not in done.stdout, (
+            done.stdout[-500:],
+            done.stderr[-1500:],
+        )
+
+    def test_the_address_space_is_read(self) -> None:
+        from cordon_scanner.engine.isolation.supervisor import Limits
+
+        if sys.platform.startswith("linux"):
+            assert Limits.address_space() > 0
+        else:
+            assert Limits.address_space() == 0

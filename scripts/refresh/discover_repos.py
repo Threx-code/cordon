@@ -30,6 +30,7 @@ changed for eleven ecosystems and had been measured against three.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import sys
 import time
@@ -126,6 +127,8 @@ class RepoDiscovery:
                 with urllib.request.urlopen(request, timeout=45) as response:  # noqa: S310
                     payload = json.loads(response.read())
             except urllib.error.HTTPError as exc:
+                with contextlib.suppress(Exception):  # the error is the response: close it
+                    exc.close()
                 if exc.code in (403, 429):
                     print(f"  rate limited on page {page}; waiting 70s", file=sys.stderr)
                     time.sleep(70)

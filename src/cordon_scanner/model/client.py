@@ -249,6 +249,7 @@ class ModelClient:
             with opener.open(request, timeout=TIMEOUT) as response:
                 raw = Download.read(response, MAX_REPLY + 1)
         except urllib.error.HTTPError as exc:
+            NetworkFailure.release(exc)
             hint = " (check the token)" if exc.code in (401, 403) else ""
             raise ModelError(f"the model server answered HTTP {exc.code}{hint}") from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
