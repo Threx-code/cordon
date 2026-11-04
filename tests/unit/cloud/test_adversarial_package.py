@@ -103,6 +103,32 @@ class TestARepositoryCannotConfigureItsOwnBlindness:
             "scan.minified",
         }
 
+    def test_a_limit_too_long_to_matter_is_withheld_like_none(self, tmp_path) -> None:
+        """`max_intel_age: 0` was withheld; ten years was not, and does the same: intel never
+        stale, so a scan target could still switch the check off by a longer name."""
+        (tmp_path / "cordon.yaml").write_text(
+            "version: 1\nscan:\n  max_intel_age: 315360000\n", encoding="utf-8"
+        )
+        config = ConfigResolver.resolve(root=tmp_path)
+        assert config.max_intel_age is None
+        assert "scan.max_intel_age" in config.clamped_settings
+
+    def test_a_stricter_limit_is_kept(self, tmp_path) -> None:
+        (tmp_path / "cordon.yaml").write_text(
+            "version: 1\nscan:\n  max_intel_age: 86400\n", encoding="utf-8"
+        )
+        config = ConfigResolver.resolve(root=tmp_path)
+        assert config.max_intel_age == 86400
+        assert "scan.max_intel_age" not in config.clamped_settings
+
+    def test_an_operator_may_still_choose_a_longer_one(self, tmp_path) -> None:
+        """--config is the operator's own file, not the scan target's: an isolated site that
+        refreshes its intel monthly says so there, deliberately, where reviewers see it."""
+        path = tmp_path / "operator.yaml"
+        path.write_text("version: 1\nscan:\n  max_intel_age: 2592000\n", encoding="utf-8")
+        config = ConfigResolver.resolve(root=tmp_path, config_path=path)
+        assert config.max_intel_age == 2592000
+
     def test_each_attempt_fails_the_default_gate(self, tmp_path) -> None:
         (tmp_path / "cordon.yaml").write_text(self.CONFIG, encoding="utf-8")
         (tmp_path / "a.txt").write_text("hello\n", encoding="utf-8")

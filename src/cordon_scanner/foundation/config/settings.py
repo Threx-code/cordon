@@ -46,7 +46,7 @@ from cordon_scanner.foundation.config.policy import (
 )
 from cordon_scanner.foundation.config.provenance import Layer, Provenance
 from cordon_scanner.foundation.errors import ConfigError, PolicyViolationError
-from cordon_scanner.foundation.limits import DEFAULT_LIMITS, Limits
+from cordon_scanner.foundation.limits import DEFAULT_LIMITS, DEFAULT_MAX_INTEL_AGE, Limits
 from cordon_scanner.foundation.models import (
     Confidence,
     RedactionMode,
@@ -508,7 +508,7 @@ class Config:
         # into the scanner itself (code execution in the scan step, and a plugin can rewrite the
         # verdict); `minified: ["**"]` silenced the long-line obfuscation rule everywhere;
         # `expand_archives: false` left every archive unread; `intel_feed: false` and
-        # `max_intel_age: 0` turned the staleness check off.
+        # `max_intel_age: 0`, or a limit past the default, turned the staleness check off.
         allow_plugins = self.allow_plugins
         if allow_plugins:
             allow_plugins = False
@@ -521,8 +521,12 @@ class Config:
         if not intel_feed:
             intel_feed = True
             clamped.append("scan.intel_feed")
+        # 0 turned the check off, and so does any limit past the default week (ten years is
+        # never stale): the scan target may make it stricter, never looser.
         max_intel_age = self.max_intel_age
-        if max_intel_age == 0:
+        if max_intel_age is not None and (
+            max_intel_age == 0 or max_intel_age > DEFAULT_MAX_INTEL_AGE
+        ):
             max_intel_age = None
             clamped.append("scan.max_intel_age")
         # A pattern that names a place is kept and reported like an exclusion; one that spans the
