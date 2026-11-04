@@ -966,3 +966,20 @@ class TestEveryDocumentedConfigurationLoads:
             except Exception as error:  # noqa: BLE001 - every refusal is reported, by document
                 refused.append(f"{where}: {type(error).__name__}: {error}")
         assert refused == []
+
+
+class TestTheCommandIsCordonScanner:
+    """The package installs `cordon-scanner` (and `cordon-sandbox`), never `cordon`. docs/09 showed
+    nine commands as `cordon login`, `cordon scan . --upload` and the like, which fail where copied
+    (4 Nov). A code-block line that starts `cordon <subcommand>` is refused."""
+
+    def test_no_document_shows_a_bare_cordon_command(self) -> None:
+        subcommands = set(CommandParser.build()._subparsers._group_actions[0].choices)
+        bare = re.compile(rf"^\s*(?:\$\s+)?cordon\s+({'|'.join(sorted(subcommands))})\b")
+        found = []
+        for path in DocumentedCommandKit.documents():
+            for block in re.findall(r"```[a-z]*\n(.*?)```", path.read_text(encoding="utf-8"), re.S):
+                for line in block.split("\n"):
+                    if bare.search(line) and not set(line) & DocumentedCommandKit.DIAGRAM:
+                        found.append(f"{path.relative_to(REPO).as_posix()}: {line.strip()}")
+        assert found == []

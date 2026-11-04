@@ -165,11 +165,11 @@ webhook (and changing its secret), and writing a channel of your own:
 Everything here is opt-in and changes nothing about what a scan finds.
 
 ```
-   cordon login                     device flow through your org's SSO; pins the org's policy key
-   cordon scan . --upload           results as an in-toto statement; keyless-signed in CI
-   cordon scan . --cloud-policy     the org's signed policy and approved suppressions
-   cordon runner --allow-host github.com     scan jobs inside your network, outbound only
-   cordon agent inventory | report  AI agents and MCP servers on this machine, for MDM
+   cordon-scanner login             device flow through your org's SSO; pins the org's policy key
+   cordon-scanner scan . --upload   results as an in-toto statement; keyless-signed in CI
+   cordon-scanner scan . --cloud-policy  the org's signed policy and approved suppressions
+   cordon-scanner runner --allow-host github.com  scan jobs inside your network, outbound only
+   cordon-scanner agent inventory | report  AI agents and MCP servers on this machine, for MDM
 ```
 
 - **Uploads** are the JSON results plus a DSSE-wrapped in-toto statement over their SHA-256
@@ -179,7 +179,7 @@ Everything here is opt-in and changes nothing about what a scan finds.
 - **The policy bundle** is verified with Ed25519 against the key pinned at sign-in, refused if it
   names another organisation or is older than the cached one, and used from cache when the cloud is
   unreachable until it expires. With `--cloud-policy` and no current bundle the scan does not run.
-  The pinned key never changes on a token renewal; rotating it is a fresh `cordon login`. CI has no
+  The pinned key never changes on a token renewal; rotating it is a fresh `cordon-scanner login`. CI has no
   sign-in to pin from, so set `CORDON_POLICY_KEYS` (`keyid:hex`, shown on the console's policy
   page) in the CI configuration: without it `--cloud-policy` refuses to apply a bundle checked
   against keys that arrived with the same token.
@@ -203,10 +203,10 @@ Rules catch the wordings someone wrote down; `--judge` has a language model read
 text for the rest. Off by default. It only adds findings; every rule still runs.
 
 ```
-   cordon scan . --judge cordon-cloud          recommended: Cordon Cloud's hosted judge (`cordon login`)
-   cordon scan . --judge anthropic             your own Anthropic key (ANTHROPIC_API_KEY)
-   cordon scan . --judge openai:<model>        OpenAI, or any compatible server (CORDON_JUDGE_URL)
-   cordon scan . --judge ollama:<model>        a local model; nothing leaves the machine
+   cordon-scanner scan . --judge cordon-cloud  recommended: Cordon Cloud's hosted judge (`cordon-scanner login`)
+   cordon-scanner scan . --judge anthropic     your own Anthropic key (ANTHROPIC_API_KEY)
+   cordon-scanner scan . --judge openai:<model>  OpenAI, or any compatible server (CORDON_JUDGE_URL)
+   cordon-scanner scan . --judge ollama:<model>  a local model; nothing leaves the machine
 ```
 
 | Judge | Measured | What leaves the machine |

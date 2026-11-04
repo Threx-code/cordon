@@ -82,7 +82,7 @@ environment:
 | Cordon Cloud API | `--cloud-url` | `CORDON_CLOUD_URL` |
 | CI identity token to exchange (audience `cordon`) | | `CORDON_ID_TOKEN`; GitHub, Bitbucket and CircleCI tokens are found automatically |
 | Runner token | | `CORDON_RUNNER_TOKEN` |
-| Device token for `cordon agent report` | | `CORDON_DEVICE_TOKEN` |
+| Device token for `cordon-scanner agent report` | | `CORDON_DEVICE_TOKEN` |
 
 ### The four layers
 

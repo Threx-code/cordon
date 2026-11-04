@@ -86,7 +86,7 @@ which). Registry-answered checks (withdrawal, published-hash) need `--online`.
                            MCP server packages are FETCHED (never installed, never run)
 
    only when asked         --upload (results), --notify (rule, path, fingerprint),
-                           cordon agent report (inventory and findings)
+                           cordon-scanner agent report  (inventory and findings)
 ```
 
 Each line is a choice about one kind of disclosure. A dependency's name is the one thing a scan
