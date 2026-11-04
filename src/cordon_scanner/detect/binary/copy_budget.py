@@ -13,8 +13,8 @@ one scan, in every worker, holds slots of one budget first:
   waiting past the scan's deadline: refused, with its reason, so the readers read the prefix and say so
 ```
 
-With no directory (a scan that set none up, or a platform without `flock`) there is no budget, and every copy is
-made as before.
+With no directory (a scan that set none up) there is no budget, and every copy is made as before. The slots are
+`FileLocks`: `flock` on POSIX, `msvcrt.locking` on Windows, where there was no budget until 4 Nov.
 """
 
 from __future__ import annotations
@@ -25,6 +25,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
+
+from cordon_scanner.foundation.files.locks import FileLocks
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -62,12 +64,7 @@ class CopyBudget:
     def hold(self, nbytes: int, deadline: float | None) -> Iterator[Held]:
         """Hold the slots `nbytes` needs (every slot for a member larger than the budget) until the block
         ends, or refuse at `deadline` (this process's monotonic clock; None waits for as long as it takes)."""
-        try:
-            import fcntl
-        except ImportError:  # no flock here: no budget, as with no directory
-            yield Held(True)
-            return
-        if self.directory is None:
+        if self.directory is None or not FileLocks.available():
             yield Held(True)
             return
         need = min(self.slots, max(1, -(-nbytes // CopyBudget.SLOT)))
@@ -75,14 +72,14 @@ class CopyBudget:
         held = Held(False, alone=alone)
         gate = self._open(CopyBudget.GATE)
         try:
-            if not self._wait(gate, deadline, fcntl):
+            if not self._wait(gate, deadline):
                 held.reason = "the copy budget was held until the deadline (waiting to take slots)"
                 yield held
                 return
             try:
-                held.fds = self._take(need, deadline, fcntl)
+                held.fds = self._take(need, deadline)
             finally:
-                fcntl.flock(gate, fcntl.LOCK_UN)
+                FileLocks.release(gate)
             if len(held.fds) < need:
                 self._release(held.fds)
                 held.fds = []
@@ -104,18 +101,15 @@ class CopyBudget:
         return os.open(Path(self.directory) / name, flags, 0o600)
 
     @staticmethod
-    def _wait(fd: int, deadline: float | None, fcntl: object) -> bool:
+    def _wait(fd: int, deadline: float | None) -> bool:
         """The exclusive lock on `fd`, polled until it is free or `deadline` passes."""
-        while True:
-            try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)  # type: ignore[attr-defined]
-                return True
-            except OSError:
-                if deadline is not None and time.monotonic() >= deadline:
-                    return False
-                time.sleep(CopyBudget.POLL)
+        while not FileLocks.take(fd):
+            if deadline is not None and time.monotonic() >= deadline:
+                return False
+            time.sleep(CopyBudget.POLL)
+        return True
 
-    def _take(self, need: int, deadline: float | None, fcntl: object) -> list[int]:
+    def _take(self, need: int, deadline: float | None) -> list[int]:
         """`need` free slots, collected in order while the gate is held; fewer if `deadline` passes."""
         taken: list[int] = []
         held_slots: set[int] = set()
@@ -126,9 +120,7 @@ class CopyBudget:
                 if slot in held_slots:
                     continue
                 fd = self._open(f"slot-{slot:03d}")
-                try:
-                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)  # type: ignore[attr-defined]
-                except OSError:
+                if not FileLocks.take(fd):
                     os.close(fd)
                     continue
                 taken.append(fd)
@@ -142,7 +134,8 @@ class CopyBudget:
     @staticmethod
     def _release(fds: list[int]) -> None:
         for fd in fds:
-            os.close(fd)  # closing drops the flock
+            FileLocks.release(fd)
+            os.close(fd)
 
 
 __all__ = ["CopyBudget", "Held"]

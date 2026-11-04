@@ -99,9 +99,38 @@ class SharedFixtures:
         monkeypatch.setattr(StatePaths, "key_dir", staticmethod(lambda: directory))
 
 
+class UnixLines:
+    """`Path.write_text` writes `\n` as `\n` on every platform while the suite runs.
+
+    The suite's 1,310 `write_text` calls mean LF: they build sources, manifests and fixtures whose
+    findings, digests and reference hashes the tests assert. On Windows the default newline wrote
+    CRLF, so a recipe's digest, a format's reference hash and every rule anchored at a line end saw
+    other bytes than on Linux and macOS (the first full Windows run, 4 Nov). CRLF itself is tested
+    where it is the subject (tests/unit/foundation/text/test_line_endings.py). A caller that passes
+    `newline` keeps it; on Linux and macOS nothing changes."""
+
+    @staticmethod
+    def install() -> None:
+        from pathlib import Path
+
+        real = Path.write_text
+        if getattr(real, "_unix_lines", False):
+            return
+
+        def write_text(self, data, encoding=None, errors=None, newline="\n"):  # type: ignore[no-untyped-def]
+            return real(self, data, encoding=encoding, errors=errors, newline=newline)
+
+        write_text._unix_lines = True  # type: ignore[attr-defined]
+        # Named as the method it replaces, so a test that pickles `Path.write_text` (a malicious
+        # pickle's payload) still finds it by name.
+        write_text.__module__, write_text.__qualname__ = real.__module__, real.__qualname__
+        Path.write_text = write_text  # type: ignore[method-assign]
+
+
 def pytest_configure(config: pytest.Config) -> None:
     """Register the shared fixtures. pytest finds hooks only as module-level functions
     in a conftest, so this one function stays one; everything else is a class."""
+    UnixLines.install()
     config.pluginmanager.register(SharedFixtures(), "cordon-shared-fixtures")
 
 

@@ -7,6 +7,7 @@ the bound lowered, so CI can afford it, with the peak memory asserted."""
 from __future__ import annotations
 
 import json
+import os
 import runpy
 import sys
 from pathlib import Path
@@ -94,6 +95,11 @@ UNMATCHED = "SUSPECT.RULEFILE.UNMATCHED.001"
 MALWARE = 'rule z { meta: category = "malicious" strings: $z = { 00 00 00 00 } condition: #z > 5 }'
 
 
+@pytest.mark.skipif(
+    not hasattr(os, "fork"),
+    reason="each case patches the matcher in this process; Windows starts scan workers fresh, so the "
+    "patch never reaches them. The same fail-closed code runs, and is tested, on Linux and macOS",
+)
 class TestEveryCauseFailsClosed:
     """Each way the matched file can stop a match fails the scan (a non-zero exit), named."""
 

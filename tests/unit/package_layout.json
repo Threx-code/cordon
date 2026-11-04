@@ -458,6 +458,7 @@
   "foundation/evidence_key": "foundation/evidence_key",
   "foundation/files/atomic": "foundation/files/atomic",
   "foundation/files/globs": "foundation/files/globs",
+  "foundation/files/locks": "foundation/files/locks",
   "foundation/files/names": "foundation/files/names",
   "foundation/files/ownership": "foundation/files/ownership",
   "foundation/files/seal": "foundation/files/seal",

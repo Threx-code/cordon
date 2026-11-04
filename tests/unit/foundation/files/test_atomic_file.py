@@ -8,6 +8,7 @@ import stat
 from pathlib import Path
 
 from cordon_scanner.foundation.files.atomic import AtomicFile
+from cordon_scanner.foundation.files.ownership import Ownership
 
 
 class AtomicFileWorker:
@@ -38,4 +39,8 @@ class TestAtomicFile:
 
     def test_the_file_is_its_owners_only(self, tmp_path) -> None:
         target = AtomicFile.write(tmp_path / "credentials.json", "{}")
-        assert stat.S_IMODE(target.stat().st_mode) == 0o600
+        if Ownership.windows():
+            # No POSIX mode on Windows (it reads 0o666): the profile's ACL is what keeps it private.
+            assert Ownership.private(target.stat())
+        else:
+            assert stat.S_IMODE(target.stat().st_mode) == 0o600

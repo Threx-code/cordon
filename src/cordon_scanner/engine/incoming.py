@@ -159,12 +159,22 @@ class Incoming:
 
         Hooks this command would fire for code it has just scanned are told so through
         `INCOMING_ENV`; `ext::` remote helpers, which run a program named in a URL, are refused.
+        The filesystem monitor is off: with `core.fsmonitor` on (Git for Windows' daemon, or a
+        hook), git started a process inside the clone being checked, which on Windows kept the
+        directory open so a blocked clone could not be removed (WinError 32, 4 Nov).
         """
         from cordon_scanner.sources.registry import GitRepository
 
         env = {**os.environ, INCOMING_ENV: "1"}
         return subprocess.run(  # noqa: S603 - absolute path, fixed argv, no shell
-            [GitRepository.binary(), "-c", "protocol.ext.allow=never", *args],
+            [
+                GitRepository.binary(),
+                "-c",
+                "protocol.ext.allow=never",
+                "-c",
+                "core.fsmonitor=false",
+                *args,
+            ],
             cwd=cwd,
             env=env,
             text=True,

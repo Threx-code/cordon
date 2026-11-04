@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.foundation.errors import ArchiveError
+from cordon_scanner.foundation.files.locks import FileLocks
 from cordon_scanner.foundation.files.ownership import Ownership
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS
 
@@ -73,31 +74,26 @@ class SpillDirectory:
     def _hold(lock: Path) -> int | None:
         """The lock file, opened and locked for as long as this process (or a worker it forks)
         lives: a killed scan's lock is free the moment it dies, whatever the directory's age."""
-        try:
-            import fcntl
-        except ImportError:
+        if not FileLocks.available():
             return None
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
         fd = os.open(lock, flags, 0o600)
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        FileLocks.take(fd)  # a file this process just created: nothing else can hold it
         return fd
 
     @staticmethod
     def _abandoned(entry: Path, age: float) -> bool:
         """Whether no scan holds `entry`: its lock is free (by liveness, at once), or it has no lock
         and is past `STALE_SECONDS` (by age, the fallback)."""
-        try:
-            import fcntl
-        except ImportError:
+        if not FileLocks.available():
             return age > SpillDirectory.STALE_SECONDS
         try:
             fd = os.open(entry / SpillDirectory.LOCK, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
         except OSError:
             return age > SpillDirectory.STALE_SECONDS
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            return False  # a live scan holds it
+            if not FileLocks.take(fd):
+                return False  # a live scan holds it
         finally:
             os.close(fd)
         return True

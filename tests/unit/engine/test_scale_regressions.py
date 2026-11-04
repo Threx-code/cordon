@@ -130,6 +130,9 @@ class TestOneLanguageEverywhere:
             b"\xff\xfe" + b"no NULs here " * 900,  # a mark UTF-16 does not bear out
             b"ok \xff\xfe bad \xc3 bytes\n" * 900,  # invalid UTF-8
         ],
+        # Named, not their bytes: a test id becomes PYTEST_CURRENT_TEST, and these ran past
+        # Windows' 32,767-character limit on an environment variable (4 Nov).
+        ids=["two-byte", "four-byte", "utf8-bom", "utf16", "false-utf16-mark", "invalid-utf8"],
     )
     def test_the_sniff_reads_what_the_whole_text_starts_with(self, raw: bytes) -> None:
         content = FileContent.from_bytes("x", raw)
