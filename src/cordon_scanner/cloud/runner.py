@@ -503,7 +503,7 @@ class CloudRunner:
                 "-c",
                 "user.name=Cordon",
                 "-c",
-                "user.email=fix@cordon.dev",
+                "user.email=fix@cordonscan.com",
                 "-c",
                 "commit.gpgsign=false",
             ]

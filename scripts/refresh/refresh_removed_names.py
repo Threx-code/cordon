@@ -31,6 +31,7 @@ carries (Source, Threshold, Fetched, Refreshed), so a reviewer sees every name a
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
 import gzip
 import json
@@ -67,6 +68,8 @@ class RegistryProbe:
                 with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310
                     return response.status, response.read()
             except urllib.error.HTTPError as exc:
+                with contextlib.suppress(Exception):  # the error is the response: close it
+                    exc.close()
                 if exc.code in (429, 500, 502, 503, 504) and attempt < 2:
                     time.sleep(2 + attempt * 3)
                     continue

@@ -47,6 +47,7 @@ class CloudTransport:
             with opener.open(request, timeout=TIMEOUT_SECONDS) as response:
                 return int(response.status), Download.read(response, MAX_RESPONSE_BYTES + 1)
         except urllib.error.HTTPError as exc:
+            NetworkFailure.release(exc)
             return int(exc.code), Download.read(exc, MAX_RESPONSE_BYTES + 1)
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             host = urllib.parse.urlsplit(url).hostname

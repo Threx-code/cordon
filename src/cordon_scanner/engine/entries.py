@@ -6,7 +6,8 @@ them as `import_entry_paths`, and, without the command targets, as `library_entr
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+import re
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.ecosystems.registry import RegistryFacts
 from cordon_scanner.foundation.formats.served_json import ServedJson
@@ -29,6 +30,49 @@ class PackageEntries:
                 members[member] = unit.path
         manifest = PackageEntries.manifest(units, distribution)
         return frozenset(RegistryFacts.library_entries(distribution, members, manifest, with_bin))
+
+    PROJECT_SCRIPTS: ClassVar[frozenset[str]] = frozenset(
+        f"{when}{name}" for name in ("dev", "build", "start") for when in ("", "pre", "post")
+    )
+    """The scripts a person runs to use a published project (`npm run dev`, `npm start`), with
+    the pre and post scripts npm runs around them. Item 72: 323 of 374 npm malware misses with
+    code outside every reach set were app projects whose payload runs on these, not on install;
+    the owner's ruling is a strict scanner (3 Nov), so what they run is reached code."""
+
+    TOOL_CONFIG: ClassVar[re.Pattern[str]] = re.compile(r"^[\w.-]+\.config\.[cm]?[jt]s$")
+    """A build tool's configuration beside the manifest (`next.config.mjs`, `vite.config.ts`):
+    code the tool loads and runs when one of those scripts does. A file-name convention, not a
+    list of tools."""
+
+    @staticmethod
+    def project_run(units: list[FileUnit], distribution: str) -> frozenset[str]:
+        """The files a published package's own dev, build and start scripts run, and the tool
+        configurations they load: empty for a package with none of those scripts."""
+        from cordon_scanner.engine.pipeline.hooks import Hooks
+        from cordon_scanner.foundation.models import Hook
+
+        place = RegistryFacts.archive_manifest(distribution)
+        scripts = PackageEntries.manifest(units, distribution).get("scripts")
+        if place is None or not isinstance(scripts, dict):
+            return frozenset()
+        hooks = [
+            Hook(kind="build", path=place, name=name, command=command)
+            for name, command in scripts.items()
+            if name in PackageEntries.PROJECT_SCRIPTS and isinstance(command, str)
+        ]
+        manifest = next((u.path for u in units if u.path.endswith(f"!{place}")), None)
+        if not hooks or manifest is None:
+            return frozenset()
+        known = frozenset(u.path for u in units)
+        found = Hooks.hook_script_paths(manifest, hooks, known)
+        here = manifest.rpartition("/")[0]
+        found.update(
+            u.path
+            for u in units
+            if u.path.rpartition("/")[0] == here
+            and PackageEntries.TOOL_CONFIG.match(u.path.rpartition("/")[2])
+        )
+        return frozenset(found)
 
     @staticmethod
     def manifest(units: list[FileUnit], distribution: str) -> dict[str, Any]:

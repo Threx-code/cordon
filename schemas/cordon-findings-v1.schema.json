@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://cordon.dev/schemas/cordon-findings-v1.schema.json",
+  "$id": "https://cordonscan.com/schemas/cordon-findings-v1.schema.json",
   "title": "Cordon scan results v1 (K1)",
   "description": "What `cordon scan --format json` writes: deterministic, sorted keys, no timestamps. `fingerprint` is sha256 over rule_id, (package or path), symbol and the whitespace-collapsed matched text (or the evidence hash), joined by NUL, first 16 hex characters. Line and column are excluded so a finding keeps its identity when code moves.",
   "type": "object",

@@ -24,6 +24,7 @@ import urllib.request
 from typing import Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
 
 API: Final = "https://api.github.com"
 TIMEOUT: Final = 15.0
@@ -53,7 +54,8 @@ class GitHubRepository:
         try:
             with urllib.request.build_opener(_ApiRedirects).open(request, timeout=TIMEOUT) as r:
                 document = json.loads(Download.read(r, MAX_BYTES))
-        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError):
+        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
+            NetworkFailure.release(exc)
             return None
         full_name = document.get("full_name") if isinstance(document, dict) else None
         if not isinstance(full_name, str) or full_name.count("/") != 1:

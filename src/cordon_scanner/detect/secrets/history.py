@@ -38,6 +38,7 @@ from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Confidence, Finding, Location, Severity
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import NoRedirects
 
 MAX_VERIFICATIONS = 50
@@ -333,6 +334,7 @@ class SecretLiveness:
             with opener.open(request, timeout=TIMEOUT_SECONDS) as response:
                 return response.status, Download.read(response, 64 << 10)
         except urllib.error.HTTPError as exc:
+            NetworkFailure.release(exc)
             return exc.code, b""
 
     def check(self, rule_id: str, value: str) -> bool | None:
@@ -345,7 +347,8 @@ class SecretLiveness:
             return None
         try:
             status, body = self.opener(request)
-        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError):
+        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
+            NetworkFailure.release(exc)
             return None
         return issuer.accepted(status, body)
 

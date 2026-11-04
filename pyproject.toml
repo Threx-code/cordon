@@ -108,6 +108,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: Implementation :: CPython",
     "Topic :: Security",
     "Topic :: Security :: Cryptography",
@@ -225,7 +226,7 @@ slack = "cordon_scanner.notify.channels.slack:SlackChannel"
 teams = "cordon_scanner.notify.channels.teams:TeamsChannel"
 
 [project.urls]
-Homepage = "https://github.com/Threx-code/cordon"
+Homepage = "https://cordonscan.com"
 Documentation = "https://github.com/Threx-code/cordon#readme"
 Repository = "https://github.com/Threx-code/cordon.git"
 "Bug Tracker" = "https://github.com/Threx-code/cordon/issues"
@@ -254,7 +255,7 @@ sources = ["src/cordon_scanner/_native/anchors.c"]
 [tool.cordon-build.package-data]
 "cordon_scanner" = ["py.typed"]
 "cordon_sandbox" = ["py.typed"]
-"cordon_scanner.rules.builtin" = ["*.yaml", "derivations.json"]
+"cordon_scanner.rules.builtin" = ["*.yaml", "derivations-*.json"]
 # The built-in rule pack (`--rule-file builtin`, detect/binary/rule_files.py) and the records of where
 # its rules came from and how they measured. Missing from the wheel before 2026-10-20: an install
 # from PyPI had no pack to load.

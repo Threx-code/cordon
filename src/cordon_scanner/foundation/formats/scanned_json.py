@@ -28,6 +28,7 @@ from __future__ import annotations
 import contextvars
 import json
 import re
+import sys
 from collections.abc import Callable
 from json.decoder import JSONDecodeError
 from typing import Any, ClassVar
@@ -87,6 +88,11 @@ class ScannedJson:
             )
             stack.extend(reversed(list(children)))
         return found
+
+
+TRAILING_COMMA_SAID = sys.version_info >= (3, 13)
+"""Whether this Python's `json` names a trailing comma (`[1,]`, `{"a":1,}`) at the comma, as 3.13
+began to, rather than the value or key it then expects: the stack decoder says what `json` says."""
 
 
 class _Iterative:
@@ -220,7 +226,10 @@ class _Iterative:
                 return True, stack.pop()[0], end
             if nextchar != ",":
                 raise JSONDecodeError("Expecting ',' delimiter", s, end - 1)
-            return False, None, _Iterative._space_after(s, end)
+            after = _Iterative._space_after(s, end)
+            if TRAILING_COMMA_SAID and s[after : after + 1] == "]":
+                raise JSONDecodeError("Illegal trailing comma before end of array", s, end - 1)
+            return False, None, after
         # JSONObject: after a value.
         frame[0].append((frame[1], value))
         try:
@@ -235,9 +244,12 @@ class _Iterative:
             return True, dict(stack.pop()[0]), end
         if nextchar != ",":
             raise JSONDecodeError("Expecting ',' delimiter", s, end - 1)
+        comma = end - 1
         end = _Iterative.space(s, end)
         nextchar = s[end : end + 1]
         end += 1
+        if TRAILING_COMMA_SAID and nextchar == "}":
+            raise JSONDecodeError("Illegal trailing comma before end of object", s, comma)
         if nextchar != '"':
             raise JSONDecodeError("Expecting property name enclosed in double quotes", s, end - 1)
         frame[1], start = _Iterative._object_key(s, end)

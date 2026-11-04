@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     from cordon_scanner.foundation.results import ScanResult
 
 STATEMENT_TYPE: Final = "https://in-toto.io/Statement/v1"
-PREDICATE_TYPE: Final = "https://cordon.dev/attestations/scan-results/v1"
+PREDICATE_TYPE: Final = "https://cordonscan.com/attestations/scan-results/v1"
 PAYLOAD_TYPE: Final = "application/vnd.in-toto+json"
 UPLOAD_SCHEMA: Final = "cordon.upload/v1"
 SUBJECT_NAME: Final = "cordon-results.json"

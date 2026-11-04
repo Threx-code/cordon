@@ -106,6 +106,7 @@ class LiveMcp:
                 kind = response.headers.get("Content-Type", "")
                 session = response.headers.get("Mcp-Session-Id") or session
         except urllib.error.HTTPError as exc:
+            NetworkFailure.release(exc)
             raise LiveMcpError(f"HTTP {exc.code} from {urllib.parse.urlsplit(url).netloc}") from exc
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             raise LiveMcpError(

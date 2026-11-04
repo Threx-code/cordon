@@ -54,6 +54,7 @@ alone rather than fetching an unranked list and pretending it was ranked.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
 import json
 import os
@@ -210,6 +211,8 @@ class PackageIntelRefresh:
             try:
                 return fetcher(url, timeout=timeout)
             except urllib.error.HTTPError as exc:
+                with contextlib.suppress(Exception):  # the error is the response: close it
+                    exc.close()
                 if exc.code not in RETRYABLE_STATUS:
                     raise
                 last = exc
@@ -596,6 +599,8 @@ class PackageIntelRefresh:
                         PackageIntelRefresh.fetch_json_retrying(f"{source}?{query}"), source
                     )
                 except urllib.error.HTTPError as exc:
+                    with contextlib.suppress(Exception):  # the error is the response: close it
+                        exc.close()
                     # A page past the end of this term's results, which pub.dev
                     # answers 400 rather than with an empty list. The end of the
                     # term; every other status is a broken source and propagates.

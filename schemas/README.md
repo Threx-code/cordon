@@ -67,7 +67,7 @@ key on it.
 
 ## K7: sign-in
 
-Endpoints, all under the API base (`https://api.cordon.dev` by default, `CORDON_CLOUD_URL`):
+Endpoints, all under the API base (`https://core-api.cordonscan.com` by default, `CORDON_CLOUD_URL`):
 
 | Request | Standard | Body (form-encoded) | Success |
 |---|---|---|---|

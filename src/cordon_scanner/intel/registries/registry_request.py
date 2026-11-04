@@ -101,6 +101,7 @@ class RegistryRequest:
             with opener.open(request, timeout=TIMEOUT_SECONDS * 6) as response:
                 body = Download.read(response, MAX_ARCHIVE_BYTES + 1)
         except urllib.error.HTTPError as exc:
+            NetworkFailure.release(exc)
             raise RegistryError(f"HTTP {exc.code} from {parsed.netloc}") from exc
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             raise RegistryError(

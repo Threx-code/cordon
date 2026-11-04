@@ -4,6 +4,7 @@ the line the parse failed (`analysis/python/statements.py`'s PythonTwo, item 27)
 from __future__ import annotations
 
 import ast
+import sys
 
 import pytest
 
@@ -26,7 +27,14 @@ class TestAPythonTwoConstruct:
         [
             ('import os\nprint "building"\n', "a print statement"),
             ('exec "x = 1"\n', "an exec statement"),
-            ("try:\n    pass\nexcept ValueError, e:\n    pass\n", "except A, e"),
+            pytest.param(
+                "try:\n    pass\nexcept ValueError, e:\n    pass\n",
+                "except A, e",
+                # PEP 758: Python 3.14 reads `except A, B:` as two exception types, so it parses.
+                marks=pytest.mark.skipif(
+                    sys.version_info >= (3, 14), reason="valid Python 3.14 (PEP 758)"
+                ),
+            ),
             # argweaver 0.8.1's setup.py, line 109 (item 27's count)
             (
                 "def f():\n    raise DistutilsSetupError, \\\n        ('in libraries')\n",

@@ -98,6 +98,7 @@ class BazelProvenance:
         try:
             return BazelProvenance._get(f"{REGISTRY}/modules/{quoted}")
         except urllib.error.HTTPError as exc:
+            NetworkFailure.release(exc)
             if exc.code == 404:
                 return None
             raise

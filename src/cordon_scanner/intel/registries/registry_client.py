@@ -130,6 +130,7 @@ class RegistryClient:
                     compressed = str(response.headers.get("Content-Encoding", "")).lower() == "gzip"
                 break
             except urllib.error.HTTPError as exc:
+                NetworkFailure.release(exc)
                 if exc.code == 404:
                     raise PackageNotFound(f"{parsed.netloc} has no package by that name") from exc
                 # A status is the registry answering. 429 and 5xx are the two it

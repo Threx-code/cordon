@@ -15,6 +15,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import ClassVar, Final
 
+from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.version import __version__
 
@@ -47,6 +48,7 @@ class HttpsTransport:
             with opener.open(request, timeout=HttpsTransport.TIMEOUT_SECONDS) as response:
                 return Reply(int(response.status))
         except urllib.error.HTTPError as exc:
+            NetworkFailure.release(exc)
             return Reply(int(exc.code), RetryPolicy.seconds(exc.headers.get("Retry-After")))
 
 

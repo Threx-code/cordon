@@ -129,7 +129,7 @@ class FeatureSchema:
             moved = root / FeatureSchema.source(path, dotted)
             node = FeatureSchema._node(moved if moved.is_file() else root / path, dotted)
             digest.update(f"{path}:{dotted}\n".encode())
-            digest.update(ast.dump(FeatureSchema._without_docstrings(node)).encode())
+            digest.update(FeatureSchema.dump(FeatureSchema._without_docstrings(node)).encode())
         for path, dotted in FeatureSchema.ADDED:
             if not (root / path).is_file():
                 continue
@@ -138,7 +138,7 @@ class FeatureSchema:
             except LookupError:
                 continue  # a tree from before the piece was written
             digest.update(f"{path}:{dotted}\n".encode())
-            digest.update(ast.dump(FeatureSchema._without_docstrings(node)).encode())
+            digest.update(FeatureSchema.dump(FeatureSchema._without_docstrings(node)).encode())
         listed = FeatureSchema.names() if names is None else names
         digest.update(json.dumps(sorted(listed)).encode())
         return FeatureSchema.equivalent(FeatureSchema.PREFIX + digest.hexdigest()[:16])
@@ -199,6 +199,41 @@ class FeatureSchema:
                 raise LookupError(f"{dotted} is not defined in {path}: the extractor list is stale")
             node = found
         return node
+
+    #: Fields Python 3.12 added to nodes the hashed code has, written as 3.12 writes them where an
+    #: older Python has no such field.
+    ADDED_IN_312: ClassVar[dict[str, str]] = {
+        "FunctionDef": "type_params",
+        "AsyncFunctionDef": "type_params",
+        "ClassDef": "type_params",
+    }
+
+    @staticmethod
+    def dump(node: ast.AST) -> str:
+        """`ast.dump` as Python 3.12 writes it, on every supported Python: 3.13 began leaving out
+        empty fields and 3.11 has no `type_params`, which moved the version of an unchanged tree
+        (fs1-ea0fb02ccf3bb099 on 3.12, fs1-5b52138d82821d4a on 3.13 and 3.14, fs1-0ecd42e235e9719e
+        on 3.11). Byte-identical to 3.12's `ast.dump` on 3.11 to 3.14 for every hashed piece."""
+
+        def text(value: object) -> str:
+            if isinstance(value, ast.AST):
+                kind = type(value)
+                fields = list(value._fields)
+                added = FeatureSchema.ADDED_IN_312.get(kind.__name__)
+                if added and added not in fields:
+                    fields.append(added)
+                parts = []
+                for name in fields:
+                    field = getattr(value, name, [])
+                    if field is None and getattr(kind, name, ...) is None:
+                        continue  # an optional field left out, as 3.12 leaves it out
+                    parts.append(f"{name}={text(field)}")
+                return f"{kind.__name__}({', '.join(parts)})"
+            if isinstance(value, list):
+                return f"[{', '.join(text(item) for item in value)}]"
+            return repr(value)
+
+        return text(node)
 
     @staticmethod
     def _without_docstrings(node: ast.AST) -> ast.AST:
@@ -269,7 +304,7 @@ class FeatureFold:
         digest = hashlib.sha256()
         digest.update(f"{FeatureSchema.current()}\nwidth={FeatureFold.WIDTH}\n".encode())
         node = FeatureSchema._node(PackagePaths.root() / "decide/feature_schema.py", "FeatureFold")
-        digest.update(ast.dump(FeatureSchema._without_docstrings(node)).encode())
+        digest.update(FeatureSchema.dump(FeatureSchema._without_docstrings(node)).encode())
         return FeatureFold.PREFIX + digest.hexdigest()[:16]
 
     @staticmethod

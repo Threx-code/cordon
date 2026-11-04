@@ -8,6 +8,7 @@ from __future__ import annotations
 import ast
 import gc
 import itertools
+import sys
 import textwrap
 import time
 import tracemalloc
@@ -184,6 +185,15 @@ SCANNED = {
     "a match statement": "match x:\n    case 1:\n        pass\nm = 1\n",
     "comments and blank lines between": "# head\n\nx = 1\n\n# between\n\ny = 2  # trailing\n",
     "bytes and prefixes": "a = b'x'\nb = rb'\\d'\nc = Rb\"x\"\nd = u'x'\ne = br'y'\n",
+}
+
+
+#: Cases written in syntax only a newer Python parses (PEP 701's f-strings are 3.12's): not a module
+#: on an older one, so not a case there.
+SCANNED = {
+    name: text
+    for name, text in SCANNED.items()
+    if "(3.12)" not in name or sys.version_info >= (3, 12)
 }
 
 

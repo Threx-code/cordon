@@ -260,14 +260,14 @@ class ArchiveStages:
             # typosquat grading asks which format it is.
             package_distribution=bool(early_format := PackageFormat.of(units)),
             distribution=early_format,
-            import_entry_paths=PackageEntries.of(units, early_format),
+            # What the package's own dev, build and start scripts run is used code too (item 72).
+            import_entry_paths=(used := PackageEntries.of(units, early_format))
+            | (project := PackageEntries.project_run(units, early_format)),
             library_entry_paths=PackageEntries.of(units, early_format, with_bin=False),
             # Seeded from every entry, `bin` included: a command's relative requires run when it
             # does (5E-1: the closure was seeded from the library entries only, so a bin script's
-            # helper was in no reach set).
-            library_closure_paths=frozenset(
-                Hooks.hook_js_closure(units, set(PackageEntries.of(units, early_format)))
-            ),
+            # helper was in no reach set). And from what the project scripts run.
+            library_closure_paths=frozenset(Hooks.hook_js_closure(units, set(used | project))),
             declared_dependencies=EcosystemRegistry.declared_dependencies(units, early_format),
             package_repository=PackageEntries.repository(units, early_format),
         )

@@ -143,6 +143,7 @@ class AnsibleSignatures:
                 )
             )
         except urllib.error.HTTPError as exc:
+            NetworkFailure.release(exc)
             if exc.code == 404:
                 return CollectionCheck("absent", f"Galaxy holds no {label}")
             return CollectionCheck("unverifiable", f"Galaxy answered HTTP {exc.code}")

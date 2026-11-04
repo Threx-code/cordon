@@ -23,6 +23,7 @@ from typing import Any, Final
 
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
 
 MAX_VSIX: Final = 200 << 20
 OPEN_VSX: Final = "https://open-vsx.org/api"
@@ -84,6 +85,7 @@ class ExtensionFetcher:
             with cls._opener.open(request, timeout=120) as response:
                 body: bytes = Download.read(response, limit + 1)
         except urllib.error.HTTPError as exc:
+            NetworkFailure.release(exc)
             if exc.code == 404:
                 raise ExtensionError("the registry has no such extension or version") from exc
             raise ExtensionError(f"the registry answered HTTP {exc.code}") from exc

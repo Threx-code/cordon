@@ -302,15 +302,33 @@ class ImageLayers:
         too large to read, and no third-party decoder."""
         import importlib
 
+        from cordon_scanner.intel.store.zstd import Zstd, ZstdError
+
         try:
             zstd = importlib.import_module("compression.zstd")
-            reader: IO[bytes] = zstd.ZstdFile(raw)
-            return reader
         except ImportError:
-            pass
-        from cordon_scanner.intel.store.zstd import Zstd
+            return io.BufferedReader(Zstd.Reader(raw))
+        reader = zstd.ZstdFile(raw)
+        refused = zstd.ZstdError
 
-        return io.BufferedReader(Zstd.Reader(raw))
+        class Translated(io.RawIOBase):
+            """The standard library's reader, its `ZstdError` (no ValueError) raised as the core's:
+            a corrupt layer was caught on 3.11-3.13 and escaped every handler on 3.14."""
+
+            def readable(self) -> bool:
+                return True
+
+            def readinto(self, buffer: Any) -> int:
+                try:
+                    return int(reader.readinto(buffer))
+                except refused as exc:
+                    raise ZstdError(str(exc)) from exc
+
+            def close(self) -> None:
+                reader.close()
+                super().close()
+
+        return io.BufferedReader(Translated())
 
     @staticmethod
     def _apply_layer(

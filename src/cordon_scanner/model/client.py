@@ -148,7 +148,7 @@ class ModelClient:
             from cordon_scanner.cloud import CloudError, auth
 
             base = (
-                cloud_url or os.environ.get("CORDON_CLOUD_URL") or "https://api.cordon.dev"
+                cloud_url or os.environ.get("CORDON_CLOUD_URL") or "https://core-api.cordonscan.com"
             ).rstrip("/")
             try:
                 credentials = auth.CloudAuth.current(base)
@@ -249,6 +249,7 @@ class ModelClient:
             with opener.open(request, timeout=TIMEOUT) as response:
                 raw = Download.read(response, MAX_REPLY + 1)
         except urllib.error.HTTPError as exc:
+            NetworkFailure.release(exc)
             hint = " (check the token)" if exc.code in (401, 403) else ""
             raise ModelError(f"the model server answered HTTP {exc.code}{hint}") from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
