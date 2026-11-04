@@ -38,6 +38,7 @@ from __future__ import annotations
 import ast
 import functools
 import hashlib
+import inspect
 import json
 import re
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -129,7 +130,7 @@ class FeatureSchema:
             moved = root / FeatureSchema.source(path, dotted)
             node = FeatureSchema._node(moved if moved.is_file() else root / path, dotted)
             digest.update(f"{path}:{dotted}\n".encode())
-            digest.update(ast.dump(FeatureSchema._without_docstrings(node)).encode())
+            digest.update(FeatureSchema.dump(FeatureSchema._without_docstrings(node)).encode())
         for path, dotted in FeatureSchema.ADDED:
             if not (root / path).is_file():
                 continue
@@ -138,7 +139,7 @@ class FeatureSchema:
             except LookupError:
                 continue  # a tree from before the piece was written
             digest.update(f"{path}:{dotted}\n".encode())
-            digest.update(ast.dump(FeatureSchema._without_docstrings(node)).encode())
+            digest.update(FeatureSchema.dump(FeatureSchema._without_docstrings(node)).encode())
         listed = FeatureSchema.names() if names is None else names
         digest.update(json.dumps(sorted(listed)).encode())
         return FeatureSchema.equivalent(FeatureSchema.PREFIX + digest.hexdigest()[:16])
@@ -199,6 +200,18 @@ class FeatureSchema:
                 raise LookupError(f"{dotted} is not defined in {path}: the extractor list is stale")
             node = found
         return node
+
+    #: `ast.dump`'s keywords that keep its text the same on every Python: 3.13 began leaving out
+    #: fields that are None or empty unless `show_empty` is set, which moved the version of an
+    #: unchanged tree (fs1-ea0fb02ccf3bb099 on 3.12, fs1-5b52138d82821d4a on 3.13 and 3.14).
+    DUMP: ClassVar[dict[str, bool]] = (
+        {"show_empty": True} if "show_empty" in inspect.signature(ast.dump).parameters else {}
+    )
+
+    @staticmethod
+    def dump(node: ast.AST) -> str:
+        """`ast.dump` as 3.11 and 3.12 write it, on every supported Python."""
+        return ast.dump(node, **FeatureSchema.DUMP)
 
     @staticmethod
     def _without_docstrings(node: ast.AST) -> ast.AST:
@@ -269,7 +282,7 @@ class FeatureFold:
         digest = hashlib.sha256()
         digest.update(f"{FeatureSchema.current()}\nwidth={FeatureFold.WIDTH}\n".encode())
         node = FeatureSchema._node(PackagePaths.root() / "decide/feature_schema.py", "FeatureFold")
-        digest.update(ast.dump(FeatureSchema._without_docstrings(node)).encode())
+        digest.update(FeatureSchema.dump(FeatureSchema._without_docstrings(node)).encode())
         return FeatureFold.PREFIX + digest.hexdigest()[:16]
 
     @staticmethod

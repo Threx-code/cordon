@@ -255,6 +255,8 @@ LEGACY_PREFIXES = frozenset({"ur", "UR", "Ur", "uR"})
 LEGACY_REFUSALS = {
     "leading zeros in decimal integer literals": "an octal literal written 0777",
     "`": "a backtick repr",
+    # Python 3.14's tokenizer refuses the prefix pair itself, before any string token exists.
+    "'u' and 'r' prefixes are incompatible": "a ur'' string",
 }
 
 
@@ -294,6 +296,8 @@ class PythonTwo:
                 previous = token
         except (tokenize.TokenError, IndentationError, SyntaxError) as exc:
             where = getattr(exc, "lineno", None)
+            if where is None and len(exc.args) > 1 and isinstance(exc.args[1], tuple):
+                where = exc.args[1][0]  # a TokenError carries its (line, column) as an argument
             if found is None and where == line:
                 text_of = str(exc)
                 found = next(
@@ -310,6 +314,16 @@ class PythonTwo:
         statement: str,
     ) -> str | None:
         if token.type == tokenize.OP and token.string == "<>":
+            return "the <> operator"
+        if (
+            # Python 3.14 tokenizes `<>` as `<` then `>`, touching.
+            token.type == tokenize.OP
+            and token.string == ">"
+            and previous is not None
+            and previous.type == tokenize.OP
+            and previous.string == "<"
+            and previous.end == token.start
+        ):
             return "the <> operator"
         if token.string == "`" and token.type in (tokenize.OP, tokenize.ERRORTOKEN):
             return "a backtick repr"
