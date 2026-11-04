@@ -26,8 +26,10 @@ scan:
   profile: balanced              # fast | balanced | thorough
   expand_archives: true          # open archives found in a directory scan
   intel_feed: true               # pull the signed intel feed, in a build that pins its root key
-  max_intel_age: 86400           # seconds before intel is reported stale (0: never; unset: 24 h
-                                 # with a feed, no check without one)
+  max_intel_age: 86400           # seconds before intel is stale and the scan incomplete. Unset:
+                                 # 24 h when the scan can refresh (the feed, or OSV's changes),
+                                 # a week when it cannot (--offline). 0: no check, operator only;
+                                 # a repository's own file may only shorten it
   limits: {max_file_bytes: 10485760, total_timeout: 900}
 policy:
   fail_on: [high, {category: malicious}]
