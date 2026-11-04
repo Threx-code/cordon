@@ -200,7 +200,8 @@ Scan a directory, file or archive.
 │                           --policy. If no current, verified bundle is      │
 │                           available the scan does not run (exit 3)         │
 │ --cloud-url URL           Cordon Cloud API base (default:                  │
-│                           CORDON_CLOUD_URL, else https://api.cordon.dev)   │
+│                           CORDON_CLOUD_URL, else https://core-             │
+│                           api.cordonscan.com)                              │
 │ --no-expand               do not open archives found inside a directory    │
 │                           scan. Faster, and the scan is then marked        │
 │                           incomplete if any archive went unopened          │

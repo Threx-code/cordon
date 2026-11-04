@@ -239,7 +239,7 @@ CRITICAL  MALWARE.EXFIL.001                                    risk 92/100
              required, move it to an explicit, reviewed build command and
              add the package to the build allowlist.
 
-  refs       https://cordon.dev/rules/MALWARE.EXFIL.001
+  refs       https://cordonscan.com/rules/MALWARE.EXFIL.001
 
 ────────────────────────────────────────────────────────────────────────────
  1 critical   0 high   3 medium   0 low        2 suppressed   0 degraded

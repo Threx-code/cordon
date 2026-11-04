@@ -148,7 +148,7 @@ class ModelClient:
             from cordon_scanner.cloud import CloudError, auth
 
             base = (
-                cloud_url or os.environ.get("CORDON_CLOUD_URL") or "https://api.cordon.dev"
+                cloud_url or os.environ.get("CORDON_CLOUD_URL") or "https://core-api.cordonscan.com"
             ).rstrip("/")
             try:
                 credentials = auth.CloudAuth.current(base)

@@ -3,7 +3,7 @@
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 The tutorials are the scanner's documentation. They live here, as Markdown, and nowhere
-else: the website's Learn section (`cordon.dev/learn`) is built from these files at each
+else: the website's Learn section (`cordonscan.com/learn`) is built from these files at each
 release tag, so editing a tutorial here is the only edit there is.
 
 ```

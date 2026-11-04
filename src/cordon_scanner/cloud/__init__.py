@@ -15,7 +15,7 @@ from __future__ import annotations
 import os
 from typing import Final
 
-DEFAULT_URL: Final = "https://api.cordon.dev"
+DEFAULT_URL: Final = "https://core-api.cordonscan.com"
 
 
 class CloudError(Exception):

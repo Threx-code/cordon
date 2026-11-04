@@ -437,7 +437,7 @@ class TestExecuteFix(FixRunFixtures):
         assert branch == "cordon/fix-lodash-4.17.21" and len(commit) == 40
         assert FixRunKit.git("rev-parse", f"refs/heads/{branch}", cwd=bare).strip() == commit
         assert FixRunKit.git("log", "-1", "--format=%an <%ae>%n%s", branch, cwd=bare).strip() == (
-            "Cordon <fix@cordon.dev>\nBump lodash from 4.17.20 to 4.17.21"
+            "Cordon <fix@cordonscan.com>\nBump lodash from 4.17.20 to 4.17.21"
         )
         changed = FixRunKit.git("diff", "--name-only", "main", branch, cwd=bare).split()
         assert changed == ["package-lock.json", "package.json"]

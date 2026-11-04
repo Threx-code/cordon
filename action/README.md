@@ -61,7 +61,7 @@ steps:
   - uses: Threx-code/cordon/action@v0.6.0
     with:
       upload: "true"
-      cloud-url: https://api.cordon.dev   # or your organisation's API
+      cloud-url: https://core-api.cordonscan.com   # or your organisation's API
 ```
 
 The job exchanges its OIDC token (audience `cordon`) for a fifteen-minute Cordon token. An

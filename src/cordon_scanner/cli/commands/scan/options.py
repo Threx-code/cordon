@@ -426,7 +426,7 @@ class ScanOptions:
             "--cloud-url",
             metavar="URL",
             default=None,
-            help="Cordon Cloud API base (default: CORDON_CLOUD_URL, else https://api.cordon.dev)",
+            help="Cordon Cloud API base (default: CORDON_CLOUD_URL, else https://core-api.cordonscan.com)",
         )
         execution.add_argument(
             "--no-expand",

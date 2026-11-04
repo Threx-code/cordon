@@ -226,7 +226,7 @@ slack = "cordon_scanner.notify.channels.slack:SlackChannel"
 teams = "cordon_scanner.notify.channels.teams:TeamsChannel"
 
 [project.urls]
-Homepage = "https://github.com/Threx-code/cordon"
+Homepage = "https://cordonscan.com"
 Documentation = "https://github.com/Threx-code/cordon#readme"
 Repository = "https://github.com/Threx-code/cordon.git"
 "Bug Tracker" = "https://github.com/Threx-code/cordon/issues"
