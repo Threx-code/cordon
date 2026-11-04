@@ -25,8 +25,10 @@ import zlib
 from typing import Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
 
 MAX_PACK_BYTES: Final = 512 << 20
+
 MAX_DEPTH: Final = 64
 SOCKET_SECONDS: Final = 120.0
 DEADLINE_SECONDS: Final = 900.0
@@ -71,7 +73,7 @@ class GitFetch:
         except http.client.HTTPException as exc:
             # A response cut short (`IncompleteRead`) is no pack: said so, not raised past.
             raise GitFetchError(
-                f"the server's answer was cut short ({type(exc).__name__})"
+                f"the server's answer was cut short ({NetworkFailure.reason(exc)})"
             ) from exc
         if len(data) > MAX_PACK_BYTES:
             raise GitFetchError("response too large")

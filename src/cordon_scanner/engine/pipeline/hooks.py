@@ -411,7 +411,11 @@ class Hooks:
         return out
 
     @staticmethod
-    def hook_import_closure(units: Sequence[FileUnit], hooks: set[str]) -> set[str]:
+    def hook_import_closure(
+        units: Sequence[FileUnit],
+        hooks: set[str],
+        unshipped: list[tuple[str, str]] | None = None,
+    ) -> set[str]:
         """First-party Python files reachable by import from an install hook.
 
         Read, never executed. Only files present in this scan are followed: a
@@ -428,7 +432,28 @@ class Hooks:
         }
         if not sources:
             return set()
-        return ImportClosure.resolve(hooks, sources)
+        by_path = {unit.path: unit for unit in units}
+
+        def other(path: str) -> str | None:
+            unit = by_path.get(path)
+            return None if unit is None or unit.content.is_binary else unit.content.text
+
+        return ImportClosure.resolve(hooks, sources, other, shipped=by_path, unshipped=unshipped)
+
+    @staticmethod
+    def executed_as_python(units: list[FileUnit], closure: set[str]) -> None:
+        """A file the install-time Python closure runs by its path, read as Python, in place:
+        `exec(open("run.txt").read())` makes `run.txt` Python whatever its name, as `node
+        lib/run.md` makes `run.md` JavaScript (`hooked_languages`). Only files the closure holds
+        that are not named `.py` and not already Python."""
+        for index, unit in enumerate(units):
+            if (
+                unit.path in closure
+                and unit.language != "python"
+                and not unit.path.endswith(".py")
+                and not unit.content.is_binary
+            ):
+                units[index] = replace(unit, language="python")
 
     @staticmethod
     def hook_js_closure(units: Sequence[FileUnit], hooks: set[str]) -> set[str]:
@@ -468,11 +493,18 @@ class Hooks:
     @staticmethod
     def lifted_inherit(ctx: ScanContext) -> ScanContext:
         """A recovered unit runs when the file it came from runs: install hook, entry point,
-        consumer install, agent tool, or a published package's import entry."""
+        consumer install, agent tool, or a published package's import entry. So does a second
+        reading of a file's bytes as another language (`Units.content_readings`)."""
         tree = ctx.tree_paths
+        readings: dict[str, list[str]] = {}
+        for path in tree:
+            original = ContainerPaths.read_from(path)
+            if original is not None:
+                readings.setdefault(original, []).append(path)
 
         def grown(paths: frozenset[str]) -> frozenset[str]:
             more = {p + Hooks.DEOBFUSCATED for p in paths if p + Hooks.DEOBFUSCATED in tree}
+            more.update(r for p in paths for r in readings.get(p, ()))
             return paths | more if more else paths
 
         return replace(
@@ -580,9 +612,17 @@ class Hooks:
                     # its extension. Exact membership only.
                     found.add(candidate)
                     continue
-                if "." not in PurePosixPath(candidate).name:
-                    # No extension: a program name such as `node` or `make`,
-                    # not a file in the repository.
+                if (
+                    "." not in PurePosixPath(candidate).name
+                    and "/" not in candidate
+                    and LanguageRegistry.language_from_interpreter(runner) is None
+                ):
+                    # No extension, no path and no interpreter before it: a program name such as
+                    # `node` or `make`, not a file in the repository. What an interpreter is handed
+                    # is its script (`sh ./tools/prepare`), and a path names a file, extension or
+                    # not: `languages_of` already reads both as the interpreter's language, and the
+                    # file must run at install as well (item 37: a payload in an extensionless
+                    # `tools/prepare` was a shell script that never counted as install-time code).
                     continue
                 resolved = posixpath.normpath(str(base / candidate))
                 if resolved.startswith(".."):

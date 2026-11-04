@@ -12,6 +12,7 @@ import urllib.parse
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.intel.advisories.upstream.base import (
     Archive,
@@ -145,7 +146,7 @@ class HomebrewBottles:
                 key = "id"
         except (OSError, ValueError, http.client.HTTPException) as exc:
             return Unnamed(
-                f"a HEAD build ({installed}): {host} could not resolve {short} ({type(exc).__name__})"
+                f"a HEAD build ({installed}): {host} could not resolve {short} ({NetworkFailure.reason(exc)})"
             )
         commit = str((record or {}).get(key) or "") if isinstance(record, dict) else ""
         if not re.fullmatch(r"[0-9a-f]{40}", commit) or not commit.startswith(short):
@@ -454,7 +455,7 @@ class HomebrewHistory:
             found = HomebrewHistory.formula(dependency.name, installed, digest)
         except (OSError, ValueError, http.client.HTTPException) as exc:
             return Unnamed(
-                f"{otherwise.reason}; homebrew-core's history could not be read ({type(exc).__name__})",
+                f"{otherwise.reason}; homebrew-core's history could not be read ({NetworkFailure.reason(exc)})",
                 homes=otherwise.homes,
             )
         if found is None:

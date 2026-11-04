@@ -21,9 +21,11 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 
 from cordon_scanner.foundation.errors import SourceError
+from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.sources.git import HARDENING, GitRepository
 
 MAX_BLOBS = 50_000
+
 MAX_BLOB_BYTES = 1 << 20
 #: Past `MAX_BLOB_BYTES` a blob is read in chunks of this size, each overlapping the last by
 #: `CHUNK_OVERLAP` so that a credential straddling a boundary is whole in one of them; the
@@ -122,7 +124,9 @@ class GitHistory:
                 env=GitRepository._environment(),
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
-            raise SourceError(f"git cat-file --batch-check failed: {type(exc).__name__}") from exc
+            raise SourceError(
+                f"git cat-file --batch-check failed: {NetworkFailure.reason(exc)}"
+            ) from exc
         out = []
         for line in completed.stdout.decode("utf-8", "replace").splitlines():
             parts = line.split()

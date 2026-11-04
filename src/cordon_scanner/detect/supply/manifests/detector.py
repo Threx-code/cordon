@@ -21,7 +21,7 @@ The finding says the safety net is absent, not that something is wrong.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
 from cordon_scanner.detect.catalogue import DeclaredRule
@@ -80,7 +80,11 @@ class ManifestDetector(BaseDetector):
         # Read before the manifest lookup: a wheel's METADATA and an sdist's PKG-INFO are a
         # release's own metadata without being dependency manifests.
         name_risk = list(IdentityFindings.name_risk_findings(unit, ctx))
-        ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
+        named = EcosystemRegistry.manifest_ecosystem(unit.path)
+        # Or a file a manifest includes, whatever its name (`-r extra.in`): the graph followed it
+        # as the installer does, so every manifest rule reads it too (item 37). The include's
+        # ecosystem is the one its declarations were graphed under.
+        ecosystem_id = named or ManifestDetector.included_ecosystem(unit.path, ctx)
         if ecosystem_id is None:
             return name_risk
 
@@ -88,7 +92,12 @@ class ManifestDetector(BaseDetector):
         if ecosystem is None:
             return ()
 
-        manifest = ecosystem.parse_manifest(unit.content)
+        parse_included = getattr(ecosystem, "parse_included", None)
+        manifest = (
+            parse_included(unit.content)
+            if named is None and parse_included is not None
+            else ecosystem.parse_manifest(unit.content)
+        )
         hooks_from_tree = getattr(ecosystem, "hooks_from_tree", None)
         if hooks_from_tree is not None:
             # Install-time code that is a file beside the manifest rather than a field in it (an R
@@ -118,6 +127,24 @@ class ManifestDetector(BaseDetector):
         findings.extend(name_risk)
         findings.extend(SourceFindings.wrapper_findings(unit, ctx))
         return findings
+
+    #: The last dependency graph indexed, and its index: path declared in -> ecosystem. Held with
+    #: the graph itself, so a new graph (another scan) is never served an old index.
+    _included: ClassVar[tuple[object, dict[str, str]] | None] = None
+
+    @staticmethod
+    def included_ecosystem(path: str, ctx: ScanContext) -> str | None:
+        """The ecosystem of a file no manifest name matches but which the dependency graph read as
+        a manifest's include: a direct dependency declared in it (`Dependency.manifest_path`).
+        Indexed once per graph, so a file's look-up is constant whatever the graph's size."""
+        held = ManifestDetector._included
+        if held is None or held[0] is not ctx.dependencies:
+            index: dict[str, str] = {}
+            for dependency in ctx.dependencies:
+                if dependency.direct and dependency.manifest_path:
+                    index.setdefault(dependency.manifest_path, dependency.ecosystem)
+            held = ManifestDetector._included = (ctx.dependencies, index)
+        return held[1].get(path)
 
     # -- Dependency confusion --------------------------------------------
 

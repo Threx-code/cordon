@@ -36,9 +36,11 @@ from typing import Any, Final
 from cordon_scanner.foundation.files.atomic import AtomicFile
 from cordon_scanner.foundation.files.seal import LocalSeal
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import NoRedirects
 
 SEAL_LABEL: Final = "osv-delta"
+
 CHUNK: Final = 64 << 10
 """How much of a change list one range request reads."""
 MAX_LIST_BYTES: Final = 4 << 20
@@ -157,7 +159,7 @@ class OsvDelta:
                 return b""
             raise OsvDeltaError(f"HTTP {exc.code} from OSV") from exc
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
-            raise OsvDeltaError(f"OSV could not be reached ({type(exc).__name__})") from exc
+            raise OsvDeltaError(f"OSV could not be reached ({NetworkFailure.reason(exc)})") from exc
         if len(body) > limit:
             raise OsvDeltaError("a response from OSV was larger than expected")
         return bytes(body)

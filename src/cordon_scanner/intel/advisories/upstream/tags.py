@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.foundation.collector import ScanCaches
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.intel.advisories.upstream.base import (
     Archive,
     Unnamed,
@@ -710,7 +711,10 @@ class ContentProof:
             release = b""  # the archive is not needed past its files' ids
             ours = {path: found[0] for path, found in hashed.items()}
         except (OSError, ValueError, tarfile.TarError, EOFError, http.client.HTTPException) as exc:
-            return "unprovable", f"the release archive could not be read ({type(exc).__name__})"
+            return (
+                "unprovable",
+                f"the release archive could not be read ({NetworkFailure.reason(exc)})",
+            )
         try:
             # The tag's tree by git's own protocol: blob ids, compared with the release's files
             # hashed the way git hashes them.
@@ -718,7 +722,7 @@ class ContentProof:
         except (GitFetchError, OSError, ValueError, http.client.HTTPException) as exc:
             return (
                 "unprovable",
-                f"the tag's tree could not be fetched ({type(exc).__name__}: {exc})"[:200],
+                f"the tag's tree could not be fetched ({NetworkFailure.reason(exc)}: {exc})"[:200],
             )
         source = {
             path: blob

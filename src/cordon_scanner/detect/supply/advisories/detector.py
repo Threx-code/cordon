@@ -487,7 +487,13 @@ class AdvisoryDetector(BaseDetector):
         ):
             # Not a range over this name's registry releases: an alias, a path, a repository.
             return
-        records = self._database.for_package(dependency.ecosystem, dependency.name)
+        # Every record, an open range beside its listed uploads included: no version is resolved, so
+        # what installs is not known, and a record calling every version malicious is taken at its
+        # word (the evasion suite's decoy probes: `node-calculator-x7k9 ^100.0.0`, outside the listed
+        # 3.1.0 and 3.4.0, passed). An exact version keeps the listed uploads alone (`roboter`).
+        records = self._database.for_package(
+            dependency.ecosystem, dependency.name, open_ranges=True
+        )
         if dependency.name in EstablishedPackageNames.established(dependency.ecosystem) or any(
             not record.malicious for record in records
         ):

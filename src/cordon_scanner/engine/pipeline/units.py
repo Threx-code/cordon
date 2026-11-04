@@ -10,6 +10,7 @@ its size is not known in advance, so the ceiling is real rather than implied by 
 
 from __future__ import annotations
 
+import functools
 import re
 import time
 from dataclasses import dataclass
@@ -760,6 +761,33 @@ class Units:
             )
             lifted.append(FileUnit(content=content, language="javascript"))
         return lifted
+
+    def content_readings(self, units: list[FileUnit]) -> list[FileUnit]:
+        """Each file whose bytes are another language than its name says, read as that one too.
+
+        `run.js` holding Python is still read as JavaScript, and is also a unit of its own,
+        `run.js#as-python.py`, read by every detector with the context of the file it is
+        (`Hooks.lifted_inherit`). See `ContentLanguage` for when, and why never in place of the
+        name's reading.
+        """
+        from cordon_scanner.analysis.shared.content_language import ContentLanguage
+        from cordon_scanner.foundation.paths import ContainerPaths
+
+        readings: list[FileUnit] = []
+        for unit in units:
+            if unit.content.is_binary or "#" in unit.path:
+                continue
+            other = ContentLanguage.second_reading(
+                unit.content.text_head(LanguageRegistry.MAX_SNIFF_BYTES),
+                unit.language,
+                functools.partial(getattr, unit.content, "text"),
+            )
+            if other is None:
+                continue
+            path = ContainerPaths.reading(unit.path, other)
+            content = FileContent.from_bytes(path, unit.content.raw, self.config.limits)
+            readings.append(FileUnit(content=content, language=other, project=unit.project))
+        return readings
 
     def inline_hooks(self, units: list[FileUnit]) -> list[FileUnit]:
         """The programs install hooks carry inline, each as a unit of its own.

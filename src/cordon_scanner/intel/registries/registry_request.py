@@ -10,9 +10,11 @@ import urllib.parse
 import urllib.request
 
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import NoRedirects
 
 TIMEOUT_SECONDS = 5.0
+
 """Per-request ceiling. A scan waiting on a slow registry is a scan somebody
 kills, and a killed scan reports nothing at all."""
 
@@ -101,7 +103,9 @@ class RegistryRequest:
         except urllib.error.HTTPError as exc:
             raise RegistryError(f"HTTP {exc.code} from {parsed.netloc}") from exc
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
-            raise RegistryError(f"{type(exc).__name__} fetching from {parsed.netloc}") from exc
+            raise RegistryError(
+                f"{NetworkFailure.reason(exc)} fetching from {parsed.netloc}"
+            ) from exc
         if len(body) > MAX_ARCHIVE_BYTES:
             raise RegistryError(f"archive from {parsed.netloc} exceeded {MAX_ARCHIVE_BYTES} bytes")
         return bytes(body)

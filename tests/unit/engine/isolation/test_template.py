@@ -191,3 +191,38 @@ class TestTheTemplateLeavesNothingBehind(TemplateFixtures):
                     return True
             time.sleep(0.01)
         return False
+
+
+class TestAChildWhoseParentHasGone:
+    """PR_SET_PDEATHSIG is armed only for a parent that ends after it: a parent killed between the fork
+    and the `prctl` left the template or its worker reparented and alive (5 of 30 runs of the kill
+    test on a loaded host, on the release code as on the branch). After arming, the child checks."""
+
+    @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="PR_SET_PDEATHSIG is Linux's")
+    def test_a_child_whose_parent_is_not_the_one_that_forked_it_ends(self) -> None:
+        script = (
+            "from cordon_scanner.engine.isolation.template import Lifeline\n"
+            "import os\n"
+            "Lifeline.die_with_parent(os.getppid() + 1_000_000)\n"
+            "print('alive')\n"
+        )
+        done = subprocess.run(
+            [sys.executable, "-c", script], capture_output=True, text=True, timeout=60
+        )
+        assert done.returncode == 1
+        assert "alive" not in done.stdout
+        assert "Traceback" not in done.stderr, done.stderr
+
+    @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="PR_SET_PDEATHSIG is Linux's")
+    def test_a_child_whose_parent_is_still_there_runs_on(self) -> None:
+        script = (
+            "from cordon_scanner.engine.isolation.template import Lifeline\n"
+            "import os\n"
+            "Lifeline.die_with_parent(os.getppid())\n"
+            "print('alive')\n"
+        )
+        done = subprocess.run(
+            [sys.executable, "-c", script], capture_output=True, text=True, timeout=60
+        )
+        assert done.returncode == 0
+        assert "alive" in done.stdout

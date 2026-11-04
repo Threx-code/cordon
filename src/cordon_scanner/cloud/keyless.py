@@ -29,8 +29,10 @@ from typing import Any, ClassVar
 from cordon_scanner.cloud._p256 import P256Signer
 from cordon_scanner.cloud.ci_agent_token import CiAgentToken
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
 
 MAX_TOKEN_REPLY_BYTES = 1 << 20
+
 """The most a token or signing endpoint's reply is read to: a JSON document of a few kilobytes,
 read whole before, with no cap at all."""
 
@@ -246,7 +248,7 @@ class Keyless:
                 return json.loads(Download.read(response, MAX_TOKEN_REPLY_BYTES))
         except (OSError, ValueError) as exc:
             raise KeylessError(
-                f"{urllib.parse.urlsplit(url).netloc} could not be reached ({type(exc).__name__})"
+                f"{urllib.parse.urlsplit(url).netloc} could not be reached ({NetworkFailure.reason(exc)})"
             ) from exc
 
 

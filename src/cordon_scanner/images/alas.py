@@ -23,9 +23,11 @@ from dataclasses import dataclass, field
 from typing import Final
 
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.images.packages import OsPackage
 
 HOST: Final = "cdn.amazonlinux.com"
+
 MIRROR_LISTS: Final = {
     "2": "https://cdn.amazonlinux.com/2/core/2.0/{arch}/mirror.list",
     "2023": "https://cdn.amazonlinux.com/al2023/core/mirrors/latest/{arch}/mirror.list",
@@ -173,7 +175,7 @@ class AmazonLinuxAdvisories:
             with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:  # noqa: S310
                 body = Download.read(response, MAX_BYTES + 1)
         except (OSError, http.client.HTTPException) as exc:
-            raise AlasError(f"{HOST} could not be reached ({type(exc).__name__})") from exc
+            raise AlasError(f"{HOST} could not be reached ({NetworkFailure.reason(exc)})") from exc
         if len(body) > MAX_BYTES:
             raise AlasError("the Amazon Linux metadata is larger than the reader accepts")
         return bytes(body)

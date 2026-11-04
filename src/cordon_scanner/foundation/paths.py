@@ -44,6 +44,31 @@ class ContainerPaths:
     #: text the scan wrote, never bytes the package ships.
     DEOBFUSCATED: ClassVar[str] = "#deobfuscated.js"
 
+    #: Infix of the unit a file is read as when its bytes are another language than its name says
+    #: (`ContentLanguage`): `run.js#as-python.py` is `run.js`'s bytes, read as Python.
+    READING: ClassVar[str] = "#as-"
+    READING_SUFFIX: ClassVar[dict[str, str]] = {
+        "python": ".py",
+        "javascript": ".js",
+        "shell": ".sh",
+    }
+
+    @staticmethod
+    def reading(path: str, language: str) -> str:
+        """The path of `path`'s bytes read as `language`."""
+        return f"{path}{ContainerPaths.READING}{language}{ContainerPaths.READING_SUFFIX[language]}"
+
+    @staticmethod
+    def read_from(path: str) -> str | None:
+        """The file a second reading is of, or None for a path that is not one."""
+        head, sep, tail = path.rpartition(ContainerPaths.READING)
+        if not sep:
+            return None
+        language, _, suffix = tail.partition(".")
+        if ContainerPaths.READING_SUFFIX.get(language) != "." + suffix:
+            return None
+        return head
+
     @staticmethod
     def is_recovered(path: str) -> bool:
         """Whether a unit is the scan's own recovery of an obfuscated file, not a shipped file."""

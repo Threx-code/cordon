@@ -36,6 +36,7 @@ from cordon_scanner.ecosystems.base import (
 )
 from cordon_scanner.foundation.formats.datayaml import DataYaml
 from cordon_scanner.foundation.models import Scope
+from cordon_scanner.foundation.network.failures import NetworkFailure
 
 if TYPE_CHECKING:
     from collections.abc import Container, Mapping
@@ -275,7 +276,7 @@ class ChartArchive:
             return LockGraph(
                 path=content.path,
                 ecosystem=ecosystem,
-                parse_error=f"not a readable chart archive: {type(exc).__name__}",
+                parse_error=f"not a readable chart archive: {NetworkFailure.reason(exc)}",
                 companion=True,
                 owner_levels=1,
             )

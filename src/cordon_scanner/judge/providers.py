@@ -30,9 +30,11 @@ from typing import Any, ClassVar, Final, Protocol
 from cordon_scanner.detect.agents.language_model.review import JudgeError
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import NoRedirects
 
 TIMEOUT_SECONDS: Final = 90.0
+
 LOCAL_TIMEOUT_SECONDS: Final = 300.0
 """A model on the developer's own machine, often on a CPU, takes minutes where a hosted API takes
 seconds. `CORDON_JUDGE_TIMEOUT` overrides either."""
@@ -104,7 +106,7 @@ class HttpTransport:
             raise ProviderUnavailable(f"the judge at {host} answered {exc.code}") from exc
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             raise ProviderUnavailable(
-                f"the judge at {host} could not be reached ({type(exc).__name__})"
+                f"the judge at {host} could not be reached ({NetworkFailure.reason(exc)})"
             ) from exc
         if len(raw) > MAX_RESPONSE_BYTES:
             raise ProviderUnavailable(f"the judge at {host} answered with too much")

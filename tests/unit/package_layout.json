@@ -63,6 +63,7 @@
   "analysis/shared/documentation": "analysis/shared/documentation",
   "analysis/shared/embedded": "analysis/shared/embedded",
   "analysis/shared/inline_programs": "analysis/shared/inline_programs",
+  "analysis/shared/content_language": "analysis/shared/content_language",
   "analysis/shared/languages": "analysis/shared/languages",
   "analysis/shared/render_diff": "analysis/shared/render_diff",
   "analysis/shared/segmented_parse": "analysis/shared/segmented_parse",
@@ -472,6 +473,7 @@
   "foundation/limits": "foundation/limits",
   "foundation/models": "foundation/models",
   "foundation/network/downloads": "foundation/network/downloads",
+  "foundation/network/failures": "foundation/network/failures",
   "foundation/network/redirects": "foundation/network/redirects",
   "foundation/once": "foundation/once",
   "foundation/paths": "foundation/paths",
@@ -539,6 +541,7 @@
   "intel/malware/campaign": "intel/malware/campaign",
   "intel/malware/datadog_malware": "intel/malware/datadog_malware",
   "intel/malware/feed": "intel/malware/feed",
+  "intel/malware/feed_roles": "intel/malware/feed_roles",
   "intel/malware/feed_lock": "intel/malware/feed_lock",
   "intel/malware/feed_rules": "intel/malware/feed_rules",
   "intel/malware/hallucinated": "intel/malware/hallucinated",
@@ -801,6 +804,7 @@
   "test_license_port.py": "intel/ports",
   "test_dbsync.py": "intel/store",
   "test_deobfuscation.py": "analysis/shared",
+  "test_content_language.py": "analysis/shared",
   "test_dependency_confusion.py": "detect/supply/manifests",
   "test_dependency_domain2.py": "detect/supply",
   "test_package_names.py": "intel/ports",
@@ -1156,7 +1160,9 @@
   "test_build_backend.py": "repository/release",
   "test_native_build.py": "repository/release",
   "test_cross_file_flows.py": "engine/isolation",
-  "test_parameter_command.py": "detect/code"
+  "test_parameter_command.py": "detect/code",
+  "test_network_failures.py": "foundation/network",
+  "test_references_followed.py": "detect/supply"
  },
  "shims": {
   "intel/provenance/_der": {

@@ -37,6 +37,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from cordon_scanner.foundation.collector import ScanCaches
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.intel.advisories.advisories import Advisory
 from cordon_scanner.intel.advisories.upstream.base import (
     VCPKG_RAW,
@@ -61,6 +62,7 @@ if TYPE_CHECKING:
     from cordon_scanner.foundation.results import Dependency
 
 OSV_QUERYBATCH: Final = "https://api.osv.dev/v1/querybatch"
+
 OSV_VULN: Final = "https://api.osv.dev/v1/vulns/"
 BCR: Final = "https://bcr.bazel.build/modules"
 CONAN_CENTER: Final = "https://center2.conan.io/v2/conans"
@@ -899,7 +901,9 @@ class UpstreamAdvisories:
                     pending = following
         except (OSError, ValueError, http.client.HTTPException) as exc:
             for dependency, _ in named:
-                result.unchecked[dependency.purl] = f"OSV could not be asked ({type(exc).__name__})"
+                result.unchecked[dependency.purl] = (
+                    f"OSV could not be asked ({NetworkFailure.reason(exc)})"
+                )
             return result
         for (dependency, upstream), identifiers in zip(named, found, strict=True):
             result.checked.add(dependency.purl)
@@ -910,7 +914,7 @@ class UpstreamAdvisories:
                 except (OSError, ValueError, http.client.HTTPException) as exc:
                     result.checked.discard(dependency.purl)
                     result.unchecked[dependency.purl] = (
-                        f"OSV's record {identifier} could not be read ({type(exc).__name__})"
+                        f"OSV's record {identifier} could not be read ({NetworkFailure.reason(exc)})"
                     )
                     break
                 summary = str(record.get("summary") or record.get("details") or "").strip()

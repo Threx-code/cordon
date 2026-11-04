@@ -51,8 +51,14 @@ class Lifeline:
     """What a template or a worker sets right after it is forked."""
 
     @staticmethod
-    def die_with_parent() -> None:
-        """Linux: the kernel sends SIGKILL when the parent ends (prctl PR_SET_PDEATHSIG)."""
+    def die_with_parent(parent: int) -> None:
+        """Linux: the kernel sends SIGKILL when the parent ends (prctl PR_SET_PDEATHSIG).
+
+        `parent` is the forking process's pid, read before the fork. The signal is armed only
+        for a parent that ends after `prctl`: one that ended between the fork and it left the
+        child reparented, never signalled, and alive (a template and its worker outlived a killed
+        scan in 5 of 30 runs on a loaded host). So the parent is checked after arming, and a
+        child whose parent has already gone ends itself."""
         if not sys.platform.startswith("linux"):
             return
         with contextlib.suppress(OSError, AttributeError):
@@ -60,6 +66,8 @@ class Lifeline:
 
             libc = ctypes.CDLL(None, use_errno=True)
             libc.prctl(1, signal.SIGKILL)  # PR_SET_PDEATHSIG
+        if os.getppid() != parent:
+            os._exit(1)
 
     @staticmethod
     def leave_interrupts_to_the_parent() -> None:
@@ -70,8 +78,8 @@ class TemplateMain:
     """What runs in the template process: forks, polls, reaps and kills its workers."""
 
     @staticmethod
-    def serve(control: socket.socket, worker_main: Any) -> None:
-        Lifeline.die_with_parent()
+    def serve(control: socket.socket, worker_main: Any, parent: int) -> None:
+        Lifeline.die_with_parent(parent)
         Lifeline.leave_interrupts_to_the_parent()
         lines, children = Lines(control), set[int]()
         try:
@@ -97,11 +105,12 @@ class TemplateMain:
     @staticmethod
     def fork(control: socket.socket, lines: Lines, children: set[int], worker_main: Any) -> None:
         ours, theirs = socket.socketpair()
+        parent = os.getpid()
         pid = os.fork()
         if pid == 0:  # the worker
             control.close()
             ours.close()
-            Lifeline.die_with_parent()
+            Lifeline.die_with_parent(parent)
             Lifeline.leave_interrupts_to_the_parent()
             try:
                 worker_main(theirs)
@@ -152,10 +161,11 @@ class Template:
         if not Template.available():
             return None
         ours, theirs = socket.socketpair()
+        parent = os.getpid()
         pid = os.fork()
         if pid == 0:
             ours.close()
-            TemplateMain.serve(theirs, worker_main)  # never returns
+            TemplateMain.serve(theirs, worker_main, parent)  # never returns
         theirs.close()
         ours.set_inheritable(False)
         return Template(ours, pid)

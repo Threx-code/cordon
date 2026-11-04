@@ -36,10 +36,12 @@ from datetime import UTC, datetime
 from typing import Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.intel.base import CollectionCheck
 from cordon_scanner.intel.provenance import openpgp
 
 GALAXY: Final = "https://galaxy.ansible.com"
+
 VERSION: Final = (
     GALAXY + "/api/v3/plugin/ansible/content/published/collections/index/{ns}/{name}/versions/{v}/"
 )
@@ -146,7 +148,7 @@ class AnsibleSignatures:
             return CollectionCheck("unverifiable", f"Galaxy answered HTTP {exc.code}")
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             return CollectionCheck(
-                "unverifiable", f"Galaxy could not be read ({type(exc).__name__})"
+                "unverifiable", f"Galaxy could not be read ({NetworkFailure.reason(exc)})"
             )
         listed = record.get("signatures") if isinstance(record, dict) else None
         signatures = [
@@ -167,7 +169,7 @@ class AnsibleSignatures:
             except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
                 return CollectionCheck(
                     "unverifiable",
-                    f"the signature at {source} could not be read ({type(exc).__name__})",
+                    f"the signature at {source} could not be read ({NetworkFailure.reason(exc)})",
                 )
         if not signatures:
             if unread:
@@ -190,7 +192,8 @@ class AnsibleSignatures:
             body = AnsibleSignatures._get(urllib.parse.urljoin(GALAXY, url), MAX_ARTIFACT_BYTES)
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             return CollectionCheck(
-                "unverifiable", f"{label}'s artifact could not be downloaded ({type(exc).__name__})"
+                "unverifiable",
+                f"{label}'s artifact could not be downloaded ({NetworkFailure.reason(exc)})",
             )
         if hashlib.sha256(body).hexdigest() != digest.lower():
             return CollectionCheck(

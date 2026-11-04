@@ -32,10 +32,12 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.intel.provenance import attest
 
 FORMULA_API: Final = "https://formulae.brew.sh/api/formula/{name}.json"
+
 ATTESTATIONS_API: Final = (
     "https://api.github.com/repos/Homebrew/homebrew-core/attestations/sha256:{digest}"
 )
@@ -123,7 +125,7 @@ class HomebrewProvenance:
             found = HomebrewProvenance.bottles(name)
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             return BottleCheck(
-                "unverifiable", f"Homebrew's API could not be read ({type(exc).__name__})"
+                "unverifiable", f"Homebrew's API could not be read ({NetworkFailure.reason(exc)})"
             )
         if found is None:
             return BottleCheck(
