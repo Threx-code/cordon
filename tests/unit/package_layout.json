@@ -1088,6 +1088,7 @@
   "test_written_then_run.py": "detect/code",
   "test_vscode_extension.py": "repository",
   "test_distinct.py": "detect/supply/advisories",
+  "test_release_own_advisories.py": "detect/supply/advisories",
   "test_watchlist_advisories.py": "detect/supply/advisories",
   "test_windows.py": "foundation/files",
   "test_names.py": "foundation/files",

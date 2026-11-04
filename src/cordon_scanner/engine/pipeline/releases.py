@@ -18,6 +18,7 @@ from cordon_scanner.detect.base import (
 from cordon_scanner.detect.registry import ServerSources
 from cordon_scanner.engine.pipeline.constants import (
     KNOWN_MALICIOUS_RELEASE_RULE,
+    KNOWN_VULNERABLE_RELEASE_RULE,
     MACHO_MAGIC,
     NATIVE_IN_PURE_WHEEL_RULE,
     NATIVE_LOAD,
@@ -38,6 +39,8 @@ from cordon_scanner.foundation.results import OperationalFinding
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+    from cordon_scanner.foundation.results import Dependency
 
 
 class ReleaseChecks:
@@ -352,6 +355,80 @@ class ReleaseChecks:
             return "gomod", module.group("module").rpartition("!")[2], module.group("version")
         return None
 
+    _ADVISORY_SEVERITY: ClassVar[dict[str, Severity]] = {
+        "low": Severity.LOW,
+        "moderate": Severity.MEDIUM,
+        "medium": Severity.MEDIUM,
+        "high": Severity.HIGH,
+        "critical": Severity.CRITICAL,
+    }
+
+    @staticmethod
+    def known_vulnerable_release(
+        units: Sequence[FileUnit], ctx: ScanContext, dependencies: Sequence[Dependency] = ()
+    ) -> list[Finding]:
+        """The scanned package is itself a release with known vulnerabilities.
+
+        `known_malicious_release` answers whether the release is a recorded incident; whether it
+        carries a published vulnerability was never asked, so a wheel or tarball downloaded to be
+        checked before install came back clean while the same pin in a lockfile was flagged. One
+        finding per release, at its worst advisory's severity, naming every advisory. A release the
+        malicious records list is answered by that rule instead, and one the dependency graph
+        already holds by the graph's own finding, so nothing is reported twice.
+        """
+        from cordon_scanner.intel.registry import BundledAdvisories
+
+        identities, _ = ReleaseChecks.release_identities(units)
+        if not identities:
+            return []
+        in_graph = {
+            (d.ecosystem, d.name.lower(), d.version or "") for d in dependencies if d.version
+        }
+        database = BundledAdvisories.database()
+        order = list(Severity)
+        out: list[Finding] = []
+        for ecosystem, name, version, path in identities:
+            if (ecosystem, name.lower(), version) in in_graph:
+                continue
+            records = list(database.matching(ecosystem, name, version))
+            if not records or any(a.malicious for a in records):
+                continue
+            severity = max(
+                (
+                    ReleaseChecks._ADVISORY_SEVERITY.get(a.severity.lower(), Severity.HIGH)
+                    for a in records
+                ),
+                key=order.index,
+            )
+            exact = any(not a.is_range for a in records)
+            named = ", ".join(sorted({a.identifier for a in records}))
+            out.append(
+                replace(
+                    OperationalFinding.build(
+                        path=path,
+                        rule_id=KNOWN_VULNERABLE_RELEASE_RULE,
+                        message=(
+                            f"{name} {version} has known vulnerabilities: {named}. This is the "
+                            "release's own identity matched against the advisory database, not a "
+                            "judgement of its code."
+                        ),
+                        remediation=(
+                            "Install a release the advisories name as fixed, or confirm the "
+                            "vulnerable code is not reachable from how you use it."
+                        ),
+                        category=Category.VULNERABLE,
+                        severity=severity,
+                    ),
+                    confidence=Confidence.CONFIRMED if exact else Confidence.HIGH,
+                    risk=ctx.scorer.score(
+                        severity, Confidence.CONFIRMED if exact else Confidence.HIGH
+                    ),
+                    detector="advisory",
+                    references=tuple(sorted({a.reference for a in records if a.reference}))[:5],
+                )
+            )
+        return out
+
     _THROWAWAY_SUMMARY: ClassVar[re.Pattern[str]] = re.compile(
         r"(?i)\S{1,3}|test|tmp|temp|foo|bar|x gem|a gem|gem"
     )
@@ -438,7 +515,9 @@ class ReleaseChecks:
             return []
         database = BundledAdvisories.database()
         out: list[Finding] = []
-        for ecosystem, name, version, path in identities[:20]:
+        # Every release, however many: a lookup is a dictionary read, and the first 20 only left a
+        # folder of 25 downloads with five never looked up.
+        for ecosystem, name, version, path in identities:
             records = [a for a in database.matching(ecosystem, name, version) if a.malicious]
             if not records:
                 continue

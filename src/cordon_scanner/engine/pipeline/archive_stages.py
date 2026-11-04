@@ -330,6 +330,7 @@ class ArchiveStages:
         acc.add(ReleaseChecks.unexamined_install_code(acc.findings, ctx))
         acc.add(ReleaseChecks.native_code_in_a_pure_wheel(units, ctx))
         acc.add(ReleaseChecks.known_malicious_release(units, ctx))
+        acc.add(ReleaseChecks.known_vulnerable_release(units, ctx))
         acc.add(ReleaseChecks.placeholder_release(units, ctx))
         acc.add(ReleaseChecks.borrowed_server_name(units, ctx))
 

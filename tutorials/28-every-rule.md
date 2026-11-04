@@ -2,7 +2,7 @@
 
 > **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,500 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,501 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -1700,7 +1700,7 @@ rule's own samples.
 
 ## Package
 
-9 rules.
+10 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -1713,6 +1713,7 @@ rule's own samples.
 | `SUSPECT.PACKAGE.PROVENANCE.001` | medium | Version published without the provenance its package normally carries |
 | `SUSPECT.PACKAGE.REPOSITORY.001` | medium | Package claims a source repository the registry does not record |
 | `SUSPECT.PACKAGE.STARJACKING.001` | high | A new package claims a popular project's repository |
+| `VULNERABLE.PACKAGE.KNOWN.001` | high | The scanned package is a release with known vulnerabilities |
 
 ## Persistence
 
