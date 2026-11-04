@@ -7,7 +7,9 @@ would flatter the answer.
 
 ## Accuracy, measured
 
-Every number is measured against real code and re-run for the release. The
+Every number is measured against real code. The two npm rows at the top were measured
+for 0.7.0 on its release commit; the rows below them were measured for 0.6.0 and are
+re-run as their drivers are re-pointed at the new code. The
 noise corpus and its driver ship here (`scripts/measure/measure_noise.py`, over the
 repository list in `scripts/data/measurement-corpus.json`), so anyone can
 reproduce that row. The two malicious corpora are public datasets rather than
@@ -17,6 +19,8 @@ them ships here.
 
 | corpus | size | result |
 |---|---|---|
+| **npm malware, blocked by reading the code (0.7.0)** | **6,793** malicious npm releases with code | **91.08%** (6,187) blocked by the content alone, intel matches not counted |
+| **npm packages wrongly blocked (0.7.0)** | **34,437** benign npm releases | **0.96%** (330); Wilson 95% interval 0.86 to 1.07% |
 | Every known-malicious package record in the intel | **249,646 records**, 287,899 checks, 10 ecosystems | **100%** caught |
 | Packages in real lockfiles, read against Trivy | **190,274 packages, 1,687 lockfiles**, 14 registries | **99.6%** agree (98.9% per lockfile); the rest sorted by cause |
 | Dependencies in 14 ecosystems Trivy does not read, against each ecosystem's own tool | **11,610 dependencies, 356 repositories** | **99.2%** recall, 98.6% precision; every difference read |
@@ -29,6 +33,33 @@ them ships here.
 | Widely used open-source repositories (0.4.0 run) | **1,427** | 85.4% pass the default gate |
 | Reference infrastructure, as its vendors publish it (0.4.0 run) | **13 repos, 20,310 files** | 2,560 findings, 795 blocking |
 | Known-vulnerable releases, by advisory | **940 pins, 11 ecosystems** | 100% reported |
+
+## npm at full scale (0.7.0)
+
+```
+   ┌──────────────────────────────────────────────────────────────────────────┐
+   │  43,627 npm releases scanned, every one, on the 0.7.0 release commit     │
+   │                                                                          │
+   │  malicious, with code to read          6,793    blocked by the content   │
+   │                                                 alone: 6,187 = 91.08%    │
+   │                                                                          │
+   │  benign, from the registry draw        34,437   blocked: 330 = 0.96%     │
+   │                                                 Wilson 95%: 0.86-1.07%   │
+   └──────────────────────────────────────────────────────────────────────────┘
+```
+
+**What counts.** A malicious release is counted as caught only when what blocked it was a reading of
+its code: a match against a recorded incident (`MALWARE.PACKAGE.KNOWN.001`,
+`MALWARE.DEPENDENCY.KNOWN.001`) is left out, because the public datasets the malware comes from are
+the same records the intel is built from, and counting them would measure the intel against itself.
+A benign release counts as a false alarm when it is blocked by anything other than a known
+vulnerability or a dependency that is itself known malware; npm's security-holding placeholders and
+releases the registry lists as malicious are taken out of the benign pool first (1,231 and 563 of
+the 36,231 drawn). An incomplete scan counts as a block, because it does not pass.
+
+**What changed from the run before**, compared release by release on the raw rows: no release lost
+a block in either set; 11 more malicious releases are blocked by their content, and 6 more benign
+ones are blocked, the measured cost of the rule that caught them.
 
 ## At scale: every item, not a sample
 
