@@ -20,6 +20,7 @@ from cordon_scanner.detect.binary.rule_engine.anchoring.places import Places
 from cordon_scanner.detect.binary.rule_engine.anchoring.stream import Streams
 from cordon_scanner.detect.binary.rule_engine.lang import RuleError, Rules
 from cordon_scanner.detect.binary.rule_engine.pattern import Unbounded
+from support import PeakMemory
 
 ZEROS = bytes(8 << 20)
 
@@ -28,11 +29,7 @@ class Bound:
     @staticmethod
     def peak_mb() -> int:
         """The process's peak resident memory in MB (where the platform reports it; else 0)."""
-        try:
-            import resource
-        except ImportError:  # not on Windows
-            return 0
-        return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) // 1024
+        return PeakMemory.mib()
 
 
 class TestTheBound:

@@ -15,6 +15,7 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton, TextCheck
+from support import PeakMemory
 
 EXAMPLES = int(os.environ.get("CORDON_NATIVE_EXAMPLES", "2000"))
 NATIVE = pytest.mark.skipif(not Automaton.NATIVE, reason=str(Automaton.WHY))
@@ -174,14 +175,13 @@ class TestArgumentShapes:
             a.positions(data, [0], 3)  # type: ignore[attr-defined]
 
     def test_a_large_cap_costs_only_what_is_found(self) -> None:
-        import resource
 
         a = Automaton.MODULE.Automaton([bytes([i, i, i]) for i in range(40)])
-        before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        before = PeakMemory.kib()
         got = a.positions(
             b"\x05\x05\x05", list(range(40)), 1 << 24
         )  # 40 x 16 M offsets if allocated up front
-        after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        after = PeakMemory.kib()
         assert got[5] == (0).to_bytes(8, "little") and all(
             got[i] == b"" for i in range(40) if i != 5
         )

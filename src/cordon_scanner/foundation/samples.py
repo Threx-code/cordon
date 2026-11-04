@@ -9,7 +9,7 @@ another tool's fixtures back at its authors.
 prompted this. 189 blocking findings, and 188 of them were samples:
 
     // ruleid: adafruit-api-key
-    adafruit_api_token = "9zu9r6idf9c0tfcc4w26l66ij7visb8n"
+    adafruit_api_token = "<32 lowercase letters and digits>"
 
 That file is two lines long, and the first line says what the second is for. Its
 sibling `adafruit-api-key.yaml` is the rule that matches it. The same repository

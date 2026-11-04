@@ -155,7 +155,9 @@ jobs:
       - run: |
           # Unit tests hold attack-shaped fixtures and fixture archives by design (a cron-persistence
           # payload, a conda recipe in a .tar.zst), and the model's data is data like detect/ and
-          # intel/'s: scanned as code they read as findings and an incomplete record. The shipped
+          # intel/'s: scanned as code they read as findings and an incomplete record. So are the
+          # built-in rule packs, whose positive test cases are the attack shapes each rule must
+          # catch (a fromCharCode string, 4 Nov). The shipped
           # code, the scripts and the integration tests stay in.
           cordon-scanner scan . \
             --exclude 'corpus/**' \
@@ -164,6 +166,7 @@ jobs:
             --exclude '**/intel/data/**' \
             --exclude '**/detect/data/**' \
             --exclude '**/model/data/**' \
+            --exclude 'src/cordon_scanner/rules/builtin/**' \
             --exclude 'tests/unit/**' \
             --exclude 'build/**' \
             --exclude 'dist/**' \

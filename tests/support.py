@@ -154,3 +154,26 @@ class SealedSync:
         }
         (directory / DIGESTS_NAME).write_text(json.dumps(digests), encoding="utf-8")
         AdvisoryFiles.seal_manifest(directory)
+
+
+class PeakMemory:
+    """The process's peak resident memory, in KiB on every platform that reports it.
+
+    `ru_maxrss` is kilobytes on Linux and bytes on macOS, so a test that divided by 1024 for
+    megabytes read a 7 MB rise on macOS as 7,376 "MB" and failed a 40 MB bound (4 Nov, the first
+    macOS run since CI came back on). 0 where there is no `resource` module (Windows)."""
+
+    @staticmethod
+    def kib() -> int:
+        try:
+            import resource
+        except ImportError:  # not on Windows
+            return 0
+        peak = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        import sys
+
+        return peak // 1024 if sys.platform == "darwin" else peak
+
+    @staticmethod
+    def mib() -> int:
+        return PeakMemory.kib() // 1024
