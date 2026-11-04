@@ -822,6 +822,17 @@ class DocumentedCommandKit:
             return said[-1] if said else f"exit {exit_.code}"
         from cordon_scanner.engine.registry import BUILTIN_REPORTERS
 
+        # A configuration or policy file the scanner cannot read: both are YAML, and tutorial 14
+        # named `cordon.toml` for months; a policy may also be a digest-pinned https URL.
+        named = [
+            argv[i + 1] for i, word in enumerate(argv[:-1]) if word in ("--config", "--policy")
+        ]
+        if argv[:2] in (["config", "validate"], ["config", "explain"]) and len(argv) > 2:
+            named.append(argv[2])
+        for value in named:
+            if not value.startswith("https://") and not value.endswith((".yaml", ".yml")):
+                return f"{value}: configuration and policy files are YAML (.yaml or .yml)"
+
         if getattr(args, "command", None) in ("scan", "report"):
             for value in getattr(args, "format", None) or []:
                 name = str(value).split(":", 1)[0]
@@ -843,9 +854,12 @@ class TestEveryDocumentedCommandRuns:
         assert refused == []
 
     def test_the_check_reads_commands_and_refuses_a_wrong_one(self) -> None:
-        sample = "```\ncordon-scanner sbom . --format cyclonedx\ncordon-scanner scan . --format html\n```\n"
+        sample = (
+            "```\ncordon-scanner sbom . --format cyclonedx\ncordon-scanner scan . --format html\n"
+            "cordon-scanner config validate cordon.toml\n```\n"
+        )
         argvs = DocumentedCommandKit.commands(sample)
-        assert len(argvs) == 2
+        assert len(argvs) == 3
         assert all(DocumentedCommandKit.refusal(a) for a in argvs)
         assert (
             len(

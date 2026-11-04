@@ -19,8 +19,8 @@ Three layers, from most local to most binding:
 ```
 
 ```
-   cordon-scanner scan .  --config cordon.toml  --policy org-policy.toml
-   cordon-scanner config validate cordon.toml            # validate without scanning
+   cordon-scanner scan .  --config cordon.yaml  --policy org-policy.yaml
+   cordon-scanner config validate cordon.yaml            # validate without scanning
 ```
 
 ## Baselines — adopt on a messy codebase

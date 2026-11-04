@@ -413,7 +413,7 @@ That must be the whole minimal case. Everything else has a defensible default.
     only-changed: false        # on PRs, scan only changed files
     baseline: ''               # baseline file path
     fail-on-incomplete: false
-    evidence: masked           # none | masked | full
+    evidence: masked           # none | masked | hash_only
     jobs: '0'                  # 0 = auto
     working-directory: .
 ```
@@ -527,9 +527,10 @@ not:
 ```
 CLI flags                       (highest)
   ↓
-Organisation policy             --policy / CORDON_POLICY / /etc/cordon/policy.yaml
+Organisation policy             --policy PATH or URL#sha256=…, else CORDON_POLICY
   ↓  ← acts as a CEILING on everything below (C3, T6)
-Repository config               cordon.yaml / .cordon.yaml / [tool.cordon] in pyproject.toml
+Repository config               --config PATH, else the first of cordon.yaml, cordon.yml,
+                                .cordon.yaml, .cordon.yml at the root (YAML only)
   ↓
 Built-in defaults               (lowest)
 ```
@@ -597,7 +598,7 @@ policy:
     - container
     - cicd
 
-evidence: masked                 # none | masked | full
+evidence: masked                 # none | masked | hash_only
 
 suppressions:
   - rule: SUSPECT.REGISTRY.SELF_PUBLISH.001
