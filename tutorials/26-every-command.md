@@ -664,8 +664,10 @@ Manage the vulnerability/malicious-package advisory database.
 │                           rocky, almalinux, redhat, suse, opensuse) so     │
 │                           image scans match operating-system packages      │
 │                           offline                                          │
-│ --bundle URL              install a signed advisory bundle from URL        │
-│                           instead of building from OSV; the bundle's       │
+│ --bundle URL|DIR          install a signed advisory bundle instead of      │
+│                           building from OSV: from a release's URL, or from │
+│                           a directory holding the two release assets       │
+│                           carried across an air gap; either way its        │
 │                           Ed25519 signature is verified against the pinned │
 │                           release key before anything is unpacked          │
 └────────────────────────────────────────────────────────────────────────────┘

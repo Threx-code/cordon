@@ -247,5 +247,30 @@ class AdvisoryBundle:
         signature = AdvisoryBundle._fetch(f"{base}/{SIGNATURE_NAME}")
         AdvisoryBundle.install_bundle(archive, signature, dest, public_key=public_key)
 
+    @staticmethod
+    def sync_from(source: str, dest: Path, *, public_key: bytes | None = None) -> None:
+        """Install the signed bundle from `source`: a release's asset URL prefix, or a local
+        directory holding the same two files carried across an air gap.
+
+        The signature is what makes a bundle trustworthy, not how it travelled, so a carried
+        bundle is verified against the same pinned key and refused the same way; a URL still
+        goes through the HTTPS host allowlist. Each file is read only up to the bundle limit.
+        """
+        carried = Path(source)
+        if not carried.is_dir():
+            AdvisoryBundle.sync_from_url(source, dest, public_key=public_key)
+            return
+        parts: list[bytes] = []
+        for name in (BUNDLE_NAME, SIGNATURE_NAME):
+            path = carried / name
+            if not path.is_file():
+                raise BundleError(f"{carried} holds no {name}; carry both release assets")
+            with path.open("rb") as handle:
+                body = handle.read(MAX_BUNDLE_BYTES + 1)
+            if len(body) > MAX_BUNDLE_BYTES:
+                raise BundleError(f"{path} exceeds {MAX_BUNDLE_BYTES} bytes and was not read")
+            parts.append(body)
+        AdvisoryBundle.install_bundle(parts[0], parts[1], dest, public_key=public_key)
+
 
 __all__ = ["ALLOWED_HOSTS", "BUNDLE_NAME", "SIGNATURE_NAME", "AdvisoryBundle", "BundleError"]
