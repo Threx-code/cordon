@@ -138,8 +138,15 @@ jobs:
         # stale). Synced first, as the frontend's and backend's scan jobs do. Names nothing scanned.
         # OSV's ecosystems only, read from the scanner itself: a full sync also fetches NVD's yearly
         # feeds, one of which timed out at 120s on 4 Nov and failed the step with OSV all synced.
+        # Three tries, 30 s apart: one transient answer from a source (raw.githubusercontent.com's
+        # "backend read error", 4 Nov) failed the whole job before anything was scanned.
         run: |
-          cordon-scanner advisories sync --only $(python -c "from cordon_scanner.intel.advisories.osv_import import ECOSYSTEM_OSV_NAMES as E; print(' '.join(sorted(E)))")
+          only=$(python -c "from cordon_scanner.intel.advisories.osv_import import ECOSYSTEM_OSV_NAMES as E; print(' '.join(sorted(E)))")
+          for attempt in 1 2 3; do
+            cordon-scanner advisories sync --only $only && exit 0
+            [ "$attempt" = 3 ] || sleep 30
+          done
+          exit 1
       # The guard manifest: every file the scan's integrity rests on (this workflow, the history
       # baseline) matches its recorded hash. CI has no hooks to check; it checks the manifest.
       - run: cordon-scanner guard verify --manifest-only
@@ -238,8 +245,15 @@ jobs:
         # stale). Synced first, as the frontend's and backend's scan jobs do. Names nothing scanned.
         # OSV's ecosystems only, read from the scanner itself: a full sync also fetches NVD's yearly
         # feeds, one of which timed out at 120s on 4 Nov and failed the step with OSV all synced.
+        # Three tries, 30 s apart: one transient answer from a source (raw.githubusercontent.com's
+        # "backend read error", 4 Nov) failed the whole job before anything was scanned.
         run: |
-          cordon-scanner advisories sync --only $(python -c "from cordon_scanner.intel.advisories.osv_import import ECOSYSTEM_OSV_NAMES as E; print(' '.join(sorted(E)))")
+          only=$(python -c "from cordon_scanner.intel.advisories.osv_import import ECOSYSTEM_OSV_NAMES as E; print(' '.join(sorted(E)))")
+          for attempt in 1 2 3; do
+            cordon-scanner advisories sync --only $only && exit 0
+            [ "$attempt" = 3 ] || sleep 30
+          done
+          exit 1
       # `adversarial-*` conformance cases are dependency files written to be unparseable (a hostile
       # DOCTYPE, an entity bomb); reading them is the conformance suite's job, and here they only
       # made the scan incomplete. Every other conformance case is still read for secrets.
@@ -274,8 +288,15 @@ jobs:
         # stale). Synced first, as the frontend's and backend's scan jobs do. Names nothing scanned.
         # OSV's ecosystems only, read from the scanner itself: a full sync also fetches NVD's yearly
         # feeds, one of which timed out at 120s on 4 Nov and failed the step with OSV all synced.
+        # Three tries, 30 s apart: one transient answer from a source (raw.githubusercontent.com's
+        # "backend read error", 4 Nov) failed the whole job before anything was scanned.
         run: |
-          cordon-scanner advisories sync --only $(python -c "from cordon_scanner.intel.advisories.osv_import import ECOSYSTEM_OSV_NAMES as E; print(' '.join(sorted(E)))")
+          only=$(python -c "from cordon_scanner.intel.advisories.osv_import import ECOSYSTEM_OSV_NAMES as E; print(' '.join(sorted(E)))")
+          for attempt in 1 2 3; do
+            cordon-scanner advisories sync --only $only && exit 0
+            [ "$attempt" = 3 ] || sleep 30
+          done
+          exit 1
       - run: |
           mkdir -p cordon-reports
           cordon-scanner inventory --format json . > cordon-reports/inventory.json
@@ -312,8 +333,15 @@ jobs:
         # stale). Synced first, as the frontend's and backend's scan jobs do. Names nothing scanned.
         # OSV's ecosystems only, read from the scanner itself: a full sync also fetches NVD's yearly
         # feeds, one of which timed out at 120s on 4 Nov and failed the step with OSV all synced.
+        # Three tries, 30 s apart: one transient answer from a source (raw.githubusercontent.com's
+        # "backend read error", 4 Nov) failed the whole job before anything was scanned.
         run: |
-          cordon-scanner advisories sync --only $(python -c "from cordon_scanner.intel.advisories.osv_import import ECOSYSTEM_OSV_NAMES as E; print(' '.join(sorted(E)))")
+          only=$(python -c "from cordon_scanner.intel.advisories.osv_import import ECOSYSTEM_OSV_NAMES as E; print(' '.join(sorted(E)))")
+          for attempt in 1 2 3; do
+            cordon-scanner advisories sync --only $only && exit 0
+            [ "$attempt" = 3 ] || sleep 30
+          done
+          exit 1
       # The release commits action/requirements.txt, so between releases there is none and the
       # pipe's `COPY` fails. It is built from the last pin committed instead: reviewed and
       # hash-pinned, and what a user of the last release runs. Nothing is asked of the index.
