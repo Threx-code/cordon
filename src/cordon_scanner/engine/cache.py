@@ -42,6 +42,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from cordon_scanner.engine.canonical import Canonical
 from cordon_scanner.engine.pipeline.constants import INCOMPLETE_WHEN_REPORTED
+from cordon_scanner.foundation.files.ownership import Ownership
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Finding
 from cordon_scanner.foundation.paths import StatePaths
@@ -769,13 +770,11 @@ class ScanCache:
         branch, which is exactly the branch that does not execute when the
         directory is already there.
         """
-        if os.name == "nt":  # pragma: no cover - POSIX permissions only
-            return True
         try:
             info = path.stat()
         except OSError:
             return False
-        return info.st_uid == os.getuid() and not info.st_mode & 0o077
+        return Ownership.private(info)
 
     def _mac(self, body: bytes, key: CacheKey) -> str | None:
         """MAC over the payload, the key it is filed under, and who owns it.

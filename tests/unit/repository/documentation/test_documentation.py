@@ -944,7 +944,7 @@ class TestEveryDocumentedConfigurationLoads:
             for body in re.findall(r"```ya?ml\n(.*?)```", path.read_text(encoding="utf-8"), re.S):
                 if re.search(r"^version: 1\s*$", body, re.M):
                     policy = bool(re.search(r"^(enforce|issuer|issued):", body, re.M))
-                    found.append((str(path.relative_to(REPO)), body, policy))
+                    found.append((path.relative_to(REPO).as_posix(), body, policy))
         return found
 
     def test_there_are_examples_to_check(self) -> None:

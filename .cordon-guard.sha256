@@ -5,7 +5,7 @@
 # same commit, and no self-hosted check can prevent that. What this file
 # guarantees is that such a change cannot be silent: it must appear as a
 # diff. Code-owner rules on this path are what put a human on that diff.
-5ce561eecd8cc65b551dc35553b31730b3bb2be92ac99d6c11c35435865bcdab  .github/workflows/ci.yml
+ef9f6bcf47b1f24749fe3041fedf22bd8fce896c6ede7009957c395f11c83270  .github/workflows/ci.yml
 5cd79590d7d8189ed1601e1f81cf9633eb193594ddc60d196ac58b6a1c61326c  .github/workflows/native-wheels.yml
 06a4fd60f830884a756b820a129a2615fbd155c387ce48f2801d9130673fee2d  .github/workflows/refresh-advisories.yml
 780f65837105fbf623728041037e989b8e1fcc72e8833fae7165fcc1b1fc7259  .github/workflows/refresh-iac-policies.yml

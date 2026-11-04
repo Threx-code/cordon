@@ -421,9 +421,16 @@ class TestIncludes:
         with pytest.raises(RuleError, match="outside the rule collection"):
             Rules.compile(top.read_text(encoding="utf-8"), includes=Includes(top.parent, top=top))
 
-    def test_an_absolute_name_is_refused(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize(
+        # As a rule author writes them: forward slashes, or a backslash escaped (\\\\), since a bare
+        # backslash in a rule string is an escape and is refused before the path is read.
+        "name",
+        ["/etc/other.yar", "//host/share/x.yar", "C:/x.yar", "C:x.yar", "C:\\\\x.yar"],
+    )
+    def test_an_absolute_name_is_refused(self, tmp_path: Path, name: str) -> None:
+        """The same refusal on every platform: Windows does not call `/etc/x` absolute."""
         with pytest.raises(RuleError, match="an absolute path"):
-            Rules.compile('include "/etc/other.yar"', includes=Includes(tmp_path))
+            Rules.compile(f'include "{name}"', includes=Includes(tmp_path))
 
     def test_a_cycle_is_refused(self, tmp_path: Path) -> None:
         self.tree(tmp_path, {"a.yar": 'include "b.yar"', "b.yar": 'include "a.yar"'})

@@ -127,7 +127,10 @@ jobs:
         # A scan's own refresh from OSV can fail for one ecosystem on a busy runner; the intel then
         # falls back to the bundle, and past its age the scan is rightly incomplete (4 Nov: 12 days,
         # stale). Synced first, as the frontend's and backend's scan jobs do. Names nothing scanned.
-        run: cordon-scanner advisories sync
+        # OSV's ecosystems only, read from the scanner itself: a full sync also fetches NVD's yearly
+        # feeds, one of which timed out at 120s on 4 Nov and failed the step with OSV all synced.
+        run: |
+          cordon-scanner advisories sync --only $(python -c "from cordon_scanner.intel.advisories.osv_import import ECOSYSTEM_OSV_NAMES as E; print(' '.join(sorted(E)))")
       # The guard manifest: every file the scan's integrity rests on (this workflow, the history
       # baseline) matches its recorded hash. CI has no hooks to check; it checks the manifest.
       - run: cordon-scanner guard verify --manifest-only
@@ -224,7 +227,10 @@ jobs:
         # A scan's own refresh from OSV can fail for one ecosystem on a busy runner; the intel then
         # falls back to the bundle, and past its age the scan is rightly incomplete (4 Nov: 12 days,
         # stale). Synced first, as the frontend's and backend's scan jobs do. Names nothing scanned.
-        run: cordon-scanner advisories sync
+        # OSV's ecosystems only, read from the scanner itself: a full sync also fetches NVD's yearly
+        # feeds, one of which timed out at 120s on 4 Nov and failed the step with OSV all synced.
+        run: |
+          cordon-scanner advisories sync --only $(python -c "from cordon_scanner.intel.advisories.osv_import import ECOSYSTEM_OSV_NAMES as E; print(' '.join(sorted(E)))")
       # `adversarial-*` conformance cases are dependency files written to be unparseable (a hostile
       # DOCTYPE, an entity bomb); reading them is the conformance suite's job, and here they only
       # made the scan incomplete. Every other conformance case is still read for secrets.
@@ -257,7 +263,10 @@ jobs:
         # A scan's own refresh from OSV can fail for one ecosystem on a busy runner; the intel then
         # falls back to the bundle, and past its age the scan is rightly incomplete (4 Nov: 12 days,
         # stale). Synced first, as the frontend's and backend's scan jobs do. Names nothing scanned.
-        run: cordon-scanner advisories sync
+        # OSV's ecosystems only, read from the scanner itself: a full sync also fetches NVD's yearly
+        # feeds, one of which timed out at 120s on 4 Nov and failed the step with OSV all synced.
+        run: |
+          cordon-scanner advisories sync --only $(python -c "from cordon_scanner.intel.advisories.osv_import import ECOSYSTEM_OSV_NAMES as E; print(' '.join(sorted(E)))")
       - run: |
           mkdir -p cordon-reports
           cordon-scanner inventory --format json . > cordon-reports/inventory.json
@@ -292,7 +301,10 @@ jobs:
         # A scan's own refresh from OSV can fail for one ecosystem on a busy runner; the intel then
         # falls back to the bundle, and past its age the scan is rightly incomplete (4 Nov: 12 days,
         # stale). Synced first, as the frontend's and backend's scan jobs do. Names nothing scanned.
-        run: cordon-scanner advisories sync
+        # OSV's ecosystems only, read from the scanner itself: a full sync also fetches NVD's yearly
+        # feeds, one of which timed out at 120s on 4 Nov and failed the step with OSV all synced.
+        run: |
+          cordon-scanner advisories sync --only $(python -c "from cordon_scanner.intel.advisories.osv_import import ECOSYSTEM_OSV_NAMES as E; print(' '.join(sorted(E)))")
       # The release commits action/requirements.txt, so between releases there is none and the
       # pipe's `COPY` fails. It is built from the last pin committed instead: reviewed and
       # hash-pinned, and what a user of the last release runs. Nothing is asked of the index.

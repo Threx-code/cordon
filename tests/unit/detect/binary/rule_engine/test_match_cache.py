@@ -4,6 +4,7 @@ never kept."""
 
 from __future__ import annotations
 
+import os
 import time
 from pathlib import Path
 
@@ -80,6 +81,9 @@ class TestMatchCache:
         assert cache.get(ident, b"data") is None
         assert cache.refused == 1
 
+    @pytest.mark.skipif(
+        os.name == "nt", reason="POSIX mode bits; Windows guards the cache by its profile ACL"
+    )
     def test_an_entry_others_could_write_is_refused(self, tmp_path: Path) -> None:
         cache = MatchCache(tmp_path / "m")
         ident = Kit.identity(Kit.write(tmp_path))

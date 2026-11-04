@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any, ClassVar
 
 
@@ -65,7 +65,10 @@ class Includes:
         def refuse(why: str) -> RuleError:
             return RuleError(f"line {line}: include {name!r}: {why}")
 
-        if Path(name).is_absolute():
+        # Absolute on any platform: a rule file reads the same everywhere, and Windows calls
+        # `/etc/x.yar` root-relative rather than absolute (no drive), so it was refused there
+        # only later, as outside the collection. A drive (`C:`) or a UNC root counts too.
+        if Path(name).is_absolute() or name.startswith(("/", "\\")) or PureWindowsPath(name).drive:
             raise refuse("an absolute path")
         including = chain[-1] if chain else self.top
         target = ((including.parent if including else self.root) / name).resolve()

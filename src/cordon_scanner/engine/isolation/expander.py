@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.foundation.errors import ArchiveError
+from cordon_scanner.foundation.files.ownership import Ownership
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS
 
 if TYPE_CHECKING:
@@ -115,7 +116,7 @@ class SpillDirectory:
             if (
                 entry.is_dir()
                 and not entry.is_symlink()
-                and st.st_uid == os.getuid()
+                and Ownership.mine(st)
                 and SpillDirectory._abandoned(entry, now - st.st_mtime)
             ):
                 shutil.rmtree(entry, ignore_errors=True)
