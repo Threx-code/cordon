@@ -35,7 +35,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python: ["3.11", "3.12", "3.13"]
+        python: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       # Actions pinned by commit SHA, not tag. A tag is mutable, so a
       # tag-pinned action is code that can change without a commit -- which is
