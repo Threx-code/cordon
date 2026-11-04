@@ -89,13 +89,16 @@ and approvals, against its own rules and 815 of the
 
 | | Result |
 |---|---|
-| Real malicious packages (39,328: npm, PyPI, AI skills, IDE extensions) | **94.2%** detected |
-| The same malware against GuardDog (a fixed-seed draw of 498) | **95.2%**, against GuardDog's 85.5% |
-| Popular packages wrongly blocked (top 1,000 PyPI + 1,000 npm) | **1.6%**, against GuardDog's 16.8% |
-| AI-agent attacks (4,034 Agent Threat Rules test cases) | **97.7%** detected |
+| npm malware blocked by reading its code alone, every release of the set (0.7.0) | **91.08%** of 6,793 |
+| Benign npm packages blocked, every release of the set (0.7.0) | **0.96%** of 34,437 |
+| Real malicious packages (39,328: npm, PyPI, AI skills, IDE extensions; 0.6.0) | **94.2%** detected |
+| The same malware against GuardDog (a fixed-seed draw of 498; 0.6.0) | **95.2%**, against GuardDog's 85.5% |
+| Popular packages wrongly blocked (top 1,000 PyPI + 1,000 npm; 0.6.0) | **1.6%**, against GuardDog's 16.8% |
+| AI-agent attacks (4,034 Agent Threat Rules test cases; 0.6.0) | **97.7%** detected |
 
-Every number comes from a script in this repository, run against code nobody here wrote. All twelve
-measurements, the method behind each and what they are not: [docs/08-ACCURACY.md](https://github.com/Threx-code/cordon/blob/v0.7.0/docs/08-ACCURACY.md).
+Every number is measured against code nobody here wrote, and says the release it was measured
+for. Each measurement, the method behind it and what it is not:
+[docs/08-ACCURACY.md](https://github.com/Threx-code/cordon/blob/v0.7.0/docs/08-ACCURACY.md).
 
 ## How it works
 
