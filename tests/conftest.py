@@ -63,6 +63,27 @@ class SharedFixtures:
         monkeypatch.setenv("CORDON_NO_ADVISORY_REFRESH", "1")
 
     @pytest.fixture(autouse=True)
+    def _intel_judged_when_it_was_built(self, monkeypatch) -> None:
+        """Intel older than its limit makes a scan incomplete (7 days without a feed), so a test
+        that read the wall clock passed the week after an intel refresh and failed the week after
+        (`test_scanning_an_empty_directory_is_clean`, 4 Nov). A scan in a test judges its intel a
+        minute after it was built; a test about staleness passes its own `now`, which wins."""
+        import time as _time
+
+        from cordon_scanner.intel.malware.feed import FeedClient
+
+        real = FeedClient.status
+
+        def status(*, use_feed, max_age, feed=None, now=None):
+            if now is None:
+                probe = real(use_feed=use_feed, max_age=max_age, feed=feed, now=_time.time())
+                if probe.age_seconds is not None:
+                    now = _time.time() - probe.age_seconds + 60
+            return real(use_feed=use_feed, max_age=max_age, feed=feed, now=now)
+
+        monkeypatch.setattr(FeedClient, "status", staticmethod(status))
+
+    @pytest.fixture(autouse=True)
     def _isolated_cache_key(self, tmp_path_factory: pytest.TempPathFactory, monkeypatch) -> None:
         directory = tmp_path_factory.mktemp("cordon-key")
         # The one place the key directory is decided: the scan cache, the evidence key and every
