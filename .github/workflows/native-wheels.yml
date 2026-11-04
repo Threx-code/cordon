@@ -46,6 +46,7 @@ jobs:
           export SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct 2>/dev/null || echo 315532800)
           for py in cp311-cp311 cp312-cp312 cp313-cp313; do
             python=/opt/python/$py/bin/python
+            mkdir -p wheelhouse
             $python -c "import sys; sys.path.insert(0, 'scripts/backend'); import cordon_build; print(cordon_build.build_wheel('wheelhouse'))"
             wheel=$(ls wheelhouse/*-$py-manylinux_2_28_${{ matrix.arch }}.whl)
             auditwheel show "$wheel"
@@ -88,6 +89,7 @@ jobs:
         run: |
           set -euo pipefail
           export SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)
+          mkdir -p wheelhouse
           python -c "import sys; sys.path.insert(0, 'scripts/backend'); import cordon_build; print(cordon_build.build_wheel('wheelhouse'))"
           wheel=$(ls wheelhouse/*-macosx_11_0_${{ matrix.arch }}.whl)
           python -m venv /tmp/venv
@@ -122,6 +124,7 @@ jobs:
           for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvars64.bat"
           if errorlevel 1 exit /b 1
           for /f %%t in ('git log -1 --pretty^=%%ct') do set SOURCE_DATE_EPOCH=%%t
+          if not exist wheelhouse mkdir wheelhouse
           python -c "import sys; sys.path.insert(0, 'scripts/backend'); import cordon_build; print(cordon_build.build_wheel('wheelhouse'))"
       - name: Test the wheel
         shell: bash

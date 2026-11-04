@@ -28,6 +28,7 @@ import hashlib
 import json
 import struct
 from pathlib import Path
+from typing import Any
 
 from cordon_scanner.intel.malware.reuse_delta import ReuseDelta, ReuseOverlay
 from cordon_scanner.intel.malware.reuse_index import ReuseIndex
@@ -77,7 +78,7 @@ class ReuseDiff:
     @staticmethod
     def section(
         old: dict[tuple[int, bytes], str], new_data: bytes, hooks: set[bytes], built: int
-    ) -> dict:
+    ) -> dict[str, Any]:
         new, _ = ReuseDiff.entries(new_data)
         target = {(ReuseDiff.space(d, hooks), d): g for d, g in new.items()}
         add = {k: ReuseGroups.id_of(g.name) for k, g in target.items() if old.get(k) != g.name}

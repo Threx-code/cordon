@@ -9,5 +9,6 @@ RUN python -m pip install --quiet --no-cache-dir \
 # training reads features with exactly the extractor the scanner ships (cordon_scanner.model).
 COPY pyproject.toml README.md LICENSE NOTICE MANIFEST.in /pkg/
 COPY src /pkg/src
+COPY scripts/backend /pkg/scripts/backend
 RUN python -m pip install --quiet --no-cache-dir --no-deps /pkg && rm -rf /pkg
 WORKDIR /model

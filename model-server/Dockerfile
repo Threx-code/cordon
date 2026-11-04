@@ -6,6 +6,7 @@ RUN apt-get update -qq && apt-get install -qq -y --no-install-recommends libgomp
  && rm -rf /var/lib/apt/lists/*
 COPY pyproject.toml README.md LICENSE NOTICE MANIFEST.in /src/scanner/
 COPY src /src/scanner/src
+COPY scripts/backend /src/scanner/scripts/backend
 COPY model-server /src/model-server
 RUN python -m pip install --quiet --no-cache-dir --no-deps /src/scanner \
  && python -m pip install --quiet --no-cache-dir /src/model-server \

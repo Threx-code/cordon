@@ -9,6 +9,8 @@ FROM python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1
 WORKDIR /build
 COPY pyproject.toml README.md LICENSE NOTICE requirements-build.txt ./
 COPY src/ ./src/
+# The in-tree build backend pyproject.toml names (backend-path = scripts/backend).
+COPY scripts/backend/ ./scripts/backend/
 
 # Installed into one flat directory rather than a versioned prefix. The runtime
 # image is distroless Python 3.11 while the build image is 3.12, so

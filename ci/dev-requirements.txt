@@ -63,6 +63,10 @@ ast-serialize==0.13.1 \
     --hash=sha256:f8b17e2921e56621bcb46792bd3e0b82ca3b85de78d5936e7b8174ba1758b0aa \
     --hash=sha256:fb8021f4dc3296de18737e3b8b34994411da725374d74a0b9eb32a738f2a23d0
     # via mypy
+colorama==0.4.6 \
+    --hash=sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44 \
+    --hash=sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6
+    # via -r ci/dev-requirements.in
 coverage==7.17.0 \
     --hash=sha256:032d4c2db4c677eb71d43f2f8b80bf64e9346f7a3f7b6ebb13f1782f3cc6c274 \
     --hash=sha256:03baf0688e14a5a44ffd1eefa8928dfc92b14565e521174e072b31b971aa1657 \
@@ -274,7 +278,7 @@ hypothesis==6.168.5 \
     --hash=sha256:f66b02c9e95e916a2c58f725a92377ec988146ed7b5aeccd5e78ceecac1eae6f \
     --hash=sha256:f8a387d9ee7f804e830b31f2e2e339ab5731665e922cfda4f6f6fbdb05e191b4 \
     --hash=sha256:ffbde24430dcd73231fd03324a934e0f638f7c0899fc566f3ef8c851534f8030
-    # via -r /tmp/in.txt
+    # via -r ci/dev-requirements.in
 iniconfig==2.3.1 \
     --hash=sha256:67f4b9c50da0dedf52af349e7749a80a9057a5031199791b906c3bb3ae878960 \
     --hash=sha256:9121e2c1fdb355232495be3194c8dfe87ccc2d5dee45947b78e68f499790d7a7
@@ -471,7 +475,7 @@ mypy==2.4.0 \
     --hash=sha256:f9b028548b3af480e2b1ed8df14ccaac86f99c9f600d1580770ab7ba3dcd40f0 \
     --hash=sha256:fb443e81057896132d3642d6be219e6efd158691ac7883e3ba8fcb469865f05d \
     --hash=sha256:ffda5244fd1ad71a1e54405e35f50d09b80c3978efa120f58bd1252ae32c62d2
-    # via -r /tmp/in.txt
+    # via -r ci/dev-requirements.in
 mypy-extensions==1.1.0 \
     --hash=sha256:1be4cccdb0f2482337c4743e60421de3a356cd97508abadd57d47403e94f5505 \
     --hash=sha256:52e68efc3284861e772bbcd66823fde5ae21fd2fdb51c62a211403730b916558
@@ -498,17 +502,17 @@ pytest==9.1.1 \
     --hash=sha256:1088fbde8f2b49d95a549a195707afa7a76a3ce9bcadc26b6d71f0ffda5fe313 \
     --hash=sha256:37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c
     # via
-    #   -r /tmp/in.txt
+    #   -r ci/dev-requirements.in
     #   pytest-cov
     #   pytest-xdist
 pytest-cov==7.1.0 \
     --hash=sha256:30674f2b5f6351aa09702a9c8c364f6a01c27aae0c1366ae8016160d1efc56b2 \
     --hash=sha256:a0461110b7865f9a271aa1b51e516c9a95de9d696734a2f71e3e78f46e1d4678
-    # via -r /tmp/in.txt
+    # via -r ci/dev-requirements.in
 pytest-xdist==3.8.0 \
     --hash=sha256:202ca578cfeb7370784a8c33d6d05bc6e13b4f25b5053c30a152269fd10f0b88 \
     --hash=sha256:7e578125ec9bc6050861aa93f2d59f1d8d085595d6551c2c90b6f4fad8d3a9f1
-    # via -r /tmp/in.txt
+    # via -r ci/dev-requirements.in
 ruff==0.17.0 \
     --hash=sha256:0e271826af9a20d18c6cfae8c51e82959167c24859686ddd3eb9a7f0842ce81e \
     --hash=sha256:13ee90156522998c3037059d8f66885c8adeeaf7643bdce2caceee196ecd23e0 \
@@ -528,7 +532,7 @@ ruff==0.17.0 \
     --hash=sha256:cbf7149e0927dc3295d5d64679a4765576eef71b00782b2ae969ef82274d6bb9 \
     --hash=sha256:d66de796b726c4801e05fa99a2a8d7a780e107be222486c304ab61765561e866 \
     --hash=sha256:db4f74c533403ab70fe4007873f6ae0c9f94a8b03158cf48d78788e47cdbe399
-    # via -r /tmp/in.txt
+    # via -r ci/dev-requirements.in
 sortedcontainers==2.4.0 \
     --hash=sha256:25caa5a06cc30b6b83d11423433f65d1f9d76c4c6a0c90e3379eaa43b9bfdb88 \
     --hash=sha256:a163dcaede0f1c021485e957a39245190e74249897e2ae4b2aa38595db237ee0

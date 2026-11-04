@@ -11,9 +11,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from test_dex import Build
+# From the test tree, on the PYTHONPATH the docstring gives: a maintainer's tool, not a module mypy
+# resolves from the repository root.
+from test_dex import Build  # type: ignore[import-not-found]
 
-from kits.androidkit import AndroidKit, Ref
+from kits.androidkit import AndroidKit, Ref  # type: ignore[import-not-found]
 
 
 class Fixtures:
@@ -44,11 +46,11 @@ class Fixtures:
         dex = Build.dex(
             (b"Lcom/A;", b"run", b"V", b"get https://c2.example/p?q=1 then ftp://files.example/x")
         )
-        return AndroidKit.apk({
+        return bytes(AndroidKit.apk({
             "AndroidManifest.xml": AndroidKit.manifest(manifest),
             "resources.arsc": AndroidKit.resources("com.cordon.sample", {"app_name": "Cordon Sample"}),
             "classes.dex": dex,
-        })  # fmt: skip
+        }))  # fmt: skip
 
     @staticmethod
     def edge() -> bytes:
@@ -59,10 +61,10 @@ class Fixtures:
                 ("activity", {"android:name": ".On"}, Fixtures.launcher()),
             ]),
         ])  # fmt: skip
-        return AndroidKit.apk({
+        return bytes(AndroidKit.apk({
             "AndroidManifest.xml": AndroidKit.manifest(manifest),
             "resources.arsc": AndroidKit.resources("org.cordon.edge", {"unused": "x"}),
-        })  # fmt: skip
+        }))  # fmt: skip
 
     @staticmethod
     def main(out: Path) -> None:

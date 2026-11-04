@@ -212,11 +212,15 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e .
+      # `adversarial-*` conformance cases are dependency files written to be unparseable (a hostile
+      # DOCTYPE, an entity bomb); reading them is the conformance suite's job, and here they only
+      # made the scan incomplete. Every other conformance case is still read for secrets.
       - run: |
           cordon-scanner scan . --history --detector secrets \
             --baseline cordon-history-baseline.json --fail-on medium \
             --exclude 'corpus/**' --exclude 'bench/**' --exclude '**/intel/data/**' \
             --exclude '**/detect/data/**' --exclude 'build/**' --exclude 'dist/**' \
+            --exclude 'tests/conformance/cases/*/adversarial-*/**' \
             --no-color --format text --format markdown:history.md
       - if: always() && hashFiles('history.md') != ''
         run: cat history.md >> "$GITHUB_STEP_SUMMARY"
