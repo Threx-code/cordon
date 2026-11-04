@@ -403,6 +403,11 @@ markers = [
 
 [tool.coverage.run]
 source = ["src/cordon_scanner"]
+# Every Python process the suite starts is measured: a CLI run as a subprocess, and the scan's
+# workers, forked and ended by SIGKILL or os._exit, which save as they go
+# (tests/sitehooks/sitecustomize.py, CoverageInWorkers). Without these the gate saw 83% of a suite
+# that runs far more, since the ecosystem parsers and detectors run in workers.
+patch = ["subprocess", "fork", "_exit"]
 # Line coverage only. Branch coverage is the expensive half of the measurement
 # by a wide margin -- the same suite takes 418 seconds with it and 52 without --
 # and it is measured on one job, on every push, as a gate rather than as a
