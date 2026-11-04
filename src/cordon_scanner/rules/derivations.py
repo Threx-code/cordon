@@ -34,7 +34,7 @@ from cordon_scanner.foundation.once import OneOff
 
 TABLE: Final = "derivations.json"
 """The 3.12 table's name before the tables were per Python; `PatternDerivations.table()` names them now."""
-SUPPORTED: Final = ("3.11", "3.12", "3.13", "3.14")
+SUPPORTED: Final = ("3.11", "3.12", "3.13", "3.14", "3.15")
 """The Pythons a table is shipped for: one each, since a derivation reads `re`'s parser, which a
 release may change. On one without a table every pattern takes the full safety walk at load
 (measured on 3.14 before its table: a one-file scan 0.9 s against 3.12's 0.7 s)."""

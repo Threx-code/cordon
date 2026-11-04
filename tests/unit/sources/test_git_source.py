@@ -397,7 +397,10 @@ class TestANarrowedScanIsCompleteBesideInstalledCode(GitSourceFixtures):
         (repository / "app.py").write_text("print('changed')\n", encoding="utf-8")
         GitSourceHelpers.run(repository, "add", "app.py")
         for flags in (("--staged",), ("--tracked",)):
-            assert self.scan(repository, *flags)["complete"] is True, flags
+            # What this is about: installed code beside the change leaves no content unread. Whether
+            # the intel is current is a separate fact (a week without a feed), and a subprocess scan
+            # judges the package's real bundle, so the content's completeness is what is asserted.
+            assert self.scan(repository, *flags)["content_complete"] is True, flags
 
     def test_a_staged_file_under_node_modules_still_counts(self, repository) -> None:
         installed = repository / "node_modules" / "evil"

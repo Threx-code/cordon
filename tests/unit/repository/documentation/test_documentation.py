@@ -850,7 +850,7 @@ class TestEveryDocumentedCommandRuns:
         assert (
             len(
                 DocumentedCommandKit.commands(
-                    Path(REPO / "tutorials" / "01-first-scan.md").read_text()
+                    Path(REPO / "tutorials" / "01-first-scan.md").read_text("utf-8")
                 )
             )
             > 3

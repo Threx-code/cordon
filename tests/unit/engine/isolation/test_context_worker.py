@@ -16,6 +16,7 @@ import io
 import json
 import os
 import tarfile
+import warnings
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, ClassVar
@@ -864,7 +865,11 @@ class TestTheParentOpensNoArchive:
         child = multiprocessing.get_context("fork").Process(
             target=SpillKit.die_holding, args=(tmp_path,)
         )
-        child.start()
+        with warnings.catch_warnings():
+            # Python 3.15 warns at a fork while the test runner's thread is alive; the child only
+            # makes a directory and exits, holding no lock that thread could have taken.
+            warnings.filterwarnings("ignore", message=r"This process .* is multi-threaded")
+            child.start()
         child.join(30)
         left = (tmp_path / "left").read_text(encoding="utf-8")
         assert Path(left).exists()  # killed: nothing removed it

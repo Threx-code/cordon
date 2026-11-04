@@ -25,6 +25,7 @@ import os
 import signal
 import socket
 import sys
+import warnings
 from typing import Any
 
 
@@ -155,6 +156,28 @@ class Template:
         return hasattr(os, "fork") and hasattr(socket, "send_fds")
 
     @staticmethod
+    def fork_from_host() -> int:
+        """`os.fork()` of the host, for the template, with Python 3.15's fork-with-threads warning
+        said here instead of raised.
+
+        The template is forked from the host because it must carry the host's state -- detectors a
+        caller passed `Scanner`, rule packs already loaded, patched settings -- which a spawned
+        interpreter would not have (measured: every scan in a threaded host failed that way). 3.15
+        warns whenever another thread is alive at a fork (3.12-3.14 do not): a lock that thread held
+        is copied into the child locked. What runs in the child is only `TemplateMain.serve`, a loop
+        of socket reads, forks and waits over locks CPython re-initialises after a fork (the GIL, the
+        import lock, logging's); it touches no lock a library thread of the host could hold. The
+        workers are forked from the template, single-threaded, so the warning does not apply to them.
+        The CLI forks before it starts a thread and never meets it."""
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=r"This process \(pid=\d+\) is multi-threaded",
+                category=DeprecationWarning,
+            )
+            return os.fork()
+
+    @staticmethod
     def start(worker_main: Any) -> Template | None:
         """The template, forked now: call it before anything scanned is read. `worker_main` is what
         each worker runs with its socket. None where the platform cannot fork."""
@@ -162,7 +185,7 @@ class Template:
             return None
         ours, theirs = socket.socketpair()
         parent = os.getpid()
-        pid = os.fork()
+        pid = Template.fork_from_host()
         if pid == 0:
             ours.close()
             TemplateMain.serve(theirs, worker_main, parent)  # never returns

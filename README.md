@@ -116,7 +116,7 @@ pipx install cordon-scanner                    # or: pip install cordon-scanner
 docker run --rm -v "$PWD:/scan" ghcr.io/threx-code/cordon:<version>
 ```
 
-Python 3.11 to 3.14 on Linux, macOS and Windows, with zero third-party runtime dependencies. The
+Python 3.11 to 3.15 on Linux, macOS and Windows, with zero third-party runtime dependencies. The
 image and the Action are distroless, non-root, signed with `cosign` and carry SLSA provenance; pin
 them by digest, not by tag.
 

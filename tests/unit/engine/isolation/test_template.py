@@ -10,6 +10,7 @@ import signal
 import subprocess
 import sys
 import textwrap
+import threading
 import time
 from pathlib import Path
 
@@ -226,3 +227,23 @@ class TestAChildWhoseParentHasGone:
         )
         assert done.returncode == 0
         assert "alive" in done.stdout
+
+
+class TestAThreadedHostStillForksItsTemplate:
+    """Python 3.15 warns at a fork while another thread is alive; the template is forked from the host
+    because it must carry the host's state, and the warning is said in `Template.fork_from_host`."""
+
+    def test_a_threaded_host_s_scan_is_complete_and_uses_its_own_detectors(self, tmp_path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.foundation.config.settings import Config
+
+        (tmp_path / "a.js").write_text("module.exports = 1;\n", encoding="utf-8")
+        release = threading.Event()
+        other = threading.Thread(target=release.wait, daemon=True)
+        other.start()
+        try:
+            result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        finally:
+            release.set()
+            other.join()
+        assert result.content_complete, [f.rule_id for f in result.findings]
