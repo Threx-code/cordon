@@ -1,6 +1,6 @@
 # 08 · Containers, Kubernetes and infrastructure as code
 
-> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 34 container rules and a policy table of 1,083 controls, over the files that
 describe *where your code runs*. Cordon reads the definitions -- it never

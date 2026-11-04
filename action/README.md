@@ -58,7 +58,7 @@ permissions:
   id-token: write          # the job's own identity; no secret is stored
 steps:
   - uses: actions/checkout@v4
-  - uses: Threx-code/cordon/action@v0.6.0
+  - uses: Threx-code/cordon/action@v0.7.0
     with:
       upload: "true"
       cloud-url: https://core-api.cordonscan.com   # or your organisation's API

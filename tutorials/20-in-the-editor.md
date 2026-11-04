@@ -1,6 +1,6 @@
 # 20 · Findings in the editor
 
-> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 Cordon's findings where you are already looking -- on the line, with the fix beside it -- in VS
 Code and the editors built on it, and in every JetBrains IDE. Both run the `cordon-scanner` you

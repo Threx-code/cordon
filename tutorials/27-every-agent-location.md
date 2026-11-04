@@ -1,6 +1,6 @@
 # 27 · Every AI agent and MCP location
 
-> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 Everything a repository can hand a coding agent, the exact paths Cordon reads for each,
 and every rule that judges them. Rendered from the detector itself, so a location added to

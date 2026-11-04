@@ -309,34 +309,40 @@ The public surface is deliberately small. Everything not listed here is internal
 and may change in a minor release.
 
 ```python
-from cordon_scanner import Scanner, Config, Policy, Severity, Category
+from cordon_scanner import PolicyGate, Scanner
 
-scanner = Scanner.for_target("./repository")
+scanner = Scanner.for_target("./repository")   # the repository's config, under the org ceiling
 result  = scanner.scan("./repository")
 
 for finding in result.findings:
     print(finding.rule_id, finding.severity, finding.location)
 
-if result.violates(Policy.default()):
-    raise SystemExit(1)
+verdict = PolicyGate.evaluate(result, scanner.config.policy)
+if not verdict.passed:
+    raise SystemExit(int(verdict.exit_code))     # 1 findings, 4 incomplete: the CLI's codes
 ```
 
 ### 2.1 Public objects
 
 | Object | Purpose | Stability |
 |---|---|---|
-| `Scanner` | Entry point. `scan()`, `scan_many()`, `inventory()`, `dependencies()` | stable |
-| `Config` | Layered configuration. `from_file`, `from_dict`, `merge`, `explain` | stable |
-| `Policy` | Thresholds, fail rules, suppressions, score weights | stable |
-| `ScanResult` | `findings`, `inventory`, `dependencies`, `stats`, `complete`, `violates()` | stable |
-| `Finding` | Frozen dataclass, § `01-ARCHITECTURE` §3.3 | stable |
-| `Rule` / `RulePack` | Loaded rule metadata | stable |
-| `Detector` | Protocol for third-party detectors | stable |
-| `Reporter` | Protocol for third-party reporters | stable |
-| `Ecosystem` | Protocol for third-party ecosystems | stable |
-| `Repository` / `Project` / `Dependency` / `Package` | Inventory types | stable |
-| `Severity` / `Confidence` / `Category` | Enums | stable |
-| `CordonError` and subclasses | Typed errors mapped to exit codes | stable |
+| `Scanner` | Entry point. `for_target()` (loads configuration as the CLI does), `scan()`, `inventory()` | stable |
+| `Config` | Configuration. `default`, `from_file`, `from_dict`, `with_overrides`, `explain` | stable |
+| `ConfigResolver` | Loads a repository's configuration under an organisation policy, as `for_target` does | stable |
+| `Policy` / `OrgConstraints` | Thresholds, fail rules, suppressions; an organisation's ceiling | stable |
+| `PolicyGate` / `Verdict` | `PolicyGate.evaluate(result, policy)`: `passed`, `exit_code`, `reason`, `triggering` | stable |
+| `ScanResult` | `findings`, `dependencies`, `stats`, `complete`, `content_complete` | stable |
+| `Finding` / `Location` / `Evidence` / `RiskScore` | Frozen dataclasses, § `01-ARCHITECTURE` §3.3 | stable |
+| `Baseline` / `Suppression` | Known findings, and accepted ones with an expiry | stable |
+| `Rule` | Loaded rule metadata | stable |
+| `Repository` / `Project` / `Dependency` / `Hook` / `Capability` | Inventory types | stable |
+| `Severity` / `Confidence` / `Category` / `Scope` / `RedactionMode` / `ExitCode` | Enums | stable |
+| `Limits` / `ScanStats` | The bounds a scan works within; what it read and how long it took | stable |
+| `__version__` / `RULEPACK_VERSION` / `SCHEMA_VERSION` | The engine, rule pack and result schema versions | stable |
+| `CordonError` and subclasses | Typed errors mapped to exit codes: `ConfigError`, `DetectorError`, `LimitExceeded`, `PolicyViolationError`, `RulePackError`, `SourceError`, `UnsafePatternError` | stable |
+
+The list is `cordon_scanner.__all__`, and a test holds this table to it. Anything not in it is
+internal.
 
 ### 2.2 Guarantees
 

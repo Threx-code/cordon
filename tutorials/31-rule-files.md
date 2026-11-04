@@ -1,6 +1,6 @@
 # 31 · Rule files: your own signatures, matched against every file
 
-> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 A security team keeps the signatures it trusts -- its own, its vendor's, a feed's -- in rule files.
 `--rule-file` matches every file of a scan against one, with cordon-rule, Cordon's own rule engine.
@@ -165,3 +165,5 @@ be given instead, and every file of the scan answers from it:
 ```
 cordon-scanner scan . --rule-file rules.yar --rule-module-data androguard=report.json
 ```
+
+Next: **[32 · Putting Cordon to work](32-choose-your-path.md)**.

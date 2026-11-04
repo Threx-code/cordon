@@ -1,6 +1,6 @@
 # 26 · Every command
 
-> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 Every command and every option, rendered from the scanner's own argument parser, so nothing
 here can name a flag that does not exist. `cordon-scanner help <command>` prints the same for

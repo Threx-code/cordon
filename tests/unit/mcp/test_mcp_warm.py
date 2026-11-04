@@ -95,19 +95,25 @@ class TestWarmScanner:
         assert a.exit_code == b.exit_code
         assert WarmKit.findings(a.stdout) == WarmKit.findings(b.stdout)
 
-    def test_a_warm_call_is_faster(self, tmp_path):
+    def test_warm_calls_are_served_by_the_loaded_helper(self, tmp_path):
+        """What makes a warm call fast: it is answered by the helper that already loaded the engine,
+        not by a new interpreter. Asserted directly. It used to compare wall-clock times, best of
+        several, and on a machine running the suite six ways at once the two came out equal
+        (0.87s each, 4 Nov): the comparison measured the machine, not the helper."""
         root = WarmKit.project(tmp_path)
         runner = WarmKit.runner()
         try:
             WarmKit.ready(runner)
-            runner.run(self.args(root), timeout=120, token=CancelToken())
-            warm_seconds = WarmKit.best(runner, self.args(root), runs=3)
+            helper = runner.warm
+            assert helper is not None and helper._process is not None
+            pid, served = helper._process.pid, helper._next
+            for _ in range(3):
+                result = runner.run(self.args(root), timeout=120, token=CancelToken())
+                assert result.exit_code in (0, 1, 4), result
+            assert runner.warm is helper and helper._process.pid == pid  # never restarted
+            assert helper._next == served + 3  # every call went to it
         finally:
             runner.close()
-        # Best of several each: the calls run in child processes, which process_time cannot see,
-        # and a single wall-clock pair on a loaded machine measured the machine, not the helper.
-        cold_seconds = WarmKit.best(WarmKit.runner(CORDON_MCP_WARM="off"), self.args(root), runs=2)
-        assert warm_seconds < cold_seconds, f"warm {warm_seconds:.2f}s, cold {cold_seconds:.2f}s"
 
     def test_the_deadline_ends_the_child(self, tmp_path):
         root = WarmKit.project(tmp_path)

@@ -1,6 +1,6 @@
 # 30 · Cordon for AI agents: the MCP server
 
-> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 Coding agents install packages, load skills and add MCP servers on their own. `cordon-scanner mcp`
 lets them ask Cordon first, over the Model Context Protocol, and get the same verdict the CLI, CI

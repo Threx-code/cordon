@@ -869,3 +869,59 @@ class TestEveryDocumentedCommandRuns:
             )
             > 3
         )
+
+
+class TestThePublicApiTableIsTheContract:
+    """docs/03 §2.1 listed `Scanner.scan_many`, `Scanner.dependencies`, `Config.merge`,
+    `ScanResult.inventory` and `ScanResult.violates()`, none of which exist, and its first example
+    called `violates()`: a caller following it got an AttributeError. The table now names
+    `cordon_scanner.__all__` exactly, and every method it names exists."""
+
+    @staticmethod
+    def _table() -> str:
+        text = (REPO / "docs" / "03-INTERFACES.md").read_text(encoding="utf-8")
+        start = text.index("| Object | Purpose | Stability |")
+        return text[start : text.index("### 2.2", start)]
+
+    def test_every_exported_name_is_in_the_table_and_nothing_else(self) -> None:
+        named = set(re.findall(r"`([A-Za-z_][A-Za-z0-9_]*)`", self._table()))
+        exported = set(cordon_scanner.__all__)
+        methods = {
+            "for_target",
+            "scan",
+            "inventory",
+            "default",
+            "from_file",
+            "from_dict",
+            "with_overrides",
+            "explain",
+            "evaluate",
+            "passed",
+            "exit_code",
+            "reason",
+            "triggering",
+            "findings",
+            "dependencies",
+            "stats",
+            "complete",
+            "content_complete",
+        }
+        assert exported - named == set()
+        assert named - exported - methods == set()
+
+    def test_every_method_the_table_names_exists(self) -> None:
+        from cordon_scanner import Config, PolicyGate, Scanner, ScanResult, Verdict
+
+        for owner, names in (
+            (Scanner, ("for_target", "scan", "inventory")),
+            (Config, ("default", "from_file", "from_dict", "with_overrides", "explain")),
+            (PolicyGate, ("evaluate",)),
+            (Verdict, ("passed",)),
+        ):
+            for name in names:
+                assert hasattr(owner, name), f"{owner.__name__}.{name}"
+        fields = {f.name for f in __import__("dataclasses").fields(ScanResult)} | set(
+            dir(ScanResult)
+        )
+        for name in ("findings", "dependencies", "stats", "complete", "content_complete"):
+            assert name in fields, f"ScanResult.{name}"
