@@ -5,7 +5,6 @@ never kept."""
 from __future__ import annotations
 
 import os
-import time
 from pathlib import Path
 
 import pytest
@@ -114,14 +113,12 @@ class TestThroughTheEngine:
         rules = Kit.write(tmp_path, "rule r { strings: $a = /n[a-z]{2,40}e/ condition: $a }")
         engine = RuleFileEngine(str(rules))
         data = b"x" * 400_000 + b"needle"
-        started = time.process_time()
         first = engine.match(data)
-        cold = time.process_time() - started
-        started = time.process_time()
         second = engine.match(data)
-        warm = time.process_time() - started
+        # The hit is what proves the second match was not run again. A CPU-time comparison used to
+        # sit beside it, and on Windows, whose process clock ticks about every 15 ms, the native
+        # matcher finished both inside one tick: 0.0 < 0.0 failed (4 Nov).
         assert first == second and engine.matches.hits == 1
-        assert warm < cold
 
     def test_no_cache_keeps_nothing(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         from cordon_scanner.detect.binary.rule_files import RuleFileEngine
