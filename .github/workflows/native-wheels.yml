@@ -53,7 +53,7 @@ jobs:
             $python -m venv /tmp/venv-$py
             /tmp/venv-$py/bin/pip install -q --require-hashes -r ci/dev-requirements.txt
             /tmp/venv-$py/bin/pip install -q --no-deps "$wheel"
-            (cd /tmp && /tmp/venv-$py/bin/python -I -c "from cordon_scanner.detect.binary.rule_engine.automaton import Automaton as A; assert A.NATIVE, A.WHY; print(A.WHY)")
+            (cd /tmp && /tmp/venv-$py/bin/python -I -c "from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton as A; assert A.NATIVE, A.WHY; print(A.WHY)")
             /tmp/venv-$py/bin/python -m pytest -q -p no:cacheprovider tests/unit/detect/binary/rule_engine
           done
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -95,7 +95,7 @@ jobs:
           python -m venv /tmp/venv
           /tmp/venv/bin/pip install -q --require-hashes -r ci/dev-requirements.txt
           /tmp/venv/bin/pip install -q --no-deps "$wheel"
-          (cd /tmp && /tmp/venv/bin/python -I -c "from cordon_scanner.detect.binary.rule_engine.automaton import Automaton as A; assert A.NATIVE, A.WHY; print(A.WHY)")
+          (cd /tmp && /tmp/venv/bin/python -I -c "from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton as A; assert A.NATIVE, A.WHY; print(A.WHY)")
           /tmp/venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/detect/binary/rule_engine
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
@@ -134,7 +134,7 @@ jobs:
           python -m venv venv
           venv/Scripts/pip install -q --require-hashes -r ci/dev-requirements.txt
           venv/Scripts/pip install -q --no-deps "$wheel"
-          (cd "$RUNNER_TEMP" && "$GITHUB_WORKSPACE/venv/Scripts/python" -I -c "from cordon_scanner.detect.binary.rule_engine.automaton import Automaton as A; assert A.NATIVE, A.WHY; print(A.WHY)")
+          (cd "$RUNNER_TEMP" && "$GITHUB_WORKSPACE/venv/Scripts/python" -I -c "from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton as A; assert A.NATIVE, A.WHY; print(A.WHY)")
           venv/Scripts/python -m pytest -q -p no:cacheprovider tests/unit/detect/binary/rule_engine
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
