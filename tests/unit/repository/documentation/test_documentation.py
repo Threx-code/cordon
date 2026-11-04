@@ -925,3 +925,44 @@ class TestThePublicApiTableIsTheContract:
         )
         for name in ("findings", "dependencies", "stats", "complete", "content_complete"):
             assert name in fields, f"ScanResult.{name}"
+
+
+class TestEveryDocumentedConfigurationLoads:
+    """Every YAML block in the README, docs/ and tutorials/ that is a configuration or policy
+    (`version: 1` at its top level) is loaded as the scanner loads it: a key the parser does not
+    know, or a value it refuses, fails here instead of in a reader's pipeline. docs/03 said
+    `evidence: none | masked | full` for months; the modes are none, masked and hash_only."""
+
+    @staticmethod
+    def examples() -> list[tuple[str, str, bool]]:
+        found = []
+        for path in [
+            REPO / "README.md",
+            *sorted((REPO / "docs").glob("*.md")),
+            *sorted((REPO / "tutorials").glob("*.md")),
+        ]:
+            for body in re.findall(r"```ya?ml\n(.*?)```", path.read_text(encoding="utf-8"), re.S):
+                if re.search(r"^version: 1\s*$", body, re.M):
+                    policy = bool(re.search(r"^(enforce|issuer|issued):", body, re.M))
+                    found.append((str(path.relative_to(REPO)), body, policy))
+        return found
+
+    def test_there_are_examples_to_check(self) -> None:
+        assert len(self.examples()) >= 8
+
+    def test_each_one_loads(self, tmp_path) -> None:
+        from cordon_scanner.foundation.config.resolver import ConfigResolver
+        from cordon_scanner.foundation.config.settings import Config
+
+        refused = []
+        for i, (where, body, policy) in enumerate(self.examples()):
+            file = tmp_path / f"example-{i}.yaml"
+            file.write_text(body, encoding="utf-8")
+            try:
+                if policy:
+                    ConfigResolver.load_org_policy(str(file), allow_network=False)
+                else:
+                    Config.from_file(file)
+            except Exception as error:  # noqa: BLE001 - every refusal is reported, by document
+                refused.append(f"{where}: {type(error).__name__}: {error}")
+        assert refused == []
