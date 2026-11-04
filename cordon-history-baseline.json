@@ -28,6 +28,7 @@
     "b4d1c1b979c671ee",
     "bf8a51efd07cc209",
     "c6219db277e6d97f",
+    "c6d11aff79b12d0d",
     "cbd1144a7bd31e54",
     "cdc739734f6d7024",
     "e31e0a079192e2bb",
@@ -286,6 +287,12 @@
       "rule": "SECRET.URL.CREDENTIAL.001",
       "path": "tests/unit/detect/secrets/test_review_defects.py",
       "note": "a detector test fixture: fabricated (Xk9m..., S3cr3tPa55, Passw0rd on example hosts; whsec_ over the base64 of an English sentence), or a public third-party string (Firebase's published mock-config key, rclone's built-in value, semgrep-rules' adafruit sample). Reviewed 2026-11-04; nothing to rotate."
+    },
+    {
+      "fingerprint": "c6d11aff79b12d0d",
+      "rule": "SECRET.GENERIC.ASSIGNMENT.001",
+      "path": "src/cordon_scanner/foundation/samples.py",
+      "note": "git history only (61fdfa7c7c0e): the two-line sample semgrep-rules publishes to be detected (adafruit-api-token), once quoted in this docstring and now described instead. Reviewed 2026-11-04; nothing to rotate."
     }
   ]
 }

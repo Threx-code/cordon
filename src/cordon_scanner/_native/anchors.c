@@ -15,6 +15,11 @@
  * needles are matched as given, so the caller passes lowered needles.
  */
 #define PY_SSIZE_T_CLEAN
+#ifdef _WIN32
+/* Python 3.11's cpython/pytime.h names `struct timeval` in a prototype, and on Windows that type is
+   winsock2.h's: without it first, MSVC's C4115 under /WX stopped the 3.11 build. */
+#include <winsock2.h>
+#endif
 #include <Python.h>
 #include <stdint.h>
 #include <string.h>
