@@ -30,16 +30,26 @@ class TextEncoding:
     def decoded(raw: bytes, data: bytes) -> str:
         """`data` (a prefix of `raw`, or all of it) decoded as the whole file is: UTF-8, past a UTF-8
         mark, or UTF-16 where its mark is borne out (`looks_utf16`); permissively, with
-        ``errors="replace"``."""
+        ``errors="replace"``. Windows line endings read as Unix ones (`lines`)."""
         encoding = "utf-8"
         if raw.startswith(b"\xef\xbb\xbf"):
             encoding = "utf-8-sig"
         elif raw.startswith((b"\xff\xfe", b"\xfe\xff")) and TextEncoding.looks_utf16(raw):
             encoding = "utf-16"
         try:
-            return data.decode(encoding, errors="replace")
+            return TextEncoding.lines(data.decode(encoding, errors="replace"))
         except (UnicodeDecodeError, LookupError):
-            return data.decode("latin-1", errors="replace")
+            return TextEncoding.lines(data.decode("latin-1", errors="replace"))
+
+    @staticmethod
+    def lines(text: str) -> str:
+        """Each CRLF read as a space and a newline. The rules are written for `\n`: a Go server's
+        `^package main$` never matched before a `\r`, so a malicious MCP server saved with Windows
+        line endings drew none of the six findings the same file with Unix endings drew (4 Nov), and
+        CRLF was an evasion on every platform. A space keeps the text exactly as long as before, so
+        every character offset, column and byte span mapped from it is unchanged; `[ \t]*$` and
+        `[ \t]*\n`, the rules' way of ending a line, match it."""
+        return text.replace("\r\n", " \n") if "\r\n" in text else text
 
     @staticmethod
     def looks_utf16(raw: bytes) -> bool:

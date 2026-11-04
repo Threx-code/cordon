@@ -73,10 +73,14 @@ class CoverageInWorkers:
         WorkerMain.resolve = staticmethod(resolve)  # type: ignore[method-assign]
 
 
-# Unconditional: coverage starts after this file runs, and a worker forked from this process
-# inherits the patch.
-with contextlib.suppress(ImportError):
-    CoverageInWorkers.install()
+# Only where coverage measures: a child the suite starts under coverage carries
+# COVERAGE_PROCESS_CONFIG (pyproject's patch = subprocess), and the pytest process has imported
+# coverage by the time tests/conftest.py runs this file. Installed everywhere, it imported the
+# scanner's engine at the start of every Python process the suite starts, and the latency job ran
+# past two hours (4 Nov). A worker forked from an installed process inherits the patch.
+if "COVERAGE_PROCESS_CONFIG" in os.environ or "coverage" in sys.modules:
+    with contextlib.suppress(ImportError):
+        CoverageInWorkers.install()
 
 if os.environ.get("CORDON_TEST_INTEL_AT_BUILD") == "1":
     # A Python without the scanner on its path has nothing to judge.

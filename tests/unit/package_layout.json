@@ -782,6 +782,7 @@
   "test_code_carried_as_data.py": "detect/agents",
   "test_delimited.py": "foundation/text",
   "test_comments.py": "foundation/text",
+  "test_line_endings.py": "foundation/text",
   "test_commercial_bench.py": "bench",
   "test_code_features.py": "detect/code",
   "test_memo.py": "detect/code/capability",

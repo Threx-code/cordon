@@ -7,6 +7,7 @@ from __future__ import annotations
 import multiprocessing
 import os
 import signal
+import stat
 import subprocess
 import sys
 import textwrap
@@ -38,9 +39,7 @@ class Planted:
             os._exit(9)
         if kind == "sockets":  # this worker and how many sockets it holds, after a pause so that
             time.sleep(float(arg))  # type: ignore[arg-type]  # the units spread across the workers
-            return os.getpid(), sum(
-                1 for fd in Path("/proc/self/fd").iterdir() if Planted.is_socket(fd)
-            )
+            return os.getpid(), Planted.sockets()
         if kind == "pid":
             return os.getpid()
         if kind == "sleep":
@@ -49,11 +48,22 @@ class Planted:
         raise AssertionError(kind)
 
     @staticmethod
-    def is_socket(fd: Path) -> bool:
-        try:
-            return str(fd.readlink()).startswith("socket:")
-        except OSError:
-            return False
+    def sockets() -> int:
+        """How many sockets this process holds: its descriptors (/proc/self/fd on Linux, /dev/fd on
+        macOS, which has no /proc), each asked of the kernel with fstat. Reading /proc's links alone
+        failed every unit on macOS, so the test there checked nothing (4 Nov). The standard streams
+        (0 to 2) are not counted: they are the host's, inherited by every process, and where the
+        host's stdin is itself a socket (a terminal multiplexer, some CI agents) they are not a
+        channel the template made."""
+        listing = "/proc/self/fd" if Path("/proc/self/fd").is_dir() else "/dev/fd"
+        count = 0
+        for entry in Path(listing).iterdir():
+            try:
+                fd = int(entry.name)
+                count += fd > 2 and stat.S_ISSOCK(os.fstat(fd).st_mode)
+            except (OSError, ValueError):
+                continue  # the listing's own descriptor, closed once listed
+        return count
 
 
 class Harness:
@@ -161,6 +171,10 @@ class TestTheTemplateLeavesNothingBehind(TemplateFixtures):
             parent.wait()
             parent.stdout.close()  # type: ignore[union-attr]
 
+    @pytest.mark.skipif(
+        not Path("/proc/self/status").exists(),
+        reason="only Linux shows another process's ignored signals (/proc); macOS's ps has no such field",
+    )
     def test_an_interrupt_is_the_parent_s(self, template) -> None:
         sock, pid = template.fork_worker()
         try:
