@@ -36,7 +36,7 @@ Three layers, from most local to most binding:
 
 ```
    baseline create   -o base.json        snapshot the current findings
-   baseline compare  ... base.json       report only what's outside the baseline
+   baseline compare  . base.json         report only what's outside the baseline
 ```
 
 ```
@@ -46,6 +46,9 @@ Three layers, from most local to most binding:
    │ catching the 401st. The baseline draws the line at "today".  │
    └──────────────────────────────────────────────────────────────┘
 ```
+
+Tutorial 39 builds all three into an organisation rollout: a policy pinned by digest, a
+baseline on day 0, and suppressions that name an approver and expire.
 
 ## Evidence redaction — safe to share a report
 

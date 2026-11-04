@@ -26,7 +26,7 @@ intel is refreshed with the bundle installed below.
 ```
    bundle create  -o cordon-bundle.tar  <source-dir>    build a bundle from a dir
    bundle verify     cordon-bundle.tar                   check it against its manifest
-   bundle install    cordon-bundle.tar                   verify, THEN extract
+   bundle install    cordon-bundle.tar --into DIR        verify, THEN extract into DIR
 ```
 
 ```
@@ -40,15 +40,23 @@ intel is refreshed with the bundle installed below.
 
 ## Keeping intel current without a network
 
+Intel older than a week makes a scan incomplete, so an isolated machine needs fresh intel
+carried to it, verified on arrival:
+
 ```
-   internet host:   cordon-scanner advisories sync            (build the data)
-        │           tar it up, carry it across the gap
+   internet host:   the release's two assets, cordon-advisories.tar.gz and its .sig
+        │           carry the folder across the gap
         ▼
-   air-gapped host: cordon-scanner scan . --advisories path/to/advisories/
+   air-gapped host: cordon-scanner advisories sync --bundle /media/usb/cordon-0.7.0/
+                    (the Ed25519 signature is checked against the key pinned in the
+                    scanner before a single byte is unpacked)
 ```
 
-Or use a signed advisory bundle (tutorial 09) so the secure side verifies an
-Ed25519 signature before trusting a single byte.
+A site with an internal HTTPS mirror can mirror Cordon's signed feed instead and set
+`CORDON_FEED_URL`; every byte is still verified against the pinned root. Do not copy one
+machine's synced cache to another: it is sealed by the install that wrote it, and copied files
+are reported as `OPERATIONAL.ADVISORY.TAMPERED` and ignored. Tutorial 40 is the full procedure,
+the hash-pinned install included.
 
 ## Determinism — the air-gap dividend
 
