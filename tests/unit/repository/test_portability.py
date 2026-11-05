@@ -97,6 +97,18 @@ class TestEachIncidentIsCaught:
         assert Checks.found(skipped) == []
         assert Checks.found("os.kill(pid, signal.SIGKILL)\n", "src/x.py") == []
 
+    def test_a_descriptor_opened_as_text_on_windows(self) -> None:
+        written = "def w(p):\n    fd = os.open(p, os.O_WRONLY | os.O_CREAT, 0o600)\n"
+        assert Checks.found(written, "src/x.py") == ["os-open-text"]
+        binary = 'def w(p):\n    fd = os.open(p, os.O_WRONLY | getattr(os, "O_BINARY", 0))\n'
+        assert Checks.found(binary, "src/x.py") == []
+        named = (
+            'def w(p):\n    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)\n'
+            "    fd = os.open(p, flags)\n"
+        )
+        assert Checks.found(named, "src/x.py") == []
+        assert Checks.found(written, "tests/unit/test_x.py") == []  # shipped code only
+
     def test_an_invisible_character_in_shipped_source(self) -> None:
         # Built at run time: this file must not hold the character it tests for.
         line = f'PATTERN = "[{chr(0x202A)}-{chr(0x202E)}]"\n'

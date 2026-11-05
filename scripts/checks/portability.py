@@ -71,6 +71,11 @@ CHECKS = {
         "A `^---` document break whose pattern does not allow `\\r` before the line end: a "
         "CRLF checkout is read as one document (pnpm 10 lockfiles, Kubernetes manifests)."
     ),
+    "os-open-text": (
+        "`os.open` without `O_BINARY`: on Windows the descriptor is in text mode, so every write turns "
+        "`\\n` into `\\r\\n` and every read stops at the first 0x1A. A 32-byte cache key was written "
+        "as 33 one install in eight, and every entry signed with it failed on the next scan."
+    ),
     "kill-zero": (
         "`os.kill(pid, 0)` where Windows runs it: signal 0 is CTRL_C_EVENT there, so it sends "
         "Ctrl+C to every process on the console (every Windows test job ended in a "
@@ -154,9 +159,54 @@ class Visitor(ast.NodeVisitor):
             and node.args[0].func.attr == "relative_to"
         ):
             self.add("native-path-text", node, "`str(...relative_to(...))`; use `.as_posix()`")
+        if self._os_open_without_binary(node):
+            self.add("os-open-text", node, "`os.open` without `O_BINARY`")
         if self._kill_zero(node) and not self._windows_returns_first(node):
             self.add("kill-zero", node, "`os.kill(pid, 0)` is Ctrl+C on Windows")
         self.generic_visit(node)
+
+    def _os_open_without_binary(self, node: ast.Call) -> bool:
+        """`os.open(path, flags, ...)` in shipped code whose flags name no `O_BINARY`, written in the
+        call or in a `flags` variable assigned in the same function."""
+        if (
+            ast.unparse(node.func) != "os.open"
+            or not self.path.startswith("src/")
+            or len(node.args) < 2
+        ):
+            return False
+        flags = node.args[1]
+        if "O_BINARY" in ast.unparse(flags):
+            return False
+        if isinstance(flags, ast.Name):
+            current: ast.AST | None = node
+            while current is not None and not isinstance(
+                current, (ast.FunctionDef, ast.AsyncFunctionDef)
+            ):
+                current = self.parents.get(id(current))
+            if current is not None:
+                for assign in ast.walk(current):
+                    if (
+                        isinstance(assign, ast.Assign)
+                        and any(getattr(t, "id", None) == flags.id for t in assign.targets)
+                        and "O_BINARY" in ast.unparse(assign.value)
+                    ):
+                        return False
+                    if (
+                        isinstance(assign, ast.Return)
+                        and assign.value is not None
+                        and "O_BINARY" in ast.unparse(assign.value)
+                    ):
+                        return False
+            # A flags value made by a helper (`FileContent._open_flags()`): the helper is checked.
+            for assign in ast.walk(current) if current is not None else ():
+                if (
+                    isinstance(assign, ast.Assign)
+                    and any(getattr(t, "id", None) == flags.id for t in assign.targets)
+                    and isinstance(assign.value, ast.Call)
+                    and "flags" in ast.unparse(assign.value.func).lower()
+                ):
+                    return False
+        return True
 
     @staticmethod
     def _kill_zero(node: ast.Call) -> bool:

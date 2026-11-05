@@ -121,7 +121,7 @@ class TemplateMain:
         listing = Path("/proc/self/fd") if Path("/proc/self/fd").is_dir() else Path("/dev/fd")
         try:
             names = [entry.name for entry in listing.iterdir()]
-            null = os.open(os.devnull, os.O_RDWR)
+            null = os.open(os.devnull, os.O_RDWR | getattr(os, "O_BINARY", 0))
         except OSError:
             return
         try:

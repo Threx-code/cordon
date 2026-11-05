@@ -405,7 +405,11 @@ class Server:
         try:
             with self.audit_lock:
                 # Created owner-only: what was checked, and when, is nobody else's to read.
-                descriptor = os.open(self.audit, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+                descriptor = os.open(
+                    self.audit,
+                    os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_BINARY", 0),
+                    0o600,
+                )
                 with os.fdopen(descriptor, "a", encoding="utf-8") as handle:
                     handle.write(json.dumps(entry) + "\n")
         except OSError as exc:

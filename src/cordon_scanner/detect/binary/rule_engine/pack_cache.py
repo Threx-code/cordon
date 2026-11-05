@@ -74,7 +74,9 @@ class PackCache:
             pass
         try:
             self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
-            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            fd = os.open(
+                path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600
+            )
             material = secrets.token_bytes(32)
             with os.fdopen(fd, "wb") as handle:
                 handle.write(material)

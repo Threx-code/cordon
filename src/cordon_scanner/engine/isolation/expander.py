@@ -81,7 +81,13 @@ class SpillDirectory:
         lives: a killed scan's lock is free the moment it dies, whatever the directory's age."""
         if not FileLocks.available():
             return None
-        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        flags = (
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_BINARY", 0)
+        )
         fd = os.open(lock, flags, 0o600)
         # A file this process just created, in a directory no sweep judges until it is ready: no
         # other process can hold it. If one does all the same, the directory is not this scan's.
@@ -99,7 +105,10 @@ class SpillDirectory:
         if not (entry / SpillDirectory.READY).exists():
             return age > SpillDirectory.STALE_SECONDS  # still being made, or made before 0.7.0
         try:
-            fd = os.open(entry / SpillDirectory.LOCK, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            fd = os.open(
+                entry / SpillDirectory.LOCK,
+                os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0),
+            )
         except OSError:
             return age > SpillDirectory.STALE_SECONDS
         try:
@@ -150,7 +159,13 @@ class ExpandWork:
         if isinstance(data, SpilledBytes):
             shutil.move(data.path, target)
             return [name, data.size, SpilledMember.digest(target), len(data)]
-        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        flags = (
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_BINARY", 0)
+        )
         with os.fdopen(os.open(target, flags, 0o600), "wb") as fh:
             fh.write(data)
         return [name, len(data), hashlib.sha256(data).hexdigest(), -1]
@@ -403,7 +418,7 @@ class ArchiveExpander:
         `SpilledBytes` the reader made, whose file this process now owns and removes."""
         from cordon_scanner.foundation.files.spill import SpilledBytes
 
-        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
         try:
             fd = os.open(path, flags)
         except OSError as exc:

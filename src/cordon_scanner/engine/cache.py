@@ -755,7 +755,9 @@ class ScanCache:
             with contextlib.suppress(OSError):
                 self.directory.chmod(0o700)
             material = secrets.token_bytes(32)
-            handle = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            handle = os.open(
+                str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600
+            )
             try:
                 os.write(handle, material)
             finally:

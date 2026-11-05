@@ -192,9 +192,9 @@ class WarmHelper:
         """In the forked child: become the call's own session and run the scanner."""
         os.setsid()
         os.chdir(request["cwd"])
-        null = os.open(os.devnull, os.O_RDONLY)
-        out = os.open(request["out"], os.O_WRONLY | os.O_TRUNC)
-        err = os.open(request["err"], os.O_WRONLY | os.O_TRUNC)
+        null = os.open(os.devnull, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+        out = os.open(request["out"], os.O_WRONLY | os.O_TRUNC | getattr(os, "O_BINARY", 0))
+        err = os.open(request["err"], os.O_WRONLY | os.O_TRUNC | getattr(os, "O_BINARY", 0))
         os.dup2(null, 0)
         os.dup2(out, 1)
         os.dup2(err, 2)

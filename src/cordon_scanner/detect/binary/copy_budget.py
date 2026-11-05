@@ -97,7 +97,7 @@ class CopyBudget:
 
     def _open(self, name: str) -> int:
         assert self.directory is not None  # noqa: S101 - checked in `hold`
-        flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+        flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
         return os.open(Path(self.directory) / name, flags, 0o600)
 
     @staticmethod

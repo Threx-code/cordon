@@ -159,7 +159,9 @@ class PackageTarget:
         try:
             directory.chmod(stat.S_IRWXU)
             path = directory / filename
-            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            descriptor = os.open(
+                path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600
+            )
             with os.fdopen(descriptor, "wb") as handle:
                 handle.write(archive.data)
             yield path
@@ -185,7 +187,9 @@ class PackageTarget:
         try:
             directory.chmod(stat.S_IRWXU)
             path = directory / "image.tar"
-            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            descriptor = os.open(
+                path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600
+            )
             with os.fdopen(descriptor, "wb") as handle:
                 handle.write(data)
             yield path
