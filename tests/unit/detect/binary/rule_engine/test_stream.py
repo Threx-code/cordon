@@ -42,7 +42,9 @@ LENGTHS = st.sampled_from([1, 2, 15, 16, 17, 64, REACH - 1, REACH, REACH + 1, 2 
 DATA = st.lists(
     st.tuples(st.sampled_from(list(b"ab \t1\x00A")), LENGTHS), min_size=1, max_size=12
 ).map(lambda runs: b"".join(bytes([b]) * n for b, n in runs))
-WINDOWS = st.sampled_from([1, 97, REACH - 1, REACH, REACH + 1, 3 * REACH])
+WINDOW_SIZES = [1, 97, REACH - 1, REACH, REACH + 1, 3 * REACH]
+"""Each its own test of EXAMPLES / 6 cases, so the cases run side by side across the suite's
+workers: as one test of EXAMPLES cases it ran on one worker for 148 s (5 Nov)."""
 
 
 class Both:
@@ -72,7 +74,12 @@ class Both:
 
 
 class TestTheSameMatches:
-    @settings(max_examples=EXAMPLES, deadline=None, suppress_health_check=list(HealthCheck))
+    @pytest.mark.parametrize("window", WINDOW_SIZES)
+    @settings(
+        max_examples=max(1, EXAMPLES // len(WINDOW_SIZES)),
+        deadline=None,
+        suppress_health_check=list(HealthCheck),
+    )
     @given(
         strings=st.lists(
             st.one_of(st.sampled_from(CHAINS), st.sampled_from(OTHERS)), min_size=1, max_size=3
@@ -80,11 +87,10 @@ class TestTheSameMatches:
         twice=st.booleans(),
         folded=st.booleans(),
         data=DATA,
-        window=WINDOWS,
         hits=st.sampled_from([None, 1, 7, 100, 1000]),
     )
     def test_streamed_and_whole_agree(
-        self, strings: list[str], twice: bool, folded: bool, data: bytes, window: int,
+        self, window: int, strings: list[str], twice: bool, folded: bool, data: bytes,
         hits: int | None, monkeypatch: pytest.MonkeyPatch,
     ) -> None:  # fmt: skip
         if folded:
@@ -93,6 +99,11 @@ class TestTheSameMatches:
             strings = [*strings, strings[0]]
         if hits is not None:
             monkeypatch.setattr(scan, "MAX_HITS", hits)
+        if window == 1:
+            # A boundary at every byte: 512 bytes cross 511 of them. The long runs are compared at
+            # 97, REACH - 1, REACH, REACH + 1 and 3 * REACH; at one byte a window a 25 KB input took
+            # 20.7 s against 0.4 s at the others, and this test 776 s of the suite's 5,422 (5 Nov).
+            data = data[:512]
         Both.agree(strings, data, window, monkeypatch)
 
 
