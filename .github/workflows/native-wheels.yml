@@ -89,7 +89,10 @@ jobs:
         python: ["3.11", "3.12", "3.13", "3.14", "3.15"]
         include:
           - arch: arm64
-            runner: macos-14
+            # macos-14 is retired: GitHub refuses the job ("The configuration
+            # 'macos-14-arm64-us-default' is not supported", 5 Nov). The wheel still targets macOS
+            # 11 and later through MACOSX_DEPLOYMENT_TARGET below, whatever the runner's own version.
+            runner: macos-15
           - arch: x86_64
             runner: macos-15-intel
     steps:

@@ -6,7 +6,7 @@
 # guarantees is that such a change cannot be silent: it must appear as a
 # diff. Code-owner rules on this path are what put a human on that diff.
 3c8653e8c13f5f4df839426261b0d9128b825eb2cf7e8588883bbe5f1883c4fe  .github/workflows/checks.yml
-d5764688ea576b2a4bb983aa87e29e901f7cc54291d30c845fc228821fa9f5cf  .github/workflows/native-wheels.yml
+9b9b70b7bd5f10a2db750c4e7cca9ba6402a52b237dc836cbda5f68ce04b4b55  .github/workflows/native-wheels.yml
 8f18558b9b0f22dbafd357a754153b9bfa1a062c225d31e6e968faf7174b4800  .github/workflows/refresh-advisories.yml
 780f65837105fbf623728041037e989b8e1fcc72e8833fae7165fcc1b1fc7259  .github/workflows/refresh-iac-policies.yml
 5558889702d2cb8eeccdc749ca71523049258ceec6370c900cfe88e6891ab05f  .github/workflows/refresh-intel.yml
