@@ -24,10 +24,11 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.core.cache import KEY_NAME, ScanCache
-from cordon_scanner.core.config import Config, ConfigResolver
-from cordon_scanner.core.errors import ConfigError
-from cordon_scanner.core.models import Severity
+from cordon_scanner.engine.cache import KEY_NAME, ScanCache
+from cordon_scanner.foundation.config.resolver import ConfigResolver
+from cordon_scanner.foundation.config.settings import Config
+from cordon_scanner.foundation.errors import ConfigError
+from cordon_scanner.foundation.models import Severity
 
 PAYLOAD_JSON = (
     '{"name":"x","version":"1.0.0","scripts":'
@@ -103,7 +104,7 @@ class TestC1GateCannotBeEmptiedByTheTarget:
         (root / "cordon.yaml").write_text(
             "version: 1\npolicy:\n  fail_on: [low]\n", encoding="utf-8"
         )
-        from cordon_scanner.core.models import Category
+        from cordon_scanner.foundation.models import Category
 
         config = ConfigResolver.resolve(root=root)
         assert Category.MALICIOUS in config.policy.fail_on_categories
@@ -223,13 +224,38 @@ class TestC3PluginTrustIsAnchoredOnLocation:
     def test_the_built_ins_still_load(self) -> None:
         """A location check that rejects everything would be a working fix and a
         broken product."""
-        from cordon_scanner.core.registry import Registry
+        from cordon_scanner.engine.registry import Registry
 
         detectors = Registry().detectors()
         assert {d.id for d in detectors} >= {"capability", "manifest", "secrets"}
 
+    def test_a_scan_without_its_built_ins_refuses(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A source tree on PYTHONPATH over another install had every built-in skipped as not ours,
+        and the scan ran with no detectors: it would have reported a package clean."""
+        from cordon_scanner.engine.registry import Registry
+        from cordon_scanner.foundation.errors import ConfigError
+
+        monkeypatch.setattr(Registry, "_is_ours", classmethod(lambda cls, entry, provider: False))
+        with pytest.raises(ConfigError, match="built-in detector"):
+            Registry().detectors()
+
+    def test_one_missing_built_in_is_named(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from cordon_scanner.engine.registry import Registry
+        from cordon_scanner.foundation.errors import ConfigError
+
+        ours = Registry._is_ours
+
+        def all_but_secrets(cls: type[Registry], entry: object, provider: str) -> bool:
+            return getattr(entry, "name", "") != "secrets" and ours(entry, provider)
+
+        monkeypatch.setattr(Registry, "_is_ours", classmethod(all_but_secrets))
+        with pytest.raises(
+            ConfigError, match=r"1 built-in detector\(s\) could not be loaded: secrets"
+        ):
+            Registry().detectors()
+
     def test_trust_is_not_decided_by_metadata_alone(self) -> None:
-        from cordon_scanner.core.registry import DISTRIBUTION, Registry
+        from cordon_scanner.engine.registry import DISTRIBUTION, Registry
 
         class Claim:
             name = "evilmod"

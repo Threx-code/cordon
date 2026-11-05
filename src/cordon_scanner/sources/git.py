@@ -31,15 +31,15 @@ from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
-from cordon_scanner.core.content import FileContent, Skipped, SkipReason
-from cordon_scanner.core.errors import SourceError
-from cordon_scanner.core.walker import WalkEntry
+from cordon_scanner.foundation.content import FileContent, Skipped, SkipReason
+from cordon_scanner.foundation.errors import SourceError
+from cordon_scanner.foundation.files.walk import WalkEntry
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
 
-    from cordon_scanner.core.limits import Limits
-    from cordon_scanner.core.walker import WalkEntry, Walker
+    from cordon_scanner.foundation.files.walk import WalkEntry, Walker
+    from cordon_scanner.foundation.limits import Limits
 
 GIT_TIMEOUT = 30.0
 
@@ -121,6 +121,30 @@ GIT_ENVIRONMENT: dict[str, str] = {
     # is stated absolutely and should be true absolutely rather than by
     # coincidence of which subcommands are currently called.
 }
+"""Environment overrides applied to every invocation.
+
+Deliberately short. An earlier version also set `GIT_CONFIG_SYSTEM`,
+`GIT_CONFIG_GLOBAL`, `GIT_CONFIG_NOSYSTEM` and `GIT_ATTR_NOSYSTEM` to suppress
+the machine's own git configuration, on the reasoning that a scan should not
+depend on the machine it runs on.
+
+Those are removed, for two reasons.
+
+The first is that they defended against nothing. The attacker in this threat
+model controls the *scanned repository*, which means `.git/config` and
+`.gitattributes` inside the tree. It does not control the user's global config
+or the system config -- anyone who can write those already runs code as the
+user. Every dangerous key is neutralised by the `-c` arguments in `HARDENING`
+instead, which git ranks above every configuration file, repository-local
+included. That is the control; this was decoration on top of it.
+
+The second is that the decoration broke something real. Git for Windows sets
+`core.autocrlf=true` in its system configuration. Suppress that and git compares
+a CRLF working tree against LF blobs and calls every text file modified, so
+`--git-diff` and `--tracked` would have reported every text file in the
+repository as changed on every Windows machine. A control that provides no
+protection and silently corrupts the result on one platform is worse than
+nothing, because its name suggests it is earning its place."""
 
 GIT_UNSET: tuple[str, ...] = (
     "GIT_INDEX_FILE",
@@ -154,30 +178,6 @@ Removed rather than set empty. An empty `GIT_DIR` is a value git acts on, not an
 absence -- setting these to `""` broke every git invocation in the suite, which
 is how I found out.
 """
-"""Environment overrides applied to every invocation.
-
-Deliberately short. An earlier version also set `GIT_CONFIG_SYSTEM`,
-`GIT_CONFIG_GLOBAL`, `GIT_CONFIG_NOSYSTEM` and `GIT_ATTR_NOSYSTEM` to suppress
-the machine's own git configuration, on the reasoning that a scan should not
-depend on the machine it runs on.
-
-Those are removed, for two reasons.
-
-The first is that they defended against nothing. The attacker in this threat
-model controls the *scanned repository*, which means `.git/config` and
-`.gitattributes` inside the tree. It does not control the user's global config
-or the system config -- anyone who can write those already runs code as the
-user. Every dangerous key is neutralised by the `-c` arguments in `HARDENING`
-instead, which git ranks above every configuration file, repository-local
-included. That is the control; this was decoration on top of it.
-
-The second is that the decoration broke something real. Git for Windows sets
-`core.autocrlf=true` in its system configuration. Suppress that and git compares
-a CRLF working tree against LF blobs and calls every text file modified, so
-`--git-diff` and `--tracked` would have reported every text file in the
-repository as changed on every Windows machine. A control that provides no
-protection and silently corrupts the result on one platform is worse than
-nothing, because its name suggests it is earning its place."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -331,6 +331,10 @@ class GitRepository:
         return completed.stdout.decode("utf-8", errors="replace")
 
     # -- Discovery -------------------------------------------------------
+
+    def tree(self, rev: str) -> GitTreeSource:
+        """The files at `rev`, read from git's objects, never from the working tree."""
+        return GitTreeSource(self, rev)
 
     @classmethod
     def discover(cls, path: str | Path) -> GitInfo | None:

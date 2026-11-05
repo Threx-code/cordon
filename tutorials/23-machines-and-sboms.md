@@ -1,6 +1,6 @@
 # 23 · Machines and vendor SBOMs
 
-> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 Not everything you run lives in a repository. A laptop or a CI runner has packages
 installed outside any project, and software bought from a vendor arrives as a bill of

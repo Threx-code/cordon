@@ -1,0 +1,11 @@
+# Bun's binary lockfile, format 2, written by Bun for its postgres bench (NOTICE.md): three
+# database clients and their 20 transitive packages.
+kinds: [real-world, valid]
+covers:
+  - file:bun.lockb
+  - npm.bun
+dependencies:
+  - {name: mariadb, resolved_version: 3.4.5, direct: true}
+  - {name: mysql2, resolved_version: 3.14.3, direct: true}
+  - {name: postgres, resolved_version: 3.4.7, direct: true}
+  - {name: "@types/bun", resolved_version: 1.1.18, dependency_type: dev, direct: true}

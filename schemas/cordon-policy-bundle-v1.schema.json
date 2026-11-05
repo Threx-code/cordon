@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://cordon.dev/schemas/cordon-policy-bundle-v1.schema.json",
+  "$id": "https://cordonscan.com/schemas/cordon-policy-bundle-v1.schema.json",
   "title": "Cordon organisation policy bundle v1 (K3)",
   "description": "Response of GET /v1/policy/bundle. `payload` is base64 of canonical JSON (the `bundle` definition); each signature is Ed25519 over the payload bytes, by a key the client pinned at sign-in (the `policy_keys` map in the token response). The client refuses a bundle with no signature under a pinned key, one naming another org, one older than its cached copy, and one past `expires_at`.",
   "type": "object",

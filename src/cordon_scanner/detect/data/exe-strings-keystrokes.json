@@ -1,0 +1,8 @@
+[
+  "CGEventTapCreate",
+  "GetAsyncKeyState",
+  "GetKeyboardState",
+  "SetWindowsHookExA",
+  "SetWindowsHookExW",
+  "XRecordEnableContext"
+]

@@ -12,7 +12,7 @@ Every subcommand's `--help` keeps argparse's layout and gains colour for its hea
 values; argparse's errors are coloured the same way.
 
 Colour is the console's terminal palette, exact in 24-bit colour and chosen 256-colour stand-ins
-elsewhere, and it follows the rules the scan report follows (`CommandLine._use_color`):
+elsewhere, and it follows the rules the scan report follows (`ScanOutput.use_color`):
 `NO_COLOR` turns it off, `FORCE_COLOR` turns it on, and otherwise it is on only when the stream
 is a terminal. A piped or captured screen carries no escape sequence and no block letters.
 
@@ -338,7 +338,7 @@ class Environment:
         for label, probe in probes:
             try:
                 value, state = probe()
-            except Exception:
+            except Exception:  # noqa: BLE001
                 value, state = "unavailable", "warn"
             out.append(Fact(label, value, state))
         return out
@@ -357,7 +357,7 @@ class Environment:
 
     @classmethod
     def _intel(cls) -> tuple[str, str]:
-        from cordon_scanner.intel import feed
+        from cordon_scanner.intel.malware import feed
 
         status = feed.FeedClient.status(use_feed=False, max_age=None)
         source = "bundled" if status.source == "package" else status.source
@@ -367,8 +367,8 @@ class Environment:
         return f"{source} · {age}", "ok"
 
     def _policy(self) -> tuple[str, str]:
-        from cordon_scanner.core.config import CONFIG_FILENAMES, Config
-        from cordon_scanner.core.errors import CordonError
+        from cordon_scanner.foundation.config.settings import CONFIG_FILENAMES, Config
+        from cordon_scanner.foundation.errors import CordonError
 
         name = next((n for n in CONFIG_FILENAMES if (self.cwd / n).is_file()), None)
         if name is None:
@@ -408,7 +408,7 @@ class Environment:
 
     @staticmethod
     def _runs_cordon(text: str) -> bool:
-        from cordon_scanner.core.guard import SHIM_MARKER
+        from cordon_scanner.engine.guard import SHIM_MARKER
 
         return SHIM_MARKER in text or "cordon-scanner" in text or "cordon-scan" in text
 
@@ -493,8 +493,9 @@ class HelpScreen:
             "SCAN AND INSPECT",
             ("scan", "clone", "pull", "inventory", "deps", "review", "sbom", "report"),
         ),
-        ("POLICY", ("rules", "config", "baseline", "suppress", "guard")),
+        ("POLICY", ("rules", "config", "baseline", "suppress", "guard", "verify", "notify")),
         ("THREAT INTEL", ("advisories", "intel", "bundle")),
+        ("AI AGENTS", ("mcp",)),
         ("CORDON CLOUD", ("login", "logout", "whoami", "runner", "agent")),
         ("GENERAL", ("help", "completion")),
     )
@@ -515,6 +516,8 @@ class HelpScreen:
         "baseline": "record findings, adopt gradually",
         "suppress": "reviewed, expiring exceptions",
         "guard": "git hooks and self-integrity",
+        "verify": "check this install is genuine",
+        "notify": "test the notification channels",
         "advisories": "the advisory database",
         "intel": "the signed threat-intel feed",
         "bundle": "offline bundle for air-gapped use",
@@ -523,6 +526,7 @@ class HelpScreen:
         "whoami": "the Cordon Cloud sign-in in use",
         "runner": "run Cloud jobs in your network",
         "agent": "AI agents and MCP servers, for MDM",
+        "mcp": "serve Cordon to AI agents (MCP)",
         "help": "this screen, or one command's help",
         "completion": "shell completion script",
     }
@@ -797,7 +801,7 @@ class HelpCommand:
 
     @staticmethod
     def run(args: argparse.Namespace, *, parser: ColourArgumentParser) -> int:
-        from cordon_scanner.core.errors import ExitCode
+        from cordon_scanner.foundation.errors import ExitCode
 
         topic: list[str] = list(getattr(args, "topic", None) or [])
         current = parser
@@ -834,6 +838,7 @@ class GroupHelp:
         "advisories": "advisories_command",
         "agent": "agent_command",
         "intel": "intel_command",
+        "notify": "notify_command",
         "sbom": "sbom_command",
     }
     """Groups with no sensible default action. Before this, a bare `config`, `report` or

@@ -1,0 +1,17 @@
+Verifies
+Verified using v1 scheme (JAR signing): false
+Verified using v2 scheme (APK Signature Scheme v2): true
+Verified using v3 scheme (APK Signature Scheme v3): false
+Verified using v3.1 scheme (APK Signature Scheme v3.1): false
+Verified using v4 scheme (APK Signature Scheme v4): false
+Verified for SourceStamp: false
+Number of signers: 1
+Signer #1 certificate DN: CN=Jeffin Vinod K, OU=Mobile, O=API Flow, C=IN
+Signer #1 certificate SHA-256 digest: 0e85e2ec2e3da573c54fe10e49bedf762980dfb074f05a03d08f50a328815c6a
+Signer #1 certificate SHA-1 digest: c4c0e11f09838ea33c6343958db72020e971ee98
+Signer #1 certificate MD5 digest: 6a5901f758be98309e2d0bdb5c3ac36b
+Signer #1 key algorithm: RSA
+Signer #1 key size (bits): 4096
+Signer #1 public key SHA-256 digest: 042e7223d5292cf1b91388d8d632ba1a443312f10731f50f15d528043bace130
+Signer #1 public key SHA-1 digest: 8c63e0587edf7af93396da492fb2aedb992cffeb
+Signer #1 public key MD5 digest: b04fe976df59909c131c48fddaf06ccb

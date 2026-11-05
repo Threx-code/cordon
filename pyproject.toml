@@ -1,45 +1,124 @@
 [build-system]
-# Floor only. The release installs an exact, hash-pinned toolchain from
-# requirements-build.txt and builds with --no-isolation, so this range is
-# what an ordinary `pip install .` uses rather than what ships a release.
-requires = ["setuptools>=77"]
-build-backend = "setuptools.build_meta"
+# Cordon's own backend (scripts/backend/cordon_build.py): the standard library alone, so building
+# the wheel, the sdist or an editable install runs no third-party code. The release still drives
+# it through the hash-pinned `build` frontend (requirements-build.txt) with --no-isolation.
+requires = []
+build-backend = "cordon_build"
+backend-path = ["scripts/backend"]
 
 [project]
 name = "cordon-scanner"
 dynamic = ["version"]
-description = "Language-agnostic software supply-chain security scanner. Detects malicious packages, suspicious install-time behaviour, secrets and dependency risk across any ecosystem."
+description = "Software supply-chain and AI-agent security scanner. Detects malicious packages, suspicious install-time behaviour, poisoned agent skills and MCP servers, secrets, vulnerable dependencies, container and infrastructure-as-code risk, across ecosystems, offline."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 authors = [
     { name = "Oluwatosin Amokeodo", email = "oluwatosin.amokeodo@gmail.com" },
 ]
+maintainers = [
+    { name = "Oluwatosin Amokeodo", email = "oluwatosin.amokeodo@gmail.com" },
+]
 keywords = [
     "security",
     "supply-chain",
+    "supply-chain-security",
+    "software-supply-chain",
     "malware",
+    "malware-detection",
+    "malicious-packages",
     "sast",
+    "sca",
+    "software-composition-analysis",
     "sarif",
     "dependency-scanning",
+    "dependency-confusion",
+    "typosquatting",
+    "vulnerability-scanner",
+    "cve",
+    "osv",
     "sbom",
+    "cyclonedx",
+    "spdx",
+    "vex",
+    "openvex",
+    "license-compliance",
+    "slsa",
+    "sigstore",
+    "provenance",
+    "attestation",
+    "in-toto",
+    "dsse",
+    "rekor",
+    "openpgp",
+    "code-signing",
+    "secrets",
+    "secret-scanning",
     "static-analysis",
+    "npm",
+    "pypi",
+    "cargo",
+    "maven",
+    "gradle",
+    "go-modules",
+    "rubygems",
+    "nuget",
+    "composer",
+    "homebrew",
+    "helm",
+    "ansible",
+    "docker",
+    "oci-images",
+    "vscode-extensions",
+    "github-actions",
+    "container-security",
+    "infrastructure-as-code",
+    "terraform",
+    "kubernetes",
+    "mcp",
+    "ai-agents",
+    "agent-security",
+    "agent-skills",
+    "ai-bom",
+    "llm-security",
+    "prompt-injection",
+    "model-security",
+    "pre-commit",
+    "ci-cd",
     "devsecops",
+    "policy-as-code",
+    "zero-dependency",
+    "offline",
+    "air-gapped",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
     "Intended Audience :: System Administrators",
+    "Natural Language :: English",
     "Operating System :: OS Independent",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
+    "Programming Language :: Python :: Implementation :: CPython",
     "Topic :: Security",
+    "Topic :: Security :: Cryptography",
+    "Topic :: Software Development :: Build Tools",
     "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
     "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Software Distribution",
+    "Topic :: System :: Systems Administration",
     "Typing :: Typed",
 ]
 requires-python = ">=3.11"
@@ -52,47 +131,13 @@ requires-python = ">=3.11"
 # who installs it. It also makes the air-gapped story a single wheel with nothing
 # to vendor, and it makes `pip download` reproducible without a resolver.
 #
-# Everything optional lives in [project.optional-dependencies] and MUST degrade
-# to a documented reduced capability rather than an error. If a feature cannot
-# degrade, it does not belong in an extra.
+# Nothing is optional either: Cordon declares no extras. Every capability is its
+# own standard-library code, so there is nothing to install to get more of it.
 dependencies = []
 
-[project.optional-dependencies]
-# JS/TS semantic resolution for the `kind: ast` match kind. The base install
-# resolves Python calls through the stdlib `ast`; this extra adds a tree-sitter
-# provider so the same `kind: ast` rules resolve JavaScript and TypeScript calls
-# through their imports and aliases too. It degrades as promised: without it, a
-# JS/TS file is still scanned by the regex tier, the ast rules simply add
-# nothing, and `detect/ast_providers` reports the language as having no provider
-# rather than treating it as fully analysed. The dependency lives here, never in
-# the base, so the zero-required-dependency guarantee holds.
-ast-js = [
-    "tree-sitter>=0.21",
-    "tree-sitter-javascript>=0.21",
-    "tree-sitter-typescript>=0.21",
-]
-# Cryptographic verification of a package's build provenance. The base only sees
-# that a release carries an attestation; this extra verifies it -- the Fulcio
-# certificate, the Rekor inclusion proof, the DSSE signature over the pinned
-# digest, and that the signing identity matches the declared source repository.
-# The work is delegated to `sigstore` (raw npm bundles), `pypi-attestations`
-# (PEP 740 conversion) and `pysequoia` (OpenPGP: Helm provenance files, against the
-# operator's --keyring) rather than reimplemented, because a subtly wrong verifier
-# reports confidence it has not earned. It degrades as promised: without it,
-# provenance stays at the presence check and anything unverifiable is reported as
-# `POLICY.PROVENANCE.UNVERIFIED`, never a crash and never a false pass. The stack
-# is heavy, which is exactly why it is opt-in and never in the base.
-attest = [
-    "sigstore>=3.6,<5",
-    "pypi-attestations>=0.0.19,<0.1",
-    "pysequoia>=0.1.35,<0.2",
-]
-# Cordon Cloud's keyless result signing. `cordon login`, `--upload` and `--cloud-policy` need
-# only the standard library; with this extra, an upload from CI is also signed with the job's
-# OIDC identity through Sigstore. Without it the upload is still made, marked unsigned.
-cloud = [
-    "sigstore>=3.6,<5",
-]
+# The development and CI toolchain. Never package metadata: no one installing Cordon can pull these
+# in. CI installs the locked, hash-pinned set (ci/dev-requirements.txt) and Cordon with --no-deps.
+[dependency-groups]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
@@ -103,16 +148,6 @@ dev = [
     "hypothesis>=6.100",
     "ruff>=0.6",
     "mypy>=1.11",
-    # The test environment carries the ast-js provider so the bundled JS `kind:
-    # ast` rules are validated here rather than shipping unchecked.
-    "tree-sitter>=0.21",
-    "tree-sitter-javascript>=0.21",
-    "tree-sitter-typescript>=0.21",
-    # And the attestation stack, so the provenance detector and its verifier are
-    # exercised here rather than only where the extra happens to be installed.
-    "sigstore>=3.6,<5",
-    "pypi-attestations>=0.0.19,<0.1",
-    "pysequoia>=0.1.35,<0.2",
 ]
 
 [project.scripts]
@@ -127,32 +162,39 @@ cordon-sandbox = "cordon_sandbox.cli:SandboxCli.main"
 # Built-in detectors register through the same entry-point mechanism third-party
 # detectors use. There is no privileged path: if the plugin system is broken for
 # third parties, it is broken for us too, and we find out immediately.
-advisory = "cordon_scanner.detect.advisory:AdvisoryDetector"
-agent-judge = "cordon_scanner.detect.agent_judge:AgentJudgeDetector"
-agents = "cordon_scanner.detect.agents:AgentChainDetector"
-attestation = "cordon_scanner.detect.attestation:AttestationDetector"
-binary = "cordon_scanner.detect.binary:BinaryDetector"
-capability = "cordon_scanner.detect.capability:CapabilityDetector"
-clamav = "cordon_scanner.detect.clamav:ClamavDetector"
-yara = "cordon_scanner.detect.yara_rules:YaraDetector"
-config = "cordon_scanner.detect.config_files:ConfigDetector"
-dependency = "cordon_scanner.detect.dependency:DependencyDetector"
-formats = "cordon_scanner.detect.formats:FormatDetector"
-iac = "cordon_scanner.detect.iac:IacDetector"
-license = "cordon_scanner.detect.license:LicenseDetector"
-lockfile = "cordon_scanner.detect.lockfile:LockfileDetector"
-manifest = "cordon_scanner.detect.manifest:ManifestDetector"
-mcp-live = "cordon_scanner.detect.live_mcp:LiveMcpDetector"
-mcp-packages = "cordon_scanner.detect.agents:McpPackageDetector"
-obfuscation = "cordon_scanner.detect.obfuscation:ObfuscationDetector"
-os-packages = "cordon_scanner.detect.ospackages:OsPackageDetector"
-package-policy = "cordon_scanner.detect.package_policy:PackagePolicyDetector"
-provenance = "cordon_scanner.detect.provenance:ProvenanceDetector"
-registry = "cordon_scanner.detect.registry:RegistryDetector"
-sbom = "cordon_scanner.detect.sbom:SbomDetector"
-secrets = "cordon_scanner.detect.secrets:SecretDetector"
-slopsquat = "cordon_scanner.detect.slopsquat:SlopsquatDetector"
-vcs = "cordon_scanner.detect.vcs:VcsDetector"
+advisory = "cordon_scanner.detect.supply.advisories.detector:AdvisoryDetector"
+agent-judge = "cordon_scanner.detect.agents.language_model.detector:AgentJudgeDetector"
+agents = "cordon_scanner.detect.agents.chain:AgentChainDetector"
+attestation = "cordon_scanner.detect.supply.attestation:AttestationDetector"
+campaign-sibling = "cordon_scanner.detect.supply.campaign_sibling:CampaignSiblingDetector"
+code-reuse = "cordon_scanner.detect.code.code_reuse:CodeReuseDetector"
+recipe-digest = "cordon_scanner.detect.supply.recipe_digests:RecipeDigestDetector"
+binary = "cordon_scanner.detect.binary.detector:BinaryDetector"
+capability = "cordon_scanner.detect.code.capability.detector:CapabilityDetector"
+clamav = "cordon_scanner.detect.binary.clamav:ClamavDetector"
+code-model = "cordon_scanner.detect.code.code_model_scores:CodeModelScores"
+rule-file = "cordon_scanner.detect.binary.rule_files:RuleFileDetector"
+config = "cordon_scanner.detect.infra.config_files:ConfigDetector"
+dependency = "cordon_scanner.detect.supply.dependency:DependencyDetector"
+formats = "cordon_scanner.detect.binary.formats:FormatDetector"
+iac = "cordon_scanner.detect.infra.iac:IacDetector"
+license = "cordon_scanner.detect.supply.license:LicenseDetector"
+lockfile = "cordon_scanner.detect.supply.lockfile:LockfileDetector"
+manifest = "cordon_scanner.detect.supply.manifests.detector:ManifestDetector"
+obfuscated-hook = "cordon_scanner.detect.supply.obfuscated_hook:ObfuscatedHookDetector"
+pack-rules = "cordon_scanner.detect.code.pack_rules:PackRuleDetector"
+mcp-live = "cordon_scanner.detect.agents.mcp_servers.live:LiveMcpDetector"
+mcp-packages = "cordon_scanner.detect.agents.mcp_servers.packages:McpPackageDetector"
+model = "cordon_scanner.detect.agents.model:ModelDetector"
+obfuscation = "cordon_scanner.detect.code.obfuscation.detector:ObfuscationDetector"
+os-packages = "cordon_scanner.detect.supply.ospackages:OsPackageDetector"
+package-policy = "cordon_scanner.detect.supply.package_policy:PackagePolicyDetector"
+provenance = "cordon_scanner.detect.supply.provenance:ProvenanceDetector"
+registry = "cordon_scanner.detect.supply.registries.detector:RegistryDetector"
+sbom = "cordon_scanner.detect.supply.sbom:SbomDetector"
+secrets = "cordon_scanner.detect.secrets.detector:SecretDetector"
+slopsquat = "cordon_scanner.detect.supply.slopsquat:SlopsquatDetector"
+vcs = "cordon_scanner.detect.source.vcs:VcsDetector"
 
 [project.entry-points."cordon_scanner.reporters"]
 text = "cordon_scanner.report.text:TextReporter"
@@ -164,26 +206,67 @@ github = "cordon_scanner.report.github:GithubReporter"
 codeclimate = "cordon_scanner.report.codeclimate:CodeClimateReporter"
 vex = "cordon_scanner.report.vex:VexReporter"
 
+[project.entry-points."cordon_scanner.ecosystem_facts"]
+# What classifying a dependency asks of the ecosystems (foundation.dependencies.EcosystemFacts):
+# provided by the ecosystems layer, so the domain names no ecosystem.
+builtin = "cordon_scanner.ecosystems.registry:RegistryFacts"
+
+[project.entry-points."cordon_scanner.model_providers"]
+# The language-model backends `--judge` names (detect.agents.language_model.review.ModelProviders):
+# found by entry point, so detection never imports their transports or keys.
+builtin = "cordon_scanner.judge.providers:ProviderFactory"
+
+[project.entry-points."cordon_scanner.commands"]
+# Front ends that drive the command line's own commands (`cordon-scanner mcp`): found by entry point,
+# so the command line never imports the server that runs it.
+mcp = "cordon_scanner.mcp.command:McpCommand"
+
+[project.entry-points."cordon_scanner.notifiers"]
+webhook = "cordon_scanner.notify.channels.webhook:WebhookChannel"
+slack = "cordon_scanner.notify.channels.slack:SlackChannel"
+teams = "cordon_scanner.notify.channels.teams:TeamsChannel"
+
 [project.urls]
-Homepage = "https://github.com/Threx-code/cordon"
+Homepage = "https://cordonscan.com"
 Documentation = "https://github.com/Threx-code/cordon#readme"
 Repository = "https://github.com/Threx-code/cordon.git"
 "Bug Tracker" = "https://github.com/Threx-code/cordon/issues"
 Changelog = "https://github.com/Threx-code/cordon/blob/main/CHANGELOG.md"
+Releases = "https://github.com/Threx-code/cordon/releases"
+Security = "https://github.com/Threx-code/cordon/blob/main/SECURITY.md"
+Tutorials = "https://github.com/Threx-code/cordon/tree/main/tutorials"
+Architecture = "https://github.com/Threx-code/cordon/blob/main/docs/01-ARCHITECTURE.md"
 
-[tool.setuptools.dynamic]
-version = { attr = "cordon_scanner.version.__version__" }
+[tool.cordon-build]
+version-file = "src/cordon_scanner/version.py"
+source = "src"
+# Every directory under these is a package, `__init__.py` or not, as setuptools' namespace
+# discovery had it; the wheel carries each one's modules plus the package data below.
+packages = ["cordon_scanner", "cordon_sandbox"]
+# Build inputs, not run-time data: the third-party rules the built-in rule pack is assembled from.
+# They ship in the sdist with their licence (MANIFEST.in), not in the wheel without it.
+exclude = ["cordon_scanner/rules/rule_files/upstream"]
 
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["cordon_scanner*", "cordon_sandbox*"]
+[[tool.cordon-build.native]]
+# The anchor automaton (src/cordon_scanner/_native/anchors.c); without a compiler the wheel is pure
+# and the rule engine reads anchors in Python, as `cordon-scanner --version` says.
+name = "cordon_scanner._native._anchors"
+sources = ["src/cordon_scanner/_native/anchors.c"]
 
-[tool.setuptools.package-data]
+[tool.cordon-build.package-data]
 "cordon_scanner" = ["py.typed"]
 "cordon_sandbox" = ["py.typed"]
-"cordon_scanner.rules.builtin" = ["*.yaml"]
-# Syft's artifact-to-group map for jars named only by their file (scripts/syft_java_groups.py).
+"cordon_scanner.rules.builtin" = ["*.yaml", "derivations-*.json"]
+# The built-in rule pack (`--rule-file builtin`, detect/binary/rule_files.py) and the records of where
+# its rules came from and how they measured. Missing from the wheel before 2026-10-20: an install
+# from PyPI had no pack to load.
+"cordon_scanner.rules" = ["rule_files/*.yar", "rule_files/*.json"]
+# The Public Suffix List snapshot the vt module's domain functions read (psl 2.1.238, MPL-2.0).
+"cordon_scanner.detect.binary.modules.reports" = ["data/*.dat"]
+# Syft's artifact-to-group map for jars named only by their file (scripts/build/syft_java_groups.py).
 "cordon_scanner.images" = ["data/*.json"]
+# The detection model's feature patterns (`cordon_scanner.model`).
+"cordon_scanner.model" = ["data/*.json"]
 # The generated package-name allowlist. A wheel without it falls back to the
 # curated sets in `intel/real.py`, which is a working scanner with a far smaller
 # allowlist -- so the consequence of leaving this out is not a crash, it is
@@ -191,14 +274,18 @@ include = ["cordon_scanner*", "cordon_sandbox*"]
 # well as in MANIFEST.in because the two govern different artefacts: MANIFEST.in
 # the sdist, this the wheel.
 #
-# `*.json.gz` is the OSV-derived advisory database (scripts/build_advisory_db.py)
+# `*.json.gz` is the OSV-derived advisory database (scripts/build/build_advisory_db.py)
 # and `*.json` its build-metadata and digest sidecars. A wheel without them
 # falls back to the small hand-curated `BUNDLED` set in `intel/advisories.py`
 # -- again not a crash, but the difference between real vulnerability coverage
 # and nine records. The advisory sets are compressed because they are the
 # largest thing in the wheel and they are JSON; the sidecars are not, because
 # they are read to decide whether the sets can be trusted at all.
-"cordon_scanner.intel.data" = ["*.txt", "*.json", "*.json.gz"]
+# `reuse-index.bin` is the code-reuse index (item 54, `intel/malware/reuse_index.py`), refreshed
+# daily through the feed (item 3B); a wheel without it has no reuse check at all.
+# `*.tbl` is each advisory file's look-up table (scripts/build/build_advisory_tables.py, item 74):
+# read by name with no per-process build, and refused unless it names its data file's digest.
+"cordon_scanner.intel.data" = ["*.txt", "*.json", "*.json.gz", "*.csv.gz", "reuse-index.bin", "*.tbl"]
 # The schema-generated infrastructure policies and the sidecar recording which
 # provider versions produced them. A wheel without them is the curated table
 # alone, which is a working scanner with a fifth of the coverage -- so the
@@ -225,6 +312,15 @@ select = [
     "S",    # bandit: this project must pass its own class of check
     "PTH",  # use pathlib
     "RET",  # return consistency
+    "PIE",  # unnecessary constructs
+    "PGH",  # blanket `noqa` and `type: ignore` are refused: each names its code
+    "G",    # logging calls format lazily
+    "LOG",  # logging used as documented
+    "TID",  # tidy imports
+    "FA",   # postponed annotations where they are needed
+    "Q",    # one quoting style
+    "BLE",  # a blind `except Exception` must say why with `noqa: BLE001`: each one here reports the
+            # failure as an operational finding or contains it where a later step reports it
 ]
 ignore = [
     "E501",  # line length is the formatter's job
@@ -238,6 +334,8 @@ ignore = [
 #   S314 xml parsing     - parsing output this project generated, not input
 #   S603/S607 subprocess - driving git to build a real repository fixture
 "tests/**" = ["S101", "S105", "S106", "S108", "S314", "S603", "S607"]
+# The model server's tests: the same, plus binding and calling loopback HTTP on purpose.
+"model-server/tests/**" = ["S101", "S104", "S105", "S106", "S310"]
 # The corpus is sample data, not source. It is never imported.
 "corpus/**" = ["ALL"]
 # Conformance cases are dependency files as package managers and projects write them (a Conan
@@ -248,6 +346,8 @@ ignore = [
 #   S310 urlopen - fixed https URLs
 #   S603/S607 subprocess - git, cordon-scanner, guarddog, osv-scanner, trivy by name
 "bench/**" = ["S310", "S603", "S607"]
+# CDI learning-pipeline tests use pytest asserts, like tests/**.
+"bench/**/test_*.py" = ["S101", "S310", "S603", "S607"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["cordon_scanner"]
@@ -256,10 +356,16 @@ known-first-party = ["cordon_scanner"]
 python_version = "3.11"
 strict = true
 warn_unreachable = true
-files = ["src/cordon_scanner"]
+# The scanner, the sandbox and the maintainers' scripts, all strict: a release or refresh script that
+# fails on a type is as broken as the code it builds.
+files = ["src/cordon_scanner", "src/cordon_sandbox", "scripts"]
+mypy_path = "src"
+explicit_package_bases = true
 
 [[tool.mypy.overrides]]
-module = ["tree_sitter.*", "tree_sitter_languages.*"]
+# yaml: CI tooling only. fetch_agent_configs: a bench module scripts/build/import_atr.py puts on the
+# path at run time.
+module = ["yaml", "fetch_agent_configs"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
@@ -267,6 +373,8 @@ testpaths = ["tests"]
 # So `tests/support.py` is importable as `support` without making `tests` a
 # package, which would change collection semantics for every file in it.
 pythonpath = ["tests"]
+# An expected failure that starts passing fails the run, so a fixed bug's marker cannot outlive it.
+xfail_strict = true
 addopts = [
     # Deselected by default. `perf` generates fifty thousand files, `fuzz`
     # explores for hundreds of examples, and `network` reaches an upstream --
@@ -285,6 +393,7 @@ addopts = [
 filterwarnings = ["error"]
 markers = [
     "slow: long-running tests, deselect with -m 'not slow'",
+    "soak: memory soaks (about 30 minutes); run on main, v* tags and manual runs, not on pull requests",
     "corpus: runs against the sample corpus",
     "hostile: feeds the scanner input designed to attack it",
     "perf: performance budget assertions",
@@ -295,6 +404,11 @@ markers = [
 
 [tool.coverage.run]
 source = ["src/cordon_scanner"]
+# Every Python process the suite starts is measured: a CLI run as a subprocess, and the scan's
+# workers, forked and ended by SIGKILL or os._exit, which save as they go
+# (tests/sitehooks/sitecustomize.py, CoverageInWorkers). Without these the gate saw 83% of a suite
+# that runs far more, since the ecosystem parsers and detectors run in workers.
+patch = ["subprocess", "fork", "_exit"]
 # Line coverage only. Branch coverage is the expensive half of the measurement
 # by a wide margin -- the same suite takes 418 seconds with it and 52 without --
 # and it is measured on one job, on every push, as a gate rather than as a

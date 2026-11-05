@@ -11,7 +11,6 @@ from __future__ import annotations
 import base64
 import contextlib
 import hashlib
-import json
 import re
 import tarfile
 import tempfile
@@ -19,7 +18,9 @@ import urllib.parse
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
+
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -43,6 +44,9 @@ class Previous:
 
 
 class PreviousRelease:
+    #: Ecosystems whose package names itself inside its archive, so `identify` reads the identity
+    #: from the archive rather than from what the command line named.
+    FROM_ARCHIVE: ClassVar[frozenset[str]] = frozenset({"npm", "pypi"})
     """The release published before this one, fetched for comparison."""
 
     @staticmethod
@@ -58,7 +62,7 @@ class PreviousRelease:
                         parts = entry.name.split("/")
                         if parts[-1] == "package.json" and len(parts) == 2:
                             handle = archive.extractfile(entry)
-                            document = json.loads(handle.read()) if handle else {}
+                            document = ScannedJson.loads(handle.read()) if handle else {}
                             if document.get("name") and document.get("version"):
                                 return Identity("npm", document["name"], document["version"])
                         if parts[-1] == "PKG-INFO" and len(parts) == 2:
@@ -89,7 +93,7 @@ class PreviousRelease:
     @staticmethod
     def _document(url: str) -> dict[str, Any]:
         """A registry document, through the bounded, redirect-free registry client."""
-        from cordon_scanner.intel.registry_client import RegistryClient, RegistryError
+        from cordon_scanner.intel.registries.registry_client import RegistryClient, RegistryError
 
         try:
             return RegistryClient._fetch(url)
@@ -103,7 +107,7 @@ class PreviousRelease:
         The packument chooses the URL, so it is untrusted: a tarball URL pointing anywhere else, or
         a redirect, would have the scanner fetch from a host the publisher picked.
         """
-        from cordon_scanner.intel.registry_client import RegistryClient, RegistryError
+        from cordon_scanner.intel.registries.registry_client import RegistryClient, RegistryError
 
         try:
             return RegistryClient._fetch_bytes(url, ecosystem)
@@ -120,15 +124,10 @@ class PreviousRelease:
                 f"https://registry.npmjs.org/{urllib.parse.quote(identity.name, safe='@')}"
             )
             times = document.get("time", {})
-            current = times.get(identity.version)
-            earlier = sorted(
-                (t, v)
-                for v, t in times.items()
-                if v in document.get("versions", {}) and current and t < current
-            )
-            if not earlier:
+            published = {v: t for v, t in times.items() if v in document.get("versions", {})}
+            version = PreviousRelease._before("npm", identity.version, published)
+            if version is None:
                 return None
-            version = earlier[-1][1]
             meta = document["versions"][version]
             blob = PreviousRelease._artefact(meta["dist"]["tarball"], "npm")
             integrity = meta["dist"].get("integrity", "")
@@ -155,19 +154,14 @@ class PreviousRelease:
             f"https://pypi.org/pypi/{urllib.parse.quote(identity.name, safe='')}/json"
         )
         releases = document.get("releases", {})
-        current_files = releases.get(identity.version) or []
-        current = min((f["upload_time_iso_8601"] for f in current_files), default=None)
-        earlier = sorted(
-            (min(f["upload_time_iso_8601"] for f in files), v)
+        published = {
+            v: min(f["upload_time_iso_8601"] for f in files)
             for v, files in releases.items()
-            if files
-            and current
-            and min(f["upload_time_iso_8601"] for f in files) < current
-            and not any(f.get("yanked") for f in files)
-        )
-        if not earlier:
+            if files and (v == identity.version or not any(f.get("yanked") for f in files))
+        }
+        version = PreviousRelease._before("pypi", identity.version, published)
+        if version is None:
             return None
-        version = earlier[-1][1]
         files = releases[version]
         chosen = next((f for f in files if f.get("packagetype") == "sdist"), files[0])
         blob = PreviousRelease._artefact(chosen["url"], "pypi")
@@ -178,12 +172,31 @@ class PreviousRelease:
         return Previous(path, f"{identity.name} {version}")
 
     @staticmethod
+    def _before(ecosystem: str, version: str, published: dict[str, str]) -> str | None:
+        """The release before `version` on its own line: of the versions published before it, the
+        highest below it in the ecosystem's version order. Not the latest published before it:
+        maintained lines interleave in time, and `express` 4.21.2 was compared with 5.0.1, out a
+        month before it on the next major line."""
+        from cordon_scanner.intel.advisories.versions import Versions
+
+        current = published.get(version)
+        if current is None:
+            return None
+        best: str | None = None
+        for candidate, when in published.items():
+            if when >= current or Versions.compare(ecosystem, candidate, version) >= 0:
+                continue
+            if best is None or Versions.compare(ecosystem, candidate, best) > 0:
+                best = candidate
+        return best
+
+    @staticmethod
     def _from_registry(identity: Identity, into: Path) -> Previous | None:
         """Crates.io, RubyGems, NuGet, the Go proxy, Hex, pub and Maven Central: the release before
         this one by the ecosystem's version order, fetched and verified against the digest its
         registry publishes (`RegistryClient.package_archive`)."""
-        from cordon_scanner.intel.more_registries import MoreRegistries
-        from cordon_scanner.intel.registry_client import RegistryClient, RegistryError
+        from cordon_scanner.intel.registries.more_registries import MoreRegistries
+        from cordon_scanner.intel.registries.registry_client import RegistryClient, RegistryError
         from cordon_scanner.sources.package import PackageTarget
 
         try:

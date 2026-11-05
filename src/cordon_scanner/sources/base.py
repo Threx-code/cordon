@@ -23,17 +23,20 @@ how every other file in the repository is scored.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from cordon_scanner.core.content import FileContent
+from cordon_scanner.foundation.content import FileContent
+from cordon_scanner.foundation.files.names import Names
+from cordon_scanner.foundation.limits import Limits
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-    from cordon_scanner.core.content import Skipped
-    from cordon_scanner.core.limits import Limits
-    from cordon_scanner.core.walker import WalkEntry, Walker
+    from cordon_scanner.foundation.content import Skipped
+    from cordon_scanner.foundation.files.walk import WalkEntry, Walker
+    from cordon_scanner.foundation.limits import Limits
 
 
 @runtime_checkable
@@ -149,4 +152,114 @@ class WorkingTreeSource:
         return "working tree"
 
 
-__all__ = ["FileSource", "WorkingTreeSource"]
+class Rejection:
+    """Why a member or an archive was refused. Each becomes a finding."""
+
+    RATIO = "compression_ratio"
+    ENTRIES = "entry_count"
+    SIZE = "uncompressed_size"
+    DEPTH = "nesting_depth"
+    TRAVERSAL = "path_traversal"
+    ABSOLUTE = "absolute_path"
+    LINK = "link_member"
+    SPECIAL = "special_file"
+    UNREADABLE = "unreadable"
+    NAME = "unsafe_name"
+    POLYGLOT = "polyglot_archive"
+    HIDDEN = "hidden_zip_member"
+    NOT_AN_ARCHIVE = "not_an_archive"
+    """A member named as an archive that no archive reader opens and that is text (`Dockerfile.conda`):
+    scanned as the text it is, so nothing is left unread (item 27, class 7)."""
+    COMPRESSED_TRUNCATED = "compressed_truncated"
+    """A lone compressed stream (`dump.sql.gz`, not a tar) that ends before its end marker: every
+    byte it holds was decompressed and read, so nothing is left unread (item 30)."""
+    UNSUPPORTED_FORMAT = "unsupported_format"
+    """An archive in a format no reader here opens (rar, 7z, cab, ar, cpio, xar, iso, lzip, lzma): its
+    contents were not examined, whatever it is called (item 53)."""
+    DIRECTORY_REBUILT = "directory_rebuilt"
+    """A zip whose central directory would not open, every member read by its local header as a
+    streaming extractor installs it (`ZipRepair`, item 76): nothing is left unread."""
+    PADDED = "padded_expansion"
+    """A budget reached while the archive expanded past `max_archive_ratio`: what follows the
+    padding was not read, and padding is how a payload is put out of a scanner's reach."""
+
+
+@dataclass(frozen=True, slots=True)
+class RejectedMember:
+    name: str
+    reason: str
+    detail: str = ""
+
+    def __post_init__(self) -> None:
+        # A refused member's name is reported as it came, before normalising, so it is made text
+        # here, once, for every one of the places that refuse a member (item 34).
+        object.__setattr__(self, "name", Names.text(self.name))
+        # and its detail, which can quote the archive's own text (a link's target)
+        object.__setattr__(self, "detail", Names.text(self.detail))
+
+
+# Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine
+# each implementation typed by one of these, and the type checker proves the implementation
+# conforms, so the engine never sees a concrete adapter type.
+
+
+class ArchiveReading(Protocol):
+    """What the engine uses of the class `ArchiveReader`."""
+
+    def is_archive(self, path: str) -> bool: ...
+    def opens_by_bytes(self, data: bytes) -> bool: ...
+    def unsupported(self, path: str, data: bytes, rejected: list[tuple[str, str, str]]) -> bool: ...
+    def safe_member_name(self, name: str, *, collapse: bool = ...) -> str | None: ...
+    def walk_archive(
+        self,
+        data: bytes,
+        *,
+        path: str,
+        limits: Limits = ...,
+        depth: int = ...,
+        rejected: list[tuple[str, str, str]] | None = ...,
+        deadline: float | None = ...,
+        import_library: set[str] | None = ...,
+    ) -> Iterator[tuple[str, bytes]]: ...
+
+
+class GitCheckout(Protocol):
+    """What the engine uses of instances of `GitRepository`."""
+
+    def run(self, args: list[str], *, check: bool = ..., harden: bool = ...) -> str: ...
+    def tree(self, rev: str) -> FileSource: ...
+    def tracked_files(self) -> list[str]: ...
+    def close(self) -> None: ...
+
+
+class GitRepositories(Protocol):
+    """What the engine uses of the class `GitRepository`."""
+
+    def __call__(self, root: str | Path) -> GitCheckout: ...
+    def binary(self) -> str: ...
+    def discover(self, path: str | Path) -> GitLocation | None: ...
+
+
+class GitLocation(Protocol):
+    """What the engine uses of the `GitInfo` discovering a repository gives: where it is and what is checked out."""
+
+    @property
+    def root(self) -> Path: ...
+    @property
+    def revision(self) -> str | None: ...
+    @property
+    def branch(self) -> str | None: ...
+    @property
+    def remote(self) -> str | None: ...
+
+
+__all__ = [
+    "ArchiveReading",
+    "FileSource",
+    "GitCheckout",
+    "GitLocation",
+    "GitRepositories",
+    "RejectedMember",
+    "Rejection",
+    "WorkingTreeSource",
+]

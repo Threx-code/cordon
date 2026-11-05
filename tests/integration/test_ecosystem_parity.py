@@ -18,7 +18,7 @@ from __future__ import annotations
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.core.models import Category
+from cordon_scanner.foundation.models import Category
 from support import Support
 
 # Assembled so this file does not become the thing it tests for.

@@ -1,0 +1,593 @@
+"""Running the detectors: every enabled file detector over each unit, under the file's time budget
+and through the cache, in a worker pool where the source and the size allow it; the repository and
+graph detectors once each; a detector's findings dropped where the configuration disables its
+rules; and each dependency annotated with what the checks concluded.
+
+A file whose checks did not all run is reported, never cached, and leaves the scan incomplete.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, ClassVar
+
+from cordon_scanner.detect.base import (
+    FileUnit,
+    ScanContext,
+    Unit,
+)
+from cordon_scanner.detect.registry import JudgeGate
+from cordon_scanner.engine.cache import CacheKey, ScanCache
+from cordon_scanner.engine.detector_clock import DetectorClock
+from cordon_scanner.engine.parallel import ParallelScanner, WorkItem
+from cordon_scanner.engine.pipeline.accumulator import Accumulator
+from cordon_scanner.engine.pipeline.archives import ArchiveMembers
+from cordon_scanner.engine.pipeline.constants import (
+    ADVISORY_DETECTORS,
+    REPOSITORY_SCOPE,
+)
+from cordon_scanner.engine.window_pass import WindowPass
+from cordon_scanner.foundation.models import Category, Finding, Severity
+from cordon_scanner.foundation.results import Dependency, OperationalFinding
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Sequence
+
+    from cordon_scanner.detect.base import Detector
+    from cordon_scanner.engine.engine import Engine
+
+
+class Detection:
+    """Runs the detectors over the scan's units."""
+
+    def __init__(self, engine: Engine) -> None:
+        self.engine = engine
+        self.cache = engine.cache
+        self.config = engine.config
+        self.detectors = engine.detectors
+        self.progress = engine.progress
+        self.rules = engine.rules
+
+    def inspect_file(
+        self,
+        unit: FileUnit,
+        ctx: ScanContext,
+        acc: Accumulator,
+        detectors: list[Detector],
+        signature: str,
+    ) -> list[Finding]:
+        """Run every file detector over one unit, via the cache.
+
+        The cache is keyed on content plus everything that could change a
+        finding, so a hit is provably identical to a cold run. A test asserts
+        that equivalence rather than assuming it, because a stale cached "clean"
+        is a false negative and false negatives are the failure that matters.
+        """
+        key = self.cache_key(unit, ctx, signature)
+
+        cached = self.cache.get(key)
+        if cached is not None:
+            return list(cached)
+
+        produced: list[Finding] = []
+        # Every detector runs on every file, as it does on every member of a package
+        # (`ArchiveStages.serial`): a per-file cut on the wall clock made a directory's result
+        # depend on the machine's load (one 1 MB main.tf came out with and without its
+        # OPERATIONAL.FILE.TIMEOUT note), and a package and its unpacked directory decide alike
+        # now. The scan's own `total_timeout` still bounds the whole.
+        root = ctx.repository.root if ctx.repository is not None else None
+        with ScanCache.watch(root, unit.path) as watch:
+            skipped_judge = self.each_detector(detectors, produced, unit, ctx, acc)
+
+            # The rest of an oversized file, a window at a time (`core/windows.py`). The workers
+            # make the same call (`ParallelScanner._inspect_batch`), so a parallel scan reads as far.
+            windowed, intact = WindowPass.run(
+                unit,
+                [d for d in detectors if not (d.id == JudgeGate.ID and skipped_judge)],
+                lambda detector, part: self.run(detector, part, ctx, acc),
+                produced,
+            )
+        produced.extend(windowed)
+        if not intact:
+            produced.append(acc.gap(ArchiveMembers.changed_while_read(unit.path)))
+
+        # Every finding carries the hash of the file it came from, recorded once here
+        # rather than in each of eleven detectors. `_collapse_repeats` is the only
+        # reader: it is what lets "the same credential in 179 directories" be told from
+        # "179 files that happen to start with the same RSA header".
+        produced = [
+            f.with_file_hash(unit.content.sha256) if f.location.path == unit.path else f
+            for f in produced
+        ]
+
+        # Only a complete result is cached. Caching the output of a run that hit
+        # a limit would make the degradation permanent and invisible. Nor one whose
+        # inspection read past the file (`Watch`): what it read is in no key. Nor one holding a
+        # finding that degrades coverage, which is checked on the file's own findings rather
+        # than the scan's flag: an advisory source's sets only `advisory_complete`, and a warm
+        # hit returning it would not set that again.
+        if acc.complete and not watch.reached and not any(f.degrades_coverage for f in produced):
+            self.cache.put(key, produced)
+
+        return produced
+
+    def each_detector(
+        self,
+        detectors: list[Detector],
+        produced: list[Finding],
+        unit: FileUnit,
+        ctx: ScanContext,
+        acc: Accumulator,
+    ) -> bool:
+        """Every detector over the unit, the judge last; whether the judge was left out (it reads
+        the grey band only, after every other detector: review 98, AG-5)."""
+        skipped_judge = False
+        for detector in JudgeGate.last(detectors):
+            if detector.id == JudgeGate.ID and not JudgeGate.wants(produced):
+                skipped_judge = True
+                continue
+            produced.extend(self.run(detector, unit, ctx, acc))
+        return skipped_judge
+
+    def parallel(
+        self,
+        units: list[FileUnit],
+        root: Path,
+        ctx: ScanContext,
+        acc: Accumulator,
+        detectors: list[Detector],
+        signature: str,
+        *,
+        carry_content: bool = False,
+        where: str = REPOSITORY_SCOPE,
+    ) -> list[Finding]:
+        """Inspect files across a worker pool.
+
+        The cache is consulted in this process first, so only genuine misses are
+        distributed. A warm scan therefore does almost no cross-process work,
+        which is the case a commit-time hook actually hits.
+
+        A pool that cannot start falls back to serial execution. On a platform
+        where processes cannot be spawned, a slower scan is the correct outcome;
+        a failed one is not.
+        """
+        pending: list[WorkItem] = []
+        results: list[Finding] = []
+
+        cached_facts: dict[str, str] = {}
+        acc.facts_content += sum(len(unit.content.raw) for unit in units)
+        self.work_items(units, ctx, signature, results, pending, carry_content, cached_facts)
+        for path, text in cached_facts.items():  # re-checked as a worker's are
+            Detection.absorb_facts(path, text, acc, results)
+        # A cache hit is READ by its path, as a cold scan's would be (item 38's review, change 3).
+        started = {item[0] for item in pending}
+        acc.ledger_read.update(unit.path for i, unit in enumerate(units) if i not in started)
+
+        if not pending:
+            return results
+
+        report = self.reporter(units)
+        # The files of batches the pool never started because the scan's budget ran out first.
+        unstarted: list[int] = []
+        # The files a worker died, hung or raised on (item 28): each named below, never read here.
+        lost: dict[int, str] = {}
+        produced = ParallelScanner.run(
+            config=self.config,
+            engine_type=type(self.engine),
+            # A worker reads a file at root / its path: for a scan of one file, its directory.
+            root=str(root.parent if root.is_file() else root),
+            files=pending,
+            workers=ParallelScanner.worker_count(
+                self.config.limits.max_workers, len(pending), sum(item[2] for item in pending)
+            ),
+            # The set the parent already filtered. Without it the worker ran
+            # every detector it could find, and a scan's findings depended on
+            # the machine's core count.
+            detector_ids=[getattr(d, "id", "") for d in detectors],
+            # The parent already walked the tree. Sending the result costs one
+            # pickle; recomputing it costs a full traversal per worker.
+            inventory=ctx.repository,
+            # And everything else the parent's context knows, which a worker reading single files
+            # cannot derive: which files an install hook runs, the entry points and their closure,
+            # the skill scripts, the shipped binaries (`ScanContext.facts`, `_initialise`).
+            facts=ctx.facts(),
+            on_batch=report,
+            deadline=ctx.deadline,
+            unstarted=unstarted,
+            template=getattr(self.engine, "_template", None),
+            lost=lost,
+        )
+
+        self.merge_worker_results(produced, units, results, acc, ctx, signature)
+        acc.ledger_read.update(units[index].path for index, *_ in produced)
+        for index, reason in sorted(lost.items()):
+            results.append(self.worker_lost(units[index], reason, acc))
+        # Each file never started, by path, beside the one finding at the scan's scope (item 38).
+        acc.ledger_unstarted.update(units[index].path for index in unstarted)
+        if unstarted:
+            results.append(self.unexamined(len(unstarted), where, acc))
+
+        return results
+
+    def reporter(self, units: list[FileUnit]) -> Callable[[Sequence[int]], None]:
+        """Progress for a pool's batches as their results arrive."""
+
+        def report(indices: Sequence[int]) -> None:
+            # Called as each batch's results arrive, so the count moves while
+            # the pool is still working. Advancing after `run` returned meant a
+            # parallel scan sat at 0 for its whole duration and then jumped to
+            # complete, which reads exactly like the hang it exists to rule out.
+            for index in indices:
+                self.progress.advance(units[index].path)
+
+        return report
+
+    def unexamined(self, count: int, where: str, acc: Accumulator) -> Finding:
+        """The pool stopped at the scan's budget with `count` files not reached. As the serial
+        loops report it: the scan is partial, and says so, rather than matching on past its
+        budget with nothing to show the budget was passed."""
+        return acc.gap(
+            OperationalFinding.build(
+                path=where,
+                rule_id="OPERATIONAL.SCAN.TIMEOUT",
+                message=(
+                    f"The {self.config.limits.total_timeout:.0f}s budget was reached with "
+                    f"{count} file(s) still unexamined."
+                ),
+                remediation="Raise --timeout, or scan a smaller part at a time.",
+                severity=Severity.MEDIUM,
+            )
+        )
+
+    @staticmethod
+    def worker_lost(unit: FileUnit, reason: str, acc: Accumulator) -> Finding:
+        """A file whose worker died, hung or raised (item 28): reported by name, the scan incomplete.
+        The file is not read again in this process, which never parses scanned content: a file that
+        kills a worker would kill it here."""
+        kind, cause = Detection.WORKER_LOSSES.get(reason.split(":", 1)[0], ("DIED", "ended"))
+        detail = reason.split(": ", 1)[1] if ": " in reason else ""
+        # a gap like any other: no list names it, so it blocks (item 27's unread-bytes rule)
+        return acc.gap(
+            OperationalFinding.build(
+                path=unit.path,
+                rule_id=f"OPERATIONAL.FILE.WORKER_{kind}",
+                message=(
+                    f"The worker inspecting this file {cause}{f' ({detail})' if detail else ''}, so "
+                    "this file's checks did not finish; every other file was inspected."
+                ),
+                remediation="Report this with the file: it is an input that defeats the scanner.",
+            )
+        )
+
+    #: How a lost unit is named: the supervisor's reason -> (rule suffix, what happened).
+    WORKER_LOSSES: ClassVar[dict[str, tuple[str, str]]] = {
+        "memory": ("DIED", "ran out of its memory limit"),
+        "died": ("DIED", "ended"),
+        "cpu": ("HUNG", "used up its CPU budget"),
+        "wall": ("HUNG", "stopped answering"),
+        "failed": ("FAILED", "raised an error"),
+    }
+
+    def work_items(
+        self,
+        units: list[FileUnit],
+        ctx: ScanContext,
+        signature: str,
+        results: list[Finding],
+        pending: list[WorkItem],
+        carry_content: bool,
+        cached_facts: dict[str, str] | None = None,
+    ) -> None:
+        """The units a worker can take, each with the bytes it must carry when the source cannot be re-read."""
+        for index, unit in enumerate(units):
+            key = self.cache_key(unit, ctx, signature)
+            entry = self.cache.get_entry(key)
+            if entry is not None:
+                cached, facts = entry
+                results.extend(cached)
+                if facts and cached_facts is not None:
+                    cached_facts[unit.path] = facts
+                # A cache hit is a file accounted for. Counting only the misses
+                # made a warm scan appear to stall at zero and then finish.
+                self.progress.advance(unit.path)
+            else:
+                # The parent's content hash travels with the work item, so the
+                # worker can tell whether it read the same bytes -- and, for a
+                # source the worker must not re-read, the bytes themselves.
+                pending.append(
+                    (
+                        index,
+                        unit.path,
+                        len(unit.content.raw),
+                        unit.content.sha256,
+                        # An archive member has no path on disk to re-read. The whole of an
+                        # oversized one travels, so the worker can sweep it as well. Nor does
+                        # a hook's inline program (`core.inline_programs`). A walked file is
+                        # opened by its own path on disk (`FileUnit.opens`), never by its shown
+                        # name, which no file has when the name is not text.
+                        unit.content.carried
+                        if carry_content or "!" in unit.path or "#" in unit.path
+                        else unit.opens,
+                        # The parent's own decisions about the unit, never made again in a worker:
+                        # its language (a hook's interpreter, which a worker reading the file
+                        # alone cannot know: a hook-run payload.png was no language under --jobs)
+                        # and its project.
+                        unit.language,
+                        unit.project,
+                    )
+                )
+
+    @staticmethod
+    def degraded(produced: list[Finding], acc: Accumulator) -> None:
+        """The findings that say their detector answered fewer questions than it was asked: an
+        advisory source's leave the advisory side incomplete, any other's the content (kept in
+        `produced`, its cause recorded)."""
+        degrading = [f for f in produced if f.degrades_coverage]
+        if any(f.detector in ADVISORY_DETECTORS for f in degrading):
+            acc.advisory_complete = False
+        for finding in degrading:
+            if finding.detector not in ADVISORY_DETECTORS:
+                acc.gap(finding)
+
+    @staticmethod
+    def absorb_facts(path: str, text: str, acc: Accumulator, results: list[Finding]) -> None:
+        """A file's facts from its worker, accepted only as plain data within their bounds and shapes
+        (`engine/isolation/facts.py`): refused, the file is a gap, and none of its facts are used."""
+        from cordon_scanner.engine.isolation.facts import Facts
+
+        accepted, why = Facts.accept(text, acc.facts_bytes, Facts.budget(acc.facts_content))
+        if accepted is None:
+            results.append(
+                acc.gap(
+                    OperationalFinding.build(
+                        path=path,
+                        rule_id="OPERATIONAL.WORKER.FACTS_REFUSED",
+                        message=f"What a worker learned about this file was refused ({why}), so the "
+                        "analysis that joins files did not use it.",
+                        remediation="Report the file: a worker sends back only declared facts.",
+                    )
+                )
+            )
+            return
+        acc.facts_bytes += len(text)
+        if accepted:
+            acc.facts[path] = accepted
+
+    def merge_worker_results(
+        self,
+        produced: list[tuple[Any, ...]],
+        units: list[FileUnit],
+        results: list[Finding],
+        acc: Accumulator,
+        ctx: ScanContext,
+        signature: str,
+    ) -> None:
+        """What the workers found, merged in the order of the units, and cached where trusted."""
+        for index, findings, trusted, cacheable, coverage, *carried in produced:
+            acc.absorb(*coverage)  # the worker's own accumulator's verdict and gaps, as its own
+            unit = units[index]
+            results.extend(findings)
+            facts = carried[0] if carried else ""
+            if facts:
+                Detection.absorb_facts(unit.path, facts, acc, results)
+            if not trusted:
+                # The worker could not read the file, or read different bytes
+                # than the parent hashed. Reported exactly as the serial path
+                # reports an unreadable file, and never cached: storing it would
+                # file a result under a key describing content the result was
+                # not produced from.
+                results.append(
+                    acc.gap(
+                        OperationalFinding.build(
+                            path=unit.path,
+                            rule_id="OPERATIONAL.FILE.UNREADABLE",
+                            message=(
+                                "A worker could not read this file, or read different "
+                                "content than the scan had already hashed, so its checks "
+                                "did not run on the content being reported."
+                            ),
+                            remediation=(
+                                "Re-run the scan on a tree nothing else is writing to, or pass -j 1."
+                            ),
+                        )
+                    )
+                )
+                continue
+            # As the serial path (`run`): a detector that failed on the file, or a finding that
+            # says its detector answered fewer questions than it was asked, left part of it
+            # unread. The worker returns them as findings; their cause is recorded here, or a
+            # crash under --jobs left the scan "complete" (item 27). The same call as the serial
+            # path's, so an advisory source's leaves the advisory side incomplete here too.
+            for finding in findings:
+                if finding.rule_id in ("OPERATIONAL.DETECTOR.FAILED", "OPERATIONAL.FILE.TIMEOUT"):
+                    acc.gap(finding)
+            Detection.degraded(findings, acc)
+            if acc.complete and cacheable and not any(f.degrades_coverage for f in findings):
+                self.cache.put(self.cache_key(unit, ctx, signature), findings, facts)
+
+    def cache_key(self, unit: FileUnit, ctx: ScanContext, signature: str) -> CacheKey:
+        return CacheKey(
+            content_hash=unit.content.sha256,
+            rulepack_hash=self.rules.content_hash,
+            config_hash=self.config.fingerprint(),
+            detector_signature=signature,
+            path=unit.path,
+            in_install_hook=ctx.in_install_hook(unit.path),
+            language=unit.language or "",
+        )
+
+    def annotated(
+        self,
+        dependencies: tuple[Dependency, ...],
+        findings: Iterable[Finding],
+        ctx: ScanContext,
+        units: list[FileUnit],
+    ) -> tuple[Dependency, ...]:
+        """Each dependency's shared record: its check statuses, path and locations."""
+        if not dependencies:
+            return dependencies
+        from cordon_scanner.engine.inventory import DependencyRecords, InventoryContext
+
+        findings = tuple(findings)
+        advisory = next((d for d in self.detectors if d.id == "advisory"), None)
+        database = (
+            getattr(advisory, "_database", None)
+            if advisory is not None and self.enabled(advisory, ctx)
+            else None
+        )
+        failed = any(
+            f.rule_id == "OPERATIONAL.DETECTOR.FAILED" and "'advisory'" in f.message
+            for f in findings
+        )
+        wanted = {d.declared_in for d in dependencies} | {d.manifest_path for d in dependencies}
+        texts = {u.path: u.content.text for u in units if u.path in wanted}
+        return DependencyRecords.annotate(
+            dependencies,
+            findings,
+            InventoryContext(
+                advisory_database=database,
+                advisory_failed=failed,
+                offline=ctx.offline,
+                checks=ctx.checks,
+                texts=texts,
+            ),
+        )
+
+    def enabled(self, detector: Detector, ctx: ScanContext) -> bool:
+        if not self.config.detector_enabled(detector.id):
+            return False
+        if detector.requires.network and ctx.offline:
+            return False
+        return detector.applicable(ctx)
+
+    def drop_disabled(self, produced: list[Finding]) -> list[Finding]:
+        """Remove findings whose rule the configuration turned off.
+
+        Applied to every detector's output rather than inside each detector, so
+        a rule declared in Python is as disableable as one declared in YAML.
+        Operational findings are never dropped: they describe the scan, and a
+        configuration that could silence them could hide the fact that it had
+        silenced everything else.
+        """
+        disabled = self.config.disabled_rules
+        if not disabled:
+            return produced
+        return [
+            f
+            for f in produced
+            if f.category is Category.OPERATIONAL or f.always_report or f.rule_id not in disabled
+        ]
+
+    def run(
+        self, detector: Detector, unit: Unit, ctx: ScanContext, acc: Accumulator
+    ) -> list[Finding]:
+        """Run one detector over one unit, containing its failures.
+
+        A detector that raises must not abort the scan, because one broken
+        detector silently reducing coverage across every file is far worse than
+        one loud finding saying it broke. The scan continues and reports itself
+        as incomplete.
+        """
+        try:
+            # a structural detector does not parse a windowed Python prefix that cannot parse
+            # (`WindowPass.withheld`): the statement-aligned pass reads those bytes
+            with WindowPass.withheld(detector.id, unit):
+                produced = DetectorClock.timed(
+                    detector.id, lambda: list(detector.inspect(unit, ctx))
+                )
+        except Exception as exc:  # noqa: BLE001
+            return [acc.gap(Detection.failed(detector, unit, exc))]
+
+        # The engine asserts that a file detector reports only about the file it
+        # was given. A detector that reports about somewhere else is a bug, and
+        # accepting it silently would make findings untraceable to their source.
+        #
+        # Graph and repository units have no single path, so the check applies
+        # only where it is meaningful. Asserting `unit.path` unconditionally is
+        # what made every graph detector crash the scan.
+        if isinstance(unit, FileUnit):
+            produced = Detection.kept_in_file(detector, unit, produced, acc)
+
+        # A detector that hit a ceiling of its own knows something the engine
+        # cannot observe from outside: that it answered fewer questions than it
+        # was asked. Reading it here keeps `complete` meaning the same thing
+        # whether the coverage was lost in the walk or inside a detector.
+        Detection.degraded(produced, acc)
+
+        return self.drop_disabled(produced)
+
+    @staticmethod
+    def failed(detector: Detector, unit: Unit, exc: Exception) -> Finding:
+        """What a detector raising on a unit is reported as."""
+        if isinstance(exc, TimeoutError):
+            # A detector's own time limit on this file (the rule engine's match timeout): the
+            # file's checks did not finish, which is a time budget, not a detector that broke on
+            # the file. Reported as one, so the report names the cause (item 58: a five-hour host
+            # stall had read as two detector crashes).
+            return OperationalFinding.build(
+                path=getattr(unit, "path", "<graph>"),
+                rule_id="OPERATIONAL.FILE.TIMEOUT",
+                message=(
+                    f"Detector {detector.id!r} reached its time limit on this file, so its "
+                    f"checks did not finish: {exc}"
+                ),
+                remediation=(
+                    "Rescan with more time (--timeout), or on a less loaded machine; the "
+                    "file was not judged."
+                ),
+                severity=Severity.MEDIUM,
+            )
+        return OperationalFinding.build(
+            path=getattr(unit, "path", "<graph>"),
+            rule_id="OPERATIONAL.DETECTOR.FAILED",
+            message=(
+                f"Detector {detector.id!r} failed on this file, so its checks "
+                f"did not run: {type(exc).__name__}: {exc}"
+            ),
+            remediation="Report this with the file that triggered it.",
+            severity=Severity.MEDIUM,
+        )
+
+    @staticmethod
+    def kept_in_file(
+        detector: Detector, unit: FileUnit, produced: list[Finding], acc: Accumulator
+    ) -> list[Finding]:
+        """The findings about the file inspected, and one gap naming any about other paths."""
+        kept: list[Finding] = []
+        stray: list[Finding] = []
+        for finding in produced:
+            if finding.category is not Category.OPERATIONAL and finding.location.path != unit.path:
+                stray.append(finding)
+            else:
+                kept.append(finding)
+
+        if stray:
+            # Reported and dropped, not raised. This check sat outside the
+            # `try` above, so `DetectorError` propagated out of `scan()` and
+            # terminated the run -- meaning a detector that mislabelled one
+            # finding killed the entire scan on the first file it touched,
+            # inside the very method whose docstring says a broken detector
+            # must not abort anything.
+            kept.append(
+                acc.gap(
+                    OperationalFinding.build(
+                        path=unit.path,
+                        rule_id="OPERATIONAL.DETECTOR.STRAY_FINDING",
+                        message=(
+                            f"Detector {detector.id!r} reported {len(stray)} finding(s) "
+                            f"about other paths while inspecting this file "
+                            f"({stray[0].location.path!r}). They were discarded."
+                        ),
+                        remediation=(
+                            "Report this. A file detector must report only about the "
+                            "file it was given, or findings cannot be traced to their "
+                            "source."
+                        ),
+                        severity=Severity.MEDIUM,
+                    )
+                )
+            )
+        return kept
+
+
+__all__ = ["Detection"]

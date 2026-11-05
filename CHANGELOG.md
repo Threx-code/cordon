@@ -5,6 +5,256 @@ Versions follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.7.0] - unreleased
+
+Cordon offered to AI agents, and in both editor families. The work prepared as 0.6.1 ships here.
+
+Probed against real repositories and each ecosystem's own tool rather than against fixtures: 82
+public repositories in 24 languages scanned with every detector, Julia projects, two container
+images against their own package databases, and new provenance checks against `helm verify` and
+`ansible-galaxy collection verify` on real signatures. Each defect found is fixed below, with a
+test or conformance case that fails on the old code.
+
+### Added
+
+- **Tutorials 32 to 42: putting Cordon to work**, ready-made implementations from a laptop to an
+  organisation: vetting a package before install, fail-closed git hooks, an install guard for
+  `pnpm add`, `npm install` and `pip install` (34), GitHub Actions, GitLab CI and five other CI
+  systems, container images, an organisation rollout, air-gapped sites, AI agents and the Python
+  API. Every command in them was run as shown.
+- **A downloaded release is checked for its own known vulnerabilities**
+  (`VULNERABLE.PACKAGE.KNOWN.001`). A wheel or tarball scanned before install was matched against
+  the malicious-package records only, so `urllib3 1.26.4` came back clean while the same pin in a
+  requirements.txt was flagged. One finding per release, at its worst advisory's severity.
+- **A signed advisory bundle installs from a carried directory**: `advisories sync --bundle DIR`
+  takes the two release assets carried across an air gap, verified against the same pinned key
+  before anything is unpacked. Before, a machine with no network had no way to take in fresh
+  signed intel.
+- **Python 3.15** is supported, with its own derivation table, in CI and the classifiers.
+- **Every command a document shows is run through the real CLI by a test**: an unknown
+  subcommand, flag or output format, or a configuration file name the scanner does not read,
+  fails it.
+- **Rules can read a file's decoded layers** (`layers = "decoded"` in a rule's meta): what a file
+  carries under `atob`, `Buffer.from`, `b64decode`, `bytes.fromhex`, `unhexlify` and zlib or gzip,
+  decoded to bytes up to four layers deep, each match naming its layer. Rules without the meta read
+  the raw bytes only, unchanged.
+- **Rule files can use the `cuckoo` module**, answered from a Cuckoo sandbox report given with
+  `--rule-module-data cuckoo=report.json` (the `rule_module_data` setting, operator only), as
+  `yara -x` gives one. Its answers are the reference engine's on the same report, including the
+  older `dns` format, ports read only as integers and text read to its first NUL; an item that
+  is not text, which crashes the reference, is skipped. Without a report the functions answer 0
+  and the rule-file status finding says none was given (tutorial 31).
+- **Notifications are a feature of their own** (`cordon_scanner.notify`). Every channel is sent at
+  the same time. A delivery that fails on the way (a dropped connection, 408, 429, 5xx) is tried
+  again, three times at most and within twenty seconds for the whole scan, under one delivery id;
+  `Retry-After` is honoured up to ten seconds. A receiver can accept two webhook secrets while
+  changing one. A notification channel is now a plugin point (`cordon_scanner.notifiers`), loaded
+  only with `--allow-plugins`, and is handed only the safe summary. The Slack, Teams and webhook
+  messages for a failed gate are byte for byte what they were.
+- **When to notify, set once, tested first, recorded.** `--notify-on failed,incomplete,passed`
+  chooses the occasions (default `failed,incomplete`, as before), so a passing gate can post too.
+  `notify.channels` and `notify.on` in `.cordon.yaml` set them for a repository; a URL there is
+  refused, since a channel's URL is a credential. `cordon-scanner notify test` sends each channel a
+  message marked as a test and exits non-zero if any did not arrive. With `--audit-log`, each
+  delivery is recorded (channel, delivery id, outcome, attempts), never its URL.
+  [docs/14-NOTIFICATIONS.md](https://github.com/Threx-code/cordon/blob/v0.7.0/docs/14-NOTIFICATIONS.md).
+- **No optional runtime dependencies for provenance or signing.** Sigstore bundles (npm, PyPI PEP
+  740, Maven Central, RubyGems, Homebrew, Bazel) and OpenPGP signatures (Helm, Ansible) are
+  verified by Cordon's own code against trust material it pins, and CI uploads are signed
+  keylessly by it too. The `[attest]` and `[cloud]` extras are removed. On 1,934 real npm
+  attestations every one sigstore-python verifies is verified, as are 147 it cannot check (Rekor
+  `intoto` 0.0.2 entries, version-0.1 bundles), and npm's 967 registry-signed publish attestations;
+  none of 25,000 tampered bundles verifies. Every Wycheproof vector for ECDSA, RSA, Ed25519 and DSA
+  passes. Helm provenance that Sequoia refused (overstated MPI bit counts; a key judged as it
+  stands now) verifies as GnuPG and Helm verify it.
+- **Cordon's own JavaScript and TypeScript front end** for the `kind: ast` rules, in the core
+  install: real lexical scopes, aliases through `require`, every `import` form, `createRequire`,
+  dynamic `import()`, TypeScript `import =`, computed members and bundler calls.
+- **The development toolchain is hash-locked** (`ci/dev-requirements.txt`, installed with
+  `--require-hashes`) and is a dependency group, not package metadata.
+
+- **Cordon for AI agents: `cordon-scanner mcp`** (tutorial 30). A Model Context Protocol server,
+  inside the package, so coding agents ask before they act: 26 read-only tools for packages,
+  install commands, advisories, skills, agent files, MCP servers and their tool descriptions, IDE
+  extensions, file contents, workspace scans, secrets, dependency graphs, SBOMs and AI-BOMs,
+  release and baseline comparisons, images, this machine, and rules. Both protocol eras
+  (2026-07-28, and the `initialize` handshake from 2025-11-25 back to 2024-11-05). A package check
+  is the verdict a project depending on that release would get, from the same detectors -- checked
+  against a real affected release in each of npm, PyPI, Cargo, Go, Maven, NuGet, Composer,
+  RubyGems, Pub, Hex, CRAN and Swift. `cordon-scanner mcp config --client <agent>` prints the
+  configuration for eleven agents.
+- **Security for an agent-driven scanner** (threat T13): paths confined to `--root`; the network
+  only with `--allow-online`, and then public addresses only; a deadline and cancellation that end
+  a scan's whole process tree; a bound on calls in flight and per minute; text quoted from scanned
+  files stripped of hidden characters and marked as data; an audit log that never records
+  arguments.
+- **`CORDON_PUBLIC_NETWORK_ONLY`**: online, no name a scan resolves may lead inside the network --
+  private, loopback, link-local and cloud-metadata addresses refused at name resolution, DNS
+  rebinding included (threat T12). On for every scan the MCP server runs; for CI that scans
+  untrusted code online.
+- **VS Code extension 0.7.0** registers Cordon's MCP server with the editor's own agents (VS Code
+  1.101 and later), carries Cordon's mark, and builds reproducibly in Docker. **A JetBrains
+  plugin** (new): findings on their lines and in a tool window for IntelliJ-based IDEs 2025.1 and
+  later, and AI Assistant's MCP configuration one action away.
+- **Agent rules for the ClawHavoc shapes**: a dropper written as prose (download a
+  password-protected archive, extract, run) and a phantom prerequisite (a tool the skill says must
+  be installed, with a download link, that the skill never runs). Held-out malicious skills
+  blocked: 7.9% to 35.6%, with no new false alarm on 3,000 real skills.
+- **The CVE List** fills affected ranges NVD gives none for (2,960 CVEs).
+
+- **Provenance for Bazel modules, Helm charts and Ansible collections (UNI-17).** Bazel Central
+  Registry modules are checked against BCR's attestations (the lock pins `source.json`, which pins
+  the archive). Helm charts' `.prov` files and Ansible collections' signatures over MANIFEST.json
+  are verified with OpenPGP against the keys the operator gives with `--keyring` (or
+  `CORDON_KEYRINGS`; never from a repository's own configuration), as `helm verify` and
+  `ansible-galaxy collection verify` check them, expired and revoked keys included. Compared with
+  each tool on real signatures: every verdict agrees. Needs the `[attest]` extra (pysequoia).
+- **`scan pkg:docker/<image>`**: an image pulled from its registry, every blob checked against
+  its digest, every platform of a multi-platform image inventoried.
+- **Terraform's implied providers** (a `provider "aws"` block or an `aws_*` resource with no
+  `required_providers` entry) are listed, as Terraform installs them.
+- **Specification items that had no proof**: Gradle substitutions and capabilities, Bazel
+  apparent names and WORKSPACE migration, Ansible execution environments and `requires_ansible`,
+  CocoaPods test and app specs, Nix overlays, Terraform's `data "external"` program.
+- **`make prepush`**: what CI will say about HEAD, run in Docker before the push; and
+  `scripts/portability.py`, which finds from source what passes on one platform and fails on
+  another.
+- **Tutorial 29**, troubleshooting from what you see back to its cause.
+
+### Fixed
+
+- **A large repository's scan is complete**: the facts the scan's workers send back were capped at
+  64 MiB per scan, so a 50,000-file JavaScript repository had 15,229 files refused, the scan
+  ended incomplete (exit 4), and none of those files was ever cached. The bound now grows with the
+  content the scan reads; a warm scan of that repository went from 37 s to 19 s.
+- **A long install hook no longer makes a scan incomplete**: a `postinstall` (or any field a
+  worker reads from a file) longer than 64 KiB refused the whole scan's context.
+- **On Windows, a scan no longer sends Ctrl+C to the console**: the check for a crashed scan's
+  leftover files asked whether a process was alive with signal 0, which on Windows is Ctrl+C to
+  every process on the console. The MCP server's check of an installed server's own copy also
+  failed on every file there.
+- **On Windows, two scans sharing a cache no longer fail on a busy file**: a rename Windows
+  refuses for a moment is retried.
+- **A scan worker that never starts cannot hold a scan past its deadline**: one stuck before it
+  was ready was waited for without a limit (macOS: a one-file scan spent its whole 15-minute
+  budget). It is now a failed start, tried once more, and the deadline always holds.
+- **A worker holds no connection the scanning process had open**: workers inherited every
+  socket open when the scan started.
+- **Three rule patterns run in time proportional to their input**: the go.mod retraction parser,
+  the constructed-DNS-name rule and the guard's destructive-command check took up to 6 s on a
+  long crafted line.
+- **Intel is stale after a week without a feed, not a month**, and a repository's own
+  configuration can no longer lengthen that limit: `max_intel_age: 0` was withheld from a scan
+  target, ten years was not, and did the same. An operator's own `--config` may still set it.
+- **Every release a scan holds is looked up**: only the first 20 were, so a folder of 25
+  downloads had five never checked, even for malware.
+- **No CI template offers `fail-on: none`**: the CircleCI orb, the Bitbucket pipe and the
+  Jenkins library did, and the scanner refuses it with exit 3, so a pipeline that chose it failed
+  on every run.
+- **`config explain` names a file only for what it sets**: it credited a repository's
+  cordon.yaml with `offline`, `confidence_threshold`, `severity_threshold` and `evidence` it never
+  wrote.
+- **The `--format` help names all eight output formats** (codeclimate and vex were missing).
+- **The documentation taught commands that do not run**: `sbom .` (it is `sbom generate`),
+  `config --config` (it is `config validate`), `advisories status`, `cordon.toml` and
+  `[tool.cordon]` in pyproject.toml (configuration is YAML only), `/etc/cordon/policy.yaml`
+  (never read), `evidence: full` (the modes are none, masked and hash_only), and a Python API
+  example calling `result.violates()`, which does not exist.
+- **A two-line agent configuration no longer comes back incomplete on a busy machine.** The first
+  file that needed the agent threat catalogue paid for compiling all 3,407 rules inside its own
+  five-second budget: about two seconds idle, past five under load, so `.mcp.json` scans (and the
+  MCP server's `check_mcp_server`) reported `OPERATIONAL.FILE.TIMEOUT` at random. Every bundled
+  catalogue and rule set (24 loaders) now records its first load as the process's cost, and the
+  per-file budget leaves it out; the file's own detector time is still charged in full.
+- **The wheel shipped without two files the scanner loads.** An install from PyPI had no built-in
+  rule pack (`rules/rule_files/`), so `--rule-file builtin` found nothing to load, and no bundled EPSS scores
+  (`intel/data/epss.csv.gz`). Both are packaged now, and a test fails when any data file in the
+  package is not declared for the wheel. A source checkout was never affected.
+- **Scans that refused a whole file** now read it, each found in a real repository:
+  - YAML block scalars (`|`, `>`) lost relative indentation, empty lines, comment-looking lines
+    and chomping, and a `[` inside one refused the file; multi-line quoted strings, flow
+    collections below their key and nested `- -` sequences were misread or refused. Measured
+    against PyYAML on 1,055 real files: no string value differs, and 21 refused files are read --
+    Kubernetes manifests among them, whose container images were missing from the inventory.
+  - Dockerfile `FROM ubuntu:"${version}"` (Homebrew), an `ARG` default built from earlier
+    arguments, as BuildKit expands it (`hexpm/elixir:${ELIXIR_VERSION}-...`), and a template
+    such as Phoenix's `Dockerfile.eex`, which is not a Dockerfile until rendered.
+  - Compose: a scalar alias (`image: *node-image`), a leading `---`, a block scalar whose text
+    looks like keys, and a service whose image comes from a file merged over it (`-f base.yml
+    -f prod.yml`) -- noted, not refused. A service whose value is not a mapping, which is what
+    a file cut short leaves, is still refused.
+  - GitHub Actions: a composite action kept in a folder under `.github/workflows/`, and a step
+    reused by YAML anchor and alias.
+  - `mix.exs` sigils, anonymous functions and function captures (Elixir's and Phoenix's own);
+    a Brewfile call with parentheses; a Shiny app's `DESCRIPTION`.
+  - Across the 2,852 such files in the 82 repositories, 76 more are read, none that was read is
+    refused, and no dependency already read changes; the 4 still refused are refused by Docker,
+    Terraform and Homebrew themselves.
+  - A Starlark string continued with `\` (Kong's BUILD.bazel).
+  - Terraform `for` expressions and computed keys; Podfile and Gemfile keyword blocks; `mix.exs`
+    module attributes; Hackage freeze files that pin only the index; Brewfiles by every name.
+  - Terraform and GitHub Actions files checked out with CRLF line endings.
+- **False positives**, each from a real repository:
+  - `"rm -rf /"` in a list of commands to refuse was reported as a wiper (claw-code, ECC).
+  - An example secret on an Elixir `iex>` or Ruby `irb>` transcript line (Phoenix.Token).
+  - Yarn 4's `patch:` entry reported as a second hash for the same version (TypeScript).
+  - An egress security-group rule reported as ingress from the internet (terraform-aws-eks).
+  - `*_FILE`, `*_PATH` and `*_DIR` environment variables reported as Kubernetes secrets (caveman).
+  - R's base packages and the platform asked of a registry; the project's own code asked too.
+- **A missed finding**: Azure's `destination_port_range = "*"` (every port) open to the internet
+  was never reported -- the pattern's `\b` never holds after `*`.
+- **A slow scan**: one repository took 608 seconds; choosing the version to upgrade to compared
+  every fixed version with every advisory, re-parsing versions each time. 58 seconds now, with an
+  identical report (14,492 findings, each equal), and the test suite runs in half the time.
+- **An incomplete scan that gave no reason**: a file past `max_file_bytes` made the scan
+  incomplete -- which fails the GitHub Action's default gate -- but a binary file's truncation was
+  never reported. Every truncated file is now named.
+- **Scanned Python's `SyntaxWarning`s** (an invalid escape in a scanned file) are no longer
+  printed to the scanner's stderr.
+- **Registry answers**: CocoaPods follows trunk's redirect to its Specs mirror; CRAN compares
+  versions as R does; a bare version is a range in Cargo and Julia; a withdrawal is reported as
+  the registry states it; a response cut short is an unreachable registry, not a crash.
+- **Provenance** checks the attestation of the file the project pinned, not another file of the
+  same release.
+- **Exit codes**: `deps` exits 4 (incomplete), not 2 (a Cordon failure), for an incomplete graph.
+- **`sbom generate`** reports the packages an SPDX document holds; `intel update` counts an OSV
+  refresh as an update.
+
+### Changed
+
+- **A rule file's `include` now loads files from its own directory.** An operator's index file
+  (`--rule-file index.yar`) loads the members it names, read relative to the file that includes
+  them, where before every `include` was refused. Only files under the rule file's directory are
+  read; an absolute name, a path or link leading out, a cycle and nesting deeper than 32 are
+  refused, all the files share the 16 MiB limit, and the built-in pack never includes (tutorial
+  31). The scan cache keys on every included file.
+- **Rule files run on cordon-rule, Cordon's own rule engine**, and are named for it: `--rule-file`
+  (env `CORDON_RULE_FILE`), the `rule_file` setting, the `rule-file` detector and the rules
+  `SUSPECT.RULEFILE.MATCH.001`, `MALWARE.RULEFILE.MATCH.001`, `OPERATIONAL.RULEFILE.STATUS` and
+  `OPERATIONAL.RULEFILE.UNAVAILABLE` (tutorial 31). The previous names -- `--yara`, `CORDON_YARA`,
+  the `yara` detector in `scan.detectors`, and the `*.YARA.*` rule IDs in suppressions -- keep
+  working through this release, the flag and variable with a deprecation warning, and are removed
+  in the next. Findings keep the fingerprints they had, so baselines and code-scanning alerts carry
+  over. Its string matching is held to the format's reference behaviour by a differential over
+  125,000 generated rules (every match compared offset by offset, no difference).
+- **A rule file is checked whole when it loads.** Every part of every condition is type-checked
+  against the modules' declarations, including branches a file would never reach, so a rule that
+  compares text with a number, names an identifier that does not exist, or divides a constant by
+  zero is refused with `OPERATIONAL.RULEFILE.UNAVAILABLE` instead of loading. A quantity worked out
+  from the file (`filesize of them`, `(#a - 3)% of them`) is taken as it is rather than refused.
+  Both match the reference behaviour of the format, over a battery of 20,007 typed cases.
+- Images list a distribution's own Python and npm packages under their language too, as Syft
+  does; Apache's PHP module, the Composer PHAR and jar groups are named as Syft names them.
+- The home screen and tutorial 11 say what a default scan does on the network (it asks OSV what
+  changed since the intel was built) and how to turn that off.
+- The capability detector's class moved to `cordon_scanner.detect.code.capability.detector`
+  (its entry point follows); the detector id `capability` that configs name is unchanged.
+
+### Security
+
+- The Ed25519 verifier accepted the identity public key, with which any signature verifies
+  (Wycheproof's universal forgery); small-order and mixed-order keys and `R` points are refused.
+
 ## [0.6.0] - 2026-10-08
 
 Measured at scale before it was written down: every one of the 249,646 known-malicious records

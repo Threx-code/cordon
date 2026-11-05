@@ -1,0 +1,6 @@
+[
+  "BitBlt",
+  "CGWindowListCreateImage",
+  "GetDesktopWindow",
+  "screencapture"
+]

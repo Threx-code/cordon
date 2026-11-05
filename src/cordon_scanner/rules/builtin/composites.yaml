@@ -177,6 +177,12 @@ rules:
             - all:
                 - capability: spawn
                 - capability: decode
+            # Or a process started beside an archive being unpacked: `curl -o x.zip URL`, `tar
+            # -xf x.zip -C dir`, then `python dir/code.py` (review 98, pycolouring). The third
+            # signal below still has to hold, so an updater unpacking a release is not this.
+            - all:
+                - capability: spawn
+                - capability: decompress
         # A third signal is required, and this is the whole rule.
         #
         # `egress AND (execute OR spawn)` describes an enormous amount of
@@ -431,7 +437,10 @@ rules:
       # installer all do, and across the first 228 repositories measured that was eleven
       # blocking findings, every one of them that.
       all:
-        - rule: AST.PY.IDENTITY_SENT
+        - any:
+            - rule: AST.PY.IDENTITY_SENT
+            # The same, in JavaScript: `os.hostname()` in what a request sends.
+            - rule: FLOW.JS.IDENTITY_SENT
       unless:
         - path_glob: "**/*.test.*"
         - path_glob: "**/test_*.py"
@@ -466,7 +475,10 @@ rules:
       scope: file
       proximity: 30
       all:
-        - rule: AST.PY.ENVIRONMENT_SENT
+        - any:
+            - rule: AST.PY.ENVIRONMENT_SENT
+            # The same, in JavaScript: `process.env` whole in what a request sends.
+            - rule: FLOW.JS.ENVIRONMENT_SENT
       unless:
         - path_glob: "**/*.test.*"
         - path_glob: "**/test_*.py"
@@ -711,6 +723,10 @@ rules:
             - context: install_entry
             - capability: egress
             - capability: decode
+            # Modules loaded by names a local decoder produces: once everything is behind the
+            # decoder there is no egress or decode left in plain sight to pair with (review 98:
+            # a preinstall helper loading os, dns and https from hex through an alias of require).
+            - rule: CAP.JS.COMPUTED_REQUIRE_SOURCE
             - capability: credential
             - capability: spawn
 
@@ -746,6 +762,89 @@ rules:
         - context: install_entry
         - capability: decode
         - capability: spawn
+
+  - id: MALWARE.DROPPER.SHIPPED_PAYLOAD.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Code decrypts bytes it carries into a program, writes it and runs it
+    message: >
+      This file transforms data it carries -- an XOR loop over a buffer, a cipher, base64 --
+      writes the result as a program (executable mode, an executable's header checked, an `.exe`
+      name) and starts it. The program never appears in the package in a form anyone can read,
+      and nothing needs to be downloaded. Libraries that ship a binary ship it as one; decrypting
+      it first exists to hide it.
+    remediation: >
+      Do not install or import this package. Treat machines that loaded it as compromised.
+    provenance:
+      kind: research
+      reference: >
+        `@winstan/binston` 1.0.1 (npm, a clone of winston): `transport.db` XOR-decrypted, checked
+        for `MZ`, written with mode 0755 and run hidden on load (review 98, work half).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1027/
+      - https://attack.mitre.org/techniques/T1140/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: CAP.JS.DECODED_PROGRAM_RUN
+
+  - id: MALWARE.EXFIL.COMMAND_OUTPUT.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: An install script runs a command and sends what it printed
+    message: >
+      At install time this script runs a command and puts its output in a request: a listing of
+      the machine, a search through its files, whatever the command was chosen to find. Install
+      scripts build and copy; none needs to report a command's output to anyone.
+    remediation: >
+      Do not install this package. Treat anything the command could read on machines that
+      installed it as exposed.
+    provenance:
+      kind: research
+      reference: >
+        The `elf-stats-*` npm packages: a preinstall `exec` whose stdout is the body of an HTTPS
+        POST (review 98, work half).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1041/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: install_hook
+        - rule: CAP.JS.COMMAND_OUTPUT_SENT
+
+  - id: SUSPECT.EXFIL.COMMAND_OUTPUT.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: A package's entry point runs a command and sends what it printed
+    message: >
+      Loading this package runs a command and puts its output in a request. Whatever imports the
+      package reports the command's output to whoever receives it.
+    remediation: >
+      Read what the command is and where its output goes; do not use the package until both are
+      accounted for.
+    provenance:
+      kind: research
+      reference: >
+        The `elf-stats-*` npm packages' flow, where it runs on import rather than install.
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1041/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: import_entry
+        - rule: CAP.JS.COMMAND_OUTPUT_SENT
 
   - id: SUSPECT.EXFIL.CALLBACK.001
     version: 1.0.0
@@ -840,9 +939,14 @@ rules:
         - path_glob: "tests/**"
 
   - id: SUSPECT.MODEL.UNSAFE_LOAD_OPTION.001
-    version: 1.0.0
+    version: 1.1.0
     category: suspicious
-    severity: medium
+    # Low: the switch is a weakness of whatever file is loaded, usually one the project wrote
+    # (`np.load(stats_file, allow_pickle=True)`). The attack -- a package unpickling the model
+    # it ships when it is imported -- is `SUSPECT.MODEL.LOADED_ON_IMPORT.001`, at high. At
+    # medium this was the only code warning on 53 of 14,000 benign units rescanned and on
+    # none of 4,269 malware samples (review 98).
+    severity: low
     confidence: high
     title: Loads a model with the loader's safety switch turned off
     message: >
@@ -938,6 +1042,33 @@ rules:
       all:
         - context: install_entry
         - rule: AST.PY.HIDDEN_ACTION
+
+  - id: SUSPECT.INSTALL.STRING_CODE.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: An install script runs a program it carries as a string
+    message: >
+      Code that runs when the package is installed hands a string literal of a thousand
+      characters or more to eval, Function or the vm module. The program that runs is written
+      inside quotes, where none of its calls are code a reader or a scanner sees as code.
+      Installing a package needs its install script, not a second program inside it.
+    remediation: >
+      Do not install it until the string has been read as code. A build step that needs to run
+      something writes it as a file in the package.
+    provenance:
+      kind: research
+      reference: >
+        A hijacked release of `is` whose postinstall ran `Function()` over an 822 KB string
+        from a file under `test/` (review 98).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: install_hook
+        - rule: CAP.JS.STRING_CODE_RUN
 
   # ---------------------------------------------------------------------
   # Cryptomining
@@ -1052,6 +1183,44 @@ rules:
   # ---------------------------------------------------------------------
   # Protestware and region-targeted payloads
   # ---------------------------------------------------------------------
+  - id: MALWARE.REVERSE_SHELL.002
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: A shell's input and output joined to a stream
+    message: >
+      This file starts a command shell and pipes a stream into its input and its
+      output back out. That is a reverse shell: whoever is at the other end of the
+      stream gets an interactive prompt on this machine, with the permissions of
+      whoever ran the code. Unlike `MALWARE.REVERSE_SHELL.001`, the address need
+      not be written into the code: a variable or a setting serves as well.
+    remediation: >
+      Treat the machine as compromised, not just the package or extension. Do not
+      install it, and report it to the registry or marketplace.
+    references:
+      - https://attack.mitre.org/techniques/T1059/
+    provenance:
+      kind: incident
+      reference: "CSF-RED.CSF-RED 0.0.1, VS Code Marketplace (DataDog malicious-software-packages-dataset)"
+      note: >
+        A VS Code extension activated on `*` that runs `cmd.exe` or `sh` and pipes
+        it to a `net.Socket` connected to a hostname held in a variable. The
+        socket-literal form of the rule saw no literal address and reported
+        nothing.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      # The label is the whole construct: a shell named, a stream into a process's stdin,
+      # its output piped back out. Not `capability: spawn` as well: the construct is the
+      # finding whichever tier labels the spawn.
+      # Ruby's form (STDIN/STDOUT reopened onto a socket, or a spawn redirecting them) is the
+      # same construct: CAP.RB.SHELL_STDIO_JOINED.001.
+      any:
+        - rule: CAP.JS.SHELL_STDIO_JOINED.001
+        - rule: CAP.RB.SHELL_STDIO_JOINED.001
+
   - id: MALWARE.PROTESTWARE.001
     version: 1.0.0
     category: malicious
@@ -1134,6 +1303,327 @@ rules:
         - path_glob: "tests/**"
         - path_glob: "**/conftest.py"
 
+  - id: SUSPECT.DROPPER.REMOTE_COMMAND.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Runs a command a server sends it
+    message: >
+      This file decodes a field of a server's response and runs it as a shell command. The
+      request reads like a version check; the answer is a command, chosen by whoever controls
+      the server at the moment it is asked.
+    remediation: >
+      Do not install or run it. If it ran, treat the machine as having executed commands from
+      that server and review what they could reach.
+    references:
+      - https://attack.mitre.org/techniques/T1105/
+      - https://attack.mitre.org/techniques/T1059/
+    provenance:
+      kind: research
+      reference: "review 98: EthCompiler.among-eth, JohnGaffney.blankebesxstnion, SmartContractAI.solaibot"
+      note: >
+        One term, as SUSPECT.REGISTRY.SELF_PUBLISH.001: the primitive is the whole act --
+        response parsed, field decoded, result executed, within one expression's reach.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 1
+      all:
+        - rule: CAP.JS.REMOTE_COMMAND.001
+
+  - id: SUSPECT.EXFIL.WALLET_SECRET.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Sends a wallet's secret to an outside address
+    message: >
+      A request to a fixed outside address carries a wallet's mnemonic, seed or private key.
+      A wallet signs with its secret and sends what it signed; nothing it does needs the
+      secret itself to leave the process, and whoever holds it holds the funds.
+    remediation: >
+      Do not install or run it. Move funds from any wallet this code opened to a new one.
+    references:
+      - https://attack.mitre.org/techniques/T1552/
+    provenance:
+      kind: research
+      reference: "review 98: the compromised xrpl 2.14.2 and 4.2.1-4.2.4 releases (April 2025)"
+      note: >
+        One term, as SUSPECT.DROPPER.REMOTE_COMMAND.001: the request and the secret it carries
+        are found together by `CapabilityDetector._js_wallet_secret_sent`.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 1
+      all:
+        - rule: CAP.JS.WALLET_SECRET_SENT
+
+  - id: MALWARE.EXFIL.FLOW_TO_DROP.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Sends this machine's secrets or identity to a drop point
+    message: >
+      A value read here -- a credential file, a wallet key, a file from the home directory, the
+      whole environment, or who and where this machine is -- reaches a request bound for an
+      address that exists to collect data from other people's code: a webhook catcher, a chat
+      bot API, a tunnel, a paste site, or a bare IP address. Followed through bindings, helper
+      functions and callbacks (`analysis/javascript/js_flow.py`), so it holds however far apart the read and
+      the send are written.
+    remediation: >
+      Do not install or run it. Treat what the code could read as sent: rotate those credentials,
+      move funds from any wallet whose key was on the machine.
+    references:
+      - https://attack.mitre.org/techniques/T1041/
+    provenance:
+      kind: research
+      reference: >
+        Review 98, on 40,768 benign units: drop-point destinations 0 benign; bare public addresses
+        3 benign before private and loopback ranges were excluded. Recovers wallet-key stealers
+        posting to bare addresses and a home-directory seed-phrase harvester whose read and send
+        sat in separate functions.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 1
+      any:
+        - rule: CAP.JS.FLOW.SECRET_FILE_SENT.DROP
+        - rule: CAP.JS.FLOW.SECRET_FILE_SENT.IP
+        - rule: CAP.JS.FLOW.WALLET_KEY_SENT.DROP
+        - rule: CAP.JS.FLOW.WALLET_KEY_SENT.IP
+        - rule: CAP.JS.FLOW.HOME_FILE_SENT.DROP
+        - rule: CAP.JS.FLOW.HOME_FILE_SENT.IP
+        - rule: CAP.JS.FLOW.IDENTITY_SENT.DROP
+        - rule: CAP.JS.FLOW.IDENTITY_SENT.IP
+        - rule: CAP.JS.FLOW.ENVIRONMENT_SENT.DROP
+        - rule: CAP.JS.FLOW.ENVIRONMENT_SENT.IP
+
+  - id: SUSPECT.EXFIL.FLOW_SECRET.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Sends a credential file off the machine
+    message: >
+      The contents of a credential store -- an SSH key, cloud or registry credentials, a
+      browser's saved logins -- reach a request. No library needs to send them: a client
+      authenticates with a token it was given, not with the file that holds the user's others.
+      Followed through bindings, helper functions and callbacks (`analysis/javascript/js_flow.py`).
+    remediation: >
+      Do not install or run it. Rotate the credentials and move funds from any wallet whose key
+      was on the machine.
+    references:
+      - https://attack.mitre.org/techniques/T1552/
+    provenance:
+      kind: research
+      reference: "Review 98: credential-file flows in 97 malicious units, 0 of 40,768 benign units."
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 1
+      any:
+        - rule: CAP.JS.FLOW.SECRET_FILE_SENT.FIXED
+        - rule: CAP.JS.FLOW.SECRET_FILE_SENT.UNKNOWN
+
+  - id: SUSPECT.EXFIL.FLOW_IDENTITY.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Sends who and where this machine is
+    message: >
+      The machine's host name, user name or network interfaces reach what a request, a connection
+      or a DNS lookup sends, to whatever host the file builds. Followed through bindings, helper
+      functions, class methods, callbacks and compiled module wrappers (`analysis/javascript/js_flow.py`), so
+      it holds however the read and the send are written. A library has no need to report the
+      machine it runs on; a dependency-confusion probe and a stealer's first message do exactly
+      this.
+    remediation: >
+      Read where the identity goes. Do not install the package unless that reporting is
+      documented and opt-in.
+    references:
+      - https://attack.mitre.org/techniques/T1082/
+    provenance:
+      kind: research
+      reference: >
+        Review 98 (17-PROOF-REVIEW): identity -> request/connection/dns at an unknown or fixed
+        host in 1 of 3,584 benign npm units (an MCP server's telemetry); in 16 code-bearing npm
+        malware of the bulk-2 study half that no other rule blocked.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 1
+      any:
+        - rule: CAP.JS.FLOW.IDENTITY_SENT.FIXED
+        - rule: CAP.JS.FLOW.IDENTITY_SENT.UNKNOWN
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/*.spec.*"
+        - path_glob: "tests/**"
+        - path_glob: "test/**"
+        - path_glob: "__tests__/**"
+
+  - id: MALWARE.EXFIL.FLOW_RAW_CHANNEL.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Sends what a command printed, or the user's files, over a channel of its own
+    message: >
+      What a command printed, a file from the home directory or a credential store reaches a raw
+      socket or the name of a DNS lookup. Libraries talk to their services over HTTP; a socket or
+      a DNS name carrying the output of `whoami`, a listing, or a key file is a payload reporting
+      what it found. Followed through bindings, helper functions, callbacks and compiled module
+      wrappers (`analysis/javascript/js_flow.py`).
+    remediation: >
+      Do not install or run it. Treat whatever the command or the files could reveal on machines
+      that ran it as exposed, and rotate those credentials.
+    references:
+      - https://attack.mitre.org/techniques/T1048/
+    provenance:
+      kind: research
+      reference: >
+        Review 98 (17-PROOF-REVIEW): 0 of 3,584 benign npm units; command output over a socket in
+        26 code-bearing npm malware of the bulk-2 study half that no other rule blocked.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 1
+      any:
+        - rule: CAP.JS.FLOW.COMMAND_OUTPUT_RAW.DROP
+        - rule: CAP.JS.FLOW.COMMAND_OUTPUT_RAW.IP
+        - rule: CAP.JS.FLOW.COMMAND_OUTPUT_RAW.FIXED
+        - rule: CAP.JS.FLOW.COMMAND_OUTPUT_RAW.UNKNOWN
+        - rule: CAP.JS.FLOW.HOME_FILE_RAW.DROP
+        - rule: CAP.JS.FLOW.HOME_FILE_RAW.IP
+        - rule: CAP.JS.FLOW.HOME_FILE_RAW.FIXED
+        # No HOME_FILE_RAW.UNKNOWN: a home file to a host the code does not name is an SSH tool's
+        # or a sync client's work, as FLOW_TO_DROP leaves HOME_FILE_SENT.UNKNOWN out over HTTP (9
+        # benign npm units, 0 of 92 malware without a secret, identity, environment or wallet flow).
+        - rule: CAP.JS.FLOW.SECRET_FILE_RAW.DROP
+        - rule: CAP.JS.FLOW.SECRET_FILE_RAW.IP
+        - rule: CAP.JS.FLOW.SECRET_FILE_RAW.FIXED
+        - rule: CAP.JS.FLOW.SECRET_FILE_RAW.UNKNOWN
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/*.spec.*"
+        - path_glob: "tests/**"
+        - path_glob: "test/**"
+        - path_glob: "__tests__/**"
+
+  - id: MALWARE.AGENT.CONFIG_PLANTED.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Installing the package plants an AI agent's configuration in your project
+    message: >
+      At install time this package copies files into the project that is installing it, and it
+      ships an AI coding agent's configuration -- an MCP server list, a CLAUDE.md or AGENTS.md
+      system prompt, agent settings or hooks. The next agent session opened in that project loads
+      them without asking: a server of the publisher's choosing, instructions the user never
+      wrote. Installing a dependency does not need to write anything into the project around it.
+    remediation: >
+      Do not install the package. Remove any `.mcp.json`, `CLAUDE.md`, `.claude/` or `.cursor/`
+      files it added to the project, and check which MCP servers your agent now starts.
+    references:
+      - https://attack.mitre.org/techniques/T1546/
+    provenance:
+      kind: research
+      reference: >
+        The 2026 `0x2ai-demo*` npm packages: a postinstall `cpSync(payload, INIT_CWD)` that drops
+        `.mcp.json`, `CLAUDE.md` and `.claude/settings.json` into the installing project (review 98,
+        17-PROOF-REVIEW).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 1
+      all:
+        - context: install_hook
+        - rule: CAP.JS.AGENT_CONFIG_PLANTED
+
+  - id: MALWARE.MOBILE.ATTRIBUTION_CLOAK.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: A component sends the app's install attribution and shows a server-chosen page
+    message: >
+      This component reads the app's install-attribution data (which campaign brought each user)
+      and renders a page whose address is a variable in a WebView -- the cloaking shape of fake
+      React Native packages: the attribution goes to the publisher, a remote setting picks the
+      page, and the WebView stays hidden until the server sends one, so app review sees an
+      ordinary screen and users see whatever the server chooses.
+    remediation: >
+      Remove the package from the app. Check what the app's WebViews loaded, and which servers
+      received its attribution data.
+    references:
+      - https://attack.mitre.org/techniques/T1406/
+    provenance:
+      kind: research
+      reference: >
+        The 2026 `sproger` npm campaign (37 React Native packages, two attacker domains). Review 98
+        (17-PROOF-REVIEW): 18 study-half misses with no other finding; on 92,999 benign npm units
+        only a package of the same campaign.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 1
+      all:
+        - rule: CAP.JS.ATTRIBUTION_CLOAK
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/*.spec.*"
+        - path_glob: "tests/**"
+        - path_glob: "test/**"
+        - path_glob: "__tests__/**"
+
+  - id: MALWARE.ACCOUNT.CHANNEL_FOLLOW.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: A WhatsApp library subscribes every account that connects to the publisher's channel
+    message: >
+      A WhatsApp Channel id is written into the library's own socket or utility code, or beside a
+      follow call. Every account that signs in through this package is made to follow that
+      channel without being asked: the publisher's audience is built from other people's
+      accounts. The genuine library defines a follow call and never names a channel.
+    remediation: >
+      Do not use this package; use the upstream library. Review which channels the accounts that
+      used it now follow, and unfollow the ones you did not choose.
+    references:
+      - https://attack.mitre.org/techniques/T1098/
+    provenance:
+      kind: research
+      reference: >
+        The 2026 family of Baileys forks (100+ on npm) that inject a covert `w:mex` FOLLOW on
+        connect. Review 98 (17-PROOF-REVIEW): 22 of 479 code-bearing misses of the bulk-2 study
+        half; in 92,999 benign npm units only forks with the same added files.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 1
+      all:
+        - rule: CAP.JS.WHATSAPP_CHANNEL_FOLLOW
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/*.spec.*"
+        - path_glob: "tests/**"
+        - path_glob: "test/**"
+        - path_glob: "__tests__/**"
+
   - id: SUSPECT.DESTROY.HOME_OR_ROOT.001
     version: 1.0.0
     category: suspicious
@@ -1165,10 +1655,51 @@ rules:
         - path_glob: "**/*.test.*"
         - path_glob: "**/test_*.py"
         - path_glob: "tests/**"
+        # Test suites hold the attack strings they test against: a bats case passing
+        # `a"; rm -rf / #` as input, protobuf's generator_unittest.cc (review 98).
+        - path_glob: "**/tests/**"
+        - path_glob: "**/test/**"
+        - path_glob: "**/*.bats"
+        - path_glob: "**/*_test.*"
+        - path_glob: "**/*_unittest.*"
 
   # ---------------------------------------------------------------------
   # Anti-analysis
   # ---------------------------------------------------------------------
+
+  - id: SUSPECT.DESTROY.SYSTEM_DISK.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Writes to the system disk itself
+    message: >
+      This file opens the machine's first disk as a raw device and writes to it: the boot
+      record, the partition table and everything under them. No build, test or install step
+      does; a disk wiper does exactly this.
+    remediation: >
+      Do not run it. If it ran, treat the machine's data as destroyed and restore from backup.
+    references:
+      - https://attack.mitre.org/techniques/T1561/
+    provenance:
+      kind: research
+      reference: >
+        Review 98 P3 census: a raw-disk wiper among the npm study-half content misses; the
+        primitive hits 1 of 1,923 study-half malware and 0 of 17,868 benign units (P4 #5).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 1
+      all:
+        - rule: CAP.DESTROY.SYSTEM_DISK.001
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+        - path_glob: "**/tests/**"
+        - path_glob: "**/test/**"
+        - path_glob: "**/*_test.*"
   - id: SUSPECT.ANTI_ANALYSIS.001
     version: 1.0.0
     category: suspicious
@@ -1485,6 +2016,17 @@ rules:
       all:
         - context: install_hook
         - capability: persist
+      unless:
+        # A container build. `useradd`, a service enabled, a line appended to a profile:
+        # each changes the image being built, inside the builder's sandbox, never the
+        # machine running the build. 13 of the 49 benign units this blocked in the long
+        # tail were Dockerfiles creating the image's user (review 98). What a RUN step
+        # fetches and runs is the dropper rules' to judge.
+        - path_glob: "**/Dockerfile"
+        - path_glob: "**/Dockerfile.*"
+        - path_glob: "**/*.Dockerfile"
+        - path_glob: "**/*.dockerfile"
+        - path_glob: "**/Containerfile"
 
   - id: MALWARE.EXFIL.INSTALL_CALLBACK.001
     version: 1.0.0
@@ -1516,6 +2058,649 @@ rules:
       all:
         - context: install_hook
         - rule: INTEL.EGRESS.DROP_POINT.001
+
+  - id: MALWARE.EXFIL.TRACKING_CALLBACK.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install script reports to a host named for this install
+    message: >
+      Code that runs at install time contacts a host whose name carries a unique identifier.
+      The lookup itself tells the owner which package, and so which machine, was installed --
+      the confirmation step of a dependency-confusion probe.
+    remediation: >
+      Do not install this package. Treat machines that installed it as known to whoever owns
+      the domain.
+    provenance:
+      kind: research
+      reference: Preinstall DNS lookups of UUID-labelled hosts (review 98).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 200
+      all:
+        - context: install_hook
+        - rule: CAP.EGRESS.TRACKING_HOST.001
+
+  - id: MALWARE.INSTALL.SPELLED_CODE.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install script spells its names in character codes
+    message: >
+      The script an install runs writes the modules, functions and hosts it uses as lists of
+      character codes and decodes them as it runs. Nothing an installer does needs its own
+      names hidden from the person reading it.
+    remediation: >
+      Do not install this package. Decode the lists to see what it does, and treat what the
+      install could reach as exposed.
+    provenance:
+      kind: research
+      reference: >
+        An install script resolving `os`, `dns`, `userInfo` and `lookup` from code arrays and
+        sending the user, host and directory in a DNS name (review 98).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: install_entry
+        - rule: CAP.JS.CHARCODE_STRING.001
+        - any:
+            - capability: dynamic_dispatch
+            - capability: egress
+            - capability: reconnaissance
+
+  - id: SUSPECT.EXFIL.COMMAND_BEACON.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Code reports the user and host to a URL
+    message: >
+      This file runs, or builds to run, a command that fetches a URL carrying the current user
+      or host name. Nothing a tool or library does for its user needs to tell a server who ran
+      it; this is how a beacon checks in.
+    remediation: Do not run it. Find where the command is executed and treat the host as known.
+    provenance:
+      kind: research
+      reference: The identity-in-URL beacon (review 98).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: CAP.EGRESS.IDENTITY_IN_URL.001
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.INSTALL.SHELL_EVASION.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install script hides the spaces in the command it runs
+    message: >
+      The script an install runs builds a command whose spaces are written as ${IFS}, so the
+      command a reviewer or a scanner looks for is not in the file as written. An installer has
+      no reason to disguise its own commands.
+    remediation: Do not install this package. Read the command with spaces restored.
+    provenance:
+      kind: research
+      reference: ${IFS}-separated curl to an out-of-band host from preinstall (review 98).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: install_hook
+        - rule: CAP.SHELL.IFS_SEPARATOR.001
+
+  - id: MALWARE.INSTALL.GYP_COMMAND.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Native-build file runs a script at install
+    message: >
+      npm configures a package's native build from `binding.gyp` on install, and a `<!( )` in that
+      file is a command gyp runs while reading it. Real build files use the form to ask for a
+      value -- an include path from `node -p`, flags from `pkg-config`, the platform from `uname`.
+      This one runs a script file, or throws the command's output away: code run at install under
+      the name of a build step, an install hook that does not appear in package.json.
+    remediation: >
+      Do not install this package. Read the script the command runs; treat machines that
+      installed it as having run it.
+    provenance:
+      kind: research
+      reference: >
+        Compromised releases (2026) whose binding.gyp ran `node index.js` with output discarded in
+        a target that builds nothing; none of 92 benign packages with gyp command expansions use
+        either form (review 98).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: install_hook
+        - rule: CAP.GYP.SIDE_EFFECT_COMMAND.001
+
+  - id: MALWARE.INSTALL.REMOTE_CODE.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install-time code runs what a server sends it
+    message: >
+      Code that runs when the package is installed -- or, for an editor extension, when the
+      editor starts it -- executes the body of a network response, or a blob it decodes: through
+      eval, new Function,
+      the vm module or a child process. Followed from the request to the execution through
+      callbacks, promise chains and helper functions (`analysis/javascript/js_flow.py`). What runs is whatever
+      the server chose at that moment, on every machine that installs it.
+    remediation: >
+      Do not install it. Treat any machine that did as having run code from that server.
+    references:
+      - https://attack.mitre.org/techniques/T1105/
+    provenance:
+      kind: research
+      reference: >
+        An editor extension posting the machine's identity and running the reply through the vm
+        module, under a name chosen to hide the module (review 98).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: install_hook
+        - any:
+            - rule: CAP.JS.FLOW.REMOTE_CODE.DROP
+            - rule: CAP.JS.FLOW.REMOTE_CODE.IP
+            - rule: CAP.JS.FLOW.REMOTE_CODE.FIXED
+            - rule: CAP.JS.FLOW.REMOTE_CODE.UNKNOWN
+            - rule: CAP.JS.FLOW.DECODED_RUN.DROP
+            - rule: CAP.JS.FLOW.DECODED_RUN.IP
+            - rule: CAP.JS.FLOW.DECODED_RUN.FIXED
+            - rule: CAP.JS.FLOW.DECODED_RUN.UNKNOWN
+
+  - id: SUSPECT.DROPPER.REMOTE_CODE.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: Code runs what a server sends it
+    message: >
+      The body of a network response reaches eval, new Function, the vm module or a child
+      process, followed from the request to the execution through bindings, destructuring,
+      promise chains and helper functions (`analysis/javascript/js_flow.py`). Outside an install hook it runs
+      when the code is loaded or called -- a library's exported function that fetches a command
+      and executes it does so in every application that calls it, with that application's
+      permissions.
+    remediation: >
+      Read where the request goes and what decides its address. A library that needs remote
+      behaviour downloads data, not code; one that executes a server's reply runs whatever that
+      server is told to send.
+    references:
+      - https://attack.mitre.org/techniques/T1105/
+    provenance:
+      kind: research
+      reference: >
+        Runtime droppers in the npm dataset that never touch an install hook: an exported
+        function reading a command from a server whose address comes from a smart contract and
+        passing it to `child_process.exec` (review 98).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - any:
+            - rule: CAP.JS.FLOW.REMOTE_CODE.DROP
+            - rule: CAP.JS.FLOW.REMOTE_CODE.IP
+            - rule: CAP.JS.FLOW.REMOTE_CODE.FIXED
+            - rule: CAP.JS.FLOW.REMOTE_CODE.UNKNOWN
+      unless:
+        - path_glob: "**/test/**"
+        - path_glob: "**/tests/**"
+        - path_glob: "**/__tests__/**"
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/*.spec.*"
+
+  - id: SUSPECT.EXFIL.CREDENTIAL_SWEEP.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: Code reads the credential stores of many services and reaches the network
+    message: >
+      This file names where several unrelated services keep their credentials -- SSH keys, the
+      AWS, npm, Docker, Kubernetes and GitHub CLI configurations, `.netrc` -- and makes network
+      requests. A tool reads the store of the service it is for; reading all of them is what a
+      stealer does, whatever runs it. The paths may be written plainly or recovered from an
+      encoding the scanner reverses.
+    remediation: >
+      Do not run it. If it has run, rotate every credential in each store it names.
+    references:
+      - https://attack.mitre.org/techniques/T1552/001/
+    provenance:
+      kind: research
+      reference: >
+        The 2025 Go module family `BufferZoneCorp/*`, whose `init()` read eight services'
+        credential files from XOR-encoded paths and posted them (review 98).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: CAP.CREDENTIAL.SWEEP
+        - capability: egress
+      unless:
+        - path_glob: "**/test/**"
+        - path_glob: "**/tests/**"
+        - path_glob: "**/testdata/**"
+        - path_glob: "**/*_test.go"
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/*.spec.*"
+
+  - id: SUSPECT.CI.ENVIRONMENT_INJECTION.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: A package writes the CI job's environment when it is imported
+    message: >
+      Code that runs on import -- a Go `init()` or package-level initialiser -- writes the CI
+      job's environment or PATH file (`GITHUB_ENV`, `GITHUB_PATH`). Every later step of the job
+      then runs with what it wrote: a proxy setting pointed elsewhere, a directory placed ahead
+      of the real tools. Importing a library asks it for nothing of the kind.
+    remediation: >
+      Remove the dependency, and treat any CI job that imported it as having run with an
+      attacker's settings: rotate the job's secrets and rebuild what it published.
+    references:
+      - https://attack.mitre.org/techniques/T1574/
+    provenance:
+      kind: research
+      reference: >
+        The 2025 Go modules `BufferZoneCorp/go-metrics-sdk`, `go-weather-sdk` and
+        `go-retryablehttp`, which from `init()` appended proxy settings to `GITHUB_ENV` and a
+        directory to `GITHUB_PATH`, and stripped `go.sum` (review 98).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: CAP.GO.CI_ENV_WRITE
+      unless:
+        - path_glob: "**/*_test.go"
+        - path_glob: "**/testdata/**"
+
+  - id: SUSPECT.EXFIL.BROWSER_SECRETS.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: Code decrypts a browser's saved passwords or cookies
+    message: >
+      This file opens a browser's saved-login or cookie store and decrypts it -- with the user's
+      DPAPI key, the browser's own key from `Local State`, or its keychain item. A browser reads
+      its own store; a library or tool that turns another program's secrets back into plaintext
+      is taking them, whether it sends them now or leaves them for a later stage.
+    remediation: >
+      Do not run it. If it has run, sign out of every site in that browser profile and change the
+      passwords it had saved.
+    references:
+      - https://attack.mitre.org/techniques/T1555/003/
+    provenance:
+      kind: research
+      reference: >
+        `chrome_taker` on RubyGems: Chrome's Login Data and Cookies read through SQLite and
+        decrypted with DPAPI, the plaintext written to a file (review 98).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 400
+      all:
+        - rule: CAP.CREDENTIAL.BROWSER_DECRYPT
+        # Decrypting a browser's store is what cookie importers do -- yt-dlp, browser-cookie3,
+        # kooky: 26 benign corpus units (review 98). A stealer also sends it out, or kills the
+        # browser to unlock the database (chrome_taker's TASKKILL /IM chrome.exe).
+        - any:
+            - capability: egress
+            - rule: CAP.CREDENTIAL.BROWSER_KILL.001
+      unless:
+        - path_glob: "**/test/**"
+        - path_glob: "**/tests/**"
+        - path_glob: "**/*_test.*"
+        - path_glob: "**/*.test.*"
+
+  - id: SUSPECT.INSTALL.AUTOSTART.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Install-time code makes something start at every login
+    message: >
+      Code that runs when the package is installed -- or, for an editor extension, when the
+      editor starts it -- registers a program to start at login or boot: the Startup folder, a
+      Run key or scheduled task, a LaunchAgent, a crontab entry, an enabled systemd unit.
+      Installing a library or an extension needs none of them; staying on the machine after the
+      package is removed does.
+    remediation: >
+      Do not install it. Remove the autostart entry it created and what that entry runs.
+    provenance:
+      kind: research
+      reference: An editor extension copying a batch file into the Startup folder on activation (review 98).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: install_hook
+        - rule: CAP.JS.AUTOSTART.001
+
+  - id: MALWARE.EXFIL.DNS_CALLBACK.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install script resolves a fixed host name
+    message: >
+      The script an install runs looks up a host name it names itself. Installing a package needs
+      the registry, which the package manager reaches; a lookup from the install script tells the
+      domain's owner that this machine installed the package -- the confirmation a
+      dependency-confusion probe exists to get.
+    remediation: Do not install this package. Treat machines that installed it as known to the domain's owner.
+    provenance:
+      kind: research
+      reference: Postinstall dns.lookup of one fixed domain (review 98).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: install_entry
+        - rule: CAP.JS.DNS_LITERAL.001
+
+  - id: MALWARE.EXFIL.HIDDEN_DESTINATION.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install script contacts an address it spells out in character codes
+    message: >
+      Code that runs at install time reaches the network, and the address or name it uses is
+      written as a list of character codes rather than as text. An installer that needs a host
+      names it; spelling it in codes keeps it out of review, out of search and out of every
+      blocklist -- the address is the one thing the author did not want seen.
+    remediation: >
+      Do not install this package. Decode the codes to find the destination, and treat what the
+      install could read as sent there.
+    provenance:
+      kind: research
+      reference: >
+        A postinstall assembling its collection URL from character codes and posting the host's
+        name, platform and working directory to it, encrypted (review 98).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 200
+      all:
+        - context: install_hook
+        - capability: egress
+        - rule: CAP.JS.CHARCODE_STRING.001
+
+  - id: MALWARE.INSTALL.BACKGROUND.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install script leaves a process running
+    message: >
+      Code that runs at install time starts a child process detached from it, so the child keeps
+      running after the install has reported success. Building a package finishes when the
+      install does; a process left behind is a payload given a life of its own.
+    remediation: >
+      Do not install this package. On a machine that installed it, find and stop the process it
+      started, and treat what that process could reach as exposed.
+    provenance:
+      kind: research
+      reference: >
+        Install scripts in the DataDog set that spawn a second file detached and exit (review 98).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1543/
+    match:
+      kind: composite
+      scope: file
+      proximity: 400
+      all:
+        - context: install_hook
+        - rule: CAP.JS.DETACHED.001
+
+  - id: MALWARE.INSTALL.OPAQUE_CODE.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install script runs code that cannot be read
+    message: >
+      Code that runs at install time executes compiled V8 bytecode. Nothing in the package says
+      what that code does, and nothing that reviews packages can read it; shipping install-time
+      code this way exists to keep it from being read.
+    remediation: Do not install this package.
+    provenance:
+      kind: research
+      reference: An install hook that loads ./main.jsc through bytenode (review 98).
+    evidence_policy: masked
+    references:
+      - https://cwe.mitre.org/data/definitions/506.html
+    match:
+      kind: composite
+      scope: file
+      proximity: 400
+      all:
+        - context: install_hook
+        - rule: CAP.JS.OPAQUE_CODE.001
+
+  - id: MALWARE.INSTALL.DISGUISED_PROGRAM.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install code turns a file shipped as data into a program
+    message: >
+      Code that runs at install time renames a file the package ships as data -- an image, a text
+      file -- to a program name and so prepares it to run on the installing machine. Installing a
+      package needs neither the disguise nor the program.
+    remediation: >
+      Do not install this package. Treat machines that installed it as compromised and rotate
+      what they could reach.
+    provenance:
+      kind: research
+      reference: >
+        RubyGems active-record_lite 0.3.0 and aliyun-live 0.1.1: extconf.rb renamed `aaa.png` to
+        `a.exe` and ran it on Windows during `gem install` (review 98, real gems).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1036/008/
+    match:
+      kind: composite
+      scope: file
+      proximity: 400
+      all:
+        - context: install_hook
+        - rule: CAP.FILE.DISGUISED_PROGRAM.001
+
+  - id: SUSPECT.FILE.DISGUISED_PROGRAM.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: Code turns a file shipped as data into a program
+    message: >
+      This file renames a file the package ships as data -- an image, a text file -- to a program
+      name. The program then travels through review and every image-skipping filter as data.
+    remediation: Find what the renamed file is, and remove it unless it is meant to be there.
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1036/008/
+    match:
+      kind: composite
+      scope: file
+      proximity: 400
+      all:
+        - rule: CAP.FILE.DISGUISED_PROGRAM.001
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+        - path_glob: "test/**"
+        - path_glob: "spec/**"
+
+  - id: MALWARE.DECODE_EXEC.ENCODED_SHELL.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: A long encoded command is decoded straight into a shell
+    message: >
+      A long encoded literal is decoded and piped into `sh`, so what runs is never written down.
+      No build, install or tool needs to hide what it runs from the person running it; this is
+      how XCSSET plants its loader in Xcode and Gradle projects.
+    remediation: >
+      Do not build or open this project. Treat machines that built it as compromised.
+    provenance:
+      kind: research
+      reference: >
+        pub.dev universal_file_viewer 0.1.5 (XCSSET, 2025), real package (review 98).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1027/
+    match:
+      kind: composite
+      scope: file
+      proximity: 2
+      all:
+        - rule: CAP.SHELL.ENCODED_TO_SHELL.001
+
+  - id: MALWARE.DECODE_EXEC.INVISIBLE.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: A payload written in invisible characters is decoded and run
+    message: >
+      A long run of invisible Unicode characters sits beside code that maps them back to bytes and
+      evaluates the result. Nothing renders the payload -- not an editor, not a diff, not a review
+      -- and the file runs it. This is the GlassWorm loader, wherever it is written.
+    remediation: >
+      Do not install, build or open this project. Treat machines that ran it as compromised.
+    provenance:
+      kind: research
+      reference: >
+        reworm package.json (2025) and @aifabrix/miso-client (review 98, real samples).
+    evidence_policy: hash_only
+    references:
+      - https://attack.mitre.org/techniques/T1027/
+    match:
+      kind: composite
+      scope: file
+      proximity: 5
+      all:
+        - rule: CAP.INVISIBLE_SMUGGLING.001
+        - rule: CAP.EXEC.INVISIBLE_DECODER.001
+
+  - id: MALWARE.CI.DECODED_PROGRAM.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: A CI step runs a program it decodes on the spot
+    message: >
+      A workflow or action step decodes content and pipes it straight into an interpreter. It runs
+      on the runner with the job's token and secrets, and nobody reading the step can see what it
+      runs. Steps that need a program check it in or download a pinned release; hiding it is what
+      the reviewdog and Trivy action compromises did.
+    remediation: >
+      Do not use this action or workflow at this revision. Rotate every secret the jobs that ran it
+      could read.
+    provenance:
+      kind: research
+      reference: >
+        reviewdog/action-setup (2025), aquasecurity/trivy-action and setup-trivy (2026), real
+        compromised revisions (review 98).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1027/
+    match:
+      kind: composite
+      scope: file
+      proximity: 2
+      all:
+        - context: ci_hook
+        - rule: CAP.SH.DECODED_INTO_INTERPRETER.001
+
+  - id: MALWARE.CI.RUNNER_SECRETS.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Code dumps the CI runner's secrets
+    message: >
+      This file reads the runner's own record of the job's secrets -- the Runner.Worker process's
+      memory or its `"isSecret":true` entries -- where they sit unmasked. It is how the tj-actions
+      and reviewdog compromises stole every secret of every job that used them.
+    remediation: >
+      Do not use this code at this revision. Rotate every secret the jobs that ran it could read.
+    provenance:
+      kind: research
+      reference: >
+        tj-actions/changed-files and reviewdog/action-setup (2025), real compromised revisions
+        (review 98).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1003/
+    match:
+      kind: composite
+      scope: file
+      proximity: 400
+      all:
+        - rule: CAP.CI.RUNNER_SECRETS.001
+
+  - id: MALWARE.INSTALL.WINDOWS_LOADER.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install script starts a Windows loader
+    message: >
+      Code that runs at install time starts rundll32, regsvr32, mshta, wscript or cscript: a
+      program whose job is to run code from the DLL, scriptlet or HTA it is handed. Installing a
+      JavaScript package compiles nothing with them; this is a native payload run on the
+      developer's machine.
+    remediation: >
+      Do not install this package. Treat machines that installed it as compromised and rotate
+      what they could reach.
+    provenance:
+      kind: research
+      reference: >
+        The compromised eslint-config-prettier releases (July 2025) started a bundled DLL from
+        postinstall through rundll32 (review 98).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1218/
+    match:
+      kind: composite
+      scope: file
+      proximity: 400
+      all:
+        - context: install_hook
+        - rule: CAP.JS.WINDOWS_LOADER.001
 
   - id: SUSPECT.EXFIL.CREDENTIAL_STORE.001
     version: 1.0.0
@@ -1583,5 +2768,83 @@ rules:
       proximity: 200
       all:
         - context: install_hook
-        - rule: CAP.CREDENTIAL.STORE.001
+        # An application's own secret counts here, though not in the two-signal rule: install
+        # code and a skill's scripts have no business reading the user's (review 98).
+        - any:
+            - rule: CAP.CREDENTIAL.STORE.001
+            - rule: CAP.CREDENTIAL.APP_SECRET.001
         - capability: egress
+
+  # ---------------------------------------------------------------------
+  # AI agents as the payload
+  # ---------------------------------------------------------------------
+  - id: MALWARE.AGENT.HIJACK.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Turns the machine's AI agent against it
+    message: >
+      This file starts an AI coding agent with its permission checks switched
+      off and hands it an instruction to destroy data or to hunt for secrets.
+      The agent then does it as the user, with nobody asked: the agent is the
+      payload and the prompt is the program.
+    remediation: >
+      Do not install or run it. If it ran, treat the machine's and the cloud
+      account's data as at risk: check the agent's history, rotate the
+      credentials it could reach and restore what it deleted.
+    references:
+      - https://attack.mitre.org/techniques/T1485/
+    provenance:
+      kind: research
+      reference: >
+        The Nx "s1ngularity" release (August 2025), which ran claude, gemini and q with
+        their checks off to inventory secrets and wallets, and the compromised Amazon Q
+        extension 1.84.0 (July 2025), which ran q --trust-all-tools with a prompt to wipe
+        the home directory and the AWS account.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      # The prompt is a constant and the call a few lines below it in both incidents; in a
+      # minified bundle both are on one line.
+      proximity: 80
+      all:
+        - rule: CAP.AGENT.UNATTENDED.001
+        - rule: CAP.AGENT.HARMFUL_INSTRUCTION.001
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: SUSPECT.AGENT.UNATTENDED.001
+    version: 1.0.0
+    category: suspicious
+    severity: medium
+    confidence: medium
+    title: Runs your AI agent with every permission and no confirmation
+    message: >
+      This code starts an AI coding agent with its permission checks switched
+      off, so the agent reads, runs and deletes whatever its prompt says
+      without asking. Tools built to orchestrate agents do this on purpose;
+      a library or an extension that does it unannounced is using your agent
+      as its own.
+    remediation: >
+      Check that driving an agent is what this package is for, and read the
+      prompt it passes. If it is not, do not install it.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 1
+      all:
+        - rule: CAP.AGENT.UNATTENDED.001
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+        # A repository's own CI choosing to run its agent this way is its decision, and the
+        # agent-in-CI rules read those files.
+        - path_glob: ".github/**"
+        - path_glob: "**/*.yml"
+        - path_glob: "**/*.yaml"

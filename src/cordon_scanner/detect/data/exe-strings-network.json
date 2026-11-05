@@ -1,0 +1,12 @@
+[
+  "InternetOpenA",
+  "InternetOpenW",
+  "URLDownloadToFile",
+  "WSAStartup",
+  "WinHttpOpen",
+  "getaddrinfo",
+  "libcurl",
+  "net.Dial",
+  "net/http.(*Client).Do",
+  "reqwest::"
+]

@@ -1,6 +1,6 @@
 # 17 · Source, build systems, binaries and licences
 
-> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 The domains that do not fit anywhere else, and the flags that decide *what gets
 scanned in the first place*. Thirteen rules plus the licence layer.
@@ -125,9 +125,11 @@ Networking plus process creation plus registry writes is every installer, so it 
 them. Measured on 342 Debian binaries and the 30 PE files of the Windows Python build: no
 verdicts.
 
-`--yara RULES` also matches every file against a YARA rules file the operator names (with the
-`yara-python` module installed). A rule whose metadata says `category = "malicious"` is reported
-as malware; a `severity` meta sets the severity. A repository's own config cannot name the rules.
+`--rule-file RULES` also matches every file against a rule file the operator names, with
+cordon-rule, Cordon's own rule engine: nothing to install, and the `math`, `hash`, `time`,
+`console`, `string`, `pe`, `elf`, `dotnet`, `macho`, `dex`, `olecf`, `msi`, `vba`, `androguard`, `cuckoo` and `magic` modules. A rule whose metadata says
+`category = "malicious"` is reported as malware; a `severity` meta sets the severity. A
+repository's own config cannot name the rules. See **[31 · Rule files](31-rule-files.md)**.
 
 ## Licences
 

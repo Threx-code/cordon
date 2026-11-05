@@ -1,6 +1,6 @@
 # 25 · Every ecosystem
 
-> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 Every package ecosystem Cordon reads, 28 of them, and how to scan each one. The files,
 the checks and the commands below are rendered from the shipped code, so this page names
@@ -549,7 +549,7 @@ JavaScript and TypeScript packages, with npm, pnpm, Yarn or Bun. Ecosystem id `n
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ MANIFESTS       package.json, deno.json, deno.jsonc                        │
 │ LOCKFILES       package-lock.json, npm-shrinkwrap.json, pnpm-lock.yaml,    │
-│                 yarn.lock, bun.lock, deno.lock                             │
+│                 yarn.lock, bun.lock, bun.lockb, deno.lock                  │
 │                                                                            │
 │ OFFLINE         the dependency graph, lockfile integrity, licences,        │
 │                 install hooks                                              │
@@ -787,45 +787,46 @@ cordon-scanner deps .                      # every package found, with its findi
 ```
 ## Every language
 
-The source Cordon reads inside any of those projects: 38 languages, each identified by its file name or extension, by a script's interpreter line, or by its content. The last column counts the rule-pack rules written for that language. Every file also gets the checks that are not tied to one language (secrets, hidden characters, obfuscation, known-malware signatures), and Dockerfiles, YAML pipelines, manifests and infrastructure are read by their own detectors (tutorials 07 and 08), so a 0 there is not a file left unread. Every rule is in tutorial 28.
+The source Cordon reads inside any of those projects: 39 languages, each identified by its file name or extension, by a script's interpreter line, or by its content. The last column counts the rule-pack rules written for that language. Every file also gets the checks that are not tied to one language (secrets, hidden characters, obfuscation, known-malware signatures), and Dockerfiles, YAML pipelines, manifests and infrastructure are read by their own detectors (tutorials 07 and 08), so a 0 there is not a file left unread. Every rule is in tutorial 28.
 
 | Language | Files | Rule-pack rules |
 |---|---|---|
+| Batch | `*.bat`, `*.cmd` | 6 |
 | C | `*.c`, `*.h` | 0 |
-| C# | `*.cs` | 10 |
+| C# | `*.cs` | 13 |
 | C++ | `*.cc`, `*.cpp`, `*.cxx`, `*.hpp` | 0 |
 | Clojure | `*.bb`, `*.clj`, `*.cljc`, `*.cljs` | 8 |
 | CMake | `CMakeLists.txt` | 10 |
 | Dart | `*.dart` | 7 |
 | Dockerfile | `Containerfile`, `Dockerfile` | 0 |
 | Elixir | `*.ex`, `*.exs` | 8 |
-| Go | `*.go` | 10 |
+| Go | `*.go` | 14 |
 | Groovy | `Jenkinsfile`, `build.gradle` | 11 |
 | Haskell | `*.hs`, `*.lhs` | 8 |
-| Java | `*.java` | 10 |
-| JavaScript | `*.cjs`, `*.js`, `*.jsx`, `*.mjs` | 15 |
+| Java | `*.java` | 11 |
+| JavaScript | `*.cjs`, `*.js`, `*.jsx`, `*.mjs` | 32 |
 | JSON | `*.json` | 0 |
 | Julia | `*.jl` | 8 |
-| Kotlin | `*.kt`, `*.kts`, `build.gradle.kts` | 18 |
+| Kotlin | `*.kt`, `*.kts`, `build.gradle.kts` | 19 |
 | Lua | `*.lua` | 8 |
 | Makefile | `GNUmakefile`, `Makefile` | 10 |
 | Markdown | `*.markdown`, `*.md`, `*.mdc` | 0 |
 | Nim | `*.nim`, `*.nimble`, `*.nims` | 7 |
 | Objective-C | `*.m`, `*.mm` | 8 |
 | OCaml | `*.ml`, `*.mli` | 8 |
-| Perl | `*.pl`, `*.pm` | 8 |
-| PHP | `*.php` | 10 |
-| PowerShell | `*.ps1`, `*.psm1` | 10 |
-| Python | `*.pth`, `*.py`, `*.pyi`, `*.pyw`, `conanfile.py`, `setup.py` | 17 |
+| Perl | `*.pl`, `*.pm` | 10 |
+| PHP | `*.php` | 14 |
+| PowerShell | `*.ps1`, `*.psm1` | 14 |
+| Python | `*.pth`, `*.py`, `*.pyi`, `*.pyw`, `conanfile.py`, `setup.py` | 24 |
 | R | `*.r` | 8 |
-| Ruby | `*.rb`, `Gemfile`, `Podfile`, `Rakefile` | 10 |
-| Rust | `*.rs`, `build.rs` | 10 |
+| Ruby | `*.rb`, `Gemfile`, `Podfile`, `Rakefile` | 17 |
+| Rust | `*.rs`, `build.rs` | 14 |
 | Scala | `*.scala` | 10 |
-| Shell | `*.bash`, `*.sh`, `*.zsh` | 11 |
+| Shell | `*.bash`, `*.sh`, `*.zsh` | 18 |
 | SQL | `*.sql` | 0 |
 | Swift | `*.swift`, `Package.swift` | 8 |
 | TOML | `*.toml` | 0 |
-| TypeScript | `*.cts`, `*.mts`, `*.ts`, `*.tsx` | 15 |
+| TypeScript | `*.cts`, `*.mts`, `*.ts`, `*.tsx` | 32 |
 | XML | `*.csproj`, `*.fsproj`, `*.props`, `*.targets`, `*.vbproj`, `*.xml` | 11 |
 | YAML | `*.yaml`, `*.yml` | 0 |
 | Zig | `*.zig`, `build.zig` | 7 |

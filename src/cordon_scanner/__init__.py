@@ -40,8 +40,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from cordon_scanner.core.config import Config, ConfigResolver, OrgConstraints, Policy
-from cordon_scanner.core.errors import (
+from cordon_scanner.decide.policy import Baseline, PolicyGate, Verdict
+from cordon_scanner.foundation.capabilities import Capability
+from cordon_scanner.foundation.config.policy import OrgConstraints, Policy
+from cordon_scanner.foundation.config.resolver import ConfigResolver
+from cordon_scanner.foundation.config.settings import Config
+from cordon_scanner.foundation.errors import (
     ConfigError,
     CordonError,
     DetectorError,
@@ -52,36 +56,30 @@ from cordon_scanner.core.errors import (
     SourceError,
     UnsafePatternError,
 )
-from cordon_scanner.core.limits import Limits
-from cordon_scanner.core.models import (
-    Capability,
+from cordon_scanner.foundation.limits import Limits
+from cordon_scanner.foundation.models import (
     Category,
     Confidence,
-    Dependency,
     Evidence,
     Finding,
     Hook,
     Location,
-    Project,
     RedactionMode,
-    Repository,
     RiskScore,
-    Rule,
-    ScanResult,
-    ScanStats,
     Scope,
     Severity,
     Suppression,
 )
-from cordon_scanner.core.policy import Baseline, PolicyGate, Verdict
+from cordon_scanner.foundation.results import Dependency, Project, Repository, ScanResult, ScanStats
+from cordon_scanner.foundation.rule_model import Rule
 from cordon_scanner.version import RULEPACK_VERSION, SCHEMA_VERSION, __version__
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
-    from cordon_scanner.core.progress import Progress
     from cordon_scanner.detect.base import Detector
+    from cordon_scanner.engine.progress import Progress
     from cordon_scanner.sources.base import FileSource
 
 
@@ -101,38 +99,13 @@ class Scanner:
         source: FileSource | None = None,
         progress: Progress | None = None,
     ) -> None:
-        from cordon_scanner.core.engine import Engine
-        from cordon_scanner.core.registry import Registry
-        from cordon_scanner.rules.loader import RuleLoader, RuleSet
+        from cordon_scanner.engine.assembly import ScanAssembly
 
         self.config = config or Config.default()
-
-        packs = list(RuleLoader.load_builtin())
-        if self.config.extra_rule_paths:
-            from cordon_scanner.rules.loader import RuleLoader
-
-            loader = RuleLoader()
-            packs.extend(loader.load_file(p) for p in self.config.extra_rule_paths)
-
-        self.rules = RuleSet(packs)
-
-        shadowed: list[tuple[str, str, str]] = []
-        if detectors is None:
-            registry = Registry(allow_third_party=self.config.allow_plugins)
-            detectors = registry.detectors()
-            # Carried into the engine so a package that tried to take a
-            # built-in's name is reported. Skipping it silently would trade a
-            # denial of service for a quiet one.
-            shadowed = registry.shadowed
-
-        self._engine = Engine(
-            self.config,
-            rules=self.rules,
-            detectors=detectors,
-            source=source,
-            progress=progress,
-            shadowed=shadowed,
+        self._engine = ScanAssembly.engine(
+            self.config, detectors=detectors, source=source, progress=progress
         )
+        self.rules = self._engine.rules
 
     @classmethod
     def for_target(
@@ -171,12 +144,35 @@ class Scanner:
 
     def scan(self, target: str | Path) -> ScanResult:
         """Scan a directory, file or archive."""
-        return self._engine.scan(target)
+        Scanner._say_a_stale_matcher()
+        return Scanner._with_matcher(self._engine.scan(target))
 
     def scan_host(self, root: str | Path = "/", home: str | Path | None = None) -> ScanResult:
         """Inventory an installed system -- its OS packages and global language installs -- and
         match them, as an image's are. `home` adds that user's own installs (pipx, ~/go/bin...)."""
-        return self._engine.scan_host(root, home)
+        Scanner._say_a_stale_matcher()
+        return Scanner._with_matcher(self._engine.scan_host(root, home))
+
+    @staticmethod
+    def _with_matcher(result: ScanResult) -> ScanResult:
+        """The result, saying which anchor matcher ran: a native build from another version falls
+        back to the Python one at about 9x the match time, and the report says so (item 17)."""
+        from dataclasses import replace
+
+        from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton
+
+        return replace(result, matcher=Automaton.status())
+
+    @staticmethod
+    def _say_a_stale_matcher() -> None:
+        """One stderr line when the native matcher is from another build, for a pipeline that never
+        runs --version; a build that simply isn't there says nothing extra."""
+        import sys
+
+        from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton
+
+        if Automaton.REASON == "stale":
+            sys.stderr.write(f"cordon: warning: {Automaton.WHY}\n")
 
     def inventory(self, target: str | Path) -> Repository:
         """Determine what a target is, without scanning its contents."""

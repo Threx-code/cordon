@@ -1,0 +1,10 @@
+[
+  "GetComputerNameA",
+  "GetComputerNameW",
+  "GetUserNameA",
+  "GetUserNameW",
+  "gethostname",
+  "ipconfig",
+  "systeminfo",
+  "whoami"
+]

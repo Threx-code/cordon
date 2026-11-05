@@ -5,3 +5,4 @@ must_find:
   - rule: SUSPECT.IAC.PUBLIC_INGRESS.001
     path: main.tf
     min_severity: high
+hardening: true

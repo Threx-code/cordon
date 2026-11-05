@@ -1,0 +1,868 @@
+# MITRE ATT&CK Enterprise 19.2 (2026-08-05) and MITRE ATLAS 5.6.0: every live technique. Generated; do not edit.
+T1001	Data Obfuscation	command-and-control	ESXi,Linux,macOS,Windows
+T1001.001	Junk Data	command-and-control	ESXi,Linux,macOS,Windows
+T1001.002	Steganography	command-and-control	Linux,macOS,Windows,ESXi
+T1001.003	Protocol or Service Impersonation	command-and-control	ESXi,Linux,macOS,Windows
+T1003	OS Credential Dumping	credential-access	Linux,macOS,Windows
+T1003.001	LSASS Memory	credential-access	Windows
+T1003.002	Security Account Manager	credential-access	Windows
+T1003.003	NTDS	credential-access	Windows
+T1003.004	LSA Secrets	credential-access	Windows
+T1003.005	Cached Domain Credentials	credential-access	Windows,Linux
+T1003.006	DCSync	credential-access	Windows
+T1003.007	Proc Filesystem	credential-access	Linux
+T1003.008	/etc/passwd and /etc/shadow	credential-access	Linux
+T1005	Data from Local System	collection	ESXi,Linux,macOS,Network Devices,Windows
+T1006	Direct Volume Access	stealth	Network Devices,Windows
+T1007	System Service Discovery	discovery	Linux,macOS,Windows
+T1008	Fallback Channels	command-and-control	ESXi,Linux,macOS,Windows
+T1010	Application Window Discovery	discovery	Linux,macOS,Windows
+T1011	Exfiltration Over Other Network Medium	exfiltration	Linux,macOS,Windows
+T1011.001	Exfiltration Over Bluetooth	exfiltration	Linux,macOS,Windows
+T1012	Query Registry	discovery	Windows
+T1014	Rootkit	stealth	Linux,macOS,Windows
+T1016	System Network Configuration Discovery	discovery	ESXi,Linux,macOS,Network Devices,Windows
+T1016.001	Internet Connection Discovery	discovery	Windows,Linux,macOS,ESXi
+T1016.002	Wi-Fi Discovery	discovery	Linux,Windows,macOS
+T1018	Remote System Discovery	discovery	ESXi,Linux,macOS,Network Devices,Windows
+T1020	Automated Exfiltration	exfiltration	Linux,macOS,Network Devices,Windows
+T1020.001	Traffic Duplication	exfiltration	Network Devices,IaaS
+T1021	Remote Services	lateral-movement	Linux,macOS,Windows,IaaS,ESXi
+T1021.001	Remote Desktop Protocol	lateral-movement	Windows
+T1021.002	SMB/Windows Admin Shares	lateral-movement	Windows
+T1021.003	Distributed Component Object Model	lateral-movement	Windows
+T1021.004	SSH	lateral-movement	ESXi,Linux,macOS
+T1021.005	VNC	lateral-movement	Linux,Windows,macOS
+T1021.006	Windows Remote Management	lateral-movement	Windows
+T1021.007	Cloud Services	lateral-movement	IaaS,Identity Provider,Office Suite,SaaS
+T1021.008	Direct Cloud VM Connections	lateral-movement	IaaS
+T1025	Data from Removable Media	collection	Linux,macOS,Windows
+T1027	Obfuscated Files or Information	stealth	ESXi,Linux,macOS,Network Devices,Windows
+T1027.001	Binary Padding	stealth	Linux,macOS,Windows
+T1027.002	Software Packing	stealth	Linux,macOS,Windows
+T1027.003	Steganography	stealth	Linux,macOS,Windows
+T1027.004	Compile After Delivery	stealth	Linux,macOS,Windows
+T1027.005	Indicator Removal from Tools	stealth	Linux,macOS,Windows
+T1027.006	HTML Smuggling	stealth	Linux,macOS,Windows
+T1027.007	Dynamic API Resolution	stealth	Windows
+T1027.008	Stripped Payloads	stealth	Linux,macOS,Network Devices,Windows
+T1027.009	Embedded Payloads	stealth	Linux,macOS,Windows
+T1027.010	Command Obfuscation	stealth	Linux,macOS,Windows
+T1027.011	Fileless Storage	stealth	Linux,Windows
+T1027.012	LNK Icon Smuggling	stealth	Windows
+T1027.013	Encrypted/Encoded File	stealth	Linux,macOS,Windows
+T1027.014	Polymorphic Code	stealth	Linux,macOS,Windows
+T1027.015	Compression	stealth	Linux,macOS,Windows
+T1027.016	Junk Code Insertion	stealth	Linux,macOS,Windows
+T1027.017	SVG Smuggling	stealth	Linux,macOS,Windows
+T1027.018	Invisible Unicode	stealth	Linux,macOS,Windows
+T1029	Scheduled Transfer	exfiltration	Linux,macOS,Windows
+T1030	Data Transfer Size Limits	exfiltration	Linux,macOS,Windows,ESXi
+T1033	System Owner/User Discovery	discovery	Linux,macOS,Network Devices,Windows
+T1036	Masquerading	stealth	Containers,ESXi,Linux,macOS,Windows
+T1036.001	Invalid Code Signature	stealth	macOS,Windows
+T1036.002	Right-to-Left Override	stealth	Linux,macOS,Windows
+T1036.003	Rename Legitimate Utilities	stealth	Linux,macOS,Windows
+T1036.004	Masquerade Task or Service	stealth	Linux,macOS,Windows
+T1036.005	Match Legitimate Resource Name or Location	stealth	Containers,ESXi,Linux,macOS,Windows
+T1036.006	Space after Filename	stealth	Linux,macOS
+T1036.007	Double File Extension	stealth	Windows
+T1036.008	Masquerade File Type	stealth	Linux,macOS,Windows
+T1036.009	Break Process Trees	stealth	Linux,macOS
+T1036.010	Masquerade Account Name	stealth	Containers,IaaS,Identity Provider,Linux,macOS,Office Suite,SaaS,Windows
+T1036.011	Overwrite Process Arguments	stealth	Linux
+T1036.012	Browser Fingerprint	stealth	Linux,macOS,Windows
+T1037	Boot or Logon Initialization Scripts	persistence,privilege-escalation	ESXi,Linux,macOS,Network Devices,Windows
+T1037.001	Logon Script (Windows)	persistence,privilege-escalation	Windows
+T1037.002	Login Hook	persistence,privilege-escalation	macOS
+T1037.003	Network Logon Script	persistence,privilege-escalation	Windows
+T1037.004	RC Scripts	persistence,privilege-escalation	macOS,Linux,Network Devices,ESXi
+T1037.005	Startup Items	persistence,privilege-escalation	macOS
+T1039	Data from Network Shared Drive	collection	Linux,macOS,Windows
+T1040	Network Sniffing	credential-access,discovery	IaaS,Linux,macOS,Network Devices,Windows
+T1041	Exfiltration Over C2 Channel	exfiltration	ESXi,Linux,macOS,Windows
+T1046	Network Service Discovery	discovery	Containers,IaaS,Linux,macOS,Network Devices,Windows
+T1047	Windows Management Instrumentation	execution	Windows
+T1048	Exfiltration Over Alternative Protocol	exfiltration	ESXi,IaaS,Linux,macOS,Network Devices,Office Suite,SaaS,Windows
+T1048.001	Exfiltration Over Symmetric Encrypted Non-C2 Protocol	exfiltration	Linux,macOS,Windows,ESXi
+T1048.002	Exfiltration Over Asymmetric Encrypted Non-C2 Protocol	exfiltration	ESXi,Linux,macOS,Windows
+T1048.003	Exfiltration Over Unencrypted Non-C2 Protocol	exfiltration	ESXi,Linux,macOS,Network Devices,Windows
+T1049	System Network Connections Discovery	discovery	ESXi,IaaS,Linux,macOS,Network Devices,Windows
+T1052	Exfiltration Over Physical Medium	exfiltration	Linux,macOS,Windows
+T1052.001	Exfiltration over USB	exfiltration	Linux,Windows,macOS
+T1053	Scheduled Task/Job	execution,persistence,privilege-escalation	Containers,ESXi,Linux,macOS,Network Devices,Windows
+T1053.002	At	execution,persistence,privilege-escalation	Windows,Linux,macOS
+T1053.003	Cron	execution,persistence,privilege-escalation	Linux,macOS,ESXi
+T1053.005	Scheduled Task	execution,persistence,privilege-escalation	Windows
+T1053.006	Systemd Timers	execution,persistence,privilege-escalation	Linux
+T1053.007	Container Orchestration Job	execution,persistence,privilege-escalation	Containers
+T1055	Process Injection	stealth,privilege-escalation	Linux,macOS,Windows
+T1055.001	Dynamic-link Library Injection	stealth,privilege-escalation	Windows
+T1055.002	Portable Executable Injection	stealth,privilege-escalation	Windows
+T1055.003	Thread Execution Hijacking	stealth,privilege-escalation	Windows
+T1055.004	Asynchronous Procedure Call	stealth,privilege-escalation	Windows
+T1055.005	Thread Local Storage	stealth,privilege-escalation	Windows
+T1055.008	Ptrace System Calls	stealth,privilege-escalation	Linux
+T1055.009	Proc Memory	stealth,privilege-escalation	Linux
+T1055.011	Extra Window Memory Injection	stealth,privilege-escalation	Windows
+T1055.012	Process Hollowing	stealth,privilege-escalation	Windows
+T1055.013	Process Doppelgänging	stealth,privilege-escalation	Windows
+T1055.014	VDSO Hijacking	stealth,privilege-escalation	Linux
+T1055.015	ListPlanting	stealth,privilege-escalation	Windows
+T1056	Input Capture	collection,credential-access	Linux,macOS,Network Devices,Windows
+T1056.001	Keylogging	collection,credential-access	Linux,macOS,Network Devices,Windows
+T1056.002	GUI Input Capture	collection,credential-access	Linux,macOS,Windows
+T1056.003	Web Portal Capture	collection,credential-access	Linux,macOS,Windows
+T1056.004	Credential API Hooking	collection,credential-access	Windows,Linux,macOS
+T1057	Process Discovery	discovery	ESXi,Linux,macOS,Network Devices,Windows
+T1059	Command and Scripting Interpreter	execution	Containers,ESXi,IaaS,Identity Provider,Linux,macOS,Network Devices,Office Suite,SaaS,Windows
+T1059.001	PowerShell	execution	Windows
+T1059.002	AppleScript	execution	macOS
+T1059.003	Windows Command Shell	execution	Windows
+T1059.004	Unix Shell	execution	ESXi,Linux,macOS,Network Devices
+T1059.005	Visual Basic	execution	Linux,macOS,Windows
+T1059.006	Python	execution	ESXi,Linux,macOS,Windows
+T1059.007	JavaScript	execution	Linux,macOS,Windows
+T1059.008	Network Device CLI	execution	Network Devices
+T1059.009	Cloud API	execution	IaaS,Identity Provider,Office Suite,SaaS
+T1059.010	AutoHotKey & AutoIT	execution	Windows
+T1059.011	Lua	execution	Linux,Network Devices,Windows,macOS
+T1059.012	Hypervisor CLI	execution	ESXi
+T1059.013	Container CLI/API	execution	Containers
+T1068	Exploitation for Privilege Escalation	privilege-escalation	Containers,Linux,macOS,Windows
+T1069	Permission Groups Discovery	discovery	Containers,IaaS,Identity Provider,Linux,macOS,Office Suite,SaaS,Windows
+T1069.001	Local Groups	discovery	Linux,macOS,Windows
+T1069.002	Domain Groups	discovery	Linux,macOS,Windows
+T1069.003	Cloud Groups	discovery	SaaS,IaaS,Office Suite,Identity Provider
+T1070	Indicator Removal	stealth	Containers,ESXi,Linux,macOS,Network Devices,Office Suite,Windows
+T1070.003	Clear Command History	stealth	ESXi,Linux,macOS,Network Devices,Windows
+T1070.004	File Deletion	stealth	ESXi,Linux,macOS,Windows
+T1070.005	Network Share Connection Removal	stealth	Windows
+T1070.006	Timestomp	stealth	ESXi,Linux,macOS,Windows
+T1070.007	Clear Network Connection History and Configurations	stealth	Linux,macOS,Windows,Network Devices
+T1070.008	Clear Mailbox Data	stealth	Linux,macOS,Office Suite,Windows
+T1070.009	Clear Persistence	stealth	ESXi,Linux,macOS,Windows
+T1070.010	Relocate Malware	stealth	Linux,macOS,Network Devices,Windows
+T1071	Application Layer Protocol	command-and-control	Linux,macOS,Windows,Network Devices,ESXi
+T1071.001	Web Protocols	command-and-control	ESXi,Linux,macOS,Network Devices,Windows
+T1071.002	File Transfer Protocols	command-and-control	ESXi,Linux,macOS,Network Devices,Windows
+T1071.003	Mail Protocols	command-and-control	Linux,macOS,Network Devices,Windows
+T1071.004	DNS	command-and-control	ESXi,Linux,macOS,Network Devices,Windows
+T1071.005	Publish/Subscribe Protocols	command-and-control	macOS,Linux,Windows,Network Devices
+T1072	Software Deployment Tools	execution,lateral-movement	Linux,macOS,Network Devices,SaaS,Windows
+T1074	Data Staged	collection	ESXi,IaaS,Linux,macOS,Windows
+T1074.001	Local Data Staging	collection	ESXi,Linux,macOS,Windows
+T1074.002	Remote Data Staging	collection	ESXi,IaaS,Linux,macOS,Windows
+T1078	Valid Accounts	stealth,persistence,privilege-escalation,initial-access	Containers,ESXi,IaaS,Identity Provider,Linux,macOS,Network Devices,Office Suite,SaaS,Windows
+T1078.001	Default Accounts	stealth,persistence,privilege-escalation,initial-access	Containers,ESXi,IaaS,Identity Provider,Linux,macOS,Network Devices,Office Suite,SaaS,Windows
+T1078.002	Domain Accounts	stealth,persistence,privilege-escalation,initial-access	ESXi,Linux,macOS,Windows
+T1078.003	Local Accounts	stealth,persistence,privilege-escalation,initial-access	Containers,ESXi,Linux,macOS,Network Devices,Windows
+T1078.004	Cloud Accounts	stealth,persistence,privilege-escalation,initial-access	IaaS,Identity Provider,Office Suite,SaaS
+T1080	Taint Shared Content	lateral-movement	Windows,SaaS,Linux,macOS,Office Suite
+T1082	System Information Discovery	discovery	ESXi,IaaS,Linux,macOS,Network Devices,Windows
+T1083	File and Directory Discovery	discovery	ESXi,Linux,macOS,Network Devices,Windows
+T1087	Account Discovery	discovery	ESXi,IaaS,Identity Provider,Linux,macOS,Office Suite,SaaS,Windows
+T1087.001	Local Account	discovery	ESXi,Linux,macOS,Windows
+T1087.002	Domain Account	discovery	Linux,macOS,Windows
+T1087.003	Email Account	discovery	Windows,Office Suite
+T1087.004	Cloud Account	discovery	IaaS,Identity Provider,Office Suite,SaaS
+T1090	Proxy	command-and-control	ESXi,Linux,macOS,Network Devices,Windows
+T1090.001	Internal Proxy	command-and-control	ESXi,Linux,macOS,Network Devices,Windows
+T1090.002	External Proxy	command-and-control	ESXi,Linux,macOS,Network Devices,Windows
+T1090.003	Multi-hop Proxy	command-and-control	ESXi,Linux,macOS,Network Devices,Windows
+T1090.004	Domain Fronting	command-and-control	Linux,macOS,Windows,ESXi
+T1091	Replication Through Removable Media	lateral-movement,initial-access	Windows
+T1092	Communication Through Removable Media	command-and-control	Linux,macOS,Windows
+T1095	Non-Application Layer Protocol	command-and-control	ESXi,Linux,macOS,Network Devices,Windows
+T1098	Account Manipulation	persistence,privilege-escalation	Containers,ESXi,IaaS,Identity Provider,Linux,macOS,Network Devices,Office Suite,SaaS,Windows
+T1098.001	Additional Cloud Credentials	persistence,privilege-escalation	IaaS,Identity Provider,SaaS
+T1098.002	Additional Email Delegate Permissions	persistence,privilege-escalation	Windows,Office Suite
+T1098.003	Additional Cloud Roles	persistence,privilege-escalation	IaaS,Identity Provider,Office Suite,SaaS
+T1098.004	SSH Authorized Keys	persistence,privilege-escalation	ESXi,IaaS,Linux,macOS,Network Devices
+T1098.005	Device Registration	persistence,privilege-escalation	Windows,Identity Provider
+T1098.006	Additional Container Cluster Roles	persistence,privilege-escalation	Containers
+T1098.007	Additional Local or Domain Groups	persistence,privilege-escalation	Windows,macOS,Linux
+T1102	Web Service	command-and-control	ESXi,Linux,macOS,Windows
+T1102.001	Dead Drop Resolver	command-and-control	ESXi,Linux,macOS,Windows
+T1102.002	Bidirectional Communication	command-and-control	ESXi,Linux,macOS,Windows
+T1102.003	One-Way Communication	command-and-control	Linux,macOS,Windows,ESXi
+T1104	Multi-Stage Channels	command-and-control	Linux,macOS,Windows,ESXi
+T1105	Ingress Tool Transfer	command-and-control	ESXi,Linux,macOS,Network Devices,Windows
+T1106	Native API	execution	Linux,macOS,Windows
+T1110	Brute Force	credential-access	Containers,ESXi,IaaS,Identity Provider,Linux,macOS,Network Devices,Office Suite,SaaS,Windows
+T1110.001	Password Guessing	credential-access	Containers,ESXi,IaaS,Identity Provider,Linux,macOS,Network Devices,Office Suite,SaaS,Windows
+T1110.002	Password Cracking	credential-access	Identity Provider,Linux,macOS,Network Devices,Office Suite,Windows
+T1110.003	Password Spraying	credential-access	Containers,ESXi,IaaS,Identity Provider,Linux,Network Devices,Office Suite,SaaS,Windows,macOS
+T1110.004	Credential Stuffing	credential-access	Containers,ESXi,IaaS,Identity Provider,Linux,macOS,Network Devices,Office Suite,SaaS,Windows
+T1111	Multi-Factor Authentication Interception	credential-access	Linux,macOS,Windows
+T1112	Modify Registry	defense-impairment,persistence	Windows
+T1113	Screen Capture	collection	Linux,macOS,Windows
+T1114	Email Collection	collection	Windows,macOS,Linux,Office Suite
+T1114.001	Local Email Collection	collection	Windows
+T1114.002	Remote Email Collection	collection	Office Suite,Windows
+T1114.003	Email Forwarding Rule	collection	Linux,macOS,Office Suite,Windows
+T1115	Clipboard Data	collection	Linux,macOS,Windows
+T1119	Automated Collection	collection	IaaS,Linux,macOS,Office Suite,SaaS,Windows
+T1120	Peripheral Device Discovery	discovery	Linux,macOS,Windows
+T1123	Audio Capture	collection	Linux,macOS,Windows
+T1124	System Time Discovery	discovery	ESXi,Linux,macOS,Network Devices,Windows
+T1125	Video Capture	collection	Linux,macOS,Windows
+T1127	Trusted Developer Utilities Proxy Execution	stealth,execution	Windows
+T1127.001	MSBuild	stealth,execution	Windows
+T1127.002	ClickOnce	stealth,execution	Windows
+T1127.003	JamPlus	stealth,execution	Windows
+T1129	Shared Modules	execution	Linux,macOS,Windows
+T1132	Data Encoding	command-and-control	ESXi,Linux,macOS,Windows
+T1132.001	Standard Encoding	command-and-control	ESXi,Linux,macOS,Windows
+T1132.002	Non-Standard Encoding	command-and-control	ESXi,Linux,macOS,Windows
+T1133	External Remote Services	persistence,initial-access	Containers,Linux,macOS,Windows
+T1134	Access Token Manipulation	stealth,privilege-escalation	Windows
+T1134.001	Token Impersonation/Theft	stealth,privilege-escalation	Windows
+T1134.002	Create Process with Token	stealth,privilege-escalation	Windows
+T1134.003	Make and Impersonate Token	stealth,privilege-escalation	Windows
+T1134.004	Parent PID Spoofing	stealth,privilege-escalation	Windows
+T1134.005	SID-History Injection	stealth,privilege-escalation	Windows
+T1135	Network Share Discovery	discovery	Linux,macOS,Windows
+T1136	Create Account	persistence	Windows,IaaS,Linux,macOS,Network Devices,Containers,SaaS,Office Suite,Identity Provider,ESXi
+T1136.001	Local Account	persistence	Containers,ESXi,Linux,macOS,Network Devices,Windows
+T1136.002	Domain Account	persistence	Linux,macOS,Windows
+T1136.003	Cloud Account	persistence	IaaS,SaaS,Office Suite,Identity Provider
+T1137	Office Application Startup	persistence	Windows,Office Suite
+T1137.001	Office Template Macros	persistence	Office Suite,Windows
+T1137.002	Office Test	persistence	Windows,Office Suite
+T1137.003	Outlook Forms	persistence	Windows,Office Suite
+T1137.004	Outlook Home Page	persistence	Windows,Office Suite
+T1137.005	Outlook Rules	persistence	Windows,Office Suite
+T1137.006	Add-ins	persistence	Windows,Office Suite
+T1140	Deobfuscate/Decode Files or Information	stealth	ESXi,Linux,macOS,Windows
+T1176	Software Extensions	persistence	Linux,macOS,Windows
+T1176.001	Browser Extensions	persistence	Linux,Windows,macOS
+T1176.002	IDE Extensions	persistence	Linux,macOS,Windows
+T1185	Browser Session Hijacking	collection	Windows
+T1187	Forced Authentication	credential-access	Windows
+T1189	Drive-by Compromise	initial-access	Identity Provider,Linux,macOS,Windows
+T1190	Exploit Public-Facing Application	initial-access	Containers,ESXi,IaaS,Linux,macOS,Network Devices,Windows
+T1195	Supply Chain Compromise	initial-access	Linux,Windows,macOS,SaaS
+T1195.001	Compromise Software Dependencies and Development Tools	initial-access	Linux,macOS,Windows
+T1195.002	Compromise Software Supply Chain	initial-access	Linux,Windows,macOS
+T1195.003	Compromise Hardware Supply Chain	initial-access	Linux,macOS,Windows
+T1197	BITS Jobs	stealth,persistence,execution	Windows
+T1199	Trusted Relationship	initial-access	IaaS,Identity Provider,Linux,macOS,Office Suite,SaaS,Windows
+T1200	Hardware Additions	initial-access	Windows,Linux,macOS
+T1201	Password Policy Discovery	discovery	Windows,Linux,macOS,IaaS,Network Devices,Identity Provider,SaaS,Office Suite
+T1202	Indirect Command Execution	stealth	Windows
+T1203	Exploitation for Client Execution	execution	Linux,macOS,Windows
+T1204	User Execution	execution	Linux,Windows,macOS,IaaS,Containers
+T1204.001	Malicious Link	execution	Linux,macOS,Windows
+T1204.002	Malicious File	execution	Linux,macOS,Windows
+T1204.003	Malicious Image	execution	IaaS,Containers
+T1204.004	Malicious Copy and Paste	execution	Linux,macOS,Windows
+T1204.005	Malicious Library	execution	Linux,macOS,Windows
+T1205	Traffic Signaling	stealth,persistence,command-and-control	Linux,macOS,Network Devices,Windows
+T1205.001	Port Knocking	stealth,persistence,command-and-control	Linux,macOS,Network Devices,Windows
+T1205.002	Socket Filters	stealth,persistence,command-and-control	Linux,macOS,Windows
+T1207	Rogue Domain Controller	defense-impairment	Windows
+T1210	Exploitation of Remote Services	lateral-movement	Linux,Windows,macOS,ESXi
+T1211	Exploitation for Stealth	stealth	Linux,Windows,macOS,SaaS,IaaS
+T1212	Exploitation for Credential Access	credential-access	Linux,Windows,macOS,Identity Provider
+T1213	Data from Information Repositories	collection	Linux,Windows,macOS,SaaS,IaaS,Office Suite
+T1213.001	Confluence	collection	SaaS
+T1213.002	Sharepoint	collection	Office Suite,Windows
+T1213.003	Code Repositories	collection	SaaS
+T1213.004	Customer Relationship Management Software	collection	SaaS
+T1213.005	Messaging Applications	collection	Office Suite,SaaS
+T1213.006	Databases	collection	IaaS,Linux,macOS,SaaS,Windows
+T1216	System Script Proxy Execution	stealth	Windows
+T1216.001	PubPrn	stealth	Windows
+T1216.002	SyncAppvPublishingServer	stealth	Windows
+T1217	Browser Information Discovery	discovery	Linux,macOS,Windows
+T1218	System Binary Proxy Execution	stealth	Linux,macOS,Windows
+T1218.001	Compiled HTML File	stealth	Windows
+T1218.002	Control Panel	stealth	Windows
+T1218.003	CMSTP	stealth	Windows
+T1218.004	InstallUtil	stealth	Windows
+T1218.005	Mshta	stealth	Windows
+T1218.007	Msiexec	stealth	Windows
+T1218.008	Odbcconf	stealth	Windows
+T1218.009	Regsvcs/Regasm	stealth	Windows
+T1218.010	Regsvr32	stealth	Windows
+T1218.011	Rundll32	stealth	Windows
+T1218.012	Verclsid	stealth	Windows
+T1218.013	Mavinject	stealth	Windows
+T1218.014	MMC	stealth	Windows
+T1218.015	Electron Applications	stealth	Linux,macOS,Windows
+T1219	Remote Access Tools	command-and-control	Linux,macOS,Windows
+T1219.001	IDE Tunneling	command-and-control	Linux,macOS,Windows
+T1219.002	Remote Desktop Software	command-and-control	Linux,macOS,Windows
+T1219.003	Remote Access Hardware	command-and-control	Linux,macOS,Windows
+T1220	XSL Script Processing	stealth	Windows
+T1221	Template Injection	stealth	Windows
+T1222	File and Directory Permissions Modification	defense-impairment	ESXi,Linux,macOS,Windows
+T1222.001	Windows Permissions	defense-impairment	Windows
+T1222.002	Linux and Mac Permissions	defense-impairment	Linux,macOS
+T1480	Execution Guardrails	stealth	ESXi,Linux,macOS,Windows
+T1480.001	Environmental Keying	stealth	Linux,Windows,macOS
+T1480.002	Mutual Exclusion	stealth	Linux,macOS,Windows
+T1482	Domain Trust Discovery	discovery	Windows
+T1484	Domain or Tenant Policy Modification	defense-impairment,privilege-escalation	Windows,Identity Provider
+T1484.001	Group Policy Modification	defense-impairment,privilege-escalation	Windows
+T1484.002	Trust Modification	defense-impairment,privilege-escalation	Identity Provider,Windows
+T1485	Data Destruction	impact	Containers,ESXi,IaaS,Linux,macOS,Windows
+T1485.001	Lifecycle-Triggered Deletion	impact	IaaS
+T1486	Data Encrypted for Impact	impact	ESXi,IaaS,Linux,macOS,Windows
+T1489	Service Stop	impact	ESXi,IaaS,Linux,macOS,Windows
+T1490	Inhibit System Recovery	impact	Containers,ESXi,IaaS,Linux,macOS,Network Devices,Windows
+T1491	Defacement	impact	Windows,IaaS,Linux,macOS,ESXi
+T1491.001	Internal Defacement	impact	ESXi,Linux,macOS,Windows
+T1491.002	External Defacement	impact	Windows,IaaS,Linux,macOS
+T1495	Firmware Corruption	impact	Linux,macOS,Network Devices,Windows
+T1496	Resource Hijacking	impact	Windows,IaaS,Linux,macOS,Containers,SaaS
+T1496.001	Compute Hijacking	impact	Windows,IaaS,Linux,macOS,Containers
+T1496.002	Bandwidth Hijacking	impact	Linux,Windows,macOS,IaaS,Containers
+T1496.003	SMS Pumping	impact	SaaS
+T1496.004	Cloud Service Hijacking	impact	SaaS
+T1497	Virtualization/Sandbox Evasion	stealth,discovery	Linux,macOS,Windows
+T1497.001	System Checks	stealth,discovery	Linux,macOS,Windows
+T1497.002	User Activity Based Checks	stealth,discovery	Linux,macOS,Windows
+T1497.003	Time Based Checks	stealth,discovery	Linux,macOS,Windows
+T1498	Network Denial of Service	impact	Windows,IaaS,Linux,macOS,Containers
+T1498.001	Direct Network Flood	impact	Windows,IaaS,Linux,macOS
+T1498.002	Reflection Amplification	impact	Windows,IaaS,Linux,macOS
+T1499	Endpoint Denial of Service	impact	Windows,Linux,macOS,Containers,IaaS
+T1499.001	OS Exhaustion Flood	impact	Linux,macOS,Windows
+T1499.002	Service Exhaustion Flood	impact	Windows,IaaS,Linux,macOS
+T1499.003	Application Exhaustion Flood	impact	Windows,IaaS,Linux,macOS
+T1499.004	Application or System Exploitation	impact	Windows,IaaS,Linux,macOS
+T1505	Server Software Component	persistence	Windows,Linux,macOS,Network Devices,ESXi
+T1505.001	SQL Stored Procedures	persistence	Windows,Linux
+T1505.002	Transport Agent	persistence	Linux,Windows
+T1505.003	Web Shell	persistence	Linux,macOS,Network Devices,Windows
+T1505.004	IIS Components	persistence	Windows
+T1505.005	Terminal Services DLL	persistence	Windows
+T1505.006	vSphere Installation Bundles	persistence	ESXi
+T1518	Software Discovery	discovery	ESXi,IaaS,Linux,macOS,Windows
+T1518.001	Security Software Discovery	discovery	IaaS,Linux,macOS,Windows
+T1518.002	Backup Software Discovery	discovery	Windows,macOS,Linux
+T1525	Implant Internal Image	persistence	IaaS,Containers
+T1526	Cloud Service Discovery	discovery	IaaS,Identity Provider,Office Suite,SaaS
+T1528	Steal Application Access Token	credential-access	Containers,IaaS,Identity Provider,Office Suite,SaaS
+T1529	System Shutdown/Reboot	impact	ESXi,Linux,macOS,Network Devices,Windows
+T1530	Data from Cloud Storage	collection	IaaS,Office Suite,SaaS
+T1531	Account Access Removal	impact	Linux,macOS,Windows,SaaS,IaaS,Office Suite,ESXi
+T1534	Internal Spearphishing	lateral-movement	Linux,macOS,Office Suite,SaaS,Windows
+T1535	Unused/Unsupported Cloud Regions	stealth	IaaS
+T1537	Transfer Data to Cloud Account	exfiltration	IaaS,Office Suite,SaaS
+T1538	Cloud Service Dashboard	discovery	IaaS,SaaS,Office Suite,Identity Provider
+T1539	Steal Web Session Cookie	credential-access	Linux,macOS,Office Suite,SaaS,Windows
+T1542	Pre-OS Boot	stealth,persistence	Linux,macOS,Network Devices,Windows
+T1542.001	System Firmware	stealth,persistence	Network Devices,Windows
+T1542.002	Component Firmware	stealth,persistence	Windows,Linux,macOS
+T1542.003	Bootkit	stealth,persistence	Linux,Windows
+T1542.004	ROMMONkit	stealth,persistence	Network Devices
+T1542.005	TFTP Boot	stealth,persistence	Network Devices
+T1543	Create or Modify System Process	persistence,privilege-escalation	Containers,Linux,macOS,Windows
+T1543.001	Launch Agent	persistence,privilege-escalation	macOS
+T1543.002	Systemd Service	persistence,privilege-escalation	Linux
+T1543.003	Windows Service	persistence,privilege-escalation	Windows
+T1543.004	Launch Daemon	persistence,privilege-escalation	macOS
+T1543.005	Container Service	persistence,privilege-escalation	Containers
+T1546	Event Triggered Execution	privilege-escalation,persistence	Linux,macOS,Windows,SaaS,IaaS,Office Suite
+T1546.001	Change Default File Association	privilege-escalation,persistence	Windows
+T1546.002	Screensaver	privilege-escalation,persistence	Windows
+T1546.003	Windows Management Instrumentation Event Subscription	privilege-escalation,persistence	Windows
+T1546.004	Unix Shell Configuration Modification	privilege-escalation,persistence	Linux,macOS
+T1546.005	Trap	privilege-escalation,persistence	macOS,Linux
+T1546.006	LC_LOAD_DYLIB Addition	privilege-escalation,persistence	macOS
+T1546.007	Netsh Helper DLL	privilege-escalation,persistence	Windows
+T1546.008	Accessibility Features	privilege-escalation,persistence	Windows
+T1546.009	AppCert DLLs	privilege-escalation,persistence	Windows
+T1546.010	AppInit DLLs	privilege-escalation,persistence	Windows
+T1546.011	Application Shimming	privilege-escalation,persistence	Windows
+T1546.012	Image File Execution Options Injection	privilege-escalation,persistence	Windows
+T1546.013	PowerShell Profile	privilege-escalation,persistence	Windows
+T1546.014	Emond	privilege-escalation,persistence	macOS
+T1546.015	Component Object Model Hijacking	privilege-escalation,persistence	Windows
+T1546.016	Installer Packages	privilege-escalation,persistence	Linux,macOS,Windows
+T1546.017	Udev Rules	persistence,privilege-escalation	Linux
+T1546.018	Python Startup Hooks	persistence,privilege-escalation	Linux,macOS,Windows
+T1547	Boot or Logon Autostart Execution	persistence,privilege-escalation	Linux,macOS,Windows,Network Devices
+T1547.001	Registry Run Keys / Startup Folder	persistence,privilege-escalation	Windows
+T1547.002	Authentication Package	persistence,privilege-escalation	Windows
+T1547.003	Time Providers	persistence,privilege-escalation	Windows
+T1547.004	Winlogon Helper DLL	persistence,privilege-escalation	Windows
+T1547.005	Security Support Provider	persistence,privilege-escalation	Windows
+T1547.006	Kernel Modules and Extensions	persistence,privilege-escalation	macOS,Linux
+T1547.007	Re-opened Applications	persistence,privilege-escalation	macOS
+T1547.008	LSASS Driver	persistence,privilege-escalation	Windows
+T1547.009	Shortcut Modification	persistence,privilege-escalation	Windows
+T1547.010	Port Monitors	persistence,privilege-escalation	Windows
+T1547.012	Print Processors	persistence,privilege-escalation	Windows
+T1547.013	XDG Autostart Entries	persistence,privilege-escalation	Linux
+T1547.014	Active Setup	persistence,privilege-escalation	Windows
+T1547.015	Login Items	persistence,privilege-escalation	macOS
+T1548	Abuse Elevation Control Mechanism	privilege-escalation	Linux,macOS,Windows,IaaS,Office Suite,Identity Provider
+T1548.001	Setuid and Setgid	privilege-escalation	Linux,macOS
+T1548.002	Bypass User Account Control	privilege-escalation	Windows
+T1548.003	Sudo and Sudo Caching	privilege-escalation	Linux,macOS
+T1548.004	Elevated Execution with Prompt	privilege-escalation	macOS
+T1548.005	Temporary Elevated Cloud Access	privilege-escalation	IaaS,Office Suite,Identity Provider
+T1548.006	TCC Manipulation	privilege-escalation	macOS
+T1550	Use Alternate Authentication Material	lateral-movement	Containers,IaaS,Identity Provider,Linux,Office Suite,SaaS,Windows
+T1550.001	Application Access Token	lateral-movement	Containers,IaaS,Identity Provider,Office Suite,SaaS
+T1550.002	Pass the Hash	lateral-movement	Windows
+T1550.003	Pass the Ticket	lateral-movement	Windows
+T1550.004	Web Session Cookie	lateral-movement	IaaS,Office Suite,SaaS
+T1552	Unsecured Credentials	credential-access	Windows,SaaS,IaaS,Linux,macOS,Containers,Network Devices,Office Suite,Identity Provider
+T1552.001	Credentials In Files	credential-access	Containers,IaaS,Linux,macOS,Windows
+T1552.002	Credentials in Registry	credential-access	Windows
+T1552.003	Shell History	credential-access	Linux,macOS,Windows
+T1552.004	Private Keys	credential-access	Linux,macOS,Network Devices,Windows
+T1552.005	Cloud Instance Metadata API	credential-access	IaaS
+T1552.006	Group Policy Preferences	credential-access	Windows
+T1552.007	Container API	credential-access	Containers
+T1552.008	Chat Messages	credential-access	SaaS,Office Suite
+T1553	Subvert Trust Controls	defense-impairment	Linux,macOS,Windows
+T1553.001	Gatekeeper Bypass	defense-impairment	macOS
+T1553.002	Code Signing	defense-impairment	macOS,Windows
+T1553.003	SIP and Trust Provider Hijacking	defense-impairment	Windows
+T1553.004	Install Root Certificate	defense-impairment	Linux,macOS,Windows
+T1553.005	Mark-of-the-Web Bypass	defense-impairment	Windows
+T1553.006	Code Signing Policy Modification	defense-impairment	macOS,Windows
+T1554	Compromise Host Software Binary	persistence	ESXi,Linux,macOS,Windows
+T1555	Credentials from Password Stores	credential-access	IaaS,Linux,macOS,Windows
+T1555.001	Keychain	credential-access	macOS
+T1555.002	Securityd Memory	credential-access	Linux,macOS
+T1555.003	Credentials from Web Browsers	credential-access	Linux,macOS,Windows
+T1555.004	Windows Credential Manager	credential-access	Windows
+T1555.005	Password Managers	credential-access	Linux,macOS,Windows
+T1555.006	Cloud Secrets Management Stores	credential-access	IaaS
+T1556	Modify Authentication Process	defense-impairment,persistence,credential-access	IaaS,Identity Provider,Linux,macOS,Network Devices,Office Suite,SaaS,Windows
+T1556.001	Domain Controller Authentication	defense-impairment,persistence,credential-access	Windows
+T1556.002	Password Filter DLL	defense-impairment,persistence,credential-access	Windows
+T1556.003	Pluggable Authentication Modules	defense-impairment,persistence,credential-access	Linux,macOS
+T1556.004	Network Device Authentication	defense-impairment,persistence,credential-access	Network Devices
+T1556.005	Reversible Encryption	defense-impairment,persistence,credential-access	Windows
+T1556.006	Multi-Factor Authentication	defense-impairment,persistence,credential-access	IaaS,Identity Provider,Linux,macOS,Office Suite,SaaS,Windows
+T1556.007	Hybrid Identity	defense-impairment,persistence,credential-access	IaaS,Identity Provider,Office Suite,SaaS,Windows
+T1556.008	Network Provider DLL	defense-impairment,persistence,credential-access	Windows
+T1556.009	Conditional Access Policies	defense-impairment,persistence,credential-access	IaaS,Identity Provider
+T1557	Adversary-in-the-Middle	credential-access,collection	Linux,macOS,Network Devices,Windows
+T1557.001	Name Resolution Poisoning and SMB Relay	credential-access,collection	Windows
+T1557.002	ARP Cache Poisoning	credential-access,collection	Linux,Windows,macOS
+T1557.003	DHCP Spoofing	credential-access,collection	Linux,Windows,macOS
+T1557.004	Evil Twin	credential-access,collection	Network Devices
+T1558	Steal or Forge Kerberos Tickets	credential-access	Linux,macOS,Windows
+T1558.001	Golden Ticket	credential-access	Windows
+T1558.002	Silver Ticket	credential-access	Windows
+T1558.003	Kerberoasting	credential-access	Windows
+T1558.004	AS-REP Roasting	credential-access	Windows
+T1558.005	Ccache Files	credential-access	Linux,macOS
+T1559	Inter-Process Communication	execution	Linux,macOS,Windows
+T1559.001	Component Object Model	execution	Windows
+T1559.002	Dynamic Data Exchange	execution	Windows
+T1559.003	XPC Services	execution	macOS
+T1560	Archive Collected Data	collection	Linux,macOS,Windows
+T1560.001	Archive via Utility	collection	Linux,macOS,Windows
+T1560.002	Archive via Library	collection	Linux,macOS,Windows
+T1560.003	Archive via Custom Method	collection	Linux,macOS,Windows
+T1561	Disk Wipe	impact	Linux,macOS,Windows,Network Devices
+T1561.001	Disk Content Wipe	impact	Linux,macOS,Network Devices,Windows
+T1561.002	Disk Structure Wipe	impact	Linux,macOS,Network Devices,Windows
+T1563	Remote Service Session Hijacking	lateral-movement	Linux,macOS,Windows
+T1563.001	SSH Hijacking	lateral-movement	Linux,macOS
+T1563.002	RDP Hijacking	lateral-movement	Windows
+T1564	Hide Artifacts	stealth	ESXi,Linux,macOS,Office Suite,Windows
+T1564.001	Hidden Files and Directories	stealth	Linux,macOS,Windows
+T1564.002	Hidden Users	stealth	Linux,macOS,Windows
+T1564.003	Hidden Window	stealth	Linux,macOS,Windows
+T1564.004	NTFS File Attributes	stealth	Windows
+T1564.005	Hidden File System	stealth	Linux,macOS,Windows
+T1564.006	Run Virtual Instance	stealth	ESXi,Linux,macOS,Windows
+T1564.007	VBA Stomping	stealth	Linux,macOS,Windows
+T1564.008	Email Hiding Rules	stealth	Windows,Linux,macOS,Office Suite
+T1564.009	Resource Forking	stealth	macOS
+T1564.010	Process Argument Spoofing	stealth	Windows
+T1564.011	Ignore Process Interrupts	stealth	Linux,macOS,Windows
+T1564.012	File/Path Exclusions	stealth	Linux,macOS,Windows
+T1564.013	Bind Mounts	stealth	Linux
+T1564.014	Extended Attributes	stealth	Linux,macOS
+T1565	Data Manipulation	impact	Linux,macOS,Windows
+T1565.001	Stored Data Manipulation	impact	Linux,macOS,Windows
+T1565.002	Transmitted Data Manipulation	impact	Linux,macOS,Windows
+T1565.003	Runtime Data Manipulation	impact	Linux,macOS,Windows
+T1566	Phishing	initial-access	Identity Provider,Linux,macOS,Office Suite,SaaS,Windows
+T1566.001	Spearphishing Attachment	initial-access	Linux,macOS,Windows
+T1566.002	Spearphishing Link	initial-access	Identity Provider,Linux,macOS,Office Suite,SaaS,Windows
+T1566.003	Spearphishing via Service	initial-access	Linux,macOS,Windows
+T1566.004	Spearphishing Voice	initial-access	Linux,macOS,Windows,Identity Provider
+T1567	Exfiltration Over Web Service	exfiltration	ESXi,Linux,macOS,Office Suite,SaaS,Windows
+T1567.001	Exfiltration to Code Repository	exfiltration	ESXi,Linux,macOS,Windows
+T1567.002	Exfiltration to Cloud Storage	exfiltration	ESXi,Linux,macOS,Windows
+T1567.003	Exfiltration to Text Storage Sites	exfiltration	Linux,macOS,Windows,ESXi
+T1567.004	Exfiltration Over Webhook	exfiltration	ESXi,Linux,macOS,Office Suite,SaaS,Windows
+T1568	Dynamic Resolution	command-and-control	ESXi,Linux,macOS,Windows
+T1568.001	Fast Flux DNS	command-and-control	Linux,macOS,Windows,ESXi
+T1568.002	Domain Generation Algorithms	command-and-control	ESXi,Linux,macOS,Windows
+T1568.003	DNS Calculation	command-and-control	ESXi,Linux,macOS,Windows
+T1569	System Services	execution	Windows,macOS,Linux
+T1569.001	Launchctl	execution	macOS
+T1569.002	Service Execution	execution	Windows
+T1569.003	Systemctl	execution	Linux
+T1570	Lateral Tool Transfer	lateral-movement	ESXi,Linux,macOS,Windows
+T1571	Non-Standard Port	command-and-control	ESXi,Linux,macOS,Windows
+T1572	Protocol Tunneling	command-and-control	ESXi,Linux,macOS,Windows
+T1573	Encrypted Channel	command-and-control	ESXi,Linux,macOS,Network Devices,Windows
+T1573.001	Symmetric Cryptography	command-and-control	ESXi,Linux,macOS,Network Devices,Windows
+T1573.002	Asymmetric Cryptography	command-and-control	ESXi,Linux,macOS,Network Devices,Windows
+T1574	Hijack Execution Flow	stealth,execution	Linux,macOS,Windows
+T1574.001	DLL	stealth,execution	Windows
+T1574.004	Dylib Hijacking	stealth,execution	macOS
+T1574.005	Executable Installer File Permissions Weakness	stealth,execution	Windows
+T1574.006	Dynamic Linker Hijacking	stealth,execution	Linux,macOS
+T1574.007	Path Interception by PATH Environment Variable	stealth,execution	Linux,macOS,Windows
+T1574.008	Path Interception by Search Order Hijacking	stealth,execution	Windows
+T1574.009	Path Interception by Unquoted Path	stealth,execution	Windows
+T1574.010	Services File Permissions Weakness	stealth,execution	Windows
+T1574.011	Services Registry Permissions Weakness	stealth,execution	Windows
+T1574.012	COR_PROFILER	stealth,execution	Windows
+T1574.013	KernelCallbackTable	stealth,execution	Windows
+T1574.014	AppDomainManager	stealth,execution	Windows
+T1578	Modify Cloud Compute Infrastructure	defense-impairment	IaaS
+T1578.001	Create Snapshot	defense-impairment	IaaS
+T1578.002	Create Cloud Instance	defense-impairment	IaaS
+T1578.003	Delete Cloud Instance	defense-impairment	IaaS
+T1578.004	Revert Cloud Instance	defense-impairment	IaaS
+T1578.005	Modify Cloud Compute Configurations	defense-impairment	IaaS
+T1580	Cloud Infrastructure Discovery	discovery	IaaS
+T1583	Acquire Infrastructure	resource-development	PRE
+T1583.001	Domains	resource-development	PRE
+T1583.002	DNS Server	resource-development	PRE
+T1583.003	Virtual Private Server	resource-development	PRE
+T1583.004	Server	resource-development	PRE
+T1583.005	Botnet	resource-development	PRE
+T1583.006	Web Services	resource-development	PRE
+T1583.007	Serverless	resource-development	PRE
+T1583.008	Malvertising	resource-development	PRE
+T1584	Compromise Infrastructure	resource-development	PRE
+T1584.001	Domains	resource-development	PRE
+T1584.002	DNS Server	resource-development	PRE
+T1584.003	Virtual Private Server	resource-development	PRE
+T1584.004	Server	resource-development	PRE
+T1584.005	Botnet	resource-development	PRE
+T1584.006	Web Services	resource-development	PRE
+T1584.007	Serverless	resource-development	PRE
+T1584.008	Network Devices	resource-development	PRE
+T1585	Establish Accounts	resource-development	PRE
+T1585.001	Social Media Accounts	resource-development	PRE
+T1585.002	Email Accounts	resource-development	PRE
+T1585.003	Cloud Accounts	resource-development	PRE
+T1586	Compromise Accounts	resource-development	PRE
+T1586.001	Social Media Accounts	resource-development	PRE
+T1586.002	Email Accounts	resource-development	PRE
+T1586.003	Cloud Accounts	resource-development	PRE
+T1587	Develop Capabilities	resource-development	PRE
+T1587.001	Malware	resource-development	PRE
+T1587.002	Code Signing Certificates	resource-development	PRE
+T1587.003	Digital Certificates	resource-development	PRE
+T1587.004	Exploits	resource-development	PRE
+T1588	Obtain Capabilities	resource-development	PRE
+T1588.001	Malware	resource-development	PRE
+T1588.002	Tool	resource-development	PRE
+T1588.003	Code Signing Certificates	resource-development	PRE
+T1588.004	Digital Certificates	resource-development	PRE
+T1588.005	Exploits	resource-development	PRE
+T1588.006	Vulnerabilities	resource-development	PRE
+T1588.007	Artificial Intelligence	resource-development	PRE
+T1589	Gather Victim Identity Information	reconnaissance	PRE
+T1589.001	Credentials	reconnaissance	PRE
+T1589.002	Email Addresses	reconnaissance	PRE
+T1589.003	Employee Names	reconnaissance	PRE
+T1590	Gather Victim Network Information	reconnaissance	PRE
+T1590.001	Domain Properties	reconnaissance	PRE
+T1590.002	DNS	reconnaissance	PRE
+T1590.003	Network Trust Dependencies	reconnaissance	PRE
+T1590.004	Network Topology	reconnaissance	PRE
+T1590.005	IP Addresses	reconnaissance	PRE
+T1590.006	Network Security Appliances	reconnaissance	PRE
+T1591	Gather Victim Org Information	reconnaissance	PRE
+T1591.001	Determine Physical Locations	reconnaissance	PRE
+T1591.002	Business Relationships	reconnaissance	PRE
+T1591.003	Identify Business Tempo	reconnaissance	PRE
+T1591.004	Identify Roles	reconnaissance	PRE
+T1592	Gather Victim Host Information	reconnaissance	PRE
+T1592.001	Hardware	reconnaissance	PRE
+T1592.002	Software	reconnaissance	PRE
+T1592.003	Firmware	reconnaissance	PRE
+T1592.004	Client Configurations	reconnaissance	PRE
+T1593	Search Open Websites/Domains	reconnaissance	PRE
+T1593.001	Social Media	reconnaissance	PRE
+T1593.002	Search Engines	reconnaissance	PRE
+T1593.003	Code Repositories	reconnaissance	PRE
+T1594	Search Victim-Owned Websites	reconnaissance	PRE
+T1595	Active Scanning	reconnaissance	PRE
+T1595.001	Scanning IP Blocks	reconnaissance	PRE
+T1595.002	Vulnerability Scanning	reconnaissance	PRE
+T1595.003	Wordlist Scanning	reconnaissance	PRE
+T1596	Search Open Technical Databases	reconnaissance	PRE
+T1596.001	DNS/Passive DNS	reconnaissance	PRE
+T1596.002	WHOIS	reconnaissance	PRE
+T1596.003	Digital Certificates	reconnaissance	PRE
+T1596.004	CDNs	reconnaissance	PRE
+T1596.005	Scan Databases	reconnaissance	PRE
+T1597	Search Closed Sources	reconnaissance	PRE
+T1597.001	Threat Intel Vendors	reconnaissance	PRE
+T1597.002	Purchase Technical Data	reconnaissance	PRE
+T1598	Phishing for Information	reconnaissance	PRE
+T1598.001	Spearphishing Service	reconnaissance	PRE
+T1598.002	Spearphishing Attachment	reconnaissance	PRE
+T1598.003	Spearphishing Link	reconnaissance	PRE
+T1598.004	Spearphishing Voice	reconnaissance	PRE
+T1599	Network Boundary Bridging	defense-impairment	Network Devices
+T1599.001	Network Address Translation Traversal	defense-impairment	Network Devices
+T1600	Weaken Encryption	defense-impairment	Network Devices
+T1600.001	Reduce Key Space	defense-impairment	Network Devices
+T1600.002	Disable Crypto Hardware	defense-impairment	Network Devices
+T1601	Modify System Image	defense-impairment	Network Devices
+T1601.001	Patch System Image	defense-impairment	Network Devices
+T1601.002	Downgrade System Image	defense-impairment	Network Devices
+T1602	Data from Configuration Repository	collection	Network Devices
+T1602.001	SNMP (MIB Dump)	collection	Network Devices
+T1602.002	Network Device Configuration Dump	collection	Network Devices
+T1606	Forge Web Credentials	credential-access	SaaS,Windows,macOS,Linux,IaaS,Office Suite,Identity Provider
+T1606.001	Web Cookies	credential-access	Linux,macOS,Windows,SaaS,IaaS
+T1606.002	SAML Tokens	credential-access	SaaS,Windows,IaaS,Office Suite,Identity Provider
+T1608	Stage Capabilities	resource-development	PRE
+T1608.001	Upload Malware	resource-development	PRE
+T1608.002	Upload Tool	resource-development	PRE
+T1608.003	Install Digital Certificate	resource-development	PRE
+T1608.004	Drive-by Target	resource-development	PRE
+T1608.005	Link Target	resource-development	PRE
+T1608.006	SEO Poisoning	resource-development	PRE
+T1609	Container Administration Command	execution	Containers
+T1610	Deploy Container	execution	Containers
+T1611	Escape to Host	privilege-escalation	Windows,Linux,Containers,ESXi
+T1612	Build Image on Host	stealth	Containers
+T1613	Container and Resource Discovery	discovery	Containers
+T1614	System Location Discovery	discovery	IaaS,Linux,macOS,Windows
+T1614.001	System Language Discovery	discovery	Linux,macOS,Windows
+T1615	Group Policy Discovery	discovery	Windows
+T1619	Cloud Storage Object Discovery	discovery	IaaS
+T1620	Reflective Code Loading	stealth	Linux,macOS,Windows
+T1621	Multi-Factor Authentication Request Generation	credential-access	Windows,Linux,macOS,IaaS,SaaS,Office Suite,Identity Provider
+T1622	Debugger Evasion	stealth,discovery	Linux,macOS,Windows
+T1647	Plist File Modification	defense-impairment	macOS
+T1648	Serverless Execution	execution	SaaS,IaaS,Office Suite
+T1649	Steal or Forge Authentication Certificates	credential-access	Windows,Linux,macOS,Identity Provider
+T1650	Acquire Access	resource-development	PRE
+T1651	Cloud Administration Command	execution	IaaS
+T1652	Device Driver Discovery	discovery	Linux,macOS,Windows
+T1653	Power Settings	persistence	Windows,Linux,macOS,Network Devices
+T1654	Log Enumeration	discovery	ESXi,IaaS,Linux,macOS,Windows
+T1657	Financial Theft	impact	Linux,macOS,Office Suite,SaaS,Windows
+T1659	Content Injection	initial-access,command-and-control	Linux,macOS,Windows
+T1665	Hide Infrastructure	command-and-control	ESXi,Linux,macOS,Network Devices,Windows
+T1666	Modify Cloud Resource Hierarchy	defense-impairment	IaaS
+T1667	Email Bombing	impact	Linux,Office Suite,Windows,macOS
+T1668	Exclusive Control	persistence	Linux,macOS,Windows
+T1669	Wi-Fi Networks	initial-access	Linux,Network Devices,Windows,macOS
+T1671	Cloud Application Integration	persistence	Office Suite,SaaS
+T1673	Virtual Machine Discovery	discovery	ESXi,Linux,macOS,Windows
+T1674	Input Injection	execution	Windows,macOS,Linux
+T1675	ESXi Administration Command	execution	ESXi
+T1677	Poisoned Pipeline Execution	execution	SaaS
+T1678	Delay Execution	stealth	Linux,macOS,Windows
+T1679	Selective Exclusion	stealth	Windows
+T1680	Local Storage Discovery	discovery	ESXi,IaaS,Linux,macOS,Windows
+T1681	Search Threat Vendor Data	reconnaissance	PRE
+T1682	Query Public AI Services	reconnaissance	PRE
+T1683	Generate Content	resource-development	PRE
+T1683.001	Written Content	resource-development	PRE
+T1683.002	Audio-Visual Content	resource-development	PRE
+T1684	Social Engineering	stealth	Linux,macOS,Office Suite,SaaS,Windows
+T1684.001	Impersonation	stealth	Linux,macOS,Office Suite,SaaS,Windows
+T1684.002	Email Spoofing	stealth	Linux,macOS,Office Suite,Windows
+T1685	Disable or Modify Tools	defense-impairment	Containers,ESXi,IaaS,Linux,macOS,Network Devices,Windows
+T1685.001	Disable or Modify Windows Event Log	defense-impairment	Windows
+T1685.002	Disable or Modify Cloud Log	defense-impairment	IaaS,SaaS,Identity Provider,Office Suite
+T1685.003	Modify or Spoof Tool UI	defense-impairment	Linux,macOS,Windows
+T1685.004	Disable or Modify Linux Audit System Log	defense-impairment	Linux
+T1685.005	Clear Windows Event Logs	defense-impairment	Windows
+T1685.006	Clear Linux or Mac System Logs	defense-impairment	Linux,macOS
+T1686	Disable or Modify System Firewall	defense-impairment	ESXi,Linux,macOS,Network Devices,Windows
+T1686.001	Cloud Firewall	defense-impairment	IaaS
+T1686.002	Network Device Firewall	defense-impairment	Network Devices
+T1686.003	Windows Host Firewall	defense-impairment	Windows
+T1687	Exploitation for Defense Impairment	defense-impairment	IaaS,Linux,macOS,SaaS,Windows
+T1688	Safe Mode Boot	defense-impairment	Windows
+T1689	Downgrade Attack	defense-impairment	macOS,Windows,Linux
+T1690	Prevent Command History Logging	defense-impairment	ESXi,Linux,macOS,Network Devices,Windows
+AML.T0000	Search Open Technical Databases	AML.TA0002	AI
+AML.T0000.000	Journals and Conference Proceedings		AI
+AML.T0000.001	Pre-Print Repositories		AI
+AML.T0000.002	Technical Blogs		AI
+AML.T0001	Search Open AI Vulnerability Analysis	AML.TA0002	AI
+AML.T0002	Acquire Public AI Artifacts	AML.TA0003	AI
+AML.T0002.000	Datasets		AI
+AML.T0002.001	Models		AI
+AML.T0002.002	AI Agent Configuration		AI
+AML.T0003	Search Victim-Owned Websites	AML.TA0002	AI
+AML.T0004	Search Application Repositories	AML.TA0002	AI
+AML.T0005	Create Proxy AI Model	AML.TA0001	AI
+AML.T0005.000	Train Proxy via Gathered AI Artifacts		AI
+AML.T0005.001	Train Proxy via Replication		AI
+AML.T0005.002	Use Pre-Trained Model		AI
+AML.T0006	Active Scanning	AML.TA0002	AI
+AML.T0007	Discover AI Artifacts	AML.TA0008	AI
+AML.T0008	Acquire Infrastructure	AML.TA0003	AI
+AML.T0008.000	AI Development Workspaces		AI
+AML.T0008.001	Consumer Hardware		AI
+AML.T0008.002	Domains		AI
+AML.T0008.003	Physical Countermeasures		AI
+AML.T0008.004	Serverless		AI
+AML.T0008.005	AI Service Proxies		AI
+AML.T0010	AI Supply Chain Compromise	AML.TA0004	AI
+AML.T0010.000	Hardware		AI
+AML.T0010.001	AI Software		AI
+AML.T0010.002	Data		AI
+AML.T0010.003	Model		AI
+AML.T0010.004	Container Registry		AI
+AML.T0010.005	AI Agent Tool		AI
+AML.T0011	User Execution	AML.TA0005	AI
+AML.T0011.000	Unsafe AI Artifacts		AI
+AML.T0011.001	Malicious Package		AI
+AML.T0011.002	Poisoned AI Agent Tool		AI
+AML.T0011.003	Malicious Link		AI
+AML.T0012	Valid Accounts	AML.TA0004,AML.TA0012	AI
+AML.T0013	Discover AI Model Ontology	AML.TA0008	AI
+AML.T0014	Discover AI Model Family	AML.TA0008	AI
+AML.T0015	Evade AI Model	AML.TA0004,AML.TA0007,AML.TA0011	AI
+AML.T0016	Obtain Capabilities	AML.TA0003	AI
+AML.T0016.000	Adversarial AI Attack Implementations		AI
+AML.T0016.001	Software Tools		AI
+AML.T0016.002	Generative AI		AI
+AML.T0017	Develop Capabilities	AML.TA0003	AI
+AML.T0017.000	Adversarial AI Attacks		AI
+AML.T0018	Manipulate AI Model	AML.TA0006,AML.TA0001	AI
+AML.T0018.000	Poison AI Model		AI
+AML.T0018.001	Modify AI Model Architecture		AI
+AML.T0018.002	Embed Malware		AI
+AML.T0019	Publish Poisoned Datasets	AML.TA0003	AI
+AML.T0020	Poison Training Data	AML.TA0003,AML.TA0006	AI
+AML.T0021	Establish Accounts	AML.TA0003	AI
+AML.T0024	Exfiltration via AI Inference API	AML.TA0010	AI
+AML.T0024.000	Infer Training Data Membership		AI
+AML.T0024.001	Invert AI Model		AI
+AML.T0024.002	Extract AI Model		AI
+AML.T0025	Exfiltration via Cyber Means	AML.TA0010	AI
+AML.T0029	Denial of AI Service	AML.TA0011	AI
+AML.T0031	Erode AI Model Integrity	AML.TA0011	AI
+AML.T0034	Cost Harvesting	AML.TA0011	AI
+AML.T0034.000	Excessive Queries		AI
+AML.T0034.001	Resource-Intensive Queries		AI
+AML.T0034.002	Agentic Resource Consumption		AI
+AML.T0035	AI Artifact Collection	AML.TA0009	AI
+AML.T0036	Data from Information Repositories	AML.TA0009	AI
+AML.T0037	Data from Local System	AML.TA0009	AI
+AML.T0040	AI Model Inference API Access	AML.TA0000	AI
+AML.T0041	Physical Environment Access	AML.TA0000	AI
+AML.T0042	Verify Attack	AML.TA0001	AI
+AML.T0043	Craft Adversarial Data	AML.TA0001	AI
+AML.T0043.000	White-Box Optimization		AI
+AML.T0043.001	Black-Box Optimization		AI
+AML.T0043.002	Black-Box Transfer		AI
+AML.T0043.003	Manual Modification		AI
+AML.T0043.004	Insert Backdoor Trigger		AI
+AML.T0044	Full AI Model Access	AML.TA0000	AI
+AML.T0046	Spamming AI System with Chaff Data	AML.TA0011	AI
+AML.T0047	AI-Enabled Product or Service	AML.TA0000	AI
+AML.T0048	External Harms	AML.TA0011	AI
+AML.T0048.000	Financial Harm		AI
+AML.T0048.001	Reputational Harm		AI
+AML.T0048.002	Societal Harm		AI
+AML.T0048.003	User Harm		AI
+AML.T0048.004	AI Intellectual Property Theft		AI
+AML.T0049	Exploit Public-Facing Application	AML.TA0004	AI
+AML.T0050	Command and Scripting Interpreter	AML.TA0005	AI
+AML.T0051	LLM Prompt Injection	AML.TA0005	AI
+AML.T0051.000	Direct		AI
+AML.T0051.001	Indirect		AI
+AML.T0051.002	Triggered		AI
+AML.T0052	Phishing	AML.TA0004,AML.TA0015	AI
+AML.T0052.000	Spearphishing via Social Engineering LLM		AI
+AML.T0052.001	Deepfake-Assisted Phishing		AI
+AML.T0053	AI Agent Tool Invocation	AML.TA0005,AML.TA0012	AI
+AML.T0054	LLM Jailbreak	AML.TA0012,AML.TA0007	AI
+AML.T0055	Unsecured Credentials	AML.TA0013	AI
+AML.T0056	Extract LLM System Prompt	AML.TA0010	AI
+AML.T0057	LLM Data Leakage	AML.TA0010	AI
+AML.T0058	Publish Poisoned Models	AML.TA0003	AI
+AML.T0059	Erode Dataset Integrity	AML.TA0011	AI
+AML.T0060	Publish Hallucinated Entities	AML.TA0003	AI
+AML.T0061	LLM Prompt Self-Replication	AML.TA0006	AI
+AML.T0062	Discover LLM Hallucinations	AML.TA0008	AI
+AML.T0063	Discover AI Model Outputs	AML.TA0008	AI
+AML.T0064	Gather RAG-Indexed Targets	AML.TA0002	AI
+AML.T0065	LLM Prompt Crafting	AML.TA0003	AI
+AML.T0066	Retrieval Content Crafting	AML.TA0003	AI
+AML.T0067	LLM Trusted Output Components Manipulation	AML.TA0007	AI
+AML.T0067.000	Citations		AI
+AML.T0068	LLM Prompt Obfuscation	AML.TA0007	AI
+AML.T0069	Discover LLM System Information	AML.TA0008	AI
+AML.T0069.000	Special Character Sets		AI
+AML.T0069.001	System Instruction Keywords		AI
+AML.T0069.002	System Prompt		AI
+AML.T0070	RAG Poisoning	AML.TA0006	AI
+AML.T0071	False RAG Entry Injection	AML.TA0007	AI
+AML.T0072	Reverse Shell	AML.TA0014	AI
+AML.T0073	Impersonation	AML.TA0007	AI
+AML.T0074	Masquerading	AML.TA0007	AI
+AML.T0075	Cloud Service Discovery	AML.TA0008	AI
+AML.T0076	Corrupt AI Model	AML.TA0007	AI
+AML.T0077	LLM Response Rendering	AML.TA0010	AI
+AML.T0078	Drive-by Compromise	AML.TA0004	AI
+AML.T0079	Stage Capabilities	AML.TA0003	AI
+AML.T0080	AI Agent Context Poisoning	AML.TA0006	AI
+AML.T0080.000	Memory		AI
+AML.T0080.001	Thread		AI
+AML.T0081	Modify AI Agent Configuration	AML.TA0006,AML.TA0007	AI
+AML.T0082	RAG Credential Harvesting	AML.TA0013	AI
+AML.T0083	Credentials from AI Agent Configuration	AML.TA0013	AI
+AML.T0084	Discover AI Agent Configuration	AML.TA0008	AI
+AML.T0084.000	Embedded Knowledge		AI
+AML.T0084.001	Tool Definitions		AI
+AML.T0084.002	Activation Triggers		AI
+AML.T0084.003	Call Chains		AI
+AML.T0085	Data from AI Services	AML.TA0009	AI
+AML.T0085.000	RAG Databases		AI
+AML.T0085.001	AI Agent Tools		AI
+AML.T0086	Exfiltration via AI Agent Tool Invocation	AML.TA0010	AI
+AML.T0087	Gather Victim Identity Information	AML.TA0002	AI
+AML.T0088	Generate Deepfakes	AML.TA0001	AI
+AML.T0089	Process Discovery	AML.TA0008	AI
+AML.T0090	OS Credential Dumping	AML.TA0013	AI
+AML.T0091	Use Alternate Authentication Material	AML.TA0015	AI
+AML.T0091.000	Application Access Token		AI
+AML.T0092	Manipulate User LLM Chat History	AML.TA0007	AI
+AML.T0093	Prompt Infiltration via Public-Facing Application	AML.TA0004,AML.TA0006	AI
+AML.T0094	Delay Execution of LLM Instructions	AML.TA0007	AI
+AML.T0095	Search Open Websites/Domains	AML.TA0002	AI
+AML.T0095.000	Code Repositories		AI
+AML.T0096	AI Service API	AML.TA0014	AI
+AML.T0097	Virtualization/Sandbox Evasion	AML.TA0007	AI
+AML.T0098	AI Agent Tool Credential Harvesting	AML.TA0013	AI
+AML.T0099	AI Agent Tool Data Poisoning	AML.TA0006	AI
+AML.T0100	AI Agent Clickbait	AML.TA0005	AI
+AML.T0101	Data Destruction via AI Agent Tool Invocation	AML.TA0011	AI
+AML.T0102	Generate Malicious Commands	AML.TA0001	AI
+AML.T0103	Deploy AI Agent	AML.TA0005	AI
+AML.T0104	Publish Poisoned AI Agent Tool	AML.TA0003	AI
+AML.T0105	Escape to Host	AML.TA0012	AI
+AML.T0106	Exploitation for Credential Access	AML.TA0013	AI
+AML.T0107	Exploitation for Defense Evasion	AML.TA0007	AI
+AML.T0108	AI Agent	AML.TA0014	AI
+AML.T0109	AI Supply Chain Rug Pull	AML.TA0007	AI
+AML.T0110	AI Agent Tool Poisoning	AML.TA0006	AI
+AML.T0111	AI Supply Chain Reputation Inflation	AML.TA0007	AI
+AML.T0112	Machine Compromise	AML.TA0011	AI
+AML.T0112.000	Local AI Agent		AI
+AML.T0112.001	AI Artifacts		AI

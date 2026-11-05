@@ -1,0 +1,111 @@
+"""`verify`: whether this Cordon installation is the one its release built (release item 75).
+
+Exit codes keep the CLI's stable meanings: 0 verified (only after the online provenance step), 1
+modified, 4 incomplete -- consistent with its own RECORD, or unverified, told apart by `state` in
+`--format json` -- and 3 for an argument that is not a site-packages directory. Offline is never
+reported as verified: whoever can edit Cordon's files can edit its RECORD too.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+from cordon_scanner.foundation.errors import ConfigError, ExitCode
+from cordon_scanner.version import PROGRAM
+
+LIMIT = (
+    "Offline this checks the installation against its own RECORD. It catches accidental and partial "
+    "changes, not a RECORD rewritten to match them. For the strong form, run it from a separate, "
+    "trusted copy (a pinned container image, or `pipx run cordon-scanner==<version>`) with --target."
+)
+
+
+class VerifyInstallCommand:
+    @staticmethod
+    def add_parser(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
+        command = sub.add_parser(
+            "verify",
+            help="check this Cordon installation against the release that built it",
+            # A wheel install consistent with its RECORD exits 4, which looked like a failure with
+            # nothing saying why (item 52's sweep): the codes are said where the command is.
+            epilog=(
+                "exit codes: 0 verified (only with --online, or --attestation and --wheel); "
+                "1 modified; 4 not verified -- offline, the installation is at most consistent "
+                "with its own RECORD, which whoever can edit its files can edit too; 3 a "
+                "--target that is not a site-packages directory"
+            ),
+        )
+        command.add_argument(
+            "--target",
+            metavar="SITE_PACKAGES",
+            help="verify the installation in this site-packages directory, not the running one",
+        )
+        command.add_argument(
+            "--online",
+            action="store_true",
+            help="fetch this wheel's PEP 740 provenance and the wheel from PyPI, and verify both",
+        )
+        command.add_argument(
+            "--attestation",
+            metavar="PROVENANCE_JSON",
+            help="PyPI's integrity response for the installed wheel, instead of fetching it",
+        )
+        command.add_argument(
+            "--wheel", metavar="WHEEL", help="the released wheel file, instead of fetching it"
+        )
+        command.add_argument("--format", choices=("text", "json"), default="text")
+
+    @staticmethod
+    def run(args: argparse.Namespace) -> int:
+        from cordon_scanner.intel.provenance.install_verify import (
+            InstallRecord,
+            InstallState,
+            ReleaseCheck,
+            VerifiedRecord,
+        )
+
+        target = Path(args.target) if getattr(args, "target", None) else None
+        if target is not None and not target.is_dir():
+            raise ConfigError(f"{target} is not a directory")
+        report = InstallRecord.check(target)
+        attestation, wheel = getattr(args, "attestation", None), getattr(args, "wheel", None)
+        if getattr(args, "online", False) or attestation or wheel:
+            if not getattr(args, "online", False) and not (attestation and wheel):
+                raise ConfigError("give --attestation and --wheel together, or --online")
+            try:
+                provenance = json.loads(Path(attestation).read_bytes()) if attestation else None
+                wheel_bytes = Path(wheel).read_bytes() if wheel else None
+            except (OSError, ValueError) as exc:
+                raise ConfigError(f"cannot read the release files: {exc}") from exc
+            report = ReleaseCheck.check(report, target, provenance=provenance, wheel=wheel_bytes)
+        if target is None:
+            # Only a check of the running installation speaks for later scans of it.
+            import datetime as dt
+
+            stamp = dt.datetime.now(dt.UTC).strftime("%Y-%m-%d %H:%M UTC")
+            VerifiedRecord.write(report, stamp)
+        code = {
+            InstallState.VERIFIED: ExitCode.CLEAN,
+            InstallState.MODIFIED: ExitCode.FINDINGS,
+            InstallState.CONSISTENT: ExitCode.INCOMPLETE,
+            InstallState.UNVERIFIED: ExitCode.INCOMPLETE,
+        }[report.state]
+        if args.format == "json":
+            print(json.dumps({**report.as_dict(), "exit": int(code), "limit": LIMIT}, indent=2))
+            return int(code)
+        out = sys.stdout if report.state is not InstallState.MODIFIED else sys.stderr
+        version = f" {report.version}" if report.version else ""
+        print(f"{PROGRAM}{version}: installation {report.state.value}", file=out)
+        if report.reason:
+            print(f"  {report.reason}", file=out)
+        for problem in report.problems:
+            print(f"  {problem}", file=out)
+        if report.state is not InstallState.VERIFIED:
+            print(LIMIT, file=out)
+        return int(code)
+
+
+__all__ = ["VerifyInstallCommand"]

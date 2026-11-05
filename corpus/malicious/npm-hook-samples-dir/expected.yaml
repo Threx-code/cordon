@@ -5,7 +5,7 @@ description: >
 must_find:
   - rule: SUSPECT.INSTALL.SCRIPT.001
     path: @innocuous-data-samples/package/package.json
-    min_severity: medium
+    min_severity: low  # the hook runs index.js, graded on its own: MALWARE.EXFIL.001 below
   - rule: MALWARE.EXFIL.001
     path: @innocuous-data-samples/package/index.js
     min_severity: critical

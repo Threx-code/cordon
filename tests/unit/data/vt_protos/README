@@ -1,0 +1,4 @@
+YARA-X 1.21.0 (VirusTotal/yara-x tag v1.21.0, commit 7b2637d4655155fdfaf68177edadb9a39406ece0;
+tarball sha256 4569f12297189a94678ea0ef027384d4cf0065b5b0892881cbae097b6f29a2e8): lib/src/modules/protos/vt/
+and yara.proto, unchanged, BSD-3-Clause (LICENSE). The input of scripts/reference/vt_schema.py, which
+generates src/cordon_scanner/detect/binary/modules/reports/vt_schema.py.

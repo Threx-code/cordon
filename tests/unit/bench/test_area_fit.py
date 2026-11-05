@@ -1,0 +1,178 @@
+"""The per-area fit writes a model the scanner loads and scores as the fit predicted.
+
+```
+  export.json (trees, rows, the fit's probabilities; bench/model/area_fit.py --fixture)
+      └─► format-3 model ──► VerdictModel.load ──► VerdictModel.score(row) == probability
+  shipped model (format 2, no hashed feature) ──► carry ──► the same score, folded or raw
+```
+"""
+
+from __future__ import annotations
+
+import copy
+import gzip
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from cordon_scanner.decide.feature_schema import FeatureFold, FeatureSchema
+from cordon_scanner.decide.verdict import MODEL_PATH, VerdictModel
+from support import ROOT as REPO
+
+sys.path.insert(0, str(REPO / "bench" / "model"))
+
+from area_fit import AreaFit
+
+FIXTURE = REPO / "tests" / "unit" / "data" / "area_fit" / "export.json"
+
+
+class AreaFitKit:
+    @staticmethod
+    def export() -> dict[str, Any]:
+        loaded: dict[str, Any] = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        return loaded
+
+    @staticmethod
+    def written(model: dict[str, Any], where: Path) -> Path:
+        path = where / "verdict.json.gz"
+        with gzip.open(path, "wt", encoding="utf-8") as handle:
+            json.dump(model, handle)
+        return path
+
+    @staticmethod
+    def shipped() -> dict[str, Any]:
+        with gzip.open(MODEL_PATH, "rt", encoding="utf-8") as handle:
+            model: dict[str, Any] = json.load(handle)
+        return model
+
+
+class TestTheExport:
+    def test_the_written_model_loads_and_scores_as_the_fit_predicted(self, tmp_path: Path) -> None:
+        fixture = AreaFitKit.export()
+        model = AreaFit.carry(AreaFitKit.shipped())
+        model["by_area"]["npm"] = fixture["section"]
+        VerdictModel.load.cache_clear()
+        loaded = VerdictModel.load(AreaFitKit.written(model, tmp_path))
+        assert loaded is not None
+        section = loaded["by_area"]["npm"]
+        for row, want in zip(fixture["rows"], fixture["expected"], strict=True):
+            assert (
+                abs(VerdictModel.score(section, VerdictModel.inputs(loaded, row)) - want)
+                <= AreaFit.TOLERANCE
+            )
+        assert AreaFit.check(section, fixture["rows"], fixture["expected"]) <= AreaFit.TOLERANCE
+
+    def test_an_export_that_walks_differently_is_not_written(self) -> None:
+        fixture = AreaFitKit.export()
+        section = copy.deepcopy(fixture["section"])
+        split = next(n for tree in section["trees"] for n in tree if not n["leaf"])
+        split["threshold"] += 2.0
+        with pytest.raises(ValueError, match="not written"):
+            AreaFit.check(section, fixture["rows"], fixture["expected"])
+
+
+class TestTheBase:
+    def test_the_shipped_model_scores_the_same_folded_or_raw(self) -> None:
+        shipped = AreaFitKit.shipped()
+        carried = AreaFit.carry(shipped)
+        assert carried["format"] == VerdictModel.FORMAT
+        assert carried["fold"] == FeatureFold.version()
+        assert carried["schema"] == FeatureSchema.current()
+        raw = {name: float(i % 5) for i, name in enumerate(shipped["features"])}
+        raw |= {"pkg:code_install_tok_517": 3.0, "pkg:code_import_apih_9": 2.0}
+        assert VerdictModel.score(carried, VerdictModel.inputs(carried, raw)) == VerdictModel.score(
+            shipped, raw
+        )
+
+    def test_a_base_that_reads_a_hashed_feature_is_refused(self) -> None:
+        shipped = AreaFitKit.shipped()
+        hashed = {**shipped, "features": [*shipped["features"], "pkg:code_install_tok_5"]}
+        with pytest.raises(ValueError, match="never computes"):
+            AreaFit.carry(hashed)
+
+    def test_a_base_that_reads_a_measure_only_feature_is_refused(self) -> None:
+        shipped = AreaFitKit.shipped()
+        unread = {**shipped, "features": [*shipped["features"], "pkg:code_import_api_exec"]}
+        with pytest.raises(ValueError, match="never computes"):
+            AreaFit.carry(unread)
+
+
+class TestTheRows:
+    def test_a_row_of_another_version_is_refused_unless_accepted(self, tmp_path: Path) -> None:
+        row = {"file": "npm/x-1.0.0.tgz", "findings": [], "verdict": {"area": "npm", "package": {}}}
+        path = tmp_path / "set-abc.jsonl"
+        path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+        args = ([(path, 0, None)], "fs1-other", set(), "npm")
+        with pytest.raises(ValueError, match="refused"):
+            list(AreaFit.rows(*args, set()))
+        assert [label for label, _, _ in AreaFit.rows(*args, {"fs1-other"})] == [0]
+
+    def test_one_file_gives_both_labels_by_prefix(self, tmp_path: Path) -> None:
+        rows = [
+            {"file": f"{where}/x", "findings": [], "verdict": {"area": "mcp", "package": {}}}
+            for where in ("benign", "malware", "elsewhere")
+        ]
+        path = tmp_path / "asb-abc.jsonl"
+        path.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+        sets = [(path, 0, "benign/"), (path, 1, "malware/")]
+        found = AreaFit.rows(sets, "fs1-p", set(), "mcp", {"fs1-p"})
+        assert [(label, unit) for label, unit, _ in found] == [(0, "benign/x"), (1, "malware/x")]
+
+    def test_a_malware_row_without_its_record_is_refused_when_required(
+        self, tmp_path: Path
+    ) -> None:
+        row = {"file": "npm/m-1.0.0.tgz", "findings": [], "verdict": {"area": "npm", "package": {}}}
+        path = tmp_path / "mal.jsonl"
+        path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+        sets = [(path, 1, None)]
+        with pytest.raises(ValueError, match="no scan-time record"):
+            list(AreaFit.rows(sets, "fs1-p", set(), "npm", {"fs1-p"}, frozenset({1})))
+        assert [label for label, _, _ in AreaFit.rows(sets, "fs1-p", set(), "npm", {"fs1-p"})] == [
+            1
+        ]
+
+
+class TestALoadDependentSplitIsRefused:
+    """No model is written whose trees split on a feature that depends on how loaded the machine
+    was (`AreaFit.LOAD_DEPENDENT`, `cov:capped` today): load would move a block score."""
+
+    @staticmethod
+    def section(feature: str) -> dict[str, Any]:
+        return {
+            "features": ["r:SUSPECT.X.001", feature],
+            "baseline": 0.0,
+            "trees": [
+                [
+                    {"leaf": False, "feature": 1, "threshold": 0.5, "left": 1, "right": 2,
+                     "missing_left": True},
+                    {"leaf": True, "value": -1.0},
+                    {"leaf": True, "value": 1.0},
+                ]
+            ],
+        }  # fmt: skip
+
+    def test_a_split_on_it_anywhere_is_refused(self) -> None:
+        for model in (
+            self.section("cov:capped"),
+            {"by_area": {"npm": self.section("cov:capped")}},
+            {"area_fits": [{"section": self.section("cov:capped")}]},
+        ):
+            with pytest.raises(ValueError, match="cov:capped"):
+                AreaFit.refuse_load_dependent(model)
+
+    def test_a_split_on_another_feature_is_written(self) -> None:
+        AreaFit.refuse_load_dependent({"by_area": {"npm": self.section("cov:parse")}})
+
+    def test_the_shipped_model_splits_on_none(self) -> None:
+        AreaFit.refuse_load_dependent(VerdictModel.load(MODEL_PATH))
+
+
+class TestTheRowsManifest:
+    def test_a_pooling_fit_records_both_versions(self) -> None:
+        manifest = AreaFit.rows_manifest(["rows.jsonl"], "cordon", [], {1})
+        assert manifest["schema"] == FeatureSchema.current()
+        assert manifest["schema_computed"] == FeatureSchema.computed()
+        assert manifest["schema_computed"] in FeatureSchema.SAME_AS

@@ -8,37 +8,46 @@ question is being asked.
 
 from __future__ import annotations
 
+import importlib
+import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, ClassVar
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, ClassVar
 
-from cordon_scanner.core.paths import ContainerPaths
-from cordon_scanner.core.walker import PathGlob
-from cordon_scanner.ecosystems.base import Ecosystem
-from cordon_scanner.ecosystems.infra import INFRA_ECOSYSTEMS
-from cordon_scanner.ecosystems.npm import NpmEcosystem
+from cordon_scanner.ecosystems.base import BaseEcosystem, Ecosystem, ReleaseFile
+from cordon_scanner.ecosystems.infra.infra import INFRA_ECOSYSTEMS
 from cordon_scanner.ecosystems.others import (
     BazelEcosystem,
-    CargoEcosystem,
     CocoaPodsEcosystem,
     ComposerEcosystem,
     ConanEcosystem,
     CondaEcosystem,
     CranEcosystem,
     GitHubActionsEcosystem,
-    GoEcosystem,
     GradleEcosystem,
     HexEcosystem,
-    MavenEcosystem,
     NuGetEcosystem,
     PubEcosystem,
     RubyGemsEcosystem,
     SwiftEcosystem,
 )
-from cordon_scanner.ecosystems.pypi import PypiEcosystem
+from cordon_scanner.ecosystems.packages.cargo import CargoEcosystem
+from cordon_scanner.ecosystems.packages.go import GoEcosystem
+from cordon_scanner.ecosystems.packages.jvm.maven import MavenEcosystem
+from cordon_scanner.ecosystems.packages.npm import NpmEcosystem
+from cordon_scanner.ecosystems.packages.pypi import PypiEcosystem
+from cordon_scanner.ecosystems.workspace_members import NpmWorkspaces, WorkspaceMembers
+from cordon_scanner.foundation.files.globs import PathGlob
+from cordon_scanner.foundation.paths import ContainerPaths
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+    from cordon_scanner.ecosystems.base import ImageReferences
+    from cordon_scanner.ecosystems.infra import image as _ecosystems_infra_image
+    from cordon_scanner.foundation.dependencies import InstalledEcosystemFacts, InstallTool
+
+    ImageReference: ImageReferences = _ecosystems_infra_image.ImageReference
 
 _MAX_ANSWERS = 1 << 20
 """Past this many distinct paths the memo starts over, so its memory stays bounded."""
@@ -75,15 +84,15 @@ class _GlobIndex:
     suffix: Mapping[str, str]
     residual: tuple[tuple[str, str], ...]
     bounds: tuple[tuple[str, str], ...] = ()
+    """For each residual pattern, what its last segment fixes about a file name: the literal text
+    before its first wildcard and after its last. A name that does not start and end with them
+    cannot match, and saying so is a string comparison rather than a glob walk -- which is the
+    answer for nearly every file, since most are no manifest. Empty when nothing is fixed."""
     rank: Mapping[str, int] = field(default_factory=dict)
     """Each ecosystem's place in the registration order, which decides between two that both
     claim a path, as the linear scan did by returning on the first match. The index looked up
     exact names first whatever their order, so `.github/workflows/requirements.yml` was read as
     an Ansible requirements file rather than the workflow it is."""
-    """For each residual pattern, what its last segment fixes about a file name: the literal text
-    before its first wildcard and after its last. A name that does not start and end with them
-    cannot match, and saying so is a string comparison rather than a glob walk -- which is the
-    answer for nearly every file, since most are no manifest. Empty when nothing is fixed."""
     answers: dict[str, str | None] = field(default_factory=dict, compare=False, repr=False)
     """Each path's answer, once. A scan asks about the same path from many places -- the graph's
     workspace, lockfile-reference, hook-path, source and manifest-join passes each walk every
@@ -275,5 +284,213 @@ class EcosystemRegistry:
     def all_ecosystems(cls) -> Sequence[Ecosystem]:
         return cls.ECOSYSTEMS
 
+    @classmethod
+    def declared_dependencies(cls, files: Sequence[ReleaseFile], ecosystem: str) -> frozenset[str]:
+        """The runtime dependencies a published release declares, as its ecosystem reads them;
+        none for an ecosystem that does not declare a way to read them."""
+        implementation = cls.get(ecosystem)
+        if isinstance(implementation, BaseEcosystem):
+            return implementation.declared_dependencies(files)
+        return frozenset()
 
-__all__ = ["EcosystemRegistry"]
+
+class VsCodeExtensionNames(BaseEcosystem):
+    """What an editor extension's name declares (`publisher.name`): its facts only. Extensions are
+    not a registered package ecosystem, but their names have a namespace."""
+
+    id = "vscode"
+
+    def namespace(self, name: str, alias: str | None = None) -> str | None:
+        return name.split(".", 1)[0] if "." in name else None
+
+
+class RegistryPublishing:
+    """The publishing and install facts RegistryFacts answers, by asking the ecosystem: projects,
+    releases, archives, entry points and the code it ships."""
+
+    @staticmethod
+    def pinned_project(ecosystem: str, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        return RegistryFacts._of(ecosystem).pinned_project(pins)
+
+    @staticmethod
+    def loose_project(ecosystem: str, names: Sequence[str]) -> dict[str, str] | None:
+        return RegistryFacts._of(ecosystem).loose_project(names)
+
+    @staticmethod
+    def install_tool(ecosystem: str) -> Sequence[InstallTool]:
+        return RegistryFacts._of(ecosystem).install_tool()
+
+    @staticmethod
+    def normalised_version(ecosystem: str, version: str) -> str:
+        return RegistryFacts._of(ecosystem).normalised_version(version)
+
+    @staticmethod
+    def library_entries(
+        ecosystem: str, members: Mapping[str, str], manifest: Mapping[str, Any], with_bin: bool
+    ) -> set[str]:
+        return RegistryFacts._of(ecosystem).library_entries(members, manifest, with_bin)
+
+    @staticmethod
+    def published_repository(ecosystem: str, manifest: Mapping[str, Any]) -> str:
+        return RegistryFacts._of(ecosystem).published_repository(manifest)
+
+    @staticmethod
+    def ships_built_code(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).ships_built_code()
+
+    @staticmethod
+    def hooks_run_javascript(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).hooks_run_javascript()
+
+    @staticmethod
+    def completes_from_checksums(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).completes_from_checksums()
+
+    @staticmethod
+    def bracket_ranges(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).bracket_ranges()
+
+    @staticmethod
+    def archive_manifest(ecosystem: str) -> str | None:
+        return RegistryFacts._of(ecosystem).archive_manifest()
+
+    @staticmethod
+    def compiled_is_inert(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).compiled_is_inert()
+
+    @staticmethod
+    def install_manifests(ecosystem: str) -> frozenset[str]:
+        return RegistryFacts._of(ecosystem).install_manifests()
+
+    @staticmethod
+    def foreign_install_manifests(ecosystem: str) -> frozenset[str]:
+        every = frozenset().union(
+            *(
+                RegistryFacts._of(e.id).install_manifests()
+                for e in EcosystemRegistry.all_ecosystems()
+            )
+        )
+        return every - RegistryFacts._of(ecosystem).install_manifests()
+
+    @staticmethod
+    def identity_in_metadata(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).identity_in_metadata()
+
+    @staticmethod
+    def release_manifest(ecosystem: str) -> re.Pattern[str] | None:
+        return RegistryFacts._of(ecosystem).release_manifest()
+
+    @staticmethod
+    def release_identity(
+        ecosystem: str, path: str, text: str, found: re.Match[str]
+    ) -> tuple[str, str] | None:
+        return RegistryFacts._of(ecosystem).release_identity(path, text, found)
+
+
+class RegistryFacts(RegistryPublishing):
+    """`foundation.dependencies`' ecosystem ports, answered by each ecosystem's own declarations
+    (an unknown ecosystem has the defaults: `BaseEcosystem`); installed through the
+    `cordon_scanner.ecosystem_facts` entry point."""
+
+    _DECLARED_ONLY: ClassVar[Mapping[str, BaseEcosystem]] = MappingProxyType(
+        {"vscode": VsCodeExtensionNames()}
+    )
+    _UNKNOWN: ClassVar[BaseEcosystem] = BaseEcosystem()
+
+    @staticmethod
+    def _of(ecosystem: str) -> BaseEcosystem:
+        """The ecosystem's declarations: registered, declared-only, or the defaults (an ecosystem
+        implementing the protocol directly, not through `BaseEcosystem`, has the defaults)."""
+        registered = EcosystemRegistry.get(ecosystem)
+        if isinstance(registered, BaseEcosystem):
+            return registered
+        return RegistryFacts._DECLARED_ONLY.get(ecosystem, RegistryFacts._UNKNOWN)
+
+    @staticmethod
+    def is_registry_host(ecosystem: str, url: str) -> bool:
+        implementation = EcosystemRegistry.get(ecosystem)
+        return implementation is not None and implementation.is_registry_host(url)
+
+    @staticmethod
+    def lockfile_ecosystem(path: str) -> str | None:
+        return EcosystemRegistry.lockfile_ecosystem(path)
+
+    @staticmethod
+    def namespace(ecosystem: str, name: str, alias: str | None = None) -> str | None:
+        if not name and not alias:
+            return None
+        return RegistryFacts._of(ecosystem).namespace(name, alias)
+
+    @staticmethod
+    def is_builtin(ecosystem: str, name: str) -> bool:
+        return RegistryFacts._of(ecosystem).is_builtin(name)
+
+    @staticmethod
+    def coordinate_separator(ecosystem: str) -> str | None:
+        return RegistryFacts._of(ecosystem).coordinate_separator()
+
+    @staticmethod
+    def pinned_by_digest(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).pinned_by_digest()
+
+    @staticmethod
+    def is_mutable_version(ecosystem: str, version: str) -> bool:
+        return RegistryFacts._of(ecosystem).is_mutable_version(version)
+
+    @staticmethod
+    def admits_lowest(ecosystem: str, declared_spec: str) -> bool:
+        return RegistryFacts._of(ecosystem).admits_lowest(declared_spec)
+
+    @staticmethod
+    def is_held_version(ecosystem: str, version: str) -> bool:
+        return RegistryFacts._of(ecosystem).is_held_version(version)
+
+    @staticmethod
+    def has_install_scripts(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).has_install_scripts()
+
+    @staticmethod
+    def has_scoped_names(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).has_scoped_names()
+
+    @staticmethod
+    def is_ci_step(ecosystem: str, name: str) -> bool:
+        return RegistryFacts._of(ecosystem).is_ci_step(name)
+
+    @staticmethod
+    def squat_comparisons(ecosystem: str) -> tuple[str, ...]:
+        return RegistryFacts._of(ecosystem).squat_comparisons()
+
+
+#: What the engine uses of this layer by name, and the module that provides each: the one place
+#: that knows, so the layer's modules can move without the engine changing. Each is imported
+#: when it is first asked for (PEP 562), as the engine's own imports were.
+ROLES: dict[str, tuple[str, str]] = {
+    "ImageReference": ("cordon_scanner.ecosystems.infra.image", "ImageReference"),
+}
+
+
+def __getattr__(name: str) -> object:
+    """The implementation of one of `ROLES`, imported on first use."""
+    try:
+        module, attribute = ROLES[name]
+    except KeyError:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from None
+    found: object = importlib.import_module(module)
+    for part in attribute.split("."):  # a class's member: `Class.MEMBER`
+        found = getattr(found, part)
+    return found
+
+
+__all__ = [
+    "ROLES",
+    "EcosystemRegistry",
+    "ImageReference",
+    "NpmWorkspaces",
+    "RegistryFacts",
+    "WorkspaceMembers",
+]
+
+if TYPE_CHECKING:
+    # The installed facts conform to every port the domain asks them through (`foundation`).
+    _CONFORMS: InstalledEcosystemFacts = RegistryFacts()

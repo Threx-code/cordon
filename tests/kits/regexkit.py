@@ -1,0 +1,1078 @@
+"""What the regular-expression scaling checks share: every pattern in the package -- compiled ones held
+by modules and classes, the ones written inline in calls, and every built-in rule's --
+how its owner's code calls it, inputs built from its own structure, a static reading of its shape, and
+the timing ladder that confirms or clears that reading.
+
+The per-file budget is checked between detectors and cannot interrupt a running expression, so one
+long line of the right shape in a file an attacker writes stalls the scan until the total timeout and
+the scan ends incomplete: a way to keep malware unread (review 98, 27-PERFORMANCE, 5). Two tiers use
+this kit. The unit suite reads every pattern's shape (`Shape`), which costs milliseconds; the prepush
+performance step times every pattern whose shape is flagged (`Ladder`).
+"""
+
+from __future__ import annotations
+
+import ast
+import contextlib
+import functools
+import importlib
+import inspect
+import multiprocessing
+import pkgutil
+import re
+import time
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
+from re import _parser as sre_parse  # type: ignore[attr-defined]
+from typing import Any, ClassVar
+
+import cordon_scanner
+
+Node = tuple[object, object]
+AnyPattern = re.Pattern[str] | re.Pattern[bytes]
+
+
+@dataclass(frozen=True)
+class Found:
+    """One compiled pattern, where it is defined, and the modes its owner's code calls it in."""
+
+    label: str
+    pattern: AnyPattern
+    modes: frozenset[str]
+    called: bool
+
+
+class Sources:
+    """Every pattern in the package, with the modes its owner's code calls it in: compiled ones held by
+    a module or a class, the ones written inline in a call (`re.search(r"...", text)`), and every
+    built-in rule's regex and each of its branches. Until 2026-10-30 this read detect/ and analysis/
+    and compiled patterns only, and the regex sweep found 41 superlinear patterns outside that: in
+    ecosystems/, images/, engine/, decide/, cli/, inline in functions, and in the rule packs."""
+
+    SRC = Path(cordon_scanner.__file__).parent
+    SCANNING = frozenset({"search", "finditer", "findall", "sub", "subn", "split"})
+    ANCHORED = frozenset({"match", "fullmatch"})
+
+    @staticmethod
+    @functools.cache
+    def texts() -> dict[str, str]:
+        out: dict[str, str] = {}
+        for path in Sources.SRC.rglob("*.py"):
+            parts = path.relative_to(Sources.SRC).with_suffix("").parts
+            name = ".".join(parts[:-1] if parts[-1] == "__init__" else parts)
+            out[name] = path.read_text(encoding="utf-8")
+        return out
+
+    @staticmethod
+    @functools.cache
+    def trees() -> dict[str, ast.Module]:
+        return {name: ast.parse(text) for name, text in Sources.texts().items()}
+
+    @staticmethod
+    def calls(module: str, owner: str, name: str) -> set[str]:
+        """The methods code calls on this pattern, read from the syntax tree (a docstring naming it is
+        not a call): through its owner (a class, `self`, `cls`) in its own module or through the owner
+        elsewhere, or bare in its own module or in a module that imports it by name."""
+        wanted = Sources.SCANNING | Sources.ANCHORED
+        found: set[str] = set()
+        for other, tree in Sources.trees().items():
+            here = other == module
+            if not here:
+                text = Sources.texts()[other]
+                if name not in text or (owner and owner not in text):
+                    continue
+                if not owner and not any(
+                    isinstance(node, ast.ImportFrom)
+                    and node.module == f"cordon_scanner.{module}"
+                    and any(alias.name == name for alias in node.names)
+                    for node in ast.walk(tree)
+                ):
+                    continue
+            holders = ({owner, "self", "cls"} if here else {owner}) if owner else set()
+            for node in ast.walk(tree):
+                if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+                    continue
+                if node.func.attr not in wanted:
+                    continue
+                target = node.func.value
+                if (not owner and isinstance(target, ast.Name) and target.id == name) or (
+                    owner
+                    and isinstance(target, ast.Attribute)
+                    and target.attr == name
+                    and isinstance(target.value, ast.Name)
+                    and target.value.id in holders
+                ):
+                    found.add(node.func.attr)
+        return found
+
+    @staticmethod
+    def found(module: str, owner: str, name: str, pattern: AnyPattern) -> Found:
+        label = f"{module}:{owner + '.' if owner else ''}{name}"
+        used = Sources.calls(module, owner, name)
+        modes = {"search" if m in Sources.SCANNING else m for m in used}
+        # Never called by name (passed on, or kept as the specification of code that replaced it):
+        # timed in every scanning mode.
+        return Found(label, pattern, frozenset(modes or {"search"}), bool(used))
+
+    @staticmethod
+    def defines(text: str, name: str) -> bool:
+        return re.search(rf"^{re.escape(name)}\s*(?::[^=\n]*)?=", text, re.M) is not None
+
+    @staticmethod
+    @functools.cache
+    def patterns() -> tuple[Found, ...]:
+        out: list[Found] = []
+        for info in pkgutil.walk_packages(cordon_scanner.__path__, "cordon_scanner."):
+            module = importlib.import_module(info.name)
+            short = info.name.removeprefix("cordon_scanner.")
+            text = Sources.texts().get(short, "")
+            for name, value in vars(module).items():
+                if isinstance(value, re.Pattern) and Sources.defines(text, name):
+                    out.append(Sources.found(short, "", name, value))
+            for owner, cls in inspect.getmembers(module, inspect.isclass):
+                if cls.__module__ != info.name:
+                    continue
+                for name, value in vars(cls).items():
+                    if isinstance(value, re.Pattern):
+                        out.append(Sources.found(short, owner, name, value))
+        out.extend(Sources.inline())
+        out.extend(Sources.rules())
+        return tuple(out)
+
+    FUNCTIONS: ClassVar[frozenset[str]] = SCANNING | ANCHORED | {"compile"}
+
+    @staticmethod
+    def inline() -> list[Found]:
+        """Patterns written as a literal in a call to `re` inside a function: `re.search(r"..", t)`,
+        and `re.compile(r"..")` that no module or class holds. Labelled by module, function and order
+        in it, so a listed one keeps its name while lines move."""
+        out: list[Found] = []
+        for module, tree in Sources.trees().items():
+            for function in ast.walk(tree):
+                if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                parents = {
+                    child: node
+                    for node in ast.walk(function)
+                    for child in ast.iter_child_nodes(node)
+                }
+                count = 0
+                for node in ast.walk(function):
+                    pattern, mode = Sources._literal_call(node, parents)
+                    if pattern is None:
+                        continue
+                    count += 1
+                    label = f"{module}:{function.name}:{count}"
+                    out.append(Found(label, pattern, frozenset({mode}), True))
+        return out
+
+    @staticmethod
+    def _literal_call(
+        node: ast.AST, parents: dict[ast.AST, ast.AST]
+    ) -> tuple[AnyPattern | None, str]:
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "re"
+            and node.func.attr in Sources.FUNCTIONS
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str | bytes)
+        ):
+            return None, ""
+        flags = 0
+        given = [kw.value for kw in node.keywords if kw.arg == "flags"]
+        if node.func.attr == "compile" and len(node.args) > 1:
+            given.append(node.args[1])
+        for value in given:
+            with contextlib.suppress(Exception):
+                flags = eval(compile(ast.Expression(value), "flags", "eval"), {"re": re})  # noqa: S307 - a literal of re flags from our own source
+        try:
+            pattern = re.compile(node.args[0].value, flags)
+        except (re.error, TypeError, ValueError):
+            return None, ""
+        mode = node.func.attr
+        if mode == "compile":
+            parent = parents.get(node)
+            if isinstance(parent, ast.Attribute):
+                mode = parent.attr
+            elif (
+                isinstance(parent, ast.Assign)
+                and len(parent.targets) == 1
+                and isinstance(parent.targets[0], ast.Name)
+            ):
+                # Held in a local: the modes are its calls in the same function (all anchored, or search).
+                name = parent.targets[0].id
+                function = parent
+                while function in parents and not isinstance(
+                    function, (ast.FunctionDef, ast.AsyncFunctionDef)
+                ):
+                    function = parents[function]
+                used = {
+                    call.func.attr
+                    for call in ast.walk(function)
+                    if isinstance(call, ast.Call)
+                    and isinstance(call.func, ast.Attribute)
+                    and isinstance(call.func.value, ast.Name)
+                    and call.func.value.id == name
+                }
+                mode = "match" if used and used <= Sources.ANCHORED else "search"
+                if used and used <= {"fullmatch"}:
+                    mode = "fullmatch"
+            else:
+                mode = "search"
+        return pattern, "search" if mode in Sources.SCANNING else mode
+
+    @staticmethod
+    def rules() -> list[Found]:
+        """Every built-in rule's regex and each of its branches, run the way the matcher runs them:
+        through `AnchoredSearch` (`rules/pack.py`), never `search` on the raw regex, which the
+        scanner never calls. A branch is planned and run on its own the same way."""
+        from cordon_scanner.rules.loader import RuleLoader
+
+        out: list[Found] = []
+        for pack in RuleLoader.load_builtin():
+            for rule in pack:
+                regex = rule.match.regex
+                if regex is None:
+                    continue
+                out.append(Found(f"rule:{rule.id}", ViaMatcher(regex), frozenset({"search"}), True))
+                for index, source in enumerate(rule.match.sources):
+                    with contextlib.suppress(re.error, UnicodeEncodeError):
+                        branch = re.compile(source.encode("latin-1"), regex.flags)
+                        out.append(
+                            Found(
+                                f"rule:{rule.id}:{index}",
+                                ViaMatcher(branch),
+                                frozenset({"search"}),
+                                True,
+                            )
+                        )
+        return out
+
+    @staticmethod
+    def by_label() -> dict[str, Found]:
+        return {found.label: found for found in Sources.patterns()}
+
+
+class ViaMatcher:
+    """A rule's regex as the scanner runs it: `search` and `finditer` through `AnchoredSearch`
+    with the regex's plan, every other attribute the regex's own (`pattern`, `flags`, `groups`)."""
+
+    def __init__(self, regex: re.Pattern[bytes]) -> None:
+        from cordon_scanner.rules.anchored import AnchoredSearch
+
+        self.regex = regex
+        self.pattern = regex.pattern
+        self.flags = regex.flags
+        self.plan = AnchoredSearch.plan(regex)
+        self._matches = AnchoredSearch.matches
+
+    def finditer(self, data: bytes) -> Any:
+        return self._matches(self.regex, self.plan, data, None)
+
+    def search(self, data: bytes) -> Any:
+        return next(self.finditer(data), None)
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        # Rebuilt from its regex in the ladder's forkserver child: unpickled field by field,
+        # `__getattr__` asked for the unset `regex` and recursed until the child died.
+        return ViaMatcher, (self.regex,)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.regex, name)
+
+
+class Parsed:
+    """A pattern's parse tree, and which characters each of its nodes can take."""
+
+    ALPHABET = (
+        *(chr(c) for c in range(32, 127)),
+        "\t",
+        "\n",
+        "\r",
+        chr(0xA0),
+        chr(0xE9),
+        chr(0x2003),
+    )
+    REPEATS = frozenset({"MAX_REPEAT", "MIN_REPEAT", "POSSESSIVE_REPEAT"})
+    ATOMS = frozenset({"LITERAL", "NOT_LITERAL", "IN", "ANY", "CATEGORY"})
+    MAXREPEAT = sre_parse.MAXREPEAT
+
+    def __init__(self, pattern: AnyPattern) -> None:
+        self.bytes = isinstance(pattern.pattern, bytes)
+        source = pattern.pattern.decode("latin-1") if self.bytes else pattern.pattern
+        self.tree = sre_parse.parse(source, pattern.flags)
+        self.memo: dict[int, frozenset[str]] = {}
+
+    def accepts(self, node: Node) -> list[str]:
+        """The alphabet's characters this one atom matches."""
+        try:
+            single = re._compiler.compile(sre_parse.SubPattern(self.tree.state, [node]), 0)  # type: ignore[attr-defined]
+        except (re.error, TypeError, ValueError, IndexError, KeyError, RecursionError):
+            return list(Parsed.ALPHABET)
+        if self.bytes:
+            return [
+                c for c in Parsed.ALPHABET if ord(c) < 256 and single.fullmatch(c.encode("latin-1"))
+            ]
+        return [c for c in Parsed.ALPHABET if single.fullmatch(c)]
+
+    def chars(self, node: Node) -> frozenset[str]:
+        """Every character this node can consume at any position."""
+        key = id(node)
+        if key not in self.memo:
+            if str(node[0]) in Parsed.ATOMS:
+                self.memo[key] = frozenset(self.accepts(node))
+            else:
+                out: set[str] = set()
+                for child in Parsed.children(node):
+                    out |= self.chars(child)
+                self.memo[key] = frozenset(out)
+        return self.memo[key]
+
+    @staticmethod
+    def children(node: Node) -> list[Node]:
+        op, arg = node
+        name = str(op)
+        if name in Parsed.REPEATS:
+            return list(arg[2])  # type: ignore[index]
+        if name == "SUBPATTERN":
+            return list(arg[-1])  # type: ignore[index]
+        if name == "ATOMIC_GROUP":
+            return list(arg)  # type: ignore[call-overload]
+        if name == "BRANCH":
+            return [item for branch in arg[1] for item in branch]  # type: ignore[index]
+        return []
+
+    @staticmethod
+    def high(node: Node) -> int:
+        return int(node[1][1]) if str(node[0]) in Parsed.REPEATS else 1  # type: ignore[index]
+
+    def optional(self, node: Node) -> bool:
+        op, arg = node
+        name = str(op)
+        if name in Parsed.REPEATS:
+            return bool(arg[0] == 0)  # type: ignore[index]
+        if name in ("AT", "ASSERT", "ASSERT_NOT"):
+            return True
+        if name == "SUBPATTERN":
+            return all(self.optional(c) for c in arg[-1])  # type: ignore[index]
+        if name == "BRANCH":
+            return any(all(self.optional(c) for c in b) for b in arg[1])  # type: ignore[index]
+        return False
+
+
+class Shape:
+    """Superlinear shapes read from a pattern's parse tree, without running it.
+
+    1. Adjacent overlap (every mode): a non-possessive unbounded repeat, then -- through items that are
+       optional or that it could take itself -- another repeat over characters it also takes. The
+       text between them can be split every way: `[ \\t]*-?[ \\t]*`, `\\S+[^\\n]{0,80}`, `[^/]*?[-_]v?\\d+`.
+    2. A re-read start (scanning modes): a path opens with items an unbounded repeat right after them
+       also takes, and nothing stops a match from starting inside a run an earlier attempt read (`^`,
+       a lookbehind, `\\b` before a word-only run): `[A-Za-z_]\\w*\\s*\\.`, `\\{[\\s\\S]*\\}`, `<[^>]{3,}>`.
+    3. A long bounded repeat opening a match (scanning modes): every start can read that far, so it is
+       linear but no cheaper on a line that long than a quadratic one: `[^\\n]{1,2000}?`.
+    4. A lookahead that reads on, reached from a repeat that gives back: each character given back runs
+       it again, `cd\\s+(?!.*\\.\\.)`.
+    The check over-reads (a tail that cannot fail makes rule 1 harmless); the ladder decides those.
+    """
+
+    PATH_LIMIT = 4000
+    LARGE = 1000
+    WORD = frozenset(c for c in Parsed.ALPHABET if re.fullmatch(r"\w", c))
+
+    def __init__(self, pattern: AnyPattern) -> None:
+        self.parsed = Parsed(pattern)
+
+    @staticmethod
+    def of(pattern: AnyPattern, scanning: bool) -> list[str]:
+        try:
+            shape = Shape(pattern)
+        except (re.error, RecursionError):
+            return []
+        found: list[str] = []
+        shape.check(list(shape.parsed.tree), scanning, found, top=True)
+        return found
+
+    def paths(self, items: list[Node]) -> list[list[Node]]:
+        """Every sequence of items through the pattern: groups opened, each branch one way."""
+        out: list[list[Node]] = [[]]
+        for node in items:
+            op, arg = node
+            name = str(op)
+            if name == "SUBPATTERN":
+                tails = self.paths(list(arg[-1]))  # type: ignore[index]
+            elif name == "BRANCH":
+                tails = [p for b in arg[1] for p in self.paths(list(b))]  # type: ignore[index]
+            else:
+                tails = [[node]]
+            out = [p + t for p in out for t in tails][: Shape.PATH_LIMIT]
+        return out
+
+    def check(self, items: list[Node], scanning: bool, found: list[str], top: bool) -> None:
+        for path in self.paths(items):
+            self.adjacent(path, found)
+            if top and scanning:
+                self.start(path, found)
+            for node in path:
+                if str(node[0]) in Parsed.REPEATS or str(node[0]) == "ATOMIC_GROUP":
+                    self.check(Parsed.children(node), scanning, found, top=False)
+                elif str(node[0]) in ("ASSERT", "ASSERT_NOT"):
+                    self.check(list(node[1][1]), False, found, top=False)  # type: ignore[index]
+
+    def unbounded_inside(self, items: list[Node]) -> bool:
+        for node in items:
+            if str(node[0]) in Parsed.REPEATS and Parsed.high(node) == Parsed.MAXREPEAT:
+                return True
+            if self.unbounded_inside(Parsed.children(node)):
+                return True
+        return False
+
+    def adjacent(self, path: list[Node], found: list[str]) -> None:
+        parsed = self.parsed
+        for i, node in enumerate(path):
+            if (
+                str(node[0]) not in ("MAX_REPEAT", "MIN_REPEAT")
+                or Parsed.high(node) != Parsed.MAXREPEAT
+            ):
+                continue
+            takes = parsed.chars(node)
+            for later in path[i + 1 :]:
+                name = str(later[0])
+                if (
+                    name in Parsed.REPEATS
+                    and Parsed.high(later) > 1
+                    and parsed.chars(later) & takes
+                ):
+                    found.append("rule 1: adjacent repeats over the same characters")
+                    return
+                if (
+                    name in ("ASSERT", "ASSERT_NOT")
+                    and later[1][0] == 1  # type: ignore[index]
+                    and self.unbounded_inside(list(later[1][1]))  # type: ignore[index]
+                ):
+                    found.append(
+                        "rule 4: a lookahead that reads on, after a repeat that gives back"
+                    )
+                    return
+                if parsed.optional(later) or (
+                    name in Parsed.ATOMS and parsed.chars(later) <= takes
+                ):
+                    continue
+                break
+
+    def start(self, path: list[Node], found: list[str]) -> None:
+        if not path:
+            return
+        parsed = self.parsed
+        first = path[0]
+        if str(first[0]) == "AT" and str(first[1]) in (
+            "AT_BEGINNING",
+            "AT_BEGINNING_STRING",
+            "AT_BEGINNING_LINE",
+        ):
+            return
+        if str(first[0]) == "ASSERT_NOT" and first[1][0] == -1:  # type: ignore[index]
+            return
+        boundary = str(first[0]) == "AT" and str(first[1]) == "AT_BOUNDARY"
+        before: set[str] = set()
+        for node in path[1:] if boundary else path:
+            name = str(node[0])
+            high = Parsed.high(node)
+            if name in Parsed.REPEATS and Shape.LARGE <= high < Parsed.MAXREPEAT:
+                if not before or before <= parsed.chars(node):
+                    found.append("rule 3: a long bounded repeat read from every start")
+                return
+            if name in Parsed.REPEATS and high == Parsed.MAXREPEAT:
+                takes = parsed.chars(node)
+                if (not before or before <= takes) and not (boundary and takes <= Shape.WORD):
+                    found.append("rule 2: a match can start inside a run an earlier attempt read")
+                return
+            if name in Parsed.ATOMS or name in Parsed.REPEATS:
+                before |= parsed.chars(node)
+                continue
+            return
+
+
+class Inputs:
+    """Adversarial inputs from a pattern's own structure, each a (prefix, repeated unit, suffix).
+
+    The pattern is walked in order; the prefix is a sample of what it has matched so far. At each
+    repeat, what the repeat takes is repeated, then followed by nothing, by a character nothing takes,
+    or by one the repeat does not take: the shapes runs alone cannot reach, such as a dash, a word and
+    blanks before a stray character for a lazy value before trailing blanks.
+    """
+
+    LIMIT = 240
+    NEVER = "\x01"
+
+    @staticmethod
+    def literals(sequence: list[Node]) -> set[str]:
+        out: set[str] = set()
+        for op, arg in sequence:
+            if str(op) == "LITERAL":
+                out.add(chr(arg))  # type: ignore[arg-type]
+            for child in arg if isinstance(arg, (list, tuple)) else ():
+                if isinstance(child, sre_parse.SubPattern):
+                    out |= Inputs.literals(list(child))
+                elif isinstance(child, list):
+                    for branch in child:
+                        if isinstance(branch, sre_parse.SubPattern):
+                            out |= Inputs.literals(list(branch))
+        return out
+
+    @staticmethod
+    def shapes(pattern: AnyPattern) -> list[tuple[str, str, str]]:
+        try:
+            parsed = Parsed(pattern)
+        except (re.error, RecursionError):
+            return [("", c, "") for c in "a0 -/."]
+        own = Inputs.literals(list(parsed.tree))
+        shapes: list[tuple[str, str, str]] = []
+
+        def favour(chars: list[str] | tuple[str, ...]) -> list[str]:
+            return sorted(chars, key=lambda c: (c not in own, c != " ", c))
+
+        def walk(sequence: list[Node], prefix: str) -> str:
+            for node in sequence:
+                op, arg = node
+                name = str(op)
+                if name in Parsed.REPEATS:
+                    low, high, body = arg  # type: ignore[misc]
+                    items = list(body)
+                    if len(items) == 1 and str(items[0][0]) in Parsed.ATOMS:
+                        takes = favour(parsed.accepts(items[0]))
+                        # A blank too, when the repeat takes one: it is what a following `\s*` also
+                        # takes, and the pattern's own letters are favoured ahead of it.
+                        units = takes[:2] + [" "] * (" " in takes[2:])
+                    else:
+                        takes = []
+                        units = [unit for unit in (walk(items, "")[:8],) if unit]
+                    if high > 1:
+                        other = next(
+                            (c for c in favour(Parsed.ALPHABET) if c not in takes), Inputs.NEVER
+                        )
+                        for unit in units:
+                            for suffix in ("", Inputs.NEVER, other):
+                                shapes.append((prefix, unit, suffix))
+                    prefix += (units[0] if units else "") * low
+                elif name == "SUBPATTERN":
+                    prefix = walk(list(arg[-1]), prefix)  # type: ignore[index]
+                elif name == "ATOMIC_GROUP":
+                    prefix = walk(list(arg), prefix)  # type: ignore[call-overload]
+                elif name == "BRANCH":
+                    ends = [walk(list(branch), prefix) for branch in arg[1]]  # type: ignore[index]
+                    prefix = ends[0]
+                elif name in Parsed.ATOMS:
+                    prefix += (favour(parsed.accepts(node)) or [""])[0]
+            return prefix
+
+        with contextlib.suppress(RecursionError):
+            walk(list(parsed.tree), "")
+        pieces = favour(sorted(own | {" ", "a", "0"}))
+        shapes += [("", c, "") for c in pieces[:12]]
+        shapes += [("", a + b, "") for i, a in enumerate(pieces[:6]) for b in pieces[i + 1 : 6]]
+        return list(dict.fromkeys(shapes))[: Inputs.LIMIT]
+
+    @staticmethod
+    def build(shape: tuple[str, str, str], n: int) -> str:
+        prefix, unit, suffix = shape
+        return prefix + unit * max(n // len(unit), 1) + suffix
+
+    #: How far a bounded repeat is filled, at most: past this its cost no longer grows with its bound.
+    FILL = 8_000
+
+    @staticmethod
+    def bounded(pattern: AnyPattern) -> list[str]:
+        """Each rule-1 adjacency at its worst: the path up to the first repeat as matched, one run of a
+        character both repeats take, long enough to fill the second to its bound, then a character
+        nothing takes, so the match fails at its last step. Repeated by `Ladder.bounded`, every start
+        retries every split, which a generic run of one character need not reach."""
+        try:
+            shape = Shape(pattern)
+        except (re.error, RecursionError):
+            return []
+        # The shape's own parse: `Parsed` remembers each node's characters by its identity, so the
+        # nodes asked about must be the ones it parsed.
+        parsed = shape.parsed
+        units: list[str] = []
+
+        def sample(node: Node) -> str:
+            name = str(node[0])
+            if name in Parsed.ATOMS:
+                return (parsed.accepts(node) or [""])[0]
+            if name in Parsed.REPEATS:
+                low = int(node[1][0])  # type: ignore[index]
+                return "".join(sample(child) for child in Parsed.children(node)) * low
+            if name == "BRANCH":
+                return "".join(sample(child) for child in node[1][1][0])  # type: ignore[index]
+            return "".join(sample(child) for child in Parsed.children(node))
+
+        def pairs(items: list[Node]) -> None:
+            for path in shape.paths(items):
+                for i, first in enumerate(path):
+                    if str(first[0]) not in ("MAX_REPEAT", "MIN_REPEAT") or (
+                        Parsed.high(first) != Parsed.MAXREPEAT
+                    ):
+                        continue
+                    takes = parsed.chars(first)
+                    for later in path[i + 1 :]:
+                        name = str(later[0])
+                        if name in Parsed.REPEATS and Parsed.high(later) > 1:
+                            shared = sorted(parsed.chars(later) & takes, key=lambda c: c != " ")
+                            fill = min(Parsed.high(later), Inputs.FILL) + Shape.LARGE // 2
+                            prefix = "".join(sample(node) for node in path[:i])
+                            units.extend(prefix + c * fill + Inputs.NEVER for c in shared[:2])
+                            break
+                        if not (
+                            parsed.optional(later)
+                            or (name in Parsed.ATOMS and parsed.chars(later) <= takes)
+                        ):
+                            break
+                for node in path:
+                    if str(node[0]) in Parsed.REPEATS or str(node[0]) == "ATOMIC_GROUP":
+                        pairs(Parsed.children(node))
+
+        with contextlib.suppress(RecursionError):
+            pairs(list(parsed.tree))
+        return list(dict.fromkeys(units))[: Inputs.LIMIT]
+
+
+class Growth:
+    """Time a call at n and 4n against a linear reference timed in the same loop.
+
+    A linear call grows as the reference does (1), a quadratic one four times as fast (4); above 2.5
+    with the 4n run over 0.1 s of CPU is superlinear. (At n and 2n the two are 1 and 2, too close on a loaded
+    machine: a known quadratic measured 1.5-2.2.) The reference is `[a-z]b` searched over "a" * n,
+    which checks two characters at each position with no literal fast path; `a+b` is not linear (with
+    no `b` it retries `a+` from every start) and as a reference it hid every quadratic pattern.
+    """
+
+    REFERENCE = re.compile(r"[a-z]b")
+    REFERENCE_REPEAT = 500
+    THRESHOLD = 2.5
+    FLOOR = 0.1
+
+    @staticmethod
+    def best(call: Callable[[], object], times: int = 5) -> float:
+        """The least CPU time of `times` calls. CPU time, not wall time: each check runs in its own
+        forked child, so other work on a busy machine does not stretch it -- a wall-clock bound
+        failed a prepush with a linear pattern at 0.80 s on 64,000 characters that takes 0.14 s of
+        CPU (the lesson TestScale and the parser test learned too). This thread's CPU, not the
+        process's: the bounded check runs four patterns on threads of one process, and process time
+        charged each with the others' work (a different linear pattern over 0.5 s on each run, 5 Nov).
+        In a forked single-threaded child the two are the same."""
+        least = float("inf")
+        for _ in range(times):
+            start = time.thread_time()
+            call()
+            least = min(least, time.thread_time() - start)
+        return least
+
+    @staticmethod
+    def reference(n: int) -> float:
+        text = "a" * n
+        search = Growth.REFERENCE.search
+        return Growth.best(lambda: [search(text) for _ in range(Growth.REFERENCE_REPEAT)])
+
+    @staticmethod
+    def of(
+        run: Callable[[str | bytes], object], small: str | bytes, big: str | bytes
+    ) -> tuple[float, float]:
+        """(relative growth, seconds at 4n)."""
+        first = Growth.best(functools.partial(run, small))
+        second = Growth.best(functools.partial(run, big))
+        base = Growth.reference(len(big)) / max(Growth.reference(len(small)), 1e-7)
+        return (second / max(first, 1e-7)) / base, second
+
+
+class Ladder:
+    """Time a pattern in its callers' modes on its structure-built inputs.
+
+    Each input is screened at 250, 1,000 and 4,000 characters; one that takes over 0.5 s, or grows
+    more than 8x for 4x, is confirmed by `Growth` at a size where its 4n run takes about a quarter of a
+    second. One that is fast in growth but over 0.01 s at 4,000 is timed once on 64,000 characters:
+    a bounded repeat read from every start grows no faster than its input, so only a time on a long
+    input can see it. Each pattern runs in a forked child under a time limit; a pattern that runs out
+    of time is checked again one input at a time, each with its own limit, so a slow machine is not
+    taken for a slow pattern.
+    """
+
+    SCREEN = (250, 1_000, 4_000)
+    LONG = 64_000
+    ABSOLUTE = 0.5
+    PATTERN_LIMIT = 240.0
+    SHAPE_LIMIT = 60.0
+
+    @staticmethod
+    def runner(pattern: AnyPattern, mode: str) -> Callable[[str | bytes], object]:
+        return getattr(pattern, mode)  # type: ignore[no-any-return]
+
+    @staticmethod
+    def encoder(pattern: AnyPattern) -> Callable[[str], str | bytes]:
+        if isinstance(pattern.pattern, bytes):
+            return lambda s: s.encode("latin-1", "replace")
+        return lambda s: s
+
+    @staticmethod
+    def one(pattern: AnyPattern, mode: str, shape: tuple[str, str, str]) -> str | None:
+        """What is wrong with this input in this mode, or None."""
+        run, encode = Ladder.runner(pattern, mode), Ladder.encoder(pattern)
+        times: list[float] = []
+        for n in Ladder.SCREEN:
+            times.append(Growth.best(functools.partial(run, encode(Inputs.build(shape, n))), 1))
+            if times[-1] > 0.5:
+                break
+        grew = len(times) > 1 and times[-1] > 0.002 and times[-1] / max(times[-2], 1e-7) > 8
+        head = Inputs.build(shape, 4)[:24]
+        if not (times[-1] > 0.5 or grew):
+            if times[-1] > 0.01:
+                large = Growth.best(
+                    functools.partial(run, encode(Inputs.build(shape, Ladder.LONG))), 1
+                )
+                if large > Ladder.ABSOLUTE:
+                    return f"slow: {large:.3f}s on {Ladder.LONG:,} characters, {mode}, {head!r}"
+            return None
+        size = Ladder.SCREEN[len(times) - 1]
+        # Toward a 4n run of about a quarter of a second, stopping at a reversal: a superlinear call
+        # can take under 0.015 s at one size and over 0.06 s at twice it, and bounce between them.
+        direction = 0
+        while True:
+            took = Growth.best(functools.partial(run, encode(Inputs.build(shape, size))), 1)
+            if took >= 0.06 and size > 100 and direction <= 0:
+                size, direction = size // 2, -1
+            elif took < 0.015 and size < Ladder.LONG and direction >= 0:
+                size, direction = size * 2, 1
+            else:
+                break
+        growth, seconds = Growth.of(
+            run, encode(Inputs.build(shape, size)), encode(Inputs.build(shape, 4 * size))
+        )
+        if growth > Growth.THRESHOLD and seconds > Growth.FLOOR:
+            return f"superlinear: growth {growth:.2f} at n={size}, {mode}, {head!r}"
+        # A bounded repeat grows as a square only up to its bound and then as the input, so growth
+        # measured across the bound can fall short; the time on one long input still tells.
+        large = Growth.best(functools.partial(run, encode(Inputs.build(shape, Ladder.LONG))), 1)
+        if large > Ladder.ABSOLUTE:
+            return f"slow: {large:.3f}s on {Ladder.LONG:,} characters, {mode}, {head!r}"
+        return None
+
+    @staticmethod
+    def bounded(found: Found) -> str | None:
+        """Over the bound on any of `Inputs.bounded`'s worst cases, repeated to LONG characters, in
+        any of the pattern's modes; None when every one holds."""
+        encode = Ladder.encoder(found.pattern)
+        for unit in Inputs.bounded(found.pattern):
+            text = encode((unit * (Ladder.LONG // len(unit) + 1))[: Ladder.LONG])
+            for mode in sorted(found.modes):
+                took = Growth.best(functools.partial(Ladder.runner(found.pattern, mode), text), 3)
+                if took > Ladder.ABSOLUTE:
+                    return f"slow at its bound: {took:.3f}s on {Ladder.LONG:,} characters, {mode}, {unit[:24]!r}"
+        return None
+
+    @staticmethod
+    def verdict(pattern: AnyPattern, modes: frozenset[str]) -> str | None:
+        for mode in sorted(modes):
+            for shape in Inputs.shapes(pattern):
+                found = Ladder.one(pattern, mode, shape)
+                if found:
+                    return found
+        return None
+
+    @staticmethod
+    def _child(target: Callable[..., str | None], args: tuple[object, ...], out: object) -> None:
+        try:
+            out.put(("ok", target(*args)))  # type: ignore[attr-defined]
+        except Exception as error:  # noqa: BLE001 - a child that fails says so; it is never waited on
+            out.put(("error", f"{type(error).__name__}: {error}"))  # type: ignore[attr-defined]
+
+    @staticmethod
+    def limited(
+        target: Callable[..., str | None], args: tuple[object, ...], limit: float
+    ) -> tuple[str, str | None]:
+        """("ok", result), ("error", why) or ("timeout", None), from a forked child.
+
+        Forked by the forkserver, which is single-threaded, never by this process: the ladder runs
+        four checks on threads, and a child forked here could inherit a lock one of them held, then
+        wait on it for ever. A linear pattern then "did not finish in 60 s" (`re.split(r"[._\\-]+")`
+        on '----', `\\t\\t\\t\\t` for the fixer's pin pattern; the latency job, 5 Nov)."""
+        context = multiprocessing.get_context("forkserver")
+        out = context.Queue()
+        child = context.Process(target=Ladder._child, args=(target, args, out))
+        child.start()
+        child.join(limit)
+        if child.is_alive():
+            child.kill()
+            child.join()
+            return "timeout", None
+        if out.empty():
+            return "error", f"the child exited {child.exitcode} without a result"
+        status, result = out.get()
+        return str(status), result
+
+    @staticmethod
+    def check(found: Found) -> str | None:
+        """What is wrong with this pattern, or None; a whole-pattern timeout is checked input by input."""
+        status, result = Ladder.limited(
+            Ladder.verdict, (found.pattern, found.modes), Ladder.PATTERN_LIMIT
+        )
+        if status == "ok":
+            return result
+        if status == "error":
+            return f"error: {result}"
+        for mode in sorted(found.modes):
+            for shape in Inputs.shapes(found.pattern):
+                status, result = Ladder.limited(
+                    Ladder.one, (found.pattern, mode, shape), Ladder.SHAPE_LIMIT
+                )
+                if status == "timeout":
+                    return f"superlinear: one input did not finish in {Ladder.SHAPE_LIMIT:.0f} s, {mode}, {Inputs.build(shape, 4)[:24]!r}"
+                if status == "ok" and result:
+                    return result
+        return None
+
+
+class Listed:
+    """The patterns the static check flags, each in one list; a pattern it flags that no list names
+    fails the unit suite, and an entry the ladder contradicts fails the prepush."""
+
+    #: Superlinear today and being rewritten, with who owns the fix; each fix removes its own line.
+    OPEN: ClassVar[dict[str, str]] = {
+        "decide.verdict_features:VerdictFeatures._FRONT_FIELD": (
+            "modelling team, after the P8 fits: VerdictFeatures is hashed by FeatureSchema, so its fix moves the version"
+        ),
+    }
+    #: Superlinear in their pattern, and fed only input a guard in their code caps: each with the guard.
+    BOUNDED: ClassVar[dict[str, str]] = {
+        "cloud.device:DeviceInventory.EXTENSION_FOLDER": "a folder name over 255 UTF-8 bytes is refused before it; 0.22 ms at 255",
+    }
+    #: Superlinear, and reading only text the scanner itself writes (its own help), never a scan's input:
+    #: each with what it reads. A pattern that may see scanned input never belongs here.
+    TRUSTED: ClassVar[dict[str, str]] = {
+        "cli.help:HelpPainter.VALUE": "the scanner's own help text, painted for a terminal",
+    }
+    #: Kept as the specification of code that replaced them: superlinear, and called by nothing.
+    SPECIFICATIONS: ClassVar[dict[str, str]] = {
+        "detect.agents.mcp_servers.source:_SENTENCE": "McpServerSource.sentences",
+        "detect.agents.skills:_DECODE_CALL": "SkillScripts.decode_calls",
+        "detect.agents.language_model.review:VerdictParser._OBJECT": "VerdictParser.json_object",
+        "detect.supply.provenance:_GITHUB_OWNER_REPO": "ProvenanceDetector._github_owner_repo",
+    }
+    #: Flagged by the static check, and linear by the ladder: what follows the overlap cannot fail, or
+    #: the runs are bounded short.
+    LINEAR: ClassVar[frozenset[str]] = frozenset(
+        {
+            "intel.advisories.upstream.vcpkg:VcpkgPorts.CONTROL_FIELD",
+            "intel.advisories.upstream_advisories:Upstreams.CHECKOUT",
+            "intel.malware.campaign:CampaignFingerprint._RUN",
+            "judge.calls:_BLANKS",
+            "mcp.packages:InstallCommand._SEPARATORS",
+            "rule:CAP.RB.FETCH_EXEC.001",
+            "detect.agents.mcp_servers.declarations:_continue_servers:3",
+            "ecosystems.packages.homebrew:_bottles_and_version:2",
+            "rule:CAP.RB.FETCH_EXEC.001:0",
+            "analysis.shared.source_paths:names_test_directory:1",
+            "analysis.shared.source_paths:names_test_file:1",
+            "cli.help:HelpPainter.LINK",
+            "cli.help:_line:1",
+            "cloud.fixer:_normalise:1",
+            "cloud.fixer:pypi:1",
+            "decide.verdict_features:_dependencies_used:1",
+            "decide.verdict_features:_manifest_facts:2",
+            "intel.malware.reuse_index:shape:1",
+            "detect.agents.configuration:lookalike_of:2",
+            "detect.agents.extension_files:gitpod_extensions:1",
+            "detect.agents.extension_files:gitpod_extensions:2",
+            "detect.agents.extensions:_folded:1",
+            "detect.agents.instruction_files:_directive_findings:1",
+            "detect.agents.instructions:_triggers:2",
+            "detect.agents.instructions:_triggers:3",
+            "detect.agents.instructions:moves_credentials:1",
+            "detect.agents.language_model.review:squash:1",
+            "detect.agents.mcp_servers.packages:_local_copy:1",
+            "detect.agents.mcp_servers.packages:_local_copy:2",
+            "detect.agents.skills:decode_run:1",
+            "detect.binary.detector:_ld_script:1",
+            "detect.code.secretflow:findings:1",
+            "detect.secrets.names:_fold:1",
+            "detect.secrets.names:_name_words:2",
+            "detect.secrets.names:names_configuration:2",
+            "detect.secrets.names:names_placeholder:2",
+            "detect.secrets.names:value_restates_the_name:1",
+            "detect.secrets.values:reads_as_words:1",
+            "detect.supply.manifests.scripts:_targets_in_tree:3",
+            "detect.supply.name_risk:_npm:2",
+            "detect.supply.name_risk:_nuget:1",
+            "ecosystems.infra.actions:parse:4",
+            "ecosystems.infra.compose:_build_sources:1",
+            "ecosystems.infra.compose:_conditions:1",
+            "ecosystems.infra.compose:_resolve_aliases:2",
+            "ecosystems.infra.image:_copy_add_run:1",
+            "ecosystems.packages.cocoapods:_pod:2",
+            "ecosystems.packages.cocoapods:parse:1",
+            "ecosystems.packages.conda:render:1",
+            "ecosystems.packages.cran:_system_needs:2",
+            "ecosystems.packages.go:__init__:3",
+            "ecosystems.packages.go:release_manifest:1",
+            "ecosystems.packages.haskell.cabal_project:parse:2",
+            "ecosystems.packages.homebrew:_bottles_and_version:1",
+            "ecosystems.packages.homebrew:_depends:1",
+            "ecosystems.packages.homebrew:parse:1",
+            "ecosystems.packages.homebrew:parse:2",
+            "ecosystems.packages.homebrew:parse:3",
+            "ecosystems.packages.javascript.pnpm:_target:1",
+            "ecosystems.packages.jvm.gradle_scripts:_declarations:2",
+            "ecosystems.packages.jvm.gradle_scripts:_plugins:1",
+            "ecosystems.packages.jvm.gradle_scripts:_top_level:1",
+            "ecosystems.packages.nix:applied:1",
+            "ecosystems.packages.pypi:declared_dependencies:1",
+            "engine.inventory:_LineIndex.RUN",
+            "engine.inventory:_LineIndex.TOKEN",
+            "engine.package_format:of:1",
+            "engine.pipeline.ceilings:image_start_ceiling:1",
+            "engine.pipeline.graph:configured_sources:1",
+            "engine.pipeline.hooks:hook_command_scripts:1",
+            "engine.pipeline.hooks:languages_of:1",
+            "foundation.formats.datayaml:_flow_pair:1",
+            "foundation.models:_WHITESPACE",
+            "foundation.samples:names_authentication:1",
+            "foundation.samples:names_installer:1",
+            "foundation.text.redact:Redactor._CREDENTIAL_SHAPE",
+            "foundation.text.redact:Redactor._HIGH_ENTROPY_RUN",
+            "images.alas:fetch:1",
+            "images.binmeta:_PRINTABLE",
+            "images.binmeta:program:1",
+            "images.langpkgs:_GEMSPEC",
+            "images.langpkgs:_PY_VERSION",
+            "intel.advisories.advisory_text:_SENTENCE",
+            "intel.advisories.nvd:release_names:1",
+            "intel.advisories.rubysec:_ITEM",
+            "intel.advisories.rubysec:_KEY",
+            "intel.advisories.upstream.base:RepositoryArchive.CGIT_SNAPSHOT",
+            "intel.advisories.upstream.base:RepositoryArchive.GITLAB_RELEASE",
+            "intel.advisories.upstream.cocoapods:NpmPodspec.NOTE",
+            "intel.advisories.upstream.cocoapods:_answers:1",
+            "intel.advisories.upstream.tags:refs:1",
+            "intel.advisories.upstream.tags:repository:7",
+            "intel.advisories.upstream.vcpkg:VcpkgPorts.DOWNLOADS",
+            "intel.advisories.upstream.vcpkg:_fetched:1",
+            "intel.advisories.upstream.vcpkg:key:2",
+            "intel.advisories.versions:_PEP440_RE",
+            "intel.advisories.versions:_TOKEN_RE",
+            "intel.advisories.versions:components:1",
+            "intel.advisories.versions:components:2",
+            "intel.malware.atr:_BASE64_BLOCK",
+            "intel.malware.campaign:CampaignFingerprint.NUMBER",
+            "intel.provenance.gitfetch:objects:1",
+            "intel.registries.infra_registries:vcpkg:1",
+            "intel.registries.package_registries:_r_version:1",
+            "intel.registries.package_registries:hackage:1",
+            "intel.registries.package_registries:hackage:2",
+            "intel.registries.package_registries:retractions:1",
+            "intel.registries.package_registries:retractions:2",
+            "intel.registries.private_registries:_image:1",
+            "intel.registries.private_registries:_pypi:2",
+            "intel.store.licenses:_PUNCTUATION_RE",
+            "judge.calls:_UNTRUSTED_CONTROL",
+            "judge.calls:_value:1",
+            "mcp.packages:_composer:1",
+            "mcp.packages:_python:1",
+            "rule:CAP.BAT.FETCH_EXEC.001",
+            "rule:CAP.BAT.FETCH_EXEC.001:0",
+            "rule:CAP.DESTROY.HOME.001",
+            "rule:CAP.DESTROY.HOME.001:0",
+            "rule:CAP.DESTROY.SYSTEM_DISK.001",
+            "rule:CAP.DESTROY.SYSTEM_DISK.001:1",
+            "rule:CAP.EGRESS.DNS_CONSTRUCTED.001",
+            "rule:CAP.EGRESS.DNS_CONSTRUCTED.001:1",
+            "rule:CAP.EGRESS.DNS_CONSTRUCTED.001:2",
+            "rule:CAP.JS.CHARCODE_STRING.001",
+            "rule:CAP.JS.CHARCODE_STRING.001:0",
+            "rule:CAP.JS.CHARCODE_STRING.001:1",
+            "rule:CAP.JS.CHARCODE_STRING.001:2",
+            "rule:CAP.JS.EGRESS.001",
+            "rule:CAP.JS.EGRESS.001:5",
+            "rule:CAP.JS.RECON.001",
+            "rule:CAP.JS.RECON.001:2",
+            "rule:CAP.JS.RECON.001:4",
+            "rule:CAP.JS.RECON.001:5",
+            "rule:CAP.JS.SHELL_STDIO_JOINED.001",
+            "rule:CAP.JS.SHELL_STDIO_JOINED.001:0",
+            "rule:CAP.JS.SHELL_STDIO_JOINED.001:1",
+            "rule:CAP.JS.SPAWN.001",
+            "rule:CAP.JS.SPAWN.001:4",
+            "rule:CAP.JVM.RECON.001",
+            "rule:CAP.JVM.RECON.001:2",
+            "rule:CAP.LUA.EXECUTE.001",
+            "rule:CAP.LUA.EXECUTE.001:1",
+            "rule:CAP.SH.CREDENTIAL.001",
+            "rule:CAP.SH.CREDENTIAL.001:0",
+            "rule:CAP.SH.CREDENTIAL.001:5",
+            "rule:CAP.SH.EGRESS.001",
+            "rule:CAP.SH.EGRESS.001:2",
+            "rule:CAP.SH.FETCH_EXEC.001",
+            "rule:CAP.SH.FETCH_EXEC.001:1",
+            "rule:CAP.SH.PERSIST.001",
+            "rule:CAP.SH.PERSIST.001:2",
+            "rule:CAP.SH.SOCKET_LITERAL.001",
+            "rule:CAP.SH.SOCKET_LITERAL.001:1",
+            "analysis.formats.documents:_RTF_CLASS",
+            "analysis.go.go_eval:_ASSIGN",
+            "analysis.go.go_eval:_HELPER",
+            "analysis.go.go_eval:_TABLE",
+            "analysis.javascript.flow.vocabulary:_URL",
+            "analysis.javascript.front.lexer:Lexer.ASCII_NAME",
+            "analysis.javascript.front.lexer:Lexer.LINE_REST",
+            "analysis.javascript.front.lexer:Lexer.SPACE_RUN",
+            "analysis.nix.nix_code:RUNS_BEFORE",
+            "analysis.shared.deobfuscation:Layers._INVISIBLE_RUN",
+            "analysis.shared.deobfuscation:ObfuscatorIo._ROTATION",
+            "analysis.shared.render_diff:HiddenInstruction._DESTINATION",
+            "analysis.shared.render_diff:RenderDiff._COMMENT",
+            "detect.agents.ci_workflows:_BROAD_TOOLS",
+            "detect.agents.instruction_files:_REMOTE_INSTRUCTIONS",
+            "detect.agents.instruction_intent:_MARKDOWN_IMAGE",
+            "detect.agents.instruction_intent:_SENTENCE_END",
+            "detect.agents.instructions:_CODE_SPANS",
+            "detect.agents.instructions:_DOWNLOAD_URL",
+            "detect.agents.mcp_servers.declarations:_YAML_ITEM",
+            "detect.agents.mcp_servers.declarations:_YAML_KEY",
+            "detect.agents.mcp_servers.handlers:McpCode._INSTALL",
+            "detect.agents.mcp_servers.source:ServerSources.NOT_A_SERVER_PATH",
+            "detect.agents.mcp_servers.source:_ORDERS_A_REQUEST",
+            "detect.agents.semantics:TRAILER",
+            "detect.agents.skills:_DECODE_BUFFER",
+            "detect.agents.skills:_DOTTED_RUN",
+            "detect.agents.text_patterns:FETCH_EXEC",
+            "detect.agents.text_patterns:ORDERS_A_COMMAND",
+            "detect.binary.features:BinaryFeatures._ASCII",
+            "detect.binary.features:BinaryFeatures._RUN",
+            "detect.binary.features:BinaryFeatures._WIDE",
+            "detect.binary.rule_engine.chain:Chain.RUNS",
+            "detect.code.capability.labelling:Labelling.COURTESY_GATE",
+            "detect.code.features:CodeFeatures._BASE64",
+            "detect.code.features:CodeFeatures._HEX",
+            "detect.code.features:CodeFeatures._SHELL_TOKEN",
+            "detect.code.install_payload:InstallPayload._PATH_TOKEN",
+            "detect.code.js_campaigns:JsCampaigns._AGENT_CONFIG_MEMBER",
+            "detect.code.obfuscation.concealment:TAG_RUN",
+            "detect.code.obfuscation.encoding:ESCAPE_RUN",
+            "detect.code.obfuscation.text:ObfuscationText.NON_ASCII",
+            "detect.code.secretflow:JavaScriptCommandFlow._HELPER",
+            "detect.code.secretflow:JavaScriptFlow._BIND",
+            "detect.code.secretflow:JavaScriptLeak._ALIAS",
+            "detect.code.secretflow:JavaScriptLeak._NAME",
+            "detect.code.store_flow:_ARGUMENT",
+            "detect.code.store_flow:_IDENTIFIER",
+            "detect.infra.ci_rules:UNTRUSTED_TRIGGER",
+            "detect.infra.config_files:ConfigDetector._SHELL_KEY",
+            "detect.infra.config_paths:VERIFIED_FETCH",
+            "detect.secrets.values:URL_RUN",
+            "detect.source.submodules:GitModules.ENTRY",
+            "detect.supply.manifests.identity_findings:IdentityFindings._WINNING_VERSION",
+            "detect.supply.manifests.scripts:FILE_OP_INSIDE",
+        }
+    )

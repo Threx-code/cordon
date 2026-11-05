@@ -1,5 +1,5 @@
 # Established npm package names. Generated; do not edit by hand.
-# Regenerate with: python3 scripts/refresh_package_intel.py --only npm
+# Regenerate with: python3 scripts/refresh/refresh_package_intel.py --only npm
 # Source:    https://cdn.jsdelivr.net/npm/npm-high-impact/lib/top.js (npm-high-impact; score derived from rank)
 # Threshold: 0 downloads
 # Fetched:   17,334 candidates, 17,334 kept

@@ -32,11 +32,11 @@ import tomllib
 import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, ClassVar, Final
 
 from cordon_scanner.cloud import CloudEndpoint, CloudError
 from cordon_scanner.cloud.transport import CloudTransport, Transport
-from cordon_scanner.core.evidence_key import EvidenceKey
+from cordon_scanner.foundation.evidence_key import EvidenceKey
 from cordon_scanner.version import __version__
 
 SCHEMA: Final = "cordon.device-inventory/v1"
@@ -56,6 +56,14 @@ class Source:
 
 class DeviceInventory:
     """A developer machine's agent and editor inventory, reported to the cloud."""
+
+    #: An extension folder's name, `publisher.name-1.2.3` or `publisher.name-1.2.3-darwin-arm64` for a
+    #: platform build. Its time grows faster than the name, so `_extension_identity` reads it only on
+    #: names of at most NAME_BYTES (a file name's limit on Linux and macOS; 0.22 ms at worst there).
+    EXTENSION_FOLDER: ClassVar[re.Pattern[str]] = re.compile(
+        r"^([A-Za-z0-9][\w-]*\.[\w.-]+?)-(\d+\.\d+\.\d+[\w.+-]*?)(?:-[a-z]+-[a-z0-9]+)?$"
+    )
+    NAME_BYTES: ClassVar[int] = 255
 
     @staticmethod
     def _app_support(home: Path) -> Path:
@@ -170,7 +178,7 @@ class DeviceInventory:
 
     @staticmethod
     def _mcp_entries(tool: str, logical: str, servers: Any) -> list[dict[str, Any]]:
-        from cordon_scanner.detect.agents import McpConfigs
+        from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
 
         entries: list[dict[str, Any]] = []
         for name, server in servers.items() if isinstance(servers, dict) else ():
@@ -279,11 +287,11 @@ class DeviceInventory:
                     f"{manifest['publisher']}.{manifest['name']}".lower(),
                     str(manifest.get("version") or ""),
                 )
-        # `publisher.name-1.2.3`, or `publisher.name-1.2.3-darwin-arm64` for a platform build.
-        match = re.match(
-            r"^([A-Za-z0-9][\w-]*\.[\w.-]+?)-(\d+\.\d+\.\d+[\w.+-]*?)(?:-[a-z]+-[a-z0-9]+)?$",
-            folder.name,
-        )
+        # A longer name (from a synced profile or an archive, not a directory) is not recognised: the
+        # bound is held here, not left to the file system.
+        if len(folder.name.encode("utf-8", "surrogateescape")) > DeviceInventory.NAME_BYTES:
+            return folder.name.lower(), ""
+        match = DeviceInventory.EXTENSION_FOLDER.match(folder.name)
         if match:
             return match.group(1).lower(), match.group(2)
         return folder.name.lower(), ""
@@ -292,8 +300,8 @@ class DeviceInventory:
     def extension_findings(installed: list[dict[str, str]]) -> list[dict[str, Any]]:
         """Each installed extension judged as a repository's recommendation is: OSV's malicious
         extension records (by version), Microsoft's removals, and look-alikes of popular ones."""
-        from cordon_scanner.detect.agents import ExtensionNames, ExtensionVerdicts
-        from cordon_scanner.intel import datafile
+        from cordon_scanner.detect.agents.extensions import ExtensionNames, ExtensionVerdicts
+        from cordon_scanner.intel.store import datafile
 
         intel = datafile.IntelDataFile.newest("vscode-extensions.json")
         removed = intel.get("removed") or {}
@@ -360,13 +368,39 @@ class DeviceInventory:
     @staticmethod
     def collect(home: Path | None = None) -> dict[str, Any]:
         """The payload: device, inventory and findings. Nothing else leaves the machine."""
-        from cordon_scanner.core.config import Config
-        from cordon_scanner.core.content import FileContent
-        from cordon_scanner.detect.agents import AgentChainDetector
-        from cordon_scanner.detect.base import FileUnit, ScanContext
-        from cordon_scanner.rules.loader import RuleSet
-
         home = home or Path.home()
+        tools, mcp, registries, files, read = DeviceInventory._read_sources(home)
+        installed = DeviceInventory.installed_extensions(home)
+        extensions = [f"{e['id']}-{e['version']}" if e["version"] else e["id"] for e in installed][
+            :MAX_EXTENSIONS
+        ]
+        for entry in installed:
+            tools.add(entry["editor"].removesuffix("-server").removesuffix("-insiders") or "vscode")
+
+        findings = DeviceInventory._agent_findings(files)
+        findings.extend(DeviceInventory.extension_findings(installed))
+        return {
+            "schema": SCHEMA,
+            "agent_version": __version__,
+            "device": DeviceInventory._device(),
+            "read": sorted(read),
+            "inventory": {
+                "tools": sorted(tools),
+                "mcp_servers": mcp,
+                "extensions": extensions,
+                "installed_extensions": installed,
+                "registries": registries,
+            },
+            "findings": findings,
+        }
+
+    @staticmethod
+    def _read_sources(
+        home: Path,
+    ) -> tuple[
+        set[str], list[dict[str, Any]], list[dict[str, Any]], list[tuple[str, bytes]], list[str]
+    ]:
+        """Each source's tools, MCP servers and registries, and the files the detector reads."""
         tools: set[str] = set()
         mcp: list[dict[str, Any]] = []
         registries: list[dict[str, Any]] = []
@@ -419,12 +453,16 @@ class DeviceInventory:
                     servers = {}
                 mcp += DeviceInventory._mcp_entries(source.tool, source.logical, servers)
             files.append((source.logical, raw))
-        installed = DeviceInventory.installed_extensions(home)
-        extensions = [f"{e['id']}-{e['version']}" if e["version"] else e["id"] for e in installed][
-            :MAX_EXTENSIONS
-        ]
-        for entry in installed:
-            tools.add(entry["editor"].removesuffix("-server").removesuffix("-insiders") or "vscode")
+        return tools, mcp, registries, files, read
+
+    @staticmethod
+    def _agent_findings(files: list[tuple[str, bytes]]) -> list[dict[str, Any]]:
+        """What the agent detector finds in the files read, as the payload reports it."""
+        from cordon_scanner.detect.agents.chain import AgentChainDetector
+        from cordon_scanner.detect.base import DetectorRun, FileUnit, ScanContext
+        from cordon_scanner.foundation.config.settings import Config
+        from cordon_scanner.foundation.content import FileContent
+        from cordon_scanner.rules.loader import RuleSet
 
         config = Config.default()
         context = ScanContext(config=config, rules=RuleSet(()), offline=True)
@@ -432,7 +470,8 @@ class DeviceInventory:
         findings: list[dict[str, Any]] = []
         for logical, raw in files:
             unit = FileUnit(content=FileContent(path=logical, raw=raw, size=len(raw)))
-            for finding in detector.inspect(unit, context):
+            # run to its end, as a scan's files are: the device scan's own bound is what ends it
+            for finding in DetectorRun.findings(detector, unit, context):
                 findings.append(
                     {
                         "rule_id": finding.rule_id,
@@ -444,34 +483,25 @@ class DeviceInventory:
                         "fingerprint": finding.fingerprint,
                     }
                 )
-        findings.extend(DeviceInventory.extension_findings(installed))
+        return findings
+
+    @staticmethod
+    def _device() -> dict[str, str]:
+        """This device: its name and system, and the keyed identifiers of its user and install."""
         user = os.environ.get("USER") or os.environ.get("USERNAME") or ""
         return {
-            "schema": SCHEMA,
-            "agent_version": __version__,
-            "device": {
-                "hostname": socket.gethostname(),
-                "os": f"{platform.system()} {platform.release()}",
-                # Keyed with this install's secret: an unkeyed hash of a known hostname and a
-                # short user name is the user name, to anyone who tries the likely ones.
-                "user": hmac.new(
-                    EvidenceKey.key(), b"device-user\0" + user.encode(), "sha256"
-                ).hexdigest()[:16],
-                # Stable for this install and unforgeable without its key; what the cloud binds the
-                # device record to, so one laptop's token cannot overwrite another laptop's report.
-                "install_id": hmac.new(
-                    EvidenceKey.key(), b"device-install-id", "sha256"
-                ).hexdigest()[:32],
-            },
-            "read": sorted(read),
-            "inventory": {
-                "tools": sorted(tools),
-                "mcp_servers": mcp,
-                "extensions": extensions,
-                "installed_extensions": installed,
-                "registries": registries,
-            },
-            "findings": findings,
+            "hostname": socket.gethostname(),
+            "os": f"{platform.system()} {platform.release()}",
+            # Keyed with this install's secret: an unkeyed hash of a known hostname and a
+            # short user name is the user name, to anyone who tries the likely ones.
+            "user": hmac.new(
+                EvidenceKey.key(), b"device-user\0" + user.encode(), "sha256"
+            ).hexdigest()[:16],
+            # Stable for this install and unforgeable without its key; what the cloud binds the
+            # device record to, so one laptop's token cannot overwrite another laptop's report.
+            "install_id": hmac.new(EvidenceKey.key(), b"device-install-id", "sha256").hexdigest()[
+                :32
+            ],
         }
 
     @staticmethod

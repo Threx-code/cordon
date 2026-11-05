@@ -8,14 +8,15 @@ tests themselves run in this suite, so a proof that stops holding fails the suit
 from __future__ import annotations
 
 import json
+import threading
 import time
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from conformancebuilders import MARKER, PROFILES, EcosystemProfile, Pkg, Profiles
-from conformancekit import ConformanceCase, ConformanceRun
+from kits.conformancebuilders import MARKER, PROFILES, EcosystemProfile, Pkg, Profiles
+from kits.conformancekit import ConformanceCase, ConformanceRun
 
 
 class Universal:
@@ -266,30 +267,74 @@ class TestDeterminism:
 
 
 class TestScale:
-    """UNI-26: a large lockfile is read whole, once per package, within a bounded time."""
+    """UNI-26: a large lockfile is read whole, once per package, in time that grows with it.
 
-    @pytest.mark.parametrize("profile", ALL, ids=ids(ALL))
-    def test_two_thousand_packages(self, profile, tmp_path) -> None:
+    The bound is on growth, not seconds: four times the packages may cost at most eight times as
+    long. A linear read costs under four times (each scan's start-up is paid once), a quadratic
+    one about sixteen. Measured in CPU time, which load does not stretch as it stretches wall
+    time, after a throwaway scan that pays the process's one-off loads. The small size starts at
+    500 packages and doubles until its scan takes `MIN_SECONDS`, the large one is four times it,
+    and the small scan runs before and after the large one and the two are averaged. A fixed
+    ceiling failed at six to seven times the idle time under a loaded suite, a wall-clock ratio
+    on a single load spike during one scan, and a 0.1 s small scan on one interruption."""
+
+    @staticmethod
+    def packages(profile: EcosystemProfile, count: int) -> list[Pkg]:
         first = profile.names[0]
         stem, _, tail = first.rpartition("/")
-        pkgs = [
+        return [
             Pkg(
                 f"{stem}/{tail}{n}" if stem else f"{first}{n}",
                 profile.versions[1],
                 profile.hash_of(n) if profile.hash_of else None,
             )
-            for n in range(2000)
+            for n in range(count)
         ]
-        started = time.monotonic()
-        report = Universal.scan(Universal.project(tmp_path, profile, pkgs), profile.id)
-        elapsed = time.monotonic() - started
+
+    @staticmethod
+    def timed(
+        profile: EcosystemProfile, pkgs: list[Pkg], where: Path
+    ) -> tuple[dict[str, Any], float]:
+        """A scan and the CPU time it took. The scan runs in this process and serially (a
+        lockfile project is a file or two), so its CPU time is its work, which other processes
+        on a loaded machine do not stretch as they stretch wall-clock time. This thread's CPU,
+        not the process's: a thread an earlier test left running was charged to the scan
+        (macOS CI: 2,000 Helm packages "took" 74 s of CPU where they take 8 s, 5 Nov)."""
+        started = time.thread_time()
+        report = Universal.scan(Universal.project(where, profile, pkgs), profile.id)
+        return report, time.thread_time() - started
+
+    #: The small scan's CPU time is grown to at least this, doubling its size, so a scheduling
+    #: interruption of a few milliseconds cannot swing the ratio: at 0.1 s it swung it tenfold.
+    MIN_SECONDS = 0.5
+    MAX_SMALL = 32_000
+
+    @pytest.mark.parametrize("profile", ALL, ids=ids(ALL))
+    def test_two_thousand_packages(self, profile, tmp_path) -> None:
+        # A throwaway scan first: the first scan of a process pays one-off loads, which counted as
+        # the small size's work and hid real growth (nix measured 3.1-3.8 s cold, 0.5 s warm).
+        TestScale.timed(profile, TestScale.packages(profile, 50), tmp_path / "warm")
+        count = 500
+        _, before = TestScale.timed(profile, TestScale.packages(profile, count), tmp_path / "a500")
+        while before < TestScale.MIN_SECONDS and count < TestScale.MAX_SMALL:
+            count *= 2
+            few = TestScale.packages(profile, count)
+            _, before = TestScale.timed(profile, few, tmp_path / f"a{count}")
+        pkgs = TestScale.packages(profile, 4 * count)
+        report, large = TestScale.timed(profile, pkgs, tmp_path / f"b{4 * count}")
+        _, after = TestScale.timed(profile, TestScale.packages(profile, count), tmp_path / "c")
+        small = (before + after) / 2
         # The packages written; not what the format records about its own tooling (Bundler's
         # `BUNDLED WITH`), the runtime, or Go's standard library.
         written = {p.name.lower() for p in pkgs}
         packages = [d for d in report["dependencies"] if d["name"].lower() in written]
-        assert len(packages) == 2000, len(packages)
-        assert len({d["purl"] for d in packages}) == 2000, "duplicated"
-        assert elapsed < 120, f"{elapsed:.0f}s"
+        assert len(packages) == len(pkgs), len(packages)
+        assert len({d["purl"] for d in packages}) == len(pkgs), "duplicated"
+        assert large < small * 8, (
+            f"{len(pkgs):,} packages {large:.2f}s against {count:,} in {before:.2f}s and"
+            f" {after:.2f}s: {large / small:.1f} times; threads alive:"
+            f" {sorted(thread.name for thread in threading.enumerate())}"
+        )
 
 
 class TestScannerSafety:
@@ -324,7 +369,10 @@ class TestHostileCoordinates:
             assert len(dependency["name"]) <= 256 and len(dependency.get("version") or "") <= 128
 
 
-from cordon_scanner.detect.registry import CONFUSABLE_ECOSYSTEMS, REGISTRY_ECOSYSTEMS  # noqa: E402
+from cordon_scanner.detect.supply.registries.detector import (  # noqa: E402
+    CONFUSABLE_ECOSYSTEMS,
+    REGISTRY_ECOSYSTEMS,
+)
 
 REGISTERED = [
     p for p in PROFILES if p.id in REGISTRY_ECOSYSTEMS and p.hash_of and p.registry_digests
@@ -338,7 +386,7 @@ class RegistryStub:
 
     @staticmethod
     def install(monkeypatch, answers: dict[str, Any]) -> list[tuple[str, str]]:
-        from cordon_scanner.intel import registry_client
+        from cordon_scanner.intel.registries import registry_client
 
         asked: list[tuple[str, str]] = []
 
@@ -368,7 +416,7 @@ class TestRegistryVerification:
 
     @pytest.mark.parametrize("profile", REGISTERED, ids=ids(REGISTERED))
     def test_outcomes_are_told_apart(self, profile, tmp_path, monkeypatch) -> None:
-        from cordon_scanner.intel.registry_client import PackageFacts, RegistryError
+        from cordon_scanner.intel.registries.registry_client import PackageFacts, RegistryError
 
         assert profile.hash_of is not None
         first, second, third = profile.names

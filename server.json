@@ -1,0 +1,32 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.threx-code/cordon",
+  "title": "Cordon",
+  "description": "Checks packages, install commands, skills and MCP servers for supply-chain attacks. Read-only.",
+  "version": "0.7.0",
+  "websiteUrl": "https://github.com/Threx-code/cordon/blob/main/tutorials/30-mcp-server.md",
+  "repository": {
+    "url": "https://github.com/Threx-code/cordon",
+    "source": "github"
+  },
+  "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/Threx-code/cordon/main/docs/assets/logo-mark.svg",
+      "mimeType": "image/svg+xml",
+      "sizes": ["any"]
+    }
+  ],
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "cordon-scanner",
+      "version": "0.7.0",
+      "runtimeHint": "uvx",
+      "transport": { "type": "stdio" },
+      "packageArguments": [
+        { "type": "positional", "value": "mcp" }
+      ]
+    }
+  ]
+}

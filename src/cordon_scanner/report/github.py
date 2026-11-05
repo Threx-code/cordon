@@ -14,13 +14,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from cordon_scanner.core.models import Category, Severity
-from cordon_scanner.report.base import BaseReporter, ReportOptions
+from cordon_scanner.foundation.models import Category, Severity
+from cordon_scanner.report.base import BaseReporter, Escape, ReportOptions
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from cordon_scanner.core.models import ScanResult
+    from cordon_scanner.foundation.results import ScanResult
 
 LEVEL = {
     Severity.CRITICAL: "error",
@@ -39,9 +39,11 @@ class GithubReporter(BaseReporter):
         """Encode a workflow-command message body.
 
         A raw newline ends the command, so the rest of the message becomes ordinary
-        log text and the annotation is silently truncated.
+        log text and the annotation is silently truncated. What is left that a log
+        viewer acts on (an escape, a bidi override) or no log can encode (a lone
+        surrogate) is shown escaped (`Escape.terminal`, item 34).
         """
-        return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        return Escape.terminal(text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))
 
     @staticmethod
     def _escape_property(text: str) -> str:

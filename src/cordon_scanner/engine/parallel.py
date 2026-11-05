@@ -1,0 +1,807 @@
+"""Parallel file inspection.
+
+Detectors were written as pure functions over immutable units precisely so that
+this module could exist without changing any of them. Nothing here reaches into
+a detector; it moves the same calls onto other processes.
+
+Three design points are worth stating, because each is a decision rather than a
+default.
+
+**Processes, not threads.** Matching is CPU-bound and runs in Python bytecode
+around the regex engine, so threads would contend on the interpreter lock and
+deliver nothing. Processes also give each worker its own memory, which bounds
+the damage a pathological input can do to one worker rather than the whole scan.
+
+**Workers are initialised once, not per task.** Compiling the rule set is the
+expensive part of starting up, so it happens once per worker at pool creation.
+Sending compiled rules with every task would cost more than the parallelism
+saves.
+
+**Results are reordered before they are returned.** Completion order depends on
+scheduling, and constraint C5 requires that two runs of the same scan produce
+identical output. Workers therefore return their input index alongside their
+findings, and the caller restores the original order.
+
+Parallelism is off for small scans. Starting a pool costs tens of milliseconds
+per worker, which is more than a few hundred files take to scan outright, and a
+pre-commit hook is exactly the case that must not pay it.
+"""
+
+from __future__ import annotations
+
+import math
+import multiprocessing
+import multiprocessing.context
+import os
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, ClassVar
+
+from cordon_scanner.engine.isolation.supervisor import Bounds
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+
+    from cordon_scanner.detect.base import ScanContext
+    from cordon_scanner.foundation.config.settings import Config
+    from cordon_scanner.foundation.models import Finding
+
+Coverage = tuple[bool, tuple[tuple[str, str], ...]]
+"""A unit's coverage as its worker's own accumulator recorded it: whether the inspection was
+complete, and the (rule, path) of each gap (a detector that failed, a finding it had to drop),
+taken by the parent with `Accumulator.absorb` so its verdict is the worker's (item 27)."""
+
+FULL: Coverage = (True, ())
+"""The coverage of a unit that left nothing unread, or that the parent reports itself."""
+
+#: (index, findings, trusted, cacheable, coverage, facts): facts are the unit's JSON-encoded per-file
+#: facts (`engine/isolation/facts.py`), "" when it sent none.
+WorkerResult = tuple[int, list[dict[str, Any]], bool | None, bool, Coverage, str]
+"""What a worker hands back for one file: its index, its findings, whether it read the bytes the
+parent hashed (None: not examined, the scan's budget had run out), whether the result may be
+cached, and its `Coverage`."""
+
+MIN_FILES_FOR_PARALLEL = 400
+"""Below this, a scan runs in the calling process.
+
+Pool startup is tens of milliseconds per worker plus interpreter initialisation.
+On a few hundred files that is most of the runtime, so parallelism would make
+the common case slower while helping only the rare one.
+"""
+
+WorkItem = tuple[int, str, int, str, "bytes | str | None", "str | None", "str | None"]
+"""One file handed to a worker: its index, path, size, the parent's content
+hash, the parent's language and project for it (never decided again in a worker: a hook-run
+payload.png is JavaScript only by the hook's interpreter, which the file alone does not show),
+and -- for a source whose bytes are not on disk -- the bytes themselves,
+or for an archive member kept on disk past `max_file_bytes` the path it was kept
+at (`FileContent.carried`), and the language the parent's walk chose for it. The
+hash travels so the worker can tell whether it read what the parent read; see
+`_inspect_batch`. The language travels because only the parent knows the
+interpreter a hook runs the file with (`node ./payload.png` makes that file
+JavaScript, `Units.language_of`), which the file alone does not show. A worker that
+chose again from the file inspected a renamed, hook-run payload as no language."""
+
+
+MAX_WORKERS = 16
+
+#: Settings a worker needs that `Config.to_dict()` does not carry, because `to_dict()` is the
+#: repository schema and these come only from the operator or the organisation policy: where a
+#: scan may send bytes (`clamav`, `rule_file`, `judge`), how the judge reports and its budget, and the
+#: policy lists per-file rules read. Each one missing here made a parallel scan disagree with a
+#: serial one; `tests/unit/engine/test_parallel.py` fails when a new field is in neither this nor
+#: `PARENT_ONLY_SETTINGS`.
+CARRIED_SETTINGS: tuple[str, ...] = (
+    "clamav",
+    "rule_file",
+    "rule_module_data",
+    "judge",
+    "judge_blocks",
+    "judge_max_calls",
+    "allowed_action_owners",
+    "internal_namespaces",
+)
+
+#: Settings a worker does not need, with the reason. A worker inspects files and returns
+#: findings; everything else -- the cache, how the configuration was assembled, the policy
+#: ceiling already applied to the values it receives -- stays with the parent.
+PARENT_ONLY_SETTINGS: dict[str, str] = {
+    "explicit_limits": "which limits the operator set by hand; the values themselves are carried",
+    "code_model_report_at": "the code model's package decision is the parent's; workers only score files",
+    "code_model_block_at": "the code model's package decision is the parent's; workers only score files",
+    "notify_channels": "the parent posts the gate's outcome after the scan; a worker never notifies",
+    "notify_on": "the parent decides whether to post, after the scan; a worker never notifies",
+    "private_registries": "registries are asked by the parent, about the graph; a worker never reaches one",
+    "keyrings": "provenance is verified by the parent, about the graph; a worker never reads a keyring",
+    "provenance": "where each setting came from, for `config show`",
+    "cache_dir": "the parent reads and writes the cache",
+    "use_cache": "the parent reads and writes the cache",
+    "constraints": "the organisation ceiling, already applied to the carried values",
+    "org_limits": "the organisation ceiling, already applied to the carried limits",
+    "untrusted_exclusions": "exclusions are applied by the parent's walk",
+    "reduced_limits": "reported by the parent",
+    "from_untrusted_source": "reported by the parent",
+    "clamped_settings": "reported by the parent",
+    "_rechecking": "the parent's own re-entry guard",
+}
+"""Ceiling on worker count.
+
+A high-core CI runner spawning one worker per core over a medium repository
+spends more time starting processes than matching bytes. The ceiling costs
+nothing on the sizes where more workers would actually help.
+"""
+
+AVERAGE_FILE_BYTES = 8 * 1024
+"""Assumed mean source-file size, used only to estimate a batch count.
+
+An estimate rather than a measurement because the batch count is needed to size
+the pool, and sizing happens before the files have been read. Being wrong costs
+at most a few idle or overloaded workers, never a difference in findings."""
+
+
+WORK_PER_WORKER = 1024 * 1024
+"""The estimated work, in bytes, that pays for one more worker.
+
+A worker costs about 1.7 s of CPU to start (0.7 s of imports, 1 s to build its engine; 0.04 s
+for the second engine in one process), and matching costs about 2 s of CPU per megabyte of
+source. Sized by 4 MB batches instead, a 9 MB archive (armadaproject/armada, 1,346 members) got
+three workers and three batches, one holding 899 of the files, and took as long at `--jobs 4` as at
+`--jobs 1`. Units now go to the workers one at a time, each idle worker taking the next, so no
+worker waits on another's batch; and a worker forked from the scan's template costs a fork, not
+that start (`engine/isolation/template.py`)."""
+
+
+class ParallelScanner:
+    """Runs file inspection across a process pool.
+
+    Processes rather than threads: the work is CPU-bound regex matching, and
+    Python's global interpreter lock makes threads useless for it.
+
+    Two properties are load-bearing and both are about not lying:
+
+    Results are restored to input order before returning. Completion order
+    depends on scheduling, and identical inputs must produce identical output.
+
+    Pool failure returns empty rather than raising, and the caller then runs
+    serially. A platform where processes cannot be spawned degrades to a slower
+    scan instead of a failed one. This is also where a silent failure once hid:
+    a config that could not round-trip through `to_dict` killed every worker in
+    its initialiser, the pool returned nothing, and the engine fell back to
+    serial without a word. The fallback is correct; being quiet about it was
+    not.
+    """
+
+    #: Per-process state, built once in the pool initialiser. A class attribute
+    #: rather than a module global because a worker process holds exactly one,
+    #: and it belongs to the class that puts it there.
+    _worker: ClassVar[_WorkerState | None] = None
+    #: The engine the scan's template holds: set before the template is forked, so the template
+    #: and every worker it forks have it without building one (`_prepare`).
+    _template_engine: ClassVar[Any] = None
+
+    #: What each worker may use (item 28). The memory limit is a constant, never a share of the
+    #: machine (review 28), measured on the seven gate heavy units and the 13,551-member package
+    #: (note 80, 3 Nov): the largest worker's address-space peak was 1,691 MB (cdktn), then 1,108,
+    #: 726, 586, 490, 408, 319 and 214 MB; 4 GiB is 2.4 times the worst. A unit past it raises
+    #: MemoryError in its own worker and ends as a named gap. The CPU budget is ten times the worst
+    #: measured rate (106 us a byte, the chain matcher) with a floor: a backstop that a benign unit
+    #: on a two to three times slower machine does not reach.
+    BOUNDS: ClassVar[Bounds] = Bounds(memory_bytes=4 << 30, cpu_floor=300.0, cpu_per_byte=1.1e-3)
+
+    @staticmethod
+    def worker_count(requested: int, file_count: int, total_bytes: int = 0) -> int:
+        """Decide how many workers to use.
+
+        Returns 1 when parallelism would not pay, so the caller has a single
+        condition to check rather than a special case.
+
+        The work is estimated from the larger of the bytes the walk actually found and the
+        file count at an average size. From the count alone, 450 files of a few hundred
+        kilobytes each estimated as 3.6 MB -- one batch, one worker -- while the bytes said
+        over a hundred; and a tree of many tiny files still has per-file cost the bytes
+        under-state.
+        """
+        if requested == 1:
+            return 1
+        estimate = max(total_bytes, file_count * AVERAGE_FILE_BYTES)
+        if file_count < 2 or estimate < MIN_FILES_FOR_PARALLEL * AVERAGE_FILE_BYTES:
+            return 1
+
+        available = (
+            requested
+            if requested > 0
+            else min(ParallelScanner.available_cpus(), ParallelScanner.memory_workers())
+        )
+        # Never more workers than the work pays for, and never more than files. The comment
+        # claimed this and the code did not do it, so a repository just over the threshold
+        # started a process per core to share one batch.
+        affordable = max(1, math.ceil(estimate / WORK_PER_WORKER))
+        return max(1, min(available, MAX_WORKERS, affordable, file_count))
+
+    @staticmethod
+    def available_cpus(cgroup: str = "/sys/fs/cgroup") -> int:
+        """The cores this process may actually use, not the cores the host has.
+
+        `os.cpu_count()` counts the host: inside a container given two CPUs on a
+        twelve-core host it says twelve, so an automatic pool started twelve workers
+        that shared two cores, each holding its own engine and slice of the input.
+        The CPU affinity mask and the cgroup quota (v2 `cpu.max`, v1 `cfs_quota_us`)
+        are what the scheduler enforces, so the smallest of the three is the answer.
+        """
+        try:
+            count = len(os.sched_getaffinity(0))
+        except (AttributeError, OSError):
+            count = os.cpu_count() or 1
+        quota = ParallelScanner._cgroup_quota(cgroup)
+        if quota is not None:
+            count = min(count, max(1, math.ceil(quota)))
+        return max(1, count)
+
+    #: What the scan's own process is counted at beside its workers (note 80): its resident peak on
+    #: the heavy units was at most 718 MB (cdktn) once it stopped decoding members, so 1 GiB.
+    PARENT_RESERVE: ClassVar[int] = 1 << 30
+    #: What one worker is counted at: 1 GiB, above six of the eight measured units' largest worker
+    #: (at most 710 MB resident) and below two (1,089 and 1,668 MB). Counted at its 4 GiB limit a
+    #: 16 GB machine would start three workers. A heavier package that runs the memory out loses a
+    #: worker, never the scan (`Limits.killed_first`), and its unit runs again alone.
+    WORKER_BUDGET: ClassVar[int] = 1 << 30
+
+    @staticmethod
+    def memory_workers(cgroup: str = "/sys/fs/cgroup") -> int:
+        """How many workers the memory this process may use holds (note 80): (limit - the parent's
+        reserve) / a worker's budget, at least one. Without the count the kernel's out-of-memory
+        killer chose: under a 2 GB container eight workers and the parent took 5.8 GB, and the largest
+        process, the parent, was killed with no report (exit 137) rather than the scan ending
+        incomplete. Unlimited (no budget set, or no limit found) is no bound."""
+        budget = ParallelScanner.WORKER_BUDGET
+        limit = ParallelScanner.available_memory(cgroup)
+        if budget <= 0 or limit is None:
+            return MAX_WORKERS
+        return max(1, (limit - ParallelScanner.PARENT_RESERVE) // budget)
+
+    @staticmethod
+    def available_memory(cgroup: str = "/sys/fs/cgroup") -> int | None:
+        """The bytes this process may use: the cgroup's limit (v2 `memory.max`, v1
+        `memory.limit_in_bytes`), else the machine's physical memory; None when neither is known."""
+        root = Path(cgroup)
+        for name in ("memory.max", "memory/memory.limit_in_bytes"):
+            try:
+                value = (root / name).read_text(encoding="ascii").strip()
+            except OSError:
+                continue
+            if value == "max":
+                break
+            try:
+                limit = int(value)
+            except ValueError:
+                continue
+            if 0 < limit < 1 << 60:  # v1 writes "no limit" as a huge number, not "max"
+                return limit
+            break
+        try:
+            return int(os.sysconf("SC_PHYS_PAGES")) * int(os.sysconf("SC_PAGE_SIZE"))
+        except (AttributeError, ValueError, OSError):
+            return None
+
+    @staticmethod
+    def _cgroup_quota(cgroup: str) -> float | None:
+        """CPUs the cgroup quota allows, or None when there is no quota to read."""
+        root = Path(cgroup)
+        try:
+            limit, _, period = (root / "cpu.max").read_text(encoding="ascii").strip().partition(" ")
+            if limit == "max":
+                return None
+            return int(limit) / int(period or "100000")
+        except (OSError, ValueError, ZeroDivisionError):
+            pass
+        try:
+            quota = int((root / "cpu" / "cpu.cfs_quota_us").read_text(encoding="ascii"))
+            interval = int((root / "cpu" / "cpu.cfs_period_us").read_text(encoding="ascii"))
+        except (OSError, ValueError):
+            return None
+        return quota / interval if quota > 0 and interval > 0 else None
+
+    @staticmethod
+    def start_context() -> multiprocessing.context.BaseContext:
+        """How workers are started: never by forking this process.
+
+        The scanner is multi-threaded by the time it scans (the progress reporter, the git batch
+        reader, the cache writer), and `fork()` copies only the calling thread. A lock another
+        thread held at that instant is held forever in the child, which is a deadlock that shows up
+        once in a few thousand scans and never under a debugger. Python deprecates exactly this and
+        3.14 stops doing it by default on Linux. A fork server is forked once, before any of that,
+        and is the cheap safe choice where it exists; elsewhere a fresh interpreter is started.
+        """
+        methods = multiprocessing.get_all_start_methods()
+        if "forkserver" not in methods:
+            return multiprocessing.get_context("spawn")
+        context = multiprocessing.get_context("forkserver")
+        # The engine's modules imported once, in the fork server, rather than again by every worker
+        # it forks: 0.7 s of CPU per worker otherwise. A module import is all it does here -- no
+        # thread is started and nothing is read -- so the fork stays as safe as it was.
+        context.set_forkserver_preload(["cordon_scanner.engine.engine"])
+        return context
+
+    @staticmethod
+    def _initialise(
+        engine_type: Callable[[Config], Any],
+        config_payload: dict[str, Any],
+        root: str,
+        detector_ids: tuple[str, ...],
+        inventory: Any = None,
+        operator: dict[str, Any] | None = None,
+        facts: dict[str, Any] | None = None,
+    ) -> None:
+        """Build one worker's engine.
+
+        `engine_type` is the parent's engine class, handed over rather than imported: the engine
+        runs the pipeline that runs this pool, so naming it here closed an import cycle. A class
+        crosses to the worker by its qualified name.
+
+        Runs once per process. Everything expensive -- loading rule packs,
+        compiling patterns, discovering detectors -- happens here rather than per
+        task, which is the difference between parallelism helping and hurting.
+
+        `detector_ids` is the set the parent already decided should run, after
+        applying detector configuration, the offline flag and each detector's
+        own applicability check. The worker used to ignore all three and run
+        every detector it could find, so a repository that disabled `capability`
+        got findings from it at `-j 8` and not at `-j 1`. Since the worker count
+        defaults to the machine's core count, the same scan produced different
+        results on different machines -- and determinism is what baselines,
+        caches and reproducible gates rest on.
+
+        `install_hook_paths` and `ci_hook_paths` are here for exactly the same
+        reason, and they were missing. `engine._context(inventory)` builds them
+        from the inventory alone, which knows a manifest DECLARES a hook but not
+        which file the hook runs: `inventory.hooks` records `package.json`, not
+        `scripts/setup.js`. The parent fills that in afterwards, resolving each
+        command to the file it reaches and then following its imports -- and none
+        of it reached the workers.
+
+        What that cost was not a lower score. `ctx.in_install_hook` is a
+        precondition on the composites, so a script that posts the environment
+        out during `postinstall` produced MALWARE.EXFIL.001 at critical with one
+        worker and NOTHING with eight. Same files, same count, same rules; the
+        finding simply was not there. Parallelism engages above four hundred
+        files and the worker count defaults to the core count, so the default
+        configuration on any real repository was the one missing it.
+
+        The hook paths were fixed, then the unreached bodies, the image, the entry files and the
+        package facts, each when its absence was found -- and the five set after them
+        (`agent_run_paths`, `shipped_native_paths`, `library_entry_paths`,
+        `library_closure_paths`, `declared_dependencies`) never reached a worker, so above the
+        parallel threshold a skill's script, a library's entry closure and a shipped binary were
+        judged as ordinary files. `facts` is now every field of the parent's context but the
+        process-local ones (`ScanContext.LOCAL`), so a field added later reaches the workers
+        without anyone remembering to send it.
+        """
+        from cordon_scanner.foundation.collector import Collector
+
+        Collector.relax()  # a worker only scans: its collector stays relaxed
+
+        from cordon_scanner.foundation.config.settings import Config as _Config
+
+        config = _Config.from_dict(config_payload, source="<worker>")
+        if operator:
+            # The operator-only settings (`--clamav`, `--rule-file`) are not in `to_dict()` on
+            # purpose: it is the repository schema, and a scan target must never choose where its
+            # own bytes are sent. So they cross to the workers separately. Without this every
+            # worker ran the ClamAV detector with no daemon address: above the parallel threshold
+            # a `--clamav` scan reported "clamd at  could not be reached" and came back
+            # incomplete, and `--rule-file` matched nothing.
+            from dataclasses import replace as _replace_operator
+
+            config = _replace_operator(config, **operator)
+        engine = engine_type(config)
+        if inventory is None:
+            # Only when the parent could not supply one. Each worker used to run
+            # a complete inventory walk of the repository, so a 200,000-file
+            # monorepo with sixteen workers paid for seventeen full traversals
+            # of a tree the parent had already walked. The inventory is a frozen
+            # dataclass, so it crosses the process boundary as data.
+            inventory = engine.inventory(ParallelScanner._to_path(root))
+        wanted = set(detector_ids)
+        detectors = tuple(d for d in engine.detectors if getattr(d, "id", "") in wanted)
+        missing = tuple(sorted(wanted - {getattr(d, "id", "") for d in detectors}))
+
+        context = engine._context(inventory)
+        context = ParallelScanner.worker_context(context, facts)
+        ParallelScanner._worker = _WorkerState(
+            engine=engine,
+            context=context,
+            detectors=detectors,
+            missing=missing,
+        )
+
+    @staticmethod
+    def worker_context(context: ScanContext, facts: dict[str, Any] | None) -> ScanContext:
+        """The worker's scan context: its own process-local fields, and the parent's facts.
+
+        Assignment over the context the worker derived from the inventory, not a union: the
+        parent derived its own context from the same inventory first and then added to it, so its
+        facts are what the worker would compute and more, and a worker that held anything the
+        parent does not would judge a file differently from a serial scan."""
+        from dataclasses import replace as _replace
+
+        return _replace(context, **(facts or {}))
+
+    @staticmethod
+    def _to_path(root: str) -> Path:
+        from pathlib import Path
+
+        return Path(root)
+
+    @staticmethod
+    def _inspect_batch(
+        batch: list[WorkItem], root: str, deadline: float | None = None, *, empty: bool = True
+    ) -> list[WorkerResult]:
+        """Scan one batch inside a worker.
+
+        Findings cross the process boundary as dictionaries rather than as domain
+        objects. That keeps the boundary explicit and depends only on the
+        serialisation the JSON reporter already relies on, rather than on every
+        domain type remaining picklable forever.
+
+        A work item may carry the file's bytes. That is how a source whose
+        content is not on disk -- `--staged`, which reads the git index -- is
+        scanned in parallel at all: re-reading by path would scan the working
+        tree while the caller believes it is scanning the index. The bytes the
+        parent already read travel with the item, and the worker reads nothing.
+
+        `deadline` is the scan's budget as a `time.monotonic()` reading, which is the same clock
+        in every process on the machine. A file reached after it is not read: it comes back
+        marked `None`, not examined, for the parent to report.
+        """
+        if ParallelScanner._worker is None:  # pragma: no cover - only reachable on a broken pool
+            return []
+
+        if getattr(ParallelScanner._worker, "missing", ()):  # (a test's stand-in state has none)
+            raise RuntimeError(
+                f"detectors no worker can build: {list(ParallelScanner._worker.missing)}"
+            )
+        engine = ParallelScanner._worker.engine
+        ctx = ParallelScanner._worker.context
+        detectors = ParallelScanner._worker.detectors
+        try:
+            return ParallelScanner._batch_results(batch, root, deadline, engine, ctx, detectors)
+        finally:
+            # The caches that hold files fill here now that detection runs in the workers (item 56),
+            # and a warm pool's worker outlives the scan: emptied when its batch is done, as the
+            # parent's are after a scan (`ScanCaches.after_scan`), or a worker keeps every file it
+            # read. `empty=False` is the timed batch's, which reads the clock (a registered cache
+            # too) first and empties after.
+            if empty:
+                from cordon_scanner.foundation.collector import ScanCaches
+
+                ScanCaches.after_scan()
+
+    @staticmethod
+    def _batch_results(
+        batch: list[WorkItem],
+        root: str,
+        deadline: float | None,
+        engine: Any,
+        ctx: Any,
+        detectors: tuple[Any, ...],
+    ) -> list[WorkerResult]:
+        """Each item of a batch, read and inspected in turn (`_inspect_batch`)."""
+        from cordon_scanner.detect.base import FileUnit
+        from cordon_scanner.engine.isolation.facts import WorkerFacts
+
+        out: list[WorkerResult] = []
+        for index, relative, _size, expected, carried, language, project in batch:
+            if deadline is not None and time.monotonic() >= deadline:
+                out.append(
+                    (index, [], None, False, FULL, "")
+                )  # not examined: the budget ran out first
+                continue
+            loaded = ParallelScanner._read_item(relative, expected, carried, engine, root)
+            if loaded is None:
+                # Not trustworthy: the parent reports it exactly as the serial path would.
+                out.append((index, [], False, False, FULL, ""))
+                continue
+
+            WorkerFacts.begin()  # what the unit's analysis learns for the parent (item 56)
+            try:
+                findings, intact, cacheable, coverage = ParallelScanner._inspected(
+                    FileUnit(content=loaded, language=language, project=project),
+                    relative,
+                    root,
+                    ctx,
+                    detectors,
+                )
+            finally:
+                facts = WorkerFacts.end()
+            out.append(
+                (index, findings, True, cacheable and coverage[0], coverage, facts)
+                if intact
+                else (index, [], False, False, FULL, "")
+            )
+
+        return out
+
+    @staticmethod
+    def _prepare(
+        detector_ids: tuple[str, ...], inventory: Any, facts: dict[str, Any] | None
+    ) -> None:
+        """A worker forked from the scan's template: its scan state, from the engine the template
+        holds (`_template_engine`) and this scan's inventory and facts; no engine is built."""
+        from cordon_scanner.foundation.collector import Collector
+
+        Collector.relax()  # a worker only scans: its collector stays relaxed
+        engine = ParallelScanner._template_engine
+        wanted = set(detector_ids)
+        detectors = tuple(d for d in engine.detectors if getattr(d, "id", "") in wanted)
+        context = ParallelScanner.worker_context(engine._context(inventory), facts)
+        ParallelScanner._worker = _WorkerState(engine=engine, context=context, detectors=detectors)
+
+    @staticmethod
+    def _inspect_one(
+        item: tuple[WorkItem, str, float | None, bool],
+    ) -> tuple[list[WorkerResult], dict[str, float] | None]:
+        """One unit in a worker: its results, and its detectors' times when the clock is on."""
+        work, root, deadline, timed = item
+        if timed:
+            return ParallelScanner._inspect_batch_timed([work], root, deadline)
+        return ParallelScanner._inspect_batch([work], root, deadline), None
+
+    @staticmethod
+    def run(
+        *,
+        config: Config,
+        root: str,
+        files: Sequence[WorkItem],
+        workers: int,
+        detector_ids: Sequence[str],
+        engine_type: Callable[[Config], Any],
+        inventory: Any = None,
+        facts: dict[str, Any] | None = None,
+        on_batch: Callable[[Sequence[int]], None] | None = None,
+        deadline: float | None = None,
+        unstarted: list[int] | None = None,
+        template: Any = None,
+        lost: dict[int, str] | None = None,
+    ) -> list[tuple[int, list[Finding], bool, bool, Coverage, str]]:
+        """Inspect files in supervised workers, returning results in input order (item 28).
+
+        Each file is one unit, given to a worker at a time; a worker that dies, hangs or raises on
+        one costs that file and nothing else, and the file goes into `lost` with why (the caller
+        reports it, never re-reads it here: the process that runs this never parses a scanned
+        file). With `template` (`engine/isolation/template.py`) the workers are forked from the
+        scan's clean template; without one they are spawned, each building its engine.
+
+        `detector_ids` has no default on purpose: defaulting it to "all" or "none" would let a
+        scan's findings depend on the default rather than on what the caller decided.
+
+        `facts` is the parent's context (`ScanContext.facts`); see `_initialise`. Each result is
+        `(index, findings, trusted, cacheable)`: `cacheable` is False when inspecting the file
+        reached past its own bytes (`ScanCache.watch`).
+
+        `deadline` (a `time.monotonic()` reading) is the scan's budget: no file is given to a
+        worker after it, and those files' indices go into `unstarted`, for the caller to report
+        unexamined; a file a worker reaches past it comes back unexamined too.
+
+        `on_batch` is called in this process with the indices of each result as it arrives."""
+        from cordon_scanner.engine.cache import ScanCache
+        from cordon_scanner.engine.detector_clock import DetectorClock
+        from cordon_scanner.engine.isolation.supervisor import Supervisor, Unit
+
+        if not files:
+            return []
+        module = f"{ParallelScanner.__module__}:ParallelScanner"
+        setup: tuple[str, tuple[Any, ...]]
+        if template is not None:
+            setup = (f"{module}._prepare", (tuple(detector_ids), inventory, dict(facts or {})))
+        else:
+            operator = {key: getattr(config, key) for key in CARRIED_SETTINGS}
+            setup = (
+                f"{module}._initialise",
+                (engine_type, config.to_dict(), root, tuple(detector_ids), inventory, operator,
+                 dict(facts or {})),
+            )  # fmt: skip
+        collected: list[tuple[int, list[Finding], bool, bool, Coverage, str]] = []
+
+        def arrived(_unit: int, result: Any) -> None:
+            out, taken = result
+            if taken:
+                DetectorClock.add(taken)
+            done = []
+            for index, findings, trusted, cacheable, coverage, facts in out:
+                if trusted is None:  # reached after the deadline
+                    if unstarted is not None:
+                        unstarted.append(index)
+                    continue
+                restored = [ScanCache.finding_from_dict(f) for f in findings]
+                collected.append((index, restored, trusted, cacheable, coverage, facts))
+                done.append(index)
+            if on_batch is not None:
+                on_batch(done)
+
+        supervisor = Supervisor(
+            ParallelScanner.start_context(), setup, f"{module}._inspect_one",
+            ParallelScanner.BOUNDS, workers, deadline=deadline, on_result=arrived,
+        )  # fmt: skip
+        supervisor.template = template
+        timed = DetectorClock.enabled()
+        outcome = supervisor.run(
+            Unit(k, (item, root, deadline, timed), item[2]) for k, item in enumerate(files)
+        )
+        if unstarted is not None:
+            unstarted.extend(files[k][0] for k in outcome.unstarted)
+        if lost is not None:
+            lost.update({files[k][0]: reason for k, reason in outcome.failed.items()})
+        # Restored to input order: completion order depends on scheduling, and identical inputs
+        # must produce identical output.
+        collected.sort(key=lambda pair: pair[0])
+        return collected
+
+    @staticmethod
+    def _read_item(relative: str, expected: str, carried: Any, engine: Any, root: str) -> Any:
+        """A work item's bytes as a `FileContent`: carried by the parent (bytes, or a spill's path)
+        or read here; None when they cannot be trusted."""
+        from pathlib import Path
+
+        from cordon_scanner.foundation.content import FileContent, Skipped
+
+        if isinstance(carried, str):
+            loaded = FileContent.load(Path(carried), relative, engine.config.limits)
+        elif carried is not None:
+            loaded = FileContent.from_bytes(relative, carried, limits=engine.config.limits)
+        else:
+            loaded = FileContent.load(Path(root) / relative, relative, engine.config.limits)
+        if isinstance(loaded, Skipped):
+            # An empty list used to be returned here with nothing said. The
+            # serial path turns a `Skipped` into OPERATIONAL.FILE.UNREADABLE
+            # and marks the scan incomplete, so coverage shrank silently and
+            # whether it did depended on the machine's core count. The
+            # `False` says the result is not trustworthy; the parent reports
+            # it exactly as the serial path would.
+            return None
+        if loaded.sha256 != expected:
+            # The parent read this file and computed its hash; the worker
+            # read it again and got something else. That happens when
+            # anything mutates the tree between the two reads -- a
+            # postinstall that has already run, a dev server, a concurrent
+            # job on a shared workspace, or a racer committed as part of the
+            # payload.
+            #
+            # Returning the findings anyway would have them cached under the
+            # parent's key, so `{}` becomes the permanent cached result for
+            # the malicious content's own hash and every later scan of that
+            # exact content on that machine is a silent hit. The engine's
+            # docstring claims a cache hit is provably identical to a cold
+            # run; this is where that stopped being true.
+            return None
+        return loaded
+
+    @staticmethod
+    def _inspect_batch_timed(
+        batch: list[WorkItem], root: str, deadline: float | None = None
+    ) -> tuple[list[WorkerResult], dict[str, float]]:
+        """`_inspect_batch`, with the CPU time each detector spent on it (`DetectorClock`)."""
+        from cordon_scanner.engine.detector_clock import DetectorClock
+
+        # The clock follows the scan that asked for it, not this worker's environment: a warm pool's
+        # workers may have started before the scan turned the clock on.
+        from cordon_scanner.foundation.collector import ScanCaches
+
+        try:
+            with DetectorClock.on():
+                out = ParallelScanner._inspect_batch(batch, root, deadline, empty=False)
+            return out, DetectorClock.taken()
+        finally:
+            ScanCaches.after_scan()
+
+    @staticmethod
+    def _inspected(
+        unit: Any, relative: str, root: str, ctx: Any, detectors: tuple[Any, ...]
+    ) -> tuple[list[dict[str, Any]], bool, bool, Coverage]:
+        """One file's findings as they cross back to the parent, whether the file stayed the same
+        while it was read, whether its inspection stayed within it (`ScanCache.watch`), and its
+        `Coverage`."""
+        from cordon_scanner.engine.cache import ScanCache
+
+        with ScanCache.watch(root, relative) as watch:
+            produced, windowed, intact, coverage = ParallelScanner._inspect_unit(
+                unit, ctx, detectors
+            )
+        if not intact:
+            return [], False, False, FULL
+        produced.extend(windowed)
+        findings: list[dict[str, Any]] = [
+            # The same per-file hash the serial path records, and recorded
+            # here too because `test_parallel_matches_serial_exactly` is
+            # what this codebase has instead of hoping the two agree.
+            f.with_file_hash(unit.content.sha256).to_dict()
+            if f.location.path == relative
+            else f.to_dict()
+            for f in produced
+        ]
+        return findings, True, not watch.reached, coverage
+
+    @staticmethod
+    def _inspect_unit(
+        unit: Any, ctx: Any, detectors: tuple[Any, ...]
+    ) -> tuple[list[Any], list[Finding], bool, Coverage]:
+        """One unit inspected inside the worker as this process inspects one: each detector through
+        `Detection.run` (a detector that raises is DETECTOR.FAILED, a finding placed in another file
+        is dropped and named), the judge last, then the windows past its prefix. Into the unit's own
+        accumulator, whose completeness goes back with the findings: a gap a worker found is the
+        parent's gap too. One implementation for both, so the two cannot drift."""
+        from cordon_scanner.detect.registry import JudgeGate
+        from cordon_scanner.engine.pipeline.accumulator import Accumulator
+        from cordon_scanner.engine.window_pass import WindowPass
+
+        state = ParallelScanner._worker
+        assert state is not None  # noqa: S101 - a worker has its state before its first unit
+        engine = state.engine
+        acc = Accumulator()
+        produced: list[Any] = []
+
+        def inspect(detector: Any, part: Any) -> list[Any]:
+            return list(engine.detection.run(detector, part, ctx, acc))
+
+        active = []
+        for detector in JudgeGate.last(list(detectors)):
+            # The judge on the grey band only, after the rest: as the serial path.
+            if getattr(detector, "id", "") == JudgeGate.ID and not JudgeGate.wants(produced):
+                continue
+            active.append(detector)
+            produced.extend(inspect(detector, unit))
+        # The rest of an oversized file, a window at a time: the call the serial path makes.
+        windowed, intact = WindowPass.run(unit, active, inspect, produced)
+        ParallelScanner._verdict_facts(unit, ctx)
+        # What the parent's profile, intent and reached-flow steps read of the file (item 56, sites
+        # 9 and 10), with the engine's labelling detector as the parent picks it, enabled or not.
+        from cordon_scanner.engine.isolation.analysis_facts import WorkerAnalysis, WorkerSummaries
+
+        WorkerAnalysis.produce(unit, ctx, tuple(engine.detectors))
+        WorkerSummaries.produce(unit)
+        return produced, windowed, intact, (acc.complete, tuple(acc.content_gaps))
+
+    @staticmethod
+    def _verdict_facts(unit: Any, ctx: Any) -> None:
+        """What the package verdict reads of a source file, read here rather than in the parent
+        (item 56): the wanted modules it names and the abilities it shows, as facts."""
+        from cordon_scanner.decide.verdict_features import VerdictFeatures
+        from cordon_scanner.engine.isolation.facts import WorkerFacts
+        from cordon_scanner.engine.pipeline.ceilings import Ceilings
+
+        if not Ceilings.is_verdict_source(unit.path):
+            return
+        named, shows = VerdictFeatures.source_facts(
+            unit.content.raw, getattr(ctx, "verdict_dependency_names", frozenset())
+        )
+        for name in sorted(named):
+            WorkerFacts.add("verdict.modules", name)
+        for name in sorted(shows):
+            WorkerFacts.add("verdict.abilities", name)
+
+
+# ---------------------------------------------------------------------------
+# Worker state
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _WorkerState:
+    """Per-process scanning state, built once at pool start."""
+
+    engine: Any
+    context: Any
+    detectors: tuple[Any, ...] = ()
+    missing: tuple[str, ...] = ()
+    """Detectors the parent asked for that this worker's engine does not build: one handed to
+    `Scanner(detectors=...)` ran in no worker, so its findings and a failure of it went missing and
+    the scan said complete (item 27). Raised by the first batch (`_inspect_batch`), so the pool
+    fails without a traceback per worker and the caller inspects every file in the parent, where
+    every detector runs."""
+
+
+__all__ = [
+    "MAX_WORKERS",
+    "MIN_FILES_FOR_PARALLEL",
+    "ParallelScanner",
+]

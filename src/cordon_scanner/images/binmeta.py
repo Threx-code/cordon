@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import functools
 import io
-import json
 import posixpath
 import re
 import struct
@@ -28,9 +27,10 @@ import zipfile
 import zlib
 from collections.abc import Mapping
 from dataclasses import replace
-from pathlib import Path
 from typing import IO, Final
 
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
+from cordon_scanner.foundation.paths import PackagePaths
 from cordon_scanner.images.langpkgs import LanguagePackage
 
 GO_MAGIC: Final = b"\xff Go buildinf:"
@@ -329,7 +329,7 @@ class BinaryMetadata:
         if not section:
             return []
         try:
-            document = json.loads(zlib.decompressobj().decompress(section, 64 << 20))
+            document = ScannedJson.loads(zlib.decompressobj().decompress(section, 64 << 20))
         except (zlib.error, ValueError):
             return []
         return [
@@ -347,7 +347,7 @@ class BinaryMetadata:
     @staticmethod
     def dotnet(path: str, data: bytes) -> list[LanguagePackage]:
         try:
-            document = json.loads(data)
+            document = ScannedJson.loads(data)
         except ValueError:
             return []
         libraries = document.get("libraries") if isinstance(document, dict) else None
@@ -521,11 +521,11 @@ class KnownGroups:
     @staticmethod
     @functools.lru_cache(maxsize=1)
     def _index() -> dict[str, frozenset[str]]:
-        from cordon_scanner.intel.advisories import ShippedAdvisories
+        from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
 
         groups: dict[str, set[str]] = {}
         try:
-            names = ShippedAdvisories._shipped_raw("maven")
+            names = ShippedAdvisories.records("maven")
         except (OSError, ValueError, KeyError):
             return {}
         for name in names:
@@ -555,10 +555,10 @@ class KnownGroups:
     @staticmethod
     @functools.lru_cache(maxsize=1)
     def _curated() -> dict[str, str]:
-        """Syft's artifact-to-group map (`scripts/syft_java_groups.py`; NOTICE has the source)."""
-        path = Path(__file__).parent / "data" / "java-groups.json"
+        """Syft's artifact-to-group map (`scripts/build/syft_java_groups.py`; NOTICE has the source)."""
+        path = PackagePaths.data("images") / "java-groups.json"
         try:
-            groups = json.loads(path.read_text(encoding="utf-8")).get("groups", {})
+            groups = ScannedJson.loads(path.read_text(encoding="utf-8")).get("groups", {})
         except (OSError, ValueError):
             return {}
         return {str(k): str(v) for k, v in groups.items()} if isinstance(groups, dict) else {}

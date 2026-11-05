@@ -1,5 +1,5 @@
 # Established cargo package names. Generated; do not edit by hand.
-# Regenerate with: python3 scripts/refresh_package_intel.py --only cargo
+# Regenerate with: python3 scripts/refresh/refresh_package_intel.py --only cargo
 # Source:    https://crates.io/api/v1/crates
 # Threshold: 50,000 downloads
 # Fetched:   20,000 candidates, 19,999 kept

@@ -53,7 +53,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - run: pip install -e ".[dev]"
+      - run: pip install --require-hashes -r ci/dev-requirements.txt && pip install --no-deps -e .
 
       - name: Refresh from OSV's bulk export
         # Talks only to osv-vulnerabilities.storage.googleapis.com (see
@@ -64,10 +64,15 @@ jobs:
         # partial run never produces a diff that looks like six ecosystems
         # losing their advisories.
         timeout-minutes: 20
-        run: python3 scripts/build_advisory_db.py
+        run: python3 scripts/build/build_advisory_db.py
+
+      - name: Rebuild each advisory file's look-up table
+        # Each .tbl names the sha256 of the file it indexes and is refused when that differs, so
+        # refreshed data with the old tables would ship tables the scanner will not use.
+        run: python3 scripts/build/build_advisory_tables.py
 
       - name: Check the result is still well formed
-        run: pytest -q tests/unit/test_osv_import.py tests/integration/test_review_advisories.py
+        run: pytest -q tests/unit/intel/advisories/test_osv_import.py tests/integration/test_review_advisories.py
 
       - name: Confirm a known incident is still reachable
         # The failure direction nobody would notice: a refresh that silently
@@ -79,9 +84,9 @@ jobs:
           python - <<'PY'
           import sys
 
-          from cordon_scanner.intel.advisories import AdvisoryDatabase
+          from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
 
-          db = AdvisoryDatabase.bundled()
+          db = ShippedAdvisories.database()
           if not db.matching("npm", "event-stream", "3.3.6"):
               print("::error::event-stream 3.3.6 no longer matches after the refresh")
               sys.exit(1)
@@ -151,7 +156,7 @@ jobs:
           # This asks the narrower question the reviewer actually cares about:
           # did the data move, and if not, is the recorded date stale enough to
           # be worth refreshing on its own.
-          verdict=$(python3 scripts/refresh_movement.py \
+          verdict=$(python3 scripts/refresh/refresh_movement.py \
             --data 'src/cordon_scanner/intel/data/advisories-*.json.gz' \
             --stamp src/cordon_scanner/intel/data/advisories-meta.json \
             --confirm-after-days 30)

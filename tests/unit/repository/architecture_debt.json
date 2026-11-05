@@ -1,0 +1,12 @@
+{
+ "_doc": "Sites that do not meet a design rule yet (tests/unit/repository/test_architecture.py; review 27, 2026-10-30). Entries are only ever deleted or lowered: a fixed site is deleted in the PR that fixes it.",
+ "adapter_order": {},
+ "cycles": {},
+ "detect_on_intel": {},
+ "ecosystem_names": {},
+ "duplicate_classes": {},
+ "class_methods": {},
+ "incohesive_classes": {},
+ "isinstance_chains": {},
+ "hidden_state": {}
+}

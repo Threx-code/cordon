@@ -11,3 +11,4 @@ must_find:
     min_severity: high
   - rule: VULNERABLE.AGENT.ACTION_VERSION.001
     path: .github/workflows/assistant.yml
+hardening: true

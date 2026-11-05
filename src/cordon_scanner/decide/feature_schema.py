@@ -1,0 +1,386 @@
+"""The verdict features' schema version: what a training row was computed by, so a fit never mixes rows
+whose features mean different things.
+
+The verdict model is trained on rows that scans wrote (`verdict.package` and the findings the
+evidence is built from), often by an earlier commit than the one the model ships in. A row is only
+usable when its features were computed the way the shipped scanner computes them, so every verdict
+record carries `schema`, and a fit refuses rows of any other version.
+
+The version is derived, never bumped by hand, from two things:
+
+- the code that turns a scan's facts into features: the abstract syntax tree of each piece listed
+  in `EXTRACTOR`, docstrings removed, so a comment or a docstring edit leaves it alone and any change
+  to what is computed moves it;
+- the static feature names: the package facts of an empty package, the cosmetic facts the model
+  never scores and the coverage rules.
+
+What the detectors find is not part of it. The findings and capability labels a feature is built
+from are the scan's facts, checked row by row wherever rows from two commits are compared.
+
+`version(root)` reads the sources under `root`, the package directory of any checkout, so a row
+written before this field existed can be stamped with the version of the tree that wrote it.
+
+A row holds the raw features. What a model reads is those features folded (`FeatureFold`), in one
+function called by both the fit's reader and the scanner's scoring, and versioned on its own: a
+model records the fold it was fitted at, and scoring refuses one of another fold. Rows keep their
+version, so changing the fold needs no rescan.
+
+    scan ──> FeatureRecord.of ──> verdict.features {schema, raw values} ──> row (raw, kept)
+                    │                                                        │
+                    v                                                        v
+           FeatureFold.apply ──> VerdictModel.score     FeatureRecord.read ──> FeatureFold.apply ──> fit
+                                       ^                                                              │
+                                       └──── model {format 3, fold: FeatureFold.version()} <──────────┘
+"""
+
+from __future__ import annotations
+
+import ast
+import functools
+import hashlib
+import json
+import re
+from typing import TYPE_CHECKING, Any, ClassVar
+
+from cordon_scanner.foundation.paths import PackagePaths
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping
+    from pathlib import Path
+
+    from cordon_scanner.foundation.models import Finding
+
+
+class FeatureSchema:
+    """The schema version of the verdict features a tree computes."""
+
+    #: Each piece of the extractor, as (file under the package, dotted name in that file).
+    EXTRACTOR: ClassVar[tuple[tuple[str, str], ...]] = (
+        ("decide/verdict.py", "VerdictFeatures"),
+        ("engine/engine.py", "Engine._capability_profile"),
+        ("detect/code/reached_flows.py", "ReachedFlows"),
+        ("engine/pipeline/history.py", "History.registry_facts"),
+    )
+    #: Pieces that produce feature values and were written after EXTRACTOR: item 56's worker side
+    #: (the verdict's source facts read in the worker, the shapes the parent accepts them by, and the
+    #: parent's selection of what a worker reads). Hashed where a tree has them, and adding nothing
+    #: where it does not, so a tree from before them keeps the version its rows carry.
+    ADDED: ClassVar[tuple[tuple[str, str], ...]] = (
+        ("engine/parallel.py", "ParallelScanner._verdict_facts"),
+        ("engine/isolation/facts.py", "Shapes"),
+        ("engine/pipeline/ceilings.py", "Ceilings.verdict_dependency_names"),
+        ("engine/pipeline/ceilings.py", "Ceilings.is_verdict_source"),
+        ("engine/pipeline/ceilings.py", "Ceilings.verdict_manifests"),
+        # Sites 9 and 10: the profile's labels and download runs, and the reached-flow facts.
+        ("engine/isolation/analysis_facts.py", "WorkerAnalysis"),
+        ("engine/isolation/analysis_facts.py", "ParentAnalysis"),
+    )
+    PREFIX: ClassVar[str] = "fs1-"
+    #: Where a piece now lives, when it moved after EXTRACTOR recorded it. The version hashes the
+    #: recorded location, not the file: moving code is not a change to the features, so a move must
+    #: not refuse every row computed before it. The code itself is still read and hashed.
+    MOVED: ClassVar[dict[str, str]] = {
+        "decide/verdict.py:VerdictFeatures": "decide/verdict_features.py",
+    }
+
+    #: A version the code hashes to, mapped to the earlier version whose features it computes
+    #: identically, and the identity test that proves it. Item 56 moves reading a file into the
+    #: workers: the extractor's code changes and no feature value does, so a row written after the
+    #: move pools with rows written before it. Admitted only with its test: the suite fails for an
+    #: entry whose test is missing (`test_feature_schema.py::TestTheEquivalences`), and the test
+    #: itself compares the record, vector and score computed both ways.
+    SAME_AS: ClassVar[dict[str, tuple[str, str]]] = {
+        # 56 phase (a), producer 1: the verdict's source facts from the workers (b2d0711f).
+        # Identity: test_verdict_facts.py::TestTheVerdictIsIdentical (record, vector, score ==).
+        # Rows A/B, 1 Nov: a seeded 500-unit npm sample (411 benign, 89 malware) scanned by this tree
+        # and by it without item 56's five commits; 0 differences in 500 on every verdict field and
+        # feature key, findings and exit (outer-layer scratchpad fsab/: base/, new/, compare.py).
+        "fs1-133be8fc1234279d": (
+            "fs1-ea0fb02ccf3bb099",
+            "tests/unit/decide/test_verdict_facts.py::TestTheVerdictIsIdentical",
+        ),
+        # 56 phase (a), sites 9 and 10: the profile's labels and download runs, the intent observer's
+        # per-file half and the reached-flow facts from the workers. Identity:
+        # tests/unit/engine/isolation/test_analysis_facts.py (profile and intent from the workers'
+        # facts equal to the same producer run on each unit's bytes, every malicious corpus sample).
+        # Rows A/B, 2 Nov: the same seeded 500 units scanned by 295b785f and by this tree; 0
+        # differences in 500 on every verdict field and feature key, findings and exit (outer-layer
+        # scratchpad fsab2/).
+        "fs1-6c6f93207f6315c8": (
+            "fs1-ea0fb02ccf3bb099",
+            "tests/unit/engine/isolation/test_analysis_facts.py::TestTheParentReadsTheWorkersFacts",
+        ),
+    }
+
+    @staticmethod
+    def source(path: str, dotted: str) -> str:
+        """The file an EXTRACTOR piece is read from now (`MOVED`), relative to the package."""
+        return FeatureSchema.MOVED.get(f"{path}:{dotted}", path)
+
+    @staticmethod
+    def version(root: Path | None = None, names: list[str] | None = None) -> str:
+        """The version of the features the tree under `root` (a `cordon_scanner` package directory;
+        this one by default) computes. `names` are its static feature names (`names()` of that
+        tree); computed here when not given."""
+        root = PackagePaths.root() if root is None else root
+        digest = hashlib.sha256()
+        for path, dotted in FeatureSchema.EXTRACTOR:
+            # A tree from before a move has the piece where EXTRACTOR recorded it.
+            moved = root / FeatureSchema.source(path, dotted)
+            node = FeatureSchema._node(moved if moved.is_file() else root / path, dotted)
+            digest.update(f"{path}:{dotted}\n".encode())
+            digest.update(FeatureSchema.dump(FeatureSchema._without_docstrings(node)).encode())
+        for path, dotted in FeatureSchema.ADDED:
+            if not (root / path).is_file():
+                continue
+            try:
+                node = FeatureSchema._node(root / path, dotted)
+            except LookupError:
+                continue  # a tree from before the piece was written
+            digest.update(f"{path}:{dotted}\n".encode())
+            digest.update(FeatureSchema.dump(FeatureSchema._without_docstrings(node)).encode())
+        listed = FeatureSchema.names() if names is None else names
+        digest.update(json.dumps(sorted(listed)).encode())
+        return FeatureSchema.equivalent(FeatureSchema.PREFIX + digest.hexdigest()[:16])
+
+    @staticmethod
+    def equivalent(computed: str) -> str:
+        """The version a computed one stands for: its `SAME_AS` pin, one step, or itself."""
+        pinned = FeatureSchema.SAME_AS.get(computed)
+        return pinned[0] if pinned is not None else computed
+
+    @staticmethod
+    def computed(root: Path | None = None) -> str:
+        """The version the tree's code hashes to before any `SAME_AS` pin: what a pooling fit
+        records beside the version it pooled under."""
+        held, FeatureSchema.SAME_AS = FeatureSchema.SAME_AS, {}
+        try:
+            return FeatureSchema.version(root)
+        finally:
+            FeatureSchema.SAME_AS = held
+
+    @staticmethod
+    @functools.cache
+    def current() -> str:
+        """This package's version, computed once: the code it is derived from does not change
+        under a running process (process-wide by design, not a per-scan cache)."""
+        return FeatureSchema.version()
+
+    @staticmethod
+    def names() -> list[str]:
+        """The static feature names: an empty package's facts, the cosmetic facts and the coverage
+        rules' axes."""
+        from cordon_scanner.decide.verdict_features import VerdictFeatures
+
+        package = VerdictFeatures.package([], {}, [])
+        return sorted(
+            {
+                *(f"pkg:{name}" for name in package),
+                *(f"cosmetic:{name}" for name in VerdictFeatures.COSMETIC),
+                *(f"cov:{axis}" for axis in VerdictFeatures.COVERAGE_RULES.values()),
+            }
+        )
+
+    @staticmethod
+    def _node(path: Path, dotted: str) -> ast.AST:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        node: ast.AST = tree
+        for part in dotted.split("."):
+            found = next(
+                (
+                    child
+                    for child in ast.iter_child_nodes(node)
+                    if isinstance(child, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef)
+                    and child.name == part
+                ),
+                None,
+            )
+            if found is None:
+                raise LookupError(f"{dotted} is not defined in {path}: the extractor list is stale")
+            node = found
+        return node
+
+    #: Fields Python 3.12 added to nodes the hashed code has, written as 3.12 writes them where an
+    #: older Python has no such field.
+    ADDED_IN_312: ClassVar[dict[str, str]] = {
+        "FunctionDef": "type_params",
+        "AsyncFunctionDef": "type_params",
+        "ClassDef": "type_params",
+    }
+
+    #: Fields a Python after 3.12 added, left out at the default it means "as 3.12 had it": 3.15's
+    #: `is_lazy` on an import (PEP 810) is 0 on every import that is not lazy, and a lazy one keeps it.
+    ADDED_AFTER_312: ClassVar[dict[tuple[str, str], object]] = {
+        ("Import", "is_lazy"): 0,
+        ("ImportFrom", "is_lazy"): 0,
+    }
+
+    @staticmethod
+    def dump(node: ast.AST) -> str:
+        """`ast.dump` as Python 3.12 writes it, on every supported Python: 3.13 began leaving out
+        empty fields, 3.11 has no `type_params` and 3.15 adds `is_lazy`, which moved the version of
+        an unchanged tree (fs1-ea0fb02ccf3bb099 on 3.12, fs1-5b52138d82821d4a on 3.13 and 3.14,
+        fs1-0ecd42e235e9719e on 3.11, fs1-fcfb8b0185c2e512 on 3.15). Byte-identical to 3.12's
+        `ast.dump` on 3.11 to 3.15 for every hashed piece."""
+
+        def text(value: object) -> str:
+            if isinstance(value, ast.AST):
+                kind = type(value)
+                fields = list(value._fields)
+                added = FeatureSchema.ADDED_IN_312.get(kind.__name__)
+                if added and added not in fields:
+                    fields.append(added)
+                parts = []
+                for name in fields:
+                    field = getattr(value, name, [])
+                    if field is None and getattr(kind, name, ...) is None:
+                        continue  # an optional field left out, as 3.12 leaves it out
+                    default = FeatureSchema.ADDED_AFTER_312.get((kind.__name__, name), ...)
+                    if default is not ... and field == default:
+                        continue  # a newer Python's field, at the value 3.12 meant without it
+                    parts.append(f"{name}={text(field)}")
+                return f"{kind.__name__}({', '.join(parts)})"
+            if isinstance(value, list):
+                return f"[{', '.join(text(item) for item in value)}]"
+            return repr(value)
+
+        return text(node)
+
+    @staticmethod
+    def _without_docstrings(node: ast.AST) -> ast.AST:
+        """A copy of `node` with every docstring removed, comments being gone already."""
+        copy = ast.parse(ast.unparse(node))
+        for child in ast.walk(copy):
+            if isinstance(
+                child, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef | ast.Module
+            ):
+                body = child.body
+                if (
+                    body
+                    and isinstance(body[0], ast.Expr)
+                    and isinstance(body[0].value, ast.Constant)
+                    and isinstance(body[0].value.value, str)
+                ):
+                    child.body = body[1:] or [ast.Pass()]
+        return copy
+
+
+class FeatureScope:
+    """Which features a user's scan computes. The code and binary features (`CodeFeatures`,
+    `BinaryFeatures`: `pkg:code_<place>_(api|apih|tok)_*`, `pkg:exe_*`) are computed only under
+    `CORDON_MEASURE_FEATURES=1` (`ReachedFlows.of`), which a user's scan never sets, so a model fitted
+    on them would read zeros on every scan. A fit reads only what `computed` allows."""
+
+    #: Folded names keep these prefixes, so a folded measure-only feature is caught too.
+    MEASURE_ONLY: ClassVar[re.Pattern[str]] = re.compile(
+        r"^pkg:(?:code_(?:install|import|closure)_(?:api|apih|tok)_|exe_)"
+    )
+
+    @staticmethod
+    def computed(name: str) -> bool:
+        """Whether a user's scan computes the feature `name`."""
+        return FeatureScope.MEASURE_ONLY.match(name) is None
+
+
+class FeatureFold:
+    """The hashed code features folded to WIDTH buckets: `pkg:code_<place>_tok_<h>` and
+    `pkg:code_<place>_apih_<h>` (h < 2**18, `CodeFeatures.HASH_MOD`) become `..._f<h mod WIDTH>`,
+    colliding counts summed; every other feature as it is.
+
+    Applied only where features reach a model: the fit's reader (`FeatureRecord.read`) and the
+    scanner's scoring (`Verdict.decide`, before `VerdictModel.score`), so a model is scored on the
+    features it was fitted on. WIDTH was measured (2026-10-30, out-of-fold, line at 2% benign,
+    the fit's gradient boosting): skills recall 71.72% at 512 against 71.91% [70.89, 72.90] unfolded,
+    npm 83.98% against 84.18% [83.14, 85.17]; the smallest width inside both intervals."""
+
+    WIDTH: ClassVar[int] = 512
+    HASHED: ClassVar[re.Pattern[str]] = re.compile(r"^(pkg:code_[a-z]+_(?:tok|apih))_(\d+)$")
+    PREFIX: ClassVar[str] = "ff1-"
+
+    @staticmethod
+    def apply(values: Mapping[str, float]) -> dict[str, float]:
+        """`values` with the hashed code features folded."""
+        out: dict[str, float] = {}
+        for name, value in values.items():
+            found = FeatureFold.HASHED.match(name)
+            key = f"{found.group(1)}_f{int(found.group(2)) % FeatureFold.WIDTH}" if found else name
+            out[key] = out.get(key, 0.0) + value
+        return out
+
+    @staticmethod
+    @functools.cache
+    def version() -> str:
+        """What a model fitted on folded features was fitted at: the row version, the width and this
+        class's code. A model records it (`stamp`) and scoring refuses one of another version."""
+        digest = hashlib.sha256()
+        digest.update(f"{FeatureSchema.current()}\nwidth={FeatureFold.WIDTH}\n".encode())
+        node = FeatureSchema._node(PackagePaths.root() / "decide/feature_schema.py", "FeatureFold")
+        digest.update(FeatureSchema.dump(FeatureSchema._without_docstrings(node)).encode())
+        return FeatureFold.PREFIX + digest.hexdigest()[:16]
+
+    @staticmethod
+    def stamp() -> dict[str, Any]:
+        """What a fit writes into the model it makes: the rows' version, the width, the fold."""
+        return {
+            "schema": FeatureSchema.current(),
+            "width": FeatureFold.WIDTH,
+            "fold": FeatureFold.version(),
+        }
+
+
+class FeatureRecord:
+    """The features the verdict model reads, built in one place: what a scan's verdict record
+    carries (`verdict.features`) and what a fit trains on. Nothing else reaches the model."""
+
+    @staticmethod
+    def of(findings: Iterable[Finding], package: dict[str, float]) -> dict[str, float]:
+        """The features of a scan's findings and package facts."""
+        from cordon_scanner.decide.verdict_features import VerdictFeatures
+
+        return VerdictFeatures.evidence(
+            (
+                (f.rule_id, int(f.severity), int(f.confidence), str(f.category), f.location.path)
+                for f in findings
+            ),
+            package,
+        )
+
+    @staticmethod
+    def read(
+        row: dict[str, Any], producer: str | None = None
+    ) -> tuple[str | None, dict[str, float]]:
+        """A training row's (schema, features), the features folded as scoring folds them
+        (`FeatureFold`): its own record, or for a row written before the record existed, the same
+        features built from what it recorded (its findings as [rule, severity, confidence,
+        category, path, ...] and `verdict.package`). The schema is the row's own (rows hold raw
+        features); a rebuilt row has none, so it is stamped `producer`, the version of the tree
+        that wrote it (`FeatureSchema.version` of that checkout), and a fit can refuse a mix. `None`
+        when the caller does not know it."""
+        schema, values = FeatureRecord._raw(row)
+        return (producer if schema is None else schema), FeatureFold.apply(values)
+
+    @staticmethod
+    def _raw(row: dict[str, Any]) -> tuple[str | None, dict[str, float]]:
+        from cordon_scanner.decide.verdict_features import VerdictFeatures
+        from cordon_scanner.foundation.models import Confidence, Severity
+
+        verdict = row.get("verdict") or {}
+        record = verdict.get("features")
+        if isinstance(record, dict) and isinstance(record.get("values"), dict):
+            return record.get("schema"), dict(record["values"])
+        return None, VerdictFeatures.evidence(
+            (
+                (
+                    f[0],
+                    int(Severity[f[1].upper()]),
+                    int(Confidence[f[2].upper()]),
+                    f[3],
+                    f[4] or "",
+                )
+                for f in row.get("findings", [])
+            ),
+            verdict.get("package") or {},
+        )
+
+
+__all__ = ["FeatureFold", "FeatureRecord", "FeatureSchema", "FeatureScope"]

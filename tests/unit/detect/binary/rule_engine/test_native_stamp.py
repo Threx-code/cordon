@@ -1,0 +1,113 @@
+"""A native anchor module from another build is not used: it falls back to the Python matcher with
+the reason said, never loading and then raising mid-scan (item 17; design note 17-native-stamp.md).
+Before, `Native.load` took any importable `_anchors`, so a stale build without `text_hits`, or with
+another interface, was loaded and failed on its first call."""
+
+from __future__ import annotations
+
+import sys
+import types
+
+from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Native
+
+
+class StampKit:
+    @staticmethod
+    def stub(monkeypatch, *, abi: int | None, drop: tuple[str, ...] = ()) -> None:
+        module = types.ModuleType("cordon_scanner._native._anchors")
+        automaton = type(
+            "Automaton", (), {"present": lambda self, data: (), "positions": lambda self, *a: ()}
+        )
+        for name, value in (
+            ("Automaton", automaton),
+            ("check_text", lambda *a: b""),
+            ("text_hits", lambda *a: ((), ())),
+            ("hex_hits", lambda *a: ((), ())),
+        ):
+            if name not in drop:
+                setattr(module, name, value)
+        if abi is not None:
+            module.ABI = abi
+        monkeypatch.setitem(sys.modules, "cordon_scanner._native._anchors", module)
+        # `from cordon_scanner._native import _anchors` reads the package's attribute first, which a
+        # real build already set, so the stub replaces it there too
+        import cordon_scanner._native as package
+
+        monkeypatch.setattr(package, "_anchors", module, raising=False)
+        monkeypatch.delenv("CORDON_NO_NATIVE", raising=False)
+
+
+class TestAModuleFromAnotherBuildIsNotUsed:
+    def test_one_with_no_stamp_falls_back(self, monkeypatch) -> None:
+        StampKit.stub(monkeypatch, abi=None)
+        module, why, reason = Native.load()
+        assert module is None
+        assert reason == "stale"
+        assert "another build" in why
+
+    def test_one_with_another_stamp_falls_back(self, monkeypatch) -> None:
+        StampKit.stub(monkeypatch, abi=Native.ABI + 1)
+        module, why, reason = Native.load()
+        assert module is None
+        assert reason == "stale"
+        assert f"expected {Native.ABI}" in why
+
+    def test_one_missing_a_function_falls_back(self, monkeypatch) -> None:
+        StampKit.stub(monkeypatch, abi=Native.ABI, drop=("hex_hits",))
+        module, why, reason = Native.load()
+        assert module is None
+        assert reason == "stale"
+        assert "hex_hits" in why
+
+    def test_one_whose_automaton_lacks_a_method_falls_back(self, monkeypatch) -> None:
+        StampKit.stub(monkeypatch, abi=Native.ABI)
+        import cordon_scanner._native as package
+
+        package._anchors.Automaton = type("Automaton", (), {})
+        module, why, reason = Native.load()
+        assert module is None
+        assert reason == "stale"
+        assert "positions" in why or "present" in why
+
+    def test_a_matching_module_is_used(self, monkeypatch) -> None:
+        StampKit.stub(monkeypatch, abi=Native.ABI)
+        module, why, reason = Native.load()
+        assert module is not None
+        assert (why, reason) == ("native", "native")
+
+
+class TestAStaleBuildSaysSo:
+    """A fallback is about 9x slower in match time, so a scan says which matcher it used, and a stale
+    build's scan says why on stderr, for a pipeline that never runs --version (the outer-layer
+    team's review of note 17)."""
+
+    def test_the_report_names_its_matcher(self, tmp_path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.foundation.config.settings import Config
+
+        (tmp_path / "index.js").write_text("module.exports = 1;\n", encoding="utf-8")
+        result = Scanner(Config.default().with_overrides(use_cache=False, offline=True)).scan(
+            tmp_path
+        )
+        assert "anchor matcher" in result.to_dict()["matcher"]
+
+    def test_a_stale_build_warns_once_per_scan(self, monkeypatch, capsys) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton
+
+        # Decided by the reason code alone: the wording of WHY doesn't matter.
+        monkeypatch.setattr(Automaton, "MODULE", None)
+        monkeypatch.setattr(Automaton, "REASON", "stale")
+        monkeypatch.setattr(Automaton, "WHY", "any wording at all")
+        Scanner._say_a_stale_matcher()
+        assert capsys.readouterr().err.count("cordon: warning:") == 1
+
+    def test_a_build_not_made_says_nothing(self, monkeypatch, capsys) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton
+
+        monkeypatch.setattr(Automaton, "MODULE", None)
+        monkeypatch.setattr(Automaton, "REASON", "absent")
+        monkeypatch.setattr(Automaton, "WHY", "words that say another build, which must not matter")
+        Scanner._say_a_stale_matcher()
+        assert capsys.readouterr().err == ""

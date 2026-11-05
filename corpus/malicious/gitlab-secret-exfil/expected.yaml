@@ -13,5 +13,6 @@ description: >
   says. Medium is what it can support.
 must_find:
   - rule: SUSPECT.CI.SECRET_EGRESS.001
-    min_severity: medium
+    min_severity: low  # recorded unless the destination is untrusted (a drop point, raw IP, /dev/tcp): a release job has this shape
     category: suspicious
+hardening: true

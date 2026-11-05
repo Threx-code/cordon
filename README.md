@@ -1,318 +1,165 @@
+<!-- mcp-name: io.github.threx-code/cordon -->
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Threx-code/cordon/main/docs/assets/logo-dark.svg">
-  <img src="https://raw.githubusercontent.com/Threx-code/cordon/main/docs/assets/logo-light.svg" alt="Cordon" width="260">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/logo-dark.svg">
+  <img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/logo-light.svg" alt="Cordon" width="240">
 </picture>
 
-# Cordon
+**A supply-chain security scanner that reads every dependency before it runs.**
 
-[![CI](https://github.com/Threx-code/cordon/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Threx-code/cordon/actions/workflows/ci.yml)
+[![checks](https://github.com/Threx-code/cordon/actions/workflows/checks.yml/badge.svg?branch=main)](https://github.com/Threx-code/cordon/actions/workflows/checks.yml) [![linux](https://github.com/Threx-code/cordon/actions/workflows/tests-linux.yml/badge.svg?branch=main)](https://github.com/Threx-code/cordon/actions/workflows/tests-linux.yml) [![macos](https://github.com/Threx-code/cordon/actions/workflows/tests-macos.yml/badge.svg?branch=main)](https://github.com/Threx-code/cordon/actions/workflows/tests-macos.yml) [![windows](https://github.com/Threx-code/cordon/actions/workflows/tests-windows.yml/badge.svg?branch=main)](https://github.com/Threx-code/cordon/actions/workflows/tests-windows.yml)
 [![PyPI](https://img.shields.io/pypi/v/cordon-scanner?logo=pypi&logoColor=white)](https://pypi.org/project/cordon-scanner/)
 [![Python](https://img.shields.io/pypi/pyversions/cordon-scanner)](https://pypi.org/project/cordon-scanner/)
-[![Runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen)](https://github.com/Threx-code/cordon/blob/v0.6.0/pyproject.toml)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/Threx-code/cordon/blob/v0.6.0/LICENSE)
-[![Coverage matrix](https://img.shields.io/badge/rules-1%2C385-informational)](https://github.com/Threx-code/cordon/blob/v0.6.0/docs/05-COVERAGE-MATRIX.md)
-[![Ecosystems](https://img.shields.io/badge/ecosystems-28-informational)](https://github.com/Threx-code/cordon/blob/v0.6.0/docs/07-ECOSYSTEMS.md)
+[![Runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen)](https://github.com/Threx-code/cordon/blob/v0.7.0/pyproject.toml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/Threx-code/cordon/blob/v0.7.0/LICENSE)
+[![Coverage matrix](https://img.shields.io/badge/rules-1%2C501-informational)](https://github.com/Threx-code/cordon/blob/v0.7.0/docs/05-COVERAGE-MATRIX.md)
+[![Ecosystems](https://img.shields.io/badge/ecosystems-28-informational)](https://github.com/Threx-code/cordon/blob/v0.7.0/docs/07-ECOSYSTEMS.md)
 
-A language-agnostic software **supply-chain security scanner**. It reads source,
-manifests, lockfiles, build scripts, CI config, Dockerfiles and IaC — and reports
-malicious packages, install-time behaviour, leaked credentials and dependency risk.
+Attackers stopped breaking in and started being installed: a typosquatted package, a release
+pushed with a stolen token, a workflow that prints its secrets, an MCP server that tells your
+coding agent to read `~/.ssh`. Cordon reads all of it before any of it runs: source, manifests,
+lockfiles, build scripts, CI config, Dockerfiles, IaC, container images, and everything a
+repository hands an AI coding agent. It never executes what it scans, it adds no runtime
+dependency to your build, and it works offline.
 
-It also reads what a repository hands an **AI coding agent**: instruction files,
-skills, MCP server configs and their source, hooks and approvals — for every agent
-in common use — against Cordon's own rules and 815 of the
-[Agent Threat Rules](https://github.com/Agent-Threat-Rule/agent-threat-rules). An
-optional judge (`--judge`) has a language model read that text for wordings no rule
-anticipated ([tutorial 18](https://github.com/Threx-code/cordon/blob/v0.6.0/tutorials/18-agents-and-mcp.md)).
-
-Twenty-eight ecosystems: package managers from npm and PyPI to Conan, Hex, CRAN,
-Hackage and Bazel, and GitHub Actions, Terraform, Helm, Ansible, Nix, Homebrew and
-container images — the file-by-file list, and which checks each one gets, is in
-[docs/07-ECOSYSTEMS.md](https://github.com/Threx-code/cordon/blob/v0.6.0/docs/07-ECOSYSTEMS.md).
-
-```
-   ┌─────────────────────────────────────────────────────────────────────────┐
-   │  Cordon READS.  It never executes the code it scans, and never sends    │
-   │  anything about your code or your dependencies anywhere unless you      │
-   │  ask.  By default it asks OSV which advisories changed since its        │
-   │  intel was built: the same requests for everyone, naming no package.    │
-   │  --offline makes no request at all.  Safe on hostile packages, safe     │
-   │  in an air-gap, and its results are reproducible.                       │
-   └─────────────────────────────────────────────────────────────────────────┘
-```
+## Sixty seconds
 
 ```bash
 pipx install cordon-scanner
 cordon-scanner scan .
 ```
 
-```
-   scan .
-     │  walk        identify            run every            sort, dedupe,
-     │  the tree    the target          applicable check     score
-     ▼     │            │                    │                   │
-   repo ───┴──▶ languages/manifests ──▶ detectors ──▶ findings ──▶ report
-   dir/file/archive     lockfiles/CI                              text·json·sarif·…
-```
+<img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/terminal.svg" alt="cordon-scanner in a terminal: its home screen, then a repository scanned (nine findings fail the build), an npm package fetched and verified (clean), and a container image (414 findings across its OS packages)" width="100%">
 
-> **New here?** The
-> [tutorials](https://github.com/Threx-code/cordon/tree/v0.6.0/tutorials) are
-> short, diagram-first walkthroughs — one per use case.
+<sub>A recording of the scanner itself, not a mock-up: `scripts/build/record_terminal.sh` records
+it (the first command with `FORCE_COLOR=1`, so the pipe keeps its colour) and
+`scripts/build/render_terminal.py` replays it. The repository scanned is built from the project's
+own test corpus.</sub>
 
----
+## What it catches
 
-## What it looks like
+| | What Cordon finds | For example |
+|---|---|---|
+| **Malware** | Install hooks that steal, droppers, wipers, poisoned models, obfuscated loaders, known-malicious releases | `MALWARE.EXFIL.001` |
+| **Leaked credentials** | Cloud keys, tokens and private keys, even split across string literals; reported by hash, never printed | `SECRET.AWS.ACCESS_KEY.001` |
+| **AI agents and MCP** | Instruction files, skills, MCP servers and their source, hooks and approvals | `SUSPECT.MCP.TOOL_DESCRIPTION.001` |
+| **CI/CD pipelines** | Secrets sent out, expression injection, untrusted checkouts, on GitHub, GitLab, Jenkins and more | `MALWARE.CI.SECRET_EXFIL.001` |
+| **Dependencies** | Known-malicious and exploited versions, typosquats, provenance that does not verify, release diffs | `VULNERABLE.DEPENDENCY.EXPLOITED.001` |
+| **Containers and IaC** | Images' OS packages, Dockerfiles, Kubernetes, Terraform, Helm and Ansible | `SUSPECT.K8S.RBAC_WILDCARD.001` |
 
-A repository with a poisoned model and an agent workflow, an npm and a PyPI package
-read before they are installed, a container image, CI pipelines, and the pre-commit
-guard — on a loop:
+Every rule that ships, by threat domain:
+[docs/05-COVERAGE-MATRIX.md](https://github.com/Threx-code/cordon/blob/v0.7.0/docs/05-COVERAGE-MATRIX.md).
 
-![cordon-scanner in a terminal: a repository, packages, an image, CI pipelines and a pre-commit hook, scanned one after another](https://raw.githubusercontent.com/Threx-code/cordon/main/docs/assets/terminal.svg)
+### Twenty-eight ecosystems
 
-The sessions are the website's terminal, recorded from real scans, and the image is
-drawn from the same recordings. It is an SVG, not a GIF — text, so it can be read in a
-diff before it is trusted, and a tool that flags committed binaries should not ship one
-to advertise itself. The single, static capture is
-[docs/assets/demo.svg](https://raw.githubusercontent.com/Threx-code/cordon/main/docs/assets/demo.svg)
-(`python scripts/render_demo.py`); the animation is redrawn from the site's sessions by
-`scripts/readme-terminal/render.mjs` in the frontend repository.
+<!-- marks:packages -->
+<table>
+<tr><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/npm.svg" width="20" height="20" align="center" alt=""> npm</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/pypi.svg" width="20" height="20" align="center" alt=""> PyPI</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/cargo.svg" width="20" height="20" align="center" alt=""> Cargo</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/gomod.svg" width="20" height="20" align="center" alt=""> Go modules</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/maven.svg" width="20" height="20" align="center" alt=""> Maven</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/gradle.svg" width="20" height="20" align="center" alt=""> Gradle</td></tr>
+<tr><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/nuget.svg" width="20" height="20" align="center" alt=""> NuGet</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/rubygems.svg" width="20" height="20" align="center" alt=""> RubyGems</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/composer.svg" width="20" height="20" align="center" alt=""> Composer</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/hex.svg" width="20" height="20" align="center" alt=""> Hex</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/pub.svg" width="20" height="20" align="center" alt=""> Pub</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/cocoapods.svg" width="20" height="20" align="center" alt=""> CocoaPods</td></tr>
+<tr><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/swift.svg" width="20" height="20" align="center" alt=""> Swift</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/conan.svg" width="20" height="20" align="center" alt=""> Conan</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/vcpkg.svg" width="20" height="20" align="center" alt=""> vcpkg</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/conda.svg" width="20" height="20" align="center" alt=""> Conda</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/cran.svg" width="20" height="20" align="center" alt=""> CRAN</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/haskell.svg" width="20" height="20" align="center" alt=""> Hackage</td></tr>
+<tr><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/julia.svg" width="20" height="20" align="center" alt=""> Julia</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/opam.svg" width="20" height="20" align="center" alt=""> opam</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/nix.svg" width="20" height="20" align="center" alt=""> Nix</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/homebrew.svg" width="20" height="20" align="center" alt=""> Homebrew</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/bazel.svg" width="20" height="20" align="center" alt=""> Bazel</td></tr>
+</table>
+<!-- /marks -->
 
-```
-  Map of this page
-  ├─ Install ................ pipx · pip · Action · container
-  ├─ Run it ................. what to scan, what to emit, what appears
-  ├─ Configure it ........... the file, the four layers, limits
-  ├─ Environments ........... local · pre-commit · CI · monorepo · air-gap · enterprise
-  ├─ Tuning ................. the noise ladder, least-blunt first
-  ├─ Adopting ............... baseline the debt, gate on the new
-  ├─ Accuracy ............... measured, reproducible
-  ├─ What fails a build ..... compromise fails; posture is reported
-  ├─ Exit codes ............. 0 clean · 1 findings · 2 broke · 3 config · 4 incomplete
-  └─ Why this exists ........ the attack, and the three invariants
-```
+<!-- marks:infrastructure -->
+<table>
+<tr><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/githubactions.svg" width="20" height="20" align="center" alt=""> GitHub Actions</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/terraform.svg" width="20" height="20" align="center" alt=""> Terraform</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/helm.svg" width="20" height="20" align="center" alt=""> Helm</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/ansible.svg" width="20" height="20" align="center" alt=""> Ansible</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/docker.svg" width="20" height="20" align="center" alt=""> container images</td></tr>
+</table>
+<!-- /marks -->
 
----
+The file-by-file list, and which checks each ecosystem gets:
+[docs/07-ECOSYSTEMS.md](https://github.com/Threx-code/cordon/blob/v0.7.0/docs/07-ECOSYSTEMS.md).
+
+### Seventeen AI coding agents
+
+<!-- marks:agents -->
+<table>
+<tr><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/claude.svg" width="20" height="20" align="center" alt=""> Claude Code</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/cursor.svg" width="20" height="20" align="center" alt=""> Cursor</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/copilot.svg" width="20" height="20" align="center" alt=""> GitHub Copilot</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/windsurf.svg" width="20" height="20" align="center" alt=""> Windsurf</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/gemini.svg" width="20" height="20" align="center" alt=""> Gemini CLI</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/openai.svg" width="20" height="20" align="center" alt=""> OpenAI Codex</td></tr>
+<tr><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/kiro.svg" width="20" height="20" align="center" alt=""> Kiro</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/aws.svg" width="20" height="20" align="center" alt=""> Amazon Q</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/jetbrains.svg" width="20" height="20" align="center" alt=""> JetBrains Junie</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/augment.svg" width="20" height="20" align="center" alt=""> Augment</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/trae.svg" width="20" height="20" align="center" alt=""> Trae</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/roo.svg" width="20" height="20" align="center" alt=""> Roo Code</td></tr>
+<tr><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/continue.svg" width="20" height="20" align="center" alt=""> Continue</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/zed.svg" width="20" height="20" align="center" alt=""> Zed</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/goose.svg" width="20" height="20" align="center" alt=""> goose</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/opencode.svg" width="20" height="20" align="center" alt=""> opencode</td><td><img src="https://raw.githubusercontent.com/Threx-code/cordon/v0.7.0/docs/assets/marks/cline.svg" width="20" height="20" align="center" alt=""> Cline</td></tr>
+</table>
+<!-- /marks -->
+
+For each, Cordon reads the instruction files, skills, MCP server configs and their source, hooks
+and approvals, against its own rules and 815 of the
+[Agent Threat Rules](https://github.com/Agent-Threat-Rule/agent-threat-rules). An optional judge
+(`--judge`) has a language model read that text for wordings no rule anticipated
+([tutorial 18](https://github.com/Threx-code/cordon/blob/v0.7.0/tutorials/18-agents-and-mcp.md)).
+
+## Measured, not claimed
+
+| | Result |
+|---|---|
+| npm malware blocked by reading its code alone, every release of the set (0.7.0) | **91.08%** of 6,793 |
+| Benign npm packages blocked, every release of the set (0.7.0) | **0.96%** of 34,437 |
+| Real malicious packages (39,328: npm, PyPI, AI skills, IDE extensions; 0.6.0) | **94.2%** detected |
+| The same malware against GuardDog (a fixed-seed draw of 498; 0.6.0) | **95.2%**, against GuardDog's 85.5% |
+| Popular packages wrongly blocked (top 1,000 PyPI + 1,000 npm; 0.6.0) | **1.6%**, against GuardDog's 16.8% |
+| AI-agent attacks (4,034 Agent Threat Rules test cases; 0.6.0) | **97.7%** detected |
+
+Every number is measured against code nobody here wrote, and says the release it was measured
+for. Each measurement, the method behind it and what it is not:
+[docs/08-ACCURACY.md](https://github.com/Threx-code/cordon/blob/v0.7.0/docs/08-ACCURACY.md).
+
+## How it works
+
+1. **Target**: a repository, an archive, a package before you install it, a container image, or git history.
+2. **Identify**: its languages, ecosystems, manifests and lockfiles.
+3. **Detect**: 1,491 rules, code reading, binary analysis and the AI-agent chain.
+4. **Decide**: score, policy and baseline settle what fails the build.
+5. **Report**: text, JSON, SARIF, JUnit, GitHub annotations, SBOM.
+
+Cordon never executes the code it scans, and sends nothing about your code anywhere unless you ask.
+By default it asks OSV which advisories changed since its intel was built, naming no package;
+`--offline` makes no request at all.
 
 ## Install
 
-| Method | Command | Use when |
-|---|---|---|
-| pipx | `pipx install cordon-scanner` | Local development. Isolated, on PATH. |
-| pip | `pip install cordon-scanner` | Inside a virtualenv you already manage. |
-| GitHub Action | `uses: Threx-code/cordon/action@<sha>` | GitHub Actions. |
-| Container | `docker run --rm -v "$PWD:/scan" ghcr.io/threx-code/cordon:<version>` | A container-native pipeline. |
-
-Python 3.11 / 3.12 / 3.13 on Linux, macOS and Windows.
-
-```
-   OPTIONAL EXTRAS — opt-in, and each degrades to a STATED limit, never a crash
-   ┌────────────────────────────────────────────────────────────────────────┐
-   │  base           zero third-party runtime deps                          │
-   │  [ast-js]       tree-sitter → JS/TS semantic rules   (tutorial 13)     │
-   │  [attest]       sigstore    → provenance verification (tutorial 05)    │
-   └────────────────────────────────────────────────────────────────────────┘
-```
-
-```
-   PIN BY DIGEST, NOT BY TAG
-   Action  → @<commit sha>     a tag is mutable; pinning to something the author
-   Image   → @sha256:<digest>  can move defeats the point of running a scanner.
-```
-
-The Action and image are built from the distroless, non-root `Dockerfile` here,
-signed keylessly with `cosign`, and carry SLSA build provenance — the same
-controls the wheel and sdist get.
-
 ```bash
-cordon-scanner --version
-cordon-scanner rules list      # what will run
+pipx install cordon-scanner                    # or: pip install cordon-scanner
+docker run --rm -v "$PWD:/scan" ghcr.io/threx-code/cordon:<version>
 ```
 
----
+Python 3.11 to 3.15 on Linux, macOS and Windows, with zero third-party runtime dependencies. The
+image and the Action are distroless, non-root, signed with `cosign` and carry SLSA provenance; pin
+them by digest, not by tag.
 
-## Run it
+## Into your pipeline
 
-```bash
-cordon-scanner scan .                                  # a directory
-cordon-scanner scan ./package.tgz                      # an archive, read in memory
-cordon-scanner scan . --severity high --fail-on high   # gate a pipeline
+```yaml
+permissions:
+  contents: read          # checkout
+  security-events: write  # upload SARIF
+
+jobs:
+  supply-chain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Threx-code/cordon/action@v0.7.0   # pin to a commit sha in production
+        with:
+          fail-on: high
+          sarif: true
 ```
 
-### What gets scanned
-
-```
-   --exclude 'vendor/**'      skip paths (repeatable)
-   --include 'src/**'         restrict to paths
-   --tracked                  only files git tracks
-   --git-diff origin/main     only what changed vs a ref
-   --staged                   the git INDEX, not the working tree
-
-   WHY --staged for a pre-commit hook
-   ┌──────────────────────────────────────────────────────────────────┐
-   │ a hook reading the WORKING TREE is defeated by: stage a poisoned │
-   │ file → restore the clean one. The poisoned blob commits; the     │
-   │ clean one is scanned. Reading the index closes that.             │
-   └──────────────────────────────────────────────────────────────────┘
-
-   Narrowing applies to FILE analysis only. Dependency & manifest checks always
-   run against the whole tree — a malicious transitive dep appears in no diff.
-```
-
-### What it emits
-
-```
-   -f text                 humans at a terminal (default)
-   -f json                 machine-readable
-   -f sarif:cordon.sarif   code-scanning platforms
-   -f junit:results.xml    CI test reporters
-   -f markdown             PR comments, job summaries
-   -f github               inline annotations on a diff
-
-   -f is repeatable; FMT:PATH writes to a file, bare FMT goes to stdout:
-   cordon-scanner scan . -f github -f sarif:cordon.sarif -f json:result.json
-```
-
-### What appears in the report
-
-```
-   --evidence masked      (default) matched values are masked
-   --evidence hash_only   no snippets — for a widely-readable report (PR, upload)
-   Secret findings are hash-only regardless.  --reachability annotates CVE noise
-   (tutorial 04).  --online adds live registry + provenance checks (tutorial 05).
-
-   --notify slack,teams,webhook   post a failed gate (URLs from CORDON_NOTIFY_*)
-   --clamav /run/clamd.sock       also hand each file to a local ClamAV daemon
-   --judge cordon-cloud           also have a language model read agent-facing text
-   --upload / --cloud-policy      Cordon Cloud: signed results, the org's policy
-```
-
-### Other commands
-
-```
-   inventory .            what is this repo, and the evidence
-   rules list|show|test   what can fire · one rule · run every rule's samples
-   config explain         the settings in effect, and a hash to compare runs by
-   guard install|verify   fail-closed git hooks (tutorial 10); --global for every
-                          repository cloned or created from now on
-   clone URL              clone, scanned from git's objects before checkout
-   pull                   fetch, scan what would be merged, merge only if it passes
-   review --base REF      what a dependency update adds (tutorial 21)
-   baseline create|compare adopt incrementally (tutorial 14)
-   advisories sync        refresh the intel (tutorial 09)
-   bundle create|install  air-gapped install (tutorial 11)
-   sbom generate          CycloneDX / SPDX from the resolved graph
-                          --vulnerabilities  advisory matches, KEV/EUVD marked
-                          --ai               the AI bill of materials (CycloneDX 1.6)
-   intel status|update    how current the signed threat-intel feed is
-   login|logout|whoami    Cordon Cloud sign-in (device flow, SSO)
-   runner                 run cloud scan jobs inside your network, outbound only
-   agent inventory|report this machine's AI agents and MCP servers, for MDM
-```
-
----
-
-## Accuracy, measured
-
-Every number is produced by a script in this repository, against code nobody
-here wrote.
-
-| corpus | size | result |
-|---|---|---|
-| Every known-malicious package record in the intel | **249,646 records**, 287,899 checks, 10 ecosystems | **100%** caught |
-| Packages in real lockfiles, read against Trivy | **190,274 packages, 1,687 lockfiles**, 14 registries | **99.6%** agree (98.9% per lockfile); the rest sorted by cause |
-| Real malicious packages | **39,328** (every DataDog npm, PyPI, AI-skill and IDE-extension sample, and malregistry) | **94.2%** detected; **79.7%** by reading the code alone, the rest by matching a known malicious release |
-| The same malware, against GuardDog | **498** (a fixed-seed draw) | **95.2%** vs GuardDog's 85.5% |
-| Popular packages wrongly blocked | top **1,000 PyPI + 1,000 npm** | **1.6%** vs GuardDog's 16.8% |
-| CVEs agreed with Trivy and OSV-Scanner | **100 lockfiles** | **98.4%**, every disagreement explained |
-| AI-agent attacks, Agent Threat Rules test cases | **4,034 attacks, 289 evasions, 4,369 benign** | **97.7%** detected, 80.6% of evasions, 92.4% of benign left clean |
-| AI-agent configs in real repositories, never tuned on | **372 repositories** | 10.5% warned, **1.1% blocked** (each block read and correct) |
-| Widely used open-source repositories (0.4.0 run) | **1,427** | 85.4% pass the default gate |
-| Reference infrastructure, as its vendors publish it (0.4.0 run) | **13 repos, 20,310 files** | 2,560 findings, 795 blocking |
-| Known-vulnerable releases, by advisory | **940 pins, 11 ecosystems** | 100% reported |
-| What container images contain, against Syft | **175 public images** | **99.9%** of OS packages the same; 95.1% mean per image (adjusted) |
-
-Per ecosystem and per attack technique, with the method for each and what the
-numbers are not: **[docs/08-ACCURACY.md](https://github.com/Threx-code/cordon/blob/v0.6.0/docs/08-ACCURACY.md)**.
-
-## What fails a build, and how to change it
-
-By default a finding fails the build when it says this code is compromised or
-giving something away — malware, leaked credentials, obfuscation, exfiltration.
-A posture choice a project made about its own infrastructure is reported and
-does not fail: a security group open to the internet, `privileged: true`, a
-Dockerfile doing `curl | sh`.
-
-That split, the configuration file, the noise ladder and every exit code:
-**[docs/10-CONFIGURATION.md](https://github.com/Threx-code/cordon/blob/v0.6.0/docs/10-CONFIGURATION.md)**.
-
-Pre-commit, GitHub Actions, GitLab, Jenkins, containers and org-wide policy:
-**[docs/09-INTEGRATIONS.md](https://github.com/Threx-code/cordon/blob/v0.6.0/docs/09-INTEGRATIONS.md)**.
-
-## Using it as a library
-
-```python
-from cordon_scanner import Scanner
-
-scanner = Scanner.for_target("./repository")
-result = scanner.scan("./repository")
-
-for finding in result.findings:
-    print(finding.rule_id, finding.severity, finding.location)
-```
-
-`Scanner.for_target` assembles configuration through the same resolver the CLI
-uses, so the organisation ceiling applies. Everything returned is immutable and
-output is deterministic: identical inputs produce identical findings in a stable order.
-
----
+A finding fails the build when it says the code is compromised or giving something away; a posture
+choice about your own infrastructure is reported, not failed. Exit codes: `0` clean, `1` findings,
+`2` scanner error, `3` configuration error, `4` incomplete. Pre-commit, GitLab, Jenkins and
+org-wide policy: [docs/09-INTEGRATIONS.md](https://github.com/Threx-code/cordon/blob/v0.7.0/docs/09-INTEGRATIONS.md).
 
 ## Documentation
 
-| Document | Contents |
-|---|---|
-| [tutorials/](https://github.com/Threx-code/cordon/tree/v0.6.0/tutorials) | Diagram-first walkthroughs, one per use case: scan, detection, reachability, provenance, CI, air-gap |
-| [docs/01-ARCHITECTURE.md](https://github.com/Threx-code/cordon/blob/v0.6.0/docs/01-ARCHITECTURE.md) | Components, detection engine, rule format, extension points |
-| [docs/02-THREAT-MODEL.md](https://github.com/Threx-code/cordon/blob/v0.6.0/docs/02-THREAT-MODEL.md) | Attacker profiles, trust boundaries, the constraints they imply |
-| [docs/03-INTERFACES.md](https://github.com/Threx-code/cordon/blob/v0.6.0/docs/03-INTERFACES.md) | CLI, configuration and SDK reference; SARIF mapping |
-| [docs/04-OPERATIONS.md](https://github.com/Threx-code/cordon/blob/v0.6.0/docs/04-OPERATIONS.md) | Deployment, rule authoring, performance, release process |
-| [docs/05-COVERAGE-MATRIX.md](https://github.com/Threx-code/cordon/blob/v0.6.0/docs/05-COVERAGE-MATRIX.md) | Every rule that ships, by threat domain and attack category |
-| [docs/06-SANDBOX.md](https://github.com/Threx-code/cordon/blob/v0.6.0/docs/06-SANDBOX.md) | The opt-in component that runs a package in isolation, and what it observes |
-| [docs/07-ECOSYSTEMS.md](https://github.com/Threx-code/cordon/blob/v0.6.0/docs/07-ECOSYSTEMS.md) | Every ecosystem read, the files read for each, and which checks it gets |
-| [docs/08-ACCURACY.md](https://github.com/Threx-code/cordon/blob/v0.6.0/docs/08-ACCURACY.md) | Detection rate by ecosystem and by attack technique, the method behind each number, and what they are not |
-| [docs/09-INTEGRATIONS.md](https://github.com/Threx-code/cordon/blob/v0.6.0/docs/09-INTEGRATIONS.md) | Pre-commit, GitHub Actions, GitLab, Jenkins, containers, org-wide policy |
-| [docs/10-CONFIGURATION.md](https://github.com/Threx-code/cordon/blob/v0.6.0/docs/10-CONFIGURATION.md) | `.cordon.yaml`, what fails a build, the noise ladder, exit codes, adopting on an existing codebase |
-| [docs/11-RATIONALE.md](https://github.com/Threx-code/cordon/blob/v0.6.0/docs/11-RATIONALE.md) | What the other tools do, what they do not, and the gap this sits in |
-| [docs/assets/](https://github.com/Threx-code/cordon/tree/v0.6.0/docs/assets) | The logo, as SVG: wordmark (light and dark), mark, and a filled square for an avatar |
+[Tutorials](https://github.com/Threx-code/cordon/tree/v0.7.0/tutorials) ·
+[Every command](https://github.com/Threx-code/cordon/blob/v0.7.0/tutorials/26-every-command.md) ·
+[Configuration](https://github.com/Threx-code/cordon/blob/v0.7.0/docs/10-CONFIGURATION.md) ·
+[Architecture](https://github.com/Threx-code/cordon/blob/v0.7.0/docs/01-ARCHITECTURE.md) ·
+[Threat model](https://github.com/Threx-code/cordon/blob/v0.7.0/docs/02-THREAT-MODEL.md) ·
+[Interfaces and SDK](https://github.com/Threx-code/cordon/blob/v0.7.0/docs/03-INTERFACES.md) ·
+[Coverage matrix](https://github.com/Threx-code/cordon/blob/v0.7.0/docs/05-COVERAGE-MATRIX.md) ·
+[Ecosystems](https://github.com/Threx-code/cordon/blob/v0.7.0/docs/07-ECOSYSTEMS.md) ·
+[Accuracy](https://github.com/Threx-code/cordon/blob/v0.7.0/docs/08-ACCURACY.md) ·
+[Changelog](https://github.com/Threx-code/cordon/blob/v0.7.0/CHANGELOG.md) ·
+[Contributing](https://github.com/Threx-code/cordon/blob/v0.7.0/CONTRIBUTING.md) ·
+[Security](https://github.com/Threx-code/cordon/blob/v0.7.0/SECURITY.md)
 
-### Project
-
-| Document | Contents |
-|---|---|
-| [CHANGELOG.md](https://github.com/Threx-code/cordon/blob/v0.6.0/CHANGELOG.md) | What changed in each release, and what it changes for you |
-| [CONTRIBUTING.md](https://github.com/Threx-code/cordon/blob/v0.6.0/CONTRIBUTING.md) | How to add a rule, and the evidence one needs before it ships |
-| [GOVERNANCE.md](https://github.com/Threx-code/cordon/blob/v0.6.0/GOVERNANCE.md) | Who decides, and what a change has to prove |
-| [SECURITY.md](https://github.com/Threx-code/cordon/blob/v0.6.0/SECURITY.md) | Reporting a vulnerability in Cordon itself |
-| [SUPPORT.md](https://github.com/Threx-code/cordon/blob/v0.6.0/SUPPORT.md) | Which door to knock on, and what a useful report contains |
-| [CODE_OF_CONDUCT.md](https://github.com/Threx-code/cordon/blob/v0.6.0/CODE_OF_CONDUCT.md) | What is not acceptable, and who to tell |
-| [CITATION.cff](https://github.com/Threx-code/cordon/blob/v0.6.0/CITATION.cff) | How to cite this in research |
-
----
-
-## Status
-
-Beta, and the classifier says so. The detection engine, rule packs, twenty-eight
-ecosystems, container images, the AI-agent chain, reporters, policy layer,
-baselines, git-aware scanning and the advisory layer are implemented and tested;
-`docs/03-INTERFACES.md` separates the commands that ship from those that are
-designed. Interfaces may still change before 1.0, the bundled advisory set is the
-malicious plus high/critical subset of OSV rather than all of it, eleven of the
-twenty-eight ecosystems have no advisory feed to match against at all, and
-reachability is modelled at its import tier, with function-level checks for Go
-(from the symbols its database lists) and for PyPI and npm (from the functions an
-advisory's text names, which can only raise a finding, never lower one) — none of it hidden: `cordon-scanner rules list`
-shows what runs, `docs/07-ECOSYSTEMS.md` shows which checks each ecosystem gets,
-and every reduction in coverage is reported as a finding rather than left for a
-reader to infer.
-
-## Licence
-
-Apache-2.0. See [LICENSE](https://github.com/Threx-code/cordon/blob/v0.6.0/LICENSE) and [NOTICE](https://github.com/Threx-code/cordon/blob/v0.6.0/NOTICE).
+Licensed under Apache-2.0: see [LICENSE](https://github.com/Threx-code/cordon/blob/v0.7.0/LICENSE) and
+[NOTICE](https://github.com/Threx-code/cordon/blob/v0.7.0/NOTICE).

@@ -24,8 +24,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
 
-from cordon_scanner.archive.safe import ArchiveReader
-from cordon_scanner.core.trees import Trees
+from cordon_scanner.foundation.files.trees import Trees
+from cordon_scanner.sources.archive import ArchiveReader
 
 
 class PackageTargetError(ValueError):
@@ -115,7 +115,7 @@ class PackageTarget:
     def _image(cls, rest: str) -> PackageTarget:
         """`name@tag` or `name@sha256:...`, the name led by its registry host where it is not
         Docker Hub's; validated as the Docker client validates a reference."""
-        from cordon_scanner.ecosystems.image import ImageReference
+        from cordon_scanner.ecosystems.infra.image import ImageReference
 
         name, at, version = rest.rpartition("@")
         if not at:
@@ -144,7 +144,7 @@ class PackageTarget:
     @contextmanager
     def fetched(self) -> Iterator[Path]:
         """The verified archive on disk in a private directory for the length of the block."""
-        from cordon_scanner.intel.registry_client import RegistryClient, RegistryError
+        from cordon_scanner.intel.registries.registry_client import RegistryClient, RegistryError
 
         if self.ecosystem == "image":
             with self._pulled_image() as pulled:
@@ -169,8 +169,8 @@ class PackageTarget:
     @contextmanager
     def _pulled_image(self) -> Iterator[Path]:
         """The image as an OCI layout archive, every blob checked against its digest."""
-        from cordon_scanner.ecosystems.image import ImageReference
-        from cordon_scanner.intel.registry_image import RegistryImage, RegistryImageError
+        from cordon_scanner.ecosystems.infra.image import ImageReference
+        from cordon_scanner.intel.registries.registry_image import RegistryImage, RegistryImageError
 
         reference = ImageReference.parse(self.name)
         if reference is None:

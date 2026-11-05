@@ -23,4 +23,5 @@ dependencies:
 findings:
   - {rule: POLICY.DEPENDENCY.MUTABLE_REF.001, message: flask}
   - {rule: POLICY.DEPENDENCY.MUTABLE_REF.001, message: requests}
-  - {rule: SUSPECT.SUBMODULE.UNTRUSTED.001, path: .gitmodules}
+# No SUSPECT.SUBMODULE.UNTRUSTED.001: every submodule here is fetched over https, ssh or a relative
+# path. The rule reports an unauthenticated transport (http://, git://), which none of these is.

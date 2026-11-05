@@ -26,6 +26,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
+from cordon_scanner.foundation.files.atomic import AtomicFile
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
+
 if TYPE_CHECKING:
     from cordon_scanner.images.osv import Matches, Query
 
@@ -130,7 +133,7 @@ class DistroVersions:
             letter = ord(match.group(2)) if match.group(2) else 0
             suffixes = tuple(
                 (
-                    DistroVersions._APK_SUFFIX.get(re.sub(r"\d+$", "", s), 4),
+                    DistroVersions._APK_SUFFIX.get(re.sub(r"(?<!\d)\d+$", "", s), 4),
                     int(re.sub(r"^\D+", "", s) or 0),
                 )
                 for s in match.group(3).split("_")
@@ -195,7 +198,7 @@ class DistroDatabase:
 
     @staticmethod
     def directory() -> Path:
-        from cordon_scanner.intel.advisories import AdvisoryFiles
+        from cordon_scanner.intel.advisories.advisories import AdvisoryFiles
 
         return AdvisoryFiles.user_sync_dir() / "os"
 
@@ -277,7 +280,7 @@ class DistroDatabase:
     @staticmethod
     def sync(family: str, *, tmp_dir: Path) -> int:
         """Download one family's export and write its compact index. Returns the record count."""
-        from cordon_scanner.intel import osv_import
+        from cordon_scanner.intel.advisories import osv_import
 
         export = FAMILIES[family]
         archive = tmp_dir / f"os-{family}.zip"
@@ -294,7 +297,7 @@ class DistroDatabase:
                     if not info.filename.endswith(".json") or info.file_size > MAX_RECORD_BYTES:
                         continue
                     try:
-                        raw = json.loads(bundle.read(info))
+                        raw = ScannedJson.loads(bundle.read(info))
                     except (ValueError, zipfile.BadZipFile, OSError):
                         continue
                     if not isinstance(raw, dict):
@@ -309,21 +312,18 @@ class DistroDatabase:
 
     @staticmethod
     def _write(family: str, index: dict[str, dict[str, list[Any]]]) -> None:
-        from cordon_scanner.core.local_seal import LocalSeal
+        from cordon_scanner.foundation.files.seal import LocalSeal
 
         directory = DistroDatabase.directory()
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         payload = gzip.compress(json.dumps(index, separators=(",", ":")).encode(), mtime=0)
         path = directory / f"os-{family}.json.gz"
-        temporary = path.with_suffix(".tmp")
-        temporary.write_bytes(payload)
-        temporary.chmod(0o600)
-        temporary.replace(path)
+        AtomicFile.write(path, payload)
         manifest_path = directory / MANIFEST
         digests: dict[str, Any] = {}
         if manifest_path.exists():
             try:
-                loaded = json.loads(manifest_path.read_text(encoding="utf-8"))
+                loaded = ScannedJson.loads(manifest_path.read_text(encoding="utf-8"))
                 if LocalSeal.valid(SEAL_LABEL, loaded):
                     digests = LocalSeal.unsealed(loaded)
             except (OSError, ValueError):
@@ -353,12 +353,12 @@ class DistroDatabase:
     @staticmethod
     def load(family: str) -> dict[str, dict[str, list[Any]]] | None:
         """One family's index, or None when it was never synced or does not verify."""
-        from cordon_scanner.core.local_seal import LocalSeal
+        from cordon_scanner.foundation.files.seal import LocalSeal
 
         directory = DistroDatabase.directory()
         path = directory / f"os-{family}.json.gz"
         try:
-            manifest = json.loads((directory / MANIFEST).read_text(encoding="utf-8"))
+            manifest = ScannedJson.loads((directory / MANIFEST).read_text(encoding="utf-8"))
             payload = path.read_bytes()
         except (OSError, ValueError):
             return None
@@ -366,7 +366,7 @@ class DistroDatabase:
             raise ValueError(f"{MANIFEST} is not sealed by this install")
         if LocalSeal.unsealed(manifest).get(path.name) != hashlib.sha256(payload).hexdigest():
             raise ValueError(f"{path.name} does not match its recorded digest")
-        loaded = json.loads(gzip.decompress(payload))
+        loaded = ScannedJson.loads(gzip.decompress(payload))
         return loaded if isinstance(loaded, dict) else None
 
     @staticmethod

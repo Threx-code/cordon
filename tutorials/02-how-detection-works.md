@@ -1,6 +1,6 @@
 # 02 · How detection works
 
-> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 Cordon is a pipeline of pure stages. Nothing here runs your code.
 
@@ -60,9 +60,8 @@ is in Python, JavaScript, or a shell script.
    import { exec as e } from 'child_process'; e("id")   →  child_process.exec
 ```
 
-Python resolves via the standard library (always on). JavaScript/TypeScript need
-the `[ast-js]` extra — without it those files still get the regex tier, and the
-AST tier reports the language as *not analysed* rather than pretending it was.
+Python resolves via the standard library, JavaScript/TypeScript via Cordon's own
+parser — both always on, nothing to install.
 See **09**.
 
 ## Every detector must prove it works

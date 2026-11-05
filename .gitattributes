@@ -12,3 +12,7 @@ src/cordon_scanner/intel/data/** binary
 # The malware corpus is a set of exact-byte fixtures whose detection is asserted
 # by offset in the tests. It must reach the working tree unchanged as well.
 corpus/** binary
+
+# The README terminal's recordings are the bytes a pseudo-terminal wrote (CRLF and all), cut by
+# byte counts in their timing files: rewriting a line ending would shift every count after it.
+docs/assets/terminal/** binary

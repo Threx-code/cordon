@@ -18,7 +18,7 @@ PKG := cordon_scanner
 VERSION := $(shell $(PY) -c "from $(PKG).version import __version__; print(__version__)" 2>/dev/null)
 
 .DEFAULT_GOAL := help
-.PHONY: help setup fmt lint types test test-all scan check live matrix demo prepush prepush-quick hooks \
+.PHONY: help setup fmt lint types test test-all fuzz-native scan check live matrix demo prepush prepush-quick hooks \
         build verify preflight guards release clean
 
 help:  ## List the targets
@@ -30,7 +30,8 @@ help:  ## List the targets
 setup:  ## Create .venv and install the package with its dev extra
 	python3 -m venv .venv
 	$(PY) -m pip install --upgrade pip
-	$(PY) -m pip install -e ".[dev]"
+	$(PY) -m pip install --require-hashes -r ci/dev-requirements.txt
+	$(PY) -m pip install --no-deps -e .
 
 fmt:  ## Format
 	$(PY) -m ruff format src/ tests/ scripts/
@@ -43,11 +44,11 @@ fmt:  ## Format
 # it runs on three operating systems and this runs on one.
 
 lint:  ## ruff check and format --check
-	$(PY) -m ruff check src/ tests/
-	$(PY) -m ruff format --check src/ tests/
+	$(PY) -m ruff check src/ tests/ scripts/ bench/
+	$(PY) -m ruff format --check src/ tests/ scripts/
 
-types:  ## mypy, strict
-	$(PY) -m mypy src/$(PKG)
+types:  ## mypy, strict: the scanner, the sandbox and scripts/ (pyproject [tool.mypy] files)
+	$(PY) -m mypy
 
 test:  ## The suite, across every core
 	@# `-n auto` is not a convenience. Serial, coverage-instrumented, this suite is
@@ -68,6 +69,21 @@ test-fast:  ## The suite with no coverage, for the edit-run loop
 test-all: test  ## The suite plus the perf and fuzz markers, which CI deselects
 	$(PY) -m pytest -q -m perf -s tests/perf/
 	$(PY) -m pytest -q -m fuzz tests/fuzz/
+
+FUZZ_SECONDS ?= 1800
+fuzz-native:  ## The native extension under libFuzzer, ASan and UBSan, two workers ($(FUZZ_SECONDS) s; needs clang)
+	@# Every call of _native/_anchors against the harness's naive checks; a wrong answer aborts
+	@# like a crash does. The corpus and any crash-* inputs land in .fuzz/ (docs/01-ARCHITECTURE.md 8.5).
+	mkdir -p .fuzz/corpus
+	clang -g -O1 -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=undefined \
+		-I$$($(PY) -c 'import sysconfig; print(sysconfig.get_paths()["include"])') \
+		scripts/native/fuzz_anchors.c \
+		-L$$($(PY) -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))') \
+		-lpython$$($(PY) -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")') \
+		-o .fuzz/fuzz_anchors
+	cd .fuzz && ASAN_OPTIONS=detect_leaks=0 \
+		LD_LIBRARY_PATH=$$($(PY) -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))') \
+		./fuzz_anchors -max_total_time=$(FUZZ_SECONDS) -workers=2 -jobs=2 corpus/
 
 scan:  ## Cordon scans Cordon
 	@# A security tool that cannot pass its own checks has no standing to
@@ -92,20 +108,20 @@ scan:  ## Cordon scans Cordon
 
 check: lint types test scan  ## Everything CI checks, in CI's order
 
-prepush:  ## What CI will say about HEAD, in Docker, on CI's terms (scripts/prepush.sh)
-	@sh scripts/prepush.sh
+prepush:  ## What CI will say about HEAD, in Docker, on CI's terms (scripts/checks/prepush.sh)
+	@sh scripts/checks/prepush.sh
 
 prepush-quick:  ## The same without the suite, perf and fuzz
-	@sh scripts/prepush.sh --quick
+	@sh scripts/checks/prepush.sh --quick
 
 hooks:  ## Run `make prepush` before every push (CORDON_PREPUSH=--quick for the short form)
-	@git config core.hooksPath .githooks && echo "pre-push hook: .githooks/pre-push -> scripts/prepush.sh"
+	@git config core.hooksPath .githooks && echo "pre-push hook: .githooks/pre-push -> scripts/checks/prepush.sh"
 
 # -- Generated artefacts ---------------------------------------------------
 
 matrix:  ## Regenerate the generated docs (coverage matrix, ecosystem table)
-	$(PY) tests/matrix.py > docs/05-COVERAGE-MATRIX.md
-	PYTHONPATH=tests $(PY) tests/ecosystems.py > docs/07-ECOSYSTEMS.md
+	$(PY) tests/kits/matrix.py > docs/05-COVERAGE-MATRIX.md
+	PYTHONPATH=tests $(PY) tests/kits/ecosystems.py > docs/07-ECOSYSTEMS.md
 
 demo: DEMO := corpus/malicious/compromised-npm-package
 demo:  ## Regenerate the README image from a real scan
@@ -185,7 +201,7 @@ live:  ## The checks that need a live registry (network; not part of `check`)
 	@# registry is slow. These need egress, so they are their own target and
 	@# their own workflow -- and `preflight` requires them, because the defects
 	@# they catch are the ones that reach users.
-	$(PY) scripts/live_checks.py
+	$(PY) scripts/measure/live_checks.py
 
 preflight: check live verify  ## Everything the release will do, before tagging
 

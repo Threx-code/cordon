@@ -1,0 +1,17 @@
+Verifies
+Verified using v1 scheme (JAR signing): false
+Verified using v2 scheme (APK Signature Scheme v2): true
+Verified using v3 scheme (APK Signature Scheme v3): false
+Verified using v3.1 scheme (APK Signature Scheme v3.1): false
+Verified using v4 scheme (APK Signature Scheme v4): false
+Verified for SourceStamp: false
+Number of signers: 1
+Signer #1 certificate DN: CN=mority, OU=Unknown, O=Unknown, L=Unknown, ST=Unknown, C=de
+Signer #1 certificate SHA-256 digest: abf2c464263dcef73c3a1523ca30bdca9ededb31eac538a8a9a0736d7edbdda4
+Signer #1 certificate SHA-1 digest: 37236b9c0b1d001ed9cc49d17b3f2248289972e7
+Signer #1 certificate MD5 digest: 1fea914a451c994a75990d5e74d14b08
+Signer #1 key algorithm: RSA
+Signer #1 key size (bits): 4096
+Signer #1 public key SHA-256 digest: 5d7e68ad92847fbb7b17e18d05016691a4ba45db588002cc7b8830a0026bb638
+Signer #1 public key SHA-1 digest: 230d649cffb0df58096cf72d86162d91e3e3ffcd
+Signer #1 public key MD5 digest: 5e8387de003e5662dcb66cf9a8da5907

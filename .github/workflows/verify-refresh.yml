@@ -127,8 +127,8 @@ jobs:
               # advisory database names the files it would not read, the policy
               # set names its own, and a check that asks one of them passes a
               # branch that broke the other.
-              from cordon_scanner.detect.iac_policies import all_policies, refused_files
-              from cordon_scanner.intel.advisories import AdvisoryDatabase, tampered_files
+              from cordon_scanner.detect.infra.iac_policies import all_policies, refused_files
+              from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase, tampered_files
 
               database = AdvisoryDatabase.bundled()
               return len(database), len(all_policies()), tampered_files() + refused_files()

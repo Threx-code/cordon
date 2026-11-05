@@ -25,7 +25,7 @@ cordon-scanner config validate|explain|fetch-policy|policy-drift
 cordon-scanner baseline create|compare       baseline management
 cordon-scanner suppress list|add|prune       suppression lifecycle
 cordon-scanner guard verify|install|update   scanner self-integrity and git hooks (--global)
-cordon-scanner advisories sync|status        the advisory database
+cordon-scanner advisories sync               the advisory database (its age: intel status)
 cordon-scanner intel status|update           the signed threat-intel feed
 cordon-scanner bundle create|install         offline bundle for air-gapped use
 cordon-scanner login|logout|whoami           Cordon Cloud sign-in
@@ -239,7 +239,7 @@ CRITICAL  MALWARE.EXFIL.001                                    risk 92/100
              required, move it to an explicit, reviewed build command and
              add the package to the build allowlist.
 
-  refs       https://cordon.dev/rules/MALWARE.EXFIL.001
+  refs       https://cordonscan.com/rules/MALWARE.EXFIL.001
 
 ────────────────────────────────────────────────────────────────────────────
  1 critical   0 high   3 medium   0 low        2 suppressed   0 degraded
@@ -309,34 +309,40 @@ The public surface is deliberately small. Everything not listed here is internal
 and may change in a minor release.
 
 ```python
-from cordon_scanner import Scanner, Config, Policy, Severity, Category
+from cordon_scanner import PolicyGate, Scanner
 
-scanner = Scanner.for_target("./repository")
+scanner = Scanner.for_target("./repository")   # the repository's config, under the org ceiling
 result  = scanner.scan("./repository")
 
 for finding in result.findings:
     print(finding.rule_id, finding.severity, finding.location)
 
-if result.violates(Policy.default()):
-    raise SystemExit(1)
+verdict = PolicyGate.evaluate(result, scanner.config.policy)
+if not verdict.passed:
+    raise SystemExit(int(verdict.exit_code))     # 1 findings, 4 incomplete: the CLI's codes
 ```
 
 ### 2.1 Public objects
 
 | Object | Purpose | Stability |
 |---|---|---|
-| `Scanner` | Entry point. `scan()`, `scan_many()`, `inventory()`, `dependencies()` | stable |
-| `Config` | Layered configuration. `from_file`, `from_dict`, `merge`, `explain` | stable |
-| `Policy` | Thresholds, fail rules, suppressions, score weights | stable |
-| `ScanResult` | `findings`, `inventory`, `dependencies`, `stats`, `complete`, `violates()` | stable |
-| `Finding` | Frozen dataclass, § `01-ARCHITECTURE` §3.3 | stable |
-| `Rule` / `RulePack` | Loaded rule metadata | stable |
-| `Detector` | Protocol for third-party detectors | stable |
-| `Reporter` | Protocol for third-party reporters | stable |
-| `Ecosystem` | Protocol for third-party ecosystems | stable |
-| `Repository` / `Project` / `Dependency` / `Package` | Inventory types | stable |
-| `Severity` / `Confidence` / `Category` | Enums | stable |
-| `CordonError` and subclasses | Typed errors mapped to exit codes | stable |
+| `Scanner` | Entry point. `for_target()` (loads configuration as the CLI does), `scan()`, `inventory()` | stable |
+| `Config` | Configuration. `default`, `from_file`, `from_dict`, `with_overrides`, `explain` | stable |
+| `ConfigResolver` | Loads a repository's configuration under an organisation policy, as `for_target` does | stable |
+| `Policy` / `OrgConstraints` | Thresholds, fail rules, suppressions; an organisation's ceiling | stable |
+| `PolicyGate` / `Verdict` | `PolicyGate.evaluate(result, policy)`: `passed`, `exit_code`, `reason`, `triggering` | stable |
+| `ScanResult` | `findings`, `dependencies`, `stats`, `complete`, `content_complete` | stable |
+| `Finding` / `Location` / `Evidence` / `RiskScore` | Frozen dataclasses, § `01-ARCHITECTURE` §3.3 | stable |
+| `Baseline` / `Suppression` | Known findings, and accepted ones with an expiry | stable |
+| `Rule` | Loaded rule metadata | stable |
+| `Repository` / `Project` / `Dependency` / `Hook` / `Capability` | Inventory types | stable |
+| `Severity` / `Confidence` / `Category` / `Scope` / `RedactionMode` / `ExitCode` | Enums | stable |
+| `Limits` / `ScanStats` | The bounds a scan works within; what it read and how long it took | stable |
+| `__version__` / `RULEPACK_VERSION` / `SCHEMA_VERSION` | The engine, rule pack and result schema versions | stable |
+| `CordonError` and subclasses | Typed errors mapped to exit codes: `ConfigError`, `DetectorError`, `LimitExceeded`, `PolicyViolationError`, `RulePackError`, `SourceError`, `UnsafePatternError` | stable |
+
+The list is `cordon_scanner.__all__`, and a test holds this table to it. Anything not in it is
+internal.
 
 ### 2.2 Guarantees
 
@@ -413,7 +419,7 @@ That must be the whole minimal case. Everything else has a defensible default.
     only-changed: false        # on PRs, scan only changed files
     baseline: ''               # baseline file path
     fail-on-incomplete: false
-    evidence: masked           # none | masked | full
+    evidence: masked           # none | masked | hash_only
     jobs: '0'                  # 0 = auto
     working-directory: .
 ```
@@ -527,9 +533,10 @@ not:
 ```
 CLI flags                       (highest)
   ↓
-Organisation policy             --policy / CORDON_POLICY / /etc/cordon/policy.yaml
+Organisation policy             --policy PATH or URL#sha256=…, else CORDON_POLICY
   ↓  ← acts as a CEILING on everything below (C3, T6)
-Repository config               cordon.yaml / .cordon.yaml / [tool.cordon] in pyproject.toml
+Repository config               --config PATH, else the first of cordon.yaml, cordon.yml,
+                                .cordon.yaml, .cordon.yml at the root (YAML only)
   ↓
 Built-in defaults               (lowest)
 ```
@@ -575,7 +582,7 @@ scan:
     per_file_timeout: 5
     total_timeout: 900
     max_archive_ratio: 200
-    max_archive_depth: 3
+    max_archive_depth: 8
     max_archive_entries: 50000
 
 policy:
@@ -597,7 +604,7 @@ policy:
     - container
     - cicd
 
-evidence: masked                 # none | masked | full
+evidence: masked                 # none | masked | hash_only
 
 suppressions:
   - rule: SUSPECT.REGISTRY.SELF_PUBLISH.001

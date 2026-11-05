@@ -118,9 +118,9 @@ CONTRACTS: Final[tuple[EcosystemContract, ...]] = (
             "pnpm-lock.yaml",
             "yarn.lock",
             "bun.lock",
+            "bun.lockb",
             "deno.lock",
-        )
-        + (FileClause("bun.lockb", "lockfile"),),
+        ),
         {
             "npm.npm-semantics": "npm lockfile v1, v2 and v3 layouts",
             "npm.pnpm-semantics": "pnpm lockfile v5, v6 and v9 layouts",

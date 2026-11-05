@@ -24,9 +24,13 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Final
 
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
+from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.version import __version__
 
 API: Final = "https://api.osv.dev/v1"
+
 BATCH: Final = 500
 MAX_DETAILS: Final = 3000
 WORKERS: Final = 8
@@ -79,7 +83,7 @@ class OsvClient:
             method="POST",
         )
         with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:  # noqa: S310
-            return json.loads(response.read(MAX_BYTES))
+            return ScannedJson.loads(Download.read(response, MAX_BYTES))
 
     @staticmethod
     def _get(url: str) -> Any:
@@ -87,7 +91,7 @@ class OsvClient:
             url, headers={"User-Agent": f"cordon-scanner/{__version__}"}
         )
         with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:  # noqa: S310
-            return json.loads(response.read(MAX_BYTES))
+            return ScannedJson.loads(Download.read(response, MAX_BYTES))
 
     @staticmethod
     def _roundup(value: float) -> float:
@@ -183,7 +187,7 @@ class OsvClient:
             try:
                 answer = post(f"{API}/querybatch", body)
             except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
-                raise OsvError(f"OSV could not be asked ({type(exc).__name__})") from exc
+                raise OsvError(f"OSV could not be asked ({NetworkFailure.reason(exc)})") from exc
             for query, result in zip(chunk, answer.get("results") or (), strict=False):
                 ids_by_query[query] = [
                     str(v.get("id")) for v in (result or {}).get("vulns") or () if v.get("id")
@@ -202,7 +206,8 @@ class OsvClient:
         def detail(identifier: str) -> tuple[str, dict[str, Any] | None]:
             try:
                 return identifier, get(f"{API}/vulns/{identifier}")
-            except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError):
+            except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
+                NetworkFailure.release(exc)
                 return identifier, None
 
         with ThreadPoolExecutor(max_workers=WORKERS) as pool:

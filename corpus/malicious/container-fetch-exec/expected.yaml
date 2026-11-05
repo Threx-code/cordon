@@ -6,3 +6,4 @@ must_find:
   - rule: SUSPECT.CONTAINER.FETCH_EXEC.001
     path: Dockerfile
     min_severity: high
+hardening: true

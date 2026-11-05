@@ -27,16 +27,19 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any, ClassVar, Final, Protocol
 
+from cordon_scanner.detect.agents.language_model.review import JudgeError
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
+from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
+from cordon_scanner.foundation.network.redirects import NoRedirects
+
 TIMEOUT_SECONDS: Final = 90.0
+
 LOCAL_TIMEOUT_SECONDS: Final = 300.0
 """A model on the developer's own machine, often on a CPU, takes minutes where a hosted API takes
 seconds. `CORDON_JUDGE_TIMEOUT` overrides either."""
 MAX_RESPONSE_BYTES: Final = 1 << 20
 LOCAL_HOSTS: Final = frozenset({"localhost", "127.0.0.1", "::1", "[::1]", "host.docker.internal"})
-
-
-class JudgeError(Exception):
-    """The judge could not be asked. The message is safe to show and never holds a key."""
 
 
 class ProviderUnavailable(JudgeError):
@@ -68,11 +71,6 @@ class Transport(Protocol):
     ) -> dict[str, Any]: ...
 
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
-        return None
-
-
 class HttpTransport:
     """JSON over HTTP(S): no redirects, a bounded response, and errors that name the host only."""
 
@@ -100,20 +98,21 @@ class HttpTransport:
         )
         host = parsed_url.hostname
         try:
-            with urllib.request.build_opener(_NoRedirect).open(
+            with urllib.request.build_opener(NoRedirects).open(
                 request, timeout=timeout
             ) as response:
-                raw = response.read(MAX_RESPONSE_BYTES + 1)
+                raw = Download.read(response, MAX_RESPONSE_BYTES + 1)
         except urllib.error.HTTPError as exc:
+            NetworkFailure.release(exc)
             raise ProviderUnavailable(f"the judge at {host} answered {exc.code}") from exc
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             raise ProviderUnavailable(
-                f"the judge at {host} could not be reached ({type(exc).__name__})"
+                f"the judge at {host} could not be reached ({NetworkFailure.reason(exc)})"
             ) from exc
         if len(raw) > MAX_RESPONSE_BYTES:
             raise ProviderUnavailable(f"the judge at {host} answered with too much")
         try:
-            parsed = json.loads(raw)
+            parsed = ScannedJson.loads(raw)
         except ValueError as exc:
             raise ProviderUnavailable(f"the judge at {host} did not answer with JSON") from exc
         if not isinstance(parsed, dict):
@@ -231,6 +230,9 @@ class BaseProvider:
             if self.environ.get(name):
                 return self.environ[name]
         raise ProviderUnavailable(f"set {' or '.join(names)} to use the {self.NAME} judge")
+
+    def context(self, prompt_version: str, kind: str, path: str, text: str) -> None:
+        """What is being judged. A backend that is sent the prompt needs none of it."""
 
     def complete(self, system: str, user: str) -> Completion:
         text = self._exchange(system, user)
@@ -376,6 +378,10 @@ class CordonCloudProvider(BaseProvider):
     def family(self) -> str:
         return "cordon-cloud"
 
+    def context(self, prompt_version: str, kind: str, path: str, text: str) -> None:
+        """The cloud runs the prompt itself, so it is sent what is judged, not the prompt."""
+        self.prompt_version, self.kind, self.path, self.text = prompt_version, kind, path, text
+
     def _exchange(self, system: str, user: str) -> str:
         from cordon_scanner.cloud import CloudError, auth
 
@@ -516,7 +522,6 @@ __all__ = [
     "CordonCloudProvider",
     "DeterministicProvider",
     "HttpTransport",
-    "JudgeError",
     "ModelFamilies",
     "OllamaProvider",
     "OpenAIProvider",

@@ -44,6 +44,69 @@ class Verdict:
     """None when the tool could not give an answer for this input."""
     detail: str = ""
     seconds: float = 0.0
+    level: str = ""
+    """Cordon only: known, intel, blocked, warned, noted, clean or error (`Levels.of`)."""
+    findings: list[list[str]] = field(default_factory=list)
+    """Cordon only: `[rule_id, severity, confidence, category, path, line, detector]` per
+    finding, blocked or not.
+    Severity is decided in context, so the rule id alone cannot say whether a user saw a warning."""
+
+
+class Levels:
+    """What a user saw, in five levels, from the exit status and the findings as emitted."""
+
+    ORDER = ("info", "low", "medium", "high", "critical")
+
+    @staticmethod
+    def of(code: int, findings: list[list[str]]) -> str:
+        if code not in (0, 1, 4):
+            return "error"
+        if code == 1:
+            # Any known-malicious intel match (the release, a dependency, an extension) makes it
+            # known: in a benign draw that is a true positive and the long tail's base rate.
+            known = any(f[0].startswith("MALWARE.") and ".KNOWN" in f[0] for f in findings)
+            if known:
+                return "known"
+            # A block counts as content only when a finding the gate failed on came from
+            # the package's own bytes (`bench/tools/content.py`); a block made by intel
+            # alone -- a feed, a registry record, a known-sample signature -- is `intel`.
+            # Rows recorded without a detector (older runs) are read as before.
+            if findings and all(len(f) > 6 and f[6] for f in findings):
+                from content import Content
+
+                if not any(
+                    Content.fails(f[0], f[1], f[2], f[3]) and Content.is_content(f[0], f[6])
+                    for f in findings
+                ):
+                    return "intel"
+            return "blocked"
+        top = max(
+            (
+                Levels.ORDER.index(f[1])
+                for f in findings
+                if f[1] in Levels.ORDER and not f[0].startswith("OPERATIONAL.")
+            ),
+            default=-1,
+        )
+        if top >= Levels.ORDER.index("medium"):
+            return "warned"
+        return "noted" if top >= 0 else "clean"
+
+
+class Wilson:
+    @staticmethod
+    def interval(successes: int, total: int, z: float = 1.959964) -> tuple[float, float]:
+        """The 95% Wilson score interval for a rate: a claim of 98% stands on its lower bound."""
+        if total == 0:
+            return (0.0, 0.0)
+        p = successes / total
+        centre = p + z * z / (2 * total)
+        spread = z * ((p * (1 - p) + z * z / (4 * total)) / total) ** 0.5
+        denominator = 1 + z * z / total
+        return (
+            round((centre - spread) / denominator, 4),
+            round((centre + spread) / denominator, 4),
+        )
 
 
 @dataclass
@@ -66,17 +129,43 @@ class SuiteResult:
             }
             for tool, counts in sorted(by_tool.items())
         }
-        identity_only = sum(
-            1 for v in self.verdicts if v.tool == "cordon" and v.detail == "identity-only"
-        )
-        if identity_only and "cordon" in rates:
+        if "cordon" in rates:
+            # Content recall: blocks a finding from the package's own bytes made (`Levels.of`
+            # "blocked"); a known-release match or an intel-only block never counts. Over EVERY
+            # sample: a scan that failed is a sample not caught, so errors can only lower it.
+            # `rate_answered` leaves the failed scans out, labelled, beside it.
             counts = by_tool["cordon"]
-            content = counts["blocked"] - identity_only
+            content = sum(1 for v in self.verdicts if v.tool == "cordon" and v.level == "blocked")
             rates["cordon, content only"] = {
                 "total": counts["total"],
                 "blocked": content,
                 "error": counts["error"],
-                "rate": round(content / max(counts["total"] - counts["error"], 1), 4),
+                "rate": round(content / max(counts["total"], 1), 4),
+                "rate_answered": round(content / max(counts["total"] - counts["error"], 1), 4),
+            }
+        # What a user saw, for a benign suite: not blocked, and not even warned, each with its
+        # interval. A malicious suite reads the same table the other way round.
+        levelled = [
+            v for v in self.verdicts if v.tool == "cordon" and v.level and v.level != "error"
+        ]
+        if levelled:
+            seen = Counter(v.level for v in levelled)
+            # Known malware is left out of the benign rates: it is a correct block, not noise.
+            total = len(levelled) - seen["known"]
+            # Every block a user sees is noise in a benign draw, whatever made it: an intel-only
+            # block counts against the rate exactly as a content one does.
+            not_blocked = total - seen["blocked"] - seen["intel"]
+            no_warning = not_blocked - seen["warned"]
+            rates["cordon, levels"] = {
+                **{
+                    level: seen[level]
+                    for level in ("known", "intel", "blocked", "warned", "noted", "clean")
+                },
+                "total": total,
+                "not_blocked": round(not_blocked / max(total, 1), 4),
+                "not_blocked_95": list(Wilson.interval(not_blocked, total)),
+                "no_warning": round(no_warning / max(total, 1), 4),
+                "no_warning_95": list(Wilson.interval(no_warning, total)),
             }
         # When another tool ran on a subset, Cordon's rate on exactly that subset as well: the
         # comparison is only fair on the same samples.
@@ -98,6 +187,9 @@ class SuiteResult:
 
 class Harness:
     """The benchmark suites: malware, benign, CVE agreement and agent cases."""
+
+    MODEL: str | None = None
+    """A model server for every Cordon scan in this run, or None for rules only (MEAS-8)."""
 
     @staticmethod
     def run(command: list[str], *, cwd: Path | None = None) -> tuple[int, str, float]:
@@ -127,11 +219,31 @@ class Harness:
                 "--quiet",
                 "--format",
                 "json",
+                *(["--model", Harness.MODEL] if Harness.MODEL else []),
             ]
         )
         if code in (-1, -2) or code == 2:
-            return Verdict("cordon", sample, None, out[:200], seconds)
+            return Verdict("cordon", sample, None, out[:200], seconds, level="error")
         detail = f"exit {code}"
+        findings: list[list[str]] = []
+        try:
+            report = json.loads(out[out.index("{") :])
+            findings = [
+                [
+                    str(f.get("rule_id", "")),
+                    str(f.get("severity", "")),
+                    str(f.get("confidence", "")),
+                    str(f.get("category", "")),
+                    str((f.get("location") or {}).get("path") or "").split("!", 1)[-1][-160:],
+                    str((f.get("location") or {}).get("line") or ""),
+                    # Which detector made it: what tells a content block from an intel one.
+                    str(f.get("detector", "")),
+                ]
+                for f in report.get("findings", [])
+            ]
+        except (ValueError, KeyError, TypeError, AttributeError):
+            pass
+        level = Levels.of(code, findings)
         if code in (0, 4):
             # A pass (or an incomplete scan): record WHAT fired below the gate, and the shape of
             # the sample (file types), so the misses can be grouped by technique. Rule ids and
@@ -159,9 +271,12 @@ class Harness:
                 }
                 if blocking and blocking <= {KNOWN_RELEASE_RULE}:
                     detail = "identity-only"
+                else:
+                    # Which rules blocked, so a block can be attributed and read: ids only.
+                    detail = f"exit 1; blocked={'|'.join(sorted(blocking))}"
             except (ValueError, KeyError, TypeError):
                 pass
-        return Verdict("cordon", sample, code == 1, detail, seconds)
+        return Verdict("cordon", sample, code == 1, detail, seconds, level=level, findings=findings)
 
     @staticmethod
     def guarddog(path: Path, sample: str, ecosystem: str) -> Verdict:
@@ -204,6 +319,94 @@ class Harness:
         # scanning the fixture instead handed both tools a few bytes of test data for litellm.
         others = [p for p in files if p not in archives and not p.name.startswith("package_info")]
         return archives[0] if len(archives) == 1 and not others else into
+
+    @staticmethod
+    def _datadog_as_published(archive: Path, into: Path) -> Path | None:
+        """A DataDog sample as the registry served it: the unpacked tree repacked into the
+        artefact a user installs, so the scanner grades it as a published package exactly as it
+        grades the benign corpus (which is all tarballs).
+
+        DataDog stores releases unpacked. Scanned as a folder, an npm package's install hooks and
+        a wheel's import-time entry point are read as a working tree's, which neither is
+        (review 98). Repacked: an npm `package/` folder with a `package.json` as `.tgz`, a tree
+        holding `<name>.dist-info/METADATA` as `.whl`, a tree whose top holds `PKG-INFO` as an
+        sdist `.tar.gz`. Some samples store each file inside a folder named for it
+        (`m/__init__.py/m/__init__.py`); the repeated half is the file's real path. Anything else
+        stays the folder `_unzip_datadog` returns.
+        """
+        import tarfile
+
+        target = Harness._unzip_datadog(archive, into)
+        if target is None or target.is_file():
+            return target
+        files = [
+            p for p in target.rglob("*") if p.is_file() and not p.name.startswith("package_info")
+        ]
+
+        def real(path: Path, root: Path) -> str:
+            parts = path.relative_to(root).parts
+            half = len(parts) // 2
+            if len(parts) % 2 == 0 and half and parts[:half] == parts[half:]:
+                parts = parts[:half]
+            return "/".join(parts)
+
+        manifests = [p for p in files if p.name == "package.json" and p.parent.name == "package"]
+        if len(manifests) == 1:
+            root = manifests[0].parent
+            out = into / f"{root.parent.name or 'package'}.tgz"
+            with tarfile.open(out, "w:gz") as tgz:
+                for path in files:
+                    if root in path.parents:
+                        tgz.add(path, arcname="package/" + real(path, root))
+            return out
+        metadata = [p for p in files if p.name == "METADATA" and ".dist-info" in str(p)]
+        if metadata:
+            # The outermost folder holding a `.dist-info`: the doubled layout nests another.
+            root = min(
+                (
+                    parent
+                    for parent in metadata[0].parents
+                    if (parent == target or target in parent.parents)
+                    and any(child.name.endswith(".dist-info") for child in parent.iterdir())
+                ),
+                key=lambda folder: len(folder.parts),
+            )
+            dist = next(c.name for c in root.iterdir() if c.name.endswith(".dist-info"))
+            out = into / f"{dist.removesuffix('.dist-info')}-py3-none-any.whl"
+            with zipfile.ZipFile(out, "w") as wheel:
+                for path in files:
+                    if root in path.parents:
+                        wheel.write(path, real(path, root))
+            return out
+        # An editor extension: the marketplace serves a .vsix -- a zip holding `extension/` and
+        # `extension.vsixmanifest`. Scanned as a bare folder its `extension/package.json` is not
+        # recognised as an extension's, so the entry the editor starts on every launch was read as
+        # inert library code (review 98: every IDE sample was graded that way).
+        vsix = [
+            p
+            for p in files
+            if p.name == "package.json"
+            and p.parent.name == "extension"
+            and (p.parent.parent / "extension.vsixmanifest").is_file()
+        ]
+        if len(vsix) == 1:
+            root = vsix[0].parent.parent
+            out = into / f"{archive.parent.name}-{archive.stem}.vsix"
+            with zipfile.ZipFile(out, "w") as package:
+                for path in files:
+                    if root in path.parents:
+                        package.write(path, real(path, root))
+            return out
+        pkg_info = [p for p in files if p.name == "PKG-INFO" and "egg-info" not in str(p)]
+        if pkg_info:
+            root = min((p.parent for p in pkg_info), key=lambda d: len(d.parts))
+            out = into / f"{root.name}.tar.gz"
+            with tarfile.open(out, "w:gz") as sdist:
+                for path in files:
+                    if root in path.parents:
+                        sdist.add(path, arcname=f"{root.name}/" + real(path, root))
+            return out
+        return target
 
     @staticmethod
     def _release_key(name: str, version: str) -> tuple[str, str]:
@@ -524,7 +727,9 @@ class Harness:
         import os
         import sys
 
-        sys.path.insert(0, str(Path(__file__).parent))
+        sys.path.insert(0, str(Path(__file__).resolve().parent / "tools"))
+        sys.path.insert(0, str(Path(__file__).resolve().parent / "suites"))
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
         from commercial import Commercial, SnykCli, SocketApi
 
         status = Commercial.availability()
@@ -604,10 +809,27 @@ class Harness:
                 "|---|---|---|---|---|---|",
             ]
             for tool, row in results[suite]["rates"].items():
+                if "rate" not in row:
+                    continue
                 lines.append(
                     f"| {tool} | {row.get('total', 0)} | {row.get('blocked', 0)} | {row.get('passed', 0)} | {row.get('error', 0)} | {row['rate']:.1%} |"
                 )
             lines.append("")
+            levels = results[suite]["rates"].get("cordon, levels")
+            if levels:
+                low, high = levels["no_warning_95"]
+                nb_low, nb_high = levels["not_blocked_95"]
+                lines += [
+                    "What a user saw: known (intel match), blocked (content), warned (medium or",
+                    "above, not blocked), noted (low or info only), clean. 95% Wilson intervals.",
+                    "",
+                    "| known | blocked | warned | noted | clean | not blocked | no warning |",
+                    "|---|---|---|---|---|---|---|",
+                    f"| {levels['known']} | {levels['blocked']} | {levels['warned']} | {levels['noted']} | "
+                    f"{levels['clean']} | {levels['not_blocked']:.1%} ({nb_low:.1%}-{nb_high:.1%}) | "
+                    f"{levels['no_warning']:.1%} ({low:.1%}-{high:.1%}) |",
+                    "",
+                ]
         if "agents" in results:
             suite = results["agents"]
             lines += [
@@ -673,9 +895,16 @@ class Harness:
             help="malware: run GuardDog on a fixed-seed random N only (Cordon runs on every sample)",
         )
         parser.add_argument(
+            "--model",
+            default=None,
+            help="score with Cordon's model as well (a cordon-model-server address): the product as "
+            "shipped with the model. Publish this run beside the rules-only one, never instead of it",
+        )
+        parser.add_argument(
             "--full-database", action="store_true", help="cve: sync the full advisory set first"
         )
         args = parser.parse_args()
+        Harness.MODEL = args.model
         args.results.mkdir(parents=True, exist_ok=True)
         collected: dict[str, Any] = {}
         previous = args.results / "results.json"
@@ -697,6 +926,7 @@ class Harness:
                     else Harness.benign(args.data, args.limit, args.workers)
                 )
                 collected[suite] = {
+                    "model": Harness.MODEL or "none: rules only",
                     "rates": outcome.rates(),
                     "verdicts": [asdict(v) for v in outcome.verdicts],
                 }

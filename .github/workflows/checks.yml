@@ -1,0 +1,383 @@
+# The quick checks, on every push: lint and types, the rule self-tests, Cordon scanning its own code,
+# history, records and images, reproducible output, and parser fuzzing. Minutes, so most mistakes are
+# reported before the platform test suites (tests-*.yml) finish. Split out of one ci.yml (5 Nov), in
+# which every job waited for the slowest and none could be rerun alone.
+#
+# Not to be confused with `action/action.yml`, which is the Action published for other people to run.
+
+name: checks
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install --require-hashes -r ci/dev-requirements.txt && pip install --no-deps -e .
+      - run: ruff check src/ tests/ scripts/ bench/
+      - run: ruff format --check src/ tests/ scripts/
+      - run: mypy
+
+  rules:
+    name: rule self-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install -e .
+      # The mechanism that makes an inert rule impossible to ship. A detection
+      # rule fails silently by nature: it stops matching, the scan still
+      # succeeds, and the gate looks green precisely because the check is
+      # broken.
+      - run: cordon-scanner rules test
+
+  self-scan:
+    name: cordon scans cordon
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    # Every file also goes to a ClamAV daemon (`--clamav`, loopback only, which this service is).
+    services:
+      clamav:
+        image: clamav/clamav@sha256:ebec5bc138401b36ae987caa1a3fa3c3b2a21ed3d51f0bfa5852825e663e67b0
+        ports:
+          - 3310:3310
+        options: >-
+          --health-cmd clamdcheck.sh --health-interval 10s --health-timeout 10s
+          --health-retries 30 --health-start-period 120s
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install -e .
+      - name: Refresh the advisory database
+        # A scan's own refresh from OSV can fail for one ecosystem on a busy runner; the intel then
+        # falls back to the bundle, and past its age the scan is rightly incomplete (4 Nov: 12 days,
+        # stale). Synced first, as the frontend's and backend's scan jobs do. Names nothing scanned.
+        # OSV's ecosystems only, read from the scanner itself: a full sync also fetches NVD's yearly
+        # feeds, one of which timed out at 120s on 4 Nov and failed the step with OSV all synced.
+        # Three tries, 30 s apart: one transient answer from a source (raw.githubusercontent.com's
+        # "backend read error", 4 Nov) failed the whole job before anything was scanned.
+        run: |
+          only=$(python -c "from cordon_scanner.intel.advisories.osv_import import ECOSYSTEM_OSV_NAMES as E; print(' '.join(sorted(E)))")
+          for attempt in 1 2 3; do
+            cordon-scanner advisories sync --only $only && exit 0
+            [ "$attempt" = 3 ] || sleep 30
+          done
+          exit 1
+      # The guard manifest: every file the scan's integrity rests on (this workflow, the history
+      # baseline) matches its recorded hash. CI has no hooks to check; it checks the manifest.
+      - run: cordon-scanner guard verify --manifest-only
+      # A security tool that cannot pass its own checks has no standing to
+      # enforce them. The corpus is excluded because it contains deliberate
+      # payloads whose whole purpose is to be detected.
+      #
+      # The bundled advisory data is excluded for the neighbouring reason: it is
+      # generated threat intelligence, and threat intelligence DESCRIBES malware.
+      # An OSV record for a cryptominer names the mining pool it connects to, so
+      # `SUSPECT.CRYPTOMINER.001` fires on the database that exists to report
+      # cryptominers. Scanning it proves nothing about this codebase -- the
+      # records are data, not code this project wrote, and their integrity is
+      # checked by the digest manifest (`intel/advisories.py`) rather than by
+      # pattern matching.
+      # `**/detect/data/**` is the generated infrastructure policy set, which is
+      # the same kind of thing one directory over: compressed, generated from a
+      # provider's own schema, and not source this project wrote.
+      # `**/intel/data/**` rather than the `src/` path: an editable install can
+      # leave a second copy of the advisory data under `build/`, and the pattern
+      # has to exclude the intelligence wherever it sits, not only in the source
+      # tree. `build/` and `dist/` are excluded for the same reason -- they are
+      # generated, not source, and a scan of them says nothing about this code.
+      # `bench/` for the corpus's reason: the agent benchmark builds every attack
+      # shape on purpose (inert -- `.invalid` hosts, shell text never run) to
+      # measure detection, so scanning it reports the attacks it exists to hold.
+      # `tests/conformance/cases/**`: other projects' dependency files, written by their own
+      # package managers, each holding the shape its case proves is reported (a git source, an
+      # install script); tests/conformance/test_cases.py asserts exactly those findings.
+      - run: |
+          # Unit tests hold attack-shaped fixtures and fixture archives by design (a cron-persistence
+          # payload, a conda recipe in a .tar.zst), and the model's data is data like detect/ and
+          # intel/'s: scanned as code they read as findings and an incomplete record. So are the
+          # built-in rule packs, whose positive test cases are the attack shapes each rule must
+          # catch (a fromCharCode string, 4 Nov). The shipped
+          # code, the scripts and the integration tests stay in.
+          cordon-scanner scan . \
+            --exclude 'corpus/**' \
+            --exclude 'bench/**' \
+            --exclude 'tests/conformance/cases/**' \
+            --exclude '**/intel/data/**' \
+            --exclude '**/detect/data/**' \
+            --exclude '**/model/data/**' \
+            --exclude 'src/cordon_scanner/rules/builtin/**' \
+            --exclude 'tests/unit/**' \
+            --exclude 'build/**' \
+            --exclude 'dist/**' \
+            --fail-on medium \
+            --reachability \
+            --clamav tcp://127.0.0.1:3310 \
+            --no-color \
+            --format text \
+            --format github \
+            --format sarif:cordon.sarif \
+            --format junit:cordon-reports/cordon.junit.xml \
+            --format markdown:cordon-reports/summary.md \
+            --format json:cordon-reports/scan.json \
+            --audit-log cordon-reports/audit.jsonl
+      - if: always() && hashFiles('cordon-reports/summary.md') != ''
+        run: cat cordon-reports/summary.md >> "$GITHUB_STEP_SUMMARY"
+      - if: always() && hashFiles('cordon.sarif') != ''
+        uses: github/codeql-action/upload-sarif@b1bff81932f5cdfc8695c7752dcee935dcd061c8 # v4.33.0
+        with:
+          sarif_file: cordon.sarif
+          category: cordon-self
+      - if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: cordon-self-scan
+          path: |
+            cordon.sarif
+            cordon-reports/
+          retention-days: 90
+
+  # Secrets in git history: every blob no longer in the tree. A gate. The history holds 24
+  # detector test fixtures (fabricated tokens, assembled strings, placeholders, and public
+  # third-party strings used as test cases), each reviewed on 2026-10-06 and pinned by fingerprint
+  # in cordon-history-baseline.json with its rule and path; anything else fails.
+  self-history:
+    name: cordon reads cordon's history
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - name: Refresh the advisory database
+        # A scan's own refresh from OSV can fail for one ecosystem on a busy runner; the intel then
+        # falls back to the bundle, and past its age the scan is rightly incomplete (4 Nov: 12 days,
+        # stale). Synced first, as the frontend's and backend's scan jobs do. Names nothing scanned.
+        # OSV's ecosystems only, read from the scanner itself: a full sync also fetches NVD's yearly
+        # feeds, one of which timed out at 120s on 4 Nov and failed the step with OSV all synced.
+        # Three tries, 30 s apart: one transient answer from a source (raw.githubusercontent.com's
+        # "backend read error", 4 Nov) failed the whole job before anything was scanned.
+        run: |
+          only=$(python -c "from cordon_scanner.intel.advisories.osv_import import ECOSYSTEM_OSV_NAMES as E; print(' '.join(sorted(E)))")
+          for attempt in 1 2 3; do
+            cordon-scanner advisories sync --only $only && exit 0
+            [ "$attempt" = 3 ] || sleep 30
+          done
+          exit 1
+      # `adversarial-*` conformance cases are dependency files written to be unparseable (a hostile
+      # DOCTYPE, an entity bomb); reading them is the conformance suite's job, and here they only
+      # made the scan incomplete. Every other conformance case is still read for secrets.
+      - run: |
+          cordon-scanner scan . --history --detector secrets \
+            --baseline cordon-history-baseline.json --fail-on medium \
+            --exclude 'corpus/**' --exclude 'bench/**' --exclude '**/intel/data/**' \
+            --exclude '**/detect/data/**' --exclude 'build/**' --exclude 'dist/**' \
+            --exclude 'tests/conformance/cases/*/adversarial-*/**' \
+            --no-color --format text --format markdown:history.md
+      - if: always() && hashFiles('history.md') != ''
+        run: cat history.md >> "$GITHUB_STEP_SUMMARY"
+
+  # What cordon says about itself besides the gate: inventory, dependency graph, AIBOM (the
+  # release workflow already writes the CycloneDX and SPDX SBOMs for the wheel).
+  self-records:
+    name: cordon's records of cordon
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - name: Refresh the advisory database
+        # A scan's own refresh from OSV can fail for one ecosystem on a busy runner; the intel then
+        # falls back to the bundle, and past its age the scan is rightly incomplete (4 Nov: 12 days,
+        # stale). Synced first, as the frontend's and backend's scan jobs do. Names nothing scanned.
+        # OSV's ecosystems only, read from the scanner itself: a full sync also fetches NVD's yearly
+        # feeds, one of which timed out at 120s on 4 Nov and failed the step with OSV all synced.
+        # Three tries, 30 s apart: one transient answer from a source (raw.githubusercontent.com's
+        # "backend read error", 4 Nov) failed the whole job before anything was scanned.
+        run: |
+          only=$(python -c "from cordon_scanner.intel.advisories.osv_import import ECOSYSTEM_OSV_NAMES as E; print(' '.join(sorted(E)))")
+          for attempt in 1 2 3; do
+            cordon-scanner advisories sync --only $only && exit 0
+            [ "$attempt" = 3 ] || sleep 30
+          done
+          exit 1
+      - run: |
+          mkdir -p cordon-reports
+          cordon-scanner inventory --format json . > cordon-reports/inventory.json
+          # Cordon's own components: not the fixtures, the corpus or the benchmarks, which hold
+          # deliberately broken and malicious files and would mark the record incomplete.
+          skip=(--exclude 'tests/conformance/cases/**' --exclude 'tests/unit/**' --exclude 'corpus/**' --exclude 'bench/**')
+          cordon-scanner deps --format json "${skip[@]}" . > cordon-reports/deps.json
+          cordon-scanner sbom generate --ai --name cordon-scanner "${skip[@]}" \
+            -o cordon-reports/aibom.cdx.json .
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: cordon-records
+          path: cordon-reports/
+          retention-days: 90
+
+  # The three images this repository publishes, scanned layer by layer before a release does.
+  self-images:
+    name: cordon scans cordon's images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the last committed pin, below
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - name: Refresh the advisory database
+        # A scan's own refresh from OSV can fail for one ecosystem on a busy runner; the intel then
+        # falls back to the bundle, and past its age the scan is rightly incomplete (4 Nov: 12 days,
+        # stale). Synced first, as the frontend's and backend's scan jobs do. Names nothing scanned.
+        # OSV's ecosystems only, read from the scanner itself: a full sync also fetches NVD's yearly
+        # feeds, one of which timed out at 120s on 4 Nov and failed the step with OSV all synced.
+        # Three tries, 30 s apart: one transient answer from a source (raw.githubusercontent.com's
+        # "backend read error", 4 Nov) failed the whole job before anything was scanned.
+        run: |
+          only=$(python -c "from cordon_scanner.intel.advisories.osv_import import ECOSYSTEM_OSV_NAMES as E; print(' '.join(sorted(E)))")
+          for attempt in 1 2 3; do
+            cordon-scanner advisories sync --only $only && exit 0
+            [ "$attempt" = 3 ] || sleep 30
+          done
+          exit 1
+      # The release commits action/requirements.txt, so between releases there is none and the
+      # pipe's `COPY` fails. It is built from the last pin committed instead: reviewed and
+      # hash-pinned, and what a user of the last release runs. Nothing is asked of the index.
+      - name: The pipe's pin between releases
+        run: |
+          if [ ! -f action/requirements.txt ]; then
+            removed=$(git log -1 --diff-filter=D --format=%H -- action/requirements.txt)
+            git show "${removed}^:action/requirements.txt" > action/requirements.txt
+            head -n 12 action/requirements.txt | grep '^cordon-scanner=='
+          fi
+      - name: Build the scanner, runner and Bitbucket pipe images
+        run: |
+          docker build -t cordon:scan .
+          docker build -f ci/runner/Dockerfile -t cordon-runner:scan .
+          docker build -f ci/bitbucket/Dockerfile -t cordon-bitbucket-pipe:scan .
+      - name: Scan each image
+        run: |
+          status=0
+          for image in cordon:scan cordon-runner:scan cordon-bitbucket-pipe:scan; do
+            ./scripts/security/cordon-image-scan.sh "$image" || status=1
+          done
+          exit $status
+      - if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: cordon-images
+          path: cordon-reports/images/
+          retention-days: 90
+
+  determinism:
+    name: output is reproducible
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install -e .
+      # Baselines, incremental caching and reproducible gates all rest on this,
+      # so it is asserted rather than assumed.
+      - run: |
+          cordon-scanner scan corpus --format json --output a.json --quiet --no-cache || true
+          cordon-scanner scan corpus --format json --output b.json --quiet --no-cache || true
+          # Findings only. A scan duration and cache statistics are observations
+          # of one particular run and legitimately differ; determinism is a claim
+          # about what was found, not about how long it took.
+          python - <<'PY'
+          import json, sys
+          a = json.load(open("a.json"))["findings"]
+          b = json.load(open("b.json"))["findings"]
+          if a != b:
+              print("::error::scan output is not reproducible")
+              sys.exit(1)
+          print(f"{len(a)} findings, identical across runs")
+          PY
+      - run: |
+          # A warm cache must produce exactly what a cold scan produced. If it
+          # does not, the cache is returning results computed under different
+          # conditions, which is a false negative waiting to happen.
+          cordon-scanner scan corpus --format json --output cold.json --quiet --no-cache || true
+          cordon-scanner scan corpus --format json --output warm1.json --quiet || true
+          cordon-scanner scan corpus --format json --output warm2.json --quiet || true
+          python - <<'PY'
+          import json, sys
+          cold = json.load(open("cold.json"))["findings"]
+          warm = json.load(open("warm2.json"))["findings"]
+          if cold != warm:
+              print("::error::cached results differ from a cold scan")
+              sys.exit(1)
+          print("cache hit is identical to a cold run")
+          PY
+
+  fuzz:
+    name: parser fuzzing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install --require-hashes -r ci/dev-requirements.txt && pip install --no-deps -e .
+      # A parser is where untrusted input first meets code, and there are only
+      # three outcomes: report the input as unparseable, raise something the
+      # caller does not expect, or not return. The second is a blinding
+      # primitive -- the engine catches broadly, so the file is quietly not
+      # examined -- and the third is a hang, which for a pre-commit hook means
+      # `--no-verify`.
+      #
+      # This found a real one on its first run: `package-lock.json` containing
+      # `0` raised AttributeError in every JSON parser.
+      - run: pytest -q -m fuzz tests/fuzz/

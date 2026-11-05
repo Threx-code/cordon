@@ -27,7 +27,7 @@ from pathlib import Path
 
 import pytest
 
-from cordon_scanner.core.bundle import MANIFEST_NAME, Bundle
+from cordon_scanner.engine.bundle import MANIFEST_NAME, Bundle
 
 
 class BundleFixtures:
@@ -235,7 +235,7 @@ class TestCreate(BundleFixtures):
     def test_an_empty_bundle_is_refused(self, tmp_path: Path) -> None:
         """It would verify successfully and contain nothing, which is the worst
         combination: a green check over an empty transfer."""
-        from cordon_scanner.core.errors import ConfigError
+        from cordon_scanner.foundation.errors import ConfigError
 
         with pytest.raises(ConfigError, match="no files"):
             Bundle.create(tmp_path / "empty.tar.gz", files=[])

@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from conformancekit import ConformanceCase, ConformanceRun
+from kits.conformancekit import ConformanceCase, ConformanceRun
 
 CASES = [
     c

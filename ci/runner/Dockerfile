@@ -13,6 +13,8 @@ FROM python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1
 WORKDIR /build
 COPY pyproject.toml README.md LICENSE NOTICE requirements-build.txt ./
 COPY src/ ./src/
+# The in-tree build backend pyproject.toml names (backend-path = scripts/backend).
+COPY scripts/backend/ ./scripts/backend/
 RUN python -m pip install --no-cache-dir --require-hashes -r requirements-build.txt \
     && python -m build --wheel --no-isolation --outdir /dist \
     && python -m pip install --no-cache-dir --no-deps --target=/install /dist/*.whl

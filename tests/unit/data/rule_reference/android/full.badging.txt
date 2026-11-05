@@ -1,0 +1,22 @@
+package: name='com.cordon.sample' versionCode='7' versionName='1.0'
+minSdkVersion:'21'
+maxSdkVersion:'35'
+targetSdkVersion:'34'
+uses-permission: name='android.permission.INTERNET'
+uses-permission: name='android.permission.SEND_SMS'
+application-label:'Cordon Sample'
+application: label='Cordon Sample' icon=''
+launchable-activity: name='com.cordon.sample.Main'  label='' icon=''
+feature-group: label=''
+  uses-feature: name='android.hardware.faketouch'
+  uses-implied-feature: name='android.hardware.faketouch' reason='default feature for all apps'
+  uses-feature: name='android.hardware.telephony'
+  uses-implied-feature: name='android.hardware.telephony' reason='requested a telephony permission'
+main
+other-activities
+other-receivers
+other-services
+supports-screens: 'small' 'normal' 'large' 'xlarge'
+supports-any-density: 'true'
+locales: '--_--'
+densities: '160'

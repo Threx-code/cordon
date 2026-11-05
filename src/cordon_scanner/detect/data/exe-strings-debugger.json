@@ -1,0 +1,7 @@
+[
+  "CheckRemoteDebuggerPresent",
+  "IsDebuggerPresent",
+  "NtQueryInformationProcess",
+  "PTRACE_TRACEME",
+  "P_TRACED"
+]

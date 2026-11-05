@@ -13,9 +13,9 @@ import re
 
 import pytest
 
-from conformancekit import ConformanceCase, ConformanceCheck, ConformanceRun
 from cordon_scanner.ecosystems.contract import RECORD_FIELDS
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
+from kits.conformancekit import ConformanceCase, ConformanceCheck, ConformanceRun
 
 CASES = ConformanceCase.all()
 VALID = [
@@ -226,7 +226,7 @@ class TestFindingsExplainThemselves:
 
     @pytest.mark.parametrize("case", VALID, ids=lambda c: c.id)
     def test_every_finding(self, case, tmp_path) -> None:
-        from cordon_scanner.core.registry import Registry
+        from cordon_scanner.engine.registry import Registry
         from cordon_scanner.rules.loader import RuleLoader, RuleSet
 
         known = {r.id for r in RuleSet(RuleLoader.load_builtin())}

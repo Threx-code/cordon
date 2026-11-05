@@ -16,6 +16,6 @@ must_find:
     min_severity: critical
     category: malicious
   - rule: SUSPECT.INSTALL.SCRIPT.001
-    min_severity: medium
+    min_severity: low  # the hook runs an in-tree file, graded on its own: MALWARE.* below
     category: suspicious
 must_not_leak_evidence: true

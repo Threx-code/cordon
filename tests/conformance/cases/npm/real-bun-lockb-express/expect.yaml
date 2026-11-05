@@ -1,0 +1,12 @@
+# Bun's binary lockfile, format 2, written by Bun for its express bench (NOTICE.md): 87 packages
+# behind one runtime, one dev and one peer dependency.
+kinds: [real-world, valid]
+covers:
+  - file:bun.lockb
+  - npm.bun
+dependencies:
+  - {name: express, resolved_version: 5.0.1, direct: true}
+  - {name: "@types/bun", resolved_version: 1.1.18, dependency_type: dev, direct: true}
+  - {name: typescript, resolved_version: 5.7.3, direct: true}
+  - {name: body-parser, dependency_path: [express, body-parser]}
+  - {name: safe-buffer, resolved_version: 5.2.1}

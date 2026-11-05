@@ -1,0 +1,13 @@
+# Bun's binary lockfile, format 2, written by Bun for its sharp integration test (NOTICE.md):
+# sharp's per-platform binaries carry their os and cpu in the lockfile's meta bits. The lockfile
+# predates the manifest's `@types/bun`; it holds `bun-types` as the dev dependency.
+kinds: [real-world, valid]
+covers:
+  - file:bun.lockb
+  - npm.bun
+dependencies:
+  - {name: sharp, resolved_version: 0.33.0, direct: true}
+  - {name: typescript, resolved_version: 5.3.2, direct: true}
+  - {name: "@img/sharp-win32-x64", resolved_version: 0.33.0, platform_constraints: ["os: win32", "cpu: x64"]}
+  - {name: "@img/sharp-linuxmusl-x64", resolved_version: 0.33.0, platform_constraints: ["os: linux", "cpu: x64"]}
+  - {name: "@img/sharp-darwin-arm64", dependency_path: [sharp, "@img/sharp-darwin-arm64"]}

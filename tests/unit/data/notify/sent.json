@@ -1,0 +1,86 @@
+{
+ "many-findings": {
+  "slack": [
+   "https://hooks.slack.test/services/T/B/X",
+   "{\"text\":\"Cordon: github.com/acme/api failed its gate (MEDIUM)\",\"blocks\":[{\"type\":\"header\",\"text\":{\"type\":\"plain_text\",\"text\":\"Cordon: github.com/acme/api failed its gate (MEDIUM)\"}},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*Why:* 1 finding at high\"}},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"```MEDIUM TEST.RULE.000 at example.py:1\\nMEDIUM TEST.RULE.001 at example.py:1\\nMEDIUM TEST.RULE.002 at example.py:1\\nMEDIUM TEST.RULE.003 at example.py:1\\nMEDIUM TEST.RULE.004 at example.py:1\\nMEDIUM TEST.RULE.005 at example.py:1\\nMEDIUM TEST.RULE.006 at example.py:1\\nMEDIUM TEST.RULE.007 at example.py:1\\nMEDIUM TEST.RULE.008 at example.py:1\\nMEDIUM TEST.RULE.009 at example.py:1\\n... and 15 more```\"}},{\"type\":\"context\",\"elements\":[{\"type\":\"mrkdwn\",\"text\":\"25 medium \\u00b7 github.com/acme/api @ 0123456789ab \\u00b7 cordon-scanner @VERSION@\"}]}]}",
+   {
+    "Content-Type": "application/json",
+    "User-Agent": "cordon-scanner/@VERSION@ (+https://github.com/Threx-code/cordon)"
+   }
+  ],
+  "teams": [
+   "https://teams.example.test/workflows/1",
+   "{\"type\":\"message\",\"attachments\":[{\"contentType\":\"application/vnd.microsoft.card.adaptive\",\"content\":{\"$schema\":\"http://adaptivecards.io/schemas/adaptive-card.json\",\"type\":\"AdaptiveCard\",\"version\":\"1.4\",\"body\":[{\"type\":\"TextBlock\",\"size\":\"Medium\",\"weight\":\"Bolder\",\"text\":\"Cordon: github.com/acme/api failed its gate (MEDIUM)\"},{\"type\":\"TextBlock\",\"wrap\":true,\"text\":\"Why: 1 finding at high\"},{\"type\":\"TextBlock\",\"wrap\":true,\"fontType\":\"Monospace\",\"text\":\"MEDIUM TEST.RULE.000 at example.py:1\"},{\"type\":\"TextBlock\",\"wrap\":true,\"fontType\":\"Monospace\",\"text\":\"MEDIUM TEST.RULE.001 at example.py:1\"},{\"type\":\"TextBlock\",\"wrap\":true,\"fontType\":\"Monospace\",\"text\":\"MEDIUM TEST.RULE.002 at example.py:1\"},{\"type\":\"TextBlock\",\"wrap\":true,\"fontType\":\"Monospace\",\"text\":\"MEDIUM TEST.RULE.003 at example.py:1\"},{\"type\":\"TextBlock\",\"wrap\":true,\"fontType\":\"Monospace\",\"text\":\"MEDIUM TEST.RULE.004 at example.py:1\"},{\"type\":\"TextBlock\",\"wrap\":true,\"fontType\":\"Monospace\",\"text\":\"MEDIUM TEST.RULE.005 at example.py:1\"},{\"type\":\"TextBlock\",\"wrap\":true,\"fontType\":\"Monospace\",\"text\":\"MEDIUM TEST.RULE.006 at example.py:1\"},{\"type\":\"TextBlock\",\"wrap\":true,\"fontType\":\"Monospace\",\"text\":\"MEDIUM TEST.RULE.007 at example.py:1\"},{\"type\":\"TextBlock\",\"wrap\":true,\"fontType\":\"Monospace\",\"text\":\"MEDIUM TEST.RULE.008 at example.py:1\"},{\"type\":\"TextBlock\",\"wrap\":true,\"fontType\":\"Monospace\",\"text\":\"MEDIUM TEST.RULE.009 at example.py:1\"},{\"type\":\"TextBlock\",\"wrap\":true,\"fontType\":\"Monospace\",\"text\":\"... and 15 more\"},{\"type\":\"TextBlock\",\"isSubtle\":true,\"wrap\":true,\"text\":\"25 medium \\u00b7 github.com/acme/api @ 0123456789ab \\u00b7 cordon-scanner @VERSION@\"}]}}]}",
+   {
+    "Content-Type": "application/json",
+    "User-Agent": "cordon-scanner/@VERSION@ (+https://github.com/Threx-code/cordon)"
+   }
+  ],
+  "webhook": [
+   "https://hooks.example.test/cordon",
+   "{\"scan\": {\"complete\": true, \"counts\": {\"critical\": 0, \"high\": 0, \"info\": 0, \"low\": 0, \"medium\": 25}, \"engine_version\": \"@VERSION@\", \"exit_code\": 1, \"findings\": [{\"category\": \"suspicious\", \"fingerprint\": \"81229609dc9a28eb\", \"location\": \"example.py:1\", \"rule_id\": \"TEST.RULE.000\", \"severity\": \"medium\"}, {\"category\": \"suspicious\", \"fingerprint\": \"951801108b42cef1\", \"location\": \"example.py:1\", \"rule_id\": \"TEST.RULE.001\", \"severity\": \"medium\"}, {\"category\": \"suspicious\", \"fingerprint\": \"9ba56526a224cf27\", \"location\": \"example.py:1\", \"rule_id\": \"TEST.RULE.002\", \"severity\": \"medium\"}, {\"category\": \"suspicious\", \"fingerprint\": \"55e40e1aca6abd3b\", \"location\": \"example.py:1\", \"rule_id\": \"TEST.RULE.003\", \"severity\": \"medium\"}, {\"category\": \"suspicious\", \"fingerprint\": \"bc8ea2e598e3eba0\", \"location\": \"example.py:1\", \"rule_id\": \"TEST.RULE.004\", \"severity\": \"medium\"}, {\"category\": \"suspicious\", \"fingerprint\": \"c9d2195ea0bcf5a4\", \"location\": \"example.py:1\", \"rule_id\": \"TEST.RULE.005\", \"severity\": \"medium\"}, {\"category\": \"suspicious\", \"fingerprint\": \"169cdcd5bf2c80da\", \"location\": \"example.py:1\", \"rule_id\": \"TEST.RULE.006\", \"severity\": \"medium\"}, {\"category\": \"suspicious\", \"fingerprint\": \"14f3956dc8f340f9\", \"location\": \"example.py:1\", \"rule_id\": \"TEST.RULE.007\", \"severity\": \"medium\"}, {\"category\": \"suspicious\", \"fingerprint\": \"c4627218916f4961\", \"location\": \"example.py:1\", \"rule_id\": \"TEST.RULE.008\", \"severity\": \"medium\"}, {\"category\": \"suspicious\", \"fingerprint\": \"b0f415bd3becc8d7\", \"location\": \"example.py:1\", \"rule_id\": \"TEST.RULE.009\", \"severity\": \"medium\"}], \"gate\": \"failed\", \"reason\": \"1 finding at high\", \"revision\": \"0123456789ab\", \"target\": \"github.com/acme/api\", \"total_findings\": 25}, \"schema\": \"cordon.event/v1\", \"sequence\": 1790000000000, \"source\": \"cli\", \"type\": \"scan.completed\"}",
+   {
+    "Content-Type": "application/json",
+    "User-Agent": "cordon-scanner/@VERSION@ (+https://github.com/Threx-code/cordon)",
+    "X-Cordon-Event": "scan.completed",
+    "X-Cordon-Signature": "t=1790000000,v1=5ca08e3e637cfc8a10d2d6bede20c19515ef8b3af6928e1449921acf9810caa3"
+   }
+  ]
+ },
+ "no-findings": {
+  "slack": [
+   "https://hooks.slack.test/services/T/B/X",
+   "{\"text\":\"Cordon: github.com/acme/api failed its gate (INFO)\",\"blocks\":[{\"type\":\"header\",\"text\":{\"type\":\"plain_text\",\"text\":\"Cordon: github.com/acme/api failed its gate (INFO)\"}},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*Why:* 1 finding at high\"}},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"```No findings listed.```\"}},{\"type\":\"context\",\"elements\":[{\"type\":\"mrkdwn\",\"text\":\"no findings \\u00b7 github.com/acme/api \\u00b7 cordon-scanner @VERSION@\"}]}]}",
+   {
+    "Content-Type": "application/json",
+    "User-Agent": "cordon-scanner/@VERSION@ (+https://github.com/Threx-code/cordon)"
+   }
+  ],
+  "teams": [
+   "https://teams.example.test/workflows/1",
+   "{\"type\":\"message\",\"attachments\":[{\"contentType\":\"application/vnd.microsoft.card.adaptive\",\"content\":{\"$schema\":\"http://adaptivecards.io/schemas/adaptive-card.json\",\"type\":\"AdaptiveCard\",\"version\":\"1.4\",\"body\":[{\"type\":\"TextBlock\",\"size\":\"Medium\",\"weight\":\"Bolder\",\"text\":\"Cordon: github.com/acme/api failed its gate (INFO)\"},{\"type\":\"TextBlock\",\"wrap\":true,\"text\":\"Why: 1 finding at high\"},{\"type\":\"TextBlock\",\"isSubtle\":true,\"wrap\":true,\"text\":\"no findings \\u00b7 github.com/acme/api \\u00b7 cordon-scanner @VERSION@\"}]}}]}",
+   {
+    "Content-Type": "application/json",
+    "User-Agent": "cordon-scanner/@VERSION@ (+https://github.com/Threx-code/cordon)"
+   }
+  ],
+  "webhook": [
+   "https://hooks.example.test/cordon",
+   "{\"scan\": {\"complete\": true, \"counts\": {\"critical\": 0, \"high\": 0, \"info\": 0, \"low\": 0, \"medium\": 0}, \"engine_version\": \"@VERSION@\", \"exit_code\": 1, \"findings\": [], \"gate\": \"failed\", \"reason\": \"1 finding at high\", \"revision\": \"\", \"target\": \"github.com/acme/api\", \"total_findings\": 0}, \"schema\": \"cordon.event/v1\", \"sequence\": 1790000000000, \"source\": \"cli\", \"type\": \"scan.completed\"}",
+   {
+    "Content-Type": "application/json",
+    "User-Agent": "cordon-scanner/@VERSION@ (+https://github.com/Threx-code/cordon)",
+    "X-Cordon-Event": "scan.completed",
+    "X-Cordon-Signature": "t=1790000000,v1=22333b49f80eead0741a2b98393be2950a72abc7deea77df63585b395e86916d"
+   }
+  ]
+ },
+ "one-finding": {
+  "slack": [
+   "https://hooks.slack.test/services/T/B/X",
+   "{\"text\":\"Cordon: acme-api failed its gate (MEDIUM)\",\"blocks\":[{\"type\":\"header\",\"text\":{\"type\":\"plain_text\",\"text\":\"Cordon: acme-api failed its gate (MEDIUM)\"}},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*Why:* 1 finding at high\"}},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"```MEDIUM SUSPECT.EXAMPLE.001 at example.py:1```\"}},{\"type\":\"context\",\"elements\":[{\"type\":\"mrkdwn\",\"text\":\"1 medium \\u00b7 acme-api \\u00b7 cordon-scanner @VERSION@\"}]}]}",
+   {
+    "Content-Type": "application/json",
+    "User-Agent": "cordon-scanner/@VERSION@ (+https://github.com/Threx-code/cordon)"
+   }
+  ],
+  "teams": [
+   "https://teams.example.test/workflows/1",
+   "{\"type\":\"message\",\"attachments\":[{\"contentType\":\"application/vnd.microsoft.card.adaptive\",\"content\":{\"$schema\":\"http://adaptivecards.io/schemas/adaptive-card.json\",\"type\":\"AdaptiveCard\",\"version\":\"1.4\",\"body\":[{\"type\":\"TextBlock\",\"size\":\"Medium\",\"weight\":\"Bolder\",\"text\":\"Cordon: acme-api failed its gate (MEDIUM)\"},{\"type\":\"TextBlock\",\"wrap\":true,\"text\":\"Why: 1 finding at high\"},{\"type\":\"TextBlock\",\"wrap\":true,\"fontType\":\"Monospace\",\"text\":\"MEDIUM SUSPECT.EXAMPLE.001 at example.py:1\"},{\"type\":\"TextBlock\",\"isSubtle\":true,\"wrap\":true,\"text\":\"1 medium \\u00b7 acme-api \\u00b7 cordon-scanner @VERSION@\"}]}}]}",
+   {
+    "Content-Type": "application/json",
+    "User-Agent": "cordon-scanner/@VERSION@ (+https://github.com/Threx-code/cordon)"
+   }
+  ],
+  "webhook": [
+   "https://hooks.example.test/cordon",
+   "{\"scan\": {\"complete\": true, \"counts\": {\"critical\": 0, \"high\": 0, \"info\": 0, \"low\": 0, \"medium\": 1}, \"engine_version\": \"@VERSION@\", \"exit_code\": 1, \"findings\": [{\"category\": \"suspicious\", \"fingerprint\": \"6a629d17255e55fc\", \"location\": \"example.py:1\", \"rule_id\": \"SUSPECT.EXAMPLE.001\", \"severity\": \"medium\"}], \"gate\": \"failed\", \"reason\": \"1 finding at high\", \"revision\": \"\", \"target\": \"acme-api\", \"total_findings\": 1}, \"schema\": \"cordon.event/v1\", \"sequence\": 1790000000000, \"source\": \"cli\", \"type\": \"scan.completed\"}",
+   {
+    "Content-Type": "application/json",
+    "User-Agent": "cordon-scanner/@VERSION@ (+https://github.com/Threx-code/cordon)",
+    "X-Cordon-Event": "scan.completed",
+    "X-Cordon-Signature": "t=1790000000,v1=46cdbb8f42c73ef26758e4e06463deb1f11e8d92bfded8d32f4995dafc4209e9"
+   }
+  ]
+ }
+}

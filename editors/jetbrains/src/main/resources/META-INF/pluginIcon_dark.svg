@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="40" height="40">
+  <!-- Cordon's mark for dark themes: the same geometry, the line lifted so it reads on a dark ground. -->
+  <path d="M 43.47 15.62 A 20 20 0 1 0 43.47 48.38" fill="none" stroke="#3fb8a8" stroke-width="8" stroke-linecap="round"/>
+  <rect x="43.5" y="26.5" width="11" height="11" rx="2.5" fill="#e8964a"/>
+</svg>

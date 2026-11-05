@@ -26,8 +26,10 @@ scan:
   profile: balanced              # fast | balanced | thorough
   expand_archives: true          # open archives found in a directory scan
   intel_feed: true               # pull the signed intel feed, in a build that pins its root key
-  max_intel_age: 86400           # seconds before intel is reported stale (0: never; unset: 24 h
-                                 # with a feed, no check without one)
+  max_intel_age: 86400           # seconds before intel is stale and the scan incomplete. Unset:
+                                 # 24 h when the scan can refresh (the feed, or OSV's changes),
+                                 # a week when it cannot (--offline). 0: no check, operator only;
+                                 # a repository's own file may only shorten it
   limits: {max_file_bytes: 10485760, total_timeout: 900}
 policy:
   fail_on: [high, {category: malicious}]
@@ -51,12 +53,14 @@ suppressions:
 Unknown keys are refused with a suggestion — a silently-ignored `sevrity_threshold`
 would leave you believing a threshold is in force when the default is.
 
-`accept_no_feed` names ecosystems no advisory source covers -- today Homebrew, Nix, CocoaPods,
-Bazel, conda, Helm, Terraform and vcpkg -- whose gap the project accepts. Their dependencies are
-still listed as unchecked in every report (`OPERATIONAL.ADVISORY.NO_FEED.001`), but no longer make
-the scan incomplete, so `fail_on_incomplete` keeps meaning "something Cordon was given went
-unread". Unset, it accepts nothing. An organisation policy that sets it caps the repository's:
-only an ecosystem both accept counts.
+`accept_no_feed` names ecosystems with no OSV feed -- Helm, which nothing covers, and those
+matched through NVD or their upstream instead (Homebrew, vcpkg, Conan, conda, CocoaPods, Bazel,
+Terraform, Nix, Ansible) -- whose unchecked packages the project accepts: a Homebrew cask or a
+vendor's closed binary that no source names. Their dependencies are still listed as unchecked in
+every report (`OPERATIONAL.ADVISORY.NO_FEED.001`), but no longer make the scan incomplete, so
+`fail_on_incomplete` keeps meaning "something Cordon was given went unread". Unset, it accepts
+nothing. An organisation policy that sets it caps the repository's: only an ecosystem both accept
+counts.
 
 An organisation policy may tighten any of the three: `expand_archives` and a shorter
 `max_intel_age` win over the repository, and `intel_feed: false` (an air-gapped estate) cannot
@@ -74,10 +78,11 @@ environment:
 | No network at all, including the intel feed | `--offline` | `CORDON_OFFLINE=1` |
 | Intel feed location | | `CORDON_FEED_URL` |
 | Notification channels | `--notify slack,teams,webhook` | `CORDON_NOTIFY_SLACK`, `CORDON_NOTIFY_TEAMS`, `CORDON_NOTIFY_WEBHOOK`, `CORDON_NOTIFY_WEBHOOK_SECRET` |
+| When to notify ([14-NOTIFICATIONS.md](14-NOTIFICATIONS.md)) | `--notify-on failed,incomplete,passed`; `notify.channels` and `notify.on` in the config file | |
 | Cordon Cloud API | `--cloud-url` | `CORDON_CLOUD_URL` |
 | CI identity token to exchange (audience `cordon`) | | `CORDON_ID_TOKEN`; GitHub, Bitbucket and CircleCI tokens are found automatically |
 | Runner token | | `CORDON_RUNNER_TOKEN` |
-| Device token for `cordon agent report` | | `CORDON_DEVICE_TOKEN` |
+| Device token for `cordon-scanner agent report` | | `CORDON_DEVICE_TOKEN` |
 
 ### The four layers
 
@@ -112,16 +117,16 @@ environment:
 | `max_files` | 200,000 | Files walked. |
 | `max_findings` | 50,000 | Findings retained. |
 | `max_dependencies` | 100,000 | Nodes in the dependency graph. |
-| `per_file_timeout` | 5 s | Detector time on one file. |
-| `total_timeout` | 900 s | Whole scan. `0` means no limit. |
+| `per_file_timeout` | 5 s | **Deprecated; nothing is cut on it**: every detector runs on every file, in a directory as in a package, on every historical blob of the git-history secret sweep, and in every detector run of a device scan (a wall-clock cut made results depend on machine load). Read for one more release. |
+| `total_timeout` | 900 s | Whole scan. `0` means no limit. A backstop, not a budget: it depends on the machine's load, so on a starved machine a scan can stop at it, and is then reported incomplete (`OPERATIONAL.SCAN.TIMEOUT`), never passed. Real scans sit well inside it: the heaviest measured unit takes 124 s quiet on one core (14%). |
 | `max_archive_ratio` | 200 | Compression ratio before an archive is refused. |
 | `max_archive_entries` | 50,000 | Members extracted. |
-| `max_archive_depth` | 3 | Nested archive levels. |
+| `max_archive_depth` | 8 | Nested archive levels. |
 | `max_uncompressed_bytes` | 2 GiB | Expanded archive size. |
 | `max_path_depth` | 64 | Directory nesting. |
 | `max_path_bytes` | 4096 | Path length. |
-| `max_memory_bytes` | 1 GiB | File content held at once. |
-| `max_workers` | 0 (automatic) | Worker processes. |
+| `max_memory_bytes` | 1 GiB | File content held at once. Peak process memory is higher: about three times this for an archive expanded to the ceiling. |
+| `max_workers` | 0 (automatic) | Worker processes. Automatic follows the CPUs the process may use, including a container quota. |
 
 Reaching any limit produces a finding and marks the scan incomplete. **A scan
 that stopped early and a scan that found nothing never look the same.**

@@ -29,15 +29,16 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from cordon_scanner.core.models import Category, Severity
-from cordon_scanner.core.scoring import RiskScorer
-from cordon_scanner.report.base import BaseReporter, ReportOptions
+from cordon_scanner.foundation.models import Category, Severity
+from cordon_scanner.foundation.scoring import RiskScorer
+from cordon_scanner.report.base import BaseReporter, Escape, ReportOptions
 from cordon_scanner.version import __version__
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from cordon_scanner.core.models import Finding, ScanResult
+    from cordon_scanner.foundation.models import Finding
+    from cordon_scanner.foundation.results import ScanResult
 
 SARIF_VERSION = "2.1.0"
 SARIF_SCHEMA = (
@@ -154,7 +155,7 @@ class SarifReporter(BaseReporter):
         # of the format most likely to be large.
         encoder = json.JSONEncoder(indent=2, sort_keys=True, ensure_ascii=False)
         for piece in encoder.iterencode(document):
-            yield piece.encode("utf-8")
+            yield Escape.json(piece).encode("utf-8")  # as the JSON reporter writes its document
         yield b"\n"
 
     # -- Rule catalogue --------------------------------------------------

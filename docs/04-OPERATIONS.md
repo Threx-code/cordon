@@ -25,13 +25,10 @@ control that runs and one that is routed around. Targets:
 | 50,000-file monorepo, incremental | < 3 s | 10 s | **5.2 s** |
 | Peak RSS, any scan | < 512 MB | 1 GB | 224 MB |
 
-The measured column is a base install on a four-core container. The `[ast-js]`
-extra, which the dev and CI environments carry so the bundled JS `kind: ast`
-rules are exercised, parses every JavaScript file with tree-sitter and costs
-about a third more on a JavaScript-only fixture: 3.0 s becomes 4.0 s on the
-2,000-staged row. `tests/perf/test_budgets.py` multiplies the ceiling when it
-detects the tier rather than publishing a number that covers an extra most
-installs do not have.
+The measured column is an install on a four-core container. JavaScript and
+TypeScript files are parsed by Cordon's own front end for the `kind: ast` rules;
+`tests/perf/test_budgets.py` holds the JavaScript rows to their ceilings with that
+tier on, as every install runs it.
 
 Measured by `pytest -m perf`, which runs in CI on every push and prints each
 number, so a regression is visible before it reaches a ceiling. The ceilings
@@ -146,6 +143,23 @@ Every limit from `02-THREAT-MODEL` is enforced in the same place it protects, an
 carries `complete: bool`. A silent skip is treated as a bug: there is a test that
 walks a corpus with limits set absurdly low and asserts that the number of
 `OPERATIONAL` findings equals the number of skipped units.
+
+### 1.5.1 What an `--online` advisory check costs
+
+For an ecosystem OSV has no feed for, `--online` reads what each package was built from
+(`docs/05-COVERAGE-MATRIX.md`), and proving a release against its tag downloads the release
+archive and the tag's tree. Bounded on every side:
+
+- **Time.** Each connection and read has a short timeout (30 s for an archive, 120 s for a git
+  server starting a large pack), and each download a deadline (300 s and 900 s): a host that
+  drops packets or trickles bytes fails that one proof, which is reported, never the scan.
+- **Size.** An archive is read to 256 MB, a pack to 512 MB, a conda package's `info` member to
+  64 MB; past that the proof is reported as not made.
+- **Memory.** A release's files are hashed as they stream and not kept; two proofs run at once.
+  A 900-package conda lock peaked at 2.6 GB.
+- **GitHub's API.** A deleted Homebrew formula is found in homebrew-core's history, and a `HEAD`
+  build's commit resolved, through `api.github.com`, which allows 60 requests an hour without a
+  token. Set `GITHUB_TOKEN` for a large estate: it is sent to `api.github.com` alone.
 
 ### 1.6 What is deliberately not done
 
@@ -315,8 +329,9 @@ its own manifest describes. It cannot prove who produced it, because anybody who
 rewrites a file can rewrite the manifest in the same pass; that comes from the
 detached signature made at release. `verify` says which of the two it checked
 rather than reporting a success that means less than it sounds like. The intelligence database records its own age, and a
-scan using data older than `intel.max_age_days` (default 30) emits an
-`OPERATIONAL` finding. Stale threat intelligence that presents itself as current
+scan using intel older than `scan.max_intel_age` (unset: 24 hours when the scan can refresh,
+from the feed or OSV's changes; a week when it cannot, as with `--offline`) is incomplete and
+says so (`OPERATIONAL.INTEL.STALE`). Stale threat intelligence that presents itself as current
 is the worst case for an air-gapped deployment: the scan passes, the report looks
 identical to a good one, and nobody has a reason to investigate.
 
@@ -399,7 +414,7 @@ build  ->  pin from the built artefacts  ->  publish those same artefacts
        ->  confirm the index serves what was uploaded
 ```
 
-`scripts/pin_action_requirements.py --from-dist dist` takes the digests from the
+`scripts/release/pin_action_requirements.py --from-dist dist` takes the digests from the
 files that are about to be uploaded, so the pin is correct by construction and
 depends on no build being byte-reproducible. After publication,
 `--from-pypi --check` reads the digests back from the index and fails if they
@@ -426,6 +441,12 @@ The product cannot be the next incident. Concretely:
   pip refuses anything else. A ref with no pin refuses to install rather than
   installing unverified; `allow-unverified-install: true` overrides that, in
   the workflow file where it is reviewable, and says loudly what it costs.
+- **The installation checked after install** with `verify-install: true` (the Action) or
+  `cordon-scanner verify --online`: the wheel's PEP 740 provenance must be signed by Cordon's
+  release workflow for that version, and every installed file must match the attested wheel's
+  RECORD. Offline, `cordon-scanner verify` checks the files against their own RECORD and says it is
+  only consistent, never verified, since whoever can edit Cordon can edit its RECORD too. For the
+  strong form, run it from a separate trusted copy with `--target <site-packages>`.
 - **Reproducible builds** with `SOURCE_DATE_EPOCH`; CI rebuilds each release
   independently and compares digests.
 - **SBOM** (CycloneDX + SPDX) generated and signed per release.
@@ -477,7 +498,7 @@ zero false typosquat positives across `corpus/benign`.
 ### Phase 5 — Breadth and false-positive control
 `secrets`, `ci`, `container`, `iac`, `script` detectors. Language packs for the
 remaining ecosystems. Baselines, suppression lifecycle, dedup and correlation.
-The `[ast]` extra with tree-sitter.
+Semantic call resolution for JavaScript and TypeScript (Cordon's own parser).
 **Exit criterion:** zero findings above `low` across the whole benign corpus;
 `cordon-scanner baseline` in use.
 

@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: cordon-dev/cordon-action@v1
+      - uses: Threx-code/cordon/action@v1
         with:
           severity: high
           sarif: true
@@ -58,10 +58,10 @@ permissions:
   id-token: write          # the job's own identity; no secret is stored
 steps:
   - uses: actions/checkout@v4
-  - uses: Threx-code/cordon/action@v0.6.0
+  - uses: Threx-code/cordon/action@v0.7.0
     with:
       upload: "true"
-      cloud-url: https://api.cordon.dev   # or your organisation's API
+      cloud-url: https://core-api.cordonscan.com   # or your organisation's API
 ```
 
 The job exchanges its OIDC token (audience `cordon`) for a fifteen-minute Cordon token. An

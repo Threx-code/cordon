@@ -74,11 +74,11 @@ a rule pack committed to the target.
 **Realised by:** a 42 KB zip expanding to 4.5 PB; a nested archive 20 levels deep;
 a tar with a billion 1-byte entries.
 
-**Controls** — all in `archive/safe.py`, the only code allowed to expand anything:
+**Controls** — all in `sources/archive.py`, the only code that expands an archive into files a scan reads (format readers that open their own container in memory read a bounded number of members, each to a byte limit):
 - `max_archive_ratio` (default 200:1) checked **incrementally during the stream**,
   not after extraction. Extraction aborts the moment the running ratio is exceeded.
 - `max_archive_entries` (default 50,000).
-- `max_archive_depth` (default 3). A nested archive beyond the limit is a finding,
+- `max_archive_depth` (default 8). A nested archive beyond the limit is a finding,
   not a silent skip.
 - `max_uncompressed_bytes` per archive and per scan, enforced by a counting
   wrapper around the stream, never by trusting the header's declared size.
@@ -117,13 +117,25 @@ regex. Especially dangerous because organisations write their own rules.
   backreferences, lookbehind of unbounded width, and nested unbounded quantifiers
   (`(a+)+`, `(a*)*`, `(a|aa)+`). The validator walks the parsed pattern rather
   than pattern-matching the source string.
-- `per_file_timeout` (default 5 s) enforced by the worker; a timeout is an
-  `OPERATIONAL` finding naming the file and the rule that was running.
+- No per-file cut: every detector runs on every file, in a directory as on every member of a
+  package. A cut on the wall clock made a scan's findings, its complete flag and its exit code
+  depend on the machine's load, and a package and its unpacked directory decided differently.
+  `total_timeout` bounds the scan as a whole, the same in both; a scan that reaches it is
+  incomplete (`OPERATIONAL.SCAN.TIMEOUT`). `per_file_timeout` is deprecated for a scan's files.
 - A worker that exceeds `max_memory` is killed and restarted; its unit is reported
   as unscanned.
 - Regex matching runs against **bytes**, with input length capped at
   `max_file_bytes` (default 10 MiB). Larger files get a targeted subset of rules
   (literal and entropy only) plus an `OPERATIONAL` note.
+
+**Known gap (2026-10-29): the scanner's own patterns.** The load-time validator covers rule
+packs, not the regular expressions in the scanner's own detectors and analysers, and no per-file
+budget interrupts a detector (none ever could interrupt a regex already running). A measured probe found patterns there that
+grow superlinearly on long crafted lines (one, in the config detector, with two adjacent
+`[ \t]*` runs). A file built for one stalls the scan until `total_timeout`, which ends it
+incomplete rather than clean (exit code 4 with `--fail-on-incomplete`). The fix in progress: a
+repository test that times every compiled pattern in `detect/` and `analysis/` the way its caller
+calls it, against a linear reference, and an output-identical rewrite of each pattern it flags.
 
 ### T5 — Memory exhaustion
 
@@ -283,6 +295,57 @@ allowlist that a target-supplied config cannot extend, TLS that no flag
 disables, responses parsed under the same limits as scanned files, and lookups
 by package coordinates only. Written here as a requirement rather than as a
 description of code, so the distinction is visible.
+
+**Hosts named by what is scanned (server-side request forgery).** Online, some
+of what a scan connects to is named by the scan target: a remote MCP server's
+URL in a configuration, an image's registry, a chart repository. Scanning
+untrusted content online could then be steered at a cloud metadata endpoint or
+an internal service. With `CORDON_PUBLIC_NETWORK_ONLY=1` every name the process
+resolves is filtered to globally routable addresses at `socket.getaddrinfo`
+(`engine/netguard.py`): a name that resolves only to private, loopback,
+link-local, carrier-grade NAT, reserved or multicast addresses is refused, and
+because the connection uses an address the filter returned, a name that
+resolves publicly for one lookup and privately for the next (DNS rebinding) has
+no second lookup to win. Hosts the operator lists in
+`CORDON_ALLOWED_PRIVATE_HOSTS` are exempt; nothing in a repository can add one.
+Off by default for the CLI, where an intranet registry is a normal thing to
+reach; on in every scan the MCP server runs (T13). Set it in CI that scans
+untrusted repositories with `--online`.
+
+### T13 — The MCP server, driven by an agent that may be steered
+
+**Threat.** `cordon-scanner mcp` takes its inputs from a coding agent, and the
+agent may be reading a malicious file at the time: a skill, an instruction file
+or a web page can tell it to call Cordon with a path, a URL or a package of the
+attacker's choosing, or to read Cordon's answer as an instruction.
+
+**Controls.**
+
+- *Read-only.* No tool installs, runs what it reads, writes into a workspace
+  root or changes configuration. Content tools write into a private temporary
+  directory (0700) removed when the call ends.
+- *Paths.* Only the directories the server was started with (`--root`); every
+  path is resolved, symlinks followed, and must land inside one. A server
+  started from `/` or the home directory reads no paths at all. Content paths
+  refuse `..`, absolute paths, drives, streams, device names and control
+  characters, so nothing lands outside the temporary directory on any system.
+- *Network.* Off unless the operator passes `--allow-online`; then every scan
+  the server runs, and the server process itself (extension downloads follow
+  registry redirects), may reach the public internet only (T12) unless the
+  operator passes `--allow-private-network`. Tools the server's flags do not
+  allow are not listed.
+- *Argument injection.* The scanner is run as a child process with an argument
+  list, never a shell; values that could start with `-` are passed as
+  `--flag=value` or checked to be paths and revisions.
+- *Answers as instructions.* Text quoted from scanned files is stripped of
+  invisible and direction-changing characters, capped, and every answer says it
+  is data. The server never relays the Cordon Cloud identity it is signed in as.
+- *Exhaustion.* A deadline per scan that ends the scan's whole process tree, a
+  cancelled call ends its scan, a cap on calls in flight (answered "busy", not
+  queued), a calls-per-minute limit, 32 MB per message, JSON nesting that the
+  parser refuses is answered rather than fatal.
+- *Audit.* `--audit-log` records each call's tool, verdict and duration, never
+  its arguments.
 
 ---
 

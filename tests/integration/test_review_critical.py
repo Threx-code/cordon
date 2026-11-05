@@ -14,18 +14,26 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.core.cache import ScanCache
-from cordon_scanner.core.config import Config
-from cordon_scanner.core.content import FileContent
-from cordon_scanner.core.errors import UnsafePatternError
-from cordon_scanner.rules.loader import PatternCompiler
-from support import requires_malicious_corpus
+from cordon_scanner.engine.cache import ScanCache
+from cordon_scanner.foundation.config.settings import Config
+from cordon_scanner.foundation.content import FileContent
+from cordon_scanner.foundation.errors import UnsafePatternError
+from cordon_scanner.rules.patterns import PatternCompiler
+from support import ROOT, requires_malicious_corpus
 
 PAYLOAD = "const p = atob(B);\neval(p);\n"
 
 
 class ReviewCriticalHelpers:
     """Helpers for test_review_critical.py."""
+
+    @staticmethod
+    def corpus_samples() -> list[Path]:
+        """Every malicious corpus sample, `expected.yaml` aside; none when the corpus is absent."""
+        corpus = ROOT / "corpus" / "malicious"
+        if not corpus.is_dir():
+            return []
+        return [p for p in sorted(corpus.rglob("*")) if p.is_file() and p.name != "expected.yaml"]
 
     @staticmethod
     def config(**kw) -> Config:
@@ -133,44 +141,47 @@ class TestC02BinaryClassification:
         assert Scanner(ReviewCriticalHelpers.config()).scan(tmp_path).complete is True
 
     @requires_malicious_corpus
-    def test_every_malicious_corpus_sample_survives_a_nul(self) -> None:
-        """The regression test the review asked for, over the whole corpus."""
-        corpus = Path(__file__).resolve().parents[2] / "corpus" / "malicious"
-        checked = 0
-        for sample in sorted(corpus.rglob("*")):
-            if not sample.is_file() or sample.name == "expected.yaml":
-                continue
-            with tempfile.TemporaryDirectory() as d:
-                plain = Path(d) / sample.name
-                plain.write_bytes(sample.read_bytes())
-                before, before_loudest = (
-                    ReviewCriticalHelpers.rule_ids(plain),
-                    ReviewCriticalHelpers.loudest(plain),
-                )
-            with tempfile.TemporaryDirectory() as d:
-                nul = Path(d) / sample.name
-                nul.write_bytes(b"/* \x00 */\n" + sample.read_bytes())
-                after, after_loudest = (
-                    ReviewCriticalHelpers.rule_ids(nul),
-                    ReviewCriticalHelpers.loudest(nul),
-                )
-            quieter = before_loudest is not None and (
-                after_loudest is None or after_loudest < before_loudest
+    def test_the_corpus_holds_samples_to_check(self) -> None:
+        assert len(ReviewCriticalHelpers.corpus_samples()) > 5
+
+    @requires_malicious_corpus
+    @pytest.mark.parametrize(
+        "sample",
+        ReviewCriticalHelpers.corpus_samples(),
+        ids=lambda sample: sample.relative_to(ROOT / "corpus" / "malicious").as_posix(),
+    )
+    def test_every_malicious_corpus_sample_survives_a_nul(self, sample: Path) -> None:
+        """The regression test the review asked for, over the whole corpus: one test a sample, so
+        the samples run side by side (as one loop it took 170 s on one worker, 5 Nov)."""
+        with tempfile.TemporaryDirectory() as d:
+            plain = Path(d) / sample.name
+            plain.write_bytes(sample.read_bytes())
+            before, before_loudest = (
+                ReviewCriticalHelpers.rule_ids(plain),
+                ReviewCriticalHelpers.loudest(plain),
             )
-            lost = before - after
-            if lost and quieter:
-                # A finding may be *replaced* by an operational report that the
-                # file could not be examined -- that is not silence, and it is
-                # the honest outcome when the prepended bytes make the file
-                # genuinely unparseable (a `package.json` cannot begin with a
-                # comment whatever the NUL does). What must never happen is the
-                # finding disappearing with nothing said.
-                assert any(name.startswith("OPERATIONAL.") for name in after), (
-                    f"{sample}: a NUL removed {sorted(lost)}, left nothing as serious "
-                    f"behind, and said nothing about why"
-                )
-            checked += 1
-        assert checked > 5
+        with tempfile.TemporaryDirectory() as d:
+            nul = Path(d) / sample.name
+            nul.write_bytes(b"/* \x00 */\n" + sample.read_bytes())
+            after, after_loudest = (
+                ReviewCriticalHelpers.rule_ids(nul),
+                ReviewCriticalHelpers.loudest(nul),
+            )
+        quieter = before_loudest is not None and (
+            after_loudest is None or after_loudest < before_loudest
+        )
+        lost = before - after
+        if lost and quieter:
+            # A finding may be *replaced* by an operational report that the
+            # file could not be examined -- that is not silence, and it is
+            # the honest outcome when the prepended bytes make the file
+            # genuinely unparseable (a `package.json` cannot begin with a
+            # comment whatever the NUL does). What must never happen is the
+            # finding disappearing with nothing said.
+            assert any(name.startswith("OPERATIONAL.") for name in after), (
+                f"{sample}: a NUL removed {sorted(lost)}, left nothing as serious "
+                f"behind, and said nothing about why"
+            )
 
 
 class TestC05PatternValidation:
@@ -231,7 +242,7 @@ class TestC05PatternValidation:
         assert sum(len(p.rules) for p in packs) > 40
 
     def test_a_pathological_pattern_cannot_be_reached_through_a_pack(self, tmp_path) -> None:
-        from cordon_scanner.core.errors import CordonError
+        from cordon_scanner.foundation.errors import CordonError
         from cordon_scanner.rules.loader import RuleLoader
 
         pack = tmp_path / "evil.yaml"
@@ -257,27 +268,34 @@ class TestC05PatternValidation:
 
 
 class TestC05PerFileTimeout:
-    """The documented backstop did not exist: `per_file_timeout` was declared,
-    documented at length, and referenced nowhere."""
+    """C-05, superseded (2026-10-31): a per-file cut on the wall clock made a directory's findings,
+    its complete flag and its exit code depend on the machine's load, while a package's members
+    were never cut. Every detector now runs on every file, in both; `total_timeout` bounds the
+    scan, and `per_file_timeout` is deprecated for a scan's files."""
 
-    def test_the_limit_is_read_by_the_engine(self) -> None:
-        source = (
-            Path(__file__).resolve().parents[2] / "src" / "cordon_scanner" / "core" / "engine.py"
-        ).read_text(encoding="utf-8")
-        assert "per_file_timeout" in source
-
-    def test_an_exhausted_budget_marks_the_scan_incomplete(self, tmp_path) -> None:
-        """A partial file must not be reported as a clean one."""
-        (tmp_path / "a.js").write_text(PAYLOAD, encoding="utf-8")
+    @staticmethod
+    def findings(tmp_path, per_file_timeout: float):
         cfg = Config.default()
-        cfg = cfg.with_overrides(use_cache=False, limits=cfg.limits.merged(per_file_timeout=1e-9))
+        cfg = cfg.with_overrides(
+            use_cache=False, limits=cfg.limits.merged(per_file_timeout=per_file_timeout)
+        )
         result = Scanner(cfg).scan(tmp_path)
-        assert result.complete is False
-        assert "OPERATIONAL.FILE.TIMEOUT" in {f.rule_id for f in result.findings}
+        rows = sorted(
+            (f.rule_id, f.location.path, f.location.line, f.severity.value) for f in result.findings
+        )
+        return result, rows
 
-    def test_a_partial_file_is_not_cached(self, tmp_path) -> None:
-        """Caching the output of a run that hit a limit would make the
-        degradation permanent and invisible."""
+    def test_no_file_is_cut_however_small_the_setting(self, tmp_path) -> None:
+        (tmp_path / "a.js").write_text(PAYLOAD, encoding="utf-8")
+        result, tiny = self.findings(tmp_path, 1e-9)
+        assert result.complete is True
+        assert "OPERATIONAL.FILE.TIMEOUT" not in {row[0] for row in tiny}
+        _, default = self.findings(tmp_path, Config.default().limits.per_file_timeout)
+        assert tiny == default
+
+    def test_a_complete_file_is_cached_whatever_the_setting(self, tmp_path) -> None:
+        """With no cut, a result is complete, so it is cached: the cache's rule (only a complete
+        result) is unchanged, and no setting turns a file's result partial any more."""
         (tmp_path / "a.js").write_text(PAYLOAD, encoding="utf-8")
         cfg = Config.default()
         cache_dir = tmp_path / "cd"
@@ -286,8 +304,8 @@ class TestC05PerFileTimeout:
             cache_dir=str(cache_dir),
             limits=cfg.limits.merged(per_file_timeout=1e-9),
         )
-        Scanner(cfg).scan(tmp_path)
-        assert not list(cache_dir.rglob("*.json"))
+        assert Scanner(cfg).scan(tmp_path).complete is True
+        assert list(cache_dir.rglob("*.json"))
 
 
 class TestC06CacheAuthentication:
@@ -348,7 +366,7 @@ class TestC06CacheAuthentication:
         import os
         import stat
 
-        from cordon_scanner.core.cache import ScanCache
+        from cordon_scanner.engine.cache import ScanCache
 
         self.warm(tmp_path)
         key = ScanCache.key_dir() / ".cordon-cache-key"
@@ -374,7 +392,7 @@ class TestC06CacheAuthentication:
         attacker chose. The entries must become misses, not clean results."""
         import secrets as secrets_module
 
-        from cordon_scanner.core.cache import KEY_NAME, ScanCache
+        from cordon_scanner.engine.cache import KEY_NAME, ScanCache
 
         repo, cache, cfg = self.warm(tmp_path)
         for entry in cache.rglob("*.json"):
@@ -435,7 +453,7 @@ class TestH13EvidenceCacheLeak:
         first = Scanner(warm).scan(repo).findings
         assert any(f.evidence.snippet for f in first)
 
-        from cordon_scanner.core.models import RedactionMode
+        from cordon_scanner.foundation.models import RedactionMode
 
         strict = warm.with_overrides(evidence=RedactionMode.HASH_ONLY)
         second = Scanner(strict).scan(repo).findings
@@ -445,8 +463,52 @@ class TestH13EvidenceCacheLeak:
             assert finding.evidence.redaction is RedactionMode.HASH_ONLY
 
     def test_the_evidence_mode_is_part_of_the_fingerprint(self) -> None:
-        from cordon_scanner.core.models import RedactionMode
+        from cordon_scanner.foundation.models import RedactionMode
 
         base = Config.default()
         strict = base.with_overrides(evidence=RedactionMode.HASH_ONLY)
         assert base.fingerprint() != strict.fingerprint()
+
+
+@requires_malicious_corpus
+class TestRuleMaterialNeverLowersAttacks:
+    """Fail-open audit (2 Nov): whether a file is "rule material" is read from text its own author
+    writes, so the judgement must never lower what a malicious sample is reported as. Forced true
+    for every file, in memory, every sample that blocks still blocks: every way of earning the
+    judgement is covered at once, and no sample is edited."""
+
+    @staticmethod
+    def blocking(path: Path) -> bool:
+        """Whether the sample blocks on a content finding. A detector that raised is a failure of
+        the test, not a block: it would hide that the forced judgement broke a detector."""
+        from cordon_scanner.foundation.models import Severity
+
+        result = Scanner(Config.default().with_overrides(use_cache=False, offline=True)).scan(path)
+        failed = [f.detector for f in result.findings if f.rule_id == "OPERATIONAL.DETECTOR.FAILED"]
+        assert failed == [], f"{path.name}: {failed}"
+        return any(
+            f.severity >= Severity.HIGH and not f.rule_id.startswith("OPERATIONAL")
+            for f in result.findings
+        )
+
+    @staticmethod
+    def samples() -> list[Path]:
+        corpus = ROOT / "corpus" / "malicious"
+        return sorted(p for p in corpus.iterdir() if p.is_dir()) if corpus.is_dir() else []
+
+    def test_enough_samples_block_to_tell(self) -> None:
+        assert sum(self.blocking(s) for s in self.samples()) >= 30
+
+    # One test a sample, so the samples run side by side (as one loop, 60 s on one worker, 5 Nov).
+    @pytest.mark.parametrize("sample", samples(), ids=lambda sample: sample.name)
+    def test_every_blocking_sample_still_blocks(
+        self, sample: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cordon_scanner.foundation.samples import SampleKinds
+
+        if not self.blocking(sample):
+            pytest.skip("this sample does not block, so the judgement cannot lower it")
+        monkeypatch.setattr(
+            SampleKinds, "is_rule_material", staticmethod(lambda raw, path="": True)
+        )
+        assert self.blocking(sample), sample.name

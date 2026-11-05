@@ -11,13 +11,16 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.core.config import Config, ConfigResolver, RestrictedYamlParser
-from cordon_scanner.core.errors import ConfigError
-from cordon_scanner.core.walker import PathGlob
+from cordon_scanner.foundation.config.resolver import ConfigResolver
+from cordon_scanner.foundation.config.settings import Config
+from cordon_scanner.foundation.errors import ConfigError
+from cordon_scanner.foundation.files.globs import PathGlob
+from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
 
 PAYLOAD = 'eval(atob("cGF5bG9hZA=="))\n'
 
@@ -35,23 +38,33 @@ class TestH3GlobMatchingIsLinear:
 
     def test_a_pathological_pattern_is_fast(self) -> None:
         path = "/".join(["a" * 200] * 60) + "/x.js"
-        started = time.monotonic()
+        # CPU time: the work runs in this process, so a loaded machine does not stretch it.
+        started = time.process_time()
         PathGlob.matches(path, "**a**a**a**a.zzz")
-        assert time.monotonic() - started < 0.5, "matching is super-linear again"
+        assert time.process_time() - started < 0.5, "matching is super-linear again"
 
     def test_cost_does_not_explode_with_length(self) -> None:
         """The shape of the growth, not just one measurement. Quartic growth
         over a 4x length increase is 256x; linear is 4x."""
 
-        def cost(segments: int) -> float:
+        def cost(segments: int, repeats: int) -> float:
+            """CPU time for `repeats` matches: the match runs in this process."""
             path = "/".join(["a" * 200] * segments) + "/x.js"
-            started = time.monotonic()
-            for _ in range(3):
+            started = time.process_time()
+            for _ in range(repeats):
                 PathGlob.matches(path, "**a**a**a**a.zzz")
-            return time.monotonic() - started
+            return time.process_time() - started
 
-        small, large = cost(5), cost(20)
-        assert large < max(small * 40, 0.2), f"{small:.5f}s -> {large:.5f}s"
+        cost(5, 3)  # the warm-up
+        # Repeated until the small size takes half a second of CPU, so one interruption of a
+        # few milliseconds cannot swing the ratio; the large size is matched as many times.
+        repeats = 3
+        while repeats < 3_000_000 and cost(5, repeats) < 0.5:
+            repeats *= 4
+        small, large = cost(5, repeats), cost(20, repeats)
+        assert large < max(small * 40, 0.2), (
+            f"{small:.5f}s -> {large:.5f}s over {repeats:,} matches"
+        )
 
     @pytest.mark.parametrize(
         ("path", "pattern", "expected"),
@@ -207,8 +220,8 @@ class TestH4ArchiveLimitsBindBeforeAllocation:
         return out
 
     def test_the_entry_limit_binds_during_iteration(self, tmp_path: Path) -> None:
-        from cordon_scanner.archive.safe import ArchiveReader
-        from cordon_scanner.core.limits import DEFAULT_LIMITS
+        from cordon_scanner.foundation.limits import DEFAULT_LIMITS
+        from cordon_scanner.sources.archive import ArchiveReader
 
         data = self.bomb(tmp_path).read_bytes()
         result = ArchiveReader.extract(data, path="bomb.tar.gz", limits=DEFAULT_LIMITS)
@@ -216,18 +229,119 @@ class TestH4ArchiveLimitsBindBeforeAllocation:
         assert len(result.members) <= DEFAULT_LIMITS.max_archive_entries
 
     def test_a_budget_bounds_the_whole_scan(self, tmp_path: Path) -> None:
-        """Most of the cost is matching, not expanding: a 50,000-member archive
-        expands in about a second and then takes eight to match. A deadline that
-        covered only expansion bounded the wrong half."""
-        bomb = self.bomb(tmp_path)
+        """The scan's time budget binds while the archive is read. Two hundred thousand members
+        take longer than the budget to read, so the reader stops and the archive is refused, with
+        the budget named as the reason and the scan incomplete.
+
+        Asserted by what the scan reports, not by seconds, which a loaded machine stretches: a
+        budget that did not bind would read every member, examine them, and name no time limit."""
+        entries = 200_000
+        bomb = self.bomb(tmp_path, entries)
         config = Config.default().with_overrides(
             use_cache=False, limits=Config.default().limits.merged(total_timeout=2.0)
         )
-        started = time.monotonic()
         result = Scanner(config).scan(bomb)
-        elapsed = time.monotonic() - started
 
-        assert elapsed < 20, f"the budget did not bind ({elapsed:.1f}s)"
+        refused = [
+            f
+            for f in result.findings
+            if f.rule_id == "OPERATIONAL.ARCHIVE.REJECTED" and "time budget" in f.message
+        ]
+        assert refused, (
+            f"the budget did not bind while reading: {[f.message for f in result.findings]}"
+        )
+        assert result.stats.files_scanned < entries, "every member was read despite the budget"
+        assert not result.complete, "a truncated scan reported complete"
+
+
+class TestH4bTheBudgetBindsWhileMatchingInParallel:
+    """Once a scan's files go to the worker pool, the budget was checked only between slices of
+    4,000 members, and the pool ran every batch it was given: 2,000 members with a 2 s budget
+    scanned for 26 s, every member examined, and nothing said the budget was passed. The pool now
+    stops handing out batches at the deadline, and what it never started is reported unexamined.
+
+    Asserted by what the scan reports, not by seconds, and independent of the machine's load: the
+    scan's budget is generous, so reading the archive or walking the tree cannot spend it, and the
+    pool is handed a deadline already reached (`_matching_out_of_time`). So it is always the
+    matching that runs out, and the pool's own report that says so. On a loaded machine a 2 s
+    budget used to run out in the expansion instead, and the scan said the archive was refused.
+    The pool's parts are tested without a clock in tests/unit/engine/test_parallel.py's
+    TestThePoolStopsAtTheDeadline."""
+
+    FUNCTION = (
+        "function f{i}(a, b) {{ const x = require('fs').readFileSync(a, 'utf8');"
+        " return x.split('\\n').map(l => l.trim()).join(b); }}\n"
+    )
+    COUNT = 2_000
+
+    @staticmethod
+    def body(index: int) -> bytes:
+        cls = TestH4bTheBudgetBindsWhileMatchingInParallel
+        return "".join(cls.FUNCTION.format(i=f"{index}_{k}") for k in range(30)).encode()
+
+    @staticmethod
+    def config() -> Config:
+        # Four workers, so the pool runs: the serial loop already checked the budget per file. A
+        # budget no read or walk can spend: the matching is what runs out (`_matching_out_of_time`).
+        return Config.default().with_overrides(
+            use_cache=False,
+            limits=Config.default().limits.merged(total_timeout=300.0, max_workers=4),
+        )
+
+    @staticmethod
+    def _matching_out_of_time(monkeypatch: pytest.MonkeyPatch) -> None:
+        """The pool starts with its deadline reached: what it is handed is the scan's own context
+        with the deadline set to now, which crosses into the workers as an argument."""
+        from dataclasses import replace
+
+        from cordon_scanner.engine.pipeline.detection import Detection
+
+        original = Detection.parallel
+
+        def at_its_deadline(
+            self: Any, units: Any, root: Any, ctx: Any, *args: Any, **kwargs: Any
+        ) -> Any:
+            return original(
+                self, units, root, replace(ctx, deadline=time.monotonic()), *args, **kwargs
+            )
+
+        monkeypatch.setattr(Detection, "parallel", at_its_deadline)
+
+    @staticmethod
+    def unexamined(result: Any) -> list[str]:
+        """The pool's own report of the files it never reached."""
+        return [
+            f.message
+            for f in result.findings
+            if f.rule_id == "OPERATIONAL.SCAN.TIMEOUT" and "still unexamined" in f.message
+        ]
+
+    def test_in_an_archive(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        import io
+        import tarfile
+
+        archive = tmp_path / "many.tar.gz"
+        with tarfile.open(archive, "w:gz") as out:
+            for index in range(self.COUNT):
+                data = self.body(index)
+                info = tarfile.TarInfo(f"pkg/lib/m{index}.js")
+                info.size = len(data)
+                out.addfile(info, io.BytesIO(data))
+        self._matching_out_of_time(monkeypatch)
+        result = Scanner(self.config()).scan(archive)
+
+        assert self.unexamined(result), [f.message for f in result.findings]
+        assert not result.complete, "a truncated scan reported complete"
+
+    def test_in_a_directory(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        tree = tmp_path / "pkg" / "lib"
+        tree.mkdir(parents=True)
+        for index in range(self.COUNT):
+            (tree / f"m{index}.js").write_bytes(self.body(index))
+        self._matching_out_of_time(monkeypatch)
+        result = Scanner(self.config()).scan(tmp_path / "pkg")
+
+        assert self.unexamined(result), [f.message for f in result.findings]
         assert not result.complete, "a truncated scan reported complete"
 
 
@@ -275,7 +389,8 @@ class TestH5DeepNestingIsNotSilent:
     def test_past_the_limit_it_is_reported_not_dropped(self, tmp_path: Path) -> None:
         """The contents still are not examined -- that is what a depth limit
         means. What must not happen is looking identical to a clean archive."""
-        result = self.scan(self.wrapped(tmp_path, 5))
+        past = Config.default().limits.max_archive_depth + 2
+        result = self.scan(self.wrapped(tmp_path, past))
         assert not result.complete, "a scan that stopped early reported complete"
         assert any("ARCHIVE" in f.rule_id for f in result.findings), (
             "one extra layer of wrapping hid the payload silently"
@@ -294,9 +409,13 @@ class TestZipRatioIsChecked:
         with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
             archive.writestr("big.txt", b"A" * (60 * 1024 * 1024))
 
-        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(out)
+        base = Config.default()
+        config = base.with_overrides(
+            limits=base.limits.merged(max_member_bytes=32 * 1024 * 1024), use_cache=False
+        )
+        result = Scanner(config).scan(out)
         assert not result.complete
-        assert any("ARCHIVE" in f.rule_id for f in result.findings)
+        assert any(f.rule_id == "SUSPECT.ARCHIVE.PADDED.001" for f in result.findings)
 
 
 class TestInstallHookImportClosure:
@@ -367,19 +486,19 @@ class TestInstallHookImportClosure:
         """An import that resolves to nothing in this scan is a third-party
         package, and a payload inside it is not this repository's file to
         judge."""
-        from cordon_scanner.core.closure import ImportClosure
+        from cordon_scanner.engine.closure import ImportClosure
 
         sources = {"setup.py": "import requests\nimport helper\n", "helper.py": "x = 1\n"}
         assert ImportClosure.resolve(["setup.py"], sources) == {"helper.py"}
 
     def test_a_cycle_terminates(self, tmp_path: Path) -> None:
         """The graph is attacker-supplied, so it may be circular."""
-        from cordon_scanner.core.closure import ImportClosure
+        from cordon_scanner.engine.closure import ImportClosure
 
         sources = {"setup.py": "import a\n", "a.py": "import b\n", "b.py": "import a\n"}
         assert ImportClosure.resolve(["setup.py"], sources) == {"a.py", "b.py"}
 
     def test_an_unparseable_hook_yields_nothing_rather_than_raising(self) -> None:
-        from cordon_scanner.core.closure import ImportClosure
+        from cordon_scanner.engine.closure import ImportClosure
 
         assert ImportClosure.imported_by("def (:\n", "setup.py") == []

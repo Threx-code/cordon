@@ -1,0 +1,963 @@
+"""Lazy file content.
+
+Every detector that looks at a file looks at it through this class, and it exists
+for two reasons.
+
+**Performance.** The naive shape reads and decodes each file once per detector,
+which on a large repository is most of the runtime. ``FileContent`` reads once,
+memoises the derived forms, and is shared across all detectors examining that
+file. Latency is a security property here: a commit-time guard that costs
+noticeably more than a second gets bypassed, and a bypassed guard protects
+nothing.
+
+**Safety.** It is also the choke point where a hostile file meets the scanner, so
+the limits live here rather than in each caller. Decoding is deferred until a
+detector actually needs text, because the large majority of files match nothing
+and decoding them is pure waste -- and because decoding attacker-controlled bytes
+is a step worth taking only when something has already indicated it is worth it.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import errno
+import hashlib
+import os
+from dataclasses import dataclass, field, replace
+from functools import cached_property
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+from cordon_scanner.foundation.files.spill import SpilledBytes
+from cordon_scanner.foundation.files.windows import BytesWindows, DiskWindows, WindowSource
+from cordon_scanner.foundation.limits import DEFAULT_LIMITS, Limits
+from cordon_scanner.foundation.paths import ContainerPaths
+from cordon_scanner.foundation.samples import SampleKinds
+from cordon_scanner.foundation.text.columns import TextColumns
+from cordon_scanner.foundation.text.comments import SourceComments
+from cordon_scanner.foundation.text.encoding import TextEncoding
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+    from typing import BinaryIO
+
+BINARY_SNIFF_BYTES = 8192
+"""How much of a file to inspect when deciding whether it is binary.
+
+A NUL byte in the first 8 KiB is the same heuristic grep uses for its -I flag. It
+is not perfect, and it does not need to be: the cost of a false "binary" is one
+unscanned file that is reported as skipped, and the cost of a false "text" is a
+handful of meaningless matches. Both are visible; neither is silent.
+"""
+
+BINARY_SUFFIXES: tuple[str, ...] = (
+    # Images and media
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".bmp",
+    ".ico",
+    ".webp",
+    ".tiff",
+    ".avif",
+    ".mp3",
+    ".mp4",
+    ".avi",
+    ".mov",
+    ".mkv",
+    ".webm",
+    ".wav",
+    ".flac",
+    ".ogg",
+    # Fonts
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".otf",
+    ".eot",
+    # Archives and packages. Note these are scanned *as archives* elsewhere;
+    # this only stops their raw bytes being run through source rules.
+    ".zip",
+    ".gz",
+    ".bz2",
+    ".xz",
+    ".zst",
+    ".7z",
+    ".rar",
+    ".tar",
+    ".jar",
+    ".war",
+    ".whl",
+    ".egg",
+    ".apk",
+    ".ipa",
+    ".nupkg",
+    # Compiled output and databases
+    ".pyc",
+    ".pyo",
+    ".pyd",
+    ".so",
+    ".dylib",
+    ".dll",
+    ".exe",
+    ".o",
+    ".a",
+    ".class",
+    ".wasm",
+    ".bin",
+    ".dat",
+    ".db",
+    ".sqlite",
+    ".sqlite3",
+    ".pdf",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".ppt",
+    ".pptx",
+)
+"""Extensions whose contents are not source and should not be matched as source.
+
+An allowlist by identity rather than a sniff of the bytes. Anything not named
+here is scanned, whatever it contains.
+"""
+
+_BINARY_EXTENSIONS: frozenset[str] = frozenset(BINARY_SUFFIXES)
+"""`BINARY_SUFFIXES` as a set, for lookup by extension.
+
+Derived rather than restated. Every entry in `BINARY_SUFFIXES` is a single
+leading-dot extension, which is what makes the set equivalent to the suffix
+scan it replaced; `test_content_walker.py` asserts that property so an entry
+like `.tar.gz` cannot be added without the mismatch being noticed.
+"""
+
+BINARY_MAGIC: tuple[bytes, ...] = (
+    b"\x7fELF",  # ELF executables and shared objects
+    b"MZ",  # PE / DOS executables
+    b"\x89PNG\r\n\x1a\n",  # PNG
+    b"\xff\xd8\xff",  # JPEG
+    b"GIF8",  # GIF
+    b"%PDF-",  # PDF
+    b"PK\x03\x04",  # ZIP and everything built on it
+    b"\x1f\x8b",  # gzip
+    b"BZh",  # bzip2
+    b"\xfd7zXZ\x00",  # xz
+    b"\x28\xb5\x2f\xfd",  # zstd
+    b"\xca\xfe\xba\xbe",  # Java class / Mach-O fat
+    b"\xcf\xfa\xed\xfe",  # Mach-O 64-bit
+    b"SQLite format 3\x00",
+    # Columnar and serialisation formats, which hold arbitrary compressed bytes and
+    # were being read as text because none of their magic numbers was listed.
+    #
+    # DuckDB's `data/parquet-testing/` produced a Stripe secret key, an AWS access
+    # key id and a cryptominer finding, all from chance byte sequences inside
+    # compressed column data -- `AKIA` followed by sixteen uppercase alphanumerics
+    # will occur in any large enough blob. Every content detector opens with
+    # `if content.is_binary: return ()`, so the listing here is where that is
+    # settled, rather than in each rule separately.
+    b"PAR1",  # Apache Parquet
+    b"ARROW1",  # Apache Arrow IPC
+    b"Obj\x01",  # Apache Avro
+    b"\x89HDF\r\n\x1a\n",  # HDF5
+    b"\x93NUMPY",  # NumPy .npy
+    b"glTF",  # glTF binary, which Bevy ships as model assets
+    b"OggS",  # Ogg
+    b"RIFF",  # WAV, AVI, WebP
+    b"\x1aE\xdf\xa3",  # Matroska and WebM
+    b"fLaC",  # FLAC
+    b"ustar",  # tar, which also appears at offset 257
+    b"\x04\x22M\x18",  # LZ4 frame
+    b"\x28\xb5\x2f\xfd",  # zstd, listed above and kept adjacent for the reader
+    b"\x37\x7a\xbc\xaf\x27\x1c",  # 7z
+    b"Rar!\x1a\x07",  # RAR
+    b"\xed\xab\xee\xdb",  # RPM
+    b"!<arch>",  # ar, and therefore .deb
+    b"\x00asm",  # WebAssembly
+    b"\xde\xc0\x17\x0b",  # LLVM bitcode
+    b"\xfe\xed\xfa\xce",  # Mach-O 32-bit
+    b"\xce\xfa\xed\xfe",  # Mach-O 32-bit, byte-swapped
+)
+"""Leading bytes of container formats that are binary regardless of name.
+
+Checked at offset zero only. A magic number is a claim the format makes about
+itself at its start; searching for it anywhere would hand the decision back to
+whatever an attacker can embed."""
+
+
+class SkipReason:
+    """Why a file was not fully scanned.
+
+    Every value here becomes an OPERATIONAL finding. A file that is silently
+    skipped is indistinguishable from a file that was scanned and found clean,
+    and a scanner whose coverage quietly shrinks is the most dangerous failure
+    mode available to one.
+    """
+
+    TOO_LARGE = "too_large"
+    BINARY = "binary"
+    UNREADABLE = "unreadable"
+    DECODE_FAILED = "decode_failed"
+    SYMLINK = "symlink"
+    NOT_REGULAR = "not_regular"
+    TIMEOUT = "timeout"
+
+
+STREAM_HASH_CHUNK = 1 << 20
+"""How much of an oversized file is read at a time to hash it."""
+
+
+@dataclass(frozen=True, slots=True)
+class Skipped:
+    """A file that was not scanned, and the reason."""
+
+    path: str
+    reason: str
+    detail: str = ""
+
+
+BYTE_ORDER_MARK = b"\xef\xbb\xbf"
+"""UTF-8's encoding preamble. Not content, and never part of what a rule matches."""
+
+
+class LineIndex:
+    """Where things are in a file's bytes: its lines, their lengths and offsets, a line's text, and
+    answers worked out once per line. Read by a `FileContent`, which holds what this reads."""
+
+    raw: bytes
+    limits: Limits
+    _comment_columns: dict[tuple[int, str | None, bool], int | None]
+    _per_line: dict[tuple[str, int], Any]
+
+    @cached_property
+    def line_starts(self) -> tuple[int, ...]:
+        """Byte offset of the start of each line.
+
+        Computed once and binary-searched, so translating a byte offset into a
+        line number is logarithmic rather than a scan of the file. With thousands
+        of matches across thousands of files, the naive version is measurable.
+        """
+        starts = [0]
+        start = 0
+        while True:
+            found = self.raw.find(b"\n", start)
+            if found == -1:
+                break
+            starts.append(found + 1)
+            start = found + 1
+        return tuple(starts)
+
+    @cached_property
+    def line_count(self) -> int:
+        return len(self.line_starts)
+
+    @cached_property
+    def longest_line(self) -> int:
+        """Length in bytes of the longest line.
+
+        A payload appended to a source file is frequently one very long line,
+        because that is what keeps it off-screen in a diff view and out of the
+        reviewer's eye. The measurement is cheap and the signal is real, though
+        it needs calibrating against minified files, which are legitimately made
+        of very long lines. That calibration is the detector's job, not this
+        class's.
+        """
+        longest = 0
+        previous = 0
+        for start in self.line_starts[1:]:
+            # `- 1` drops the newline; the extra `- 1` drops a carriage return
+            # when the file uses CRLF. Counting it would make the same content
+            # measure differently depending on how it was checked out.
+            end = start - 1
+            if end > previous and self.raw[end - 1 : end] == b"\r":
+                end -= 1
+            longest = max(longest, end - previous)
+            previous = start
+
+        tail = len(self.raw)
+        if tail > previous and self.raw[tail - 1 : tail] == b"\r":
+            tail -= 1
+        return max(longest, tail - previous)
+
+    def placed(self, byte_offset: int) -> int:
+        """Where a match starting at `byte_offset` is shown: its first byte that is not a line
+        terminator (item 48). A pattern may begin with `\\s` or `\\n`, so a match can start on the
+        newline that ends the line before it; placed there, it was reported on that line, at the
+        newline's column, with that line's text as its evidence (SUSPECT.AGENT.ATR.PROMPT_INJECTION at
+        .cursorrules:1:28, the injection on line 2). The offset itself when only terminators follow."""
+        raw, offset = self.raw, byte_offset
+        while 0 <= offset < len(raw) and raw[offset] in (0x0A, 0x0D):
+            offset += 1
+        return offset if offset < len(raw) else byte_offset
+
+    def line_of(self, byte_offset: int, *, place: bool = True) -> int:
+        """1-indexed line number of a match starting at a byte offset (`placed`). `place=False` for
+        an offset that is a match's last byte, where a terminator is the match's own."""
+        from bisect import bisect_right
+
+        offset = self.placed(byte_offset) if place else byte_offset
+        return bisect_right(self.line_starts, offset)
+
+    def column_of(self, byte_offset: int, *, place: bool = True) -> int:
+        """1-indexed column, in bytes, of an offset within its line (placed as `line_of` places it)."""
+        offset = self.placed(byte_offset) if place else byte_offset
+        line = self.line_of(offset, place=False)
+        return offset - self.line_starts[line - 1] + 1
+
+    def char_column(self, byte_offset: int) -> int:
+        """0-indexed column, in characters, of an offset within its line (`TextColumns`)."""
+        return TextColumns.char_column(self, byte_offset)
+
+    def byte_spans(self, spans: tuple[tuple[int, int], ...]) -> tuple[tuple[int, int], ...]:
+        """Spans over the decoded text as byte spans (`TextColumns`)."""
+        return TextColumns.byte_spans(self, spans)
+
+    @cached_property
+    def _ascii(self) -> bool:
+        """Whether every byte is ASCII, so characters and bytes agree: once per file, not per match."""
+        return self.raw.isascii()
+
+    @cached_property
+    def _line_char_starts(self) -> tuple[int, ...]:
+        """Character offset of the start of each line, in step with `line_starts`."""
+        starts, total = [], 0
+        for raw_line in self.raw.split(b"\n"):
+            starts.append(total)
+            total += len(raw_line.decode("utf-8", "replace")) + 1
+        return tuple(starts)
+
+    def in_line_comment(
+        self, byte_offset: int, language: str | None, *, blocks_known: bool = False
+    ) -> bool:
+        """Whether the offset sits in a comment its own line shows (`SourceComments.comment_column`),
+        compared in characters. `blocks_known`: the caller checks the exact block spans itself."""
+        start = self.comment_column(self.line_of(byte_offset), language, blocks_known=blocks_known)
+        return start is not None and self.char_column(byte_offset) >= start
+
+    def comment_column(
+        self, line_number: int, language: str | None, *, blocks_known: bool = False
+    ) -> int | None:
+        """Where a comment begins on this line, memoised for the file.
+
+        The computation is a scan of the line, and the answer does not depend on
+        which column is asked about -- so a detector with forty matches on one
+        line was paying for forty scans of it. That is invisible on ordinary
+        source, where a line is eighty characters, and ruinous on a bundle, where
+        the file is one line: `bun_environment.js`, the ten-megabyte payload the
+        Shai-Hulud npm worm ships beside its `preinstall` hook, spent most of its
+        five-second budget here and then exceeded it, so the detectors that would
+        have named it as obfuscated never ran.
+        """
+        key = (line_number, language, blocks_known)
+        memo = self._comment_columns
+        if key not in memo:
+            memo[key] = SourceComments.comment_column(
+                self.line_text(line_number), language, blocks_known=blocks_known
+            )
+        return memo[key]
+
+    def line_text(self, line_number: int) -> str:
+        """One line's text, bounded by ``max_line_bytes``.
+
+        The bound matters: a one-gigabyte single line is either minified output
+        or an attack on the line-slicing code, and neither should be
+        materialised in full to print an error message about it.
+        """
+        if line_number < 1 or line_number > len(self.line_starts):
+            return ""
+        start = self.line_starts[line_number - 1]
+        end = (
+            self.line_starts[line_number] if line_number < len(self.line_starts) else len(self.raw)
+        )
+        end = min(end, start + self.limits.max_line_bytes)
+        # Both terminators are stripped. A CRLF checkout would otherwise carry a
+        # trailing carriage return into every evidence snippet, and the same
+        # repository checked out with different line endings would produce
+        # different output -- which breaks the determinism guarantee across
+        # platforms rather than merely looking untidy.
+        return self.raw[start:end].decode("utf-8", errors="replace").rstrip("\r\n")
+
+    def line_bounds(self, byte_offset: int) -> tuple[int, int]:
+        """Where the line holding `byte_offset` starts and ends, its terminator excluded: for a
+        test of a match's neighbourhood, which reads a few bytes of `raw` around it rather than
+        copying a line that, in a minified bundle, is the whole file -- once per match."""
+        line = self.line_of(byte_offset)
+        starts = self.line_starts
+        start = starts[line - 1]
+        end = starts[line] - 1 if line < len(starts) else len(self.raw)
+        if end > start and self.raw[end - 1 : end] == b"\r":
+            end -= 1
+        return start, end
+
+    def once_per_line(self, name: str, byte_offset: int, compute: Callable[[], Any]) -> Any:
+        """`compute()`'s answer for the line holding `byte_offset`, worked out once per line: a
+        question about a whole line -- every host on it, every command on it -- has the same
+        answer for each match on that line, and a minified bundle is one line of thousands."""
+        key = (name, self.line_of(byte_offset))
+        if key not in self._per_line:
+            self._per_line[key] = compute()
+        return self._per_line[key]
+
+    def slice(self, start: int, end: int) -> bytes:
+        """Bounded byte slice, for evidence extraction."""
+        start = max(0, start)
+        end = min(len(self.raw), max(start, end))
+        return self.raw[start:end]
+
+
+class ContentKind:
+    """What a file's bytes are: binary or text and how the text decodes, a Git LFS pointer, rule
+    material, the language its name or shebang says. Read by a `FileContent`."""
+
+    path: str
+    raw: bytes
+
+    @cached_property
+    def is_binary(self) -> bool:
+        """Whether this file is a binary artefact rather than source.
+
+        Two signals, and *both* names are attacker-chosen, so neither is trusted
+        alone:
+
+        * **Magic bytes at offset zero** are decisive. A file that starts with
+          the PNG or ELF header is that format; nothing else needs checking.
+        * **A binary extension** is only believed when the content agrees with
+          it. A `.png` holding JavaScript text is not a PNG.
+
+        Each half fixes a real bypass, and the second was introduced by the fix
+        for the first.
+
+        The original implementation was `b"\\x00" in raw[:8192]`, and every
+        content detector opens with `if content.is_binary: return ()`. So
+        prepending `/* NUL */` to a payload removed it from capability,
+        obfuscation, secret and config detection at once, and the output was
+        identical to a clean file. Every language involved tolerates a NUL in a
+        comment, so the file still ran.
+
+        Deciding from the extension alone then reopened it from the other side.
+        A file named `payload.png` is skipped as an image -- and
+        `"postinstall": "node ./payload.png"` runs it, because an interpreter
+        handed an explicit path does not consult the extension. Same evasion,
+        same silence, one rename instead of one byte.
+
+        Requiring agreement closes both. A `.js` file never reaches the
+        extension branch whatever it contains, and a `.png` full of source is
+        not a PNG.
+        """
+        if any(self.raw.startswith(magic) for magic in BINARY_MAGIC):
+            return True
+
+        # A set lookup on the extension, not a scan over sixty-one suffixes.
+        # Every entry is a single leading-dot extension, so the two are
+        # equivalent, and the scan cost three million string comparisons on a
+        # fifty-thousand-file repository to answer "no" for all of them.
+        # `_BINARY_EXTENSIONS` is derived from `BINARY_SUFFIXES` rather than
+        # written out again, so the two cannot drift, and a test asserts a
+        # suffix that is not a plain extension would be caught.
+        # A third signal, for a format neither table knows: content that contains a
+        # NUL **and** will not decode as UTF-8.
+        #
+        # Both halves are required, and that is what makes it immune to the bypass the
+        # original heuristic had. `b"\x00" in raw[:8192]` alone meant prepending
+        # `/* NUL */` to a payload removed the file from every detector; such a file
+        # still decodes as UTF-8 perfectly, so it stays text here. Bytes that are both
+        # NUL-bearing and undecodable are not a text file with something prepended,
+        # they are a binary format nobody has added to `BINARY_MAGIC`.
+        #
+        # DuckDB's secret-manager fixtures are the case: `data/secrets/http/*.
+        # duckdb_secret` is a serialised struct starting `d\x00\x04http`, with no
+        # recognised magic and an extension no table lists. Scanned as text it produced
+        # three Stripe secret-key findings from chance byte sequences.
+        if b"\x00" in self.raw[:BINARY_SNIFF_BYTES] and not self._decodes_as_text:
+            return True
+
+        name = ContainerPaths.basename(self.path).lower()
+        dot = name.rfind(".")
+        if dot < 0 or name[dot:] not in _BINARY_EXTENSIONS:
+            return False
+
+        # The name claims binary. Believe it only if the bytes do too.
+        return self._looks_binary
+
+    @cached_property
+    def is_lfs_pointer(self) -> bool:
+        """Whether this file is a Git LFS pointer rather than the content it names.
+
+        A pointer is about 130 bytes of text:
+
+            version https://git-lfs.github.com/spec/v1
+            oid sha256:c7c7bf33de10f0b172e1153222ca8ad8e3ba09681525662a2e00177560f4acb6
+            size 755472
+
+        The bytes the name promises are on a server. A `.png` holding this is not a
+        forgery, it is a checkout without LFS -- which is the DEFAULT for
+        `actions/checkout`, so it is the state most CI runs are in.
+
+        `unionlabs/union` tracks `*.png`, `*.pdf` and `*.psd` through LFS, and a shallow
+        clone of it produced 907 format-mismatch findings: every tracked asset reported
+        as a polyglot. Any repository using LFS has the same shape.
+
+        Matched on the spec URL at offset zero, which is what the format requires and
+        what `git lfs` itself looks for. Cheap enough to ask on every file: the prefix
+        test fails on the first byte for anything else.
+        """
+        return self.raw.startswith(b"version https://git-lfs.github.com/spec/v1")
+
+    @cached_property
+    def is_rule_material(self) -> bool:
+        """Whether this file is another analyser's rule, or a test case for one.
+
+        Consulted by every content detector that applies a severity ceiling, and
+        cached here rather than recomputed in each of them: `semgrep/semgrep-rules`
+        tripped five detectors on the same files. See `core.samples` for what the
+        signals are and why this lowers a finding rather than removing it.
+
+        Binary files are not asked. A rule set is a text document and an annotation is
+        a comment, so neither signal can be present, and a megabyte of compiled output
+        should not pay for two regex passes to establish that.
+        """
+        if self.is_binary:
+            return False
+        return SampleKinds.is_rule_material(self.raw, self.path)
+
+    @cached_property
+    def _decodes_as_text(self) -> bool:
+        """Whether the leading bytes are valid UTF-8.
+
+        Separate from `_looks_binary`, which short-circuits on a NUL and so cannot
+        answer this question. A truncated multi-byte sequence at the window edge is not
+        evidence of anything, so the window is trimmed before the second attempt.
+        """
+        window = self.raw[:BINARY_SNIFF_BYTES]
+        for trim in (0, 1, 2, 3):
+            candidate = window[: len(window) - trim] if trim else window
+            try:
+                candidate.decode("utf-8")
+            except UnicodeDecodeError:
+                continue
+            return True
+        return False
+
+    @cached_property
+    def _looks_binary(self) -> bool:
+        """Whether the leading bytes are unlike text.
+
+        Consulted only for a file whose extension already claims to be binary,
+        which is what keeps it from becoming the evasion it was. A NUL byte, or
+        content that will not decode as UTF-8, is the ordinary signal; neither
+        can be used to hide a `.js` file, because a `.js` file never gets here.
+        """
+        window = self.raw[:BINARY_SNIFF_BYTES]
+        if b"\x00" in window:
+            return True
+        try:
+            window.decode("utf-8")
+        except UnicodeDecodeError:
+            # A truncated multi-byte sequence at the window edge is not
+            # evidence of anything, so retry on a whole-character boundary.
+            try:
+                self.raw[: max(0, BINARY_SNIFF_BYTES - 4)].decode("utf-8")
+            except UnicodeDecodeError:
+                return True
+        return False
+
+    @cached_property
+    def text(self) -> str:
+        """Decoded content.
+
+        Decoded permissively with ``errors="replace"``. A file that is 99 percent
+        valid UTF-8 with a few stray bytes is common in real repositories, and it
+        is also exactly what a payload hiding behind an encoding trick looks
+        like. Refusing to decode would skip both; replacing the bad bytes scans
+        both.
+
+        Byte offsets from a byte-level match do not index into this string. That
+        is why :class:`Location` carries both, and why evidence extraction works
+        from ``raw``.
+        """
+        return TextEncoding.decoded(self.raw, self.raw)
+
+    def text_head(self, chars: int) -> str:
+        """`text[:chars]`, decoded from a bounded prefix and not kept (note 80: `text` held for each
+        member was 590 MB of the parent's 1.4 GB). Four bytes a character covers every encoding."""
+        held = self.__dict__.get("text")
+        if held is not None:
+            return str(held)[:chars]
+        return TextEncoding.decoded(self.raw, self.raw[: chars * 4 + 4])[:chars]
+
+    @property
+    def extension(self) -> str:
+        """Lower-cased suffix including the dot, or empty.
+
+        The basename is taken first. `"README".rpartition(".")` returns
+        `('', '', 'README')`, so the old form invented `.readme` for a
+        root-level `README`, `.makefile` for a `Makefile` and `.dockerfile` for
+        a `Dockerfile` -- while the same file one directory down correctly
+        returned empty, because the fabricated suffix then contained a slash.
+        Identical files behaved differently according to their depth.
+        """
+        name = ContainerPaths.basename(self.path)
+        dot = name.rfind(".")
+        if dot <= 0:
+            # `<= 0` and not `< 0`: a leading dot is a hidden file, not a
+            # suffix, so `.gitignore` has no extension.
+            return ""
+        return name[dot:].lower()
+
+    @property
+    def basename(self) -> str:
+        """The final component, correct for a member at an archive root.
+
+        `rpartition("/")` returned `pkg.zip!package.json` for one of those,
+        which matched no manifest glob and no language extension."""
+        return ContainerPaths.basename(self.path)
+
+    @cached_property
+    def shebang(self) -> str | None:
+        """The interpreter named on the first line, if any.
+
+        Needed because extension alone misidentifies files, and a scanner that
+        misidentifies a language applies the wrong rules to it. Executable
+        scripts with no extension are common and are exactly the kind of file
+        worth reading carefully.
+        """
+        # Past a byte-order mark. A Windows editor writes one in front of the
+        # shebang, the file still runs, and the shebang is still what it says --
+        # but `startswith(b"#!")` said no, the language came out unknown, and the
+        # shell rules never ran on it. `corpus/malicious/polyglot-png` loses its
+        # `SUSPECT.DROPPER.001` at HIGH to three bytes without this.
+        start = len(BYTE_ORDER_MARK) if self.raw.startswith(BYTE_ORDER_MARK) else 0
+        if not self.raw.startswith(b"#!", start):
+            return None
+        end = self.raw.find(b"\n", start, start + 256)
+        line = self.raw[start + 2 : end if end != -1 else start + 256]
+        return line.decode("utf-8", errors="replace").strip() or None
+
+    def sniff_language(self, extension_map: Sequence[tuple[str, str]]) -> str | None:
+        """Identify this file's language from extension, then shebang.
+
+        A method rather than a free function because both inputs it reads --
+        the extension and the shebang -- are properties of the content itself,
+        and the answer is a property of the file.
+
+        Extension first because it is right the overwhelming majority of the
+        time and costs nothing. Shebang second because it is authoritative when
+        present: a file declaring an interpreter is telling you what will
+        execute it, which beats any inference from its name.
+        """
+        ext = self.extension
+        if ext:
+            for suffix, language in extension_map:
+                if suffix == ext:
+                    return language
+
+        shebang = self.shebang
+        if shebang:
+            interpreter = (
+                shebang.split("/")[-1].split()[0] if "/" in shebang else shebang.split()[0]
+            )
+            # `#!/usr/bin/env python3` names env, not the interpreter. The real
+            # one is the argument, and this form is more common than the direct
+            # path.
+            if interpreter == "env" and " " in shebang:
+                interpreter = shebang.split()[-1]
+            for suffix, language in extension_map:
+                if suffix.lstrip(".") == interpreter:
+                    return language
+            return interpreter or None
+
+        return None
+
+
+@dataclass
+class FileContent(LineIndex, ContentKind):
+    """One file's bytes and everything derived from them.
+
+    Not frozen, because the memoised properties are computed on demand. It is
+    still treated as immutable by every consumer: nothing mutates ``raw``.
+
+    Construct via :meth:`load`, which applies the limits. Constructing directly
+    bypasses them.
+    """
+
+    path: str
+    """Repository-relative, forward-slashed. What appears in a finding."""
+
+    raw: bytes
+    size: int
+    limits: Limits = field(default=DEFAULT_LIMITS, repr=False)
+    truncated: bool = False
+    """True when only a prefix of the file was read. Detectors that need whole-
+    file reasoning (entropy over the file, longest-line) must check this rather
+    than silently computing over a fragment."""
+
+    streamed: bytes | None = field(default=None, repr=False, compare=False)
+    """The whole of an oversized archive member, which is in memory already as the archive's: what
+    its windows are read from, and what travels to a worker. None for a file on disk, whose
+    windows are read from disk (`window_source`), and for every file that fits."""
+
+    window_source: WindowSource | None = field(default=None, repr=False, compare=False)
+    """Where the rest of an oversized file is read from, a window at a time (`core/windows.py`).
+    None for a file that fits, and when `max_stream_bytes` is 0."""
+
+    archive_source: WindowSource | None = field(default=None, repr=False, compare=False)
+    """Where the whole of an oversized *archive* (a zip, e.g. a PyTorch model file) is read from by
+    a structured reader that seeks -- its index is at the end, past the prefix. Set for a truncated
+    file on disk whose first bytes are a zip; None otherwise. Unlike `window_source` it drives no
+    text window pass, so giving it to a binary does not run the text rules over binary bytes."""
+
+    whole_sha256: str | None = field(default=None, repr=False, compare=False)
+    """The hash of the whole file as far as its windows read, for a file on disk past
+    `max_file_bytes`: computed while streaming it, so it is never held."""
+
+    spill: SpilledBytes | None = field(default=None, repr=False, compare=False)
+    """The archive member this was read from, kept on disk (`foundation/files/spill.py`): held so the
+    file stays for as long as this content is scanned, and what a worker is given to read."""
+
+    window_of: tuple[WindowSource, int] | None = field(default=None, repr=False, compare=False)
+    """For a window of a larger file (`WindowPass`): that file's source and the window's byte
+    offset in it."""
+
+    _comment_columns: dict[tuple[int, str | None, bool], int | None] = field(
+        default_factory=dict, repr=False, compare=False
+    )
+    """Memo for `comment_column`. See that method for what it cost without one."""
+
+    _per_line: dict[tuple[str, int], Any] = field(default_factory=dict, repr=False, compare=False)
+    """Memo for `once_per_line`."""
+
+    def in_block_comment(self, byte_offset: int, language: str | None) -> bool:
+        """Whether a byte offset lies in one of the file's `/* ... */` blocks (`TextColumns`)."""
+        return TextColumns.in_block_comment(self, byte_offset, language)
+
+    # -- Construction ----------------------------------------------------
+
+    @classmethod
+    def load(
+        cls,
+        real_path: Path,
+        rel_path: str,
+        limits: Limits = DEFAULT_LIMITS,
+    ) -> FileContent | Skipped:
+        """Read a file, applying limits.
+
+        Returns :class:`Skipped` rather than raising, because one unreadable
+        file must never abort a scan of ten thousand. The caller turns the
+        Skipped into an OPERATIONAL finding.
+        """
+        import stat as stat_module
+
+        flags = FileContent._open_flags()
+        try:
+            descriptor = os.open(real_path, flags)
+        except OSError as exc:
+            # ELOOP is the symlink refusal on POSIX. It is reported as a symlink
+            # rather than as an unreadable file so the output distinguishes
+            # "deliberately not followed" from "could not be read".
+            if getattr(exc, "errno", None) == errno.ELOOP:
+                return Skipped(rel_path, SkipReason.SYMLINK, "symlinks are not followed")
+            if real_path.is_symlink():
+                return Skipped(rel_path, SkipReason.SYMLINK, "symlinks are not followed")
+            return Skipped(rel_path, SkipReason.UNREADABLE, str(exc))
+
+        try:
+            stat = os.fstat(descriptor)
+
+            # Checked on the opened file, not on the path. A check against the
+            # path is a statement about what was there a moment ago.
+            if stat_module.S_ISLNK(stat.st_mode):
+                return Skipped(rel_path, SkipReason.SYMLINK, "symlinks are not followed")
+            if not stat_module.S_ISREG(stat.st_mode):
+                return Skipped(rel_path, SkipReason.NOT_REGULAR, "not a regular file")
+
+            size = stat.st_size
+
+            with os.fdopen(descriptor, "rb", closefd=True) as handle:
+                descriptor = -1  # ownership passed to the file object
+                if size > limits.max_file_bytes:
+                    text, source, whole, archive = FileContent._read_oversized(
+                        handle, limits, size, real_path, stat
+                    )
+                    return cls(
+                        path=rel_path,
+                        raw=text,
+                        size=size,
+                        limits=limits,
+                        truncated=True,
+                        window_source=source,
+                        archive_source=archive,
+                        whole_sha256=whole,
+                    )
+
+                # mmap is not used. `bytes(mapped)` copied the whole mapping
+                # into the heap anyway, so it cost an extra syscall and saved
+                # nothing -- and a file truncated by another process during the
+                # mapping raises SIGBUS, a fatal signal rather than an
+                # exception, which a hostile repository on a shared runner can
+                # use to kill the scanner outright.
+                raw = handle.read(limits.max_file_bytes + 1)
+                if len(raw) > limits.max_file_bytes:
+                    # The file grew between fstat and read.
+                    return cls(
+                        path=rel_path,
+                        raw=raw[: limits.max_file_bytes],
+                        size=len(raw),
+                        limits=limits,
+                        truncated=True,
+                    )
+        except (OSError, ValueError) as exc:
+            return Skipped(rel_path, SkipReason.UNREADABLE, str(exc))
+        finally:
+            if descriptor >= 0:
+                with contextlib.suppress(OSError):
+                    os.close(descriptor)
+
+        return cls(path=rel_path, raw=TextEncoding.as_utf8(raw), size=len(raw), limits=limits)
+
+    @staticmethod
+    def _open_flags() -> int:
+        """How a scanned file is opened: never following a link, never blocking on a pipe, never as text."""
+        # Opened before it is examined, and examined through the descriptor.
+        #
+        # The previous order was `lstat(path)` then, later, `read_bytes(path)`.
+        # Between the two, the path could be replaced with a symlink and the
+        # open would follow it -- and the docstring below names exactly what
+        # that costs: a scanner made to read a private key outside the scan root
+        # and print it as evidence into a CI log. Cordon is pointed deliberately
+        # at code that may be actively hostile, and a `postinstall` that has
+        # already started is squarely inside the threat model.
+        #
+        # O_NOFOLLOW refuses at the final component, so the race has no window:
+        # the descriptor either refers to a regular file that was not a link, or
+        # there is no descriptor.
+        # O_NONBLOCK matters as much as O_NOFOLLOW here. Checking the path
+        # first and opening second was the race; opening first and checking
+        # second means the open happens before anything knows the file is a
+        # FIFO, and opening a FIFO for reading blocks until a writer appears --
+        # forever, on a repository that contains one. O_NONBLOCK returns
+        # immediately and the S_ISREG check below then rejects it.
+        return (
+            os.O_RDONLY
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_NONBLOCK", 0)
+            | getattr(os, "O_BINARY", 0)
+        )
+
+    @staticmethod
+    def _read_oversized(
+        handle: BinaryIO, limits: Limits, size: int, real_path: Path, stat: os.stat_result
+    ) -> tuple[bytes, WindowSource | None, str | None, WindowSource | None]:
+        """A file past the size limit: its prefix, the whole file's hash while it streams past, and the windows past the prefix."""
+        # Every rule reads the prefix; the rest is read from disk a window at a time
+        # by the rules that judge text (`core/windows.py`), never held. The whole is
+        # hashed while it streams past, so two files that differ only after the
+        # prefix never share a cached result.
+        raw = handle.read(limits.max_file_bytes)
+        text = TextEncoding.as_utf8(raw)
+        source: WindowSource | None = None
+        whole: str | None = None
+        # Windows are cut on bytes. A file the prefix had to re-encode (UTF-16) would
+        # be cut mid-character, so it keeps the prefix alone, as before.
+        if limits.max_stream_bytes > 0 and text == raw:
+            digest = hashlib.sha256(raw)
+            remaining = min(size, limits.max_stream_bytes) - len(raw)
+            while remaining > 0:
+                chunk = handle.read(min(STREAM_HASH_CHUNK, remaining))
+                if not chunk:
+                    break
+                digest.update(chunk)
+                remaining -= len(chunk)
+            digest.update(f"\0{size}".encode())
+            whole = digest.hexdigest()
+            source = DiskWindows(str(real_path), DiskWindows.identity_of(stat))
+        archive: WindowSource | None = None
+        if raw[:4] == b"PK\x03\x04":
+            # A zip keeps its index at the end, past this prefix. A structured reader is
+            # given the whole file on disk to seek through -- the one way to reach a
+            # member (a PyTorch `data.pkl`) stored after the first `max_file_bytes`.
+            archive = DiskWindows(str(real_path), DiskWindows.identity_of(stat))
+        return text, source, whole, archive
+
+    @classmethod
+    def from_bytes(cls, path: str, raw: bytes, limits: Limits = DEFAULT_LIMITS) -> FileContent:
+        """Build from bytes already in memory.
+
+        Used for archive members, staged git blobs and tests, all of which have
+        content but no readable path on disk.
+        """
+        text = TextEncoding.as_utf8(raw)
+        if len(text) > limits.max_file_bytes:
+            # Every rule reads the prefix, as a file on disk is read; the whole of it is kept for
+            # the high-signal sweep when it is within `max_stream_bytes`. An archive member used
+            # to be refused outright here, unread.
+            whole = (
+                text
+                if limits.max_stream_bytes > 0 and len(text) <= limits.max_stream_bytes
+                else None
+            )
+            return cls(
+                path=path,
+                raw=text[: limits.max_file_bytes],
+                size=len(raw),
+                limits=limits,
+                truncated=True,
+                streamed=whole,
+                window_source=None if whole is None else BytesWindows(whole),
+            )
+        return cls(path=path, raw=text, size=len(raw), limits=limits)
+
+    @classmethod
+    def from_member(cls, path: str, data: bytes, limits: Limits = DEFAULT_LIMITS) -> FileContent:
+        """An archive member: from its bytes, or -- kept on disk past `max_file_bytes` -- read as
+        a large file on disk is read, its prefix by every rule and its windows by the sweeps."""
+        if isinstance(data, SpilledBytes):
+            loaded = cls.load(Path(data.path), path, limits)
+            if isinstance(loaded, FileContent):
+                return replace(loaded, spill=data)
+        return cls.from_bytes(path, data, limits)
+
+    @property
+    def part_of(self) -> tuple[WindowSource, int] | None:
+        """The whole file this content is a piece of, and the piece's byte offset in it: a window,
+        or the prefix of a file past `max_file_bytes` read from its own bytes. None for a whole
+        file. What reads a file as a whole -- a parse -- reads that file, not the piece."""
+        if self.window_of is not None:
+            return self.window_of
+        if self.truncated and self.window_source is not None:
+            return (self.window_source, 0)
+        return None
+
+    @property
+    def carried(self) -> bytes | str:
+        """What a worker is given for a file it cannot re-read by its own path: the bytes, or the
+        path of the file on disk an archive member was kept in."""
+        if self.spill is not None:
+            return self.spill.path
+        return self.streamed or self.raw
+
+    # -- Derived forms ---------------------------------------------------
+
+    @cached_property
+    def sha256(self) -> str:
+        """Content hash. The incremental cache key and the artefact identity.
+
+        Of the whole file when its windows read past the prefix (`streamed`, `whole_sha256`): two
+        files that share their first `max_file_bytes` and differ after must not share a cached
+        result."""
+        if self.whole_sha256 is not None:
+            return self.whole_sha256
+        return hashlib.sha256(self.streamed if self.streamed is not None else self.raw).hexdigest()
+
+    # -- Position translation --------------------------------------------
+
+    # -- Convenience -----------------------------------------------------
+
+    def __len__(self) -> int:
+        return len(self.raw)
+
+    def __repr__(self) -> str:
+        return f"FileContent({self.path!r}, {self.size} bytes)"
+
+
+__all__ = ["BINARY_SNIFF_BYTES", "FileContent", "SkipReason", "Skipped"]

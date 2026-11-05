@@ -1,0 +1,1698 @@
+{
+ "macho_ppc_file.bin": {
+  "modules": {
+   "macho": {
+    "cpusubtype": 0,
+    "cputype": 18,
+    "dylibs": [
+     {
+      "compatibility_version": "1.0.0",
+      "current_version": "71.1.1",
+      "name": {
+       "encoding": "base64",
+       "value": "L3Vzci9saWIvbGliU3lzdGVtLkIuZHlsaWI="
+      },
+      "timestamp": {
+       "encoding": "timestamp",
+       "value": 1111112572
+      }
+     }
+    ],
+    "dynamic_linker": {
+     "encoding": "base64",
+     "value": "L3Vzci9saWIvZHlsZA=="
+    },
+    "dysymtab": {
+     "extrefsymoff": 0,
+     "extreloff": 94284,
+     "iextdefsym": 2170,
+     "ilocalsym": 0,
+     "indirectsymoff": 0,
+     "locreloff": 0,
+     "modtaboff": 0,
+     "nextdefsym": 111,
+     "nextrefsyms": 0,
+     "nextrel": 191,
+     "nindirectsyms": 0,
+     "nlocalsym": 2170,
+     "nlocrel": 0,
+     "nmodtab": 0,
+     "ntoc": 86,
+     "tocoff": 2281
+    },
+    "entry_point": 3768,
+    "filetype": 2,
+    "flags": 133,
+    "magic": 4277009102,
+    "ncmds": 10,
+    "number_of_segments": 4,
+    "segments": [
+     {
+      "fileoff": 0,
+      "filesize": 0,
+      "flags": 4,
+      "initprot": 0,
+      "maxprot": 0,
+      "nsects": 0,
+      "segname": {
+       "encoding": "base64",
+       "value": "X19QQUdFWkVSTw=="
+      },
+      "vmaddr": 0,
+      "vmsize": 4096
+     },
+     {
+      "fileoff": 0,
+      "filesize": 61440,
+      "flags": 0,
+      "initprot": 5,
+      "maxprot": 7,
+      "nsects": 7,
+      "sections": [
+       {
+        "addr": 7864,
+        "align": 2,
+        "flags": 2147484672,
+        "nreloc": 0,
+        "offset": 3768,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "sectname": {
+         "encoding": "base64",
+         "value": "X190ZXh0"
+        },
+        "segname": {
+         "encoding": "base64",
+         "value": "X19URVhU"
+        },
+        "size": 47160
+       },
+       {
+        "addr": 55024,
+        "align": 2,
+        "flags": 2147483656,
+        "nreloc": 0,
+        "offset": 50928,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 36,
+        "sectname": {
+         "encoding": "base64",
+         "value": "X19waWNzeW1ib2xfc3R1Yg=="
+        },
+        "segname": {
+         "encoding": "base64",
+         "value": "X19URVhU"
+        },
+        "size": 0
+       },
+       {
+        "addr": 55024,
+        "align": 2,
+        "flags": 2147483656,
+        "nreloc": 0,
+        "offset": 50928,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 20,
+        "sectname": {
+         "encoding": "base64",
+         "value": "X19zeW1ib2xfc3R1Yg=="
+        },
+        "segname": {
+         "encoding": "base64",
+         "value": "X19URVhU"
+        },
+        "size": 0
+       },
+       {
+        "addr": 55024,
+        "align": 2,
+        "flags": 2147484680,
+        "nreloc": 0,
+        "offset": 50928,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 32,
+        "sectname": {
+         "encoding": "base64",
+         "value": "X19waWNzeW1ib2xzdHViMQ=="
+        },
+        "segname": {
+         "encoding": "base64",
+         "value": "X19URVhU"
+        },
+        "size": 2560
+       },
+       {
+        "addr": 57584,
+        "align": 2,
+        "flags": 2,
+        "nreloc": 0,
+        "offset": 53488,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "sectname": {
+         "encoding": "base64",
+         "value": "X19jc3RyaW5n"
+        },
+        "segname": {
+         "encoding": "base64",
+         "value": "X19URVhU"
+        },
+        "size": 7816
+       },
+       {
+        "addr": 65400,
+        "align": 3,
+        "flags": 4,
+        "nreloc": 0,
+        "offset": 61304,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "sectname": {
+         "encoding": "base64",
+         "value": "X19saXRlcmFsOA=="
+        },
+        "segname": {
+         "encoding": "base64",
+         "value": "X19URVhU"
+        },
+        "size": 80
+       },
+       {
+        "addr": 65480,
+        "align": 2,
+        "flags": 1744830475,
+        "nreloc": 0,
+        "offset": 61384,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "sectname": {
+         "encoding": "base64",
+         "value": "X19laF9mcmFtZQ=="
+        },
+        "segname": {
+         "encoding": "base64",
+         "value": "X19URVhU"
+        },
+        "size": 52
+       }
+      ],
+      "segname": {
+       "encoding": "base64",
+       "value": "X19URVhU"
+      },
+      "vmaddr": 4096,
+      "vmsize": 61440
+     },
+     {
+      "fileoff": 61440,
+      "filesize": 4096,
+      "flags": 0,
+      "initprot": 3,
+      "maxprot": 7,
+      "nsects": 6,
+      "sections": [
+       {
+        "addr": 65536,
+        "align": 3,
+        "flags": 0,
+        "nreloc": 0,
+        "offset": 61440,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "sectname": {
+         "encoding": "base64",
+         "value": "X19kYXRh"
+        },
+        "segname": {
+         "encoding": "base64",
+         "value": "X19EQVRB"
+        },
+        "size": 596
+       },
+       {
+        "addr": 66132,
+        "align": 2,
+        "flags": 7,
+        "nreloc": 0,
+        "offset": 62036,
+        "reloff": 0,
+        "reserved1": 80,
+        "reserved2": 0,
+        "sectname": {
+         "encoding": "base64",
+         "value": "X19sYV9zeW1ib2xfcHRy"
+        },
+        "segname": {
+         "encoding": "base64",
+         "value": "X19EQVRB"
+        },
+        "size": 320
+       },
+       {
+        "addr": 66452,
+        "align": 2,
+        "flags": 6,
+        "nreloc": 0,
+        "offset": 62356,
+        "reloff": 0,
+        "reserved1": 160,
+        "reserved2": 0,
+        "sectname": {
+         "encoding": "base64",
+         "value": "X19ubF9zeW1ib2xfcHRy"
+        },
+        "segname": {
+         "encoding": "base64",
+         "value": "X19EQVRB"
+        },
+        "size": 124
+       },
+       {
+        "addr": 66576,
+        "align": 2,
+        "flags": 0,
+        "nreloc": 0,
+        "offset": 62480,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "sectname": {
+         "encoding": "base64",
+         "value": "X19keWxk"
+        },
+        "segname": {
+         "encoding": "base64",
+         "value": "X19EQVRB"
+        },
+        "size": 28
+       },
+       {
+        "addr": 66604,
+        "align": 2,
+        "flags": 1,
+        "nreloc": 0,
+        "offset": 0,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "sectname": {
+         "encoding": "base64",
+         "value": "X19ic3M="
+        },
+        "segname": {
+         "encoding": "base64",
+         "value": "X19EQVRB"
+        },
+        "size": 1032
+       },
+       {
+        "addr": 67648,
+        "align": 4,
+        "flags": 1,
+        "nreloc": 0,
+        "offset": 0,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "sectname": {
+         "encoding": "base64",
+         "value": "X19jb21tb24="
+        },
+        "segname": {
+         "encoding": "base64",
+         "value": "X19EQVRB"
+        },
+        "size": 208
+       }
+      ],
+      "segname": {
+       "encoding": "base64",
+       "value": "X19EQVRB"
+      },
+      "vmaddr": 65536,
+      "vmsize": 4096
+     },
+     {
+      "fileoff": 65536,
+      "filesize": 46032,
+      "flags": 4,
+      "initprot": 1,
+      "maxprot": 7,
+      "nsects": 0,
+      "segname": {
+       "encoding": "base64",
+       "value": "X19MSU5LRURJVA=="
+      },
+      "vmaddr": 69632,
+      "vmsize": 49152
+     }
+    ],
+    "sizeofcmds": 1484,
+    "symtab": {
+     "nsyms": 2367,
+     "stroff": 95048,
+     "strsize": 16520,
+     "symoff": 65536
+    }
+   }
+  },
+  "sha256": "858e110792cde08d12c7dfa8e12e44586224a3d445a0d3a4781cd817212279fb"
+ },
+ "macho_x86_64_dylib_file.bin": {
+  "modules": {
+   "macho": {
+    "cpusubtype": 3,
+    "cputype": 16777223,
+    "dyld_info": {
+     "bind_off": 0,
+     "bind_size": 0,
+     "export_off": 4096,
+     "export_size": 24,
+     "lazy_bind_off": 0,
+     "lazy_bind_size": 0,
+     "rebase_off": 0,
+     "rebase_size": 0,
+     "weak_bind_off": 0,
+     "weak_bind_size": 0
+    },
+    "dylibs": [
+     {
+      "compatibility_version": "0.0.0",
+      "current_version": "0.0.0",
+      "name": {
+       "encoding": "base64",
+       "value": "ZmFjdF94ODZfNjQuZHlsaWI="
+      },
+      "timestamp": {
+       "encoding": "timestamp",
+       "value": 1
+      }
+     },
+     {
+      "compatibility_version": "1.0.0",
+      "current_version": "1213.0.0",
+      "name": {
+       "encoding": "base64",
+       "value": "L3Vzci9saWIvbGliU3lzdGVtLkIuZHlsaWI="
+      },
+      "timestamp": {
+       "encoding": "timestamp",
+       "value": 2
+      }
+     }
+    ],
+    "dysymtab": {
+     "extrefsymoff": 0,
+     "extreloff": 0,
+     "iextdefsym": 0,
+     "ilocalsym": 0,
+     "indirectsymoff": 0,
+     "locreloff": 0,
+     "modtaboff": 0,
+     "nextdefsym": 1,
+     "nextrefsyms": 0,
+     "nextrel": 0,
+     "nindirectsyms": 0,
+     "nlocalsym": 0,
+     "nlocrel": 0,
+     "nmodtab": 0,
+     "ntoc": 1,
+     "tocoff": 1
+    },
+    "filetype": 6,
+    "flags": 1048709,
+    "magic": 3489328638,
+    "min_version": {
+     "device": "MACOSX",
+     "sdk": "10.10.0",
+     "version": "10.9.0"
+    },
+    "ncmds": 13,
+    "number_of_segments": 2,
+    "reserved": 1,
+    "segments": [
+     {
+      "fileoff": 0,
+      "filesize": 4096,
+      "flags": 0,
+      "initprot": 5,
+      "maxprot": 7,
+      "nsects": 3,
+      "sections": [
+       {
+        "addr": 3920,
+        "align": 4,
+        "flags": 2147484672,
+        "nreloc": 0,
+        "offset": 3920,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "reserved3": 0,
+        "sectname": {
+         "encoding": "base64",
+         "value": "X190ZXh0"
+        },
+        "segname": {
+         "encoding": "base64",
+         "value": "X19URVhU"
+        },
+        "size": 72
+       },
+       {
+        "addr": 3992,
+        "align": 2,
+        "flags": 0,
+        "nreloc": 0,
+        "offset": 3992,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "reserved3": 0,
+        "sectname": {
+         "encoding": "base64",
+         "value": "X191bndpbmRfaW5mbw=="
+        },
+        "segname": {
+         "encoding": "base64",
+         "value": "X19URVhU"
+        },
+        "size": 72
+       },
+       {
+        "addr": 4064,
+        "align": 3,
+        "flags": 0,
+        "nreloc": 0,
+        "offset": 4064,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "reserved3": 0,
+        "sectname": {
+         "encoding": "base64",
+         "value": "X19laF9mcmFtZQ=="
+        },
+        "segname": {
+         "encoding": "base64",
+         "value": "X19URVhU"
+        },
+        "size": 24
+       }
+      ],
+      "segname": {
+       "encoding": "base64",
+       "value": "X19URVhU"
+      },
+      "vmaddr": 0,
+      "vmsize": 4096
+     },
+     {
+      "fileoff": 4096,
+      "filesize": 128,
+      "flags": 0,
+      "initprot": 1,
+      "maxprot": 7,
+      "nsects": 0,
+      "segname": {
+       "encoding": "base64",
+       "value": "X19MSU5LRURJVA=="
+      },
+      "vmaddr": 4096,
+      "vmsize": 4096
+     }
+    ],
+    "sizeofcmds": 744,
+    "source_version": "0.0.0.0.0",
+    "symtab": {
+     "nsyms": 2,
+     "stroff": 4184,
+     "strsize": 40,
+     "symoff": 4152
+    },
+    "uuid": "8C904612-6253-3FA1-B8D2-D5829848A8FC"
+   }
+  },
+  "sha256": "bf1907fec6d5ee364341b2bf3b7ddb0b5d37eaa9e102da5389b6afdcf816687c"
+ },
+ "macho_x86_file.bin": {
+  "modules": {
+   "macho": {
+    "cpusubtype": 3,
+    "cputype": 7,
+    "dyld_info": {
+     "bind_off": 8208,
+     "bind_size": 24,
+     "export_off": 8260,
+     "export_size": 44,
+     "lazy_bind_off": 8232,
+     "lazy_bind_size": 28,
+     "rebase_off": 8192,
+     "rebase_size": 16,
+     "weak_bind_off": 0,
+     "weak_bind_size": 0
+    },
+    "dylibs": [
+     {
+      "compatibility_version": "1.0.0",
+      "current_version": "1213.0.0",
+      "name": {
+       "encoding": "base64",
+       "value": "L3Vzci9saWIvbGliU3lzdGVtLkIuZHlsaWI="
+      },
+      "timestamp": {
+       "encoding": "timestamp",
+       "value": 2
+      }
+     }
+    ],
+    "dynamic_linker": {
+     "encoding": "base64",
+     "value": "L3Vzci9saWIvZHlsZA=="
+    },
+    "dysymtab": {
+     "extrefsymoff": 0,
+     "extreloff": 8388,
+     "iextdefsym": 0,
+     "ilocalsym": 0,
+     "indirectsymoff": 0,
+     "locreloff": 0,
+     "modtaboff": 0,
+     "nextdefsym": 2,
+     "nextrefsyms": 0,
+     "nextrel": 6,
+     "nindirectsyms": 0,
+     "nlocalsym": 0,
+     "nlocrel": 0,
+     "nmodtab": 0,
+     "ntoc": 3,
+     "tocoff": 2
+    },
+    "entry_point": 3728,
+    "filetype": 2,
+    "flags": 18874501,
+    "magic": 3472551422,
+    "min_version": {
+     "device": "MACOSX",
+     "sdk": "10.10.0",
+     "version": "10.9.0"
+    },
+    "ncmds": 16,
+    "number_of_segments": 4,
+    "segments": [
+     {
+      "fileoff": 0,
+      "filesize": 0,
+      "flags": 0,
+      "initprot": 0,
+      "maxprot": 0,
+      "nsects": 0,
+      "segname": {
+       "encoding": "base64",
+       "value": "X19QQUdFWkVSTw=="
+      },
+      "vmaddr": 0,
+      "vmsize": 4096
+     },
+     {
+      "fileoff": 0,
+      "filesize": 4096,
+      "flags": 0,
+      "initprot": 5,
+      "maxprot": 7,
+      "nsects": 5,
+      "sections": [
+       {
+        "addr": 7824,
+        "align": 4,
+        "flags": 2147484672,
+        "nreloc": 0,
+        "offset": 3728,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "sectname": {
+         "encoding": "base64",
+         "value": "X190ZXh0"
+        },
+        "segname": {
+         "encoding": "base64",
+         "value": "X19URVhU"
+        },
+        "size": 166
+       },
+       {
+        "addr": 7990,
+        "align": 1,
+        "flags": 2147484936,
+        "nreloc": 0,
+        "offset": 3894,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 6,
+        "sectname": {
+         "encoding": "base64",
+         "value": "X19zeW1ib2xfc3R1Yg=="
+        },
+        "segname": {
+         "encoding": "base64",
+         "value": "X19URVhU"
+        },
+        "size": 12
+       },
+       {
+        "addr": 8004,
+        "align": 2,
+        "flags": 2147484928,
+        "nreloc": 0,
+        "offset": 3908,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "sectname": {
+         "encoding": "base64",
+         "value": "X19zdHViX2hlbHBlcg=="
+        },
+        "segname": {
+         "encoding": "base64",
+         "value": "X19URVhU"
+        },
+        "size": 32
+       },
+       {
+        "addr": 8036,
+        "align": 0,
+        "flags": 2,
+        "nreloc": 0,
+        "offset": 3940,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "sectname": {
+         "encoding": "base64",
+         "value": "X19jc3RyaW5n"
+        },
+        "segname": {
+         "encoding": "base64",
+         "value": "X19URVhU"
+        },
+        "size": 69
+       },
+       {
+        "addr": 8108,
+        "align": 2,
+        "flags": 0,
+        "nreloc": 0,
+        "offset": 4012,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "sectname": {
+         "encoding": "base64",
+         "value": "X191bndpbmRfaW5mbw=="
+        },
+        "segname": {
+         "encoding": "base64",
+         "value": "X19URVhU"
+        },
+        "size": 72
+       }
+      ],
+      "segname": {
+       "encoding": "base64",
+       "value": "X19URVhU"
+      },
+      "vmaddr": 4096,
+      "vmsize": 4096
+     },
+     {
+      "fileoff": 4096,
+      "filesize": 4096,
+      "flags": 0,
+      "initprot": 3,
+      "maxprot": 7,
+      "nsects": 2,
+      "sections": [
+       {
+        "addr": 8192,
+        "align": 2,
+        "flags": 6,
+        "nreloc": 0,
+        "offset": 4096,
+        "reloff": 0,
+        "reserved1": 2,
+        "reserved2": 0,
+        "sectname": {
+         "encoding": "base64",
+         "value": "X19ubF9zeW1ib2xfcHRy"
+        },
+        "segname": {
+         "encoding": "base64",
+         "value": "X19EQVRB"
+        },
+        "size": 8
+       },
+       {
+        "addr": 8200,
+        "align": 2,
+        "flags": 7,
+        "nreloc": 0,
+        "offset": 4104,
+        "reloff": 0,
+        "reserved1": 4,
+        "reserved2": 0,
+        "sectname": {
+         "encoding": "base64",
+         "value": "X19sYV9zeW1ib2xfcHRy"
+        },
+        "segname": {
+         "encoding": "base64",
+         "value": "X19EQVRB"
+        },
+        "size": 8
+       }
+      ],
+      "segname": {
+       "encoding": "base64",
+       "value": "X19EQVRB"
+      },
+      "vmaddr": 8192,
+      "vmsize": 4096
+     },
+     {
+      "fileoff": 8192,
+      "filesize": 280,
+      "flags": 0,
+      "initprot": 1,
+      "maxprot": 7,
+      "nsects": 0,
+      "segname": {
+       "encoding": "base64",
+       "value": "X19MSU5LRURJVA=="
+      },
+      "vmaddr": 12288,
+      "vmsize": 4096
+     }
+    ],
+    "sizeofcmds": 1060,
+    "source_version": "0.0.0.0.0",
+    "stack_size": 0,
+    "symtab": {
+     "nsyms": 5,
+     "stroff": 8412,
+     "strsize": 60,
+     "symoff": 8328
+    },
+    "uuid": "5FB5950F-4025-3D4F-A8FB-9648C1740790"
+   }
+  },
+  "sha256": "f72b95cef1874d7c14228c1f3e0996eb75c6f7e3a3ec5e0659e7703818862e47"
+ },
+ "macho_x86_object_file.bin": {
+  "modules": {
+   "macho": {
+    "cpusubtype": 3,
+    "cputype": 7,
+    "dysymtab": {
+     "extrefsymoff": 0,
+     "extreloff": 0,
+     "iextdefsym": 0,
+     "ilocalsym": 0,
+     "indirectsymoff": 0,
+     "locreloff": 0,
+     "modtaboff": 0,
+     "nextdefsym": 1,
+     "nextrefsyms": 0,
+     "nextrel": 0,
+     "nindirectsyms": 0,
+     "nlocalsym": 0,
+     "nlocrel": 0,
+     "nmodtab": 0,
+     "ntoc": 0,
+     "tocoff": 1
+    },
+    "exports": [
+     "__Z9factoriali"
+    ],
+    "filetype": 1,
+    "flags": 8192,
+    "magic": 3472551422,
+    "ncmds": 3,
+    "number_of_segments": 1,
+    "segments": [
+     {
+      "fileoff": 256,
+      "filesize": 72,
+      "flags": 0,
+      "initprot": 7,
+      "maxprot": 7,
+      "nsects": 1,
+      "sections": [
+       {
+        "addr": 0,
+        "align": 4,
+        "flags": 2147484672,
+        "nreloc": 0,
+        "offset": 256,
+        "reloff": 0,
+        "reserved1": 0,
+        "reserved2": 0,
+        "sectname": {
+         "encoding": "base64",
+         "value": "X190ZXh0"
+        },
+        "segname": {
+         "encoding": "base64",
+         "value": "X19URVhU"
+        },
+        "size": 72
+       }
+      ],
+      "segname": {
+       "encoding": "base64",
+       "value": ""
+      },
+      "vmaddr": 0,
+      "vmsize": 72
+     }
+    ],
+    "sizeofcmds": 228,
+    "symtab": {
+     "entries": [
+      {
+       "encoding": "base64",
+       "value": "X19aOWZhY3RvcmlhbGk="
+      }
+     ],
+     "nlists": [
+      {
+       "n_desc": 0,
+       "n_sect": 1,
+       "n_strx": 1,
+       "n_type": 15,
+       "n_value": 0
+      }
+     ],
+     "nsyms": 1,
+     "stroff": 340,
+     "strsize": 16,
+     "symoff": 328
+    }
+   }
+  },
+  "sha256": "1e709abbdd3e0681166ea3611fc80a25f6fc184f0ed143b51d496a931a91e8cf"
+ },
+ "tiny-macho": {
+  "modules": {
+   "macho": {
+    "cpusubtype": 3,
+    "cputype": 7,
+    "entry_point": 116,
+    "filetype": 2,
+    "flags": 18874368,
+    "magic": 3472551422,
+    "ncmds": 2,
+    "number_of_segments": 1,
+    "segments": [
+     {
+      "fileoff": 0,
+      "filesize": 164,
+      "flags": 0,
+      "initprot": 5,
+      "maxprot": 7,
+      "nsects": 0,
+      "segname": {
+       "encoding": "base64",
+       "value": "U1AxwInnaghXagFQsATrsA=="
+      },
+      "vmaddr": 4096,
+      "vmsize": 4096
+     }
+    ],
+    "sizeofcmds": 136
+   }
+  },
+  "sha256": "e29e46cc91651a52fa2078e747890ea9ceb89ed9f2f024fb4b60e04f7454fd63"
+ },
+ "tiny-universal": {
+  "modules": {
+   "macho": {
+    "fat_arch": [
+     {
+      "align": 12,
+      "cpusubtype": 3,
+      "cputype": 7,
+      "offset": 4096,
+      "reserved": 0,
+      "size": 8512
+     },
+     {
+      "align": 12,
+      "cpusubtype": 2147483651,
+      "cputype": 16777223,
+      "offset": 16384,
+      "reserved": 0,
+      "size": 8544
+     }
+    ],
+    "fat_magic": 3405691582,
+    "file": [
+     {
+      "cpusubtype": 3,
+      "cputype": 7,
+      "dyld_info": {
+       "bind_off": 8208,
+       "bind_size": 24,
+       "export_off": 8260,
+       "export_size": 60,
+       "lazy_bind_off": 8232,
+       "lazy_bind_size": 28,
+       "rebase_off": 8192,
+       "rebase_size": 16,
+       "weak_bind_off": 0,
+       "weak_bind_size": 0
+      },
+      "dylibs": [
+       {
+        "compatibility_version": "1.0.0",
+        "current_version": "1213.0.0",
+        "name": {
+         "encoding": "base64",
+         "value": "L3Vzci9saWIvbGliU3lzdGVtLkIuZHlsaWI="
+        },
+        "timestamp": {
+         "encoding": "timestamp",
+         "value": 2
+        }
+       }
+      ],
+      "dynamic_linker": {
+       "encoding": "base64",
+       "value": "L3Vzci9saWIvZHlsZA=="
+      },
+      "dysymtab": {
+       "extrefsymoff": 0,
+       "extreloff": 8416,
+       "iextdefsym": 0,
+       "ilocalsym": 0,
+       "indirectsymoff": 0,
+       "locreloff": 0,
+       "modtaboff": 0,
+       "nextdefsym": 3,
+       "nextrefsyms": 0,
+       "nextrel": 6,
+       "nindirectsyms": 0,
+       "nlocalsym": 0,
+       "nlocrel": 0,
+       "nmodtab": 0,
+       "ntoc": 3,
+       "tocoff": 3
+      },
+      "entry_point": 3808,
+      "exports": [
+       "_main",
+       "_factorial",
+       "__mh_execute_header"
+      ],
+      "filetype": 2,
+      "flags": 18874501,
+      "imports": [
+       "dyld_stub_binder",
+       "_printf",
+       "_scanf"
+      ],
+      "magic": 3472551422,
+      "min_version": {
+       "device": "MACOSX",
+       "sdk": "10.10.0",
+       "version": "10.9.0"
+      },
+      "ncmds": 16,
+      "number_of_segments": 4,
+      "segments": [
+       {
+        "fileoff": 0,
+        "filesize": 0,
+        "flags": 0,
+        "initprot": 0,
+        "maxprot": 0,
+        "nsects": 0,
+        "segname": {
+         "encoding": "base64",
+         "value": "X19QQUdFWkVSTw=="
+        },
+        "vmaddr": 0,
+        "vmsize": 4096
+       },
+       {
+        "fileoff": 0,
+        "filesize": 4096,
+        "flags": 0,
+        "initprot": 5,
+        "maxprot": 7,
+        "nsects": 5,
+        "sections": [
+         {
+          "addr": 7824,
+          "align": 4,
+          "flags": 2147484672,
+          "nreloc": 0,
+          "offset": 3728,
+          "reloff": 0,
+          "reserved1": 0,
+          "reserved2": 0,
+          "sectname": {
+           "encoding": "base64",
+           "value": "X190ZXh0"
+          },
+          "segname": {
+           "encoding": "base64",
+           "value": "X19URVhU"
+          },
+          "size": 214
+         },
+         {
+          "addr": 8038,
+          "align": 1,
+          "flags": 2147484936,
+          "nreloc": 0,
+          "offset": 3942,
+          "reloff": 0,
+          "reserved1": 0,
+          "reserved2": 6,
+          "sectname": {
+           "encoding": "base64",
+           "value": "X19zeW1ib2xfc3R1Yg=="
+          },
+          "segname": {
+           "encoding": "base64",
+           "value": "X19URVhU"
+          },
+          "size": 12
+         },
+         {
+          "addr": 8052,
+          "align": 2,
+          "flags": 2147484928,
+          "nreloc": 0,
+          "offset": 3956,
+          "reloff": 0,
+          "reserved1": 0,
+          "reserved2": 0,
+          "sectname": {
+           "encoding": "base64",
+           "value": "X19zdHViX2hlbHBlcg=="
+          },
+          "segname": {
+           "encoding": "base64",
+           "value": "X19URVhU"
+          },
+          "size": 32
+         },
+         {
+          "addr": 8084,
+          "align": 0,
+          "flags": 2,
+          "nreloc": 0,
+          "offset": 3988,
+          "reloff": 0,
+          "reserved1": 0,
+          "reserved2": 0,
+          "sectname": {
+           "encoding": "base64",
+           "value": "X19jc3RyaW5n"
+          },
+          "segname": {
+           "encoding": "base64",
+           "value": "X19URVhU"
+          },
+          "size": 25
+         },
+         {
+          "addr": 8112,
+          "align": 2,
+          "flags": 0,
+          "nreloc": 0,
+          "offset": 4016,
+          "reloff": 0,
+          "reserved1": 0,
+          "reserved2": 0,
+          "sectname": {
+           "encoding": "base64",
+           "value": "X191bndpbmRfaW5mbw=="
+          },
+          "segname": {
+           "encoding": "base64",
+           "value": "X19URVhU"
+          },
+          "size": 72
+         }
+        ],
+        "segname": {
+         "encoding": "base64",
+         "value": "X19URVhU"
+        },
+        "vmaddr": 4096,
+        "vmsize": 4096
+       },
+       {
+        "fileoff": 4096,
+        "filesize": 4096,
+        "flags": 0,
+        "initprot": 3,
+        "maxprot": 7,
+        "nsects": 2,
+        "sections": [
+         {
+          "addr": 8192,
+          "align": 2,
+          "flags": 6,
+          "nreloc": 0,
+          "offset": 4096,
+          "reloff": 0,
+          "reserved1": 2,
+          "reserved2": 0,
+          "sectname": {
+           "encoding": "base64",
+           "value": "X19ubF9zeW1ib2xfcHRy"
+          },
+          "segname": {
+           "encoding": "base64",
+           "value": "X19EQVRB"
+          },
+          "size": 8
+         },
+         {
+          "addr": 8200,
+          "align": 2,
+          "flags": 7,
+          "nreloc": 0,
+          "offset": 4104,
+          "reloff": 0,
+          "reserved1": 4,
+          "reserved2": 0,
+          "sectname": {
+           "encoding": "base64",
+           "value": "X19sYV9zeW1ib2xfcHRy"
+          },
+          "segname": {
+           "encoding": "base64",
+           "value": "X19EQVRB"
+          },
+          "size": 8
+         }
+        ],
+        "segname": {
+         "encoding": "base64",
+         "value": "X19EQVRB"
+        },
+        "vmaddr": 8192,
+        "vmsize": 4096
+       },
+       {
+        "fileoff": 8192,
+        "filesize": 320,
+        "flags": 0,
+        "initprot": 1,
+        "maxprot": 7,
+        "nsects": 0,
+        "segname": {
+         "encoding": "base64",
+         "value": "X19MSU5LRURJVA=="
+        },
+        "vmaddr": 12288,
+        "vmsize": 4096
+       }
+      ],
+      "sizeofcmds": 1060,
+      "source_version": "0.0.0.0.0",
+      "stack_size": 0,
+      "symtab": {
+       "entries": [
+        {
+         "encoding": "base64",
+         "value": "X19taF9leGVjdXRlX2hlYWRlcg=="
+        },
+        {
+         "encoding": "base64",
+         "value": "X2ZhY3RvcmlhbA=="
+        },
+        {
+         "encoding": "base64",
+         "value": "X21haW4="
+        },
+        {
+         "encoding": "base64",
+         "value": "X3ByaW50Zg=="
+        },
+        {
+         "encoding": "base64",
+         "value": "X3NjYW5m"
+        },
+        {
+         "encoding": "base64",
+         "value": "ZHlsZF9zdHViX2JpbmRlcg=="
+        }
+       ],
+       "nlists": [
+        {
+         "n_desc": 16,
+         "n_sect": 1,
+         "n_strx": 2,
+         "n_type": 15,
+         "n_value": 4096
+        },
+        {
+         "n_desc": 0,
+         "n_sect": 1,
+         "n_strx": 22,
+         "n_type": 15,
+         "n_value": 7824
+        },
+        {
+         "n_desc": 0,
+         "n_sect": 1,
+         "n_strx": 33,
+         "n_type": 15,
+         "n_value": 7904
+        },
+        {
+         "n_desc": 256,
+         "n_sect": 0,
+         "n_strx": 39,
+         "n_type": 1,
+         "n_value": 0
+        },
+        {
+         "n_desc": 256,
+         "n_sect": 0,
+         "n_strx": 47,
+         "n_type": 1,
+         "n_value": 0
+        },
+        {
+         "n_desc": 256,
+         "n_sect": 0,
+         "n_strx": 54,
+         "n_type": 1,
+         "n_value": 0
+        }
+       ],
+       "nsyms": 6,
+       "stroff": 8440,
+       "strsize": 72,
+       "symoff": 8344
+      },
+      "uuid": "0443555D-A992-3B9E-8BCE-5D9FC8BAC0E9"
+     },
+     {
+      "cpusubtype": 2147483651,
+      "cputype": 16777223,
+      "dyld_info": {
+       "bind_off": 8200,
+       "bind_size": 24,
+       "export_off": 8256,
+       "export_size": 64,
+       "lazy_bind_off": 8224,
+       "lazy_bind_size": 32,
+       "rebase_off": 8192,
+       "rebase_size": 8,
+       "weak_bind_off": 0,
+       "weak_bind_size": 0
+      },
+      "dylibs": [
+       {
+        "compatibility_version": "1.0.0",
+        "current_version": "1213.0.0",
+        "name": {
+         "encoding": "base64",
+         "value": "L3Vzci9saWIvbGliU3lzdGVtLkIuZHlsaWI="
+        },
+        "timestamp": {
+         "encoding": "timestamp",
+         "value": 2
+        }
+       }
+      ],
+      "dynamic_linker": {
+       "encoding": "base64",
+       "value": "L3Vzci9saWIvZHlsZA=="
+      },
+      "dysymtab": {
+       "extrefsymoff": 0,
+       "extreloff": 8448,
+       "iextdefsym": 0,
+       "ilocalsym": 0,
+       "indirectsymoff": 0,
+       "locreloff": 0,
+       "modtaboff": 0,
+       "nextdefsym": 3,
+       "nextrefsyms": 0,
+       "nextrel": 6,
+       "nindirectsyms": 0,
+       "nlocalsym": 0,
+       "nlocrel": 0,
+       "nmodtab": 0,
+       "ntoc": 3,
+       "tocoff": 3
+      },
+      "entry_point": 3808,
+      "exports": [
+       "_main",
+       "_factorial",
+       "__mh_execute_header"
+      ],
+      "filetype": 2,
+      "flags": 2097285,
+      "imports": [
+       "dyld_stub_binder",
+       "_printf",
+       "_scanf"
+      ],
+      "magic": 3489328638,
+      "min_version": {
+       "device": "MACOSX",
+       "sdk": "10.10.0",
+       "version": "10.9.0"
+      },
+      "ncmds": 16,
+      "number_of_segments": 4,
+      "reserved": 0,
+      "segments": [
+       {
+        "fileoff": 0,
+        "filesize": 0,
+        "flags": 0,
+        "initprot": 0,
+        "maxprot": 0,
+        "nsects": 0,
+        "segname": {
+         "encoding": "base64",
+         "value": "X19QQUdFWkVSTw=="
+        },
+        "vmaddr": 0,
+        "vmsize": 4294967296
+       },
+       {
+        "fileoff": 0,
+        "filesize": 4096,
+        "flags": 0,
+        "initprot": 5,
+        "maxprot": 7,
+        "nsects": 6,
+        "sections": [
+         {
+          "addr": 4294971024,
+          "align": 4,
+          "flags": 2147484672,
+          "nreloc": 0,
+          "offset": 3728,
+          "reloff": 0,
+          "reserved1": 0,
+          "reserved2": 0,
+          "reserved3": 0,
+          "sectname": {
+           "encoding": "base64",
+           "value": "X190ZXh0"
+          },
+          "segname": {
+           "encoding": "base64",
+           "value": "X19URVhU"
+          },
+          "size": 181
+         },
+         {
+          "addr": 4294971206,
+          "align": 1,
+          "flags": 2147484680,
+          "nreloc": 0,
+          "offset": 3910,
+          "reloff": 0,
+          "reserved1": 0,
+          "reserved2": 6,
+          "reserved3": 0,
+          "sectname": {
+           "encoding": "base64",
+           "value": "X19zdHVicw=="
+          },
+          "segname": {
+           "encoding": "base64",
+           "value": "X19URVhU"
+          },
+          "size": 12
+         },
+         {
+          "addr": 4294971220,
+          "align": 2,
+          "flags": 2147484672,
+          "nreloc": 0,
+          "offset": 3924,
+          "reloff": 0,
+          "reserved1": 0,
+          "reserved2": 0,
+          "reserved3": 0,
+          "sectname": {
+           "encoding": "base64",
+           "value": "X19zdHViX2hlbHBlcg=="
+          },
+          "segname": {
+           "encoding": "base64",
+           "value": "X19URVhU"
+          },
+          "size": 36
+         },
+         {
+          "addr": 4294971256,
+          "align": 0,
+          "flags": 2,
+          "nreloc": 0,
+          "offset": 3960,
+          "reloff": 0,
+          "reserved1": 0,
+          "reserved2": 0,
+          "reserved3": 0,
+          "sectname": {
+           "encoding": "base64",
+           "value": "X19jc3RyaW5n"
+          },
+          "segname": {
+           "encoding": "base64",
+           "value": "X19URVhU"
+          },
+          "size": 25
+         },
+         {
+          "addr": 4294971284,
+          "align": 2,
+          "flags": 0,
+          "nreloc": 0,
+          "offset": 3988,
+          "reloff": 0,
+          "reserved1": 0,
+          "reserved2": 0,
+          "reserved3": 0,
+          "sectname": {
+           "encoding": "base64",
+           "value": "X191bndpbmRfaW5mbw=="
+          },
+          "segname": {
+           "encoding": "base64",
+           "value": "X19URVhU"
+          },
+          "size": 72
+         },
+         {
+          "addr": 4294971360,
+          "align": 3,
+          "flags": 0,
+          "nreloc": 0,
+          "offset": 4064,
+          "reloff": 0,
+          "reserved1": 0,
+          "reserved2": 0,
+          "reserved3": 0,
+          "sectname": {
+           "encoding": "base64",
+           "value": "X19laF9mcmFtZQ=="
+          },
+          "segname": {
+           "encoding": "base64",
+           "value": "X19URVhU"
+          },
+          "size": 24
+         }
+        ],
+        "segname": {
+         "encoding": "base64",
+         "value": "X19URVhU"
+        },
+        "vmaddr": 4294967296,
+        "vmsize": 4096
+       },
+       {
+        "fileoff": 4096,
+        "filesize": 4096,
+        "flags": 0,
+        "initprot": 3,
+        "maxprot": 7,
+        "nsects": 2,
+        "sections": [
+         {
+          "addr": 4294971392,
+          "align": 3,
+          "flags": 6,
+          "nreloc": 0,
+          "offset": 4096,
+          "reloff": 0,
+          "reserved1": 2,
+          "reserved2": 0,
+          "reserved3": 0,
+          "sectname": {
+           "encoding": "base64",
+           "value": "X19ubF9zeW1ib2xfcHRy"
+          },
+          "segname": {
+           "encoding": "base64",
+           "value": "X19EQVRB"
+          },
+          "size": 16
+         },
+         {
+          "addr": 4294971408,
+          "align": 3,
+          "flags": 7,
+          "nreloc": 0,
+          "offset": 4112,
+          "reloff": 0,
+          "reserved1": 4,
+          "reserved2": 0,
+          "reserved3": 0,
+          "sectname": {
+           "encoding": "base64",
+           "value": "X19sYV9zeW1ib2xfcHRy"
+          },
+          "segname": {
+           "encoding": "base64",
+           "value": "X19EQVRB"
+          },
+          "size": 16
+         }
+        ],
+        "segname": {
+         "encoding": "base64",
+         "value": "X19EQVRB"
+        },
+        "vmaddr": 4294971392,
+        "vmsize": 4096
+       },
+       {
+        "fileoff": 8192,
+        "filesize": 352,
+        "flags": 0,
+        "initprot": 1,
+        "maxprot": 7,
+        "nsects": 0,
+        "segname": {
+         "encoding": "base64",
+         "value": "X19MSU5LRURJVA=="
+        },
+        "vmaddr": 4294975488,
+        "vmsize": 4096
+       }
+      ],
+      "sizeofcmds": 1296,
+      "source_version": "0.0.0.0.0",
+      "stack_size": 0,
+      "symtab": {
+       "entries": [
+        {
+         "encoding": "base64",
+         "value": "X19taF9leGVjdXRlX2hlYWRlcg=="
+        },
+        {
+         "encoding": "base64",
+         "value": "X2ZhY3RvcmlhbA=="
+        },
+        {
+         "encoding": "base64",
+         "value": "X21haW4="
+        },
+        {
+         "encoding": "base64",
+         "value": "X3ByaW50Zg=="
+        },
+        {
+         "encoding": "base64",
+         "value": "X3NjYW5m"
+        },
+        {
+         "encoding": "base64",
+         "value": "ZHlsZF9zdHViX2JpbmRlcg=="
+        }
+       ],
+       "nlists": [
+        {
+         "n_desc": 16,
+         "n_sect": 1,
+         "n_strx": 2,
+         "n_type": 15,
+         "n_value": 4294967296
+        },
+        {
+         "n_desc": 0,
+         "n_sect": 1,
+         "n_strx": 22,
+         "n_type": 15,
+         "n_value": 4294971024
+        },
+        {
+         "n_desc": 0,
+         "n_sect": 1,
+         "n_strx": 33,
+         "n_type": 15,
+         "n_value": 4294971104
+        },
+        {
+         "n_desc": 256,
+         "n_sect": 0,
+         "n_strx": 39,
+         "n_type": 1,
+         "n_value": 0
+        },
+        {
+         "n_desc": 256,
+         "n_sect": 0,
+         "n_strx": 47,
+         "n_type": 1,
+         "n_value": 0
+        },
+        {
+         "n_desc": 256,
+         "n_sect": 0,
+         "n_strx": 54,
+         "n_type": 1,
+         "n_value": 0
+        }
+       ],
+       "nsyms": 6,
+       "stroff": 8472,
+       "strsize": 72,
+       "symoff": 8352
+      },
+      "uuid": "57199705-E3C0-352D-BBE8-3990B1A732B7"
+     }
+    ],
+    "nfat_arch": 2
+   }
+  },
+  "sha256": "8917e8a4d33701d6c2f56f0acf62b9cad88abf48da394a5312fac0d0b93491bf"
+ }
+}

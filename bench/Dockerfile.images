@@ -13,6 +13,6 @@ RUN set -eu; arch="$(dpkg --print-architecture)"; \
     tar -xzf "go-containerregistry_Linux_${a}.tar.gz" -C /usr/local/bin crane; \
     rm -f /tmp/*
 COPY --from=syft /syft /usr/local/bin/syft
-COPY bench/image_agreement.py /bench/image_agreement.py
+COPY bench/tools/image_agreement.py /bench/image_agreement.py
 RUN mkdir -p /scratch
 ENTRYPOINT ["python", "/bench/image_agreement.py"]

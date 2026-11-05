@@ -30,7 +30,7 @@ Syft
 
 src/cordon_scanner/images/data/java-groups.json is derived from Syft
 (https://github.com/anchore/syft), Copyright Anchore, Inc., by
-scripts/syft_java_groups.py: the map from Java artifact names to the Maven groups
+scripts/build/syft_java_groups.py: the map from Java artifact names to the Maven groups
 that publish them (cpegenerate.DefaultArtifactIDToGroupID). The version it was
 built from is recorded in the file. It is used under the Apache License,
 Version 2.0, the licence above.
@@ -40,7 +40,7 @@ Agent Threat Rules
 
 src/cordon_scanner/intel/data/atr-rules.json.gz is derived from the Agent
 Threat Rules catalogue (https://github.com/Agent-Threat-Rule/agent-threat-rules)
-by scripts/import_atr.py: its rule identifiers, titles, categories, severities
+by scripts/build/import_atr.py: its rule identifiers, titles, categories, severities
 and detection patterns, translated to Python's regular-expression dialect. The
 commit it was built from is recorded in the file. It is used under the
 following licence:
@@ -66,3 +66,53 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+-------------------------------------------------------------------------------
+TLSH
+
+src/cordon_scanner/detect/binary/modules/tlsh.py computes the TLSH locality-sensitive hash
+(https://github.com/trendmicro/tlsh), Copyright Trend Micro Incorporated, and carries its
+fixed Pearson permutation and length-code tables. They are used under the Apache License,
+Version 2.0, the licence above.
+
+-------------------------------------------------------------------------------
+OpenSSL object names
+
+src/cordon_scanner/detect/binary/modules/oid_itu_t.py, oid_iso.py and oid_joint.py hold the
+short and long names OpenSSL 1.1 gives object identifiers, and modules/oids.py the sizes of the
+digests it knows, generated from OpenSSL's object tables (https://www.openssl.org). This product includes software developed by the
+OpenSSL Project for use in the OpenSSL Toolkit.
+
+-------------------------------------------------------------------------------
+YARA
+
+Cordon's rule engine reads rule files in the YARA format and was inspired by YARA
+(https://github.com/VirusTotal/yara); it is Cordon's own code, and Cordon is not affiliated
+with or endorsed by the YARA project or VirusTotal.
+
+-------------------------------------------------------------------------------
+Public Suffix List
+
+src/cordon_scanner/detect/binary/modules/reports/data/public_suffix_list.dat is the Public
+Suffix List (https://publicsuffix.org) as the psl crate 2.1.238 packages it (data/rules.txt),
+used unchanged by the vt module's domain functions. It is subject to the Mozilla Public
+License, version 2.0 (https://mozilla.org/MPL/2.0/).
+
+-------------------------------------------------------------------------------
+YARA-X and the module names it defines
+
+The lnk, zip, crx, macho, dex, olecf, msi, vba and vt modules answer the names YARA-X
+(https://github.com/VirusTotal/yara-x, BSD-3-Clause) declares, so rules written for it read the
+same values. The look-alike letter and keyboard-neighbour tables of the vt module's permutation
+checks are the reference's. The code reading each format is Cordon's own; Cordon is not
+affiliated with or endorsed by VirusTotal.
+
+-------------------------------------------------------------------------------
+Ecosystem and agent marks
+
+docs/assets/marks/marks.json holds the marks the README shows beside each ecosystem and AI
+agent Cordon reads, as the project's website draws them: from SVG Logos (@iconify-json/logos,
+CC0-1.0, https://github.com/gilbarbara/logos), Simple Icons (simple-icons, CC0-1.0,
+https://simpleicons.org) and the website's own source files. Each mark is its owner's
+trademark, shown only to name the product or ecosystem it stands for; Cordon is not
+affiliated with or endorsed by any of them.

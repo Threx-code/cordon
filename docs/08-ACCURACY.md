@@ -7,16 +7,20 @@ would flatter the answer.
 
 ## Accuracy, measured
 
-Every number is measured against real code and re-run for the release. The
-noise corpus and its driver ship here (`scripts/measure_noise.py`, over the
+Every number is measured against real code. The two npm rows at the top were measured
+for 0.7.0 on its release commit; the rows below them were measured for 0.6.0 and are
+re-run as their drivers are re-pointed at the new code. The
+noise corpus and its driver ship here (`scripts/measure/measure_noise.py`, over the
 repository list in `scripts/data/measurement-corpus.json`), so anyone can
 reproduce that row. The two malicious corpora are public datasets rather than
 files in this repository: the methodology is in
-[docs/05-COVERAGE-MATRIX.md](https://github.com/Threx-code/cordon/blob/v0.6.0/docs/05-COVERAGE-MATRIX.md), and no driver for
+[docs/05-COVERAGE-MATRIX.md](https://github.com/Threx-code/cordon/blob/v0.7.0/docs/05-COVERAGE-MATRIX.md), and no driver for
 them ships here.
 
 | corpus | size | result |
 |---|---|---|
+| **npm malware, blocked by reading the code (0.7.0)** | **6,793** malicious npm releases with code | **91.08%** (6,187) blocked by the content alone, intel matches not counted |
+| **npm packages wrongly blocked (0.7.0)** | **34,437** benign npm releases | **0.96%** (330); Wilson 95% interval 0.86 to 1.07% |
 | Every known-malicious package record in the intel | **249,646 records**, 287,899 checks, 10 ecosystems | **100%** caught |
 | Packages in real lockfiles, read against Trivy | **190,274 packages, 1,687 lockfiles**, 14 registries | **99.6%** agree (98.9% per lockfile); the rest sorted by cause |
 | Dependencies in 14 ecosystems Trivy does not read, against each ecosystem's own tool | **11,610 dependencies, 356 repositories** | **99.2%** recall, 98.6% precision; every difference read |
@@ -30,6 +34,33 @@ them ships here.
 | Reference infrastructure, as its vendors publish it (0.4.0 run) | **13 repos, 20,310 files** | 2,560 findings, 795 blocking |
 | Known-vulnerable releases, by advisory | **940 pins, 11 ecosystems** | 100% reported |
 
+## npm at full scale (0.7.0)
+
+```
+   ┌──────────────────────────────────────────────────────────────────────────┐
+   │  43,627 npm releases scanned, every one, on the 0.7.0 release commit     │
+   │                                                                          │
+   │  malicious, with code to read          6,793    blocked by the content   │
+   │                                                 alone: 6,187 = 91.08%    │
+   │                                                                          │
+   │  benign, from the registry draw        34,437   blocked: 330 = 0.96%     │
+   │                                                 Wilson 95%: 0.86-1.07%   │
+   └──────────────────────────────────────────────────────────────────────────┘
+```
+
+**What counts.** A malicious release is counted as caught only when what blocked it was a reading of
+its code: a match against a recorded incident (`MALWARE.PACKAGE.KNOWN.001`,
+`MALWARE.DEPENDENCY.KNOWN.001`) is left out, because the public datasets the malware comes from are
+the same records the intel is built from, and counting them would measure the intel against itself.
+A benign release counts as a false alarm when it is blocked by anything other than a known
+vulnerability or a dependency that is itself known malware; npm's security-holding placeholders and
+releases the registry lists as malicious are taken out of the benign pool first (1,231 and 563 of
+the 36,231 drawn). An incomplete scan counts as a block, because it does not pass.
+
+**What changed from the run before**, compared release by release on the raw rows: no release lost
+a block in either set; 11 more malicious releases are blocked by their content, and 6 more benign
+ones are blocked, the measured cost of the rule that caught them.
+
 ## At scale: every item, not a sample
 
 A percentage is only as good as what it was measured on, so the runs below take whole
@@ -39,7 +70,7 @@ number was written down.
 
 ### Every known-malicious record
 
-`bench/malicious_records.py` plants each malicious-package record in the bundled intel as
+`bench/suites/malicious_records.py` plants each malicious-package record in the bundled intel as
 a pinned dependency in its ecosystem's own lockfile shape, scans it, and checks the record
 is reported. 249,646 records, 287,899 checks (a record naming several versions is checked
 once per version), **none missed**.
@@ -64,8 +95,8 @@ bounds were raised and the run repeated.
 
 ### What real lockfiles contain, against Trivy
 
-`bench/fetch_lockfiles.py` takes the lockfiles of the most-downloaded projects on 14
-registries (1,796 fetched; 1,687 that both tools read), and `bench/parse_agreement.py`
+`bench/tools/fetch_lockfiles.py` takes the lockfiles of the most-downloaded projects on 14
+registries (1,796 fetched; 1,687 that both tools read), and `bench/tools/parse_agreement.py`
 compares the packages Cordon and Trivy each read from them, offline.
 
 ```
@@ -93,7 +124,7 @@ compares the packages Cordon and Trivy each read from them, offline.
 
 Normalised before comparing: the development dependencies both tools can report, the
 package managers' own entries (bundler, CocoaPods, Go's stdlib), and the project's own
-packages. The figures are left raw beyond that, and `bench/parse_gaps.py` sorts every
+packages. The figures are left raw beyond that, and `bench/tools/parse_gaps.py` sorts every
 remaining difference by cause, each checked against the lockfile itself:
 
 | Cause | Packages |
@@ -117,7 +148,7 @@ modules to go.sum, and a lone go.sum.
 
 Trivy reads none of Terraform, Helm, Julia, opam, Bazel, Nix, Ansible, vcpkg, Conan, conda,
 Homebrew or GitHub Actions workflows, and its CRAN and Hackage coverage gave 5 and 2 lockfiles.
-So `bench/tool_agreement.py` compares each with the reader that ecosystem treats as authoritative,
+So `bench/tools/tool_agreement.py` compares each with the reader that ecosystem treats as authoritative,
 on up to 30 real repositories apiece: the most-downloaded packages' repositories where a registry
 lists them, GitHub search where it does not (flakes, dotfiles, collections, C++ and Haskell
 projects, renv projects). Every tool runs in its own image (`bench/tool_reference/run.sh`).
@@ -204,9 +235,41 @@ What still differs, every case read:
 
 Results, repository by repository: `bench/results/tool-agreement-2026-10-10/`.
 
+### Advisory coverage where OSV has no feed
+
+OSV publishes nothing for Homebrew, vcpkg, Conan, conda or CocoaPods. Measured on the same real
+lockfiles, in Docker, with `--online`: how many locked packages Cordon could match against an
+advisory source at all -- through the upstream they were built from (named, or proved against
+the release archive's own files), or through NVD once a package is tied to one CPE product. A
+package counts only if one of those reached it; the rest are named in every report as unchecked.
+
+| Ecosystem | Packages from the public registry | Checked |
+|---|---|---|
+| CocoaPods | 4,260 | 4,243 (99.6%) |
+| vcpkg | 1,454 | 1,429 (98.3%) |
+| Conan | 832 | 817 (98.2%) |
+| conda | 13,152 | 12,797 (97.3%) |
+| Homebrew formulae | 531 | 505 (95.1%) |
+
+Counted apart, because no source exists to check them against: Homebrew casks (macOS
+applications; 85 of 286 tied to NVD products), vendors' prebuilt binaries (174 CocoaPods pods
+whose podspecs vend frameworks and build no source; 120 conda packages under their
+vendors' own licences -- NVIDIA's CUDA, Intel's MKL, Microsoft's runtimes), and packages from
+private repositories or channels.
+
+What stays unchecked, by kind:
+
+| Kind | Examples |
+|---|---|
+| A project with no public repository and no NVD product | libev, libmpdec, libspatialite, gts (conda); markdown, sleepwatcher, proctools, ipcalc (Homebrew); termcap, mpdecimal (Conan) |
+| A release that differs from its tag in code or a build file, so is not proved | x265 (a version file), librttopo (`Makefile.am`), hwloc, curl's release files (NVD ties curl instead) |
+| A release archive that no longer exists to prove | tree, colordiff (Homebrew) |
+| A formula from a tap, locked without its tap's name | cf-cli, enarx, godu (Homebrew) |
+| A bundle of several projects under one name | React Native's ReactNativeDependencies; Qt's qt-everywhere |
+
 ### What container images contain, against Syft
 
-`bench/image_agreement.py` saves each of 182 public images (175 read by both tools; 7 could not
+`bench/tools/image_agreement.py` saves each of 182 public images (175 read by both tools; 7 could not
 be pulled through the registry mirrors) and compares the packages Cordon and Syft 1.18.1 each
 inventory, by normalised package URL.
 
@@ -352,15 +415,15 @@ different route.
 **AI agents.**
 
 ```
-   ATR test cases, each on its rule's scan path        bench/atr_bench.py
+   ATR test cases, each on its rule's scan path        bench/suites/atr_bench.py
      attacks ............ 3,933 / 4,026   97.7%
      evasions ...........   209 /   289   72.3%   regex ceiling: what --judge is for
      benign left clean .. 4,038 / 4,364   92.5%   ATR's near-misses: a floor
 
-   real repositories never used for tuning          bench/agent_realworld.py
+   real repositories never used for tuning          bench/suites/agent_realworld.py
      372 repositories ── 10.5% warned ── 1.1% blocked, every block read and correct
 
-   the judge, per model                             bench/judge_bench.py
+   the judge, per model                             bench/suites/judge_bench.py
 ```
 
 ```

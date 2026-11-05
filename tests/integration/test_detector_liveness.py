@@ -18,21 +18,22 @@ directory it was asked to scan.
 from __future__ import annotations
 
 from collections import Counter
-from pathlib import Path
 
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.core.registry import Registry
-from support import requires_malicious_corpus
+from cordon_scanner.engine.registry import Registry
+from support import ROOT, requires_malicious_corpus
 
-CORPUS = Path(__file__).resolve().parents[2] / "corpus"
+CORPUS = ROOT / "corpus"
 
 NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD = {
-    # Requires a live registry. Exercised in tests/unit/test_registry_detector.py
-    # against a substituted client, because a suite that reaches PyPI fails when
-    # PyPI is slow.
-    "registry",
+    # Fires only on a file whose fingerprint the shipped reuse index holds: a code file, or an install
+    # hook's shape, of earlier real malware. A corpus sample that fired would have to BE that malware's
+    # code, which this repository does not ship and never authors. Exercised against a synthetic index
+    # built in the test from inert bytes (tests/unit/intel/malware/test_reuse_index.py: a code file and
+    # an install hook, in a directory and a package).
+    "code-reuse",
     # Requires an advisory database, which is supplied by the operator rather
     # than committed. Exercised in the advisory unit tests.
     "advisory",
@@ -50,16 +51,22 @@ NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD = {
     # an exception that reports itself as coverage and fails in somebody else's
     # unrelated pull request.
     #
-    # `tests/unit/test_vcs.py` builds a real repository with `git init` and commits
+    # `tests/unit/detect/source/test_vcs.py` builds a real repository with `git init` and commits
     # into it, and covers both rules plus the unreadable-history case. That is the
     # deterministic version of what this was approximating.
     "vcs",
-    # Requires a live registry AND the [attest] crypto stack: it fetches the
+    # Requires a live registry: it fetches the
     # sigstore bundle a release advertises and verifies it. Exercised in
-    # tests/unit/test_provenance.py against a substituted registry and verifier,
+    # tests/unit/detect/supply/test_provenance.py against a substituted registry and verifier,
     # for the same reason the registry detector is -- a suite that reaches the
     # network and a trust root fails when either is slow or unreachable.
     "provenance",
+    # Runs only the rules a rule pack declares without a capability, and no bundled rule has that
+    # shape: such packs arrive through the signed feed (`intel/malware/feed_rules.py`), which a
+    # committed corpus does not hold. Exercised in tests/unit/detect/code/test_pack_rules.py, and
+    # end to end, a delivered shadow pack's finding included, in
+    # tests/unit/intel/malware/test_feed_rules.py.
+    "pack-rules",
 }
 
 
@@ -87,11 +94,24 @@ class TestEveryDetectorRuns(DetectorLivenessFixtures):
         registered = {d.id for d in detectors}
         # A detector that declares it needs the network cannot run on an offline corpus by
         # construction; each is exercised against a substituted client in its unit tests
-        # (`registry`, `provenance`, `mcp-packages` in test_agents.py).
+        # (`registry` in tests/unit/intel/registries/test_registry_detector.py, `provenance`,
+        # `mcp-packages` in test_agents.py).
         networked = {d.id for d in detectors if d.requires.network}
         # Likewise a detector the operator must switch on and point at a service (ClamAV).
         operator_enabled = {d.id for d in detectors if getattr(d, "operator_enabled", False)}
-        expected = registered - NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD - networked - operator_enabled
+        # And a detector that only matches what the feed already condemned (`requires.condemned`):
+        # the corpus would have to hold a condemned release, or a new variant of a real campaign
+        # written for it, which this project never does. Each is exercised against a substituted
+        # index (`recipe-digest` in test_recipe_digests.py, `campaign-sibling` in
+        # test_campaign_sibling.py).
+        condemned = {d.id for d in detectors if d.requires.condemned}
+        expected = (
+            registered
+            - NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD
+            - networked
+            - operator_enabled
+            - condemned
+        )
         silent = sorted(d for d in expected if not findings_by_detector.get(d))
         assert not silent, (
             f"these detectors ship and never fire on the corpus: {silent}. "
@@ -105,7 +125,9 @@ class TestEveryDetectorRuns(DetectorLivenessFixtures):
         stay short enough to read."""
         registered = {d.id for d in Registry().detectors()}
         assert registered >= NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD
-        assert len(NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD) <= 4
+        # Five: the four that need input the repository cannot commit, and code-reuse, whose only
+        # trigger is earlier real malware's code, which the corpus must never hold.
+        assert len(NEEDS_INPUT_THE_CORPUS_CANNOT_HOLD) <= 5
 
     def test_it_is_not_vacuous(self, findings_by_detector) -> None:
         assert sum(findings_by_detector.values()) > 40

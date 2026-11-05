@@ -3,21 +3,32 @@
   "fingerprints": [
     "0e9f922aaff9fa68",
     "1494e9be58b324b1",
+    "16a76405267447d4",
     "18c393d405067e3d",
+    "1d32df38dc7918de",
     "288f77b388ad83c3",
     "3009c0ed43f0dfa2",
     "3154d8626ea88066",
+    "35f36e26e4b4be3e",
+    "3ab51a03d47f25d8",
     "3eb8c33ee092b555",
+    "4debb91f5ba15db5",
+    "4e46aeeba7471700",
     "4f8a8b47cc61c19b",
     "574d782dd1d151b6",
     "5c5c8a10858f451e",
     "71aeafa611dde8c0",
+    "7375d34d3f231330",
     "7a830554a15a1273",
+    "7af9b3444887f9cd",
     "83687ec72c0c03b3",
     "95cfc9acd5d6717f",
+    "ab594ac0491f1a95",
     "adbe339edea1b4c2",
     "b4d1c1b979c671ee",
+    "bf8a51efd07cc209",
     "c6219db277e6d97f",
+    "c6d11aff79b12d0d",
     "cbd1144a7bd31e54",
     "cdc739734f6d7024",
     "e31e0a079192e2bb",
@@ -28,7 +39,7 @@
     {
       "fingerprint": "0e9f922aaff9fa68",
       "rule": "SECRET.AWS.ACCESS_KEY.001",
-      "path": "tests/unit/test_redact.py",
+      "path": "tests/unit/foundation/test_redact.py",
       "note": "git history only (ea94ff20a6ea): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
     },
     {
@@ -46,37 +57,37 @@
     {
       "fingerprint": "ebdb31c4aaadbc0f",
       "rule": "SECRET.GENERIC.ASSIGNMENT.001",
-      "path": "tests/unit/test_review_defects.py",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
       "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
     },
     {
       "fingerprint": "ebdb31c4aaadbc0f",
       "rule": "SECRET.GENERIC.ASSIGNMENT.001",
-      "path": "tests/unit/test_review_defects.py",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
       "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
     },
     {
       "fingerprint": "ebdb31c4aaadbc0f",
       "rule": "SECRET.GENERIC.ASSIGNMENT.001",
-      "path": "tests/unit/test_review_defects.py",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
       "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
     },
     {
       "fingerprint": "ebdb31c4aaadbc0f",
       "rule": "SECRET.GENERIC.ASSIGNMENT.001",
-      "path": "tests/unit/test_review_defects.py",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
       "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
     },
     {
       "fingerprint": "ebdb31c4aaadbc0f",
       "rule": "SECRET.GENERIC.ASSIGNMENT.001",
-      "path": "tests/unit/test_review_defects.py",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
       "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
     },
     {
       "fingerprint": "ebdb31c4aaadbc0f",
       "rule": "SECRET.GENERIC.ASSIGNMENT.001",
-      "path": "tests/unit/test_review_defects.py",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
       "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
     },
     {
@@ -88,37 +99,37 @@
     {
       "fingerprint": "574d782dd1d151b6",
       "rule": "SECRET.GITHUB.TOKEN.001",
-      "path": "tests/unit/test_cloud.py",
+      "path": "tests/unit/cloud/test_cloud.py",
       "note": "git history only (2c54c900362c): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
     },
     {
       "fingerprint": "ec901eb952ef50d8",
       "rule": "SECRET.GITHUB.TOKEN.001",
-      "path": "tests/unit/test_detectors.py",
+      "path": "tests/unit/langs/test_detectors.py",
       "note": "git history only (2f1902841fa6): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
     },
     {
       "fingerprint": "1494e9be58b324b1",
       "rule": "SECRET.GOOGLE.API_KEY.001",
-      "path": "tests/unit/test_review_defects.py",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
       "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
     },
     {
       "fingerprint": "c6219db277e6d97f",
       "rule": "SECRET.GOOGLE.API_KEY.001",
-      "path": "tests/unit/test_redact.py",
+      "path": "tests/unit/foundation/test_redact.py",
       "note": "git history only (ea94ff20a6ea): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
     },
     {
       "fingerprint": "cbd1144a7bd31e54",
       "rule": "SECRET.JWT.001",
-      "path": "tests/unit/test_redact.py",
+      "path": "tests/unit/foundation/test_redact.py",
       "note": "git history only (2f1902841fa6): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
     },
     {
       "fingerprint": "4f8a8b47cc61c19b",
       "rule": "SECRET.NPM.TOKEN.001",
-      "path": "tests/unit/test_redact.py",
+      "path": "tests/unit/foundation/test_redact.py",
       "note": "git history only (ea94ff20a6ea): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
     },
     {
@@ -130,43 +141,43 @@
     {
       "fingerprint": "83687ec72c0c03b3",
       "rule": "SECRET.STRIPE.WEBHOOK_SECRET.001",
-      "path": "tests/unit/test_review_defects.py",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
       "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
     },
     {
       "fingerprint": "83687ec72c0c03b3",
       "rule": "SECRET.STRIPE.WEBHOOK_SECRET.001",
-      "path": "tests/unit/test_review_defects.py",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
       "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
     },
     {
       "fingerprint": "288f77b388ad83c3",
       "rule": "SECRET.URL.CREDENTIAL.001",
-      "path": "tests/unit/test_review_defects.py",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
       "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
     },
     {
       "fingerprint": "288f77b388ad83c3",
       "rule": "SECRET.URL.CREDENTIAL.001",
-      "path": "tests/unit/test_review_defects.py",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
       "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
     },
     {
       "fingerprint": "288f77b388ad83c3",
       "rule": "SECRET.URL.CREDENTIAL.001",
-      "path": "tests/unit/test_review_defects.py",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
       "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
     },
     {
       "fingerprint": "288f77b388ad83c3",
       "rule": "SECRET.URL.CREDENTIAL.001",
-      "path": "tests/unit/test_review_defects.py",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
       "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
     },
     {
       "fingerprint": "288f77b388ad83c3",
       "rule": "SECRET.URL.CREDENTIAL.001",
-      "path": "tests/unit/test_review_defects.py",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
       "note": "git history only (18f5a798c31d): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-10-06; nothing to rotate."
     },
     {
@@ -216,6 +227,72 @@
       "rule": "SECRET.GENERIC.ASSIGNMENT.001",
       "path": "tests/conformance/cases/terraform/edge-execution-and-tfvars/prod.tfvars",
       "note": "a conformance fixture (a612aec): a fabricated db_password a tfvars file carries, the shape the secrets detector must report there. Reviewed 2026-10-10; nothing to rotate."
+    },
+    {
+      "fingerprint": "3ab51a03d47f25d8",
+      "rule": "SECRET.GENERIC.ASSIGNMENT.001",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
+      "note": "git history only (3350b1797137): a detector test fixture: fabricated (Xk9m..., S3cr3tPa55, Passw0rd on example hosts; whsec_ over the base64 of an English sentence), or a public third-party string (Firebase's published mock-config key, rclone's built-in value, semgrep-rules' adafruit sample). Reviewed 2026-11-04; nothing to rotate."
+    },
+    {
+      "fingerprint": "4debb91f5ba15db5",
+      "rule": "SECRET.GENERIC.ASSIGNMENT.001",
+      "path": "src/cordon_scanner/foundation/samples.py",
+      "note": "the two-line sample semgrep-rules publishes to be detected (adafruit-api-token), quoted in the docstring that explains why such samples are not findings. Reviewed 2026-11-04; nothing to rotate."
+    },
+    {
+      "fingerprint": "4e46aeeba7471700",
+      "rule": "SECRET.GENERIC.ASSIGNMENT.001",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
+      "note": "a detector test fixture: fabricated (Xk9m..., S3cr3tPa55, Passw0rd on example hosts; whsec_ over the base64 of an English sentence), or a public third-party string (Firebase's published mock-config key, rclone's built-in value, semgrep-rules' adafruit sample). Reviewed 2026-11-04; nothing to rotate."
+    },
+    {
+      "fingerprint": "ab594ac0491f1a95",
+      "rule": "SECRET.GITHUB.TOKEN.001",
+      "path": "tests/conformance/cases/image/edge-layers-and-history/image.tar!blobs/sha256/1abcbce62ed80ec39a4882486ef7e9e5a23e120d1456ea93b81bbc9a9be62623!app/.env",
+      "note": "a conformance fixture: the fabricated token an image layer's .env carries, the shape the image reader must report. Reviewed 2026-11-04; nothing to rotate."
+    },
+    {
+      "fingerprint": "16a76405267447d4",
+      "rule": "SECRET.GOOGLE.API_KEY.001",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
+      "note": "git history only (3350b1797137): a detector test fixture: fabricated (Xk9m..., S3cr3tPa55, Passw0rd on example hosts; whsec_ over the base64 of an English sentence), or a public third-party string (Firebase's published mock-config key, rclone's built-in value, semgrep-rules' adafruit sample). Reviewed 2026-11-04; nothing to rotate."
+    },
+    {
+      "fingerprint": "7af9b3444887f9cd",
+      "rule": "SECRET.GOOGLE.API_KEY.001",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
+      "note": "a detector test fixture: fabricated (Xk9m..., S3cr3tPa55, Passw0rd on example hosts; whsec_ over the base64 of an English sentence), or a public third-party string (Firebase's published mock-config key, rclone's built-in value, semgrep-rules' adafruit sample). Reviewed 2026-11-04; nothing to rotate."
+    },
+    {
+      "fingerprint": "1d32df38dc7918de",
+      "rule": "SECRET.STRIPE.WEBHOOK_SECRET.001",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
+      "note": "a detector test fixture: fabricated (Xk9m..., S3cr3tPa55, Passw0rd on example hosts; whsec_ over the base64 of an English sentence), or a public third-party string (Firebase's published mock-config key, rclone's built-in value, semgrep-rules' adafruit sample). Reviewed 2026-11-04; nothing to rotate."
+    },
+    {
+      "fingerprint": "bf8a51efd07cc209",
+      "rule": "SECRET.STRIPE.WEBHOOK_SECRET.001",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
+      "note": "git history only (3350b1797137): a detector test fixture: fabricated (Xk9m..., S3cr3tPa55, Passw0rd on example hosts; whsec_ over the base64 of an English sentence), or a public third-party string (Firebase's published mock-config key, rclone's built-in value, semgrep-rules' adafruit sample). Reviewed 2026-11-04; nothing to rotate."
+    },
+    {
+      "fingerprint": "35f36e26e4b4be3e",
+      "rule": "SECRET.URL.CREDENTIAL.001",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
+      "note": "git history only (3350b1797137): a detector test fixture: fabricated (Xk9m..., S3cr3tPa55, Passw0rd on example hosts; whsec_ over the base64 of an English sentence), or a public third-party string (Firebase's published mock-config key, rclone's built-in value, semgrep-rules' adafruit sample). Reviewed 2026-11-04; nothing to rotate."
+    },
+    {
+      "fingerprint": "7375d34d3f231330",
+      "rule": "SECRET.URL.CREDENTIAL.001",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
+      "note": "a detector test fixture: fabricated (Xk9m..., S3cr3tPa55, Passw0rd on example hosts; whsec_ over the base64 of an English sentence), or a public third-party string (Firebase's published mock-config key, rclone's built-in value, semgrep-rules' adafruit sample). Reviewed 2026-11-04; nothing to rotate."
+    },
+    {
+      "fingerprint": "c6d11aff79b12d0d",
+      "rule": "SECRET.GENERIC.ASSIGNMENT.001",
+      "path": "src/cordon_scanner/foundation/samples.py",
+      "note": "git history only (61fdfa7c7c0e): the two-line sample semgrep-rules publishes to be detected (adafruit-api-token), once quoted in this docstring and now described instead. Reviewed 2026-11-04; nothing to rotate."
     }
   ]
 }

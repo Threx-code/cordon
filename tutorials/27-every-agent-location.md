@@ -1,6 +1,6 @@
 # 27 · Every AI agent and MCP location
 
-> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 Everything a repository can hand a coding agent, the exact paths Cordon reads for each,
 and every rule that judges them. Rendered from the detector itself, so a location added to
@@ -167,7 +167,7 @@ Workflow steps that run a coding agent, checked for untrusted triggers, write pe
 
 ## Every agent rule
 
-46 rules of Cordon's own, beside the Agent Threat Rules (tutorial 28 lists those too).
+72 rules of Cordon's own, beside the Agent Threat Rules (tutorial 28 lists those too).
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -193,27 +193,53 @@ Workflow steps that run a coding agent, checked for untrusted triggers, write pe
 | `SUSPECT.AGENT.ATR.PROMPT_INJECTION.001` | medium | Text that tries to override an agent's instructions |
 | `SUSPECT.AGENT.ATR.SKILL_COMPROMISE.001` | medium | A skill or plugin shaped like a known compromise |
 | `SUSPECT.AGENT.ATR.TOOL_POISONING.001` | medium | Text that turns a tool into a channel for steering the agent |
+| `SUSPECT.AGENT.AUTH_BYPASS_EDIT.001` | high | Tells the agent to add an access check that one fixed identity always passes |
 | `SUSPECT.AGENT.CI_PROMPT_INJECTION.001` | high | Untrusted event text passed straight into an agent's prompt |
 | `SUSPECT.AGENT.CI_UNTRUSTED_TRIGGER.001` | high | An AI agent in CI reads text an outsider can write |
 | `SUSPECT.AGENT.CREDENTIAL_EXFIL.001` | critical | Agent instructions that move credentials somewhere |
+| `SUSPECT.AGENT.DROPPER_PROSE.001` | high | Agent instructions that have the reader run a hidden or pasted payload |
 | `SUSPECT.AGENT.FETCH_EXEC.001` | high | Agent instructions that fetch and execute remote code |
+| `SUSPECT.AGENT.FRONT_MATTER_CODE.001` | high | Agent instructions whose front matter is code |
+| `SUSPECT.AGENT.HIDDEN_DIRECTIVE.001` | high | Instructions to the model hidden in a comment |
+| `SUSPECT.AGENT.HIDDEN_INSTRUCTION.001` | high | An instruction to the agent that the rendered page does not show |
 | `SUSPECT.AGENT.HIDDEN_TEXT.001` | high | Hidden characters in an agent instruction file |
 | `SUSPECT.AGENT.HOOK.001` | medium | An agent hook committed to the repository |
 | `SUSPECT.AGENT.INJECTION_TEXT.001` | medium | Instruction-like text aimed at a coding agent |
+| `SUSPECT.AGENT.INSTALL_REDIRECT.001` | high | Code an agent runs points package installs somewhere else |
 | `SUSPECT.AGENT.INTENT.001` | high | Text that tells the agent to act against its user |
 | `SUSPECT.AGENT.INTENT_CHAINED.001` | high | Agent instructions that send the agent to a file that acts against its user |
+| `SUSPECT.AGENT.PHANTOM_PREREQUISITE.001` | high | Agent instructions that require downloading a tool they never use |
 | `SUSPECT.AGENT.PLUGIN_SOURCE.001` | high | Agent plugins installed from an unverified source |
 | `SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001` | medium | An agent instruction file tells the agent to fetch and follow remote text |
 | `SUSPECT.AGENT.SENSITIVE_IMPORT.001` | high | An agent instruction file imports a credential file |
+| `SUSPECT.AGENT.SKILL_DECODE_RUN.001` | high | A skill's script decodes code and runs it |
+| `SUSPECT.AGENT.SKILL_HOOK_FETCH.001` | high | A skill script installs an agent hook that runs a download |
+| `SUSPECT.AGENT.SKILL_INSTALLS_LOOKALIKE.001` | high | A skill's script installs a package named like a popular one |
+| `SUSPECT.AGENT.SKILL_INSTRUCTIONS.001` | high | A skill's instructions read as an attack on the agent |
+| `SUSPECT.AGENT.SKILL_JAILBREAK_TEXT.001` | high | A skill's script hands the agent text that tells it to drop its instructions |
+| `SUSPECT.AGENT.SKILL_RUNS_INPUT.001` | medium | A skill's script runs its own input as code or a command |
+| `SUSPECT.AGENT.TOOL_PRIORITY_CLAIM.001` | high | Tells the agent to pick this tool over every other |
+| `SUSPECT.CI.DEVCONTAINER_FETCH.001` | low | A published package's dev-container fetches and runs code when a developer opens it |
+| `SUSPECT.EXTENSION.HIDDEN_NAME.001` | medium | An editor extension's display name carries invisible characters |
 | `SUSPECT.EXTENSION.LOOKALIKE.001` | medium | A recommended editor extension imitates a popular one |
 | `SUSPECT.EXTENSION.MALICIOUS_VERSIONS.001` | low | A named editor extension has had malicious releases |
 | `SUSPECT.EXTENSION.REMOVED.001` | high | A recommended or vendored editor extension was removed from the Marketplace |
+| `SUSPECT.MCP.ARGUMENT_OVERRIDE.001` | high | An MCP tool replaces the argument it was called with |
 | `SUSPECT.MCP.CONTAINER_HOST_ACCESS.001` | high | An MCP server's container is given the host |
+| `SUSPECT.MCP.DENIAL_OF_WALLET.001` | medium | An MCP tool's result tells the agent to call it again, deeper or for every item |
 | `SUSPECT.MCP.ENV_INJECTION.001` | high | An MCP server's environment loads code into it before it starts |
+| `SUSPECT.MCP.HANDLER_SHELL.001` | high | An MCP tool runs its own input as a command |
+| `SUSPECT.MCP.INPUT_FORWARDED.001` | high | An MCP tool sends what it is asked to a second host |
+| `SUSPECT.MCP.INPUT_MIRROR.001` | high | An MCP tool copies what it is asked into a hidden file |
 | `SUSPECT.MCP.INSECURE_TRANSPORT.001` | high | A remote MCP server over plain HTTP |
+| `SUSPECT.MCP.LISTENER.001` | high | An MCP server opens its own listening socket and runs commands |
 | `SUSPECT.MCP.LOOKALIKE.001` | high | An MCP server package named like a popular one |
+| `SUSPECT.MCP.SCHEMA_POISONING.001` | high | An MCP tool's parameter names an order to the agent |
+| `SUSPECT.MCP.SECRET_HARVEST.001` | high | An MCP server gathers the environment's secrets by name |
 | `SUSPECT.MCP.SHELL_LAUNCH.001` | high | An MCP server launched through a shell that fetches code |
+| `SUSPECT.MCP.TIME_BOMB.001` | high | An MCP tool changes behaviour on a mixed date, chance and call-count gate |
 | `SUSPECT.MCP.TOOL_DESCRIPTION.001` | high | A tool in this repository's MCP server instructs the agent |
+| `SUSPECT.MCP.TOOL_SQUATTING.001` | high | An MCP tool takes a well-known tool's name and claims to be the safer one |
 | `SUSPECT.MCP.UNPINNED.001` | medium | An MCP server launched from an unpinned package |
 | `SUSPECT.MCP.UNTRUSTED_REMOTE.001` | high | A remote MCP server on a tunnel, paste or interaction host |
 | `VULNERABLE.AGENT.ACTION_VERSION.001` | high | An AI agent action below its security fix |

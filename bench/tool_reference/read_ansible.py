@@ -38,7 +38,7 @@ for repo in sorted(Path("/data/ansible").iterdir()):
                     for r in parsed.get("roles", [])
                 ],
             }
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             out[rel] = {"error": f"{type(exc).__name__}: {exc}"[:200]}
     for path in repo.rglob("galaxy.yml"):
         if ".reference" in path.parts:
@@ -53,7 +53,7 @@ for repo in sorted(Path("/data/ansible").iterdir()):
                 ],
                 "roles": [],
             }
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             out[rel] = {"error": f"{type(exc).__name__}: {exc}"[:200]}
     (repo / ".reference").mkdir(exist_ok=True)
     (repo / ".reference" / "ansible.json").write_text(

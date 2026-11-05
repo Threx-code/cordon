@@ -1,0 +1,441 @@
+"""cordon-rule: rule files compiled and matched by Cordon's own code.
+
+`--rule-file` matches every file against a rule file: Cordon's own pack, or an operator's. A native
+library reading attacker-supplied bytes is the attack surface this project refuses, so the engine is
+Cordon's own, in four parts:
+
+- `rule_engine.syntax` reads rule text into rules whose conditions are trees;
+- `rule_engine.scan` (with `rule_engine.pattern`) finds every string's matches in a file;
+- `rule_engine.build` checks each condition against the modules' declared types and builds it into
+  closures, once;
+- this module ties them together: `Rules.compile(text)`, then `rules.match(data)`.
+
+The language it reads, and what each part means, is documented for operators in
+`tutorials/31-rule-files.md`; the conformance suite (`tests/unit/detect/binary/rule_engine/test_lang.py`)
+and the differentials over generated rules hold the engine to it.
+
+No file can make a scan unbounded: a string records at most `MAX_MATCHES` matches, a pattern
+never reads more than `rule_engine.threads.REACH` bytes past where a run of it starts, and the search
+gives up at the deadline `match` is given.
+"""
+
+from __future__ import annotations
+
+import binascii
+import dataclasses
+import time
+from collections.abc import Callable, Iterator, Sequence
+from typing import Any, ClassVar
+
+from cordon_scanner.detect.binary.modules.builtin import Builtin
+from cordon_scanner.detect.binary.modules.values import Module
+from cordon_scanner.detect.binary.rule_engine.anchoring.places import Places
+from cordon_scanner.detect.binary.rule_engine.build import Builder, Frame
+from cordon_scanner.detect.binary.rule_engine.gates import Gates, MagicIndex
+from cordon_scanner.detect.binary.rule_engine.hits import Hits, Match
+from cordon_scanner.detect.binary.rule_engine.pack_cache import PackCache
+from cordon_scanner.detect.binary.rule_engine.scan import Search
+from cordon_scanner.detect.binary.rule_engine.syntax import (
+    Both,
+    Either,
+    Found,
+    Grammar,
+    Invoke,
+    Literal,
+    Members,
+    Node,
+    Of,
+    RuleDef,
+    StringDef,
+)
+from cordon_scanner.detect.binary.rule_engine.tokens import Includes, RuleError
+
+MAX_MATCHES = 1_000_000
+
+
+class Tree:
+    """Walks over condition trees."""
+
+    @staticmethod
+    def parts(node: Any) -> Iterator[Any]:
+        """Everything directly inside `node`: nodes, steps, lists and names."""
+        if dataclasses.is_dataclass(node) and not isinstance(node, type):
+            for f in dataclasses.fields(node):
+                yield getattr(node, f.name)
+        elif isinstance(node, (list, tuple)):
+            yield from node
+
+    @staticmethod
+    def calls(node: Any) -> bool:
+        """Whether running `node` calls a module function (which may do something, as
+        `console.log` does)."""
+        if isinstance(node, Invoke):
+            return True
+        return any(Tree.calls(p) for p in Tree.parts(node))
+
+    @staticmethod
+    def needs_match(node: Node) -> bool:
+        """Whether `node` is false whenever no string of the rule has a match: a string found,
+        `at` or `in`, or `any`/`all`/a literal number of at least 1 of a set of strings; `and` when
+        either side needs one, `or` when both do. Anything else -- a count, a loop, `none of`, a
+        percentage, a quantity read from the file -- may be true without a match."""
+        if isinstance(node, Found):
+            return True
+        if isinstance(node, Both):
+            return Tree.needs_match(node.left) or Tree.needs_match(node.right)
+        if isinstance(node, Either):
+            return Tree.needs_match(node.left) and Tree.needs_match(node.right)
+        if isinstance(node, Of):
+            names = node.members.names
+            strings = names is None or all(n.startswith("$") for n in names)
+            q = node.quantity
+            amount = q.amount.value if isinstance(q.amount, Literal) else None
+            some = q.word in ("any", "all") or (
+                type(amount) is int and amount >= 1 and q.word is None
+            )
+            return strings and some
+        return False
+
+
+class Strings:
+    """The rules' strings: each made ready to search for, then searched for in a file, and
+    placed where a condition fixes them."""
+
+    @staticmethod
+    def prepare(rules: list[RuleDef]) -> None:
+        from cordon_scanner.detect.binary.rule_engine.pattern import PatternError
+        from cordon_scanner.detect.binary.rule_engine.scan import Search
+
+        for s in (s for rule in rules for s in rule.strings):
+            try:
+                s.search = Search(s.kind, s.value, s.modifiers)
+            except PatternError as exc:
+                raise RuleError(f"string {s.name}: {exc}") from exc
+
+    @staticmethod
+    def search(s: StringDef, data: bytes, deadline: float | None, seen: dict[Any, Any]) -> Hits:
+        """Where `s` matches in `data`, as (offset, length) pairs in offset order (`Hits`). Running
+        out of time, or a pattern needing more than its bounds allow, or more matches in the file
+        than `Hits.MOST`, refuses the file."""
+        from cordon_scanner.detect.binary.rule_engine.pattern import RunError, TooManyMatches
+
+        why: str | None = None
+        cause: BaseException | None = None
+        assert s.search is not None  # noqa: S101 - every string is prepared (`Strings.prepare`)
+        try:
+            found: Sequence[tuple[int, int]] = s.search.find(data, s.fixed, deadline, seen)
+            hits = found if isinstance(found, Hits) else Hits(found)
+            del found
+            held = seen.get(("matches",), 0) + len(hits)
+            if held > Hits.MOST:
+                raise TooManyMatches(f"more than {Hits.MOST:,} matches in one file")
+            seen[("matches",)] = held
+        except TimeoutError as exc:
+            why, cause = "matching took longer than the time allowed", exc
+        except RunError as exc:
+            why, cause = f"string {s.name}: {exc}", exc
+        if why is not None:
+            raise RuleError(why) from cause
+        return hits
+
+    @staticmethod
+    def place(rule: RuleDef) -> None:
+        """Marks each string whose first part is plain bytes and whose every use is `$a at
+        <constant>` (one constant): it counts only there, as the search records it only there."""
+        names = [s.name for s in rule.strings]
+        where: dict[str, int | None] = dict.fromkeys(names)
+        loose: set[str] = set()
+
+        def fix(name: str, at: Node) -> None:
+            value = at.value if isinstance(at, Literal) and type(at.value) is int else None
+            for n in names if name == "$" else [name]:
+                if n not in where:
+                    continue
+                if where[n] is None:
+                    where[n] = value
+                if value is None or where[n] != value:
+                    loose.add(n)
+
+        def name_used(name: str) -> None:
+            if name == "$":
+                loose.update(names)
+            elif name.endswith("*"):
+                loose.update(n for n in names if n.startswith(name[:-1]))
+            else:
+                loose.add(name)
+
+        def visit(node: Any) -> None:
+            if isinstance(node, Found) and node.at is not None:
+                fix(node.string, node.at)
+                visit(node.at)
+                return
+            if isinstance(node, Members) and node.names is None:
+                loose.update(names)
+                return
+            if isinstance(node, str):
+                if node.startswith("$"):
+                    name_used(node)
+                return
+            for part in Tree.parts(node):
+                visit(part)
+
+        visit(rule.condition)
+        for s in rule.strings:
+            # a string of linked parts counts from its first, so that part decides
+            plain = s.search is not None and s.search.parts[0].text is not None
+            if plain and s.name not in loose and where[s.name] is not None:
+                s.fixed = where[s.name]
+
+
+class Plan:
+    """Which rules one match has to look at. A rule with strings that is false unless one of them
+    matches (it needs a match, or has a clause of strings: `Gates.hopeless`) is false outright when
+    none of its strings has an anchor in the file, so it is visited only when one does
+    (`by_string`); every other rule is visited always (`always`)."""
+
+    __slots__ = ("always", "by_string", "global_skippable", "names")
+
+    def __init__(self, rules: list[RuleDef]) -> None:
+        self.names = [r.name for r in rules]
+        self.by_string: dict[int, int] = {}
+        self.always: list[int] = []
+        self.global_skippable: list[int] = []
+        for i, rule in enumerate(rules):
+            skippable = bool(rule.strings) and (rule.needs_match or bool(rule.clauses))
+            if not skippable:
+                self.always.append(i)
+                continue
+            if rule.is_global:
+                self.global_skippable.append(i)
+            for s in rule.strings:
+                self.by_string[id(s)] = i
+
+
+class Rules:
+    """Compiled rules: `Rules.compile(text)`, then `rules.match(data)`."""
+
+    #: The built-in modules, loaded once.
+    BUILT_IN: ClassVar[dict[str, Module]] = {}
+
+    def __init__(
+        self,
+        rules: list[RuleDef],
+        modules: dict[str, Module],
+        imports: frozenset[str] = frozenset(),
+    ) -> None:
+        self.rules, self.modules = rules, modules
+        #: The modules the rules import.
+        self.imports = imports
+        self._index: tuple[Any, list[StringDef]] | None = None
+        self._magic: MagicIndex | None = None
+        self._plan: Plan | None = None
+
+    @staticmethod
+    def loaded(given: dict[str, Any] | None) -> dict[str, Module]:
+        if not Rules.BUILT_IN:
+            Rules.BUILT_IN.update(Builtin.modules())
+        return {**Rules.BUILT_IN, **(given or {})}
+
+    @staticmethod
+    def compile(
+        text: str,
+        externals: dict[str, Any] | None = None,
+        modules: dict[str, Any] | None = None,
+        includes: Includes | None = None,
+        cache: PackCache | None = None,
+    ) -> Rules:
+        """`modules` adds modules (`modules.values.Module`s) to the built-in ones; `includes` says
+        where `include` may read from (None: every include is refused); `cache` keeps the parsed
+        and prepared rules for the next compile of the same text (`pack_cache`)."""
+        loaded = Rules.loaded(modules)
+        given = dict(externals or {})
+        key = ""
+        if cache is not None:
+            # a load makes the pack's objects and no garbage, so the collector is off for it
+            # (foundation/collector: 2.70 s of the full YARA-Forge pack's load against 0.62 s)
+            from cordon_scanner.foundation.collector import Collector
+
+            key = cache.key(text, given, frozenset(loaded))
+            found = Collector.paused(Rules._kept, cache, key, loaded, given)
+            if found is not None:
+                return found
+        rules, imports = Rules._read(text, given, loaded, includes)
+        # kept only once the whole set has built without error, from its state before building
+        blob = PackCache.dumps((rules, imports)) if cache is not None else None
+        built = Rules._built(rules, loaded, given, imports)
+        if cache is not None and blob is not None:
+            cache.put(key, blob, list(includes.read) if includes else [])
+        return built
+
+    @staticmethod
+    def _kept(
+        cache: PackCache, key: str, loaded: dict[str, Module], given: dict[str, Any]
+    ) -> Rules | None:
+        """The rules `cache` kept under `key`, each to be built on its first run; None if none."""
+        kept = cache.get(key)
+        if kept is None:
+            return None
+        rules, imports = kept
+        return Rules._built(rules, loaded, given, imports, lazily=True)
+
+    @staticmethod
+    def _read(
+        text: str, given: dict[str, Any], loaded: dict[str, Module], includes: Includes | None
+    ) -> tuple[list[RuleDef], frozenset[str]]:
+        """The rules parsed and their strings' searches prepared: what the cache keeps."""
+        try:
+            grammar = Grammar(text, given, frozenset(loaded), includes)
+            rules = grammar.read()
+            Strings.prepare(rules)
+            # what the condition tree alone decides, worked out once and kept with the rules
+            for rule in rules:
+                rule.needs_match = (
+                    bool(rule.strings)
+                    and Tree.needs_match(rule.condition)
+                    and not Tree.calls(rule.condition)
+                )
+                Strings.place(rule)
+        except (IndexError, ValueError, binascii.Error) as exc:
+            if isinstance(exc, RuleError):
+                raise
+            raise RuleError(f"the rules do not parse: {exc}") from exc
+        return rules, frozenset(grammar.imports)
+
+    @staticmethod
+    def _built(
+        rules: list[RuleDef],
+        loaded: dict[str, Module],
+        given: dict[str, Any],
+        imports: frozenset[str],
+        lazily: bool = False,
+    ) -> Rules:
+        """The conditions built into closures, for rules read now; `lazily`, each on its first
+        run, for rules a cache kept (built once already, without error)."""
+        try:
+            if lazily:
+                from cordon_scanner.detect.binary.rule_engine.lazy_build import LazyBuild
+
+                LazyBuild.stubs(rules, loaded, given)
+            else:
+                Builder(rules, loaded, given).build()
+        except RuleError:
+            raise
+        except (ValueError, TypeError, IndexError, KeyError, OverflowError) as exc:
+            raise RuleError(f"the rules do not compile: {type(exc).__name__}: {exc}") from exc
+        return Rules(rules, loaded, imports)
+
+    @property
+    def notes(self) -> list[tuple[str, str]]:
+        """What the compiler decided for each rule where the rule did not say, as (rule, note)."""
+        return [(rule.name, note) for rule in self.rules for note in rule.notes]
+
+    def index(self) -> tuple[Any, list[StringDef]]:
+        """One index of every string's anchors, built once for the rule set."""
+        if self._index is None:
+            from cordon_scanner.detect.binary.rule_engine.anchoring.anchor_index import AnchorIndex
+
+            strings = [s for r in self.rules for s in r.strings]
+            searches = [s.search for s in strings if s.search is not None]
+            assert len(searches) == len(strings)  # noqa: S101 - every string is prepared
+            self._index = (AnchorIndex(searches), strings)
+        return self._index
+
+    def plan(self) -> Plan:
+        """Which rules a match must visit (`Plan`), worked out once for the rule set."""
+        if self._plan is None:
+            self._plan = Plan(self.rules)
+        return self._plan
+
+    def magic_index(self) -> MagicIndex:
+        """The anchor indexes by leading-byte requirement, each built when a file first needs it."""
+        if self._magic is None:
+            from cordon_scanner.detect.binary.rule_engine.anchoring.anchor_index import AnchorIndex
+
+            self._magic = MagicIndex(self.rules, AnchorIndex)
+        return self._magic
+
+    def match(
+        self,
+        data: bytes,
+        timeout: float | None = None,
+        console: Callable[[str], Any] | None = None,
+        given: dict[str, Module] | None = None,
+        subset: frozenset[int] | None = None,
+        spent: dict[str, int] | None = None,
+    ) -> list[Match]:
+        """The rules `data` matches; a `RuleError` once `timeout` seconds have passed. `console`
+        receives each `console.log`/`console.hex` message. `given` replaces built-in modules for
+        this match by name, as one built from data given to the scan (`Cuckoo.module(report)`).
+        `subset`: only the rules at these positions are decided and reported (one share of a
+        match split over workers; the caller keeps rules a reference joins, and global rules, in
+        each share they bear on). `spent`, when given, is filled with what the match used of the
+        file's bounds: "places" (of `Places.MOST`) and "matches" (of `Hits.MOST`)."""
+        deadline = time.monotonic() + timeout if timeout is not None else None
+        modules = self.modules
+        if given:
+            unknown = set(given) - set(modules)
+            if unknown:
+                raise RuleError(f"data given for modules the rules do not have: {sorted(unknown)}")
+            modules = {**modules, **given}
+        if console is not None:
+            modules = {**modules, "console": Builtin.console(console)}
+        frame = Frame(data, modules)
+        seen: dict[Any, Any] = {}
+        live = self.magic_index().live(data, seen)
+        found_by: dict[str, dict[str, Sequence[tuple[int, int]]]] = {}
+        held: dict[str, bool] = {}  # each distinct gate's result on this file (`Gates.hold`)
+        # only the rules a string with an anchor here can reach, and those that may hold with no
+        # match, are visited; every other rule is false without being looked at (Gates.hopeless)
+        plan = self.plan()
+        visit = set(plan.always)
+        for sid in live:
+            reached = plan.by_string.get(sid)
+            if reached is not None:
+                visit.add(reached)
+        frame.decided.update(dict.fromkeys(plan.names, False))
+        all_global = all(i in visit for i in plan.global_skippable)
+        if subset is not None:
+            visit &= subset
+        for i in sorted(visit):
+            rule = self.rules[i]
+            frame.found, frame.env = {}, [None] * rule.width
+            if Gates.hopeless(rule, live) or (rule.gates and not Gates.hold(rule, frame, held)):
+                found: dict[str, Sequence[tuple[int, int]]] = {s.name: [] for s in rule.strings}
+                may = False
+            else:
+                found, may = Gates.search(
+                    rule, live, lambda s: Strings.search(s, data, deadline, seen)
+                )
+            found_by[rule.name] = frame.found = found
+            if not may or (rule.needs_match and not any(found.values())):
+                result = False
+            else:
+                frame.env = [None] * rule.width
+                assert rule.run is not None  # noqa: S101 - every rule is built, or stubbed to be
+                result = rule.run(frame)
+            frame.decided[rule.name] = result
+            if rule.is_global and not result:
+                all_global = False
+        if spent is not None:
+            spent["places"] = Places.MOST - Search.budget(seen)[0]
+            spent["matches"] = int(seen.get(("matches",), 0))
+        out: list[Match] = []
+        if not all_global:
+            return out
+        for i, rule in enumerate(self.rules):
+            if subset is not None and i not in subset:
+                continue
+            if not frame.decided[rule.name] or rule.private:
+                continue
+            # an anonymous string is reported as `$`, as the reference reports it; its inner name
+            # (`$#anonymousN`) only keeps it apart from its rule's other anonymous strings
+            hits: list[tuple[str, Sequence[tuple[int, int]]]] = [
+                ("$" if s.name.startswith("$#") else s.name, found_by[rule.name][s.name])
+                for s in rule.strings
+                if not s.private
+            ]
+            out.append(Match(rule.name, list(rule.tags), dict(rule.meta), data=data, hits=hits))
+        return out
+
+
+__all__ = ["Match", "RuleError", "Rules"]

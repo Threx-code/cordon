@@ -26,7 +26,7 @@ Or the `pre-commit` framework — pinned to a release tag:
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/Threx-code/cordon
-    rev: v0.6.0
+    rev: v0.7.0
     hooks:
       - id: cordon
 ```
@@ -67,7 +67,7 @@ hides findings exactly when there are some:
                  see tutorial 11 for the signed offline bundle
 ```
 
-Templates live in [`ci/`](https://github.com/Threx-code/cordon/tree/v0.6.0/ci).
+Templates live in [`ci/`](https://github.com/Threx-code/cordon/tree/v0.7.0/ci).
 The advisory database ships inside the wheel (malicious entries + high/critical
 vulns, to bound size); `cordon-scanner advisories sync` fetches the full,
 unfiltered set (OSV, plus rubysec for RubyGems) into a local cache a scan then prefers — still no network at scan
@@ -114,13 +114,13 @@ the same ceiling.
 
 | Platform | Template | Upload identity | Closes findings when |
 |---|---|---|---|
-| GitHub Actions | [`action/`](https://github.com/Threx-code/cordon/tree/v0.6.0/action) | the job's OIDC token (`id-token: write`) | the job ran on the default branch (from the token) |
-| GitLab CI | [`ci/gitlab/cordon.gitlab-ci.yml`](https://github.com/Threx-code/cordon/tree/v0.6.0/ci/gitlab) | `id_tokens: CORDON_ID_TOKEN` (aud `cordon`), set by the template | the job ran on the default branch (from the token) |
-| CircleCI | [`ci/circleci/orb.yml`](https://github.com/Threx-code/cordon/tree/v0.6.0/ci/circleci) | `circleci run oidc get` with aud `cordon` | the job ran on the default branch (`vcs-origin`, `vcs-ref` in the token) |
-| Bitbucket Pipelines | [`ci/bitbucket/`](https://github.com/Threx-code/cordon/tree/v0.6.0/ci/bitbucket) (a pipe) | `oidc: true` on the step | the workspace is connected in Cordon (it names the repository) and the step ran on the default branch |
-| Buildkite | [`ci/buildkite/pipeline.yml`](https://github.com/Threx-code/cordon/tree/v0.6.0/ci/buildkite) | `buildkite-agent oidc request-token --audience cordon` | the trust rule names the pipeline's repository; the token names the branch |
-| Azure Pipelines | [`ci/azure/cordon-task.yml`](https://github.com/Threx-code/cordon/tree/v0.6.0/ci/azure) | the token of `serviceConnectionId`, a workload identity service connection | the trust rule pins that connection and names its repository and branch, and a branch control check limits the connection to that branch |
-| Jenkins | [`ci/jenkins/vars/cordonScan.groovy`](https://github.com/Threx-code/cordon/tree/v0.6.0/ci/jenkins) (shared library) | `credentialsId`: an OIDC Provider plugin id token credential, aud `cordon` | the issuer is on a domain your organisation verified, and the trust rule pins the branch job (`sub`) and names its repository and branch |
+| GitHub Actions | [`action/`](https://github.com/Threx-code/cordon/tree/v0.7.0/action) | the job's OIDC token (`id-token: write`) | the job ran on the default branch (from the token) |
+| GitLab CI | [`ci/gitlab/cordon.gitlab-ci.yml`](https://github.com/Threx-code/cordon/tree/v0.7.0/ci/gitlab) | `id_tokens: CORDON_ID_TOKEN` (aud `cordon`), set by the template | the job ran on the default branch (from the token) |
+| CircleCI | [`ci/circleci/orb.yml`](https://github.com/Threx-code/cordon/tree/v0.7.0/ci/circleci) | `circleci run oidc get` with aud `cordon` | the job ran on the default branch (`vcs-origin`, `vcs-ref` in the token) |
+| Bitbucket Pipelines | [`ci/bitbucket/`](https://github.com/Threx-code/cordon/tree/v0.7.0/ci/bitbucket) (a pipe) | `oidc: true` on the step | the workspace is connected in Cordon (it names the repository) and the step ran on the default branch |
+| Buildkite | [`ci/buildkite/pipeline.yml`](https://github.com/Threx-code/cordon/tree/v0.7.0/ci/buildkite) | `buildkite-agent oidc request-token --audience cordon` | the trust rule names the pipeline's repository; the token names the branch |
+| Azure Pipelines | [`ci/azure/cordon-task.yml`](https://github.com/Threx-code/cordon/tree/v0.7.0/ci/azure) | the token of `serviceConnectionId`, a workload identity service connection | the trust rule pins that connection and names its repository and branch, and a branch control check limits the connection to that branch |
+| Jenkins | [`ci/jenkins/vars/cordonScan.groovy`](https://github.com/Threx-code/cordon/tree/v0.7.0/ci/jenkins) (shared library) | `credentialsId`: an OIDC Provider plugin id token credential, aud `cordon` | the issuer is on a domain your organisation verified, and the trust rule pins the branch job (`sub`) and names its repository and branch |
 
 Cordon holds each CI token to the repository and branch its identity stands for. Where the token
 names them (GitHub, GitLab, CircleCI; the branch for Buildkite and Bitbucket) the token decides;
@@ -151,34 +151,35 @@ when the gate fails.
 
 ### Notifications
 
-`--notify slack,teams,webhook` posts once when the gate fails or the scan is incomplete. The URLs
-come only from the environment (`CORDON_NOTIFY_SLACK`, `CORDON_NOTIFY_TEAMS`,
-`CORDON_NOTIFY_WEBHOOK`). The webhook body is a `cordon.event/v1` envelope
-([schema](https://github.com/Threx-code/cordon/blob/v0.6.0/schemas/cordon-event-v1.schema.json))
-signed with `CORDON_NOTIFY_WEBHOOK_SECRET` as `X-Cordon-Signature: t=<unix>,v1=<hex HMAC-SHA256 of
-"t.body">`; reject a delivery more than five minutes old. Messages carry rule, severity, path and
-fingerprint, never evidence. A failed delivery is reported on stderr and never changes the exit code.
+`--notify slack,teams,webhook` posts once per channel when the gate fails or the scan is
+incomplete; `--notify-on failed,incomplete,passed` chooses the occasions, and `notify.channels` and
+`notify.on` in `.cordon.yaml` set them once for a repository. URLs come only from the environment
+(`CORDON_NOTIFY_SLACK`, `CORDON_NOTIFY_TEAMS`, `CORDON_NOTIFY_WEBHOOK`); the webhook is signed with
+`CORDON_NOTIFY_WEBHOOK_SECRET`. `cordon-scanner notify test` checks every channel before a real
+failure does. A failed delivery never changes the exit code. Retries, the audit record, verifying a
+webhook (and changing its secret), and writing a channel of your own:
+[14-NOTIFICATIONS.md](14-NOTIFICATIONS.md).
 
 ### Cordon Cloud
 
 Everything here is opt-in and changes nothing about what a scan finds.
 
 ```
-   cordon login                     device flow through your org's SSO; pins the org's policy key
-   cordon scan . --upload           results as an in-toto statement; keyless-signed in CI
-   cordon scan . --cloud-policy     the org's signed policy and approved suppressions
-   cordon runner --allow-host github.com     scan jobs inside your network, outbound only
-   cordon agent inventory | report  AI agents and MCP servers on this machine, for MDM
+   cordon-scanner login             device flow through your org's SSO; pins the org's policy key
+   cordon-scanner scan . --upload   results as an in-toto statement; keyless-signed in CI
+   cordon-scanner scan . --cloud-policy  the org's signed policy and approved suppressions
+   cordon-scanner runner --allow-host github.com  scan jobs inside your network, outbound only
+   cordon-scanner agent inventory | report  AI agents and MCP servers on this machine, for MDM
 ```
 
 - **Uploads** are the JSON results plus a DSSE-wrapped in-toto statement over their SHA-256
-  ([K2](https://github.com/Threx-code/cordon/blob/v0.6.0/schemas/cordon-upload-v1.schema.json)). In
-  CI, with the `[cloud]` extra, Sigstore signs it with the job's identity; elsewhere it is marked
-  unsigned. A failed upload never changes the exit code.
+  ([K2](https://github.com/Threx-code/cordon/blob/v0.7.0/schemas/cordon-upload-v1.schema.json)). In
+  CI, Cordon signs it keylessly with the job's identity (Fulcio and Rekor, built in); elsewhere it
+  is marked unsigned. A failed upload never changes the exit code.
 - **The policy bundle** is verified with Ed25519 against the key pinned at sign-in, refused if it
   names another organisation or is older than the cached one, and used from cache when the cloud is
   unreachable until it expires. With `--cloud-policy` and no current bundle the scan does not run.
-  The pinned key never changes on a token renewal; rotating it is a fresh `cordon login`. CI has no
+  The pinned key never changes on a token renewal; rotating it is a fresh `cordon-scanner login`. CI has no
   sign-in to pin from, so set `CORDON_POLICY_KEYS` (`keyid:hex`, shown on the console's policy
   page) in the CI configuration: without it `--cloud-policy` refuses to apply a bundle checked
   against keys that arrived with the same token.
@@ -194,7 +195,7 @@ Everything here is opt-in and changes nothing about what a scan finds.
   records, Microsoft's removals and look-alikes. Never file contents or a credential. `cordon
   agent inventory` prints exactly what `report` would send.
 
-The contracts, K1 to K9, are in [`schemas/`](https://github.com/Threx-code/cordon/tree/v0.6.0/schemas).
+The contracts, K1 to K9, are in [`schemas/`](https://github.com/Threx-code/cordon/tree/v0.7.0/schemas).
 
 ### The agent judge
 
@@ -202,19 +203,19 @@ Rules catch the wordings someone wrote down; `--judge` has a language model read
 text for the rest. Off by default. It only adds findings; every rule still runs.
 
 ```
-   cordon scan . --judge cordon-cloud          recommended: Cordon Cloud's hosted judge (`cordon login`)
-   cordon scan . --judge anthropic             your own Anthropic key (ANTHROPIC_API_KEY)
-   cordon scan . --judge openai:<model>        OpenAI, or any compatible server (CORDON_JUDGE_URL)
-   cordon scan . --judge ollama:<model>        a local model; nothing leaves the machine
+   cordon-scanner scan . --judge cordon-cloud  recommended: Cordon Cloud's hosted judge (`cordon-scanner login`)
+   cordon-scanner scan . --judge anthropic     your own Anthropic key (ANTHROPIC_API_KEY)
+   cordon-scanner scan . --judge openai:<model>  OpenAI, or any compatible server (CORDON_JUDGE_URL)
+   cordon-scanner scan . --judge ollama:<model>  a local model; nothing leaves the machine
 ```
 
 | Judge | Measured | What leaves the machine |
 |---|---|---|
 | `cordon-cloud` | Not yet: the hosted endpoint ships with Cordon Cloud | Agent-facing text only |
-| `anthropic`, `openai:` a current hosted model | Not by this project: run `bench/judge_bench.py` against it | Agent-facing text only, to that provider |
+| `anthropic`, `openai:` a current hosted model | Not by this project: run `bench/suites/judge_bench.py` against it | Agent-facing text only, to that provider |
 | `ollama:` qwen2.5 7B, on CPU | 70 of 100 new ATR attack wordings; 22 of 22 realistic benign configs clean; 11 of 75 of ATR's hardest benign texts flagged | Nothing |
 
-Measure the model you choose with `bench/judge_bench.py` before `--judge-blocks` gates on it.
+Measure the model you choose with `bench/suites/judge_bench.py` before `--judge-blocks` gates on it.
 
 `cordon-cloud` answers only for organisations whose administrator has turned on the hosted judge
 (Settings, AI). Until they do, the hosted judge refuses every request before reading its text,
@@ -235,6 +236,40 @@ repository's text to a model; only the organisation can agree to it.
    budget ............... --judge-max-calls (default 200)
    timeout per call ..... local 300 s · remote 90 s · CORDON_JUDGE_TIMEOUT
 ```
+
+### AI agents: the MCP server
+
+`cordon-scanner mcp` serves Cordon's checks to coding agents over the Model Context Protocol
+(stdio), so an agent asks before it installs a package, runs an install command, loads a skill,
+follows an instruction file or adds an MCP server (tutorial 30). It ships inside the package; there
+is nothing else to install.
+
+```
+   cordon-scanner mcp config --client claude-code    the exact configuration for one agent
+                                                     (claude-code, claude-desktop, cursor, vscode,
+                                                      windsurf, gemini, codex, zed, cline,
+                                                      continue, jetbrains)
+   cordon-scanner mcp --root DIR                     a directory tools may read (repeatable)
+                      --allow-online                 registries, packages' code, images, live MCP
+                      --allow-private-network        online names may lead inside the network
+                      --allow-machine                this machine's packages and agent configs
+                      --timeout · --max-concurrent · --rate · --max-findings · --audit-log
+```
+
+It speaks the current protocol (2026-07-28, per-request metadata) and the `initialize`
+handshake of 2025-11-25, 2025-06-18, 2025-03-26 and 2024-11-05, each response shaped to the
+version in use. Every tool is read-only; the security controls are threat T13 in
+`02-THREAT-MODEL.md`.
+
+### Editors
+
+The VS Code extension (Visual Studio Marketplace, and Open VSX for Cursor, Windsurf, VSCodium
+and Gitpod) and the JetBrains plugin (IntelliJ-based IDEs, 2025.1 and later) show findings on
+their lines and run only in trusted folders, with the scanner's path a machine-level setting no
+project can change. On VS Code 1.101 and later the extension registers the MCP server with the
+editor's own agents. Both are built from `editors/` in Docker (`editors/*/Dockerfile`), the
+JetBrains plugin checked by JetBrains' Plugin Verifier against the oldest and newest IDEs it
+claims. Tutorial 20.
 
 ### Container images
 

@@ -32,9 +32,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
 
-from cordon_scanner.cloud import CloudError
+from cordon_scanner.cloud import CloudError, JobRefused
 from cordon_scanner.cloud.transport import CloudTransport, Response, Transport
-from cordon_scanner.core.trees import Trees
+from cordon_scanner.foundation.files.trees import Trees
+from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.redirects import ClosedErrors
 from cordon_scanner.version import PROGRAM
 
 MAX_ARTIFACT_BYTES: Final = 2 << 30
@@ -76,11 +78,11 @@ class RunnerConfig:
     whose code host cannot mint a per-clone token (GitLab, Bitbucket). Held on the customer's
     machine only; Cordon never sees it."""
     make_fixes: bool = False
+    """Take fix jobs too (`--make-fixes`): move one dependency to a safe version in its lockfile and
+    push a branch. Off unless the operator turns it on, because it writes to repositories."""
     allow_online: bool = False
     """Let a job ask for registry lookups (`--allow-online`). Off unless the operator turns it on:
     the control plane does not decide that a customer's machine makes outbound requests."""
-    """Take fix jobs too (`--make-fixes`): move one dependency to a safe version in its lockfile and
-    push a branch. Off unless the operator turns it on, because it writes to repositories."""
 
 
 #: The user name a bare token is sent with, by host. Anything else takes `user:token`.
@@ -105,11 +107,7 @@ class CheckedRedirects(urllib.request.HTTPRedirectHandler):
 
     @classmethod
     def opener(cls, config: RunnerConfig) -> urllib.request.OpenerDirector:
-        return urllib.request.build_opener(cls(config))
-
-
-class JobRefused(CloudError):
-    """The job asked for something this runner will not do. Reported to the cloud as failed."""
+        return urllib.request.build_opener(cls(config), ClosedErrors)
 
 
 class CloudRunner:
@@ -342,7 +340,7 @@ class CloudRunner:
             ) as response,
             destination.open("wb") as handle,
         ):
-            for chunk in iter(lambda: response.read(1 << 20), b""):
+            for chunk in Download.chunks(response, size=1 << 20):
                 total += len(chunk)
                 if total > MAX_ARTIFACT_BYTES:
                     raise JobRefused("the artefact is larger than the runner accepts")
@@ -367,9 +365,6 @@ class CloudRunner:
                 job, config, transport=transport, fetchers=fetchers, alive=alive
             )
         from cordon_scanner import Scanner
-        from cordon_scanner.cloud import auth, results
-        from cordon_scanner.core.config import ConfigResolver
-        from cordon_scanner.core.policy import PolicyGate
 
         fetch: dict[str, Callable[..., Path]] = {
             "git": CloudRunner.fetch_git,
@@ -394,16 +389,7 @@ class CloudRunner:
                     "status": "abandoned",
                     "error": "the lease was lost before the scan",
                 }
-            overrides: dict[str, Any] = {"use_cache": False}
-            if job.options.get("online") and config.allow_online:
-                overrides["offline"] = False
-            # The repository's own configuration, as a CI scan of it would read it: clamped as
-            # untrusted, so it can narrow what is reported only in the ways a scan target may.
-            # Through the resolver, which is the only path that clamps a discovered config as
-            # untrusted and applies every ceiling; `Config.discover` alone returns it unclamped.
-            scan_config = ConfigResolver.resolve(
-                root=target if target.is_dir() else target.parent, **overrides
-            )
+            scan_config = CloudRunner._scan_config(job, config, target)
             with _Heartbeat(config, job, transport) as beating:
                 result = Scanner(scan_config).scan(target)
             if beating.lost.is_set():
@@ -411,34 +397,12 @@ class CloudRunner:
                     "status": "abandoned",
                     "error": "the lease was lost during the scan",
                 }
-            # A runner scan that did not read everything has not passed.
-            gate = dataclasses.replace(scan_config.policy, fail_on_incomplete=True)
-            verdict = PolicyGate.evaluate(result, gate)
-            CloudRunner.heartbeat(config, job, transport=transport, stage="uploading")
-            credentials = auth.Credentials(
-                url=config.url,
-                org=str(job.options.get("org", "")),
-                access_token=config.token,
-                expires_at=time.time() + 600,
-            )
-            receipt = results.SignedResults.upload(
-                result,
-                credentials,
-                exit_code=int(verdict.exit_code),
-                reason=str(verdict.reason),
-                transport=transport,
-                ai_document=results.SignedResults.ai_inventory(target, result),
-            )
-            return {
-                "status": "succeeded",
-                "exit_code": int(verdict.exit_code),
-                "scan_id": receipt.scan_id,
-            }
+            return CloudRunner._report(job, config, transport, scan_config, result, target)
         except JobRefused as exc:
             return {"status": "refused", "error": str(exc)}
         except CloudError as exc:
             return {"status": "failed", "error": str(exc)}
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             # The detail stays on the runner. The exception type was returned to the control
             # plane, which made a failed fetch an oracle for what is reachable from here.
             print(
@@ -448,6 +412,59 @@ class CloudRunner:
             return {"status": "failed", "error": "the job failed on the runner; see its log"}
         finally:
             Trees.remove(workspace)
+
+    @staticmethod
+    def _scan_config(job: Job, config: RunnerConfig, target: Path) -> Any:
+        """The configuration the job's scan runs with."""
+        from cordon_scanner.foundation.config.resolver import ConfigResolver
+
+        overrides: dict[str, Any] = {"use_cache": False}
+        if job.options.get("online") and config.allow_online:
+            overrides["offline"] = False
+        # The repository's own configuration, as a CI scan of it would read it: clamped as
+        # untrusted, so it can narrow what is reported only in the ways a scan target may.
+        # Through the resolver, which is the only path that clamps a discovered config as
+        # untrusted and applies every ceiling; `Config.discover` alone returns it unclamped.
+        return ConfigResolver.resolve(
+            root=target if target.is_dir() else target.parent, **overrides
+        )
+
+    @staticmethod
+    def _report(
+        job: Job,
+        config: RunnerConfig,
+        transport: Transport | None,
+        scan_config: Any,
+        result: Any,
+        target: Path,
+    ) -> dict[str, Any]:
+        """The verdict, uploaded with the result, and the job's outcome."""
+        from cordon_scanner.cloud import auth, results
+        from cordon_scanner.decide.policy import PolicyGate
+
+        # A runner scan that did not read everything has not passed.
+        gate = dataclasses.replace(scan_config.policy, fail_on_incomplete=True)
+        verdict = PolicyGate.evaluate(result, gate)
+        CloudRunner.heartbeat(config, job, transport=transport, stage="uploading")
+        credentials = auth.Credentials(
+            url=config.url,
+            org=str(job.options.get("org", "")),
+            access_token=config.token,
+            expires_at=time.time() + 600,
+        )
+        receipt = results.SignedResults.upload(
+            result,
+            credentials,
+            exit_code=int(verdict.exit_code),
+            reason=str(verdict.reason),
+            transport=transport,
+            ai_document=results.SignedResults.ai_inventory(target, result),
+        )
+        return {
+            "status": "succeeded",
+            "exit_code": int(verdict.exit_code),
+            "scan_id": receipt.scan_id,
+        }
 
     @staticmethod
     def execute_fix(
@@ -487,7 +504,7 @@ class CloudRunner:
                 "-c",
                 "user.name=Cordon",
                 "-c",
-                "user.email=fix@cordon.dev",
+                "user.email=fix@cordonscan.com",
                 "-c",
                 "commit.gpgsign=false",
             ]
@@ -526,7 +543,7 @@ class CloudRunner:
             return {"status": "refused", "error": str(exc)[:500]}
         except CloudError as exc:
             return {"status": "failed", "error": str(exc)[:500]}
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return {"status": "failed", "error": f"{type(exc).__name__} while making the fix"}
         finally:
             Trees.remove(workspace)

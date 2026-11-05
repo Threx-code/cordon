@@ -26,12 +26,14 @@ import zipfile
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.archive.safe import ArchiveReader, Rejection
-from cordon_scanner.core.config import Config
-from cordon_scanner.core.content import FileContent
-from cordon_scanner.core.errors import ArchiveError
-from cordon_scanner.core.limits import DEFAULT_LIMITS
-from cordon_scanner.core.models import Category, Severity
+from cordon_scanner.foundation.config.settings import Config
+from cordon_scanner.foundation.content import FileContent
+from cordon_scanner.foundation.errors import ArchiveError
+from cordon_scanner.foundation.files.spill import SpilledBytes
+from cordon_scanner.foundation.limits import DEFAULT_LIMITS
+from cordon_scanner.foundation.models import Category, Severity
+from cordon_scanner.sources.archive import ArchiveReader
+from cordon_scanner.sources.base import Rejection
 from support import Support
 
 pytestmark = pytest.mark.hostile
@@ -104,34 +106,54 @@ class HostileHelpers:
 
 
 class TestDecompressionBombs:
-    def test_high_ratio_member_is_refused(self) -> None:
-        """A hugely compressible member is the classic bomb. The ratio ceiling
-        must stop it while it streams, not after it has been materialised."""
+    def test_high_ratio_member_is_stopped_while_it_streams(self) -> None:
+        """A hugely compressible member is the classic bomb. The expansion cap must stop it while
+        it streams, not after it has been materialised, and say it is padding."""
         bomb = HostileHelpers.zip_of({"bomb.txt": b"\x00" * (8 * 1024 * 1024)})
-        limits = DEFAULT_LIMITS.merged(max_archive_ratio=10, max_file_bytes=64 * 1024 * 1024)
+        limits = DEFAULT_LIMITS.merged(max_archive_ratio=10, max_member_bytes=1024 * 1024)
 
         result = ArchiveReader.extract(bomb, path="bomb.zip", limits=limits)
 
         assert not result.members, "the bomb member must not be returned"
-        assert any(r.reason == Rejection.RATIO for r in result.rejected)
+        assert result.truncated
+        assert any(r.reason == Rejection.PADDED for r in result.rejected)
 
     def test_rejection_is_reported_not_silent(self) -> None:
         """An archive that was refused and one that was clean must never look
         alike in the output."""
         bomb = HostileHelpers.zip_of({"bomb.txt": b"\x00" * (4 * 1024 * 1024)})
         result = ArchiveReader.extract(
-            bomb, path="bomb.zip", limits=DEFAULT_LIMITS.merged(max_archive_ratio=10)
+            bomb,
+            path="bomb.zip",
+            limits=DEFAULT_LIMITS.merged(max_archive_ratio=10, max_member_bytes=1024 * 1024),
         )
         assert result.rejected
         assert result.rejected[0].detail, "a rejection must explain itself"
 
-    def test_oversized_member_is_refused(self) -> None:
+    def test_an_oversized_member_is_read_from_disk_not_refused(self) -> None:
+        """Past both the per-file limit and the member limit, a member is kept on disk and read
+        whole: refused unread, it was where a payload padded past the limit went unseen."""
+        data = HostileHelpers.zip_of({"big.bin": b"A" * 200_000}, compress=False)
+        result = ArchiveReader.extract(
+            data,
+            path="a.zip",
+            limits=DEFAULT_LIMITS.merged(max_file_bytes=1000, max_member_bytes=100_000),
+        )
+        (member,) = result.members
+        assert isinstance(member.data, SpilledBytes)
+        assert member.data.read_whole() == b"A" * 200_000
+        assert not any(r.reason == Rejection.SIZE for r in result.rejected)
+
+    def test_a_member_within_the_stream_ceiling_is_read_for_the_sweep(self) -> None:
+        """Over the per-file limit: kept on disk whole, so its windows can be read, its prefix in
+        memory, and still bounded by the expansion cap and the total budget."""
         data = HostileHelpers.zip_of({"big.bin": b"A" * 200_000}, compress=False)
         result = ArchiveReader.extract(
             data, path="a.zip", limits=DEFAULT_LIMITS.merged(max_file_bytes=1000)
         )
-        assert not result.members
-        assert any(r.reason == Rejection.SIZE for r in result.rejected)
+        assert [(len(m.data), getattr(m.data, "size", None)) for m in result.members] == [
+            (1000, 200_000)
+        ]
 
     def test_total_budget_is_enforced_across_members(self) -> None:
         members = {f"f{i}.bin": b"B" * 50_000 for i in range(20)}
@@ -152,16 +174,18 @@ class TestDecompressionBombs:
                 limits=DEFAULT_LIMITS.merged(max_archive_entries=100),
             )
 
-    def test_compressed_tar_bomb_is_caught_by_aggregate_ratio(self) -> None:
-        """A compressed tar reports no per-member compressed size, so the
-        per-member ceiling cannot apply. The aggregate ratio catches it."""
+    def test_compressed_tar_bomb_is_stopped_by_the_expansion_cap(self) -> None:
+        """A compressed tar reports no per-member compressed size; the decompressed stream is
+        metered against the whole archive's size instead, and stopped as padding."""
         bomb = HostileHelpers.tar_of({"bomb.txt": b"\x00" * (8 * 1024 * 1024)})
-        with pytest.raises(ArchiveError, match="expands"):
-            ArchiveReader.extract(
-                bomb,
-                path="bomb.tar.gz",
-                limits=DEFAULT_LIMITS.merged(max_archive_ratio=10, max_file_bytes=64 * 1024 * 1024),
-            )
+        result = ArchiveReader.extract(
+            bomb,
+            path="bomb.tar.gz",
+            limits=DEFAULT_LIMITS.merged(max_archive_ratio=10, max_member_bytes=1024 * 1024),
+        )
+        assert not result.members
+        assert result.truncated
+        assert any(r.reason == Rejection.PADDED for r in result.rejected)
 
 
 # ---------------------------------------------------------------------------
@@ -190,6 +214,58 @@ class TestTraversalAndLinks:
         result = ArchiveReader.extract(buffer.getvalue(), path="a.tar")
         assert not result.members
         assert result.rejected[0].reason == Rejection.LINK
+
+    @pytest.mark.parametrize(
+        ("name", "target", "kind"),
+        [
+            ("pkg/include/alsa", "../sound", tarfile.SYMTYPE),
+            ("pkg/CLAUDE.md", "AGENTS.md", tarfile.SYMTYPE),
+            ("pkg/copy.py", "pkg/real.py", tarfile.LNKTYPE),
+        ],
+    )
+    def test_a_link_inside_the_archive_is_not_a_gap(self, name, target, kind) -> None:
+        """Never followed, and nothing to read: the content it names is a member of its own."""
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w") as archive:
+            link = tarfile.TarInfo(name)
+            link.type = kind
+            link.linkname = target
+            archive.addfile(link)
+        result = ArchiveReader.extract(buffer.getvalue(), path="a.tar")
+        assert not result.members
+        assert not result.rejected
+        assert result.links == [name]
+
+    @pytest.mark.parametrize(
+        ("name", "target", "kind"),
+        [
+            ("pkg/key", "/root/.ssh/id_rsa", tarfile.SYMTYPE),
+            ("pkg/key", "../../.ssh/id_rsa", tarfile.SYMTYPE),
+            ("key", "..", tarfile.SYMTYPE),
+            ("pkg/x", "../../etc/passwd", tarfile.LNKTYPE),
+            ("pkg/c", "C:/Windows/win.ini", tarfile.SYMTYPE),
+        ],
+    )
+    def test_a_link_out_of_the_archive_is_still_refused(self, name, target, kind) -> None:
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w") as archive:
+            link = tarfile.TarInfo(name)
+            link.type = kind
+            link.linkname = target
+            archive.addfile(link)
+        result = ArchiveReader.extract(buffer.getvalue(), path="a.tar")
+        assert result.rejected[0].reason == Rejection.LINK
+
+    def test_a_zip_symlink_inside_and_outside(self) -> None:
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            for name, target in (("pkg/doc.md", "README.md"), ("pkg/key", "/etc/shadow")):
+                info = zipfile.ZipInfo(name)
+                info.external_attr = 0o120777 << 16
+                archive.writestr(info, target)
+        result = ArchiveReader.extract(buffer.getvalue(), path="a.zip")
+        assert result.links == ["pkg/doc.md"]
+        assert [r.name for r in result.rejected] == ["pkg/key"]
 
     def test_special_files_are_refused(self) -> None:
         """A device node or FIFO can block a reader indefinitely."""
@@ -283,9 +359,10 @@ class TestHostileFileContent:
             current.mkdir()
         (current / "app.js").write_text("console.log(1)", encoding="utf-8")
 
-        started = time.monotonic()
+        # CPU time: the work runs in this process, so a loaded machine does not stretch it.
+        started = time.process_time()
         result = Scanner(Config.default()).scan(tmp_path)
-        assert time.monotonic() - started < 30
+        assert time.process_time() - started < 30
 
         # Depth was bounded, so the deepest file is out of reach. That must be
         # visible in the result rather than resembling an empty directory.
@@ -361,9 +438,10 @@ class TestRegexSafety:
                 if compiled.match.regex is None:
                     continue
                 for payload in adversarial:
-                    started = time.monotonic()
+                    # CPU time: the work runs in this process, so a loaded machine does not stretch it.
+                    started = time.process_time()
                     compiled.match.regex.search(payload)
-                    elapsed = time.monotonic() - started
+                    elapsed = time.process_time() - started
                     assert elapsed < 1.0, f"{compiled.id} took {elapsed:.2f}s on adversarial input"
 
 
@@ -384,7 +462,7 @@ class TestArchiveScanning:
 
     def test_a_malicious_package_is_detected(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.core.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         archive = self.package(
             tmp_path,
@@ -403,7 +481,7 @@ class TestArchiveScanning:
         """A finding that says only "somewhere in this tarball" is not
         actionable."""
         from cordon_scanner import Scanner
-        from cordon_scanner.core.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         archive = self.package(tmp_path, {"package/loader.js": b"const p = atob(B);\neval(p);\n"})
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(archive)
@@ -412,7 +490,7 @@ class TestArchiveScanning:
 
     def test_a_clean_package_produces_nothing(self, tmp_path) -> None:
         from cordon_scanner import Scanner
-        from cordon_scanner.core.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         archive = self.package(
             tmp_path,
@@ -433,7 +511,7 @@ class TestArchiveScanning:
         """The rule the whole engine follows: an archive that was refused and
         one that was clean must never look alike."""
         from cordon_scanner import Scanner
-        from cordon_scanner.core.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         broken = tmp_path / "broken.tgz"
         broken.write_bytes(b"this is not an archive at all")
@@ -446,7 +524,7 @@ class TestArchiveScanning:
         """Members are held in memory and never materialised. Nothing that was
         never written can be executed, followed, or left behind by a crash."""
         from cordon_scanner import Scanner
-        from cordon_scanner.core.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         archive = self.package(tmp_path, {"package/a.js": b"const x = 1;\n"}, name="only.tgz")
         before = {p.name for p in tmp_path.iterdir()}

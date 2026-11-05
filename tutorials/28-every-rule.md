@@ -1,8 +1,8 @@
 # 28 · Every rule
 
-> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,385 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,501 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -17,13 +17,23 @@ rule's own samples.
 ```
 
 
+## Account
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.ACCOUNT.CHANNEL_FOLLOW.001` | critical | A WhatsApp library subscribes every account that connects to the publisher's channel |
+
 ## AI agents
 
-32 rules.
+49 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.AGENT.AUTORUN.001` | critical | A command an editor or agent runs on its own attacks the machine |
+| `MALWARE.AGENT.CONFIG_PLANTED.001` | critical | Installing the package plants an AI agent's configuration in your project |
+| `MALWARE.AGENT.HIJACK.001` | critical | Turns the machine's AI agent against it |
 | `MALWARE.AGENT.HOOK_EXFIL.001` | critical | An agent hook that sends credentials away or opens a remote shell |
 | `MALWARE.AGENT.HOOK_FETCH_EXEC.001` | critical | An agent hook that fetches and executes remote code |
 | `POLICY.AGENT.AUTO_APPROVE.001` | high | Agent confirmations switched off in committed settings |
@@ -41,19 +51,34 @@ rule's own samples.
 | `SUSPECT.AGENT.ATR.PROMPT_INJECTION.001` | medium | Text that tries to override an agent's instructions |
 | `SUSPECT.AGENT.ATR.SKILL_COMPROMISE.001` | medium | A skill or plugin shaped like a known compromise |
 | `SUSPECT.AGENT.ATR.TOOL_POISONING.001` | medium | Text that turns a tool into a channel for steering the agent |
+| `SUSPECT.AGENT.AUTH_BYPASS_EDIT.001` | high | Tells the agent to add an access check that one fixed identity always passes |
 | `SUSPECT.AGENT.CI_PROMPT_INJECTION.001` | high | Untrusted event text passed straight into an agent's prompt |
 | `SUSPECT.AGENT.CI_UNTRUSTED_TRIGGER.001` | high | An AI agent in CI reads text an outsider can write |
 | `SUSPECT.AGENT.CREDENTIAL_EXFIL.001` | critical | Agent instructions that move credentials somewhere |
+| `SUSPECT.AGENT.DROPPER_PROSE.001` | high | Agent instructions that have the reader run a hidden or pasted payload |
 | `SUSPECT.AGENT.FETCH_EXEC.001` | high | Agent instructions that fetch and execute remote code |
+| `SUSPECT.AGENT.FRONT_MATTER_CODE.001` | high | Agent instructions whose front matter is code |
+| `SUSPECT.AGENT.HIDDEN_DIRECTIVE.001` | high | Instructions to the model hidden in a comment |
+| `SUSPECT.AGENT.HIDDEN_INSTRUCTION.001` | high | An instruction to the agent that the rendered page does not show |
 | `SUSPECT.AGENT.HIDDEN_TEXT.001` | high | Hidden characters in an agent instruction file |
 | `SUSPECT.AGENT.HOOK.001` | medium | An agent hook committed to the repository |
 | `SUSPECT.AGENT.INJECTION_TEXT.001` | medium | Instruction-like text aimed at a coding agent |
+| `SUSPECT.AGENT.INSTALL_REDIRECT.001` | high | Code an agent runs points package installs somewhere else |
 | `SUSPECT.AGENT.INTENT.001` | high | Text that tells the agent to act against its user |
 | `SUSPECT.AGENT.INTENT_CHAINED.001` | high | Agent instructions that send the agent to a file that acts against its user |
 | `SUSPECT.AGENT.JUDGED.001` | medium | A language model judges agent-facing text to be subverting the agent |
+| `SUSPECT.AGENT.PHANTOM_PREREQUISITE.001` | high | Agent instructions that require downloading a tool they never use |
 | `SUSPECT.AGENT.PLUGIN_SOURCE.001` | high | Agent plugins installed from an unverified source |
 | `SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001` | medium | An agent instruction file tells the agent to fetch and follow remote text |
 | `SUSPECT.AGENT.SENSITIVE_IMPORT.001` | high | An agent instruction file imports a credential file |
+| `SUSPECT.AGENT.SKILL_DECODE_RUN.001` | high | A skill's script decodes code and runs it |
+| `SUSPECT.AGENT.SKILL_HOOK_FETCH.001` | high | A skill script installs an agent hook that runs a download |
+| `SUSPECT.AGENT.SKILL_INSTALLS_LOOKALIKE.001` | high | A skill's script installs a package named like a popular one |
+| `SUSPECT.AGENT.SKILL_INSTRUCTIONS.001` | high | A skill's instructions read as an attack on the agent |
+| `SUSPECT.AGENT.SKILL_JAILBREAK_TEXT.001` | high | A skill's script hands the agent text that tells it to drop its instructions |
+| `SUSPECT.AGENT.SKILL_RUNS_INPUT.001` | medium | A skill's script runs its own input as code or a command |
+| `SUSPECT.AGENT.TOOL_PRIORITY_CLAIM.001` | high | Tells the agent to pick this tool over every other |
+| `SUSPECT.AGENT.UNATTENDED.001` | medium | Runs your AI agent with every permission and no confirmation |
 | `VULNERABLE.AGENT.ACTION_VERSION.001` | high | An AI agent action below its security fix |
 
 ## Anti Analysis
@@ -67,11 +92,13 @@ rule's own samples.
 
 ## Archive
 
-3 rules.
+5 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
+| `SUSPECT.ARCHIVE.LINK_TO_SECRET.001` | high | Archive member is a link to a secret on the user's machine |
 | `SUSPECT.ARCHIVE.NESTING.001` | high | Archives nested past the depth the scan opens |
+| `SUSPECT.ARCHIVE.PADDED.001` | high | Archive padded past the scan's budget |
 | `SUSPECT.ARCHIVE.PATH_ESCAPE.001` | high | Archive member named to write outside the archive |
 | `SUSPECT.ARCHIVE.POLYGLOT.001` | high | Archive that is a tarball and a zip at once |
 
@@ -109,7 +136,7 @@ rule's own samples.
 | `SUSPECT.BINARY.EXECUTABLE_PATH.001` | high | Executable committed where a lifecycle step will run it |
 | `SUSPECT.BINARY.HIDDEN_IMPORTS.001` | medium | Committed binary resolves its imports at run time |
 | `SUSPECT.BINARY.IMPLANT.001` | high | Committed binary imports download-and-run calls |
-| `SUSPECT.BINARY.KEYLOGGER.001` | medium | Committed binary imports keyboard-capture and network calls |
+| `SUSPECT.BINARY.KEYLOGGER.001` | high | Committed binary imports keyboard-capture and network calls |
 | `SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001` | high | A pure-Python wheel loads a native library it carries |
 | `SUSPECT.BINARY.PACKED.001` | medium | Committed binary is packed |
 | `SUSPECT.BINARY.PROCESS_INJECTION.001` | high | Committed binary imports process-injection calls |
@@ -127,13 +154,27 @@ rule's own samples.
 | `SUSPECT.BUILD.MAKE_FETCH_EXEC.001` | high | Makefile recipe fetches and executes remote content |
 | `SUSPECT.BUILD.MSBUILD_FETCH_EXEC.001` | high | MSBuild target fetches and executes remote content |
 
-## CI/CD pipelines
+## Campaign
 
-19 rules.
+1 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
+| `SUSPECT.CAMPAIGN.SIBLING.001` | high | Package is a variant of a condemned campaign |
+
+## CI/CD pipelines
+
+27 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.CI.CREDENTIAL_HARVEST.001` | high | Pipeline step searches for credentials and sends what it gathered |
+| `MALWARE.CI.DECODED_PROGRAM.001` | critical | A CI step runs a program it decodes on the spot |
+| `MALWARE.CI.RUNNER_SECRETS.001` | critical | Code dumps the CI runner's secrets |
+| `MALWARE.CI.SCHEDULED_FETCH_EXEC.001` | high | Pipeline step installs a cron job that downloads and runs code |
+| `MALWARE.CI.SECRET_DUMP.001` | high | Pipeline step sends secrets labelled with their own names |
 | `MALWARE.CI.SECRET_EXFIL.001` | critical | CI workflow serialises its secret context |
+| `MALWARE.CI.SECRET_TO_DROP_POINT.001` | high | Pipeline step sends a secret to a destination no pipeline publishes to |
 | `POLICY.CI.UNPINNED_ACTION.001` | medium | Action referenced by a mutable tag |
 | `POLICY.CI.UNPINNED_REUSABLE_WORKFLOW.001` | medium | Reusable workflow called by a mutable ref |
 | `POLICY.CI.WRITE_ALL_PERMISSIONS.001` | medium | Workflow token is granted every write scope |
@@ -143,6 +184,8 @@ rule's own samples.
 | `SUSPECT.CI.BUILDKITE_INJECTION.001` | high | Buildkite pipeline interpolates a contributor-controlled value at upload |
 | `SUSPECT.CI.CACHE_POISONING.001` | medium | A publishing workflow restores a cache an untrusted run can write |
 | `SUSPECT.CI.CIRCLE_INJECTION.001` | high | CircleCI step interpolates a contributor-controlled pipeline value |
+| `SUSPECT.CI.DEVCONTAINER_FETCH.001` | low | A published package's dev-container fetches and runs code when a developer opens it |
+| `SUSPECT.CI.ENVIRONMENT_INJECTION.001` | high | A package writes the CI job's environment when it is imported |
 | `SUSPECT.CI.EXPRESSION_INJECTION.001` | high | Untrusted pipeline input interpolated into a shell command |
 | `SUSPECT.CI.FETCH_EXEC.001` | high | CI step fetches and executes remote content |
 | `SUSPECT.CI.GITLAB_INJECTION.001` | high | GitLab job interpolates a contributor-controlled variable into a script |
@@ -402,6 +445,23 @@ rule's own samples.
 | `SUSPECT.CFN.PUBLIC_ACCESS.DBINSTANCE.001` | high | AWS::RDS::DBInstance: the database is reachable from the public internet |
 | `SUSPECT.CFN.PUBLIC_STORAGE.BUCKET.001` | high | AWS::S3::Bucket: the bucket is readable by anyone |
 
+## Code
+
+2 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.CODE.REUSE.001` | high | Code file of an earlier malware campaign |
+| `SUSPECT.CODE.MODEL.001` | high | The code itself reads as malicious to Cordon's code model |
+
+## Code Model
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `OPERATIONAL.CODE_MODEL.UNAVAILABLE` | info | The code model's weights could not be used |
+
 ## Compose files
 
 2 rules.
@@ -442,47 +502,67 @@ rule's own samples.
 
 ## Decode Exec
 
-1 rules.
+3 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
+| `MALWARE.DECODE_EXEC.ENCODED_SHELL.001` | critical | A long encoded command is decoded straight into a shell |
+| `MALWARE.DECODE_EXEC.INVISIBLE.001` | critical | A payload written in invisible characters is decoded and run |
 | `SUSPECT.DECODE_EXEC.001` | high | Encoded data decoded and executed in the same file |
 
 ## Dependencies
 
-21 rules.
+38 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
+| `MALWARE.DEPENDENCY.BUNDLED.001` | high | A dependency the package bundles but does not install is a known-malicious release |
 | `MALWARE.DEPENDENCY.KNOWN.001` | critical | Dependency is a known-malicious release |
+| `MALWARE.DEPENDENCY.PAYLOAD.001` | critical | A declared dependency is malicious by its own content |
+| `MALWARE.DEPENDENCY.REMOTE_TARBALL.001` | critical | A published package installs a dependency from a drop-point host |
+| `MALWARE.DEPENDENCY.REMOTE_TARBALL.BUNDLED.001` | high | A published package installs a dependency from a drop-point host, in a file installing the package does not read |
 | `POLICY.DEPENDENCY.ABANDONED.001` | medium | Dependency is abandoned by its maintainer |
 | `POLICY.DEPENDENCY.CLEARTEXT_SOURCE.001` | medium | Package source over plain HTTP |
 | `POLICY.DEPENDENCY.DEPRECATED.001` | medium | Dependency pins a version its publisher deprecated |
 | `POLICY.DEPENDENCY.DOWNGRADE.001` | low | Dependency pins a version far behind the current release |
 | `POLICY.DEPENDENCY.INTEGRITY.001` | medium | Dependency has no integrity hash |
 | `POLICY.DEPENDENCY.MUTABLE_REF.001` | medium | Git dependency on a reference that can move |
+| `POLICY.DEPENDENCY.MUTABLE_REF.BUNDLED.001` | info | Git dependency on a reference that can move, in a file installing the package does not read |
 | `POLICY.DEPENDENCY.SECURITY_PLACEHOLDER.001` | medium | Dependency pins npm's security placeholder |
 | `POLICY.DEPENDENCY.SOURCE.001` | low | Dependency declared from a non-registry source |
+| `POLICY.DEPENDENCY.SOURCE.BUNDLED.001` | info | Dependency declared from a non-registry source, in a file installing the package does not read |
 | `POLICY.DEPENDENCY.UNMAINTAINED.001` | low | Dependency has had no release in five years |
 | `SUSPECT.DEPENDENCY.CONFUSION.001` | high | Internal package name resolved from a public registry |
 | `SUSPECT.DEPENDENCY.DEPRECATED_SECURITY.001` | high | Dependency pins a version its publisher deprecated for a security reason |
+| `SUSPECT.DEPENDENCY.FOREIGN_COMMIT.001` | high | A published package installs a dependency from another project's commit |
+| `SUSPECT.DEPENDENCY.FOREIGN_COMMIT.BUNDLED.001` | info | A published package installs a dependency from another project's commit, in a file installing the package does not read |
 | `SUSPECT.DEPENDENCY.HALLUCINATED.001` | high | A dependency's name is a documented AI hallucination |
+| `SUSPECT.DEPENDENCY.HALLUCINATED.BUNDLED.001` | info | A dependency the package bundles but does not install is a documented AI hallucination |
+| `SUSPECT.DEPENDENCY.LOCAL_SHADOW.001` | medium | Dependency resolved locally shares a known-malicious name |
+| `SUSPECT.DEPENDENCY.PROVISIONAL.001` | high | Dependency version is held for review |
+| `SUSPECT.DEPENDENCY.REMOTE_TARBALL.001` | high | A published package installs a dependency from an arbitrary URL |
+| `SUSPECT.DEPENDENCY.REMOTE_TARBALL.BUNDLED.001` | info | A published package installs a dependency from an arbitrary URL, in a file installing the package does not read |
+| `SUSPECT.DEPENDENCY.REMOVED_NAME.001` | medium | Dependency names a removed malicious package |
 | `SUSPECT.DEPENDENCY.SOURCE.001` | medium | Dependency resolved from outside the registry |
+| `SUSPECT.DEPENDENCY.SOURCE.BUNDLED.001` | info | A dependency the package bundles but does not install resolves from outside the registry |
 | `SUSPECT.DEPENDENCY.SOURCE_PRIORITY.001` | medium | A private package index merged with a public one |
 | `SUSPECT.DEPENDENCY.TYPOSQUAT.001` | high | Dependency name is one edit from a popular package |
+| `SUSPECT.DEPENDENCY.TYPOSQUAT.BUNDLED.001` | info | A dependency the package bundles but does not install has a lookalike name |
 | `SUSPECT.DEPENDENCY.UNREGISTERED.001` | high | A dependency does not exist on its public registry |
 | `SUSPECT.DEPENDENCY.UNVETTED.001` | medium | A dependency is new, sourceless and unknown: the shape of a slopsquatted package |
 | `SUSPECT.DEPENDENCY.YANKED.001` | high | Dependency pins a version its publisher withdrew |
+| `VULNERABLE.DEPENDENCY.BUNDLED.001` | info | A dependency the package bundles but does not install has a known vulnerability |
 | `VULNERABLE.DEPENDENCY.EXPLOITED.001` | critical | Dependency has a vulnerability that is exploited in the wild |
 | `VULNERABLE.DEPENDENCY.KNOWN.001` | high | Dependency has a known vulnerability |
 
 ## Destroy
 
-1 rules.
+2 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `SUSPECT.DESTROY.HOME_OR_ROOT.001` | high | Deletes the home directory or the filesystem root |
+| `SUSPECT.DESTROY.SYSTEM_DISK.001` | high | Writes to the system disk itself |
 
 ## Dockerfiles
 
@@ -516,12 +596,15 @@ rule's own samples.
 
 ## Dropper
 
-2 rules.
+5 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.DROPPER.001` | critical | Install script fetches and executes remote content |
+| `MALWARE.DROPPER.SHIPPED_PAYLOAD.001` | critical | Code decrypts bytes it carries into a program, writes it and runs it |
 | `SUSPECT.DROPPER.001` | high | Content fetched from the network and executed |
+| `SUSPECT.DROPPER.REMOTE_CODE.001` | high | Code runs what a server sends it |
+| `SUSPECT.DROPPER.REMOTE_COMMAND.001` | high | Runs a command a server sends it |
 
 ## Dynamic Dispatch
 
@@ -534,51 +617,76 @@ rule's own samples.
 
 ## Exfiltration
 
-13 rules.
+27 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.EXFIL.001` | critical | Install script reads credentials and transmits them |
 | `MALWARE.EXFIL.BEACON.001` | critical | Install script reports the machine it is installing on |
+| `MALWARE.EXFIL.COMMAND_OUTPUT.001` | critical | An install script runs a command and sends what it printed |
 | `MALWARE.EXFIL.CREDENTIAL_STORE.001` | critical | Install-time code reads a credential store and reaches the network |
+| `MALWARE.EXFIL.DNS_CALLBACK.001` | critical | Install script resolves a fixed host name |
 | `MALWARE.EXFIL.DROP_POINT.001` | critical | Install-time code sends data to a drop point |
+| `MALWARE.EXFIL.FLOW_RAW_CHANNEL.001` | critical | Sends what a command printed, or the user's files, over a channel of its own |
+| `MALWARE.EXFIL.FLOW_TO_DROP.001` | critical | Sends this machine's secrets or identity to a drop point |
+| `MALWARE.EXFIL.HIDDEN_DESTINATION.001` | critical | Install script contacts an address it spells out in character codes |
 | `MALWARE.EXFIL.INSTALL_CALLBACK.001` | critical | Install script calls back to a drop point |
+| `MALWARE.EXFIL.SCRIPT_CALLBACK.001` | high | Package script calls back to an interaction service |
+| `MALWARE.EXFIL.TRACKING_CALLBACK.001` | critical | Install script reports to a host named for this install |
 | `SUSPECT.EXFIL.001` | medium | Credential access combined with network egress and execution |
 | `SUSPECT.EXFIL.BEACON.001` | high | Code reports the machine it runs on |
+| `SUSPECT.EXFIL.BROWSER_SECRETS.001` | high | Code decrypts a browser's saved passwords or cookies |
 | `SUSPECT.EXFIL.CALLBACK.001` | high | Code calls an out-of-band interaction service |
+| `SUSPECT.EXFIL.COMMAND_BEACON.001` | high | Code reports the user and host to a URL |
+| `SUSPECT.EXFIL.COMMAND_OUTPUT.001` | high | A package's entry point runs a command and sends what it printed |
 | `SUSPECT.EXFIL.CREDENTIAL_STORE.001` | high | A credential store is read and the file reaches the network |
+| `SUSPECT.EXFIL.CREDENTIAL_SWEEP.001` | high | Code reads the credential stores of many services and reaches the network |
 | `SUSPECT.EXFIL.DNS.001` | high | Credential access and a hostname assembled for resolution |
 | `SUSPECT.EXFIL.DROP_POINT.001` | high | Credential or machine identity, and a request to a drop point |
 | `SUSPECT.EXFIL.ENVIRONMENT.001` | high | Code sends the whole environment over the network |
+| `SUSPECT.EXFIL.FLOW_IDENTITY.001` | high | Sends who and where this machine is |
+| `SUSPECT.EXFIL.FLOW_SECRET.001` | high | Sends a credential file off the machine |
 | `SUSPECT.EXFIL.NAMED_SECRET.001` | high | Code sends a named credential to a host outside its service |
+| `SUSPECT.EXFIL.WALLET_SECRET.001` | high | Sends a wallet's secret to an outside address |
 
 ## Extension
 
-5 rules.
+6 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.EXTENSION.KNOWN.001` | critical | An editor extension is a recorded malicious release |
 | `MALWARE.EXTENSION.REMOVED.001` | critical | A recommended or vendored editor extension was removed from the Marketplace as malware |
+| `SUSPECT.EXTENSION.HIDDEN_NAME.001` | medium | An editor extension's display name carries invisible characters |
 | `SUSPECT.EXTENSION.LOOKALIKE.001` | medium | A recommended editor extension imitates a popular one |
 | `SUSPECT.EXTENSION.MALICIOUS_VERSIONS.001` | low | A named editor extension has had malicious releases |
 | `SUSPECT.EXTENSION.REMOVED.001` | high | A recommended or vendored editor extension was removed from the Marketplace |
 
-## Format
+## File
 
 1 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
+| `SUSPECT.FILE.DISGUISED_PROGRAM.001` | high | Code turns a file shipped as data into a program |
+
+## Format
+
+2 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `OPERATIONAL.FORMAT.NOT_A_PICKLE` | info | A file named as a pickle that no pickle loader opens |
 | `OPERATIONAL.FORMAT.UNREADABLE` | info | A model, document or image could not be read |
 
 ## Helm
 
-1 rules.
+2 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `SUSPECT.HELM.UNTRUSTED_REPOSITORY.001` | medium | Chart depends on a chart from an unpinned or plain-HTTP repository |
+| `SUSPECT.HELM.UNTRUSTED_REPOSITORY.BUNDLED.001` | info | Chart depends on a chart from an unpinned or plain-HTTP repository, in a file installing the package does not read |
 
 ## Image
 
@@ -1418,17 +1526,38 @@ rule's own samples.
 
 ## Install-time code
 
-7 rules.
+20 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
+| `MALWARE.INSTALL.BACKGROUND.001` | critical | Install script leaves a process running |
 | `MALWARE.INSTALL.CONSUMER_CODE.001` | critical | Code that runs on every machine that installs this package |
 | `MALWARE.INSTALL.DECODED_LAUNCH.001` | critical | An install script decodes content and starts a process |
+| `MALWARE.INSTALL.DISGUISED_PROGRAM.001` | critical | Install code turns a file shipped as data into a program |
 | `MALWARE.INSTALL.FETCH_EXEC.001` | critical | Install script fetches and executes remote content |
+| `MALWARE.INSTALL.GYP_COMMAND.001` | critical | Native-build file runs a script at install |
 | `MALWARE.INSTALL.HIDDEN_ACTION.001` | critical | An install script hides a process, request or credential read inside a string it executes |
+| `MALWARE.INSTALL.NETWORK_PROBE.001` | high | Install script calls a network-probing tool |
+| `MALWARE.INSTALL.OPAQUE_CODE.001` | critical | Install script runs code that cannot be read |
 | `MALWARE.INSTALL.PERSIST.001` | critical | Install script plants code that runs again later |
+| `MALWARE.INSTALL.REMOTE_CODE.001` | critical | Install-time code runs what a server sends it |
+| `MALWARE.INSTALL.SHELL_EVASION.001` | critical | Install script hides the spaces in the command it runs |
+| `MALWARE.INSTALL.SPELLED_CODE.001` | critical | Install script spells its names in character codes |
+| `MALWARE.INSTALL.WINDOWS_LOADER.001` | critical | Install script starts a Windows loader |
+| `SUSPECT.INSTALL.AUTOSTART.001` | high | Install-time code makes something start at every login |
+| `SUSPECT.INSTALL.DEPENDENCY_CONFUSION.001` | high | A version made to win resolution runs code on install |
+| `SUSPECT.INSTALL.OBFUSCATED_HOOK.001` | high | An install hook runs a file too obfuscated to read |
 | `SUSPECT.INSTALL.SCRIPT.001` | high | Package declares an install-time lifecycle script |
+| `SUSPECT.INSTALL.STRING_CODE.001` | high | An install script runs a program it carries as a string |
 | `SUSPECT.INSTALL.UNEXAMINED.001` | high | Install-time code too large or slow to examine |
+
+## Intent
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.INTENT.UNEXPLAINED_EFFECT.001` | high | The package's effects are not explained by what it says it is |
 
 ## Judge
 
@@ -1481,32 +1610,46 @@ rule's own samples.
 
 ## Lockfiles
 
-4 rules.
+7 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `POLICY.LOCKFILE.INTEGRITY.001` | medium | Lockfile entry without an integrity hash |
 | `SUSPECT.LOCKFILE.INTEGRITY_CONFLICT.001` | high | One package version locked with two different hashes |
+| `SUSPECT.LOCKFILE.INTEGRITY_CONFLICT.BUNDLED.001` | info | One package version locked with two different hashes, in a file installing the package does not read |
 | `SUSPECT.LOCKFILE.INTEGRITY_MALFORMED.001` | high | Lockfile integrity value is not a hash |
+| `SUSPECT.LOCKFILE.INTEGRITY_MALFORMED.BUNDLED.001` | info | Lockfile integrity value is not a hash, in a file installing the package does not read |
 | `SUSPECT.LOCKFILE.SOURCE.001` | medium | Lockfile entry resolved from outside the registry |
+| `SUSPECT.LOCKFILE.SOURCE.BUNDLED.001` | info | Lockfile entry resolved from outside the registry, in a file installing the package does not read |
 
 ## MCP servers
 
-13 rules.
+24 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `OPERATIONAL.MCP.LIVE_UNREAD.001` | info | A remote MCP server could not be read |
 | `OPERATIONAL.MCP.UNRESOLVED` | info | An MCP server package was not examined |
+| `SUSPECT.MCP.ARGUMENT_OVERRIDE.001` | high | An MCP tool replaces the argument it was called with |
+| `SUSPECT.MCP.BORROWED_NAME.001` | high | MCP server published under a service's name its code never mentions |
 | `SUSPECT.MCP.CONTAINER_HOST_ACCESS.001` | high | An MCP server's container is given the host |
+| `SUSPECT.MCP.DENIAL_OF_WALLET.001` | medium | An MCP tool's result tells the agent to call it again, deeper or for every item |
 | `SUSPECT.MCP.ENV_INJECTION.001` | high | An MCP server's environment loads code into it before it starts |
+| `SUSPECT.MCP.HANDLER_SHELL.001` | high | An MCP tool runs its own input as a command |
+| `SUSPECT.MCP.INPUT_FORWARDED.001` | high | An MCP tool sends what it is asked to a second host |
+| `SUSPECT.MCP.INPUT_MIRROR.001` | high | An MCP tool copies what it is asked into a hidden file |
 | `SUSPECT.MCP.INSECURE_TRANSPORT.001` | high | A remote MCP server over plain HTTP |
+| `SUSPECT.MCP.LISTENER.001` | high | An MCP server opens its own listening socket and runs commands |
 | `SUSPECT.MCP.LIVE_TOOL_DESCRIPTION.001` | high | A remote MCP server serves a tool description that steers the agent |
 | `SUSPECT.MCP.LOOKALIKE.001` | high | An MCP server package named like a popular one |
+| `SUSPECT.MCP.SCHEMA_POISONING.001` | high | An MCP tool's parameter names an order to the agent |
+| `SUSPECT.MCP.SECRET_HARVEST.001` | high | An MCP server gathers the environment's secrets by name |
 | `SUSPECT.MCP.SHELL_LAUNCH.001` | high | An MCP server launched through a shell that fetches code |
+| `SUSPECT.MCP.TIME_BOMB.001` | high | An MCP tool changes behaviour on a mixed date, chance and call-count gate |
 | `SUSPECT.MCP.TOOLS_CHANGED.001` | medium | A remote MCP server's tools changed since they were approved |
 | `SUSPECT.MCP.TOOL_DESCRIPTION.001` | high | A tool in this repository's MCP server instructs the agent |
 | `SUSPECT.MCP.TOOL_POISONING.001` | high | An MCP server's tool description hides text or instructs the agent |
+| `SUSPECT.MCP.TOOL_SQUATTING.001` | high | An MCP tool takes a well-known tool's name and claims to be the safer one |
 | `SUSPECT.MCP.UNPINNED.001` | medium | An MCP server launched from an unpinned package |
 | `SUSPECT.MCP.UNTRUSTED_REMOTE.001` | high | A remote MCP server on a tunnel, paste or interaction host |
 
@@ -1520,33 +1663,44 @@ rule's own samples.
 | `SUSPECT.MEDIA.OPAQUE_TRAILER.001` | medium | A file carries a large, near-random block after its end |
 | `SUSPECT.MEDIA.TRAILING_DATA.001` | low | An image has data after its end |
 
+## Mobile
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.MOBILE.ATTRIBUTION_CLOAK.001` | critical | A component sends the app's install attribution and shows a server-chosen page |
+
 ## Model
 
-5 rules.
+6 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.MODEL.PICKLE_EXEC.001` | critical | A pickle that runs a command, reaches the network or evaluates code when loaded |
 | `SUSPECT.MODEL.LOADED_ON_IMPORT.001` | high | The package deserialises a model file it ships, unsafely, when it is imported |
+| `SUSPECT.MODEL.MALICIOUS_PACKAGE.001` | high | Cordon's model judges a package malicious |
 | `SUSPECT.MODEL.PICKLE_IMPORT.001` | medium | A pickle imports something ordinary model files do not |
 | `SUSPECT.MODEL.REMOTE_CODE.001` | medium | Loads a model with trust_remote_code, running its repository's Python |
-| `SUSPECT.MODEL.UNSAFE_LOAD_OPTION.001` | medium | Loads a model with the loader's safety switch turned off |
+| `SUSPECT.MODEL.UNSAFE_LOAD_OPTION.001` | low | Loads a model with the loader's safety switch turned off |
 
 ## Obfuscation
 
-5 rules.
+7 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `SUSPECT.OBFUSCATION.BIDI.001` | high | Bidirectional or invisible Unicode in source |
 | `SUSPECT.OBFUSCATION.ENCODED.001` | medium | Large encoded blob embedded in source |
 | `SUSPECT.OBFUSCATION.LONGLINE.001` | low | Line far longer than any hand-written source |
+| `SUSPECT.OBFUSCATION.MANGLED.001` | high | Output of obfuscator.io outside the package's build output |
 | `SUSPECT.OBFUSCATION.PACKED.001` | medium | Packer or minifier signature in hand-written source |
+| `SUSPECT.OBFUSCATION.REQUIRE_ALIAS.001` | high | Node's require hidden behind a global name |
 | `SUSPECT.OBFUSCATION.TAG_SMUGGLING.001` | high | Invisible text written in Unicode Tag characters |
 
 ## Package
 
-7 rules.
+10 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -1554,9 +1708,12 @@ rule's own samples.
 | `POLICY.PACKAGE.DENIED.001` | high | Dependency on a package the policy denies |
 | `POLICY.PACKAGE.NOT_ALLOWED.001` | medium | Dependency outside the policy's allowed packages |
 | `SUSPECT.PACKAGE.MANIFEST_CONFUSION.001` | high | The manifest npm serves is not the package.json in the tarball |
+| `SUSPECT.PACKAGE.NAME_RISK.001` | high | Published package is a name with nothing behind it |
+| `SUSPECT.PACKAGE.PLACEHOLDER_RELEASE.001` | high | A published release ships no code under a throwaway description |
 | `SUSPECT.PACKAGE.PROVENANCE.001` | medium | Version published without the provenance its package normally carries |
 | `SUSPECT.PACKAGE.REPOSITORY.001` | medium | Package claims a source repository the registry does not record |
 | `SUSPECT.PACKAGE.STARJACKING.001` | high | A new package claims a popular project's repository |
+| `VULNERABLE.PACKAGE.KNOWN.001` | high | The scanned package is a release with known vulnerabilities |
 
 ## Persistence
 
@@ -1593,20 +1750,30 @@ rule's own samples.
 | `SUSPECT.PROVENANCE.MISMATCH.001` | critical | Lockfile hash disagrees with the registry |
 | `VULNERABLE.PROVENANCE.INVALID.001` | critical | Dependency's build attestation fails verification |
 
+## Recipe
+
+2 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.RECIPE.KNOWN.001` | critical | Recipe is a known-malicious release |
+| `SUSPECT.RECIPE.PROVISIONAL.001` | high | Recipe is held for review |
+
 ## Registry
 
-4 rules.
+5 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `OPERATIONAL.REGISTRY.NOT_ASKED.001` | low | Dependencies past the query ceiling or time budget were never asked about |
 | `OPERATIONAL.REGISTRY.NO_SOURCE.001` | low | No registry is configured for part of the dependency graph |
 | `OPERATIONAL.REGISTRY.UNREACHABLE.001` | low | Registry could not be asked about a dependency |
+| `SUSPECT.REGISTRY.REVIEW.001` | high | What the registry recorded about this release looks like a malicious release |
 | `SUSPECT.REGISTRY.SELF_PUBLISH.001` | high | Shipped code that publishes packages |
 
 ## Release
 
-6 rules.
+7 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -1616,14 +1783,29 @@ rule's own samples.
 | `SUSPECT.RELEASE.NEW_INSTALL_HOOK.001` | high | This release runs code at install that the previous release did not |
 | `SUSPECT.RELEASE.NEW_OBFUSCATION.001` | high | This release ships obfuscated code where the previous shipped none |
 | `SUSPECT.RELEASE.NEW_PUBLISHER.001` | medium | This release was published by a different account than the previous one |
+| `SUSPECT.RELEASE.NEW_YOUNG_DEPENDENCY.001` | medium | This release adds a dependency that was itself published days ago |
 
 ## Reverse Shell
 
-1 rules.
+2 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.REVERSE_SHELL.001` | critical | A shell piped to a socket |
+| `MALWARE.REVERSE_SHELL.002` | critical | A shell's input and output joined to a stream |
+
+## Rule files
+
+6 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.RULEFILE.MATCH.001` | critical | An operator's rule identifies this file as malware |
+| `OPERATIONAL.RULEFILE.SHAPE` | info | A rule reads a field two engines declare differently, and did not say which |
+| `OPERATIONAL.RULEFILE.STATUS` | info | The rule file examined the scan's files |
+| `OPERATIONAL.RULEFILE.UNAVAILABLE` | info | A rule file was asked for and could not be used |
+| `SUSPECT.RULEFILE.MATCH.001` | high | An operator's rule matched this file |
+| `SUSPECT.RULEFILE.UNMATCHED.001` | high | A file could not be matched against the rule file |
 
 ## SBOMs
 
@@ -1737,7 +1919,7 @@ rule's own samples.
 
 | Rule | Severity | What it catches |
 |---|---|---|
-| `SUSPECT.SUBMODULE.UNTRUSTED.001` | medium | Submodule fetched over plain HTTP or from a personal account |
+| `SUSPECT.SUBMODULE.UNTRUSTED.001` | medium | Submodule fetched over an unauthenticated transport |
 
 ## Targeted Payload
 
@@ -1755,16 +1937,13 @@ rule's own samples.
 |---|---|---|
 | `SUSPECT.TYPOSQUAT.PACKAGE_NAME.001` | high | Package is named like a popular package |
 
-## YARA
+## Verdict
 
-4 rules.
+1 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
-| `MALWARE.YARA.MATCH.001` | critical | An operator's YARA rule identifies this file as malware |
-| `OPERATIONAL.YARA.STATUS` | info | YARA examined the scan's files |
-| `OPERATIONAL.YARA.UNAVAILABLE` | info | YARA was asked for and could not be used |
-| `SUSPECT.YARA.MATCH.001` | high | An operator's YARA rule matched this file |
+| `SUSPECT.VERDICT.MODEL.001` | high | The package's findings together look malicious |
 
 ## Agent Threat Rules
 
@@ -1881,7 +2060,7 @@ rule's own samples.
 | [`ATR-2026-00440`](https://agentthreatrule.org/en/rules/ATR-2026-00440) | critical | production | Microsoft Semantic Kernel In-Memory Vector Store eval() RCE (CVE-2026-26030) |
 | [`ATR-2026-02105`](https://agentthreatrule.org/en/rules/ATR-2026-02105) | high | production | Prototype Pollution via constructor.prototype Path Bypassing __proto__-Only Filters |
 | [`ATR-2026-02231`](https://agentthreatrule.org/en/rules/ATR-2026-02231) | medium | production | Second-Person Direct Existential Threat Coercion |
-| [`CORDON-ATR-0004`](https://github.com/Threx-code/cordon/blob/v0.6.0/scripts/data/cordon-atr-rules.yaml#CORDON-ATR-0004) | high | production | Persona whose definition is the absence of safety rules |
+| [`CORDON-ATR-0004`](https://github.com/Threx-code/cordon/blob/v0.7.0/scripts/data/cordon-atr-rules.yaml#CORDON-ATR-0004) | high | production | Persona whose definition is the absence of safety rules |
 
 ### Context exfiltration
 
@@ -2017,8 +2196,8 @@ rule's own samples.
 | [`ATR-2026-02649`](https://agentthreatrule.org/en/rules/ATR-2026-02649) | high | production | Vendor API Hostname Used as a Label Prefix of Another Domain |
 | [`ATR-2026-02684`](https://agentthreatrule.org/en/rules/ATR-2026-02684) | high | production | File-Tool Argument Targets a Modern Credential Store Outside the Classic Path List |
 | [`ATR-2026-02703`](https://agentthreatrule.org/en/rules/ATR-2026-02703) | high | production | Agent-Generated SQL Reaches Outside the Database via COPY TO PROGRAM or a Server-Side File Read |
-| [`CORDON-ATR-0001`](https://github.com/Threx-code/cordon/blob/v0.6.0/scripts/data/cordon-atr-rules.yaml#CORDON-ATR-0001) | high | production | Context exfiltration instruction in Spanish, French, German, Portuguese or Italian |
-| [`CORDON-ATR-0003`](https://github.com/Threx-code/cordon/blob/v0.6.0/scripts/data/cordon-atr-rules.yaml#CORDON-ATR-0003) | high | production | Exfiltration or disclosure keyword split by stray spaces to slip past matching |
+| [`CORDON-ATR-0001`](https://github.com/Threx-code/cordon/blob/v0.7.0/scripts/data/cordon-atr-rules.yaml#CORDON-ATR-0001) | high | production | Context exfiltration instruction in Spanish, French, German, Portuguese or Italian |
+| [`CORDON-ATR-0003`](https://github.com/Threx-code/cordon/blob/v0.7.0/scripts/data/cordon-atr-rules.yaml#CORDON-ATR-0003) | high | production | Exfiltration or disclosure keyword split by stray spaces to slip past matching |
 
 ### Data poisoning
 
@@ -2078,7 +2257,7 @@ rule's own samples.
 | [`ATR-2026-02525`](https://agentthreatrule.org/en/rules/ATR-2026-02525) | high | production | Shell Command-Word Reassembly via Parameter Expansion |
 | [`ATR-2026-02641`](https://agentthreatrule.org/en/rules/ATR-2026-02641) | high | production | Client-Supplied Approver Identity on an Approval Decision |
 | [`ATR-2026-02667`](https://agentthreatrule.org/en/rules/ATR-2026-02667) | high | production | Submitted Job Payload Carries Its Own Pre-Approved Tool List |
-| [`CORDON-ATR-0002`](https://github.com/Threx-code/cordon/blob/v0.6.0/scripts/data/cordon-atr-rules.yaml#CORDON-ATR-0002) | high | production | Instruction to act without the user's confirmation, in Spanish, French, German, Portuguese or Italian |
+| [`CORDON-ATR-0002`](https://github.com/Threx-code/cordon/blob/v0.7.0/scripts/data/cordon-atr-rules.yaml#CORDON-ATR-0002) | high | production | Instruction to act without the user's confirmation, in Spanish, French, German, Portuguese or Italian |
 
 ### Model abuse
 

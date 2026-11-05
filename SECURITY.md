@@ -59,17 +59,19 @@ so a compromised `build` or `setuptools` release would execute inside the job
 that holds the publishing identity. For this project specifically, that is the
 whole attack.
 
-**Development dependencies are not pinned**, and this file used to say they
-were. `pytest`, `ruff`, `mypy` and the rest are open ranges, and CI installs
-them on every push. They do not reach a release artefact -- the wheel is built
-from source with the pinned toolchain above, and nothing in `[dev]` is a runtime
-dependency -- but they do run on CI runners with repository read access, and
-saying otherwise was worse than the gap itself.
+**Development dependencies are pinned by hash.** `pytest`, `ruff`, `mypy` and the
+rest run on CI runners with repository read access, so they are installed from
+`ci/dev-requirements.txt` with `--require-hashes`: one version of each, every file
+by its SHA-256, and a changed upload is refused. They are not package metadata
+(a PEP 735 dependency group, not an extra), so nothing installing Cordon can pull
+them in, and none of them is a runtime dependency. Cordon has no optional runtime
+dependencies to pin: provenance verification and keyless signing are its own
+code, and the JavaScript parser extra is being replaced the same way.
 
 ## Verifying what we publish
 
 `docs/12-SIGNING-KEYS.md` lists every key that signs something a Cordon client trusts, with
 its fingerprint, and the Sigstore identity that signs each release. It is generated from the
 keys pinned in the build, so it never names a key the build does not carry; where a key is not
-yet pinned it says so. `scripts/key_ceremony.py` creates the keys offline, outside any git
+yet pinned it says so. `scripts/release/key_ceremony.py` creates the keys offline, outside any git
 working tree, and verifies its output with the client's own verifier before it finishes.

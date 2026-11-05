@@ -20,7 +20,7 @@ generator both exist.
 
 Not byte-deterministic the way a scan result is (`core/engine.py`'s C5): a
 timestamp and a fresh serial number/document namespace are part of both
-formats' own specifications, the same way `scripts/generate_sbom.py` -- this
+formats' own specifications, the same way `scripts/build/generate_sbom.py` -- this
 project's own release SBOM generator -- already includes them. The dependency
 data itself is unchanged between two runs over identical input; only the
 document's own identity fields differ, which is what those fields are for.
@@ -36,7 +36,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from cordon_scanner.core.models import Dependency
+    from cordon_scanner.foundation.results import Dependency
 
 SPEC_VERSION_CYCLONEDX = "1.5"
 SPEC_VERSION_SPDX = "SPDX-2.3"
@@ -97,7 +97,7 @@ class SbomDocument:
         version pin. The data is already parsed from the lockfile; this is what puts
         it in the document.
         """
-        from cordon_scanner.detect.registry import RegistryEvidence
+        from cordon_scanner.detect.supply.registries.evidence import RegistryEvidence
 
         parsed = RegistryEvidence._canonical_digest(dependency.integrity)
         if parsed is None:
@@ -160,6 +160,10 @@ class SbomDocument:
             licence = SbomDocument._licence_of(dependency)
             if licence is not None:
                 component["licenses"] = [{"license": {"name": licence}}]
+            if not dependency.installed:
+                # It ships in the artifact, so it is listed, but installing the target does not
+                # install it (`Dependency.installed`): a consumer can tell the two apart.
+                component["properties"] = [{"name": "cordon:installed", "value": "false"}]
             components.append(component)
 
         edges: dict[str, set[str]] = {root_purl: set()}
@@ -214,6 +218,42 @@ class SbomDocument:
         root_id = "SPDXRef-Package-root"
         root_purl = f"pkg:generic/{root_name}@{root_version}"
 
+        packages, spdx_id_by_name = SbomDocument._spdx_packages(dependencies)
+        relationships = SbomDocument._spdx_relationships(dependencies, spdx_id_by_name, root_id)
+
+        return {
+            "spdxVersion": SPEC_VERSION_SPDX,
+            "dataLicense": "CC0-1.0",
+            "SPDXID": "SPDXRef-DOCUMENT",
+            "name": f"{root_name}-{root_version}",
+            "documentNamespace": (
+                f"https://spdx.org/spdxdocs/{root_name}-{SbomDocument._identity(root_purl, dependencies)}"
+            ),
+            "creationInfo": {
+                "created": moment,
+                "creators": [f"Tool: {TOOL_NAME}-{tool_version}"],
+            },
+            "packages": [
+                {
+                    "SPDXID": root_id,
+                    "name": root_name,
+                    "versionInfo": root_version,
+                    "downloadLocation": "NOASSERTION",
+                    "filesAnalyzed": False,
+                    "licenseConcluded": "NOASSERTION",
+                    "licenseDeclared": "NOASSERTION",
+                    "copyrightText": "NOASSERTION",
+                },
+                *packages,
+            ],
+            "relationships": relationships,
+        }
+
+    @staticmethod
+    def _spdx_packages(
+        dependencies: Sequence[Dependency],
+    ) -> tuple[list[dict[str, Any]], dict[str, str]]:
+        """Each dependency's SPDX package entry, and the SPDXID its edges are looked up by."""
         spdx_id_by_name: dict[str, str] = {}
         by_purl: dict[str, str] = {}
         packages = []
@@ -246,13 +286,24 @@ class SbomDocument:
                     }
                 ],
             }
+            if not dependency.installed:
+                entry["comment"] = (
+                    "cordon:installed=false -- ships in the artifact, but installing it does not "
+                    f"install this package (recorded only by {dependency.declared_in})."
+                )
             digest = SbomDocument._hash_of(dependency)
             if digest is not None:
                 entry["checksums"] = [
                     {"algorithm": digest[0].replace("-", ""), "checksumValue": digest[1]}
                 ]
             packages.append(entry)
+        return packages, spdx_id_by_name
 
+    @staticmethod
+    def _spdx_relationships(
+        dependencies: Sequence[Dependency], spdx_id_by_name: dict[str, str], root_id: str
+    ) -> list[dict[str, str]]:
+        """The document describes the root, and every dependency hangs off its parents or the root."""
         relationships = [
             {
                 "spdxElementId": "SPDXRef-DOCUMENT",
@@ -279,34 +330,7 @@ class SbomDocument:
                         "relatedSpdxElement": child_id,
                     }
                 )
-
-        return {
-            "spdxVersion": SPEC_VERSION_SPDX,
-            "dataLicense": "CC0-1.0",
-            "SPDXID": "SPDXRef-DOCUMENT",
-            "name": f"{root_name}-{root_version}",
-            "documentNamespace": (
-                f"https://spdx.org/spdxdocs/{root_name}-{SbomDocument._identity(root_purl, dependencies)}"
-            ),
-            "creationInfo": {
-                "created": moment,
-                "creators": [f"Tool: {TOOL_NAME}-{tool_version}"],
-            },
-            "packages": [
-                {
-                    "SPDXID": root_id,
-                    "name": root_name,
-                    "versionInfo": root_version,
-                    "downloadLocation": "NOASSERTION",
-                    "filesAnalyzed": False,
-                    "licenseConcluded": "NOASSERTION",
-                    "licenseDeclared": "NOASSERTION",
-                    "copyrightText": "NOASSERTION",
-                },
-                *packages,
-            ],
-            "relationships": relationships,
-        }
+        return relationships
 
     @staticmethod
     def _index_by_name(dependencies: Sequence[Dependency]) -> dict[str, Dependency]:

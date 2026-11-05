@@ -4,6 +4,8 @@ __pycache__/
 *.egg-info/
 .eggs/
 build/
+# The release and data-build scripts are source: tracked, and linted like every other script.
+!/scripts/build/
 dist/
 .venv/
 venv/
@@ -33,7 +35,7 @@ cordon-result.json
 # Local virtualenv
 .venv/
 reviews
-# Measurement output. `scripts/measure_noise.py` and the recall scripts write
+# Measurement output. `scripts/measure/measure_noise.py` and the recall scripts write
 # their JSON beside wherever they are run from, which is ordinarily this tree.
 recall.json
 noise-*.json
@@ -46,3 +48,12 @@ techniques.json
 # Benchmark build artefact (a wheel of this checkout) and raw per-run logs.
 bench/.dist/
 bench/results/*.log
+# A run's output is a measurement on one machine, not source. Published results are added on
+# purpose (`git add -f`), so a run is never committed by accident.
+bench/results/
+
+# The native extensions are built by cordon_build into each wheel, never kept in the source tree.
+src/cordon_scanner/_native/*.so
+src/cordon_scanner/_native/*.pyd
+src/cordon_scanner/_native/ENGINE_BUILD
+.fuzz/

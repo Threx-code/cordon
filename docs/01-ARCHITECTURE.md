@@ -11,17 +11,37 @@
 
 Cordon is built as **ports and adapters** (hexagonal architecture) around an immutable domain model.
 
-- The **domain** (`core/models.py`) depends on nothing. It defines findings,
+- The **domain** (`foundation/models.py`) depends on nothing. It defines findings,
   rules, dependencies, repositories and results, and imports no other Cordon
   module.
-- The **application core** (`core/engine.py`) orchestrates phases. It depends on
+- The **application core** (`engine/engine.py`) orchestrates phases. It depends on
   the domain and on a set of `Protocol` definitions, never on a concrete
   detector, reporter, ecosystem or source.
 - The **adapters** (`detect/`, `report/`, `ecosystems/`, `sources/`, `intel/`)
   implement those protocols and are discovered at runtime through entry points.
 
-The dependency rule is one-directional and enforced by a test: nothing in
-`core/` may import from `detect/`, `report/`, `ecosystems/` or `sources/`.
+The dependency rule is one-directional: a layer imports only the layers inside it.
+
+```
+          cli  report  mcp  cloud                 outermost: user-facing
+                    │
+                  engine                          running a scan
+                    │
+                  decide                          package-level decisions
+                    │
+       detect ── ecosystems ── intel ── images ── sources
+                    │
+                 analysis                         reading code: facts, never verdicts
+                    │
+                foundation                        shared types; imports nothing above
+```
+
+Every module's place, and every unit test's (`tests/unit/<place>/`), is listed in
+`tests/unit/package_layout.json`; `tests/unit/repository/test_package_layout.py` keeps the table
+complete and holds the arrangement to its limits: imports point inward, the engine reaches the
+adapters only through the registry and the protocols, modules and classes stay within 1,000 lines,
+functions within 90, directories within 20 modules. What does not follow a rule yet is listed
+there with its size and may only shrink; when the lists are empty the rules hold with no exceptions.
 
 This is not architectural decoration. It buys four specific properties the
 product requires:
@@ -38,12 +58,12 @@ product requires:
 | Pattern | Where | Why here specifically |
 |---|---|---|
 | Dependency inversion via `Protocol` | detectors, reporters, ecosystems, sources, intel | Structural typing means a third-party plugin implements an interface without importing Cordon's base class, so plugins are not coupled to our release cycle. |
-| Plugin registry over entry points | `core/registry.py` | Built-in components register through the same mechanism third parties use. There is no privileged path, so a broken plugin system fails for us first. |
+| Plugin registry over entry points | `engine/registry.py` | Built-in components register through the same mechanism third parties use. There is no privileged path, so a broken plugin system fails for us first. |
 | Strategy | match kinds, reporters, sources | Adding an output format or a match type is a new class, not a branch in a growing conditional. |
-| Pipeline / phases | `core/engine.py` | Each phase has one input type and one output type, so a phase can be replaced, parallelised or cached in isolation. |
+| Pipeline / phases | `engine/engine.py` | Each phase has one input type and one output type, so a phase can be replaced, parallelised or cached in isolation. |
 | Immutable value objects | the whole domain | Safe to share across processes, impossible to mutate a result post hoc, and free hashability for deduplication. |
-| Specification | `core/policy.py` | Failure policy is a composable predicate over findings, so gate logic is testable without running a scan. |
-| Layered configuration with a ceiling | `core/config.py` | Untrusted repository configuration must be able to describe a project without being able to disable its own inspection. |
+| Specification | `decide/policy.py` | Failure policy is a composable predicate over findings, so gate logic is testable without running a scan. |
+| Layered configuration with a ceiling | `foundation/config/settings.py` | Untrusted repository configuration must be able to describe a project without being able to disable its own inspection. |
 | Streaming iterators | sources, reporters | Bounds memory on inputs of unknown size, which is a security requirement, not just an efficiency one. |
 
 ---
@@ -54,22 +74,18 @@ Decisions, not preferences. Every later section is downstream of them.
 
 ### C1. The core has zero third-party runtime dependencies
 
-`cordon_scanner.core`, `cordon_scanner.detect`, `cordon_scanner.report`, `cordon_scanner.rules` and `cordon_scanner.cli`
-import nothing outside the standard library on a base install. Two runtime extras
-exist. `[ast-js]` adds the tree-sitter grammars for JavaScript and TypeScript so
-`kind: ast` rules resolve calls in those languages; without it those languages
-are reported as unscanned by the AST tier, never silently skipped. `[attest]`
-adds `sigstore` and `pypi-attestations` so the provenance detector can verify a
-dependency's build attestation -- the Fulcio certificate, the Rekor inclusion
-proof, the DSSE signature over the pinned digest, and the signer-to-repository
-identity -- and `pysequoia`, so a Helm chart's OpenPGP provenance file and an
-Ansible collection's signatures are verified against the keys the operator gives
-with `--keyring`; without it a
-package's provenance stays at the presence check and
-anything unverifiable is reported as `POLICY.PROVENANCE.UNVERIFIED`, never an
-error. An extra is opt-in and must degrade to a documented reduced capability,
-never to an error, and its imports are guarded so the base install never touches
-them. `[ast]` and `[intel]` were both named here before either existed; `[ast]`
+`cordon_scanner.foundation`, `cordon_scanner.analysis`, `cordon_scanner.detect`, `cordon_scanner.decide`, `cordon_scanner.engine`, `cordon_scanner.report`, `cordon_scanner.rules` and `cordon_scanner.cli`
+import nothing outside the standard library on a base install. Provenance is
+verified by the project's own code (`intel/provenance`): a dependency's Sigstore
+attestation -- the Fulcio certificate and its certificate-transparency timestamp,
+the Rekor inclusion proof and signed checkpoint, the DSSE signature over the
+pinned digest, and the signer-to-repository identity -- and a Helm chart's or an
+Ansible collection's OpenPGP signatures, against the keys the operator gives with
+`--keyring`. Keyless signing of uploaded results is the project's own too
+(`cloud/keyless`), and so is the JavaScript and TypeScript parser behind the
+`kind: ast` rules (`analysis/javascript/front`). Cordon declares no extras: the
+`[ast-js]`, `[attest]` and `[cloud]` extras do not exist any more, removed when the
+parser, the verification and the signing they carried became Cordon's own code. `[ast]` and `[intel]` were both named here before either existed; `[ast]`
 shipped as two packages nothing imported, and `[intel]` was never declared at
 all -- which is why the extras that do exist are pinned by a test.
 
@@ -95,7 +111,7 @@ the URL, verifies against it, and caches the result so later scans need none. A
 configuration file found inside the scanned repository cannot enable it, supply
 the URL, or supply the digest.
 
-The feed client is `intel/feed.py`; it makes no request until this build pins a
+The feed client is `intel/malware/feed.py`; it makes no request until this build pins a
 feed root key (`intel/data/feed-root.json`), and with one it is bounded to three
 seconds and never blocks a scan.
 
@@ -178,43 +194,70 @@ prints the secret. Reports travel further than the repository does.
 
 ### 3.1 Package layout
 
+Layers, inner to outer; a module imports only its own layer and those inside it. An adapter
+layer's ports are its `base` (the protocols) and its `registry` (what implements them); the
+engine imports an adapter layer through nothing else.
+
 ```
 src/cordon_scanner/
   __init__.py             Public SDK surface. Everything else is internal.
   version.py              Engine, rule-pack and schema versions
 
-  core/                   Domain and application core. Imports no adapter.
-    models.py             Findings, rules, dependencies, repositories, results
-    errors.py             Typed errors mapped to exit codes
-    config.py             Layered configuration with an enforced ceiling
-    policy.py             Thresholds, failure rules, suppressions, baselines
-    scoring.py            Explainable deterministic risk score
-    registry.py           Plugin discovery and registration
-    limits.py             Resource governance
-    content.py            Lazy file content: bytes, text, lines, hashes
-    walker.py             Traversal, ignore semantics, git awareness
-    cache.py              Content-addressed incremental cache
-    dedup.py              Deduplication and correlation
-    redact.py             Evidence redaction
-    audit.py              Structured audit log
+  foundation/             The domain: shared types and utilities; imports nothing above it
+    models.py results.py rule_model.py capabilities.py
+                          Findings, rules, dependencies, repositories, results
+    dependencies.py       A dependency's source and resolution; EcosystemFacts, the port the
+                          ecosystems layer answers for it
+    errors.py limits.py content.py paths.py
+                          Typed errors, resource governance, lazy file content, where files are
+    config/               Layered configuration: settings, parser, resolver, policy
+    files/                Walking, globs, atomic writes, spill, windows over large files, seals
+    formats/ text/        Hardened readers (restricted YAML, XML, JSONC); comments, prose, redaction
+  analysis/               Reading code: facts, never verdicts
+    javascript/ python/ go/ dotnet/ jvm/ nix/ formats/ shared/
+  detect/                 Detectors: base.py (the contract), catalogue.py, registry.py, then
+    code/ agents/ supply/ binary/ infra/ secrets/ source/
+  ecosystems/             Package-ecosystem adapters: base.py, registry.py, packages/, infra/
+  intel/                  Knowledge from outside the scanned content, offline-first: registry.py,
+    advisories/ malware/ registries/ provenance/ store/
+  images/                 Container images: layers, OS packages, distribution advisories
+  sources/                Where a scan's files come from: base.py, registry.py, archive, git, package
+  rules/                  Rule loading, validation, compilation; the built-in packs
+  decide/                 Package-level decisions: verdict, intent, scoring, policy, VEX
+  engine/                 Running a scan
     engine.py             Phase orchestration
+    pipeline/             The phases: units, facts, detection, stages, graph, hooks, history, results
+    registry.py           Plugin discovery and registration (entry points)
+    parallel.py cache.py audit.py guard.py incoming.py
+                          The worker pool, the incremental cache, the audit log, the guard
+  judge/ model/           The optional reviewing model and the verdict model
+  notify/                 Notifications: notifier, events, transport, channels/
+  report/                 Output adapters, each a Reporter
+  cli/                    The command line
+    main.py               Dispatch: each command's handler, and the typed exit codes
+    parser.py             The parser: every command's own arguments, in help order
+    commands/             One module per command, holding its arguments and its code;
+                          scan/ (by phase: options, command, enrichment, output, ...)
+                          and account/ (login, logout, whoami) as sub-packages
+  mcp/                    The MCP server for AI agents
+    server.py             The protocol: stdio, tools/list, tools/call, cancellation
+    tools/                base.py (what every tool shares), one module per tool
+                          family (packages, workspace, agents, machine, knowledge),
+                          catalogue.py (the definitions, in a fixed order)
+  cloud/                  The cloud agent: sign-in, runner, device inventory, results upload
 
-  sources/                Adapters: directory, file, archive, git, package
-  detect/                 Detector adapters
-  rules/                  Rule loading, validation, compilation, packs
-  ecosystems/             Package-ecosystem adapters
-  langs/                  Language identification data
-  report/                 Output adapters
-  intel/                  Advisory and reputation providers, offline-first
-  archive/                Hardened archive extraction
-  cli/                    Argument parsing and command implementations
+tests/unit/               Mirrors src: tests/unit/<place>/test_<module>.py, plus
+                          repository/ (docs, release, layout), bench/, sandbox/
 ```
+
+Where each module and each unit test goes is `tests/unit/package_layout.json`; a new file adds
+its line there in the same commit.
 
 ---
 
 ## 4. Domain model
 
-Detailed in `core/models.py`. The load-bearing decisions:
+Detailed in `foundation/models.py`. The load-bearing decisions:
 
 ### 4.1 Five categories
 
@@ -539,12 +582,54 @@ without an explicit review trailer.
 | `regex` | Validated safe subset. No backreferences, no unbounded nesting. | 1 |
 | `entropy` | Shannon entropy over a window with a shape guard. | 1 |
 | `structural` | Query over a parsed manifest or configuration. | 2 |
-| `ast` | Grammar query. Python is built in; other languages need the `[ast-js]` extra and degrade with a note. | 3 |
+| `ast` | Resolved calls. Python (stdlib `ast`) and JavaScript/TypeScript (`analysis/javascript/front`) are built in; other languages are scanned by the regex tier. | 3 |
 | `graph` | Predicate over the dependency graph. | 4 |
 | `composite` | Boolean expression over other rules, with a scope. | 5 |
 
 Pattern safety is enforced at pack load, not at match time. A rule pack must not
 be able to hang the scanner, and organisations author their own rules.
+
+### 8.5 The native accelerator and its Python twins
+
+The YARA-compatible rule engine (`detect/binary/rule_engine`) has one optional C extension,
+`cordon_scanner._native._anchors` (`src/cordon_scanner/_native/anchors.c`), built when the wheel's
+build has a compiler (`[[tool.cordon-build.native]]` in `pyproject.toml`). Every call it offers has
+a Python twin that gives the same answer, so a wheel without it finds exactly what a wheel with it
+finds (constraint C6), only more slowly.
+
+```
+  rule file + file bytes
+          │
+          ▼
+  ┌──────────────────────┐  native?   ┌─────────────────────────────┬──────────────────────────┐
+  │ anchoring.automaton  │ ─────────► │ C (_anchors)                │ Python twin              │
+  └──────────────────────┘            ├─────────────────────────────┼──────────────────────────┤
+          │                           │ Automaton.present/positions │ NeedleSet, bytes.find    │
+          │                           │ check_text                  │ TextCheck.at             │
+          │                           │ text_hits  (TextFind)       │ scan._Hunt, text parts   │
+          │                           │ hex_hits   (HexFind)        │ scan._Hunt + Lanes       │
+          │                           └─────────────────────────────┴──────────────────────────┘
+          ▼
+  matches (start, length) ── identical either way, held by the properties below
+```
+
+- **What runs in C.** Which anchors occur, and where (an Aho-Corasick automaton, case-folded or not).
+  The text check at each candidate offset. A text string's whole find (`text_hits`), and a plain hex
+  string's whole find (`hex_hits`, a step-for-step port of `threads.Lanes`). Every other string
+  (regular expressions, hex with alternatives or heavy jumps, base64, linked parts) is found by the
+  Python hunt. A string is found natively only from `NeedleSet.FEW` anchors up.
+- **When it is used.** Whenever the extension imports. `CORDON_NO_NATIVE=1` turns it off for a
+  process, and the engine reads everything in Python.
+- **How to tell.** `cordon-scanner --version` prints a second line: `native: yes, native anchor
+  matcher (sha256 <digest of the loaded binary>)`, or `native: no, Python anchor matcher (<why>)`.
+  The rule file's load status says the same.
+- **Bounds.** The time allowed for a match is read inside the C loops as the hunt reads it (the
+  first event and every 4,096th), and every argument the extension takes is bounded on entry
+  (ValueError or TypeError, never a read outside the data).
+- **Proof that the twins agree.** Hypothesis properties, each run at 100,000 cases before a merge:
+  `test_native_anchors` (the automaton and `check_text`), `test_text_find`, `test_hex_find`. The
+  libFuzzer harness `scripts/native/fuzz_anchors.c` runs every call under ASan and UBSan against
+  naive checks of its own (`make fuzz-native`). The full suite also runs with `CORDON_NO_NATIVE=1`.
 
 ### 8.4 Suppression
 
@@ -680,11 +765,16 @@ Full treatment in `02-THREAT-MODEL.md`. The architectural hooks:
 - `Limits` is passed to every source and detector and is not optional.
 - Reaching a limit produces an `OPERATIONAL` finding, never a silent skip, and
   `ScanResult.complete` records whether the scan was whole.
-- `archive/safe.py` is the only code permitted to expand an archive. It enforces
-  an incremental compression-ratio ceiling, rejects absolute and traversing
-  paths, refuses links, and caps entry count and nesting depth.
-- No path from the scan target reaches a shell. `subprocess` appears in exactly
-  one module, wrapped with fixed argv, separators and timeouts.
+- `sources/archive.py` is the only code that expands an archive into files a scan
+  reads. It enforces an incremental compression-ratio ceiling, rejects absolute and
+  traversing paths, refuses links, and caps entry count and nesting depth. Format
+  readers that open their own container in memory (Office documents, APKs, VBA
+  projects, model pickles, Helm charts, a JAR's manifest) each read a bounded
+  number of members, each to a byte limit.
+- No path from the scan target reaches a shell. No call anywhere passes
+  `shell=True` or uses `os.system` or `os.popen`; the modules that start a process
+  (git, the scanner's own workers, the sandbox's container runtime) pass a fixed
+  argument list, with separators and timeouts.
 
 ---
 
@@ -698,6 +788,7 @@ Full treatment in `02-THREAT-MODEL.md`. The architectural hooks:
 | New detector | `Detector` implementation, entry point `cordon_scanner.detectors` | none |
 | New reporter | `Reporter` implementation, entry point `cordon_scanner.reporters` | none |
 | New source | `Source` implementation, entry point `cordon_scanner.sources` | none |
+| New notification channel | `Channel` implementation, entry point `cordon_scanner.notifiers` | none |
 | New intel feed | `IntelProvider` implementation | none |
 | Organisation policy | YAML | none |
 

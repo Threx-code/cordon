@@ -17,12 +17,12 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from cordon_scanner.report.base import BaseReporter, ReportOptions
+from cordon_scanner.report.base import BaseReporter, Escape, ReportOptions
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from cordon_scanner.core.models import ScanResult
+    from cordon_scanner.foundation.results import ScanResult
 
 
 class JsonReporter(BaseReporter):
@@ -41,11 +41,15 @@ class JsonReporter(BaseReporter):
             # A truncated report that does not say so is a report that lies.
             payload["truncated"] = True
 
-        yield json.dumps(
-            payload,
-            indent=2,
-            sort_keys=True,
-            ensure_ascii=False,
+        # every character no reader should meet raw (a bidi override or lone surrogate in a name)
+        # as its JSON escape: the same document to a program (`Escape.json`)
+        yield Escape.json(
+            json.dumps(
+                payload,
+                indent=2,
+                sort_keys=True,
+                ensure_ascii=False,
+            )
         ).encode("utf-8")
         yield b"\n"
 

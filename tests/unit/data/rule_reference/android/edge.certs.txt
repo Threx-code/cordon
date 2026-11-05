@@ -1,0 +1,17 @@
+Verifies
+Verified using v1 scheme (JAR signing): false
+Verified using v2 scheme (APK Signature Scheme v2): true
+Verified using v3 scheme (APK Signature Scheme v3): false
+Verified using v3.1 scheme (APK Signature Scheme v3.1): false
+Verified using v4 scheme (APK Signature Scheme v4): false
+Verified for SourceStamp: false
+Number of signers: 1
+Signer #1 certificate DN: CN=Cordon Test, OU=QA, O=Cordon, L=London, ST=England, C=GB
+Signer #1 certificate SHA-256 digest: c80f99a4b7a92966d8976b67dd3c45ef5bdf0c91a2ba6bc56302b69abd676d41
+Signer #1 certificate SHA-1 digest: 1afd8c4643cc206851604afd15e763d6e013ac45
+Signer #1 certificate MD5 digest: 60bdac5a1d9ceae447109ffee7684594
+Signer #1 key algorithm: RSA
+Signer #1 key size (bits): 2048
+Signer #1 public key SHA-256 digest: 5629c0a17a7ef58b2794397780f31f89bd1497e0435bfe8a9d0fe5f4076f2986
+Signer #1 public key SHA-1 digest: d3384fdebfec62e020feabd92a8053757236f2bc
+Signer #1 public key MD5 digest: 5f496dafd0474ef361ea58f7484e4127

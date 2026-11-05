@@ -1,6 +1,6 @@
 # 26 · Every command
 
-> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 Every command and every option, rendered from the scanner's own argument parser, so nothing
 here can name a flag that does not exist. `cordon-scanner help <command>` prints the same for
@@ -67,6 +67,9 @@ Scan a directory, file or archive.
 │ --confidence LEVEL        report at or above: low|medium|high|confirmed    │
 │ --fail-on LEVEL           fail the build at or above this severity         │
 │ --fail-on-incomplete      treat a degraded scan as a failure               │
+│ --hardening               report pipeline, container and infrastructure    │
+│                           hardening findings at their own severity instead │
+│                           of recording them at LOW                         │
 │ --baseline PATH           treat findings recorded in this file as already- │
 │                           known                                            │
 │ --vex PATH                an OpenVEX or CycloneDX VEX document             │
@@ -75,9 +78,10 @@ Scan a directory, file or archive.
 │                           with its justification                           │
 │ --config PATH             repository configuration file                    │
 │ --policy PATH             organisation policy file                         │
-│ --format, -f FMT[:PATH]   text|json|sarif|junit|markdown|github.           │
-│                           Repeatable. Append :PATH to write that format to │
-│                           a file, for example --format sarif:cordon.sarif  │
+│ --format, -f FMT[:PATH]   text|json|sarif|junit|markdown|github|codeclimat │
+│                           e|vex. Repeatable. Append :PATH to write that    │
+│                           format to a file, for example --format           │
+│                           sarif:cordon.sarif                               │
 │ --output, -o PATH         write to a file (only valid with a single        │
 │                           --format)                                        │
 │ --evidence MODE           none|masked|hash_only (default: masked). The     │
@@ -85,6 +89,8 @@ Scan a directory, file or archive.
 │                           wins, so `none` only takes effect for rules that │
 │                           permit it -- no shipped rule does.               │
 │ --timeout SECONDS         total wall-clock budget                          │
+│ --per-file-timeout SECONDS                                                 │
+│                           budget for one file (default 5; 0 means none)    │
 │ --no-cache                ignore and do not write the incremental cache    │
 │ --cache-dir PATH          where to keep the incremental cache              │
 │ --jobs, -j N              worker processes (0 or unset means automatic)    │
@@ -104,6 +110,13 @@ Scan a directory, file or archive.
 │                           or binaries. With --online and a published npm   │
 │                           or PyPI artefact, the previous release is        │
 │                           fetched from the registry instead                │
+│ --dependency-store DIR    a directory of npm archives                      │
+│                           (npm/<name>@<version>.tgz, a scope's / written   │
+│                           _) to resolve the scanned package's declared     │
+│                           dependencies from; each is scanned, and one      │
+│                           whose own content is malicious blocks this       │
+│                           package (MALWARE.DEPENDENCY.PAYLOAD.001). With   │
+│                           --online the registry is asked instead           │
 │ --allow-network           permit the one network operation there is:       │
 │                           fetching a --policy URL, which must carry a      │
 │                           #sha256= digest. Never used for scanning         │
@@ -112,13 +125,25 @@ Scan a directory, file or archive.
 │                           no first-party code imports is lowered and       │
 │                           tagged (never dropped). Reads every source file  │
 │                           to collect imports                               │
-│ --notify CHANNELS         when the gate fails, post one message to each    │
-│                           channel: webhook, slack, teams (comma-           │
-│                           separated). URLs come only from                  │
-│                           CORDON_NOTIFY_WEBHOOK, CORDON_NOTIFY_SLACK and   │
-│                           CORDON_NOTIFY_TEAMS; the webhook is signed with  │
+│ --notify CHANNELS         post one message to each channel: webhook,       │
+│                           slack, teams (comma-separated; or                │
+│                           notify.channels in the config file). URLs come   │
+│                           only from CORDON_NOTIFY_WEBHOOK,                 │
+│                           CORDON_NOTIFY_SLACK and CORDON_NOTIFY_TEAMS; the │
+│                           webhook is signed with                           │
 │                           CORDON_NOTIFY_WEBHOOK_SECRET. A failed delivery  │
 │                           never changes the exit code                      │
+│ --notify-on WHEN          when to post: failed, incomplete, passed (comma- │
+│                           separated; or notify.on in the config file).     │
+│                           Default failed,incomplete: when the gate fails   │
+│ --model SERVER            also have Cordon's own detection model score the │
+│                           packages this scan holds (a scanned package      │
+│                           archive, archives in the tree, installed         │
+│                           node_modules and site-packages): cordon-cloud    │
+│                           (`cordon-scanner login`), or the https://        │
+│                           address of a cordon-model-server with its token  │
+│                           in CORDON_MODEL_TOKEN. Sends features -- counts  │
+│                           and hashed identifiers -- never source           │
 │ --judge MODEL             also have a language model judge agent-facing    │
 │                           text (instruction files, skills, MCP tool        │
 │                           descriptions, hook commands): cordon-cloud       │
@@ -144,14 +169,21 @@ Scan a directory, file or archive.
 │                           against the OpenPGP keys in FILE, as `helm       │
 │                           verify --keyring` and `ansible-galaxy collection │
 │                           verify --keyring` do: armored, binary or a GnuPG │
-│                           keybox (repeatable; needs the [attest] extra).   │
-│                           Never set from a repository's own configuration  │
-│                           (env: CORDON_KEYRINGS, separated by the path     │
+│                           keybox (repeatable). Never set from a            │
+│                           repository's own configuration (env:             │
+│                           CORDON_KEYRINGS, separated by the path           │
 │                           separator)                                       │
-│ --yara RULES              also match every file against a YARA rules file  │
-│                           (needs the yara-python module). Off by default;  │
-│                           never set from a repository's own configuration  │
-│                           (env: CORDON_YARA)                               │
+│ --rule-file RULES         also match every file against a cordon-rule rule │
+│                           file (`builtin` for the pack shipped with        │
+│                           Cordon). Off by default; never set from a        │
+│                           repository's own configuration (env:             │
+│                           CORDON_RULE_FILE)                                │
+│ --rule-module-data MODULE=FILE                                             │
+│                           give a rule file's module data for the scan, as  │
+│                           `yara -x` does: `cuckoo=report.json` (a Cuckoo   │
+│                           sandbox report) answers the cuckoo module's      │
+│                           functions (repeatable). Never set from a         │
+│                           repository's own configuration                   │
 │ --clamav SOCKET           also hand each file to a local ClamAV daemon: a  │
 │                           Unix socket path, or tcp://127.0.0.1:3310. Off   │
 │                           by default; the report says whether it ran.      │
@@ -169,7 +201,8 @@ Scan a directory, file or archive.
 │                           --policy. If no current, verified bundle is      │
 │                           available the scan does not run (exit 3)         │
 │ --cloud-url URL           Cordon Cloud API base (default:                  │
-│                           CORDON_CLOUD_URL, else https://api.cordon.dev)   │
+│                           CORDON_CLOUD_URL, else https://core-             │
+│                           api.cordonscan.com)                              │
 │ --no-expand               do not open archives found inside a directory    │
 │                           scan. Faster, and the scan is then marked        │
 │                           incomplete if any archive went unopened          │
@@ -319,7 +352,8 @@ Re-render a saved JSON result in another format.
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ path                      a result written with --format json              │
-│ --format, -f FORMAT       text|json|sarif|junit|markdown|github            │
+│ --format, -f FORMAT       text|json|sarif|junit|markdown|github|codeclimat │
+│                           e|vex                                            │
 │ --output, -o OUTPUT       write to a file                                  │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -331,6 +365,8 @@ Re-render a saved JSON result in another format.
 - `baseline`: record findings, adopt gradually
 - `suppress`: reviewed, expiring exceptions
 - `guard`: git hooks and self-integrity
+- `verify`: check this install is genuine
+- `notify`: test the notification channels
 
 ## rules
 
@@ -557,6 +593,49 @@ Scanner self-integrity and git hook installation.
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## verify
+
+Check this Cordon installation against the release that built it.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ --target SITE_PACKAGES    verify the installation in this site-packages    │
+│                           directory, not the running one                   │
+│ --online                  fetch this wheel's PEP 740 provenance and the    │
+│                           wheel from PyPI, and verify both                 │
+│ --attestation PROVENANCE_JSON                                              │
+│                           PyPI's integrity response for the installed      │
+│                           wheel, instead of fetching it                    │
+│ --wheel WHEEL             the released wheel file, instead of fetching it  │
+│ --format {text,json}                                                       │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## notify
+
+Notification channels: send a test message to each.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ notify test                   send each channel a message marked as a      │
+│                               test, print each outcome, and exit non-zero  │
+│                               if any did not arrive                        │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+### notify test
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ channels                  webhook, slack, teams (comma-separated);         │
+│                           default: notify.channels in the configuration.   │
+│                           URLs come from CORDON_NOTIFY_WEBHOOK,            │
+│                           CORDON_NOTIFY_SLACK and CORDON_NOTIFY_TEAMS      │
+│ --config PATH             the configuration file to read                   │
+│ --policy PATH             the organisation policy to read                  │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
 ## Threat intel
 
 - `advisories`: the advisory database
@@ -578,15 +657,17 @@ Manage the vulnerability/malicious-package advisory database.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
-│ --only ECOSYSTEM          sync only these ecosystems (default: all         │
-│                           supported)                                       │
+│ --only ECOSYSTEM          sync only these ecosystems, or nvd for NVD's     │
+│                           data (default: all, and NVD)                     │
 │ --os FAMILY               also sync these distributions' advisories        │
 │                           (debian, ubuntu, alpine, wolfi, chainguard,      │
 │                           rocky, almalinux, redhat, suse, opensuse) so     │
 │                           image scans match operating-system packages      │
 │                           offline                                          │
-│ --bundle URL              install a signed advisory bundle from URL        │
-│                           instead of building from OSV; the bundle's       │
+│ --bundle URL|DIR          install a signed advisory bundle instead of      │
+│                           building from OSV: from a release's URL, or from │
+│                           a directory holding the two release assets       │
+│                           carried across an air gap; either way its        │
 │                           Ed25519 signature is verified against the pinned │
 │                           release key before anything is unpacked          │
 └────────────────────────────────────────────────────────────────────────────┘
@@ -601,6 +682,10 @@ The signed threat-intel feed: how current it is, and refreshing it.
 │ intel status                  show the intel's source, serial and age      │
 │                               without fetching anything                    │
 │ intel update                  verify and apply the latest signed feed now  │
+│ intel acquire                 fetch what a later offline scan compares a   │
+│                               published package with: the newest release   │
+│                               at least 90 days older, hashed per file      │
+│                               (network: registries only)                   │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -616,6 +701,15 @@ The signed threat-intel feed: how current it is, and refreshing it.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
+│ --json                    print as JSON                                    │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+### intel acquire
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ ARCHIVE                   published package archives                       │
 │ --json                    print as JSON                                    │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -655,6 +749,61 @@ Build and verify an offline bundle for an air-gapped install.
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ BUNDLE                                                                     │
 │ --into DIR                                                                 │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## AI agents
+
+- `mcp`: serve Cordon to AI agents (MCP)
+
+## mcp
+
+Serve Cordon to AI agents over the Model Context Protocol (stdio).
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ mcp config                    print the configuration that adds this       │
+│                               server to an agent                           │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+### mcp config
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ --client CLIENT           the agent: claude-code, claude-desktop, cline,   │
+│                           codex, continue, cursor, gemini, jetbrains,      │
+│                           vscode, windsurf, zed                            │
+│ --allow-online            configure the server with --allow-online         │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ --root DIR                a directory tools may read (repeatable; default: │
+│                           the current directory)                           │
+│ --allow-online            let tools ask registries, fetch packages, images │
+│                           and extensions, and read remote MCP servers      │
+│ --allow-machine           let tools read this machine's installed packages │
+│                           and AI agent configuration                       │
+│ --model SERVER            have Cordon's own model score the packages each  │
+│                           scan holds: cordon-cloud, or the https://        │
+│                           address of a cordon-model-server (token in       │
+│                           CORDON_MODEL_TOKEN). Only features are sent      │
+│ --allow-private-network   let online tools connect to private and local    │
+│                           addresses (an intranet MCP server or registry);  │
+│                           by default a name an agent passes in may lead    │
+│                           only to the public network                       │
+│ --timeout SECONDS         deadline for one scan (default 600)              │
+│ --per-file-timeout SECONDS                                                 │
+│                           budget for one file within a scan (default: the  │
+│                           scanner's own; 0 means none)                     │
+│ --max-concurrent N        scans run at once (default 4)                    │
+│ --rate N                  tool calls allowed per minute (default 120)      │
+│ --max-findings N          findings returned per call unless the call asks  │
+│                           (default 50)                                     │
+│ --audit-log PATH          append one JSON line per tool call: tool,        │
+│                           verdict, duration (never arguments)              │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 

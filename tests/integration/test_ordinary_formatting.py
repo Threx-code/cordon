@@ -15,7 +15,7 @@ written. A corpus is only evidence if it was not written to fit.
 from __future__ import annotations
 
 from cordon_scanner import Scanner
-from cordon_scanner.core.models import Category
+from cordon_scanner.foundation.models import Category
 from support import Support
 
 

@@ -21,7 +21,7 @@ for repo in sorted(Path("/data/conda").iterdir()):
                 "conda": [{"name": MatchSpec(s).name, "spec": s} for s in deps.get("conda", [])],
                 "pip": list(deps.get("pip", [])),
             }
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             out[rel] = {"error": f"{type(exc).__name__}: {exc}"[:200]}
     (repo / ".reference").mkdir(exist_ok=True)
     (repo / ".reference" / "conda.json").write_text(json.dumps(out, indent=1), encoding="utf-8")

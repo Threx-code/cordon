@@ -11,9 +11,13 @@ from dataclasses import dataclass
 from typing import Any, Final, Protocol
 
 from cordon_scanner.cloud import CloudError
+from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.foundation.network.failures import NetworkFailure
+from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.version import __version__
 
 TIMEOUT_SECONDS: Final = 15.0
+
 MAX_RESPONSE_BYTES: Final = 8 << 20
 USER_AGENT: Final = f"cordon-scanner/{__version__}"
 
@@ -30,11 +34,6 @@ class Transport(Protocol):
     ) -> tuple[int, bytes]: ...
 
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
-        return None
-
-
 class CloudTransport:
     """JSON over HTTPS to the cloud: no redirects, bounded responses, tokens never in errors."""
 
@@ -43,15 +42,16 @@ class CloudTransport:
         method: str, url: str, *, body: bytes | None, headers: dict[str, str]
     ) -> tuple[int, bytes]:
         request = urllib.request.Request(url, data=body, headers=headers, method=method)  # noqa: S310 - base_url() checked the scheme
-        opener = urllib.request.build_opener(_NoRedirect)
+        opener = urllib.request.build_opener(NoRedirects)
         try:
             with opener.open(request, timeout=TIMEOUT_SECONDS) as response:
-                return int(response.status), response.read(MAX_RESPONSE_BYTES + 1)
+                return int(response.status), Download.read(response, MAX_RESPONSE_BYTES + 1)
         except urllib.error.HTTPError as exc:
-            return int(exc.code), exc.read(MAX_RESPONSE_BYTES + 1)
+            NetworkFailure.release(exc)
+            return int(exc.code), Download.read(exc, MAX_RESPONSE_BYTES + 1)
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
             host = urllib.parse.urlsplit(url).hostname
-            raise CloudError(f"could not reach {host} ({type(exc).__name__})") from exc
+            raise CloudError(f"could not reach {host} ({NetworkFailure.reason(exc)})") from exc
 
     @staticmethod
     def request(

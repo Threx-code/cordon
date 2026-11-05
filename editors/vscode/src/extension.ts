@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import * as os from "node:os";
 import * as vscode from "vscode";
 import { containedPath, parseReport, Severity, toDiagnostics } from "./findings";
+import { registerMcpServer } from "./mcp";
 
 const SEVERITY: Record<string, vscode.DiagnosticSeverity> = {
   error: vscode.DiagnosticSeverity.Error,
@@ -11,6 +12,13 @@ const SEVERITY: Record<string, vscode.DiagnosticSeverity> = {
 };
 const SAVE_DELAY_MS = 1500;
 const SCAN_TIMEOUT_MS = 5 * 60 * 1000;
+const INSTALL_COMMAND = "pipx install cordon-scanner";
+const GUIDE = "https://github.com/Threx-code/cordon#install";
+
+/** The scanner to run: read from the machine scope only, whatever a workspace's settings say. */
+function executable(): string {
+  return vscode.workspace.getConfiguration("cordon").inspect<string>("path")?.globalValue ?? "cordon-scanner";
+}
 
 export function activate(context: vscode.ExtensionContext): void {
   const diagnostics = vscode.languages.createDiagnosticCollection("cordon");
@@ -35,15 +43,13 @@ export function activate(context: vscode.ExtensionContext): void {
     status.text = "$(sync~spin) Cordon";
     status.show();
     const settings = vscode.workspace.getConfiguration("cordon");
-    // Read from the machine scope only, whatever a workspace's settings say.
-    const executable = settings.inspect<string>("path")?.globalValue ?? "cordon-scanner";
     const minimum = settings.get<Severity>("minimumSeverity", "low");
     diagnostics.clear();
     let total = 0;
     try {
       for (const folder of folders) {
         const root = folder.uri.fsPath;
-        const stdout = await run(executable, ["scan", root, "--format", "json", "--quiet", "--no-color", "--offline"]);
+        const stdout = await run(executable(), ["scan", root, "--format", "json", "--quiet", "--no-color", "--offline"]);
         const report = parseReport(stdout);
         const { located, general } = toDiagnostics(report, minimum);
         const byFile = new Map<string, vscode.Diagnostic[]>();
@@ -94,8 +100,64 @@ export function activate(context: vscode.ExtensionContext): void {
       pending = setTimeout(() => void scan(), SAVE_DELAY_MS);
     }),
     vscode.workspace.onDidGrantWorkspaceTrust(() => void scan()),
+    vscode.commands.registerCommand("cordon.showMcpConfig", () => showMcpConfig(output)),
   );
-  void scan();
+
+  void installed().then((version) => {
+    if (version === null) {
+      void offerInstall();
+      return;
+    }
+    output.appendLine(`using ${version}`);
+    const offered = registerMcpServer(context, () => {
+      const settings = vscode.workspace.getConfiguration("cordon");
+      return {
+        executable: executable(),
+        enabled: settings.get<boolean>("mcp.enabled", true),
+        // Machine scope only, as the executable is: a repository cannot turn the network on.
+        allowOnline: settings.inspect<boolean>("mcp.allowOnline")?.globalValue ?? false,
+        version: version.split(" ").pop() ?? "",
+      };
+    });
+    output.appendLine(
+      offered
+        ? "Cordon's MCP server is offered to this editor's AI agents (Copilot agent mode and others)."
+        : "This editor has no MCP server API (VS Code 1.101+); run `Cordon: Show MCP configuration` to add it by hand.",
+    );
+    void scan();
+  });
+}
+
+/** `cordon-scanner --version`, or null when the scanner cannot be run. */
+function installed(): Promise<string | null> {
+  return new Promise((resolve) => {
+    execFile(executable(), ["--version"], { cwd: os.tmpdir(), timeout: 30_000 }, (error, stdout) => {
+      resolve(error ? null : stdout.trim() || null);
+    });
+  });
+}
+
+async function offerInstall(): Promise<void> {
+  const choice = await vscode.window.showWarningMessage(
+    `Cordon needs the cordon-scanner command. Install it with: ${INSTALL_COMMAND}`,
+    "Copy command",
+    "Open guide",
+  );
+  if (choice === "Copy command") {
+    await vscode.env.clipboard.writeText(INSTALL_COMMAND);
+  } else if (choice === "Open guide") {
+    await vscode.env.openExternal(vscode.Uri.parse(GUIDE));
+  }
+}
+
+async function showMcpConfig(output: vscode.OutputChannel): Promise<void> {
+  try {
+    const text = await run(executable(), ["mcp", "config", "--client", "vscode"]);
+    const document = await vscode.workspace.openTextDocument({ content: text, language: "jsonc" });
+    await vscode.window.showTextDocument(document);
+  } catch (error) {
+    output.appendLine(`could not print the MCP configuration: ${String(error)}`);
+  }
 }
 
 function run(executable: string, args: string[]): Promise<string> {

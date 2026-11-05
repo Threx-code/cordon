@@ -1,6 +1,6 @@
 # 24 · Policy for every repository
 
-> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 An organisation policy is the ceiling (tutorial 14): what no repository may disable,
 suppress or raise. With more than a handful of repositories it cannot be copied into
@@ -65,7 +65,7 @@ Compared by digest; nothing is fetched. Exit 1 when the copy differs.
 
 Repositories pin the scanner exactly: the Action by commit, pip by version and hash,
 pre-commit by rev, the runner image by digest. That is right, and it means a fix needs
-the same four edits everywhere. `scripts/bump_cordon_pins.py` makes them, and only them:
+the same four edits everywhere. `scripts/release/bump_cordon_pins.py` makes them, and only them:
 
 ```
    uses: <owner>/cordon/action@<40 hex>  # vX.Y.Z    ─►  the release's commit and tag

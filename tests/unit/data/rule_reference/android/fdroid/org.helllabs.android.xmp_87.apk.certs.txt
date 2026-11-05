@@ -1,0 +1,17 @@
+Verifies
+Verified using v1 scheme (JAR signing): true
+Verified using v2 scheme (APK Signature Scheme v2): true
+Verified using v3 scheme (APK Signature Scheme v3): true
+Verified using v3.1 scheme (APK Signature Scheme v3.1): false
+Verified using v4 scheme (APK Signature Scheme v4): false
+Verified for SourceStamp: false
+Number of signers: 1
+Signer #1 certificate DN: CN=FDroid, OU=FDroid, O=fdroid.org, L=ORG, ST=ORG, C=UK
+Signer #1 certificate SHA-256 digest: b15d37a7333a9f55fcd60cb967116b06f82767017579fd96d9f722a198144dd3
+Signer #1 certificate SHA-1 digest: c61265ca6c7fcf0b9a05d6e7f8a0a42188407999
+Signer #1 certificate MD5 digest: 92e222ea6c5552825152fce80d00cab7
+Signer #1 key algorithm: RSA
+Signer #1 key size (bits): 2048
+Signer #1 public key SHA-256 digest: dc32bba7bb8bbe58c82fd622f629cda4866e433a888183dc425286f5fa9a5841
+Signer #1 public key SHA-1 digest: 47ccaeec3c54251cff8d546edc81fef4b8b1baa3
+Signer #1 public key MD5 digest: 2703713ff846ce07d5fe33596762eee4

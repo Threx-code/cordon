@@ -21,17 +21,21 @@ positives.
 
 from __future__ import annotations
 
-import json
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from cordon_scanner.core.models import Dependency, Hook, Scope
+from cordon_scanner.foundation.dependencies import InstallTool
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
+from cordon_scanner.foundation.models import Hook, Scope
+from cordon_scanner.foundation.results import Dependency
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Iterable, Mapping, Sequence
 
-    from cordon_scanner.core.content import FileContent
+    from cordon_scanner.foundation.content import FileContent
+    from cordon_scanner.foundation.models import Scope
 
 
 class Coordinate:
@@ -59,7 +63,7 @@ class Coordinate:
     # Past every real coordinate: npm allows a 214-character name, and a prerelease tag can run to
     # seventy characters and more. Bounds shorter than that cut a published malicious release's
     # name or version before it was looked up -- 2 of the 249,646 known-malicious records were
-    # missed that way (`bench/malicious_records.py`) -- which hands an attacker an evasion: pad the
+    # missed that way (`bench/suites/malicious_records.py`) -- which hands an attacker an evasion: pad the
     # version, and the lookup is of a release that never existed.
     MAX_NAME = 256
     MAX_VERSION = 128
@@ -86,6 +90,7 @@ class Coordinate:
         r"|h1:[A-Za-z0-9+/]{43}="  # Go module hash, Terraform h1
         r"|git-tree-sha1:[0-9a-fA-F]{40}"  # Julia: the git tree of a package version or artifact
         r"|sha256:[0-9a-df-np-sv-z]{52}"  # Nix: a sha256 in Nix's own base32 alphabet
+        r"|sha512:[0-9a-df-np-sv-z]{103}|sha1:[0-9a-df-np-sv-z]{32}"  # and its sha512 and sha1
         r"|zh:[0-9a-f]{64}"  # Terraform zip hash
         r"|\d{1,3}c\d{1,2}/[0-9a-f]{64,128}|\d{1,2}/[0-9a-f]{64,128}"  # Yarn Berry cache key / checksum
         r"|[0-9a-fA-F]{32}|[0-9a-fA-F]{40}|[0-9a-fA-F]{56}|[0-9a-fA-F]{64}|[0-9a-fA-F]{96}|[0-9a-fA-F]{128}"
@@ -293,6 +298,11 @@ class Manifest:
     finding: a manifest that cannot be read is a manifest whose contents were
     not checked, and that must never look like a clean result."""
 
+    not_python3: str | None = None
+    """The Python 2 construct a `setup.py` Python 3 refuses fails on, when it fails on one
+    (`PythonTwo.construct`): not a parse error, as no Python 3 can run the file (pip on Python 3
+    fails on the same line), so its hooks never run there (item 27). Said at info."""
+
     includes: tuple[tuple[str, str], ...] = ()
     """Other files this one pulls in, as `(kind, relative path)`: `("requirements", ...)` for
     pip's `-r`, `("constraints", ...)` for `-c`. The engine reads each one the walk has, so a
@@ -393,6 +403,10 @@ class LockEntry:
     signed: bytes | None = None
     """The exact bytes those signatures cover (the collection's MANIFEST.json)."""
 
+    note: str | None = None
+    """What the reader knows about where this entry resolves that no other field holds -- a
+    CocoaPods podspec read from inside an npm package, and the versions that package is at."""
+
     def __post_init__(self) -> None:
         object.__setattr__(self, "name", Coordinate.token(self.name, Coordinate.MAX_NAME))
         object.__setattr__(self, "version", Coordinate.token(self.version, Coordinate.MAX_VERSION))
@@ -424,6 +438,10 @@ class LockGraph:
     here is not missing, and is judged after the companion is applied."""
 
     companion: bool = False
+    """This file records facts about another file's resolution, not a resolution of its own:
+    `go.sum` holds hashes for what `go.mod` selects (and for versions it no longer does), and
+    `vendor/modules.txt` says which of them were vendored. Its entries complete the matching
+    entries of the resolving file -- integrity, a vendored source -- and add none of their own."""
 
     completed_by_companion: bool = False
     """The resolving file lists only what the project requires directly -- a `go.mod` written
@@ -445,10 +463,6 @@ class LockGraph:
     """How many directories above the file the project it belongs to is: 2 for Maven's
     `.mvn/checksums/` and Gradle's legacy `gradle/dependency-locks/`, 1 for Gradle's
     `gradle/verification-metadata.xml`. 0: the file's own directory."""
-    """This file records facts about another file's resolution, not a resolution of its own:
-    `go.sum` holds hashes for what `go.mod` selects (and for versions it no longer does), and
-    `vendor/modules.txt` says which of them were vendored. Its entries complete the matching
-    entries of the resolving file -- integrity, a vendored source -- and add none of their own."""
 
     def __len__(self) -> int:
         return len(self.entries)
@@ -486,9 +500,214 @@ class Ecosystem(Protocol):
         """Package URL qualifiers telling apart artefacts of one name and version."""
         ...
 
+    def not_run_at_install(self, path: str, text: str) -> list[tuple[int, int]]:
+        """The line spans of a manifest that is an install hook as a whole which installing it
+        never runs (a Homebrew formula's `service` and `test` blocks): code there is not
+        install-time code. Most ecosystems have none."""
+        ...
 
-class BaseEcosystem:
+
+class RegistryHosts:
+    """Whether a URL is served by one of an ecosystem's registry hosts."""
+
+    @staticmethod
+    def matches(url: str, known: frozenset[str]) -> bool:
+        """The URL's host is a listed host or a subdomain of one; a listed `host/path` entry
+        also needs the URL's path to start there (`mirrors.aliyun.com/pypi`).
+
+        Not a substring test. `registry.npmjs.org.example.net` contains the npm registry's
+        name and is somebody else's server; under a substring test it read as the registry,
+        and a lockfile resolving from it was neither reported as foreign nor kept apart from
+        advisory matching.
+        """
+        rest = url.lower().split("://", 1)[-1]
+        authority, _, path = rest.partition("/")
+        host = authority.rpartition("@")[2].split(":", 1)[0].rstrip(".")
+        for entry in known:
+            entry_host, _, entry_path = entry.lower().partition("/")
+            if host != entry_host and not host.endswith("." + entry_host):
+                continue
+            if (
+                not entry_path
+                or path == entry_path
+                or path.startswith(entry_path.rstrip("/") + "/")
+            ):
+                return True
+        return False
+
+
+class ReleaseFile(Protocol):
+    """One file of a published release, as an ecosystem reads it for what the release declares."""
+
+    @property
+    def path(self) -> str: ...
+    @property
+    def content(self) -> FileContent: ...
+
+
+class NamingDefaults:
+    """How an ecosystem names its packages (`foundation.dependencies.EcosystemNaming`), as an
+    ecosystem with none of it answers; each ecosystem overrides what is its own."""
+
+    def namespace(self, name: str, alias: str | None = None) -> str | None:
+        return None
+
+    def is_builtin(self, name: str) -> bool:
+        return False
+
+    def coordinate_separator(self) -> str | None:
+        return None
+
+
+class VersionDefaults:
+    """What an ecosystem's versions pin (`foundation.dependencies.EcosystemVersions`), as an
+    ecosystem with none of it answers; each ecosystem overrides what is its own."""
+
+    def pinned_by_digest(self) -> bool:
+        return False
+
+    def is_mutable_version(self, version: str) -> bool:
+        return False
+
+    def admits_lowest(self, declared_spec: str) -> bool:
+        return False
+
+    def is_held_version(self, version: str) -> bool:
+        return False
+
+
+class TraitDefaults:
+    """What an ecosystem's packages can carry (`foundation.dependencies.EcosystemTraits`), as an
+    ecosystem with none of it answers; each ecosystem overrides what is its own."""
+
+    def has_install_scripts(self) -> bool:
+        return False
+
+    def has_scoped_names(self) -> bool:
+        return False
+
+    def is_ci_step(self, name: str) -> bool:
+        return False
+
+    def squat_comparisons(self) -> tuple[str, ...]:
+        return ("npm", "cargo")
+
+
+class ProjectDefaults:
+    """How an ecosystem's projects pin and install (EcosystemProjects): the defaults."""
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A project pinning these releases, as this ecosystem's own lockfile: `{path: content}`;
+        None where the ecosystem has no project to write."""
+        return None
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A project naming these packages with no version: `{path: content}`; None where the
+        ecosystem has no project to write. Raises ValueError where it needs a version."""
+        return None
+
+    def install_tool(self) -> Sequence[InstallTool]:
+        """The package tools whose install commands name this ecosystem's packages."""
+        return ()
+
+
+class VersionSyntaxDefaults:
+    """An ecosystem's version spelling (EcosystemVersionSyntax): the default."""
+
+    def normalised_version(self, version: str) -> str:
+        """A version as given, in the form its records keep: a leading `v` dropped."""
+        return version.strip().removeprefix("v")
+
+
+class ReleaseIdentityDefaults:
+    """Where a release names itself (EcosystemReleaseIdentity): the defaults."""
+
+    def identity_in_metadata(self) -> bool:
+        """Whether a published archive names its release in the metadata its checks read."""
+        return False
+
+    def release_manifest(self) -> re.Pattern[str] | None:
+        """The member of a published archive that names the release, as a path pattern."""
+        return None
+
+    def release_identity(
+        self, path: str, text: str, found: re.Match[str]
+    ) -> tuple[str, str] | None:
+        """(name, version) from that member: its path, its text, and the pattern's match."""
+        return None
+
+
+class ArchiveTraitDefaults:
+    """What an ecosystem's archives hold (EcosystemArchiveTraits): the defaults."""
+
+    def compiled_is_inert(self) -> bool:
+        """Whether a compiled file in its archive does not run at install."""
+        return False
+
+    def install_manifests(self) -> frozenset[str]:
+        """The files its installer runs or reads to build; none by default."""
+        return frozenset()
+
+    def completes_from_checksums(self) -> bool:
+        """Whether a checksum file of its builds completes the dependency graph."""
+        return False
+
+    def bracket_ranges(self) -> bool:
+        """Whether a declared version may be a bracketed range."""
+        return False
+
+
+class PackageEntryDefaults:
+    """A published package's manifest, entry points and repository (EcosystemPackageEntries): the defaults."""
+
+    def archive_manifest(self) -> str | None:
+        """Where a published archive keeps its manifest, where that is fixed."""
+        return None
+
+    def library_entries(
+        self, members: Mapping[str, str], manifest: Mapping[str, Any], with_bin: bool
+    ) -> set[str]:
+        """The members of a published archive that run on import or as its command: `members` is
+        member path -> full path, `manifest` the archive's own manifest ({} if none)."""
+        return set()
+
+    def published_repository(self, manifest: Mapping[str, Any]) -> str:
+        """The source repository a published archive's manifest names, or ""."""
+        return ""
+
+
+class PublishedCodeDefaults:
+    """What a published package's code does at install (EcosystemPublishedCode): the defaults."""
+
+    def ships_built_code(self) -> bool:
+        """Whether a published archive's built output is the code that runs."""
+        return False
+
+    def hooks_run_javascript(self) -> bool:
+        """Whether its install hooks and entry points run JavaScript."""
+        return False
+
+
+class BaseEcosystem(
+    NamingDefaults,
+    VersionDefaults,
+    TraitDefaults,
+    ProjectDefaults,
+    VersionSyntaxDefaults,
+    ReleaseIdentityDefaults,
+    ArchiveTraitDefaults,
+    PackageEntryDefaults,
+    PublishedCodeDefaults,
+):
     """Shared behaviour. Implementing the protocol directly is equally valid."""
+
+    def declared_dependencies(self, files: Sequence[ReleaseFile]) -> frozenset[str]:
+        """The runtime dependencies a published release of this ecosystem declares, read from its
+        own files; none where the ecosystem's releases are not read this way."""
+        return frozenset()
+
+    def not_run_at_install(self, path: str, text: str) -> list[tuple[int, int]]:
+        return []
 
     @staticmethod
     def _json_object(text: str) -> dict[str, Any]:
@@ -510,7 +729,7 @@ class BaseEcosystem:
         `tomllib.loads` cannot return a non-mapping, so the TOML parsers need no
         equivalent.
         """
-        data = json.loads(text)
+        data = ScannedJson.loads(text)
         if not isinstance(data, dict):
             raise ValueError(f"top level is {type(data).__name__}, expected an object")
         return data
@@ -542,6 +761,10 @@ class BaseEcosystem:
     purl_type: str = "generic"
     manifest_globs: tuple[str, ...] = ()
     lockfile_globs: tuple[str, ...] = ()
+    installed_with_package: tuple[str, ...] = ()
+    """Nested dependency files, relative to a published package's root, whose packages this
+    ecosystem's installer brings in with it, exactly as shipped (npm's bundled `node_modules`). The
+    inventory reads them as part of the install set (`DependencyScope`); none by default."""
     registry_hosts: frozenset[str] = frozenset()
     records_integrity: bool = True
     """Whether this ecosystem's lock format records a per-package hash at all. Where it does
@@ -657,6 +880,7 @@ class BaseEcosystem:
                 deprecated=entry.deprecated,
                 signatures=entry.signatures,
                 signed=entry.signed,
+                resolution_note=entry.note,
             )
             for index, entry in sorted(
                 enumerate(entries), key=lambda pair: (pair[1].name, pair[1].version)
@@ -697,9 +921,7 @@ class BaseEcosystem:
         if "://" not in lowered:
             return True
 
-        host = lowered.split("://", 1)[1].split("/", 1)[0]
-        host = host.rpartition("@")[2]  # strip any userinfo
-        return any(known in host for known in self.registry_hosts)
+        return RegistryHosts.matches(lowered, self.registry_hosts)
 
     def is_public_registry(self, url: str | None) -> bool:
         """Whether a resolution is this ecosystem's PUBLIC registry, where anyone can publish a
@@ -708,8 +930,7 @@ class BaseEcosystem:
         if url and url.lower().startswith("registry:"):
             named = url.lower().removeprefix("registry:").strip()
             if "://" in named:
-                host = named.split("://", 1)[1].split("/", 1)[0].rpartition("@")[2]
-                return any(known in host for known in self.registry_hosts)
+                return RegistryHosts.matches(named, self.registry_hosts)
             return named in PUBLIC_REGISTRY_NAMES
         return self.is_registry_host(url)
 
@@ -720,22 +941,60 @@ class BaseEcosystem:
         somebody chooses to run tests; a `postinstall` script runs whether they
         wanted it to or not.
         """
+        # And a key that is one only in another case: `postInstall` beside the real scripts is
+        # how a Shai-Hulud worm copy named its `node bundle.js` (review 98). The package manager
+        # may not run it, but nothing but a lifecycle hook is spelled that way, and the file it
+        # names is read as install code either way.
+        canonical = {k.lower(): k for k in self.lifecycle_keys}
         for key, command in sorted(scripts.items()):
-            if key in self.lifecycle_keys:
+            kind = key if key in self.lifecycle_keys else canonical.get(key.lower())
+            if kind is not None:
                 yield Hook(
-                    kind=key,
+                    kind=kind,
                     path=path,
                     name=key,
                     command=str(command),
                     ecosystem=self.id,
                 )
 
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------------------
+
+
+# Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine
+# each implementation typed by one of these, and the type checker proves the implementation
+# conforms, so the engine never sees a concrete adapter type.
+
+
+class ImageName(Protocol):
+    """What the engine uses of an `ImageReference` parsed from a name."""
+
+    @property
+    def digest(self) -> str | None: ...
+    @property
+    def familiar(self) -> str: ...
+    @property
+    def registry(self) -> str | None: ...
+    @property
+    def tag(self) -> str | None: ...
+
+
+class ImageReferences(Protocol):
+    """What the engine uses of the class `ImageReference`."""
+
+    def parse(self, text: str) -> ImageName | None: ...
+
 
 __all__ = [
     "BaseEcosystem",
     "DeclaredDependency",
     "Ecosystem",
+    "ImageName",
+    "ImageReferences",
+    "InstallTool",
     "LockEntry",
     "LockGraph",
     "Manifest",
+    "NamingDefaults",
+    "TraitDefaults",
+    "VersionDefaults",
 ]

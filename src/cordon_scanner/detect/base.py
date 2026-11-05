@@ -21,11 +21,12 @@ from __future__ import annotations
 
 import functools
 import time
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from dataclasses import dataclass, field, fields
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol, runtime_checkable
 
-from cordon_scanner.core.inventory import CheckLog
-from cordon_scanner.core.models import (
+from cordon_scanner.foundation.collector import ScanCaches
+from cordon_scanner.foundation.dependencies import CheckLog
+from cordon_scanner.foundation.models import (
     Category,
     Confidence,
     Evidence,
@@ -37,15 +38,21 @@ from cordon_scanner.core.models import (
     RiskScore,
     Severity,
 )
-from cordon_scanner.core.scoring import RiskScorer, ScoringContext
+from cordon_scanner.foundation.scoring import RiskScorer, ScoringContext
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Callable, Iterable, Mapping, Sequence
+    from pathlib import Path
+    from typing import Any
 
-    from cordon_scanner.core.config import Config
-    from cordon_scanner.core.content import FileContent
-    from cordon_scanner.core.models import Capability, Dependency, Repository, Rule
-    from cordon_scanner.rules.loader import CompiledRule, RuleSet
+    from cordon_scanner.foundation.capabilities import Capability
+    from cordon_scanner.foundation.config.settings import Config
+    from cordon_scanner.foundation.content import FileContent
+    from cordon_scanner.foundation.models import Finding
+    from cordon_scanner.foundation.results import Dependency, Repository
+    from cordon_scanner.foundation.rule_model import Rule
+    from cordon_scanner.rules.loader import RuleSet
+    from cordon_scanner.rules.pack import CompiledRule
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +78,11 @@ class DetectorRequirements:
     """Needs network access. Such a detector is skipped entirely when the scan is
     offline, which is the default."""
 
+    condemned: bool = False
+    """Matches what Cordon's feed has already condemned -- a recipe's digest, a campaign's
+    fingerprints -- and finds nothing else. It cannot be shown to fire on a corpus without that
+    corpus holding a condemned release, so its unit tests exercise it against a substituted index."""
+
 
 @dataclass(frozen=True, slots=True)
 class ScanContext:
@@ -87,12 +99,10 @@ class ScanContext:
     checks: CheckLog = field(default_factory=CheckLog)
     """Positive results a detector reaches without a finding -- a registry hash that matched,
     provenance that verified -- read into each dependency's record (`core/inventory.py`)."""
+    import_library_paths: frozenset[str] = frozenset()
+    """Members of an `ar` archive that is an import library whole (`FileUnit.import_library`,
+    notes/75): carried here because the workers rebuild each unit from its path and bytes."""
     install_hook_paths: frozenset[str] = frozenset()
-    install_entry_paths: frozenset[str] = frozenset()
-    """The hook scripts themselves -- a `setup.py`, the file a lifecycle script names, a `.pth`
-    -- as distinct from the modules they import, which `install_hook_paths` also holds. A
-    library is in the closure because `setup.py` reads its `__version__`; its own design
-    choices are not the install script's."""
     """Paths that execute during install or build.
 
     Precomputed because it is consulted for every finding and is the largest
@@ -102,6 +112,31 @@ class ScanContext:
 
     Pipeline definitions are deliberately not in here. See `ci_hook_paths`.
     """
+    import_entry_paths: frozenset[str] = frozenset()
+    """A published package's own entry points -- npm `main`, `bin` and `exports` targets, a
+    wheel's or sdist's top-level `__init__.py` -- whose top level runs on `require()`, `import`
+    or the command. Code there runs on every consumer without a hook (review 98, REC-2)."""
+    library_entry_paths: frozenset[str] = frozenset()
+    """`import_entry_paths` without `bin`: the files that run whenever another program loads the
+    package (npm `main`, `exports`), not when a person runs its command."""
+    library_closure_paths: frozenset[str] = frozenset()
+    """First-party JavaScript files a published package's library entry points (`main`, `exports`)
+    load, transitively: code that runs on a consumer's `require()` without being an entry itself."""
+    declared_dependencies: frozenset[str] = frozenset()
+    """The runtime dependencies a published package's manifest declares, by name (npm
+    `dependencies` and `optionalDependencies`): what installing it installs beside it."""
+    verdict_dependency_names: frozenset[str] = frozenset()
+    """The dependencies the package verdict asks the code to name (`VerdictFeatures.
+    wanted_dependencies`): each worker reports which of them its source file names (item 56), so
+    the parent reads no source bytes for the verdict."""
+    install_entry_paths: frozenset[str] = frozenset()
+    """The hook scripts themselves -- a `setup.py`, the file a lifecycle script names, a `.pth`
+    -- as distinct from the modules they import, which `install_hook_paths` also holds. A
+    library is in the closure because `setup.py` reads its `__version__`; its own design
+    choices are not the install script's."""
+    agent_run_paths: frozenset[str] = frozenset()
+    """Skill scripts and MCP server sources: in `install_hook_paths` because an agent runs them
+    unasked, but tools, not install scripts -- a bundle read to its end is not padding."""
 
     ci_hook_paths: frozenset[str] = frozenset()
     """Paths that execute in the project's own pipeline.
@@ -124,6 +159,12 @@ class ScanContext:
     """Every path in the scanned tree. For an ecosystem whose install-time code is a file beside
     its manifest rather than a field in it (an R package's `configure`), so the manifest detector
     can see that the file is there."""
+
+    shipped_native_paths: frozenset[str] = frozenset()
+    """Paths whose bytes begin with native-executable magic (ELF, PE, Mach-O). A spawn of one from
+    install code runs the author's own compiled binary on the consumer's machine -- which no reader
+    of the install script can see, unlike a compiler spawned by bare name (census A, pypi-98). Used
+    to keep a dropper of a shipped binary blocked while a compiler-spawn `setup.py` clears."""
 
     consumer_install_paths: frozenset[str] = frozenset()
     """Paths that execute on the machine of whoever INSTALLS the package.
@@ -164,6 +205,10 @@ class ScanContext:
 
     scorer: RiskScorer = field(default_factory=RiskScorer)
     offline: bool = True
+    nested_scan: Callable[[Path, Config], tuple[Finding, ...]] | None = None
+    """How a detector scans something it fetched (an MCP server's package): set by the engine to
+    scan the target with the same engine under the configuration given, so a detector never names
+    the engine. None outside a scan (a detector run on its own), where nothing is scanned."""
 
     deadline: float | None = None
     """`time.monotonic()` after which a detector must stop, or `None` for no bound.
@@ -181,14 +226,65 @@ class ScanContext:
     incomplete -- but it does mean the budget is advisory for that detector.
     """
 
+    copy_budget: str | None = None
+    """The scan's copy-budget directory (`detect/binary/copy_budget.py`, notes/74): every worker of the
+    scan holds slots there before a binary reader's owned whole copy. None: no budget."""
+
     package_distribution: bool = False
-    """The target is a published package (an sdist, a wheel, an npm tarball). Its lockfiles then
-    describe its maintainers' development environment, not what installing it brings in."""
+    """The target is a published package (an sdist, a wheel, an npm tarball, a crate, a gem, ...).
+    Its lockfiles then describe its maintainers' development environment, not what installing it
+    brings in."""
+
+    package_repository: str = ""
+    """The published package's own `repository` URL (npm's `package.json`), as the registry shows
+    it; empty when there is none or the target is not a package. Lets a detector tell the
+    package's own release from someone else's (review 98, FP-2)."""
+    distribution: str = ""
+    """Which published format `package_distribution` recognised: `pypi`, `npm`, `cargo`,
+    `rubygems`, `nuget`, `hex`, `gomod`, `maven`, `conda`, `hackage`, `cran` or `galaxy`; empty
+    otherwise. What else is lowered or raised depends on what that format's installer runs."""
 
     image: Any = None
     """The operating-system inventory (`images.oci.ImageInventory`) when the target is a
     container image tarball, else None. Carried whole because matching needs what a purl cannot
     hold faithfully: Debian's source-package version and the distribution's advisory namespace."""
+
+    scan_facts: Mapping[str, Any] | None = None
+    """The facts the package verdict reads -- the capability profile's capabilities, the reached
+    files' flows, the registry record, the campaign siblings -- gathered once after detection
+    (`engine/pipeline/facts`) for the rule file's deferred pass (`modules.scanner_facts`).
+    None during detection, before they exist. A fact like the others: carried to a worker and
+    part of a file's cache key, so a file is never served findings made under other facts."""
+
+    cross_file_flows: Mapping[str, tuple[tuple[int, tuple[str, ...], str, str], ...]] | None = None
+    """Per calling file, the flows that cross into another of the package's files (item 60):
+    (line, source kinds, sink, destination class), joined by the parent from the workers' summaries
+    (`CrossFileFlows`). Set only for the re-grade of those files, after detection; None before. A
+    fact like the others: carried to a worker and part of the file's cache key."""
+
+    cross_file_unresolved: bool = False
+    """Whether some file of the package calls into it in a way the join cannot follow (a computed
+    `require`, a file not read whole, facts refused): set for the re-grade only. What needs the join
+    to be complete -- note 78's lowering of a parameter-built command -- is then not applied."""
+
+    #: The fields that belong to the process holding the context rather than to the scan target,
+    #: each with where its effect is accounted for. Everything else is a fact about the target:
+    #: `facts()` carries all of it to a worker, and the scan cache keys on all of it. Named
+    #: here, once, because both used to list the facts instead -- a worker received seven of
+    #: them and the cache key one, and every field added since was silently missing from both.
+    LOCAL: ClassVar[dict[str, str]] = {
+        "config": "each process builds it from the configuration; keyed by config_hash",
+        "rules": "each engine loads them from the configuration; keyed by rulepack_hash",
+        "scorer": "stateless; its code is keyed with the package's",
+        "checks": "an output: detectors record into it and none reads it",
+        "nested_scan": "a callable bound to this process's engine",
+        "deadline": "this process's clock; a run that hits it is never cached",
+    }
+
+    def facts(self) -> dict[str, Any]:
+        """Every field but `LOCAL`: what a worker needs to judge a file exactly as this process
+        does, and what a file's cached findings depend on besides its own bytes."""
+        return {f.name: getattr(self, f.name) for f in fields(self) if f.name not in self.LOCAL}
 
     def out_of_time(self) -> bool:
         """Whether the scan's time budget has been spent."""
@@ -227,6 +323,14 @@ class FileUnit:
     content: FileContent
     language: str | None = None
     project: str | None = None
+    opens: str | None = None
+    """The path that opens this file on disk, where it was read from one (a walked file); None for
+    content with no file of its own (an archive member, a hook's inline program). Never `path`: a
+    name that is not text is shown escaped (`Names.text`), and no file has the escaped name, so
+    anything that reads the file again (a supervised worker, item 28) opens it by this."""
+    import_library: bool = False
+    """A member of an `ar` archive that is an import library whole (`ImportLibrary`, notes/75):
+    named for the DLL it imports from, so its name is no claim about its contents."""
 
     @property
     def path(self) -> str:
@@ -330,8 +434,13 @@ class BaseDetector:
             )
             # An install hook is where a capability stops being a capability and
             # becomes a mechanism. Escalating severity here rather than writing a
-            # second rule keeps the rule set small enough to audit.
-            if rule.category in {Category.SUSPICIOUS, Category.MALICIOUS}:
+            # second rule keeps the rule set small enough to audit. Only where the hook
+            # REACHES: a function in `setup.py` that `setup()` never calls runs at no install
+            # (review 98, FP-5; `ScanContext.install_hook_reaches`).
+            reached = location.line is None or ctx.install_hook_reaches(
+                location.path, location.line
+            )
+            if rule.category in {Category.SUSPICIOUS, Category.MALICIOUS} and reached:
                 severity = max(severity, Severity.HIGH)
 
         risk = ctx.scorer.score(
@@ -432,6 +541,7 @@ class RuleSelector:
     """
 
     @staticmethod
+    @ScanCaches.register  # holds files: emptied after each scan (foundation/collector)
     @functools.lru_cache(maxsize=131072)
     def _pattern_matches(path: str, pattern: str) -> bool:
         """Whether `path` matches one glob, memoised per (file, pattern).
@@ -446,7 +556,7 @@ class RuleSelector:
         across rules with otherwise-different `paths_include`/`paths_exclude`
         tuples.
         """
-        from cordon_scanner.core.walker import PathGlob
+        from cordon_scanner.foundation.files.globs import PathGlob
 
         return PathGlob.matches(path, pattern)
 
@@ -470,8 +580,8 @@ class RuleSelector:
         Filtering here rather than inside the match loop means a rule that cannot
         apply never costs a regex execution.
 
-        A YARA rules file is none: its strings are the indicators it detects -- mining pools, drop
-        points, credential paths -- written down to be matched, and nothing runs them but a YARA
+        A rule file (`.yar`) is none: its strings are the indicators it detects -- mining pools, drop
+        points, credential paths -- written down to be matched, and nothing runs them but a rule
         engine. Read as code, every repository keeping detection rules reported the malware they
         describe. The secret rules, which are not capability rules, still read it. (`.rules` stays
         in: a udev rules file runs commands.)
@@ -485,14 +595,210 @@ class RuleSelector:
         )
 
 
+class CapabilityMark(Protocol):
+    """One thing a piece of code can do, where it does it: what the engine reads of a hit."""
+
+    @property
+    def capability(self) -> Capability: ...
+    @property
+    def byte_start(self) -> int: ...
+
+
+@runtime_checkable
+class CapabilityLabelling(Protocol):
+    """A detector that says what each file's code can do: the engine finds it by this, not by its
+    class, for the intent layer and the capability profile."""
+
+    def labelled(
+        self, unit: FileUnit, ctx: ScanContext
+    ) -> tuple[Sequence[CapabilityMark], Sequence[object]] | None: ...
+
+
+class ModelCompletion(Protocol):
+    """What a model returned, as the judge reads it."""
+
+    @property
+    def text(self) -> str: ...
+
+
+class ModelProvider(Protocol):
+    """A language model the judge asks (`--judge`): a plugin port. The built-in backends are in
+    `cordon_scanner.judge`, found through the `cordon_scanner.model_providers` entry point."""
+
+    @property
+    def label(self) -> str: ...
+    @property
+    def family(self) -> str: ...
+    @property
+    def remote(self) -> bool: ...
+    def complete(self, system: str, user: str) -> ModelCompletion: ...
+    def context(self, prompt_version: str, kind: str, path: str, text: str) -> None:
+        """What is being judged, for a backend that runs the prompt itself (Cordon Cloud)."""
+        ...
+
+
+# Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine
+# each implementation typed by one of these, and the type checker proves the implementation
+# conforms, so the engine never sees a concrete adapter type.
+
+
+class FileFormat(Protocol):
+    """A recognised file format, as the engine reads it: its name."""
+
+    @property
+    def name(self) -> str: ...
+
+
+class BinaryIdentification(Protocol):
+    """What the engine uses of the class `BinaryDetector`."""
+
+    def identify(self, raw: bytes) -> FileFormat | None: ...
+
+
+class RuleFileInputs(Protocol):
+    """What the engine uses of the class `RuleFileEngine`: the files an operator's rule file
+    reads, for the scan cache."""
+
+    def files(self, rules_path: str) -> list[Path]: ...
+
+
+class ComposerPluginPaths(Protocol):
+    """What the engine uses of the class `ComposerPluginHooks`."""
+
+    def paths(self, units: Sequence[Any]) -> set[str]: ...
+
+
+class DeclaredSourceKinds(Protocol):
+    """What the engine uses of the class `DeclaredSource`."""
+
+    def kind(self, spec: str, manifest_path: str) -> str: ...
+
+
+class DownloadRunning(Protocol):
+    """What the engine uses of the class `DownloadFlow`."""
+
+    def runs_download(self, text: str, language: str | None) -> list[int] | None: ...
+
+
+class ImportReachabilityNotes(Protocol):
+    """What the engine uses of the class `ImportReachability`."""
+
+    def annotate(
+        self, findings: list[Finding], units: Sequence[Unit], dependencies: tuple[Dependency, ...]
+    ) -> list[Finding]: ...
+
+
+class JudgeScheduling(Protocol):
+    """What the engine uses of the class `JudgeGate`."""
+
+    @property
+    def ID(self) -> str: ...
+    def last(self, detectors: list[Any]) -> list[Any]: ...
+    def wants(self, findings: list[Any]) -> bool: ...
+
+
+class PackerSignatures(Protocol):
+    """What the engine uses of the class `PackingFindings`: whether a text file has an obfuscator's
+    output shape (an established release's archive, read for intel's release history)."""
+
+    def packers(self, content: FileContent, language: str | None = ...) -> Iterable[object]: ...
+
+
+class CampaignSiblingFacts(Protocol):
+    """What the engine uses of the class `CampaignSiblingDetector`: an npm manifest's campaign
+    facets and the condemned releases sharing two of them, for the `package` rule module."""
+
+    def siblings_of(
+        self, unit: FileUnit, ctx: ScanContext
+    ) -> tuple[dict[str, str | None], list[dict[str, Any]]] | None: ...
+    def shared(self, facets: dict[str, str | None], sibling: dict[str, Any]) -> list[str]: ...
+
+
+class ReachedFlowFacts(Protocol):
+    """What the engine uses of the class `ReachedFlows`: the parent joins each file's flow facts
+    (`of`), a worker reads them (`reads`, `facts`; item 56)."""
+
+    def of(
+        self, units: Sequence[FileUnit], ctx: ScanContext, facts: dict[str, dict[str, list[Any]]]
+    ) -> dict[str, float]: ...
+    def reads(self, unit: FileUnit, ctx: ScanContext) -> bool: ...
+    def facts(self, place: str, text: str, *, python: bool = ...) -> dict[str, float]: ...
+
+
+class CrossFileJoining(Protocol):
+    """What the engine uses of the class `CrossFileJoin`: the parent joins the files' summaries
+    across the package (`cross_file`), and asks what the re-grade needs (`unresolved`, `lowered`;
+    item 60, note 78)."""
+
+    def cross_file(
+        self, units: Sequence[FileUnit], facts: Mapping[str, Mapping[str, list[Any]]]
+    ) -> dict[str, tuple[tuple[int, tuple[str, ...], str, str], ...]]: ...
+    def unresolved(
+        self,
+        units: Sequence[FileUnit],
+        facts: Mapping[str, Mapping[str, list[Any]]],
+        findings: Sequence[Finding],
+    ) -> bool: ...
+    def lowered(self, findings: Sequence[Finding]) -> set[str]: ...
+
+
+class ServerSourceFinding(Protocol):
+    """What the engine uses of the class `ServerSources`: which files are an MCP server's own source."""
+
+    def of(self, units: Sequence[FileUnit]) -> set[str]: ...
+
+
+class SkillScripts(Protocol):
+    """What the engine uses of the class `LoadPath`."""
+
+    def skill_script(self, path: str, ctx: ScanContext | None) -> bool: ...
+
+
+class SubmoduleDependencies(Protocol):
+    """What the engine uses of the class `Submodules`."""
+
+    def dependencies(
+        self, units: Iterable[Any], root: Path
+    ) -> tuple[list[Dependency], list[tuple[str, str]]]: ...
+
+
+class DetectorRun:
+    """One detector over one unit, run to its end: the way every caller outside the engine's own
+    runners (`engine/pipeline/detection`, `engine/parallel`) runs a detector. No time budget cuts
+    it, as none cuts a scan's files: a run cut on the wall clock left what a busy machine did not
+    reach unread (a historical secret reported unfinished for load, not for the blob), so its
+    answer depended on the load. Bounds that remain are decided from the input (the bytes read)
+    and the scan's own `total_timeout`."""
+
+    @staticmethod
+    def findings(detector: Detector, unit: Unit, ctx: ScanContext) -> list[Finding]:
+        return list(detector.inspect(unit, ctx))
+
+
 __all__ = [
     "BaseDetector",
+    "BinaryIdentification",
+    "CapabilityLabelling",
+    "CapabilityMark",
+    "ComposerPluginPaths",
+    "DeclaredSourceKinds",
     "Detector",
     "DetectorRequirements",
+    "DetectorRun",
+    "DownloadRunning",
+    "FileFormat",
     "FileUnit",
     "GraphUnit",
+    "ImportReachabilityNotes",
+    "JudgeScheduling",
+    "ModelCompletion",
+    "ModelProvider",
+    "ReachedFlowFacts",
     "RepositoryUnit",
     "RuleSelector",
     "ScanContext",
+    "ServerSourceFinding",
+    "SkillScripts",
+    "SubmoduleDependencies",
     "Unit",
 ]

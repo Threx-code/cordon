@@ -1,5 +1,5 @@
 # Established pub package names. Generated; do not edit by hand.
-# Regenerate with: python3 scripts/refresh_package_intel.py --only pub
+# Regenerate with: python3 scripts/refresh/refresh_package_intel.py --only pub
 # Source:    https://pub.dev/api/search (sort=popularity; score derived from rank)
 # Threshold: 0 downloads
 # Fetched:   7,359 candidates, 7,359 kept

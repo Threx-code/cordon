@@ -4,9 +4,10 @@ Everything here is opt-in and changes nothing about what a scan finds. A scan wi
 makes no request to the cloud, and one with them still finds the same things -- the cloud receives
 results and supplies an organisation's policy, and never decides a finding.
 
-The contracts are in `schemas/`: K2 (signed results), K3 (policy bundle), K7 (auth). The core
-needs only the standard library; keyless signing uses `sigstore` from the `[attest]` extra when it
-is installed, and without it an upload is authenticated by the sign-in token alone and says so.
+The contracts are in `schemas/`: K2 (signed results), K3 (policy bundle), K7 (auth). Everything
+here is standard library and the project's own code, keyless signing included (`keyless`): in CI
+an upload is signed with the job's identity, and elsewhere it is authenticated by the sign-in
+token alone and says so.
 """
 
 from __future__ import annotations
@@ -14,11 +15,15 @@ from __future__ import annotations
 import os
 from typing import Final
 
-DEFAULT_URL: Final = "https://api.cordon.dev"
+DEFAULT_URL: Final = "https://core-api.cordonscan.com"
 
 
 class CloudError(Exception):
     """A cloud operation failed. The message is safe to show and never contains a token."""
+
+
+class JobRefused(CloudError):
+    """The job asked for something this runner will not do. Reported to the cloud as failed."""
 
 
 class CloudEndpoint:
@@ -40,4 +45,4 @@ class CloudEndpoint:
         return url
 
 
-__all__ = ["DEFAULT_URL", "CloudEndpoint", "CloudError"]
+__all__ = ["DEFAULT_URL", "CloudEndpoint", "CloudError", "JobRefused"]

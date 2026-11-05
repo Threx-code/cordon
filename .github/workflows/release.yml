@@ -32,8 +32,15 @@ jobs:
   live:
     uses: ./.github/workflows/live-checks.yml
 
-  build:
+  # The platform wheels, each built natively with the scanner's own C extension, installed and
+  # tested on its platform. `build` puts them into `dist/` beside the pure wheel before anything
+  # is hashed, so the SBOM, the Action's pin, the attestations and the upload all cover them.
+  native:
     needs: live
+    uses: ./.github/workflows/native-wheels.yml
+
+  build:
+    needs: [live, native]
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -87,7 +94,38 @@ jobs:
       - run: |
           # A fixed timestamp makes the wheel byte-reproducible, so a third
           # party can rebuild from the tag and compare digests with the SBOM.
-          SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) python -m build --no-isolation
+          # CORDON_BUILD_PURE: this job makes the sdist and the pure wheel, which
+          # installs anywhere; the platform wheels come from `native`.
+          SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) CORDON_BUILD_PURE=1 python -m build --no-isolation
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: wheels-*
+          merge-multiple: true
+          path: dist
+
+      - name: Every platform wheel is here, and the pure wheel
+        run: |
+          set -euo pipefail
+          ls -l dist
+          version="${{ steps.version.outputs.version }}"
+          for tag in py3-none-any \
+              cp311-cp311-manylinux_2_28_x86_64 cp312-cp312-manylinux_2_28_x86_64 cp313-cp313-manylinux_2_28_x86_64 \
+              cp311-cp311-manylinux_2_28_aarch64 cp312-cp312-manylinux_2_28_aarch64 cp313-cp313-manylinux_2_28_aarch64 \
+              cp311-cp311-macosx_11_0_arm64 cp312-cp312-macosx_11_0_arm64 cp313-cp313-macosx_11_0_arm64 \
+              cp311-cp311-macosx_11_0_x86_64 cp312-cp312-macosx_11_0_x86_64 cp313-cp313-macosx_11_0_x86_64 \
+              cp311-cp311-win_amd64 cp312-cp312-win_amd64 cp313-cp313-win_amd64; do
+            test -f "dist/cordon_scanner-$version-$tag.whl" || { echo "::error::no $tag wheel"; exit 1; }
+          done
+
+      - name: The wheel carries a verdict model this code loads
+        run: |
+          set -euo pipefail
+          # Without `detect/data/verdict.json.gz` the scanner runs with every verdict line off and
+          # says nothing: a release must not go out that way.
+          python -m venv /tmp/cordon-verdict
+          /tmp/cordon-verdict/bin/pip install -q --no-deps dist/*-py3-none-any.whl
+          /tmp/cordon-verdict/bin/python -c "from cordon_scanner.decide.verdict import VerdictModel as V; import sys; sys.exit(V.load() is None)"
 
       - name: Generate the SBOM
         run: |
@@ -96,8 +134,8 @@ jobs:
           # consumer cannot check is marketing. This is the checkable form, and
           # it is generated from the packaging metadata rather than restated, so
           # a dependency added later appears without anyone remembering to.
-          python scripts/generate_sbom.py --check
-          python scripts/generate_sbom.py --dist dist --out dist
+          python scripts/build/generate_sbom.py --check
+          python scripts/build/generate_sbom.py --dist dist --out dist
           cat dist/sbom.cdx.json
 
       - name: What this release adds, compared with the one before it
@@ -107,7 +145,10 @@ jobs:
         # previous wheel is fetched by pip; the scanner itself makes no network request.
         run: |
           set -euo pipefail
-          wheel=$(ls dist/*.whl)
+          # The wheel most installs get (this runner's: CPython 3.12, manylinux x86_64), and pip
+          # fetches the previous release's wheel for the same platform. The first native release
+          # reports its new binary here, at medium, so it is seen and does not block.
+          wheel=$(ls dist/*-cp312-cp312-manylinux_2_28_x86_64.whl)
           current=$(basename "$wheel" | sed -E 's/^cordon_scanner-([^-]+)-.*/\1/')
           python -m venv /tmp/cordon-release
           /tmp/cordon-release/bin/pip install -q --no-deps "$wheel"
@@ -132,7 +173,7 @@ jobs:
       - name: Generate the Action's hash pin
         run: |
           set -euo pipefail
-          python scripts/pin_action_requirements.py \
+          python scripts/release/pin_action_requirements.py \
             --version "${{ steps.version.outputs.version }}" --from-dist dist
           cat action/requirements.txt
 
@@ -257,22 +298,29 @@ jobs:
         # pinned in `intel/dbsync.PUBLIC_KEY_HEX`.
         env:
           CORDON_DB_SIGNING_KEY: ${{ secrets.CORDON_DB_SIGNING_KEY }}
+          # Set to "true" once the signing key exists (after the key ceremony): from then on a release
+          # without its signed offline bundle fails rather than shipping without one.
+          BUNDLE_REQUIRED: ${{ vars.CORDON_DB_BUNDLE_REQUIRED }}
         run: |
           set -euo pipefail
           if [ -z "${CORDON_DB_SIGNING_KEY:-}" ]; then
-            echo "::notice::CORDON_DB_SIGNING_KEY is not set; skipping the advisory bundle"
+            if [ "${BUNDLE_REQUIRED:-}" = "true" ]; then
+              echo "::error::CORDON_DB_SIGNING_KEY is not set but the signed offline bundle is required"
+              exit 1
+            fi
+            echo "::notice::CORDON_DB_SIGNING_KEY is not set; skipping the advisory bundle (the release notes say so)"
             echo "skip=true" >> "$GITHUB_ENV"
             exit 0
           fi
           # The bundle is the whole of OSV, every severity: it is what an air-gapped install
           # syncs from instead of the network, and the wheel's high/critical cut is a size
           # trade-off for the wheel, not for the one source an offline machine has.
-          python3 scripts/build_advisory_db.py --full --output bundle-data
+          python3 scripts/build/build_advisory_db.py --full --output bundle-data
           for intel in hallucinated.json agent-actions.json vscode-extensions.json atr-rules.json.gz; do
             cp "src/cordon_scanner/intel/data/$intel" bundle-data/
           done
           test -f bundle-data/exploited.json || cp src/cordon_scanner/intel/data/exploited.json bundle-data/
-          python3 scripts/sign_advisory_bundle.py \
+          python3 scripts/release/sign_advisory_bundle.py \
             --data-dir bundle-data \
             --out dist-bundle
       - name: Upload the bundle to the release
@@ -351,7 +399,7 @@ jobs:
       # Local `twine check` passed throughout, because local twine is current
       # -- the disagreement was between the builder and the publisher, and a
       # pin is exactly the thing that lets those drift apart.
-      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
           packages-dir: upload
           # PEP 740 attestations, minted from the same workflow identity, so an
@@ -393,7 +441,7 @@ jobs:
           # Reads the digests PyPI reports and compares them with the pin taken
           # from the artefacts before upload. A difference means the file that
           # landed is not the file that was sent.
-          python scripts/pin_action_requirements.py \
+          python scripts/release/pin_action_requirements.py \
             --version "${{ needs.build.outputs.version }}" --from-pypi --check
 
       - name: What to commit
@@ -523,9 +571,12 @@ jobs:
           npx --yes @vscode/vsce@3.6.0 package --no-dependencies -o "../../artefacts/cordon-${GITHUB_REF_NAME#v}.vsix"
 
       - name: Take the notes from the release page
+        env:
+          # Whether the bundle signing key is configured, as true/false: the secret itself is not read.
+          HAS_DB_KEY: ${{ secrets.CORDON_DB_SIGNING_KEY != '' }}
         # docs/releases/<version>.md is the release written for a reader: the
         # same ASCII-diagram form as the READMEs, linking the full CHANGELOG
-        # section for every change. tests/unit/test_release_notes.py holds CI
+        # section for every change. tests/unit/repository/test_release_notes.py holds CI
         # to it existing for the version being cut, so a missing page fails a
         # pull request, not a release.
         run: |
@@ -537,6 +588,10 @@ jobs:
             exit 1
           fi
           cp "$page" notes.md
+          if [ "${HAS_DB_KEY}" != "true" ]; then
+            # Said plainly, so an air-gapped user does not look for a bundle that was never signed.
+            printf '\n%s\n' "**No signed offline advisory bundle ships with this release.** The advisory database's signing key is not configured yet, so offline installs sync only from what the wheel carries." >> notes.md
+          fi
           head -8 notes.md
 
       - name: Publish it

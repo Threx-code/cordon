@@ -1,5 +1,5 @@
 # Established composer package names. Generated; do not edit by hand.
-# Regenerate with: python3 scripts/refresh_package_intel.py --only composer
+# Regenerate with: python3 scripts/refresh/refresh_package_intel.py --only composer
 # Source:    https://packagist.org/explore/popular.json
 # Threshold: 50,000 downloads
 # Fetched:   900 candidates, 900 kept

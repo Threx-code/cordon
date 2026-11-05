@@ -1,5 +1,5 @@
 # Established pypi package names. Generated; do not edit by hand.
-# Regenerate with: python3 scripts/refresh_package_intel.py --only pypi
+# Regenerate with: python3 scripts/refresh/refresh_package_intel.py --only pypi
 # Source:    https://hugovk.github.io/top-pypi-packages/top-pypi-packages.min.json
 # Threshold: 100,000 downloads
 # Fetched:   15,000 candidates, 12,480 kept

@@ -19,19 +19,25 @@ from __future__ import annotations
 
 import gzip
 import io
-import json
 import posixpath
 import re
 import struct
 import tarfile
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass, field, replace
-from typing import IO, Any, ClassVar, Final
+from dataclasses import replace
+from typing import IO, TYPE_CHECKING, Any, ClassVar, Final
 
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
+from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.images import langpkgs
 from cordon_scanner.images import packages as pkgdb
+from cordon_scanner.images.members import ImageArchive
+
+if TYPE_CHECKING:
+    from cordon_scanner.images.identity import ImageInventory
 
 MAX_LAYERS: Final = 256
+
 MAX_WANTED_BYTES: Final = 256 << 20
 MAX_MEMBERS_PER_LAYER: Final = 2_000_000
 
@@ -123,172 +129,8 @@ OWNED_JAR_BYTES: Final = 64 << 20
 """A jar a distribution package installs is read for the artifacts it records, up to this size."""
 
 
-@dataclass
-class ImageIdentity:
-    """What the image is, from its archive: the digests a registry and a runtime know it by, the
-    names it was saved under, its layers, its platform, and what its labels say it was built from."""
-
-    image_id: str | None = None
-    """The SHA-256 of the image's configuration: the ID `docker images` shows."""
-    manifest_digest: str | None = None
-    """The digest a registry serves it under -- what `image@sha256:...` pins. An OCI layout (and
-    `docker save` from Docker 25) records it; an older `docker save` does not."""
-    references: tuple[str, ...] = ()
-    layers: tuple[str, ...] = ()
-    """Each layer's uncompressed digest (`rootfs.diff_ids`), bottom first."""
-    platform: str = ""
-    created: str = ""
-    base_name: str | None = None
-    base_digest: str | None = None
-    source: str | None = None
-    revision: str | None = None
-
-    DIGEST: ClassVar[re.Pattern[str]] = re.compile(r"^sha256:[0-9a-f]{64}$")
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "image_id": self.image_id,
-            "manifest_digest": self.manifest_digest,
-            "references": list(self.references),
-            "layers": list(self.layers),
-            "platform": self.platform or None,
-            "created": self.created or None,
-            "base": {"name": self.base_name, "digest": self.base_digest}
-            if self.base_name
-            else None,
-            "source": self.source,
-            "revision": self.revision,
-        }
-
-    @staticmethod
-    def _mapping(value: Any) -> dict[str, Any]:
-        return value if isinstance(value, dict) else {}
-
-    @staticmethod
-    def _digest(value: Any) -> str | None:
-        return value if isinstance(value, str) and ImageIdentity.DIGEST.match(value) else None
-
-    @staticmethod
-    def read(data: bytes) -> ImageIdentity:
-        import hashlib
-
-        identity = ImageIdentity()
-        references: list[str] = []
-        config_bytes: bytes | None = None
-        with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as archive:
-            by_path = ImageLayers._members_by_path(archive)
-            if "index.json" in by_path:
-                index = json.loads(ImageLayers._read_member(archive, by_path["index.json"]))
-                descriptor: Any = (
-                    (index.get("manifests") or [{}])[0] if isinstance(index, dict) else {}
-                )
-                identity.manifest_digest = ImageIdentity._digest(descriptor.get("digest"))
-                annotations = (
-                    descriptor.get("annotations")
-                    if isinstance(descriptor.get("annotations"), dict)
-                    else {}
-                )
-                for key in ("io.containerd.image.name", "org.opencontainers.image.ref.name"):
-                    value = annotations.get(key)
-                    if (
-                        isinstance(value, str)
-                        and value
-                        and value not in references
-                        and (key != "org.opencontainers.image.ref.name" or not references)
-                    ):
-                        references.append(value)
-                # An index (several platforms) leads to the manifest of the first, which names the config.
-                for _ in range(4):
-                    algorithm, _, hexdigest = str(descriptor.get("digest", "")).partition(":")
-                    blob = by_path.get(f"blobs/{algorithm}/{hexdigest}")
-                    if blob is None:
-                        break
-                    document = json.loads(ImageLayers._read_member(archive, blob))
-                    if isinstance(document, dict) and isinstance(document.get("config"), dict):
-                        algorithm, _, hexdigest = str(
-                            document["config"].get("digest", "")
-                        ).partition(":")
-                        config_path = by_path.get(f"blobs/{algorithm}/{hexdigest}")
-                        if config_path is not None:
-                            config_bytes = ImageLayers._read_member(archive, config_path)
-                        break
-                    manifests = document.get("manifests") if isinstance(document, dict) else None
-                    if not manifests:
-                        break
-                    descriptor = manifests[0]
-            if "manifest.json" in by_path:
-                manifest = json.loads(ImageLayers._read_member(archive, by_path["manifest.json"]))
-                entry = (
-                    manifest[0]
-                    if isinstance(manifest, list) and manifest and isinstance(manifest[0], dict)
-                    else {}
-                )
-                for tag in entry.get("RepoTags") or ():
-                    if isinstance(tag, str) and tag not in references:
-                        references.append(tag)
-                config_path = by_path.get(ImageLayers._normalise(str(entry.get("Config", ""))))
-                if config_bytes is None and config_path is not None:
-                    config_bytes = ImageLayers._read_member(archive, config_path)
-        identity.references = tuple(references)
-        if config_bytes is None:
-            return identity
-        identity.image_id = f"sha256:{hashlib.sha256(config_bytes).hexdigest()}"
-        config = json.loads(config_bytes)
-        if not isinstance(config, dict):
-            return identity
-        rootfs = ImageIdentity._mapping(config.get("rootfs"))
-        identity.layers = tuple(
-            d for d in (rootfs.get("diff_ids") or ()) if ImageIdentity._digest(d)
-        )
-        identity.platform = "/".join(
-            str(config[k])
-            for k in ("os", "architecture", "variant")
-            if isinstance(config.get(k), str) and config[k]
-        )
-        identity.created = str(config.get("created") or "")
-        labels = ImageIdentity._mapping(ImageIdentity._mapping(config.get("config")).get("Labels"))
-        text = {k: v for k, v in labels.items() if isinstance(k, str) and isinstance(v, str) and v}
-        identity.base_name = text.get("org.opencontainers.image.base.name")
-        identity.base_digest = ImageIdentity._digest(
-            text.get("org.opencontainers.image.base.digest")
-        )
-        identity.source = text.get("org.opencontainers.image.source")
-        identity.revision = text.get("org.opencontainers.image.revision")
-        return identity
-
-
-@dataclass
-class ImageInventory:
-    identity: ImageIdentity = field(default_factory=ImageIdentity)
-    platform: str = ""
-    """The platform this inventory is of, for a multi-platform image."""
-    other_platforms: list[ImageInventory] = field(default_factory=list)
-    """A multi-platform image's other platforms, their operating-system packages inventoried too;
-    the files are content-scanned on the first platform only."""
-    release: pkgdb.OsRelease | None = None
-    packages: list[pkgdb.OsPackage] = field(default_factory=list)
-    language_packages: list[langpkgs.LanguagePackage] = field(default_factory=list)
-    problems: list[str] = field(default_factory=list)
-    """Anything that stopped part of the image being read. Each makes the scan incomplete."""
-    layers: int = 0
-    owned: frozenset[str] = frozenset()
-    """Paths the distribution's packages install; their content is the distribution's."""
-    added_files: int = 0
-    skipped: dict[str, int] = field(default_factory=dict)
-    """Reason -> files not content-scanned for it."""
-    binaries_as_strings: int = 0
-    """Files past the per-file limit content-scanned as their printable strings."""
-    removed_files: int = 0
-    """Added files a later layer deleted or replaced: absent from the running container, still in
-    the image's layers for anyone who pulls it."""
-
-
 class ImageLayers:
     """An OCI or Docker image tarball, squashed to the files that matter."""
-
-    @staticmethod
-    def _normalise(name: str) -> str:
-        return posixpath.normpath("/" + name).lstrip("/")
 
     @staticmethod
     def _wanted(path: str) -> bool:
@@ -319,7 +161,7 @@ class ImageLayers:
         try:
             with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as archive:
                 for member in archive:
-                    if ImageLayers.LAYER_MEMBER.match(ImageLayers._normalise(member.name)):
+                    if ImageLayers.LAYER_MEMBER.match(ImageArchive.normalise(member.name)):
                         seen += 1
                 return False
         except (tarfile.TarError, OSError, ValueError, EOFError):
@@ -327,22 +169,8 @@ class ImageLayers:
 
     @staticmethod
     def is_image(archive: tarfile.TarFile) -> bool:
-        names = {ImageLayers._normalise(m.name) for m in archive.getmembers()[:4096]}
+        names = {ImageArchive.normalise(m.name) for m in archive.getmembers()[:4096]}
         return "manifest.json" in names or ("oci-layout" in names and "index.json" in names)
-
-    @staticmethod
-    def _read_member(archive: tarfile.TarFile, name: str, limit: int = 16 << 20) -> bytes:
-        member = archive.getmember(name)
-        if not member.isfile() or member.size > limit:
-            raise ValueError(f"{name} is not a readable file within limits")
-        handle = archive.extractfile(member)
-        if handle is None:
-            raise ValueError(f"{name} could not be opened")
-        return handle.read()
-
-    @staticmethod
-    def _members_by_path(archive: tarfile.TarFile) -> dict[str, str]:
-        return {ImageLayers._normalise(m.name): m.name for m in archive.getmembers()}
 
     @staticmethod
     def _real_platforms(manifests: list[Any]) -> list[tuple[int, str]]:
@@ -366,10 +194,12 @@ class ImageLayers:
         """The platforms of a multi-platform image, as `(manifest index, label)`; [] for one."""
         try:
             with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as archive:
-                by_path = ImageLayers._members_by_path(archive)
+                by_path = ImageArchive.members_by_path(archive)
                 if "index.json" not in by_path:
                     return []
-                document = json.loads(ImageLayers._read_member(archive, by_path["index.json"]))
+                document = ScannedJson.loads(
+                    ImageArchive.read_member(archive, by_path["index.json"])
+                )
                 for _ in range(4):
                     manifests = document.get("manifests") or []
                     real = ImageLayers._real_platforms(manifests)
@@ -382,7 +212,7 @@ class ImageLayers:
                     member = by_path.get(f"blobs/{algorithm}/{hexdigest}")
                     if member is None:
                         return []
-                    document = json.loads(ImageLayers._read_member(archive, member))
+                    document = ScannedJson.loads(ImageArchive.read_member(archive, member))
                     if "layers" in document:
                         return []
         except (tarfile.TarError, OSError, ValueError, KeyError):
@@ -395,9 +225,11 @@ class ImageLayers:
     ) -> list[str]:
         """The image's layer members, bottom first. The first image when a tarball holds several;
         for a multi-platform image, the manifest `platform` names, else the first real platform."""
-        by_path = ImageLayers._members_by_path(archive)
+        by_path = ImageArchive.members_by_path(archive)
         if "manifest.json" in by_path:
-            manifest = json.loads(ImageLayers._read_member(archive, by_path["manifest.json"]))
+            manifest = ScannedJson.loads(
+                ImageArchive.read_member(archive, by_path["manifest.json"])
+            )
             if isinstance(manifest, list) and manifest:
                 if len(manifest) > 1:
                     problems.append(
@@ -405,15 +237,15 @@ class ImageLayers:
                     )
                 layers = manifest[0].get("Layers") or []
                 return [
-                    by_path.get(ImageLayers._normalise(str(layer)), str(layer)) for layer in layers
+                    by_path.get(ImageArchive.normalise(str(layer)), str(layer)) for layer in layers
                 ]
-        index = json.loads(ImageLayers._read_member(archive, by_path["index.json"]))
+        index = ScannedJson.loads(ImageArchive.read_member(archive, by_path["index.json"]))
         descriptor: Any = (index.get("manifests") or [{}])[0]
         for _ in range(4):  # an index may point at another index (a multi-platform image)
             digest = str(descriptor.get("digest", ""))
             algorithm, _, hexdigest = digest.partition(":")
-            document = json.loads(
-                ImageLayers._read_member(archive, by_path[f"blobs/{algorithm}/{hexdigest}"])
+            document = ScannedJson.loads(
+                ImageArchive.read_member(archive, by_path[f"blobs/{algorithm}/{hexdigest}"])
             )
             if "layers" in document:
                 return [
@@ -435,6 +267,24 @@ class ImageLayers:
             descriptor = manifests[0]
         raise ValueError("the OCI layout names no image manifest")
 
+    #: Stream magics a layer is compressed with: gzip, zstd, bzip2, xz.
+    _LAYER_MAGICS: ClassVar[tuple[bytes, ...]] = (
+        b"\x1f\x8b",
+        b"\x28\xb5\x2f\xfd",
+        b"BZh",
+        b"\xfd7zXZ\x00",
+    )
+
+    @staticmethod
+    def _is_archive(raw: IO[bytes]) -> bool:
+        """Whether a layer blob is a (compressed) tar at all, read from its first bytes only."""
+        head = raw.read(512)
+        raw.seek(0)
+        if any(head.startswith(magic) for magic in ImageLayers._LAYER_MAGICS):
+            return True
+        # An uncompressed tar: `ustar` at offset 257, or an empty archive of zero blocks.
+        return head[257:262] == b"ustar" or (len(head) == 512 and not head.strip(b"\x00"))
+
     @staticmethod
     def _open_layer(raw: IO[bytes]) -> tarfile.TarFile:
         head = raw.read(4)
@@ -447,17 +297,38 @@ class ImageLayers:
 
     @staticmethod
     def _zstd_reader(raw: IO[bytes]) -> IO[bytes]:
-        """A zstd decompressor from the standard library, which has one from Python 3.14."""
-        try:
-            import importlib
+        """A zstd decompressor: the standard library's (Python 3.14+), else the core's own
+        (`intel/store/zstd`), which reads the layer as a stream, as the gzip path does -- no layer
+        too large to read, and no third-party decoder."""
+        import importlib
 
+        from cordon_scanner.intel.store.zstd import Zstd, ZstdError
+
+        try:
             zstd = importlib.import_module("compression.zstd")
-        except ImportError as exc:
-            raise ValueError(
-                "zstd-compressed layer; reading one needs Python 3.14 or later"
-            ) from exc
-        reader: IO[bytes] = zstd.ZstdFile(raw)
-        return reader
+        except ImportError:
+            return io.BufferedReader(Zstd.Reader(raw))
+        reader = zstd.ZstdFile(raw)
+        refused = zstd.ZstdError
+
+        class Translated(io.RawIOBase):
+            """The standard library's reader, its `ZstdError` (no ValueError) raised as the core's:
+            a corrupt layer was caught on 3.11-3.13 and escaped every handler on 3.14."""
+
+            def readable(self) -> bool:
+                return True
+
+            def readinto(self, buffer: Any) -> int:
+                try:
+                    return int(reader.readinto(buffer))
+                except refused as exc:
+                    raise ZstdError(str(exc)) from exc
+
+            def close(self) -> None:
+                reader.close()
+                super().close()
+
+        return io.BufferedReader(Translated())
 
     @staticmethod
     def _apply_layer(
@@ -487,7 +358,7 @@ class ImageLayers:
         for count, member in enumerate(layer):
             if count >= MAX_MEMBERS_PER_LAYER:
                 raise ValueError("a layer has more members than the reader walks")
-            path = ImageLayers._normalise(member.name)
+            path = ImageArchive.normalise(member.name)
             directory, base = posixpath.split(path)
             if base == ".wh..wh..opq":
                 prefix = directory + "/" if directory else ""
@@ -538,6 +409,7 @@ class ImageLayers:
         peek: Peek | None = None,
         platform: int | None = None,
     ) -> dict[str, bytes]:
+
         files: dict[str, bytes] = {}
         origin: dict[str, int] = {}
         remaining = [budget]
@@ -557,6 +429,12 @@ class ImageLayers:
                         inventory.problems.append(
                             f"layer {posixpath.basename(name)} could not be opened"
                         )
+                    continue
+                if not ImageLayers._is_archive(handle):
+                    # An OCI artifact's blob -- an attestation, an SBOM, a JSON document listed
+                    # as a layer -- holds no filesystem, so nothing of the OS inventory is in it.
+                    # Counted as unread, it scored 233 of 650 benign images "not fully examined"
+                    # for a 600-byte JSON file (review 98).
                     continue
                 try:
                     with ImageLayers._open_layer(handle) as layer:
@@ -578,6 +456,8 @@ class ImageLayers:
     @staticmethod
     def squash(data: bytes, platform: int | None = None) -> tuple[dict[str, bytes], ImageInventory]:
         """The package databases, their file lists and `os-release`, as the top layer leaves them."""
+        from cordon_scanner.images.identity import ImageInventory
+
         inventory = ImageInventory()
         files = ImageLayers._squash(
             data,
@@ -593,12 +473,14 @@ class ImageLayers:
     def read_image(data: bytes, platform: int | None = None) -> ImageInventory:
         """The operating-system inventory of an image tarball, and what its packages own. For a
         multi-platform image, of the platform whose manifest index is given, else the first."""
+        from cordon_scanner.images.identity import ImageIdentity
+
         files, inventory = ImageLayers.squash(data, platform)
         try:
             inventory.identity = ImageIdentity.read(data)
         except (KeyError, ValueError, tarfile.TarError, OSError) as exc:
             inventory.problems.append(
-                f"the image's manifest and configuration were not read ({type(exc).__name__})"
+                f"the image's manifest and configuration were not read ({NetworkFailure.reason(exc)})"
             )
         return ImageLayers.databases(files, inventory)
 
@@ -607,13 +489,14 @@ class ImageLayers:
         """The release and the package databases among `files` (paths relative to the root, as
         `_wanted` selects them), with the files those packages own. Shared by an image, whose files
         come from its squashed layers, and a host (`images/host.py`), whose come from its disk."""
+
         for path in OS_RELEASE:
             if path in files:
                 inventory.release = pkgdb.PackageDatabases.os_release(files[path])
                 break
         owned: set[str] = set()
         if DPKG_STATUS in files:
-            inventory.packages.extend(pkgdb.PackageDatabases.dpkg(files[DPKG_STATUS]))
+            inventory.packages.extend(pkgdb.DpkgDatabase.dpkg(files[DPKG_STATUS]))
         # distroless keeps one stanza per package in `status.d/<name>` and that package's files in
         # `status.d/<name>.md5sums`, where Debian has `info/<name>.list`. The md5sums were read
         # as if they were stanzas and never as file lists, so every file a distroless package
@@ -621,31 +504,67 @@ class ImageLayers:
         # added by the image and was content-scanned as if it were the application's own code.
         for path in sorted(p for p in files if p.startswith(DPKG_STATUS_D)):
             if path.endswith(".md5sums"):
-                owned |= pkgdb.PackageDatabases.dpkg_md5sums_owned(files[path])
+                owned |= pkgdb.DpkgDatabase.dpkg_md5sums_owned(files[path])
             else:
-                inventory.packages.extend(pkgdb.PackageDatabases.dpkg(files[path]))
-        owned |= pkgdb.PackageDatabases.dpkg_owned(
-            [files[p] for p in files if p.startswith(DPKG_INFO)]
-        )
+                inventory.packages.extend(pkgdb.DpkgDatabase.dpkg(files[path]))
+        owned |= pkgdb.DpkgDatabase.dpkg_owned([files[p] for p in files if p.startswith(DPKG_INFO)])
         for path in (APK_INSTALLED, APK_INSTALLED_USR):
             if path in files:
-                inventory.packages.extend(pkgdb.PackageDatabases.apk(files[path]))
-                owned |= pkgdb.PackageDatabases.apk_owned(files[path])
+                inventory.packages.extend(pkgdb.ApkDatabase.apk(files[path]))
+                owned |= pkgdb.ApkDatabase.apk_owned(files[path])
                 break
         pacman = {p: files[p] for p in files if p.startswith(PACMAN_LOCAL)}
         if pacman:
-            inventory.packages.extend(pkgdb.PackageDatabases.pacman(pacman))
-            owned |= pkgdb.PackageDatabases.pacman_owned(pacman)
+            inventory.packages.extend(pkgdb.PacmanDatabase.pacman(pacman))
+            owned |= pkgdb.PacmanDatabase.pacman_owned(pacman)
         portage = {p: files[p] for p in files if p.startswith(PORTAGE_DB)}
         if portage:
-            inventory.packages.extend(pkgdb.PackageDatabases.portage(portage))
-            owned |= pkgdb.PackageDatabases.portage_owned(portage)
+            inventory.packages.extend(pkgdb.PortageDatabase.portage(portage))
+            owned |= pkgdb.PortageDatabase.portage_owned(portage)
+        ImageLayers._mark_requested(files, inventory)
+        blobs: list[bytes] = []
+        for path in RPM_SQLITE:
+            if path in files:
+                try:
+                    blobs = pkgdb.RpmDatabase.rpm_sqlite_blobs(
+                        files[path], files.get(path + "-wal")
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    inventory.problems.append(
+                        f"the RPM database at {path} was not read ({type(exc).__name__})"
+                    )
+                break
+        else:
+            for path in RPM_LEGACY:
+                if path not in files:
+                    continue
+                reader = (
+                    pkgdb.RpmDatabase.rpm_ndb_blobs
+                    if path.endswith(".db")
+                    else pkgdb.RpmDatabase.rpm_bdb_blobs
+                )
+                try:
+                    blobs = reader(files[path])
+                except (ValueError, struct.error) as exc:
+                    inventory.problems.append(f"the RPM database at {path} was not read ({exc})")
+                break
+        if blobs:
+            inventory.packages.extend(pkgdb.RpmDatabase.rpm_blobs(blobs))
+            owned |= pkgdb.RpmDatabase.rpm_owned(blobs)
+        inventory.owned = frozenset(ImageLayers._with_merged_usr(owned))
+        ImageLayers._unique_packages(inventory)
+        return inventory
+
+    @staticmethod
+    def _mark_requested(files: dict[str, bytes], inventory: ImageInventory) -> None:
+        """Which packages were asked for: those apt did not pull in automatically, and those apk's world names."""
+
         # Which packages were asked for: apt marks what it pulled in automatically, apk lists what
         # was requested. Without either, the graph's roots stand for them.
         automatic = (
-            pkgdb.PackageDatabases.apt_automatic(files[APT_STATES]) if APT_STATES in files else None
+            pkgdb.DpkgDatabase.apt_automatic(files[APT_STATES]) if APT_STATES in files else None
         )
-        world = pkgdb.PackageDatabases.apk_world(files[APK_WORLD]) if APK_WORLD in files else None
+        world = pkgdb.ApkDatabase.apk_world(files[APK_WORLD]) if APK_WORLD in files else None
         if automatic is not None or world is not None:
             inventory.packages = [
                 replace(package, requested=package.name not in automatic)
@@ -658,36 +577,11 @@ class ImageLayers:
                 else package
                 for package in inventory.packages
             ]
-        blobs: list[bytes] = []
-        for path in RPM_SQLITE:
-            if path in files:
-                try:
-                    blobs = pkgdb.PackageDatabases.rpm_sqlite_blobs(
-                        files[path], files.get(path + "-wal")
-                    )
-                except Exception as exc:
-                    inventory.problems.append(
-                        f"the RPM database at {path} was not read ({type(exc).__name__})"
-                    )
-                break
-        else:
-            for path in RPM_LEGACY:
-                if path not in files:
-                    continue
-                reader = (
-                    pkgdb.PackageDatabases.rpm_ndb_blobs
-                    if path.endswith(".db")
-                    else pkgdb.PackageDatabases.rpm_bdb_blobs
-                )
-                try:
-                    blobs = reader(files[path])
-                except (ValueError, struct.error) as exc:
-                    inventory.problems.append(f"the RPM database at {path} was not read ({exc})")
-                break
-        if blobs:
-            inventory.packages.extend(pkgdb.PackageDatabases.rpm_blobs(blobs))
-            owned |= pkgdb.PackageDatabases.rpm_owned(blobs)
-        inventory.owned = frozenset(ImageLayers._with_merged_usr(owned))
+
+    @staticmethod
+    def _unique_packages(inventory: ImageInventory) -> None:
+        """One entry per package: distroless ships each in both status and status.d."""
+
         # distroless ships a package in both `status` and `status.d`; one entry each.
         seen: set[tuple[str, str, str]] = set()
         unique = []
@@ -697,7 +591,6 @@ class ImageLayers:
                 seen.add(key)
                 unique.append(package)
         inventory.packages = unique
-        return inventory
 
     @staticmethod
     def _with_merged_usr(owned: set[str]) -> set[str]:
@@ -727,6 +620,7 @@ class ImageLayers:
         Language-package metadata is read from the trees that are not content-scanned, and recorded on
         the inventory rather than yielded.
         """
+
         skipped: dict[str, int] = {}
         metadata: dict[str, bytes] = {}
 
@@ -761,33 +655,8 @@ class ImageLayers:
         files = ImageLayers._squash(
             data, keep, max_total_bytes, inventory, count_layers=False, removed=removed, peek=peek
         )
-        inventory.language_packages.extend(peek.packages)
-        # A program named by its version string counts only where no package database owns it.
-        inventory.language_packages.extend(p for p in peek.known if p.path not in inventory.owned)
-        if peek.truncated:
-            skipped[OVERSIZE_STRINGS] = peek.truncated
-        for path in sorted(files):
-            if ImageLayers.skip_reason(path) is not None or path in inventory.owned:
-                metadata[path] = files.pop(path)
-        from cordon_scanner.images.binmeta import BinaryMetadata
-
-        for path, payload in sorted(metadata.items()):
-            if TOOLCHAIN_BINARIES.match(path):
-                inventory.language_packages.extend(BinaryMetadata.extract(path, payload))
-                continue
-            if path.endswith(".jar"):
-                inventory.language_packages.extend(BinaryMetadata.extract(path, payload))
-                continue
-            # A distribution's own Python, Ruby or npm package (python3-cryptography's METADATA) is
-            # listed under the language's name as well as the OS package's, as Syft lists it. It
-            # was once skipped as already counted; measured against Syft on ten images that ship
-            # them, listing them raised agreement on every one (odoo 0.85 to 1.0) and added no
-            # package Syft does not list.
-            inventory.language_packages.extend(langpkgs.LanguagePackages.parse_all(path, payload))
-        inventory.skipped = skipped
-        inventory.added_files = len(files)
-        inventory.binaries_as_strings = len(peek.strings)
-        from cordon_scanner.images.binmeta import KnownBinaries
+        ImageLayers._record_added(inventory, peek, skipped, files, metadata)
+        from cordon_scanner.images.binmeta import BinaryMetadata, KnownBinaries
 
         for path in sorted(files):
             # Package metadata outside the trees that are not content-scanned (an R library under
@@ -820,6 +689,43 @@ class ImageLayers:
         for path, payload in ImageConfig.files(data):
             yield path, payload
 
+    @staticmethod
+    def _record_added(
+        inventory: ImageInventory,
+        peek: Peek,
+        skipped: dict[str, int],
+        files: dict[str, bytes],
+        metadata: dict[str, bytes],
+    ) -> None:
+        """What the squashed files tell the inventory: the language packages found, the binaries' metadata, what was skipped and how many files the image adds."""
+        inventory.language_packages.extend(peek.packages)
+        # A program named by its version string counts only where no package database owns it.
+        inventory.language_packages.extend(p for p in peek.known if p.path not in inventory.owned)
+        if peek.truncated:
+            skipped[OVERSIZE_STRINGS] = peek.truncated
+        for path in sorted(files):
+            if ImageLayers.skip_reason(path) is not None or path in inventory.owned:
+                metadata[path] = files.pop(path)
+        from cordon_scanner.images.binmeta import BinaryMetadata
+
+        for path, payload in sorted(metadata.items()):
+            if TOOLCHAIN_BINARIES.match(path):
+                inventory.language_packages.extend(BinaryMetadata.extract(path, payload))
+                continue
+            if path.endswith(".jar"):
+                inventory.language_packages.extend(BinaryMetadata.extract(path, payload))
+                continue
+            # A distribution's own Python, Ruby or npm package (python3-cryptography's METADATA) is
+            # listed under the language's name as well as the OS package's, as Syft lists it. It
+            # was once skipped as already counted; measured against Syft on ten images that ship
+            # them, listing them raised agreement on every one (odoo 0.85 to 1.0) and added no
+            # package Syft does not list.
+            inventory.language_packages.extend(langpkgs.LanguagePackages.parse_all(path, payload))
+        inventory.skipped = skipped
+        inventory.added_files = len(files)
+        inventory.binaries_as_strings = len(peek.strings)
+        inventory.as_strings = {path: peek.heads.get(path, b"") for path in peek.strings}
+
 
 Keep = Callable[[str, int], bool]
 Removed = list[tuple[int, str, bytes]]
@@ -833,6 +739,29 @@ MAX_PEEK_STRINGS_BYTES: Final = 512 << 20
 OVERSIZE_STRINGS: Final = "more printable text than is scanned, so its strings were cut short"
 #: Where the second and later parts of a binary's strings are reported: `usr/bin/app!strings-2`.
 STRINGS_PART: Final = "{}!strings-{}"
+
+
+HEAD_BYTES: Final = 64
+"""Enough of a file's start for every signature `detect/binary.FORMATS` reads."""
+
+
+class PrefixedReader:
+    """A stream whose first bytes were read off already, put back in front of it."""
+
+    def __init__(self, head: bytes, handle: Any) -> None:
+        self._head = head
+        self._handle: IO[bytes] = handle
+
+    def read(self, n: int = -1) -> bytes:
+        if not self._head:
+            return self._handle.read(n)
+        if n < 0:
+            out, self._head = self._head + self._handle.read(), b""
+            return out
+        out, self._head = self._head[:n], self._head[n:]
+        if len(out) < n:
+            out += self._handle.read(n - len(out))
+        return out
 
 
 class Peek:
@@ -851,6 +780,7 @@ class Peek:
         self.strings: dict[str, list[bytes]] = {}
         self.truncated = 0
         self.budget = budget
+        self.heads: dict[str, bytes] = {}
 
     def wants(self, path: str, size: int) -> bool:
         return (
@@ -876,6 +806,7 @@ class Peek:
         ]
         from cordon_scanner.images.binmeta import BinaryClassifiers
 
+        self.heads[path] = data[:HEAD_BYTES]
         self.packages.extend(BinaryMetadata.extract(path, data))
         from cordon_scanner.images.binmeta import KnownBinaries
 
@@ -890,6 +821,9 @@ class Peek:
         from cordon_scanner.images.binmeta import BinaryClassifiers, StreamedBinary, StreamedJar
 
         self.packages = [p for p in self.packages if p.path != path]
+        head = handle.read(HEAD_BYTES)
+        self.heads[path] = head
+        handle = PrefixedReader(head, handle)
         if path.lower().endswith((".jar", ".war", ".ear")):
             # An application packed as one jar past the hold limit (an uberjar of every library it
             # uses): its entries walked for the Maven artifacts they record. A jar's bytes are
@@ -928,19 +862,21 @@ class ImageConfig:
     @staticmethod
     def _document(data: bytes) -> dict[str, Any] | None:
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as archive:
-            by_path = ImageLayers._members_by_path(archive)
+            by_path = ImageArchive.members_by_path(archive)
             name: str | None = None
             if "manifest.json" in by_path:
-                manifest = json.loads(ImageLayers._read_member(archive, by_path["manifest.json"]))
+                manifest = ScannedJson.loads(
+                    ImageArchive.read_member(archive, by_path["manifest.json"])
+                )
                 if isinstance(manifest, list) and manifest and manifest[0].get("Config"):
-                    name = by_path.get(ImageLayers._normalise(str(manifest[0]["Config"])))
+                    name = by_path.get(ImageArchive.normalise(str(manifest[0]["Config"])))
             elif "index.json" in by_path:
-                index = json.loads(ImageLayers._read_member(archive, by_path["index.json"]))
+                index = ScannedJson.loads(ImageArchive.read_member(archive, by_path["index.json"]))
                 descriptor: Any = (index.get("manifests") or [{}])[0]
                 for _ in range(4):
                     algorithm, _, hexdigest = str(descriptor.get("digest", "")).partition(":")
-                    document = json.loads(
-                        ImageLayers._read_member(archive, by_path[f"blobs/{algorithm}/{hexdigest}"])
+                    document = ScannedJson.loads(
+                        ImageArchive.read_member(archive, by_path[f"blobs/{algorithm}/{hexdigest}"])
                     )
                     if "config" in document:
                         algorithm, _, hexdigest = str(
@@ -954,7 +890,7 @@ class ImageConfig:
                     descriptor = manifests[0]
             if name is None:
                 return None
-            config = json.loads(ImageLayers._read_member(archive, name))
+            config = ScannedJson.loads(ImageArchive.read_member(archive, name))
         return config if isinstance(config, dict) else None
 
     @staticmethod
@@ -981,6 +917,12 @@ class ImageConfig:
             value = runtime.get(key)
             if isinstance(value, list):
                 commands.append(f"{key.upper()} " + " ".join(str(v) for v in value))
+        # What the engine needs to know what the image runs on start (`Ceilings.image_start_ceiling`).
+        if isinstance(runtime.get("WorkingDir"), str) and runtime["WorkingDir"]:
+            commands.append(f"WORKDIR {runtime['WorkingDir']}")
+        healthcheck = runtime.get("Healthcheck")
+        if isinstance(healthcheck, dict) and isinstance(healthcheck.get("Test"), list):
+            commands.append("HEALTHCHECK " + " ".join(str(v) for v in healthcheck["Test"]))
         for step in config.get("history") or ():
             if isinstance(step, dict) and isinstance(step.get("created_by"), str):
                 commands.append(step["created_by"])
@@ -1001,8 +943,6 @@ __all__ = [
     "OVERSIZE_STRINGS",
     "REMOVED_PREFIX",
     "ImageConfig",
-    "ImageIdentity",
-    "ImageInventory",
     "ImageLayers",
     "Peek",
 ]

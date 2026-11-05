@@ -1,0 +1,63 @@
+# Latency budgets, detector growth and, off pull requests and nightly, the memory soaks. Split out
+# of ci.yml (5 Nov).
+
+name: latency
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - "src/**"
+      - "tests/perf/**"
+      - "pyproject.toml"
+      - "ci/**"
+      - ".github/workflows/latency.yml"
+  workflow_dispatch:
+  schedule:
+    # The memory soaks (about 30 minutes), every night.
+    - cron: "17 3 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  performance:
+    name: latency budgets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install --require-hashes -r ci/dev-requirements.txt && pip install --no-deps -e .
+      # Latency is a security property: a commit-time guard slower than about a
+      # second gets `--no-verify`, and a bypassed guard protects nothing. The
+      # budgets were written in docs/04-OPERATIONS.md and never measured, which
+      # is the same failure in a different place -- a number nobody checks is a
+      # number nobody meets.
+      #
+      # Asserted at the hard ceilings, not the targets. Shared runners are too
+      # variable for a 300ms assertion, and a check that fails at random is one
+      # people learn to re-run rather than read. The measurement is printed, so
+      # a regression toward a ceiling is visible in the log first.
+      # The memory soaks (tests/perf/test_soak.py, about 30 minutes) run where the full grid does:
+      # main, v* tags and manual runs. A pull request runs every other latency check (4 Nov: CI
+      # took four hours).
+      - run: pytest -q -m "${{ github.event_name == 'pull_request' && 'perf and not soak' || 'perf' }}" -s tests/perf/
+        env:
+          # The documented ceilings are commitments measured on a reference
+          # machine. A shared runner is five times slower and far noisier --
+          # the 50,000-file incremental scan is 5.5s there and 27s here -- so CI
+          # guards against regression at a multiple rather than asserting a
+          # number it cannot meet. The real figures are printed either way, and
+          # inflating the documented ceilings to fit the slowest runner would
+          # weaken a promise to users to make a test go green.
+          CORDON_PERF_ALLOWANCE: "5"

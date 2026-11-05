@@ -6,7 +6,7 @@ author: "Cordon Contributors"
 
 branding:
   icon: shield
-  color: blue
+  color: green
 
 inputs:
   allow-unverified-install:
@@ -15,6 +15,14 @@ inputs:
       this Action. Only for running a ref that predates a signed release; it
       leaves the scanner itself unverified, which is the one dependency a
       supply-chain scanner cannot afford to take on trust.
+    required: false
+    default: "false"
+  verify-install:
+    description: >
+      After installing, check the installation against the release that built it
+      (`cordon-scanner verify --online`): the wheel's PEP 740 provenance, signed by
+      Cordon's release workflow for that version, and every installed file against
+      the attested wheel. The job fails unless it verifies. Needs network to PyPI.
     required: false
     default: "false"
   target:
@@ -93,7 +101,7 @@ inputs:
     default: "false"
   cloud-url:
     description: >-
-      Cordon Cloud API base. Defaults to https://api.cordon.dev. The scan and the CI's OIDC-exchanged
+      Cordon Cloud API base. Defaults to https://core-api.cordonscan.com. The scan and the CI's OIDC-exchanged
       token are sent here, so set it to a fixed value in the workflow file, never from
       github.event.* or any other value a pull request can influence.
     required: false
@@ -191,17 +199,15 @@ runs:
         python -m pip install --disable-pip-version-check --quiet \
           "cordon-scanner==${CORDON_VERSION}"
 
-    - name: Install keyless signing (upload only)
-      if: inputs.upload == 'true'
+    - name: Verify the installation
+      if: inputs.verify-install == 'true'
       shell: bash
-      env:
-        ACTION_PATH: ${{ github.action_path }}
       run: |
         set -euo pipefail
-        # sigstore and everything it needs, each file pinned by hash. With it an upload is signed
-        # with this job's own identity, which an organisation's deploy gate can require.
-        python -m pip install --disable-pip-version-check --quiet \
-          --require-hashes --no-deps -r "${ACTION_PATH}/requirements-attest.txt"
+        # Exit 0 only when verified against the release workflow's signature; 1 modified, 4 not
+        # verified. The step fails on either: a scanner that cannot show it is the release's is
+        # not one to trust with the verdict.
+        cordon-scanner verify --online
 
     - name: Scan
       id: scan

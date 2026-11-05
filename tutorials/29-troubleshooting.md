@@ -1,6 +1,6 @@
 # 29 · Troubleshooting
 
-> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 When a scan fails, stops early, or passes where you expected a finding, Cordon has almost
 always said why: in its exit code, in the scan coverage notes under the findings, or in the
@@ -10,7 +10,7 @@ screen.
 
 ## Start from the exit code
 
-Every run ends in one of five exit codes, and they never change meaning (`core/errors.py`).
+Every run ends in one of five exit codes, and they never change meaning (`foundation/errors.py`).
 The code says which part of this tutorial you need.
 
 ```
@@ -64,7 +64,7 @@ do, and each carries its own fix. The ones met most often:
 |---|---|---|
 | `OPERATIONAL.INTEL.STALE` | The threat intel is older than its limit (24 hours when Cordon can refresh it), so recent malware and advisories may not match | Let the scan reach OSV; or run `cordon-scanner advisories sync`, `cordon-scanner intel update`, or `cordon-scanner bundle install` |
 | `OPERATIONAL.SCAN.TIMEOUT` | The total time budget ran out | Raise `--timeout`, or unpack an archive and scan it as a directory |
-| `OPERATIONAL.FILE.TIMEOUT` | One file exceeded its budget; the malware, obfuscation, secret and binary detectors still ran on it | Raise `limits.per_file_timeout`, or exclude it if it is generated output |
+| `OPERATIONAL.FILE.TIMEOUT` | No longer raised by a scan: every detector now runs on every file, as on every member of a package, so whether a file was cut no longer depends on the machine's load. Kept here for reports from earlier versions | Nothing to do; `total_timeout` bounds the scan as a whole (`OPERATIONAL.SCAN.TIMEOUT`) |
 | `OPERATIONAL.SCAN.MEMORY_LIMIT` | Retained content reached its budget; later files were not examined | Raise `limits.max_memory_bytes`, exclude generated or vendored directories, or scan in parts |
 | `OPERATIONAL.SCAN.FINDING_LIMIT` | The finding cap was reached | Raise `limits.max_findings`; this many findings usually share one cause worth fixing first |
 | `OPERATIONAL.WALK.TOO_DEEP` | A tree went deeper than `max_path_depth` | Raise `scan.limits.max_path_depth`, or scan the deep tree directly |
@@ -209,7 +209,7 @@ steps:
   - uses: actions/checkout@<sha>
     with:
       fetch-depth: 0        # only if you scan --history
-  - uses: Threx-code/cordon/action@v0.6.0
+  - uses: Threx-code/cordon/action@v0.7.0
 ```
 
 | Symptom | Cause | Fix |
@@ -299,4 +299,4 @@ cordon-scanner scan . -v --format json:result.json --audit-log audit.jsonl
 records what the scan did. Both name paths in the repository and nothing else. For a crash
 (exit 2), the smallest file that reproduces it is worth more than any description.
 
-Next: back to **[the tutorial map](README.md)**.
+Next: **[30 · Cordon for AI agents: the MCP server](30-mcp-server.md)**.

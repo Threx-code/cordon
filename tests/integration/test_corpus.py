@@ -17,18 +17,20 @@ the change that addresses it merges.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.core.config import Config, RestrictedYamlParser
-from cordon_scanner.core.models import Category, Severity
-from support import requires_corpus, requires_malicious_corpus
+from cordon_scanner.foundation.config.settings import Config
+from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
+from cordon_scanner.foundation.models import Category, Severity
+from support import ROOT, requires_corpus, requires_malicious_corpus
 
 pytestmark = requires_corpus
 
-CORPUS = Path(__file__).resolve().parents[2] / "corpus"
+CORPUS = ROOT / "corpus"
 BENIGN = CORPUS / "benign"
 MALICIOUS = CORPUS / "malicious"
 
@@ -88,6 +90,11 @@ class TestMaliciousCorpus(CorpusFixtures):
     @pytest.mark.parametrize("sample", CorpusHelpers.malicious_samples(), ids=lambda p: p.name)
     def test_sample_is_detected(self, scanner: Scanner, sample: Path) -> None:
         expectation = CorpusHelpers.load_expectation(sample)
+        if expectation.get("hardening"):
+            # A posture weakness (CI, container, infrastructure) is recorded at LOW by default and
+            # reported at its own severity in a hardening pass, which is what the sample shows.
+            config = scanner.config
+            scanner = Scanner(config.with_overrides(policy=replace(config.policy, hardening=True)))
         result = scanner.scan(sample)
         found = {f.rule_id for f in result.findings}
 
@@ -221,9 +228,20 @@ class TestBenignCorpus(CorpusFixtures):
 @pytest.mark.corpus
 @requires_malicious_corpus
 class TestScanGuarantees(CorpusFixtures):
-    def test_scans_are_deterministic(self, scanner: Scanner) -> None:
+    def test_scans_are_deterministic(self) -> None:
         """Constraint C5. Baselines, caching and reproducible gates all depend
-        on identical inputs producing identical output."""
+        on identical inputs producing identical output.
+
+        With the wall-clock budgets off: this tests determinism, not budgets, and on
+        a loaded machine a per-file budget that tripped in one of the two scans gave
+        it a finding the other lacked (a skipped detector reported as such)."""
+        config = Config.default()
+        scanner = Scanner(
+            config.with_overrides(
+                use_cache=False,
+                limits=config.limits.merged(per_file_timeout=0.0, total_timeout=0.0),
+            )
+        )
         first = scanner.scan(MALICIOUS)
         second = scanner.scan(MALICIOUS)
 
@@ -338,7 +356,7 @@ class TestSelfScan(CorpusFixtures):
     """
 
     def test_the_repository_scans_clean(self, scanner: Scanner) -> None:
-        repository = Path(__file__).resolve().parents[2]
+        repository = ROOT
         result = self._scan_tracked(repository, scanner)
 
         offending = [
@@ -358,7 +376,37 @@ class TestSelfScan(CorpusFixtures):
             # The agent benchmark plants attack instructions and configurations in every place
             # an agent reads them from; its fixtures are attack text by construction, like
             # `corpus/`. Splitting the strings would not help: constant folding joins them.
-            and f.location.path != "bench/agent_matrix.py"
+            and f.location.path != "bench/suites/agent_matrix.py"
+            # The tool-call guard's tests are the calls it must refuse -- a cron write, an
+            # encoded `rm -rf /` -- as arguments, by construction, like the agent benchmark.
+            and f.location.path != "tests/unit/judge/test_tool_call_guard.py"
+            and f.location.path != "tests/unit/analysis/python/test_pattern_literals.py"
+            # Cordon's own rule material, reported at MEDIUM since rule material no longer lowers a
+            # secret or attack finding (1c00b353, the outer layer's fail-open fix): the secrets
+            # tests' credential-shaped fixtures, one rule pack and the rule-material markers. The
+            # decided cost of that fix, as on other rule corpora; listed here, file by file.
+            and f.location.path != "tests/unit/detect/secrets/test_review_defects.py"
+            and f.location.path != "src/cordon_scanner/rules/builtin/capabilities-javascript.yaml"
+            and f.location.path != "src/cordon_scanner/foundation/samples.py"
+            # Recovered malware shapes, rebuilt as minimal fixtures to keep them caught.
+            and f.location.path
+            != "tests/unit/detect/code/capability/test_recovered_malware_shapes.py"
+            # The spelling matrix lists every way JavaScript writes a capability primitive -- a
+            # spawn, a beacon, a persistence write -- each a rule's test positive, by construction.
+            and f.location.path != "tests/unit/detect/code/capability/test_js_spelling_matrix.py"
+            # Campaign behaviours rebuilt as inert fixtures, each a rule's test positive.
+            and f.location.path != "tests/unit/detect/code/test_npm_campaign_behaviours.py"
+            and f.location.path != "tests/unit/detect/agents/test_agents.py"
+            # The JavaScript dataflow's fixtures are attack-shaped fixtures by construction -- a
+            # credential read reaching a request, a decoded blob reaching a spawn -- each the
+            # positive a flow rule is tested on.
+            and f.location.path != "tests/unit/analysis/javascript/test_js_flow.py"
+            # The skills measurement classifies samples by what their payloads do, with the
+            # indicators it counts and annotations naming the hosts they fetch from.
+            and f.location.path != "bench/suites/skills_measure.py"
+            # The detection model's feature patterns name what they count -- a miner's binary and
+            # pool protocol among them -- as the rule packs do; data, never run.
+            and f.location.path != "src/cordon_scanner/model/data/patterns.json"
             # Conformance cases are other projects' dependency files, written by their package
             # managers, and each holds the shape its case proves the scanner reports: a git
             # source, an install script. `tests/conformance/test_cases.py` asserts those
@@ -439,11 +487,11 @@ class TestADeclarationIsAPromiseAboutTheMaximum(CorpusFixtures):
 
     @staticmethod
     def _declared() -> dict[str, object]:
-        from cordon_scanner.detect.advisory import AdvisoryDetector
-        from cordon_scanner.detect.binary import BinaryDetector
-        from cordon_scanner.detect.dependency import DependencyDetector
-        from cordon_scanner.detect.lockfile import LockfileDetector
-        from cordon_scanner.detect.manifest import ManifestDetector
+        from cordon_scanner.detect.binary.detector import BinaryDetector
+        from cordon_scanner.detect.supply.advisories.detector import AdvisoryDetector
+        from cordon_scanner.detect.supply.dependency import DependencyDetector
+        from cordon_scanner.detect.supply.lockfile import LockfileDetector
+        from cordon_scanner.detect.supply.manifests.detector import ManifestDetector
 
         declared: dict[str, object] = {}
         for detector in (
@@ -458,15 +506,12 @@ class TestADeclarationIsAPromiseAboutTheMaximum(CorpusFixtures):
         return declared
 
     def test_no_finding_exceeds_its_declaration(self) -> None:
-        from pathlib import Path
 
         from cordon_scanner import Scanner
-        from cordon_scanner.core.config import Config
+        from cordon_scanner.foundation.config.settings import Config
 
         declared = self._declared()
-        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(
-            Path(__file__).resolve().parents[2] / "corpus"
-        )
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(ROOT / "corpus")
         over = [
             (f.rule_id, f.severity.name, declared[f.rule_id].name, f.location.path)
             for f in result.findings
@@ -476,7 +521,7 @@ class TestADeclarationIsAPromiseAboutTheMaximum(CorpusFixtures):
 
     def test_the_two_that_diverged_are_where_they_were_put(self) -> None:
         declared = self._declared()
-        from cordon_scanner.core.models import Severity
+        from cordon_scanner.foundation.models import Severity
 
         assert declared["POLICY.LOCKFILE.INTEGRITY.001"] == Severity.MEDIUM
         assert declared["SUSPECT.INSTALL.SCRIPT.001"] == Severity.HIGH

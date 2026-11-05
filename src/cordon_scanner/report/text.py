@@ -18,16 +18,18 @@ from __future__ import annotations
 
 import re
 import shutil
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from cordon_scanner.core.models import Category, Severity
-from cordon_scanner.report.base import BaseReporter, ReportOptions
+from cordon_scanner.foundation.models import Category, Severity
+from cordon_scanner.report.base import BaseReporter, Escape, ReportOptions
 from cordon_scanner.version import __version__
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from cordon_scanner.core.models import Finding, ScanResult
+    from cordon_scanner.foundation.models import Finding
+    from cordon_scanner.foundation.results import ScanResult
 
 ANSI = re.compile(r"\033\[[0-9;]*m")
 
@@ -137,18 +139,89 @@ class TextReporter(BaseReporter):
         if opts.verbose:
             for finding in reportable:
                 yield from self._finding(finding, color, verbose=True)
+        elif opts.blocking is not None:
+            yield from self._tiered(reportable, opts, color)
         else:
             yield from self._grouped(reportable, color)
 
         # Operational findings are grouped at the end rather than interleaved.
         # They describe the scan rather than the code, and mixing the two makes
         # a reader work to tell "your code is fine" from "I could not look".
+        noted = len(operational)
+        if opts.blocking is not None and not opts.verbose:
+            # Tiered: a note about the scan that changes nothing (the advisory database's scope,
+            # a cache hit) is informational like any other; one that does (stale intel, files
+            # not read) still prints.
+            operational = [f for f in operational if f.severity > Severity.INFO]
         if operational:
             yield from self._operational_block(operational, color)
 
-        yield from self._summary(result, color, hidden, compact=not opts.verbose)
+        yield from self._summary(
+            result,
+            color,
+            hidden,
+            compact=not opts.verbose,
+            notes=(len(operational), noted - len(operational)),
+        )
 
     # -- Findings --------------------------------------------------------
+
+    @staticmethod
+    def _shown(f: Finding) -> Finding:
+        """`f` with every field the scanned content can choose through `Escape.terminal`: a path,
+        a message that quotes one, a snippet. Made where a finding is printed, after the gate's
+        split (`_tiered`), which matches fingerprints computed from the unescaped fields."""
+        t = Escape.terminal
+        where = f.location
+        return replace(
+            f,
+            rule_id=t(f.rule_id),
+            message=t(f.message),
+            remediation=t(f.remediation),
+            location=replace(
+                where,
+                path=t(where.path),
+                symbol=t(where.symbol) if where.symbol else where.symbol,
+                project=t(where.project) if where.project else where.project,
+                package=t(where.package) if where.package else where.package,
+            ),
+            evidence=replace(
+                f.evidence,
+                snippet=t(f.evidence.snippet) if f.evidence.snippet else f.evidence.snippet,
+            ),
+            explanation=replace(
+                f.explanation,
+                contributing=tuple(map(t, f.explanation.contributing)),
+                escalations=tuple(map(t, f.explanation.escalations)),
+            ),
+            references=tuple(map(t, f.references)),
+        )
+
+    def _tiered(self, findings: list[Finding], opts: ReportOptions, color: bool) -> Iterator[bytes]:
+        """The default view once the gate is known: what fails it, in full; the rest, counted.
+
+        Review 98 measured why a quiet scan matters more than a short one. Three in four real
+        packages carried at least one finding below the gate -- a capability, a policy note, a
+        LOW signal in a bundled file -- so a report that prints all of them teaches its reader
+        that output means nothing, and then the one finding that blocks is read the same way.
+        Everything is still there: `-v` prints every finding, and JSON and SARIF carry them all.
+        """
+        blocking = opts.blocking or frozenset()
+        gate = [f for f in findings if f.fingerprint in blocking]
+        yield from self._grouped(gate, color)
+        review = [
+            f for f in findings if f.fingerprint not in blocking and f.severity > Severity.INFO
+        ]
+        if review and not opts.quiet:
+            files = len({f.location.path for f in review})
+            noun = "signal" if len(review) == 1 else "signals"
+            where = "file" if files == 1 else "files"
+            yield b"\n"
+            yield self._line(
+                f"{DIM}{len(review)} {noun} below the failure policy in {files} {where}, worth a "
+                f"look when reviewing this code; `-v` lists them.{RESET}",
+                color,
+            )
 
     def _grouped(self, findings: list[Finding], color: bool) -> Iterator[bytes]:
         """The default view: one line per finding, grouped under its file.
@@ -169,6 +242,7 @@ class TextReporter(BaseReporter):
         per finding: three composites firing on one line is three findings
         about one place, and repeating `22:1` down the margin says otherwise.
         """
+        findings = [self._shown(f) for f in findings]
         if not findings:
             # The common case, and the one the column measurement below cannot
             # survive: `max()` over nothing raises, so a clean scan crashed and
@@ -268,6 +342,7 @@ class TextReporter(BaseReporter):
         return f"{text[: room - 4].rsplit(' ', 1)[0]} ..."
 
     def _finding(self, f: Finding, color: bool, verbose: bool) -> Iterator[bytes]:
+        f = self._shown(f)
         tint = SEVERITY_COLOR.get(f.severity, "")
         header = f"{tint}{str(f.severity).upper():<9}{RESET}{BOLD}{f.rule_id}{RESET}"
         suffix = f"{DIM}risk {f.risk.value}/100{RESET}"
@@ -344,7 +419,7 @@ class TextReporter(BaseReporter):
             f"{DIM}scan coverage{RESET}  {len(findings)} note(s) about the scan itself",
             color,
         )
-        for f in findings[:10]:
+        for f in map(self._shown, findings[:10]):
             yield self._line(f"  {DIM}{f.location.path}{RESET}  {f.message}", color)
         if len(findings) > 10:
             yield self._line(f"  {DIM}... and {len(findings) - 10} more{RESET}", color)
@@ -352,9 +427,41 @@ class TextReporter(BaseReporter):
 
     # -- Summary ---------------------------------------------------------
 
-    def _summary(
-        self, result: ScanResult, color: bool, hidden: int, *, compact: bool = False
+    def _completeness(
+        self, result: ScanResult, color: bool, notes: tuple[int, int]
     ) -> Iterator[bytes]:
+        """Whether the scan looked at everything, and where its coverage notes are if it did not."""
+        # Completeness is stated on every scan, not only when it fails. A reader
+        # should never have to infer whether the tool actually looked.
+        if result.complete:
+            yield self._line(f"{DIM}scan complete{RESET}", color)
+        else:
+            # Pointed at only where the notes are: it said "above" whatever was above, and the
+            # tiered view leaves informational notes out, a per-file timeout's among them.
+            shown, left_out = notes
+            where = (
+                "see the coverage notes above"
+                if shown
+                else f"see the {left_out} coverage note(s) with -v"
+                if left_out
+                else ""
+            )
+            yield self._line(
+                f"{SEVERITY_COLOR[Severity.MEDIUM]}scan INCOMPLETE{RESET} "
+                f"{DIM}- results are partial{'; ' + where if where else ''}{RESET}",
+                color,
+            )
+
+    def _summary(
+        self,
+        result: ScanResult,
+        color: bool,
+        hidden: int,
+        *,
+        compact: bool = False,
+        notes: tuple[int, int] = (0, 0),
+    ) -> Iterator[bytes]:
+        """`notes`: the coverage notes printed above, and those the tiered view left out."""
         counts = result.by_severity()
         yield self._line(f"{DIM}{'-' * WIDTH}{RESET}", color)
 
@@ -406,16 +513,7 @@ class TextReporter(BaseReporter):
                 f"{DIM}intel: {intel.get('source')}{serial}, {when}{stale}{RESET}", color
             )
 
-        # Completeness is stated on every scan, not only when it fails. A reader
-        # should never have to infer whether the tool actually looked.
-        if result.complete:
-            yield self._line(f"{DIM}scan complete{RESET}", color)
-        else:
-            yield self._line(
-                f"{SEVERITY_COLOR[Severity.MEDIUM]}scan INCOMPLETE{RESET} "
-                f"{DIM}- results are partial; see the coverage notes above{RESET}",
-                color,
-            )
+        yield from self._completeness(result, color, notes)
 
         if hidden:
             yield self._line(f"{DIM}{hidden} further finding(s) not shown{RESET}", color)
