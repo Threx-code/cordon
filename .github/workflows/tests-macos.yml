@@ -1,4 +1,4 @@
-# The test suite on macOS, in two parts on two runners. Split out of ci.yml (5 Nov).
+# The test suite on macOS, in four parts on four runners. Split out of the one ci.yml (5 Nov).
 
 name: tests (macos)
 

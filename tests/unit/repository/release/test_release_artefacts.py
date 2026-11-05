@@ -132,6 +132,62 @@ class TestSbomGenerator:
 
 
 @requires_workflows
+class TestTheSelfScansAgree:
+    """The release's self-scan (scripts/measure/live_checks.py) excludes exactly what CI's
+    (checks.yml) excludes. They drifted twice: on 8 October the release's blocked 0.6.0 after CI was
+    green, and on 5 November it scanned the rule packs CI excluded, so a detection pattern blocked
+    0.7.0 at its tag."""
+
+    @staticmethod
+    def ci() -> set[str]:
+        import re
+
+        import yaml
+
+        steps = yaml.safe_load(
+            (ROOT / ".github" / "workflows" / "checks.yml").read_text(encoding="utf-8")
+        )["jobs"]["self-scan"]["steps"]
+        scans = [s["run"] for s in steps if "run" in s and "cordon-scanner scan ." in s["run"]]
+        assert len(scans) == 1, "the self-scan step"
+        return set(re.findall(r"--exclude '([^']+)'", scans[0]))
+
+    @staticmethod
+    def release() -> set[str]:
+        import ast
+
+        tree = ast.parse(
+            (ROOT / "scripts" / "measure" / "live_checks.py").read_text(encoding="utf-8")
+        )
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "check_self_scan":
+                for call in ast.walk(node):
+                    if isinstance(call, ast.List):
+                        words = [e.value for e in call.elts if isinstance(e, ast.Constant)]
+                        if "--exclude" in words:
+                            return {
+                                words[i + 1] for i, w in enumerate(words[:-1]) if w == "--exclude"
+                            }
+        raise AssertionError("no exclude list in check_self_scan")
+
+    @requires_workflows
+    def test_the_release_excludes_what_ci_excludes(self) -> None:
+        ci, release = self.ci(), self.release()
+        assert ci, "no excludes read from checks.yml"
+        assert release == ci, (
+            f"only in CI: {sorted(ci - release)}; only in the release: {sorted(release - ci)}"
+        )
+
+    @requires_workflows
+    def test_the_parity_check_reads_workflows_that_exist(self) -> None:
+        import re
+
+        text = (ROOT / "scripts" / "checks" / "ci_parity.py").read_text(encoding="utf-8")
+        named = re.findall(r'"([a-z-]+\.yml)"', text)
+        assert named, "no workflow named in ci_parity.py"
+        missing = [n for n in named if not (ROOT / ".github" / "workflows" / n).is_file()]
+        assert missing == [], f"ci_parity.py reads workflows that do not exist: {missing}"
+
+
 class TestReleaseWorkflow:
     def body(self) -> str:
         return RELEASE.read_text(encoding="utf-8")

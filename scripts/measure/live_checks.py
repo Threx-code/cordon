@@ -261,11 +261,11 @@ class LiveChecks:
                 "--exclude",
                 "bench/**",
                 # The conformance cases hold deliberately unreadable files (a DTD in a .csproj,
-                # Bun's binary lockfile) whose notices are the point of them, as `ci.yml`'s
+                # Bun's binary lockfile) whose notices are the point of them, as checks.yml's
                 # self-scan already excludes them.
                 "--exclude",
                 "tests/conformance/cases/**",
-                # Unit tests and the model's data, as `ci.yml`'s self-scan excludes them: fixtures
+                # Unit tests and the model's data, as checks.yml's self-scan excludes them: fixtures
                 # shaped like attacks by design, and data rather than code.
                 "--exclude",
                 "tests/unit/**",
@@ -275,6 +275,11 @@ class LiveChecks:
                 "**/intel/data/**",
                 "--exclude",
                 "**/detect/data/**",
+                # The rule packs: detection patterns, shaped like what they detect. Missing here
+                # while checks.yml excluded them, a fromCharCode pattern blocked 0.7.0 after CI was
+                # green (5 Nov); a repository test now holds the two lists equal.
+                "--exclude",
+                "src/cordon_scanner/rules/builtin/**",
                 "--exclude",
                 "build/**",
                 "--exclude",
