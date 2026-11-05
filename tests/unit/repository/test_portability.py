@@ -85,6 +85,18 @@ class TestEachIncidentIsCaught:
         assert Checks.found(after, "src/x.py") == []
         assert Checks.found(with_comment, "src/x.py") == []
 
+    def test_a_liveness_probe_that_is_ctrl_c_on_windows(self) -> None:
+        probe = "def alive(pid):\n    try:\n        os.kill(pid, 0)\n    except OSError:\n        return False\n"
+        assert Checks.found(probe, "src/x.py") == ["kill-zero"]
+        guarded = (
+            "def alive(pid):\n    if os.name == 'nt':\n        return windows(pid)\n"
+            "    os.kill(pid, 0)\n"
+        )
+        assert Checks.found(guarded, "src/x.py") == []
+        skipped = "pytestmark = pytest.mark.skipif(os.name != 'posix', reason='x')\nos.kill(1, 0)\n"
+        assert Checks.found(skipped) == []
+        assert Checks.found("os.kill(pid, signal.SIGKILL)\n", "src/x.py") == []
+
     def test_an_invisible_character_in_shipped_source(self) -> None:
         # Built at run time: this file must not hold the character it tests for.
         line = f'PATTERN = "[{chr(0x202A)}-{chr(0x202E)}]"\n'

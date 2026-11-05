@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 
+from cordon_scanner.foundation.files.spill import Spill
 from cordon_scanner.mcp.runner import Cancelled, CancelToken, Runner, TimedOut
 from cordon_scanner.mcp.server import LEGACY, MODERN, Server
 from cordon_scanner.mcp.tools.base import Args, Outcome, Settings, Tool, ToolError
@@ -457,10 +458,9 @@ class Tree:
     @staticmethod
     def ended(pid: int) -> bool:
         """Gone, or a zombie: ended, and waiting only to be reaped by whoever adopted it (in a
-        container whose first process reaps nothing, that is forever)."""
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
+        container whose first process reaps nothing, that is forever). Asked through
+        `Spill.running`: `os.kill(pid, 0)` on Windows is Ctrl+C to the whole console."""
+        if not Spill.running(pid):
             return True
         status = Path(f"/proc/{pid}/status")
         if status.exists():

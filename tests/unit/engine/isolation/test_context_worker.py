@@ -910,7 +910,9 @@ class TestTheParentOpensNoArchive:
         fresh = SpillDirectory()
         try:
             assert not stale.exists()
-            assert fresh.path.exists() and (fresh.path.stat().st_mode & 0o777) == 0o700
+            assert fresh.path.exists()
+            # POSIX mode bits; Windows reports 0o777 and guards the directory by its profile ACL.
+            assert os.name != "posix" or (fresh.path.stat().st_mode & 0o777) == 0o700
         finally:
             fresh.remove()
 

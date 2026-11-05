@@ -21,6 +21,7 @@ from __future__ import annotations
 import contextlib
 import importlib
 import math
+import multiprocessing
 import multiprocessing.connection
 import os
 import signal
@@ -132,6 +133,12 @@ class TemplateProcess:
 class Worker:
     """One supervised process and the unit it holds: spawned, or forked by the scan's template."""
 
+    #: Seconds a worker has to say it is ready. One that has not by then ends as a worker that
+    #: ended before it was ready: tried once more, and a scan none can start is a scanner error.
+    #: Without it a worker hung before it was ready, holding no unit, was waited for without a
+    #: timeout (macOS CI: a one-file scan spent its whole 900 s budget, 5 Nov).
+    START_BACKSTOP: ClassVar[float] = 120.0
+
     def __init__(self, context: BaseContext, setup: tuple[str, tuple[Any, ...]], work: str,
                  bounds: Bounds, template: Template | None = None) -> None:  # fmt: skip
         self.process: Any
@@ -146,18 +153,12 @@ class Worker:
         else:
             ours, theirs = context.Pipe()
             self.conn = ours
-            # Not daemonic: a daemonic process may not start processes, and a detector's nested scan
-            # (an MCP server's installed copy, `ScanContext.nested_scan`) starts its own workers. On
-            # Windows every worker is spawned, so the MCP package check failed on every file there
-            # ("daemonic processes are not allowed to have children", 5 Nov), as a forked worker on
-            # Linux never did. The flag only acts at interpreter exit; every worker is ended in
-            # `_drain`'s `finally`, daemonic or not.
             self.process = context.Process(  # type: ignore[attr-defined]  # spawn and forkserver have it
-                target=WorkerMain.run, args=(theirs, setup, work, bounds), daemon=False
+                target=WorkerMain.run, args=(theirs, setup, work, bounds), daemon=True
             )
             self.process.start()
             theirs.close()
-        self.ready = False
+        self.ready, self.started_at = False, time.monotonic()
         self.unit: Unit | None = None
         self.given_at = 0.0
 
@@ -166,7 +167,17 @@ class Worker:
         self.conn.send((unit.index, unit.item, bounds.cpu_budget(unit.size)))
 
     def overdue(self, bounds: Bounds, now: float) -> bool:
+        if not self.ready:
+            return now - self.started_at > Worker.START_BACKSTOP
         return self.unit is not None and now - self.given_at > bounds.wall_budget(self.unit.size)
+
+    def due(self, bounds: Bounds, now: float) -> float | None:
+        """Seconds until `overdue`; None while it waits for no backstop (ready, holding nothing)."""
+        if not self.ready:
+            return self.started_at + Worker.START_BACKSTOP - now
+        if self.unit is not None:
+            return self.given_at + bounds.wall_budget(self.unit.size) - now
+        return None
 
     def end(self) -> None:
         if self.process.is_alive():
@@ -211,6 +222,13 @@ class WorkerMain:
         conn: Connection, setup: tuple[str, tuple[Any, ...]], work: str, bounds: Bounds
     ) -> None:
         os.environ[WorkerMain.INSIDE] = "1"
+        # A spawned worker is daemonic, so its parent ends it at exit, and a daemonic process may
+        # not start processes: a detector's nested scan (an MCP server's installed copy,
+        # `ScanContext.nested_scan`) starts its own workers. The worker clears the flag on itself:
+        # on Windows the MCP package check failed on every file ("daemonic processes are not
+        # allowed to have children", 5 Nov). Spawned non-daemonic instead, they are joined, not
+        # ended, when their parent exits; the Windows test job ended interrupted at its exit.
+        multiprocessing.current_process().daemon = False
         isolation = Limits.apply(bounds)
         WorkerMain.resolve(setup[0])(*setup[1])
         run = WorkerMain.resolve(work)
@@ -458,8 +476,8 @@ class Supervisor:
     def _wait(self, pool: list[Worker]) -> None:
         """Until a worker answers or ends, or the nearest wall backstop or the deadline falls due."""
         now = time.monotonic()
-        due = [w.given_at + self.bounds.wall_budget(w.unit.size) - now for w in pool if w.unit]
-        if self.deadline is not None and due:
+        due = [d for w in pool if (d := w.due(self.bounds, now)) is not None]
+        if self.deadline is not None:
             due.append(self.deadline - self.clock())
         timeout = max(0.0, min(due)) if due else None
         if timeout is not None:

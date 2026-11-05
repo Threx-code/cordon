@@ -71,6 +71,11 @@ CHECKS = {
         "A `^---` document break whose pattern does not allow `\\r` before the line end: a "
         "CRLF checkout is read as one document (pnpm 10 lockfiles, Kubernetes manifests)."
     ),
+    "kill-zero": (
+        "`os.kill(pid, 0)` where Windows runs it: signal 0 is CTRL_C_EVENT there, so it sends "
+        "Ctrl+C to every process on the console (every Windows test job ended in a "
+        'KeyboardInterrupt). Ask `Spill.running(pid)`, or return first when `os.name == "nt"`.'
+    ),
     "invisible-characters": (
         "A literal bidi or zero-width character in source: Cordon reports it in its own "
         "image (SUSPECT.OBFUSCATION.BIDI.001). Write it as an escape."
@@ -149,7 +154,41 @@ class Visitor(ast.NodeVisitor):
             and node.args[0].func.attr == "relative_to"
         ):
             self.add("native-path-text", node, "`str(...relative_to(...))`; use `.as_posix()`")
+        if self._kill_zero(node) and not self._windows_returns_first(node):
+            self.add("kill-zero", node, "`os.kill(pid, 0)` is Ctrl+C on Windows")
         self.generic_visit(node)
+
+    @staticmethod
+    def _kill_zero(node: ast.Call) -> bool:
+        return (
+            ast.unparse(node.func) == "os.kill"
+            and len(node.args) == 2
+            and isinstance(node.args[1], ast.Constant)
+            and node.args[1].value == 0
+        )
+
+    def _windows_returns_first(self, node: ast.AST) -> bool:
+        """The call sits in a function that returns first on Windows, or in a module skipped
+        there (`pytestmark` naming `os.name`)."""
+        current: ast.AST | None = node
+        while current is not None:
+            if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for statement in current.body:
+                    if (
+                        isinstance(statement, ast.If)
+                        and ast.unparse(statement.test) in ("os.name == 'nt'", "os.name != 'posix'")
+                        and isinstance(statement.body[-1], ast.Return)
+                    ):
+                        return True
+            if isinstance(current, ast.Module):
+                return any(
+                    isinstance(s, ast.Assign)
+                    and any(getattr(t, "id", "") == "pytestmark" for t in s.targets)
+                    and "os.name != 'posix'" in ast.unparse(s.value)
+                    for s in current.body
+                )
+            current = self.parents.get(id(current))
+        return False
 
     def _separators_normalised(self, node: ast.Call) -> bool:
         parent = self.parents.get(id(node))

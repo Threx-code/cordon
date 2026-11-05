@@ -14,6 +14,7 @@ from cordon_scanner.detect.base import DetectorRequirements, ScanContext
 from cordon_scanner.engine.isolation import facts as channel
 from cordon_scanner.engine.isolation.facts import FILE_BYTES, FILE_COUNT, Facts, WorkerFacts
 from cordon_scanner.foundation.models import Category
+from support import requires_forked_workers
 
 
 class Sends:
@@ -123,6 +124,7 @@ class TestThePlainDataRule:
         assert WorkerFacts.end() == ""
 
 
+@requires_forked_workers
 class TestThroughTheWorkers:
     def test_a_worker_s_facts_reach_the_parent_and_bad_ones_are_gaps(
         self, tmp_path, monkeypatch
@@ -167,6 +169,7 @@ class TestADeepPayloadIsRefusedNotRaised:
         assert results[0].location.path == "deep.py" and not acc.facts
 
 
+@requires_forked_workers
 class TestACachedFileKeepsItsFacts:
     """A warm scan joins the same closure as a cold one: a file served from the scan cache brings
     back the facts its worker sent, kept beside its findings and re-checked as a worker's are."""
