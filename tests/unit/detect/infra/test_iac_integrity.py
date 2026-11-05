@@ -23,6 +23,7 @@ from cordon_scanner.detect.infra.generated_policies import (
     GENERATED_NAME,
 )
 from cordon_scanner.foundation.config.settings import Config
+from support import requires_forked_workers
 
 TERRAFORM = 'resource "aws_db_instance" "main" {\n  identifier = "prod"\n}\n'
 
@@ -78,6 +79,7 @@ class TestAnEditedSetIsRefused(IacIntegrityFixtures):
         assert generated_policies.GeneratedPolicies.generated_rows() == {}
         assert GENERATED_NAME in generated_policies.GeneratedPolicies.refused_files()
 
+    @requires_forked_workers
     def test_the_scan_reports_the_refusal_and_calls_itself_partial(
         self, tmp_path, monkeypatch, clean_caches
     ) -> None:
@@ -108,6 +110,7 @@ class TestAnEditedSetIsRefused(IacIntegrityFixtures):
 
 
 class TestAStaleSetSaysSo(IacIntegrityFixtures):
+    @requires_forked_workers
     def test_an_old_build_is_reported(self, tmp_path, monkeypatch, clean_caches) -> None:
         aged = tmp_path / "data"
         aged.mkdir()

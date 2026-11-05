@@ -238,11 +238,17 @@ class Incoming:
         head = cls._rev(root, "HEAD")
         if head is None:
             return None
+        # Closed before anything is removed: its `git cat-file --batch` child runs with the clone as
+        # its working directory, and on Windows a directory a live process stands in cannot be
+        # deleted, so a blocked clone stayed on disk and the command failed (WinError 32, 4 Nov).
+        repository = GitRepository(root)
         try:
-            check = cls.check(GitRepository(root), head, config)
+            check = cls.check(repository, head, config)
         except BaseException:
+            repository.close()
             cls._remove(root, existed)
             raise
+        repository.close()
         if not check.ok:
             cls._remove(root, existed)
             return check

@@ -21,6 +21,7 @@ from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.limits import Limits
 from kits.paddedkit import PAD, PaddedKit
+from support import requires_forked_workers
 
 INJECTION = "SUSPECT.BINARY.PROCESS_INJECTION.001"
 
@@ -98,6 +99,7 @@ class TestInAScan:
         (tmp_path / "tool.exe").write_bytes(PaddedKit.pe(pad=0))
         assert INJECTION in {rule for rule, _ in WholeKit.rules(tmp_path)}
 
+    @requires_forked_workers
     def test_a_reader_failing_on_the_whole_copy_reads_the_prefix_and_says_so(
         self, tmp_path, monkeypatch
     ) -> None:

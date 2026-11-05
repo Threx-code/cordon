@@ -127,10 +127,57 @@ class UnixLines:
         Path.write_text = write_text  # type: ignore[method-assign]
 
 
+class PortableZips:
+    """Every `zipfile.ZipInfo` the suite makes records Unix as the system that made it.
+
+    `ZipInfo` writes `create_system` 0 on Windows and 3 elsewhere, so the archives the suite builds
+    (the CRX and ZIP references, recorded by sha256 and by YARA-X's listing) were other bytes on
+    Windows: 16 CRX cases and the ZIP listing failed there (4 Nov). Same reason, same place, as
+    `UnixLines`."""
+
+    @staticmethod
+    def install() -> None:
+        import zipfile
+
+        real = zipfile.ZipInfo.__init__
+        if getattr(real, "_portable", False):
+            return
+
+        def init(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            real(self, *args, **kwargs)
+            self.create_system = 3
+
+        init._portable = True  # type: ignore[attr-defined]
+        zipfile.ZipInfo.__init__ = init  # type: ignore[method-assign]
+
+
+class Shard:
+    """`CORDON_TEST_SHARD=k/N` runs only this shard's tests: those whose id hashes to k modulo N. CI
+    splits the Windows and macOS jobs in two this way (each ran 85 to 100 minutes alone, 4 Nov); every
+    test runs in exactly one shard, chosen by its id, so the split never changes between runs."""
+
+    @staticmethod
+    def keep(items: list[pytest.Item]) -> list[pytest.Item]:
+        import os
+        import zlib
+
+        spec = os.environ.get("CORDON_TEST_SHARD", "")
+        if not spec:
+            return items
+        index, count = (int(part) for part in spec.split("/"))
+        return [item for item in items if zlib.crc32(item.nodeid.encode("utf-8")) % count == index]
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """The shard's tests only (`Shard`). A hook pytest finds only at module level."""
+    items[:] = Shard.keep(items)
+
+
 def pytest_configure(config: pytest.Config) -> None:
     """Register the shared fixtures. pytest finds hooks only as module-level functions
     in a conftest, so this one function stays one; everything else is a class."""
     UnixLines.install()
+    PortableZips.install()
     config.pluginmanager.register(SharedFixtures(), "cordon-shared-fixtures")
 
 

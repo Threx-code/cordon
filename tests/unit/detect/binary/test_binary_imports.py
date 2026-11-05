@@ -23,7 +23,7 @@ from cordon_scanner.detect.binary.imports import (
 )
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Severity
-from support import ROOT
+from support import ROOT, requires_forked_workers
 
 
 class Build:
@@ -536,6 +536,7 @@ class TestRuleFile(RuleFileFixtures):
             for f in result.findings
         )
 
+    @requires_forked_workers
     def test_an_engine_error_on_one_file_does_not_end_the_scan(self, scan, monkeypatch) -> None:
         from cordon_scanner.detect.binary.rule_engine import lang
 

@@ -6,7 +6,7 @@
 
 **A supply-chain security scanner that reads every dependency before it runs.**
 
-[![CI](https://github.com/Threx-code/cordon/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Threx-code/cordon/actions/workflows/ci.yml)
+[![checks](https://github.com/Threx-code/cordon/actions/workflows/checks.yml/badge.svg?branch=main)](https://github.com/Threx-code/cordon/actions/workflows/checks.yml) [![linux](https://github.com/Threx-code/cordon/actions/workflows/tests-linux.yml/badge.svg?branch=main)](https://github.com/Threx-code/cordon/actions/workflows/tests-linux.yml) [![macos](https://github.com/Threx-code/cordon/actions/workflows/tests-macos.yml/badge.svg?branch=main)](https://github.com/Threx-code/cordon/actions/workflows/tests-macos.yml) [![windows](https://github.com/Threx-code/cordon/actions/workflows/tests-windows.yml/badge.svg?branch=main)](https://github.com/Threx-code/cordon/actions/workflows/tests-windows.yml)
 [![PyPI](https://img.shields.io/pypi/v/cordon-scanner?logo=pypi&logoColor=white)](https://pypi.org/project/cordon-scanner/)
 [![Python](https://img.shields.io/pypi/pyversions/cordon-scanner)](https://pypi.org/project/cordon-scanner/)
 [![Runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen)](https://github.com/Threx-code/cordon/blob/v0.7.0/pyproject.toml)

@@ -15,10 +15,28 @@
 name: native-wheels
 
 on:
+  # The release calls this to build what it publishes (release.yml).
   workflow_call:
+  # Its own run otherwise, only when the native code or how it is built changes: ten builds of up to
+  # 40 minutes ran on every push while they were part of ci.yml (5 Nov).
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - "src/cordon_scanner/_native/**"
+      - "src/cordon_scanner/detect/binary/rule_engine/anchoring/**"
+      - "pyproject.toml"
+      - "scripts/backend/**"
+      - ".github/workflows/native-wheels.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-native-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   linux:

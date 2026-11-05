@@ -14,6 +14,7 @@ from cordon_scanner import Scanner
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.errors import RulePackError
 from cordon_scanner.foundation.models import Severity
+from support import requires_forked_workers
 
 PACK = """
 pack: {{id: test.indicators, version: 1.0.0, license: Apache-2.0}}
@@ -47,15 +48,18 @@ class PackKit:
 
 
 class TestAPlainPackRuleReports:
+    @requires_forked_workers
     def test_in_source(self, tmp_path: Path) -> None:
         (finding,) = PackKit.findings(tmp_path, {"app/main.py": "x = 1\nmarker_7f3a()\n"})
         assert finding.severity is Severity.HIGH and finding.location.line == 2
 
+    @requires_forked_workers
     def test_in_a_workflow(self, tmp_path: Path) -> None:
         workflow = "on: push\njobs:\n  b:\n    runs-on: ubuntu-latest\n    steps:\n      - run: marker_7f3a()\n"
         found = PackKit.findings(tmp_path, {".github/workflows/ci.yml": workflow})
         assert [f.rule_id for f in found] == ["TEST.INDICATOR.001"]
 
+    @requires_forked_workers
     def test_once_per_file(self, tmp_path: Path) -> None:
         found = PackKit.findings(tmp_path, {"a.py": "marker_7f3a()\nmarker_7f3a()\n"})
         assert len(found) == 1
@@ -65,10 +69,12 @@ class TestAPlainPackRuleReports:
 
 
 class TestTheUsualRestraint:
+    @requires_forked_workers
     def test_a_non_malicious_rule_is_ceilinged_in_test_material(self, tmp_path: Path) -> None:
         (finding,) = PackKit.findings(tmp_path, {"tests/test_a.py": "marker_7f3a()\n"})
         assert finding.severity is Severity.LOW
 
+    @requires_forked_workers
     def test_a_malicious_rule_is_not(self, tmp_path: Path) -> None:
         extra = "    provenance: {kind: incident, reference: test}"
         (finding,) = PackKit.findings(

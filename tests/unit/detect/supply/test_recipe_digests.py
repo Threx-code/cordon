@@ -19,6 +19,7 @@ from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.intel.advisories import shipped
 from cordon_scanner.intel.malware.feed import FeedRoles
 from kits.feedkit import FeedKit, SignedFeed
+from support import requires_forked_workers
 
 FORMULA = b'class Evil < Formula\n  url "https://example.invalid/evil-1.0.tar.gz"\nend\n'
 
@@ -77,6 +78,7 @@ class RecipeFixtures:
 
 
 class TestRecipeDigests(RecipeFixtures):
+    @requires_forked_workers
     def test_the_condemned_recipe_bytes_block(self, tmp_path) -> None:
         digest = hashlib.sha256(FORMULA).hexdigest()
         self.feed(advisories={"homebrew": {"upsert": [RecipeKit.record(digest)], "withdraw": []}})
@@ -88,6 +90,7 @@ class TestRecipeDigests(RecipeFixtures):
         edited = FORMULA.replace(b"1.0", b"1.1")
         assert RecipeKit.rules(RecipeKit.tap(tmp_path / "tap", edited)) == set()
 
+    @requires_forked_workers
     def test_a_held_recipe_is_paused(self, tmp_path) -> None:
         digest = hashlib.sha256(FORMULA).hexdigest()
         held = RecipeKit.record(digest, provisional=True)
@@ -133,6 +136,7 @@ class TestMcpBundles(RecipeFixtures):
         (root / "server.mcpb").write_bytes(buffer.getvalue())
         return buffer.getvalue()
 
+    @requires_forked_workers
     def test_the_condemned_bundle_bytes_block(self, tmp_path) -> None:
         data = self.bundle(tmp_path / "p")
         record = RecipeKit.record(

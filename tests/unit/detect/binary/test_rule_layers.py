@@ -17,6 +17,7 @@ import pytest
 
 from cordon_scanner.detect.binary.rule_files import BUILTIN, RuleFileEngine
 from cordon_scanner.detect.binary.rule_layers import RuleLayers
+from support import requires_forked_workers
 
 MARK = b"CORDON-LAYER-PROBE-PAYLOAD-0001"
 _STRING = f'strings: $m = "{MARK.decode()}" condition: $m }}'
@@ -126,6 +127,7 @@ class TestThroughTheScan:
 
 
 class TestALayerFailsClosed:
+    @requires_forked_workers
     def test_a_layer_past_the_bound_fails_the_scan(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

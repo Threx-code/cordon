@@ -26,6 +26,7 @@ from cordon_scanner.detect.code.code_model_scores import MODEL_RULE, UNAVAILABLE
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.report.base import ReportOptions
 from cordon_scanner.report.sarif import SarifReporter
+from support import requires_forked_workers
 
 FIXTURE = (
     "const os = require('os');\n"
@@ -88,6 +89,7 @@ class CodeModelKit:
 
 
 class TestReachedCodeIsScored:
+    @requires_forked_workers
     def test_a_reached_file_with_the_learned_shape_is_reported_at_that_file(self, tmp_path) -> None:
         result = CodeModelKit.scanner(CodeModelKit.weights(tmp_path)).scan(
             CodeModelKit.package(tmp_path / "p")
@@ -103,6 +105,7 @@ class TestReachedCodeIsScored:
 
 
 class TestTheOperatingPoint:
+    @requires_forked_workers
     def test_block_at_raises_the_finding_to_high(self, tmp_path) -> None:
         base = CodeModelKit.scanner(CodeModelKit.weights(tmp_path))
         config = Config.default().with_overrides(use_cache=False, code_model_block_at=0.5)
@@ -154,6 +157,7 @@ class TestWeights:
         assert CodeModelKit.rules(result).count(UNAVAILABLE) == 1
         assert MODEL_RULE not in CodeModelKit.rules(result)
 
+    @requires_forked_workers
     def test_one_scan_with_weights_then_one_without_shares_nothing(self, tmp_path) -> None:
         target = CodeModelKit.package(tmp_path / "p")
         first = CodeModelKit.scanner(CodeModelKit.weights(tmp_path)).scan(target)

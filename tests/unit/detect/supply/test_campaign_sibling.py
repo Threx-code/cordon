@@ -13,6 +13,7 @@ import pytest
 from cordon_scanner import Scanner
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.intel.malware.campaign import CampaignFingerprint, CampaignIndex
+from support import requires_forked_workers
 
 RULE = "SUSPECT.CAMPAIGN.SIBLING.001"
 
@@ -64,6 +65,7 @@ class TestCampaignSibling:
         index = CampaignIndex.of_document(CampaignIndex.build([(facets, record)], [], "2026-10-21"))
         monkeypatch.setattr(CampaignIndex, "shipped", staticmethod(lambda: index))
 
+    @requires_forked_workers
     def test_a_renamed_renumbered_variant_is_held(self, tmp_path: Path) -> None:
         variant = {**CONDEMNED, "name": "ledger-tools-97", "version": "2.0.0"}
         variant["scripts"] = {"preinstall": "node setup-97.js"}

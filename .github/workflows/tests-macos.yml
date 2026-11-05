@@ -1,0 +1,88 @@
+# The test suite on macOS, in two parts on two runners. Split out of ci.yml (5 Nov).
+
+name: tests (macos)
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "ci/**"
+      - "scripts/backend/**"
+      - ".github/workflows/tests-macos.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # The OS belongs in the name. Nine jobs shared three names, so a failure
+    # could not be attributed to a platform without opening the API, and the
+    # CLI returned a different job's log for the same name.
+    name: test (macos, python ${{ matrix.python }}, part ${{ matrix.shard }})
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13", "3.14", "3.15"]
+        # Two parts on two runners (CORDON_TEST_SHARD, tests/conftest.py): alone, the suite took 85
+        # to 100 minutes on one runner (4 Nov).
+        shard: [0, 1]
+        # On a pull request, the oldest and newest Python only: what breaks on one operating system
+        # breaks on any version, and what changes between versions is tested on Linux at all five.
+        # All five run on main, on a v* tag and on a manual run, before every release.
+        exclude: ${{ fromJSON(github.event_name == 'pull_request' && '[{"python":"3.12"},{"python":"3.13"},{"python":"3.14"}]' || '[]') }}
+    steps:
+      # Actions pinned by commit SHA, not tag. A tag is mutable, so a
+      # tag-pinned action is code that can change without a commit -- which is
+      # one of the things Cordon reports in other people's workflows.
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: ${{ matrix.python }}
+          # Up to fifteen jobs install the locked toolchain on every run.
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: python -m pip install --upgrade pip
+      - run: pip install --require-hashes -r ci/dev-requirements.txt && pip install --no-deps -e .
+      # `-n auto`: the suite is CPU-bound and a runner has four cores. A gate
+      # slow enough to be resented is one people learn to merge past.
+      #
+      # Coverage is measured on one job rather than nine. It is a property of
+      # the test suite, not of the operating system or the interpreter, so
+      # measuring it nine times buys one number and costs eight runs of
+      # instrumented Python. `fail_under = 85` still gates, on that one job.
+      # A rerun of a failed job runs only the tests that failed (pytest's --lf), from the list the
+      # earlier attempt saved below, instead of the whole suite again (5 Nov).
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .pytest_cache
+          key: pytest-${{ runner.os }}-${{ matrix.python }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: pytest-${{ runner.os }}-${{ matrix.python }}-${{ matrix.shard }}-${{ github.run_id }}-
+      - name: Test
+        # `COVERAGE_CORE=sysmon` uses CPython 3.12's own monitoring hooks
+        # instead of the settrace callback, which is what makes measuring
+        # coverage cost seconds rather than minutes. It is set for every job
+        # because it does nothing unless coverage is running, and the one job
+        # that measures is chosen below.
+        env:
+          COVERAGE_CORE: sysmon
+          CORDON_TEST_SHARD: ${{ format('{0}/2', matrix.shard) }}
+        run: >-
+          pytest -q -n auto
+          ${{ github.run_attempt > 1 && '--lf' || '' }}
+      # Kept even when the tests fail: that is the list a rerun needs.
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        if: always()
+        with:
+          path: .pytest_cache
+          key: pytest-${{ runner.os }}-${{ matrix.python }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}

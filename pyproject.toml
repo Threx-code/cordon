@@ -393,6 +393,7 @@ addopts = [
 filterwarnings = ["error"]
 markers = [
     "slow: long-running tests, deselect with -m 'not slow'",
+    "soak: memory soaks (about 30 minutes); run on main, v* tags and manual runs, not on pull requests",
     "corpus: runs against the sample corpus",
     "hostile: feeds the scanner input designed to attack it",
     "perf: performance budget assertions",

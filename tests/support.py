@@ -124,6 +124,17 @@ requires_workflows = pytest.mark.skipif(
     reason=".github/ is not shipped in the sdist",
 )
 
+requires_forked_workers = pytest.mark.skipif(
+    not hasattr(__import__("os"), "fork"),
+    reason=(
+        "patches code or data in the test process, then scans; on Windows a scan's workers are "
+        "spawned fresh and never see the patch. The same code is tested on Linux and macOS, "
+        "where workers are forked"
+    ),
+)
+""" For a test that patches the scanner in the test process and then scans (4 Nov: 27 Windows
+failures, every one reproduced on Linux by spawning workers instead of forking them). """
+
 __all__ = [
     "BENIGN",
     "CORPUS",
@@ -132,6 +143,7 @@ __all__ = [
     "WORKFLOWS",
     "Support",
     "requires_corpus",
+    "requires_forked_workers",
     "requires_malicious_corpus",
     "requires_workflows",
 ]

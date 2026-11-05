@@ -27,7 +27,7 @@ import pytest
 from cordon_scanner import Scanner
 from cordon_scanner.foundation.config.settings import Config
 
-pytestmark = pytest.mark.perf
+pytestmark = [pytest.mark.perf, pytest.mark.soak]
 
 #: Scans after the warm-up, and the growth they may add (measured: 00578d7e +50 MB from scan 25 to
 #: 150, emptied 0 MB). CORDON_SOAK_SCANS raises the count for the release soak (1,000).

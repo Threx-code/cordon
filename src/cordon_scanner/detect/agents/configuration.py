@@ -222,7 +222,9 @@ class CommandClassifier:
         if not words:
             return False
         first = words[0]
-        if first.rsplit("/", 1)[-1] in _PACKAGE_RUNNERS:
+        from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
+
+        if McpConfigs.program(first) in _PACKAGE_RUNNERS:
             # `npx prettier --write .`: the tool is the first word that is not a flag.
             tool = next((w for w in words[1:] if not w.startswith("-") and w != "dlx"), "")
             return tool.rsplit("@", 1)[0].rsplit("/", 1)[-1] in _DEV_TOOLS

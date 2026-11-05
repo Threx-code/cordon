@@ -9,6 +9,7 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.foundation.config.settings import Config
+from support import requires_forked_workers
 
 RULE = "MALWARE.INSTALL.PERSIST.001"
 
@@ -49,6 +50,7 @@ class TestNamedNotWritten:
         )
         assert RULE not in PersistHelpers.rules(tmp_path, {"Dockerfile": dockerfile})
 
+    @requires_forked_workers
     def test_a_dependency_vendoring_a_dockerfile_does_not_make_it_an_install_hook(
         self, tmp_path, monkeypatch
     ) -> None:

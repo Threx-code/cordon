@@ -421,7 +421,7 @@ class McpServerFindings:
                     message=RULES["SUSPECT.MCP.UNPINNED.001"].message
                     + f" ({ecosystem}: {package})",
                 )
-        elif command.rsplit("/", 1)[-1] in ("docker", "podman") and "run" in args:
+        elif McpConfigs.program(command) in ("docker", "podman") and "run" in args:
             launched = configuration.ServerExposure.docker_run(args)
             image = launched.image if launched is not None else None
             if launched is not None and launched.host_access:

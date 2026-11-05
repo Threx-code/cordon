@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import io
 import json
-import resource
 from collections.abc import Callable
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -194,6 +193,8 @@ class Scan:
         worker processes (item 56); this process's own time alone stayed near 0.09 s whatever the
         size, so the size doubled toward a million items looking for 0.5 s and the test never
         finished (4 Nov). The workers are reaped when the scan ends, so their time is counted here."""
+        import resource  # POSIX: the perf suite runs on Linux
+
         own = resource.getrusage(resource.RUSAGE_SELF)
         children = resource.getrusage(resource.RUSAGE_CHILDREN)
         return own.ru_utime + own.ru_stime + children.ru_utime + children.ru_stime

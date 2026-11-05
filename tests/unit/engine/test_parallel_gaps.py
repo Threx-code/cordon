@@ -22,6 +22,7 @@ from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import Category
 from cordon_scanner.foundation.results import OperationalFinding
+from support import requires_forked_workers
 
 #: Files in the tree: the smallest that crosses into two batches, so --jobs 2 runs two workers
 #: (as tests/unit/engine/test_parallel.py's FIXTURE_FILES, asserted below).
@@ -123,6 +124,7 @@ class TestAWorkersGap:
 
 @pytest.mark.slow
 class TestTheTwoPathsAgree:
+    @requires_forked_workers
     def test_a_detector_that_raises_on_one_file_blocks_at_one_worker_and_at_two(
         self, tmp_path
     ) -> None:
