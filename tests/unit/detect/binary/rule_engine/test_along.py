@@ -59,10 +59,8 @@ class TestTheSameStarts:
 
 
 class TestMemory:
-    def test_an_anchorless_pattern_over_16_mb_holds_little(self) -> None:
-        rules = Rules.compile(r"rule r { strings: $r = /[a-c][0-3][a-c][0-3][a-c]/ condition: $r }")
-        data = (b"a1b2x" * 3_355_444)[: 16 << 20]
-        data = data[: 10 << 20] + b"a1b2c" + data[(10 << 20) + 5 :]  # one match, 10 MB in
+    @staticmethod
+    def peak(rules: Rules, data: bytes) -> tuple[list, int]:
         tracemalloc.start()
         try:
             rules.match(data[:4096])
@@ -72,5 +70,19 @@ class TestMemory:
             _, peak = tracemalloc.get_traced_memory()
         finally:
             tracemalloc.stop()
-        assert [m.strings for m in found] == [[(10 << 20, "$r", b"a1b2c")]]
-        assert peak - before < 24 << 20  # measured 6.6 MB; whole-file masks: 89.5 MB
+        return [m.strings for m in found], peak - before
+
+    def test_an_anchorless_pattern_over_16_mb_holds_little(self) -> None:
+        """What a part with no anchor holds is a window's masks, never the file's: whole-file masks
+        took 89.5 MB on 16 MB. Held per window it does not grow with the input. The window's cost
+        is the interpreter's: 6.3 MB at 16, 32 and 64 MB on 3.13; on 3.14 28.7, 12.7 and 11.7 MB, and
+        33.4 MB (macOS) and 35.7 MB (Windows) at 16 MB on CI (5 Nov). So the bound is on growth, with
+        a ceiling far from the whole file's."""
+        rules = Rules.compile(r"rule r { strings: $r = /[a-c][0-3][a-c][0-3][a-c]/ condition: $r }")
+        data = (b"a1b2x" * 3_355_444)[: 16 << 20]
+        data = data[: 10 << 20] + b"a1b2c" + data[(10 << 20) + 5 :]  # one match, 10 MB in
+        found, small = self.peak(rules, data)
+        assert found == [[(10 << 20, "$r", b"a1b2c")]]
+        assert small < 48 << 20  # whole-file masks: 89.5 MB on these 16 MB
+        _, large = self.peak(rules, data * 4)
+        assert large < small + (8 << 20), (small, large)  # four times the input, no more held
