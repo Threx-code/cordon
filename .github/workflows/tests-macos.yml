@@ -34,9 +34,9 @@ jobs:
       fail-fast: false
       matrix:
         python: ["3.11", "3.12", "3.13", "3.14", "3.15"]
-        # Two parts on two runners (CORDON_TEST_SHARD, tests/conftest.py): alone, the suite took 85
-        # to 100 minutes on one runner (4 Nov).
-        shard: [0, 1]
+        # Four parts on four runners (CORDON_TEST_SHARD, tests/conftest.py): alone, the suite took 85
+        # to 100 minutes on one runner (4 Nov), and in two parts 81 to 96 minutes each (5 Nov).
+        shard: [0, 1, 2, 3]
         # On a pull request, the oldest and newest Python only: what breaks on one operating system
         # breaks on any version, and what changes between versions is tested on Linux at all five.
         # All five run on main, on a v* tag and on a manual run, before every release.
@@ -76,7 +76,7 @@ jobs:
         # that measures is chosen below.
         env:
           COVERAGE_CORE: sysmon
-          CORDON_TEST_SHARD: ${{ format('{0}/2', matrix.shard) }}
+          CORDON_TEST_SHARD: ${{ format('{0}/4', matrix.shard) }}
         run: >-
           pytest -q -n auto
           ${{ github.run_attempt > 1 && '--lf' || '' }}
