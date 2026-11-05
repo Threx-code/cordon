@@ -123,6 +123,26 @@ test or conformance case that fails on the old code.
 
 ### Fixed
 
+- **A large repository's scan is complete**: the facts the scan's workers send back were capped at
+  64 MiB per scan, so a 50,000-file JavaScript repository had 15,229 files refused, the scan
+  ended incomplete (exit 4), and none of those files was ever cached. The bound now grows with the
+  content the scan reads; a warm scan of that repository went from 37 s to 19 s.
+- **A long install hook no longer makes a scan incomplete**: a `postinstall` (or any field a
+  worker reads from a file) longer than 64 KiB refused the whole scan's context.
+- **On Windows, a scan no longer sends Ctrl+C to the console**: the check for a crashed scan's
+  leftover files asked whether a process was alive with signal 0, which on Windows is Ctrl+C to
+  every process on the console. The MCP server's check of an installed server's own copy also
+  failed on every file there.
+- **On Windows, two scans sharing a cache no longer fail on a busy file**: a rename Windows
+  refuses for a moment is retried.
+- **A scan worker that never starts cannot hold a scan past its deadline**: one stuck before it
+  was ready was waited for without a limit (macOS: a one-file scan spent its whole 15-minute
+  budget). It is now a failed start, tried once more, and the deadline always holds.
+- **A worker holds no connection the scanning process had open**: workers inherited every
+  socket open when the scan started.
+- **Three rule patterns run in time proportional to their input**: the go.mod retraction parser,
+  the constructed-DNS-name rule and the guard's destructive-command check took up to 6 s on a
+  long crafted line.
 - **Intel is stale after a week without a feed, not a month**, and a repository's own
   configuration can no longer lengthen that limit: `max_intel_age: 0` was withheld from a scan
   target, ten years was not, and did the same. An operator's own `--config` may still set it.

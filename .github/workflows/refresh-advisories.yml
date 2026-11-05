@@ -84,9 +84,9 @@ jobs:
           python - <<'PY'
           import sys
 
-          from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
+          from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
 
-          db = AdvisoryDatabase.bundled()
+          db = ShippedAdvisories.database()
           if not db.matching("npm", "event-stream", "3.3.6"):
               print("::error::event-stream 3.3.6 no longer matches after the refresh")
               sys.exit(1)
