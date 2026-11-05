@@ -514,8 +514,10 @@ class PackageRegistries:
         Ranges are expanded against nothing: they are returned as `lo..hi` keys for `retracted`."""
         out: dict[str, str] = {}
         text = re.sub(r"(?s)/\*.*?\*/", "", go_mod)
-        blocks = re.findall(r"(?ms)^\s*retract\s*\((.*?)^\s*\)", text)
-        singles = re.findall(r"(?m)^\s*retract\s+([^(\n][^\n]*)$", text)
+        # `[ \t]*`, not `\s*`, before the keyword: `\s` crosses newlines, so on a run of blank lines
+        # every line start scanned to the end (1.2 s on 64,000 characters, the regex ladder, 5 Nov).
+        blocks = re.findall(r"(?ms)^[ \t]*retract\s*\((.*?)^[ \t]*\)", text)
+        singles = re.findall(r"(?m)^[ \t]*retract[ \t]+([^(\n][^\n]*)$", text)
         for line in [ln for block in blocks for ln in block.splitlines()] + singles:
             body, _, comment = line.partition("//")
             body = body.strip()

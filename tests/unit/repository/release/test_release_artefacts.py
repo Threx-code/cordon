@@ -273,8 +273,18 @@ class TestBuildToolchainIsPinned:
         pins = [line for line in lock.splitlines() if "==" in line and not line.startswith("#")]
         assert pins and all(line.rstrip().endswith("\\") for line in pins)
         assert lock.count("--hash=sha256:") >= len(pins)
-        ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-        assert "--require-hashes -r ci/dev-requirements.txt" in ci and ".[dev]" not in ci
+        # Every workflow that installs the development tools does so from the lock, by hash (one
+        # ci.yml became checks, tests-linux/macos/windows and latency on 5 Nov).
+        workflows = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
+        installing = [
+            w for w in workflows if "ci/dev-requirements.txt" in w.read_text(encoding="utf-8")
+        ]
+        assert {w.name for w in installing} >= {"checks.yml", "tests-linux.yml", "latency.yml"}
+        for workflow in workflows:
+            text = workflow.read_text(encoding="utf-8")
+            assert ".[dev]" not in text, workflow.name
+            if "ci/dev-requirements.txt" in text:
+                assert "--require-hashes -r ci/dev-requirements.txt" in text, workflow.name
 
 
 @requires_workflows

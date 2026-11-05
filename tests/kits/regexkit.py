@@ -276,6 +276,11 @@ class ViaMatcher:
     def search(self, data: bytes) -> Any:
         return next(self.finditer(data), None)
 
+    def __reduce__(self) -> tuple[Any, ...]:
+        # Rebuilt from its regex in the ladder's forkserver child: unpickled field by field,
+        # `__getattr__` asked for the unset `regex` and recursed until the child died.
+        return ViaMatcher, (self.regex,)
+
     def __getattr__(self, name: str) -> Any:
         return getattr(self.regex, name)
 
@@ -656,12 +661,15 @@ class Growth:
         """The least CPU time of `times` calls. CPU time, not wall time: each check runs in its own
         forked child, so other work on a busy machine does not stretch it -- a wall-clock bound
         failed a prepush with a linear pattern at 0.80 s on 64,000 characters that takes 0.14 s of
-        CPU (the lesson TestScale and the parser test learned too)."""
+        CPU (the lesson TestScale and the parser test learned too). This thread's CPU, not the
+        process's: the bounded check runs four patterns on threads of one process, and process time
+        charged each with the others' work (a different linear pattern over 0.5 s on each run, 5 Nov).
+        In a forked single-threaded child the two are the same."""
         least = float("inf")
         for _ in range(times):
-            start = time.process_time()
+            start = time.thread_time()
             call()
-            least = min(least, time.process_time() - start)
+            least = min(least, time.thread_time() - start)
         return least
 
     @staticmethod
@@ -785,8 +793,13 @@ class Ladder:
     def limited(
         target: Callable[..., str | None], args: tuple[object, ...], limit: float
     ) -> tuple[str, str | None]:
-        """("ok", result), ("error", why) or ("timeout", None), from a forked child."""
-        context = multiprocessing.get_context("fork")
+        """("ok", result), ("error", why) or ("timeout", None), from a forked child.
+
+        Forked by the forkserver, which is single-threaded, never by this process: the ladder runs
+        four checks on threads, and a child forked here could inherit a lock one of them held, then
+        wait on it for ever. A linear pattern then "did not finish in 60 s" (`re.split(r"[._\\-]+")`
+        on '----', `\\t\\t\\t\\t` for the fixer's pin pattern; the latency job, 5 Nov)."""
+        context = multiprocessing.get_context("forkserver")
         out = context.Queue()
         child = context.Process(target=Ladder._child, args=(target, args, out))
         child.start()
@@ -963,7 +976,6 @@ class Listed:
             "intel.registries.private_registries:_image:1",
             "intel.registries.private_registries:_pypi:2",
             "intel.store.licenses:_PUNCTUATION_RE",
-            "judge.calls:_DESTRUCTIVE",
             "judge.calls:_UNTRUSTED_CONTROL",
             "judge.calls:_value:1",
             "mcp.packages:_composer:1",
@@ -975,7 +987,6 @@ class Listed:
             "rule:CAP.DESTROY.SYSTEM_DISK.001",
             "rule:CAP.DESTROY.SYSTEM_DISK.001:1",
             "rule:CAP.EGRESS.DNS_CONSTRUCTED.001",
-            "rule:CAP.EGRESS.DNS_CONSTRUCTED.001:0",
             "rule:CAP.EGRESS.DNS_CONSTRUCTED.001:1",
             "rule:CAP.EGRESS.DNS_CONSTRUCTED.001:2",
             "rule:CAP.JS.CHARCODE_STRING.001",

@@ -207,12 +207,26 @@ class TestExtensionFolderBound:
         # why only NAME_BYTES of a name reach it: the claim is that at the bound its worst case stays a
         # modest multiple of an ordinary name of the same length, in CPU time, never wall time.
         pattern, bound = device.DeviceInventory.EXTENSION_FOLDER, device.DeviceInventory.NAME_BYTES
+        # Calls enough that the ordinary name takes a measurable time: Windows' process clock ticks
+        # every 15.6 ms, so 300 calls read as 0, the floor made the ratio 1,406 (4 Nov).
+        calls = 300
+        while (
+            TestExtensionFolderBound.cpu(
+                lambda: pattern.match("a." + "x" * (bound - 3) + "\x01"), calls
+            )
+            < 0.05
+            and calls < 1 << 20
+        ):
+            calls *= 4
         ordinary = TestExtensionFolderBound.cpu(
-            lambda: pattern.match("a." + "x" * (bound - 3) + "\x01")
+            lambda: pattern.match("a." + "x" * (bound - 3) + "\x01"), calls
         )
         for unit in TestExtensionFolderBound.WORST:
             name = ("a." + unit * bound)[: bound - 1] + "\x01"
-            ratio = TestExtensionFolderBound.cpu(lambda name=name: pattern.match(name)) / ordinary
+            ratio = (
+                TestExtensionFolderBound.cpu(lambda name=name: pattern.match(name), calls)
+                / ordinary
+            )
             assert ratio < TestExtensionFolderBound.WORST_LINE, (unit, ratio)
 
     def test_the_measure_catches_a_catastrophic_pattern(self) -> None:

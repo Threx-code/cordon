@@ -1,8 +1,8 @@
 # 28 · Every rule
 
-> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,500 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,501 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -1700,7 +1700,7 @@ rule's own samples.
 
 ## Package
 
-9 rules.
+10 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -1713,6 +1713,7 @@ rule's own samples.
 | `SUSPECT.PACKAGE.PROVENANCE.001` | medium | Version published without the provenance its package normally carries |
 | `SUSPECT.PACKAGE.REPOSITORY.001` | medium | Package claims a source repository the registry does not record |
 | `SUSPECT.PACKAGE.STARJACKING.001` | high | A new package claims a popular project's repository |
+| `VULNERABLE.PACKAGE.KNOWN.001` | high | The scanned package is a release with known vulnerabilities |
 
 ## Persistence
 
@@ -2059,7 +2060,7 @@ rule's own samples.
 | [`ATR-2026-00440`](https://agentthreatrule.org/en/rules/ATR-2026-00440) | critical | production | Microsoft Semantic Kernel In-Memory Vector Store eval() RCE (CVE-2026-26030) |
 | [`ATR-2026-02105`](https://agentthreatrule.org/en/rules/ATR-2026-02105) | high | production | Prototype Pollution via constructor.prototype Path Bypassing __proto__-Only Filters |
 | [`ATR-2026-02231`](https://agentthreatrule.org/en/rules/ATR-2026-02231) | medium | production | Second-Person Direct Existential Threat Coercion |
-| [`CORDON-ATR-0004`](https://github.com/Threx-code/cordon/blob/v0.6.0/scripts/data/cordon-atr-rules.yaml#CORDON-ATR-0004) | high | production | Persona whose definition is the absence of safety rules |
+| [`CORDON-ATR-0004`](https://github.com/Threx-code/cordon/blob/v0.7.0/scripts/data/cordon-atr-rules.yaml#CORDON-ATR-0004) | high | production | Persona whose definition is the absence of safety rules |
 
 ### Context exfiltration
 
@@ -2195,8 +2196,8 @@ rule's own samples.
 | [`ATR-2026-02649`](https://agentthreatrule.org/en/rules/ATR-2026-02649) | high | production | Vendor API Hostname Used as a Label Prefix of Another Domain |
 | [`ATR-2026-02684`](https://agentthreatrule.org/en/rules/ATR-2026-02684) | high | production | File-Tool Argument Targets a Modern Credential Store Outside the Classic Path List |
 | [`ATR-2026-02703`](https://agentthreatrule.org/en/rules/ATR-2026-02703) | high | production | Agent-Generated SQL Reaches Outside the Database via COPY TO PROGRAM or a Server-Side File Read |
-| [`CORDON-ATR-0001`](https://github.com/Threx-code/cordon/blob/v0.6.0/scripts/data/cordon-atr-rules.yaml#CORDON-ATR-0001) | high | production | Context exfiltration instruction in Spanish, French, German, Portuguese or Italian |
-| [`CORDON-ATR-0003`](https://github.com/Threx-code/cordon/blob/v0.6.0/scripts/data/cordon-atr-rules.yaml#CORDON-ATR-0003) | high | production | Exfiltration or disclosure keyword split by stray spaces to slip past matching |
+| [`CORDON-ATR-0001`](https://github.com/Threx-code/cordon/blob/v0.7.0/scripts/data/cordon-atr-rules.yaml#CORDON-ATR-0001) | high | production | Context exfiltration instruction in Spanish, French, German, Portuguese or Italian |
+| [`CORDON-ATR-0003`](https://github.com/Threx-code/cordon/blob/v0.7.0/scripts/data/cordon-atr-rules.yaml#CORDON-ATR-0003) | high | production | Exfiltration or disclosure keyword split by stray spaces to slip past matching |
 
 ### Data poisoning
 
@@ -2256,7 +2257,7 @@ rule's own samples.
 | [`ATR-2026-02525`](https://agentthreatrule.org/en/rules/ATR-2026-02525) | high | production | Shell Command-Word Reassembly via Parameter Expansion |
 | [`ATR-2026-02641`](https://agentthreatrule.org/en/rules/ATR-2026-02641) | high | production | Client-Supplied Approver Identity on an Approval Decision |
 | [`ATR-2026-02667`](https://agentthreatrule.org/en/rules/ATR-2026-02667) | high | production | Submitted Job Payload Carries Its Own Pre-Approved Tool List |
-| [`CORDON-ATR-0002`](https://github.com/Threx-code/cordon/blob/v0.6.0/scripts/data/cordon-atr-rules.yaml#CORDON-ATR-0002) | high | production | Instruction to act without the user's confirmation, in Spanish, French, German, Portuguese or Italian |
+| [`CORDON-ATR-0002`](https://github.com/Threx-code/cordon/blob/v0.7.0/scripts/data/cordon-atr-rules.yaml#CORDON-ATR-0002) | high | production | Instruction to act without the user's confirmation, in Spanish, French, German, Portuguese or Italian |
 
 ### Model abuse
 

@@ -19,9 +19,10 @@ in a child process with a deadline, so a hung or oversized scan is ended, never 
 
 from __future__ import annotations
 
-from cordon_scanner.mcp.server import Server
+from cordon_scanner.mcp.command import McpCommand
 
 __all__ = ["main"]
 
-#: The entry point: `cordon-scanner mcp` hands the rest of its command line here.
-main = Server.main
+#: The entry point: `cordon-scanner mcp` hands the rest of its command line here. The server is
+#: imported when it runs, not when this package is (mcp/command.py).
+main = McpCommand.main

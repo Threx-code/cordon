@@ -14,6 +14,7 @@ from cordon_scanner.detect.base import DetectorRequirements, ScanContext
 from cordon_scanner.engine.isolation import facts as channel
 from cordon_scanner.engine.isolation.facts import FILE_BYTES, FILE_COUNT, Facts, WorkerFacts
 from cordon_scanner.foundation.models import Category
+from support import requires_forked_workers
 
 
 class Sends:
@@ -55,9 +56,9 @@ class FactsKit:
         handed: list[int] = []
         real = Facts.accept
 
-        def accept(text, spent):
+        def accept(text, spent, budget=channel.SCAN_BYTES):
             handed.append(len(text))
-            return real(text, spent)
+            return real(text, spent, budget)
 
         monkeypatch.setattr(Facts, "accept", staticmethod(accept))
         config = Config.default().with_overrides(use_cache=False, offline=True)
@@ -110,6 +111,17 @@ class TestThePlainDataRule:
         assert Facts.accept("x" * (FILE_BYTES + 1), 0)[0] is None
         assert Facts.accept('{"python.dotted_path":["a"]}', channel.SCAN_BYTES)[0] is None
 
+    def test_the_scan_bound_grows_with_the_content_read(self) -> None:
+        """A flat 64 MiB refused the facts of 15,229 files of a 50,000-file repository, so the scan
+        was incomplete and those files were never cached (5 Nov): past SCAN_BYTES, a scan holds
+        PER_CONTENT_BYTE of facts for each byte of content it read, and no more."""
+        text = '{"python.dotted_path":["a"]}'
+        read = 100 << 20
+        assert Facts.budget(read) == channel.SCAN_BYTES + channel.PER_CONTENT_BYTE * read
+        assert Facts.accept(text, channel.SCAN_BYTES, Facts.budget(read))[0] is not None
+        full = Facts.budget(read)
+        assert Facts.accept(text, full, Facts.budget(read))[0] is None
+
     def test_the_worker_bounds_the_count_before_anything_crosses(self) -> None:
         WorkerFacts.begin()
         for i in range(FILE_COUNT + 1):
@@ -123,6 +135,7 @@ class TestThePlainDataRule:
         assert WorkerFacts.end() == ""
 
 
+@requires_forked_workers
 class TestThroughTheWorkers:
     def test_a_worker_s_facts_reach_the_parent_and_bad_ones_are_gaps(
         self, tmp_path, monkeypatch
@@ -167,6 +180,7 @@ class TestADeepPayloadIsRefusedNotRaised:
         assert results[0].location.path == "deep.py" and not acc.facts
 
 
+@requires_forked_workers
 class TestACachedFileKeepsItsFacts:
     """A warm scan joins the same closure as a cold one: a file served from the scan cache brings
     back the facts its worker sent, kept beside its findings and re-checked as a worker's are."""
@@ -180,8 +194,8 @@ class TestACachedFileKeepsItsFacts:
         accepted: list[dict] = []
         real = Facts.accept
 
-        def accept(text, spent):
-            decoded, why = real(text, spent)
+        def accept(text, spent, budget=channel.SCAN_BYTES):
+            decoded, why = real(text, spent, budget)
             accepted.append(decoded)
             return decoded, why
 

@@ -16,6 +16,7 @@ import io
 import json
 import os
 import tarfile
+import warnings
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, ClassVar
@@ -38,7 +39,7 @@ from cordon_scanner.engine.pipeline.units import Units
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.formats.served_json import ServedJson
 from cordon_scanner.foundation.results import Dependency
-from support import ROOT
+from support import ROOT, requires_forked_workers
 
 MALICIOUS = sorted(p for p in (ROOT / "corpus" / "malicious").iterdir() if p.is_dir())
 BENIGN = sorted(p for p in (ROOT / "corpus" / "benign").iterdir() if p.is_dir())
@@ -281,10 +282,24 @@ class TestTheParentParsesNoContext:
         assert Counted.calls == []
 
 
+class TestALongFieldCrosses:
+    def test_a_long_install_hook_leaves_the_scan_complete(self, tmp_path: Path) -> None:
+        """A string a worker read from a file may be as long as the file: at 65,536 characters a
+        `postinstall` past 64 KiB refused the whole context document, and every such package's
+        scan was incomplete (the detector-growth probe, 5 Nov)."""
+        chain = " && ".join(f"test -d dir{i} || cd dir{i} && echo step{i}" for i in range(4096))
+        assert len(chain) > 65536
+        manifest = {"name": "long-hook", "version": "1.0.0", "scripts": {"postinstall": chain}}
+        (tmp_path / "package.json").write_text(json.dumps(manifest), encoding="utf-8")
+        result = Scanner().scan(tmp_path)
+        assert ContextStage.RULE not in {f.rule_id for f in result.findings}
+
+
 class TestAFailedWorkerIsAGapNeverAStepHere:
     """The worker's function replaced before the scan starts: the template the workers are forked
     from is forked from this process, so they run the replacement."""
 
+    @requires_forked_workers
     @pytest.mark.parametrize("how", ["raises", "dies", "refused"])
     def test_the_scan_blocks_and_nothing_is_parsed_here(
         self, how: str, tmp_path: Path, monkeypatch
@@ -313,6 +328,7 @@ class TestAFailedWorkerIsAGapNeverAStepHere:
         assert any(rule == ContextStage.RULE for rule, _ in result.content_gaps)
         assert Counted.calls == []
 
+    @requires_forked_workers
     def test_one_failing_step_is_its_own_gap_and_the_rest_still_run(
         self, tmp_path: Path, monkeypatch
     ) -> None:
@@ -807,6 +823,7 @@ class TestTheParentOpensNoArchive:
         assert {f.location.path.split("!", 1)[-1] for f in result.findings} >= set()
         assert result.repository.file_count == 3
 
+    @requires_forked_workers
     @pytest.mark.parametrize("how", ["raises", "dies", "refused"])
     def test_a_failed_expander_is_a_rejected_archive(
         self, how: str, tmp_path: Path, monkeypatch
@@ -850,6 +867,7 @@ class TestTheParentOpensNoArchive:
         assert not (tmp_path / "escape.js").exists()
         assert SpillDirectory.sweep(now=float("inf")) == 0  # the scan removed its own directory
 
+    @requires_forked_workers
     def test_a_killed_scans_directory_is_swept_at_once_whatever_its_age(
         self, tmp_path: Path, monkeypatch
     ) -> None:
@@ -864,7 +882,11 @@ class TestTheParentOpensNoArchive:
         child = multiprocessing.get_context("fork").Process(
             target=SpillKit.die_holding, args=(tmp_path,)
         )
-        child.start()
+        with warnings.catch_warnings():
+            # Python 3.15 warns at a fork while the test runner's thread is alive; the child only
+            # makes a directory and exits, holding no lock that thread could have taken.
+            warnings.filterwarnings("ignore", message=r"This process .* is multi-threaded")
+            child.start()
         child.join(30)
         left = (tmp_path / "left").read_text(encoding="utf-8")
         assert Path(left).exists()  # killed: nothing removed it
@@ -901,7 +923,9 @@ class TestTheParentOpensNoArchive:
         fresh = SpillDirectory()
         try:
             assert not stale.exists()
-            assert fresh.path.exists() and (fresh.path.stat().st_mode & 0o777) == 0o700
+            assert fresh.path.exists()
+            # POSIX mode bits; Windows reports 0o777 and guards the directory by its profile ACL.
+            assert os.name != "posix" or (fresh.path.stat().st_mode & 0o777) == 0o700
         finally:
             fresh.remove()
 

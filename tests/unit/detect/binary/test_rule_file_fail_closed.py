@@ -7,6 +7,7 @@ the bound lowered, so CI can afford it, with the peak memory asserted."""
 from __future__ import annotations
 
 import json
+import os
 import runpy
 import sys
 from pathlib import Path
@@ -20,6 +21,7 @@ from cordon_scanner.detect.binary.rule_engine.anchoring.places import Places
 from cordon_scanner.detect.binary.rule_engine.anchoring.stream import Streams
 from cordon_scanner.detect.binary.rule_engine.lang import RuleError, Rules
 from cordon_scanner.detect.binary.rule_engine.pattern import Unbounded
+from support import PeakMemory
 
 ZEROS = bytes(8 << 20)
 
@@ -28,11 +30,7 @@ class Bound:
     @staticmethod
     def peak_mb() -> int:
         """The process's peak resident memory in MB (where the platform reports it; else 0)."""
-        try:
-            import resource
-        except ImportError:  # not on Windows
-            return 0
-        return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) // 1024
+        return PeakMemory.mib()
 
 
 class TestTheBound:
@@ -97,6 +95,11 @@ UNMATCHED = "SUSPECT.RULEFILE.UNMATCHED.001"
 MALWARE = 'rule z { meta: category = "malicious" strings: $z = { 00 00 00 00 } condition: #z > 5 }'
 
 
+@pytest.mark.skipif(
+    not hasattr(os, "fork"),
+    reason="each case patches the matcher in this process; Windows starts scan workers fresh, so the "
+    "patch never reaches them. The same fail-closed code runs, and is tested, on Linux and macOS",
+)
 class TestEveryCauseFailsClosed:
     """Each way the matched file can stop a match fails the scan (a non-zero exit), named."""
 

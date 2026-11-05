@@ -1,6 +1,6 @@
 # 26 · Every command
 
-> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 Every command and every option, rendered from the scanner's own argument parser, so nothing
 here can name a flag that does not exist. `cordon-scanner help <command>` prints the same for
@@ -78,9 +78,10 @@ Scan a directory, file or archive.
 │                           with its justification                           │
 │ --config PATH             repository configuration file                    │
 │ --policy PATH             organisation policy file                         │
-│ --format, -f FMT[:PATH]   text|json|sarif|junit|markdown|github.           │
-│                           Repeatable. Append :PATH to write that format to │
-│                           a file, for example --format sarif:cordon.sarif  │
+│ --format, -f FMT[:PATH]   text|json|sarif|junit|markdown|github|codeclimat │
+│                           e|vex. Repeatable. Append :PATH to write that    │
+│                           format to a file, for example --format           │
+│                           sarif:cordon.sarif                               │
 │ --output, -o PATH         write to a file (only valid with a single        │
 │                           --format)                                        │
 │ --evidence MODE           none|masked|hash_only (default: masked). The     │
@@ -351,7 +352,8 @@ Re-render a saved JSON result in another format.
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ path                      a result written with --format json              │
-│ --format, -f FORMAT       text|json|sarif|junit|markdown|github            │
+│ --format, -f FORMAT       text|json|sarif|junit|markdown|github|codeclimat │
+│                           e|vex                                            │
 │ --output, -o OUTPUT       write to a file                                  │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -662,8 +664,10 @@ Manage the vulnerability/malicious-package advisory database.
 │                           rocky, almalinux, redhat, suse, opensuse) so     │
 │                           image scans match operating-system packages      │
 │                           offline                                          │
-│ --bundle URL              install a signed advisory bundle from URL        │
-│                           instead of building from OSV; the bundle's       │
+│ --bundle URL|DIR          install a signed advisory bundle instead of      │
+│                           building from OSV: from a release's URL, or from │
+│                           a directory holding the two release assets       │
+│                           carried across an air gap; either way its        │
 │                           Ed25519 signature is verified against the pinned │
 │                           release key before anything is unpacked          │
 └────────────────────────────────────────────────────────────────────────────┘

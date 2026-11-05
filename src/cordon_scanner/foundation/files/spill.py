@@ -89,11 +89,14 @@ class Spill:
         root = Path(tempfile.gettempdir())
         for entry in root.glob(f"{Spill.PREFIX}*"):
             pid = entry.name[len(Spill.PREFIX) :].split("-", 1)[0]
-            if pid.isdigit() and int(pid) != os.getpid() and not Spill._running(int(pid)):
+            if pid.isdigit() and int(pid) != os.getpid() and not Spill.running(int(pid)):
                 shutil.rmtree(entry, ignore_errors=True)
 
     @staticmethod
-    def _running(pid: int) -> bool:
+    def running(pid: int) -> bool:
+        """Whether process `pid` runs; one another user owns counts as running."""
+        if os.name == "nt":
+            return Spill._running_on_windows(pid)
         try:
             os.kill(pid, 0)
         except ProcessLookupError:
@@ -101,6 +104,25 @@ class Spill:
         except OSError:  # it exists and is another user's: not ours to remove
             return True
         return True
+
+    @staticmethod
+    def _running_on_windows(pid: int) -> bool:  # pragma: no cover - Windows
+        """Whether `pid` runs, asked of the kernel. Never `os.kill(pid, 0)` here: on Windows signal 0
+        is CTRL_C_EVENT, so it sent Ctrl+C to every process on the console (each Windows test job
+        ended with a KeyboardInterrupt after its last test, 5 Nov)."""
+        import ctypes
+
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+        handle = kernel.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return bool(ctypes.get_last_error() == 5)  # type: ignore[attr-defined]  # denied: another user's
+        try:
+            code = ctypes.c_ulong()
+            if not kernel.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return True
+            return code.value == 259  # STILL_ACTIVE
+        finally:
+            kernel.CloseHandle(handle)
 
 
 __all__ = ["Spill", "SpilledBytes"]

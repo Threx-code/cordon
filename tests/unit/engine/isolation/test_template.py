@@ -7,9 +7,12 @@ from __future__ import annotations
 import multiprocessing
 import os
 import signal
+import socket
+import stat
 import subprocess
 import sys
 import textwrap
+import threading
 import time
 from pathlib import Path
 
@@ -37,9 +40,7 @@ class Planted:
             os._exit(9)
         if kind == "sockets":  # this worker and how many sockets it holds, after a pause so that
             time.sleep(float(arg))  # type: ignore[arg-type]  # the units spread across the workers
-            return os.getpid(), sum(
-                1 for fd in Path("/proc/self/fd").iterdir() if Planted.is_socket(fd)
-            )
+            return os.getpid(), Planted.sockets()
         if kind == "pid":
             return os.getpid()
         if kind == "sleep":
@@ -48,11 +49,22 @@ class Planted:
         raise AssertionError(kind)
 
     @staticmethod
-    def is_socket(fd: Path) -> bool:
-        try:
-            return str(fd.readlink()).startswith("socket:")
-        except OSError:
-            return False
+    def sockets() -> int:
+        """How many sockets this process holds: its descriptors (/proc/self/fd on Linux, /dev/fd on
+        macOS, which has no /proc), each asked of the kernel with fstat. Reading /proc's links alone
+        failed every unit on macOS, so the test there checked nothing (4 Nov). The standard streams
+        (0 to 2) are not counted: they are the host's, inherited by every process, and where the
+        host's stdin is itself a socket (a terminal multiplexer, some CI agents) they are not a
+        channel the template made."""
+        listing = "/proc/self/fd" if Path("/proc/self/fd").is_dir() else "/dev/fd"
+        count = 0
+        for entry in Path(listing).iterdir():
+            try:
+                fd = int(entry.name)
+                count += fd > 2 and stat.S_ISSOCK(os.fstat(fd).st_mode)
+            except (OSError, ValueError):
+                continue  # the listing's own descriptor, closed once listed
+        return count
 
 
 class Harness:
@@ -112,6 +124,23 @@ class TestWorkersFromTheTemplate(TemplateFixtures):
         # no channel to the template or another worker, in the last worker forked as in the first
         assert {count for _, count in outcome.results.values()} == {1}
 
+    def test_a_socket_the_host_held_at_the_start_reaches_no_worker(self) -> None:
+        """A fork copies every descriptor: a socket the host had open when the template started (a
+        connection, another scan's channel) was held by every worker (macOS CI, 5 Nov)."""
+        held = socket.socketpair()
+        started = Template.start(WorkerMain.from_template)
+        assert started is not None
+        try:
+            units = [Unit(i, ("sockets", 0.5), 1) for i in range(2)]
+            outcome = Harness.supervisor(started, workers=2).run(units)
+            assert {count for _, count in outcome.results.values()} == {1}
+            held[0].sendall(b"x")  # the host's pair still works: the template's copies were its own
+            assert held[1].recv(1) == b"x"
+        finally:
+            started.close()
+            for end in held:
+                end.close()
+
     def test_workers_are_the_template_s_children_not_the_parent_s(self, template) -> None:
         outcome = Harness.supervisor(template, workers=1).run([Unit(0, ("pid", None), 1)])
         with pytest.raises(ChildProcessError):
@@ -160,6 +189,10 @@ class TestTheTemplateLeavesNothingBehind(TemplateFixtures):
             parent.wait()
             parent.stdout.close()  # type: ignore[union-attr]
 
+    @pytest.mark.skipif(
+        not Path("/proc/self/status").exists(),
+        reason="only Linux shows another process's ignored signals (/proc); macOS's ps has no such field",
+    )
     def test_an_interrupt_is_the_parent_s(self, template) -> None:
         sock, pid = template.fork_worker()
         try:
@@ -226,3 +259,23 @@ class TestAChildWhoseParentHasGone:
         )
         assert done.returncode == 0
         assert "alive" in done.stdout
+
+
+class TestAThreadedHostStillForksItsTemplate:
+    """Python 3.15 warns at a fork while another thread is alive; the template is forked from the host
+    because it must carry the host's state, and the warning is said in `Template.fork_from_host`."""
+
+    def test_a_threaded_host_s_scan_is_complete_and_uses_its_own_detectors(self, tmp_path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.foundation.config.settings import Config
+
+        (tmp_path / "a.js").write_text("module.exports = 1;\n", encoding="utf-8")
+        release = threading.Event()
+        other = threading.Thread(target=release.wait, daemon=True)
+        other.start()
+        try:
+            result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        finally:
+            release.set()
+            other.join()
+        assert result.content_complete, [f.rule_id for f in result.findings]

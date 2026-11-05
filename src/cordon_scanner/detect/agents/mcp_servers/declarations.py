@@ -61,9 +61,17 @@ class McpConfigs:
         return re.split(r"[\[=@<>~!]", spec, maxsplit=1)[0], None
 
     @staticmethod
+    def program(command: str) -> str:
+        """The program a command names, as one word: its last path part, on either separator, lower
+        case, without Windows' `.cmd` or `.exe`. A Windows config names `C:\\Program Files\\nodejs\\
+        npx.cmd`; split on `/` alone it stayed the whole path, so its server's package was never
+        examined, nor a `docker.exe run`'s image, nor an agent hook's runner (4 Nov)."""
+        return re.split(r"[/\\]", command)[-1].lower().removesuffix(".cmd").removesuffix(".exe")
+
+    @staticmethod
     def launched_package(command: str, args: list[str]) -> tuple[str, str, bool] | None:
         """The (ecosystem, package spec, pinned) an MCP launch command downloads, if it does."""
-        runner = command.rsplit("/", 1)[-1].lower().removesuffix(".cmd").removesuffix(".exe")
+        runner = McpConfigs.program(command)
         rest = list(args)
         ecosystem = _RUNNERS.get(runner)
         if ecosystem is None and rest:

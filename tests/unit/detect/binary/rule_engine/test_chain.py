@@ -103,7 +103,10 @@ class TestSameMatchesAsTheRuns:
             pattern = "/" + "".join(terms) + "/" + r.choice(["", "i", "s"])
             rules = Runs.rules(pattern)
             pieces = [b" " * r.randint(1, 300), b"ab1", b"\n", b"aB" * r.randint(1, 40), b"7" * 90]
-            data = b"".join(r.choice(pieces) for _ in range(40))[:3000]
+            # 1,000 bytes: still past every repeat drawn (16 to 80) and holding the 300-byte runs. At
+            # 3,000, `/.{20,}.{0,3} +/s` (seed 0) took 215 s: with `s` its `.` takes every byte, so
+            # each start matches to the end and every match is collected, in both matchers (5 Nov).
+            data = b"".join(r.choice(pieces) for _ in range(40))[:1000]
             assert Runs.matches(rules, data, chain=True) == Runs.matches(
                 rules, data, chain=False
             ), pattern

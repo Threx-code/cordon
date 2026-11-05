@@ -742,6 +742,7 @@ class ContextStage:
         carry_content: bool, where: str, image: bool, pending_hooks: Any,
     ) -> tuple[Accepted | None, str]:  # fmt: skip
         """The context worker run over `units`, and its document checked, or why there is none."""
+        from cordon_scanner.engine.isolation.context_cache import ContextCache
         from cordon_scanner.engine.isolation.supervisor import Supervisor, Unit
         from cordon_scanner.engine.parallel import CARRIED_SETTINGS, ParallelScanner
 
@@ -772,24 +773,75 @@ class ContextStage:
                 (type(self.engine), config.to_dict(), read_root, (), ctx.repository, operator,
                  facts),
             )  # fmt: skip
+        item = (kind, items, read_root, str(root), where, image, pending_hooks)
+        cache = self.engine.cache
+        digest = self.cache_digest(item, ctx) if cache.enabled else ""
+        if digest:
+            # The same tree, scanned again: the worker's document from last time, checked exactly
+            # as a fresh one is. A warm 20,000-file scan spent 10 s re-reading every file here.
+            cached = ContextCache.get(cache, digest, DOCUMENT_BYTES)
+            if cached is not None:
+                accepted, why = ContextFacts.accept(cached, units, ctx)
+                if accepted is not None:
+                    return accepted, why
         supervisor = Supervisor(
             ParallelScanner.start_context(), setup, f"{__name__}:ContextWork.run",
             ParallelScanner.BOUNDS, 1, deadline=ctx.deadline,
         )  # fmt: skip
         supervisor.template = template
         size = sum(len(unit.content.raw) for unit in units)
-        item = (kind, items, read_root, str(root), where, image, pending_hooks)
         outcome = supervisor.run([Unit(0, item, size)])
         if 0 in outcome.results:
             answer = outcome.results[0]
             if isinstance(answer, str):
-                return ContextFacts.accept(answer, units, ctx)
+                accepted, why = ContextFacts.accept(answer, units, ctx)
+                if accepted is not None and digest:
+                    ContextCache.put(cache, digest, answer, DOCUMENT_BYTES)
+                return accepted, why
             return None, "its worker answered with something that is not a document"
         if 0 in outcome.failed:
             return None, f"its worker ended: {outcome.failed[0]}"
         if outcome.unstarted:
             return None, "the scan's budget was spent before it finished"
         return None, "its worker gave no answer"
+
+    def cache_digest(self, item: tuple[Any, ...], ctx: ScanContext) -> str:
+        """Everything the context worker's answer depends on: each unit's path, sha256, language,
+        project and where it is opened (never its bytes; the hash stands for them), the target and
+        how it is read, the hooks pending from the walk, the context the parent built, and the
+        code, intelligence, rule file and Python that read them (`CacheSignature`). One byte of
+        one file changed, or a different scanner, and it is another key."""
+        import hashlib
+        import sys
+
+        from cordon_scanner.engine.cache import CACHE_VERSION, CacheSignature
+        from cordon_scanner.engine.canonical import Canonical
+
+        kind, items, read_root, root, where, image, pending_hooks = item
+        digest = hashlib.sha256()
+        Canonical.feed(
+            digest,
+            {
+                "version": CACHE_VERSION,
+                "kind": kind,
+                "units": [
+                    [path, sha, language, project, opens]
+                    for path, sha, _, language, project, opens in items
+                ],
+                "read_root": read_root,
+                "root": root,
+                "where": where,
+                "image": image,
+                "pending_hooks": pending_hooks,
+                "code": CacheSignature._package_hash(),
+                "context": CacheSignature.context_digest(ctx),
+                "intel": CacheSignature._intel_state(),
+                "rule_file": CacheSignature._rule_file_digest(self.engine.config),
+                "config": self.engine.config.to_dict(),
+                "python": sys.version,
+            },
+        )
+        return digest.hexdigest()
 
     def _failed(
         self, units: list[FileUnit], acc: Accumulator, ctx: ScanContext, where: str, why: str

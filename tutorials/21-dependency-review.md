@@ -1,6 +1,6 @@
 # 21 · Reviewing a dependency update
 
-> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 A pull request that bumps a lockfile is reviewed as a diff nobody reads: hundreds of
 changed `integrity` lines, and somewhere among them the one package that started running
@@ -63,7 +63,7 @@ Composer package is listed and said not to be compared.
 The GitHub Action runs it after the scan, with the base branch's commit as `--base`:
 
 ```yaml
-- uses: Threx-code/cordon/action@<sha>   # v0.6.0
+- uses: Threx-code/cordon/action@<sha>   # v0.7.0
   with:
     dependency-review: true          # the report, in the job summary
     dependency-review-online: true   # fetch, verify and compare each release

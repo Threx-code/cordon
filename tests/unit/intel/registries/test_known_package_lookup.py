@@ -31,6 +31,22 @@ class Reference:
         return any(implementation.normalize_name(c) == name for c in candidates)
 
     @staticmethod
+    def answers(ecosystem: str, names: set[str]) -> dict[str, bool]:
+        """`is_known` for each of `names`, the same comparison with each candidate normalised once
+        here, never by the code under test: asked name by name, every candidate was normalised for
+        every name, and the test took 460 s of the suite's 5,422 (5 Nov)."""
+        candidates = (
+            PackageIntel.POPULAR_PACKAGES.get(ecosystem, frozenset())
+            | REAL_PACKAGES.get(ecosystem, frozenset())
+            | PackageIntel._KNOWN_NEIGHBOURS.get(ecosystem, frozenset())
+        )
+        implementation = EcosystemRegistry.get(ecosystem)
+        normalised = (
+            {implementation.normalize_name(c) for c in candidates} if implementation else set()
+        )
+        return {n: n in candidates or n in normalised for n in names}
+
+    @staticmethod
     def ecosystems() -> list[str]:
         return sorted(
             {*PackageIntel.POPULAR_PACKAGES, *REAL_PACKAGES, *PackageIntel._KNOWN_NEIGHBOURS}
@@ -69,10 +85,15 @@ class TestTheLookup:
         asked |= {Reference.near(n, rng) for n in names for _ in range(2)}
         asked |= {"", "zz-not-a-package-zz", "a"}
         known = sum(PackageIntel.is_known_package(ecosystem, n) for n in asked)
+        expected = Reference.answers(ecosystem, asked)
         for name in sorted(asked):
-            assert PackageIntel.is_known_package(ecosystem, name) == Reference.is_known(
-                ecosystem, name
-            ), (ecosystem, name)
+            assert PackageIntel.is_known_package(ecosystem, name) == expected[name], (
+                ecosystem,
+                name,
+            )
+        # The batch answer is the per-name one: checked on a sample, where each costs a full pass.
+        for name in sorted(asked)[:: max(1, len(asked) // 40)]:
+            assert Reference.is_known(ecosystem, name) == expected[name], (ecosystem, name)
         assert ecosystem == "no-such-ecosystem" or known >= len(names)  # not vacuous
 
     def test_a_replaced_list_is_read_again(self, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -159,12 +159,22 @@ class Incoming:
 
         Hooks this command would fire for code it has just scanned are told so through
         `INCOMING_ENV`; `ext::` remote helpers, which run a program named in a URL, are refused.
+        The filesystem monitor is off: with `core.fsmonitor` on (Git for Windows' daemon, or a
+        hook), git started a process inside the clone being checked, which on Windows kept the
+        directory open so a blocked clone could not be removed (WinError 32, 4 Nov).
         """
         from cordon_scanner.sources.registry import GitRepository
 
         env = {**os.environ, INCOMING_ENV: "1"}
         return subprocess.run(  # noqa: S603 - absolute path, fixed argv, no shell
-            [GitRepository.binary(), "-c", "protocol.ext.allow=never", *args],
+            [
+                GitRepository.binary(),
+                "-c",
+                "protocol.ext.allow=never",
+                "-c",
+                "core.fsmonitor=false",
+                *args,
+            ],
             cwd=cwd,
             env=env,
             text=True,
@@ -228,11 +238,17 @@ class Incoming:
         head = cls._rev(root, "HEAD")
         if head is None:
             return None
+        # Closed before anything is removed: its `git cat-file --batch` child runs with the clone as
+        # its working directory, and on Windows a directory a live process stands in cannot be
+        # deleted, so a blocked clone stayed on disk and the command failed (WinError 32, 4 Nov).
+        repository = GitRepository(root)
         try:
-            check = cls.check(GitRepository(root), head, config)
+            check = cls.check(repository, head, config)
         except BaseException:
+            repository.close()
             cls._remove(root, existed)
             raise
+        repository.close()
         if not check.ok:
             cls._remove(root, existed)
             return check

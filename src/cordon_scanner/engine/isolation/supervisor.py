@@ -21,6 +21,7 @@ from __future__ import annotations
 import contextlib
 import importlib
 import math
+import multiprocessing
 import multiprocessing.connection
 import os
 import signal
@@ -132,6 +133,12 @@ class TemplateProcess:
 class Worker:
     """One supervised process and the unit it holds: spawned, or forked by the scan's template."""
 
+    #: Seconds a worker has to say it is ready. One that has not by then ends as a worker that
+    #: ended before it was ready: tried once more, and a scan none can start is a scanner error.
+    #: Without it a worker hung before it was ready, holding no unit, was waited for without a
+    #: timeout (macOS CI: a one-file scan spent its whole 900 s budget, 5 Nov).
+    START_BACKSTOP: ClassVar[float] = 120.0
+
     def __init__(self, context: BaseContext, setup: tuple[str, tuple[Any, ...]], work: str,
                  bounds: Bounds, template: Template | None = None) -> None:  # fmt: skip
         self.process: Any
@@ -151,7 +158,7 @@ class Worker:
             )
             self.process.start()
             theirs.close()
-        self.ready = False
+        self.ready, self.started_at = False, time.monotonic()
         self.unit: Unit | None = None
         self.given_at = 0.0
 
@@ -160,7 +167,17 @@ class Worker:
         self.conn.send((unit.index, unit.item, bounds.cpu_budget(unit.size)))
 
     def overdue(self, bounds: Bounds, now: float) -> bool:
+        if not self.ready:
+            return now - self.started_at > Worker.START_BACKSTOP
         return self.unit is not None and now - self.given_at > bounds.wall_budget(self.unit.size)
+
+    def due(self, bounds: Bounds, now: float) -> float | None:
+        """Seconds until `overdue`; None while it waits for no backstop (ready, holding nothing)."""
+        if not self.ready:
+            return self.started_at + Worker.START_BACKSTOP - now
+        if self.unit is not None:
+            return self.given_at + bounds.wall_budget(self.unit.size) - now
+        return None
 
     def end(self) -> None:
         if self.process.is_alive():
@@ -205,6 +222,13 @@ class WorkerMain:
         conn: Connection, setup: tuple[str, tuple[Any, ...]], work: str, bounds: Bounds
     ) -> None:
         os.environ[WorkerMain.INSIDE] = "1"
+        # A spawned worker is daemonic, so its parent ends it at exit, and a daemonic process may
+        # not start processes: a detector's nested scan (an MCP server's installed copy,
+        # `ScanContext.nested_scan`) starts its own workers. The worker clears the flag on itself:
+        # on Windows the MCP package check failed on every file ("daemonic processes are not
+        # allowed to have children", 5 Nov). Spawned non-daemonic instead, they are joined, not
+        # ended, when their parent exits; the Windows test job ended interrupted at its exit.
+        multiprocessing.current_process().daemon = False
         isolation = Limits.apply(bounds)
         WorkerMain.resolve(setup[0])(*setup[1])
         run = WorkerMain.resolve(work)
@@ -413,10 +437,30 @@ class Supervisor:
                     elif queue:
                         pool.append(self._start())
         finally:
-            for worker in pool:
-                if worker.process.is_alive():
+            self._stop(pool)
+
+    #: Seconds an idle worker told to stop has to end on its own before it is killed: it reads
+    #: the stop and returns at once. Killed straight after the message, none ever finished its own
+    #: way out (the test suite's coverage of worker code was lost there, 5 Nov).
+    STOP_GRACE: ClassVar[float] = 2.0
+
+    @staticmethod
+    def _stop(pool: list[Worker]) -> None:
+        """Every worker told to stop; the idle ones given `STOP_GRACE` together to end, a worker
+        still holding a unit none: each still running after that is killed (`Worker.end`)."""
+        idle = []
+        for worker in pool:
+            if worker.process.is_alive():
+                with contextlib.suppress(OSError):
                     worker.conn.send(None)
-                worker.end()
+                if worker.unit is None:
+                    idle.append(worker.process.sentinel)
+        deadline = time.monotonic() + Supervisor.STOP_GRACE
+        while idle and (left := deadline - time.monotonic()) > 0:
+            for ended in multiprocessing.connection.wait(idle, left):
+                idle.remove(ended)
+        for worker in pool:
+            worker.end()
 
     def _stop_in_flight(self, pool: list[Worker]) -> None:
         """The scan's deadline holds for a unit already running too (item 64): each worker holding
@@ -432,8 +476,8 @@ class Supervisor:
     def _wait(self, pool: list[Worker]) -> None:
         """Until a worker answers or ends, or the nearest wall backstop or the deadline falls due."""
         now = time.monotonic()
-        due = [w.given_at + self.bounds.wall_budget(w.unit.size) - now for w in pool if w.unit]
-        if self.deadline is not None and due:
+        due = [d for w in pool if (d := w.due(self.bounds, now)) is not None]
+        if self.deadline is not None:
             due.append(self.deadline - self.clock())
         timeout = max(0.0, min(due)) if due else None
         if timeout is not None:

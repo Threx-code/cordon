@@ -36,6 +36,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, ClassVar
 
+from cordon_scanner.foundation.files.ownership import Ownership
+
 
 class PackCache:
     """Entries under one directory, one file per key."""
@@ -64,7 +66,7 @@ class PackCache:
         path = self.root / PackCache.KEY_NAME
         try:
             st = path.stat()
-            if st.st_uid == os.getuid() and not st.st_mode & 0o077 and st.st_size >= 32:
+            if Ownership.private(st) and st.st_size >= 32:
                 self._key = path.read_bytes()
                 return self._key
             path.unlink()
@@ -156,7 +158,7 @@ class PackCache:
         path = self.root / key
         try:
             st = path.stat()
-            if st.st_uid != os.getuid() or st.st_mode & 0o022:
+            if not Ownership.others_cannot_write(st):
                 self.refused += 1
                 return None
             raw = path.read_bytes()

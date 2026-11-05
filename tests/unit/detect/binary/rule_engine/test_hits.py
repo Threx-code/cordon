@@ -10,16 +10,13 @@ from cordon_scanner.detect.binary.rule_engine import scan
 from cordon_scanner.detect.binary.rule_engine.hits import Hits, Match
 from cordon_scanner.detect.binary.rule_engine.lang import RuleError, Rules
 from cordon_scanner.detect.binary.rule_engine.pattern import TooManyMatches
+from support import PeakMemory
 
 
 class Peak:
     @staticmethod
     def mb() -> int:
-        try:
-            import resource
-        except ImportError:  # not on Windows
-            return 0
-        return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) // 1024
+        return PeakMemory.mib()
 
 
 class TestHits:

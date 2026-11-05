@@ -187,6 +187,7 @@ rather than a document.
 | `VULNERABLE.DEPENDENCY.KNOWN.001` | high | `advisory` | vulnerability |
 | `VULNERABLE.IMAGE.EXPLOITED.001` | critical | `os-packages` | vulnerability |
 | `VULNERABLE.IMAGE.PACKAGE.001` | high | `os-packages` | vulnerability |
+| `VULNERABLE.PACKAGE.KNOWN.001` | high | `advisory` | vulnerability |
 | `VULNERABLE.PROVENANCE.INVALID.001` | critical | `provenance` | vulnerability |
 | `VULNERABLE.SBOM.LISTED.001` | medium | `sbom` | vulnerability |
 

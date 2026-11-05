@@ -42,6 +42,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 from cordon_scanner.engine.canonical import Canonical
 from cordon_scanner.engine.pipeline.constants import INCOMPLETE_WHEN_REPORTED
+from cordon_scanner.foundation.files.atomic import AtomicFile
+from cordon_scanner.foundation.files.ownership import Ownership
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Finding
 from cordon_scanner.foundation.paths import StatePaths
@@ -175,13 +177,24 @@ class Watch:
             for name in ("stdlib", "platstdlib"):
                 with contextlib.suppress(KeyError):
                     places.add(sysconfig.get_paths()[name])
+            # Each place under its real path too: Homebrew's Python names its standard library
+            # through a symlink (/opt/homebrew/opt/...) while its modules load from the Cellar, so a
+            # module imported during a file's inspection read as outside the package and that file
+            # was never cached on macOS (4 Nov). Resolved once, here, not on every audited open.
+            places |= {os.path.realpath(place) for place in places}
             cls._allowed = tuple(Watch.absolute(place) + os.sep for place in sorted(places))
             # The per-machine evidence key, loaded once per process on first use -- which was
             # inside the first file inspected, keeping that file out of the cache for a read
             # that is not about it. Loaded here instead, before anything is watched.
+            from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
             from cordon_scanner.foundation.evidence_key import EvidenceKey
 
             EvidenceKey.key()
+            # The ecosystem facts, found through an entry point: `entry_points()` lists every
+            # directory on sys.path (the working directory under `python -m`, the script's own
+            # directory, site-packages), a read outside the package that kept each worker's first
+            # file out of the cache (4 Nov; a one-file scan never hit). Loaded here, once, too.
+            EcosystemFactsProvider.facts()
             sys.addaudithook(cls._audit)
             cls._installed = True
 
@@ -622,7 +635,9 @@ class ScanCache:
         entry = self.get_entry(key)
         return None if entry is None else entry[0]
 
-    def get_entry(self, key: CacheKey) -> tuple[tuple[Finding, ...], str] | None:
+    def get_entry(
+        self, key: CacheKey, *, limit: int = MAX_ENTRY_BYTES
+    ) -> tuple[tuple[Finding, ...], str] | None:
         """Return cached findings and the file's worker facts (their JSON text, "" for none), or None.
         The facts are kept beside the findings (item 56): a warm scan must join the same closure as
         a cold one, and they are re-checked as a worker's are (`Detection.absorb_facts`).
@@ -649,7 +664,7 @@ class ScanCache:
             # Bounded before reading. MAX_ENTRY_BYTES was enforced on write
             # only, so a planted multi-gigabyte entry was pulled entirely into
             # memory before anything verified it.
-            if info.st_size > MAX_ENTRY_BYTES:
+            if info.st_size > limit:
                 self.misses += 1
                 return None
             # Age checked on read, not only by the manual `prune` command. An
@@ -769,13 +784,11 @@ class ScanCache:
         branch, which is exactly the branch that does not execute when the
         directory is already there.
         """
-        if os.name == "nt":  # pragma: no cover - POSIX permissions only
-            return True
         try:
             info = path.stat()
         except OSError:
             return False
-        return info.st_uid == os.getuid() and not info.st_mode & 0o077
+        return Ownership.private(info)
 
     def _mac(self, body: bytes, key: CacheKey) -> str | None:
         """MAC over the payload, the key it is filed under, and who owns it.
@@ -831,7 +844,14 @@ class ScanCache:
             {"facts": facts, "findings": body}, separators=(",", ":"), sort_keys=True
         ).encode("utf-8")
 
-    def put(self, key: CacheKey, findings: Sequence[Finding], facts: str = "") -> None:
+    def put(
+        self,
+        key: CacheKey,
+        findings: Sequence[Finding],
+        facts: str = "",
+        *,
+        limit: int = MAX_ENTRY_BYTES,
+    ) -> None:
         """Store findings for a key, with the file's accepted worker facts (their JSON text).
 
         Written atomically through a temporary file and a rename, so a
@@ -860,7 +880,7 @@ class ScanCache:
             sort_keys=True,
         ).encode("utf-8")
 
-        if len(payload) > MAX_ENTRY_BYTES:
+        if len(payload) > limit:
             return
 
         path = self._path(key)
@@ -870,7 +890,7 @@ class ScanCache:
             try:
                 with os.fdopen(handle, "wb") as out:
                     out.write(payload)
-                Path(temporary).replace(path)
+                AtomicFile.replace(Path(temporary), path)
             except BaseException:
                 Path(temporary).unlink(missing_ok=True)
                 raise

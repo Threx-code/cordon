@@ -350,7 +350,9 @@ class TestClients:
     @pytest.mark.parametrize("client", sorted(CLIENTS))
     def test_each_snippet_names_the_mcp_command(self, client: str) -> None:
         text = Clients.snippet(client)
-        assert "mcp" in text and Clients.command() in text
+        command = Clients.command()
+        # As the snippet's format writes it: a Windows path's backslashes are escaped in JSON.
+        assert "mcp" in text and any(form in text for form in (command, json.dumps(command)[1:-1]))
 
     def test_the_cli_prints_a_snippet(self) -> None:
         run = subprocess.run(

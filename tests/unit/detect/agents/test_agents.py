@@ -12,7 +12,22 @@ from cordon_scanner.detect.agents.chain import AgentChainDetector
 from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Severity
-from support import Support
+from support import Support, requires_forked_workers
+
+
+class Found(dict):
+    """A scan's findings by rule. A rule that is not there says what the scan did find, and the
+    text of every operational finding: the MCP local-copy tests failed on Windows with a bare
+    KeyError, which said nothing about why the installed copy was not read (4 Nov)."""
+
+    def __missing__(self, rule: str) -> list:
+        notes = [
+            f.message
+            for findings in self.values()
+            for f in findings
+            if f.rule_id.startswith("OPERATIONAL")
+        ]
+        raise AssertionError(f"{rule} not found; found {sorted(self)}; operational: {notes}")
 
 
 class AgentsHelpers:
@@ -29,7 +44,7 @@ class AgentsHelpers:
 
     @staticmethod
     def _rules(result) -> dict[str, list]:
-        out: dict[str, list] = {}
+        out: dict[str, list] = Found()
         for finding in result.findings:
             out.setdefault(finding.rule_id, []).append(finding)
         return out
@@ -213,6 +228,14 @@ class TestMcpConfigs:
             ("uvx", ["mcp-server-git"], ("pypi", "mcp-server-git", False)),
             ("pnpm", ["dlx", "pkg@2.0.0"], ("npm", "pkg@2.0.0", True)),
             ("node", ["server.js"], None),
+            # The runner named by a path, as Windows configs name it (4 Nov: only `/` was split).
+            ("/usr/local/bin/npx", ["-y", "pkg@1.0.0"], ("npm", "pkg@1.0.0", True)),
+            ("C:\\Program Files\\nodejs\\npx.cmd", ["-y", "pkg@1.0.0"], ("npm", "pkg@1.0.0", True)),
+            (
+                "C:\\Users\\dev\\.local\\bin\\uvx.exe",
+                ["mcp-server-git"],
+                ("pypi", "mcp-server-git", False),
+            ),
         ],
     )
     def test_launched_packages(self, command, args, expected) -> None:
@@ -313,6 +336,7 @@ class TestAgentsInCi:
 class TestMcpPackagesOnline:
     """A4 online: the fetch is replaced; what is checked is what happens to the bytes."""
 
+    @requires_forked_workers
     def test_a_malicious_package_is_found_in_the_config(self, tmp_path, monkeypatch) -> None:
         import io
         import tarfile
@@ -436,6 +460,7 @@ class TestAgentActionFactors:
         assert "no tool allow-list" in hit.message
         assert "posted back as a comment" in hit.message
 
+    @requires_forked_workers
     def test_fixed_in_versions_come_from_the_intel_file(self, tmp_path, monkeypatch) -> None:
         from cordon_scanner.intel.store import datafile
 

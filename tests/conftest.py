@@ -63,6 +63,35 @@ class SharedFixtures:
         monkeypatch.setenv("CORDON_NO_ADVISORY_REFRESH", "1")
 
     @pytest.fixture(autouse=True)
+    def _intel_judged_when_it_was_built(self, monkeypatch) -> None:
+        """Intel older than its limit makes a scan incomplete (7 days without a feed), so a test
+        that read the wall clock passed the week after an intel refresh and failed the week after
+        (`test_scanning_an_empty_directory_is_clean`, 4 Nov). A scan in a test judges its intel a
+        minute after it was built, here and in every Python process the test starts (the MCP
+        server's scans, 4 Nov); a test about staleness passes its own `now`, which wins."""
+        import importlib.util
+        import os as _os
+
+        from cordon_scanner.intel.malware.feed import FeedClient
+        from support import ROOT
+
+        hooks = ROOT / "tests" / "sitehooks"
+        spec = importlib.util.spec_from_file_location(
+            "cordon_test_sitehooks", hooks / "sitecustomize.py"
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        monkeypatch.setattr(FeedClient, "status", FeedClient.status)  # restored after the test
+        module.IntelAtBuild.install()
+        monkeypatch.setenv("CORDON_TEST_INTEL_AT_BUILD", "1")
+        paths = [
+            str(hooks),
+            *[p for p in _os.environ.get("PYTHONPATH", "").split(_os.pathsep) if p],
+        ]
+        monkeypatch.setenv("PYTHONPATH", _os.pathsep.join(paths))
+
+    @pytest.fixture(autouse=True)
     def _isolated_cache_key(self, tmp_path_factory: pytest.TempPathFactory, monkeypatch) -> None:
         directory = tmp_path_factory.mktemp("cordon-key")
         # The one place the key directory is decided: the scan cache, the evidence key and every
@@ -70,9 +99,111 @@ class SharedFixtures:
         monkeypatch.setattr(StatePaths, "key_dir", staticmethod(lambda: directory))
 
 
+class UnixLines:
+    """`Path.write_text` writes `\n` as `\n` on every platform while the suite runs.
+
+    The suite's 1,310 `write_text` calls mean LF: they build sources, manifests and fixtures whose
+    findings, digests and reference hashes the tests assert. On Windows the default newline wrote
+    CRLF, so a recipe's digest, a format's reference hash and every rule anchored at a line end saw
+    other bytes than on Linux and macOS (the first full Windows run, 4 Nov). CRLF itself is tested
+    where it is the subject (tests/unit/foundation/text/test_line_endings.py). A caller that passes
+    `newline` keeps it; on Linux and macOS nothing changes."""
+
+    @staticmethod
+    def install() -> None:
+        from pathlib import Path
+
+        real = Path.write_text
+        if getattr(real, "_unix_lines", False):
+            return
+
+        def write_text(self, data, encoding=None, errors=None, newline="\n"):  # type: ignore[no-untyped-def]
+            return real(self, data, encoding=encoding, errors=errors, newline=newline)
+
+        write_text._unix_lines = True  # type: ignore[attr-defined]
+        # Named as the method it replaces, so a test that pickles `Path.write_text` (a malicious
+        # pickle's payload) still finds it by name.
+        write_text.__module__, write_text.__qualname__ = real.__module__, real.__qualname__
+        Path.write_text = write_text  # type: ignore[method-assign]
+
+
+class PortableZips:
+    """Every `zipfile.ZipInfo` the suite makes records Unix as the system that made it.
+
+    `ZipInfo` writes `create_system` 0 on Windows and 3 elsewhere, so the archives the suite builds
+    (the CRX and ZIP references, recorded by sha256 and by YARA-X's listing) were other bytes on
+    Windows: 16 CRX cases and the ZIP listing failed there (4 Nov). Same reason, same place, as
+    `UnixLines`."""
+
+    @staticmethod
+    def install() -> None:
+        import zipfile
+
+        real = zipfile.ZipInfo.__init__
+        if getattr(real, "_portable", False):
+            return
+
+        def init(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            real(self, *args, **kwargs)
+            self.create_system = 3
+
+        init._portable = True  # type: ignore[attr-defined]
+        zipfile.ZipInfo.__init__ = init  # type: ignore[method-assign]
+
+
+class Shard:
+    """`CORDON_TEST_SHARD=k/N` runs only this shard's tests: those whose id hashes to k modulo N. CI
+    splits the Windows and macOS jobs in two this way (each ran 85 to 100 minutes alone, 4 Nov); every
+    test runs in exactly one shard, chosen by its id, so the split never changes between runs."""
+
+    @staticmethod
+    def keep(items: list[pytest.Item]) -> list[pytest.Item]:
+        import os
+        import zlib
+
+        spec = os.environ.get("CORDON_TEST_SHARD", "")
+        if not spec:
+            return items
+        index, count = (int(part) for part in spec.split("/"))
+        return [item for item in items if zlib.crc32(item.nodeid.encode("utf-8")) % count == index]
+
+
+class SaysWhyContextFailed:
+    """A failed context worker's reason, written to stderr, which pytest prints for a failed test.
+
+    The reason is in the gap's message, but a failed assertion shows the findings cut short, so
+    macOS's intermittent context failures reached the log without it (5 Nov). Nothing changes
+    for a passing test: its stderr is not shown."""
+
+    @staticmethod
+    def install() -> None:
+        import sys
+
+        from cordon_scanner.engine.isolation.context import ContextStage
+
+        real = ContextStage._failed
+        if getattr(real, "_says_why", False):
+            return
+
+        def failed(self, units, acc, ctx, where, why):  # type: ignore[no-untyped-def]
+            print(f"context worker failed ({where}): {why}", file=sys.stderr)
+            return real(self, units, acc, ctx, where, why)
+
+        failed._says_why = True  # type: ignore[attr-defined]
+        ContextStage._failed = failed  # type: ignore[method-assign]
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """The shard's tests only (`Shard`). A hook pytest finds only at module level."""
+    items[:] = Shard.keep(items)
+
+
 def pytest_configure(config: pytest.Config) -> None:
     """Register the shared fixtures. pytest finds hooks only as module-level functions
     in a conftest, so this one function stays one; everything else is a class."""
+    UnixLines.install()
+    PortableZips.install()
+    SaysWhyContextFailed.install()
     config.pluginmanager.register(SharedFixtures(), "cordon-shared-fixtures")
 
 

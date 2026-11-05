@@ -66,6 +66,11 @@ jobs:
         timeout-minutes: 20
         run: python3 scripts/build/build_advisory_db.py
 
+      - name: Rebuild each advisory file's look-up table
+        # Each .tbl names the sha256 of the file it indexes and is refused when that differs, so
+        # refreshed data with the old tables would ship tables the scanner will not use.
+        run: python3 scripts/build/build_advisory_tables.py
+
       - name: Check the result is still well formed
         run: pytest -q tests/unit/intel/advisories/test_osv_import.py tests/integration/test_review_advisories.py
 
@@ -79,9 +84,9 @@ jobs:
           python - <<'PY'
           import sys
 
-          from cordon_scanner.intel.advisories.advisories import AdvisoryDatabase
+          from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
 
-          db = AdvisoryDatabase.bundled()
+          db = ShippedAdvisories.database()
           if not db.matching("npm", "event-stream", "3.3.6"):
               print("::error::event-stream 3.3.6 no longer matches after the refresh")
               sys.exit(1)

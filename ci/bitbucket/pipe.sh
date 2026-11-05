@@ -3,7 +3,7 @@
 set -eu
 
 case "${SEVERITY:-low}" in info|low|medium|high|critical) ;; *) echo "SEVERITY must be a severity" >&2; exit 3 ;; esac
-case "${FAIL_ON:-high}" in info|low|medium|high|critical|none) ;; *) echo "FAIL_ON must be a severity" >&2; exit 3 ;; esac
+case "${FAIL_ON:-high}" in info|low|medium|high|critical) ;; *) echo "FAIL_ON must be a severity" >&2; exit 3 ;; esac
 
 set -- scan "${BITBUCKET_CLONE_DIR:-.}" --severity "${SEVERITY:-low}" --fail-on "${FAIL_ON:-high}" --no-color \
   --format text \

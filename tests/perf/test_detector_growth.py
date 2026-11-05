@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import io
 import json
-import time
 from collections.abc import Callable
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -181,12 +180,24 @@ class Scan:
         ]
         args += ["--format", "json", "--output", str(root.parent / f"{root.name}.json")]
         args += ["--config", str(config)]
-        started = time.process_time()
+        started = Scan.spent()
         with redirect_stdout(io.StringIO()):
             code = CommandLine.run(args)
-        took = time.process_time() - started
+        took = Scan.spent() - started
         assert code != 2, f"the scan failed to run on {root}"
         return took
+
+    @staticmethod
+    def spent() -> float:
+        """CPU seconds of this process and of every child it has reaped. A scan's files are read in
+        worker processes (item 56); this process's own time alone stayed near 0.09 s whatever the
+        size, so the size doubled toward a million items looking for 0.5 s and the test never
+        finished (4 Nov). The workers are reaped when the scan ends, so their time is counted here."""
+        import resource  # POSIX: the perf suite runs on Linux
+
+        own = resource.getrusage(resource.RUSAGE_SELF)
+        children = resource.getrusage(resource.RUSAGE_CHILDREN)
+        return own.ru_utime + own.ru_stime + children.ru_utime + children.ru_stime
 
     @staticmethod
     def growth(shape: Callable[[int], Files], where: Path) -> tuple[int, float, float, float]:

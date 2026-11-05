@@ -146,9 +146,13 @@ class TestRecovery:
                 start = time.process_time()
                 Parser(text).program()
                 parse = min(parse, time.process_time() - start)
-                start = time.process_time()
-                reference(text)
-                ref = min(ref, time.process_time() - start)
+                # Repeated to a measurable span: Windows' process clock ticks in 15.6 ms, and one
+                # pass at small sizes read 0 there (a division by zero, 5 Nov).
+                start, rounds = time.process_time(), 0
+                while (spent := time.process_time() - start) < 0.05:
+                    reference(text)
+                    rounds += 1
+                ref = min(ref, spent / rounds)
             return parse, ref
 
         Parser(unit * 50).program()  # the warm-up: what a first parse pays once

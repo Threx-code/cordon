@@ -60,7 +60,8 @@ class SigningKeysPage:
             lines += [
                 "**Not pinned in this build.** The feed root is created at the key ceremony",
                 "(`scripts/release/key_ceremony.py`) and committed as `src/cordon_scanner/intel/data/feed-root.json`.",
-                "Until then the feed is off: a scan makes no request and uses the installed advisory database.",
+                "Until then the feed is off: a scan makes no feed request and uses the installed advisory database,",
+                "refreshed from OSV's public export as every default scan is (`--offline` makes no request at all).",
             ]
         else:
             signed = root["signed"]

@@ -24,6 +24,7 @@ from typing import Any, Final
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
+from cordon_scanner.foundation.network.redirects import ClosedErrors
 
 MAX_VSIX: Final = 200 << 20
 OPEN_VSX: Final = "https://open-vsx.org/api"
@@ -58,7 +59,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 class ExtensionFetcher:
-    _opener = urllib.request.build_opener(_NoRedirect)
+    _opener = urllib.request.build_opener(_NoRedirect, ClosedErrors)
 
     @staticmethod
     def check(identifier: str, version: str | None) -> tuple[str, str]:

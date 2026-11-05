@@ -12,11 +12,12 @@ import pytest
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS
 from cordon_scanner.sources.archive import ArchiveReader
 from cordon_scanner.sources.base import Rejection
+from support import PeakMemory
 
 
 class TestBombsAreRefusedWhileStreaming:
     def test_a_small_gzip_that_expands_to_gigabytes_is_refused_early(self) -> None:
-        resource = pytest.importorskip("resource")  # memory accounting is POSIX-only
+        pytest.importorskip("resource")  # memory accounting is POSIX-only
         zeros = b"\0" * (10 * 1024 * 1024 - 1)
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w:gz", compresslevel=9) as archive:
@@ -24,9 +25,9 @@ class TestBombsAreRefusedWhileStreaming:
                 info = tarfile.TarInfo(f"pkg/d{i}.bin")
                 info.size = len(zeros)
                 archive.addfile(info, io.BytesIO(zeros))
-        before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        before = PeakMemory.kib()
         result = ArchiveReader.extract(buf.getvalue(), path="bomb.tgz")
-        grown_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - before
+        grown_kb = PeakMemory.kib() - before
         assert grown_kb < 300 * 1024, "the expansion stopped before it was held in memory"
         assert result.truncated
         assert any(r.reason == Rejection.PADDED for r in result.rejected)

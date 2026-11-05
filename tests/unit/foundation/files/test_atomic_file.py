@@ -7,7 +7,10 @@ import re
 import stat
 from pathlib import Path
 
+import pytest
+
 from cordon_scanner.foundation.files.atomic import AtomicFile
+from cordon_scanner.foundation.files.ownership import Ownership
 
 
 class AtomicFileWorker:
@@ -36,6 +39,38 @@ class TestAtomicFile:
         assert content == piece * 50
         assert not [p for p in tmp_path.iterdir() if p.name.endswith(".tmp")]
 
+    def test_a_replace_windows_refuses_for_a_moment_is_retried(self, tmp_path, monkeypatch) -> None:
+        """Windows denies a rename onto a file another writer is renaming onto: eight writers on one
+        file failed with "Access is denied" (5 Nov). The refusal is retried, briefly, on Windows."""
+        refusals = [PermissionError(13, "Access is denied")] * 3
+        real = Path.replace
+
+        def busy(self: Path, target: Path) -> Path:
+            if refusals:
+                raise refusals.pop()
+            return real(self, target)
+
+        monkeypatch.setattr(AtomicFile, "WINDOWS", True)
+        monkeypatch.setattr(Path, "replace", busy)
+        target = tmp_path / "state.json"
+        AtomicFile.write(target, "whole")
+        assert target.read_text(encoding="utf-8") == "whole" and not refusals
+
+    def test_a_refusal_that_lasts_is_raised(self, tmp_path, monkeypatch) -> None:
+        def refused(self: Path, target: Path) -> Path:
+            raise PermissionError(13, "Access is denied")
+
+        monkeypatch.setattr(AtomicFile, "WINDOWS", True)
+        monkeypatch.setattr(AtomicFile, "WINDOWS_RETRY_SECONDS", 0.05)
+        monkeypatch.setattr(Path, "replace", refused)
+        with pytest.raises(PermissionError):
+            AtomicFile.write(tmp_path / "state.json", "x")
+        assert not list(tmp_path.iterdir())  # the staging file is removed
+
     def test_the_file_is_its_owners_only(self, tmp_path) -> None:
         target = AtomicFile.write(tmp_path / "credentials.json", "{}")
-        assert stat.S_IMODE(target.stat().st_mode) == 0o600
+        if Ownership.windows():
+            # No POSIX mode on Windows (it reads 0o666): the profile's ACL is what keeps it private.
+            assert Ownership.private(target.stat())
+        else:
+            assert stat.S_IMODE(target.stat().st_mode) == 0o600

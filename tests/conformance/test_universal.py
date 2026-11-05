@@ -8,6 +8,7 @@ tests themselves run in this suite, so a proof that stops holding fails the suit
 from __future__ import annotations
 
 import json
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -296,10 +297,12 @@ class TestScale:
     ) -> tuple[dict[str, Any], float]:
         """A scan and the CPU time it took. The scan runs in this process and serially (a
         lockfile project is a file or two), so its CPU time is its work, which other processes
-        on a loaded machine do not stretch as they stretch wall-clock time."""
-        started = time.process_time()
+        on a loaded machine do not stretch as they stretch wall-clock time. This thread's CPU,
+        not the process's: a thread an earlier test left running was charged to the scan
+        (macOS CI: 2,000 Helm packages "took" 74 s of CPU where they take 8 s, 5 Nov)."""
+        started = time.thread_time()
         report = Universal.scan(Universal.project(where, profile, pkgs), profile.id)
-        return report, time.process_time() - started
+        return report, time.thread_time() - started
 
     #: The small scan's CPU time is grown to at least this, doubling its size, so a scheduling
     #: interruption of a few milliseconds cannot swing the ratio: at 0.1 s it swung it tenfold.
@@ -329,7 +332,8 @@ class TestScale:
         assert len({d["purl"] for d in packages}) == len(pkgs), "duplicated"
         assert large < small * 8, (
             f"{len(pkgs):,} packages {large:.2f}s against {count:,} in {before:.2f}s and"
-            f" {after:.2f}s: {large / small:.1f} times"
+            f" {after:.2f}s: {large / small:.1f} times; threads alive:"
+            f" {sorted(thread.name for thread in threading.enumerate())}"
         )
 
 

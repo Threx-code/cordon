@@ -1,6 +1,6 @@
 # 25 · Every ecosystem
 
-> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 Every package ecosystem Cordon reads, 28 of them, and how to scan each one. The files,
 the checks and the commands below are rendered from the shipped code, so this page names

@@ -208,12 +208,20 @@ class FeatureSchema:
         "ClassDef": "type_params",
     }
 
+    #: Fields a Python after 3.12 added, left out at the default it means "as 3.12 had it": 3.15's
+    #: `is_lazy` on an import (PEP 810) is 0 on every import that is not lazy, and a lazy one keeps it.
+    ADDED_AFTER_312: ClassVar[dict[tuple[str, str], object]] = {
+        ("Import", "is_lazy"): 0,
+        ("ImportFrom", "is_lazy"): 0,
+    }
+
     @staticmethod
     def dump(node: ast.AST) -> str:
         """`ast.dump` as Python 3.12 writes it, on every supported Python: 3.13 began leaving out
-        empty fields and 3.11 has no `type_params`, which moved the version of an unchanged tree
-        (fs1-ea0fb02ccf3bb099 on 3.12, fs1-5b52138d82821d4a on 3.13 and 3.14, fs1-0ecd42e235e9719e
-        on 3.11). Byte-identical to 3.12's `ast.dump` on 3.11 to 3.14 for every hashed piece."""
+        empty fields, 3.11 has no `type_params` and 3.15 adds `is_lazy`, which moved the version of
+        an unchanged tree (fs1-ea0fb02ccf3bb099 on 3.12, fs1-5b52138d82821d4a on 3.13 and 3.14,
+        fs1-0ecd42e235e9719e on 3.11, fs1-fcfb8b0185c2e512 on 3.15). Byte-identical to 3.12's
+        `ast.dump` on 3.11 to 3.15 for every hashed piece."""
 
         def text(value: object) -> str:
             if isinstance(value, ast.AST):
@@ -227,6 +235,9 @@ class FeatureSchema:
                     field = getattr(value, name, [])
                     if field is None and getattr(kind, name, ...) is None:
                         continue  # an optional field left out, as 3.12 leaves it out
+                    default = FeatureSchema.ADDED_AFTER_312.get((kind.__name__, name), ...)
+                    if default is not ... and field == default:
+                        continue  # a newer Python's field, at the value 3.12 meant without it
                     parts.append(f"{name}={text(field)}")
                 return f"{kind.__name__}({', '.join(parts)})"
             if isinstance(value, list):

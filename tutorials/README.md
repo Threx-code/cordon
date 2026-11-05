@@ -1,6 +1,6 @@
 # Cordon tutorials
 
-> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 Short, diagram-first walkthroughs. Each one is a single use case: read the
 picture, run the command, move on. They assume nothing beyond a terminal.
@@ -59,11 +59,24 @@ picture, run the command, move on. They assume nothing beyond a terminal.
     ├─ 23  Machines & vendor SBOMs ..... installed packages, images, supplier SBOMs
     ├─ 24  Policy for every repo ....... one ceiling, pinned by digest; pins kept current
     │
+  PUTTING IT TO WORK: COPY-PASTE IMPLEMENTATIONS, BASIC TO ADVANCED
+    ├─ 32  Choose your path ............ which of the ten to start with
+    ├─ 33  On your laptop .............. vet a package first, scan, fail-closed git hooks
+    ├─ 34  Guard your installs ......... pnpm, npm and pip: read before anything runs
+    ├─ 35  GitHub Actions .............. one step to a full workflow, SARIF, PR review
+    ├─ 36  GitLab CI ................... the template, code quality, merge-request gate
+    ├─ 37  Other CI systems ............ Jenkins, Azure, Bitbucket, CircleCI, Buildkite, shell
+    ├─ 38  Containers and images ....... an image before it is pushed or run
+    ├─ 39  Rolling out ................. one policy, baselines, expiring suppressions, alerts
+    ├─ 40  Air-gapped .................. a verified install and current intel, no network
+    ├─ 41  AI agents ................... the MCP server, set up for each coding agent
+    ├─ 42  From your own code .......... the Python API and the JSON result
+    │
   REFERENCE
     ├─ 25  Every ecosystem ............. all 28: the files read, the checks, the commands
     ├─ 26  Every command ............... every command and option, from the parser itself
     ├─ 27  Every agent location ........ each agent's files, MCP configs, hooks and rules
-    ├─ 28  Every rule .................. all 1,433 rules and every Agent Threat Rule
+    ├─ 28  Every rule .................. all 1,501 rules and every Agent Threat Rule
     │
   WHEN SOMETHING GOES WRONG
     └─ 29  Troubleshooting ............. exit codes, coverage notes, CI, hooks, images
@@ -73,9 +86,10 @@ picture, run the command, move on. They assume nothing beyond a terminal.
 
 ```
   Cordon READS. It never runs the code it is scanning, and it never sends anything
-  about your code or dependencies anywhere unless you ask. By default it makes
-  no network request at all; --offline (or CORDON_OFFLINE=1) guarantees it.
-  A scan is safe to point at hostile packages and safe to run in an air-gap.
+  about your code or dependencies anywhere unless you ask. By default it asks OSV
+  only what advisories changed, the same requests for everyone, naming nothing;
+  --offline (or CORDON_OFFLINE=1) makes no request at all. A scan is safe to
+  point at hostile packages and safe to run in an air-gap.
 ```
 
 ## Install
@@ -89,6 +103,16 @@ silent gap, never a crash. See tutorials 09 and 05.
 
 ## New in 0.7.0
 
+- **32 to 42 · Putting Cordon to work**: ready-made implementations to copy into a machine, a
+  repository, a pipeline or an organisation, from vetting one package on a laptop to an
+  organisation-wide rollout, each run as shown. **34** guards `pnpm add`, `npm install` and
+  `pip install` so nothing new runs before Cordon has read it.
+- A downloaded release is checked for its own known vulnerabilities, not only its malware
+  records (`VULNERABLE.PACKAGE.KNOWN.001`), so a wheel or tarball read before install is held
+  to the same advisories as the same pin in a lockfile.
+- An air-gapped machine installs the signed advisory bundle from a carried folder
+  (`advisories sync --bundle DIR`), and intel older than a week makes a scan incomplete.
+- Python 3.15 is supported.
 - **31 · Rule files** -- `--rule-file`: your own signatures, matched against every file with
   cordon-rule, Cordon's own rule engine.
 - **30 · The MCP server** -- `cordon-scanner mcp`: coding agents ask Cordon before they install a

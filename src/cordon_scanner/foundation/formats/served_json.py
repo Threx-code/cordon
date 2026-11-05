@@ -18,6 +18,7 @@ import contextlib
 import contextvars
 import hashlib
 import json
+import re
 from collections.abc import Iterator
 from typing import Any, ClassVar
 
@@ -67,7 +68,10 @@ class ServedJson:
     @staticmethod
     def depth(text: str) -> int:
         """The deepest nesting of `[` and `{` outside JSON strings, in one linear pass: checked before
-        a worker's answer is decoded, since CPython's decoder recurses per level."""
+        a worker's answer is decoded, since CPython's decoder recurses per level. A character walk:
+        on the facts a worker returns, dense with short strings, it measured 0.81 s per 20,000 against
+        1.35 s for visiting only quotes and brackets (`deeper_than`'s way, kept where stopping early
+        on hostile nesting is the point), 4 Nov."""
         deepest = level = 0
         quoted = escaped = False
         for char in text:
@@ -86,6 +90,45 @@ class ServedJson:
             elif char in "]}":
                 level -= 1
         return deepest
+
+    _TOKEN: ClassVar[re.Pattern[str]] = re.compile(r'["\[\]{}]')
+
+    @staticmethod
+    def deeper_than(text: str, limit: int) -> bool:
+        """Whether `text` nests `[` and `{` deeper than `limit` outside JSON strings. The same
+        answer as `depth(text) > limit`, but a string is skipped in one regex step and the walk stops
+        at the first level past `limit`, so a 256 MB document costs what its quotes and brackets
+        cost. Linear: each search starts past the last, and a string's end is found by `str.find`.
+
+        The bound is ours, not the decoder's: CPython 3.14 decodes nesting that 3.11 to 3.13 refuse
+        with RecursionError, so a limit left to the decoder gave one file two outcomes (4 Nov)."""
+        level = position = 0
+        while match := ServedJson._TOKEN.search(text, position):
+            char, position = match.group(), match.end()
+            if char == '"':
+                position = ServedJson._string_end(text, position)
+                if position < 0:
+                    return False  # an unterminated string: nothing after it is structure
+            elif char in "[{":
+                level += 1
+                if level > limit:
+                    return True
+            else:
+                level -= 1
+        return False
+
+    @staticmethod
+    def _string_end(text: str, start: int) -> int:
+        """Where the JSON string opened before `start` ends (just past its quote), or -1 if it
+        never does: a quote ends it unless an odd run of backslashes precedes it."""
+        while (quote := text.find('"', start)) >= 0:
+            slashes = quote - 1
+            while slashes >= start and text[slashes] == "\\":
+                slashes -= 1
+            if (quote - 1 - slashes) % 2 == 0:
+                return quote + 1
+            start = quote + 1
+        return -1
 
     @staticmethod
     def hold(documents: Any, known: set[str]) -> str:

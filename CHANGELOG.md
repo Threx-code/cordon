@@ -17,6 +17,23 @@ test or conformance case that fails on the old code.
 
 ### Added
 
+- **Tutorials 32 to 42: putting Cordon to work**, ready-made implementations from a laptop to an
+  organisation: vetting a package before install, fail-closed git hooks, an install guard for
+  `pnpm add`, `npm install` and `pip install` (34), GitHub Actions, GitLab CI and five other CI
+  systems, container images, an organisation rollout, air-gapped sites, AI agents and the Python
+  API. Every command in them was run as shown.
+- **A downloaded release is checked for its own known vulnerabilities**
+  (`VULNERABLE.PACKAGE.KNOWN.001`). A wheel or tarball scanned before install was matched against
+  the malicious-package records only, so `urllib3 1.26.4` came back clean while the same pin in a
+  requirements.txt was flagged. One finding per release, at its worst advisory's severity.
+- **A signed advisory bundle installs from a carried directory**: `advisories sync --bundle DIR`
+  takes the two release assets carried across an air gap, verified against the same pinned key
+  before anything is unpacked. Before, a machine with no network had no way to take in fresh
+  signed intel.
+- **Python 3.15** is supported, with its own derivation table, in CI and the classifiers.
+- **Every command a document shows is run through the real CLI by a test**: an unknown
+  subcommand, flag or output format, or a configuration file name the scanner does not read,
+  fails it.
 - **Rules can read a file's decoded layers** (`layers = "decoded"` in a rule's meta): what a file
   carries under `atob`, `Buffer.from`, `b64decode`, `bytes.fromhex`, `unhexlify` and zlib or gzip,
   decoded to bytes up to four layers deep, each match naming its layer. Rules without the meta read
@@ -40,7 +57,7 @@ test or conformance case that fails on the old code.
   refused, since a channel's URL is a credential. `cordon-scanner notify test` sends each channel a
   message marked as a test and exits non-zero if any did not arrive. With `--audit-log`, each
   delivery is recorded (channel, delivery id, outcome, attempts), never its URL.
-  [docs/14-NOTIFICATIONS.md](https://github.com/Threx-code/cordon/blob/v0.6.0/docs/14-NOTIFICATIONS.md).
+  [docs/14-NOTIFICATIONS.md](https://github.com/Threx-code/cordon/blob/v0.7.0/docs/14-NOTIFICATIONS.md).
 - **No optional runtime dependencies for provenance or signing.** Sigstore bundles (npm, PyPI PEP
   740, Maven Central, RubyGems, Homebrew, Bazel) and OpenPGP signatures (Helm, Ansible) are
   verified by Cordon's own code against trust material it pins, and CI uploads are signed
@@ -106,6 +123,43 @@ test or conformance case that fails on the old code.
 
 ### Fixed
 
+- **A large repository's scan is complete**: the facts the scan's workers send back were capped at
+  64 MiB per scan, so a 50,000-file JavaScript repository had 15,229 files refused, the scan
+  ended incomplete (exit 4), and none of those files was ever cached. The bound now grows with the
+  content the scan reads; a warm scan of that repository went from 37 s to 19 s.
+- **A long install hook no longer makes a scan incomplete**: a `postinstall` (or any field a
+  worker reads from a file) longer than 64 KiB refused the whole scan's context.
+- **On Windows, a scan no longer sends Ctrl+C to the console**: the check for a crashed scan's
+  leftover files asked whether a process was alive with signal 0, which on Windows is Ctrl+C to
+  every process on the console. The MCP server's check of an installed server's own copy also
+  failed on every file there.
+- **On Windows, two scans sharing a cache no longer fail on a busy file**: a rename Windows
+  refuses for a moment is retried.
+- **A scan worker that never starts cannot hold a scan past its deadline**: one stuck before it
+  was ready was waited for without a limit (macOS: a one-file scan spent its whole 15-minute
+  budget). It is now a failed start, tried once more, and the deadline always holds.
+- **A worker holds no connection the scanning process had open**: workers inherited every
+  socket open when the scan started.
+- **Three rule patterns run in time proportional to their input**: the go.mod retraction parser,
+  the constructed-DNS-name rule and the guard's destructive-command check took up to 6 s on a
+  long crafted line.
+- **Intel is stale after a week without a feed, not a month**, and a repository's own
+  configuration can no longer lengthen that limit: `max_intel_age: 0` was withheld from a scan
+  target, ten years was not, and did the same. An operator's own `--config` may still set it.
+- **Every release a scan holds is looked up**: only the first 20 were, so a folder of 25
+  downloads had five never checked, even for malware.
+- **No CI template offers `fail-on: none`**: the CircleCI orb, the Bitbucket pipe and the
+  Jenkins library did, and the scanner refuses it with exit 3, so a pipeline that chose it failed
+  on every run.
+- **`config explain` names a file only for what it sets**: it credited a repository's
+  cordon.yaml with `offline`, `confidence_threshold`, `severity_threshold` and `evidence` it never
+  wrote.
+- **The `--format` help names all eight output formats** (codeclimate and vex were missing).
+- **The documentation taught commands that do not run**: `sbom .` (it is `sbom generate`),
+  `config --config` (it is `config validate`), `advisories status`, `cordon.toml` and
+  `[tool.cordon]` in pyproject.toml (configuration is YAML only), `/etc/cordon/policy.yaml`
+  (never read), `evidence: full` (the modes are none, masked and hash_only), and a Python API
+  example calling `result.violates()`, which does not exist.
 - **A two-line agent configuration no longer comes back incomplete on a busy machine.** The first
   file that needed the agent threat catalogue paid for compiling all 3,407 rules inside its own
   five-second budget: about two seconds idle, past five under load, so `.mcp.json` scans (and the

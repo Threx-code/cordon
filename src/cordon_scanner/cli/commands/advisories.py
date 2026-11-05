@@ -40,12 +40,13 @@ class AdvisoriesCommand:
         )
         advisories_sync.add_argument(
             "--bundle",
-            metavar="URL",
+            metavar="URL|DIR",
             default=None,
             help=(
-                "install a signed advisory bundle from URL instead of building "
-                "from OSV; the bundle's Ed25519 signature is verified against the "
-                "pinned release key before anything is unpacked"
+                "install a signed advisory bundle instead of building from OSV: from a "
+                "release's URL, or from a directory holding the two release assets "
+                "carried across an air gap; either way its Ed25519 signature is verified "
+                "against the pinned release key before anything is unpacked"
             ),
         )
 
@@ -81,7 +82,7 @@ class AdvisoriesCommand:
 
             destination = AdvisoryFiles.user_sync_dir()
             try:
-                dbsync.AdvisoryBundle.sync_from_url(args.bundle, destination)
+                dbsync.AdvisoryBundle.sync_from(args.bundle, destination)
             except dbsync.BundleError as exc:
                 raise ConfigError(f"advisories sync: {exc}") from exc
             print(f"installed a verified advisory bundle into {destination}")

@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from cordon_scanner.engine.registry import BUILTIN_REPORTERS
 from cordon_scanner.foundation.errors import ConfigError, ExitCode
 from cordon_scanner.version import PROGRAM
 
@@ -38,7 +39,7 @@ class ReportCommand:
             "--format",
             "-f",
             default="text",
-            help="text|json|sarif|junit|markdown|github",
+            help="|".join(BUILTIN_REPORTERS),
         )
         convert.add_argument("--output", "-o", default=None, help="write to a file")
 
@@ -54,7 +55,6 @@ class ReportCommand:
 
         Documented in the interface specification and never implemented.
         """
-        import json as _json
 
         from cordon_scanner.engine.cache import ScanCache
         from cordon_scanner.engine.registry import Registry
@@ -81,19 +81,7 @@ class ReportCommand:
                 hint="A result document this large is not one this command produced.",
             )
 
-        try:
-            payload = _json.loads(source.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as exc:
-            raise ConfigError(f"{source}: not a readable JSON result: {exc}") from exc
-        except RecursionError as exc:
-            # A deeply nested document exhausts the decoder's stack. Reported as
-            # the malformed input it is: it reached the top-level handler as
-            # "internal error", exit 2, which blames the tool for a file
-            # somebody else wrote.
-            raise ConfigError(
-                f"{source}: JSON is nested too deeply to decode",
-                hint="A result document this deeply nested is not one this command produced.",
-            ) from exc
+        payload = cls._load(source)
 
         try:
             findings = tuple(
@@ -165,6 +153,33 @@ class ReportCommand:
                 redaction=RedactionMode.MASKED,
             ),
         )
+
+    @staticmethod
+    def _load(source: Path) -> Any:
+        """The result document at `source`, decoded; ConfigError for one that is not JSON or is
+        nested past DOCUMENT_DEPTH."""
+        import json as _json
+
+        from cordon_scanner.foundation.formats.served_json import DOCUMENT_DEPTH, ServedJson
+
+        try:
+            text = source.read_text(encoding="utf-8")
+            if ServedJson.deeper_than(text, DOCUMENT_DEPTH):
+                raise RecursionError
+            payload = _json.loads(text)
+        except (OSError, ValueError) as exc:
+            raise ConfigError(f"{source}: not a readable JSON result: {exc}") from exc
+        except RecursionError as exc:
+            # Nested past DOCUMENT_DEPTH, refused before decoding, so every Python
+            # gives one answer (3.14's decoder reads nesting 3.11-3.13 cannot);
+            # or past the decoder's own stack. Reported as the malformed input
+            # it is, not as "internal error", exit 2, which blames the tool for
+            # a file somebody else wrote.
+            raise ConfigError(
+                f"{source}: JSON is nested too deeply to decode",
+                hint="A result document this deeply nested is not one this command produced.",
+            ) from exc
+        return payload
 
 
 __all__ = ["ReportCommand"]

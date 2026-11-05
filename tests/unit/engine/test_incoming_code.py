@@ -129,6 +129,29 @@ class TestClone(GitWorld):
         assert {f.rule_id for f in check.blocking} >= {"MALWARE.DEPENDENCY.KNOWN.001"}
         assert not target.exists()
 
+    def test_the_checked_repository_is_closed_before_the_clone_is_removed(
+        self, upstream, tmp_path, monkeypatch
+    ) -> None:
+        """Its `git cat-file --batch` child runs in the clone; on Windows a directory a live process
+        stands in cannot be deleted, so the blocked clone stayed and the command failed (4 Nov)."""
+        order: list[str] = []
+        close, remove = GitRepository.close, Incoming._remove
+
+        def closing(self) -> None:
+            order.append("close")
+            close(self)
+
+        def removing(root, keep):  # type: ignore[no-untyped-def]
+            order.append("remove")
+            remove(root, keep)
+
+        monkeypatch.setattr(GitRepository, "close", closing)
+        monkeypatch.setattr(Incoming, "_remove", staticmethod(removing))
+        Repo.commit(upstream, COMPROMISED, "compromise")
+        check = Incoming.clone(str(upstream), tmp_path / "clone", Repo.config())
+        assert check is not None and not check.ok
+        assert "remove" in order and "close" in order[: order.index("remove")]
+
     def test_the_repository_cannot_configure_its_own_check(self, upstream, tmp_path) -> None:
         Repo.commit(
             upstream,

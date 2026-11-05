@@ -15,6 +15,11 @@
  * needles are matched as given, so the caller passes lowered needles.
  */
 #define PY_SSIZE_T_CLEAN
+#ifdef _WIN32
+/* Python 3.11's cpython/pytime.h names `struct timeval` in a prototype, and on Windows that type is
+   winsock2.h's: without it first, MSVC's C4115 under /WX stopped the 3.11 build. */
+#include <winsock2.h>
+#endif
 #include <Python.h>
 #include <stdint.h>
 #include <string.h>
@@ -385,7 +390,6 @@ static PyTypeObject AutomatonType = {
     .tp_basicsize = sizeof(Automaton),
     .tp_flags = Py_TPFLAGS_DEFAULT,
     .tp_doc = "An Aho-Corasick automaton over distinct, non-empty byte needles.",
-    .tp_new = PyType_GenericNew,
     .tp_init = (initproc)Automaton_init,
     .tp_dealloc = (destructor)Automaton_dealloc,
     .tp_methods = Automaton_methods,
@@ -918,6 +922,9 @@ PyMODINIT_FUNC PyInit__anchors(void) {
         LOWER[i] = (uint8_t)(i >= 'A' && i <= 'Z' ? i + 32 : i);
         ALNUM[i] = (uint8_t)((i >= '0' && i <= '9') || (i >= 'A' && i <= 'Z') || (i >= 'a' && i <= 'z'));
     }
+    /* Set here rather than in the initialiser: PyType_GenericNew lives in the Python DLL on Windows,
+       so its address is not a constant there, and MSVC's C4232 under /WX stopped the build. */
+    AutomatonType.tp_new = PyType_GenericNew;
     if (PyType_Ready(&AutomatonType) < 0) return NULL;
     PyObject *m = PyModule_Create(&module);
     if (!m) return NULL;

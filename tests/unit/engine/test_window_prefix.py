@@ -25,6 +25,7 @@ from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.analysis.python.statements import PythonStatements
 from cordon_scanner.engine.window_pass import WindowPass
 from cordon_scanner.foundation.config.settings import Config
+from support import requires_forked_workers
 
 DECODE = "b64" + "decode"
 PLANT = (
@@ -89,6 +90,7 @@ class TestTheWithholding:
         assert PythonSyntax.parse(text) is not None
         assert not PythonSyntax._WITHHELD
 
+    @requires_forked_workers
     def test_a_piece_cut_inside_a_statement_is_not_parsed(
         self, tmp_path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -98,6 +100,7 @@ class TestTheWithholding:
         assert sizes  # the aligned windows were parsed: the file is read as Python
         assert LIMIT not in sizes  # the prefix and plain windows, cut at the limit, were not
 
+    @requires_forked_workers
     def test_a_prefix_that_ends_on_a_whole_line_is_parsed(
         self, tmp_path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

@@ -24,7 +24,10 @@ import contextlib
 import os
 import signal
 import socket
+import stat
 import sys
+import warnings
+from pathlib import Path
 from typing import Any
 
 
@@ -81,6 +84,7 @@ class TemplateMain:
     def serve(control: socket.socket, worker_main: Any, parent: int) -> None:
         Lifeline.die_with_parent(parent)
         Lifeline.leave_interrupts_to_the_parent()
+        TemplateMain.close_inherited_sockets(control)
         lines, children = Lines(control), set[int]()
         try:
             while (command := lines.read()) is not None and command != "Q":
@@ -101,6 +105,35 @@ class TemplateMain:
                 with contextlib.suppress(ChildProcessError):
                     os.waitpid(pid, 0)
             os._exit(0)
+
+    @staticmethod
+    def close_inherited_sockets(control: socket.socket) -> None:
+        """Every socket the host held when it forked the template, closed here but `control`.
+
+        A fork copies every descriptor, close-on-exec or not, so each worker held whatever the host
+        had open at the template's start: another scan's template and worker channels, a connection
+        a caller left open. A worker reading scanned content holds no channel but its own (macOS CI:
+        a worker held 3 sockets, 5 Nov). Sockets only: a file or a pipe the host opened may be state
+        a detector reads. The standard streams (0 to 2) are the host's and stay.
+
+        Each is replaced by /dev/null, not freed: the host's socket objects are copied here too, and
+        one collected later closes its number, which by then could be a new worker's channel."""
+        listing = Path("/proc/self/fd") if Path("/proc/self/fd").is_dir() else Path("/dev/fd")
+        try:
+            names = [entry.name for entry in listing.iterdir()]
+            null = os.open(os.devnull, os.O_RDWR)
+        except OSError:
+            return
+        try:
+            keep = {control.fileno(), null}
+            for name in names:
+                if not name.isdigit() or (fd := int(name)) <= 2 or fd in keep:
+                    continue
+                with contextlib.suppress(OSError):  # the listing's own descriptor, closed already
+                    if stat.S_ISSOCK(os.fstat(fd).st_mode):
+                        os.dup2(null, fd)
+        finally:
+            os.close(null)
 
     @staticmethod
     def fork(control: socket.socket, lines: Lines, children: set[int], worker_main: Any) -> None:
@@ -155,6 +188,28 @@ class Template:
         return hasattr(os, "fork") and hasattr(socket, "send_fds")
 
     @staticmethod
+    def fork_from_host() -> int:
+        """`os.fork()` of the host, for the template, with Python 3.15's fork-with-threads warning
+        said here instead of raised.
+
+        The template is forked from the host because it must carry the host's state -- detectors a
+        caller passed `Scanner`, rule packs already loaded, patched settings -- which a spawned
+        interpreter would not have (measured: every scan in a threaded host failed that way). 3.15
+        warns whenever another thread is alive at a fork (3.12-3.14 do not): a lock that thread held
+        is copied into the child locked. What runs in the child is only `TemplateMain.serve`, a loop
+        of socket reads, forks and waits over locks CPython re-initialises after a fork (the GIL, the
+        import lock, logging's); it touches no lock a library thread of the host could hold. The
+        workers are forked from the template, single-threaded, so the warning does not apply to them.
+        The CLI forks before it starts a thread and never meets it."""
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=r"This process \(pid=\d+\) is multi-threaded",
+                category=DeprecationWarning,
+            )
+            return os.fork()
+
+    @staticmethod
     def start(worker_main: Any) -> Template | None:
         """The template, forked now: call it before anything scanned is read. `worker_main` is what
         each worker runs with its socket. None where the platform cannot fork."""
@@ -162,7 +217,7 @@ class Template:
             return None
         ours, theirs = socket.socketpair()
         parent = os.getpid()
-        pid = os.fork()
+        pid = Template.fork_from_host()
         if pid == 0:
             ours.close()
             TemplateMain.serve(theirs, worker_main, parent)  # never returns

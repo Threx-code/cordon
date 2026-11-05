@@ -35,6 +35,10 @@ class Workloads:
         raise RuntimeError("planted: a setup that cannot finish")
 
     @staticmethod
+    def setup_that_hangs() -> None:
+        time.sleep(600)
+
+    @staticmethod
     def wait_for(path: Path, pattern: str | None = None) -> None:
         """Until `path` exists (or holds a file matching `pattern`), bounded: a broken handshake
         ends in the assertion that follows, never in a hang."""
@@ -209,6 +213,30 @@ class TestTheSupervisor:
         assert outcome.unstarted == [0]
         assert not outcome.failed
         assert not supervisor.retry
+
+    def test_a_worker_that_never_starts_holds_no_scan_past_its_deadline(self) -> None:
+        """A worker hung before it said ready held no unit, so the wait had no timeout at all: the
+        deadline was read only once something answered (macOS CI: a one-file case spent the whole
+        900 s budget, "the scan's budget was spent before it finished", 5 Nov)."""
+        supervisor = Harness.supervisor(Bounds(), workers=1, setup="setup_that_hangs")
+        supervisor.deadline = time.monotonic() + 2.0
+        began = time.monotonic()
+        outcome = supervisor.run([Unit(0, ("echo", 1), 1)])
+        assert time.monotonic() - began < 2.0 + Supervisor.STOP_GRACE + 10
+        assert outcome.unstarted == [0] and outcome.results == {}
+
+    def test_a_worker_that_never_starts_is_a_failed_start_after_its_backstop(
+        self, monkeypatch
+    ) -> None:
+        """No deadline: a worker not ready within `START_BACKSTOP` ends as one that ended before it
+        was ready, so a scan whose workers cannot start is a scanner error, never a hang."""
+        monkeypatch.setattr(Worker, "START_BACKSTOP", 2.0)
+        began = time.monotonic()
+        with pytest.raises(IsolationUnavailable):
+            Harness.supervisor(Bounds(), workers=1, setup="setup_that_hangs").run(
+                [Unit(0, ("echo", 1), 1)]
+            )
+        assert time.monotonic() - began < 2 * 2.0 + 20
 
     def test_no_worker_that_can_start_is_said_not_run_here(self) -> None:
         with pytest.raises(IsolationUnavailable):

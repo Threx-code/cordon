@@ -5,3 +5,8 @@ pytest==9.1.1
 pytest-cov==7.1.0
 pytest-xdist==3.8.0
 ruff==0.17.0
+
+# pytest needs colorama on Windows only, so a lock resolved on Linux left it out and the Windows
+# test jobs stopped at `pip install --require-hashes` ("colorama>=0.4 ... not pinned", 4 Nov).
+# Listed unconditionally, so every regeneration keeps it pinned by hash on every platform.
+colorama

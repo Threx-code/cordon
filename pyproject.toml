@@ -109,6 +109,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Programming Language :: Python :: Implementation :: CPython",
     "Topic :: Security",
     "Topic :: Security :: Cryptography",
@@ -218,7 +219,7 @@ builtin = "cordon_scanner.judge.providers:ProviderFactory"
 [project.entry-points."cordon_scanner.commands"]
 # Front ends that drive the command line's own commands (`cordon-scanner mcp`): found by entry point,
 # so the command line never imports the server that runs it.
-mcp = "cordon_scanner.mcp.server:Server"
+mcp = "cordon_scanner.mcp.command:McpCommand"
 
 [project.entry-points."cordon_scanner.notifiers"]
 webhook = "cordon_scanner.notify.channels.webhook:WebhookChannel"
@@ -392,6 +393,7 @@ addopts = [
 filterwarnings = ["error"]
 markers = [
     "slow: long-running tests, deselect with -m 'not slow'",
+    "soak: memory soaks (about 30 minutes); run on main, v* tags and manual runs, not on pull requests",
     "corpus: runs against the sample corpus",
     "hostile: feeds the scanner input designed to attack it",
     "perf: performance budget assertions",
@@ -402,6 +404,11 @@ markers = [
 
 [tool.coverage.run]
 source = ["src/cordon_scanner"]
+# Every Python process the suite starts is measured: a CLI run as a subprocess, and the scan's
+# workers, forked and ended by SIGKILL or os._exit, which save as they go
+# (tests/sitehooks/sitecustomize.py, CoverageInWorkers). Without these the gate saw 83% of a suite
+# that runs far more, since the ecosystem parsers and detectors run in workers.
+patch = ["subprocess", "fork", "_exit"]
 # Line coverage only. Branch coverage is the expensive half of the measurement
 # by a wide margin -- the same suite takes 418 seconds with it and 52 without --
 # and it is measured on one job, on every push, as a gate rather than as a

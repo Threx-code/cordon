@@ -1,0 +1,139 @@
+# The test suite on Linux, Python 3.11 to 3.15; coverage is measured on 3.12. Split out of ci.yml
+# (5 Nov). Also runs the documentation tests, so a docs change runs it.
+
+name: tests (linux)
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "ci/**"
+      - "scripts/backend/**"
+      - "docs/**"
+      - "tutorials/**"
+      - "README.md"
+      - "CHANGELOG.md"
+      - "action/**"
+      - ".github/workflows/tests-linux.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # The OS belongs in the name. Nine jobs shared three names, so a failure
+    # could not be attributed to a platform without opening the API, and the
+    # CLI returned a different job's log for the same name.
+    name: test (linux, python ${{ matrix.python }}, part ${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13", "3.14", "3.15"]
+        # Parts on separate runners (CORDON_TEST_SHARD, tests/conftest.py): one runner per version
+        # took 55 minutes, and the coverage job on 3.12 past 100 (5 Nov). Two parts per version,
+        # four for 3.12, whose instrumented run is the slowest; `coverage` below joins its parts.
+        shard: [0, 1, 2, 3]
+        exclude:
+          - {python: "3.11", shard: 2}
+          - {python: "3.11", shard: 3}
+          - {python: "3.13", shard: 2}
+          - {python: "3.13", shard: 3}
+          - {python: "3.14", shard: 2}
+          - {python: "3.14", shard: 3}
+          - {python: "3.15", shard: 2}
+          - {python: "3.15", shard: 3}
+    steps:
+      # Actions pinned by commit SHA, not tag. A tag is mutable, so a
+      # tag-pinned action is code that can change without a commit -- which is
+      # one of the things Cordon reports in other people's workflows.
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: ${{ matrix.python }}
+          # Up to fifteen jobs install the locked toolchain on every run.
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: python -m pip install --upgrade pip
+      - run: pip install --require-hashes -r ci/dev-requirements.txt && pip install --no-deps -e .
+      # `-n auto`: the suite is CPU-bound and a runner has four cores. A gate
+      # slow enough to be resented is one people learn to merge past.
+      #
+      # Coverage is measured on one job rather than nine. It is a property of
+      # the test suite, not of the operating system or the interpreter, so
+      # measuring it nine times buys one number and costs eight runs of
+      # instrumented Python. `fail_under = 85` still gates, on that one job.
+      # A rerun of a failed job runs only the tests that failed (pytest's --lf), from the list the
+      # earlier attempt saved below, instead of the whole suite again (5 Nov).
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .pytest_cache
+          key: pytest-${{ runner.os }}-${{ matrix.python }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: pytest-${{ runner.os }}-${{ matrix.python }}-${{ matrix.shard }}-${{ github.run_id }}-
+      - name: Test
+        # `COVERAGE_CORE=sysmon` uses CPython 3.12's own monitoring hooks
+        # instead of the settrace callback, which is what makes measuring
+        # coverage cost seconds rather than minutes. It is set for every job
+        # because it does nothing unless coverage is running, and the one job
+        # that measures is chosen below.
+        env:
+          COVERAGE_CORE: sysmon
+          CORDON_TEST_SHARD: ${{ format('{0}/{1}', matrix.shard, matrix.python == '3.12' && '4' || '2') }}
+          # A part's coverage data, joined with the other parts' by `coverage`, which applies the gate.
+          COVERAGE_FILE: ${{ github.workspace }}/.coverage-part-${{ matrix.shard }}
+        run: >-
+          pytest -q -n auto
+          ${{ matrix.python == '3.12'
+          && '--cov=cordon_scanner --cov-report= --cov-fail-under=0' || '' }}
+          ${{ matrix.python != '3.12' && github.run_attempt > 1 && '--lf' || '' }}
+      - if: always() && matrix.python == '3.12'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: coverage-part-${{ matrix.shard }}
+          path: .coverage-part-${{ matrix.shard }}
+          include-hidden-files: true
+          overwrite: true
+          retention-days: 1
+      # Kept even when the tests fail: that is the list a rerun needs.
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        if: always()
+        with:
+          path: .pytest_cache
+          key: pytest-${{ runner.os }}-${{ matrix.python }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+  coverage:
+    # The parts' coverage joined, and the gate (`fail_under` in pyproject.toml) applied to the whole
+    # suite's: a part alone covers a fraction of the code.
+    name: coverage (linux, python 3.12)
+    needs: test
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install --require-hashes -r ci/dev-requirements.txt && pip install --no-deps -e .
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: coverage-part-*
+          merge-multiple: true
+      - name: Coverage of the whole suite
+        run: |
+          test "$(ls .coverage-part-* | wc -l)" -eq 4
+          coverage combine .coverage-part-*
+          # The checkout's source only: a test that copies the package into a temporary directory
+          # and runs it there is measured too, and that copy is gone by now ("No source for code").
+          coverage report --omit='/tmp/*'

@@ -14,10 +14,14 @@ declared in. The emitted module holds data only: FIELDS (message -> [rule name, 
 type, flags]), ENUMS (enum -> rule name, scope, {value name: value}) and ROOT.
 """
 
+from __future__ import annotations
+
 import json
 import re
 import sys
+from collections.abc import Container
 from pathlib import Path
+from typing import Any
 
 SCALARS = {
     "int32": "int",
@@ -42,31 +46,32 @@ class ProtoText:
     """A .proto file's text: comments removed, then split into tokens."""
 
     @staticmethod
-    def strip_comments(text):
+    def strip_comments(text: str) -> str:
         text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
         return re.sub(r"//[^\n]*", "", text)
 
     @staticmethod
-    def tokens(text):
+    def tokens(text: str) -> list[str]:
         return re.findall(
             r'"(?:[^"\\]|\\.)*"|[A-Za-z_][\w.]*|-?\d+(?:\.\d+)?|[{}\[\]();=<>,:]', text
         )
 
 
 class Parser:
-    def __init__(self, toks, package):
+    def __init__(self, toks: list[str], package: str) -> None:
         self.t, self.i, self.package = toks, 0, package
-        self.messages, self.enums = {}, {}
+        self.messages: dict[str, dict[str, Any]] = {}
+        self.enums: dict[str, dict[str, Any]] = {}
 
-    def peek(self):
+    def peek(self) -> str | None:
         return self.t[self.i] if self.i < len(self.t) else None
 
-    def take(self):
+    def take(self) -> str:
         tok = self.t[self.i]
         self.i += 1
         return tok
 
-    def skip_block(self):
+    def skip_block(self) -> None:
         depth = 0
         while True:
             tok = self.take()
@@ -77,7 +82,7 @@ class Parser:
                 if depth == 0:
                     return
 
-    def options_text(self):
+    def options_text(self) -> str:
         """The raw tokens of a [ ... ] or { ... } option block, as text."""
         start, depth = self.i, 0
         while True:
@@ -89,7 +94,7 @@ class Parser:
                 if depth == 0:
                     return " ".join(self.t[start : self.i])
 
-    def file(self):
+    def file(self) -> None:
         while self.peek() is not None:
             tok = self.take()
             if tok == "message":
@@ -107,11 +112,11 @@ class Parser:
                         self.take()
                 self.take()
 
-    def message(self, scope):
+    def message(self, scope: str) -> None:
         name = self.take()
         full = f"{scope}.{name}"
         self.take()  # {
-        info = {"fields": [], "rule_name": name, "scope": scope}
+        info: dict[str, Any] = {"fields": [], "rule_name": name, "scope": scope}
         self.messages[full] = info
         while (tok := self.take()) != "}":
             if tok == "message":
@@ -125,7 +130,7 @@ class Parser:
                     self.field(info, None, full)
                 self.take()
             elif tok == "option":
-                opts = []
+                opts: list[str] = []
                 while self.peek() != ";":
                     opts.append(self.options_text() if self.peek() == "{" else self.take())
                 self.take()
@@ -140,7 +145,7 @@ class Parser:
             else:
                 self.field(info, tok, full)
 
-    def field(self, info, first, scope):
+    def field(self, info: dict[str, Any], first: str | None, scope: str) -> None:
         label = None
         tok = first if first is not None else self.take()
         if tok in ("repeated", "optional", "required"):
@@ -153,7 +158,7 @@ class Parser:
             self.take()
             kind, ftype = "map", (key, value)
         else:
-            kind, ftype = ("repeated" if label == "repeated" else "single"), tok
+            kind, ftype = ("repeated" if label == "repeated" else "single"), tok  # type: ignore[assignment]
         name = self.take()
         self.take()
         number = int(self.take())
@@ -175,19 +180,25 @@ class Parser:
             }
         )
 
-    def enum(self, scope):
+    def enum(self, scope: str) -> None:
         name = self.take()
         full = f"{scope}.{name}"
         self.take()
-        info = {"rule_name": name, "scope": scope, "values": {}, "numbers": {}, "inline": False}
+        info: dict[str, Any] = {
+            "rule_name": name,
+            "scope": scope,
+            "values": {},
+            "numbers": {},
+            "inline": False,
+        }
         self.enums[full] = info
         while (tok := self.take()) != "}":
             if tok == "option":
-                text = []
+                parts: list[str] = []
                 while self.peek() != ";":
-                    text.append(self.options_text() if self.peek() == "{" else self.take())
+                    parts.append(self.options_text() if self.peek() == "{" else self.take())
                 self.take()
-                text = " ".join(text)
+                text = " ".join(parts)
                 if m := re.search(r'name : "([^"]+)"', text):
                     info["rule_name"] = m.group(1)
                 info["inline"] = info["inline"] or bool(re.search(r"inline : true", text))
@@ -208,7 +219,7 @@ class Names:
     """Type names as protobuf resolves them."""
 
     @staticmethod
-    def resolve(name, scope, known):
+    def resolve(name: str, scope: str, known: Container[str]) -> str | None:
         """A type name as protobuf resolves it: innermost scope outwards, then as written."""
         if name in SCALARS:
             return name
@@ -225,7 +236,7 @@ class VtSchemaFile:
     protos is the same file."""
 
     @staticmethod
-    def render(data):
+    def render(data: Any) -> str:
         return json.dumps(data, indent=1, sort_keys=True) + "\n"
 
 
@@ -233,11 +244,15 @@ class Generate:
     """The generator's run: the protos read, the tables written."""
 
     @staticmethod
-    def main(protos, out):
-        messages, enums = {}, {}
+    def main(protos: str, out: str) -> None:
+        messages: dict[str, dict[str, Any]] = {}
+        enums: dict[str, dict[str, Any]] = {}
         for path in sorted(Path(protos, "vt").rglob("*.proto")):
             text = ProtoText.strip_comments(path.read_text(encoding="utf-8"))
-            pkg = re.search(r"package\s+([\w.]+)\s*;", text).group(1)
+            declared = re.search(r"package\s+([\w.]+)\s*;", text)
+            if declared is None:
+                raise SystemExit(f"{path}: no package declaration")
+            pkg = declared.group(1)
             p = Parser(ProtoText.tokens(text), pkg)
             p.file()
             messages.update(p.messages)

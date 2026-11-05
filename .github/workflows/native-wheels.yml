@@ -15,10 +15,28 @@
 name: native-wheels
 
 on:
+  # The release calls this to build what it publishes (release.yml).
   workflow_call:
+  # Its own run otherwise, only when the native code or how it is built changes: ten builds of up to
+  # 40 minutes ran on every push while they were part of ci.yml (5 Nov).
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - "src/cordon_scanner/_native/**"
+      - "src/cordon_scanner/detect/binary/rule_engine/anchoring/**"
+      - "pyproject.toml"
+      - "scripts/backend/**"
+      - ".github/workflows/native-wheels.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-native-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   linux:
@@ -46,13 +64,14 @@ jobs:
           export SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct 2>/dev/null || echo 315532800)
           for py in cp311-cp311 cp312-cp312 cp313-cp313; do
             python=/opt/python/$py/bin/python
+            mkdir -p wheelhouse
             $python -c "import sys; sys.path.insert(0, 'scripts/backend'); import cordon_build; print(cordon_build.build_wheel('wheelhouse'))"
             wheel=$(ls wheelhouse/*-$py-manylinux_2_28_${{ matrix.arch }}.whl)
             auditwheel show "$wheel"
             $python -m venv /tmp/venv-$py
             /tmp/venv-$py/bin/pip install -q --require-hashes -r ci/dev-requirements.txt
             /tmp/venv-$py/bin/pip install -q --no-deps "$wheel"
-            (cd /tmp && /tmp/venv-$py/bin/python -I -c "from cordon_scanner.detect.binary.rule_engine.automaton import Automaton as A; assert A.NATIVE, A.WHY; print(A.WHY)")
+            (cd /tmp && /tmp/venv-$py/bin/python -I -c "from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton as A; assert A.NATIVE, A.WHY; print(A.WHY)")
             /tmp/venv-$py/bin/python -m pytest -q -p no:cacheprovider tests/unit/detect/binary/rule_engine
           done
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -88,12 +107,13 @@ jobs:
         run: |
           set -euo pipefail
           export SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)
+          mkdir -p wheelhouse
           python -c "import sys; sys.path.insert(0, 'scripts/backend'); import cordon_build; print(cordon_build.build_wheel('wheelhouse'))"
           wheel=$(ls wheelhouse/*-macosx_11_0_${{ matrix.arch }}.whl)
           python -m venv /tmp/venv
           /tmp/venv/bin/pip install -q --require-hashes -r ci/dev-requirements.txt
           /tmp/venv/bin/pip install -q --no-deps "$wheel"
-          (cd /tmp && /tmp/venv/bin/python -I -c "from cordon_scanner.detect.binary.rule_engine.automaton import Automaton as A; assert A.NATIVE, A.WHY; print(A.WHY)")
+          (cd /tmp && /tmp/venv/bin/python -I -c "from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton as A; assert A.NATIVE, A.WHY; print(A.WHY)")
           /tmp/venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/detect/binary/rule_engine
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
@@ -122,6 +142,7 @@ jobs:
           for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvars64.bat"
           if errorlevel 1 exit /b 1
           for /f %%t in ('git log -1 --pretty^=%%ct') do set SOURCE_DATE_EPOCH=%%t
+          if not exist wheelhouse mkdir wheelhouse
           python -c "import sys; sys.path.insert(0, 'scripts/backend'); import cordon_build; print(cordon_build.build_wheel('wheelhouse'))"
       - name: Test the wheel
         shell: bash
@@ -131,7 +152,7 @@ jobs:
           python -m venv venv
           venv/Scripts/pip install -q --require-hashes -r ci/dev-requirements.txt
           venv/Scripts/pip install -q --no-deps "$wheel"
-          (cd "$RUNNER_TEMP" && "$GITHUB_WORKSPACE/venv/Scripts/python" -I -c "from cordon_scanner.detect.binary.rule_engine.automaton import Automaton as A; assert A.NATIVE, A.WHY; print(A.WHY)")
+          (cd "$RUNNER_TEMP" && "$GITHUB_WORKSPACE/venv/Scripts/python" -I -c "from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton as A; assert A.NATIVE, A.WHY; print(A.WHY)")
           venv/Scripts/python -m pytest -q -p no:cacheprovider tests/unit/detect/binary/rule_engine
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:

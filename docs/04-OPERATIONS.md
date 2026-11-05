@@ -329,8 +329,9 @@ its own manifest describes. It cannot prove who produced it, because anybody who
 rewrites a file can rewrite the manifest in the same pass; that comes from the
 detached signature made at release. `verify` says which of the two it checked
 rather than reporting a success that means less than it sounds like. The intelligence database records its own age, and a
-scan using data older than `intel.max_age_days` (default 30) emits an
-`OPERATIONAL` finding. Stale threat intelligence that presents itself as current
+scan using intel older than `scan.max_intel_age` (unset: 24 hours when the scan can refresh,
+from the feed or OSV's changes; a week when it cannot, as with `--offline`) is incomplete and
+says so (`OPERATIONAL.INTEL.STALE`). Stale threat intelligence that presents itself as current
 is the worst case for an air-gapped deployment: the scan passes, the report looks
 identical to a good one, and nobody has a reason to investigate.
 

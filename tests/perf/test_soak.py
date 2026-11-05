@@ -27,7 +27,7 @@ import pytest
 from cordon_scanner import Scanner
 from cordon_scanner.foundation.config.settings import Config
 
-pytestmark = pytest.mark.perf
+pytestmark = [pytest.mark.perf, pytest.mark.soak]
 
 #: Scans after the warm-up, and the growth they may add (measured: 00578d7e +50 MB from scan 25 to
 #: 150, emptied 0 MB). CORDON_SOAK_SCANS raises the count for the release soak (1,000).
@@ -131,14 +131,16 @@ class TestSoak:
 class TestStatementWindowMemory:
     """D1: an oversized Python module is read in statement windows, each window's tree released
     before the next, so its peak memory does not grow with the module's length, and the windows add
-    little over what the first pass already holds."""
+    little over what the first pass already holds. Measured in the scan's worker, where the windows
+    are read (item 56): the parent's own peak grows with the file it holds, and read there the test
+    saw that and never saw the windows begin (4 Nov)."""
 
     LIMIT = 3 * 1024 * 1024
     ADDED_MB = 100
     """The most the statement windows may add over the first pass's peak (measured: 62 MB at 2.9 windows of 3 MiB)."""
 
     CHILD = """
-import json, sys
+import json, resource, sys
 from pathlib import Path
 from cordon_scanner import Scanner
 from cordon_scanner.engine import window_pass
@@ -153,17 +155,22 @@ while sum(map(len, body)) < size:
     n += 1
 target.mkdir()
 (target / "generated.py").write_text("".join(body), encoding="utf-8")
-before = {}
+marker = Path(sys.argv[4])
 read = window_pass.WindowPass._read
 def reading(*args, release=False, **kwargs):
-    if release and "aligned" not in before:
-        before["aligned"] = hwm()
+    # Runs in the scan's worker (item 56), which inherits this patch: what it holds as the windows
+    # begin is written where this process can read it after the scan.
+    if release and not marker.exists():
+        marker.write_text(str(hwm()), encoding="ascii")
     return read(*args, release=release, **kwargs)
 window_pass.WindowPass._read = staticmethod(reading)
 base = Config.default()
 limits = base.limits.merged(max_file_bytes=int(sys.argv[3]), per_file_timeout=0.0, total_timeout=0.0)
 Scanner(base.with_overrides(limits=limits, use_cache=False)).scan(target)
-print(json.dumps({"peak_kb": hwm(), "before_aligned_kb": before.get("aligned", 0)}))
+# The windows are read in a worker; its peak is the largest reaped child's (ru_maxrss is KiB on Linux).
+worker = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
+aligned = int(marker.read_text(encoding="ascii")) if marker.exists() else 0
+print(json.dumps({"peak_kb": worker, "before_aligned_kb": aligned}))
 """
 
     @classmethod
@@ -179,6 +186,7 @@ print(json.dumps({"peak_kb": hwm(), "before_aligned_kb": before.get("aligned", 0
                 str(work),
                 str(int(cls.LIMIT * windows)),
                 str(cls.LIMIT),
+                str(work.parent / f"{work.name}.aligned"),
             ],
             capture_output=True,
             text=True,

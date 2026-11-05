@@ -16,6 +16,11 @@ from cordon_scanner.foundation.models import Scope
 
 LIST_ENTRIES = 1_000_000
 """The most entries any one list in the document may hold."""
+STRING_CHARS = 10 << 20
+"""The longest string a record may hold: the largest file a scan reads by default
+(`Limits.max_file_bytes`), since a field read from a file is never longer than it. The whole
+document is bounded on its own (`DOCUMENT_BYTES`). At 65,536 one `postinstall` past 64 KiB refused the
+context document, and the whole scan was incomplete (the detector-growth probe, 5 Nov)."""
 
 
 class Codec:
@@ -23,8 +28,8 @@ class Codec:
     record crosses only when every field is one of the types listed here."""
 
     CHECKS: ClassVar[dict[str, Any]] = {
-        "str": lambda v: isinstance(v, str) and len(v) <= 65536,
-        "str | None": lambda v: v is None or (isinstance(v, str) and len(v) <= 65536),
+        "str": lambda v: isinstance(v, str) and len(v) <= STRING_CHARS,
+        "str | None": lambda v: v is None or (isinstance(v, str) and len(v) <= STRING_CHARS),
         "bool": lambda v: type(v) is bool,
         "int": lambda v: type(v) is int,
         "int | None": lambda v: v is None or type(v) is int,
@@ -32,22 +37,29 @@ class Codec:
         "tuple[str, ...]": lambda v: (
             isinstance(v, list)
             and len(v) <= LIST_ENTRIES
-            and all(isinstance(x, str) and len(x) <= 65536 for x in v)
+            and all(isinstance(x, str) and len(x) <= STRING_CHARS for x in v)
         ),
         "frozenset[str]": lambda v: (
             isinstance(v, list)
             and len(v) <= LIST_ENTRIES
-            and all(isinstance(x, str) and len(x) <= 65536 for x in v)
+            and all(isinstance(x, str) and len(x) <= STRING_CHARS for x in v)
         ),
         "bytes | None": lambda v: (
             v is None
-            or (isinstance(v, str) and len(v) <= 65536 and re.fullmatch(r"(?:[0-9a-f]{2})*", v))
+            or (
+                isinstance(v, str)
+                and len(v) <= STRING_CHARS
+                and re.fullmatch(r"(?:[0-9a-f]{2})*", v)
+            )
         ),
         "Mapping[str, str]": lambda v: (
             isinstance(v, dict)
             and len(v) <= LIST_ENTRIES
             and all(
-                isinstance(k, str) and isinstance(x, str) and len(k) <= 65536 and len(x) <= 65536
+                isinstance(k, str)
+                and isinstance(x, str)
+                and len(k) <= STRING_CHARS
+                and len(x) <= STRING_CHARS
                 for k, x in v.items()
             )
         ),
@@ -55,12 +67,15 @@ class Codec:
         "list[str]": lambda v: (
             isinstance(v, list)
             and len(v) <= LIST_ENTRIES
-            and all(isinstance(x, str) and len(x) <= 65536 for x in v)
+            and all(isinstance(x, str) and len(x) <= STRING_CHARS for x in v)
         ),
         "dict[str, int]": lambda v: (
             isinstance(v, dict)
             and len(v) <= LIST_ENTRIES
-            and all(isinstance(k, str) and len(k) <= 65536 and type(x) is int for k, x in v.items())
+            and all(
+                isinstance(k, str) and len(k) <= STRING_CHARS and type(x) is int
+                for k, x in v.items()
+            )
         ),
         "dict[str, bytes]": lambda v: (
             isinstance(v, dict)
@@ -68,7 +83,7 @@ class Codec:
             and all(
                 isinstance(k, str)
                 and isinstance(x, str)
-                and len(k) <= 65536
+                and len(k) <= STRING_CHARS
                 and re.fullmatch(r"[A-Za-z0-9+/]*={0,2}", x) is not None
                 for k, x in v.items()
             )
@@ -212,4 +227,4 @@ class Codec:
             return False, None
 
 
-__all__ = ["LIST_ENTRIES", "Codec"]
+__all__ = ["LIST_ENTRIES", "STRING_CHARS", "Codec"]

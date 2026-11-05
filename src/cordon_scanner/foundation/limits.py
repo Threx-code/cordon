@@ -260,6 +260,11 @@ class Limits:
 
 
 DEFAULT_LIMITS = Limits()
+
+#: How old intel may be, with no feed to refresh it, before a scan says it is stale (owner, 4 Nov:
+#: a week, not a month). `intel/malware/feed.py` judges by it, and a scan target's own config may
+#: only shorten it (`foundation/config/settings.py`): a longer one is the check switched off.
+DEFAULT_MAX_INTEL_AGE: int = 7 * 24 * 60 * 60
 """Full-depth profile. Used by CI, pre-push and on-demand scans."""
 
 
@@ -280,4 +285,4 @@ depth runs at pre-push and in CI where the wait is already expected.
 """
 
 
-__all__ = ["DEFAULT_LIMITS", "HOOK_LIMITS", "Limits"]
+__all__ = ["DEFAULT_LIMITS", "DEFAULT_MAX_INTEL_AGE", "HOOK_LIMITS", "Limits"]

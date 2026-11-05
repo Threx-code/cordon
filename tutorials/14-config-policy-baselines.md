@@ -1,6 +1,6 @@
 # 14 · Config, policy & baselines
 
-> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 Three layers, from most local to most binding:
 
@@ -19,8 +19,8 @@ Three layers, from most local to most binding:
 ```
 
 ```
-   cordon-scanner scan .  --config cordon.toml  --policy org-policy.toml
-   cordon-scanner config  --config cordon.toml           # validate without scanning
+   cordon-scanner scan .  --config cordon.yaml  --policy org-policy.yaml
+   cordon-scanner config validate cordon.yaml            # validate without scanning
 ```
 
 ## Baselines — adopt on a messy codebase
@@ -36,7 +36,7 @@ Three layers, from most local to most binding:
 
 ```
    baseline create   -o base.json        snapshot the current findings
-   baseline compare  ... base.json       report only what's outside the baseline
+   baseline compare  . base.json         report only what's outside the baseline
 ```
 
 ```
@@ -46,6 +46,9 @@ Three layers, from most local to most binding:
    │ catching the 401st. The baseline draws the line at "today".  │
    └──────────────────────────────────────────────────────────────┘
 ```
+
+Tutorial 39 builds all three into an organisation rollout: a policy pinned by digest, a
+baseline on day 0, and suppressions that name an approver and expire.
 
 ## Evidence redaction — safe to share a report
 

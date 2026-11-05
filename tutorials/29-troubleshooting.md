@@ -1,6 +1,6 @@
 # 29 · Troubleshooting
 
-> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 When a scan fails, stops early, or passes where you expected a finding, Cordon has almost
 always said why: in its exit code, in the scan coverage notes under the findings, or in the
@@ -209,7 +209,7 @@ steps:
   - uses: actions/checkout@<sha>
     with:
       fetch-depth: 0        # only if you scan --history
-  - uses: Threx-code/cordon/action@v0.6.0
+  - uses: Threx-code/cordon/action@v0.7.0
 ```
 
 | Symptom | Cause | Fix |

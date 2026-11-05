@@ -28,6 +28,14 @@ class ReviewCriticalHelpers:
     """Helpers for test_review_critical.py."""
 
     @staticmethod
+    def corpus_samples() -> list[Path]:
+        """Every malicious corpus sample, `expected.yaml` aside; none when the corpus is absent."""
+        corpus = ROOT / "corpus" / "malicious"
+        if not corpus.is_dir():
+            return []
+        return [p for p in sorted(corpus.rglob("*")) if p.is_file() and p.name != "expected.yaml"]
+
+    @staticmethod
     def config(**kw) -> Config:
         return Config.default().with_overrides(use_cache=False, **kw)
 
@@ -133,44 +141,47 @@ class TestC02BinaryClassification:
         assert Scanner(ReviewCriticalHelpers.config()).scan(tmp_path).complete is True
 
     @requires_malicious_corpus
-    def test_every_malicious_corpus_sample_survives_a_nul(self) -> None:
-        """The regression test the review asked for, over the whole corpus."""
-        corpus = ROOT / "corpus" / "malicious"
-        checked = 0
-        for sample in sorted(corpus.rglob("*")):
-            if not sample.is_file() or sample.name == "expected.yaml":
-                continue
-            with tempfile.TemporaryDirectory() as d:
-                plain = Path(d) / sample.name
-                plain.write_bytes(sample.read_bytes())
-                before, before_loudest = (
-                    ReviewCriticalHelpers.rule_ids(plain),
-                    ReviewCriticalHelpers.loudest(plain),
-                )
-            with tempfile.TemporaryDirectory() as d:
-                nul = Path(d) / sample.name
-                nul.write_bytes(b"/* \x00 */\n" + sample.read_bytes())
-                after, after_loudest = (
-                    ReviewCriticalHelpers.rule_ids(nul),
-                    ReviewCriticalHelpers.loudest(nul),
-                )
-            quieter = before_loudest is not None and (
-                after_loudest is None or after_loudest < before_loudest
+    def test_the_corpus_holds_samples_to_check(self) -> None:
+        assert len(ReviewCriticalHelpers.corpus_samples()) > 5
+
+    @requires_malicious_corpus
+    @pytest.mark.parametrize(
+        "sample",
+        ReviewCriticalHelpers.corpus_samples(),
+        ids=lambda sample: sample.relative_to(ROOT / "corpus" / "malicious").as_posix(),
+    )
+    def test_every_malicious_corpus_sample_survives_a_nul(self, sample: Path) -> None:
+        """The regression test the review asked for, over the whole corpus: one test a sample, so
+        the samples run side by side (as one loop it took 170 s on one worker, 5 Nov)."""
+        with tempfile.TemporaryDirectory() as d:
+            plain = Path(d) / sample.name
+            plain.write_bytes(sample.read_bytes())
+            before, before_loudest = (
+                ReviewCriticalHelpers.rule_ids(plain),
+                ReviewCriticalHelpers.loudest(plain),
             )
-            lost = before - after
-            if lost and quieter:
-                # A finding may be *replaced* by an operational report that the
-                # file could not be examined -- that is not silence, and it is
-                # the honest outcome when the prepended bytes make the file
-                # genuinely unparseable (a `package.json` cannot begin with a
-                # comment whatever the NUL does). What must never happen is the
-                # finding disappearing with nothing said.
-                assert any(name.startswith("OPERATIONAL.") for name in after), (
-                    f"{sample}: a NUL removed {sorted(lost)}, left nothing as serious "
-                    f"behind, and said nothing about why"
-                )
-            checked += 1
-        assert checked > 5
+        with tempfile.TemporaryDirectory() as d:
+            nul = Path(d) / sample.name
+            nul.write_bytes(b"/* \x00 */\n" + sample.read_bytes())
+            after, after_loudest = (
+                ReviewCriticalHelpers.rule_ids(nul),
+                ReviewCriticalHelpers.loudest(nul),
+            )
+        quieter = before_loudest is not None and (
+            after_loudest is None or after_loudest < before_loudest
+        )
+        lost = before - after
+        if lost and quieter:
+            # A finding may be *replaced* by an operational report that the
+            # file could not be examined -- that is not silence, and it is
+            # the honest outcome when the prepended bytes make the file
+            # genuinely unparseable (a `package.json` cannot begin with a
+            # comment whatever the NUL does). What must never happen is the
+            # finding disappearing with nothing said.
+            assert any(name.startswith("OPERATIONAL.") for name in after), (
+                f"{sample}: a NUL removed {sorted(lost)}, left nothing as serious "
+                f"behind, and said nothing about why"
+            )
 
 
 class TestC05PatternValidation:
@@ -480,14 +491,24 @@ class TestRuleMaterialNeverLowersAttacks:
             for f in result.findings
         )
 
-    def test_every_blocking_sample_still_blocks(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    @staticmethod
+    def samples() -> list[Path]:
+        corpus = ROOT / "corpus" / "malicious"
+        return sorted(p for p in corpus.iterdir() if p.is_dir()) if corpus.is_dir() else []
+
+    def test_enough_samples_block_to_tell(self) -> None:
+        assert sum(self.blocking(s) for s in self.samples()) >= 30
+
+    # One test a sample, so the samples run side by side (as one loop, 60 s on one worker, 5 Nov).
+    @pytest.mark.parametrize("sample", samples(), ids=lambda sample: sample.name)
+    def test_every_blocking_sample_still_blocks(
+        self, sample: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from cordon_scanner.foundation.samples import SampleKinds
 
-        samples = sorted(p for p in (ROOT / "corpus" / "malicious").iterdir() if p.is_dir())
-        blocking = [s for s in samples if self.blocking(s)]
-        assert len(blocking) >= 30
+        if not self.blocking(sample):
+            pytest.skip("this sample does not block, so the judgement cannot lower it")
         monkeypatch.setattr(
             SampleKinds, "is_rule_material", staticmethod(lambda raw, path="": True)
         )
-        lost = [s.name for s in blocking if not self.blocking(s)]
-        assert lost == []
+        assert self.blocking(sample), sample.name

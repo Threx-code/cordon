@@ -381,6 +381,17 @@ _DECLARED: tuple[DeclaredRule, ...] = (
         remediation="Do not install it; treat any machine that did as compromised.",
     ),
     DeclaredRule(
+        id="VULNERABLE.PACKAGE.KNOWN.001",
+        title="The scanned package is a release with known vulnerabilities",
+        severity=Severity.HIGH,
+        confidence=Confidence.CONFIRMED,
+        category=Category.VULNERABLE,
+        detector="advisory",
+        message="The package's own manifest names a release the vulnerability advisories list.",
+        references=(references.OBSCURED_SECURITY_DATA,),
+        remediation="Install a release the advisories name as fixed.",
+    ),
+    DeclaredRule(
         id="SUSPECT.PACKAGE.PLACEHOLDER_RELEASE.001",
         title="A published release ships no code under a throwaway description",
         severity=Severity.HIGH,

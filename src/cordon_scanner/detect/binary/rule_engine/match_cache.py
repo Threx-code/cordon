@@ -29,6 +29,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.detect.binary.rule_engine.pack_cache import PackCache
+from cordon_scanner.foundation.files.atomic import AtomicFile
+from cordon_scanner.foundation.files.ownership import Ownership
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -77,7 +79,7 @@ class MatchCache:
         path = self._path(identity, data)
         try:
             st = path.stat()
-            if st.st_uid != os.getuid() or st.st_mode & 0o022:
+            if not Ownership.others_cannot_write(st):
                 self.refused += 1
                 return None
             mac_line, _, signed = path.read_bytes().partition(b"\n")
@@ -119,7 +121,7 @@ class MatchCache:
             with os.fdopen(fd, "wb") as handle:
                 handle.write(mac.encode() + b"\n" + signed)
             Path(tmp).chmod(0o600)
-            Path(tmp).replace(path)
+            AtomicFile.replace(Path(tmp), path)
         except (OSError, TypeError, ValueError):
             return
 

@@ -1,6 +1,6 @@
 # 15 · Output formats
 
-> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 One scan, any number of renderings. Pick by audience.
 
@@ -55,7 +55,7 @@ scan:
 ```
 
 ```bash
-cordon-scanner sbom . --format cyclonedx --output sbom.cdx.json
+cordon-scanner sbom generate . --format cyclonedx --output sbom.cdx.json
 cordon-scanner scan . --reachability --format vex --output sbom.vex.json
 ```
 

@@ -3,6 +3,7 @@ entry is refused whenever what made it changed, or anyone but this user could ha
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,9 @@ class TestThePackCache:
         Rules.compile(RULES, externals={"x": 1}, cache=cache)
         assert cache.loaded == 0
 
+    @pytest.mark.skipif(
+        os.name == "nt", reason="POSIX mode bits; Windows guards the cache by its profile ACL"
+    )
     def test_an_entry_others_could_write_is_refused(self, tmp_path: Path) -> None:
         cache = PackCache(tmp_path)
         Rules.compile(RULES, cache=cache)
@@ -153,6 +157,9 @@ class TestTheSignature:
         Rules.compile(RULES, cache=fresh)
         assert fresh.refused == 1
 
+    @pytest.mark.skipif(
+        os.name == "nt", reason="POSIX mode bits; Windows guards the cache by its profile ACL"
+    )
     def test_a_key_others_can_read_is_replaced(self, tmp_path: Path) -> None:
         cache = PackCache(tmp_path)
         Rules.compile(RULES, cache=cache)

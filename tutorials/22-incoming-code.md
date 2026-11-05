@@ -1,6 +1,6 @@
 # 22 · Code arriving from someone else
 
-> **For Cordon 0.6.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
+> **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
 A repository is most dangerous the moment it lands on your machine. Nobody has to run
 it on purpose: an editor opens its tasks, a shell loads its `.envrc`, a coding agent

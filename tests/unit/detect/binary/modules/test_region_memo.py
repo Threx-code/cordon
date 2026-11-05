@@ -102,7 +102,8 @@ class TestRegionTallies:
         assert len(module.tallies) == 0
 
     def test_ten_thousand_regions_keep_at_most_the_bound(self) -> None:
-        data = bytes(random.Random(8).randrange(256) for _ in range(10 << 20))  # noqa: S311 -- a fixture, not key material
+        # One call, not ten million: drawn byte by byte, the data took most of this test's 89 s.
+        data = random.Random(8).randbytes(10 << 20)  # noqa: S311 -- a fixture, not key material
         module = MathModule(data)
         entropy = module.values()["entropy"][0]
         tracemalloc.start()

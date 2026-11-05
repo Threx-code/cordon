@@ -85,7 +85,7 @@ written.
 ## Verifying a webhook
 
 The webhook body is a `cordon.event/v1` envelope
-([schema](https://github.com/Threx-code/cordon/blob/v0.6.0/schemas/cordon-event-v1.schema.json)),
+([schema](https://github.com/Threx-code/cordon/blob/v0.7.0/schemas/cordon-event-v1.schema.json)),
 signed with `CORDON_NOTIFY_WEBHOOK_SECRET` as
 `X-Cordon-Signature: t=<unix>,v1=<hex HMAC-SHA256 of "t.body">`. A receiver checks the signature
 and rejects a delivery more than five minutes old. `EventSignature.verify` in

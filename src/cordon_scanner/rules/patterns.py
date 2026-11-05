@@ -87,11 +87,12 @@ class PatternCompiler:
             # named: Linux CI reports import-not-found where macOS reports
             # import-untyped, and a single code fails on the other.
             import re._parser as parser  # type: ignore[import-not-found,import-untyped,unused-ignore]
-        except ImportError:  # pragma: no cover - CPython < 3.11 layout
-            try:
-                import sre_parse as parser
-            except ImportError:
-                return None
+        except (
+            ImportError
+        ):  # pragma: no cover - not CPython's layout (every supported CPython has it)
+            # `sre_parse`, the pre-3.11 name, was the fallback; 3.11 is the oldest supported Python
+            # and 3.15 removed the module, so a fallback to it was dead code naming a missing module.
+            return None
         try:
             return parser.parse(pattern)
         except re.error:

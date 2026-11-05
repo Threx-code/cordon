@@ -1,6 +1,7 @@
 """Hardened archive extraction.
 
-This module is the only code permitted to expand an archive, and it exists
+This module is the only code that expands an archive into files a scan reads (format
+readers open their own containers in memory, each member to a byte limit), and it exists
 because archive formats were designed for convenience rather than for hostile
 input. Every protection here maps to a documented attack:
 

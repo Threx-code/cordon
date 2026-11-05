@@ -18,6 +18,7 @@ from cordon_scanner.detect.base import DetectorRequirements, ScanContext
 from cordon_scanner.engine.engine import Engine
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Category, Finding, Severity
+from support import requires_forked_workers
 
 
 class EngineHelpers:
@@ -216,6 +217,7 @@ class MisplacedDetector:
 
 
 class TestDetectorContainment(EngineFixtures):
+    @requires_forked_workers
     def test_a_failing_detector_does_not_abort_the_scan(self, project) -> None:
         """One broken detector silently reducing coverage everywhere is far
         worse than one loud finding saying it broke."""
@@ -224,6 +226,7 @@ class TestDetectorContainment(EngineFixtures):
         assert result.complete is False
         assert any(f.rule_id == "OPERATIONAL.DETECTOR.FAILED" for f in result.findings)
 
+    @requires_forked_workers
     def test_the_failure_names_the_detector(self, project) -> None:
         engine = Engine(EngineHelpers.config(), detectors=[BrokenDetector()])
         failures = [
@@ -232,6 +235,7 @@ class TestDetectorContainment(EngineFixtures):
         assert failures
         assert "broken" in failures[0].message
 
+    @requires_forked_workers
     def test_a_misplaced_finding_is_dropped_and_reported(self, project) -> None:
         """A detector that reports about a file it was not given is a bug, and
         accepting it silently would make findings untraceable.

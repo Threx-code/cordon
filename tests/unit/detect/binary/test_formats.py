@@ -26,6 +26,7 @@ from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.files.windows import BytesWindows
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS
 from kits.formatkit import FormatKit, Reduces
+from support import requires_forked_workers
 
 
 class FormatsHelpers:
@@ -175,6 +176,7 @@ class TestPickles:
         assert report.partial and report.refusal and "memo exceeds" in report.refusal
         assert report.imports and report.imports[0].module == "<unresolved>"
 
+    @requires_forked_workers
     def test_the_memo_overflow_is_an_operational_finding(self, tmp_path, monkeypatch) -> None:
         monkeypatch.setattr(pickles, "MAX_MEMO_BYTES", 8)
         (tmp_path / "model.pkl").write_bytes(self.stack_global("a_module_of_some_length", "attr"))

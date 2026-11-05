@@ -72,8 +72,10 @@ _INJECTED: Final = re.compile(
     r"(?:^|[^\\])(?:;|&&?|\|\|?|\n)\s*(?:sudo\s+)?[a-z][\w.-]{1,30}(?:\s|$)|\$\([^)]{1,200}\)|`[^`]{1,200}`"
 )
 #: Commands whose act is the damage, whether injected or passed as the whole value.
+# `-(?=[a-z]*r)[a-z]+`, not `-[a-z]*r[a-z]*f?`: the two runs split `rm -rrrr...` every way, quadratic
+# in the flag's length (6.3 s on 64,000 characters, the regex ladder, 5 Nov). Same flags matched.
 _DESTRUCTIVE: Final = re.compile(
-    r"(?i)\brm\s+-[a-z]*r[a-z]*f?\s+(?:--no-preserve-root\s+)?(?:/|~|\$HOME|\*)(?:\s|$)"
+    r"(?i)\brm\s+-(?=[a-z]*r)[a-z]+\s+(?:--no-preserve-root\s+)?(?:/|~|\$HOME|\*)(?:\s|$)"
     r"|\b(?:mkfs(?:\.\w+)?|shred|wipefs)\s|\bdd\s+if=\S+\s+of=/dev/"
     r"|\bkill(?:all)?\s+-9\s+(?:-1|1)\b|\bpkill\s+-9\b|\bchmod\s+(?:-R\s+)?0?777\s+/"
     r"|\bexec\s*\(\s*[\"']/bin/(?:ba|z|k)?sh\b|\bos\.system\s*\(\s*[\"'](?:/bin/)?(?:ba)?sh\b"

@@ -333,11 +333,16 @@ class TestJudgePatternsLinear:
         83-93x; the line at 30x sits between them with room on both sides (15x failed 1 run of 6)."""
 
         def cpu(size: int) -> float:
+            # Each size repeated to a span the clock can time, then per call: Windows' clock ticks
+            # in 15.6 ms, so a fast run read 0 or one tick and the ratio was ticks over the 2 ms
+            # floor (46.875, 31.25 for linear patterns, 5 Nov). This thread's CPU only.
             best = float("inf")
             for _ in range(3):
-                start = time.process_time()
-                probe(size)
-                best = min(best, time.process_time() - start)
+                start, rounds = time.thread_time(), 0
+                while (spent := time.thread_time() - start) < 0.05:
+                    probe(size)
+                    rounds += 1
+                best = min(best, spent / rounds)
             return best
 
         return cpu(10 * n) / max(cpu(n), 0.002)

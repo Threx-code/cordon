@@ -22,9 +22,9 @@ class TestSelfScanScope:
     def test_every_self_scan_excludes_the_attack_samples(self) -> None:
         places = {
             "Makefile": (ROOT / "Makefile").read_text(encoding="utf-8"),
-            ".github/workflows/ci.yml": (ROOT / ".github" / "workflows" / "ci.yml").read_text(
-                encoding="utf-8"
-            ),
+            ".github/workflows/checks.yml": (
+                ROOT / ".github" / "workflows" / "checks.yml"
+            ).read_text(encoding="utf-8"),
             "scripts/measure/live_checks.py": (
                 ROOT / "scripts" / "measure" / "live_checks.py"
             ).read_text(encoding="utf-8"),

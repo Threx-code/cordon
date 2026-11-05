@@ -9,6 +9,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from cordon_scanner.detect.binary.rule_engine.scan import _Hunt
+from support import PeakMemory
 
 CLASSES = [
     bytes(1 if b in set(cls) else 0 for b in range(256))
@@ -78,9 +79,7 @@ class TestMemory:
     the file, about 125 MB of peak on 8 MB here; read at the offsets, nothing grows."""
 
     def test_no_allocation_grows_with_the_file(self) -> None:
-        try:
-            import resource
-        except ImportError:  # not on Windows
+        if PeakMemory.kib() == 0:  # no peak-memory accounting (Windows)
             return
         from cordon_scanner.detect.binary.rule_engine.lang import Rules
 
@@ -93,6 +92,6 @@ class TestMemory:
         unit = b"/mifs/api /ows/v2 /aa/bb /cc/dd \x00 200 x" + bytes(range(256))
         data = (unit * ((8 << 20) // len(unit) + 1))[: 8 << 20]
         rules.match(data[:4096])
-        before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024
+        before = PeakMemory.mib()
         assert rules.match(data) == []
-        assert resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024 - before < 40
+        assert PeakMemory.mib() - before < 40

@@ -6,6 +6,7 @@ import argparse
 import os
 
 from cordon_scanner.cli.dependency_payload import DependencyPayload
+from cordon_scanner.engine.registry import BUILTIN_REPORTERS
 from cordon_scanner.version import PROGRAM
 
 
@@ -180,8 +181,9 @@ class ScanOptions:
             "-f",
             action="append",
             metavar="FMT[:PATH]",
+            # The registry's own list, so the help cannot leave a format out (it named six of eight).
             help=(
-                "text|json|sarif|junit|markdown|github. Repeatable. "
+                f"{'|'.join(BUILTIN_REPORTERS)}. Repeatable. "
                 "Append :PATH to write that format to a file, "
                 "for example --format sarif:cordon.sarif"
             ),

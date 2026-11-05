@@ -533,3 +533,30 @@ class TestTheFingerprintIgnoresWhereAScanPosts:
         assert (
             dataclasses.replace(base, offline=not base.offline).fingerprint() != base.fingerprint()
         )
+
+
+class TestExplainNamesOnlyWhatAFileSets:
+    """`config explain` credited a repository's cordon.yaml with `scan.offline` and
+    `scan.confidence_threshold` when the file set neither (found writing the rollout tutorial,
+    4 Nov): the command that exists to say where a setting came from said the wrong place."""
+
+    def test_a_file_that_sets_one_key_is_named_for_that_key_only(self, tmp_path) -> None:
+        path = tmp_path / "cordon.yaml"
+        path.write_text("version: 1\nscan:\n  severity_threshold: low\n", encoding="utf-8")
+        config = ConfigResolver.resolve(root=tmp_path, config_path=path, policy_path=None)
+        assert [p.key for p in config.provenance] == ["scan.severity_threshold"]
+
+    def test_every_key_it_does_set_is_named(self, tmp_path) -> None:
+        path = tmp_path / "cordon.yaml"
+        path.write_text(
+            "version: 1\nevidence: hash_only\nscan:\n  severity_threshold: low\n"
+            "  confidence_threshold: high\n  offline: true\n",
+            encoding="utf-8",
+        )
+        config = ConfigResolver.resolve(root=tmp_path, config_path=path, policy_path=None)
+        assert sorted(p.key for p in config.provenance) == [
+            "evidence",
+            "scan.confidence_threshold",
+            "scan.offline",
+            "scan.severity_threshold",
+        ]

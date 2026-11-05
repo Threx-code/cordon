@@ -207,10 +207,16 @@ class ConfigParser:
         packs, extra, disabled = ConfigParser._parse_rules(data, source)
         notify_channels, notify_on = ConfigParser._parse_notify(data, source)
 
-        record("scan.severity_threshold", str(severity))
-        record("scan.confidence_threshold", str(confidence))
-        record("evidence", str(evidence))
-        record("scan.offline", bool(scan.get("offline", True)))
+        # Only what this file sets: `config explain` names the layer each setting came from, and
+        # crediting a file with a default it never wrote names the wrong one.
+        if "severity_threshold" in scan:
+            record("scan.severity_threshold", str(severity))
+        if "confidence_threshold" in scan:
+            record("scan.confidence_threshold", str(confidence))
+        if "evidence" in data:
+            record("evidence", str(evidence))
+        if "offline" in scan:
+            record("scan.offline", bool(scan["offline"]))
 
         return into(
             version=CONFIG_VERSION,

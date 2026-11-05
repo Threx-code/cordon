@@ -230,3 +230,60 @@ class TestDbsync(DbsyncFixtures):
     def test_gzip_is_stdlib_no_zstd_dependency(self) -> None:
         """The bundle is gzip precisely so the core needs no compression dependency."""
         assert gzip.decompress(gzip.compress(b"x")) == b"x"
+
+
+class TestABundleCarriedAcrossTheGap(DbsyncFixtures):
+    """A machine with no network has the signed bundle as files, carried in. The signature is what
+    makes the bundle trustworthy, not the transport, so a directory holding the two release assets
+    is installed exactly as a download would be -- and refused exactly as one would be. Before, the
+    only route was an https URL on a GitHub host, which an air-gapped machine cannot reach, so its
+    intel could only age (stale after a week)."""
+
+    @staticmethod
+    def _carried(tmp_path, archive: bytes, signature: bytes):
+        carried = tmp_path / "carried"
+        carried.mkdir()
+        (carried / dbsync.BUNDLE_NAME).write_bytes(archive)
+        (carried / dbsync.SIGNATURE_NAME).write_bytes(signature)
+        return carried
+
+    def test_a_signed_bundle_in_a_directory_is_installed(self, keypair, tmp_path) -> None:
+        public, private = keypair
+        archive = DbsyncHelpers._bundle(DbsyncHelpers._signed_advisory_bundle())
+        carried = self._carried(tmp_path, archive, DbsyncHelpers._sign(private, archive))
+        dest = tmp_path / "dest"
+        dbsync.AdvisoryBundle.sync_from(str(carried), dest, public_key=public)
+        assert (dest / "advisories-npm.json").exists()
+
+    def test_a_carried_bundle_with_a_wrong_signature_writes_nothing(
+        self, keypair, tmp_path
+    ) -> None:
+        public, _ = keypair
+        _, wrong = DbsyncHelpers._sign_keypair(b"\x09" * 32)
+        archive = DbsyncHelpers._bundle(DbsyncHelpers._signed_advisory_bundle())
+        carried = self._carried(tmp_path, archive, DbsyncHelpers._sign(wrong, archive))
+        dest = tmp_path / "dest"
+        with pytest.raises(dbsync.BundleError, match="did not verify"):
+            dbsync.AdvisoryBundle.sync_from(str(carried), dest, public_key=public)
+        assert not dest.exists() or not any(dest.iterdir())
+
+    def test_a_directory_missing_the_signature_is_refused(self, keypair, tmp_path) -> None:
+        public, _ = keypair
+        carried = tmp_path / "carried"
+        carried.mkdir()
+        (carried / dbsync.BUNDLE_NAME).write_bytes(b"x")
+        with pytest.raises(dbsync.BundleError, match=dbsync.SIGNATURE_NAME):
+            dbsync.AdvisoryBundle.sync_from(str(carried), tmp_path / "dest", public_key=public)
+
+    def test_an_oversized_carried_bundle_is_not_read(self, keypair, tmp_path, monkeypatch) -> None:
+        public, _ = keypair
+        monkeypatch.setattr(dbsync, "MAX_BUNDLE_BYTES", 8)
+        carried = self._carried(tmp_path, b"x" * 9, b"sig")
+        with pytest.raises(dbsync.BundleError, match="exceeds"):
+            dbsync.AdvisoryBundle.sync_from(str(carried), tmp_path / "dest", public_key=public)
+
+    def test_a_url_still_goes_through_the_host_allowlist(self, tmp_path) -> None:
+        with pytest.raises(dbsync.BundleError, match="allowlist"):
+            dbsync.AdvisoryBundle.sync_from(
+                "https://evil.invalid/x", tmp_path, public_key=b"\x00" * 32
+            )
