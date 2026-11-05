@@ -60,6 +60,10 @@ class SpillDirectory:
     """One scan's directory for expanded members' bytes, held by a lock for the scan's life."""
 
     LOCK: ClassVar[str] = ".scan.lock"
+    #: Written once the lock is held, and judged only then. A sweep in the window between the lock
+    #: file's creation and its lock saw a free lock and removed a live scan's directory, and the
+    #: members it held: a .deb's data.tar.gz went unread under four test workers at once (5 Nov).
+    READY: ClassVar[str] = ".scan.ready"
     #: A directory without a lock to test (a platform with no `flock`, or one caught between its
     #: creation and its lock) is swept once it is older than this: no scan runs longer than a day.
     STALE_SECONDS: ClassVar[float] = 24 * 3600.0
@@ -69,6 +73,7 @@ class SpillDirectory:
         self.path = Path(tempfile.mkdtemp(prefix=PREFIX))
         self.path.chmod(0o700)
         self._lock = SpillDirectory._hold(self.path / SpillDirectory.LOCK)
+        (self.path / SpillDirectory.READY).touch()
 
     @staticmethod
     def _hold(lock: Path) -> int | None:
@@ -78,15 +83,21 @@ class SpillDirectory:
             return None
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
         fd = os.open(lock, flags, 0o600)
-        FileLocks.take(fd)  # a file this process just created: nothing else can hold it
+        # A file this process just created, in a directory no sweep judges until it is ready: no
+        # other process can hold it. If one does all the same, the directory is not this scan's.
+        if not FileLocks.take(fd):
+            os.close(fd)
+            raise OSError(f"the spill directory's lock is held elsewhere: {lock}")
         return fd
 
     @staticmethod
     def _abandoned(entry: Path, age: float) -> bool:
-        """Whether no scan holds `entry`: its lock is free (by liveness, at once), or it has no lock
-        and is past `STALE_SECONDS` (by age, the fallback)."""
+        """Whether no scan holds `entry`: it is ready and its lock is free (by liveness, at once), or
+        it is not ready or has no lock and is past `STALE_SECONDS` (by age, the fallback)."""
         if not FileLocks.available():
             return age > SpillDirectory.STALE_SECONDS
+        if not (entry / SpillDirectory.READY).exists():
+            return age > SpillDirectory.STALE_SECONDS  # still being made, or made before 0.7.0
         try:
             fd = os.open(entry / SpillDirectory.LOCK, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
         except OSError:

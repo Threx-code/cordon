@@ -214,7 +214,17 @@ class TestArIsRead:
         paths = sorted(
             {f.location.path for f in result.findings if f.rule_id == "SUSPECT.DECODE_EXEC.001"}
         )
-        assert any(p.endswith("demo.deb!data.tar.gz!usr/lib/demo/install.py") for p in paths), paths
+        # The scan's own account when the member is missed: an intermittent CI miss showed only `[]`.
+        notes = [
+            (f.rule_id, f.location.path, f.message[:160])
+            for f in result.findings
+            if f.rule_id.startswith("OPERATIONAL")
+        ]
+        assert any(p.endswith("demo.deb!data.tar.gz!usr/lib/demo/install.py") for p in paths), (
+            paths,
+            notes,
+            result.complete,
+        )
 
     def test_a_long_name_is_read(self, tmp_path) -> None:
         table = b"a_member_name_longer_than_sixteen.py/\n"

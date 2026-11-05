@@ -993,6 +993,41 @@ class TestTheParentOpensNoArchive:
         assert expander.accept(self.answer(members[:3]), "t.tgz")[1] != why
 
 
+class TestALiveSpillDirectoryIsNeverSwept:
+    """Another scan's sweep, between a directory's lock file being created and its being locked, saw a
+    free lock and removed a live scan's directory, and with it the members it was expanding: a .deb's
+    data.tar.gz went unread under four test workers at once (5 Nov)."""
+
+    def test_a_sweep_in_the_window_before_the_lock_keeps_it(self, tmp_path, monkeypatch) -> None:
+        import tempfile
+
+        from cordon_scanner.engine.isolation import expander
+        from cordon_scanner.engine.isolation.expander import SpillDirectory
+        from cordon_scanner.foundation.files.locks import FileLocks
+
+        if not FileLocks.available():
+            pytest.skip("no file locks on this platform: directories are swept by age alone")
+        monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+        real_take = FileLocks.take
+        swept: list[bool] = []
+
+        def take_after_a_sweep(fd: int) -> bool:
+            if not swept:  # the owner's own lock: another scan starts its sweep in the window
+                swept.append(True)  # before the sweep, whose own probe comes back through here
+                SpillDirectory.sweep()
+            return real_take(fd)
+
+        monkeypatch.setattr(expander.FileLocks, "take", staticmethod(take_after_a_sweep))
+        spill = SpillDirectory()
+        monkeypatch.setattr(expander.FileLocks, "take", staticmethod(real_take))
+        try:
+            assert spill.path.is_dir(), "a live scan's spill directory was swept"
+            assert SpillDirectory.sweep() == 0  # and, held now, no later sweep takes it either
+            assert spill.path.is_dir()
+        finally:
+            spill.remove()
+
+
 class SpillKit:
     @staticmethod
     def die_holding(root: Path) -> None:
