@@ -39,7 +39,7 @@ from cordon_scanner.engine.pipeline.units import Units
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.formats.served_json import ServedJson
 from cordon_scanner.foundation.results import Dependency
-from support import ROOT
+from support import ROOT, requires_forked_workers
 
 MALICIOUS = sorted(p for p in (ROOT / "corpus" / "malicious").iterdir() if p.is_dir())
 BENIGN = sorted(p for p in (ROOT / "corpus" / "benign").iterdir() if p.is_dir())
@@ -286,6 +286,7 @@ class TestAFailedWorkerIsAGapNeverAStepHere:
     """The worker's function replaced before the scan starts: the template the workers are forked
     from is forked from this process, so they run the replacement."""
 
+    @requires_forked_workers
     @pytest.mark.parametrize("how", ["raises", "dies", "refused"])
     def test_the_scan_blocks_and_nothing_is_parsed_here(
         self, how: str, tmp_path: Path, monkeypatch
@@ -314,6 +315,7 @@ class TestAFailedWorkerIsAGapNeverAStepHere:
         assert any(rule == ContextStage.RULE for rule, _ in result.content_gaps)
         assert Counted.calls == []
 
+    @requires_forked_workers
     def test_one_failing_step_is_its_own_gap_and_the_rest_still_run(
         self, tmp_path: Path, monkeypatch
     ) -> None:
@@ -808,6 +810,7 @@ class TestTheParentOpensNoArchive:
         assert {f.location.path.split("!", 1)[-1] for f in result.findings} >= set()
         assert result.repository.file_count == 3
 
+    @requires_forked_workers
     @pytest.mark.parametrize("how", ["raises", "dies", "refused"])
     def test_a_failed_expander_is_a_rejected_archive(
         self, how: str, tmp_path: Path, monkeypatch
@@ -851,6 +854,7 @@ class TestTheParentOpensNoArchive:
         assert not (tmp_path / "escape.js").exists()
         assert SpillDirectory.sweep(now=float("inf")) == 0  # the scan removed its own directory
 
+    @requires_forked_workers
     def test_a_killed_scans_directory_is_swept_at_once_whatever_its_age(
         self, tmp_path: Path, monkeypatch
     ) -> None:

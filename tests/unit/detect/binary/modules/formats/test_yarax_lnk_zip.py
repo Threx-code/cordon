@@ -128,6 +128,16 @@ class Zips:
         return out.getvalue()
 
     @staticmethod
+    def compressed_sizes(data: bytes) -> dict[str, int]:
+        """Each member's compressed size as the central directory written here gives it; empty
+        when Python's reader cannot open the case."""
+        try:
+            with zipfile.ZipFile(io.BytesIO(data)) as z:
+                return {i.filename: i.compress_size for i in z.infolist()}
+        except (zipfile.BadZipFile, ValueError, OSError):
+            return {}
+
+    @staticmethod
     def case(name: str) -> bytes:
         base = Zips.of({"a.txt": b"hello" * 100, "dir/b.bin": b"\0" * 10})
         simple = {
@@ -194,7 +204,8 @@ class TestZipAgainstYaraX:
     @pytest.mark.parametrize("name", sorted(n[:-4] for n in RECORD["zip"]))
     def test_each_case_gives_the_reference_listing(self, name: str) -> None:
         ref = RECORD["zip"][name + ".zip"]
-        out = Zip.data(Zips.case(name))
+        built = Zips.case(name)
+        out = Zip.data(built)
         entries = out["entries"]
         ours = [
             [
@@ -211,4 +222,12 @@ class TestZipAgainstYaraX:
             assert ref["entries"]["count"] == 100_000 and len(ours) == 150_000
             assert ours[0] == ref["entries"]["first"] and ours[99_999] == ref["entries"]["last"]
             return
-        assert ours == ref["entries"]
+        # A deflated entry's compressed size is the compressor's, not the format's: Python 3.15 on
+        # Windows ships zlib-ng, which writes 13 bytes where zlib wrote the reference's 12 (5 Nov).
+        # The header this build wrote is the expectation for that one field.
+        written = Zips.compressed_sizes(built)
+        expected = [
+            [p, m, u, written.get(p, c) if m == zipfile.ZIP_DEFLATED else c]
+            for p, m, u, c in ref["entries"]
+        ]
+        assert ours == expected

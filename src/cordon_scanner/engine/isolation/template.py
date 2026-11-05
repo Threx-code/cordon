@@ -24,8 +24,10 @@ import contextlib
 import os
 import signal
 import socket
+import stat
 import sys
 import warnings
+from pathlib import Path
 from typing import Any
 
 
@@ -82,6 +84,7 @@ class TemplateMain:
     def serve(control: socket.socket, worker_main: Any, parent: int) -> None:
         Lifeline.die_with_parent(parent)
         Lifeline.leave_interrupts_to_the_parent()
+        TemplateMain.close_inherited_sockets(control)
         lines, children = Lines(control), set[int]()
         try:
             while (command := lines.read()) is not None and command != "Q":
@@ -102,6 +105,35 @@ class TemplateMain:
                 with contextlib.suppress(ChildProcessError):
                     os.waitpid(pid, 0)
             os._exit(0)
+
+    @staticmethod
+    def close_inherited_sockets(control: socket.socket) -> None:
+        """Every socket the host held when it forked the template, closed here but `control`.
+
+        A fork copies every descriptor, close-on-exec or not, so each worker held whatever the host
+        had open at the template's start: another scan's template and worker channels, a connection
+        a caller left open. A worker reading scanned content holds no channel but its own (macOS CI:
+        a worker held 3 sockets, 5 Nov). Sockets only: a file or a pipe the host opened may be state
+        a detector reads. The standard streams (0 to 2) are the host's and stay.
+
+        Each is replaced by /dev/null, not freed: the host's socket objects are copied here too, and
+        one collected later closes its number, which by then could be a new worker's channel."""
+        listing = Path("/proc/self/fd") if Path("/proc/self/fd").is_dir() else Path("/dev/fd")
+        try:
+            names = [entry.name for entry in listing.iterdir()]
+            null = os.open(os.devnull, os.O_RDWR)
+        except OSError:
+            return
+        try:
+            keep = {control.fileno(), null}
+            for name in names:
+                if not name.isdigit() or (fd := int(name)) <= 2 or fd in keep:
+                    continue
+                with contextlib.suppress(OSError):  # the listing's own descriptor, closed already
+                    if stat.S_ISSOCK(os.fstat(fd).st_mode):
+                        os.dup2(null, fd)
+        finally:
+            os.close(null)
 
     @staticmethod
     def fork(control: socket.socket, lines: Lines, children: set[int], worker_main: Any) -> None:

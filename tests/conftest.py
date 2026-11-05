@@ -168,6 +168,31 @@ class Shard:
         return [item for item in items if zlib.crc32(item.nodeid.encode("utf-8")) % count == index]
 
 
+class SaysWhyContextFailed:
+    """A failed context worker's reason, written to stderr, which pytest prints for a failed test.
+
+    The reason is in the gap's message, but a failed assertion shows the findings cut short, so
+    macOS's intermittent context failures reached the log without it (5 Nov). Nothing changes
+    for a passing test: its stderr is not shown."""
+
+    @staticmethod
+    def install() -> None:
+        import sys
+
+        from cordon_scanner.engine.isolation.context import ContextStage
+
+        real = ContextStage._failed
+        if getattr(real, "_says_why", False):
+            return
+
+        def failed(self, units, acc, ctx, where, why):  # type: ignore[no-untyped-def]
+            print(f"context worker failed ({where}): {why}", file=sys.stderr)
+            return real(self, units, acc, ctx, where, why)
+
+        failed._says_why = True  # type: ignore[attr-defined]
+        ContextStage._failed = failed  # type: ignore[method-assign]
+
+
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     """The shard's tests only (`Shard`). A hook pytest finds only at module level."""
     items[:] = Shard.keep(items)
@@ -178,6 +203,7 @@ def pytest_configure(config: pytest.Config) -> None:
     in a conftest, so this one function stays one; everything else is a class."""
     UnixLines.install()
     PortableZips.install()
+    SaysWhyContextFailed.install()
     config.pluginmanager.register(SharedFixtures(), "cordon-shared-fixtures")
 
 

@@ -7,6 +7,7 @@ from __future__ import annotations
 import multiprocessing
 import os
 import signal
+import socket
 import stat
 import subprocess
 import sys
@@ -122,6 +123,23 @@ class TestWorkersFromTheTemplate(TemplateFixtures):
         assert len(pids) >= 2, "the units must reach later workers for this to test anything"
         # no channel to the template or another worker, in the last worker forked as in the first
         assert {count for _, count in outcome.results.values()} == {1}
+
+    def test_a_socket_the_host_held_at_the_start_reaches_no_worker(self) -> None:
+        """A fork copies every descriptor: a socket the host had open when the template started (a
+        connection, another scan's channel) was held by every worker (macOS CI, 5 Nov)."""
+        held = socket.socketpair()
+        started = Template.start(WorkerMain.from_template)
+        assert started is not None
+        try:
+            units = [Unit(i, ("sockets", 0.5), 1) for i in range(2)]
+            outcome = Harness.supervisor(started, workers=2).run(units)
+            assert {count for _, count in outcome.results.values()} == {1}
+            held[0].sendall(b"x")  # the host's pair still works: the template's copies were its own
+            assert held[1].recv(1) == b"x"
+        finally:
+            started.close()
+            for end in held:
+                end.close()
 
     def test_workers_are_the_template_s_children_not_the_parent_s(self, template) -> None:
         outcome = Harness.supervisor(template, workers=1).run([Unit(0, ("pid", None), 1)])

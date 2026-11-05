@@ -146,8 +146,14 @@ class Worker:
         else:
             ours, theirs = context.Pipe()
             self.conn = ours
+            # Not daemonic: a daemonic process may not start processes, and a detector's nested scan
+            # (an MCP server's installed copy, `ScanContext.nested_scan`) starts its own workers. On
+            # Windows every worker is spawned, so the MCP package check failed on every file there
+            # ("daemonic processes are not allowed to have children", 5 Nov), as a forked worker on
+            # Linux never did. The flag only acts at interpreter exit; every worker is ended in
+            # `_drain`'s `finally`, daemonic or not.
             self.process = context.Process(  # type: ignore[attr-defined]  # spawn and forkserver have it
-                target=WorkerMain.run, args=(theirs, setup, work, bounds), daemon=True
+                target=WorkerMain.run, args=(theirs, setup, work, bounds), daemon=False
             )
             self.process.start()
             theirs.close()
@@ -413,10 +419,30 @@ class Supervisor:
                     elif queue:
                         pool.append(self._start())
         finally:
-            for worker in pool:
-                if worker.process.is_alive():
+            self._stop(pool)
+
+    #: Seconds an idle worker told to stop has to end on its own before it is killed: it reads
+    #: the stop and returns at once. Killed straight after the message, none ever finished its own
+    #: way out (the test suite's coverage of worker code was lost there, 5 Nov).
+    STOP_GRACE: ClassVar[float] = 2.0
+
+    @staticmethod
+    def _stop(pool: list[Worker]) -> None:
+        """Every worker told to stop; the idle ones given `STOP_GRACE` together to end, a worker
+        still holding a unit none: each still running after that is killed (`Worker.end`)."""
+        idle = []
+        for worker in pool:
+            if worker.process.is_alive():
+                with contextlib.suppress(OSError):
                     worker.conn.send(None)
-                worker.end()
+                if worker.unit is None:
+                    idle.append(worker.process.sentinel)
+        deadline = time.monotonic() + Supervisor.STOP_GRACE
+        while idle and (left := deadline - time.monotonic()) > 0:
+            for ended in multiprocessing.connection.wait(idle, left):
+                idle.remove(ended)
+        for worker in pool:
+            worker.end()
 
     def _stop_in_flight(self, pool: list[Worker]) -> None:
         """The scan's deadline holds for a unit already running too (item 64): each worker holding
