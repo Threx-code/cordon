@@ -149,6 +149,31 @@ __all__ = [
 ]
 
 
+class CpuTime:
+    """How long one call takes in this thread's CPU, measured where the clock can see it.
+
+    Windows' process clock moves in 15.6 ms steps: a call under one step read 0 or one whole step, so
+    a growth ratio of a fast call against a floor of 1 or 2 ms was a count of ticks (0.109375 against
+    0.015625 failed a linear pass, 5 Nov). Each measurement repeats the call until `SPAN` of CPU has
+    passed and gives the time per call, best of `times`. This thread's CPU, not the process's: a
+    thread another test left running is not charged to it."""
+
+    SPAN = 0.05
+
+    @staticmethod
+    def per_call(call, times: int = 3) -> float:  # type: ignore[no-untyped-def]
+        import time
+
+        best = float("inf")
+        for _ in range(times):
+            started, rounds = time.thread_time(), 0
+            while (spent := time.thread_time() - started) < CpuTime.SPAN:
+                call()
+                rounds += 1
+            best = min(best, spent / rounds)
+        return best
+
+
 class SealedSync:
     """A synced intel directory written the way `advisories sync` writes one: every file listed in
     the digest manifest, and the manifest sealed with this install's key."""

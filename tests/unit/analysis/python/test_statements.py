@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import ast
 import itertools
-import time
 
 from cordon_scanner.analysis.python.statements import PythonStatements
+from support import CpuTime
 
 SOURCE = '''import os
 x = 1
@@ -143,14 +143,9 @@ class TestPythonStatements:
         small, large = self.module(2_000), self.module(8_000)
 
         def cpu(source: str) -> float:
-            best = float("inf")
-            for _ in range(3):
-                started = time.process_time()
-                PythonStatements.starts(source)
-                best = min(best, time.process_time() - started)
-            return best
+            return CpuTime.per_call(lambda: PythonStatements.starts(source))
 
         assert len(PythonStatements.starts(large)) == 8_000
         # Four times the statements: about four times the time. A pass that grew with the square
         # of the module would take sixteen.
-        assert cpu(large) < 7 * max(cpu(small), 1e-3)
+        assert cpu(large) < 7 * cpu(small)

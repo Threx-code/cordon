@@ -8,6 +8,7 @@ import re
 import pytest
 
 from cordon_scanner.rules.anchored import AnchoredSearch
+from support import CpuTime
 
 
 class AnchorKit:
@@ -142,22 +143,19 @@ class TestLineMonotone:
             AnchorKit.both(rb">>[^\n]*\.profile\b", data)
 
     def test_its_time_grows_with_the_line_not_faster(self) -> None:
-        import time
 
         compiled = re.compile(PERSIST)
         plan = AnchoredSearch.plan(compiled)
 
         def cpu(data: bytes) -> float:
-            best = float("inf")
-            for _ in range(3):
-                started = time.process_time()
-                assert list(AnchoredSearch.matches(compiled, plan, data, None)) == []
-                best = min(best, time.process_time() - started)
-            return best
+            assert list(AnchoredSearch.matches(compiled, plan, data, None)) == []
+            return CpuTime.per_call(
+                lambda: list(AnchoredSearch.matches(compiled, plan, data, None))
+            )
 
         small, large = b"x >> " * 2_000, b"x >> " * 8_000
         # Four times the line: about four times the time. finditer takes sixteen (quadratic).
-        assert cpu(large) < 7 * max(cpu(small), 1e-3)
+        assert cpu(large) < 7 * cpu(small)
 
     def test_too_many_anchored_candidates_keeps_the_line_wise_search(self) -> None:
         # A file full of the anchored alternative's literal: trying each candidate would cost more
