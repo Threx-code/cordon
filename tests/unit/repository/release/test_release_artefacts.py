@@ -140,16 +140,20 @@ class TestTheSelfScansAgree:
 
     @staticmethod
     def ci() -> set[str]:
+        """The excludes of the self-scan job's scan, read as text (the suite has no YAML parser):
+        from the job's key to its `cordon-scanner scan .`, then each continued line of it."""
         import re
 
-        import yaml
-
-        steps = yaml.safe_load(
-            (ROOT / ".github" / "workflows" / "checks.yml").read_text(encoding="utf-8")
-        )["jobs"]["self-scan"]["steps"]
-        scans = [s["run"] for s in steps if "run" in s and "cordon-scanner scan ." in s["run"]]
-        assert len(scans) == 1, "the self-scan step"
-        return set(re.findall(r"--exclude '([^']+)'", scans[0]))
+        text = (ROOT / ".github" / "workflows" / "checks.yml").read_text(encoding="utf-8")
+        job = re.search(r"(?m)^  self-scan:\n", text)
+        assert job, "no self-scan job in checks.yml"
+        start = text.index("cordon-scanner scan .", job.end())
+        command = []
+        for line in text[start:].splitlines():
+            command.append(line)
+            if not line.rstrip().endswith("\\"):
+                break
+        return set(re.findall(r"--exclude '([^']+)'", "\n".join(command)))
 
     @staticmethod
     def release() -> set[str]:
