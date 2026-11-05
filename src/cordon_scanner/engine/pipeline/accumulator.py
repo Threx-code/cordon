@@ -52,6 +52,8 @@ class Accumulator:
     the parent joins across files without parsing any of them."""
     facts_bytes: int = 0
     """The bytes those facts took, against the scan's bound."""
+    facts_content: int = 0
+    """The bytes of content detection read, which the bound grows with (`Facts.budget`)."""
     verdict_facts: dict[str, float] | None = None
     """The facts the package verdict reads, when the rule file's deferred pass gathered them
     already (`engine/pipeline/facts`): the verdict reuses them instead of computing twice."""

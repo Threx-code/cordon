@@ -42,6 +42,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from cordon_scanner.engine.canonical import Canonical
 from cordon_scanner.engine.pipeline.constants import INCOMPLETE_WHEN_REPORTED
+from cordon_scanner.foundation.files.atomic import AtomicFile
 from cordon_scanner.foundation.files.ownership import Ownership
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Finding
@@ -889,7 +890,7 @@ class ScanCache:
             try:
                 with os.fdopen(handle, "wb") as out:
                     out.write(payload)
-                Path(temporary).replace(path)
+                AtomicFile.replace(Path(temporary), path)
             except BaseException:
                 Path(temporary).unlink(missing_ok=True)
                 raise

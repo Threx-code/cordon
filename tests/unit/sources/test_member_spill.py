@@ -120,7 +120,8 @@ class TestLifetime:
     def test_the_file_is_owner_only(self) -> None:
         data = os.urandom(10_000)
         kept = Archives.spilled(Archives.zip({"bin/tool.exe": data}), "p.zip", "bin/tool.exe")
-        assert Path(kept.path).stat().st_mode & 0o077 == 0
+        # POSIX mode bits; Windows reports 0o666 and guards the file by its profile ACL.
+        assert os.name != "posix" or Path(kept.path).stat().st_mode & 0o077 == 0
 
 
 class TestContent:

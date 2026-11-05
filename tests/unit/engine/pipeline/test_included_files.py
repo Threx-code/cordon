@@ -13,6 +13,7 @@ from cordon_scanner.engine.pipeline.graph import Graph
 from cordon_scanner.foundation.config.policy import Policy
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.errors import ExitCode
+from support import requires_forked_workers
 
 
 class IncludeKit:
@@ -28,6 +29,7 @@ class IncludeKit:
 
 
 class TestAnIncludedFileIsNeverDroppedUnsaid:
+    @requires_forked_workers
     def test_an_include_whose_parse_raises_blocks(self, tmp_path, monkeypatch) -> None:
         (tmp_path / "requirements.txt").write_text(
             "-r extra.txt\nrequests==2.31.0\n", encoding="utf-8"

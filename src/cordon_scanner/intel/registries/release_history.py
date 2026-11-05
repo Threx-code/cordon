@@ -37,6 +37,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
+from cordon_scanner.foundation.files.atomic import AtomicFile
+
 if TYPE_CHECKING:  # from the source
     from cordon_scanner.foundation.content import FileContent
     from cordon_scanner.intel.base import ReleaseArchiveReader
@@ -168,9 +170,8 @@ class ReleaseHistory:
             root or cls.store_dir(), baseline.ecosystem, baseline.name, baseline.version
         )
         path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_suffix(".tmp")
-        temporary.write_text(json.dumps(baseline.to_dict(), sort_keys=True), encoding="utf-8")
-        temporary.replace(path)
+        # Staged under its own name, never a shared `.tmp` (`AtomicFile`).
+        AtomicFile.write(path, json.dumps(baseline.to_dict(), sort_keys=True))
         return path
 
     # -- comparing (offline) ------------------------------------------------------------------

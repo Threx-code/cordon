@@ -155,6 +155,7 @@ class Detection:
         results: list[Finding] = []
 
         cached_facts: dict[str, str] = {}
+        acc.facts_content += sum(len(unit.content.raw) for unit in units)
         self.work_items(units, ctx, signature, results, pending, carry_content, cached_facts)
         for path, text in cached_facts.items():  # re-checked as a worker's are
             Detection.absorb_facts(path, text, acc, results)
@@ -334,7 +335,7 @@ class Detection:
         (`engine/isolation/facts.py`): refused, the file is a gap, and none of its facts are used."""
         from cordon_scanner.engine.isolation.facts import Facts
 
-        accepted, why = Facts.accept(text, acc.facts_bytes)
+        accepted, why = Facts.accept(text, acc.facts_bytes, Facts.budget(acc.facts_content))
         if accepted is None:
             results.append(
                 acc.gap(

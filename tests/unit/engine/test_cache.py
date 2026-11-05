@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -644,6 +645,9 @@ class TestWatch:
 
 
 class TestTheWatchNeverBreaksWhatItWatches:
+    @pytest.mark.skipif(
+        os.name == "nt", reason="Windows cannot remove the working directory a process is in"
+    )
     def test_a_path_it_cannot_resolve_is_counted_as_reached_not_raised(
         self, tmp_path, monkeypatch
     ) -> None:

@@ -24,6 +24,7 @@ from cordon_scanner.foundation.files.windows import (
     Windows,
     WindowSourceChanged,
 )
+from support import requires_forked_workers
 
 # Assembled at run time, so this file does not itself carry the shape it tests for.
 TOKEN = 'const t = "' + "ghp" + "_" + "9eU3aG0cF5dJ1sH6pY4nW7kR2bT9vX3mL8qZ"[::-1] + '";\n'
@@ -183,6 +184,7 @@ class TestStatementWindows:
             assert window.lines_before == data[: window.begin].count(b"\n")
             ast.parse(window.data.decode())
 
+    @requires_forked_workers
     def test_the_tree_tier_reads_every_statement_window_of_an_oversized_module(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

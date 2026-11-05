@@ -276,6 +276,11 @@ class ViaMatcher:
     def search(self, data: bytes) -> Any:
         return next(self.finditer(data), None)
 
+    def __reduce__(self) -> tuple[Any, ...]:
+        # Rebuilt from its regex in the ladder's forkserver child: unpickled field by field,
+        # `__getattr__` asked for the unset `regex` and recursed until the child died.
+        return ViaMatcher, (self.regex,)
+
     def __getattr__(self, name: str) -> Any:
         return getattr(self.regex, name)
 
@@ -788,8 +793,13 @@ class Ladder:
     def limited(
         target: Callable[..., str | None], args: tuple[object, ...], limit: float
     ) -> tuple[str, str | None]:
-        """("ok", result), ("error", why) or ("timeout", None), from a forked child."""
-        context = multiprocessing.get_context("fork")
+        """("ok", result), ("error", why) or ("timeout", None), from a forked child.
+
+        Forked by the forkserver, which is single-threaded, never by this process: the ladder runs
+        four checks on threads, and a child forked here could inherit a lock one of them held, then
+        wait on it for ever. A linear pattern then "did not finish in 60 s" (`re.split(r"[._\\-]+")`
+        on '----', `\\t\\t\\t\\t` for the fixer's pin pattern; the latency job, 5 Nov)."""
+        context = multiprocessing.get_context("forkserver")
         out = context.Queue()
         child = context.Process(target=Ladder._child, args=(target, args, out))
         child.start()

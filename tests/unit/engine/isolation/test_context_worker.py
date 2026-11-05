@@ -282,6 +282,19 @@ class TestTheParentParsesNoContext:
         assert Counted.calls == []
 
 
+class TestALongFieldCrosses:
+    def test_a_long_install_hook_leaves_the_scan_complete(self, tmp_path: Path) -> None:
+        """A string a worker read from a file may be as long as the file: at 65,536 characters a
+        `postinstall` past 64 KiB refused the whole context document, and every such package's
+        scan was incomplete (the detector-growth probe, 5 Nov)."""
+        chain = " && ".join(f"test -d dir{i} || cd dir{i} && echo step{i}" for i in range(4096))
+        assert len(chain) > 65536
+        manifest = {"name": "long-hook", "version": "1.0.0", "scripts": {"postinstall": chain}}
+        (tmp_path / "package.json").write_text(json.dumps(manifest), encoding="utf-8")
+        result = Scanner().scan(tmp_path)
+        assert ContextStage.RULE not in {f.rule_id for f in result.findings}
+
+
 class TestAFailedWorkerIsAGapNeverAStepHere:
     """The worker's function replaced before the scan starts: the template the workers are forked
     from is forked from this process, so they run the replacement."""

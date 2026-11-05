@@ -10,7 +10,8 @@ is held to three rules on the way in (cordon-47, 1 Nov):
                                                             │
   parent: Facts.accept(text) ◄──────────────────────────────┘
             ├─ json.loads only: str, int, float, bool, None, lists and dicts, never an object
-            ├─ bounded: FILE_COUNT and FILE_BYTES per file, SCAN_BYTES per scan
+            ├─ bounded: FILE_COUNT and FILE_BYTES per file; per scan, SCAN_BYTES and PER_CONTENT_BYTE
+            │  for each byte of content the scan read
             └─ each kind against its declared shape (KINDS); an unknown kind or a wrong type refuses
                the file's facts, a gap at that file, never a partial set
 ```
@@ -27,7 +28,12 @@ FILE_COUNT = 20_000
 FILE_BYTES = 2 << 20
 """The most bytes one file's encoded facts may take."""
 SCAN_BYTES = 64 << 20
-"""The most bytes all files' facts may take in one scan."""
+"""The bytes all files' facts may take in any scan, however little content it read."""
+PER_CONTENT_BYTE = 4
+"""Bytes of facts a scan may hold beyond SCAN_BYTES for each byte of content it read: the parent's
+memory for facts stays a fixed multiple of the content it already holds, at any scale. A flat 64 MiB
+refused the facts of 15,229 files of a 50,000-file repository (about 0.8 bytes of facts for each byte
+of its JavaScript), so the scan was incomplete and none of those files was ever cached (5 Nov)."""
 MAX_DEPTH = 4
 """The deepest a facts payload nests: a mapping of kinds, a list of facts, a fact's fields (3), and one
 level of slack. Each declared shape is at most 3 deep."""
@@ -254,16 +260,24 @@ class Facts:
         return ServedJson.depth(text)
 
     @staticmethod
-    def accept(text: str, spent: int) -> tuple[dict[str, list[Any]] | None, str]:
+    def budget(content_bytes: int) -> int:
+        """The bytes of facts a scan that read `content_bytes` of content may hold."""
+        return SCAN_BYTES + PER_CONTENT_BYTE * content_bytes
+
+    @staticmethod
+    def accept(
+        text: str, spent: int, budget: int = SCAN_BYTES
+    ) -> tuple[dict[str, list[Any]] | None, str]:
         """A file's facts, decoded and checked, or None with why they were refused. `spent` is the
-        bytes earlier files' facts took in this scan. Plain data only: `json.loads` builds nothing
-        but strings, numbers, booleans, None, lists and dicts."""
+        bytes earlier files' facts took in this scan, `budget` what it may hold (`Facts.budget`).
+        Plain data only: `json.loads` builds nothing but strings, numbers, booleans, None, lists
+        and dicts."""
         if not text:
             return {}, ""
         if len(text) > FILE_BYTES:
             return None, f"{len(text)} bytes of facts, past the {FILE_BYTES} a file may send"
-        if spent + len(text) > SCAN_BYTES:
-            return None, f"the scan's facts passed {SCAN_BYTES} bytes"
+        if spent + len(text) > budget:
+            return None, f"the scan's facts passed {budget} bytes"
         if Facts.depth(text) > MAX_DEPTH:
             # Before decoding: CPython's decoder recurses per level and raises RecursionError on a
             # deep payload a fraction of FILE_BYTES long (cordon-47's review).
@@ -333,4 +347,13 @@ class WorkerFacts:
         return OVERSIZED if len(text) > FILE_BYTES else text
 
 
-__all__ = ["FILE_BYTES", "FILE_COUNT", "SCAN_BYTES", "Facts", "JsShapes", "Shapes", "WorkerFacts"]
+__all__ = [
+    "FILE_BYTES",
+    "FILE_COUNT",
+    "PER_CONTENT_BYTE",
+    "SCAN_BYTES",
+    "Facts",
+    "JsShapes",
+    "Shapes",
+    "WorkerFacts",
+]

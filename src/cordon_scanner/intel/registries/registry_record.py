@@ -36,6 +36,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, ClassVar, Final
 
+from cordon_scanner.foundation.files.atomic import AtomicFile
+
 STORE_VERSION: Final = 1
 ECOSYSTEMS: Final = frozenset({"npm", "pypi"})
 #: npm's lifecycle scripts that run on the installing machine.
@@ -319,9 +321,8 @@ class RegistryRecord:
     def save(self, root: Path | None = None) -> Path:
         path = self._entry(root or self.store_dir(), self.ecosystem, self.name, self.version)
         path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_suffix(".tmp")
-        temporary.write_text(json.dumps(self.to_dict(), sort_keys=True), encoding="utf-8")
-        temporary.replace(path)
+        # Staged under its own name, never a shared `.tmp` (`AtomicFile`).
+        AtomicFile.write(path, json.dumps(self.to_dict(), sort_keys=True))
         return path
 
     # -- acquiring (network; `intel acquire` only) --------------------------------------

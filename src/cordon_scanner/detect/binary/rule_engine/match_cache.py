@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.detect.binary.rule_engine.pack_cache import PackCache
+from cordon_scanner.foundation.files.atomic import AtomicFile
 from cordon_scanner.foundation.files.ownership import Ownership
 
 if TYPE_CHECKING:
@@ -120,7 +121,7 @@ class MatchCache:
             with os.fdopen(fd, "wb") as handle:
                 handle.write(mac.encode() + b"\n" + signed)
             Path(tmp).chmod(0o600)
-            Path(tmp).replace(path)
+            AtomicFile.replace(Path(tmp), path)
         except (OSError, TypeError, ValueError):
             return
 
