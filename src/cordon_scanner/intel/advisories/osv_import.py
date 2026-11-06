@@ -728,7 +728,9 @@ class OsvImport:
         produced. Not `O_EXCL`: unlike the cache's key, this file is meant to be
         overwritten on every sync.
         """
-        fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        fd = os.open(
+            str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_BINARY", 0), 0o600
+        )
         try:
             os.write(fd, text.encode("utf-8"))
         finally:
@@ -743,7 +745,9 @@ class OsvImport:
         files and two different digests -- and the digest manifest beside them is
         what a later load checks the data against.
         """
-        fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        fd = os.open(
+            str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_BINARY", 0), 0o600
+        )
         try:
             raw = os.fdopen(fd, "wb")
         except BaseException:

@@ -10,7 +10,6 @@ import gc
 import itertools
 import sys
 import textwrap
-import time
 import tracemalloc
 from collections.abc import Callable
 from typing import ClassVar
@@ -21,6 +20,7 @@ from cordon_scanner.analysis.python.module_facts import ModuleFacts, StatementTr
 from cordon_scanner.analysis.python.pyast import PythonAnalyzer
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.analysis.python.statements import PythonStatements, StatementScan
+from support import CpuTime
 
 DECODE = "b64" + "decode"
 
@@ -244,15 +244,13 @@ class TestCost:
         assert spans_small is not None and spans_large is not None
 
         def cpu(text: str, spans: list[tuple[int, int]]) -> float:
-            best = float("inf")
-            for _ in range(3):
-                started = time.process_time()
+            def each() -> None:
                 for _tree, index in StatementTrees.each(text, spans):
                     StatementTrees.release(index)
-                best = min(best, time.process_time() - started)
-            return best
 
-        assert cpu(large, spans_large) < 6 * max(cpu(small, spans_small), 0.002)
+            return CpuTime.per_call(each)
+
+        assert cpu(large, spans_large) < 6 * cpu(small, spans_small)
 
     def test_lines_stay_the_file_s(self) -> None:
         text = "x = 1\n\n\ny = 2\nz = [\n3]\nw = 4\n"

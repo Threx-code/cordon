@@ -1,8 +1,8 @@
 # The platform wheels: the scanner with its own C extensions compiled in, for every supported
 # interpreter on Linux (x86_64, aarch64), macOS (arm64, x86_64) and Windows (x64).
 #
-# Called by `ci.yml` on every pull request, so a change that breaks a platform's native build is
-# seen before merge, and by `release.yml`, which publishes exactly the wheels built here beside the
+# Run on a pull request that touches the native code or its build, so a change that breaks a
+# platform's native build is seen before merge, and called by `release.yml`, which publishes exactly the wheels built here beside the
 # pure wheel. Every wheel is built with `CORDON_BUILD_NATIVE=require` (a wheel meant to be native
 # cannot quietly come out pure), installed into a fresh environment, checked to load the native
 # matcher, and run against the rule-engine tests from that installed copy.
@@ -18,7 +18,7 @@ on:
   # The release calls this to build what it publishes (release.yml).
   workflow_call:
   # Its own run otherwise, only when the native code or how it is built changes: ten builds of up to
-  # 40 minutes ran on every push while they were part of ci.yml (5 Nov).
+  # 40 minutes ran on every push while they were part of the one ci.yml (5 Nov).
   push:
     branches: [main]
     tags: ["v*"]
@@ -62,7 +62,7 @@ jobs:
         run: |
           set -euo pipefail
           export SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct 2>/dev/null || echo 315532800)
-          for py in cp311-cp311 cp312-cp312 cp313-cp313; do
+          for py in cp311-cp311 cp312-cp312 cp313-cp313 cp314-cp314 cp315-cp315; do
             python=/opt/python/$py/bin/python
             mkdir -p wheelhouse
             $python -c "import sys; sys.path.insert(0, 'scripts/backend'); import cordon_build; print(cordon_build.build_wheel('wheelhouse'))"
@@ -86,10 +86,13 @@ jobs:
       fail-fast: false
       matrix:
         arch: [arm64, x86_64]
-        python: ["3.11", "3.12", "3.13"]
+        python: ["3.11", "3.12", "3.13", "3.14", "3.15"]
         include:
           - arch: arm64
-            runner: macos-14
+            # macos-14 is retired: GitHub refuses the job ("The configuration
+            # 'macos-14-arm64-us-default' is not supported", 5 Nov). The wheel still targets macOS
+            # 11 and later through MACOSX_DEPLOYMENT_TARGET below, whatever the runner's own version.
+            runner: macos-15
           - arch: x86_64
             runner: macos-15-intel
     steps:
@@ -126,7 +129,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.11", "3.12", "3.13"]
+        python: ["3.11", "3.12", "3.13", "3.14", "3.15"]
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0

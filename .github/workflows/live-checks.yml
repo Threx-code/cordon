@@ -1,6 +1,6 @@
 # The checks that need a live registry.
 #
-# `ci.yml` runs offline on purpose: the suite must pass in an air-gap, and a
+# The test workflows run offline on purpose: the suite must pass in an air-gap, and a
 # green build must not depend on PyPI being up. That leaves a gap, and four
 # defects shipped through it at once -- the attestation verifier rejecting every
 # genuine bundle, Yarn Berry lockfiles reporting a CRITICAL hash mismatch on

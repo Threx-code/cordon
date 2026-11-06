@@ -56,7 +56,9 @@ class EvidenceKey:
     def _create(path: Path) -> bytes | None:
         fresh = secrets.token_bytes(KEY_BYTES)
         try:
-            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            descriptor = os.open(
+                path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600
+            )
         except FileExistsError:
             raw = path.read_bytes()
             return raw if len(raw) == KEY_BYTES else None

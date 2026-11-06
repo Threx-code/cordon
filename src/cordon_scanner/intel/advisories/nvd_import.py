@@ -418,7 +418,9 @@ class NvdImport:
                 manifest = {k: v for k, v in loaded.items() if isinstance(v, str)}
         for name in (CVES_NAME, CPE_NAME):
             manifest[name] = AdvisoryFiles.digest_of(output_dir / name)
-        fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        fd = os.open(
+            str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_BINARY", 0), 0o600
+        )
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
         if seal:
@@ -427,7 +429,9 @@ class NvdImport:
     @staticmethod
     def _write(path: Path, data: dict[str, Any]) -> None:
         """Gzipped, mode 0600, byte-identical for identical input (`mtime=0`)."""
-        fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        fd = os.open(
+            str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_BINARY", 0), 0o600
+        )
         with (
             os.fdopen(fd, "wb") as raw,
             gzip.GzipFile(fileobj=raw, mode="wb", mtime=0) as compressed,

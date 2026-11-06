@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """What CI will say about this commit, said before the push. Run by `scripts/checks/prepush.sh`.
 
-The steps are read from `.github/workflows/ci.yml` and run as written, rather than restated
+The steps are read from the workflows that hold them (`WORKFLOWS`) and run as written, rather than restated
 here: a restated copy drifts, and on 8 October 2026 the release's self-scan had drifted from
 CI's and blocked 0.6.0 after CI was green. Around them sit the checks for what CI found only on
 another platform: `scripts/checks/portability.py` (Windows code pages and paths, POSIX-only imports,
@@ -37,7 +37,13 @@ import yaml
 ROOT = next(
     (p for p in (Path.cwd(), *Path.cwd().parents) if (p / "src" / "cordon_scanner").is_dir()), None
 ) or sys.exit("run this from inside the Cordon repository")
-WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+#: The workflows the jobs below are read from: one ci.yml until 5 Nov, split then into checks.yml,
+#: latency.yml and one file per platform. Reading only ci.yml after the split, every job was "not
+#: found" and the release's self-scan ran nowhere before the tag, which it then blocked.
+WORKFLOWS = tuple(
+    ROOT / ".github" / "workflows" / name
+    for name in ("checks.yml", "latency.yml", "tests-linux.yml")
+)
 
 #: The CI jobs, in the order they are worth failing fast on. `test` is the matrix suite.
 JOBS_QUICK = ("lint", "rules", "self-scan", "self-history", "self-records", "determinism")
@@ -105,17 +111,21 @@ class Shell:
 
 
 class Workflow:
-    """`ci.yml`'s steps, adapted only where a container is not a runner -- and each adaptation
+    """The CI jobs' steps, adapted only where a container is not a runner -- and each adaptation
     is printed, so nothing is quietly weakened."""
 
     EXPRESSION = re.compile(r"\$\{\{.*?\}\}")
 
     @staticmethod
     def jobs() -> dict[str, dict[str, Any]]:
-        return cast(
-            "dict[str, dict[str, Any]]",
-            yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"],
-        )
+        """Every job of `WORKFLOWS`, by its key; a key two of them use is an error, not a choice."""
+        jobs: dict[str, dict[str, Any]] = {}
+        for workflow in WORKFLOWS:
+            for key, job in yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"].items():
+                if key in jobs:
+                    raise SystemExit(f"job `{key}` is in two workflows; name them apart")
+                jobs[key] = cast("dict[str, Any]", job)
+        return jobs
 
     @staticmethod
     def steps(job: dict[str, Any]) -> list[tuple[str, dict[str, str], list[str]]]:
@@ -234,14 +244,16 @@ class Parity:
         for key in selected:
             job = jobs.get(key)
             if job is None:
-                report.add(Result(f"ci.yml: {key}", False, 0, output=f"no job `{key}` in ci.yml"))
+                report.add(
+                    Result(f"CI: {key}", False, 0, output=f"no job `{key}` in the workflows")
+                )
                 continue
             name = job.get("name") or key
             name = Workflow.EXPRESSION.sub("…", name)
             # Each CI job starts from a fresh checkout. Without this, one job's reports
             # (cordon-reports/, history.md, a.json) were in the tree the next job scanned or tested.
             Shell.run("git clean -fdxq -e '*.egg-info' && git checkout -q -- .")
-            print(f"ci.yml: {name}", flush=True)
+            print(f"CI: {name}", flush=True)
             for index, (command, env, adaptations) in enumerate(Workflow.steps(job), 1):
                 result = Shell.run(command, env)
                 result.name = f"{key} step {index}: {command.strip().splitlines()[0][:70]}"

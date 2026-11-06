@@ -45,3 +45,13 @@ class TestTheCommittedMetadata:
             f"src/{committed[0].name}/{name} differs from what pyproject.toml makes: regenerate it "
             "with scripts/backend/cordon_build.py"
         )
+
+    def test_it_is_this_release(self) -> None:
+        """Named for the version being built: 0.7.0 was tagged with the 0.6.0 copy, whose METADATA
+        still described 0.6.0 and linked the removed ci.yml badge (5 Nov)."""
+        from cordon_scanner.version import __version__
+
+        committed = sorted((ROOT / "src").glob("cordon_scanner-*.dist-info"))
+        assert [p.name for p in committed] == [f"cordon_scanner-{__version__}.dist-info"]
+        metadata = (committed[0] / "METADATA").read_text(encoding="utf-8")
+        assert f"\nVersion: {__version__}\n" in metadata

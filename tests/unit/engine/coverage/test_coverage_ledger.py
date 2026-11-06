@@ -226,8 +226,13 @@ class TestTheReviewChanges:
         root = LedgerKit.tree(tmp_path / "t")
         config = LedgerKit.config(use_cache=True, cache_dir=str(tmp_path / "cache"))
         cold = Scanner(config).scan(root)
+        # What the cold scan stored, for when the warm one finds nothing: a Windows run found 0
+        # hits once (5 Nov), and an empty count alone could not say whether nothing was written,
+        # nothing was cacheable, or what was written was not read.
+        stored = sorted(p.name for p in (tmp_path / "cache").rglob("*") if p.is_file())
         warm = Scanner(config).scan(root)
-        assert warm.stats.cache_hits > 0
+        notes = [(f.rule_id, f.message[:120]) for f in cold.findings if f.rule_id.startswith("OP")]
+        assert warm.stats.cache_hits > 0, (cold.stats, warm.stats, len(stored), stored[:8], notes)
         assert LedgerKit.unaccounted(cold) == LedgerKit.unaccounted(warm) == []
 
     def test_a_file_read_in_windows_is_one_entry(self, tmp_path: Path) -> None:

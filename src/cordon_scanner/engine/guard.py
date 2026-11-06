@@ -282,7 +282,13 @@ class Guard:
         absent and the preceding `_refuse_symlink` check is the whole defence --
         the same degradation `core.content` accepts for the identical reason.
         """
-        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+        flags = (
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_TRUNC
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_BINARY", 0)
+        )
         descriptor = os.open(path, flags, mode)
         try:
             handle = os.fdopen(descriptor, "w", encoding="utf-8")
