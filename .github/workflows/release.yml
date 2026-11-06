@@ -549,10 +549,14 @@ jobs:
     needs: [build, publish, confirm]
     # Only for a real tag push. A `workflow_dispatch` verification run must not
     # create a release object for a version that already exists.
+    # Also on the second run a tag push makes once PyPI has the version (publish skipped, confirm
+    # passed): a release page this job failed to create the first time is created then, and an
+    # existing one only has its notes refreshed.
     if: >-
-      startsWith(github.ref, 'refs/tags/v')
+      !cancelled() && startsWith(github.ref, 'refs/tags/v')
       && needs.build.result == 'success'
-      && needs.publish.result == 'success'
+      && (needs.publish.result == 'success'
+          || (needs.publish.result == 'skipped' && needs.confirm.result == 'success'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -572,8 +576,14 @@ jobs:
         # Built from the tagged source, tested, and attached beside the wheel; the editor
         # extension and the scanner it runs are released together and carry one version.
         working-directory: editors/vscode
+        # The marketplace icon is a PNG rendered from images/icon.svg, never committed: rendered
+        # here as editors/vscode/Dockerfile renders it. Without it vsce refuses to package, which
+        # stopped the 0.7.0 release here after PyPI had published (6 Nov).
         run: |
           set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -qq -y --no-install-recommends librsvg2-bin
+          rsvg-convert -w 256 -h 256 images/icon.svg -o images/icon.png
           npm ci --no-audit --no-fund
           npm test
           npx --yes @vscode/vsce@3.6.0 package --no-dependencies -o "../../artefacts/cordon-${GITHUB_REF_NAME#v}.vsix"
