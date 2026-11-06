@@ -168,7 +168,14 @@ jobs:
           echo "this release: $current, the one before it: ${previous:-none}"
           [ -n "$previous" ] || exit 0
           pip download -q --no-deps --only-binary :all: "cordon-scanner==$previous" -d /tmp/previous-release
-          /tmp/cordon-release/bin/cordon-scanner scan "$wheel" \
+          # A release-specific baseline, reviewed in the repository, when this release has one: it
+          # names each accepted finding by rule and path (.github/release-baselines/README.md). Never
+          # a malicious finding, which no baseline suppresses.
+          accepted=()
+          if [ -f ".github/release-baselines/$current.json" ]; then
+            accepted=(--baseline ".github/release-baselines/$current.json")
+          fi
+          /tmp/cordon-release/bin/cordon-scanner scan "$wheel" "${accepted[@]}" \
             --compare-with /tmp/previous-release/*.whl --no-color --format text --format github
 
       - name: Generate the Action's hash pin

@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "fingerprints": [
+    "be430c6604eea6b3",
+    "d38fe3b4baec2422"
+  ],
+  "entries": [
+    {
+      "fingerprint": "d38fe3b4baec2422",
+      "rule": "SUSPECT.RELEASE.NEW_OBFUSCATION.001",
+      "path": "cordon_scanner-0.7.0-cp312-cp312-manylinux_2_28_x86_64.whl!cordon_scanner/rules/builtin/capabilities-javascript.yaml",
+      "why": "The rule pack's own positive samples (String.fromCharCode over character codes) are what it detects; 0.6.0 shipped no obfuscation-shaped file, so the first release with them reports 'ships obfuscated code'. The rule-material ceiling is never applied inside a published package (fail-open audit, 2 Nov), so this is accepted here, by the project, for 0.7.0 only."
+    },
+    {
+      "fingerprint": "be430c6604eea6b3",
+      "rule": "SUSPECT.RELEASE.NEW_OBFUSCATION.001",
+      "path": "cordon_scanner-0.7.0-py3-none-any.whl!cordon_scanner/rules/builtin/capabilities-javascript.yaml",
+      "why": "The rule pack's own positive samples (String.fromCharCode over character codes) are what it detects; 0.6.0 shipped no obfuscation-shaped file, so the first release with them reports 'ships obfuscated code'. The rule-material ceiling is never applied inside a published package (fail-open audit, 2 Nov), so this is accepted here, by the project, for 0.7.0 only."
+    }
+  ]
+}
