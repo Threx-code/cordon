@@ -163,6 +163,18 @@ class TestReleaseBaselines:
                     entry["path"],
                 ), (file.name, entry["path"])
                 assert len(entry.get("why", "")) > 40, (file.name, "an entry without its reason")
+                # The fingerprint the scanner gives that finding, recomputed: the hash in it covers
+                # the path, so one copied from another wheel's entry never matches (7 Nov).
+                assert entry["fingerprint"] == self.fingerprint(entry), (file.name, entry["path"])
+
+    @staticmethod
+    def fingerprint(entry: dict[str, str]) -> str:
+        from cordon_scanner.foundation.models import Severity
+        from cordon_scanner.foundation.results import OperationalFinding
+
+        return OperationalFinding.release_change(
+            path=entry["path"], rule_id=entry["rule"], message="", severity=Severity.HIGH
+        ).fingerprint
 
     @requires_workflows
     def test_the_release_uses_the_baseline_for_its_own_version_only(self) -> None:
