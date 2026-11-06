@@ -278,6 +278,49 @@ class TestReleaseWorkflow:
         assert step in self.body()
 
 
+class TestTheReleasePackagesTheExtension:
+    """The 0.7.0 release published to PyPI, then stopped creating its GitHub release: vsce refused
+    to package an extension whose icon, images/icon.png, is rendered at build time and was not
+    rendered in the release step (6 Nov)."""
+
+    EXTENSION = ROOT / "editors" / "vscode"
+
+    @staticmethod
+    def packaging_step() -> str:
+        text = RELEASE.read_text(encoding="utf-8")
+        start = text.index("- name: Build the VS Code extension")
+        return text[start : text.index("- name:", start + 1)]
+
+    def test_every_file_the_manifest_names_is_committed_or_rendered_first(self) -> None:
+        manifest = json.loads((self.EXTENSION / "package.json").read_text(encoding="utf-8"))
+        step = self.packaging_step()
+        named = [manifest["icon"]] if "icon" in manifest else []
+        for path in named:
+            if (self.EXTENSION / path).is_file():
+                continue
+            assert f"-o {path}" in step, (
+                f"{path} is neither committed nor rendered before packaging"
+            )
+            assert step.index(f"-o {path}") < step.index("vsce@"), f"{path} is rendered after vsce"
+
+    def test_the_release_and_the_dockerfile_package_with_one_vsce(self) -> None:
+        import re
+
+        dockerfile = (self.EXTENSION / "Dockerfile").read_text(encoding="utf-8")
+        versions = set(re.findall(r"@vscode/vsce@([0-9.]+)", RELEASE.read_text(encoding="utf-8")))
+        assert versions == set(re.findall(r"@vscode/vsce@([0-9.]+)", dockerfile)), versions
+
+    def test_the_release_page_is_created_on_the_run_after_publishing_too(self) -> None:
+        text = RELEASE.read_text(encoding="utf-8")
+        job = text[
+            text.index("  github-release:") : text.index(
+                "    steps:", text.index("  github-release:")
+            )
+        ]
+        assert "!cancelled()" in job, "a skipped publish would skip the job without it"
+        assert "needs.publish.result == 'skipped' && needs.confirm.result == 'success'" in job
+
+
 class TestReleaseWorkflowPublishesTheImage:
     """The Dockerfile existed and nothing built or pushed it -- README called
     this out explicitly ("no published container image yet"). These assert

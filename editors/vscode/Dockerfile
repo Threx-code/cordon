@@ -8,7 +8,7 @@ COPY . .
 RUN rsvg-convert -w 256 -h 256 images/icon.svg -o images/icon.png \
  && npm ci --ignore-scripts \
  && npm test \
- && npx --yes @vscode/vsce@4.0.0 package --no-dependencies -o /build/cordon.vsix
+ && npx --yes @vscode/vsce@3.6.0 package --no-dependencies -o /build/cordon.vsix
 
 FROM scratch
 COPY --from=build /build/cordon.vsix /
