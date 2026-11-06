@@ -26,6 +26,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -132,6 +133,44 @@ class TestSbomGenerator:
 
 
 @requires_workflows
+class TestReleaseBaselines:
+    """A release baseline (.github/release-baselines/<version>.json) accepts what the release
+    comparison reports and nothing broader: only the new-obfuscation finding, only on a bundled rule
+    pack, each entry with its rule, path, fingerprint and reason, and every fingerprint an entry's.
+    Accepting a release's findings is the project's decision, so it is kept small enough to read."""
+
+    ACCEPTABLE: ClassVar[set[str]] = {"SUSPECT.RELEASE.NEW_OBFUSCATION.001"}
+
+    @staticmethod
+    def files() -> list[Path]:
+        return sorted((ROOT / ".github" / "release-baselines").glob("*.json"))
+
+    @requires_workflows
+    def test_each_is_for_a_release_and_accepts_only_rule_pack_obfuscation(self) -> None:
+        import re
+
+        assert self.files(), "no release baseline: remove this test with the directory"
+        for file in self.files():
+            assert re.fullmatch(r"\d+\.\d+\.\d+", file.stem), file.name
+            data = json.loads(file.read_text(encoding="utf-8"))
+            entries = data["entries"]
+            assert sorted(data["fingerprints"]) == sorted(e["fingerprint"] for e in entries), file
+            for entry in entries:
+                assert entry["rule"] in self.ACCEPTABLE, (file.name, entry["rule"])
+                assert re.fullmatch(
+                    rf"cordon_scanner-{re.escape(file.stem)}-[^!/]+\.whl!cordon_scanner/rules/builtin/"
+                    r"[a-z0-9-]+\.yaml",
+                    entry["path"],
+                ), (file.name, entry["path"])
+                assert len(entry.get("why", "")) > 40, (file.name, "an entry without its reason")
+
+    @requires_workflows
+    def test_the_release_uses_the_baseline_for_its_own_version_only(self) -> None:
+        text = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+        assert ".github/release-baselines/$current.json" in text
+        assert "--baseline .github/release-baselines/" not in text  # never one fixed file
+
+
 class TestTheSelfScansAgree:
     """The release's self-scan (scripts/measure/live_checks.py) excludes exactly what CI's
     (checks.yml) excludes. They drifted twice: on 8 October the release's blocked 0.6.0 after CI was
