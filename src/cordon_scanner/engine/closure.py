@@ -65,6 +65,9 @@ class ImportClosure:
         as `a/b/__init__.py`. Relative imports resolve against the importing
         file's directory, which is what makes `from . import helper` work.
         """
+        if module.startswith("/"):  # a relative import, already a path (`imported_by`)
+            stem = module[1:]
+            return [f"{stem}.py", f"{stem}/__init__.py"]
         parts = module.split(".")
         base = PurePosixPath(importer).parent
         joined = "/".join(parts)
@@ -112,11 +115,14 @@ class ImportClosure:
                     prefix = base
                     for _ in range(node.level - 1):
                         prefix = prefix.parent
-                    stem = f"{prefix}/{node.module}" if node.module else str(prefix)
-                    found.append(stem.strip("/").replace("/", "."))
-                    found.extend(
-                        f"{stem.strip('/').replace('/', '.')}.{alias.name}" for alias in node.names
-                    )
+                    # Kept as a path, marked by a leading "/", never flattened to dots: a package
+                    # archive's directories carry dots and "!" (`pkg-1.0.tar.gz!pkg-1.0/pkg`), and
+                    # `from .core import run` there resolved to nothing (09 3a).
+                    module_path = node.module.replace(".", "/") if node.module else ""
+                    stem = f"{prefix}/{module_path}" if module_path else str(prefix)
+                    stem = stem.strip("/")
+                    found.append(f"/{stem}")
+                    found.extend(f"/{stem}/{alias.name}" for alias in node.names)
                 elif node.module:
                     found.append(node.module)
                     # `from pkg import module` may name a module rather than a
@@ -331,7 +337,7 @@ class ImportClosure:
                 rooted = [
                     f"{root}/{'/'.join(module.split('.'))}{suffix}"
                     for root in roots
-                    if root != "."
+                    if root != "." and not module.startswith("/")
                     for suffix in (".py", "/__init__.py")
                 ]
                 shipped_here = False
@@ -343,7 +349,9 @@ class ImportClosure:
                             seen.add(normalised)
                             frontier.append((normalised, depth + 1))
                 if not shipped_here:
-                    for reading in hidden.get(module, ()):
+                    # A relative import is looked up here as it always was, dotted.
+                    dotted = module[1:].replace("/", ".") if module.startswith("/") else module
+                    for reading in hidden.get(dotted, ()):
                         if reading not in seen:
                             seen.add(reading)
                             frontier.append((reading, depth + 1))

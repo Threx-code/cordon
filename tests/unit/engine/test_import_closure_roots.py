@@ -34,6 +34,31 @@ class TestAbsoluteImportsResolveFromTheHooksDirectory:
         assert f"{self.ROOT}/setup/unused.py" not in reached
 
 
+class TestRelativeImportsResolveInsideAnArchive:
+    """A package archive's paths carry dots and "!" (`pkg-1.0.tar.gz!pkg-1.0/pkg/`): a relative import
+    flattened to a dotted name there resolved to nothing, so `from .core import run` left `core.py`
+    out of every closure it belonged to."""
+
+    BASE = "pkg-1.0.tar.gz!pkg-1.0/pkg/"
+    SOURCES: ClassVar[dict[str, str]] = {
+        f"{BASE}__init__.py": "from .core import run\nfrom . import helpers\nfrom .sub.deep import x\n",
+        f"{BASE}core.py": "def run():\n    return 1\n",
+        f"{BASE}helpers.py": "VALUE = 1\n",
+        f"{BASE}sub/__init__.py": "",
+        f"{BASE}sub/deep.py": "from ..core import run\nx = 1\n",
+        f"{BASE}unused.py": "VALUE = 2\n",
+    }
+
+    def test_relative_imports_are_followed(self) -> None:
+        reached = ImportClosure.resolve({f"{self.BASE}__init__.py"}, self.SOURCES)
+        for name in ("core.py", "helpers.py", "sub/deep.py"):
+            assert f"{self.BASE}{name}" in reached, name
+
+    def test_a_module_nothing_imports_is_still_not(self) -> None:
+        reached = ImportClosure.resolve({f"{self.BASE}__init__.py"}, self.SOURCES)
+        assert f"{self.BASE}unused.py" not in reached
+
+
 # Item 72, the owner's ruling of 3 Nov (a strict scanner): what a published package's own dev, build and
 # start scripts run is reached code. Measured on the npm work set: 4,976 archives with such a script or a
 # root tool configuration; +4 malware and +5 benign blocked against the release head.
