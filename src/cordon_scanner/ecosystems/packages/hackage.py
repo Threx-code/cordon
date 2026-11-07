@@ -49,7 +49,7 @@ from cordon_scanner.foundation.formats.datayaml import DataYaml
 from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping
+    from collections.abc import Collection, Iterator, Mapping
 
     from cordon_scanner.foundation.content import FileContent
 
@@ -692,6 +692,32 @@ class HackageEcosystem(BaseEcosystem):
             else None
         )
 
+    #: A key Stack requires in every stack.yaml: the snapshot it resolves against.
+    STACK_SNAPSHOT: ClassVar[re.Pattern[str]] = re.compile(
+        r"^(resolver|snapshot)\s*:", re.MULTILINE
+    )
+
+    def claims_manifest(self, content: FileContent, paths: Collection[str]) -> bool:
+        """Whether this file is Hackage's, in view of the tree's paths: a stack.yaml only when it
+        names a snapshot or sits beside a .cabal, package.yaml or stack.yaml.lock (stackpack 0.1.1's
+        tool registry named stack.yaml failed a PyPI sdist closed, census 2026-11-07). With no
+        paths given, claimed as before."""
+        if content.basename != "stack.yaml" or not paths:
+            return True
+        if HackageEcosystem.STACK_SNAPSHOT.search(content.text):
+            return True
+        directory = content.path.rpartition("/")[0]
+        prefix = f"{directory}/" if directory else ""
+        return any(
+            path.startswith(prefix)
+            and "/" not in path[len(prefix) :]
+            and (
+                path.endswith(".cabal")
+                or path[len(prefix) :] in ("package.yaml", "stack.yaml.lock")
+            )
+            for path in paths
+        )
+
     def parse_manifest(self, content: FileContent) -> Manifest:
         return self.parse_in_tree(content, {content.path: content})
 
@@ -703,6 +729,15 @@ class HackageEcosystem(BaseEcosystem):
         if basename == "cabal.project":
             return CabalProject.parse(content, self.id)
         if basename == "stack.yaml":
+            if len(files) > 1 and not self.claims_manifest(content, files):
+                return Manifest(
+                    path=content.path,
+                    ecosystem=self.id,
+                    sources=(
+                        "a file named stack.yaml that names no snapshot and sits beside no Haskell "
+                        "package, so not Stack's (another tool's file of the same name)",
+                    ),
+                )
             return StackProject.parse(content, self.id)
         owner = HackageEcosystem.owning_project(content.path, files)
         note = HackageEcosystem.snapshot_note(content.path, files, owner)

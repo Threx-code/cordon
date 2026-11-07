@@ -452,3 +452,37 @@ class TestADescriptionOutsideAnRPackage:
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
         assert "OPERATIONAL.MANIFEST.UNPARSED" not in {f.rule_id for f in result.findings}
         assert result.content_complete
+
+
+class TestAStackYamlOutsideAHaskellProject:
+    """A stack.yaml is Haskell Stack's only when it names a snapshot (`resolver:`/`snapshot:`, which
+    Stack requires) or sits beside a .cabal, package.yaml or stack.yaml.lock: stackpack 0.1.1's tool
+    registry named stack.yaml failed a PyPI sdist closed (census 2026-11-07, 05 section C2)."""
+
+    REGISTRY = "tools:\n  - name: ruff\n    version: 0.6.0\n  - name: mypy\n"
+
+    @staticmethod
+    def tree(*paths: str) -> dict[str, FileContent]:
+        return {p: NewEcosystemsHelpers.fc(p, "") for p in paths}
+
+    def test_a_tool_registry_named_stack_yaml_is_not_stacks(self) -> None:
+        from cordon_scanner.ecosystems.packages.hackage import HackageEcosystem
+
+        content = NewEcosystemsHelpers.fc("pkg-1.0/stack.yaml", self.REGISTRY)
+        files = {**self.tree("pkg-1.0/setup.py"), content.path: content}
+        manifest = HackageEcosystem().parse_in_tree(content, files)
+        assert manifest.parse_error is None and manifest.sources
+
+    def test_beside_a_cabal_file_a_damaged_one_still_fails_closed(self) -> None:
+        from cordon_scanner.ecosystems.packages.hackage import HackageEcosystem
+
+        content = NewEcosystemsHelpers.fc("pkg/stack.yaml", self.REGISTRY)
+        files = {**self.tree("pkg/pkg.cabal"), content.path: content}
+        assert HackageEcosystem().parse_in_tree(content, files).parse_error is not None
+
+    def test_one_naming_a_snapshot_is_stacks_wherever_it_is(self) -> None:
+        from cordon_scanner.ecosystems.packages.hackage import HackageEcosystem
+
+        content = NewEcosystemsHelpers.fc("pkg-1.0/stack.yaml", "resolver: [\n")
+        files = {**self.tree("pkg-1.0/setup.py"), content.path: content}
+        assert HackageEcosystem().parse_in_tree(content, files).parse_error is not None
