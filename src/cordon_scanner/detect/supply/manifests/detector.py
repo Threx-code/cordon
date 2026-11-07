@@ -92,6 +92,12 @@ class ManifestDetector(BaseDetector):
         if ecosystem is None:
             return ()
 
+        claims = getattr(ecosystem, "claims_manifest", None)
+        if named is not None and claims is not None and not claims(unit.content, ctx.tree_paths):
+            # A file with a manifest's name that the tree shows is not one (a Python sdist's
+            # prose DESCRIPTION): its content is still scanned; it is just not R's manifest.
+            return name_risk
+
         parse_included = getattr(ecosystem, "parse_included", None)
         manifest = (
             parse_included(unit.content)

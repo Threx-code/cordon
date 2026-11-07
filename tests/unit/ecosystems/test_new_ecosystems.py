@@ -406,3 +406,49 @@ class TestAHyphenatedHexPackage:
             f.location.package for f in findings if f.rule_id == "VULNERABLE.DEPENDENCY.KNOWN.001"
         }
         assert any("ecdsa-elixir" in (p or "") for p in named), named
+
+
+class TestADescriptionOutsideAnRPackage:
+    """A file named DESCRIPTION is R's only in an R package: one declaring `Package:`, or beside an
+    R package's NAMESPACE or R/ directory. 17 PyPI sdists failed closed on a prose DESCRIPTION read
+    as a damaged CRAN manifest (census 2026-11-07, 05 §C2)."""
+
+    PROSE = "LinOTP is an open source one time password solution.\n\nIt supports tokens.\n"
+
+    @staticmethod
+    def tree(*paths: str) -> dict[str, FileContent]:
+        return {p: NewEcosystemsHelpers.fc(p, "") for p in paths}
+
+    def test_a_prose_description_in_a_python_sdist_is_not_an_r_manifest(self) -> None:
+        content = NewEcosystemsHelpers.fc("pkg-1.0/DESCRIPTION", self.PROSE)
+        files = {**self.tree("pkg-1.0/setup.py", "pkg-1.0/pkg/__init__.py"), content.path: content}
+        manifest = CranEcosystem().parse_in_tree(content, files)
+        assert manifest.parse_error is None
+        assert manifest.dependencies == ()
+        assert manifest.sources  # said, not dropped quietly
+
+    def test_beside_a_namespace_a_damaged_description_still_fails_closed(self) -> None:
+        content = NewEcosystemsHelpers.fc("pkg/DESCRIPTION", self.PROSE)
+        files = {**self.tree("pkg/NAMESPACE", "pkg/R/zzz.R"), content.path: content}
+        assert CranEcosystem().parse_in_tree(content, files).parse_error is not None
+
+    def test_a_description_declaring_a_package_is_r_wherever_it_is(self) -> None:
+        text = "Package: demo\nVersion: 1.0\nLicense: MIT\nImports: curl\n  ,,(\n"
+        content = NewEcosystemsHelpers.fc("pkg-1.0/DESCRIPTION", text + "not a field\n")
+        files = {**self.tree("pkg-1.0/setup.py"), content.path: content}
+        assert CranEcosystem().parse_in_tree(content, files).parse_error is not None
+
+    def test_a_python_sdist_with_a_prose_description_scans_complete(self, tmp_path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.foundation.config.settings import Config
+
+        root = tmp_path / "pkg-1.0"
+        (root / "pkg").mkdir(parents=True)
+        (root / "setup.py").write_text(
+            "from setuptools import setup\nsetup(name='pkg')\n", encoding="utf-8"
+        )
+        (root / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+        (root / "DESCRIPTION").write_text(self.PROSE, encoding="utf-8")
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
+        assert "OPERATIONAL.MANIFEST.UNPARSED" not in {f.rule_id for f in result.findings}
+        assert result.content_complete
