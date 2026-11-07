@@ -272,7 +272,29 @@ class ArchiveStages:
             package_repository=PackageEntries.repository(units, early_format),
         )
         ctx = replace(ctx, verdict_dependency_names=Ceilings.verdict_dependency_names(units))
+        ctx = self.import_context(units, ctx, early_format)
         return Hooks.lifted_inherit(ctx)
+
+    @staticmethod
+    def import_context(units: list[FileUnit], ctx: ScanContext, distribution: str) -> ScanContext:
+        """What runs when a consumer imports a published Python package: every importable module and
+        what it imports, and the bodies importing never runs (`LoadReach`, reviews/pypi-98/10)."""
+        from cordon_scanner.analysis.python.reachability import LoadReach
+
+        modules = PackageEntries.importable_modules(units, distribution)
+        if not modules:
+            return ctx
+        closure = set(modules) | Hooks.hook_import_closure(units, set(modules))
+        sources = {
+            unit.path: unit.content.text
+            for unit in units
+            if unit.path in closure and unit.path.endswith(".py") and not unit.content.is_binary
+        }
+        return replace(
+            ctx,
+            import_closure_paths=frozenset(closure),
+            import_deferred_lines=LoadReach.deferred_lines(sorted(sources), sources),
+        )
 
     def parallel(
         self, units: list[FileUnit], deadline: float, acc: Accumulator, path: Path, ctx: ScanContext

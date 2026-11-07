@@ -331,6 +331,12 @@ class RegistryPublishing:
         return RegistryFacts._of(ecosystem).library_entries(members, manifest, with_bin)
 
     @staticmethod
+    def import_modules(ecosystem: str, members: Mapping[str, str]) -> set[str]:
+        """The members a consumer imports as the package, where the ecosystem says (PyPI); none else."""
+        method = getattr(RegistryFacts._of(ecosystem), "import_modules", None)
+        return set(method(members)) if callable(method) else set()
+
+    @staticmethod
     def published_repository(ecosystem: str, manifest: Mapping[str, Any]) -> str:
         return RegistryFacts._of(ecosystem).published_repository(manifest)
 

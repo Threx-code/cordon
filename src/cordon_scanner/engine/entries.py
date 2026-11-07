@@ -31,6 +31,17 @@ class PackageEntries:
         manifest = PackageEntries.manifest(units, distribution)
         return frozenset(RegistryFacts.library_entries(distribution, members, manifest, with_bin))
 
+    @staticmethod
+    def importable_modules(units: list[FileUnit], distribution: str) -> frozenset[str]:
+        """Every module of a published package a consumer can import as the package, by its
+        ecosystem (`import_modules`): their top level runs when imported (reviews/pypi-98/10)."""
+        members: dict[str, str] = {}
+        for unit in units:
+            _, sep, member = unit.path.partition("!")
+            if sep and "!" not in member:
+                members[member] = unit.path
+        return frozenset(RegistryFacts.import_modules(distribution, members))
+
     PROJECT_SCRIPTS: ClassVar[frozenset[str]] = frozenset(
         f"{when}{name}" for name in ("dev", "build", "start") for when in ("", "pre", "post")
     )

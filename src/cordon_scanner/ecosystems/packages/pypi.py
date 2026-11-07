@@ -730,6 +730,32 @@ class PypiEcosystem(PypiLockfiles, BaseEcosystem):
                 found.add(path)
         return found
 
+    #: Python files a distribution ships that nothing imports as the package: its build, task and
+    #: test-runner scripts.
+    NOT_MODULES: ClassVar[frozenset[str]] = frozenset(
+        {"setup.py", "conftest.py", "noxfile.py", "fabfile.py"}
+    )
+
+    def import_modules(self, members: Mapping[str, str]) -> set[str]:
+        """Every first-party module a consumer can import, not only the top-level `__init__.py`: a
+        consumer imports the module that holds the API (`from aliyunsdkcore.client import AcsClient`)
+        and its top level runs then, which is where a typosquat puts its payload (reviews/pypi-98/10).
+        Not tests, documentation, build tooling or vendored copies (`SourcePaths`)."""
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
+
+        return {
+            path
+            for member, path in members.items()
+            if member.endswith(".py")
+            and member.rpartition("/")[2] not in self.NOT_MODULES
+            and not (
+                SourcePaths.is_test_material(member)
+                or SourcePaths.is_documentation(member)
+                or SourcePaths.is_build_tooling(member)
+                or SourcePaths.is_vendored(member)
+            )
+        }
+
     # -- Lockfiles -------------------------------------------------------
 
 

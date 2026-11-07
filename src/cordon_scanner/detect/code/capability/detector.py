@@ -440,6 +440,7 @@ class CapabilityDetector(BaseDetector):
         # a body nothing reaches does not run at install time, whatever the file
         # does. See `ScanContext.install_hook_reaches`.
         deferred = CapabilityDetector._deferred_windows(ctx, unit, in_hook)
+        import_deferred = CapabilityDetector._import_windows(ctx, unit, in_hook)
 
         decode_excused = DecodeRun.excused_lines(
             unit, hits, BuildOutput.bundled_path(unit.path), [c.rule.id for c in candidates]
@@ -451,14 +452,10 @@ class CapabilityDetector(BaseDetector):
                 continue
 
             rule_hits = CapabilityDetector._rule_hits(compiled, unit, hits, decode_excused)
-            if compiled.rule.id in CompositeRuleIds.CONTEXT_FREE:
-                window = evaluator.satisfying_window(
-                    compiled, rule_hits, unit.path, False, False, False, frozenset()
-                )
-            else:
-                window = evaluator.satisfying_window(
-                    compiled, rule_hits, unit.path, in_hook, in_ci, in_consumer, deferred
-                )
+            window = CapabilityDetector._window(
+                evaluator, compiled, rule_hits, unit.path, (in_hook, in_ci, in_consumer),
+                deferred, import_deferred,
+            )  # fmt: skip
             if window is None:
                 continue
 
@@ -493,6 +490,45 @@ class CapabilityDetector(BaseDetector):
             ).finding()
             if finding is not None:
                 yield finding
+
+    @staticmethod
+    def _window(
+        evaluator: CompositeEvaluator,
+        compiled: CompiledRule,
+        rule_hits: list[CapabilityHit],
+        path: str,
+        where: tuple[bool, bool, bool],
+        deferred: frozenset[tuple[int, int]],
+        import_deferred: frozenset[tuple[int, int]] | None,
+    ) -> list[CapabilityHit] | None:
+        """The window of hits that satisfies the composite, read in the context it runs in."""
+        in_hook, in_ci, in_consumer = where
+        if compiled.rule.id in CompositeRuleIds.CONTEXT_FREE:
+            return evaluator.satisfying_window(
+                compiled, rule_hits, path, False, False, False, frozenset()
+            )
+        if import_deferred is not None and compiled.rule.id in CompositeRuleIds.IMPORT_GRADED:
+            # What a published package runs at import is unasked too (reviews/pypi-98/10): the
+            # install term is read against the import reach, the bodies importing never calls as
+            # the dead code -- the same per-window rule.
+            return evaluator.satisfying_window(
+                compiled, rule_hits, path, True, in_ci, in_consumer, import_deferred
+            )
+        return evaluator.satisfying_window(
+            compiled, rule_hits, path, in_hook, in_ci, in_consumer, deferred
+        )
+
+    @staticmethod
+    def _import_windows(
+        ctx: ScanContext, unit: FileUnit, in_hook: bool
+    ) -> frozenset[tuple[int, int]] | None:
+        """For a module a consumer imports (and no install hook runs), the line ranges importing
+        never runs; None for any other file."""
+        if in_hook or unit.path not in ctx.import_closure_paths:
+            return None
+        return frozenset(
+            (first, last) for path, first, last in ctx.import_deferred_lines if path == unit.path
+        )
 
     @staticmethod
     def _deferred_windows(
