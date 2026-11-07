@@ -156,25 +156,37 @@ class AnalyzerCore:
         return self._dotted_uncached(node)
 
     def _dotted_uncached(self, node: ast.AST) -> str | None:
+        # Down the chain of attributes and calls first, then back up: by a list, not by recursion,
+        # because a builder chain is as many links long as its author wrote (PySegmentKit 0.2.1's
+        # thousands of `.where(...)` stopped the detector at the recursion limit). An attacker's
+        # deep chain resolves fully too; a depth cap would let one hide a name behind it.
+        links: list[ast.Attribute | ast.Call] = []
+        while isinstance(node, ast.Attribute) or (isinstance(node, ast.Call) and node.args):
+            links.append(node)
+            node = node.value if isinstance(node, ast.Attribute) else node.func
+        name: str | None = None
         if isinstance(node, ast.Name):
-            return self._aliases.get(node.id) or self._bindings.get(node.id) or node.id
-        if isinstance(node, ast.Attribute):
-            base = self._dotted(node.value)
-            if base in BUILTIN_MODULES:
-                # `builtins.exec` is `exec`: the module is how the name is reached, not part of it.
-                return node.attr
-            return f"{base}.{node.attr}" if base else None
-        if isinstance(node, ast.Call) and node.args:
-            # `__import__("base64")` and `importlib.import_module("base64")` evaluate to the module,
-            # so `__import__("base64").b64decode` is `base64.b64decode` -- the spelling droppers use
-            # to keep `import base64` and `exec(` off the same page.
-            callee = self._dotted(node.func)
-            if callee in ("__import__", "importlib.import_module"):
-                module = PythonFacts.constant(node.args[0])
-                if module:
-                    return module
-            if callee == "eval":
-                return self._evaluated_name(node.args[0])
+            name = self._aliases.get(node.id) or self._bindings.get(node.id) or node.id
+        for link in reversed(links):
+            if isinstance(link, ast.Attribute):
+                if name in BUILTIN_MODULES:
+                    # `builtins.exec` is `exec`: the module is how the name is reached, not part of it.
+                    name = link.attr
+                else:
+                    name = f"{name}.{link.attr}" if name else None
+            else:
+                name = self._called_name(name, link)
+        return name
+
+    def _called_name(self, callee: str | None, call: ast.Call) -> str | None:
+        """What a call evaluates to by name. `__import__("base64")` and
+        `importlib.import_module("base64")` evaluate to the module, so `__import__("base64").b64decode`
+        is `base64.b64decode` -- the spelling droppers use to keep `import base64` and `exec(` off the
+        same page; `eval` of a written name is that name. Any other call names nothing."""
+        if callee in ("__import__", "importlib.import_module"):
+            return PythonFacts.constant(call.args[0]) or None
+        if callee == "eval":
+            return self._evaluated_name(call.args[0])
         return None
 
     def _evaluated_name(self, node: ast.AST) -> str | None:
