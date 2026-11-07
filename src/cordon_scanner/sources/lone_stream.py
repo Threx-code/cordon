@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Any
 from cordon_scanner.foundation.errors import ArchiveError
 from cordon_scanner.sources.base import RejectedMember, Rejection
 from cordon_scanner.sources.budget import READ_CHUNK, BudgetExceeded, _BudgetedStream, _BytesReader
+from cordon_scanner.sources.declared_size import DeclaredSize
 from cordon_scanner.sources.signatures import ArchiveSignatures, CompressedHeader
 
 if TYPE_CHECKING:
@@ -209,6 +210,13 @@ class LoneStream:
         `read` is the archive reader's bounded member read and `member` its member type, handed
         in so this module never imports the reader that imports it."""
         name = ArchiveSignatures.inner_name(path)
+        # A gzip whose own format declares the size it expands to (FITS, NIfTI-1, NTFS; 08 7c) may
+        # expand to exactly that, and not a byte more: the cap moves to the declared size.
+        declared = (
+            DeclaredSize.of(data, limits) if CompressedHeader.format_of(data) == "gzip" else None
+        )
+        if declared is not None and declared.size > result.expansion_cap > 0:
+            result.expansion_cap = declared.size
         stream, cut = LoneStream._open(
             data, path=path, limits=limits, deadline=deadline, cap=result.expansion_cap
         )
@@ -226,6 +234,23 @@ class LoneStream:
         except (OSError, ValueError) as exc:
             raise ArchiveError(f"{path}: not a readable compressed stream: {exc}") from exc
         if payload is None:
+            return
+        if (
+            declared is not None
+            and declared.size > 0
+            and not DeclaredSize.slack_is_zero(payload, declared)
+        ):
+            # Let past the padding cap for its declared size, it must be exactly that size with its
+            # format's padding empty: a byte in the slack is a payload riding where padding goes.
+            result.truncated = True
+            result.rejected.append(
+                RejectedMember(
+                    path,
+                    Rejection.PADDED,
+                    f"a {declared.format} stream that declares {declared.size} bytes holds other "
+                    "than its declared size, or bytes in its padding",
+                )
+            )
             return
         if cut.cut and not payload and LoneStream.bare_header(data):
             # Nothing past the header at all (npm's cache leaves `package.tgz.<n>` so when a write

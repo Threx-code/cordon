@@ -665,6 +665,7 @@
   "sources/import_library": "sources/import_library",
   "sources/nested_walk": "sources/nested_walk",
   "sources/lone_stream": "sources/lone_stream",
+  "sources/declared_size": "sources/declared_size",
   "sources/rar": "sources/rar",
   "sources/sevenzip": "sources/sevenzip",
   "sources/zip_entries": "sources/zip_entries",
