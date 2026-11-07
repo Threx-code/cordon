@@ -2,7 +2,7 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,502 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,503 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -27,7 +27,7 @@ rule's own samples.
 
 ## AI agents
 
-50 rules.
+51 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -72,6 +72,7 @@ rule's own samples.
 | `SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001` | medium | An agent instruction file tells the agent to fetch and follow remote text |
 | `SUSPECT.AGENT.SENSITIVE_IMPORT.001` | high | An agent instruction file imports a credential file |
 | `SUSPECT.AGENT.SKILL_DECODE_RUN.001` | high | A skill's script decodes code and runs it |
+| `SUSPECT.AGENT.SKILL_DISGUISED_ARCHIVE.001` | high | A skill ships an archive under a name that says it is something else |
 | `SUSPECT.AGENT.SKILL_HOOK_FETCH.001` | high | A skill script installs an agent hook that runs a download |
 | `SUSPECT.AGENT.SKILL_INSTALLS_LOOKALIKE.001` | high | A skill's script installs a package named like a popular one |
 | `SUSPECT.AGENT.SKILL_INSTRUCTIONS.001` | high | A skill's instructions read as an attack on the agent |

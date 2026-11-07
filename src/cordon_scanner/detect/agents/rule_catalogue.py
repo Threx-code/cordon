@@ -581,6 +581,19 @@ RULES.update(
                 (ref.MCP_SECURITY,),
             ),
             AgentRules._rule(
+                "SUSPECT.AGENT.SKILL_DISGUISED_ARCHIVE.001",
+                "A skill ships an archive under a name that says it is something else",
+                Category.SUSPICIOUS,
+                Severity.HIGH,
+                Confidence.MEDIUM,
+                "A file this skill ships is an archive -- zip, 7z or rar by its first bytes -- under a "
+                "name that is not an archive's: a `.txt`, a document, a dotfile. The agent and the "
+                "reader take each file as what it is named; an archive named as text is there to be "
+                "unpacked by an instruction, and what is inside it is read by nobody.",
+                "Unpack it and read every file inside. Do not use the skill until each is explained.",
+                (ref.MCP_SECURITY,),
+            ),
+            AgentRules._rule(
                 "SUSPECT.AGENT.SKILL_LISTENER.001",
                 "A skill's script opens its own listening socket and runs commands",
                 Category.SUSPICIOUS,

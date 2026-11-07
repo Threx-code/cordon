@@ -118,9 +118,28 @@ class AgentChainDetector(BaseDetector):
     def applicable(self, ctx: ScanContext) -> bool:
         return True
 
+    @staticmethod
+    def _binary_member(unit: FileUnit, ctx: ScanContext) -> list[Finding]:
+        """The one thing read of a binary member here: a skill's archive under another name."""
+        if SkillScripts.in_skill(unit.content.path, ctx) and SkillScripts.disguised_archive(
+            unit.content.path, unit.content.raw[:8]
+        ):
+            return [
+                AgentFinding.finding(
+                    "SUSPECT.AGENT.SKILL_DISGUISED_ARCHIVE.001",
+                    unit,
+                    ctx,
+                    0,
+                    min(len(unit.content.raw), 4),
+                )
+            ]
+        return []
+
     def inspect(self, unit: Unit, ctx: ScanContext) -> Iterable[Finding]:
-        if not isinstance(unit, FileUnit) or unit.content.is_binary:
+        if not isinstance(unit, FileUnit):
             return ()
+        if unit.content.is_binary:
+            return self._binary_member(unit, ctx)
         path = (
             unit.content.path.rpartition("!")[2] if "!" in unit.content.path else unit.content.path
         )
