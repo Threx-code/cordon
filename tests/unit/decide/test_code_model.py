@@ -157,6 +157,36 @@ class TestWeights:
         assert CodeModelKit.rules(result).count(UNAVAILABLE) == 1
         assert MODEL_RULE not in CodeModelKit.rules(result)
 
+    def test_building_the_detector_reads_nothing(self, tmp_path) -> None:
+        path = tmp_path / "w.json.gz"
+        path.write_bytes(b"not a model")
+        detector = CodeModelScores(weights_path=path)
+        assert detector.unavailable is None
+
+    def test_a_scan_that_reaches_no_javascript_never_reads_the_weights(self, tmp_path) -> None:
+        # Release item 17: 0.1 s of every scan went on weights a Python package never uses.
+        path = tmp_path / "w.json.gz"
+        path.write_bytes(b"not a model")
+        root = tmp_path / "py"
+        root.mkdir()
+        (root / "setup.py").write_text(
+            "from setuptools import setup\nsetup(name='x')\n", encoding="utf-8"
+        )
+        result = CodeModelKit.scanner(path).scan(root)
+        assert UNAVAILABLE not in CodeModelKit.rules(result)
+
+    @requires_forked_workers
+    def test_a_long_running_scanner_reads_them_once_before_its_next_scan(self, tmp_path) -> None:
+        scanner = CodeModelKit.scanner(CodeModelKit.weights(tmp_path))
+        detector = next(d for d in scanner._engine.detectors if d.id == "code-model")
+        target = CodeModelKit.package(tmp_path / "p")
+        first = scanner.scan(target)
+        assert detector.loaded is False  # the workers read them; the one-scan CLI pays no more
+        second = scanner.scan(target)
+        assert detector.loaded is True  # held before the template, so every later worker has them
+        assert MODEL_RULE in CodeModelKit.rules(first)
+        assert MODEL_RULE in CodeModelKit.rules(second)
+
     @requires_forked_workers
     def test_one_scan_with_weights_then_one_without_shares_nothing(self, tmp_path) -> None:
         target = CodeModelKit.package(tmp_path / "p")

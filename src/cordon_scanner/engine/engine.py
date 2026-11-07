@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.analysis.shared.languages import LanguageRegistry
+from cordon_scanner.decide.code_model import CodeModelPass
 from cordon_scanner.decide.policy import PolicyGate
 from cordon_scanner.detect.base import (
     FileUnit,
@@ -150,6 +151,7 @@ class Engine:
     def scan(self, target: str | Path) -> ScanResult:
         """Scan a target and return a complete, sorted result."""
         self._begin_scan()
+        CodeModelPass.prepare(self)
         # Before anything is read: the template every worker is forked from holds no scanned byte.
         self._template = self._start_template()
         try:
