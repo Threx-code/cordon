@@ -138,6 +138,13 @@ class InstructionFileFindings:
                 yield AgentFinding.finding(
                     "SUSPECT.AGENT.SKILL_JAILBREAK_TEXT.001", unit, ctx, *at(line)
                 )
+            listening = McpCode.listener(text)
+            if listening is not None:
+                # A bind shell is not a download it runs, so the capability composite lets it off as
+                # a tool that runs nothing fetched (skills-98 03: backdoor_test). The MCP rule's shape.
+                yield AgentFinding.finding(
+                    "SUSPECT.AGENT.SKILL_LISTENER.001", unit, ctx, *at(listening)
+                )
 
     @classmethod
     def instructions(cls, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:

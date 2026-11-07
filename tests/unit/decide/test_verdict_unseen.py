@@ -74,6 +74,9 @@ class TestTheAdmittedRulesAreKept:
         "SUSPECT.MCP.INPUT_MIRROR.001",  # 21 malicious, 1 benign (mcpc agentsync-mcp); 2 Nov had 2 vs 1
         "SUSPECT.MCP.LISTENER.001",  # 8 malicious, 0 benign
         "SUSPECT.MCP.TIME_BOMB.001",  # 7 malicious, 0 benign
+        # Declared HIGH (cordon-47, 7 Nov), kept from the start: 1 dev-half wild skill (backdoor_test), and
+        # 8 of 154,808 public skills carry the shape (scratchpad skill-listener.py).
+        "SUSPECT.AGENT.SKILL_LISTENER.001",
     )
 
     def test_each_is_in_keep(self) -> None:
