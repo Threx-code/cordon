@@ -115,7 +115,7 @@ prepush-quick:  ## The same without the suite, perf and fuzz
 	@sh scripts/checks/prepush.sh --quick
 
 hooks:  ## Run `make prepush` before every push (CORDON_PREPUSH=--quick for the short form)
-	@git config core.hooksPath .githooks && echo "pre-push hook: .githooks/pre-push -> scripts/checks/prepush.sh"
+	@git config core.hooksPath .githooks && echo "hooks: pre-push -> scripts/checks/prepush.sh, commit-msg -> scripts/checks/attribution.py"
 
 # -- Generated artefacts ---------------------------------------------------
 
