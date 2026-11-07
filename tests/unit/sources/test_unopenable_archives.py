@@ -16,7 +16,7 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.foundation.config.settings import Config
-from cordon_scanner.sources.signatures import UnopenedFormats
+from cordon_scanner.sources.signatures import CompressedHeader, UnopenedFormats
 
 GAP = "OPERATIONAL.ARCHIVE.UNSUPPORTED_FORMAT"
 FILL = b"inert filler bytes for a format test\n" * 40
@@ -166,6 +166,36 @@ class TestLzmaIsReadNotGapped:
             and f.location.path.endswith("install.py.lzma!install.py")
             for f in result.findings
         )
+
+    @pytest.mark.parametrize(
+        "data",
+        [
+            # CASA's table.f0i: a properties byte, a 2^28 dictionary, size 0, three bytes (spotless,
+            # lsmtool; 05-CENSUS C2, 08 7d).
+            pytest.param(
+                b"\x01" + struct.pack("<I", 1 << 28) + struct.pack("<Q", 0) + b"\x00\x00\x00",
+                id="a 16-byte table index",
+            ),
+            # CoreML's weight.bin: the same header shape, size 0, then the weights (pipersr).
+            pytest.param(
+                b"\x1c"
+                + struct.pack("<I", 1 << 25)
+                + struct.pack("<Q", 0)
+                + bytes(range(256)) * 40,
+                id="a weights blob",
+            ),
+        ],
+    )
+    def test_a_header_that_declares_nothing_and_has_more_bytes_is_no_stream(self, data) -> None:
+        """A decoder with 0 bytes to produce succeeds at once, so "the first block decodes" proved
+        nothing: the proof is that it decodes something, or ends exactly where the input ends."""
+        assert CompressedHeader.format_of(data) is None
+
+    @pytest.mark.parametrize(
+        "plain", [b"", b"hello\n" * 100, b"\x00" * 100_000], ids=["empty", "text", "zeros"]
+    )
+    def test_a_real_lzma_stream_is_still_one(self, plain: bytes) -> None:
+        assert CompressedHeader.format_of(lzma.compress(plain, format=lzma.FORMAT_ALONE)) == "lzma"
 
     def test_a_header_that_does_not_decode_is_no_gap(self, tmp_path) -> None:
         data = b"\x5d\x00\x00\x80\x00" + b"\xff" * 8 + FILL
