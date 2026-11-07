@@ -432,6 +432,23 @@ class TestADescriptionOutsideAnRPackage:
         files = {**self.tree("pkg/NAMESPACE", "pkg/R/zzz.R"), content.path: content}
         assert CranEcosystem().parse_in_tree(content, files).parse_error is not None
 
+    @pytest.mark.parametrize(
+        "text", ["\x00\xff{[<n: ok\nImports:\n    curl (>= 5\n", "garbage\nSuggests: testthat\n"]
+    )
+    def test_a_damaged_description_keeping_an_r_field_still_fails_closed(self, text: str) -> None:
+        """The conformance damage cuts the `Package:` line off; R's dependency fields remain."""
+        content = NewEcosystemsHelpers.fc("DESCRIPTION", text)
+        files = {content.path: content}
+        assert CranEcosystem().claims_manifest(content, files)
+
+    @pytest.mark.parametrize("sibling", ["renv.lock", ".Rbuildignore", "analysis.Rproj"])
+    def test_beside_an_r_project_file_a_damaged_description_still_fails_closed(
+        self, sibling: str
+    ) -> None:
+        content = NewEcosystemsHelpers.fc("analysis/DESCRIPTION", self.PROSE)
+        files = {**self.tree(f"analysis/{sibling}"), content.path: content}
+        assert CranEcosystem().parse_in_tree(content, files).parse_error is not None
+
     def test_a_description_declaring_a_package_is_r_wherever_it_is(self) -> None:
         text = "Package: demo\nVersion: 1.0\nLicense: MIT\nImports: curl\n  ,,(\n"
         content = NewEcosystemsHelpers.fc("pkg-1.0/DESCRIPTION", text + "not a field\n")

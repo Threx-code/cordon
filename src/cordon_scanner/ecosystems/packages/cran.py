@@ -101,17 +101,34 @@ class Description:
         r"^([A-Za-z][A-Za-z0-9._]*)\s*(?:\(\s*([^)]*?)\s*\))?$"
     )
     DECLARES: ClassVar[re.Pattern[str]] = re.compile(r"^Package\s*:", re.MULTILINE)
+    #: A field of R's DESCRIPTION format at a line start: what survives when the `Package:` line is
+    #: the part that was damaged. None of the 16 prose DESCRIPTIONs the census found has one.
+    R_FIELD: ClassVar[re.Pattern[str]] = re.compile(
+        r"^(?:Depends|Imports|LinkingTo|Suggests|Enhances|Remotes|Authors@R|Title|Version|License"
+        r"|Description|Maintainer|Author|Encoding|LazyData|RoxygenNote)[ \t]*:",
+        re.MULTILINE,
+    )
+    #: Files only an R package or R project keeps beside its DESCRIPTION.
+    R_SIBLINGS: ClassVar[tuple[str, ...]] = ("NAMESPACE", "renv.lock", ".Rbuildignore")
 
     @staticmethod
     def in_r_package(content: FileContent, files: Collection[str]) -> bool:
-        """Whether this DESCRIPTION is an R package's: it declares `Package:` (however damaged the
-        rest), or an R package's NAMESPACE or R/ directory sits beside it."""
-        if Description.DECLARES.search(content.text):
+        """Whether this DESCRIPTION is R's: it declares `Package:` or one of R's dependency fields
+        (however damaged the rest), or an R package's NAMESPACE, R/ directory, `.Rbuildignore`, an
+        renv lockfile or an `.Rproj` sits beside it. A damaged R DESCRIPTION is then reported, never
+        dropped; prose that merely shares the name is not R's."""
+        if Description.DECLARES.search(content.text) or Description.R_FIELD.search(content.text):
             return True
         directory = content.path.rpartition("/")[0]
         prefix = f"{directory}/" if directory else ""
-        return f"{prefix}NAMESPACE" in files or any(
-            path.startswith(f"{prefix}R/") for path in files
+        return any(f"{prefix}{name}" in files for name in Description.R_SIBLINGS) or any(
+            path.startswith(f"{prefix}R/")
+            or (
+                path.startswith(prefix)
+                and "/" not in path[len(prefix) :]
+                and path.endswith(".Rproj")
+            )
+            for path in files
         )
 
     @staticmethod
