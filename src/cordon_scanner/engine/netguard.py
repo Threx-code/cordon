@@ -53,6 +53,7 @@ class NetworkGuard:
     _lock: ClassVar[threading.Lock] = threading.Lock()
     _allowed: ClassVar[frozenset[str]] = frozenset()
     _sealed: ClassVar[bool] = False
+    _public_only: ClassVar[bool] = False
 
     @staticmethod
     def public(address: str) -> bool:
@@ -87,50 +88,58 @@ class NetworkGuard:
                     cls.host_key(h) for h in os.environ.get(ALLOWED, "").split(",") if h.strip()
                 )
             cls._allowed = allowed
-            if cls._installed:
-                return
-            original = socket.getaddrinfo
+            cls._public_only = True
+            cls._patch()
 
-            def guarded(host: Any, port: Any, *args: Any, **kwargs: Any) -> Any:
-                key = cls.host_key(host)
-                if cls._sealed:
-                    # The scan phase is sealed: refuse before resolving, so nothing reaches the
-                    # network even for the lookup. A loopback name is still refused -- a sealed
-                    # scan talks to nothing, and a detector with a real local-service need runs
-                    # outside the seal (online mode), not through an exception here.
-                    raise NetworkSealed(
-                        socket.EAI_NONAME,
-                        f"refused {key or 'an empty host'}: the scan phase is sealed and must not "
-                        f"reach the network; intel is pulled before the scan, never during it",
-                    )
-                answers = original(host, port, *args, **kwargs)
-                if key in cls._allowed:
-                    return answers
-                kept = [a for a in answers if cls.public(str(a[4][0]))]
-                if not kept:
-                    raise PrivateAddressRefused(
-                        socket.EAI_NONAME,
-                        f"refused {key or 'an empty host'}: it resolves only to private or local "
-                        f"addresses, and this scan may reach the public network only ({ENABLE})",
-                    )
-                return kept
+    @classmethod
+    def _patch(cls) -> None:
+        """Replace `socket.getaddrinfo` once; what it enforces is read from the class each call."""
+        if cls._installed:
+            return
+        original = socket.getaddrinfo
 
-            socket.getaddrinfo = guarded
-            cls._installed = True
+        def guarded(host: Any, port: Any, *args: Any, **kwargs: Any) -> Any:
+            key = cls.host_key(host)
+            if cls._sealed:
+                # The scan phase is sealed: refuse before resolving, so nothing reaches the
+                # network even for the lookup. A loopback name is still refused -- a sealed
+                # scan talks to nothing, and a detector with a real local-service need runs
+                # outside the seal (online mode), not through an exception here.
+                raise NetworkSealed(
+                    socket.EAI_NONAME,
+                    f"refused {key or 'an empty host'}: the scan phase is sealed and must not "
+                    f"reach the network; intel is pulled before the scan, never during it",
+                )
+            answers = original(host, port, *args, **kwargs)
+            if not cls._public_only or key in cls._allowed:
+                return answers
+            kept = [a for a in answers if cls.public(str(a[4][0]))]
+            if not kept:
+                raise PrivateAddressRefused(
+                    socket.EAI_NONAME,
+                    f"refused {key or 'an empty host'}: it resolves only to private or local "
+                    f"addresses, and this scan may reach the public network only ({ENABLE})",
+                )
+            return kept
+
+        socket.getaddrinfo = guarded
+        cls._installed = True
 
     @classmethod
     @contextlib.contextmanager
     def sealed(cls) -> Iterator[None]:
         """Seal the network for the duration of the scan phase: every resolution is refused.
 
-        Installs the guard first (so `getaddrinfo` is patched even when the public-only mode was
-        not enabled), sets the seal, and restores the previous seal state on exit -- so nesting
-        and an online phase that follows an offline one both behave. The engine enters this around
+        Patches `getaddrinfo` first (without turning the public-only mode on), sets the seal, and
+        restores the previous seal state on exit -- so nesting and an online phase that follows an
+        offline one both behave. The engine enters this around
         the detector phase of a scan that may not use the network, so the "offline" guarantee is
         enforced rather than trusted.
         """
-        cls.install(cls._allowed if cls._installed else None)
         with cls._lock:
+            # Patched, not switched to public-only: a seal that lifts leaves the process resolving
+            # as it did before, so an offline scan does not turn the filter on for the rest of it.
+            cls._patch()
             previous = cls._sealed
             cls._sealed = True
         try:
