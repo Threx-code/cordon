@@ -47,7 +47,26 @@ class TestLongCallChain:
         found = {hit.capability for hit in PythonAnalyzer.analyse(self.CHAIN + payload)}
         assert Capability.EXECUTE in found
 
+    @staticmethod
+    def _resolved(source: str) -> str | None:
+        """The name the analyser resolves the file's last expression to, its tables built."""
+        tree = ast.parse(source)
+        analyzer = PythonAnalyzer()
+        analyzer._collect_names(tree)
+        last = tree.body[-1]
+        assert isinstance(last, ast.Expr)
+        return analyzer._dotted(last.value)
+
     def test_a_deep_chain_of_attributes_resolves_to_its_dotted_name(self) -> None:
         names = ".".join(f"n{i}" for i in range(TERMS))
-        source = Support.assemble("import os\nos.", f"{names}()\n")
-        assert PythonAnalyzer.analyse(source) is not None
+        assert self._resolved(f"import os\nos.{names}\n") == f"os.{names}"
+
+    def test_an_import_at_the_end_of_a_long_chain_resolves(self) -> None:
+        chain = "q" + ".where(1)" * TERMS
+        source = Support.assemble(f"x = {chain}\n", "__imp", "ort__('base64').b64decode\n")
+        assert self._resolved(source) == "base64.b64decode"
+
+    def test_builtins_is_how_a_name_is_reached_not_part_of_it(self) -> None:
+        assert (
+            self._resolved(Support.assemble("import builtins\nbuiltins.ex", "ec\n")) == "ex" + "ec"
+        )

@@ -160,13 +160,21 @@ class AnalyzerCore:
         # because a builder chain is as many links long as its author wrote (PySegmentKit 0.2.1's
         # thousands of `.where(...)` stopped the detector at the recursion limit). An attacker's
         # deep chain resolves fully too; a depth cap would let one hide a name behind it.
+        # Every link is kept in the per-node cache as it resolves, and a link already there ends the
+        # walk down: the capability walk asks for each call of a chain, so without it a chain of n
+        # links would cost n * n steps.
+        cache: dict[int, str | None] | None = self.__dict__.get("_dotted_cache")
         links: list[ast.Attribute | ast.Call] = []
+        name: str | None = None
         while isinstance(node, ast.Attribute) or (isinstance(node, ast.Call) and node.args):
+            if cache is not None and links and id(node) in cache:
+                name = cache[id(node)]
+                break
             links.append(node)
             node = node.value if isinstance(node, ast.Attribute) else node.func
-        name: str | None = None
-        if isinstance(node, ast.Name):
-            name = self._aliases.get(node.id) or self._bindings.get(node.id) or node.id
+        else:
+            if isinstance(node, ast.Name):
+                name = self._aliases.get(node.id) or self._bindings.get(node.id) or node.id
         for link in reversed(links):
             if isinstance(link, ast.Attribute):
                 if name in BUILTIN_MODULES:
@@ -176,6 +184,8 @@ class AnalyzerCore:
                     name = f"{name}.{link.attr}" if name else None
             else:
                 name = self._called_name(name, link)
+            if cache is not None:
+                cache[id(link)] = name
         return name
 
     def _called_name(self, callee: str | None, call: ast.Call) -> str | None:
