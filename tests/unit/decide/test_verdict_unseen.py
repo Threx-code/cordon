@@ -66,6 +66,17 @@ class TestTheAdmittedRulesAreKept:
         # Declared HIGH (cordon-47, 3 Nov): 12 content misses in 3 groups, 0 of 36,231 benign units carry it
         # (full-b9bd rows; npmbase/kl-units.jsonl)
         "SUSPECT.BINARY.KEYLOGGER.001",
+        # MCP, measured on the full sets (cordon-47, 7 Nov; scratchpad mcp-base/*-rows.jsonl, rows on
+        # 0f23e016): units not blocked today that carry the lowered finding, newly blocked if kept.
+        # mcp-variants 177 malicious, 636 benign; MCPTox 485/362; MCP-SafetyBench 180/13; AgentDefense
+        # 132/384; real MCP packages mcpc 1,700 benign; npm benign 91,199 rows (none carries any of them).
+        "SUSPECT.MCP.BORROWED_NAME.001",  # 6 malicious, 0 benign
+        "SUSPECT.MCP.INPUT_MIRROR.001",  # 21 malicious, 1 benign (mcpc agentsync-mcp); 2 Nov had 2 vs 1
+        "SUSPECT.MCP.LISTENER.001",  # 8 malicious, 0 benign
+        "SUSPECT.MCP.TIME_BOMB.001",  # 7 malicious, 0 benign
+        # Declared HIGH (cordon-47, 7 Nov), kept from the start: 1 dev-half wild skill (backdoor_test), and
+        # 8 of 154,808 public skills carry the shape (scratchpad skill-listener.py).
+        "SUSPECT.AGENT.SKILL_LISTENER.001",
     )
 
     def test_each_is_in_keep(self) -> None:
@@ -181,16 +192,12 @@ class TestNoRuleIsLoweredUnseenByAccident:
             "SUSPECT.LOCKFILE.INTEGRITY_MALFORMED.BUNDLED.001",
             "SUSPECT.LOCKFILE.SOURCE.BUNDLED.001",
             "SUSPECT.MCP.ARGUMENT_OVERRIDE.001",
-            "SUSPECT.MCP.BORROWED_NAME.001",
             "SUSPECT.MCP.CONTAINER_HOST_ACCESS.001",
             "SUSPECT.MCP.ENV_INJECTION.001",
             "SUSPECT.MCP.INPUT_FORWARDED.001",
-            "SUSPECT.MCP.INPUT_MIRROR.001",  # measured 2 Nov (MCP): 2 malware, 1 benign newly blocked if kept: stays
-            "SUSPECT.MCP.LISTENER.001",
             "SUSPECT.MCP.LIVE_TOOL_DESCRIPTION.001",
             "SUSPECT.MCP.LOOKALIKE.001",
             "SUSPECT.MCP.SCHEMA_POISONING.001",  # measured 2 Nov (MCP): 0 malware, 1 benign: stays
-            "SUSPECT.MCP.TIME_BOMB.001",
             "SUSPECT.MCP.TOOLS_CHANGED.001",
             "SUSPECT.MCP.TOOL_POISONING.001",
             "SUSPECT.MCP.UNTRUSTED_REMOTE.001",

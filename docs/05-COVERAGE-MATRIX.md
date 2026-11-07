@@ -798,6 +798,7 @@ rather than a document.
 | `SUSPECT.AGENT.SKILL_INSTALLS_LOOKALIKE.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.SKILL_INSTRUCTIONS.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.SKILL_JAILBREAK_TEXT.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.SKILL_LISTENER.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.SKILL_RUNS_INPUT.001` | medium | `agents` | prompt_injection |
 | `SUSPECT.AGENT.TOOL_PRIORITY_CLAIM.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.UNATTENDED.001` | medium | `composites` | prompt_injection |

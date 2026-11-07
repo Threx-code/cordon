@@ -581,6 +581,18 @@ RULES.update(
                 (ref.MCP_SECURITY,),
             ),
             AgentRules._rule(
+                "SUSPECT.AGENT.SKILL_LISTENER.001",
+                "A skill's script opens its own listening socket and runs commands",
+                Category.SUSPICIOUS,
+                Severity.HIGH,
+                Confidence.MEDIUM,
+                "A script this skill ships binds a raw socket, accepts connections and, in the same "
+                "file, runs commands: a way into the machine that is neither the agent nor the user. "
+                "A skill acts through the agent that loads it; a listener of its own is a back door.",
+                "Remove the listener and find out who connects to it.",
+                (ref.MCP_SECURITY,),
+            ),
+            AgentRules._rule(
                 "SUSPECT.AGENT.SKILL_RUNS_INPUT.001",
                 "A skill's script runs its own input as code or a command",
                 Category.SUSPICIOUS,
