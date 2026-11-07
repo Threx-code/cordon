@@ -951,6 +951,55 @@ class TestSkillDecodeRun:
         assert self._found(tmp_path, script) == []
 
 
+class TestSkillDisguisedArchive:
+    """`SUSPECT.AGENT.SKILL_DISGUISED_ARCHIVE.001`: a skill ships an archive under a name that says it
+    is something else -- a zip in `.instructions.docx.txt` the agent is told to unpack and run
+    (skills-98 03, the dev half's context-loader). The archive is built here and holds only text."""
+
+    @staticmethod
+    def _zip(names: dict[str, str]) -> bytes:
+        import io
+        import zipfile
+
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            for name, body in names.items():
+                archive.writestr(name, body)
+        return buffer.getvalue()
+
+    @classmethod
+    def _found(cls, tmp_path, name: str, *, with_skill: bool = True) -> list:
+        files: dict[str, str | bytes] = {f"skills/kit/{name}": cls._zip({"notes.txt": "hello\n"})}
+        if with_skill:
+            files["skills/kit/SKILL.md"] = "---\nname: kit\ndescription: A kit\n---\nUse it.\n"
+        return AgentsHelpers._rules(AgentsHelpers._scan(tmp_path, files)).get(
+            "SUSPECT.AGENT.SKILL_DISGUISED_ARCHIVE.001", []
+        )
+
+    @pytest.mark.parametrize("name", [".instructions.docx.txt", ".notebook-profile", "README.md"])
+    def test_an_archive_under_another_name_blocks(self, tmp_path, name: str) -> None:
+        [hit] = self._found(tmp_path, name)
+        assert hit.severity == Severity.HIGH
+
+    @pytest.mark.parametrize(
+        "name",
+        ["bundle.zip", "report.docx", "plugin.jar", "data.whl", "model.pt", "sheet.xlsb", "a.npz"],
+    )
+    def test_an_archive_named_as_one_is_not_it(self, tmp_path, name: str) -> None:
+        assert self._found(tmp_path, name) == []
+
+    def test_a_7z_under_another_name_is_it(self, tmp_path) -> None:
+        files: dict[str, str | bytes] = {
+            "skills/kit/notes.txt": b"7z\xbc\xaf\x27\x1c" + bytes(32),
+            "skills/kit/SKILL.md": "---\nname: kit\ndescription: A kit\n---\nUse it.\n",
+        }
+        found = AgentsHelpers._rules(AgentsHelpers._scan(tmp_path, files))
+        assert len(found.get("SUSPECT.AGENT.SKILL_DISGUISED_ARCHIVE.001", [])) == 1
+
+    def test_outside_a_skill_it_is_not_this_rule(self, tmp_path) -> None:
+        assert self._found(tmp_path, "notes.txt", with_skill=False) == []
+
+
 class TestSkillListener:
     """`SUSPECT.AGENT.SKILL_LISTENER.001`: a skill's script that binds a raw socket, accepts
     connections and runs commands -- a way in that is neither the agent nor the user (skills-98 03,

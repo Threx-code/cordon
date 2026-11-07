@@ -77,6 +77,9 @@ class TestTheAdmittedRulesAreKept:
         # Declared HIGH (cordon-47, 7 Nov), kept from the start: 1 dev-half wild skill (backdoor_test), and
         # 8 of 154,808 public skills carry the shape (scratchpad skill-listener.py).
         "SUSPECT.AGENT.SKILL_LISTENER.001",
+        # Declared HIGH (cordon-47, 7 Nov), kept from the start: 2 dev-half malicious skills (context-loader,
+        # an injected .notebook-profile), 0 dev benign; 1 of 154,808 public skills, the same proof of concept.
+        "SUSPECT.AGENT.SKILL_DISGUISED_ARCHIVE.001",
     )
 
     def test_each_is_in_keep(self) -> None:
