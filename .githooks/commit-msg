@@ -1,0 +1,4 @@
+#!/bin/sh
+# Installed by `make hooks` (git config core.hooksPath .githooks). Refuses a commit message carrying a
+# co-author trailer or a tool-attribution line (scripts/checks/attribution.py).
+exec python3 "$(git rev-parse --show-toplevel)/scripts/checks/attribution.py" --message "$1"
