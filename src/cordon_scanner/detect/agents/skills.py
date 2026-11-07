@@ -113,19 +113,26 @@ class SkillScripts:
 
     #: What an archive's first bytes are: zip (and every zip-based container), 7z, rar.
     ARCHIVE_MAGIC: ClassVar[tuple[bytes, ...]] = (b"PK\x03\x04", b"7z\xbc\xaf", b"Rar!")
-    #: Names a zip-based container honestly goes by.
-    ARCHIVE_NAME: ClassVar[re.Pattern[str]] = re.compile(
-        r"(?i)\.(?:zip|jar|war|ear|whl|egg|apk|aab|aar|xpi|crx|vsix|nupkg|ipa|epub|kmz|mcpack|skill"
-        r"|docx|docm|dotx|xlsx|xlsm|xltx|pptx|pptm|potx|odt|ods|odp|odg|7z|rar)$"
-    )
+    #: Names an archive or a zip-based container honestly goes by, beyond the document and model
+    #: formats the readers already name (`OFFICE_SUFFIXES`, `PICKLE_SUFFIXES`).
+    CONTAINER_SUFFIXES: ClassVar[tuple[str, ...]] = (
+        ".zip", ".jar", ".war", ".ear", ".whl", ".egg", ".apk", ".aab", ".aar", ".xpi", ".crx",
+        ".vsix", ".nupkg", ".ipa", ".epub", ".kmz", ".mcpack", ".skill", ".7z", ".rar",
+        ".odt", ".ods", ".odp", ".odg", ".ppsx", ".potx", ".npz", ".keras", ".pages", ".numbers",
+        ".key", ".cbz", ".cbr", ".sb3", ".xps", ".msix", ".appx", ".3mf", ".usdz",
+    )  # fmt: skip
 
     @classmethod
     def disguised_archive(cls, path: str, raw: bytes) -> bool:
         """An archive under a name that says it is something else: a zip in `.instructions.docx.txt`
         or a dotfile. A skill's files are read by the agent as what they are named; one that is
         really an archive is there to be unpacked by an instruction, out of every reader's sight."""
-        name = path.replace("\\", "/").rpartition("/")[2]
-        return raw.startswith(cls.ARCHIVE_MAGIC) and not cls.ARCHIVE_NAME.search(name)
+        from cordon_scanner.analysis.formats.documents import OFFICE_SUFFIXES
+        from cordon_scanner.analysis.formats.pickles import PICKLE_SUFFIXES
+
+        name = path.replace("\\", "/").rpartition("/")[2].lower()
+        honest = (*cls.CONTAINER_SUFFIXES, *OFFICE_SUFFIXES, *PICKLE_SUFFIXES)
+        return raw.startswith(cls.ARCHIVE_MAGIC) and not name.endswith(honest)
 
     @staticmethod
     def beside_skill(path: str, ctx: ScanContext) -> bool:
