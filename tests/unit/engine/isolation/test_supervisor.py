@@ -236,6 +236,23 @@ class TestTheSupervisor:
             )
         assert time.monotonic() - began < 2 * 2.0 + 20
 
+    def test_a_worker_that_never_starts_says_where_it_hung(self, monkeypatch) -> None:
+        """A run where no worker could start once ended in "exit -9" and nothing else; the error
+        carries the stuck worker's threads."""
+        monkeypatch.setattr(Worker, "START_BACKSTOP", 4.0)
+        with pytest.raises(IsolationUnavailable) as raised:
+            Harness.supervisor(Bounds(), workers=1, setup="setup_that_hangs").run(
+                [Unit(0, ("echo", 1), 1)]
+            )
+        assert "setup_that_hangs" in str(raised.value)
+
+    def test_a_worker_that_starts_leaves_no_stack_file(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+        outcome = Harness.supervisor(Bounds(), workers=1).run([Unit(0, ("echo", 1), 1)])
+        assert outcome.results
+        assert not list(tmp_path.rglob("*.stack"))
+        assert not list(tmp_path.glob("cordon-start-*"))
+
     def test_no_worker_that_can_start_is_said_not_run_here(self) -> None:
         """One that ended by itself is not said to have met the start backstop: once the backstop
         had killed a hung worker, the two read the same ("died, exit -9", macOS CI, 2026-11-14)."""

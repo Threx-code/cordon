@@ -19,12 +19,15 @@ passes. Results are keyed by the unit's index, so the caller restores input orde
 from __future__ import annotations
 
 import contextlib
+import faulthandler
 import importlib
 import math
 import multiprocessing
 import multiprocessing.connection
 import os
+import shutil
 import signal
+import tempfile
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -140,8 +143,13 @@ class Worker:
     #: timeout (macOS CI: a one-file scan spent its whole 900 s budget, 5 Nov).
     START_BACKSTOP: ClassVar[float] = 120.0
 
+    #: Seconds before the backstop at which a worker not yet ready writes its threads' stacks
+    #: (`StartStacks`), so the error that follows says where it hung.
+    STACKS_BEFORE: ClassVar[float] = 5.0
+
     def __init__(self, context: BaseContext, setup: tuple[str, tuple[Any, ...]], work: str,
-                 bounds: Bounds, template: Template | None = None) -> None:  # fmt: skip
+                 bounds: Bounds, template: Template | None = None,
+                 stacks: str | None = None) -> None:  # fmt: skip
         self.process: Any
         if template is not None:
             sock, pid = template.fork_worker()
@@ -149,13 +157,15 @@ class Worker:
             # forked before they existed: its first message. A worker already gone is seen as one
             # that ended before it was ready, not as an error here.
             with contextlib.suppress(OSError):
-                self.conn.send((setup, work, bounds))
+                self.conn.send((setup, work, bounds, self.stacks_at(stacks)))
             self.process = TemplateProcess(template, pid, self.conn)
         else:
             ours, theirs = context.Pipe()
             self.conn = ours
             self.process = context.Process(  # type: ignore[attr-defined]  # spawn and forkserver have it
-                target=WorkerMain.run, args=(theirs, setup, work, bounds), daemon=True
+                target=WorkerMain.run,
+                args=(theirs, setup, work, bounds, self.stacks_at(stacks)),
+                daemon=True,
             )
             self.process.start()
             theirs.close()
@@ -169,6 +179,26 @@ class Worker:
         #: what `past_cpu_budget` compares a death with.
         self.cpu_given = 0.0
         self.user_at_give: int | None = None
+
+    @staticmethod
+    def stacks_at(directory: str | None) -> tuple[str, float] | None:
+        """Where and when a worker not ready writes its stacks: before the backstop, by
+        `STACKS_BEFORE` or a quarter of it, whichever is less. The time is a wall-clock deadline
+        counted from now, when the supervisor starts the worker, so the seconds the worker takes
+        to start and import before it arms the dump do not push the dump past the backstop."""
+        if directory is None:
+            return None
+        backstop = Worker.START_BACKSTOP
+        return directory, time.time() + backstop - min(Worker.STACKS_BEFORE, backstop / 4)
+
+    def stacks(self, directory: str | None) -> str:
+        """The threads' stacks this worker wrote while not ready, or ""."""
+        if directory is None:
+            return ""
+        path = Path(directory) / f"{self.process.pid}.stack"
+        with contextlib.suppress(OSError):
+            return path.read_text(encoding="utf-8", errors="replace")[-4000:].strip()
+        return ""
 
     def give(self, unit: Unit, bounds: Bounds) -> None:
         self.unit, self.given_at = unit, time.monotonic()
@@ -257,8 +287,8 @@ class WorkerMain:
     def from_template(sock: Any) -> None:
         """A worker the template forked: its setup, work and bounds arrive first on its socket."""
         conn = multiprocessing.connection.Connection(sock.detach())
-        setup, work, bounds = conn.recv()
-        WorkerMain.run(conn, setup, work, bounds)
+        setup, work, bounds, stacks = conn.recv()
+        WorkerMain.run(conn, setup, work, bounds, stacks)
 
     @staticmethod
     def resolve(name: str) -> Callable[..., Any]:
@@ -270,9 +300,14 @@ class WorkerMain:
 
     @staticmethod
     def run(
-        conn: Connection, setup: tuple[str, tuple[Any, ...]], work: str, bounds: Bounds
+        conn: Connection,
+        setup: tuple[str, tuple[Any, ...]],
+        work: str,
+        bounds: Bounds,
+        stacks: tuple[str, float] | None = None,
     ) -> None:
         os.environ[WorkerMain.INSIDE] = "1"
+        armed = StartStacks.arm(stacks)
         # A spawned worker is daemonic, so its parent ends it at exit, and a daemonic process may
         # not start processes: a detector's nested scan (an MCP server's installed copy,
         # `ScanContext.nested_scan`) starts its own workers. The worker clears the flag on itself:
@@ -283,6 +318,7 @@ class WorkerMain:
         isolation = Limits.apply(bounds)
         WorkerMain.resolve(setup[0])(*setup[1])
         run = WorkerMain.resolve(work)
+        StartStacks.disarm(armed)
         conn.send(("ready", isolation))
         while True:
             message = conn.recv()
@@ -306,6 +342,41 @@ class WorkerMain:
             # the CPU the unit before used.
             Limits.cpu_release()
             conn.send(("done", index, result))
+
+
+class StartStacks:
+    """A worker's threads written to `<directory>/<pid>.stack` if it is still not ready shortly
+    before the start backstop kills it: without them, a run where no worker could start ends in
+    "exit -9" and nothing else. Python's own `faulthandler` writes them from
+    its watchdog thread, so a worker stuck in C code or a lock still says where. The file is the
+    worker's own, created exclusively in the supervisor's private directory; disarmed and removed
+    once the worker is ready."""
+
+    @staticmethod
+    def arm(stacks: tuple[str, float] | None) -> tuple[Any, Path] | None:
+        if stacks is None:
+            return None
+        directory, deadline = stacks
+        path = Path(directory) / f"{os.getpid()}.stack"
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            handle = os.fdopen(os.open(path, flags, 0o600), "w", encoding="utf-8")
+        except OSError:
+            return None  # no stacks then, and the worker starts as before
+        faulthandler.dump_traceback_later(
+            max(deadline - time.time(), 0.1), repeat=False, file=handle
+        )
+        return handle, path
+
+    @staticmethod
+    def disarm(armed: tuple[Any, Path] | None) -> None:
+        if armed is None:
+            return
+        faulthandler.cancel_dump_traceback_later()
+        handle, path = armed
+        handle.close()
+        with contextlib.suppress(OSError):
+            path.unlink()
 
 
 class Limits:
@@ -443,25 +514,35 @@ class Supervisor:
         self.template: Template | None = None
         self.outcome = Outcome()
         self.retry: list[Unit] = []
+        #: This run's private directory for `StartStacks`, removed when the run ends.
+        self._stacks: str | None = None
 
     def run(self, units: Iterable[Unit]) -> Outcome:
         queue = deque(units)
         if not queue:
             return self.outcome
-        pool = [self._start() for _ in range(min(self.workers, len(queue)))]
-        self._drain(pool, queue, retried=False)
-        # Each unit that died in company, once more, alone: nothing else in flight beside it.
-        for unit in self.retry:
-            self._drain([self._start()], deque([unit]), retried=True)
+        with contextlib.suppress(OSError):
+            self._stacks = tempfile.mkdtemp(prefix="cordon-start-")
+        try:
+            pool = [self._start() for _ in range(min(self.workers, len(queue)))]
+            self._drain(pool, queue, retried=False)
+            # Each unit that died in company, once more, alone: nothing else in flight beside it.
+            for unit in self.retry:
+                self._drain([self._start()], deque([unit]), retried=True)
+        finally:
+            if self._stacks is not None:
+                shutil.rmtree(self._stacks, ignore_errors=True)
+                self._stacks = None
         return self.outcome
 
     def _start(self) -> Worker:
-        return Worker(self.context, self.setup, self.work, self.bounds, self.template)
+        return Worker(self.context, self.setup, self.work, self.bounds, self.template, self._stacks)
 
     def _drain(self, pool: list[Worker], queue: deque[Unit], *, retried: bool) -> None:
         """Every unit of `queue` run on `pool`, a dead worker replaced while units remain."""
         started_any = False
         unready_ends = 0
+        stacks_seen = ""
         try:
             while pool and (queue or any(w.unit is not None for w in pool)):
                 if self.deadline is not None and self.clock() >= self.deadline:
@@ -499,8 +580,15 @@ class Supervisor:
                         # It ended before it was ready: tried once more in a fresh worker; when no
                         # worker has started at all and that one ends too, nothing can run here.
                         unready_ends += 1
+                        stacks = worker.stacks(self._stacks) or stacks_seen
+                        stacks_seen = stacks
                         if not started_any and unready_ends >= 2:
-                            raise IsolationUnavailable(Worker.never_ready(worker, ended=alive))
+                            where = (
+                                f"; its threads before the backstop:\n{stacks}" if stacks else ""
+                            )
+                            raise IsolationUnavailable(
+                                Worker.never_ready(worker, ended=alive) + where
+                            )
                         pool.append(self._start())
                     elif queue:
                         pool.append(self._start())
