@@ -100,6 +100,36 @@ class Description:
     ENTRY: ClassVar[re.Pattern[str]] = re.compile(
         r"^([A-Za-z][A-Za-z0-9._]*)\s*(?:\(\s*([^)]*?)\s*\))?$"
     )
+    DECLARES: ClassVar[re.Pattern[str]] = re.compile(r"^Package\s*:", re.MULTILINE)
+    #: A field of R's DESCRIPTION format at a line start: what survives when the `Package:` line is
+    #: the part that was damaged. None of the 16 prose DESCRIPTIONs the census found has one.
+    R_FIELD: ClassVar[re.Pattern[str]] = re.compile(
+        r"^(?:Depends|Imports|LinkingTo|Suggests|Enhances|Remotes|Authors@R|Title|Version|License"
+        r"|Description|Maintainer|Author|Encoding|LazyData|RoxygenNote)[ \t]*:",
+        re.MULTILINE,
+    )
+    #: Files only an R package or R project keeps beside its DESCRIPTION.
+    R_SIBLINGS: ClassVar[tuple[str, ...]] = ("NAMESPACE", "renv.lock", ".Rbuildignore")
+
+    @staticmethod
+    def in_r_package(content: FileContent, files: Collection[str]) -> bool:
+        """Whether this DESCRIPTION is R's: it declares `Package:` or one of R's dependency fields
+        (however damaged the rest), or an R package's NAMESPACE, R/ directory, `.Rbuildignore`, an
+        renv lockfile or an `.Rproj` sits beside it. A damaged R DESCRIPTION is then reported, never
+        dropped; prose that merely shares the name is not R's."""
+        if Description.DECLARES.search(content.text) or Description.R_FIELD.search(content.text):
+            return True
+        directory = content.path.rpartition("/")[0]
+        prefix = f"{directory}/" if directory else ""
+        return any(f"{prefix}{name}" in files for name in Description.R_SIBLINGS) or any(
+            path.startswith(f"{prefix}R/")
+            or (
+                path.startswith(prefix)
+                and "/" not in path[len(prefix) :]
+                and path.endswith(".Rproj")
+            )
+            for path in files
+        )
 
     @staticmethod
     def remotes(value: str) -> dict[str, str]:
@@ -509,7 +539,27 @@ class CranEcosystem(BaseEcosystem):
         return Description.parse(content, self.id)
 
     def parse_in_tree(self, content: FileContent, files: Mapping[str, Any]) -> Manifest:
+        if not self.claims_manifest(content, files):
+            # A Python sdist's prose DESCRIPTION, read as a damaged R manifest, failed 17 PyPI
+            # packages closed (census 2026-11-07). R installs nothing from a DESCRIPTION without
+            # `Package:`, so outside an R package's tree it describes no package.
+            return Manifest(
+                path=content.path,
+                ecosystem=self.id,
+                sources=(
+                    "a file named DESCRIPTION outside an R package (no `Package:` field, no "
+                    "NAMESPACE or R/ beside it), which R installs nothing from",
+                ),
+            )
         return self.hooks_from_tree(self.parse_manifest(content), files)
+
+    def claims_manifest(self, content: FileContent, paths: Collection[str]) -> bool:
+        """Whether this file is R's manifest, in view of the tree's paths: a DESCRIPTION only in an
+        R package (`Description.in_r_package`). With no paths given, claimed as before, so an R
+        package's damaged DESCRIPTION is never dropped for want of a tree."""
+        if content.basename != "DESCRIPTION" or not paths:
+            return True
+        return Description.in_r_package(content, paths)
 
     def hooks_from_tree(self, manifest: Manifest, paths: Collection[str]) -> Manifest:
         """A source package's `configure` and `cleanup` are files beside DESCRIPTION."""

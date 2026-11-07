@@ -406,3 +406,100 @@ class TestAHyphenatedHexPackage:
             f.location.package for f in findings if f.rule_id == "VULNERABLE.DEPENDENCY.KNOWN.001"
         }
         assert any("ecdsa-elixir" in (p or "") for p in named), named
+
+
+class TestADescriptionOutsideAnRPackage:
+    """A file named DESCRIPTION is R's only in an R package: one declaring `Package:`, or beside an
+    R package's NAMESPACE or R/ directory. 17 PyPI sdists failed closed on a prose DESCRIPTION read
+    as a damaged CRAN manifest (census 2026-11-07, 05 §C2)."""
+
+    PROSE = "LinOTP is an open source one time password solution.\n\nIt supports tokens.\n"
+
+    @staticmethod
+    def tree(*paths: str) -> dict[str, FileContent]:
+        return {p: NewEcosystemsHelpers.fc(p, "") for p in paths}
+
+    def test_a_prose_description_in_a_python_sdist_is_not_an_r_manifest(self) -> None:
+        content = NewEcosystemsHelpers.fc("pkg-1.0/DESCRIPTION", self.PROSE)
+        files = {**self.tree("pkg-1.0/setup.py", "pkg-1.0/pkg/__init__.py"), content.path: content}
+        manifest = CranEcosystem().parse_in_tree(content, files)
+        assert manifest.parse_error is None
+        assert manifest.dependencies == ()
+        assert manifest.sources  # said, not dropped quietly
+
+    def test_beside_a_namespace_a_damaged_description_still_fails_closed(self) -> None:
+        content = NewEcosystemsHelpers.fc("pkg/DESCRIPTION", self.PROSE)
+        files = {**self.tree("pkg/NAMESPACE", "pkg/R/zzz.R"), content.path: content}
+        assert CranEcosystem().parse_in_tree(content, files).parse_error is not None
+
+    @pytest.mark.parametrize(
+        "text", ["\x00\xff{[<n: ok\nImports:\n    curl (>= 5\n", "garbage\nSuggests: testthat\n"]
+    )
+    def test_a_damaged_description_keeping_an_r_field_still_fails_closed(self, text: str) -> None:
+        """The conformance damage cuts the `Package:` line off; R's dependency fields remain."""
+        content = NewEcosystemsHelpers.fc("DESCRIPTION", text)
+        files = {content.path: content}
+        assert CranEcosystem().claims_manifest(content, files)
+
+    @pytest.mark.parametrize("sibling", ["renv.lock", ".Rbuildignore", "analysis.Rproj"])
+    def test_beside_an_r_project_file_a_damaged_description_still_fails_closed(
+        self, sibling: str
+    ) -> None:
+        content = NewEcosystemsHelpers.fc("analysis/DESCRIPTION", self.PROSE)
+        files = {**self.tree(f"analysis/{sibling}"), content.path: content}
+        assert CranEcosystem().parse_in_tree(content, files).parse_error is not None
+
+    def test_a_description_declaring_a_package_is_r_wherever_it_is(self) -> None:
+        text = "Package: demo\nVersion: 1.0\nLicense: MIT\nImports: curl\n  ,,(\n"
+        content = NewEcosystemsHelpers.fc("pkg-1.0/DESCRIPTION", text + "not a field\n")
+        files = {**self.tree("pkg-1.0/setup.py"), content.path: content}
+        assert CranEcosystem().parse_in_tree(content, files).parse_error is not None
+
+    def test_a_python_sdist_with_a_prose_description_scans_complete(self, tmp_path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.foundation.config.settings import Config
+
+        root = tmp_path / "pkg-1.0"
+        (root / "pkg").mkdir(parents=True)
+        (root / "setup.py").write_text(
+            "from setuptools import setup\nsetup(name='pkg')\n", encoding="utf-8"
+        )
+        (root / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+        (root / "DESCRIPTION").write_text(self.PROSE, encoding="utf-8")
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
+        assert "OPERATIONAL.MANIFEST.UNPARSED" not in {f.rule_id for f in result.findings}
+        assert result.content_complete
+
+
+class TestAStackYamlOutsideAHaskellProject:
+    """A stack.yaml is Haskell Stack's only when it names a snapshot (`resolver:`/`snapshot:`, which
+    Stack requires) or sits beside a .cabal, package.yaml or stack.yaml.lock: stackpack 0.1.1's tool
+    registry named stack.yaml failed a PyPI sdist closed (census 2026-11-07, 05 section C2)."""
+
+    REGISTRY = "tools:\n  - name: ruff\n    version: 0.6.0\n  - name: mypy\n"
+
+    @staticmethod
+    def tree(*paths: str) -> dict[str, FileContent]:
+        return {p: NewEcosystemsHelpers.fc(p, "") for p in paths}
+
+    def test_a_tool_registry_named_stack_yaml_is_not_stacks(self) -> None:
+        from cordon_scanner.ecosystems.packages.hackage import HackageEcosystem
+
+        content = NewEcosystemsHelpers.fc("pkg-1.0/stack.yaml", self.REGISTRY)
+        files = {**self.tree("pkg-1.0/setup.py"), content.path: content}
+        manifest = HackageEcosystem().parse_in_tree(content, files)
+        assert manifest.parse_error is None and manifest.sources
+
+    def test_beside_a_cabal_file_a_damaged_one_still_fails_closed(self) -> None:
+        from cordon_scanner.ecosystems.packages.hackage import HackageEcosystem
+
+        content = NewEcosystemsHelpers.fc("pkg/stack.yaml", self.REGISTRY)
+        files = {**self.tree("pkg/pkg.cabal"), content.path: content}
+        assert HackageEcosystem().parse_in_tree(content, files).parse_error is not None
+
+    def test_one_naming_a_snapshot_is_stacks_wherever_it_is(self) -> None:
+        from cordon_scanner.ecosystems.packages.hackage import HackageEcosystem
+
+        content = NewEcosystemsHelpers.fc("pkg-1.0/stack.yaml", "resolver: [\n")
+        files = {**self.tree("pkg-1.0/setup.py"), content.path: content}
+        assert HackageEcosystem().parse_in_tree(content, files).parse_error is not None
