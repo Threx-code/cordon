@@ -737,6 +737,7 @@
   "test_area_fit.py": "bench",
   "test_verdict_train_fold.py": "bench",
   "test_bench_content.py": "bench",
+  "test_content_gate.py": "bench",
   "test_bench_imports.py": "bench",
   "test_bench_levels.py": "bench",
   "test_bench_longtail_levels.py": "bench",
