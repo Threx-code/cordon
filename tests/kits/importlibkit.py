@@ -9,6 +9,7 @@ tables only: no code section and nothing that runs.
 from __future__ import annotations
 
 import struct
+from typing import ClassVar
 
 I386, AMD64 = 0x14C, 0x8664
 DEBUG, IDATA, IDATA6 = 0x42100040, 0xC0300040, 0xC0200040
@@ -65,10 +66,42 @@ class ImportLibKit:
         body = header + section_table + raw + relocs + entries
         return body + struct.pack("<I", 4 + len(strings)) + strings + tail
 
+    CV_MACHINE: ClassVar[dict[int, int]] = {I386: 0x03, AMD64: 0xD0, 0xAA64: 0xF6}
+    """The CodeView machine the linker writes for each COFF machine (measured, 141 sections)."""
+
     @staticmethod
-    def debug() -> bytes:
-        """A `.debug$S` as the linker writes one: CodeView signature 2, then a short record."""
-        return struct.pack("<I", 2) + b"\x00" * 56
+    def record(kind: int, body: bytes) -> bytes:
+        """A CodeView C11 symbol record: its length (kind and body), its kind, its body."""
+        return struct.pack("<HH", 2 + len(body), kind) + body
+
+    @staticmethod
+    def objname(dll: str | bytes) -> bytes:
+        """S_OBJNAME_ST (0x0009): signature 0, then the name, length-prefixed."""
+        name = dll.encode() if isinstance(dll, str) else dll
+        return ImportLibKit.record(0x0009, struct.pack("<IB", 0, len(name)) + name)
+
+    @staticmethod
+    def compiler(
+        machine: int = I386,
+        *,
+        flags: int = 7,
+        banner: bytes = b"Microsoft (R) LINK",
+        cv: int | None = None,
+    ) -> bytes:
+        """S_COMPILE2_ST (0x1013): flags, CodeView machine, six version shorts, the banner
+        length-prefixed."""
+        cv = ImportLibKit.CV_MACHINE[machine] if cv is None else cv
+        body = struct.pack("<IH", flags, cv) + b"\x00" * 12 + bytes([len(banner)]) + banner
+        return ImportLibKit.record(0x1013, body)
+
+    @staticmethod
+    def debug(dll: str = "jc.dll", machine: int = I386, *, records: bytes | None = None) -> bytes:
+        """A `.debug$S` as the linker writes one into a descriptor object: CodeView signature 2, then
+        exactly an object-name record (the DLL's name) and a compiler record, nothing after them
+        (measured on 141 sections in 9 benign PyPI units, 48 to 95 bytes)."""
+        if records is None:
+            records = ImportLibKit.objname(dll) + ImportLibKit.compiler(machine)
+        return struct.pack("<I", 2) + records
 
     @staticmethod
     def descriptors(dll: str, machine: int = I386) -> list[bytes]:
@@ -82,7 +115,7 @@ class ImportLibKit:
             ImportLibKit.coff(
                 machine,
                 [
-                    (".debug$S", ImportLibKit.debug(), 0, DEBUG),
+                    (".debug$S", ImportLibKit.debug(dll, machine), 0, DEBUG),
                     (".idata$2", b"\x00" * 20, 3, IDATA),
                     (".idata$6", name, 0, IDATA6),
                 ],
@@ -100,7 +133,7 @@ class ImportLibKit:
             ImportLibKit.coff(
                 machine,
                 [
-                    (".debug$S", ImportLibKit.debug(), 0, DEBUG),
+                    (".debug$S", ImportLibKit.debug(dll, machine), 0, DEBUG),
                     (".idata$3", b"\x00" * 20, 0, IDATA),
                 ],
                 [("@comp.id", -1, 3), ("__NULL_IMPORT_DESCRIPTOR", 2, 2)],
@@ -108,7 +141,7 @@ class ImportLibKit:
             ImportLibKit.coff(
                 machine,
                 [
-                    (".debug$S", ImportLibKit.debug(), 0, DEBUG),
+                    (".debug$S", ImportLibKit.debug(dll, machine), 0, DEBUG),
                     (".idata$5", b"\x00" * word, 0, flags),
                     (".idata$4", b"\x00" * word, 0, flags),
                 ],
@@ -130,17 +163,23 @@ class ImportLibKit:
 
     @staticmethod
     def archive(
-        members: list[tuple[bytes, bytes]], *, linkers: int = 2, tail: bytes = b""
+        members: list[tuple[bytes, bytes]],
+        *,
+        linkers: int = 2,
+        tail: bytes = b"",
+        microsoft_names: bool = False,
     ) -> bytes:
         """An ar archive: the linker members (one symbol per member, pointing at it), then
-        `members` as (ar name, body)."""
+        `members` as (ar name, body). A long name goes in the `//` member as GNU writes it
+        (`name/` then a newline) or, with `microsoft_names`, as lib.exe does (`name` then a NUL)."""
         table = b""
         named = []
         for name, body in members:
-            if len(name) > 16:  # a GNU long name, `/offset` into the `//` member
-                at = table.find(name + b"\n")
+            if len(name) > 16:  # a long name, `/offset` into the `//` member
+                entry = name[:-1] + b"\x00" if microsoft_names else name + b"\n"
+                at = table.find(entry)
                 if at < 0:
-                    at, table = len(table), table + name + b"\n"
+                    at, table = len(table), table + entry
                 name = b"/%d" % at
             named.append((name, body))
         members = named
@@ -174,12 +213,14 @@ class ImportLibKit:
         dll: str = "jc.dll",
         functions: tuple[str, ...] = ("jc_open", "jc_close"),
         machine: int = I386,
+        *,
+        microsoft_names: bool = False,
     ) -> bytes:
         """A whole import library for `dll`, as the linker lays one out."""
         name = dll.encode() + b"/"
         members = [(name, body) for body in ImportLibKit.descriptors(dll, machine)]
         members += [(name, ImportLibKit.stub(f, dll, machine)) for f in functions]
-        return ImportLibKit.archive(members)
+        return ImportLibKit.archive(members, microsoft_names=microsoft_names)
 
 
 __all__ = ["AMD64", "I386", "TEXT", "ImportLibKit"]
