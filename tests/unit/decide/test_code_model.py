@@ -21,9 +21,11 @@ from cordon_scanner.analysis.javascript.code_model import (
     CodeModelWeights,
     FileScoreRecord,
 )
-from cordon_scanner.decide.code_model import CodePackageStep
+from cordon_scanner.decide.code_model import CodeModelPass, CodePackageStep
+from cordon_scanner.detect.base import FileUnit
 from cordon_scanner.detect.code.code_model_scores import MODEL_RULE, UNAVAILABLE, CodeModelScores
 from cordon_scanner.foundation.config.settings import Config
+from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.report.base import ReportOptions
 from cordon_scanner.report.sarif import SarifReporter
 from support import requires_forked_workers
@@ -144,6 +146,7 @@ class TestWeights:
         )
         assert not {MODEL_RULE, UNAVAILABLE} & set(CodeModelKit.rules(result))
 
+    @requires_forked_workers  # a spawned worker builds its own detector, not this test's
     @pytest.mark.parametrize("damage", ["not gzip", "other features", "other format"])
     def test_damaged_or_mismatched_weights_give_one_note(self, tmp_path, damage: str) -> None:
         if damage == "not gzip":
@@ -156,6 +159,34 @@ class TestWeights:
         result = CodeModelKit.scanner(path).scan(CodeModelKit.package(tmp_path / "p"))
         assert CodeModelKit.rules(result).count(UNAVAILABLE) == 1
         assert MODEL_RULE not in CodeModelKit.rules(result)
+
+    def test_a_reached_file_with_damaged_weights_gets_the_note(self, tmp_path) -> None:
+        """The worker's side, on every platform: the file that needed the model says it was not
+        scored."""
+        path = tmp_path / "w.json.gz"
+        path.write_bytes(b"not a model")
+        detector = CodeModelScores(weights_path=path)
+        unit = FileUnit(
+            content=FileContent.from_bytes("p/index.js", FIXTURE.encode()), language="javascript"
+        )
+        ctx = SimpleNamespace(
+            install_hook_paths=frozenset(),
+            import_entry_paths=frozenset({"p/index.js"}),
+            library_closure_paths=frozenset(),
+        )
+        assert [f.rule_id for f in detector.inspect(unit, ctx)] == [UNAVAILABLE]
+
+    def test_the_parent_keeps_one_note_a_scan(self, tmp_path) -> None:
+        detector = CodeModelScores(weights_path=tmp_path / "absent.json.gz")
+        notes = [
+            detector.operational(path=f"p/{name}.js", rule_id=UNAVAILABLE, message="damaged")
+            for name in ("a", "b", "c")
+        ]
+        engine = SimpleNamespace(detectors=(detector,), config=Config.default())
+        kept, extra = CodeModelPass.decide(engine, list(notes), SimpleNamespace())
+        assert kept == []
+        assert [(f.rule_id, f.location.path) for f in extra] == [(UNAVAILABLE, ".")]
+        assert detector.wanted is True
 
     def test_building_the_detector_reads_nothing(self, tmp_path) -> None:
         path = tmp_path / "w.json.gz"
