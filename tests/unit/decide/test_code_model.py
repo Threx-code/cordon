@@ -21,9 +21,11 @@ from cordon_scanner.analysis.javascript.code_model import (
     CodeModelWeights,
     FileScoreRecord,
 )
-from cordon_scanner.decide.code_model import CodePackageStep
+from cordon_scanner.decide.code_model import CodeModelPass, CodePackageStep
+from cordon_scanner.detect.base import FileUnit
 from cordon_scanner.detect.code.code_model_scores import MODEL_RULE, UNAVAILABLE, CodeModelScores
 from cordon_scanner.foundation.config.settings import Config
+from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.report.base import ReportOptions
 from cordon_scanner.report.sarif import SarifReporter
 from support import requires_forked_workers
@@ -144,6 +146,7 @@ class TestWeights:
         )
         assert not {MODEL_RULE, UNAVAILABLE} & set(CodeModelKit.rules(result))
 
+    @requires_forked_workers  # a spawned worker builds its own detector, not this test's
     @pytest.mark.parametrize("damage", ["not gzip", "other features", "other format"])
     def test_damaged_or_mismatched_weights_give_one_note(self, tmp_path, damage: str) -> None:
         if damage == "not gzip":
@@ -156,6 +159,64 @@ class TestWeights:
         result = CodeModelKit.scanner(path).scan(CodeModelKit.package(tmp_path / "p"))
         assert CodeModelKit.rules(result).count(UNAVAILABLE) == 1
         assert MODEL_RULE not in CodeModelKit.rules(result)
+
+    def test_a_reached_file_with_damaged_weights_gets_the_note(self, tmp_path) -> None:
+        """The worker's side, on every platform: the file that needed the model says it was not
+        scored."""
+        path = tmp_path / "w.json.gz"
+        path.write_bytes(b"not a model")
+        detector = CodeModelScores(weights_path=path)
+        unit = FileUnit(
+            content=FileContent.from_bytes("p/index.js", FIXTURE.encode()), language="javascript"
+        )
+        ctx = SimpleNamespace(
+            install_hook_paths=frozenset(),
+            import_entry_paths=frozenset({"p/index.js"}),
+            library_closure_paths=frozenset(),
+        )
+        assert [f.rule_id for f in detector.inspect(unit, ctx)] == [UNAVAILABLE]
+
+    def test_the_parent_keeps_one_note_a_scan(self, tmp_path) -> None:
+        detector = CodeModelScores(weights_path=tmp_path / "absent.json.gz")
+        notes = [
+            detector.operational(path=f"p/{name}.js", rule_id=UNAVAILABLE, message="damaged")
+            for name in ("a", "b", "c")
+        ]
+        engine = SimpleNamespace(detectors=(detector,), config=Config.default())
+        kept, extra = CodeModelPass.decide(engine, list(notes), SimpleNamespace())
+        assert kept == []
+        assert [(f.rule_id, f.location.path) for f in extra] == [(UNAVAILABLE, ".")]
+        assert detector.wanted is True
+
+    def test_building_the_detector_reads_nothing(self, tmp_path) -> None:
+        path = tmp_path / "w.json.gz"
+        path.write_bytes(b"not a model")
+        detector = CodeModelScores(weights_path=path)
+        assert detector.unavailable is None
+
+    def test_a_scan_that_reaches_no_javascript_never_reads_the_weights(self, tmp_path) -> None:
+        # Release item 17: 0.1 s of every scan went on weights a Python package never uses.
+        path = tmp_path / "w.json.gz"
+        path.write_bytes(b"not a model")
+        root = tmp_path / "py"
+        root.mkdir()
+        (root / "setup.py").write_text(
+            "from setuptools import setup\nsetup(name='x')\n", encoding="utf-8"
+        )
+        result = CodeModelKit.scanner(path).scan(root)
+        assert UNAVAILABLE not in CodeModelKit.rules(result)
+
+    @requires_forked_workers
+    def test_a_long_running_scanner_reads_them_once_before_its_next_scan(self, tmp_path) -> None:
+        scanner = CodeModelKit.scanner(CodeModelKit.weights(tmp_path))
+        detector = next(d for d in scanner._engine.detectors if d.id == "code-model")
+        target = CodeModelKit.package(tmp_path / "p")
+        first = scanner.scan(target)
+        assert detector.loaded is False  # the workers read them; the one-scan CLI pays no more
+        second = scanner.scan(target)
+        assert detector.loaded is True  # held before the template, so every later worker has them
+        assert MODEL_RULE in CodeModelKit.rules(first)
+        assert MODEL_RULE in CodeModelKit.rules(second)
 
     @requires_forked_workers
     def test_one_scan_with_weights_then_one_without_shares_nothing(self, tmp_path) -> None:

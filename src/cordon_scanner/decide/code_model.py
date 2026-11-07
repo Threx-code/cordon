@@ -71,6 +71,7 @@ class CodePackageStep:
 
 class CodeModelPass:
     DETECTOR = "code-model"
+    UNAVAILABLE = "OPERATIONAL.CODE_MODEL.UNAVAILABLE"
 
     @staticmethod
     def detector(engine: Any) -> Any | None:
@@ -86,6 +87,11 @@ class CodeModelPass:
         detector = CodeModelPass.detector(engine)
         if detector is None:
             return CodeModelPass.without_records(findings), ()
+        # The workers' notes that the weights could not be read, one per reached file: one a scan.
+        missing = [f for f in findings if f.rule_id == CodeModelPass.UNAVAILABLE]
+        findings = [f for f in findings if f.rule_id != CodeModelPass.UNAVAILABLE]
+        if missing or any(f.rule_id == FileScoreRecord.RULE for f in findings):
+            detector.wanted = True
         try:
             config = engine.config
             kept, finding = CodePackageStep.decide(
@@ -97,15 +103,27 @@ class CodeModelPass:
         except Exception as error:  # noqa: BLE001 -- extra evidence must never cost the scan
             note = detector.operational(
                 path=".",
-                rule_id="OPERATIONAL.CODE_MODEL.UNAVAILABLE",
+                rule_id=CodeModelPass.UNAVAILABLE,
                 message=f"The code model's package step failed, so no package was scored: {error}",
             )
             return CodeModelPass.without_records(findings), (note,)
         extra = [finding] if finding is not None else []
-        note = detector.unavailable_note(".")
-        if note is not None:
-            extra.append(note)
+        if missing:
+            extra.append(
+                detector.operational(
+                    path=".", rule_id=CodeModelPass.UNAVAILABLE, message=missing[0].message
+                )
+            )
         return kept, tuple(extra)
+
+    @staticmethod
+    def prepare(engine: Any) -> None:
+        """Before a scan's template is forked: the weights read here once a scan of this engine has
+        needed them, so a long-running scanner's workers inherit them rather than each reading
+        them again. A one-scan process never gets here with `wanted` set, so it pays nothing."""
+        detector = CodeModelPass.detector(engine)
+        if detector is not None and getattr(detector, "wanted", False):
+            _ = detector.weights
 
     @staticmethod
     def without_records(findings: list[Finding]) -> list[Finding]:

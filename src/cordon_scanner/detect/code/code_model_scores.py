@@ -6,7 +6,10 @@ detector scores the file's buckets with the shipped weights and returns one inte
 finding a reader sees: `INTERNAL.CODE_MODEL.FILE_SCORE`, info, operational, its score and the platform
 n-grams that raised it in the evidence's metadata, versioned (`FileScoreRecord`). The package step in
 the parent takes the maximum, decides, and removes every record; the result assembly strips any left.
-The weights are this detector's own, loaded when the engine builds it: no module or class cache.
+The weights are this detector's own (no module or class cache), read when the first reached
+JavaScript file needs them (release item 17: 0.1 s of every scan went on weights a Python package
+never uses). A worker reads them for itself; a long-running scanner whose scan needed them reads them
+once in the parent before its next scan's template, so every later worker has them.
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.javascript.code_model import (
+    WEIGHTS_PATH,
     CodeFeatures,
     CodeModelUnavailable,
     CodeModelWeights,
@@ -52,18 +56,32 @@ class CodeModelScores(BaseDetector):
     LANGUAGES: ClassVar[frozenset[str]] = frozenset({"javascript", "typescript"})
 
     def __init__(self, weights_path: Path | None = None) -> None:
+        self.weights_path = WEIGHTS_PATH if weights_path is None else weights_path
         self.unavailable: str | None = None
-        try:
-            self.weights = (
-                CodeModelWeights.load()
-                if weights_path is None
-                else CodeModelWeights.load(weights_path)
-            )
-        except CodeModelUnavailable as error:
-            self.weights, self.unavailable = None, str(error)
+        #: A scan reached JavaScript: the next scan's parent reads the weights before its template.
+        self.wanted = False
+        self._weights: CodeModelWeights | None = None
+        self._loaded = False
+
+    @property
+    def loaded(self) -> bool:
+        return self._loaded
+
+    @property
+    def weights(self) -> CodeModelWeights | None:
+        """The weights, read on first use; None when the build ships none or they are damaged
+        (`unavailable` says why)."""
+        if not self._loaded:
+            self._loaded = True
+            try:
+                self._weights = CodeModelWeights.load(self.weights_path)
+            except CodeModelUnavailable as error:
+                self.unavailable = str(error)
+        return self._weights
 
     def applicable(self, ctx: ScanContext) -> bool:
-        return self.weights is not None
+        # A stat, not a read: whether the weights are sound is learnt where a file needs them.
+        return self._weights is not None if self._loaded else self.weights_path.exists()
 
     @staticmethod
     def reached(path: str, ctx: ScanContext) -> bool:
@@ -75,15 +93,18 @@ class CodeModelScores(BaseDetector):
         )
 
     def inspect(self, unit: Unit, ctx: ScanContext) -> Iterable[Finding]:
-        weights = self.weights
         if (
-            weights is None
-            or not isinstance(unit, FileUnit)
+            not isinstance(unit, FileUnit)
             or unit.language not in self.LANGUAGES
             or "#" in unit.path.rpartition("!")[2]  # the scan's own derived units
             or not self.reached(unit.path, ctx)
         ):
             return ()
+        weights = self.weights
+        if weights is None:
+            # The parent keeps one of these a scan (`CodeModelPass`).
+            note = self.unavailable_note(unit.path)
+            return () if note is None else (note,)
         # Every window of the file, however large: no size escapes the model (the owner's no-caps
         # rule). The file's score is its highest window's; a file within one window scores as trained.
         score: float = 0.0
@@ -147,8 +168,8 @@ class CodeModelScores(BaseDetector):
         )
 
     def unavailable_note(self, path: str) -> Finding | None:
-        """OPERATIONAL.CODE_MODEL.UNAVAILABLE, once a scan, when the weights are damaged or mismatched;
-        nothing when the build ships none."""
+        """OPERATIONAL.CODE_MODEL.UNAVAILABLE when the weights are damaged or mismatched and a reached
+        file needed them; nothing when the build ships none."""
         if self.unavailable is None:
             return None
         return self.operational(path=path, rule_id=UNAVAILABLE, message=self.unavailable)
