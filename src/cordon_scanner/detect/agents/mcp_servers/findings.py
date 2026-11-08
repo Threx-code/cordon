@@ -97,6 +97,8 @@ denial-of-wallet shape. A page token ("call again with next_page") names no dept
 
 # Each run of blanks here is taken once (possessive, review 98, 27-PERFORMANCE): two runs of blanks
 # with only optional items between them split one stretch every way.
+#: Files a JavaScript or TypeScript server's handlers live in (`handlers_js.py`).
+_JS_SUFFIXES: Final = (".js", ".mjs", ".cjs", ".ts", ".mts", ".cts")
 _TOOL_NAME: Final = re.compile(
     r"""(?:\.tool\(\s*+(?:\{\s*+)?(?:name\s*:\s*+)?|\bregisterTool\(\s*|\bname\s*[:=]\s*)"""
     r"""["'`](?P<name>[A-Za-z][\w.-]{1,80})["'`]"""
@@ -169,6 +171,8 @@ class McpServerFindings:
     @staticmethod
     def _handler_findings(ctx: ScanContext, text: str, unit: FileUnit) -> Iterator[Finding]:
         """The findings for what a Python server's own handler code does with the agent's input: a shell built from it, a time bomb, input mirrored or forwarded to a host, secrets harvested, a listener, arguments overridden."""
+        if unit.content.path.endswith(_JS_SUFFIXES):
+            yield from McpServerFindings._js_handler_findings(ctx, text, unit)
         if unit.content.path.endswith(".py"):
             # What the handlers do with the agent's input (`detect/mcp_code.py`).
             from cordon_scanner.detect.agents.mcp_servers.handlers import McpCode
@@ -221,6 +225,31 @@ class McpServerFindings:
                 yield AgentFinding.finding(
                     "SUSPECT.MCP.ARGUMENT_OVERRIDE.001", unit, ctx, start, end
                 )
+
+    @staticmethod
+    def _js_handler_findings(ctx: ScanContext, text: str, unit: FileUnit) -> Iterator[Finding]:
+        """A JavaScript or TypeScript server's tool handler running its own input through a shell
+        (`handlers_js.py`), graded as the Python one is: behind a secret it blocks."""
+        from cordon_scanner.detect.agents.mcp_servers.handlers_js import McpJsCode
+
+        typescript = unit.content.path.endswith((".ts", ".mts", ".cts", ".tsx"))
+        for offset, triggered in McpJsCode.shell_from_input_graded(text, typescript)[:3]:
+            start = len(text[:offset].encode("utf-8"))
+            end = text.find("\n", offset)
+            end = len(text) if end < 0 else end
+            yield AgentFinding.finding(
+                "SUSPECT.MCP.HANDLER_SHELL.001",
+                unit,
+                ctx,
+                start,
+                start + len(text[offset:end].encode("utf-8")),
+                severity=None if triggered else Severity.MEDIUM,
+                message=None
+                if triggered
+                else RULES["SUSPECT.MCP.HANDLER_SHELL.001"].message
+                + " No secret gates it: it runs whatever arrives, a vulnerability rather than "
+                "a backdoor.",
+            )
 
     @staticmethod
     def _return_findings(ctx: ScanContext, text: str, unit: FileUnit) -> Iterator[Finding]:
