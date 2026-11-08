@@ -271,6 +271,12 @@ class AnalyzerCore:
                 return None
             return (left or "{?}") + (right or "{?}")
         if isinstance(node, ast.Name):
+            # A name bound to one literal is that literal, as the f-string branch above reads it:
+            # `cmd = "..."; subprocess.run(cmd, shell=True)` hides nothing from the shell rules
+            # (07-NARROWING-GATES §2). Assigned two different literals, `_strings` holds None.
+            literal = self._strings.get(node.id)
+            if literal is not None:
+                return literal
             bound = self._sketches.get(node.id)
             if bound is not None:
                 return self._sketch(bound, depth + 1)
