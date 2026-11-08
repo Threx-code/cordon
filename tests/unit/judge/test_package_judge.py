@@ -112,6 +112,21 @@ class TestTheCascade:
         )
 
 
+class TestAgentExtensions:
+    def test_an_agent_judge_also_reads_instructions_aimed_at_the_agent(self) -> None:
+        triage, confirm = Scripted(TestTheCascade.MAL), Scripted(TestTheCascade.MAL)
+        PackageJudge(triage, confirm, kind="agent").judge("bundle")
+        assert "tool poisoning" in triage.seen[0][0] and "tool poisoning" in confirm.seen[0][0]
+        assert triage.seen[0][0].endswith(PackagePrompts.ANSWER)
+
+    def test_a_package_judge_does_not(self) -> None:
+        assert "tool poisoning" not in PackagePrompts.triage("package")
+
+    def test_an_unknown_kind_is_refused(self) -> None:
+        with pytest.raises(ValueError):
+            PackageJudge(Scripted(), kind="other")
+
+
 class TestTheReply:
     def test_reasoning_before_the_answer_is_ignored(self) -> None:
         verdict = PackageJudge.parse(
