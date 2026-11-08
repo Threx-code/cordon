@@ -140,3 +140,26 @@ class TestTheReply:
     def test_an_unreadable_reply_is_an_error(self, text) -> None:
         with pytest.raises(JudgeError):
             PackageJudge.parse(text, stage=1, model="m")
+
+
+class TestThePlainHttpAllowList:
+    """The backend's model servers sit on an internal network over plain HTTP: only the hosts it names
+    may be reached that way, through the real transport."""
+
+    def test_a_listed_host_passes_the_https_rule(self) -> None:
+        from cordon_scanner.judge.providers import HttpTransport, ProviderUnavailable
+
+        post = HttpTransport.allowing(frozenset({"judge.invalid"}))
+        with pytest.raises(ProviderUnavailable) as caught:
+            post("http://judge.invalid:9/v1/chat/completions", {}, {}, timeout=2)
+        assert "over https" not in str(caught.value)
+
+    def test_any_other_host_still_needs_https(self) -> None:
+        from cordon_scanner.judge.providers import HttpTransport, ProviderUnavailable
+
+        post = HttpTransport.allowing(frozenset({"judge.invalid"}))
+        for url in ("http://other.invalid/v1", "ftp://judge.invalid/v1"):
+            with pytest.raises(ProviderUnavailable, match="over https"):
+                post(url, {}, {}, timeout=2)
+        with pytest.raises(ProviderUnavailable, match="over https"):
+            HttpTransport.post("http://judge.invalid/v1", {}, {}, timeout=2)

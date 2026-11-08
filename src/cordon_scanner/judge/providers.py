@@ -78,11 +78,39 @@ class HttpTransport:
     def post(
         url: str, body: dict[str, Any], headers: dict[str, str], timeout: float = TIMEOUT_SECONDS
     ) -> dict[str, Any]:
+        return HttpTransport.send(url, body, headers, timeout)
+
+    @staticmethod
+    def allowing(plain_hosts: frozenset[str]) -> Transport:
+        """The same transport, also allowing plain HTTP to `plain_hosts`: model servers on a network
+        nothing else can reach (the backend's `judge` network). Everything else still needs https."""
+        hosts = frozenset(h.lower() for h in plain_hosts)
+
+        def post(
+            url: str,
+            body: dict[str, Any],
+            headers: dict[str, str],
+            timeout: float = TIMEOUT_SECONDS,
+        ) -> dict[str, Any]:
+            return HttpTransport.send(url, body, headers, timeout, plain_hosts=hosts)
+
+        return post
+
+    @staticmethod
+    def send(
+        url: str,
+        body: dict[str, Any],
+        headers: dict[str, str],
+        timeout: float = TIMEOUT_SECONDS,
+        *,
+        plain_hosts: frozenset[str] = frozenset(),
+    ) -> dict[str, Any]:
         from cordon_scanner.version import __version__
 
         parsed_url = urllib.parse.urlsplit(url)
+        plain_ok = (parsed_url.hostname or "").lower() in LOCAL_HOSTS | plain_hosts
         if parsed_url.scheme not in ("https", "http") or (
-            parsed_url.scheme == "http" and parsed_url.hostname not in LOCAL_HOSTS
+            parsed_url.scheme == "http" and not plain_ok
         ):
             raise ProviderUnavailable("a remote judge must be reached over https")
         request = urllib.request.Request(  # noqa: S310  (scheme checked above)
