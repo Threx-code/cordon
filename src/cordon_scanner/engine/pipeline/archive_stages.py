@@ -11,6 +11,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from cordon_scanner.analysis.python.unparsed_source import UnparsedSource
 from cordon_scanner.analysis.shared.languages import LanguageRegistry
 from cordon_scanner.decide.code_model import CodeModelPass
 from cordon_scanner.detect.base import (
@@ -42,6 +43,7 @@ from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.errors import ArchiveError
 from cordon_scanner.foundation.formats.served_json import ServedJson
 from cordon_scanner.foundation.models import Scope, Severity
+from cordon_scanner.foundation.paths import ContainerPaths
 from cordon_scanner.foundation.results import Dependency, OperationalFinding
 from cordon_scanner.sources.registry import ArchiveReader
 
@@ -272,7 +274,34 @@ class ArchiveStages:
             package_repository=PackageEntries.repository(units, early_format),
         )
         ctx = replace(ctx, verdict_dependency_names=Ceilings.verdict_dependency_names(units))
+        ctx = self.unparsed(units, acc, ctx, python_closure)
         return Hooks.lifted_inherit(ctx)
+
+    def unparsed(
+        self, units: list[FileUnit], acc: Accumulator, ctx: ScanContext, python_closure: set[str]
+    ) -> ScanContext:
+        """What runs at install or import and does not parse is read as Python 2, or is a gap,
+        fail closed (09 3a). A reading runs where its file runs (`lifted_inherit`)."""
+        python_entries = {p for p in ctx.import_entry_paths if p.endswith(".py")}
+        running = python_closure | python_entries | Hooks.hook_import_closure(units, python_entries)
+        readings: list[FileUnit] = []
+        for unit in list(units):
+            if unit.content.is_binary or not UnparsedSource.runs_as_source(unit.path, running):
+                continue
+            decision = UnparsedSource.decide(unit.content.text)
+            if decision.kind == "gap":
+                acc.incomplete(UnparsedSource.gap(unit.path))
+            elif decision.kind == "broken":
+                acc.append(UnparsedSource.broken(unit.path))
+            elif decision.reading is not None:
+                where = ContainerPaths.reading(unit.path, "python")
+                raw = decision.reading.encode("utf-8")
+                content = FileContent.from_bytes(where, raw, self.config.limits)
+                readings.append(FileUnit(content=content, language="python", project=unit.project))
+        if not readings:
+            return ctx
+        units.extend(readings)
+        return replace(ctx, tree_paths=ctx.tree_paths | {r.path for r in readings})
 
     def parallel(
         self, units: list[FileUnit], deadline: float, acc: Accumulator, path: Path, ctx: ScanContext
