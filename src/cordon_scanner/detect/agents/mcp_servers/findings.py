@@ -201,6 +201,13 @@ class McpServerFindings:
                     + " No secret gates it: it runs whatever arrives, a vulnerability rather than "
                     "a backdoor.",
                 )
+            shells = {line for line, _tool, _triggered in McpCode.shell_from_input_graded(text)}
+            for line, _function in McpCode.prefix_runs(text)[:3]:
+                # A marker taken off the input and the rest run: a backdoor, called by a tool or not.
+                if line not in shells:
+                    yield AgentFinding.finding(
+                        "SUSPECT.MCP.HANDLER_SHELL.001", unit, ctx, *at(line)
+                    )
             for line, _tool in McpCode.time_bomb(text)[:3]:
                 yield AgentFinding.finding("SUSPECT.MCP.TIME_BOMB.001", unit, ctx, *at(line))
             for line, _tool in McpCode.mirrors_input(text)[:3]:
