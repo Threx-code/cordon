@@ -38,7 +38,9 @@ class TestLongCallChain:
     failed closed for it). Resolved without recursion, the file is read whole: a payload after the chain
     is still found, and the chain itself names nothing."""
 
-    CHAIN = "q = builder" + ".where(1)" * TERMS + "\n"
+    #: Past the old resolver's recursion limit, inside what Python 3.11's own parser accepts (1,500 is not).
+    LINKS = 1_200
+    CHAIN = "q = builder" + ".where(1)" * LINKS + "\n"
 
     def test_a_file_holding_one_is_still_analysed(self) -> None:
         payload = Support.assemble(
@@ -58,11 +60,11 @@ class TestLongCallChain:
         return analyzer._dotted(last.value)
 
     def test_a_deep_chain_of_attributes_resolves_to_its_dotted_name(self) -> None:
-        names = ".".join(f"n{i}" for i in range(TERMS))
+        names = ".".join(f"n{i}" for i in range(self.LINKS))
         assert self._resolved(f"import os\nos.{names}\n") == f"os.{names}"
 
     def test_an_import_at_the_end_of_a_long_chain_resolves(self) -> None:
-        chain = "q" + ".where(1)" * TERMS
+        chain = "q" + ".where(1)" * self.LINKS
         source = Support.assemble(f"x = {chain}\n", "__imp", "ort__('base64').b64decode\n")
         assert self._resolved(source) == "base64.b64decode"
 
