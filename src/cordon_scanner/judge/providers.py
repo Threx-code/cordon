@@ -196,6 +196,10 @@ class BaseProvider:
         self.url = url.rstrip("/")
         self.environ = dict(os.environ if environ is None else environ)
         self._transport = transport or HttpTransport.post
+        #: The completion's budget, raised for a model that reasons before it answers (the package
+        #: judge's confirming stage); `think` turns that reasoning on or off where the server can.
+        self.max_tokens = self.MAX_TOKENS
+        self.think: bool | None = None
 
     @property
     def timeout(self) -> float:
@@ -266,8 +270,11 @@ class ChatCompletionsProvider(BaseProvider):
                 {"role": "user", "content": user},
             ],
             "response_format": {"type": "json_object"},
-            "max_completion_tokens": self.MAX_TOKENS,
+            "max_completion_tokens": self.max_tokens,
         }
+        if self.think is not None:
+            # vLLM and SGLang pass this to the chat template: Qwen3's reasoning on or off.
+            payload["chat_template_kwargs"] = {"enable_thinking": self.think}
         if not self._model_controls_sampling():
             payload["temperature"] = 0
             payload["seed"] = 0
@@ -312,7 +319,8 @@ class OllamaProvider(BaseProvider):
                 "model": self.model,
                 "stream": False,
                 "format": "json",
-                "options": {"temperature": 0, "seed": 0, "num_predict": self.MAX_TOKENS},
+                **({"think": self.think} if self.think is not None else {}),
+                "options": {"temperature": 0, "seed": 0, "num_predict": self.max_tokens},
                 "messages": [
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},
