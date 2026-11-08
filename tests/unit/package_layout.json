@@ -904,6 +904,7 @@
   "test_install_hooks_tools.py": "engine/pipeline",
   "test_install_payload.py": "detect/code",
   "test_install_persist_named.py": "detect/code/capability",
+  "test_python_shell_streams.py": "detect/code/capability",
   "test_fixed_program_arguments.py": "detect/code/capability",
   "test_measure_admission.py": "repository",
   "test_install_time_factor.py": "foundation",
