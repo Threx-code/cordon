@@ -156,25 +156,47 @@ class AnalyzerCore:
         return self._dotted_uncached(node)
 
     def _dotted_uncached(self, node: ast.AST) -> str | None:
-        if isinstance(node, ast.Name):
-            return self._aliases.get(node.id) or self._bindings.get(node.id) or node.id
-        if isinstance(node, ast.Attribute):
-            base = self._dotted(node.value)
-            if base in BUILTIN_MODULES:
-                # `builtins.exec` is `exec`: the module is how the name is reached, not part of it.
-                return node.attr
-            return f"{base}.{node.attr}" if base else None
-        if isinstance(node, ast.Call) and node.args:
-            # `__import__("base64")` and `importlib.import_module("base64")` evaluate to the module,
-            # so `__import__("base64").b64decode` is `base64.b64decode` -- the spelling droppers use
-            # to keep `import base64` and `exec(` off the same page.
-            callee = self._dotted(node.func)
-            if callee in ("__import__", "importlib.import_module"):
-                module = PythonFacts.constant(node.args[0])
-                if module:
-                    return module
-            if callee == "eval":
-                return self._evaluated_name(node.args[0])
+        # Down the chain of attributes and calls first, then back up: by a list, not by recursion,
+        # because a builder chain is as many links long as its author wrote (PySegmentKit 0.2.1's
+        # thousands of `.where(...)` stopped the detector at the recursion limit). An attacker's
+        # deep chain resolves fully too; a depth cap would let one hide a name behind it.
+        # Every link is kept in the per-node cache as it resolves, and a link already there ends the
+        # walk down: the capability walk asks for each call of a chain, so without it a chain of n
+        # links would cost n * n steps.
+        cache: dict[int, str | None] | None = self.__dict__.get("_dotted_cache")
+        links: list[ast.Attribute | ast.Call] = []
+        name: str | None = None
+        while isinstance(node, ast.Attribute) or (isinstance(node, ast.Call) and node.args):
+            if cache is not None and links and id(node) in cache:
+                name = cache[id(node)]
+                break
+            links.append(node)
+            node = node.value if isinstance(node, ast.Attribute) else node.func
+        else:
+            if isinstance(node, ast.Name):
+                name = self._aliases.get(node.id) or self._bindings.get(node.id) or node.id
+        for link in reversed(links):
+            if isinstance(link, ast.Attribute):
+                if name in BUILTIN_MODULES:
+                    # `builtins.exec` is `exec`: the module is how the name is reached, not part of it.
+                    name = link.attr
+                else:
+                    name = f"{name}.{link.attr}" if name else None
+            else:
+                name = self._called_name(name, link)
+            if cache is not None:
+                cache[id(link)] = name
+        return name
+
+    def _called_name(self, callee: str | None, call: ast.Call) -> str | None:
+        """What a call evaluates to by name. `__import__("base64")` and
+        `importlib.import_module("base64")` evaluate to the module, so `__import__("base64").b64decode`
+        is `base64.b64decode` -- the spelling droppers use to keep `import base64` and `exec(` off the
+        same page; `eval` of a written name is that name. Any other call names nothing."""
+        if callee in ("__import__", "importlib.import_module"):
+            return PythonFacts.constant(call.args[0]) or None
+        if callee == "eval":
+            return self._evaluated_name(call.args[0])
         return None
 
     def _evaluated_name(self, node: ast.AST) -> str | None:
