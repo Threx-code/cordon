@@ -748,11 +748,14 @@ class PypiEcosystem(PypiLockfiles, BaseEcosystem):
             for member, path in members.items()
             if member.endswith(".py")
             and member.rpartition("/")[2] not in self.NOT_MODULES
+            # By the unit's full path, so the release's own name -- the root folder an sdist is
+            # named after -- is never read as a directory (`SourcePaths.inside_release`):
+            # `requests_test_test2-2.33.0/src/requests/models.py` is not test material.
             and not (
-                SourcePaths.is_test_material(member)
-                or SourcePaths.is_documentation(member)
-                or SourcePaths.is_build_tooling(member)
-                or SourcePaths.is_vendored(member)
+                SourcePaths.is_test_material(path)
+                or SourcePaths.is_documentation(path)
+                or SourcePaths.is_build_tooling(path)
+                or SourcePaths.is_vendored(path)
             )
         }
 

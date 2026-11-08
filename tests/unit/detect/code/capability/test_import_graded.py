@@ -26,12 +26,13 @@ class ImportKit:
     )
 
     @staticmethod
-    def sdist(tmp_path: Path, files: dict[str, str]) -> Path:
+    def sdist(tmp_path: Path, files: dict[str, str], name: str = "acme") -> Path:
+        root = f"{name}-1.0.0"
         members = {
-            "acme-1.0.0/PKG-INFO": "Metadata-Version: 2.1\nName: acme\nVersion: 1.0.0\n",
-            "acme-1.0.0/setup.py": "from setuptools import setup\nsetup(name='acme')\n",
-            "acme-1.0.0/acme/__init__.py": "",
-            **{f"acme-1.0.0/{k}": v for k, v in files.items()},
+            f"{root}/PKG-INFO": f"Metadata-Version: 2.1\nName: {name}\nVersion: 1.0.0\n",
+            f"{root}/setup.py": f"from setuptools import setup\nsetup(name='{name}')\n",
+            f"{root}/acme/__init__.py": "",
+            **{f"{root}/{k}": v for k, v in files.items()},
         }
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w:gz") as tar:
@@ -40,7 +41,7 @@ class ImportKit:
                 info = tarfile.TarInfo(name)
                 info.size = len(data)
                 tar.addfile(info, io.BytesIO(data))
-        path = tmp_path / "acme-1.0.0.tar.gz"
+        path = tmp_path / f"{root}.tar.gz"
         path.write_bytes(buf.getvalue())
         return path
 
@@ -51,6 +52,17 @@ class ImportKit:
 
 
 class TestRunsAtImport:
+    def test_a_release_named_like_a_test_is_still_imported(self, tmp_path) -> None:
+        """`requests_test_test2-2.33.0/src/requests/models.py`: `test` is in the release's own name,
+        the root folder an sdist is named after, not a directory of tests -- and it had made every
+        module of the release test material, so importing it reached nothing."""
+        target = ImportKit.sdist(
+            tmp_path, {"acme/client.py": ImportKit.PAYLOAD + "_boot()\n"}, name="acme_test_test2"
+        )
+        [finding] = ImportKit.graded(target)
+        assert finding.severity >= Severity.HIGH
+        assert any("imported" in e for e in finding.explanation.escalations)
+
     def test_a_module_that_runs_it_at_import_is_graded_as_unasked(self, tmp_path) -> None:
         target = ImportKit.sdist(tmp_path, {"acme/client.py": ImportKit.PAYLOAD + "_boot()\n"})
         [finding] = ImportKit.graded(target)
