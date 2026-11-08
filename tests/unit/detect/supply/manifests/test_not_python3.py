@@ -3,10 +3,14 @@ text rule still read the file, so Python 2 cannot be used to hide a payload (ite
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import io
+import sys
 import tarfile
 from typing import TYPE_CHECKING
+
+import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.analysis.python.unparsed_source import UnparsedSource
@@ -50,6 +54,20 @@ class UnparsedKit:
                 info.size = len(data)
                 tar.addfile(info, io.BytesIO(data))
         return Scanner(Config.default().with_overrides(use_cache=False, offline=True)).scan(path)
+
+    #: Syntax by the Python that first runs it: a type-parameter default (3.13), a t-string (3.14).
+    NEWER = (
+        ((3, 13), "def first[T = int](items: list[T]) -> T:\n    return items[0]\n"),
+        ((3, 14), "def greet(name):\n    return t'hello {name}'\n"),
+    )
+
+    @staticmethod
+    def newer_than_this_python() -> str:
+        """The first fixture this interpreter refuses; a skip when every one is older than it."""
+        for version, text in UnparsedKit.NEWER:
+            if sys.version_info[:2] < version:
+                return text
+        pytest.skip(f"no syntax newer than Python {sys.version_info[0]}.{sys.version_info[1]}")
 
     @staticmethod
     def gapped(result) -> bool:
@@ -111,7 +129,9 @@ class TestPackageSourceThatDoesNotParse:
         assert result.content_complete
 
     def test_syntax_newer_than_this_python_stays_a_gap(self, tmp_path: Path) -> None:
-        newer = "def first[T = int](items: list[T]) -> T:\n    return items[0]\n"
+        newer = UnparsedKit.newer_than_this_python()
+        with pytest.raises(SyntaxError):
+            ast.parse(newer)
         result = UnparsedKit.sdist(tmp_path, {"pkg/__init__.py": newer})
         assert UnparsedKit.gapped(result)
 

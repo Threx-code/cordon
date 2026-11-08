@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import ast
+import sys
 
 import pytest
 
@@ -18,6 +19,12 @@ from cordon_scanner.analysis.python.python_two_reader import PythonTwoReader
 
 
 class ReaderKit:
+    #: From Python 3.14 (PEP 758) `except A, B:` parses as a tuple of exceptions, so the
+    #: Python 2 comma forms are code there and no reading is asked of the reader.
+    COMMA_PARSES = pytest.mark.skipif(
+        sys.version_info >= (3, 14), reason="PEP 758: `except A, B:` parses on this Python"
+    )
+
     @staticmethod
     def read(text: str) -> str:
         try:
@@ -40,8 +47,16 @@ class TestAPythonTwoFileIsReadAsCode:
             ('import os\nprint "x", os.name\n', 'print("x", os.name)'),
             ("import sys\nprint >>sys.stderr, 'x'\nprint 'y'\n", "print(sys.stderr, 'x')"),
             ("code = 'x = 1'\nexec code in globals()\n", "exec(code , globals())"),
-            ("try:\n    pass\nexcept ValueError, e:\n    pass\n", "except ValueError as e:"),
-            ("try:\n    pass\nexcept ValueError,e:\n    pass\n", "except ValueError as e:"),
+            pytest.param(
+                "try:\n    pass\nexcept ValueError, e:\n    pass\n",
+                "except ValueError as e:",
+                marks=ReaderKit.COMMA_PARSES,
+            ),
+            pytest.param(
+                "try:\n    pass\nexcept ValueError,e:\n    pass\n",
+                "except ValueError as e:",
+                marks=ReaderKit.COMMA_PARSES,
+            ),
             ("raise ValueError, 'bad'\n", "raise ValueError( 'bad')"),
             ("x = 0L + 0xFFL\n", "x = 0 + 0xFF"),
             ("mode = 0777\n", "mode = 0o777"),
@@ -54,7 +69,11 @@ class TestAPythonTwoFileIsReadAsCode:
             ("import asyncio\nasyncio.async(f())\n", "asyncio.async_(f())"),
             ("def async(n):\n    return n\n", "def async_(n):"),
             ("async = True\nif async:\n    pass\n", "if async_:"),
-            ("try:\n    pass\nexcept IOError, (no, why):\n    pass\n", "except IOError:"),
+            pytest.param(
+                "try:\n    pass\nexcept IOError, (no, why):\n    pass\n",
+                "except IOError:",
+                marks=ReaderKit.COMMA_PARSES,
+            ),
             ("try:\n    pass\nexcept IOError as (no, why):\n    pass\n", "except IOError :"),
             ('p = "C:\\Users\\me"\nprint p\n', 'p = "C:\\\\Users\\\\me"'),
         ],
