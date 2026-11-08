@@ -40,3 +40,55 @@ class TestTheLoadReach:
             ("payload.py", "def update():"),
             ("util.py", "def unused():"),
         }
+
+
+class TestWhatImportNeverRuns:
+    """Code importing can never reach: a `__main__` block and a file no import statement can name
+    (measured: 6 of #59's 30 newly blocked benign, reviews/pypi-98/11)."""
+
+    def test_a_main_guard_block_is_not_run_by_import(self) -> None:
+        package = {
+            "p-1/pkg/__init__.py": "from . import cli\n",
+            "p-1/pkg/cli.py": "import os\nif __name__ == '__main__':\n    os.system('make')\n",
+        }
+        deferred = LoadReach.deferred_lines(package, package)
+        assert ("p-1/pkg/cli.py", 3, 3) in deferred
+
+    def test_a_file_no_import_can_name_is_not_a_module(self) -> None:
+        from cordon_scanner.ecosystems.packages.pypi import PypiEcosystem
+
+        members = {
+            m: m
+            for m in (
+                "p-1.0/bootstrap-buildout.py",
+                "p-1.0/pkg/__init__.py",
+                "p-1.0/pkg/run-me.py",
+                "p-1.0/pkg/core.py",
+                "p-1.0/my-tools/helper.py",
+                "p-1.0/src/pkg2/mod.py",
+            )
+        }
+        assert PypiEcosystem().import_modules(members) == {
+            "p-1.0/pkg/__init__.py",
+            "p-1.0/pkg/core.py",
+            "p-1.0/src/pkg2/mod.py",
+        }
+
+    def test_a_function_defined_and_run_inside_a_reached_one_is_run(self) -> None:
+        package = {
+            "p-1/pkg/__init__.py": (
+                "def _s():\n"
+                "    import threading\n"
+                "    def _r():\n"
+                "        pass\n"
+                "    def _q():\n"
+                "        pass\n"
+                "    def _never():\n"
+                "        pass\n"
+                "    threading.Thread(target=_r).start()\n"
+                "    _q()\n"
+                "_s()\n"
+            ),
+        }
+        deferred = LoadReach.deferred_lines(package, package)
+        assert {first for _path, first, _last in deferred} == {8}

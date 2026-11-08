@@ -39,6 +39,21 @@ if TYPE_CHECKING:
     from cordon_scanner.foundation.content import FileContent
 
 
+class ImportableName:
+    """Whether an import statement can name a file: every folder below the release's own root (and
+    an `src` layout) and the file's stem are identifiers -- `bootstrap-buildout.py` or
+    `my-tools/helper.py` are scripts, not modules."""
+
+    @staticmethod
+    def of(member: str) -> bool:
+        parts = member.split("/")
+        if len(parts) > 1 and "-" in parts[0]:
+            parts = parts[1:]  # an sdist's `name-1.0/` root
+        if parts and parts[0] == "src":
+            parts = parts[1:]
+        return bool(parts) and all(p.isidentifier() for p in [*parts[:-1], parts[-1][:-3]])
+
+
 class PypiEcosystem(PypiLockfiles, BaseEcosystem):
     @staticmethod
     def _poetry_spec(value: object) -> str:
@@ -748,6 +763,7 @@ class PypiEcosystem(PypiLockfiles, BaseEcosystem):
             for member, path in members.items()
             if member.endswith(".py")
             and member.rpartition("/")[2] not in self.NOT_MODULES
+            and ImportableName.of(member)
             # By the unit's full path, so the release's own name -- the root folder an sdist is
             # named after -- is never read as a directory (`SourcePaths.inside_release`):
             # `requests_test_test2-2.33.0/src/requests/models.py` is not test material.
@@ -762,4 +778,4 @@ class PypiEcosystem(PypiLockfiles, BaseEcosystem):
     # -- Lockfiles -------------------------------------------------------
 
 
-__all__ = ["PypiEcosystem"]
+__all__ = ["ImportableName", "PypiEcosystem"]

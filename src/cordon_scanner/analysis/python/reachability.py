@@ -640,11 +640,48 @@ class LoadReach:
                 yield node
                 stack.extend(ast.iter_child_nodes(node))
 
+    @classmethod
+    def _local_functions(cls, nodes: list[ast.AST]) -> dict[str, ast.AST]:
+        """The functions a body defines for itself (`def _r(): ...` inside `_s`), by name."""
+        local: dict[str, ast.AST] = {}
+        for root in nodes:
+            stack = [root]
+            while stack:
+                node = stack.pop()
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    local.setdefault(node.name, node)
+                    continue
+                if isinstance(node, (ast.Lambda, ast.ClassDef)):
+                    continue
+                stack.extend(ast.iter_child_nodes(node))
+        return local
+
+    def _local_targets(self, local: dict[str, ast.AST], call: ast.Call) -> list[ast.AST]:
+        """A call to, or a runner handed, one of the body's own functions."""
+        out: list[ast.AST] = []
+        if isinstance(call.func, ast.Name) and call.func.id in local:
+            out.append(local[call.func.id])
+        callee = (
+            call.func.attr
+            if isinstance(call.func, ast.Attribute)
+            else getattr(call.func, "id", None)
+        )
+        if callee in RUNNERS:
+            out += [
+                local[a.id]
+                for a in [*call.args, *(k.value for k in call.keywords)]
+                if isinstance(a, ast.Name) and a.id in local
+            ]
+        return out
+
     def _follow(self, module: LoadModule, nodes: list[ast.AST]) -> None:
+        local = self._local_functions(nodes)
         for node in self._calls_in(nodes):
             if isinstance(node, ast.Call):
                 for owner, target in [*self._edges(module, node), *self._runner_args(module, node)]:
                     self._visit(owner, target)
+                for target in self._local_targets(local, node):
+                    self._visit(module, target)
             elif (
                 isinstance(node, ast.Assign)
                 and any(getattr(t, "attr", None) == "excepthook" for t in node.targets)
@@ -691,6 +728,12 @@ class LoadReach:
                 ):
                     last = node.end_lineno or node.body[-1].lineno
                     deferred.add((path, node.body[0].lineno, last))
+            # A module's `if __name__ == "__main__":` block runs when it is a script, never when it
+            # is imported.
+            for statement in module.tree.body:
+                if LoadReach._is_main_guard(statement) and statement.body:
+                    last = statement.end_lineno or statement.body[-1].lineno
+                    deferred.add((path, statement.body[0].lineno, last))
         return frozenset(deferred)
 
 
