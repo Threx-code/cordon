@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Any
 from cordon_scanner.foundation.models import Category, Severity
 from cordon_scanner.foundation.scoring import RiskScorer
 from cordon_scanner.report.base import BaseReporter, Escape, ReportOptions
+from cordon_scanner.report.claims import Claims
 from cordon_scanner.version import __version__
 
 if TYPE_CHECKING:
@@ -278,6 +279,11 @@ class SarifReporter(BaseReporter):
 
         if f.evidence.match_hash:
             entry["properties"]["matchHash"] = f.evidence.match_hash
+
+        claim = Claims.of_finding(f)
+        if claim is not None:
+            # What the finding claims: malware, risky behaviour or policy (`report/claims.py`).
+            entry["properties"]["claim"] = str(claim)
 
         if f.is_suppressed and f.suppressed:
             entry["suppressions"] = [

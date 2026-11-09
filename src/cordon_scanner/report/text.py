@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 
 from cordon_scanner.foundation.models import Category, Severity
 from cordon_scanner.report.base import BaseReporter, Escape, ReportOptions
+from cordon_scanner.report.claims import Claims
 from cordon_scanner.version import __version__
 
 if TYPE_CHECKING:
@@ -209,6 +210,12 @@ class TextReporter(BaseReporter):
         blocking = opts.blocking or frozenset()
         gate = [f for f in findings if f.fingerprint in blocking]
         yield from self._grouped(gate, color)
+        claim = Claims.of_unit(gate)
+        if claim is not None:
+            # What the block means, from the evidence of the findings that cause it: malware,
+            # risky behaviour or policy (`report/claims.py`). Blocked the same way either way.
+            yield b"\n"
+            yield self._line(f"Blocked as: {claim.text}", color)
         review = [
             f for f in findings if f.fingerprint not in blocking and f.severity > Severity.INFO
         ]
