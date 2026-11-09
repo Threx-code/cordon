@@ -31,7 +31,7 @@ class ShimReport:
 
 class Shims:
     TOOLS: ClassVar[tuple[str, ...]] = (
-        "npm", "pnpm", "yarn", "pip", "pip3", "uv", "poetry", "cargo", "go", "gem", "bundle", "dotnet",
+        "npm", "pnpm", "yarn", "pip", "pip3", "uv", "poetry", "cargo", "go", "gem", "bundle", "dotnet", "dart", "flutter",
     )  # fmt: skip
 
     #: The Cordon command a shim runs, where it differs from the tool's name (`bundle` is Cordon's own

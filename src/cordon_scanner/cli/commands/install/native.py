@@ -1,4 +1,4 @@
-"""cargo, go, gem and bundle through Cordon. cargo, go and Bundler resolve in the project (their
+"""cargo, go, gem, bundle and pub through Cordon. cargo, go, Bundler and pub resolve in the project (their
 manifests saved first and put back if anything blocks), then run as typed against the scanned lock;
 RubyGems installs exactly the scanned `.gem` files."""
 
@@ -45,6 +45,12 @@ class NativeTools:
 
         # A bare `bundle` is `bundle install`.
         return not args or args[0] in GemPlanner.BUNDLE_VERBS
+
+    @staticmethod
+    def pub_installs(args: list[str]) -> bool:
+        from cordon_scanner.sources.install.pub import PubPlanner
+
+        return PubPlanner.installs(args)
 
     # -- cargo ----------------------------------------------------------------------------------
 
@@ -200,6 +206,24 @@ class NativeTools:
     @staticmethod
     def _gem_name(name: str, version: str) -> str:
         return f"{name}-{version}.gem"
+
+    # -- pub (dart, flutter) --------------------------------------------------------------------
+
+    @classmethod
+    def pub(cls, tool: str, args: list[str], context: InstallContext) -> int:
+        from cordon_scanner.sources.install.plan import PrivateDirectory, Subprocesses
+        from cordon_scanner.sources.install.pub import PubPlanner
+
+        project = Path.cwd()
+        with PrivateDirectory.made("cordon-pub-") as cache:
+            plan = PubPlanner.project(args, Subprocesses.run, tool, project, cache)
+        return cls._checked(
+            plan,
+            context,
+            functools.partial(PubPlanner.restore, project, cls._saved(plan)),
+            PubPlanner.locked(tool),
+            project,
+        )
 
     # -- shared ---------------------------------------------------------------------------------
 

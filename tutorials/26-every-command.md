@@ -661,6 +661,8 @@ Notification channels: send a test message to each.
 - `gem`: gem install, scanned first
 - `bundler`: bundle install, scanned first
 - `dotnet`: dotnet restore/build/tool, scanned
+- `dart`: dart pub get/add, scanned first
+- `flutter`: flutter pub get/add, scanned first
 
 ## npm
 
@@ -803,6 +805,30 @@ Run dotnet, scanning every package before anything is installed.
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ arguments                 dotnet's own arguments                           │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## dart
+
+Run dart, scanning every package before anything is installed.
+
+`cordon-scanner dart ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 dart's own arguments                             │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## flutter
+
+Run flutter, scanning every package before anything is installed.
+
+`cordon-scanner flutter ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 flutter's own arguments                          │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 

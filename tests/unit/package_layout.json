@@ -674,6 +674,7 @@
   "sources/install/cache": "sources/install/cache",
   "sources/install/cargo": "sources/install/cargo",
   "sources/install/nuget": "sources/install/nuget",
+  "sources/install/pub": "sources/install/pub",
   "sources/install/gem": "sources/install/gem",
   "sources/install/gomod": "sources/install/gomod",
   "sources/install/guard": "sources/install/guard",
