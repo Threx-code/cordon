@@ -256,6 +256,30 @@ class TestSpawnCommands:
     def test_a_bound_name_carries_its_command(self) -> None:
         assert self.command_for("import os\nrun = os." + SYSTEM + "\nrun('id -u')") == "id -u"
 
+    def test_a_command_bound_to_a_literal_is_read(self) -> None:
+        """`cmd = "..."; subprocess.run(cmd, shell=True)` hands the spawn the literal as surely as
+        writing it in the call: binding it to a name first must not hide it from the shell rules
+        (07-NARROWING-GATES §2, mechanism A)."""
+        source = "import subprocess\ncmd = 'id -u'\nsubprocess." + RUN + "(cmd, shell=True)"
+        assert self.command_for(source) == "id -u"
+
+    def test_a_module_literal_reaches_a_spawn_in_a_method(self) -> None:
+        source = (
+            "import os\nCMD = 'id -u'\nclass Install:\n    def run(self):\n        os."
+            + SYSTEM
+            + "(CMD)\n"
+        )
+        assert self.command_for(source) == "id -u"
+
+    def test_a_literal_inside_a_sequence_command_is_read(self) -> None:
+        source = "import subprocess\nc = '-u'\nsubprocess." + RUN + "(['id', c])"
+        assert self.command_for(source) == "id -u"
+
+    def test_a_name_bound_to_two_literals_is_not_one_command(self) -> None:
+        """Assigned twice with different text, the command is not knowable statically."""
+        source = "import os\ncmd = 'id -u'\ncmd = 'id -g'\nos." + SYSTEM + "(cmd)"
+        assert self.command_for(source) is None
+
     def test_a_computed_command_yields_nothing(self) -> None:
         """Not derivable, so nothing is claimed about it. The dynamic target is
         its own signal rather than a guess at this one."""
