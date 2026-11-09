@@ -844,9 +844,11 @@ class TestDropperOverLines:
 
     def test_a_withheld_password_alone_is_not_enough(self, tmp_path) -> None:
         # No warning about the program: a licensed vendor's archive, not the shape.
-        text = self._WITHHELD.replace("not code-signed", "fine").replace(
-            "SmartScreen shows *Unknown publisher*", "nothing special happens"
-        ).replace("an unsigned program", "it")
+        text = (
+            self._WITHHELD.replace("not code-signed", "fine")
+            .replace("SmartScreen shows *Unknown publisher*", "nothing special happens")
+            .replace("an unsigned program", "it")
+        )
         assert self._found(tmp_path, text) == []
 
     def test_an_unsigned_warning_alone_is_not_enough(self, tmp_path) -> None:
@@ -894,9 +896,7 @@ class TestTelegramNotifier:
         assert self._found(tmp_path, script) != []
 
     def test_a_token_written_into_the_url_still_is(self, tmp_path) -> None:
-        script = (
-            "await fetch('https://api.telegram.org/bot1234567890:AAEhBP0av28SvEgvHMX-cV2xyz0123456789/sendMessage');\n"
-        )
+        script = "await fetch('https://api.telegram.org/bot1234567890:AAEhBP0av28SvEgvHMX-cV2xyz0123456789/sendMessage');\n"
         assert self._found(tmp_path, script) != []
 
 

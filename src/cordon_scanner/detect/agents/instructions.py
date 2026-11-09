@@ -282,9 +282,7 @@ class InstructionText:
         return InstructionText._withheld_password(text, lines, offsets)
 
     @staticmethod
-    def _withheld_password(
-        text: str, lines: list[str], offsets: list[int]
-    ) -> re.Match[str] | None:
+    def _withheld_password(text: str, lines: list[str], offsets: list[int]) -> re.Match[str] | None:
         """The dropper whose password is not given: the reader is told to get it from the publisher,
         and within ten lines an archive or executable is named, extracted and run, and the program
         is said to be unsigned or untrusted by the system. Two signs of the shape beside the

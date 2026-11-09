@@ -731,7 +731,11 @@ class LoadReach:
             # A module's `if __name__ == "__main__":` block runs when it is a script, never when it
             # is imported.
             for statement in module.tree.body:
-                if LoadReach._is_main_guard(statement) and statement.body:
+                if (
+                    isinstance(statement, ast.If)
+                    and LoadReach._is_main_guard(statement)
+                    and statement.body
+                ):
                     last = statement.end_lineno or statement.body[-1].lineno
                     deferred.add((path, statement.body[0].lineno, last))
         return frozenset(deferred)
