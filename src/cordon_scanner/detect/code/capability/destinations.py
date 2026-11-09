@@ -85,6 +85,8 @@ class DestinationLabels:
                 continue
             if TextPosition.is_comment(content, offset, language):
                 continue
+            if cls._token_from_variable(raw, candidate):
+                continue
             match = candidate
             break
         if match is None:
@@ -113,6 +115,23 @@ class DestinationLabels:
                 )
             )
         return found
+
+    #: A Telegram bot token as it is written in a file: the bot's numeric id, a colon, thirty-five characters.
+    _TELEGRAM_TOKEN = re.compile(rb"\b\d{8,10}:[A-Za-z0-9_-]{35}\b")
+
+    @classmethod
+    def _token_from_variable(cls, raw: bytes, candidate: re.Match[bytes]) -> bool:
+        """Whether a bot API URL takes its token from a variable: `bot${token}`, `bot{token}`, `bot%s`.
+
+        The bot URL is a drop point because malware posts to it with a token it carries. A client that
+        asks its user for the token is a notifier; it is reported as a drop point only when a literal
+        token is written somewhere in the same file."""
+        if not candidate.group(0).lower().endswith(b"api.telegram.org/bot"):
+            return False
+        following = raw[candidate.end() : candidate.end() + 1]
+        if not following or following.isdigit():
+            return False
+        return cls._TELEGRAM_TOKEN.search(raw) is None
 
     _IP_URL = re.compile(
         rb"\bhttps?://(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?::\d{1,5})?(?:/|[\"'\s]|$)"
