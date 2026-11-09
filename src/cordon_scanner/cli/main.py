@@ -82,7 +82,7 @@ class CommandLine:
     def _front_end(arguments: list[str]) -> int | None:
         """A command that takes the rest of the command line whole, before argparse sees it: `npm`
         and `pip` (the tool's own flags), and any front end a plugin registers (`mcp`)."""
-        from cordon_scanner.cli.commands.install_guard import InstallGuardCommand
+        from cordon_scanner.cli.commands.install.command import InstallGuardCommand
 
         if arguments[:1] and arguments[0] in InstallGuardCommand.TOOLS:
             return InstallGuardCommand.main(arguments[0], arguments[1:])

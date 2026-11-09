@@ -132,7 +132,7 @@ tutorials for this version ({__version__}):
         from cordon_scanner.cli.commands.review import ReviewCommand
 
         IncomingCommand.add_parser(sub)
-        from cordon_scanner.cli.commands.install_guard import InstallGuardCommand
+        from cordon_scanner.cli.commands.install.command import InstallGuardCommand
 
         InstallGuardCommand.add_parser(sub)
 

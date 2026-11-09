@@ -19,8 +19,6 @@ one command at a terminal.
 - `scan`: scan a directory, file or archive
 - `clone`: clone, scanned before checkout
 - `pull`: pull, scanned before the merge
-- `npm`: npm install, scanned before it runs
-- `pip`: pip install, scanned before it runs
 - `inventory`: what the repository is, and why
 - `deps`: dependency graph and findings
 - `review`: what a dependency update adds
@@ -259,30 +257,6 @@ Fetch the branch, scan the incoming commit from git's object store, and merge on
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## npm
-
-Run npm, scanning every package before anything is installed.
-
-`cordon-scanner npm install ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH.
-
-```
-┌────────────────────────────────────────────────────────────────────────────┐
-│ arguments                 npm's own arguments                              │
-└────────────────────────────────────────────────────────────────────────────┘
-```
-
-## pip
-
-Run pip, scanning every package before anything is installed.
-
-`cordon-scanner pip install ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH.
-
-```
-┌────────────────────────────────────────────────────────────────────────────┐
-│ arguments                 pip's own arguments                              │
-└────────────────────────────────────────────────────────────────────────────┘
-```
-
 ## inventory
 
 Print what the repository is, and the evidence for it.
@@ -390,7 +364,7 @@ Re-render a saved JSON result in another format.
 - `config`: check the repository configuration
 - `baseline`: record findings, adopt gradually
 - `suppress`: reviewed, expiring exceptions
-- `guard`: git hooks and self-integrity
+- `guard`: git hooks, shims, self-integrity
 - `verify`: check this install is genuine
 - `notify`: test the notification channels
 
@@ -583,6 +557,8 @@ Scanner self-integrity and git hook installation.
 │ guard verify                  check that the guard is intact               │
 │ guard install                 install fail-closed git hooks                │
 │ guard update                  regenerate the guard hash manifest           │
+│ guard shims                   route npm, pip, cargo, go, ... through       │
+│                               Cordon from any shell                        │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -616,6 +592,15 @@ Scanner self-integrity and git hook installation.
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ path                                                                       │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+### guard shims
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ --dir SHIM_DIR            where to write them                              │
+│ --remove                  delete the shims Cordon wrote                    │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -659,6 +644,152 @@ Notification channels: send a test message to each.
 │                           CORDON_NOTIFY_SLACK and CORDON_NOTIFY_TEAMS      │
 │ --config PATH             the configuration file to read                   │
 │ --policy PATH             the organisation policy to read                  │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Install, checked first
+
+- `npm`: npm install, scanned before it runs
+- `pnpm`: pnpm install, scanned first
+- `yarn`: yarn install, scanned first
+- `pip`: pip install, scanned before it runs
+- `pip3`: pip3 install, scanned first
+- `uv`: uv add/sync/pip, scanned first
+- `poetry`: poetry add/install, scanned first
+- `cargo`: cargo build/install, scanned first
+- `go`: go get/build/install, scanned first
+- `gem`: gem install, scanned first
+- `bundler`: bundle install, scanned first
+
+## npm
+
+Run npm, scanning every package before anything is installed.
+
+`cordon-scanner npm ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 npm's own arguments                              │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## pnpm
+
+Run pnpm, scanning every package before anything is installed.
+
+`cordon-scanner pnpm ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 pnpm's own arguments                             │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## yarn
+
+Run yarn, scanning every package before anything is installed.
+
+`cordon-scanner yarn ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 yarn's own arguments                             │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## pip
+
+Run pip, scanning every package before anything is installed.
+
+`cordon-scanner pip ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 pip's own arguments                              │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## pip3
+
+Run pip3, scanning every package before anything is installed.
+
+`cordon-scanner pip3 ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 pip3's own arguments                             │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## uv
+
+Run uv, scanning every package before anything is installed.
+
+`cordon-scanner uv ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 uv's own arguments                               │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## poetry
+
+Run poetry, scanning every package before anything is installed.
+
+`cordon-scanner poetry ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 poetry's own arguments                           │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## cargo
+
+Run cargo, scanning every package before anything is installed.
+
+`cordon-scanner cargo ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 cargo's own arguments                            │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## go
+
+Run go, scanning every package before anything is installed.
+
+`cordon-scanner go ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 go's own arguments                               │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## gem
+
+Run gem, scanning every package before anything is installed.
+
+`cordon-scanner gem ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 gem's own arguments                              │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## bundler
+
+Run bundler, scanning every package before anything is installed.
+
+`cordon-scanner bundler ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 bundler's own arguments                          │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
