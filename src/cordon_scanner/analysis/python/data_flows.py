@@ -7,6 +7,7 @@ from __future__ import annotations
 import ast
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.analysis.python.environ_carry import EnvironmentCarry
 from cordon_scanner.analysis.python.pyfacts import (
     DNS_LOOKUPS,
     ENVIRONMENT,
@@ -270,27 +271,16 @@ class DataFlows(AnalyzerCore):
         every token and secret the process can see, serialised and sent in one call. Reading one
         named setting and calling its service is what every API client does; sending all of them
         is the commonest exfiltration in published malware. A keyed read (`os.environ["KEY"]`,
-        `os.getenv("KEY")`) is not the whole environment, nor is a copy handed to a child
-        process, which inherits it anyway.
+        `os.getenv("KEY")`, `env.get("KEY")` on an alias, a helper that only reads keys) is not
+        the whole environment, nor is a copy handed to a child process, which inherits it anyway.
+        Which expressions are whole: `EnvironmentCarry`.
         """
-        parents = PythonSyntax.parents(tree)
         handed_on = self._environment_handed_to_children(tree)
 
-        def is_whole(node: ast.AST) -> bool:
-            if self._dotted(node) not in ("os.environ", "os.environb") or id(node) in handed_on:
-                return False
-            parent = parents.get(id(node))
-            if isinstance(parent, ast.Subscript) and parent.value is node:
-                return False
-            if isinstance(parent, ast.Compare):
-                return False
-            # `os.environ.get("KEY")` and its kin read one named setting.
-            return not (
-                isinstance(parent, ast.Attribute)
-                and parent.attr in ("get", "setdefault", "pop", "__contains__")
-            )
+        def is_environ(node: ast.AST) -> bool:
+            return self._dotted(node) in ("os.environ", "os.environb") and id(node) not in handed_on
 
-        holds = PythonFacts.carried(tree, is_whole, ast.Attribute)
+        holds = EnvironmentCarry.carried(tree, is_environ)
         for node in PythonSyntax.of(tree, ast.Call):
             resolved = self._resolve_callee(node)
             if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.EGRESS:
