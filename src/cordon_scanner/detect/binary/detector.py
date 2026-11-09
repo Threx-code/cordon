@@ -35,6 +35,7 @@ understood.
 from __future__ import annotations
 
 import re
+import zlib
 from dataclasses import replace
 from typing import TYPE_CHECKING, ClassVar, Final
 
@@ -80,7 +81,9 @@ class named `.dylib`, is exactly the substitution the rule exists to notice, and
 both would be silenced by comparing kinds alone. Nor is `data`, which is a
 default rather than a claim that two formats mean the same thing."""
 
-NATIVE_FORMATS = frozenset({"ELF executable", "PE executable", "Mach-O executable"})
+NATIVE_FORMATS = frozenset(
+    {"ELF executable", "PE executable", "Mach-O executable", "z/OS program object"}
+)
 """Compiled machine code for one platform or another. Swapped for each other they are a build's
 naming convention; a script or a Java class in their place is still a disguise -- reported, and for
 a shell script, which every shell rule reads by its shebang, recorded at low."""
@@ -308,6 +311,13 @@ class BinaryDetector(BaseDetector):
             else self.mismatch(content.path, named)
         )
         if (
+            mismatch is not None
+            and head is None
+            and named is not None
+            and named.name == "gzip archive"
+        ):
+            mismatch = self.through_gzip(content.path, raw, mismatch)
+        if (
             mismatch is None
             and named is None
             and not content.is_lfs_pointer
@@ -400,6 +410,23 @@ class BinaryDetector(BaseDetector):
                     "raised.",
                 )
             elif (
+                named is None
+                and self._names_a_shared_library(content.path)
+                and self._is_html_document(judged)
+            ):
+                # A web page where a library will go: `libffmpeg.so` holding the HTML of the page
+                # its download link led to (fmpegarm64v8a-mkkk, a benign PyPI block; 08 §8a).
+                # `dlopen`, `LoadLibrary` and the extension importer refuse a file that is not a
+                # binary, and no browser or image processor opens a library name -- the reason
+                # `_CODE_MARKERS` keeps `<html` for image names, where one does. Library names only.
+                finding = replace(
+                    finding,
+                    severity=min(finding.severity, Severity.LOW),
+                    message=finding.message
+                    + " It is a web page under a library's name, which no loader opens, so it is "
+                    "recorded rather than raised.",
+                )
+            elif (
                 named is not None
                 and named.name == "shell script"
                 and self._names_a_native_program(content.path)
@@ -457,6 +484,24 @@ class BinaryDetector(BaseDetector):
             return False
         printable = all(c.isprintable() or c in "\r\n\t" for c in text)
         return printable and len(BinaryDetector._WORDS.findall(raw)) >= 3
+
+    #: The start of an HTML document: an optional UTF-8 BOM and whitespace, then a doctype or the
+    #: document's own first element. Anchored, so HTML inside other text is not a document here.
+    _HTML_DOCUMENT: ClassVar[re.Pattern[bytes]] = re.compile(
+        rb"(?i)\A(?:\xef\xbb\xbf)?\s{0,64}<(?:!doctype\s+html\b|html\b|head\b|body\b)"
+    )
+
+    #: Names a native loader opens as a shared library, and nothing else does.
+    _SHARED_LIBRARY_EXTENSIONS: ClassVar[frozenset[str]] = frozenset({".so", ".dll", ".dylib"})
+
+    @staticmethod
+    def _is_html_document(raw: bytes) -> bool:
+        return BinaryDetector._HTML_DOCUMENT.match(raw[:256]) is not None
+
+    @staticmethod
+    def _names_a_shared_library(path: str) -> bool:
+        _, dot, extension = ContainerPaths.basename(path).lower().rpartition(".")
+        return bool(dot) and f".{extension}" in BinaryDetector._SHARED_LIBRARY_EXTENSIONS
 
     @staticmethod
     def _promises_a_binary_format(path: str) -> bool:
@@ -580,6 +625,43 @@ class BinaryDetector(BaseDetector):
         return (
             f"named {extension} but its contents are binary data, which no interpreter for it reads"
         )
+
+    #: How much of a gzip under an image's name is decompressed to judge what it holds.
+    GZIP_INNER_MAX: ClassVar[int] = 4 * 1024 * 1024
+
+    @staticmethod
+    def through_gzip(path: str, raw: bytes, mismatch: str) -> str | None:
+        """The mismatch of a gzip under an image's name, judged by what it decompresses to.
+
+        A web server's pre-compressed asset is a gzip of the image its name says: acr's
+        `public/favicon.ico` (a benign PyPI block; 08-BENIGN-F-SHAPES §8b). One whole member is
+        decompressed, at most `GZIP_INNER_MAX` bytes; anything else -- a stream that will not
+        open, ends early, runs past the bound or carries a second member -- keeps `mismatch` as it
+        was, so nothing is cleared by being too large to read. Within the bound the inner bytes
+        are judged as if they were the file: an image under an image's name is no disguise, an
+        executable gzipped as `.ico` is reported naming the executable.
+        """
+        extension = "." + ContainerPaths.basename(path).lower().rpartition(".")[2]
+        promised = next((f for f in FORMATS if extension in f.extensions), None)
+        if promised is None or promised.kind != "image":
+            return mismatch
+        stream = zlib.decompressobj(16 + zlib.MAX_WBITS)
+        try:
+            inner = stream.decompress(raw, BinaryDetector.GZIP_INNER_MAX + 1)
+        except zlib.error:
+            return mismatch
+        if (
+            len(inner) > BinaryDetector.GZIP_INNER_MAX
+            or not stream.eof
+            or stream.unused_data
+            or stream.unconsumed_tail
+        ):
+            return mismatch
+        found = BinaryDetector.identify(inner)
+        if found is None:
+            return mismatch
+        within = BinaryDetector.mismatch(path, found)
+        return None if within is None else f"{within}, compressed with gzip"
 
     LD_DIRECTIVE: ClassVar[re.Pattern[bytes]] = re.compile(
         rb"(?:INPUT|GROUP|OUTPUT_FORMAT|OUTPUT_ARCH|AS_NEEDED|SEARCH_DIR|TARGET)\s*\(|\)"

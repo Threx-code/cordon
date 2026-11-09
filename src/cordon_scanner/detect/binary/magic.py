@@ -141,6 +141,18 @@ FORMATS: tuple[Format, ...] = (
         extensions=(".wasm",),
         kind="executable",
     ),
+    Format(
+        "z/OS program object",
+        # The binder's program-object header, `IEWPLMH` in EBCDIC: what a z/OS shared library is
+        # in place of ELF. IBM's `pyzfile` ships `libzfile.so` so, with its `libzfile.x` side
+        # deck beside it, and as an unrecognised format under `.so` it read as a disguise
+        # (08-BENIGN-F-SHAPES §8c). Recognised, it is a compiled program like the other three, and
+        # the executable checks read it as one.
+        (b"\xc9\xc5\xe6\xd7\xd3\xd4\xc8",),
+        executable=True,
+        extensions=(".so",),
+        kind="executable",
+    ),
     # No extensions, deliberately. A shebang identifies a script when it is
     # present, but no source extension *promises* one: most Python files have
     # no shebang, and listing `.py` here made every one of them disagree with
