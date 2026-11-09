@@ -131,9 +131,37 @@ class Content:
             return False
         return not rule_id.startswith(INTEL_RULE_PREFIXES)
 
+    @staticmethod
+    def gap_blocked(row: dict) -> bool:
+        """Whether a scan row was blocked as unreadable or incomplete by the package's own bytes: its
+        content is incomplete and one of `CONTENT_GAPS` says why. A harness or infrastructure
+        failure (an error, a timeout, a memory limit, a detector crash) never counts. Reported as its
+        own line beside "caught by a content finding", never folded into it (cordon-47, 2026-11-07)."""
+        if row.get("error") or str(row.get("exit")) in ("timeout", "None"):
+            return False
+        if row.get("content_complete") is not False:
+            return False
+        return any(f[0] in CONTENT_GAPS for f in row.get("findings") or ())
+
+
+#: The gaps the package's own bytes cause, which count as blocked in the unknown bar ("blocked as
+#: unreadable/incomplete"): source it runs that does not parse, code its install runs that it does
+#: not ship, and archive members refused by its bombs, padding or nesting. Not here, so never
+#: counted on the malware side: formats or readers we lack, memory limits, timeouts, crashes.
+CONTENT_GAPS = frozenset(
+    {
+        "OPERATIONAL.SOURCE.UNPARSED",
+        "OPERATIONAL.MANIFEST.UNPARSED",
+        "OPERATIONAL.INSTALL.CODE_NOT_SHIPPED",
+        "OPERATIONAL.ARCHIVE.MEMBER_REJECTED",
+        "OPERATIONAL.ARCHIVE.REJECTED",
+    }
+)
+
 
 __all__ = [
     "CONTENT_DETECTORS",
+    "CONTENT_GAPS",
     "INTEL_DETECTORS",
     "INTEL_MARKERS",
     "INTEL_RULE_PREFIXES",

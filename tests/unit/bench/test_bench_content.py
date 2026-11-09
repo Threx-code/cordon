@@ -28,6 +28,42 @@ from cordon_scanner import Scanner
 from cordon_scanner.foundation.config.settings import Config
 
 
+class TestContentGaps:
+    """A gap the package's own bytes cause counts as blocked in the unknown bar, on its own line;
+    a harness or infrastructure failure never does (cordon-47, 2026-11-07)."""
+
+    @staticmethod
+    def row(rules: list[str], **flags) -> dict:
+        findings = [[r, "medium", "high", "operational", "a.py", "", "engine"] for r in rules]
+        return {"exit": 4, "content_complete": False, "findings": findings, **flags}
+
+    def test_exactly_these_ids_are_content_gaps(self) -> None:
+        from content import CONTENT_GAPS
+
+        assert sorted(CONTENT_GAPS) == [
+            "OPERATIONAL.ARCHIVE.MEMBER_REJECTED",
+            "OPERATIONAL.ARCHIVE.REJECTED",
+            "OPERATIONAL.INSTALL.CODE_NOT_SHIPPED",
+            "OPERATIONAL.MANIFEST.UNPARSED",
+            "OPERATIONAL.SOURCE.UNPARSED",
+        ]
+
+    def test_an_unparseable_running_file_is_gap_blocked(self) -> None:
+        assert Content.gap_blocked(self.row(["OPERATIONAL.SOURCE.UNPARSED"]))
+
+    def test_harness_and_infrastructure_failures_never_are(self) -> None:
+        assert not Content.gap_blocked(self.row(["OPERATIONAL.SCAN.MEMORY_LIMIT"]))
+        assert not Content.gap_blocked(self.row(["OPERATIONAL.DETECTOR.FAILED"]))
+        assert not Content.gap_blocked(self.row(["OPERATIONAL.ARCHIVE.UNSUPPORTED_FORMAT"]))
+        assert not Content.gap_blocked({"exit": "timeout", "findings": None})
+        assert not Content.gap_blocked(self.row(["OPERATIONAL.SOURCE.UNPARSED"], error="Crash"))
+
+    def test_a_complete_scan_is_not_gap_blocked(self) -> None:
+        assert not Content.gap_blocked(
+            self.row(["OPERATIONAL.SOURCE.UNPARSED"], content_complete=True)
+        )
+
+
 class TestLevels:
     @staticmethod
     def row(rule: str, detector: str, severity: str = "critical", confidence: str = "high") -> list:

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import io
 import lzma
+import pickletools
 import posixpath
 import struct
 import zipfile
@@ -82,11 +83,18 @@ class CompressedHeader:
             return False
         # The header is only the candidate; a decode of the first block is the proof, so bytes that
         # merely start like one are never taken for a stream (modelling team's review of note 53).
+        # The proof must decode something: a header declaring size 0 gives a decoder nothing to
+        # produce, so it "succeeds" on any bytes (a CoreML weights blob, a CASA table index; 08 7d).
+        # A real empty stream ends exactly where its input does.
+        head = data[:65536]
+        decoder = lzma.LZMADecompressor(format=lzma.FORMAT_ALONE)
         try:
-            lzma.LZMADecompressor(format=lzma.FORMAT_ALONE).decompress(data[:65536], 4096)
+            out = decoder.decompress(head, 4096)
         except lzma.LZMAError:
             return False
-        return True
+        if out:
+            return True
+        return decoder.eof and not decoder.unused_data and len(head) == len(data)
 
 
 class ArchiveSignatures:
@@ -150,6 +158,53 @@ class ArchiveSignatures:
             if lowered.endswith(suffix) and len(base) > len(suffix):
                 return base[: -len(suffix)]
         return base
+
+
+#: Every opcode pickle defines, by its one-character code (protocols 0 to 5).
+_PICKLE_OPCODES: frozenset[str] = frozenset(op.code for op in pickletools.opcodes)
+
+
+class NotArchiveFormats:
+    """Formats a member named as an archive may positively be instead, each known by its full
+    header, never a magic alone, and only those measured (05-CENSUS C2, 08 7d): such a member is
+    examined as the file it is, as text is (class 7), not refused as an archive that would not open."""
+
+    _APPLE_DOUBLE = b"\x00\x05\x16\x07\x00\x02\x00\x00"
+
+    @staticmethod
+    def format_of(data: bytes) -> str | None:
+        """ "AppleDouble" or "pickle", or None."""
+        if NotArchiveFormats._apple_double(data):
+            return "AppleDouble"
+        if NotArchiveFormats._pickle(data):
+            return "pickle"
+        return None
+
+    @staticmethod
+    def _apple_double(data: bytes) -> bool:
+        """A macOS resource fork (`__MACOSX/._name`): magic and version 2, a 16-byte filler, an entry
+        count of at least one, and every 12-byte entry descriptor pointing inside the fork."""
+        if len(data) < 26 or data[:8] != NotArchiveFormats._APPLE_DOUBLE:
+            return False
+        (count,) = struct.unpack(">H", data[24:26])
+        if not count >= 1 or 26 + 12 * count > len(data):
+            return False
+        for i in range(count):
+            _entry, offset, length = struct.unpack(">III", data[26 + 12 * i : 38 + 12 * i])
+            if offset < 26 + 12 * count or offset + length > len(data):
+                return False
+        return True
+
+    @staticmethod
+    def _pickle(data: bytes) -> bool:
+        """A pickle stream of protocol 2 to 5: PROTO and its version, then an opcode pickle defines
+        (PyTorch's legacy `torch.save` opens with LONG1 and its magic number)."""
+        return (
+            len(data) >= 3
+            and data[0] == 0x80
+            and 2 <= data[1] <= 5
+            and chr(data[2]) in _PICKLE_OPCODES
+        )
 
 
 class UnopenedFormats:
@@ -225,6 +280,18 @@ class UnopenedFormats:
         shape = MemberNames.not_an_archive(inner)
         if shape == "empty" or UnopenedFormats.refused(member_path, inner, rejected):
             return
+        other = NotArchiveFormats.format_of(bytes(inner[:65536]))
+        if other is not None and not ArchiveSignatures.opens(bytes(inner[: UnopenedFormats.HEAD])):
+            # Named as an archive, it is positively another format: the member is examined as that
+            # (a pickle reaches the pickle reader), said, not refused unread (08 7d).
+            rejected.append(
+                (
+                    member_path,
+                    Rejection.NOT_AN_ARCHIVE,
+                    f"named as an archive, it is a {other} file, examined as one",
+                )
+            )
+            return
         # Bytes whose structure says archive (a whole header, `ArchiveSignatures.opens`) are a broken
         # archive however they decode: an ar of object files is valid UTF-8, and was passed as text.
         if shape == "text" and not ArchiveSignatures.opens(bytes(inner[: UnopenedFormats.HEAD])):
@@ -240,4 +307,10 @@ class UnopenedFormats:
         rejected.append((member_path, reason, detail))
 
 
-__all__ = ["STREAM_SUFFIXES", "ArchiveSignatures", "CompressedHeader", "UnopenedFormats"]
+__all__ = [
+    "STREAM_SUFFIXES",
+    "ArchiveSignatures",
+    "CompressedHeader",
+    "NotArchiveFormats",
+    "UnopenedFormats",
+]
