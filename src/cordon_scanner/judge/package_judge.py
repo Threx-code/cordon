@@ -73,6 +73,24 @@ class ReleaseBundle:
         ".pyc",
     )
     READABLE_OTHER: ClassVar[tuple[str, ...]] = (".pth", ".sh", ".bat", ".ps1")
+    #: What runs without anyone calling the package's code: a `.pth` line runs at every interpreter
+    #: start; entry points and build configuration decide what installing or launching it runs.
+    SURFACE: ClassVar[tuple[str, ...]] = (
+        ".pth",
+        "entry_points.txt",
+        "pyproject.toml",
+        "setup.cfg",
+        "MANIFEST.in",
+    )
+    SURFACE_BYTES: ClassVar[int] = 3000
+    CODE: ClassVar[tuple[str, ...]] = (".py", ".pyi", *OTHER)
+    #: The characters an encoded run (base64, base64url, hex) is made of; counted in one pass.
+    ENCODED_CHARS: ClassVar[frozenset[str]] = frozenset(
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=_-"
+    )
+    ENCODED_MIN: ClassVar[int] = 100
+    COMPRESSED: ClassVar[tuple[str, ...]] = (".gz", ".bz2", ".xz")
+    ENTRY_TARGET: ClassVar[re.Pattern[str]] = re.compile(r"=\s*([A-Za-z_][\w.]*)\s*:")
 
     @staticmethod
     def members(archive: Path) -> list[tuple[str, bytes]]:
@@ -125,6 +143,8 @@ class ReleaseBundle:
             ", ".join(f"{cls.short(n)} ({len(b)} B)" for n, b in members)[:3000],
             "",
         ]
+        parts += cls._surface(members)
+        parts += cls._data_digest(members)
         used = sum(len(p) for p in parts)
         for name, text, notes in cls._python_in_order(members, flagged):
             if used > budget:
@@ -140,7 +160,7 @@ class ReleaseBundle:
             parts.append(joined)
             used += len(joined)
         for name, data in members:
-            if name.endswith(cls.OTHER):
+            if name.endswith(cls.OTHER) and not name.endswith(".pth"):
                 shown = (
                     data[:400].decode("utf-8", "replace")
                     if name.endswith(cls.READABLE_OTHER)
@@ -148,6 +168,72 @@ class ReleaseBundle:
                 )
                 parts.append(f"## OTHER {cls.short(name)}\n{cls.shrink(shown)}")
         return "\n".join(parts)[: budget + 6000]
+
+    @classmethod
+    def _surface(cls, members: Sequence[tuple[str, bytes]]) -> list[str]:
+        """Every `.pth` file, the entry points and the build configuration, in full up to a bound:
+        placed before any source file, so the budget can never cut them."""
+        out = ["## INSTALL AND STARTUP SURFACE (runs without anyone calling the package)"]
+        for name, data in members:
+            if name.endswith(cls.SURFACE):
+                text = cls.shrink(data[: cls.SURFACE_BYTES].decode("utf-8", "replace"))
+                cut = " [... truncated]" if len(data) > cls.SURFACE_BYTES else ""
+                out.append(f"### {cls.short(name)} ({len(data)} B)\n{text}{cut}")
+        return [*out, ""] if len(out) > 1 else []
+
+    @classmethod
+    def _data_digest(cls, members: Sequence[tuple[str, bytes]]) -> list[str]:
+        """Each data file by its shape, never its bytes: size, and the longest encoded run in it (also
+        inside a compressed member, opened in memory). A payload hidden in a data file shows here."""
+        import bz2
+        import gzip
+        import lzma
+
+        rows: list[tuple[int, str]] = []
+        for name, data in members:
+            if name.endswith((*cls.CODE, *cls.SURFACE)) or cls.SKIP.search(name):
+                continue
+            body, note = data, ""
+            if name.endswith(cls.COMPRESSED):
+                opener = {".gz": gzip.decompress, ".bz2": bz2.decompress, ".xz": lzma.decompress}[
+                    next(s for s in cls.COMPRESSED if name.endswith(s))
+                ]
+                try:
+                    body, note = opener(data)[:MAX_MEMBER_BYTES], " compressed"
+                except (OSError, EOFError, lzma.LZMAError, ValueError):
+                    body, note = b"", " compressed, unreadable"
+            longest = cls.longest_run(body.decode("latin-1"))
+            flag = f", encoded run of {longest} chars" if longest else ""
+            rows.append((longest, f"{cls.short(name)} ({len(data)} B{note}{flag})"))
+        if not rows:
+            return []
+        rows.sort(key=lambda r: -r[0])
+        return ["## DATA FILES (shape only)", *[r for _, r in rows[:30]], ""]
+
+    @classmethod
+    def longest_run(cls, text: str) -> int:
+        """The longest run of encoded-text characters, if at least `ENCODED_MIN` long: one pass."""
+        best = run = 0
+        allowed = cls.ENCODED_CHARS
+        for ch in text:
+            run = run + 1 if ch in allowed else 0
+            best = max(best, run)
+        return best if best >= cls.ENCODED_MIN else 0
+
+    @staticmethod
+    def imported(text: str) -> set[str]:
+        """Module and name parts of every `import` / `from ... import` line, read line by line."""
+        out: set[str] = set()
+        for raw in text.splitlines():
+            line = raw.strip()
+            if line.startswith("from "):
+                head, sep, tail = line[5:].partition(" import ")
+                if sep:
+                    out.add(head.strip().rsplit(".", 1)[-1])
+                    out.update(p.strip().split(" ")[0] for p in tail.strip("() ").split(","))
+            elif line.startswith("import "):
+                out.update(p.strip().split(" ")[0].rsplit(".", 1)[-1] for p in line[7:].split(","))
+        return out
 
     @staticmethod
     def short(name: str) -> str:
@@ -158,7 +244,9 @@ class ReleaseBundle:
     def _python_in_order(
         cls, members: Sequence[tuple[str, bytes]], flagged: dict[str, list[ScanHint]]
     ) -> list[tuple[str, str, list[str]]]:
-        """Python sources: setup first, package roots next, then what the scan flagged, then the rest."""
+        """Python sources: setup first, package roots next, then what the scan flagged and what runs on
+        import or launch (modules the roots import, entry-point targets), then the rest."""
+        reached = cls._reached(members)
         ranked = []
         for name, data in members:
             if not name.endswith(".py") or cls.SKIP.search(name):
@@ -166,12 +254,36 @@ class ReleaseBundle:
             hints = flagged.get(cls.short(name), [])
             notes = [f"{h.rule_id}" + (f" line {h.line}" if h.line else "") for h in hints][:20]
             base = name.rsplit("/", 1)[-1]
-            rank = 0 if base == "setup.py" else 1 if base == "__init__.py" else 2 if notes else 3
+            module = name.rsplit("/", 1)[-1].removesuffix(".py")
+            rank = (
+                0
+                if base == "setup.py"
+                else 1
+                if base == "__init__.py"
+                else 2
+                if notes or module in reached
+                else 3
+            )
             ranked.append(
                 ((rank, -len(notes), len(data)), name, data.decode("utf-8", "replace"), notes)
             )
         ranked.sort(key=lambda r: r[0])
         return [(name, text, notes) for _, name, text, notes in ranked]
+
+    @classmethod
+    def _reached(cls, members: Sequence[tuple[str, bytes]]) -> set[str]:
+        """Module names a package root imports, or an entry point names: what runs on import or launch.
+        By last dotted part, which is enough to order files by; nothing is resolved or run."""
+        reached: set[str] = set()
+        for name, data in members:
+            base = name.rsplit("/", 1)[-1]
+            text = data[:MAX_MEMBER_BYTES].decode("utf-8", "replace")
+            if base in ("__init__.py", "__main__.py", "setup.py"):
+                reached |= cls.imported(text)
+            if base in ("entry_points.txt", "setup.cfg", "pyproject.toml", "setup.py"):
+                reached.update(t.rsplit(".", 1)[-1] for t in cls.ENTRY_TARGET.findall(text))
+        reached.discard("")
+        return reached
 
 
 class PackagePrompts:

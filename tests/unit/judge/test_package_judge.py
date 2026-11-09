@@ -4,6 +4,8 @@ scripted: nothing is dialled."""
 
 from __future__ import annotations
 
+import base64
+import gzip
 import io
 import tarfile
 from pathlib import Path
@@ -81,6 +83,68 @@ class TestTheBundle:
     def test_the_budget_bounds_the_bundle(self, tmp_path) -> None:
         files = {**JudgeKit.FILES, **{f"demo/m{i}.py": "x = 1\n" * 2000 for i in range(20)}}
         assert len(ReleaseBundle.build(JudgeKit.sdist(tmp_path, files), budget=10_000)) <= 16_000
+
+
+class TestWhatTheBundleCannotLeaveOut:
+    """What runs without anyone calling the package -- a `.pth` line, an entry point -- and what hides in a
+    data file must reach the model even when the source fills the budget."""
+
+    @staticmethod
+    def archive(tmp_path: Path, files: dict[str, bytes]) -> Path:
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+            for name, data in files.items():
+                info = tarfile.TarInfo(f"demo-1.0/{name}")
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+        path = tmp_path / "demo-1.0.tar.gz"
+        path.write_bytes(buf.getvalue())
+        return path
+
+    def test_a_pth_line_survives_a_full_budget(self, tmp_path: Path) -> None:
+        big = {f"demo/m{i}.py": ("x = 1\n" * 4000).encode() for i in range(12)}
+        path = self.archive(tmp_path, {**big, "demo_hook.pth": b"import demo.startup\n"})
+        bundle = ReleaseBundle.build(path, budget=8000)
+        assert "demo_hook.pth" in bundle and "import demo.startup" in bundle
+        assert bundle.index("INSTALL AND STARTUP SURFACE") < bundle.index("## FILE ")
+
+    def test_an_encoded_run_in_a_compressed_data_file_shows_as_its_shape(
+        self, tmp_path: Path
+    ) -> None:
+        run = base64.b64encode(b"benign words, repeated " * 40)
+        path = self.archive(
+            tmp_path, {"demo/__init__.py": b"", "demo/words.json.gz": gzip.compress(run)}
+        )
+        bundle = ReleaseBundle.build(path)
+        assert f"encoded run of {len(run)} chars" in bundle and "compressed" in bundle
+        assert run.decode()[:60] not in bundle, "a data file is described, never shown"
+
+    def test_what_a_package_root_imports_comes_before_the_rest(self, tmp_path: Path) -> None:
+        path = self.archive(
+            tmp_path,
+            {
+                "demo/__init__.py": b"from .agent import start\n",
+                "demo/aaa_helpers.py": b"def a():\n    return 1\n",
+                "demo/agent.py": b"def start():\n    return 2\n" * 50,
+            },
+        )
+        bundle = ReleaseBundle.build(path)
+        assert bundle.index("## FILE demo/agent.py") < bundle.index("## FILE demo/aaa_helpers.py")
+
+    def test_the_run_count_is_linear(self) -> None:
+        import time
+
+        text = ("A" * 99 + "!") * 10_000 + "B" * 1_000_000
+        started = time.perf_counter()
+        assert ReleaseBundle.longest_run(text) == 1_000_000
+        assert time.perf_counter() - started < 2.0
+        assert ReleaseBundle.imported("from .a import b, c\nimport os.path, sys\n") >= {
+            "a",
+            "b",
+            "c",
+            "path",
+            "sys",
+        }
 
 
 class TestTheCascade:
