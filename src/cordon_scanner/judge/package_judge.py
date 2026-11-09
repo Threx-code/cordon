@@ -51,8 +51,12 @@ class ScanHint:
 class ReleaseBundle:
     """One release as text for the judge, read in memory and bounded."""
 
+    #: A long single- or double-quoted run of base64, hex or escape characters. Two
+    #: alternatives instead of a backreference to the opening quote (the pattern validator
+    #: refuses backreferences in every engine pattern).
     BLOB: ClassVar[re.Pattern[str]] = re.compile(
-        r"""(?P<q>['"])(?P<s>[A-Za-z0-9+/=_\-\\x]{160,})(?P=q)"""
+        r"""'(?P<s1>[A-Za-z0-9+/=_\-\\x]{160,})'"""
+        r"""|"(?P<s2>[A-Za-z0-9+/=_\-\\x]{160,})["]"""
     )
     SKIP: ClassVar[re.Pattern[str]] = re.compile(
         r"(?i)(^|/)(tests?|docs?|examples?)/|(^|/)test_[^/]*\.py$"
@@ -113,9 +117,13 @@ class ReleaseBundle:
     @classmethod
     def shrink(cls, text: str) -> str:
         """Long literals by length only: the model gets their shape, not their bytes."""
-        return cls.BLOB.sub(
-            lambda m: f"{m.group('q')}<BLOB len={len(m.group('s'))}>{m.group('q')}", text
-        )
+
+        def shape(m: re.Match[str]) -> str:
+            quote = "'" if m.group("s1") is not None else '"'
+            body = m.group("s1") if m.group("s1") is not None else m.group("s2")
+            return f"{quote}<BLOB len={len(body)}>{quote}"
+
+        return cls.BLOB.sub(shape, text)
 
     @classmethod
     def build(

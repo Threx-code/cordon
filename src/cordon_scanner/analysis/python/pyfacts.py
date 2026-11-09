@@ -8,7 +8,7 @@ from __future__ import annotations
 import ast
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.foundation.capabilities import Capability
@@ -314,13 +314,47 @@ class PythonFacts:
         for node in PythonSyntax.of(tree, ast.Name, ast.Attribute):
             if (node.id if isinstance(node, ast.Name) else node.attr) in PythonFacts.PROBE_NAMES:
                 return None
+        parents = PythonSyntax.parents(tree)
         return tuple(
             (node.lineno, node.col_offset, node.end_lineno, node.end_col_offset)
             for node in PythonSyntax.of(tree, ast.Constant)
             if isinstance(node.value, str)
             and node.end_lineno is not None
             and node.end_col_offset is not None
+            and PythonFacts._is_prose(node, parents.get(id(node)))
         )
+
+    #: Calls whose string arguments are text for a person: a message, not something the code
+    #: compares, opens or runs.
+    PROSE_CALLS: ClassVar[frozenset[str]] = frozenset(
+        {"print", "echo", "secho", "warn", "warning", "info", "debug", "error", "critical",
+         "exception", "log", "add_argument", "add_option"}
+    )  # fmt: skip
+
+    @staticmethod
+    def _is_prose(node: ast.Constant, parent: ast.AST | None) -> bool:
+        """A string that is text, not a value the code tests: a docstring or other bare string,
+        a multi-line template assigned whole (`SCRIPT = \"\"\"...\"\"\"`), or a message handed to
+        print, logging, warnings or an argument parser. `'TracerPid:\\t0' not in status` and
+        `open('/proc/self/status')` are values the code uses: a probe there stays a probe."""
+        if isinstance(parent, ast.Expr):
+            return True
+        text = node.value if isinstance(node.value, str) else ""
+        if isinstance(parent, ast.Assign | ast.AnnAssign) and parent.value is node:
+            return "\n" in text
+        if isinstance(parent, ast.keyword):
+            return parent.arg in ("help", "description", "epilog", "msg", "message")
+        if isinstance(parent, ast.Call) and node in parent.args:
+            func = parent.func
+            name = (
+                func.id
+                if isinstance(func, ast.Name)
+                else func.attr
+                if isinstance(func, ast.Attribute)
+                else ""
+            )
+            return name in PythonFacts.PROSE_CALLS
+        return False
 
     @classmethod
     def _pattern_literals(cls, tree: ast.AST) -> frozenset[int]:
