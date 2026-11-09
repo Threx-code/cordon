@@ -26,7 +26,7 @@ import json
 import re
 import tarfile
 import zipfile
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar, Final
@@ -145,6 +145,7 @@ class ReleaseBundle:
         ]
         parts += cls._surface(members)
         parts += cls._data_digest(members)
+        parts += NativeStrings.digest(members, cls.short)
         used = sum(len(p) for p in parts)
         for name, text, notes in cls._python_in_order(members, flagged):
             if used > budget:
@@ -284,6 +285,75 @@ class ReleaseBundle:
                 reached.update(t.rsplit(".", 1)[-1] for t in cls.ENTRY_TARGET.findall(text))
         reached.discard("")
         return reached
+
+
+class NativeStrings:
+    """What a compiled module (`.so`, `.pyd`, `.dll`, `.exe`, `.dylib`) says about itself, for a reader
+    that cannot run or disassemble it: its readable strings, ASCII and UTF-16 (Windows keeps URLs
+    and paths wide), ranked so the telling ones come first -- addresses (`://`), file and registry
+    paths, and the system functions it imports, whose names a binary keeps in plain text. The
+    interpreter's own C API (`Py...`) is the noise of every extension module and is dropped."""
+
+    SUFFIXES: ClassVar[tuple[str, ...]] = (".so", ".pyd", ".dll", ".exe", ".dylib")
+    ASCII: ClassVar[re.Pattern[bytes]] = re.compile(rb"[\x20-\x7e]{8,200}")
+    WIDE: ClassVar[re.Pattern[bytes]] = re.compile(rb"(?<![\x20-\x7e])(?:[\x20-\x7e]\x00){8,200}")
+    #: Source files a compiler names in its own panic and debug strings.
+    SOURCE: ClassVar[tuple[str, ...]] = (".rs", ".c", ".cc", ".cpp", ".h", ".hpp", ".go", ".zig")
+    READ_BYTES: ClassVar[int] = 8 << 20
+    PER_FILE: ClassVar[int] = 120
+
+    @classmethod
+    def digest(cls, members: Sequence[tuple[str, bytes]], short: Callable[[str], str]) -> list[str]:
+        out: list[str] = []
+        for name, data in members:
+            if not name.lower().endswith(cls.SUFFIXES):
+                continue
+            shown = cls.ranked(data[: cls.READ_BYTES])
+            if shown:
+                out.append(f"### {short(name)} ({len(data)} B, {len(shown)} strings shown)")
+                out.append("\n".join(shown))
+        return ["## COMPILED CODE (readable strings only)", *out, ""] if out else []
+
+    @classmethod
+    def ranked(cls, data: bytes) -> list[str]:
+        seen: dict[str, None] = {}
+        for match in cls.ASCII.finditer(data):
+            seen.setdefault(match.group().decode("ascii"), None)
+        for match in cls.WIDE.finditer(data):
+            seen.setdefault(match.group().decode("utf-16-le"), None)
+        kept = [s.strip() for s in seen if not s.startswith(("Py", "_Py")) and s.strip()]
+        kept = [s for s in kept if cls.rank(s) < 5]
+        kept.sort(key=lambda s: (cls.rank(s), -len(s)))
+        return [ReleaseBundle.shrink(s)[:200] for s in kept[: cls.PER_FILE]]
+
+    @staticmethod
+    def api_name(text: str) -> bool:
+        """A Windows or POSIX API name: one CamelCase word of letters and digits (`CreateProcessW`),
+        checked character by character."""
+        return (
+            len(text) <= 64
+            and text.isascii()
+            and text.isalnum()
+            and text[0].isupper()
+            and sum(c.isupper() for c in text) >= 2
+            and any(c.islower() for c in text)
+        )
+
+    @classmethod
+    def rank(cls, text: str) -> int:
+        """0 an address, 1 a registry or Windows path, 2 a system function, 3 another path, 4 the rest;
+        5 the compiler's own source paths (`.rs`, `.c`, ...), which every build carries and are dropped."""
+        if "://" in text:
+            return 0
+        if text.lower().endswith(cls.SOURCE) or "/rustc/" in text or "/.cargo/" in text:
+            return 5
+        if "\\" in text or "%" in text:
+            return 1
+        if cls.api_name(text):
+            return 2
+        if text.startswith(("/", "~")) or "/" in text:
+            return 3
+        return 4
 
 
 class PackagePrompts:

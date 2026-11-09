@@ -101,6 +101,28 @@ class TestWhatTheBundleCannotLeaveOut:
         path.write_bytes(buf.getvalue())
         return path
 
+    def test_a_compiled_module_shows_its_telling_strings_first(self, tmp_path: Path) -> None:
+        # A stand-in extension module: the interpreter's C API, a compiler's own source path, a
+        # system function, a wide (UTF-16) address and a registry path, as a real build lays them out.
+        binary = (
+            b"\x00PyInit__native\x00/rustc/abc123/library/core/src/fmt/mod.rs\x00CreateProcessW\x00"
+            + "https://example.invalid/fetch".encode("utf-16-le")
+            + b"\x00\x00Software\\Demo\\Settings\\Values\x00ordinary words in a row\x00"
+        )
+        path = self.archive(
+            tmp_path, {"demo/__init__.py": b"from ._native import *\n", "demo/_native.pyd": binary}
+        )
+        bundle = ReleaseBundle.build(path)
+        section = bundle[bundle.index("## COMPILED CODE") :]
+        lines = section.splitlines()[2:6]
+        assert lines == [
+            "https://example.invalid/fetch",
+            "Software\\Demo\\Settings\\Values",
+            "CreateProcessW",
+            "ordinary words in a row",
+        ]
+        assert "PyInit" not in section and "mod.rs" not in section
+
     def test_a_pth_line_survives_a_full_budget(self, tmp_path: Path) -> None:
         big = {f"demo/m{i}.py": ("x = 1\n" * 4000).encode() for i in range(12)}
         path = self.archive(tmp_path, {**big, "demo_hook.pth": b"import demo.startup\n"})
