@@ -52,6 +52,44 @@ if TYPE_CHECKING:
     from cordon_scanner.ecosystems.base import Manifest
 
 
+class BuildRoots:
+    """Where a `setup.py` can be the build script pip runs, from the paths a walk sees."""
+
+    #: Marks an sdist's root (the directory holding its `PKG-INFO`) inside the directory set the
+    #: walk collects (`note`), so the one set answers both questions `not_a_build_root` asks.
+    SDIST_ROOT: ClassVar[str] = "\x00sdist:"
+
+    @staticmethod
+    def note(path: str, directories: set[str]) -> None:
+        """Record what a walked path says about its directory: an importable package (an
+        `__init__.py`), or an sdist's root (a `PKG-INFO` that is not inside `*.egg-info`)."""
+        name = ContainerPaths.basename(path)
+        directory = path.rpartition("/")[0]
+        if name == "__init__.py":
+            directories.add(directory)
+        elif name == "PKG-INFO" and not directory.endswith(".egg-info"):
+            directories.add(BuildRoots.SDIST_ROOT + directory)
+
+    @staticmethod
+    def not_a_build_root(directory: str, directories: Iterable[str] | set[str]) -> bool:
+        """Whether a `setup.py` in `directory` cannot be the build script pip runs: it is inside an
+        importable package, or it is below an sdist's root without being that root. pip builds an
+        sdist by running the `setup.py` beside its `PKG-INFO` and no other; a deeper one runs only if
+        that one imports it, which the hook's import closure follows (`vendored numpy/core/setup.py`,
+        `src/<pkg>/setup.py`, a CLI's `setup` subcommand module)."""
+        known = directories if isinstance(directories, set | frozenset) else set(directories)
+        if directory in known:
+            return True
+        roots = [
+            d.removeprefix(BuildRoots.SDIST_ROOT)
+            for d in known
+            if d.startswith(BuildRoots.SDIST_ROOT)
+        ]
+        if not roots or directory in roots:
+            return False
+        return any(root == "" or directory.startswith(root + "/") for root in roots)
+
+
 class Hooks:
     """The code a package runs at install or import."""
 
@@ -89,7 +127,7 @@ class Hooks:
         name = ContainerPaths.basename(hook.path)
         directory = hook.path.rpartition("/")[0]
         if name in PACKAGED_BUILD_FILENAMES:
-            if directory in package_directories:
+            if BuildRoots.not_a_build_root(directory, package_directories):
                 return False
             # And a build file the project's own tests build. See
             # `FIXTURE_DIRECTORIES`: this one costs more than the others,
@@ -711,11 +749,9 @@ class Hooks:
         """Paths that run for whoever INSTALLS the package, a subset (`ScanContext.consumer_install_paths`):
         a `setup.py` reaches a consumer only when it overrides a consumer-time command."""
         known = frozenset(unit.path for unit in units)
-        package_directories = {
-            unit.path.rpartition("/")[0]
-            for unit in units
-            if ContainerPaths.basename(unit.path) == "__init__.py"
-        }
+        package_directories: set[str] = set()
+        for unit in units:
+            BuildRoots.note(unit.path, package_directories)
         from cordon_scanner.analysis.shared.source_paths import SourcePaths
 
         for unit in units:
@@ -725,7 +761,7 @@ class Hooks:
             ):
                 continue
             if ContainerPaths.basename(unit.path) in PACKAGED_BUILD_FILENAMES and (
-                unit.path.rpartition("/")[0] in package_directories
+                BuildRoots.not_a_build_root(unit.path.rpartition("/")[0], package_directories)
                 # And the second half of the same test. Applying only the
                 # package-directory half here is the mistake this function's
                 # docstring already warns about, one member of the family later:
@@ -875,4 +911,4 @@ class JsReferences:
         ]
 
 
-__all__ = ["Hooks", "JsReferences"]
+__all__ = ["BuildRoots", "Hooks", "JsReferences"]

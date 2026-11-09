@@ -12,8 +12,10 @@ import hashlib
 import io
 import tarfile
 from pathlib import Path
+from typing import ClassVar
 
 from cordon_scanner import Scanner
+from cordon_scanner.engine.pipeline.hooks import BuildRoots
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Severity
 
@@ -62,3 +64,81 @@ class TestALongLineInSetupPy:
         )
         found = SetupKit.longline(tmp_path, setup)
         assert found and all(f.severity >= Severity.HIGH for f in found)
+
+
+# pip builds an sdist by running the `setup.py` beside its `PKG-INFO` and no other
+# (`BuildRoots.not_a_build_root`): a deeper one is not install-time code unless the root one imports it.
+class RootKit:
+    PROFILE: ClassVar[str] = (
+        "import os\n"
+        "with open(os.path.expanduser('~/.bashrc'), 'a') as profile:\n"
+        "    profile.write('export PATH=$PATH:/opt/demo/bin\\n')\n"
+    )
+    PKG_INFO: ClassVar[bytes] = b"Metadata-Version: 2.1\nName: demo\nVersion: 1.0\n"
+
+    @staticmethod
+    def sdist(tmp_path: Path, files: dict[str, str | bytes]) -> Path:
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as tar:
+            for name, body in files.items():
+                data = body.encode() if isinstance(body, str) else body
+                info = tarfile.TarInfo(f"demo-1.0/{name}")
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+        path = tmp_path / "demo-1.0.tar.gz"
+        path.write_bytes(buffer.getvalue())
+        return path
+
+    @staticmethod
+    def persistence(path: Path) -> list[str]:
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(path)
+        return [
+            f.location.path for f in result.findings if f.rule_id == "MALWARE.INSTALL.PERSIST.001"
+        ]
+
+
+class TestTheBuildRoot:
+    @staticmethod
+    def noted(*paths: str) -> set[str]:
+        seen: set[str] = set()
+        for path in paths:
+            BuildRoots.note(path, seen)
+        return seen
+
+    def test_only_the_setup_beside_pkg_info_is_the_build_script(self) -> None:
+        seen = self.noted(
+            "demo-1.0/PKG-INFO", "demo-1.0/demo.egg-info/PKG-INFO", "demo-1.0/setup.py"
+        )
+        assert not BuildRoots.not_a_build_root("demo-1.0", seen)
+        assert BuildRoots.not_a_build_root("demo-1.0/Lib/site-packages/numpy/core", seen)
+        assert BuildRoots.not_a_build_root("demo-1.0/src/demo", seen)
+
+    def test_an_egg_info_pkg_info_is_not_an_sdist_root(self) -> None:
+        seen = self.noted("demo-1.0/demo.egg-info/PKG-INFO")
+        assert not BuildRoots.not_a_build_root("demo-1.0/tools", seen), (
+            "no sdist root: nothing changes"
+        )
+
+    def test_a_repository_without_pkg_info_keeps_every_setup(self) -> None:
+        seen = self.noted("tools/__init__.py")
+        assert not BuildRoots.not_a_build_root("build/helpers", seen)
+        assert BuildRoots.not_a_build_root("tools", seen), "a package directory is still not a root"
+
+
+class TestAScanOfAnSdist:
+    def test_a_profile_written_by_the_root_setup_still_blocks(self, tmp_path: Path) -> None:
+        path = RootKit.sdist(tmp_path, {"PKG-INFO": RootKit.PKG_INFO, "setup.py": RootKit.PROFILE})
+        assert RootKit.persistence(path)
+
+    def test_the_same_code_in_a_nested_setup_module_is_not_install_time(
+        self, tmp_path: Path
+    ) -> None:
+        path = RootKit.sdist(
+            tmp_path,
+            {
+                "PKG-INFO": RootKit.PKG_INFO,
+                "pyproject.toml": '[project]\nname = "demo"\nversion = "1.0"\n',
+                "cli/setup.py": RootKit.PROFILE,
+            },
+        )
+        assert RootKit.persistence(path) == []
