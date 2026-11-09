@@ -4,8 +4,6 @@ lock; `dotnet tool install` installs exactly the scanned `.nupkg`, from a source
 
 from __future__ import annotations
 
-import functools
-import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
@@ -31,23 +29,36 @@ class DotnetTools:
 
     @classmethod
     def dotnet(cls, dotnet: str, args: list[str], context: InstallContext) -> int:
-        from cordon_scanner.cli.commands.install.native import NativeTools
         from cordon_scanner.sources.install.nuget import NuGetPlanner
         from cordon_scanner.sources.install.plan import PrivateDirectory, Subprocesses
 
         if args[0] == "tool":
             return cls._tool(dotnet, args[1:], context)
         project = Path.cwd()
-        with PrivateDirectory.made("cordon-nuget-") as packages:
-            plan = NuGetPlanner.project(args, Subprocesses.run, dotnet, project, packages)
-        command = NuGetPlanner.locked(args)
-        return NativeTools._checked(
-            plan,
-            context,
-            functools.partial(NuGetPlanner.restore, project, NativeTools._saved(plan)),
-            [dotnet, *command] if command else [],
-            project,
-        )
+        with PrivateDirectory.made("cordon-nuget-") as scratch:
+            plan = NuGetPlanner.project(
+                args, Subprocesses.run, dotnet, project, scratch / "resolve", context.registries
+            )
+            saved = {
+                k.removeprefix("saved:"): v
+                for k, v in plan.manifests.items()
+                if k.startswith("saved:")
+            }
+            files = scratch / "files"
+            files.mkdir(mode=0o700)
+            try:
+                verdict = context.check(plan, files)
+            except BaseException:
+                NuGetPlanner.restore(project, saved)
+                raise
+            if not verdict.ok:
+                NuGetPlanner.restore(project, saved)
+                return context.blocked(verdict)
+            NuGetPlanner.scanned_source(plan.files, files, scratch / "source")
+            config = scratch / "nuget.config"
+            config.write_text(NuGetPlanner.source_config(scratch / "source"), encoding="utf-8")
+            # Restored from the scanned packages only: the config's one source is their folder.
+            return context.run([dotnet, *NuGetPlanner.locked(args, config)], project)
 
     @classmethod
     def _tool(cls, dotnet: str, args: list[str], context: InstallContext) -> int:
@@ -71,14 +82,9 @@ class DotnetTools:
             verdict = context.check(plan, files)
             if not verdict.ok:
                 return context.blocked(verdict)
-            source = scratch / "source"
-            source.mkdir(mode=0o700)
-            shutil.copyfile(
-                files / package.filename,
-                source / f"{package.name.lower()}.{package.version.lower()}.nupkg",
-            )
+            NuGetPlanner.scanned_source(plan.files, files, scratch / "source")
             config = scratch / "nuget.config"
-            config.write_text(NuGetPlanner.tool_config(source), encoding="utf-8")
+            config.write_text(NuGetPlanner.source_config(scratch / "source"), encoding="utf-8")
             pinned = cls._without_value(rest, "--version")
             # Installed from the scanned package only: the config's one source is its folder.
             return context.run(

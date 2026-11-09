@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import base64
+import gzip
 import hashlib
 import json
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 from xml.etree import ElementTree
 
 import pytest
@@ -68,21 +69,61 @@ class TestWhatInstalls:
         assert NuGetPlanner.installs(args) is installs
 
 
+class NuGetOrg:
+    """nuget.org's answers for Newtonsoft.Json 13.0.3 and dotnet-ef, the registration gzip-compressed."""
+
+    REGISTRATION = "https://api.nuget.org/v3/registration5-gz-semver2"
+    ANSWERS: ClassVar[dict[str, Any]] = {
+        f"{REGISTRATION}/newtonsoft.json/13.0.3.json": {
+            "catalogEntry": "https://api.nuget.org/v3/catalog0/nj.json"
+        },
+        "https://api.nuget.org/v3/catalog0/nj.json": {
+            "id": "Newtonsoft.Json",
+            "packageHash": HASH,
+            "packageHashAlgorithm": "SHA512",
+        },
+        "https://api.nuget.org/v3-flatcontainer/dotnet-ef/index.json": {
+            "versions": ["8.0.4", "9.0.0-rc.1"]
+        },
+        f"{REGISTRATION}/dotnet-ef/8.0.4.json": {
+            "catalogEntry": "https://api.nuget.org/v3/catalog0/ef.json"
+        },
+        "https://api.nuget.org/v3/catalog0/ef.json": {
+            "id": "dotnet-ef",
+            "packageHash": HASH,
+            "packageHashAlgorithm": "SHA512",
+        },
+    }
+
+    @classmethod
+    def answer(cls, monkeypatch: pytest.MonkeyPatch) -> InstallRegistries:
+        def fetch(self: InstallRegistries, url: str, ecosystem: str) -> bytes:
+            data = json.dumps(cls.ANSWERS[url]).encode()
+            return gzip.compress(data) if "registration5-gz" in url else data
+
+        monkeypatch.setattr(InstallRegistries, "fetch", fetch)
+        return InstallRegistries()
+
+
 class TestTheLock:
-    def test_packages_with_their_sha512_and_projects_left_local(self) -> None:
-        files = NuGetPlanner.files(NuGetKit.lock())
-        assert [(f.name, f.version) for f in files] == [("Newtonsoft.Json", "13.0.3")]
-        assert files[0].url == (
+    def test_packages_from_the_lock_and_projects_left_local(self) -> None:
+        assert NuGetPlanner.locked_packages(NuGetKit.lock()) == [("Newtonsoft.Json", "13.0.3")]
+
+    def test_each_file_is_held_to_the_catalog_hash_of_the_whole_nupkg(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        file = NuGetPlanner.published("Newtonsoft.Json", "13.0.3", NuGetOrg.answer(monkeypatch))
+        assert file.url == (
             "https://api.nuget.org/v3-flatcontainer/newtonsoft.json/13.0.3/newtonsoft.json.13.0.3.nupkg"
         )
-        files[0].verify(NUPKG)
+        file.verify(NUPKG)
         with pytest.raises(InstallRefused):
-            files[0].verify(NUPKG + b"tampered")
+            file.verify(NUPKG + b"tampered")
 
-    def test_a_package_without_a_hash_is_refused(self) -> None:
+    def test_a_package_without_a_hash_in_the_lock_is_refused(self) -> None:
         lock = NuGetKit.lock(Serilog={"type": "Transitive", "resolved": "3.1.1"})
         with pytest.raises(InstallRefused, match="Serilog"):
-            NuGetPlanner.files(lock)
+            NuGetPlanner.locked_packages(lock)
 
     def test_a_name_that_is_not_a_package_id_is_refused(self) -> None:
         with pytest.raises(InstallRefused):
@@ -105,7 +146,9 @@ class TestTheProjectResolve:
             return NuGetKit.done(1, "NU1101: Unable to find package")
 
         with pytest.raises(InstallRefused, match="NU1101"):
-            NuGetPlanner.project(["restore"], runner, "dotnet", tmp_path, tmp_path / "pkgs")
+            NuGetPlanner.project(
+                ["restore"], runner, "dotnet", tmp_path, tmp_path / "pkgs", InstallRegistries()
+            )
         argv, env = seen[0]
         assert argv[:3] == ["dotnet", "restore", "--use-lock-file"]
         assert env["NUGET_PACKAGES"] == str(tmp_path / "pkgs")
@@ -113,7 +156,7 @@ class TestTheProjectResolve:
         assert not (tmp_path / "packages.lock.json").exists()
 
     def test_the_locks_under_the_project_are_read_build_output_skipped(
-        self, tmp_path: Path
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         (tmp_path / "app.csproj").write_text(NuGetKit.CSPROJ, encoding="utf-8")
 
@@ -125,20 +168,53 @@ class TestTheProjectResolve:
             (cwd / "obj" / "packages.lock.json").write_text("not read", encoding="utf-8")
             return NuGetKit.done()
 
-        plan = NuGetPlanner.project(["build"], runner, "dotnet", tmp_path, tmp_path / "pkgs")
+        registries = NuGetOrg.answer(monkeypatch)
+        plan = NuGetPlanner.project(
+            ["build"], runner, "dotnet", tmp_path, tmp_path / "p", registries
+        )
         assert [f.name for f in plan.files] == ["Newtonsoft.Json"]
         assert "saved:app.csproj" in plan.manifests
 
-    def test_the_command_then_runs_in_locked_mode(self) -> None:
-        assert NuGetPlanner.locked(["restore"]) == ["restore", "--locked-mode"]
-        assert NuGetPlanner.locked(["run", "--", "--port", "1"]) == [
-            "run",
-            "-p:RestoreLockedMode=true",
-            "--",
-            "--port",
-            "1",
+    def test_the_command_then_runs_locked_from_the_scanned_source(self) -> None:
+        config = Path("/s/nuget.config")
+        assert NuGetPlanner.locked(["restore"], config) == [
+            "restore", "--locked-mode", "--configfile", "/s/nuget.config",
+        ]  # fmt: skip
+        assert NuGetPlanner.locked(["run", "--", "--port", "1"], config) == [
+            "run", "-p:RestoreLockedMode=true", "-p:RestoreConfigFile=/s/nuget.config",
+            "--", "--port", "1",
+        ]  # fmt: skip
+        assert NuGetPlanner.locked(["add", "package", "x"], config)[:2] == [
+            "restore",
+            "--locked-mode",
         ]
-        assert NuGetPlanner.locked(["add", "package", "x"]) == []
+
+    def test_the_scanned_files_become_the_one_source(self, tmp_path: Path) -> None:
+        file = NuGetPlanner.package_file("Newtonsoft.Json", "13.0.3", b"\0" * 64)
+        (tmp_path / file.filename).write_bytes(NUPKG)
+        NuGetPlanner.scanned_source([file], tmp_path, tmp_path / "source")
+        assert (tmp_path / "source" / "newtonsoft.json.13.0.3.nupkg").read_bytes() == NUPKG
+        sources = ElementTree.fromstring(NuGetPlanner.source_config(tmp_path / 'a "b" <c>')).find(
+            "packageSources"
+        )
+        assert sources is not None
+        assert [child.tag for child in sources] == ["clear", "add"]
+        assert sources[1].get("value") == str(tmp_path / 'a "b" <c>')
+
+
+class TestARefusalWhileChecking:
+    def test_puts_the_project_back_as_a_block_does(self) -> None:
+        from cordon_scanner.cli.commands.install.native import NativeTools
+
+        restored: list[bool] = []
+
+        class Refusing:
+            def check(self, plan: object, scratch: Path) -> None:
+                raise InstallRefused("x 1.0 does not match the sha512 its registry publishes")
+
+        with pytest.raises(InstallRefused):
+            NativeTools._checked(None, Refusing(), lambda: restored.append(True), ["x"], Path())  # type: ignore[arg-type]
+        assert restored == [True]
 
 
 class TestTools:
@@ -148,26 +224,10 @@ class TestTools:
         )
         assert (names, version) == (["dotnet-ef"], "8.0.4")
 
-    def test_the_catalog_sha512_is_the_tool_package_hash(
+    def test_the_newest_stable_tool_with_its_catalog_hash(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        answers = {
-            "https://api.nuget.org/v3-flatcontainer/dotnet-ef/index.json": {
-                "versions": ["8.0.4", "9.0.0-rc.1"]
-            },
-            "https://api.nuget.org/v3/registration5-semver1/dotnet-ef/8.0.4.json": {
-                "catalogEntry": "https://api.nuget.org/v3/catalog0/data/x/dotnet-ef.8.0.4.json"
-            },
-            "https://api.nuget.org/v3/catalog0/data/x/dotnet-ef.8.0.4.json": {
-                "id": "dotnet-ef",
-                "packageHash": HASH,
-                "packageHashAlgorithm": "SHA512",
-            },
-        }
-        monkeypatch.setattr(
-            InstallRegistries, "fetch", lambda self, url, eco: json.dumps(answers[url]).encode()
-        )
-        plan = NuGetPlanner.tool("dotnet-ef", "", InstallRegistries())
+        plan = NuGetPlanner.tool("dotnet-ef", "", NuGetOrg.answer(monkeypatch))
         (file,) = plan.files
         assert (file.version, file.requested) == ("8.0.4", True)
         file.verify(NUPKG)
@@ -177,10 +237,3 @@ class TestTools:
             DotnetTools._tool(
                 "dotnet", ["install", "x", "--add-source", "https://evil.invalid"], None
             )  # type: ignore[arg-type]
-
-    def test_the_tool_config_names_only_the_scanned_folder(self, tmp_path: Path) -> None:
-        folder = tmp_path / 'a "b" <c>'
-        sources = ElementTree.fromstring(NuGetPlanner.tool_config(folder)).find("packageSources")
-        assert sources is not None
-        assert [child.tag for child in sources] == ["clear", "add"]
-        assert sources[1].get("value") == str(folder)

@@ -5,9 +5,11 @@ and `.targets` are imported into the next build, and a tool package is a program
 The resolve is NuGet's own and runs no package code: `dotnet restore --use-lock-file` in the project
 writes `packages.lock.json`, downloading into a private folder Cordon deletes, never the person's
 global package folder. The project files and locks are saved first and put back if anything blocks.
-Each package's `contentHash` in the lock is the SHA-512 of its `.nupkg`, which Cordon fetches from
-nuget.org, verifies and scans. The command then runs in locked mode, so NuGet restores from that lock
-and checks every package against the same hash.
+Cordon fetches each locked package's `.nupkg` from nuget.org and verifies it against the SHA-512
+nuget.org's catalog publishes for the whole file. (The lock's own `contentHash` is NuGet's hash of the
+package without its repository signature, which only NuGet computes.) The command then runs in
+locked mode with a NuGet config whose only source is the folder of scanned packages: NuGet installs
+those bytes and checks them against the lock itself, and can fetch nothing else.
 
 `dotnet tool install <id>` takes the version and hash nuget.org publishes for the tool package, scans
 that one `.nupkg`, and installs it from a NuGet config whose only source is the folder holding the
@@ -18,6 +20,7 @@ from __future__ import annotations
 
 import base64
 import dataclasses
+import gzip
 import json
 import os
 import re
@@ -40,7 +43,8 @@ class NuGetPlanner:
     )
     TOOL_VERBS: ClassVar[frozenset[str]] = frozenset({"install", "update"})
     FLAT: ClassVar[str] = "https://api.nuget.org/v3-flatcontainer"
-    REGISTRATION: ClassVar[str] = "https://api.nuget.org/v3/registration5-semver1"
+    #: Registration leaves for every version, SemVer 2.0 included (served gzip-compressed).
+    REGISTRATION: ClassVar[str] = "https://api.nuget.org/v3/registration5-gz-semver2"
     LOCK: ClassVar[str] = "packages.lock.json"
     #: What a restore reads or writes beside the project, saved before and put back on a block.
     PROJECT_FILES: ClassVar[re.Pattern[str]] = re.compile(
@@ -77,7 +81,13 @@ class NuGetPlanner:
 
     @classmethod
     def project(
-        cls, args: Sequence[str], runner: Runner, dotnet: str, project: Path, packages: Path
+        cls,
+        args: Sequence[str],
+        runner: Runner,
+        dotnet: str,
+        project: Path,
+        packages: Path,
+        registries: InstallRegistries,
     ) -> InstallPlan:
         """Resolve in the project (saved first: `saved:` entries in the plan's manifests are what to
         restore), downloading only into `packages`."""
@@ -105,7 +115,7 @@ class NuGetPlanner:
                 f"dotnet could not resolve the restore:\n{(done.stderr or done.stdout or '').strip()[-2000:]}"
             )
         try:
-            files = cls.files_in(project)
+            files = cls.files_in(project, registries)
         except InstallRefused:
             cls.restore(project, saved)
             raise
@@ -114,7 +124,7 @@ class NuGetPlanner:
         return plan
 
     @classmethod
-    def files_in(cls, project: Path) -> list[PackageFile]:
+    def files_in(cls, project: Path, registries: InstallRegistries) -> list[PackageFile]:
         locks = [
             p
             for p in sorted(project.rglob(cls.LOCK))
@@ -124,20 +134,21 @@ class NuGetPlanner:
         ]
         if not locks:
             raise InstallRefused("dotnet resolved but wrote no packages.lock.json")
-        seen: dict[str, PackageFile] = {}
+        seen: dict[str, tuple[str, str]] = {}
         for lock in locks:
-            for file in cls.files(lock.read_text(encoding="utf-8")):
-                seen.setdefault(file.key, file)
-        return list(seen.values())
+            for name, version in cls.locked_packages(lock.read_text(encoding="utf-8")):
+                seen.setdefault(f"{name.lower()} {version.lower()}", (name, version))
+        return [cls.published(name, version, registries) for name, version in seen.values()]
 
     @classmethod
-    def files(cls, text: str) -> list[PackageFile]:
-        """The packages of one `packages.lock.json`: every target framework's, projects skipped."""
+    def locked_packages(cls, text: str) -> list[tuple[str, str]]:
+        """(id, version) of every package in one `packages.lock.json`: every target framework's,
+        projects skipped. A package the lock records without a content hash is refused."""
         try:
             document: dict[str, Any] = json.loads(text)
         except ValueError as exc:
             raise InstallRefused("packages.lock.json could not be read") from exc
-        out: list[PackageFile] = []
+        out: list[tuple[str, str]] = []
         for frameworks in (document.get("dependencies") or {}).values():
             for name, entry in (frameworks or {}).items():
                 if not isinstance(entry, dict) or entry.get("type") == "Project":
@@ -146,8 +157,23 @@ class NuGetPlanner:
                 digest = cls._sha512(str(entry.get("contentHash") or ""))
                 if not version or digest is None:
                     raise InstallRefused(f"{name} has no resolved version or SHA-512 in the lock")
-                out.append(cls.package_file(str(name), version, digest))
+                out.append((str(name), version))
         return out
+
+    @classmethod
+    def published(cls, name: str, version: str, registries: InstallRegistries) -> PackageFile:
+        """The `.nupkg` of one version, with the SHA-512 nuget.org's catalog records for the file."""
+        lower = name.lower()
+        if not re.fullmatch(r"[a-z0-9_.-]{1,100}", lower):
+            raise InstallRefused(f"{name[:80]!r} is not a NuGet package id")
+        leaf = cls._json(f"{cls.REGISTRATION}/{lower}/{version.lower()}.json", registries)
+        entry = leaf.get("catalogEntry")
+        catalog = cls._json(entry, registries) if isinstance(entry, str) else {}
+        algorithm = str(catalog.get("packageHashAlgorithm") or "")
+        digest = cls._sha512(str(catalog.get("packageHash") or ""))
+        if algorithm.upper() != "SHA512" or digest is None:
+            raise InstallRefused(f"nuget.org publishes no SHA-512 for {name} {version}")
+        return cls.package_file(str(catalog.get("id") or name), version, digest)
 
     @classmethod
     def package_file(cls, name: str, version: str, digest: bytes) -> PackageFile:
@@ -189,15 +215,31 @@ class NuGetPlanner:
             (project / relative).write_bytes(data)
 
     @staticmethod
-    def locked(args: Sequence[str]) -> list[str]:
-        """The person's command, restoring only what the lock records."""
+    def locked(args: Sequence[str], config: Path) -> list[str]:
+        """The person's command, restoring only what the lock records, from the scanned source only.
+        `add package` has already added the reference; what is left is restoring it."""
         verb, rest = args[0], list(args[1:])
         if verb == "add":
-            return []  # the reference was added and the lock written; nothing more to run
+            return ["restore", "--locked-mode", "--configfile", str(config)]
         if verb == "restore":
-            return [verb, *rest] if "--locked-mode" in rest else [verb, *rest, "--locked-mode"]
+            locked = rest if "--locked-mode" in rest else [*rest, "--locked-mode"]
+            return [verb, *locked, "--configfile", str(config)]
         cut = rest.index("--") if "--" in rest else len(rest)
-        return [verb, *rest[:cut], "-p:RestoreLockedMode=true", *rest[cut:]]
+        return [
+            verb,
+            *rest[:cut],
+            "-p:RestoreLockedMode=true",
+            f"-p:RestoreConfigFile={config}",
+            *rest[cut:],
+        ]
+
+    @staticmethod
+    def scanned_source(files: Sequence[PackageFile], scanned: Path, source: Path) -> None:
+        """The scanned `.nupkg` files under the names a NuGet folder source reads."""
+        source.mkdir(mode=0o700, exist_ok=True)
+        for file in files:
+            target = source / f"{file.name.lower()}.{file.version.lower()}.nupkg"
+            target.write_bytes((scanned / file.filename).read_bytes())
 
     # -- tools ----------------------------------------------------------------------------------
 
@@ -208,15 +250,7 @@ class NuGetPlanner:
         lower = name.lower()
         if not re.fullmatch(r"[a-z0-9_.-]{1,100}", lower):
             raise InstallRefused(f"{name[:80]!r} is not a NuGet package id")
-        version = version or cls._newest_stable(lower, registries)
-        leaf = cls._json(f"{cls.REGISTRATION}/{lower}/{version.lower()}.json", registries)
-        entry = leaf.get("catalogEntry")
-        catalog = cls._json(entry, registries) if isinstance(entry, str) else {}
-        algorithm = str(catalog.get("packageHashAlgorithm") or "")
-        digest = cls._sha512(str(catalog.get("packageHash") or ""))
-        if algorithm.upper() != "SHA512" or digest is None:
-            raise InstallRefused(f"nuget.org publishes no SHA-512 for {name} {version}")
-        file = cls.package_file(str(catalog.get("id") or name), version, digest)
+        file = cls.published(name, version or cls._newest_stable(lower, registries), registries)
         return InstallPlan("nuget", [dataclasses.replace(file, requested=True)])
 
     @classmethod
@@ -230,7 +264,10 @@ class NuGetPlanner:
     @staticmethod
     def _json(url: str, registries: InstallRegistries) -> dict[str, Any]:
         try:
-            value = json.loads(registries.fetch(url, "nuget"))
+            data = registries.fetch(url, "nuget")
+            if data[:2] == b"\x1f\x8b":
+                data = gzip.decompress(data)
+            value = json.loads(data)
         except (ValueError, RuntimeError, OSError) as exc:
             raise InstallRefused(
                 f"nuget.org answered nothing usable for {url[:120]}: {exc}"
@@ -238,7 +275,7 @@ class NuGetPlanner:
         return value if isinstance(value, dict) else {}
 
     @staticmethod
-    def tool_config(source: Path) -> str:
+    def source_config(source: Path) -> str:
         """A NuGet config whose only source is the folder of scanned packages."""
         return (
             '<?xml version="1.0" encoding="utf-8"?>\n<configuration>\n  <packageSources>\n'

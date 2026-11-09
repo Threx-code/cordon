@@ -220,7 +220,13 @@ class NativeTools:
         from cordon_scanner.sources.install.plan import PrivateDirectory
 
         with PrivateDirectory.made("cordon-install-") as scratch:
-            verdict = context.check(plan, scratch)
+            try:
+                verdict = context.check(plan, scratch)
+            except BaseException:
+                # A refusal while checking (a file that does not match its registry hash) leaves the
+                # project as it was, as a block does.
+                restore()
+                raise
         if not verdict.ok:
             restore()
             return context.blocked(verdict)
