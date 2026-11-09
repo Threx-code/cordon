@@ -135,6 +135,9 @@ _POLICY_PREFIXES: tuple[str, ...] = (
     "SUSPECT.MCP.TOOLS_CHANGED.",
     "SUSPECT.AGENT.PLUGIN_SOURCE.",
     "SUSPECT.AGENT.ATR.MODEL_SECURITY.",
+    # A file that stopped the rule engine before an answer: a fail-closed incomplete scan, which
+    # claims neither malware nor behaviour (lead, 2026-11-09).
+    "SUSPECT.RULEFILE.UNMATCHED.",
     # D3 boundary (lead, 2026-11-09): name similarity alone is not proof of deception.
     "SUSPECT.TYPOSQUAT.",
     "SUSPECT.DEPENDENCY.TYPOSQUAT.",
@@ -295,15 +298,12 @@ _SIGNALS_BY_PREFIX: tuple[tuple[str, frozenset[Signal]], ...] = tuple(
     )
 )
 
-# Findings with no evidence of their own: a model's verdict (D2), and a file that stopped the rule
-# engine before an answer (it is blocked because it could be built to do that, not because of what
-# it does). No signal, so they never claim malware alone. Listed so the completeness test can tell
-# them from a forgotten rule.
+# Verdicts from a model, with no evidence of their own (D2): no signal, so they never claim malware
+# alone. Listed so the completeness test can tell them from a forgotten rule.
 _NO_SIGNAL_PREFIXES: tuple[str, ...] = (
     "SUSPECT.VERDICT.",
     "SUSPECT.CODE.MODEL.",
     "SUSPECT.INTENT.",
-    "SUSPECT.RULEFILE.UNMATCHED.",
 )
 
 _UNCLAIMED_PREFIXES: tuple[str, ...] = ("CAP.", "AST.", "OPERATIONAL.")

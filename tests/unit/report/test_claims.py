@@ -147,6 +147,7 @@ class TestFindingClaim:
             ("SECRET.AWS.001", Claim.POLICY),
             ("VULNERABLE.DEPENDENCY.KNOWN.001", Claim.POLICY),
             ("SUSPECT.PACKAGE.NAME_RISK.001", Claim.POLICY),
+            ("SUSPECT.RULEFILE.UNMATCHED.001", Claim.POLICY),
             ("SUSPECT.PACKAGE.STARJACKING.001", Claim.MALWARE),
         ],
     )
