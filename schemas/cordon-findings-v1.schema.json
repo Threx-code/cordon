@@ -122,6 +122,14 @@
     "matcher": {
       "type": "string",
       "description": "Which anchor matcher ran, and why if it was the Python one (a native build from another version falls back)."
+    },
+    "claim": {
+      "enum": [
+        "malware",
+        "risky_behaviour",
+        "policy"
+      ],
+      "description": "What the blocked scan claims, from the evidence of the findings that block it: malware (concealment, theft, a drop point, known-bad intel, propagation or destruction), risky behaviour, or policy (secrets, vulnerabilities, provenance). Present only when the policy gate blocked. Report-only: it never changes which scans block."
     }
   },
   "$defs": {
@@ -247,6 +255,14 @@
         },
         "attack_category": {
           "type": "string"
+        },
+        "claim": {
+          "enum": [
+            "malware",
+            "risky_behaviour",
+            "policy"
+          ],
+          "description": "What this finding claims, from its evidence. Absent on findings about the scan itself. Report-only."
         },
         "references": {
           "type": "array",
