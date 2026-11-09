@@ -663,6 +663,8 @@ Notification channels: send a test message to each.
 - `dotnet`: dotnet restore/build/tool, scanned
 - `dart`: dart pub get/add, scanned first
 - `flutter`: flutter pub get/add, scanned first
+- `conda`: conda install/create, scanned first
+- `mamba`: mamba install/create, scanned first
 
 ## npm
 
@@ -829,6 +831,30 @@ Run flutter, scanning every package before anything is installed.
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ arguments                 flutter's own arguments                          │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## conda
+
+Run conda, scanning every package before anything is installed.
+
+`cordon-scanner conda ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 conda's own arguments                            │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## mamba
+
+Run mamba, scanning every package before anything is installed.
+
+`cordon-scanner mamba ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 mamba's own arguments                            │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 

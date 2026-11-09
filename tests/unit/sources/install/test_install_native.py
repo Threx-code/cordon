@@ -6,11 +6,12 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
+import json
 import subprocess
 import tarfile
 import zipfile
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -358,3 +359,84 @@ class TestPub:
 
         assert PubPlanner.locked("flutter") == ["flutter", "pub", "get", "--enforce-lockfile"]
         assert PubPlanner.installs(["pub", "get"]) and not PubPlanner.installs(["pub", "deps"])
+
+
+class CondaKit:
+    SHA = "d6" * 32
+    ENTRY: ClassVar[dict[str, str]] = {
+        "name": "ncurses",
+        "version": "6.5",
+        "build": "h2d0b736_3",
+        "url": "https://conda.anaconda.org/conda-forge/linux-64/ncurses-6.5-h2d0b736_3.conda",
+        "sha256": SHA,
+    }
+
+    @classmethod
+    def dry_run(cls, *entries: dict[str, str]) -> str:
+        return json.dumps({"actions": {"FETCH": list(entries), "LINK": list(entries)}})
+
+
+class TestConda:
+    def test_the_dry_run_lists_every_file_with_its_sha256(self, tmp_path: Path) -> None:
+        from cordon_scanner.sources.install.conda import CondaPlanner
+
+        seen: list[tuple[list[str], dict[str, str]]] = []
+
+        def runner(
+            argv: list[str], cwd: Path, env: dict[str, str]
+        ) -> subprocess.CompletedProcess[str]:
+            seen.append((argv, env))
+            return NativeKit.done(0, CondaKit.dry_run(CondaKit.ENTRY))
+
+        plan = CondaPlanner.plan(["install", "-y", "ncurses"], runner, "conda", tmp_path / "c")
+        assert seen[0][0][-2:] == ["--dry-run", "--json"]
+        assert seen[0][1]["CONDA_PKGS_DIRS"] == str(tmp_path / "c")
+        (file,) = plan.files
+        assert (file.name, file.version, file.digest) == (
+            "ncurses",
+            "6.5-h2d0b736_3",
+            bytes.fromhex(CondaKit.SHA),
+        )
+
+    def test_another_channel_host_is_refused(self) -> None:
+        from cordon_scanner.sources.install.conda import CondaPlanner
+
+        entry = {**CondaKit.ENTRY, "url": "https://channel.example.invalid/x/ncurses-6.5-0.conda"}
+        with pytest.raises(InstallRefused, match=r"conda\.anaconda\.org"):
+            CondaPlanner.package_file(entry)
+
+    def test_the_scanned_files_go_to_condas_cache_under_their_own_names(
+        self, tmp_path: Path
+    ) -> None:
+        from cordon_scanner.sources.install.conda import CondaPlanner
+
+        file = CondaPlanner.package_file(CondaKit.ENTRY)
+        (tmp_path / file.filename).write_bytes(b"scanned")
+        (tmp_path / "pkgs").mkdir()
+        CondaPlanner.place([file], tmp_path, tmp_path / "pkgs")
+        assert (tmp_path / "pkgs" / "ncurses-6.5-h2d0b736_3.conda").read_bytes() == b"scanned"
+        assert (tmp_path / "pkgs" / "urls.txt").read_text(encoding="utf-8") == file.url + "\n"
+        md5 = hashlib.md5(b"scanned", usedforsecurity=False).hexdigest()
+        assert CondaPlanner.explicit([file], tmp_path) == f"@EXPLICIT\n{file.url}#{md5}\n"
+        command = CondaPlanner.explicit_command(
+            [
+                "create",
+                "-y",
+                "-n",
+                "demo",
+                "-c",
+                "conda-forge",
+                "--override-channels",
+                "python=3.12",
+            ],
+            Path("/s/explicit.txt"),
+        )
+        assert command == ["create", "-y", "-n", "demo", "--file", "/s/explicit.txt", "--offline"]
+
+    def test_what_counts_as_an_install(self) -> None:
+        from cordon_scanner.sources.install.conda import CondaPlanner
+
+        assert CondaPlanner.installs(["install", "x"]) and CondaPlanner.installs(["env", "create"])
+        assert not CondaPlanner.installs(["list"]) and not CondaPlanner.installs(
+            ["install", "x", "--dry-run"]
+        )

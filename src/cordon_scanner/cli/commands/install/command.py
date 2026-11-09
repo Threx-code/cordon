@@ -32,7 +32,7 @@ Handler = "Callable[[str, list[str], InstallContext], int]"
 class InstallGuardCommand:
     TOOLS: ClassVar[tuple[str, ...]] = (
         "npm", "pnpm", "yarn", "pip", "pip3", "uv", "poetry", "cargo", "go", "gem", "bundler",
-        "dotnet", "dart", "flutter",
+        "dotnet", "dart", "flutter", "conda", "mamba",
     )  # fmt: skip
     #: The executable each tool runs, where its name here differs (`bundle` is Cordon's own command).
     EXECUTABLES: ClassVar[dict[str, str]] = {"bundler": "bundle"}
@@ -103,6 +103,8 @@ class InstallGuardCommand:
             "dotnet": (DotnetTools.installs, DotnetTools.dotnet),
             "dart": (NativeTools.pub_installs, NativeTools.pub),
             "flutter": (NativeTools.pub_installs, NativeTools.pub),
+            "conda": (NativeTools.conda_installs, NativeTools.conda),
+            "mamba": (NativeTools.conda_installs, NativeTools.conda),
         }
 
 

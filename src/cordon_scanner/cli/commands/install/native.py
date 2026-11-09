@@ -1,4 +1,4 @@
-"""cargo, go, gem, bundle and pub through Cordon. cargo, go, Bundler and pub resolve in the project (their
+"""cargo, go, gem, bundle, pub and conda through Cordon. cargo, go, Bundler and pub resolve in the project (their
 manifests saved first and put back if anything blocks), then run as typed against the scanned lock;
 RubyGems installs exactly the scanned `.gem` files."""
 
@@ -45,6 +45,12 @@ class NativeTools:
 
         # A bare `bundle` is `bundle install`.
         return not args or args[0] in GemPlanner.BUNDLE_VERBS
+
+    @staticmethod
+    def conda_installs(args: list[str]) -> bool:
+        from cordon_scanner.sources.install.conda import CondaPlanner
+
+        return CondaPlanner.installs(args)
 
     @staticmethod
     def pub_installs(args: list[str]) -> bool:
@@ -224,6 +230,30 @@ class NativeTools:
             PubPlanner.locked(tool),
             project,
         )
+
+    # -- conda, mamba ---------------------------------------------------------------------------
+
+    @classmethod
+    def conda(cls, conda: str, args: list[str], context: InstallContext) -> int:
+        from cordon_scanner.sources.install.conda import CondaPlanner
+        from cordon_scanner.sources.install.plan import PrivateDirectory, Subprocesses
+
+        with PrivateDirectory.made("cordon-conda-") as scratch:
+            plan = CondaPlanner.plan(args, Subprocesses.run, conda, scratch / "resolve")
+            if not plan.files:
+                return context.run([conda, *args])  # nothing to fetch: every package is installed
+            files = scratch / "files"
+            files.mkdir(mode=0o700)
+            verdict = context.check(plan, files)
+            if not verdict.ok:
+                return context.blocked(verdict)
+            CondaPlanner.place(
+                plan.files, files, CondaPlanner.package_cache(Subprocesses.run, conda)
+            )
+            spec = scratch / "explicit.txt"
+            spec.write_text(CondaPlanner.explicit(plan.files, files), encoding="utf-8")
+            # Linked from the scanned files only: an explicit list, offline, nothing solved or fetched.
+            return context.run([conda, *CondaPlanner.explicit_command(args, spec)])
 
     # -- shared ---------------------------------------------------------------------------------
 
