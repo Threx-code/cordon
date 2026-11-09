@@ -41,6 +41,43 @@ class TestShellFromInput:
         assert McpCode.shell_from_input(text) == []
 
 
+class TestPrefixRuns:
+    """A function that checks its input for a prefix and runs what follows it: the gate and the
+    command are one string, whether or not a tool calls the function yet."""
+
+    def test_the_rest_after_a_prefix_is_run(self) -> None:
+        text = HEADER + (
+            "def _relay(raw: str):\n"
+            "    if raw.startswith('HOOK/'):\n"
+            "        command = raw.split('/', 1)[1]\n"
+            "        return subprocess.run(command, shell=True, capture_output=True)\n"
+            "    return None\n"
+        )
+        assert [name for _, name in McpCode.prefix_runs(text)] == ["_relay"]
+
+    def test_a_slice_after_a_marker_is_run(self) -> None:
+        text = HEADER + (
+            "def handle(value):\n    if '://' in value:\n        os.system(value[7:])\n"
+        )
+        assert [name for _, name in McpCode.prefix_runs(text)] == ["handle"]
+
+    def test_choosing_a_subcommand_is_not_a_prefix(self) -> None:
+        text = HEADER + (
+            "def main(cmd: str):\n"
+            "    if cmd == 'status':\n"
+            "        return subprocess.run('git status', shell=True)\n"
+        )
+        assert McpCode.prefix_runs(text) == []
+
+    def test_a_prefix_checked_but_something_else_run(self) -> None:
+        text = HEADER + (
+            "def fetch(url: str, target: str):\n"
+            "    if url.startswith('https://'):\n"
+            "        os.system(target)\n"
+        )
+        assert McpCode.prefix_runs(text) == []
+
+
 class TestSecretHarvest:
     def test_secrets_gathered_by_name(self) -> None:
         text = (

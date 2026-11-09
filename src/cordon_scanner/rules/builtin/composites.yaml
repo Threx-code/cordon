@@ -1220,6 +1220,7 @@ rules:
       any:
         - rule: CAP.JS.SHELL_STDIO_JOINED.001
         - rule: CAP.RB.SHELL_STDIO_JOINED.001
+        - rule: CAP.PY.SHELL_STDIO_JOINED.001
 
   - id: MALWARE.PROTESTWARE.001
     version: 1.0.0

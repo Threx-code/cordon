@@ -34,7 +34,7 @@ from cordon_scanner.engine.pipeline.constants import (
 from cordon_scanner.engine.pipeline.facts import TreeFacts
 from cordon_scanner.engine.pipeline.graph import Graph
 from cordon_scanner.engine.pipeline.history import History
-from cordon_scanner.engine.pipeline.hooks import Hooks
+from cordon_scanner.engine.pipeline.hooks import BuildRoots, Hooks
 from cordon_scanner.engine.pipeline.images import Images
 from cordon_scanner.engine.pipeline.publisher import Publisher
 from cordon_scanner.engine.pipeline.releases import ReleaseChecks
@@ -208,12 +208,18 @@ class ArchiveStages:
         # The same install-time picture a directory scan builds: filename hooks (`setup.py`, a
         # `.pth`), and everything the hooks import or run. A downloaded sdist or tarball is the
         # commonest thing to vet, and it was the one target that skipped all three.
+        # A `setup.py` is the build script only where a directory scan would take it as one
+        # (`Hooks.hook_executes`): beside the sdist's `PKG-INFO`, never inside a package or below
+        # the root. Read by the member's path in its archive, as the hook names it.
+        directories: set[str] = set()
+        for unit in units:
+            BuildRoots.note(unit.path.rpartition("!")[2], directories)
         hook_paths |= {
             unit.path
             for unit in units
             if not Hooks.under_fixture_directory(unit.path)
             and any(
-                hook.kind not in ("ci", "projectbuild")
+                hook.kind not in ("ci", "projectbuild") and Hooks.hook_executes(hook, directories)
                 for hook in Hooks.hooks_for(unit.path.rpartition("!")[2])
             )
         }

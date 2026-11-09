@@ -66,6 +66,7 @@ if TYPE_CHECKING:
 from cordon_scanner.analysis.python.analyzer_core import AnalyzerCore
 from cordon_scanner.analysis.python.data_flows import DataFlows
 from cordon_scanner.analysis.python.execution_flows import ExecutionFlows
+from cordon_scanner.analysis.python.sourced_flows import SourcedFlows
 
 CREDENTIAL_VARIABLE = re.compile(
     r"""(?ix)
@@ -166,7 +167,7 @@ analogue worth the silence. `getattr(self, method_name)` on a plugin object is
 ordinary; `getattr(os, something_decoded)` is not."""
 
 
-class PythonAnalyzer(DataFlows, ExecutionFlows, AnalyzerCore):
+class PythonAnalyzer(DataFlows, ExecutionFlows, SourcedFlows, AnalyzerCore):
     """Resolves capability primitives through aliases, bindings and constants."""
 
     @classmethod
@@ -186,6 +187,7 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, AnalyzerCore):
         analyzer._walk(tree)
         analyzer._downloaded_and_run(tree)
         analyzer._received_and_run(tree)
+        analyzer._received_into_process(tree)
         analyzer._download_run_through_helpers(tree)
         if analyzer._sends(tree):
             # Each of these records only at a call that sends (an egress primitive) or through a
@@ -196,6 +198,16 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, AnalyzerCore):
             analyzer._environment_sent(tree)
             analyzer._secret_sent(tree)
         return analyzer._hits
+
+    @classmethod
+    def sink_sources(cls, source: str) -> tuple[frozenset[int], frozenset[int]] | None:
+        """(lines of every execute or deserialize call, lines of those running what was fetched or
+        decoded), or None when the source does not parse (`SourcedFlows.sourced_sinks`)."""
+        try:
+            tree = PythonSyntax.shared(source)
+        except (SyntaxError, ValueError, RecursionError):
+            return None
+        return cls._prepared(tree).sourced_sinks(tree)
 
     def _sends(self, tree: ast.AST) -> bool:
         """Whether any call in `tree` resolves to an egress primitive."""
