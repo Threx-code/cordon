@@ -34,7 +34,7 @@ class DestinationLabels:
 
     @classmethod
     def destination_capabilities(
-        cls, content: FileContent, language: str | None = None
+        cls, content: FileContent, language: str | None = None, *, notifier_exempt: bool = True
     ) -> list[CapabilityHit]:
         """Egress to a destination that means something on its own.
 
@@ -85,7 +85,7 @@ class DestinationLabels:
                 continue
             if TextPosition.is_comment(content, offset, language):
                 continue
-            if cls._token_from_variable(raw, candidate):
+            if notifier_exempt and cls._token_from_variable(raw, candidate):
                 continue
             match = candidate
             break

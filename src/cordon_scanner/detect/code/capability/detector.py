@@ -480,6 +480,31 @@ class CapabilityDetector(BaseDetector):
         if NixCode.is_nix(content.path):
             # What a Nix file declares does not run (`detect/nix_code.py`).
             hits = NixCode.keep_running(content.text, hits)
+        return CapabilityDetector._restore_notifier_drop_points(content, unit.language, hits)
+
+    @staticmethod
+    def _restore_notifier_drop_points(
+        content: FileContent, language: str | None, hits: list[CapabilityHit]
+    ) -> list[CapabilityHit]:
+        """A Telegram bot URL whose token comes from a variable is a notifier, not a drop point,
+        only while the file carries no loot. A stealer posts the environment, the user and host
+        names or another service's credential through the same URL with its token read from the
+        environment; once the file reads any of those, the bot URL is a drop point again."""
+        loot = any(
+            h.capability in (Capability.CREDENTIAL, Capability.RECONNAISSANCE)
+            and not LegitimateUse.a_setting(content, h)
+            for h in hits
+        )
+        if not loot:
+            return hits
+        held = set(hits)
+        hits.extend(
+            h
+            for h in DestinationLabels.destination_capabilities(
+                content, language, notifier_exempt=False
+            )
+            if h not in held
+        )
         return hits
 
     # -- Reasoning -------------------------------------------------------
