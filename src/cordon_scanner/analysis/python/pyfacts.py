@@ -284,6 +284,44 @@ class PythonFacts:
         {"compile", "match", "fullmatch", "search", "findall", "finditer", "sub", "subn", "split"}
     )
 
+    #: What a check for a debugger, a sandbox or the machine it runs on reads: the names the
+    #: anti-analysis patterns look for, as code rather than text.
+    PROBE_NAMES: frozenset[str] = frozenset(
+        {
+            "gettrace",
+            "settrace",
+            "ptrace",
+            "gethostname",
+            "node",
+            "uname",
+            "getuser",
+            "getenv",
+            "environ",
+            "IsDebuggerPresent",
+            "CheckRemoteDebuggerPresent",
+        }
+    )
+
+    @staticmethod
+    def string_spans(source: str) -> tuple[tuple[int, int, int, int], ...] | None:
+        """(first line, first column, last line, end column) of every string literal, columns in
+        UTF-8 bytes as `ast` reports them; None when the source does not parse, or when the code
+        itself (not a string) names a probe in `PROBE_NAMES` -- then every match may be real."""
+        try:
+            tree = PythonSyntax.shared(source)
+        except (SyntaxError, ValueError, RecursionError):
+            return None
+        for node in PythonSyntax.of(tree, ast.Name, ast.Attribute):
+            if (node.id if isinstance(node, ast.Name) else node.attr) in PythonFacts.PROBE_NAMES:
+                return None
+        return tuple(
+            (node.lineno, node.col_offset, node.end_lineno, node.end_col_offset)
+            for node in PythonSyntax.of(tree, ast.Constant)
+            if isinstance(node.value, str)
+            and node.end_lineno is not None
+            and node.end_col_offset is not None
+        )
+
     @classmethod
     def _pattern_literals(cls, tree: ast.AST) -> frozenset[int]:
         """Lines of a regular expression written as literal text: `re.compile(r"/etc/rc\\.local|

