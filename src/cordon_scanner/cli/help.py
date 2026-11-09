@@ -491,7 +491,18 @@ class HelpScreen:
     GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
         (
             "SCAN AND INSPECT",
-            ("scan", "clone", "pull", "inventory", "deps", "review", "sbom", "report"),
+            (
+                "scan",
+                "clone",
+                "pull",
+                "npm",
+                "pip",
+                "inventory",
+                "deps",
+                "review",
+                "sbom",
+                "report",
+            ),
         ),
         ("POLICY", ("rules", "config", "baseline", "suppress", "guard", "verify", "notify")),
         ("THREAT INTEL", ("advisories", "intel", "bundle")),
@@ -509,6 +520,8 @@ class HelpScreen:
         "review": "what a dependency update adds",
         "clone": "clone, scanned before checkout",
         "pull": "pull, scanned before the merge",
+        "npm": "npm install, scanned before it runs",
+        "pip": "pip install, scanned before it runs",
         "sbom": "CycloneDX or SPDX bill of materials",
         "report": "re-render a saved JSON result",
         "rules": "list, test and show the rules",

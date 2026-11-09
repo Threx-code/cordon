@@ -19,6 +19,8 @@ one command at a terminal.
 - `scan`: scan a directory, file or archive
 - `clone`: clone, scanned before checkout
 - `pull`: pull, scanned before the merge
+- `npm`: npm install, scanned before it runs
+- `pip`: pip install, scanned before it runs
 - `inventory`: what the repository is, and why
 - `deps`: dependency graph and findings
 - `review`: what a dependency update adds
@@ -254,6 +256,30 @@ Fetch the branch, scan the incoming commit from git's object store, and merge on
 │ --config PATH             your own configuration; the incoming code's is   │
 │                           never read                                       │
 │ -C PATH                   the repository (default: .)                      │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## npm
+
+Run npm, scanning every package before anything is installed.
+
+`cordon-scanner npm install ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 npm's own arguments                              │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## pip
+
+Run pip, scanning every package before anything is installed.
+
+`cordon-scanner pip install ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 pip's own arguments                              │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
