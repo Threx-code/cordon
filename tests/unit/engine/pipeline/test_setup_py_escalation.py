@@ -142,3 +142,30 @@ class TestAScanOfAnSdist:
             },
         )
         assert RootKit.persistence(path) == []
+
+
+# pip builds no image: a Dockerfile an sdist carries runs only when somebody builds it by hand
+# (`BuildRoots.in_sdist`; gym-ignition's `.docker/cicd-devel.Dockerfile`).
+class TestADockerfileInAnSdist:
+    DOCKERFILE: ClassVar[str] = (
+        "FROM ubuntu:22.04\n"
+        "RUN apt-get update &&\\\n"
+        '    echo "source /usr/share/demo/setup.sh" >> /etc/bash.bashrc\n'
+    )
+
+    def test_its_run_steps_are_not_install_time(self, tmp_path: Path) -> None:
+        path = RootKit.sdist(
+            tmp_path,
+            {
+                "PKG-INFO": RootKit.PKG_INFO,
+                "pyproject.toml": '[project]\nname = "demo"\nversion = "1.0"\n',
+                ".docker/Dockerfile": "FROM python:3.12-slim\nRUN pip install demo\n",
+                ".docker/cicd-devel.Dockerfile": self.DOCKERFILE,
+            },
+        )
+        assert RootKit.persistence(path) == []
+
+    def test_only_paths_below_an_sdist_root_count(self) -> None:
+        seen = TestTheBuildRoot.noted("demo-1.0/PKG-INFO")
+        assert BuildRoots.in_sdist("demo-1.0/.docker/x.Dockerfile", seen)
+        assert not BuildRoots.in_sdist("Dockerfile", TestTheBuildRoot.noted("app/__init__.py"))

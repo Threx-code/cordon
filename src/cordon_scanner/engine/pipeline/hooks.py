@@ -89,6 +89,20 @@ class BuildRoots:
             return False
         return any(root == "" or directory.startswith(root + "/") for root in roots)
 
+    @staticmethod
+    def in_sdist(path: str, directories: Iterable[str] | set[str]) -> bool:
+        """Whether `path` lies inside an sdist (below a `PKG-INFO` root). pip builds no image, so a
+        Dockerfile there runs only when somebody builds it by hand (gym-ignition's
+        `.docker/cicd-devel.Dockerfile`), never on install."""
+        return any(
+            d.startswith(BuildRoots.SDIST_ROOT)
+            and (
+                d == BuildRoots.SDIST_ROOT
+                or path.startswith(d.removeprefix(BuildRoots.SDIST_ROOT) + "/")
+            )
+            for d in directories
+        )
+
 
 class Hooks:
     """The code a package runs at install or import."""
@@ -134,6 +148,12 @@ class Hooks:
             # because a hook seeds an import closure and a fixture that imports
             # the library puts the whole library in install-time context.
             return not Hooks.under_fixture_directory(hook.path)
+        lower = name.lower()
+        if (
+            lower.startswith(("dockerfile", "containerfile"))
+            or lower.endswith((".dockerfile", ".containerfile"))
+        ) and BuildRoots.in_sdist(hook.path, package_directories):
+            return False
         return not name.endswith(".sample")
 
     @staticmethod
@@ -757,7 +777,11 @@ class Hooks:
         for unit in units:
             ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
             if ecosystem_id is None or (
-                ecosystem_id == "image" and SourcePaths.is_vendored(unit.path)
+                ecosystem_id == "image"
+                and (
+                    SourcePaths.is_vendored(unit.path)
+                    or BuildRoots.in_sdist(unit.path, package_directories)
+                )
             ):
                 continue
             if ContainerPaths.basename(unit.path) in PACKAGED_BUILD_FILENAMES and (
