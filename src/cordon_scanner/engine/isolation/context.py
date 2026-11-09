@@ -57,6 +57,7 @@ PATH_SETS = (
     "tree_paths",
     "shipped_native_paths",
     "consumer_install_paths",
+    "import_closure_paths",
 )
 """Context fields that are sets of tree paths: each must be a path of the scan's units, or one the
 parent's own context held before the worker ran (the inventory's hook paths)."""
@@ -67,7 +68,9 @@ SCALARS: dict[str, type] = {
     "package_repository": str,
     "distribution": str,
 }
-CONTEXT_FIELDS = (*PATH_SETS, *NAME_SETS, *SCALARS, "install_deferred_lines", "dependencies")
+DEFERRED_LINES = ("install_deferred_lines", "import_deferred_lines")
+"""Context fields that are `(path, first_line, last_line)` sets: bodies a hook or an import never runs."""
+CONTEXT_FIELDS = (*PATH_SETS, *NAME_SETS, *SCALARS, *DEFERRED_LINES, "dependencies")
 """Every context field a context worker may set. A step that changes any other field fails the
 worker (`ContextWork.encode_context`): a new field is declared here, with its shape, or not sent."""
 
@@ -237,7 +240,7 @@ class ContextWork:
                 raise TypeError(f"a context step set {f.name}, which no context worker may send")
             if f.name == "dependencies":
                 out[f.name] = [Codec.encode(d) for d in value]
-            elif f.name == "install_deferred_lines":
+            elif f.name in DEFERRED_LINES:
                 out[f.name] = sorted([path, first, last] for path, first, last in value)
             elif f.name in SCALARS:
                 out[f.name] = value
@@ -651,13 +654,13 @@ class ContextFacts:
                 if any(d is None for d in records) or len(records) > LIST_ENTRIES:
                     return None, "a dependency record of the wrong shape"
                 out[name] = tuple(records)
-            elif name == "install_deferred_lines":
+            elif name in DEFERRED_LINES:
                 if not isinstance(value, list) or len(value) > LIST_ENTRIES or not all(
                     isinstance(t, list) and len(t) == 3 and t[0] in known
                     and type(t[1]) is int and type(t[2]) is int and 0 <= t[1] <= t[2]
                     for t in value
                 ):  # fmt: skip
-                    return None, "install_deferred_lines of the wrong shape"
+                    return None, f"{name} of the wrong shape"
                 out[name] = frozenset((p, first, last) for p, first, last in value)
             else:
                 if (

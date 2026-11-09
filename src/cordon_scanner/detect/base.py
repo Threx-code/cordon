@@ -203,6 +203,15 @@ class ScanContext:
     name.
     """
 
+    import_closure_paths: frozenset[str] = frozenset()
+    """The Python modules of a published distribution a consumer can import (every importable
+    first-party module: consumers import the module that holds the API, `from sdk.client import
+    Client`, and its top level runs then), with what they import. Not tests, documentation, build
+    tooling or vendored copies (`PackageEntries.importable_modules`)."""
+    import_deferred_lines: frozenset[tuple[str, int, int]] = frozenset()
+    """`(path, first_line, last_line)` for function bodies in `import_closure_paths` that importing
+    never runs (`analysis.python.reachability.LoadReach`): reached only when someone calls them."""
+
     scorer: RiskScorer = field(default_factory=RiskScorer)
     offline: bool = True
     nested_scan: Callable[[Path, Config], tuple[Finding, ...]] | None = None
@@ -306,6 +315,17 @@ class ScanContext:
         return not any(
             first <= line <= last
             for deferred_path, first, last in self.install_deferred_lines
+            if deferred_path == path
+        )
+
+    def import_reaches(self, path: str, line: int) -> bool:
+        """Whether this line runs when the published package is imported: the file is one a consumer
+        imports (or what it imports), and the line is not in a body only a caller runs."""
+        if path not in self.import_closure_paths:
+            return False
+        return not any(
+            first <= line <= last
+            for deferred_path, first, last in self.import_deferred_lines
             if deferred_path == path
         )
 

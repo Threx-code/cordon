@@ -214,7 +214,23 @@ class CompositeGrading:
             ):
                 category = Category.MALICIOUS
                 escalations.append("reads credentials and reaches the network from an install hook")
+        elif self._at_import(ceilinged):
+            # The same act in a module a consumer imports runs unprompted too, on every machine
+            # that imports the package, as the user (reviews/pypi-98/10). Held at HIGH, not
+            # install's CRITICAL: importing is something the user chose to do.
+            escalations.append("runs when the package is imported, as the user, unprompted")
+            severity = max(severity, Severity.HIGH)
         return self._scored(severity, category, escalations)
+
+    def _at_import(self, ceilinged: str) -> bool:
+        """Whether the anchor's line runs when the published package is imported, for a composite
+        admitted to import grading, and no ceiling but the on-request one applies (a reached body
+        is not one that runs only when called)."""
+        if self.compiled.rule.id not in CompositeRuleIds.IMPORT_GRADED:
+            return False
+        if ceilinged and ceilinged != LoadPath.ON_REQUEST_REASONS[1]:
+            return False
+        return self.ctx.import_reaches(self.unit.content.path, self.anchor.line)
 
     def _withdrawn_for_its_use(self) -> bool:
         """Withdrawn for what the code is for: a credential sent to its own service, an agent's tool calling its API, a dropper that is an extension's or an agent's own tooling or a verified release."""

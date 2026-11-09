@@ -574,6 +574,8 @@ class Hooks:
             import_entry_paths=grown(ctx.import_entry_paths),
             library_entry_paths=grown(ctx.library_entry_paths),
             library_closure_paths=grown(ctx.library_closure_paths),
+            # A reading has its own lines and no deferred ranges: all of it counts as reached.
+            import_closure_paths=grown(ctx.import_closure_paths),
         )
 
     _ACTION_PATH: ClassVar[re.Pattern[str]] = re.compile(
