@@ -466,21 +466,15 @@ class ExecutionFlows(AnalyzerCore):
             return False
 
         tainted: set[str] = set()
-        assignments = [
-            node
-            for node in PythonSyntax.nodes(tree)
-            if isinstance(node, ast.Assign | ast.AnnAssign) and node.value is not None
-        ]
+        # Every binding form (`with ... as`, `for`, `:=` as well as assignment): see `SourcedFlows`.
+        from cordon_scanner.analysis.python.sourced_flows import SourcedFlows
+
+        bindings = list(SourcedFlows._binding_forms(tree))
         for _ in range(4):
             before = len(tainted)
-            for assignment in assignments:
-                targets = (
-                    assignment.targets
-                    if isinstance(assignment, ast.Assign)
-                    else [assignment.target]
-                )
-                if assignment.value is not None and received(assignment.value):
-                    tainted.update(t.id for t in targets if isinstance(t, ast.Name))
+            for targets, value in bindings:
+                if received(value):
+                    tainted.update(targets)
             if len(tainted) == before:
                 break
         for node in PythonSyntax.of(tree, ast.Call):

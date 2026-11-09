@@ -55,6 +55,12 @@ class CompositeGrading:
         "with nothing fetched or decoded reaching it in this file; a caller in another file could "
         "inject"
     )
+    #: The unsourced-sink lowering, said in the finding.
+    UNSOURCED_CODE_REASON = (
+        "code that runs or loads only what this file read locally or was given as a setting: the "
+        "parsed source shows nothing fetched or decoded reaching it, so the request elsewhere in "
+        "the file is not what runs"
+    )
     #: What else completes the dropper's pairing: each makes the window a dropper on its own.
     _RUNS_CODE: ClassVar[frozenset[Capability]] = frozenset(
         {Capability.EXECUTE, Capability.FETCH_EXEC, Capability.DESERIALIZE}
@@ -175,6 +181,7 @@ class CompositeGrading:
                     or ceilinged in ("the tool's own official installer", PublishReach.REASON)
                     or ceilinged == CompositeGrading.VERIFIED_DOWNLOAD_REASON
                     or ceilinged == CompositeGrading.PARAMETER_COMMAND_REASON
+                    or ceilinged == CompositeGrading.UNSOURCED_CODE_REASON
                     else ", where a pattern like this is usually written to be read rather than run"
                 )
             )
@@ -417,6 +424,7 @@ class CompositeGrading:
             return "", FIXTURE_CEILING
         self._clients()
         for run in (
+            self._ceiling_for_unsourced_code,
             self._ceiling_for_parameter_command,
             self._ceiling_for_provisioning,
             self._ceiling_for_credentials_and_material,
@@ -513,6 +521,25 @@ class CompositeGrading:
             own_credential_client,
         )
         self.agent_tool_client = agent_tool_client
+
+    def _ceiling_for_unsourced_code(self) -> tuple[str, Severity] | None:
+        """`SUSPECT.DROPPER.001` in Python whose running half is only execute or deserialize hits the
+        parsed tree shows were handed nothing fetched or decoded (`CapabilityHit.unsourced`): no
+        fetch-and-run, and no process started beside a decode or an unpack. Reported at MEDIUM with
+        the reason, never dropped. An install hook still escalates it after this ceiling, and where
+        the package's calls are not all known (`ScanContext.cross_file_unresolved`) nothing is
+        lowered."""
+        if self.compiled.rule.id != CompositeRuleIds.DROPPER_RULE or self.ctx.cross_file_unresolved:
+            return None
+        present = {h.capability for h in self.hits}
+        if any(h.capability is Capability.FETCH_EXEC and not h.unsourced for h in self.hits):
+            return None
+        if Capability.SPAWN in present and present & {Capability.DECODE, Capability.DECOMPRESS}:
+            return None
+        sinks = [h for h in self.hits if h.capability in self._RUNS_CODE]
+        if not sinks or not all(h.unsourced for h in sinks):
+            return None
+        return CompositeGrading.UNSOURCED_CODE_REASON, Severity.MEDIUM
 
     def _ceiling_for_parameter_command(self) -> tuple[str, Severity] | None:
         """`SUSPECT.DROPPER.001` whose every spawn is a parameter-built shell command of a data

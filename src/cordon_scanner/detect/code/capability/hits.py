@@ -43,6 +43,14 @@ class CapabilityHit:
     (`JsFlow.parameter_command_lines`, note 78). Read by `CompositeGrading`, which LOWERS a dropper
     pairing such a spawn, never drops it: a caller elsewhere could pass one."""
 
+    unsourced: bool = False
+    """Whether this is a Python execute or deserialize hit whose input the parsed tree shows was
+    neither fetched nor decoded: `exec` of a local file's text, `eval` of an environment value,
+    a parser's `load` of a config, or a pattern hit on a line where the tree finds no such call at
+    all (a model's `.eval()` method). Set only when the file parsed
+    (`PythonAnalyzer.sink_sources`); read by `CompositeGrading`, which lowers a dropper whose
+    only running half is such hits, never drops it."""
+
     variants: int = 1
     """How many distinct operations of this capability the rule matched.
 

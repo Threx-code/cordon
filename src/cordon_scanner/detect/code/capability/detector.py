@@ -156,6 +156,44 @@ class FixedJsSpawns:
         ]
 
 
+class UnsourcedPythonSinks:
+    """Python execute and deserialize hits whose input was neither fetched nor decoded."""
+
+    SINKS: ClassVar[frozenset[Capability]] = frozenset({Capability.EXECUTE, Capability.DESERIALIZE})
+
+    @classmethod
+    def mark(cls, content: FileContent, hits: list[CapabilityHit]) -> list[CapabilityHit]:
+        """Each sink hit on a line where the parsed tree finds either no execute or deserialize
+        call, or one whose argument was neither fetched nor decoded, marked `unsourced`; and a
+        pattern-tier fetch-and-run on such a line, where the tree records no fetch-and-run of its
+        own (`exec(fp.read())` of an opened local file). A file that does not parse marks nothing
+        (fail closed)."""
+        if not any(h.capability in cls.SINKS for h in hits):
+            return hits
+        from cordon_scanner.analysis.python.pyast import PythonAnalyzer
+
+        found = PythonAnalyzer.sink_sources(content.text)
+        if found is None:
+            return hits
+        every, sourced = found
+        unsourced_lines = every - sourced
+        tree_fetch_exec = {
+            h.line for h in hits if h.capability is Capability.FETCH_EXEC and h.resolved
+        }
+
+        def unsourced(h: CapabilityHit) -> bool:
+            if h.capability in cls.SINKS:
+                return h.line not in every or h.line not in sourced
+            return (
+                h.capability is Capability.FETCH_EXEC
+                and not h.resolved
+                and h.line in unsourced_lines
+                and h.line not in tree_fetch_exec
+            )
+
+        return [replace(h, unsourced=True) if unsourced(h) else h for h in hits]
+
+
 class CapabilityDetector(BaseDetector):
     """Labels files with capabilities and evaluates composite rules over them."""
 
@@ -347,6 +385,8 @@ class CapabilityDetector(BaseDetector):
             for h in hits
         ):
             hits = Labelling.drop_excused_pattern_hits(content, hits)
+        if unit.language == "python" and not content.path.endswith(".pth"):
+            hits = UnsourcedPythonSinks.mark(content, hits)
         if unit.language in ("javascript", "typescript"):
             hits = JsPersistence.drop_named_only(content, hits)
             hits = FixedJsSpawns.mark(content, hits)
