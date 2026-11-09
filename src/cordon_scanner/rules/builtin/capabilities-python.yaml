@@ -522,6 +522,7 @@ rules:
         # and writing the line that makes it start at login.
         - '["''`]systemd["''`][ \t]{0,4},[ \t]{0,4}["''`](?:system|user)["''`]'
         - 'systemctl[ \t]{1,4}(?:--user[ \t]{1,4})?enable\b'
+        - '/etc/init\.d/|/etc/rc\.local\b|update-rc\.d[ \t]|chkconfig[ \t]{1,4}(?:--add|\S+[ \t]{1,4}on\b)'
         - 'WantedBy=(?:default|multi-user)\.target'
         # The registry key a login runs, spelled as Python source does: one escaped backslash or a raw
         # string's single one (review 98: a clipboard stealer's `winreg` Run entry was missed).
@@ -536,6 +537,7 @@ rules:
         - "open(home + '/.bashrc', 'a').write(line)"
         - "subprocess.run(['crontab', '-'])"
         - "path = site_packages / 'sitecustomize.py'"
+        - "os.system('sudo sh -c \"echo x > /etc/init.d/svc\"')"
       negative:
         - "profile = load_user_profile(user_id)"
         - "logger.info('service started')"
