@@ -52,8 +52,16 @@ class EnvironmentCarry:
     `PythonFacts.carried`'s result: `holds(node, deep=True)`."""
 
     @classmethod
-    def carried(cls, tree: ast.AST, is_environ: Callable[[ast.AST], bool]) -> Callable[..., bool]:
-        """`is_environ(node)`: whether a node is `os.environ` (or `os.environb`) as a value."""
+    def carried(
+        cls,
+        tree: ast.AST,
+        is_environ: Callable[[ast.AST], bool],
+        spawns: Callable[[ast.Call], bool] | None = None,
+    ) -> Callable[..., bool]:
+        """`is_environ(node)`: whether a node is `os.environ` (or `os.environb`) as a value.
+        `spawns(call)`: whether a call starts a child process, resolved through the file's
+        imports by the caller; `is_spawn` (no imports) when not given."""
+        starts_child = spawns or cls.is_spawn
         scope = PythonSyntax.name_scope(tree)
         passed = PythonSyntax.passed(tree)
         functions: dict[str, ast.FunctionDef | ast.AsyncFunctionDef] = {
@@ -83,7 +91,7 @@ class EnvironmentCarry:
                 return func.attr not in KEYED_METHODS
             # A child process's `env=` is consumed by the child: the Popen or CompletedProcess
             # that comes back is not the environment (pull-request-view, review 2026-11-09).
-            spawned = cls._is_spawn(call)
+            spawned = starts_child(call)
             arguments = [
                 *call.args,
                 *(k.value for k in call.keywords if not (spawned and k.arg == "env")),
@@ -127,7 +135,7 @@ class EnvironmentCarry:
         return holds
 
     @staticmethod
-    def _is_spawn(call: ast.Call) -> bool:
+    def is_spawn(call: ast.Call) -> bool:
         """`subprocess.Popen(...)` and its kin, or `Popen(...)` imported bare."""
         func = call.func
         if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):

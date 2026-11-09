@@ -88,13 +88,13 @@ class DataFlows(AnalyzerCore):
                     id(node)
                 )
                 continue
-            elif isinstance(parent, ast.keyword) and parent.arg == "env":
+            elif self._child_env(parent, parents):
                 direct.add(id(node))
                 continue
             if copy is None:
                 continue
             holder = parents.get(id(copy))
-            if isinstance(holder, ast.keyword) and holder.arg == "env":
+            if self._child_env(holder, parents):
                 direct.add(id(node))
             elif (
                 isinstance(holder, ast.Assign)
@@ -116,9 +116,26 @@ class DataFlows(AnalyzerCore):
                 excused.update(nodes)
         return frozenset(excused)
 
+    def _spawns(self, call: ast.Call) -> bool:
+        """Whether a call starts a child process, resolved through this file's imports
+        (`from subprocess import run` included): a spawn primitive, or `EnvironmentCarry.SPAWNS`."""
+        resolved = self._resolve_callee(call)
+        if resolved is not None and PRIMITIVES.get(resolved[0]) is Capability.SPAWN:
+            return True
+        return EnvironmentCarry.is_spawn(call)
+
+    def _child_env(self, node: ast.AST | None, parents: dict[int, ast.AST]) -> bool:
+        """`env=` of a call that starts a child process. The same keyword on any other callee is
+        an argument like any other, and is followed: a function named anything can be handed
+        `env=dict(os.environ)` and send it (review 2026-11-09)."""
+        if not (isinstance(node, ast.keyword) and node.arg == "env"):
+            return False
+        call = parents.get(id(node))
+        return isinstance(call, ast.Call) and self._spawns(call)
+
     def _harmless_use(self, use: ast.Name, parents: dict[int, ast.AST]) -> bool:
         parent = parents.get(id(use))
-        if isinstance(parent, ast.keyword) and parent.arg == "env":
+        if self._child_env(parent, parents):
             return True
         if isinstance(parent, ast.Attribute) and parent.value is use:
             return parent.attr in {"update", "setdefault", "pop", "get", "copy", "__setitem__"}
@@ -280,7 +297,7 @@ class DataFlows(AnalyzerCore):
         def is_environ(node: ast.AST) -> bool:
             return self._dotted(node) in ("os.environ", "os.environb") and id(node) not in handed_on
 
-        holds = EnvironmentCarry.carried(tree, is_environ)
+        holds = EnvironmentCarry.carried(tree, is_environ, self._spawns)
         for node in PythonSyntax.of(tree, ast.Call):
             resolved = self._resolve_callee(node)
             if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.EGRESS:
