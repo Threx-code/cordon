@@ -828,6 +828,34 @@ class TestDropperOverLines:
         [hit] = self._found(tmp_path, text)
         assert hit.severity == Severity.HIGH
 
+    _WITHHELD = (
+        "## Download\n\n"
+        "| Download | `https://example.invalid/releases/kit.zip` |\n"
+        "| Inside the archive | `kit/tool.exe` |\n\n"
+        "Extract the archive and start `kit/tool.exe`.\n\n"
+        "The program is not code-signed, so Windows SmartScreen shows *Unknown publisher*.\n"
+        "Run it only if you accept an unsigned program.\n\n"
+        "The installer asks for a password; ask the publisher for it before you start.\n"
+    )
+
+    def test_a_password_the_publisher_keeps_is_a_dropper(self, tmp_path) -> None:
+        [hit] = self._found(tmp_path, self._WITHHELD)
+        assert hit.severity == Severity.HIGH
+
+    def test_a_withheld_password_alone_is_not_enough(self, tmp_path) -> None:
+        # No warning about the program: a licensed vendor's archive, not the shape.
+        text = self._WITHHELD.replace("not code-signed", "fine").replace(
+            "SmartScreen shows *Unknown publisher*", "nothing special happens"
+        ).replace("an unsigned program", "it")
+        assert self._found(tmp_path, text) == []
+
+    def test_an_unsigned_warning_alone_is_not_enough(self, tmp_path) -> None:
+        text = self._WITHHELD.replace(
+            "The installer asks for a password; ask the publisher for it before you start.",
+            "Start it when the download finishes.",
+        )
+        assert self._found(tmp_path, text) == []
+
     def test_a_password_for_a_service_is_not_a_dropper(self, tmp_path) -> None:
         text = (
             "Set the database password: `export PGPASSWORD=...`.\n"
