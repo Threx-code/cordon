@@ -6,10 +6,11 @@ checks on the release as a whole, the dependency graph and what the archive is, 
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.analysis.python.unparsed_source import UnparsedSource
 from cordon_scanner.analysis.shared.languages import LanguageRegistry
@@ -29,6 +30,7 @@ from cordon_scanner.engine.pipeline.archives import ArchiveMembers
 from cordon_scanner.engine.pipeline.ceilings import Ceilings
 from cordon_scanner.engine.pipeline.constants import (
     ARCHIVE_SLICE,
+    DEPENDENCY_BUILD_FILENAMES,
     HONOURED_PINS,
     REPOSITORY_SCOPE,
 )
@@ -207,27 +209,10 @@ class ArchiveStages:
         units.extend(self.engine.units.content_readings(units))
         units.extend(self.engine.units.deobfuscated(units))
         hook_paths, consumer_hooks, ci_scripts = Hooks.manifest_hook_paths(units, acc)
-        # The same install-time picture a directory scan builds: filename hooks (`setup.py`, a
-        # `.pth`), and everything the hooks import or run. A downloaded sdist or tarball is the
-        # commonest thing to vet, and it was the one target that skipped all three.
-        # A `setup.py` is the build script only where a directory scan would take it as one
-        # (`Hooks.hook_executes`): beside the sdist's `PKG-INFO`, never inside a package or below
-        # the root. Read by the member's path in its archive, as the hook names it.
-        directories: set[str] = set()
-        for unit in units:
-            BuildRoots.note(unit.path.rpartition("!")[2], directories)
-        hook_paths |= {
-            unit.path
-            for unit in units
-            if not Hooks.under_fixture_directory(unit.path)
-            and any(
-                hook.kind not in ("ci", "projectbuild") and Hooks.hook_executes(hook, directories)
-                for hook in Hooks.hooks_for(unit.path.rpartition("!")[2])
-            )
-        }
-        hook_paths |= Hooks.nuget_hooks(units)
-        hook_paths |= Hooks.gem_extension_hooks(units)
-        hook_paths |= ComposerPluginHooks.paths(units)
+        registry = PackageFormat.of(units)
+        hook_paths = self._without_foreign_npm_hooks(units, hook_paths, registry)
+        foreign_package = self._foreign_package(registry)
+        hook_paths |= self._filename_hooks(units)
         skill_scripts = TreeFacts.skill_scripts(units)
         agent_run = skill_scripts | ServerSources.of(units)
         agent_tools = self.engine._agent_tool_paths(units, agent_run, hook_paths)
@@ -237,7 +222,14 @@ class ArchiveStages:
         # real MCP packages (review 98). What a server's handlers do with the agent's input is
         # read by `detect/mcp_code.py` instead -- a shell behind a secret prefix, a hidden copy of
         # every argument, a gate that turns the tool later, secrets gathered by name.
-        hook_paths |= skill_scripts
+        # A skill's scripts run unasked when an agent uses the skill. A SKILL.md in a registry
+        # package's source (a PyPI sdist's root, beside its PKG-INFO) is guidance for whoever
+        # works on that repository: the package manager installs none of it where an agent loads
+        # skills, so the scripts beside it are scanned as what they are, not as install code
+        # (pypi-benign F472: barangay, browser-automation-cli, moregan). npm is left out: skills
+        # are also distributed as npm packages, and that was not measured.
+        if not foreign_package:
+            hook_paths |= skill_scripts
         entries = frozenset(hook_paths)
         unshipped: list[tuple[str, str]] = []
         python_closure = Hooks.hook_import_closure(units, hook_paths, unshipped)
@@ -283,6 +275,64 @@ class ArchiveStages:
         ctx = self.unparsed(units, acc, ctx, python_closure)
         ctx = self.import_context(units, ctx, early_format)
         return Hooks.lifted_inherit(ctx)
+
+    @staticmethod
+    def _filename_hooks(units: list[FileUnit]) -> set[str]:
+        """The same install-time picture a directory scan builds: filename hooks (`setup.py`, a
+        `.pth`), NuGet's, a gem's extension, a Composer plugin. A downloaded sdist or tarball is
+        the commonest thing to vet, and it was the one target that skipped them. A `setup.py` is
+        the build script only where a directory scan would take it as one (`Hooks.hook_executes`):
+        beside the sdist's `PKG-INFO`, never inside a package or below the root. Read by the
+        member's path in its archive, as the hook names it."""
+        directories: set[str] = set()
+        for unit in units:
+            BuildRoots.note(unit.path.rpartition("!")[2], directories)
+        paths = {
+            unit.path
+            for unit in units
+            if not Hooks.under_fixture_directory(unit.path)
+            and any(
+                hook.kind not in ("ci", "projectbuild") and Hooks.hook_executes(hook, directories)
+                for hook in Hooks.hooks_for(unit.path.rpartition("!")[2])
+            )
+        }
+        return (
+            paths
+            | Hooks.nuget_hooks(units)
+            | Hooks.gem_extension_hooks(units)
+            | ComposerPluginHooks.paths(units)
+        )
+
+    @staticmethod
+    def _foreign_package(registry: str) -> bool:
+        """A registry package whose installer runs no bundled npm script and loads no skill."""
+        return bool(registry) and not EcosystemRegistry.runs_bundled_scripts(registry)
+
+    #: A build step that runs npm, and with it the lifecycle scripts of what node_modules holds.
+    _RUNS_NPM: ClassVar[re.Pattern[str]] = re.compile(r"\b(?:npm|yarn|pnpm|bun)\b")
+
+    @classmethod
+    def _without_foreign_npm_hooks(
+        cls, units: list[FileUnit], hook_paths: set[str], registry: str
+    ) -> set[str]:
+        """An npm tree vendored inside another registry's package (a Python front end's
+        node_modules): pip runs no npm lifecycle script, so esbuild's install.js there is not
+        install code -- unless the package's own build runs npm (`npm rebuild`), which would run
+        them. npm's own tarballs run their bundled dependencies' scripts and keep them."""
+        if not cls._foreign_package(registry):
+            return hook_paths
+        foreign = {p for p in hook_paths if "/node_modules/" in f"/{p.rpartition('!')[2]}"}
+        if not foreign:
+            return hook_paths
+        builds = [
+            u
+            for u in units
+            if ContainerPaths.basename(u.path.rpartition("!")[2]) in DEPENDENCY_BUILD_FILENAMES
+            and not u.content.is_binary
+        ]
+        if any(cls._RUNS_NPM.search(u.content.text) for u in builds):
+            return hook_paths
+        return hook_paths - foreign
 
     def unparsed(
         self, units: list[FileUnit], acc: Accumulator, ctx: ScanContext, python_closure: set[str]

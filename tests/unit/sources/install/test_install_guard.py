@@ -452,6 +452,20 @@ class TestTheVerdictCache:
         assert not VerdictCache(tmp_path, "0.8.0|high").clean("sha512:ab")
         assert not VerdictCache(tmp_path, "0.8.1|default").clean("sha512:ab")
 
+    def test_an_entry_stamped_just_after_the_clock_is_fresh(self, tmp_path: Path) -> None:
+        import time
+
+        cache = VerdictCache(tmp_path, "id")
+        cache.remember(["k"])
+        assert cache.clean("k", now=time.time() - 1)
+
+    def test_an_entry_dated_in_the_future_is_not_trusted(self, tmp_path: Path) -> None:
+        import time
+
+        cache = VerdictCache(tmp_path, "id")
+        cache.remember(["k"])
+        assert not cache.clean("k", now=time.time() - 60)
+
     def test_an_entry_expires_after_a_day(self, tmp_path: Path) -> None:
         import time
 
@@ -542,12 +556,14 @@ class TestTheCommand:
         shims, real = tmp_path / "shims", tmp_path / "bin"
         shims.mkdir()
         real.mkdir()
-        (shims / "npm").write_text(f"#!/bin/sh\n{SHIM_MARKER}\nexec x\n", encoding="utf-8")
-        (real / "npm").write_text("#!/bin/sh\necho real\n", encoding="utf-8")
-        for p in (shims / "npm", real / "npm"):
+        # Windows finds a command only by an extension PATHEXT lists, and in any case.
+        name = "npm.cmd" if os.name == "nt" else "npm"
+        (shims / name).write_text(f"#!/bin/sh\n{SHIM_MARKER}\nexec x\n", encoding="utf-8")
+        (real / name).write_text("#!/bin/sh\necho real\n", encoding="utf-8")
+        for p in (shims / name, real / name):
             p.chmod(0o755)
         found = Subprocesses.executable("npm", path=os.pathsep.join([str(shims), str(real)]))
-        assert found == str(real / "npm")
+        assert os.path.normcase(found) == os.path.normcase(str(real / name))
 
 
 class TestAnSdistsBuildTools:

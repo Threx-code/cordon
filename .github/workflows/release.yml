@@ -298,7 +298,10 @@ jobs:
       - run: pip install -e .
       # `cryptography` is a RELEASE-only dependency: it signs the bundle here and
       # never ships. The scanner verifies with the vendored `intel/_ed25519`.
-      - run: pip install "cryptography>=42"
+      # Pinned by version and hash, wheels only: the next step holds the signing key, and
+      # anything installed here would run beside it.
+      - run: |
+          pip install --require-hashes --only-binary :all: -r ci/release-signing-requirements.txt
       - name: Build and sign the bundle
         # Skips cleanly when the signing key is not yet configured, so the
         # release itself is never blocked on this opt-in feature being set up.
