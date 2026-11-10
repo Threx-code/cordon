@@ -117,7 +117,7 @@ class IntentSignals:
 
     #: The line a script writes to a shell startup file to store a variable: `export ${name}=${value}`,
     #: `"export " + name + "=" + value`, `export NAME="$VALUE"`. The name is a placeholder or a plain
-    #: literal; the value is a placeholder, a variable or a quoted literal -- never a command.
+    #: literal; the value is a placeholder or a variable -- never a literal or a command.
     _VARIABLE_LINE = re.compile(
         rb"export[ \t]+(?:\$\{[A-Za-z_]\w{0,40}\}|[\"'`][ \t]*\+[ \t]*[A-Za-z_]\w{0,40}[ \t]*\+[ \t]*[\"'`]|"
         rb"[A-Z][A-Z0-9_]{1,40})=[\"']?(?:\$\{[A-Za-z_]\w{0,40}\}|[\"'`][ \t]*\+[ \t]*[A-Za-z_]\w{0,40}|"
@@ -130,10 +130,9 @@ class IntentSignals:
     _NOT_A_VARIABLE = re.compile(
         rb"(?i:\b(?:curl|wget|Invoke-WebRequest|iwr|eval|alias|crontab|systemctl|ExecStart|RunAtLoad|"
         rb"child_process|execSync|spawnSync|execFile|subprocess|os\.system|popen)\b)|"
-        rb"\bexec\s*\(|\bspawn\s*\(|\$\(|`[^`\n]*`\s*\)?\s*\|"
+        rb"\bexec\s*\(|\bspawn\s*\(|\$\("
         rb"|\b(?:PATH|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_[A-Z_]+|BASH_ENV|PROMPT_COMMAND|PYTHONPATH|NODE_OPTIONS|"
         rb"[A-Z_]*(?:PROXY|REGISTRY|INDEX_URL|CA_BUNDLE|CERT|TLS|SSL|HOME|SHELL)[A-Z_]*)\b"
-        rb"|\bsource\b|(?m:^\s*\.\s+\S)"
     )
 
     @staticmethod
