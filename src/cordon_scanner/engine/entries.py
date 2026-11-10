@@ -207,8 +207,10 @@ class PythonScripts:
     def _setup_py(text: str) -> list[str]:
         import ast
 
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
         try:
-            tree = ast.parse(text)
+            tree = PythonSyntax.parse(text)  # the guarded parse (test_untrusted_parse.py)
         except (SyntaxError, ValueError, RecursionError, MemoryError):
             return []  # S2: covered: a setup.py that does not parse is MANIFEST.UNPARSED
         out: list[str] = []

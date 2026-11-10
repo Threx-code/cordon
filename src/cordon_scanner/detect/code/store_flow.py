@@ -241,8 +241,11 @@ class PythonStoreFlow:
 
     @classmethod
     def reaches(cls, text: str, store_lines: list[int], egress_lines: list[int]) -> bool | None:
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
         try:
-            tree = ast.parse(text)
+            # the guarded parse: no source warning reaches the output or, as an error, unparses it
+            tree = PythonSyntax.parse(text)
         except (SyntaxError, ValueError, RecursionError, MemoryError):
             # S2: a fallback; the next reader (or SOURCE.UNPARSED for running files) reads it
             return None
