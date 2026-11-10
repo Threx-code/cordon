@@ -16,6 +16,7 @@ no file of the package binds nothing.
 from __future__ import annotations
 
 import ast
+import re
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from pathlib import PurePosixPath
 from typing import Any, ClassVar, Protocol
@@ -56,9 +57,17 @@ class ImportedClients:
         trees = cls._trees(sources)
         if len(trees) < 2:
             return {}
-        return cls._follow(
-            trees, {path: cls._runs_here(tree) for path, tree in trees.items()}, modules=True
-        )
+        runs = {
+            path: cls._runs_here(trees[path])
+            for path, text in sources.items()
+            if path in trees and cls._SINK_WORDS.search(text)
+        }
+        return cls._follow(trees, {path: runs.get(path, {}) for path in trees}, modules=True)
+
+    #: A file with none of these cannot run a command, so its analyser is not started for it.
+    _SINK_WORDS: ClassVar[re.Pattern[str]] = re.compile(
+        r"subprocess|system|popen|Popen|exec|eval|spawn|compile|getoutput|check_(?:call|output)"
+    )
 
     @staticmethod
     def _trees(sources: Mapping[str, str]) -> dict[str, ast.Module]:
