@@ -665,6 +665,7 @@ Notification channels: send a test message to each.
 - `flutter`: flutter pub get/add, scanned first
 - `conda`: conda install/create, scanned first
 - `mamba`: mamba install/create, scanned first
+- `composer`: composer install/require, scanned
 
 ## npm
 
@@ -855,6 +856,18 @@ Run mamba, scanning every package before anything is installed.
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ arguments                 mamba's own arguments                            │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## composer
+
+Run composer, scanning every package before anything is installed.
+
+`cordon-scanner composer ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 composer's own arguments                         │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 

@@ -18,7 +18,30 @@ class ArchiveDigest:
     def of(algorithm: str, data: bytes) -> bytes:
         if algorithm == "h1":
             return GoModuleHash.of_zip(data)
+        if algorithm == "commit":
+            return CommitArchive.of_zip(data)
         return hashlib.new(algorithm, data).digest()
+
+
+class CommitArchive:
+    """`commit`: the git commit a code host's archive of one commit names, for a registry that
+    publishes no file hash (Composer's GitHub dists). GitHub writes the full commit hash as the zip's
+    comment and roots every file in one folder ending in its first seven characters
+    (`Seldaek-monolog-f4393b6/`); both must name the same commit, and the hash is what is checked."""
+
+    @staticmethod
+    def of_zip(data: bytes) -> bytes:
+        try:
+            with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                comment = zf.comment.decode("ascii", "replace").strip()
+                roots = {name.split("/", 1)[0] for name in zf.namelist()}
+        except (zipfile.BadZipFile, OSError, EOFError) as exc:
+            raise ValueError("an archive that cannot be read") from exc
+        if len(comment) != 40 or any(c not in "0123456789abcdef" for c in comment):
+            raise ValueError("an archive that does not name the commit it was made from")
+        if len(roots) != 1 or not next(iter(roots)).endswith("-" + comment[:7]):
+            raise ValueError("an archive whose folder does not name its commit")
+        return bytes.fromhex(comment)
 
 
 class GoModuleHash:
@@ -54,4 +77,4 @@ class GoModuleHash:
         return digest if len(digest) == 32 else None
 
 
-__all__ = ["ArchiveDigest", "GoModuleHash"]
+__all__ = ["ArchiveDigest", "CommitArchive", "GoModuleHash"]

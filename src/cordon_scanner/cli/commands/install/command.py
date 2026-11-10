@@ -32,7 +32,7 @@ Handler = "Callable[[str, list[str], InstallContext], int]"
 class InstallGuardCommand:
     TOOLS: ClassVar[tuple[str, ...]] = (
         "npm", "pnpm", "yarn", "pip", "pip3", "uv", "poetry", "cargo", "go", "gem", "bundler",
-        "dotnet", "dart", "flutter", "conda", "mamba",
+        "dotnet", "dart", "flutter", "conda", "mamba", "composer",
     )  # fmt: skip
     #: The executable each tool runs, where its name here differs (`bundle` is Cordon's own command).
     EXECUTABLES: ClassVar[dict[str, str]] = {"bundler": "bundle"}
@@ -83,6 +83,7 @@ class InstallGuardCommand:
     @classmethod
     def _table(cls) -> dict[str, tuple[Callable[[list[str]], bool], Callable[..., int]]]:
         """Each tool: which of its command lines install, and what checks them."""
+        from cordon_scanner.cli.commands.install.composer import ComposerTools
         from cordon_scanner.cli.commands.install.dotnet import DotnetTools
         from cordon_scanner.cli.commands.install.native import NativeTools
         from cordon_scanner.cli.commands.install.node import NodeTools
@@ -105,6 +106,7 @@ class InstallGuardCommand:
             "flutter": (NativeTools.pub_installs, NativeTools.pub),
             "conda": (NativeTools.conda_installs, NativeTools.conda),
             "mamba": (NativeTools.conda_installs, NativeTools.conda),
+            "composer": (ComposerTools.installs, ComposerTools.composer),
         }
 
 
