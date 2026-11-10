@@ -2,7 +2,7 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,508 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,510 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -620,7 +620,7 @@ rule's own samples.
 
 ## Exfiltration
 
-29 rules.
+30 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -630,6 +630,7 @@ rule's own samples.
 | `MALWARE.EXFIL.CREDENTIAL_STORE.001` | critical | Install-time code reads a credential store and reaches the network |
 | `MALWARE.EXFIL.CREDENTIAL_STORE.002` | high | Code sends a credential store's contents outside the store's own service |
 | `MALWARE.EXFIL.DNS_CALLBACK.001` | critical | Install script resolves a fixed host name |
+| `MALWARE.EXFIL.DNS_TUNNEL.001` | high | Code sends data out encoded in DNS names |
 | `MALWARE.EXFIL.DROP_POINT.001` | critical | Install-time code sends data to a drop point |
 | `MALWARE.EXFIL.FLOW_RAW_CHANNEL.001` | critical | Sends what a command printed, or the user's files, over a channel of its own |
 | `MALWARE.EXFIL.FLOW_TO_DROP.001` | critical | Sends this machine's secrets or identity to a drop point |
@@ -702,6 +703,14 @@ rule's own samples.
 | `OPERATIONAL.IMAGE.UNMATCHED` | info | An image's packages were not all matched against advisories |
 | `VULNERABLE.IMAGE.EXPLOITED.001` | critical | An image's operating-system package has a vulnerability exploited in the wild |
 | `VULNERABLE.IMAGE.PACKAGE.001` | high | An image's operating-system package has a known vulnerability |
+
+## Implant
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.IMPLANT.INSTALL.001` | high | Code downloads and runs something and makes itself start again |
 
 ## Infrastructure as code
 

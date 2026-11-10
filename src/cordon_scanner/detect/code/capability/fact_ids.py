@@ -30,6 +30,8 @@ class PythonFactIds:
         ("hidden request", "AST.PY.HIDDEN_REQUEST"),
         # What arrives on a connection, a bot update or a fetched sheet, run as a command.
         ("received run", "AST.PY.RECEIVED_RUN"),
+        # Encoded data resolved as DNS names: a channel out that no firewall rule for HTTP sees.
+        ("dns tunnel", "AST.PY.DNS_TUNNEL"),
     )
     #: A payload carried encoded, written out and made runnable or run.
     DROPPED: ClassVar[tuple[str, ...]] = (

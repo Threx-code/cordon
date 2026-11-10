@@ -2886,6 +2886,80 @@ rules:
         - path_glob: "**/test_*.py"
         - path_glob: "tests/**"
 
+  - id: MALWARE.IMPLANT.INSTALL.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: Code downloads and runs something and makes itself start again
+    message: >
+      One file both runs what it fetched (a download handed to an interpreter, or fetched text
+      evaluated) and writes a persistence location (a shell profile, a LaunchAgent, a crontab, a
+      systemd user unit, a startup folder or a Run key). Each alone has ordinary uses; together in
+      one file they are an implant's installer: a payload brought in and made to survive a reboot.
+      Across 33,733 published packages 4 files carried both. It is graded the same whether the code
+      runs on import, as a command, or only when a function is called: installing an implant is
+      not a routine a caller asks for.
+    remediation: >
+      Do not run this code. Check the persistence locations it names and remove what it planted.
+    provenance:
+      kind: research
+      reference: >
+        PyPI packages that fetch a payload, run it and register it for the next login from the same
+        module, reached only from a function (group A (c), 2026-11-10).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1547/
+    match:
+      kind: composite
+      scope: file
+      proximity: 4000
+      all:
+        - capability: egress
+        - capability: persist
+        - any:
+            - capability: fetch_exec
+            - capability: execute
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.EXFIL.DNS_TUNNEL.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: Code sends data out encoded in DNS names
+    message: >
+      This file resolves host names built from encoded data -- base64, base32, hex -- in pieces,
+      a label at a time. The lookups are the channel: each query carries part of the data to the
+      name server of a domain the author controls, past any filter that watches HTTP. Resolving a
+      name is ordinary; resolving names made of encoded data has no use but moving that data out.
+      Graded the same wherever the code runs.
+    remediation: >
+      Do not run this code. Find what it encoded -- tokens, files, the environment -- and treat
+      it as sent.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package that read a Kubernetes service-account token, called the API with it and
+        resolved the base64 of the reply in 60-character labels under its own domain from a
+        thread started at import (group A (a), 2026-11-10); benign 0/1,063.
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1048/003/
+    match:
+      kind: composite
+      scope: file
+      proximity: 4000
+      any:
+        - rule: AST.PY.DNS_TUNNEL
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: MALWARE.INSTALL.FOREIGN_PROGRAM.001
     version: 1.0.0
     category: malicious
