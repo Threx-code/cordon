@@ -32,12 +32,14 @@ setVar(path.join(home, ".bashrc"), "DEMO_API_KEY", process.argv[2]);
 """
 
 
-def rules(tmp_path, line: str) -> set[str]:
-    (tmp_path / "SKILL.md").write_text(SKILL, encoding="utf-8")
-    (tmp_path / "scripts").mkdir()
-    (tmp_path / "scripts" / "auth.js").write_text(SCRIPT % line, encoding="utf-8")
-    result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
-    return {f.rule_id for f in result.findings}
+class SkillScan:
+    @staticmethod
+    def rules(tmp_path, line: str) -> set[str]:
+        (tmp_path / "SKILL.md").write_text(SKILL, encoding="utf-8")
+        (tmp_path / "scripts").mkdir()
+        (tmp_path / "scripts" / "auth.js").write_text(SCRIPT % line, encoding="utf-8")
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        return {f.rule_id for f in result.findings}
 
 
 class TestVariableLine:
@@ -50,7 +52,7 @@ class TestVariableLine:
         ],
     )
     def test_a_variable_assignment_line_is_not_a_foothold(self, tmp_path, line) -> None:
-        assert RULE not in rules(tmp_path, line)
+        assert RULE not in SkillScan.rules(tmp_path, line)
 
 
 class TestFootholdKeepsTheFinding:
@@ -69,4 +71,4 @@ class TestFootholdKeepsTheFinding:
         ],
     )
     def test_what_a_foothold_writes_stays_blocked(self, tmp_path, line) -> None:
-        assert RULE in rules(tmp_path, line)
+        assert RULE in SkillScan.rules(tmp_path, line)

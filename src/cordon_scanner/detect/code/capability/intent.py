@@ -131,8 +131,10 @@ class IntentSignals:
         rb"(?i:\b(?:curl|wget|Invoke-WebRequest|iwr|eval|alias|crontab|systemctl|ExecStart|RunAtLoad|"
         rb"child_process|execSync|spawnSync|execFile|subprocess|os\.system|popen)\b)|"
         rb"\bexec\s*\(|\bspawn\s*\(|\$\("
-        rb"|\b(?:PATH|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_[A-Z_]+|BASH_ENV|PROMPT_COMMAND|PYTHONPATH|NODE_OPTIONS|"
-        rb"[A-Z_]*(?:PROXY|REGISTRY|INDEX_URL|CA_BUNDLE|CERT|TLS|SSL|HOME|SHELL)[A-Z_]*)\b"
+        rb"|\b(?:PATH|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_[A-Z_]+|BASH_ENV|PROMPT_COMMAND|PYTHONPATH|NODE_OPTIONS)\b"
+        # A name that holds one of these words anywhere in it. One bounded run before the word and
+        # none after it, so no two repeats can match the same characters (S7, regex scaling).
+        rb"|\b[A-Z_]{0,60}(?:PROXY|REGISTRY|INDEX_URL|CA_BUNDLE|CERT|TLS|SSL|HOME|SHELL)"
     )
 
     @staticmethod
@@ -148,7 +150,8 @@ class IntentSignals:
             return False
         raw = content.raw
         return bool(
-            IntentSignals._VARIABLE_LINE.search(raw) and not IntentSignals._NOT_A_VARIABLE.search(raw)
+            IntentSignals._VARIABLE_LINE.search(raw)
+            and not IntentSignals._NOT_A_VARIABLE.search(raw)
         )
 
     #: A payload written into the code, decoded and run in one expression: `eval(atob('...'))`,

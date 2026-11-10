@@ -305,14 +305,12 @@ class CompositeGrading:
 
     def _withdrawn_for_where_it_runs(self) -> bool:
         """Withdrawn for where it runs or what it reaches: a loopback health check, a Homebrew formula, an editor extension that only names a path or host, a pinned fetch in CI, an agent's tool calling the service it holds a key for."""
-        ctx, hits, rule, content, in_hook = (
-            self.ctx,
+        hits, rule, content, in_hook = (
             self.hits,
             self.compiled.rule,
             self.unit.content,
             self.in_hook,
         )
-        category = self.compiled.rule.category
         if rule.id == "MALWARE.EXFIL.BEACON.001" and LegitimateUse.loopback_only(
             CompositeEvaluator.satisfying_region(content, hits)
         ):
@@ -361,25 +359,25 @@ class CompositeGrading:
             ):
                 return True
 
-        # The composite admits `ci_hook` alongside `install_hook`, correctly: a
-        # compromised pipeline running what it downloaded is a real, observed attack.
-        # But an install hook runs on every consumer's machine, unprompted, while a CI
-        # script runs only in the pipeline the project controls -- so for CI the
-        # category rests entirely on the fetch being unreviewable, and a pinned one is
-        # not.
-        #
-        # Withdrawn rather than demoted, and the rule id is why. `MALWARE.DROPPER.001`
-        # reported with `category: suspicious` is self-contradictory: the id namespace
-        # encodes the category, a consumer filtering on `MALWARE.*` gets it anyway, and
-        # the taxonomy derives a threat domain from the prefix. The first attempt at
-        # this demoted the category and left the id, which produced exactly that.
-        #
-        # Nothing is lost by withdrawing it. `SUSPECT.DROPPER.001` fires on the same
-        # span, at a severity the evidence supports, with remediation a maintainer can
-        # act on - copy the script into the repository, or verify a digest. What stops
-        # being said is "treat the host as compromised and report the package to the
-        # registry", which is advice about a package somebody installed and means
-        # nothing to the owner of a `.buildkite` script.
+        return self._withdrawn_in_a_pipeline_or_a_tool()
+
+    def _withdrawn_in_a_pipeline_or_a_tool(self) -> bool:
+        """Withdrawn where a pinned fetch runs in the project's own CI, or where an agent's tool calls the service it holds a key for."""
+        ctx, hits, rule, content, in_hook = (
+            self.ctx,
+            self.hits,
+            self.compiled.rule,
+            self.unit.content,
+            self.in_hook,
+        )
+        category = rule.category
+        # The composite admits `ci_hook` alongside `install_hook`: a compromised pipeline running
+        # what it downloaded is a real attack. But an install hook runs on every consumer's
+        # machine, unprompted, while a CI script runs only in the project's own pipeline, so
+        # there the category rests on the fetch being unreviewable, and a pinned one is not.
+        # Withdrawn rather than demoted, because a `MALWARE.*` id with `category: suspicious`
+        # contradicts itself; `SUSPECT.DROPPER.001` fires on the same span at a severity the
+        # evidence supports, with remediation a maintainer can act on.
         if (
             category is Category.MALICIOUS
             and not in_hook
