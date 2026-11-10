@@ -613,9 +613,17 @@ class CapabilityDetector(BaseDetector):
         if import_deferred is not None and compiled.rule.id in CompositeRuleIds.IMPORT_GRADED:
             # What a published package runs at import is unasked too (reviews/pypi-98/10): the
             # install term is read against the import reach, the bodies importing never calls as
-            # the dead code -- the same per-window rule.
+            # the dead code -- the same per-window rule. A destination only written down (a URL
+            # literal handed to a telemetry client's constructor) is not a send at import: it
+            # counts as egress only on a line where a request is made (evidently 0.7.23).
             return evaluator.satisfying_window(
-                compiled, rule_hits, path, True, in_ci, in_consumer, import_deferred
+                compiled,
+                DestinationLabels.sent_at_import(rule_hits),
+                path,
+                True,
+                in_ci,
+                in_consumer,
+                import_deferred,
             )
         return evaluator.satisfying_window(
             compiled, rule_hits, path, in_hook, in_ci, in_consumer, deferred

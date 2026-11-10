@@ -33,6 +33,23 @@ class DestinationLabels:
     """Egress to an out-of-band interaction service. See `intel.hosts.INTERACTION_HOSTS`."""
 
     @classmethod
+    def sent_at_import(cls, hits: list[CapabilityHit]) -> list[CapabilityHit]:
+        """The hits, less a destination label on a line where nothing is sent: what import makes
+        of a URL written as a constant or passed to a constructor is a destination named, not a
+        request. A label on a request's own line (`urlopen("http://1.2.3.4", data)`) stays."""
+        sending = {
+            hit.line
+            for hit in hits
+            if hit.capability is Capability.EGRESS
+            and hit.rule_id not in (cls.DROP_POINT_RULE, cls.INTERACTION_RULE)
+        }
+        return [
+            hit
+            for hit in hits
+            if hit.rule_id not in (cls.DROP_POINT_RULE, cls.INTERACTION_RULE) or hit.line in sending
+        ]
+
+    @classmethod
     def destination_capabilities(
         cls, content: FileContent, language: str | None = None, *, notifier_exempt: bool = True
     ) -> list[CapabilityHit]:
