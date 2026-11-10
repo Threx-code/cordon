@@ -35,13 +35,12 @@ understood.
 from __future__ import annotations
 
 import re
-import zlib
 from dataclasses import replace
 from typing import TYPE_CHECKING, ClassVar, Final
 
 from cordon_scanner.analysis.shared.source_paths import FIXTURE_CEILING, SourcePaths
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
-from cordon_scanner.detect.binary.magic import FORMATS, Format, MachO
+from cordon_scanner.detect.binary.magic import FORMATS, Contents, Format, MachO
 from cordon_scanner.detect.binary.rule_declarations import DECLARED_RULES, DETECTOR
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.secrets.secrets import RULE_MATERIAL_CEILING
@@ -411,8 +410,8 @@ class BinaryDetector(BaseDetector):
                 )
             elif (
                 named is None
-                and self._names_a_shared_library(content.path)
-                and self._is_html_document(judged)
+                and Contents.names_a_shared_library(ContainerPaths.basename(content.path))
+                and Contents.is_html_document(judged)
             ):
                 # A web page where a library will go: `libffmpeg.so` holding the HTML of the page
                 # its download link led to (fmpegarm64v8a-mkkk, a benign PyPI block; 08 §8a).
@@ -484,24 +483,6 @@ class BinaryDetector(BaseDetector):
             return False
         printable = all(c.isprintable() or c in "\r\n\t" for c in text)
         return printable and len(BinaryDetector._WORDS.findall(raw)) >= 3
-
-    #: The start of an HTML document: an optional UTF-8 BOM and whitespace, then a doctype or the
-    #: document's own first element. Anchored, so HTML inside other text is not a document here.
-    _HTML_DOCUMENT: ClassVar[re.Pattern[bytes]] = re.compile(
-        rb"(?i)\A(?:\xef\xbb\xbf)?\s{0,64}<(?:!doctype\s+html\b|html\b|head\b|body\b)"
-    )
-
-    #: Names a native loader opens as a shared library, and nothing else does.
-    _SHARED_LIBRARY_EXTENSIONS: ClassVar[frozenset[str]] = frozenset({".so", ".dll", ".dylib"})
-
-    @staticmethod
-    def _is_html_document(raw: bytes) -> bool:
-        return BinaryDetector._HTML_DOCUMENT.match(raw[:256]) is not None
-
-    @staticmethod
-    def _names_a_shared_library(path: str) -> bool:
-        _, dot, extension = ContainerPaths.basename(path).lower().rpartition(".")
-        return bool(dot) and f".{extension}" in BinaryDetector._SHARED_LIBRARY_EXTENSIONS
 
     @staticmethod
     def _promises_a_binary_format(path: str) -> bool:
@@ -626,18 +607,14 @@ class BinaryDetector(BaseDetector):
             f"named {extension} but its contents are binary data, which no interpreter for it reads"
         )
 
-    #: How much of a gzip under an image's name is decompressed to judge what it holds.
-    GZIP_INNER_MAX: ClassVar[int] = 4 * 1024 * 1024
-
     @staticmethod
     def through_gzip(path: str, raw: bytes, mismatch: str) -> str | None:
         """The mismatch of a gzip under an image's name, judged by what it decompresses to.
 
         A web server's pre-compressed asset is a gzip of the image its name says: acr's
-        `public/favicon.ico` (a benign PyPI block; 08-BENIGN-F-SHAPES §8b). One whole member is
-        decompressed, at most `GZIP_INNER_MAX` bytes; anything else -- a stream that will not
-        open, ends early, runs past the bound or carries a second member -- keeps `mismatch` as it
-        was, so nothing is cleared by being too large to read. Within the bound the inner bytes
+        `public/favicon.ico` (a benign PyPI block; 08-BENIGN-F-SHAPES §8b). Only one whole member
+        within `Contents.GZIP_INNER_MAX` is read (`Contents.gunzip_whole`); anything else keeps
+        `mismatch` as it was, so nothing is cleared by being too large to read. The inner bytes
         are judged as if they were the file: an image under an image's name is no disguise, an
         executable gzipped as `.ico` is reported naming the executable.
         """
@@ -645,17 +622,8 @@ class BinaryDetector(BaseDetector):
         promised = next((f for f in FORMATS if extension in f.extensions), None)
         if promised is None or promised.kind != "image":
             return mismatch
-        stream = zlib.decompressobj(16 + zlib.MAX_WBITS)
-        try:
-            inner = stream.decompress(raw, BinaryDetector.GZIP_INNER_MAX + 1)
-        except zlib.error:
-            return mismatch
-        if (
-            len(inner) > BinaryDetector.GZIP_INNER_MAX
-            or not stream.eof
-            or stream.unused_data
-            or stream.unconsumed_tail
-        ):
+        inner = Contents.gunzip_whole(raw)
+        if inner is None:
             return mismatch
         found = BinaryDetector.identify(inner)
         if found is None:

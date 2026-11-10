@@ -5,7 +5,10 @@ file's format can be named whatever it is called, and a name that disagrees with
 
 from __future__ import annotations
 
+import re
+import zlib
 from dataclasses import dataclass
+from typing import ClassVar
 
 MAX_FAT_ARCHITECTURES = 20
 """How many slices a universal binary may declare and still be one.
@@ -32,6 +35,48 @@ class MachO:
         if len(head) < 8:
             return False
         return int.from_bytes(head[4:8], "big") <= MAX_FAT_ARCHITECTURES
+
+
+class Contents:
+    """What some bytes or a name are, read without the detector: an HTML document, a name only a
+    native loader opens, the one whole member of a gzip."""
+
+    #: The start of an HTML document: an optional UTF-8 BOM and whitespace, then a doctype or the
+    #: document's own first element. Anchored, so HTML inside other text is not a document here.
+    HTML_DOCUMENT: ClassVar[re.Pattern[bytes]] = re.compile(
+        rb"(?i)\A(?:\xef\xbb\xbf)?\s{0,64}<(?:!doctype\s+html\b|html\b|head\b|body\b)"
+    )
+    #: Names a native loader opens as a shared library, and nothing else does.
+    SHARED_LIBRARY_EXTENSIONS: ClassVar[frozenset[str]] = frozenset({".so", ".dll", ".dylib"})
+    #: How much of a gzip is decompressed to judge what it holds.
+    GZIP_INNER_MAX: ClassVar[int] = 4 * 1024 * 1024
+
+    @staticmethod
+    def is_html_document(raw: bytes) -> bool:
+        return Contents.HTML_DOCUMENT.match(raw[:256]) is not None
+
+    @staticmethod
+    def names_a_shared_library(basename: str) -> bool:
+        _, dot, extension = basename.lower().rpartition(".")
+        return bool(dot) and f".{extension}" in Contents.SHARED_LIBRARY_EXTENSIONS
+
+    @staticmethod
+    def gunzip_whole(raw: bytes) -> bytes | None:
+        """The one member of a gzip, decompressed whole within `GZIP_INNER_MAX`; None for a stream
+        that will not open, ends early, runs past the bound or carries a second member."""
+        stream = zlib.decompressobj(16 + zlib.MAX_WBITS)
+        try:
+            inner = stream.decompress(raw, Contents.GZIP_INNER_MAX + 1)
+        except zlib.error:
+            return None
+        if (
+            len(inner) > Contents.GZIP_INNER_MAX
+            or not stream.eof
+            or stream.unused_data
+            or stream.unconsumed_tail
+        ):
+            return None
+        return inner
 
 
 @dataclass(frozen=True, slots=True)

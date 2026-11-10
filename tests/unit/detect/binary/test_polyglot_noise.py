@@ -15,6 +15,7 @@ import pytest
 from cordon_scanner import Scanner
 from cordon_scanner.detect.base import FileUnit, ScanContext
 from cordon_scanner.detect.binary.detector import BinaryDetector
+from cordon_scanner.detect.binary.magic import Contents
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
@@ -190,7 +191,7 @@ class TestPageGzipAndZosNarrowings:
 
     def test_a_gzip_past_the_bound_fails_closed(self) -> None:
         # A valid icon inside, but more than the bound decompressed: not cleared.
-        big = self.ICO + b"\x00" * (BinaryDetector.GZIP_INNER_MAX + 1)
+        big = self.ICO + b"\x00" * (Contents.GZIP_INNER_MAX + 1)
         assert self.grades("pkg/public/favicon.ico", self.gzipped(big)) != []
 
     def test_a_second_gzip_member_keeps_its_finding(self) -> None:
