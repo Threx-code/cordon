@@ -77,8 +77,9 @@ class EnvironmentCarry:
                 return (scope(node, node.id), node.id) in carrying
             if isinstance(node, ast.Subscript):
                 return not whole(node.value) and whole(node.slice)
-            if isinstance(node, ast.Compare):
-                return False
+            # A comparison that is itself sent (`{"ci": "CI" in env}`, `any(k in env for k in
+            # markers)`) still tells the receiver what the environment holds; one that only
+            # steers control flow is never a sent value (runtime-readout, review 2026-11-10).
             if isinstance(node, ast.Call):
                 return call_whole(node)
             return any(whole(child) for child in ast.iter_child_nodes(node))

