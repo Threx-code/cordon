@@ -484,6 +484,42 @@ rules:
         - path_glob: "**/test_*.py"
         - path_glob: "tests/**"
 
+  - id: MALWARE.EXFIL.HIDDEN_DESTINATION.002
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: Code sends the machine's identity, environment or a credential to a host it hides
+    message: >
+      This file sends who the machine is, its environment, or a credential to a URL it decodes,
+      reverses or builds from character codes at runtime, so the destination never appears in the
+      source. A package's own service, a vendor's telemetry and a CI notifier name their hosts;
+      hiding the host of a request that carries what the machine holds is how a stealer keeps its
+      collector out of a reviewer's sight. It is graded the same whether the code runs on import,
+      as a command, or only when a function is called.
+    remediation: >
+      Decode the destination and read why the request carries this data. If this is not your
+      code, treat what it sends, and the environment of whatever ran it, as exposed.
+    provenance:
+      kind: research
+      reference: >
+        PyPI stealers that send the hostname, user or environment to a base64-decoded or reversed
+        collector URL from a method only a caller reaches (group A, 2026-11-10).
+    evidence_policy: hash_only
+    references:
+      - https://cwe.mitre.org/data/definitions/200.html
+      - https://cwe.mitre.org/data/definitions/506.html
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.SENT_TO_HIDDEN_HOST
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: SUSPECT.EXFIL.NAMED_SECRET.001
     version: 1.0.0
     category: suspicious
@@ -2814,6 +2850,36 @@ rules:
   # ---------------------------------------------------------------------
   # AI agents as the payload
   # ---------------------------------------------------------------------
+  - id: MALWARE.INSTALL.FOREIGN_PROGRAM.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: Install code starts a desktop application or an identity command
+    message: >
+      The code an install runs starts a desktop application (a calculator, an editor) or a
+      command whose output is who and where the machine is (id, whoami, hostname, uname,
+      ipconfig). Builds start compilers, build systems, git, package managers and interpreters;
+      across 50,010 published packages none started either kind. A window opened at install is
+      proof that the author's code runs on the installer's machine; an identity command is the
+      first step of a reconnaissance callback.
+    remediation: >
+      Do not install this package. If it was installed, review what else its install code ran.
+    provenance:
+      kind: research
+      reference: >
+        Install-time proofs of execution and identity probes in published PyPI packages
+        (setup.py and cmdclass), 2026-11-10; benign census of setup.py programs over 50,010 sdists.
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1033/
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.INSTALL_FOREIGN_PROGRAM
+
   - id: MALWARE.AGENT.HIJACK.001
     version: 1.0.0
     category: malicious

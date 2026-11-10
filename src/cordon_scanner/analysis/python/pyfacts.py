@@ -684,6 +684,11 @@ class PythonFacts:
             code = PythonFacts._code_point(node.args[0])
             if code is not None:
                 return chr(code)
+        # `"moc.tsoh//:sptth"[::-1]` and `"".join(reversed("..."))`: a literal stored backwards so
+        # no rule that reads literals sees it. Folded, it is the text the program uses.
+        if PythonSyntax.reversed_slice(node) and isinstance(node, ast.Subscript):
+            inner = PythonFacts.constant(node.value)
+            return inner[::-1] if inner is not None else None
         return None
 
     @classmethod
@@ -694,6 +699,16 @@ class PythonFacts:
             return None
         separator = PythonFacts.constant(node.func.value)
         elements = node.args[0]
+        if (
+            separator is not None
+            and isinstance(elements, ast.Call)
+            and isinstance(elements.func, ast.Name)
+            and elements.func.id == "reversed"
+            and len(elements.args) == 1
+        ):
+            # `"".join(reversed("moc.tsoh"))`: the characters of a literal, backwards.
+            inner = PythonFacts.constant(elements.args[0])
+            return separator.join(inner[::-1]) if inner is not None else None
         if separator is not None and isinstance(elements, ast.List | ast.Tuple):
             pieces = [PythonFacts.constant(element) for element in elements.elts]
             if all(part is not None for part in pieces):

@@ -28,6 +28,12 @@ if TYPE_CHECKING:
 class CompositeEvaluator:
     """One file's composite evaluation: windows, expressions and terms."""
 
+    #: Spawn facts kept on a line whose command is written out whole. A program spelled in full is
+    #: normally data (`fixed_lines`: `git rev-parse` is not a decode-and-run); for these facts the
+    #: literal is the act itself -- a calculator or `whoami` started at install
+    #: (`InstallPrograms`), as `safe_spawn_lines` keeps a bare shell or a `start x.vbs`.
+    LITERAL_IS_THE_ACT: ClassVar[frozenset[str]] = frozenset({"AST.PY.INSTALL_FOREIGN_PROGRAM"})
+
     def __init__(self, *, in_entry: bool = False, in_import_entry: bool = False) -> None:
         #: The file is an install hook's own entry (the `install_entry` term).
         self.in_entry = in_entry
@@ -349,7 +355,11 @@ class CompositeEvaluator:
         return [
             hit
             for hit in window
-            if not (hit.capability is Capability.SPAWN and hit.line in fixed_lines)
+            if not (
+                hit.capability is Capability.SPAWN
+                and hit.line in fixed_lines
+                and hit.rule_id not in CompositeEvaluator.LITERAL_IS_THE_ACT
+            )
         ]
 
     @staticmethod

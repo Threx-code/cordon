@@ -2,7 +2,7 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-**61 secret rules and 27 exfiltration rules**: the part of the rule pack where
+**61 secret rules and 28 exfiltration rules**: the part of the rule pack where
 the tool that finds the problem must not become the problem.
 
 ```
@@ -115,7 +115,7 @@ something live, all of them are in git history and in every clone.
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-The 27 exfiltration rules divide on **where the data goes**. `MALWARE.` is the
+The 28 exfiltration rules divide on **where the data goes**. `MALWARE.` is the
 install-time form of a rule, `SUSPECT.` the same behaviour in ordinary code:
 
 | rule | the channel |
@@ -125,6 +125,7 @@ install-time form of a rule, `SUSPECT.` the same behaviour in ordinary code:
 | `*.EXFIL.DROP_POINT.001` | paste sites, Discord/Telegram webhooks |
 | `SUSPECT.EXFIL.ENVIRONMENT.001` | the whole environment sent over the network |
 | `SUSPECT.EXFIL.NAMED_SECRET.001` | one named token (AWS secret key, GitHub, npm, PyPI, ...) sent to a host outside its own service |
+| `MALWARE.EXFIL.HIDDEN_DESTINATION.002` | the machine's identity, environment or a credential sent to a URL the code decodes, reverses or builds from character codes, wherever the code runs |
 | `SUSPECT.EXFIL.DNS.001` | data encoded into DNS lookups |
 | `SUSPECT.EXFIL.WALLET_SECRET.001` | a wallet's mnemonic, seed or private key in a request to a fixed outside address |
 | `*.EXFIL.BEACON.001` | hostname/user/cwd reported to the publisher |

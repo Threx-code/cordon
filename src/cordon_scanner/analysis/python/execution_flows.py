@@ -11,6 +11,7 @@ import posixpath
 import re
 from typing import TYPE_CHECKING
 
+from cordon_scanner.analysis.python.flows.loop_reads import LoopReads
 from cordon_scanner.analysis.python.pyfacts import (
     PRIMITIVES,
     PythonFacts,
@@ -159,6 +160,7 @@ class ExecutionFlows(AnalyzerCore):
                         item.optional_vars, ast.Name
                     ):
                         fetched.add(item.optional_vars.id)
+        LoopReads.fetched_through(tree, fetched, self._egress_call)
         # A download run as a command: `curl -o X`, `wget -O X`, `Invoke-WebRequest -OutFile X`.
         # And a command's captured output kept for later: `r = run(["curl", URL])`.
         fetched_output: set[str] = set()

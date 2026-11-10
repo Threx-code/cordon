@@ -12,6 +12,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.analysis.python.flows.imported_clients import ImportedClients
 from cordon_scanner.analysis.python.unparsed_source import UnparsedSource
 from cordon_scanner.analysis.shared.languages import LanguageRegistry
 from cordon_scanner.decide.code_model import CodeModelPass
@@ -271,7 +272,11 @@ class ArchiveStages:
             declared_dependencies=EcosystemRegistry.declared_dependencies(units, early_format),
             package_repository=PackageEntries.repository(units, early_format),
         )
-        ctx = replace(ctx, verdict_dependency_names=Ceilings.verdict_dependency_names(units))
+        ctx = replace(
+            ctx,
+            verdict_dependency_names=Ceilings.verdict_dependency_names(units),
+            python_imported_clients=ImportedClients.of_units(units),
+        )
         ctx = self.unparsed(units, acc, ctx, python_closure)
         ctx = self.import_context(units, ctx, early_format)
         return Hooks.lifted_inherit(ctx)

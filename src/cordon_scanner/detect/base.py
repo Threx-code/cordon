@@ -271,6 +271,12 @@ class ScanContext:
     (`CrossFileFlows`). Set only for the re-grade of those files, after detection; None before. A
     fact like the others: carried to a worker and part of the file's cache key."""
 
+    python_imported_clients: Mapping[str, Mapping[str, str]] | None = None
+    """Per Python file, the names it imports from another of the package's files that are HTTP
+    clients made there (`ImportedClients`): `from .imports import *` taking `session =
+    httpx.Client()`. Found before detection from every Python file of the package, so a file's
+    analyser starts with them bound. None when there are none, or for a single-file scan."""
+
     cross_file_unresolved: bool = False
     """Whether some file of the package calls into it in a way the join cannot follow (a computed
     `require`, a file not read whole, facts refused): set for the re-grade only. What needs the join
