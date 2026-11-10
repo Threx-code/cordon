@@ -742,6 +742,8 @@
   "test_agent_hijack.py": "detect/code/capability",
   "test_instruction_intent.py": "detect/agents",
   "test_language_model_judge.py": "detect/agents",
+  "test_judge_only_adds.py": "detect/agents",
+  "test_verdict_bounds.py": "decide",
   "test_semantics.py": "detect/agents",
   "test_agents.py": "detect/agents",
   "test_aibom.py": "report",
