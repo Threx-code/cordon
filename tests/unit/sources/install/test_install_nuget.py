@@ -178,10 +178,10 @@ class TestTheProjectResolve:
     def test_the_command_then_runs_locked_from_the_scanned_source(self) -> None:
         config = Path("/s/nuget.config")
         assert NuGetPlanner.locked(["restore"], config) == [
-            "restore", "--locked-mode", "--configfile", "/s/nuget.config",
+            "restore", "--locked-mode", "--configfile", str(config),
         ]  # fmt: skip
         assert NuGetPlanner.locked(["run", "--", "--port", "1"], config) == [
-            "run", "-p:RestoreLockedMode=true", "-p:RestoreConfigFile=/s/nuget.config",
+            "run", "-p:RestoreLockedMode=true", f"-p:RestoreConfigFile={config}",
             "--", "--port", "1",
         ]  # fmt: skip
         assert NuGetPlanner.locked(["add", "package", "x"], config)[:2] == [
