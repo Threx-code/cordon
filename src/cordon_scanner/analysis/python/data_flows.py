@@ -453,7 +453,8 @@ class DataFlows(SecretSources, HiddenDestinations):
         return False
 
     def _iterated_literals(self, tree: ast.AST) -> dict[str, list[str]]:
-        """Loop variables whose every value is a string literal, with those values.
+        """Loop variables whose every value is a string literal, with those values, and names bound
+        once to one string literal.
 
         From `for n in (...)` and comprehensions, iterating either a literal tuple or list, or a
         name bound once to one. A name used as a loop variable twice, over different things, is
@@ -484,6 +485,21 @@ class DataFlows(SecretSources, HiddenDestinations):
                     refused.add(name)
                 else:
                     found[name] = values
+        # A name bound once in the file to one string literal, and never a parameter, is that
+        # string: `DO_NOT_TRACK_ENV = "DO_NOT_TRACK"; os.environ.get(DO_NOT_TRACK_ENV)` reads
+        # one named setting, not the environment (evidently 0.7.23's telemetry opt-out was
+        # graded a credential read and paired at import into MALWARE.EXFIL.001).
+        parameters = {a.arg for a in PythonSyntax.of(tree, ast.arg)}
+        for node in PythonSyntax.of(tree, ast.Assign):
+            if (
+                len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)
+            ):
+                name = node.targets[0].id
+                if assigned.get(name) == 1 and name not in parameters and name not in found:
+                    found[name] = [node.value.value]
         return {name: values for name, values in found.items() if name not in refused}
 
     def _handed_to_a_sender(

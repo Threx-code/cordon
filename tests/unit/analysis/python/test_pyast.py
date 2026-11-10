@@ -531,6 +531,31 @@ class TestEnvironmentReadsByLoopVariable:
         assert any(c is Capability.CREDENTIAL for c, _ in PyastHelpers._capabilities(source))
 
 
+class TestEnvironmentReadsByNamedConstant:
+    """evidently 0.7.23: `os.environ.get(DO_NOT_TRACK_ENV)` with the name a module constant was a
+    whole-environment (credential) read, and paired at import into MALWARE.EXFIL.001."""
+
+    def test_an_opt_out_flag_named_by_a_constant_is_not_a_credential(self) -> None:
+        source = (
+            "import os\n"
+            "DO_NOT_TRACK_ENV = 'DO_NOT_TRACK'\n"
+            "enabled = not os.environ.get(DO_NOT_TRACK_ENV, None)\n"
+        )
+        assert not any(c is Capability.CREDENTIAL for c, _ in PyastHelpers._capabilities(source))
+
+    def test_a_secret_named_by_a_constant_is(self) -> None:
+        source = "import os\nKEY_ENV = 'AWS_SECRET_ACCESS_KEY'\nkey = os.environ.get(KEY_ENV)\n"
+        assert any(c is Capability.CREDENTIAL for c, _ in PyastHelpers._capabilities(source))
+
+    def test_a_name_bound_twice_is_not_resolved(self) -> None:
+        source = "import os\nname = 'DEBUG'\nname = input()\nvalue = os.environ.get(name)\n"
+        assert any(c is Capability.CREDENTIAL for c, _ in PyastHelpers._capabilities(source))
+
+    def test_a_parameter_of_the_same_name_is_not_resolved(self) -> None:
+        source = "import os\nname = 'DEBUG'\ndef read(name):\n    return os.environ.get(name)\n"
+        assert any(c is Capability.CREDENTIAL for c, _ in PyastHelpers._capabilities(source))
+
+
 class TestTheEnvironmentHandedToAChild:
     def test_a_copy_passed_as_env_is_not_a_credential_read(self) -> None:
         source = (
