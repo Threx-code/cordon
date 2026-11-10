@@ -8,6 +8,7 @@ state it. Every part of the agent chain that reads such text asks here."""
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
@@ -20,6 +21,7 @@ from cordon_scanner.foundation.models import (
     Finding,
     Severity,
 )
+from cordon_scanner.foundation.results import OperationalFinding
 from cordon_scanner.intel.registry import ATR_INSTRUCTION_TOLERANCE, AtrEngine, RuleLinks
 
 if TYPE_CHECKING:
@@ -33,6 +35,14 @@ _MEDIUM_INTENTS: Final = frozenset({"markdown-exfil", "persist"})
 
 class AgentTextFindings:
     """The agent-chain findings in what agent-facing text says."""
+
+    ATR_TEXT_LIMIT: Final = 512 * 1024
+    """The most characters of one file the Agent Threat Rules read. They cost about 20 seconds a
+    megabyte, so an unbounded file lets one hostile SKILL.md hold the scan until its budget runs out.
+    The largest real SKILL.md in the skills dev half is 290 KB (the 99.9th percentile is 75 KB), so
+    this is 1.8 times the largest and about 10 seconds at worst. Past it the rest is not read, and
+    that is a content gap (`OPERATIONAL.FILE.TRUNCATED`): the scan is incomplete and blocks. A
+    payload padded past the limit is therefore blocked, not cleared (S1)."""
 
     @classmethod
     def intents(
@@ -106,6 +116,26 @@ class AgentTextFindings:
                     return
                 break
 
+    @staticmethod
+    def _unread(unit: FileUnit, size: int) -> Finding:
+        """The gap for the part of an oversized text the Agent Threat Rules did not read."""
+        return replace(
+            OperationalFinding.build(
+                path=unit.content.path,
+                rule_id="OPERATIONAL.FILE.TRUNCATED",
+                message=(
+                    f"This file's text is {size} characters. The agent-text rules read the first "
+                    f"{AgentTextFindings.ATR_TEXT_LIMIT} and not the rest, so what follows was not "
+                    "checked and found clean: it was not checked."
+                ),
+                remediation=(
+                    "A skill or instruction file this large is not ordinary. Read the rest by hand, "
+                    "or accept the gap for this file in policy.accepted_gaps."
+                ),
+            ),
+            degrades_coverage=True,
+        )
+
     @classmethod
     def threat_rules(
         cls,
@@ -121,6 +151,7 @@ class AgentTextFindings:
         documentation: bool = False,
         local: bool = False,
         unconfirmed: bool = False,
+        model_agrees: bool = False,
     ) -> Iterator[Finding]:
         """The Agent Threat Rules that match `text`, one finding per ATR category.
 
@@ -130,21 +161,24 @@ class AgentTextFindings:
         `within` is the file's text when `text` is a piece of it -- a hook's command, a tool's
         description -- so the finding points at the piece; otherwise `text` is the file itself.
         """
-        matches = AtrEngine.evaluate(text, kinds)
+        examined = text[: AgentTextFindings.ATR_TEXT_LIMIT]
+        if len(examined) < len(text):
+            yield AgentTextFindings._unread(unit, len(text))
+        matches = AtrEngine.evaluate(examined, kinds)
         by_category: dict[str, list[AtrMatchFacts]] = {}
         for match in matches:
             by_category.setdefault(match.rule.category, []).append(match)
-        defensive = DefensiveDoc.is_defensive(documentation, within or text)
         for category, found in by_category.items():
             yield from AgentTextFindings._category_finding(
                 category,
                 corroborated,
                 corroborated_code,
                 ctx,
-                defensive,
+                documentation,
                 found,
                 instruction_file,
                 local,
+                model_agrees,
                 text,
                 unconfirmed,
                 unit,
@@ -157,10 +191,11 @@ class AgentTextFindings:
         corroborated: bool,
         corroborated_code: bool,
         ctx: ScanContext,
-        defensive: bool,
+        documentation: bool,
         found: list[AtrMatchFacts],
         instruction_file: bool,
         local: bool,
+        model_agrees: bool,
         text: str,
         unconfirmed: bool,
         unit: FileUnit,
@@ -193,7 +228,10 @@ class AgentTextFindings:
             if m.rule.status == "stable"
             and m.rule.severity in ("critical", "high")
             and DefensiveDoc.stable_blocks(
-                corroborated_code, defensive, corroborated, instruction_file
+                corroborated_code,
+                DefensiveDoc.lowers(documentation, text, m.start, m.end, model_agrees=model_agrees),
+                corroborated,
+                instruction_file,
             )
             and not local
             and not unconfirmed

@@ -21,8 +21,68 @@ DISCUSSES_INJECTION: Final = re.compile(
 )
 
 
+_QUOTE_PAIRS: Final = (('"', '"'), ("\u201c", "\u201d"), ("\u2018", "\u2019"), ("'", "'"))
+
+
 class DefensiveDoc:
     """When a file documents these attacks, and what still counts as proof inside one."""
+
+    @staticmethod
+    def frontmatter_end(text: str) -> int:
+        """Where a leading `---` frontmatter block ends (0 when there is none)."""
+        if not text.startswith(("---\n", "---\r\n")):
+            return 0
+        close = re.search(r"(?m)^---[ \t]*\r?$", text[3:])
+        return 0 if close is None else 3 + close.end()
+
+    @staticmethod
+    def _paragraph(text: str, start: int, end: int) -> tuple[int, int]:
+        low = text.rfind("\n\n", 0, start)
+        high = text.find("\n\n", end)
+        return (0 if low < 0 else low + 2), (len(text) if high < 0 else high)
+
+    @staticmethod
+    def quoted_example(text: str, start: int, end: int) -> bool:
+        """Whether the span at [start, end) is shown as an example: inside a fenced code block, a
+        blockquote line, inline code, or a pair of quotation marks in its own paragraph.
+
+        Wording that stands bare in a sentence would act as an instruction to the agent that
+        reads the file, whatever the file says about itself."""
+        fences = len(re.findall(r"(?m)^[ \t]*(?:```|~~~)", text[:start]))
+        if fences % 2 == 1:
+            return True
+        line_start = text.rfind("\n", 0, start) + 1
+        if text[line_start:start].lstrip().startswith(">"):
+            return True
+        low, high = DefensiveDoc._paragraph(text, start, end)
+        before, after = text[low:start], text[end:high]
+        if before.count("`") % 2 == 1 and "`" in after:
+            return True
+        for opener, closer in _QUOTE_PAIRS:
+            if opener == closer:
+                if before.count(opener) % 2 == 0 or closer not in after:
+                    continue
+            else:
+                if before.rfind(opener) <= before.rfind(closer) or closer not in after:
+                    continue
+            cut = before.rfind(opener)
+            if opener == "'" and cut > 0 and before[cut - 1].isalnum():
+                continue  # an apostrophe, not an opening quote
+            return True
+        return False
+
+    @staticmethod
+    def lowers(documentation: bool, text: str, start: int, end: int, *, model_agrees: bool) -> bool:
+        """Whether this match is lowered as a documented example. Text the author controls is not
+        enough on its own: the wording must be quoted as an example, beside the defensive
+        vocabulary in the same paragraph and outside frontmatter, and the learned model must not
+        read the file as an attack (S6, `reviews/release-080/SECURITY-HARDENING.md`)."""
+        if not documentation or model_agrees or start < DefensiveDoc.frontmatter_end(text):
+            return False
+        if not DefensiveDoc.quoted_example(text, start, end):
+            return False
+        low, high = DefensiveDoc._paragraph(text, start, end)
+        return DISCUSSES_INJECTION.search(text[max(low, DefensiveDoc.frontmatter_end(text)) : high]) is not None
 
     @staticmethod
     def code_evidence(hidden: object, exfil: object, concealed: object, alarming: object) -> bool:
