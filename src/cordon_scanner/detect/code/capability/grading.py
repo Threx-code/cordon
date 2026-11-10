@@ -647,6 +647,7 @@ class CompositeGrading:
                 content.text,
                 [h.line for h in hits if h.rule_id == "CAP.CREDENTIAL.STORE.001"],
                 [h.line for h in hits if h.capability is Capability.EGRESS],
+                language=self.unit.language,
             )
         ):
             # Nothing the file reads from the store reaches the call (`detect/store_flow.py`):

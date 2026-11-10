@@ -23,7 +23,7 @@ Flow-insensitive, as the analysis around it: order inside a function is not foll
 from __future__ import annotations
 
 import ast
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from typing import ClassVar
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
@@ -232,6 +232,14 @@ class ScopedTaint:
         if key is None:
             key = self._key_cache[id(name)] = (self._owner(self.scope_of(name), name.id), name.id)
         return key
+
+    def mark(self, names: Iterable[ast.Name]) -> bool:
+        """Mark these names sourced, each in its own scope: a value a caller knows was put into
+        them though no binding shows it (`shutil.copy(src, dst)` fills `dst`). True when any was
+        new; `spread` again to carry them on."""
+        before = len(self._marked)
+        self._marked.update(self._key(name) for name in names)
+        return len(self._marked) != before
 
     def _callees(self, call: ast.Call) -> list[Function]:
         """The local functions a call can reach: by name, or a method called on `self`/`cls`."""
