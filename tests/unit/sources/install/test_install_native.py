@@ -448,3 +448,94 @@ class TestConda:
         assert not CondaPlanner.installs(["list"]) and not CondaPlanner.installs(
             ["install", "x", "--dry-run"]
         )
+
+
+class TestRubyGemsInstallsOnlyTheScannedFiles:
+    """S4 (reviews/release-080/SECURITY-HARDENING.md): after the scan, RubyGems and Bundler install
+    from the scanned files and fetch nothing, and an option that would let them fetch is refused."""
+
+    @staticmethod
+    def context(runs: list[tuple[list[str], dict[str, str] | None]]):
+        from types import SimpleNamespace
+
+        def run(argv, cwd=None, env=None) -> int:
+            runs.append((list(argv), env))
+            return 0
+
+        def check(plan, scratch):
+            # The real check leaves each verified, scanned file in `scratch` under its filename.
+            for file in plan.files:
+                (scratch / file.filename).write_bytes(b"scanned")
+            return SimpleNamespace(ok=True)
+
+        return SimpleNamespace(
+            registries=InstallRegistries(),
+            check=check,
+            run=run,
+            blocked=lambda verdict: 1,
+        )
+
+    @staticmethod
+    def plan():
+        from cordon_scanner.sources.install.plan import InstallPlan, PackageFile
+
+        return InstallPlan(
+            "rubygems",
+            [
+                PackageFile(
+                    "rubygems",
+                    "rake",
+                    "13.2.1",
+                    "https://x/rake-13.2.1.gem",
+                    "sha256",
+                    b"\0" * 32,
+                    separator="-",
+                )
+            ],
+        )
+
+    def test_gem_installs_the_scanned_files_with_the_network_off(self, monkeypatch) -> None:
+        from cordon_scanner.cli.commands.install.native import NativeTools
+
+        monkeypatch.setattr(
+            GemPlanner, "gem_install", classmethod(lambda cls, *a, **k: self.plan())
+        )
+        runs: list = []
+        assert NativeTools.gem("gem", ["install", "rake"], self.context(runs)) == 0
+        ((argv, _env),) = runs
+        assert argv[:4] == ["gem", "install", "--local", "--ignore-dependencies"]
+        assert argv[-1].endswith("rake-13.2.1.gem") and "cordon-install-" in argv[-1]
+
+    @pytest.mark.parametrize(
+        "option",
+        [
+            "--remote",
+            "-r",
+            "--both",
+            "-b",
+            "--source",
+            "--source=https://x",
+            "-s",
+            "--clear-sources",
+        ],
+    )
+    def test_an_option_that_lets_rubygems_fetch_is_refused(self, option, monkeypatch) -> None:
+        from cordon_scanner.cli.commands.install.native import NativeTools
+
+        monkeypatch.setattr(
+            GemPlanner, "gem_install", classmethod(lambda cls, *a, **k: self.plan())
+        )
+        runs: list = []
+        with pytest.raises(InstallRefused, match="fetch"):
+            NativeTools.gem("gem", ["install", option, "rake"], self.context(runs))
+        assert runs == []
+
+    def test_bundler_installs_locally_from_the_scanned_cache(self, monkeypatch) -> None:
+        from cordon_scanner.cli.commands.install.native import NativeTools
+
+        monkeypatch.setattr(GemPlanner, "bundle", classmethod(lambda cls, *a, **k: self.plan()))
+        runs: list = []
+        assert NativeTools.bundle("bundle", ["install"], self.context(runs)) == 0
+        ((argv, env),) = runs
+        assert argv == ["bundle", "install", "--local"]
+        assert env is not None and "cordon-install-" in env["BUNDLE_CACHE_PATH"]

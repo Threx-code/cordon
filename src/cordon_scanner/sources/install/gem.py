@@ -47,6 +47,26 @@ class GemSpec:
 class GemPlanner:
     GEM_VERBS: ClassVar[frozenset[str]] = frozenset({"install", "i", "update"})
     BUNDLE_VERBS: ClassVar[frozenset[str]] = frozenset({"install", "update", "add", "lock", "exec"})
+    #: `gem install` options that let RubyGems fetch, or change where from, after the scan: the
+    #: install that follows runs `--local` from the scanned files only, and these would undo it.
+    FETCHING_OPTIONS: ClassVar[frozenset[str]] = frozenset(
+        {"-r", "--remote", "-b", "--both", "-s", "--source", "--clear-sources", "--update-sources"}
+    )
+
+    @classmethod
+    def local_options(cls, args: Sequence[str]) -> list[str]:
+        """The user's own `gem install` options, kept for the local install; one that would let
+        RubyGems fetch is refused before anything is resolved."""
+        options = [a for a in args if a.startswith("-") and a not in {"-v", "--version"}]
+        for option in options:
+            if option.partition("=")[0] in cls.FETCHING_OPTIONS:
+                raise InstallRefused(
+                    f"{option.partition('=')[0]} would let RubyGems fetch after Cordon's scan; "
+                    "Cordon installs only the files it scanned. Name another gem source with "
+                    "--cordon-registry-token instead"
+                )
+        return options
+
     SAVED: ClassVar[tuple[str, ...]] = ("Gemfile", "Gemfile.lock")
     HOST: ClassVar[str] = "https://rubygems.org"
 
