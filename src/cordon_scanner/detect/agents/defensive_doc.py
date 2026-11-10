@@ -82,7 +82,10 @@ class DefensiveDoc:
         if not DefensiveDoc.quoted_example(text, start, end):
             return False
         low, high = DefensiveDoc._paragraph(text, start, end)
-        return DISCUSSES_INJECTION.search(text[max(low, DefensiveDoc.frontmatter_end(text)) : high]) is not None
+        return (
+            DISCUSSES_INJECTION.search(text[max(low, DefensiveDoc.frontmatter_end(text)) : high])
+            is not None
+        )
 
     @staticmethod
     def code_evidence(hidden: object, exfil: object, concealed: object, alarming: object) -> bool:

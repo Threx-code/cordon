@@ -117,6 +117,16 @@ class AgentTextFindings:
                 break
 
     @staticmethod
+    def capped(unit: FileUnit) -> tuple[FileUnit, list[Finding]]:
+        """The unit with at most `ATR_TEXT_LIMIT` bytes of an agent-text file, and the gap when the
+        rest was dropped. Every reader of the file after this one sees the same part."""
+        limit = AgentTextFindings.ATR_TEXT_LIMIT
+        if len(unit.content.raw) <= limit:
+            return unit, []
+        part = replace(unit.content, raw=unit.content.raw[:limit], truncated=True)
+        return replace(unit, content=part), [AgentTextFindings._unread(unit, len(unit.content.raw))]
+
+    @staticmethod
     def _unread(unit: FileUnit, size: int) -> Finding:
         """The gap for the part of an oversized text the Agent Threat Rules did not read."""
         return replace(

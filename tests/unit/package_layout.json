@@ -741,6 +741,7 @@
   "test_agent_hidden_text.py": "detect/agents",
   "test_agent_hijack.py": "detect/code/capability",
   "test_agent_text_limit.py": "detect/agents",
+  "test_skill_text_cannot_lower_a_block.py": "detect/agents",
   "test_instruction_intent.py": "detect/agents",
   "test_language_model_judge.py": "detect/agents",
   "test_semantics.py": "detect/agents",

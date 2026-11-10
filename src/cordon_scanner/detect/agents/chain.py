@@ -57,6 +57,7 @@ from cordon_scanner.detect.agents.paths import (
 from cordon_scanner.detect.agents.rule_catalogue import RULES
 from cordon_scanner.detect.agents.settings_files import SettingsFileFindings
 from cordon_scanner.detect.agents.skills import SkillScripts
+from cordon_scanner.detect.agents.text_findings import AgentTextFindings
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.foundation.models import (
@@ -92,6 +93,17 @@ _INSTALL_REDIRECT: Final = re.compile(
     r"|^\s*registry\s+\"(?:https?://|\$\{?\w)|config\s+set\s+(?:global\.)?(?:index-url|registry)\b"
 )
 
+
+_AGENT_TEXT_PATHS: Final = (
+    *INSTRUCTION_PATHS,
+    *AGENT_SETTINGS_PATHS,
+    *VSCODE_SETTINGS_PATHS,
+    *MCP_PATHS,
+    *CODEX_CONFIG_PATHS,
+    *COMMAND_PATHS,
+)
+"""The files whose text the agent-text rules and the instruction readers go through. Past
+`AgentTextFindings.ATR_TEXT_LIMIT` such a file is read in part, and said so (S1)."""
 
 _HIDDEN_DIRECTIVE_DOCS: Final = (
     ".md",
@@ -144,6 +156,9 @@ class AgentChainDetector(BaseDetector):
             unit.content.path.rpartition("!")[2] if "!" in unit.content.path else unit.content.path
         )
         findings: list[Finding] = []
+        if AgentPaths._paths_match(path, _AGENT_TEXT_PATHS):
+            unit, gap = AgentTextFindings.capped(unit)
+            findings.extend(gap)
         if AgentPaths._paths_match(path, INSTRUCTION_PATHS):
             findings.extend(InstructionFileFindings.instructions(unit, ctx))
         if AgentPaths._paths_match(path, AGENT_SETTINGS_PATHS):
