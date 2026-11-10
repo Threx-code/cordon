@@ -628,7 +628,14 @@ class DataFlows(AnalyzerCore):
                     assigned = SecretFlow.host_of(literal)
                     if assigned:
                         urls.update(dict.fromkeys(targets, assigned))
+                receivers = {id(a.value) for a in PythonSyntax.within(node.value, ast.Attribute)}
                 for part in PythonSyntax.nodes(node.value):
+                    if (
+                        isinstance(part, ast.Name)
+                        and part.id in self.KEY_NAMES
+                        and id(part) in receivers
+                    ):
+                        continue
                     key = self._credential_read(part)
                     if key is None and isinstance(part, ast.Name) and part.id in carrying:
                         key = carrying[part.id]
@@ -642,9 +649,18 @@ class DataFlows(AnalyzerCore):
             arguments = [*node.args, *(k.value for k in node.keywords)]
             keys: set[str] = set()
             for argument in arguments:
+                # `private_key.public_key()` sends what the key derives, not the key: a key's name
+                # is the value only where it is not the receiver of an attribute.
+                receivers = {id(a.value) for a in PythonSyntax.within(argument, ast.Attribute)}
                 for part in PythonSyntax.within(
                     argument, ast.Subscript, ast.Call, ast.Name, ast.Attribute
                 ):
+                    if (
+                        isinstance(part, ast.Name)
+                        and part.id in self.KEY_NAMES
+                        and id(part) in receivers
+                    ):
+                        continue
                     key = self._credential_read(part)
                     if key is None and isinstance(part, ast.Name) and part.id in carrying:
                         key = carrying[part.id]
@@ -679,6 +695,17 @@ class DataFlows(AnalyzerCore):
         "privateKey": "WALLET_PRIVATE_KEY",
         "_private_key": "WALLET_PRIVATE_KEY",
         "mnemonic": "WALLET_MNEMONIC",
+    }
+    #: Names that say they hold a wallet's key or seed. Not `secret_key` or `api_key`: those name a
+    #: service credential, which goes to its own host.
+    KEY_NAMES: ClassVar[dict[str, str]] = {
+        "private_key": "WALLET_PRIVATE_KEY",
+        "privateKey": "WALLET_PRIVATE_KEY",
+        "priv_key": "WALLET_PRIVATE_KEY",
+        "privkey": "WALLET_PRIVATE_KEY",
+        "mnemonic": "WALLET_MNEMONIC",
+        "seed_phrase": "WALLET_MNEMONIC",
+        "seedPhrase": "WALLET_MNEMONIC",
     }
     WALLET_MAKERS: ClassVar[tuple[str, ...]] = (
         "Account.from_key",
@@ -731,6 +758,10 @@ class DataFlows(AnalyzerCore):
             and node.value.id in self._wallets()
         ):
             return self.WALLET_SECRETS[node.attr]
+        if isinstance(node, ast.Name) and node.id in self.KEY_NAMES:
+            # A value named for a wallet's key (`def perm(private_key): requests.post(URL,
+            # json={"k": private_key})`, trongridor 0.0.1): what it holds is never sent.
+            return self.KEY_NAMES[node.id]
         name: ast.AST | None = None
         if isinstance(node, ast.Subscript) and self._dotted(node.value) in (
             "os.environ",
