@@ -174,8 +174,8 @@ class NativeTools:
         from cordon_scanner.sources.install.plan import PrivateDirectory, Subprocesses
 
         cwd = Path.cwd()
+        options = GemPlanner.local_options(args[1:])
         plan = GemPlanner.gem_install(args[1:], Subprocesses.run, gem, context.registries, cwd)
-        options = [a for a in args[1:] if a.startswith("-") and a not in {"-v", "--version"}]
         with PrivateDirectory.made("cordon-install-") as scratch:
             verdict = context.check(plan, scratch)
             if not verdict.ok:

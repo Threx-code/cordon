@@ -4,7 +4,9 @@ expansion cap and the deadline bind while tarfile reads, not after.
 
 from __future__ import annotations
 
+import lzma
 import time
+import zlib
 from typing import Any, cast
 
 from cordon_scanner.foundation.errors import ArchiveError
@@ -100,7 +102,10 @@ class _BudgetedStream:
             raise ArchiveError(f"{self.path}: the time budget ran out while reading the archive")
         if size is None or size < 0:
             size = READ_CHUNK
-        chunk: bytes = self.inner.read(min(size, READ_CHUNK * 16))
+        try:
+            chunk: bytes = self.inner.read(min(size, READ_CHUNK * 16))
+        except (zlib.error, lzma.LZMAError) as exc:  # from inside the decompressor (S1 fuzzing)
+            raise OSError(f"{self.path}: a damaged compressed stream: {exc}") from exc
         self.produced += len(chunk)
         if self.compressed is not None and 0 < self.cap < self.produced:
             raise BudgetExceeded(
