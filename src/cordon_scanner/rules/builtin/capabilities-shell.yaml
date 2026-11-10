@@ -70,7 +70,10 @@ rules:
       kind: regex
       patterns:
         - '\beval\s+'
-        - '^\s*\.\s+/dev/stdin'
+        # [ \t]*, not \s*: under ^ in multiline, \s* ran across every following blank line from
+        # each one, quadratic in a run of newlines (S7, test_rule_hostile_input.py). The match
+        # still exists: ^ matches again at the line that holds it.
+        - '^[ \t]*\.\s+/dev/stdin'
         - '\bsource\s+/dev/stdin'
         - '\bInvoke-Expression\b|\biex\s+'
         - '\bpowershell\b[^\n]*-(?:enc|EncodedCommand)\b'
@@ -221,7 +224,10 @@ rules:
         # `echo` and `printf` only, and only when the substitution holds nothing else -- no
         # pipe, no separator, no nested substitution. `$(echo x | sed s/x/y/)` starts `sed`.
         # The same two commands `Engine.PRINTING_COMMANDS` names, for the same reason.
-        - '\$\((?![ \t]*(?:echo|printf)[ \t](?![^)]{0,200}(?:\$\(|;[ \t]*[A-Za-z_./]))[^)|&`]{0,200}\))[^)]{2,}\)'
+        # The body stops at the next `$(`, not at any length: from each `$(` in a run with no `)`,
+        # `[^)]{2,}` read to the end of the file, quadratic (S7, test_rule_hostile_input.py). A
+        # nested substitution still matches at the inner `$(`.
+        - '\$\((?![ \t]*(?:echo|printf)[ \t](?![^)]{0,200}(?:\$\(|;[ \t]*[A-Za-z_./]))[^)|&`]{0,200}\))(?:(?!\$\()[^)]){2,}\)'
         # A command substitution runs a PROGRAM. `[^`]{2,}` matched any two
         # characters between backticks, which is also the markdown convention for inline
         # code -- and every language's doc comments use it. `getgrav/grav` builds a regex
@@ -304,7 +310,9 @@ rules:
         # entirely ordinary; the signal is `env` with nothing after it, which is
         # the form that dumps every variable at once.
         # Closed by a backtick too: `` curl -d "`env`" `` is the substitution written the old way.
-        - '^[^#\n]*(?:^|[;&|`$(])\s*env\s*(?:$|[;&|)`])'
+        # [ \t]*, not \s*: from ^, \s* crossed every blank line after it, quadratic in a run of
+        # newlines (S7). `env` alone on its line still matches at that line's ^.
+        - '^[^#\n]*(?:^|[;&|`$(])[ \t]*env[ \t]*(?:$|[;&|)`])'
         - '\bprintenv\b'
         - '\bGet-ChildItem\s+Env:'
         - '\.ssh/id_|\.aws/credentials|\.npmrc|\.netrc|\.docker/config\.json|\.kube/config'
@@ -418,7 +426,9 @@ rules:
     match:
       kind: regex
       patterns:
-        - '>>(?>\s*\n)?[^\n]*\.(?:bashrc|bash_profile|zshrc|profile)\b'
+        # The rest of the line stops at the next `>>` (S7): from each `>>` of a long line, `[^\n]*`
+        # read to its end, quadratic. A later `>>` on the line is tried from there instead.
+        - '>>(?>\s*\n)?(?:(?!>>)[^\n])*\.(?:bashrc|bash_profile|zshrc|profile)\b'
         # `crontab -` installs what it reads, `crontab -u user <file>` a file. `-l` lists, `-e` opens an editor for a
         # person and `-r` removes: none plants anything, and incident-response scripts save `crontab
         # -l` as evidence (review 98, real skills). A pipeline that lists, edits and reinstalls still
@@ -668,7 +678,8 @@ rules:
         # Make's own command substitution, which is explicit and unambiguous.
         - '\$\(shell\s'
         # And the shell's, escaped so that Make passes it through to the recipe.
-        - '\$\$\((?![ \t]*(?:echo|printf)[ \t](?![^)]{0,200}(?:\$\(|;[ \t]*[A-Za-z_./]))[^)|&`]{0,200}\))[^)]{2,}\)'
+        # The body stops at the next `$$(` (S7): as the shell rule's.
+        - '\$\$\((?![ \t]*(?:echo|printf)[ \t](?![^)]{0,200}(?:\$\(|;[ \t]*[A-Za-z_./]))[^)|&`]{0,200}\))(?:(?!\$\$\()[^)]){2,}\)'
         # A command substitution runs a PROGRAM. `[^`]{2,}` matched any two
         # characters between backticks, which is also the markdown convention for inline
         # code -- and every language's doc comments use it. `getgrav/grav` builds a regex

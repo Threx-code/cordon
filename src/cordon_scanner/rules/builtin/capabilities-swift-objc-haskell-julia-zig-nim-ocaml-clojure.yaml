@@ -927,7 +927,8 @@ rules:
       kind: regex
       patterns:
         - '\b(?:execShellCmd|execProcess|startProcess|execCmd|execCmdEx|staticExec|gorge|gorgeEx)\s*\('
-        - '^\s*exec\s+"'
+        # [ \t]*, not \s*: quadratic in a run of newlines from ^ (S7)
+        - '^[ \t]*exec\s+"'
     tests:
       positive:
         - "discard execShellCmd(\"make install\")"

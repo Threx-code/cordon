@@ -1047,6 +1047,8 @@
   "test_anchored.py": "rules",
   "test_derivations.py": "rules",
   "test_pattern_safety.py": "rules",
+  "test_rule_hostile_input.py": "rules",
+  "test_rule_time.py": "rules",
   "test_pickle_own_package.py": "detect/binary",
   "test_pin_bump.py": "repository/release",
   "test_policy_pins.py": "engine",
