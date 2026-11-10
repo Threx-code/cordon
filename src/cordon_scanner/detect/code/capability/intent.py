@@ -115,6 +115,45 @@ class IntentSignals:
                 return True
         return False
 
+    #: The line a script writes to a shell startup file to store a variable: `export ${name}=${value}`,
+    #: `"export " + name + "=" + value`, `export NAME="$VALUE"`. The name is a placeholder or a plain
+    #: literal; the value is a placeholder or a variable -- never a literal or a command.
+    _VARIABLE_LINE = re.compile(
+        rb"export[ \t]+(?:\$\{[A-Za-z_]\w{0,40}\}|[\"'`][ \t]*\+[ \t]*[A-Za-z_]\w{0,40}[ \t]*\+[ \t]*[\"'`]|"
+        rb"[A-Z][A-Z0-9_]{1,40})=[\"']?(?:\$\{[A-Za-z_]\w{0,40}\}|[\"'`][ \t]*\+[ \t]*[A-Za-z_]\w{0,40}|"
+        rb"\$[A-Za-z_]\w{0,40})[\"']?[`\"']?"
+    )
+
+    #: What turns a startup-file write into a foothold: a fetch, an alias, a command run or built,
+    #: a loader or path variable, a service or scheduled job. One of these anywhere in the file
+    #: keeps the finding, since the helper that writes the line cannot be told from the caller.
+    _NOT_A_VARIABLE = re.compile(
+        rb"(?i:\b(?:curl|wget|Invoke-WebRequest|iwr|eval|alias|crontab|systemctl|ExecStart|RunAtLoad|"
+        rb"child_process|execSync|spawnSync|execFile|subprocess|os\.system|popen)\b)|"
+        rb"\bexec\s*\(|\bspawn\s*\(|\$\("
+        rb"|\b(?:PATH|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_[A-Z_]+|BASH_ENV|PROMPT_COMMAND|PYTHONPATH|NODE_OPTIONS)\b"
+        # A name that holds one of these words anywhere in it. One bounded run before the word and
+        # none after it, so no two repeats can match the same characters (S7, regex scaling).
+        rb"|\b[A-Z_]{0,60}(?:PROXY|REGISTRY|INDEX_URL|CA_BUNDLE|CERT|TLS|SSL|HOME|SHELL)"
+    )
+
+    @staticmethod
+    def persists_only_a_variable(content: FileContent, hits: list[CapabilityHit]) -> bool:
+        """Whether every startup-file write in this file stores one environment variable.
+
+        A skill's auth script puts its own API key into `~/.zshenv`, `~/.profile` and `~/.bashrc` as
+        `export NAME=value` so a terminal and the agent both see it. That is configuration, and
+        it is not what a foothold writes. The file must carry the variable-line template, name no
+        fetch, alias, command, scheduled job, loader or path variable, and write no startup file
+        from anything but that template. Anything else in the file keeps the finding."""
+        if not any(h.capability is Capability.PERSIST for h in hits):
+            return False
+        raw = content.raw
+        return bool(
+            IntentSignals._VARIABLE_LINE.search(raw)
+            and not IntentSignals._NOT_A_VARIABLE.search(raw)
+        )
+
     #: A payload written into the code, decoded and run in one expression: `eval(atob('...'))`,
     #: `new Function(Buffer.from('...', "base64").toString())`, `exec(base64.b64decode(b'...'))`.
     #: Sixty characters of encoding or more: what a module loader decodes is computed, not written.
