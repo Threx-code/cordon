@@ -750,6 +750,7 @@
   "test_archive_damaged_member.py": "sources",
   "test_install_guard.py": "sources/install",
   "test_sourced_flows.py": "analysis/python",
+  "test_environment_keyed.py": "analysis/python",
   "test_install_native.py": "sources/install",
   "test_install_composer.py": "sources/install",
   "test_install_fetched.py": "sources/install",

