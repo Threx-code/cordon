@@ -38,6 +38,8 @@ from cordon_scanner.foundation.capabilities import Capability
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from cordon_scanner.analysis.python.scoped_taint import ScopedTaint
+
 
 from cordon_scanner.analysis.python.analyzer_core import AnalyzerCore
 
@@ -441,42 +443,16 @@ class ExecutionFlows(AnalyzerCore):
         multiprocessing pipe's `recv()` takes none and returns objects from a local process.
         """
 
+        # Every binding form (`with ... as`, `for`, `:=` as well as assignment), each name in its
+        # own scope, through local returns, calls and downloaded files: see `ScopedTaint`.
+        from cordon_scanner.analysis.python.scoped_taint import ScopedTaint
+
+        tainted = ScopedTaint(tree)
+        tainted.spread(lambda value: self._received_by(tainted, value))
+
         def received(node: ast.AST) -> bool:
-            """The value IS what arrived, not a command built around it: an f-string, `+`, `%`
-            or `.format` that wraps a fetched value (`f"git checkout {sha}"`) passes it as data."""
-            if any(
-                isinstance(part, ast.JoinedStr)
-                or (isinstance(part, ast.BinOp) and isinstance(part.op, ast.Add | ast.Mod))
-                or (isinstance(part, ast.Attribute) and part.attr == "format")
-                for part in PythonSyntax.within(node, ast.JoinedStr, ast.BinOp, ast.Attribute)
-            ):
-                return False
-            for part in PythonSyntax.within(node, ast.Name, ast.Call):
-                if isinstance(part, ast.Name) and part.id in tainted:
-                    return True
-                if self._egress_call(part):
-                    return True
-                if (
-                    isinstance(part, ast.Call)
-                    and isinstance(part.func, ast.Attribute)
-                    and part.func.attr in ("recv", "recvfrom")
-                    and part.args
-                ):
-                    return True
-            return False
+            return self._received_by(tainted, node)
 
-        tainted: set[str] = set()
-        # Every binding form (`with ... as`, `for`, `:=` as well as assignment): see `SourcedFlows`.
-        from cordon_scanner.analysis.python.sourced_flows import SourcedFlows
-
-        bindings = list(SourcedFlows._binding_forms(tree))
-        for _ in range(4):
-            before = len(tainted)
-            for targets, value in bindings:
-                if received(value):
-                    tainted.update(targets)
-            if len(tainted) == before:
-                break
         for node in PythonSyntax.of(tree, ast.Call):
             if not node.args:
                 continue
@@ -493,7 +469,7 @@ class ExecutionFlows(AnalyzerCore):
                     node,
                     f"{resolved[0]} runs code received over the network",
                 )
-            elif capability is Capability.SPAWN and not isinstance(command, ast.List | ast.Tuple):
+            elif capability is Capability.SPAWN and not tainted.is_argument_list(command):
                 # A command string from the network, not an argument list naming a program: `run(
                 # ["git", "clone", url])` passes a fetched URL as data.
                 self._record(
@@ -501,6 +477,49 @@ class ExecutionFlows(AnalyzerCore):
                     node,
                     f"{resolved[0]} runs a command received over the network",
                 )
+
+    @staticmethod
+    def _wraps(node: ast.AST) -> bool:
+        """An f-string, `+`, `%` or `.format`: a value built around what is inside it."""
+        return (
+            isinstance(node, ast.JoinedStr)
+            or (isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add | ast.Mod))
+            or (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "format"
+            )
+        )
+
+    def _received_by(self, tainted: ScopedTaint, node: ast.AST) -> bool:
+        """The value IS what arrived, not a command built around it: an f-string, `+`, `%` or
+        `.format` that wraps a fetched value (`f"git checkout {sha}"`) passes it as data. Only a
+        wrapper AROUND the fetched part counts: the f-string URL a request is made to
+        (`requests.get(f"{base}/{slug}")`) is not around what the request returns. Walked without
+        recursion: a long chain of `+` is one deep tree."""
+        stack = [node]
+        while stack:
+            part = stack.pop()
+            if self._wraps(part) or isinstance(
+                part, ast.Lambda | ast.FunctionDef | ast.AsyncFunctionDef
+            ):
+                continue
+            verdict = tainted.carries(part)
+            if verdict is not None:
+                if verdict:
+                    return True
+                continue
+            if isinstance(part, ast.Call) and (
+                self._egress_call(part)
+                or (
+                    isinstance(part.func, ast.Attribute)
+                    and part.func.attr in ("recv", "recvfrom")
+                    and bool(part.args)
+                )
+            ):
+                return True
+            stack.extend(ast.iter_child_nodes(part))
+        return False
 
     def _starts_an_executable(self, call: ast.Call) -> bool:
         text = self._command(call) or PythonFacts.constant(call.args[0]) or ""
