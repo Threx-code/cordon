@@ -88,3 +88,22 @@ class TestASubmoduleIndexThatCannotBeReadIsSaid:
 
     def test_no_checkout_is_still_an_empty_index(self, tmp_path: Path) -> None:
         assert Submodules.gitlinks(tmp_path) == {}
+
+
+class TestTheFlowFactsAreUnchanged:
+    """The identity behind `FeatureSchema.SAME_AS` for the S2 edit of `ReachedFlows.facts`: the
+    removed `except Exception: flows = []` changed a value only where `JsFlow.flows` raised. On
+    every JavaScript file of the corpus it does not raise, so the facts are those the earlier
+    extractor computed. (Rows A/B, 2026-11-10: 1,055 PyPI units on d1b75222 and 739d751b, 0
+    differences in any `*_flow_*` feature: /out/security/s2-probe/.)"""
+
+    SUFFIXES = (".js", ".mjs", ".cjs")
+
+    def test_no_corpus_javascript_makes_the_reader_raise(self) -> None:
+        from support import ROOT
+
+        files = [p for p in (ROOT / "corpus").rglob("*") if p.suffix in self.SUFFIXES]
+        assert files, "no corpus JavaScript: the identity is untested"
+        for path in files:
+            text = path.read_text(encoding="utf-8", errors="replace")
+            assert isinstance(ReachedFlows.facts("pkg:entry", text), dict), path
