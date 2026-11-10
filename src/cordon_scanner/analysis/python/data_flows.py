@@ -20,7 +20,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 
-from cordon_scanner.analysis.python.analyzer_core import AnalyzerCore
+from cordon_scanner.analysis.python.flows.hidden_destinations import HiddenDestinations
+from cordon_scanner.analysis.python.flows.secret_sources import SecretSources
 
 #: Methods of a mapping that return one value, not the mapping.
 KEYED_METHODS = frozenset({"get", "setdefault", "pop", "__getitem__", "__contains__"})
@@ -323,7 +324,7 @@ class EnvironmentCarry:
 __all__ = ["KEYED_METHODS", "SPAWNS", "EnvironmentCarry"]
 
 
-class DataFlows(AnalyzerCore):
+class DataFlows(SecretSources, HiddenDestinations):
     """The Python analyser's data flows: what a file reads and sends."""
 
     def _environment_handed_to_children(self, tree: ast.AST) -> frozenset[int]:
@@ -557,66 +558,6 @@ class DataFlows(AnalyzerCore):
                 sends.append((call, name))
         return sends
 
-    #: The keyword arguments a request names its destination by.
-    _URL_KEYWORDS: ClassVar[tuple[str, ...]] = ("url", "uri", "host", "address", "endpoint")
-
-    def _hidden(self, tree: ast.AST) -> Callable[..., bool]:
-        """Whether an expression holds a value the file kept hidden: decoded (a DECODE or
-        DECOMPRESS primitive), reversed (`s[::-1]`, `reversed(s)`), or built from `chr()` codes,
-        carried through names, returns and `self.x` (`PythonFacts.carried`). Once per tree."""
-        cached: tuple[ast.AST, Callable[..., bool]] | None = self.__dict__.get("_hidden_cache")
-        if cached is not None and cached[0] is tree:
-            return cached[1]
-
-        def is_hidden(node: ast.AST) -> bool:
-            if isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Slice):
-                step = node.slice.step
-                return (
-                    isinstance(step, ast.UnaryOp)
-                    and isinstance(step.op, ast.USub)
-                    and isinstance(step.operand, ast.Constant)
-                    and step.operand.value == 1
-                )
-            if not isinstance(node, ast.Call):
-                return False
-            if isinstance(node.func, ast.Name) and node.func.id in ("chr", "reversed"):
-                return True
-            resolved = self._resolve_callee(node)
-            return resolved is not None and PRIMITIVES.get(resolved[0]) in (
-                Capability.DECODE,
-                Capability.DECOMPRESS,
-            )
-
-        holds = PythonFacts.carried(tree, is_hidden, ast.Subscript)
-        self.__dict__["_hidden_cache"] = (tree, holds)
-        return holds
-
-    def _destination_of(self, call: ast.Call) -> ast.AST | None:
-        if call.args:
-            return call.args[0]
-        return next((k.value for k in call.keywords if k.arg in self._URL_KEYWORDS), None)
-
-    def _dest(self, tree: ast.AST, call: ast.Call) -> str:
-        """` dest=decoded` when the request's destination is a hidden value (group A (a)); the
-        detail otherwise unchanged."""
-        destination = self._destination_of(call)
-        return (
-            " dest=decoded" if destination is not None and self._hidden(tree)(destination) else ""
-        )
-
-    def _hidden_requests(self, tree: ast.AST) -> None:
-        """`hidden request: <sink> dest=decoded`: a request whose destination the file kept hidden,
-        whatever it sends (snapshot-photo 0.0.3: `self.endp[::-1] + year`). A fact for grading;
-        what it weighs alone is the rule's to decide, from its benign count."""
-        hidden = self._hidden(tree)
-        for node in PythonSyntax.of(tree, ast.Call):
-            resolved = self._resolve_callee(node)
-            if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.EGRESS:
-                continue
-            destination = self._destination_of(resolved[1])
-            if destination is not None and hidden(destination):
-                self._record(Capability.EGRESS, node, f"hidden request: {resolved[0]} dest=decoded")
-
     def _identity_sent(self, tree: ast.AST) -> None:
         """The machine's identity, in the arguments of a request.
 
@@ -684,32 +625,7 @@ class DataFlows(AnalyzerCore):
         """
         from cordon_scanner.analysis.shared.credential_homes import SecretFlow
 
-        self.__dict__["_tree_for_wallets"] = tree
-        self.__dict__.pop("_wallet_names", None)
-        carrying: dict[str, str] = {}
-        urls: dict[str, str] = {}
-        for _ in range(3):
-            for node in PythonSyntax.of(tree, ast.Assign):
-                targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
-                literal = PythonFacts.url_literal(node.value)
-                if literal is not None:
-                    assigned = SecretFlow.host_of(literal)
-                    if assigned:
-                        urls.update(dict.fromkeys(targets, assigned))
-                receivers = {id(a.value) for a in PythonSyntax.within(node.value, ast.Attribute)}
-                for part in PythonSyntax.nodes(node.value):
-                    if (
-                        isinstance(part, ast.Name)
-                        and part.id in self.KEY_NAMES
-                        and id(part) in receivers
-                    ):
-                        continue
-                    key = self._credential_read(part)
-                    if key is None and isinstance(part, ast.Name) and part.id in carrying:
-                        key = carrying[part.id]
-                    if key is not None:
-                        carrying.update(dict.fromkeys(targets, key))
-                        break
+        carrying, urls = self._secret_carrying(tree)
         for node in PythonSyntax.of(tree, ast.Call):
             resolved = self._resolve_callee(node)
             if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.EGRESS:
@@ -752,104 +668,15 @@ class DataFlows(AnalyzerCore):
                 elif isinstance(destination, ast.Name):
                     host = urls.get(destination.id)
             for key in sorted(keys):
-                if SecretFlow.misdirected(key, host):
+                # A credential store's contents are sent wherever they go, a host the file does
+                # not write down included (a webhook read from the environment).
+                if key == "CREDENTIAL_FILE" or SecretFlow.misdirected(key, host):
                     self._record(
                         Capability.CREDENTIAL,
                         node,
-                        f"secret sent: {key} to {host}{self._dest(tree, node)}",
+                        f"secret sent: {key} to {host or '?'}{self._dest(tree, node)}",
                     )
                     break
-
-    #: A wallet object's secret, by attribute, and the calls and annotations that make a wallet.
-    WALLET_SECRETS: ClassVar[dict[str, str]] = {
-        "key": "WALLET_PRIVATE_KEY",
-        "private_key": "WALLET_PRIVATE_KEY",
-        "privateKey": "WALLET_PRIVATE_KEY",
-        "_private_key": "WALLET_PRIVATE_KEY",
-        "mnemonic": "WALLET_MNEMONIC",
-    }
-    #: Names that say they hold a wallet's key or seed. Not `secret_key` or `api_key`: those name a
-    #: service credential, which goes to its own host.
-    KEY_NAMES: ClassVar[dict[str, str]] = {
-        "private_key": "WALLET_PRIVATE_KEY",
-        "privateKey": "WALLET_PRIVATE_KEY",
-        "priv_key": "WALLET_PRIVATE_KEY",
-        "privkey": "WALLET_PRIVATE_KEY",
-        "mnemonic": "WALLET_MNEMONIC",
-        "seed_phrase": "WALLET_MNEMONIC",
-        "seedPhrase": "WALLET_MNEMONIC",
-    }
-    WALLET_MAKERS: ClassVar[tuple[str, ...]] = (
-        "Account.from_key",
-        "Account.create",
-        "Account.from_mnemonic",
-        "account.from_key",
-        "account.create",
-        "account.from_mnemonic",
-        "Keypair.from_secret_key",
-        "Keypair.from_seed",
-        "Keypair.generate",
-    )
-
-    def _wallets(self) -> set[str]:
-        """Names holding a wallet in this file: assigned from a wallet maker
-        (`web3.Account.from_key(k)`), or a parameter annotated as an account (`account:
-        LocalAccount`). Kept per tree."""
-        tree = self.__dict__.get("_tree_for_wallets")
-        cached: set[str] | None = self.__dict__.get("_wallet_names")
-        if cached is not None:
-            return cached
-        found: set[str] = set()
-        if tree is not None:
-            for node in PythonSyntax.of(tree, ast.Assign):
-                if isinstance(node.value, ast.Call):
-                    dotted = self._dotted(node.value.func) or ""
-                    if dotted.endswith(self.WALLET_MAKERS):
-                        found.update(t.id for t in node.targets if isinstance(t, ast.Name))
-            for arg in PythonSyntax.of(tree, ast.arg):
-                annotation = arg.annotation
-                named = (
-                    annotation.id
-                    if isinstance(annotation, ast.Name)
-                    else annotation.attr
-                    if isinstance(annotation, ast.Attribute)
-                    else ""
-                )
-                if named.endswith(("Account", "Keypair")):
-                    found.add(arg.arg)
-        self.__dict__["_wallet_names"] = found
-        return found
-
-    def _credential_read(self, node: ast.AST) -> str | None:
-        from cordon_scanner.analysis.shared.credential_homes import SecretFlow
-
-        if (
-            isinstance(node, ast.Attribute)
-            and node.attr in self.WALLET_SECRETS
-            and isinstance(node.value, ast.Name)
-            and node.value.id in self._wallets()
-        ):
-            return self.WALLET_SECRETS[node.attr]
-        if isinstance(node, ast.Name) and node.id in self.KEY_NAMES:
-            # A value named for a wallet's key (`def perm(private_key): requests.post(URL,
-            # json={"k": private_key})`, trongridor 0.0.1): what it holds is never sent.
-            return self.KEY_NAMES[node.id]
-        name: ast.AST | None = None
-        if isinstance(node, ast.Subscript) and self._dotted(node.value) in (
-            "os.environ",
-            "os.environb",
-        ):
-            name = node.slice
-        elif isinstance(node, ast.Call):
-            dotted = self._dotted(node.func)
-            if (
-                dotted in ("os.getenv", "os.environ.get", "os.environ.setdefault", "os.environ.pop")
-                and node.args
-            ):
-                name = node.args[0]
-        if isinstance(name, ast.Constant) and isinstance(name.value, str):
-            return name.value if SecretFlow.home_of(name.value) else None
-        return None
 
     def _read_from_local_file(self, node: ast.AST) -> bool:
         """Whether every name in this expression holds text read from a local file, rather than

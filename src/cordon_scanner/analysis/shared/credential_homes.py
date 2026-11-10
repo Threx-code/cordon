@@ -62,6 +62,12 @@ CREDENTIAL_HOMES: Final[tuple[tuple[re.Pattern[str], Home], ...]] = (
         Home("AWS", homeless=True),
     ),
     (
+        # The contents of a credential store on disk (`SecretFlow.store_of`): no client sends the
+        # file itself anywhere (group A (a): http_query 0.0.1 posted ~/.aws/credentials).
+        re.compile(r"^CREDENTIAL_FILE$"),
+        Home("a credential store", homeless=True),
+    ),
+    (
         # A wallet's private key or seed: a wallet signs with it locally and never sends it
         # (group A (a): web3_py_checksum 1.1 put `account.key.hex()` in a Telegram URL).
         re.compile(r"^(?:WALLET_PRIVATE_KEY|WALLET_MNEMONIC|PRIVATE_KEY|MNEMONIC|SEED_PHRASE)$"),
@@ -156,6 +162,24 @@ _HOST: Final = re.compile(r"^[a-z][a-z0-9+.-]*://(?:[^@/\s]*@)?(\[[0-9a-f:.]+\]|
 
 class SecretFlow:
     """Where a credential belongs, and whether a host is outside it."""
+
+    #: Where services keep credentials on disk: the same stores `CredentialSweep` counts.
+    STORES: Final = re.compile(
+        r"\.ssh/(?:id_(?:rsa|ed25519|ecdsa|dsa)|identity)\b|\.aws/credentials\b|(?<![\w.])\.npmrc\b"
+        r"|(?<![\w.])\.netrc\b|\.kube/config\b|\.docker/config\.json\b|\.config/gh/hosts\.ya?ml\b"
+        r"|(?<![\w.])\.git-credentials\b|(?<![\w.])\.pypirc\b"
+        r"|\.config/gcloud/(?:credentials\.db|application_default_credentials\.json)"
+        r"|\.azure/(?:accessTokens|msal_token_cache)"
+    )
+
+    @staticmethod
+    def store_of(path_parts: list[str]) -> bool:
+        """Whether a path, written whole or in parts (`os.path.join(home, ".aws", "credentials")`),
+        names a credential store."""
+        joined = "/".join(p.strip("/") for p in path_parts if p)
+        return bool(SecretFlow.STORES.search(joined)) or any(
+            SecretFlow.STORES.search(p) for p in path_parts
+        )
 
     @staticmethod
     def home_of(name: str) -> Home | None:

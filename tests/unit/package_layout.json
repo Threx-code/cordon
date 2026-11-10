@@ -50,6 +50,8 @@
   "analysis/python/flows/client_bindings": "analysis/python/flows/client_bindings",
   "analysis/python/flows/containers": "analysis/python/flows/containers",
   "analysis/python/flows/decoded_drops": "analysis/python/flows/decoded_drops",
+  "analysis/python/flows/hidden_destinations": "analysis/python/flows/hidden_destinations",
+  "analysis/python/flows/secret_sources": "analysis/python/flows/secret_sources",
   "analysis/python/flows/http_clients": "analysis/python/flows/http_clients",
   "analysis/python/module_facts": "analysis/python/module_facts",
   "analysis/python/pysyntax": "analysis/python/pysyntax",

