@@ -68,6 +68,7 @@ from cordon_scanner.analysis.python.analyzer_core import AnalyzerCore
 from cordon_scanner.analysis.python.data_flows import DataFlows
 from cordon_scanner.analysis.python.flows.client_bindings import ClientBindings
 from cordon_scanner.analysis.python.flows.decoded_drops import DecodedDrops
+from cordon_scanner.analysis.python.flows.received_run import ReceivedRuns
 from cordon_scanner.analysis.python.sourced_flows import SourcedFlows
 
 CREDENTIAL_VARIABLE = re.compile(
@@ -170,7 +171,9 @@ analogue worth the silence. `getattr(self, method_name)` on a plugin object is
 ordinary; `getattr(os, something_decoded)` is not."""
 
 
-class PythonAnalyzer(DataFlows, DecodedDrops, ClientBindings, SourcedFlows, AnalyzerCore):
+class PythonAnalyzer(
+    DataFlows, DecodedDrops, ReceivedRuns, ClientBindings, SourcedFlows, AnalyzerCore
+):
     """Resolves capability primitives through aliases, bindings and constants."""
 
     @classmethod
@@ -192,6 +195,7 @@ class PythonAnalyzer(DataFlows, DecodedDrops, ClientBindings, SourcedFlows, Anal
         analyzer._downloaded_and_run(tree)
         analyzer._decoded_dropped_and_run(tree)
         analyzer._received_and_run(tree)
+        analyzer._received_message_run(tree)
         analyzer._received_into_process(tree)
         analyzer._download_run_through_helpers(tree)
         if analyzer._sends(tree):
