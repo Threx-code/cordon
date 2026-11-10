@@ -616,6 +616,8 @@ class DataFlows(AnalyzerCore):
         """
         from cordon_scanner.analysis.shared.credential_homes import SecretFlow
 
+        self.__dict__["_tree_for_wallets"] = tree
+        self.__dict__.pop("_wallet_names", None)
         carrying: dict[str, str] = {}
         urls: dict[str, str] = {}
         for _ in range(3):
@@ -640,7 +642,9 @@ class DataFlows(AnalyzerCore):
             arguments = [*node.args, *(k.value for k in node.keywords)]
             keys: set[str] = set()
             for argument in arguments:
-                for part in PythonSyntax.within(argument, ast.Subscript, ast.Call, ast.Name):
+                for part in PythonSyntax.within(
+                    argument, ast.Subscript, ast.Call, ast.Name, ast.Attribute
+                ):
                     key = self._credential_read(part)
                     if key is None and isinstance(part, ast.Name) and part.id in carrying:
                         key = carrying[part.id]
@@ -668,9 +672,65 @@ class DataFlows(AnalyzerCore):
                     self._record(Capability.CREDENTIAL, node, f"secret sent: {key} to {host}")
                     break
 
+    #: A wallet object's secret, by attribute, and the calls and annotations that make a wallet.
+    WALLET_SECRETS: ClassVar[dict[str, str]] = {
+        "key": "WALLET_PRIVATE_KEY",
+        "private_key": "WALLET_PRIVATE_KEY",
+        "privateKey": "WALLET_PRIVATE_KEY",
+        "_private_key": "WALLET_PRIVATE_KEY",
+        "mnemonic": "WALLET_MNEMONIC",
+    }
+    WALLET_MAKERS: ClassVar[tuple[str, ...]] = (
+        "Account.from_key",
+        "Account.create",
+        "Account.from_mnemonic",
+        "account.from_key",
+        "account.create",
+        "account.from_mnemonic",
+        "Keypair.from_secret_key",
+        "Keypair.from_seed",
+        "Keypair.generate",
+    )
+
+    def _wallets(self) -> set[str]:
+        """Names holding a wallet in this file: assigned from a wallet maker
+        (`web3.Account.from_key(k)`), or a parameter annotated as an account (`account:
+        LocalAccount`). Kept per tree."""
+        tree = self.__dict__.get("_tree_for_wallets")
+        cached: set[str] | None = self.__dict__.get("_wallet_names")
+        if cached is not None:
+            return cached
+        found: set[str] = set()
+        if tree is not None:
+            for node in PythonSyntax.of(tree, ast.Assign):
+                if isinstance(node.value, ast.Call):
+                    dotted = self._dotted(node.value.func) or ""
+                    if dotted.endswith(self.WALLET_MAKERS):
+                        found.update(t.id for t in node.targets if isinstance(t, ast.Name))
+            for arg in PythonSyntax.of(tree, ast.arg):
+                annotation = arg.annotation
+                named = (
+                    annotation.id
+                    if isinstance(annotation, ast.Name)
+                    else annotation.attr
+                    if isinstance(annotation, ast.Attribute)
+                    else ""
+                )
+                if named.endswith(("Account", "Keypair")):
+                    found.add(arg.arg)
+        self.__dict__["_wallet_names"] = found
+        return found
+
     def _credential_read(self, node: ast.AST) -> str | None:
         from cordon_scanner.analysis.shared.credential_homes import SecretFlow
 
+        if (
+            isinstance(node, ast.Attribute)
+            and node.attr in self.WALLET_SECRETS
+            and isinstance(node.value, ast.Name)
+            and node.value.id in self._wallets()
+        ):
+            return self.WALLET_SECRETS[node.attr]
         name: ast.AST | None = None
         if isinstance(node, ast.Subscript) and self._dotted(node.value) in (
             "os.environ",

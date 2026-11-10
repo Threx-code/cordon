@@ -62,6 +62,12 @@ CREDENTIAL_HOMES: Final[tuple[tuple[re.Pattern[str], Home], ...]] = (
         Home("AWS", homeless=True),
     ),
     (
+        # A wallet's private key or seed: a wallet signs with it locally and never sends it
+        # (group A (a): web3_py_checksum 1.1 put `account.key.hex()` in a Telegram URL).
+        re.compile(r"^(?:WALLET_PRIVATE_KEY|WALLET_MNEMONIC|PRIVATE_KEY|MNEMONIC|SEED_PHRASE)$"),
+        Home("a wallet", homeless=True),
+    ),
+    (
         re.compile(
             r"^(?:GITHUB_TOKEN|GH_TOKEN|GITHUB_PAT|GH_PAT|GITHUB_API_TOKEN|GITHUB_ACCESS_TOKEN)$"
         ),
