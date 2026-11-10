@@ -53,6 +53,7 @@
   "analysis/python/python_two_reader": "analysis/python/python_two_reader",
   "analysis/python/reachability": "analysis/python/reachability",
   "analysis/python/sourced_flows": "analysis/python/sourced_flows",
+  "analysis/python/scoped_taint": "analysis/python/scoped_taint",
   "analysis/python/vocabulary": "analysis/python/vocabulary",
   "analysis/shared/ast_providers": "analysis/shared/ast_providers",
   "analysis/shared/astquery": "analysis/shared/astquery",

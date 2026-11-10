@@ -17,8 +17,7 @@ from __future__ import annotations
 
 import ast
 import re
-from collections.abc import Callable, Iterator
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.python.analyzer_core import AnalyzerCore
 from cordon_scanner.analysis.python.pyfacts import PRIMITIVES, PythonFacts
@@ -30,59 +29,8 @@ from cordon_scanner.analysis.python.vocabulary import (
 )
 from cordon_scanner.foundation.capabilities import Capability
 
-
-class BindingForms:
-    """Each way Python binds a name to a value, read by the node's type."""
-
-    @staticmethod
-    def assign(node: ast.AST) -> Iterator[tuple[list[str], ast.AST]]:
-        if not isinstance(node, ast.Assign):
-            return
-        yield [t.id for t in node.targets if isinstance(t, ast.Name)], node.value
-
-    @staticmethod
-    def annotated(node: ast.AST) -> Iterator[tuple[list[str], ast.AST]]:
-        if not isinstance(node, ast.AnnAssign | ast.AugAssign):
-            return
-        if node.value is not None and isinstance(node.target, ast.Name):
-            yield [node.target.id], node.value
-
-    @staticmethod
-    def walrus(node: ast.AST) -> Iterator[tuple[list[str], ast.AST]]:
-        if not isinstance(node, ast.NamedExpr):
-            return
-        yield [node.target.id], node.value
-
-    @staticmethod
-    def with_items(node: ast.AST) -> Iterator[tuple[list[str], ast.AST]]:
-        if not isinstance(node, ast.With | ast.AsyncWith):
-            return
-        for item in node.items:
-            if isinstance(item.optional_vars, ast.Name):
-                yield [item.optional_vars.id], item.context_expr
-
-    @staticmethod
-    def for_target(node: ast.AST) -> Iterator[tuple[list[str], ast.AST]]:
-        if not isinstance(node, ast.For | ast.AsyncFor):
-            return
-        if isinstance(node.target, ast.Name):
-            yield [node.target.id], node.iter
-
-    READERS: ClassVar[dict[type, Callable[[ast.AST], Iterator[tuple[list[str], ast.AST]]]]] = {}
-
-
-BindingForms.READERS.update(
-    {
-        ast.Assign: BindingForms.assign,
-        ast.AnnAssign: BindingForms.annotated,
-        ast.AugAssign: BindingForms.annotated,
-        ast.NamedExpr: BindingForms.walrus,
-        ast.With: BindingForms.with_items,
-        ast.AsyncWith: BindingForms.with_items,
-        ast.For: BindingForms.for_target,
-        ast.AsyncFor: BindingForms.for_target,
-    }
-)
+if TYPE_CHECKING:
+    from cordon_scanner.analysis.python.scoped_taint import ScopedTaint
 
 
 class SourcedFlows(AnalyzerCore):
@@ -100,14 +48,6 @@ class SourcedFlows(AnalyzerCore):
     )
     SINKS: ClassVar[frozenset[Capability]] = frozenset({Capability.EXECUTE, Capability.DESERIALIZE})
     ROUNDS: ClassVar[int] = 4
-
-    @staticmethod
-    def _binding_forms(tree: ast.AST) -> Iterator[tuple[list[str], ast.AST]]:
-        """(names bound, the value they are bound from), for every binding form."""
-        for node in PythonSyntax.nodes(tree):
-            read = BindingForms.READERS.get(type(node))
-            if read is not None:
-                yield from read(node)
 
     def _fetching_process(self, node: ast.AST) -> bool:
         """A process started to download: `subprocess.run(["curl", url], capture_output=True)`."""
@@ -147,26 +87,29 @@ class SourcedFlows(AnalyzerCore):
             Capability.DECOMPRESS,
         )
 
-    def _touches(self, expr: ast.AST, names: set[str], *, decoded: bool) -> bool:
-        for part in PythonSyntax.within(expr, ast.Name, ast.Call):
-            if isinstance(part, ast.Name) and part.id in names:
-                return True
+    def _touches(self, expr: ast.AST, names: ScopedTaint, *, decoded: bool) -> bool:
+        """Whether the expression holds what arrived (or, with `decoded`, what was decoded).
+        Walked without recursion: a long chain of `+` is one deep tree."""
+        stack = [expr]
+        while stack:
+            part = stack.pop()
+            verdict = names.carries(part)
+            if verdict is not None:
+                if verdict:
+                    return True
+                continue
             if self._arrived(part) or (decoded and self._decoded(part)):
                 return True
+            stack.extend(ast.iter_child_nodes(part))
         return False
 
-    def _bound_from(self, tree: ast.AST, *, decoded: bool) -> set[str]:
-        """Names whose value came from the network (and, with `decoded`, from a decode)."""
-        names: set[str] = set()
-        bindings = list(self._binding_forms(tree))
-        for _ in range(self.ROUNDS):
-            before = len(names)
-            for targets, value in bindings:
-                if self._touches(value, names, decoded=decoded):
-                    names.update(targets)
-            if len(names) == before:
-                break
-        return names
+    def _bound_from(self, tree: ast.AST, *, decoded: bool) -> ScopedTaint:
+        """Names whose value came from the network (and, with `decoded`, from a decode), each in
+        its own scope (`ScopedTaint`)."""
+        from cordon_scanner.analysis.python.scoped_taint import ScopedTaint
+
+        names = ScopedTaint(tree)
+        return names.spread(lambda value: self._touches(value, names, decoded=decoded))
 
     def sourced_sinks(self, tree: ast.AST) -> tuple[frozenset[int], frozenset[int]]:
         """(lines of every execute or deserialize call, lines of those whose input was fetched or
@@ -255,4 +198,4 @@ class SourcedFlows(AnalyzerCore):
                     break
 
 
-__all__ = ["BindingForms", "SourcedFlows"]
+__all__ = ["SourcedFlows"]
