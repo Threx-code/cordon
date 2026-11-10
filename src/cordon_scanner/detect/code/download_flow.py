@@ -411,7 +411,7 @@ class PythonDownloads:
         try:
             tree = PythonSyntax.parse(text)
         except (SyntaxError, ValueError):
-            # S2: SOURCE.UNPARSED covers a running file; a file no CPython parses runs nothing
+            # S2: covered by SOURCE.UNPARSED at every running file (install closure, import entries, command modules); proven by test_not_python3.py TestPackageSourceThatDoesNotParse
             return None
         flow = cls(tree)
         # Twice: a helper defined below its caller taints on the second pass.

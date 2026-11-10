@@ -290,6 +290,10 @@ class ArchiveStages:
         """What runs at install or import and does not parse is read as Python 2, or is a gap,
         fail closed (09 3a). A reading runs where its file runs (`lifted_inherit`)."""
         python_entries = {p for p in ctx.import_entry_paths if p.endswith(".py")}
+        from cordon_scanner.engine.entries import PythonScripts
+
+        # A command's module runs on every invocation, imported by `__init__` or not (S2).
+        python_entries |= PythonScripts.targets(units)
         running = python_closure | python_entries | Hooks.hook_import_closure(units, python_entries)
         readings: list[FileUnit] = []
         for unit in list(units):

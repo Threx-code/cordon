@@ -135,6 +135,71 @@ class TestPackageSourceThatDoesNotParse:
         result = UnparsedKit.sdist(tmp_path, {"pkg/__init__.py": newer})
         assert UnparsedKit.gapped(result)
 
+    # S2 (lead, 2026-11-10): a payload written in syntax newer than the scanner's Python runs on
+    # the user's newer Python. Every producer's SyntaxError handler leans on these: a running file
+    # in that syntax is a blocking gap at each place it runs from.
+    def test_newer_syntax_in_a_module_the_init_imports_is_a_blocking_gap(
+        self, tmp_path: Path
+    ) -> None:
+        newer = UnparsedKit.newer_than_this_python()
+        result = UnparsedKit.sdist(
+            tmp_path, {"pkg/__init__.py": "from .core import run\n", "pkg/core.py": newer}
+        )
+        assert UnparsedKit.gapped(result)
+        assert not result.content_complete
+
+    def test_newer_syntax_in_a_module_setup_py_imports_is_a_blocking_gap(
+        self, tmp_path: Path
+    ) -> None:
+        newer = UnparsedKit.newer_than_this_python()
+        setup = "from setuptools import setup\nimport build_helper\nsetup(name='pkg')\n"
+        result = UnparsedKit.sdist(
+            tmp_path,
+            {"setup.py": setup, "build_helper.py": newer, "pkg/__init__.py": "VERSION = '1'\n"},
+        )
+        assert UnparsedKit.gapped(result)
+        assert not result.content_complete
+
+    def test_newer_syntax_in_a_console_script_entry_point_is_a_blocking_gap(
+        self, tmp_path: Path
+    ) -> None:
+        newer = UnparsedKit.newer_than_this_python()
+        setup = (
+            "from setuptools import setup\n"
+            "setup(name='pkg', packages=['pkg'],\n"
+            "      entry_points={'console_scripts': ['pkg-run = pkg.cli:main']})\n"
+        )
+        result = UnparsedKit.sdist(
+            tmp_path, {"setup.py": setup, "pkg/__init__.py": "VERSION = '1'\n", "pkg/cli.py": newer}
+        )
+        assert UnparsedKit.gapped(result)
+        assert not result.content_complete
+
+    @pytest.mark.parametrize(
+        ("place", "declaration"),
+        [
+            ("pkg.egg-info/entry_points.txt", "[console_scripts]\npkg-run = pkg.cli:main\n"),
+            (
+                "pyproject.toml",
+                "[project]\nname = 'pkg'\n[project.scripts]\npkg-run = 'pkg.cli:main'\n",
+            ),
+            (
+                "setup.cfg",
+                "[options.entry_points]\nconsole_scripts =\n    pkg-run = pkg.cli:main\n",
+            ),
+        ],
+    )
+    def test_a_command_declared_anywhere_runs_its_module(
+        self, tmp_path: Path, place: str, declaration: str
+    ) -> None:
+        newer = UnparsedKit.newer_than_this_python()
+        result = UnparsedKit.sdist(
+            tmp_path,
+            {place: declaration, "pkg/__init__.py": "VERSION = '1'\n", "pkg/cli.py": newer},
+        )
+        assert UnparsedKit.gapped(result)
+        assert not result.content_complete
+
     def test_a_python_2_token_before_garbage_is_still_a_gap(self, tmp_path) -> None:
         result = UnparsedKit.sdist(tmp_path, {"pkg/__init__.py": 'print "hello"\n' + self.BROKEN})
         assert UnparsedKit.gapped(result)

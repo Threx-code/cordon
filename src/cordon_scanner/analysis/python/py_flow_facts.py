@@ -139,7 +139,7 @@ class PythonFlowFacts(PythonValueFlow):
         try:
             tree = PythonSyntax.parse(source)
         except (SyntaxError, ValueError):
-            # S2: SOURCE.UNPARSED covers a running file; a file no CPython parses runs nothing
+            # S2: covered by SOURCE.UNPARSED at every running file (install closure, import entries, command modules); proven by test_not_python3.py TestPackageSourceThatDoesNotParse
             return set()
         analysis = cls(tree)
         if not analysis.index():

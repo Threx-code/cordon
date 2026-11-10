@@ -215,7 +215,7 @@ class AnalyzerCore:
         try:
             expression = PythonSyntax.parse(source.strip(), mode="eval").body
         except (SyntaxError, ValueError):
-            # S2: SOURCE.UNPARSED covers a running file; a file no CPython parses runs nothing
+            # S2: covered by SOURCE.UNPARSED at every running file (install closure, import entries, command modules); proven by test_not_python3.py TestPackageSourceThatDoesNotParse
             return None
         if isinstance(expression, ast.Name | ast.Attribute | ast.Call):
             return self._dotted(expression)

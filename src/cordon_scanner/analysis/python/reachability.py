@@ -471,7 +471,7 @@ class LoadReach:
             try:
                 tree = PythonSyntax.parse(src)
             except (SyntaxError, ValueError):
-                # S2: SOURCE.UNPARSED covers a running file; a file no CPython parses runs nothing
+                # S2: covered by SOURCE.UNPARSED at every running file (install closure, import entries, command modules); proven by test_not_python3.py TestPackageSourceThatDoesNotParse
                 continue  # unparsed: defers nothing, every line keeps its context
             dotted, is_package = LoadReach.dotted(path)
             module = LoadModule(path, dotted, tree, is_package)

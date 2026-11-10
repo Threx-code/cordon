@@ -112,4 +112,112 @@ class PackageEntries:
         )
 
 
-__all__ = ["PackageEntries"]
+class PythonScripts:
+    """The modules a Python package's commands run (`console_scripts`, `gui_scripts`, a Poetry
+    `scripts` table): `pkg-run = pkg.cli:main` runs pkg/cli.py's top level on every invocation,
+    whether or not `__init__` imports it (S2, lead 2026-11-10: a payload in syntax newer than the
+    scanner's Python, placed only in the command's module, ran unread). Read from every place a
+    distribution declares them: a wheel's or egg-info's entry_points.txt, pyproject.toml,
+    setup.cfg, and a literal `entry_points=` in setup.py."""
+
+    GROUPS: ClassVar[tuple[str, ...]] = ("console_scripts", "gui_scripts")
+
+    @staticmethod
+    def targets(units: list[FileUnit]) -> frozenset[str]:
+        """Unit paths of the `.py` files the declared commands name, within each archive."""
+        modules: set[tuple[str, str]] = set()  # (archive prefix, dotted module)
+        for unit in units:
+            archive, sep, member = unit.path.rpartition("!")
+            if not sep:
+                continue
+            name = member.rsplit("/", 1)[-1]
+            text = unit.content.text if not unit.content.is_binary else ""
+            for target in PythonScripts._declared(name, text):
+                modules.add((archive, target.split(":", 1)[0].strip()))
+        found: set[str] = set()
+        for unit in units:
+            archive, sep, member = unit.path.rpartition("!")
+            if not sep or not member.endswith(".py"):
+                continue
+            for owner, module in modules:
+                if owner != archive or not module:
+                    continue
+                stem = module.replace(".", "/")
+                if ("/" + member).endswith((f"/{stem}.py", f"/{stem}/__init__.py")):
+                    found.add(unit.path)
+        return frozenset(found)
+
+    @staticmethod
+    def _declared(name: str, text: str) -> list[str]:
+        """`module:function` targets a file declares, by the file's own format; [] if none."""
+        if name == "entry_points.txt" or name == "setup.cfg":
+            return PythonScripts._ini(text, name == "setup.cfg")
+        if name == "pyproject.toml":
+            return PythonScripts._pyproject(text)
+        if name == "setup.py":
+            return PythonScripts._setup_py(text)
+        return []
+
+    @staticmethod
+    def _ini(text: str, setup_cfg: bool) -> list[str]:
+        import configparser
+
+        parser = configparser.ConfigParser(interpolation=None)
+        try:
+            parser.read_string(text)
+        except (configparser.Error, ValueError):
+            return []
+        out: list[str] = []
+        if setup_cfg:
+            if parser.has_section("options.entry_points"):
+                for group in PythonScripts.GROUPS:
+                    value = parser.get("options.entry_points", group, fallback="")
+                    out += [ln.split("=", 1)[1] for ln in value.splitlines() if "=" in ln]
+            return out
+        for group in PythonScripts.GROUPS:
+            if parser.has_section(group):
+                out += [v for _, v in parser.items(group)]
+        return out
+
+    @staticmethod
+    def _pyproject(text: str) -> list[str]:
+        import tomllib
+
+        try:
+            document = tomllib.loads(text)
+        except (tomllib.TOMLDecodeError, ValueError, RecursionError):
+            return []
+        project = document.get("project", {})
+        tables = [
+            project.get("scripts", {}),
+            project.get("gui-scripts", {}),
+            document.get("tool", {}).get("poetry", {}).get("scripts", {}),
+        ]
+        return [v for t in tables if isinstance(t, dict) for v in t.values() if isinstance(v, str)]
+
+    @staticmethod
+    def _setup_py(text: str) -> list[str]:
+        import ast
+
+        try:
+            tree = ast.parse(text)
+        except (SyntaxError, ValueError, RecursionError, MemoryError):
+            return []  # S2: covered: a setup.py that does not parse is MANIFEST.UNPARSED
+        out: list[str] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.keyword) or node.arg != "entry_points":
+                continue
+            try:
+                value = ast.literal_eval(node.value)
+            except (ValueError, SyntaxError, TypeError, RecursionError, MemoryError):
+                continue
+            if not isinstance(value, dict):
+                continue
+            for group in PythonScripts.GROUPS:
+                lines = value.get(group, [])
+                lines = [lines] if isinstance(lines, str) else lines
+                out += [ln.split("=", 1)[1] for ln in lines if isinstance(ln, str) and "=" in ln]
+        return out
+
+
+__all__ = ["PackageEntries", "PythonScripts"]

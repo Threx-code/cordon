@@ -85,7 +85,7 @@ class ModuleFacts:
                     analyzer._collect_statement(tree)
                     StatementTrees.release(index)
             except (SyntaxError, ValueError):
-                # S2: SOURCE.UNPARSED covers a running file; a file no CPython parses runs nothing
+                # S2: covered by SOURCE.UNPARSED at every running file (install closure, import entries, command modules); proven by test_not_python3.py TestPackageSourceThatDoesNotParse
                 pieces = (
                     None  # a cut that is not between statements, or a module that does not parse
                 )

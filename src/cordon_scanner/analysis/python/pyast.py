@@ -182,7 +182,7 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, SourcedFlows, AnalyzerCore):
         try:
             tree = PythonSyntax.shared(source)
         except (SyntaxError, ValueError):
-            # S2: SOURCE.UNPARSED covers a running file; a file no CPython parses runs nothing
+            # S2: covered by SOURCE.UNPARSED at every running file (install closure, import entries, command modules); proven by test_not_python3.py TestPackageSourceThatDoesNotParse
             return []
         analyzer = PythonAnalyzer._prepared(tree)
         analyzer._follow_literals = follow_literals
@@ -208,7 +208,7 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, SourcedFlows, AnalyzerCore):
         try:
             tree = PythonSyntax.shared(source)
         except (SyntaxError, ValueError):
-            # S2: SOURCE.UNPARSED covers a running file; a file no CPython parses runs nothing
+            # S2: covered by SOURCE.UNPARSED at every running file (install closure, import entries, command modules); proven by test_not_python3.py TestPackageSourceThatDoesNotParse
             return None
         return cls._prepared(tree).sourced_sinks(tree)
 
@@ -479,7 +479,7 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, SourcedFlows, AnalyzerCore):
         try:
             inner_tree = PythonSyntax.parse(value)
         except (SyntaxError, ValueError):
-            # S2: SOURCE.UNPARSED covers a running file; a file no CPython parses runs nothing
+            # S2: covered by SOURCE.UNPARSED at every running file (install closure, import entries, command modules); proven by test_not_python3.py TestPackageSourceThatDoesNotParse
             return
         inner = type(self)()
         inner._collect_names(inner_tree)
@@ -726,7 +726,7 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, SourcedFlows, AnalyzerCore):
         try:
             tree = PythonSyntax.shared(source)
         except (SyntaxError, ValueError):
-            # S2: SOURCE.UNPARSED covers a running file; a file no CPython parses runs nothing
+            # S2: covered by SOURCE.UNPARSED at every running file (install closure, import entries, command modules); proven by test_not_python3.py TestPackageSourceThatDoesNotParse
             return []
         analyzer = PythonAnalyzer._prepared(tree)
         # `_invoked` maps an inner call to the call that invokes its result, so
