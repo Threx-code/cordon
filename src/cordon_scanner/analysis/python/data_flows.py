@@ -98,6 +98,11 @@ class EnvironmentCarry:
             # still is.
             if isinstance(node, ast.Attribute) and node.attr in KEYED_METHODS and whole(node.value):
                 return False
+            # An if-expression's value is one of its branches, never its test: `url = default if
+            # "URL" not in os.environ else os.environ["URL"]` (c2cciutils, Finance-Ultron,
+            # review 2026-11-10).
+            if isinstance(node, ast.IfExp):
+                return whole(node.body) or whole(node.orelse)
             # A comparison that is itself sent (`{"ci": "CI" in env}`, `any(k in env for k in
             # markers)`) still tells the receiver what the environment holds; one that only
             # steers control flow is never a sent value (runtime-readout, review 2026-11-10).

