@@ -35,6 +35,7 @@ class TestWhatAMessageHandlerRuns:
     def test_a_decorated_handler(self) -> None:
         source = (
             "import subprocess\n"
+            "import telebot\n"
             "@bot.message_handler(commands=['sh'])\n"
             "def sh(message):\n"
             "    subprocess.run(message.text, shell=True)\n"
@@ -66,6 +67,7 @@ class TestWhatAMessageHandlerRuns:
         source = (
             "import asyncio\n"
             "import subprocess\n"
+            "from telegram.ext import ContextTypes\n"
             "def run_cmd(cmd):\n"
             "    return subprocess.check_output(cmd.split())\n"
             "async def com_command(update, context):\n"
@@ -78,6 +80,7 @@ class TestWhatAMessageHandlerRuns:
         source = (
             "import asyncio\n"
             "import subprocess\n"
+            "from telegram.ext import ContextTypes\n"
             "def run_cmd(cmd):\n"
             "    return subprocess.check_output(cmd.split())\n"
             "async def com(update, context):\n"
@@ -89,6 +92,7 @@ class TestWhatAMessageHandlerRuns:
         source = (
             "import base64\n"
             "import subprocess\n"
+            "import telebot\n"
             "def execute_command(cmd):\n"
             "    subprocess.run(cmd, shell=True)\n"
             "def handle_command(message):\n"
@@ -187,6 +191,18 @@ class TestOrdinaryProgramsOnTheSameChannels:
             "import json, subprocess\n"
             "spec = json.load(open('job.json'))\n"
             "subprocess.run(['make', spec['target']], check=True)\n"
+        )
+        assert RunKit.received(source) == []
+
+    def test_a_command_line_tool_whose_commands_take_a_message(self) -> None:
+        source = (
+            "import click, subprocess\n"
+            "@click.command()\n"
+            "@click.argument('message')\n"
+            "def commit(message):\n"
+            "    subprocess.run(message, shell=True)\n"
+            "def handle_message(message):\n"
+            "    subprocess.run(message, shell=True)\n"
         )
         assert RunKit.received(source) == []
 

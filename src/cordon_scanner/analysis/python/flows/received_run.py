@@ -52,6 +52,18 @@ class ReceivedRuns(ExecutionFlows):
     _OFFLOADS: ClassVar[frozenset[str]] = frozenset({"to_thread", "run_in_executor", "submit"})
     #: Parameter types a chat library hands a handler: the message, update or callback it received.
     _MESSAGE_TYPES: ClassVar[frozenset[str]] = frozenset({"Message", "Update", "CallbackQuery"})
+    #: Modules of the chat and messaging libraries. A decorator named `command` or a parameter named
+    #: `message` is only a handler where the file talks to one of them: `@click.command()` and an
+    #: `email.message.Message` are not a channel anyone sends commands over.
+    _CHAT_LIBRARIES: ClassVar[frozenset[str]] = frozenset(
+        {
+            "telegram", "telebot", "aiogram", "pyrogram", "telethon", "discord", "disnake",
+            "nextcord", "hikari", "slack_sdk", "slack_bolt", "slack", "slackclient", "twilio",
+            "irc", "matrix_client", "nio", "vk_api", "vkbottle", "botbuilder", "whatsapp",
+            "tweepy", "mattermostdriver", "zulip", "rocketchat_API", "line", "linebot",
+            "pytgcalls", "pyTelegramBotAPI", "fbchat", "wechat", "itchat", "wxpy",
+        }
+    )  # fmt: skip
     #: Methods that return the command's text in another shape.
     _SAME_TEXT: ClassVar[frozenset[str]] = frozenset(
         {"split", "strip", "lower", "decode", "rstrip"}
@@ -129,12 +141,13 @@ class ReceivedRuns(ExecutionFlows):
         functions = PythonSyntax.of(tree, ast.FunctionDef, ast.AsyncFunctionDef)
         by_name = {f.name: f for f in functions}
         found: dict[int, ast.FunctionDef | ast.AsyncFunctionDef] = {}
-        for function in functions:
+        chat = self._talks_to_a_chat_library(tree)
+        for function in functions if chat else ():
             for decorator in function.decorator_list:
                 target = decorator.func if isinstance(decorator, ast.Call) else decorator
                 if isinstance(target, ast.Attribute) and target.attr in self._HANDLER_DECORATORS:
                     found[id(function)] = function
-        for function in functions:
+        for function in functions if chat else ():
             if self._takes_a_message(function):
                 found[id(function)] = function
         for call in calls:
@@ -148,6 +161,20 @@ class ReceivedRuns(ExecutionFlows):
                     if isinstance(arg, ast.Name) and arg.id in by_name:
                         found[id(by_name[arg.id])] = by_name[arg.id]
         return list(found.values())
+
+    def _talks_to_a_chat_library(self, tree: ast.AST) -> bool:
+        """Whether the file imports a chat or messaging library (`_CHAT_LIBRARIES`)."""
+        for node in PythonSyntax.of(tree, ast.Import, ast.ImportFrom):
+            modules = (
+                [a.name for a in node.names]
+                if isinstance(node, ast.Import)
+                else [node.module or ""]
+                if not node.level
+                else []
+            )
+            if any(m.split(".")[0] in self._CHAT_LIBRARIES for m in modules):
+                return True
+        return False
 
     def _takes_a_message(self, function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
         """The signature of a chat handler: `(update, context)`, a parameter typed as the library's
