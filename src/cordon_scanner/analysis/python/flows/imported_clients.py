@@ -287,8 +287,13 @@ class ImportedClients:
     def _module_file(
         path: str, node: ast.ImportFrom, trees: Mapping[str, ast.Module]
     ) -> str | None:
-        """The package file `from <module> import ...` names, relative or absolute, if shipped."""
-        here = PurePosixPath(path).parent
+        """The package file `from <module> import ...` names, relative or absolute, if shipped.
+
+        A file inside an archive is named `archive!member` (`pkg-1.0-py3-none-any.whl!pkg/a.py`):
+        the import is resolved inside the archive, whose name is only the prefix the keys carry."""
+        archive, bang, member = path.rpartition("!")
+        prefix = archive + bang
+        here = PurePosixPath(member).parent
         if node.level:
             base = here
             for _ in range(node.level - 1):
@@ -303,7 +308,7 @@ class ImportedClients:
             stems = [ancestor / relative for ancestor in (here, *here.parents)]
         for stem in stems:
             for candidate in (f"{stem}.py", f"{stem}/__init__.py"):
-                key = candidate[2:] if candidate.startswith("./") else candidate
+                key = prefix + (candidate[2:] if candidate.startswith("./") else candidate)
                 if key in trees:
                     return key
         return None
