@@ -38,7 +38,8 @@
     "26df0d89d764952b",
     "978fb9a4c0c1b435",
     "0b8b4730510bbc1c",
-    "3593fc438a1bfa4d"
+    "3593fc438a1bfa4d",
+    "b610c5ebaa3b51e3"
   ],
   "entries": [
     {
@@ -328,6 +329,12 @@
       "rule": "SECRET.URL.CREDENTIAL.001",
       "path": "tests/unit/detect/secrets/test_review_defects.py",
       "note": "git history only (90f343bb): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-11-10: the value's shape checked masked, it is the fixture of a detector test."
+    },
+    {
+      "fingerprint": "b610c5ebaa3b51e3",
+      "rule": "SECRET.TELEGRAM.BOT_TOKEN.001",
+      "path": "tests/unit/detect/agents/test_agents.py",
+      "note": "git history only (01333eca): a detector test fixture - a fabricated bot-token shape that tests a literal token is still found. Reviewed 2026-11-10: the value's shape checked masked; the working tree now assembles it from two parts."
     }
   ]
 }

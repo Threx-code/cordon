@@ -890,7 +890,8 @@ class TestTelegramNotifier:
 
     def test_a_literal_token_in_the_file_still_is(self, tmp_path) -> None:
         script = (
-            "const token = '1234567890:AAEhBP0av28SvEgvHMX-cV2xyz012345678';\n"
+            "const token = '1234567890:"
+            "AAEhBP0av28SvEgvHMX-cV2xyz012345678';\n"
             "await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {method: 'POST'});\n"
         )
         assert self._found(tmp_path, script) != []

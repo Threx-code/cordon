@@ -8,6 +8,13 @@ the registry's signatures and the lock's hashes). Cordon notes every file under 
 writes before and after; the files that are new or changed are scanned. If any blocks, they are
 removed and the lock is put back as it was, so nothing fetched is left where the next command would
 run it. A file that was replaced is removed, not restored: the next fetch brings it back, scanned.
+
+What a fetch writes is not always a file. A linked directory (Terraform's plugin cache links each
+provider in) is followed and its files scanned: they are what the tool runs. Anything that is not
+a regular file once its links are followed -- a FIFO, a device, a socket, a dangling link -- is
+refused and removed, never read: reading one hangs or reads without end. A link loop ends at the
+first directory already seen, and a walk that passes MAX_FILES files or MAX_BYTES bytes is refused,
+so a link to `/` cannot make the guard read the whole disk (S3, reviews/release-080).
 """
 
 from __future__ import annotations
@@ -16,9 +23,12 @@ import hashlib
 import itertools
 import os
 import shutil
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
+
+from cordon_scanner.sources.install.plan import InstallRefused
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -38,6 +48,12 @@ class FetchedTree:
     HELM_VERBS: ClassVar[frozenset[str]] = frozenset({"dependency", "dependencies", "dep"})
     HELM_FETCHES: ClassVar[frozenset[str]] = frozenset({"build", "update", "up"})
     GALAXY_PATHS: ClassVar[frozenset[str]] = frozenset({"-p", "--collections-path", "--roles-path"})
+    MAX_FILES: ClassVar[int] = 200_000
+    MAX_BYTES: ClassVar[int] = 8 << 30
+    #: The mark of an entry that is not a regular file once links are followed: never read.
+    SPECIAL: ClassVar[str] = "special:"
+    #: The mark of a linked directory: followed for its files, removed with them on a block.
+    LINK: ClassVar[str] = "link:"
 
     @classmethod
     def installs(cls, tool: str, args: Sequence[str]) -> bool:
@@ -73,21 +89,71 @@ class FetchedTree:
         home = Path.home() / ".ansible"
         return FetchedPlaces(tool, tuple(given) or (home / "collections", home / "roles"), ())
 
-    @staticmethod
-    def snapshot(places: FetchedPlaces) -> dict[Path, str]:
-        """Every file under the places, by its content's sha256 (a link read through)."""
+    @classmethod
+    def snapshot(cls, places: FetchedPlaces) -> dict[Path, str]:
+        """Every entry under the places: a regular file by its content's sha256, a linked
+        directory by its target, anything else by its kind, unread."""
         seen: dict[Path, str] = {}
+        walked: set[str] = set()
+        budget = [cls.MAX_FILES, cls.MAX_BYTES]
         for directory in places.directories:
-            if not directory.is_dir():
-                continue
-            for path in directory.rglob("*"):
-                if path.is_file():
-                    digest = hashlib.sha256()
-                    with path.open("rb") as handle:
-                        for block in iter(lambda: handle.read(1 << 20), b""):
-                            digest.update(block)
-                    seen[path] = digest.hexdigest()
+            if directory.is_dir():
+                cls._walk(directory, seen, walked, budget)
         return seen
+
+    @classmethod
+    def _walk(cls, top: Path, seen: dict[Path, str], walked: set[str], budget: list[int]) -> None:
+        for root, dirs, files in os.walk(top, followlinks=True):
+            real = os.path.realpath(root)
+            if real in walked:
+                dirs[:] = []
+                continue
+            walked.add(real)
+            for name in dirs:
+                path = Path(root, name)
+                if path.is_symlink():
+                    seen[path] = cls.LINK + str(path.readlink())
+            for name in files:
+                path = Path(root, name)
+                budget[0] -= 1
+                if budget[0] < 0:
+                    raise InstallRefused(
+                        f"what the fetch left under {top} holds more than {cls.MAX_FILES} files; "
+                        "Cordon does not scan part of it"
+                    )
+                seen[path] = cls._entry(path, budget)
+
+    @classmethod
+    def _entry(cls, path: Path, budget: list[int]) -> str:
+        try:
+            info = path.stat()
+        except OSError:
+            return cls.SPECIAL + "dangling link"
+        if not stat.S_ISREG(info.st_mode):
+            return cls.SPECIAL + stat.filemode(info.st_mode)
+        budget[1] -= info.st_size
+        if budget[1] < 0:
+            raise InstallRefused(
+                f"what the fetch left holds more than {cls.MAX_BYTES >> 30} GiB; Cordon does not "
+                "scan part of it"
+            )
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for block in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(block)
+        return digest.hexdigest()
+
+    @classmethod
+    def _entries_only(cls, places: FetchedPlaces) -> dict[Path, str]:
+        """Every entry's path, unread and unfollowed: what an over-large fetch wrote, to remove."""
+        out: dict[Path, str] = {}
+        for directory in places.directories:
+            for root, dirs, files in os.walk(directory, followlinks=False):
+                for name in (*dirs, *files):
+                    path = Path(root, name)
+                    if path.is_symlink() or name in files:
+                        out[path] = "?"
+        return out
 
     @staticmethod
     def saved_locks(places: FetchedPlaces) -> dict[Path, bytes | None]:
@@ -103,6 +169,8 @@ class FetchedTree:
         below the place it was written, so a finding names what was fetched."""
         root = into / f"{places.tool}-fetched"
         for path in changed:
+            if path.is_symlink() and path.is_dir():
+                continue
             base = next((d for d in places.directories if path.is_relative_to(d)), path.parent)
             target = root / base.name / path.relative_to(base)
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -112,7 +180,7 @@ class FetchedTree:
     @staticmethod
     def undo(changed: Sequence[Path], locks: dict[Path, bytes | None]) -> None:
         """What the fetch wrote, removed; the locks as they were."""
-        for path in changed:
+        for path in sorted(changed, key=lambda p: len(p.parts), reverse=True):
             path.unlink(missing_ok=True)
         for lock, data in locks.items():
             if data is None:
@@ -136,9 +204,22 @@ class FetchedTree:
         before = cls.snapshot(places)
         locks = cls.saved_locks(places)
         code = fetch()
-        changed = cls.changed(before, cls.snapshot(places))
+        try:
+            after = cls.snapshot(places)
+        except InstallRefused:
+            cls.undo(cls.changed(before, cls._entries_only(places)), locks)
+            raise
+        changed = cls.changed(before, after)
         if not changed:
             return code
+        special = [path for path in changed if after[path].startswith(cls.SPECIAL)]
+        if special:
+            cls.undo(changed, locks)
+            first = special[0]
+            raise InstallRefused(
+                f"{tool} wrote {first}, which is not a regular file "
+                f"({after[first].removeprefix(cls.SPECIAL)}); Cordon removed what the fetch wrote"
+            )
         try:
             passed = scan(cls.stage(changed, places, scratch))
         except BaseException:
