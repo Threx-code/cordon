@@ -16,7 +16,7 @@ no file of the package binds nothing.
 from __future__ import annotations
 
 import ast
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from pathlib import PurePosixPath
 from typing import Any, ClassVar, Protocol
 
@@ -79,7 +79,7 @@ class ImportedClients:
     def _made_here(tree: ast.Module) -> dict[str, str]:
         """Top-level `name = <client constructor>(...)`, through the file's import aliases."""
         aliases: dict[str, str] = {}
-        for node in tree.body:
+        for node in ImportedClients._module_level(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     aliases[alias.asname or alias.name.split(".")[0]] = (
@@ -89,7 +89,7 @@ class ImportedClients:
                 for alias in node.names:
                     aliases[alias.asname or alias.name] = f"{node.module}.{alias.name}"
         made: dict[str, str] = {}
-        for node in tree.body:
+        for node in ImportedClients._module_level(tree):
             if not (isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)):
                 continue
             client = ImportedClients._dotted(node.value.func, aliases)
@@ -132,6 +132,27 @@ class ImportedClients:
         if len(sources) < 2:
             return None
         return cls.of(sources) or None
+
+    @staticmethod
+    def _module_level(tree: ast.Module) -> Iterator[ast.stmt]:
+        """The statements that run when the module is imported: the module's body and the bodies
+        of its top-level `try` (every branch) and `if`, recursively, but never a function or class
+        body. `try: from httpx import Client / except ImportError: ...` then `session = Client()`
+        is a module-level client (TheThreadingAssistant, 2026-11-10); one made in a function is
+        not exported."""
+        pending: list[ast.stmt] = list(tree.body)
+        while pending:
+            node = pending.pop(0)
+            yield node
+            if isinstance(node, ast.Try | ast.TryStar):
+                pending[:0] = [
+                    *node.body,
+                    *(s for h in node.handlers for s in h.body),
+                    *node.orelse,
+                    *node.finalbody,
+                ]
+            elif isinstance(node, ast.If):
+                pending[:0] = [*node.body, *node.orelse]
 
     @staticmethod
     def _dotted(node: ast.AST, aliases: Mapping[str, str]) -> str | None:

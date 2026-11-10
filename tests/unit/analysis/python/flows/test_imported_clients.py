@@ -55,6 +55,18 @@ class TestWhichNamesAFileTakes:
             }
         )
 
+    def test_a_client_made_after_a_guarded_import_is_exported(self) -> None:
+        maker = (
+            "try:\n    from httpx import Client\nexcept ImportError:\n    Client = None\n"
+            "if Client is not None:\n    session = Client()\n"
+        )
+        found = ImportedClients.of({"p/imports.py": maker, "p/entry.py": SENDER})
+        assert found == {"p/entry.py": {"session": "httpx.Client"}}
+
+    def test_a_client_made_inside_a_function_is_not(self) -> None:
+        maker = "import httpx\ndef make():\n    session = httpx.Client()\n    return session\n"
+        assert not ImportedClients.of({"p/imports.py": maker, "p/entry.py": SENDER})
+
     def test_a_name_the_file_binds_itself_keeps_its_own_meaning(self) -> None:
         found = ImportedClients.of(
             {"p/imports.py": MAKER, "p/entry.py": "from .imports import *\nsession = object()\n"}
