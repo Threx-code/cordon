@@ -38,7 +38,6 @@
   "analysis/nix/nix_code": "analysis/nix/nix_code",
   "analysis/python/analyzer_core": "analysis/python/analyzer_core",
   "analysis/python/data_flows": "analysis/python/data_flows",
-  "analysis/python/environ_carry": "analysis/python/environ_carry",
   "analysis/python/execution_flows": "analysis/python/execution_flows",
   "analysis/python/inert_literals": "analysis/python/inert_literals",
   "analysis/python/py_decoded": "analysis/python/py_decoded",
