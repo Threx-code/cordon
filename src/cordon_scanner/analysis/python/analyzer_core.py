@@ -9,6 +9,7 @@ from typing import ClassVar
 
 from cordon_scanner.analysis.python.py_identity import IDENTITY_COMMANDS, IdentityVariables
 from cordon_scanner.analysis.python.pyfacts import (
+    HTTP_CLIENTS,
     PRIMITIVES,
     AstHit,
     PythonFacts,
@@ -30,6 +31,9 @@ class AnalyzerCore:
         self._aliases: dict[str, str] = {}
         # Local name -> dotted primitive, from `f = os.system`.
         self._bindings: dict[str, str] = {}
+        # `self.x` / `cls.x` -> what it is bound to in this file: `self._session = requests.Session()`
+        # makes `self._session.post` a request (`HTTP_CLIENTS`).
+        self._attribute_bindings: dict[str, str] = {}
         # Inner call -> the call that invokes its result. `getattr(os, "system")`
         # resolves to a primitive, but the command it is handed belongs to the
         # enclosing `(...)`, so the two nodes have to be related to read it.
@@ -166,7 +170,7 @@ class AnalyzerCore:
         cache: dict[int, str | None] | None = self.__dict__.get("_dotted_cache")
         links: list[ast.Attribute | ast.Call] = []
         name: str | None = None
-        while isinstance(node, ast.Attribute) or (isinstance(node, ast.Call) and node.args):
+        while isinstance(node, (ast.Attribute, ast.Call)):
             if cache is not None and links and id(node) in cache:
                 name = cache[id(node)]
                 break
@@ -182,6 +186,8 @@ class AnalyzerCore:
                     name = link.attr
                 else:
                     name = f"{name}.{link.attr}" if name else None
+                    # `self._session`, bound in this file to `requests.Session()`, is that client.
+                    name = self._attribute_bindings.get(name, name) if name else None
             else:
                 name = self._called_name(name, link)
             if cache is not None:
@@ -193,6 +199,12 @@ class AnalyzerCore:
         `importlib.import_module("base64")` evaluate to the module, so `__import__("base64").b64decode`
         is `base64.b64decode` -- the spelling droppers use to keep `import base64` and `exec(` off the
         same page; `eval` of a written name is that name. Any other call names nothing."""
+        if callee in HTTP_CLIENTS:
+            # `httpx.Client()` evaluates to a client, so `httpx.Client().post` is a request the way
+            # `requests.post` is (`HTTP_CLIENTS`).
+            return callee
+        if not call.args:
+            return None
         if callee in ("__import__", "importlib.import_module"):
             return PythonFacts.constant(call.args[0]) or None
         if callee == "eval":

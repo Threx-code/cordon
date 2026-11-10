@@ -108,6 +108,35 @@ PRIMITIVES: dict[str, Capability] = {
     "http.client.HTTPSConnection": Capability.EGRESS,
 }
 
+#: Constructors of an HTTP client object, and the methods on it that send a request. A request sent
+#: through a client (`client = httpx.Client(); client.post(url, json=data)`, `with requests.Session()
+#: as s`, `self._session = requests.Session()`) is a request as `requests.post` is: group A (a),
+#: 2026-11-10, where 13 of 17 PyPI units sent what they gathered through one and no flow fact fired.
+HTTP_CLIENTS: frozenset[str] = frozenset(
+    {
+        "requests.Session",
+        "requests.session",
+        "requests.sessions.Session",
+        "httpx.Client",
+        "httpx.AsyncClient",
+        "urllib3.PoolManager",
+        "urllib3.HTTPConnectionPool",
+        "urllib3.HTTPSConnectionPool",
+        "aiohttp.ClientSession",
+    }
+)
+HTTP_CLIENT_METHODS: frozenset[str] = frozenset(
+    {"get", "post", "put", "patch", "delete", "head", "options", "request", "send", "stream",
+     "urlopen"}
+)  # fmt: skip
+PRIMITIVES.update(
+    {
+        f"{client}.{method}": Capability.EGRESS
+        for client in HTTP_CLIENTS
+        for method in HTTP_CLIENT_METHODS
+    }
+)
+
 
 ENVIRONMENT = frozenset({"os.environ", "os.getenv", "os.environb"})
 """The environment primitives, which need a second question asked of them."""
@@ -252,6 +281,9 @@ class AstCall:
 
 class PythonFacts:
     """Stateless facts about Python source."""
+
+    #: Rounds `carried` runs before taking its answer as it stands; it stops sooner at a fixed point.
+    CARRY_ROUNDS: ClassVar[int] = 10
 
     @staticmethod
     def literal_strings(node: ast.AST) -> list[str] | None:
@@ -828,6 +860,18 @@ class PythonFacts:
         functions = PythonSyntax.of(tree, ast.FunctionDef, ast.AsyncFunctionDef)
         carrying: set[tuple[int, str]] = set()
         returning: set[str] = set()
+        # `self.x` / `cls.x` assigned what a source gives: the instance carries it to every method
+        # (`self._device_id = _get_device_id()` in one, `self._device_id` in a request in another).
+        attributes: set[str] = set()
+
+        def attribute_key(node: ast.AST) -> str | None:
+            if (
+                isinstance(node, ast.Attribute)
+                and isinstance(node.value, ast.Name)
+                and node.value.id in ("self", "cls")
+            ):
+                return f"{node.value.id}.{node.attr}"
+            return None
 
         def callee(call: ast.Call) -> str | None:
             func = call.func
@@ -840,27 +884,70 @@ class PythonFacts:
 
         def holds(node: ast.AST, *, deep: bool = True) -> bool:
             parts = PythonSyntax.within(node, kind, ast.Call, ast.Name) if deep else [node]
-            return any(
+            if any(
                 is_source(part)
                 or (isinstance(part, ast.Name) and (scope(part, part.id), part.id) in carrying)
                 or (isinstance(part, ast.Call) and callee(part) in returning)
                 for part in parts
-            )
+            ):
+                return True
+            if not attributes:
+                return False
+            held = PythonSyntax.within(node, ast.Attribute) if deep else [node]
+            return any(attribute_key(part) in attributes for part in held)
 
-        for _ in range(3):
+        # To a fixed point, bounded: a collector is often several helpers deep (tsshare 1.0.2:
+        # platform.node -> three fingerprint helpers -> a hash -> self._device_id -> the payload).
+        for _ in range(PythonFacts.CARRY_ROUNDS):
+            before = (len(carrying), len(returning), len(attributes))
             carrying.update((function, param) for arg, function, param in passed if holds(arg))
             for node in PythonSyntax.nodes(tree):
                 if isinstance(node, ast.Assign) and holds(node.value):
                     carrying.update(
                         (scope(t, t.id), t.id) for t in node.targets if isinstance(t, ast.Name)
                     )
+                    attributes.update(
+                        key for t in node.targets if (key := attribute_key(t)) is not None
+                    )
+                for filled in PythonFacts._filled_by(node, holds):
+                    if isinstance(filled, ast.Name):
+                        carrying.add((scope(filled, filled.id), filled.id))
+                    elif (key := attribute_key(filled)) is not None:
+                        attributes.add(key)
             for function in functions:
                 if function.name not in returning and any(
                     isinstance(part, ast.Return) and part.value is not None and holds(part.value)
                     for part in PythonSyntax.within(function, ast.Return)
                 ):
                     returning.add(function.name)
+            if (len(carrying), len(returning), len(attributes)) == before:
+                break
         return holds
+
+    #: Methods that put their argument into their receiver.
+    FILLS: ClassVar[frozenset[str]] = frozenset(
+        {"append", "extend", "update", "add", "insert", "setdefault", "appendleft", "write",
+         "writelines", "writestr"}
+    )  # fmt: skip
+
+    @staticmethod
+    def _filled_by(node: ast.AST, holds: Callable[..., bool]) -> list[ast.AST]:
+        """The container a statement puts a held value into: `box[k] = v` (item assignment),
+        `box += v`, `box.append(v)` and the other `FILLS`. A dict or list built up a key at a time
+        and sent whole is how a collector is written as often as a literal is (group A (a))."""
+        if isinstance(node, ast.Assign) and holds(node.value):
+            return [t.value for t in node.targets if isinstance(t, ast.Subscript)]
+        if isinstance(node, ast.AugAssign) and holds(node.value):
+            target = node.target
+            return [target.value if isinstance(target, ast.Subscript) else target]
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in PythonFacts.FILLS
+            and any(holds(a) for a in [*node.args, *(k.value for k in node.keywords)])
+        ):
+            return [node.func.value]
+        return []
 
     @staticmethod
     def url_literal(node: ast.AST) -> str | None:

