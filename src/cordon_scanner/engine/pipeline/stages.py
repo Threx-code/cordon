@@ -175,6 +175,7 @@ class ScanStages:
             ctx,
             verdict_dependency_names=Ceilings.verdict_dependency_names(units),
             python_imported_clients=ImportedClients.of_units(units),
+            python_imported_runners=ImportedClients.runners_of_units(units),
         )
         return Hooks.lifted_inherit(ctx)
 

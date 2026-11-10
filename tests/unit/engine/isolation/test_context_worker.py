@@ -396,10 +396,22 @@ class TestTheDocumentIsChecked:
         assert accepted is not None, why
         assert accepted.context["python_imported_clients"] == {"a.js": {"session": "httpx.Client"}}
 
+    def test_imported_runners_cross_as_triples(self) -> None:
+        accepted, why = ContextFacts.accept(
+            self.document(context={"python_imported_runners": [["a.js", "run_cmd", "0,2"]]}),
+            self.units(),
+            self.ctx(),
+        )
+        assert accepted is not None, why
+        assert accepted.context["python_imported_runners"] == {"a.js": {"run_cmd": "0,2"}}
+
     @pytest.mark.parametrize(
         "over",
         [
             {"extra": []},
+            {"context": {"python_imported_runners": [["a.js", "run cmd", "0"]]}},
+            {"context": {"python_imported_runners": [["a.js", "run_cmd", "0;1"]]}},
+            {"context": {"python_imported_runners": [["b.js", "run_cmd", "0"]]}},
             {"context": {"install_hook_paths": ["/etc/passwd"]}},
             {"context": {"config": {}}},
             {"context": {"tree_paths": ["a.js", "b.js"]}},

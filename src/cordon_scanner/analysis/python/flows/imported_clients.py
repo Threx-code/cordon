@@ -16,6 +16,7 @@ no file of the package binds nothing.
 from __future__ import annotations
 
 import ast
+import re
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from pathlib import PurePosixPath
 from typing import Any, ClassVar, Protocol
@@ -43,6 +44,33 @@ class ImportedClients:
     @classmethod
     def of(cls, sources: Mapping[str, str]) -> dict[str, dict[str, str]]:
         """`{path: {name: client constructor}}` for each file that imports a client, and only those."""
+        trees = cls._trees(sources)
+        return cls._follow(trees, {path: cls._made_here(tree) for path, tree in trees.items()})
+
+    @classmethod
+    def runners_of(cls, sources: Mapping[str, str]) -> dict[str, dict[str, str]]:
+        """`{path: {name: "0,2"}}` for each file that imports a function another file of the package
+        defines at its top level and that runs its own parameters at those positions as a command
+        (`ReceivedRuns._runners`): `def run_cmd(cmd): subprocess.check_output(cmd.split())` in
+        `utils.py`, called from the bot handler that took it with `from .utils import run_cmd`.
+        Followed through imports and re-exports like the clients."""
+        trees = cls._trees(sources)
+        if len(trees) < 2:
+            return {}
+        runs = {
+            path: cls._runs_here(trees[path])
+            for path, text in sources.items()
+            if path in trees and cls._SINK_WORDS.search(text)
+        }
+        return cls._follow(trees, {path: runs.get(path, {}) for path in trees}, modules=True)
+
+    #: A file with none of these cannot run a command, so its analyser is not started for it.
+    _SINK_WORDS: ClassVar[re.Pattern[str]] = re.compile(
+        r"subprocess|system|popen|Popen|exec|eval|spawn|compile|getoutput|check_(?:call|output)"
+    )
+
+    @staticmethod
+    def _trees(sources: Mapping[str, str]) -> dict[str, ast.Module]:
         trees: dict[str, ast.Module] = {}
         for path, text in sources.items():
             if not path.endswith(".py"):
@@ -55,14 +83,25 @@ class ImportedClients:
                 continue
             if isinstance(tree, ast.Module):
                 trees[path] = tree
-        exported = {path: cls._made_here(tree) for path, tree in trees.items()}
+        return trees
+
+    @classmethod
+    def _follow(
+        cls,
+        trees: Mapping[str, ast.Module],
+        exported: dict[str, dict[str, str]],
+        *,
+        modules: bool = False,
+    ) -> dict[str, dict[str, str]]:
+        """What each file takes of `exported` (each file's own names) through the package's imports,
+        re-exports included, to a fixed point."""
         owned = {path: cls._bound_here(tree) for path, tree in trees.items()}
         imported: dict[str, dict[str, str]] = {}
         for _ in range(cls.MAX_ROUNDS):
             changed = False
             for path, tree in trees.items():
                 own = owned[path]
-                for name, client in cls._taken(path, tree, exported, trees):
+                for name, client in cls._taken(path, tree, exported, trees, modules=modules):
                     if (
                         name not in own
                         and exported[path].get(name) is None
@@ -74,6 +113,26 @@ class ImportedClients:
             if not changed:
                 break
         return {path: names for path, names in imported.items() if names}
+
+    @staticmethod
+    def _runs_here(tree: ast.Module) -> dict[str, str]:
+        """Top-level functions that run one of their own parameters, by position."""
+        from cordon_scanner.analysis.python.pyast import PythonAnalyzer
+
+        top = {
+            node.name
+            for node in ImportedClients._module_level(tree)
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        }
+        if not top:
+            return {}
+        analyzer = PythonAnalyzer._prepared(tree)
+        analyzer._walk(tree)
+        return {
+            name: ",".join(str(i) for i in sorted(positions))
+            for name, positions in analyzer._runners(tree).items()
+            if name in top
+        }
 
     @staticmethod
     def _made_here(tree: ast.Module) -> dict[str, str]:
@@ -119,6 +178,18 @@ class ImportedClients:
             if binds is not None:
                 names.update(binds(node))
         return frozenset(names)
+
+    @classmethod
+    def runners_of_units(cls, units: Sequence[ScannedFile]) -> dict[str, dict[str, str]] | None:
+        """`runners_of` over a scan's Python files (`ScanContext.python_imported_runners`)."""
+        sources = {
+            unit.path: unit.content.text
+            for unit in units
+            if unit.path.endswith(".py") and not unit.content.is_binary
+        }
+        if len(sources) < 2:
+            return None
+        return cls.runners_of(sources) or None
 
     @classmethod
     def of_units(cls, units: Sequence[ScannedFile]) -> dict[str, dict[str, str]] | None:
@@ -172,17 +243,23 @@ class ImportedClients:
         tree: ast.Module,
         exported: Mapping[str, Mapping[str, str]],
         trees: Mapping[str, ast.Module],
+        *,
+        modules: bool = False,
     ) -> list[tuple[str, str]]:
-        """The client names this file's `from ... import` statements take from the package."""
+        """The names this file's `from ... import` statements take from the package. With
+        `modules`, `from . import core` also takes what `core.py` exports, by its bare names: the
+        file reaches them as `core.run_cmd`, and the analyser matches a call by that last name."""
         out: list[tuple[str, str]] = []
         for node in ast.walk(tree):
             if not isinstance(node, ast.ImportFrom):
                 continue
             source = cls._module_file(path, node, trees)
-            if source is None or source == path:
+            if source == path:
                 continue
-            offered = exported.get(source, {})
+            offered = exported.get(source, {}) if source is not None else {}
             for alias in node.names:
+                if source is None and not modules:
+                    break
                 if alias.name == "*":
                     out.extend(
                         (name, client)
@@ -191,6 +268,19 @@ class ImportedClients:
                     )
                 elif alias.name in offered:
                     out.append((alias.asname or alias.name, offered[alias.name]))
+                elif modules:
+                    named = ast.ImportFrom(
+                        module=f"{node.module}.{alias.name}" if node.module else alias.name,
+                        names=[],
+                        level=node.level,
+                    )
+                    member = cls._module_file(path, named, trees)
+                    if member is not None and member != path:
+                        out.extend(
+                            (name, value)
+                            for name, value in exported.get(member, {}).items()
+                            if not name.startswith("_")
+                        )
         return out
 
     @staticmethod

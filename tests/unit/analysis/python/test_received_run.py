@@ -139,6 +139,21 @@ class TestWhatAnotherChannelHandsTheProgram:
         assert RunKit.received(source) == ["received run: os.system at=load"]
 
 
+class TestAHandlerOfAnOwnWireProtocol:
+    def test_a_handler_given_the_connection_and_the_message_runs_it(self) -> None:
+        source = (
+            "import base64\nimport subprocess\n"
+            "def handle_command(conn, message):\n"
+            "    cmd = base64.b64decode(message['command']).decode()\n"
+            "    subprocess.run(cmd, shell=True)\n"
+        )
+        assert RunKit.received(source) == ["received run: subprocess.run at=call"]
+
+    def test_the_same_handler_answering_with_a_fixed_reply_does_not(self) -> None:
+        source = "def handle_command(conn, message):\n    conn.send(b'ok')\n"
+        assert RunKit.received(source) == []
+
+
 class TestOrdinaryProgramsOnTheSameChannels:
     def test_a_chat_bot_that_replies_with_text(self) -> None:
         source = (
@@ -204,6 +219,10 @@ class TestOrdinaryProgramsOnTheSameChannels:
             "def handle_message(message):\n"
             "    subprocess.run(message, shell=True)\n"
         )
+        assert RunKit.received(source) == []
+
+    def test_a_handler_given_only_a_message_and_no_chat_library(self) -> None:
+        source = "import subprocess\ndef handle_message(message):\n    subprocess.run(message, shell=True)\n"
         assert RunKit.received(source) == []
 
     def test_a_pipe_read_with_no_size_is_a_local_process(self) -> None:
