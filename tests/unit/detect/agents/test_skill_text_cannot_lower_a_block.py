@@ -24,7 +24,7 @@ class SkillScans:
     def severity(tmp_path: Path, body: str) -> Severity | None:
         path = tmp_path / "skills" / "s" / "SKILL.md"
         path.parent.mkdir(parents=True)
-        path.write_text(body)
+        path.write_text(body, encoding="utf-8")
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
         hits = [f for f in result.findings if f.rule_id == _RULE]
         return max((f.severity for f in hits), default=None, key=lambda s: s.value)
