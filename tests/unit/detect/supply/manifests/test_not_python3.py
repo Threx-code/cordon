@@ -200,6 +200,28 @@ class TestPackageSourceThatDoesNotParse:
         assert UnparsedKit.gapped(result)
         assert not result.content_complete
 
+    @pytest.mark.parametrize(
+        "entry_points",
+        ["ENTRY_POINTS", "entries()", "{'console_scripts': [f'pkg-run = {target}']}"],
+    )
+    def test_commands_setup_py_hides_make_every_module_running(
+        self, tmp_path: Path, entry_points: str
+    ) -> None:
+        # A non-literal entry_points= hides which modules the commands run: fail closed, every
+        # non-test module of the package is running for this check (lead, 2026-11-10).
+        newer = UnparsedKit.newer_than_this_python()
+        setup = (
+            "from setuptools import setup\n"
+            "target = 'pkg.cli:main'\nENTRY_POINTS = {}\n"
+            "def entries():\n    return {}\n"
+            f"setup(name='pkg', packages=['pkg'], entry_points={entry_points})\n"
+        )
+        result = UnparsedKit.sdist(
+            tmp_path, {"setup.py": setup, "pkg/__init__.py": "VERSION = '1'\n", "pkg/cli.py": newer}
+        )
+        assert UnparsedKit.gapped(result)
+        assert not result.content_complete
+
     def test_a_python_2_token_before_garbage_is_still_a_gap(self, tmp_path) -> None:
         result = UnparsedKit.sdist(tmp_path, {"pkg/__init__.py": 'print "hello"\n' + self.BROKEN})
         assert UnparsedKit.gapped(result)

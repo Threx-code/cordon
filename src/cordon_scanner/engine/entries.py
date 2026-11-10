@@ -121,6 +121,9 @@ class PythonScripts:
     setup.cfg, and a literal `entry_points=` in setup.py."""
 
     GROUPS: ClassVar[tuple[str, ...]] = ("console_scripts", "gui_scripts")
+    #: A setup.py whose `entry_points=` is not a literal: its commands could name any module, so
+    #: every non-test module of that archive is running for the unparsed check (fail closed).
+    UNKNOWN: ClassVar[str] = "*"
 
     @staticmethod
     def targets(units: list[FileUnit]) -> frozenset[str]:
@@ -134,10 +137,14 @@ class PythonScripts:
             text = unit.content.text if not unit.content.is_binary else ""
             for target in PythonScripts._declared(name, text):
                 modules.add((archive, target.split(":", 1)[0].strip()))
+        unknown = {archive for archive, module in modules if module == PythonScripts.UNKNOWN}
         found: set[str] = set()
         for unit in units:
             archive, sep, member = unit.path.rpartition("!")
             if not sep or not member.endswith(".py"):
+                continue
+            if archive in unknown and not PythonScripts._test_or_setup(member):
+                found.add(unit.path)
                 continue
             for owner, module in modules:
                 if owner != archive or not module:
@@ -146,6 +153,17 @@ class PythonScripts:
                 if ("/" + member).endswith((f"/{stem}.py", f"/{stem}/__init__.py")):
                     found.add(unit.path)
         return frozenset(found)
+
+    @staticmethod
+    def _test_or_setup(member: str) -> bool:
+        parts = member.split("/")
+        name = parts[-1]
+        return (
+            name == "setup.py"
+            or name.startswith("test_")
+            or name.endswith("_test.py")
+            or any(p in ("tests", "test", "testing") for p in parts[:-1])
+        )
 
     @staticmethod
     def _declared(name: str, text: str) -> list[str]:
@@ -205,14 +223,23 @@ class PythonScripts:
             return []  # S2: covered: a setup.py that does not parse is MANIFEST.UNPARSED
         out: list[str] = []
         for node in ast.walk(tree):
-            if not isinstance(node, ast.keyword) or node.arg != "entry_points":
+            if not isinstance(node, ast.keyword) or node.arg not in ("entry_points", "scripts"):
+                continue
+            if node.arg == "scripts":
+                # Script files by path; built at run time, they could be any file (fail closed).
+                try:
+                    ast.literal_eval(node.value)
+                except (ValueError, SyntaxError, TypeError, RecursionError, MemoryError):
+                    # S2: recorded as UNKNOWN: scripts built at run time could name any module.
+                    return [PythonScripts.UNKNOWN]
                 continue
             try:
                 value = ast.literal_eval(node.value)
             except (ValueError, SyntaxError, TypeError, RecursionError, MemoryError):
-                continue
+                # S2: recorded as UNKNOWN: commands built at run time could name any module.
+                return [PythonScripts.UNKNOWN]
             if not isinstance(value, dict):
-                continue
+                return [PythonScripts.UNKNOWN]
             for group in PythonScripts.GROUPS:
                 lines = value.get(group, [])
                 lines = [lines] if isinstance(lines, str) else lines
