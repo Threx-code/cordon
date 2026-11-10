@@ -335,6 +335,16 @@ class CompositeGrading:
             # 27 formulas in one tap). A cask runs unsandboxed and keeps the rule.
             return True
 
+        if (
+            rule.id == CompositeRuleIds.PERSIST_RULE
+            and LoadPath.skill_script(content.path, self.ctx)
+            and IntentSignals.persists_only_a_variable(content, hits)
+        ):
+            # A skill's script that stores its own variable in the shell startup files as
+            # `export NAME=value`: configuration, not a foothold. The file names no fetch, alias,
+            # command, scheduled job, loader, path or proxy variable (note 18).
+            return True
+
         if in_hook and SourcePaths.is_editor_extension(content.path):
             # The same reasoning, for the two rules a coding extension trips by talking: its help
             # text names `~/.zshrc` and its secret redactor names `hooks.slack.com`, megabytes of
