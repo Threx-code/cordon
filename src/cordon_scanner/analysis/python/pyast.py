@@ -201,6 +201,7 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, SourcedFlows, AnalyzerCore):
             analyzer._identity_sent(tree)
             analyzer._environment_sent(tree)
             analyzer._secret_sent(tree)
+            analyzer._hidden_requests(tree)
         return analyzer._hits
 
     @classmethod
