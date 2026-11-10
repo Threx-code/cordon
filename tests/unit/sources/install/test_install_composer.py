@@ -12,8 +12,8 @@ from typing import Any, ClassVar
 
 import pytest
 
-from cordon_scanner.sources.install.composer import ComposerPlanner
 from cordon_scanner.sources.install.hashes import CommitArchive
+from cordon_scanner.sources.install.managers.composer import ComposerPlanner
 from cordon_scanner.sources.install.plan import InstallRefused
 
 COMMIT = "f4393b648b78a5408747de94fca38beb5f7e9ef8"

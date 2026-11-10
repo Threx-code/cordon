@@ -15,13 +15,13 @@ if TYPE_CHECKING:
 class ComposerTools:
     @staticmethod
     def installs(args: list[str]) -> bool:
-        from cordon_scanner.sources.install.composer import ComposerPlanner
+        from cordon_scanner.sources.install.managers.composer import ComposerPlanner
 
         return ComposerPlanner.installs(args)
 
     @staticmethod
     def composer(composer: str, args: list[str], context: InstallContext) -> int:
-        from cordon_scanner.sources.install.composer import ComposerPlanner
+        from cordon_scanner.sources.install.managers.composer import ComposerPlanner
         from cordon_scanner.sources.install.plan import PrivateDirectory, Subprocesses
 
         project = Path.cwd()

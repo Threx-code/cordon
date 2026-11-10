@@ -23,13 +23,13 @@ class DotnetTools:
 
     @staticmethod
     def installs(args: list[str]) -> bool:
-        from cordon_scanner.sources.install.nuget import NuGetPlanner
+        from cordon_scanner.sources.install.managers.nuget import NuGetPlanner
 
         return NuGetPlanner.installs(args)
 
     @classmethod
     def dotnet(cls, dotnet: str, args: list[str], context: InstallContext) -> int:
-        from cordon_scanner.sources.install.nuget import NuGetPlanner
+        from cordon_scanner.sources.install.managers.nuget import NuGetPlanner
         from cordon_scanner.sources.install.plan import PrivateDirectory, Subprocesses
 
         if args[0] == "tool":
@@ -62,7 +62,7 @@ class DotnetTools:
 
     @classmethod
     def _tool(cls, dotnet: str, args: list[str], context: InstallContext) -> int:
-        from cordon_scanner.sources.install.nuget import NuGetPlanner
+        from cordon_scanner.sources.install.managers.nuget import NuGetPlanner
         from cordon_scanner.sources.install.plan import InstallRefused, PrivateDirectory
 
         verb, rest = args[0], args[1:]

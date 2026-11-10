@@ -48,13 +48,13 @@ class NativeTools:
 
     @staticmethod
     def conda_installs(args: list[str]) -> bool:
-        from cordon_scanner.sources.install.conda import CondaPlanner
+        from cordon_scanner.sources.install.managers.conda import CondaPlanner
 
         return CondaPlanner.installs(args)
 
     @staticmethod
     def pub_installs(args: list[str]) -> bool:
-        from cordon_scanner.sources.install.pub import PubPlanner
+        from cordon_scanner.sources.install.managers.pub import PubPlanner
 
         return PubPlanner.installs(args)
 
@@ -217,8 +217,8 @@ class NativeTools:
 
     @classmethod
     def pub(cls, tool: str, args: list[str], context: InstallContext) -> int:
+        from cordon_scanner.sources.install.managers.pub import PubPlanner
         from cordon_scanner.sources.install.plan import PrivateDirectory, Subprocesses
-        from cordon_scanner.sources.install.pub import PubPlanner
 
         project = Path.cwd()
         with PrivateDirectory.made("cordon-pub-") as cache:
@@ -235,7 +235,7 @@ class NativeTools:
 
     @classmethod
     def conda(cls, conda: str, args: list[str], context: InstallContext) -> int:
-        from cordon_scanner.sources.install.conda import CondaPlanner
+        from cordon_scanner.sources.install.managers.conda import CondaPlanner
         from cordon_scanner.sources.install.plan import PrivateDirectory, Subprocesses
 
         with PrivateDirectory.made("cordon-conda-") as scratch:

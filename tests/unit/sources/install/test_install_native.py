@@ -315,7 +315,7 @@ sdks:
 
 class TestPub:
     def test_hosted_packages_with_their_sha256_and_sdk_and_path_left_local(self) -> None:
-        from cordon_scanner.sources.install.pub import PubPlanner
+        from cordon_scanner.sources.install.managers.pub import PubPlanner
 
         files = PubPlanner.files(PubKit.LOCK)
         assert [(f.name, f.version) for f in files] == [("path", "1.9.0")]
@@ -323,7 +323,7 @@ class TestPub:
         assert files[0].digest == bytes.fromhex(PubKit.SHA)
 
     def test_a_git_package_or_another_host_is_refused(self) -> None:
-        from cordon_scanner.sources.install.pub import PubPlanner
+        from cordon_scanner.sources.install.managers.pub import PubPlanner
 
         git = PubKit.LOCK.replace("source: hosted", "source: git", 1)
         with pytest.raises(InstallRefused, match="git source"):
@@ -335,7 +335,7 @@ class TestPub:
     def test_the_resolve_uses_a_private_cache_and_a_failure_puts_the_project_back(
         self, tmp_path: Path
     ) -> None:
-        from cordon_scanner.sources.install.pub import PubPlanner
+        from cordon_scanner.sources.install.managers.pub import PubPlanner
 
         (tmp_path / "pubspec.yaml").write_text("name: app\n", encoding="utf-8")
         seen: list[dict[str, str]] = []
@@ -355,7 +355,7 @@ class TestPub:
         assert not (tmp_path / "pubspec.lock").exists()
 
     def test_what_runs_after_enforces_the_lock(self) -> None:
-        from cordon_scanner.sources.install.pub import PubPlanner
+        from cordon_scanner.sources.install.managers.pub import PubPlanner
 
         assert PubPlanner.locked("flutter") == ["flutter", "pub", "get", "--enforce-lockfile"]
         assert PubPlanner.installs(["pub", "get"]) and not PubPlanner.installs(["pub", "deps"])
@@ -378,7 +378,7 @@ class CondaKit:
 
 class TestConda:
     def test_the_dry_run_lists_every_file_with_its_sha256(self, tmp_path: Path) -> None:
-        from cordon_scanner.sources.install.conda import CondaPlanner
+        from cordon_scanner.sources.install.managers.conda import CondaPlanner
 
         seen: list[tuple[list[str], dict[str, str]]] = []
 
@@ -399,7 +399,7 @@ class TestConda:
         )
 
     def test_another_channel_host_is_refused(self) -> None:
-        from cordon_scanner.sources.install.conda import CondaPlanner
+        from cordon_scanner.sources.install.managers.conda import CondaPlanner
 
         entry = {**CondaKit.ENTRY, "url": "https://channel.example.invalid/x/ncurses-6.5-0.conda"}
         with pytest.raises(InstallRefused, match=r"conda\.anaconda\.org"):
@@ -408,7 +408,7 @@ class TestConda:
     def test_the_scanned_files_go_to_condas_cache_under_their_own_names(
         self, tmp_path: Path
     ) -> None:
-        from cordon_scanner.sources.install.conda import CondaPlanner
+        from cordon_scanner.sources.install.managers.conda import CondaPlanner
 
         file = CondaPlanner.package_file(CondaKit.ENTRY)
         (tmp_path / file.filename).write_bytes(b"scanned")
@@ -434,7 +434,7 @@ class TestConda:
         assert command == ["create", "-y", "-n", "demo", "--file", "/s/explicit.txt", "--offline"]
 
     def test_what_counts_as_an_install(self) -> None:
-        from cordon_scanner.sources.install.conda import CondaPlanner
+        from cordon_scanner.sources.install.managers.conda import CondaPlanner
 
         assert CondaPlanner.installs(["install", "x"]) and CondaPlanner.installs(["env", "create"])
         assert not CondaPlanner.installs(["list"]) and not CondaPlanner.installs(
