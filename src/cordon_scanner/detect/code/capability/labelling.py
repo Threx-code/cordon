@@ -485,6 +485,15 @@ class Labelling:
             for labelled, hit in facts
             if HiddenDestination.applies(hit.detail)
         ]
+        # What arrives on a channel and runs carries its channel with it, as the JavaScript and Go
+        # twins do (`CAP.JS.RECEIVED_RUN`): the receive is the network side of the same act, so a
+        # bot update or a spreadsheet cell that becomes a command satisfies egress + fetch_exec
+        # even where the receive is not a request primitive.
+        hits += [
+            dataclasses.replace(labelled, capability=Capability.EGRESS)
+            for labelled, _ in facts
+            if labelled.rule_id == "AST.PY.RECEIVED_RUN"
+        ]
         # A desktop application or an identity command started where the install reaches. The
         # command being written out whole is the evidence here, not an excuse (`fixed`).
         hits += [

