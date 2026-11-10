@@ -93,22 +93,9 @@ class EnvironmentCarry:
                 return (scope(node, node.id), node.id) in carrying
             if isinstance(node, ast.Subscript):
                 return not whole(node.value) and whole(node.slice)
-            # `E = os.environ.get`: a bound keyed method reads one setting per call; it is not
-            # the environment (delegate-router, review 2026-11-10). `items = os.environ.items`
-            # still is.
-            if isinstance(node, ast.Attribute) and node.attr in KEYED_METHODS and whole(node.value):
-                return False
-            # An if-expression's value is one of its branches, never its test: `url = default if
-            # "URL" not in os.environ else os.environ["URL"]` (c2cciutils, Finance-Ultron,
-            # review 2026-11-10).
-            if isinstance(node, ast.IfExp):
-                return whole(node.body) or whole(node.orelse)
-            # A comparison is one bool, never the environment: `{"ci": "CI" in env}` is a CI
-            # flag, the shape of Rasa's Segment telemetry (convo-new-version-abdo, review
-            # 2026-11-10). Host identity sent unasked from an import, runtime-readout's beacon,
-            # is the beacon rules' (`SUSPECT/MALWARE.EXFIL.BEACON.001`), not this fact's.
-            if isinstance(node, ast.Compare):
-                return False
+            shaped = cls._by_shape(node, whole)
+            if shaped is not None:
+                return shaped
             if isinstance(node, ast.Call):
                 return call_whole(node)
             return any(whole(child) for child in ast.iter_child_nodes(node))
@@ -163,6 +150,27 @@ class EnvironmentCarry:
             return whole(node)
 
         return holds
+
+    @staticmethod
+    def _by_shape(node: ast.AST, whole: Callable[[ast.AST], bool]) -> bool | None:
+        """What a node's own shape decides, None where its parts do (review 2026-11-10).
+
+        * `E = os.environ.get`: a bound keyed method reads one setting per call; it is not the
+          environment (delegate-router). `items = os.environ.items` still is.
+        * An if-expression's value is one of its branches, never its test: `url = default if
+          "URL" not in os.environ else os.environ["URL"]` (c2cciutils, Finance-Ultron).
+        * A comparison is one bool, never the environment: `{"ci": "CI" in env}` is a CI flag,
+          the shape of Rasa's Segment telemetry (convo-new-version-abdo). Host identity sent
+          unasked from an import, runtime-readout's beacon, is the beacon rules' finding
+          (`SUSPECT/MALWARE.EXFIL.BEACON.001`), not this fact's.
+        """
+        if isinstance(node, ast.Attribute) and node.attr in KEYED_METHODS and whole(node.value):
+            return False
+        if isinstance(node, ast.IfExp):
+            return whole(node.body) or whole(node.orelse)
+        if isinstance(node, ast.Compare):
+            return False
+        return None
 
     @staticmethod
     def is_spawn(call: ast.Call) -> bool:
