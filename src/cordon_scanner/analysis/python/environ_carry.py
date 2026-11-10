@@ -77,6 +77,11 @@ class EnvironmentCarry:
                 return (scope(node, node.id), node.id) in carrying
             if isinstance(node, ast.Subscript):
                 return not whole(node.value) and whole(node.slice)
+            # `E = os.environ.get`: a bound keyed method reads one setting per call; it is not
+            # the environment (delegate-router, review 2026-11-10). `items = os.environ.items`
+            # still is.
+            if isinstance(node, ast.Attribute) and node.attr in KEYED_METHODS and whole(node.value):
+                return False
             # A comparison that is itself sent (`{"ci": "CI" in env}`, `any(k in env for k in
             # markers)`) still tells the receiver what the environment holds; one that only
             # steers control flow is never a sent value (runtime-readout, review 2026-11-10).
