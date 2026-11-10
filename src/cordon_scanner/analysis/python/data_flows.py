@@ -661,21 +661,28 @@ class DataFlows(SecretSources, HiddenDestinations):
                 )
             )
             host: str | None = None
+            url: str | None = None
             if destination is not None:
                 literal = PythonFacts.url_literal(destination)
                 if literal is not None:
-                    host = SecretFlow.host_of(literal)
+                    host, url = SecretFlow.host_of(literal), literal
                 elif isinstance(destination, ast.Name):
                     host = urls.get(destination.id)
+            dest = self._dest(tree, node)
             for key in sorted(keys):
-                # A credential store's contents are sent wherever they go, a host the file does
-                # not write down included (a webhook read from the environment).
-                if key == "CREDENTIAL_FILE" or SecretFlow.misdirected(key, host):
-                    self._record(
-                        Capability.CREDENTIAL,
-                        node,
-                        f"secret sent: {key} to {host or '?'}{self._dest(tree, node)}",
-                    )
+                if key.startswith("CREDENTIAL_FILE:"):
+                    # A credential store's contents, sent outside the store's home
+                    # (`SecretSources._store_outside`).
+                    outside = self._store_outside(key, host, url, bool(dest))
+                    if outside is not None:
+                        self._record(
+                            Capability.CREDENTIAL,
+                            node,
+                            f"secret sent: CREDENTIAL_FILE outside={outside} to {host or '?'}{dest}",
+                        )
+                        break
+                elif SecretFlow.misdirected(key, host):
+                    self._record(Capability.CREDENTIAL, node, f"secret sent: {key} to {host}{dest}")
                     break
 
     def _read_from_local_file(self, node: ast.AST) -> bool:

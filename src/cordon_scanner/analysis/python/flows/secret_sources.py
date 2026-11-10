@@ -145,9 +145,10 @@ class SecretSources(AnalyzerCore):
             return self.KEY_NAMES[node.id]
         if isinstance(node, ast.Call):
             opened = self._opened_path(node)
-            if opened is not None and SecretFlow.store_of(self._path_parts(opened)):
+            store = SecretFlow.store_of(self._path_parts(opened)) if opened is not None else None
+            if store is not None:
                 # The contents of a credential store read from disk (http_query 0.0.1).
-                return "CREDENTIAL_FILE"
+                return f"CREDENTIAL_FILE:{store}"
         name: ast.AST | None = None
         if isinstance(node, ast.Subscript) and self._dotted(node.value) in (
             "os.environ",
@@ -165,6 +166,39 @@ class SecretSources(AnalyzerCore):
             return name.value if SecretFlow.home_of(name.value) else None
         return None
 
+    @staticmethod
+    def _store_outside(key: str, host: str | None, url: str | None, hidden: bool) -> str | None:
+        """Where a credential store's contents went outside the store's home, as a class, or None
+        for a send inside it (lead's grading, 2026-11-10; 15 of 1,063 benign units sent a store at
+        all, mostly to their own registry or netrc host):
+        - `hidden`: a destination the file kept hidden (decoded, reversed, chr-built);
+        - `chat` / `ip`: a drop point (chat, webhook, paste, tunnel) or a raw IP;
+        - `home`: a fixed-home store (aws, gcloud, azure, ssh) sent to a host outside its service;
+        - `unknown`: a fixed-home store sent to a host the file does not write down.
+        Stores that name their own hosts (netrc, git, gh, docker, kube, npmrc, pypirc) are outside
+        only by the first two classes."""
+        from cordon_scanner.analysis.javascript.js_flow import JsFlow
+        from cordon_scanner.analysis.shared.credential_homes import SecretFlow
+
+        if hidden:
+            return "hidden"
+        # The URL as written when there is one: a drop point can live under a path
+        # (`discord.com/api/webhooks`).
+        kind = JsFlow.classify(url or f"https://{host}/")[1] if host else "unknown"
+        if kind == "drop":
+            return "chat"
+        if kind == "ip":
+            return "ip"
+        family = key.partition(":")[2]
+        fixed = SecretFlow.FIXED_HOMES.get(family)
+        if fixed is None:
+            return None
+        if host is None:
+            return "unknown"
+        if any(host == s or host.endswith("." + s) for s in fixed):
+            return None
+        return "home"
+
     def _carried_by_receiver(self, call: ast.Call, carrying: dict[str, str]) -> None:
         """A receiver that takes a secret in: a reader handed a credential store's path
         (`config.read(path)`, configparser; http_query 0.0.1), or a container filled with a
@@ -178,10 +212,13 @@ class SecretSources(AnalyzerCore):
         receiver = func.value.id
         if receiver in carrying or not call.args:
             return
-        if func.attr in ("read", "read_file") and SecretFlow.store_of(
-            self._path_parts(call.args[0])
-        ):
-            carrying[receiver] = "CREDENTIAL_FILE"
+        store = (
+            SecretFlow.store_of(self._path_parts(call.args[0]))
+            if func.attr in ("read", "read_file")
+            else None
+        )
+        if store is not None:
+            carrying[receiver] = f"CREDENTIAL_FILE:{store}"
             return
         if func.attr in Containers.FILLS:
             for argument in call.args:

@@ -64,7 +64,7 @@ CREDENTIAL_HOMES: Final[tuple[tuple[re.Pattern[str], Home], ...]] = (
     (
         # The contents of a credential store on disk (`SecretFlow.store_of`): no client sends the
         # file itself anywhere (group A (a): http_query 0.0.1 posted ~/.aws/credentials).
-        re.compile(r"^CREDENTIAL_FILE$"),
+        re.compile(r"^CREDENTIAL_FILE(?::\w+)?$"),
         Home("a credential store", homeless=True),
     ),
     (
@@ -163,23 +163,43 @@ _HOST: Final = re.compile(r"^[a-z][a-z0-9+.-]*://(?:[^@/\s]*@)?(\[[0-9a-f:.]+\]|
 class SecretFlow:
     """Where a credential belongs, and whether a host is outside it."""
 
-    #: Where services keep credentials on disk: the same stores `CredentialSweep` counts.
-    STORES: Final = re.compile(
-        r"\.ssh/(?:id_(?:rsa|ed25519|ecdsa|dsa)|identity)\b|\.aws/credentials\b|(?<![\w.])\.npmrc\b"
-        r"|(?<![\w.])\.netrc\b|\.kube/config\b|\.docker/config\.json\b|\.config/gh/hosts\.ya?ml\b"
-        r"|(?<![\w.])\.git-credentials\b|(?<![\w.])\.pypirc\b"
-        r"|\.config/gcloud/(?:credentials\.db|application_default_credentials\.json)"
-        r"|\.azure/(?:accessTokens|msal_token_cache)"
-    )
+    #: Where services keep credentials on disk, by store: the same stores `CredentialSweep` counts.
+    STORES: Final[dict[str, re.Pattern[str]]] = {
+        name: re.compile(pattern)
+        for name, pattern in {
+            "ssh": r"\.ssh/(?:id_(?:rsa|ed25519|ecdsa|dsa)|identity)\b",
+            "aws": r"\.aws/credentials\b",
+            "npmrc": r"(?<![\w.])\.npmrc\b",
+            "netrc": r"(?<![\w.])\.netrc\b",
+            "kube": r"\.kube/config\b",
+            "docker": r"\.docker/config\.json\b",
+            "gh": r"\.config/gh/hosts\.ya?ml\b",
+            "git": r"(?<![\w.])\.git-credentials\b",
+            "pypirc": r"(?<![\w.])\.pypirc\b",
+            "gcloud": r"\.config/gcloud/(?:credentials\.db|application_default_credentials\.json)",
+            "azure": r"\.azure/(?:accessTokens|msal_token_cache)",
+        }.items()
+    }
+    #: Stores whose credentials authenticate to one fixed service: sent anywhere else, or to a host
+    #: the file does not write down, they left their home. `ssh` has no host: its keys sign locally.
+    #: The other stores name their own hosts (a registry, a netrc machine): only a send to a hidden
+    #: or chat/tunnel/raw-IP destination is outside them (`SecretSources._store_outside`).
+    FIXED_HOMES: Final[dict[str, tuple[str, ...]]] = {
+        "ssh": (),
+        "aws": ("amazonaws.com", "aws.amazon.com", "amazonaws.com.cn"),
+        "gcloud": ("googleapis.com", "google.com"),
+        "azure": ("microsoftonline.com", "azure.com", "windows.net", "microsoft.com"),
+    }
 
     @staticmethod
-    def store_of(path_parts: list[str]) -> bool:
-        """Whether a path, written whole or in parts (`os.path.join(home, ".aws", "credentials")`),
-        names a credential store."""
+    def store_of(path_parts: list[str]) -> str | None:
+        """The credential store a path names, written whole or in parts
+        (`os.path.join(home, ".aws", "credentials")`), or None."""
         joined = "/".join(p.strip("/") for p in path_parts if p)
-        return bool(SecretFlow.STORES.search(joined)) or any(
-            SecretFlow.STORES.search(p) for p in path_parts
-        )
+        for name, pattern in SecretFlow.STORES.items():
+            if pattern.search(joined) or any(pattern.search(p) for p in path_parts):
+                return name
+        return None
 
     @staticmethod
     def home_of(name: str) -> Home | None:

