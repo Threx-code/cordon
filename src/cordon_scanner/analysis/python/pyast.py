@@ -301,6 +301,15 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, SourcedFlows, AnalyzerCore):
     def _bind_import_from(self, node: ast.ImportFrom) -> None:
         if node.module and not node.level:
             for alias in node.names:
+                if alias.name == "*":
+                    # `from base64 import *` binds every public name of the module: each primitive
+                    # it holds resolves bare (`b16decode(x)` is `base64.b16decode`; nai 1.4).
+                    prefix = f"{node.module}."
+                    for primitive in PRIMITIVES:
+                        tail = primitive[len(prefix) :]
+                        if primitive.startswith(prefix) and "." not in tail:
+                            self._aliases.setdefault(tail, primitive)
+                    continue
                 self._aliases[alias.asname or alias.name] = f"{node.module}.{alias.name}"
 
     def _bind_assignment(self, node: ast.Assign) -> None:
