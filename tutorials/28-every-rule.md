@@ -2,7 +2,7 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,505 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,507 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -620,7 +620,7 @@ rule's own samples.
 
 ## Exfiltration
 
-27 rules.
+28 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -633,6 +633,7 @@ rule's own samples.
 | `MALWARE.EXFIL.FLOW_RAW_CHANNEL.001` | critical | Sends what a command printed, or the user's files, over a channel of its own |
 | `MALWARE.EXFIL.FLOW_TO_DROP.001` | critical | Sends this machine's secrets or identity to a drop point |
 | `MALWARE.EXFIL.HIDDEN_DESTINATION.001` | critical | Install script contacts an address it spells out in character codes |
+| `MALWARE.EXFIL.HIDDEN_DESTINATION.002` | high | Code sends the machine's identity, environment or a credential to a host it hides |
 | `MALWARE.EXFIL.INSTALL_CALLBACK.001` | critical | Install script calls back to a drop point |
 | `MALWARE.EXFIL.SCRIPT_CALLBACK.001` | high | Package script calls back to an interaction service |
 | `MALWARE.EXFIL.TRACKING_CALLBACK.001` | critical | Install script reports to a host named for this install |
@@ -1529,7 +1530,7 @@ rule's own samples.
 
 ## Install-time code
 
-20 rules.
+21 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -1538,6 +1539,7 @@ rule's own samples.
 | `MALWARE.INSTALL.DECODED_LAUNCH.001` | critical | An install script decodes content and starts a process |
 | `MALWARE.INSTALL.DISGUISED_PROGRAM.001` | critical | Install code turns a file shipped as data into a program |
 | `MALWARE.INSTALL.FETCH_EXEC.001` | critical | Install script fetches and executes remote content |
+| `MALWARE.INSTALL.FOREIGN_PROGRAM.001` | high | Install code starts a desktop application or an identity command |
 | `MALWARE.INSTALL.GYP_COMMAND.001` | critical | Native-build file runs a script at install |
 | `MALWARE.INSTALL.HIDDEN_ACTION.001` | critical | An install script hides a process, request or credential read inside a string it executes |
 | `MALWARE.INSTALL.NETWORK_PROBE.001` | high | Install script calls a network-probing tool |

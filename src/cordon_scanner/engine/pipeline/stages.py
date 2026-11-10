@@ -13,6 +13,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from cordon_scanner.analysis.python.flows.imported_clients import ImportedClients
 from cordon_scanner.decide.code_model import CodeModelPass
 from cordon_scanner.detect.base import (
     FileUnit,
@@ -170,7 +171,11 @@ class ScanStages:
             install_deferred_lines=deferred,
             ci_hook_paths=ctx.ci_hook_paths | frozenset(ci_scripts),
         )
-        ctx = replace(ctx, verdict_dependency_names=Ceilings.verdict_dependency_names(units))
+        ctx = replace(
+            ctx,
+            verdict_dependency_names=Ceilings.verdict_dependency_names(units),
+            python_imported_clients=ImportedClients.of_units(units),
+        )
         return Hooks.lifted_inherit(ctx)
 
     def detect(

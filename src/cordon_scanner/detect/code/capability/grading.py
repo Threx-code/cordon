@@ -860,7 +860,8 @@ class CompositeGrading:
             # A command channel -- what arrives on a connection, run -- is not a routine a
             # caller asks for; it is never lowered for running only when called.
             and not any(
-                hit.rule_id in ("CAP.GO.RECEIVED_RUN", "CAP.JS.RECEIVED_RUN") for hit in hits
+                hit.rule_id in ("CAP.GO.RECEIVED_RUN", "CAP.JS.RECEIVED_RUN", "AST.PY.RECEIVED_RUN")
+                for hit in hits
             )
         ):
             # Fetch-and-run is HIGH where it runs on its own: an install hook, a pipeline, a

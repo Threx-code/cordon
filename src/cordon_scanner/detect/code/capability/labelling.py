@@ -8,6 +8,7 @@ not accusations; the composite reasoning in the detector is what combines them."
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from typing import TYPE_CHECKING, ClassVar
 
@@ -20,7 +21,10 @@ from cordon_scanner.detect.base import (
     ScanContext,
 )
 from cordon_scanner.detect.code.capability.build_output import BuildOutput
+from cordon_scanner.detect.code.capability.fact_ids import PythonFactIds
+from cordon_scanner.detect.code.capability.hidden_destination import HiddenDestination
 from cordon_scanner.detect.code.capability.hits import CapabilityHit
+from cordon_scanner.detect.code.capability.install_programs import InstallPrograms
 from cordon_scanner.detect.code.capability.javascript import JavaScriptCapabilities
 from cordon_scanner.detect.code.capability.memo import CapabilityMemo
 from cordon_scanner.detect.code.capability.text_position import TextPosition
@@ -453,58 +457,45 @@ class Labelling:
             else content.text
         )
         resolved = PythonAnalyzer.analyse(
-            source, follow_literals=not SourcePaths.is_test_material_here(content.path, ctx)
+            source,
+            follow_literals=not SourcePaths.is_test_material_here(content.path, ctx),
+            imported_clients=(ctx.python_imported_clients or {}).get(content.path),
         )
+        hits = [
+            CapabilityHit(
+                capability=hit.capability,
+                rule_id=PythonFactIds.rule_id(hit.detail, hit.capability),
+                byte_start=min(
+                    cls._span_of_line(content, hit.line)[0] + hit.column,
+                    cls._span_of_line(content, hit.line)[1],
+                ),
+                byte_end=cls._span_of_line(content, hit.line)[1],
+                line=hit.line,
+                fixed=hit.fixed_command,
+                resolved=True,
+            )
+            for hit in resolved
+        ]
+        # What the machine holds sent to a destination the code hides -- a URL decoded, reversed
+        # or built from character codes (` dest=decoded`) -- is a second fact beside the send:
+        # nobody's own API is a host the code will not write down (`HiddenDestination`).
+        facts = list(zip(hits, resolved, strict=True))
+        hits += [
+            dataclasses.replace(labelled, rule_id=HiddenDestination.FACT)
+            for labelled, hit in facts
+            if HiddenDestination.applies(hit.detail)
+        ]
+        # A desktop application or an identity command started where the install reaches. The
+        # command being written out whole is the evidence here, not an excuse (`fixed`).
+        hits += [
+            dataclasses.replace(labelled, rule_id=InstallPrograms.FACT, fixed=False)
+            for labelled, hit in facts
+            if hit.capability is Capability.SPAWN
+            and InstallPrograms.foreign(hit.command)
+            and ctx.install_hook_reaches(content.path, hit.line)
+        ]
         return (
-            [
-                CapabilityHit(
-                    capability=hit.capability,
-                    rule_id=(
-                        "AST.PY.IDENTITY_SENT"
-                        if hit.detail.startswith("identity sent")
-                        else "AST.PY.ENVIRONMENT_SENT"
-                        if hit.detail.startswith("environment sent")
-                        else "AST.PY.SECRET_SENT"
-                        if hit.detail.startswith("secret sent")
-                        # A payload carried encoded, written out and made runnable or run.
-                        else "AST.PY.DECODED_DROP_RUN"
-                        if hit.detail.endswith(
-                            (
-                                "a decoded file runnable",
-                                "runs a decoded file",
-                                "decoded file as code",
-                            )
-                        )
-                        # A spawn, request or credential read written inside a string the file
-                        # then executes. See `MALWARE.INSTALL.HIDDEN_ACTION.001`.
-                        else "AST.PY.UNSAFE_MODEL_LOAD"
-                        if hit.detail.startswith("unsafe model load")
-                        else "AST.PY.REMOTE_MODEL_CODE"
-                        if hit.detail.startswith("remote model code")
-                        else "AST.PY.UNSAFE_MODEL_OPTION"
-                        if hit.detail.startswith("unsafe model option")
-                        else "AST.PY.HIDDEN_ACTION"
-                        if hit.detail.startswith("executed literal")
-                        and hit.capability
-                        in (
-                            Capability.SPAWN,
-                            Capability.EGRESS,
-                            Capability.FETCH_EXEC,
-                            Capability.CREDENTIAL,
-                        )
-                        else f"AST.PY.{hit.capability.name}"
-                    ),
-                    byte_start=min(
-                        cls._span_of_line(content, hit.line)[0] + hit.column,
-                        cls._span_of_line(content, hit.line)[1],
-                    ),
-                    byte_end=cls._span_of_line(content, hit.line)[1],
-                    line=hit.line,
-                    fixed=hit.fixed_command,
-                    resolved=True,
-                )
-                for hit in resolved
-            ],
+            hits,
             [embedded.Command(text=hit.command, line=hit.line) for hit in resolved if hit.command],
         )
 

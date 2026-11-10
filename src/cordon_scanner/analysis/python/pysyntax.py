@@ -76,6 +76,21 @@ class PythonSyntax:
         return (node.lineno, node.col_offset, node.end_lineno, node.end_col_offset)
 
     @staticmethod
+    def reversed_slice(node: ast.AST) -> bool:
+        """`x[::-1]`: the whole sequence, backwards."""
+        if not (isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Slice)):
+            return False
+        step = node.slice.step
+        return (
+            node.slice.lower is None
+            and node.slice.upper is None
+            and isinstance(step, ast.UnaryOp)
+            and isinstance(step.op, ast.USub)
+            and isinstance(step.operand, ast.Constant)
+            and step.operand.value == 1
+        )
+
+    @staticmethod
     def within(node: ast.AST, *types: type) -> list[Any]:
         """The nodes of `types` in `node`'s subtree, `node` included -- what filtering
         `ast.walk(node)` gives, in depth-first rather than breadth-first order.

@@ -61,7 +61,7 @@ from cordon_scanner.analysis.python.vocabulary import (
 from cordon_scanner.foundation.capabilities import Capability
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterator, Mapping
 
 
 from cordon_scanner.analysis.python.analyzer_core import AnalyzerCore
@@ -174,12 +174,22 @@ class PythonAnalyzer(DataFlows, DecodedDrops, ClientBindings, SourcedFlows, Anal
     """Resolves capability primitives through aliases, bindings and constants."""
 
     @classmethod
-    def analyse(cls, source: str, *, follow_literals: bool = True) -> list[AstHit]:
+    def analyse(
+        cls,
+        source: str,
+        *,
+        follow_literals: bool = True,
+        imported_clients: Mapping[str, str] | None = None,
+    ) -> list[AstHit]:
         """Capabilities resolvable from this source, or none if it will not parse.
 
         `follow_literals=False` leaves code held in string literals unread (see `_written_code`).
         A test suite writes code fixtures to disk as its ordinary business, and what such a
         fixture would do is not something the suite does.
+
+        `imported_clients` are the names this file takes from another of its package's files
+        that are HTTP clients made there (`ImportedClients`, which leaves out a name the file
+        binds itself): bound before the walk.
         """
         try:
             tree = PythonSyntax.shared(source)
@@ -188,6 +198,8 @@ class PythonAnalyzer(DataFlows, DecodedDrops, ClientBindings, SourcedFlows, Anal
             return []
         analyzer = PythonAnalyzer._prepared(tree)
         analyzer._follow_literals = follow_literals
+        for name, client in (imported_clients or {}).items():
+            analyzer._bindings.setdefault(name, client)
         analyzer._walk(tree)
         analyzer._downloaded_and_run(tree)
         analyzer._decoded_dropped_and_run(tree)
