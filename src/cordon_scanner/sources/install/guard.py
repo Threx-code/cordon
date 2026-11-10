@@ -92,8 +92,11 @@ class InstallGuard:
             if cache is None or not cache.clean(file.key)
         }
         blocking: dict[str, list[Finding]] = {}
+        installed = {cls._identity(f.name, f.version) for f in plan.files}
         if fresh:
             for finding in cls._scan_files(fresh, into, scan):
+                if not cls._installs(finding, installed):
+                    continue
                 top = finding.location.path.split("/", 1)[0].split("!", 1)[0]
                 # A finding Cordon cannot attribute still blocks: it came from these files.
                 blocking.setdefault(top if top in fresh else UNATTRIBUTED, []).append(finding)
@@ -105,6 +108,35 @@ class InstallGuard:
         return InstallVerdict(
             plan, {k: tuple(v) for k, v in blocking.items()}, len(written) - len(fresh)
         )
+
+    #: A known-vulnerable dependency a fetched package names (`VULNERABLE.DEPENDENCY.*`), as
+    #: against a malicious one, which always blocks.
+    VULNERABLE_PREFIX: ClassVar[str] = "VULNERABLE.DEPENDENCY."
+
+    @classmethod
+    def _installs(cls, finding: Finding, installed: set[str]) -> bool:
+        """Whether a finding is about what this install puts on disk. A vulnerable dependency a
+        fetched package's own manifest names (a jar's embedded POM) is what the package manager
+        resolves from, not what it installs: the resolve already chose, and every file it chose is
+        in this plan, scanned on its own. Maven mediates versions and never puts its own core on a
+        plugin's classpath, so `maven-core 3.0` named by a shared component is not installed. Such
+        a finding blocks only when that exact package is in the plan."""
+        # Fail closed: anything this cannot read about a finding leaves it blocking.
+        if not str(getattr(finding, "rule_id", "")).startswith(cls.VULNERABLE_PREFIX):
+            return True
+        package = str(getattr(finding.location, "package", "") or "")
+        if "!" not in finding.location.path or not package.startswith("pkg:"):
+            return True
+        name, _, version = package.split("/", 1)[-1].rpartition("@")
+        return cls._identity(name, version.split("?", 1)[0]) in installed
+
+    @staticmethod
+    def _identity(name: str, version: str) -> str:
+        """A package as `name@version`, the same for a purl's `group/artifact` and a plan's
+        `group:artifact`: lower case, `:` read as `/`, percent escapes undone."""
+        import urllib.parse
+
+        return f"{urllib.parse.unquote(name).lower().replace(':', '/')}@{version.lower()}"
 
     @classmethod
     def _scan_files(

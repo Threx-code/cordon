@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Collection
-from typing import Protocol
+from typing import ClassVar, Protocol
 
 from cordon_scanner.analysis.shared.test_material import SCANNER_CONFIG_PATHS, TEST_MATERIAL_PATHS
 from cordon_scanner.foundation.files.globs import PathGlob
@@ -386,6 +386,26 @@ class SourcePaths:
         r"\.vsix!|(?:^|/)\.(?:vscode|vscode-insiders|vscode-oss|vscode-server|cursor|windsurf)"
         r"/extensions/[^/\n]{1,200}/"
     )
+
+    #: Files inside a published package that its consumer's installer reads and obeys: what they
+    #: pin is what installing the package brings in. A file matching one is, by where it sits, a
+    #: published package's own, whatever the scan target is. `HONOURED_PINS` in the engine.
+    PUBLISHED_PINS: ClassVar[dict[str, re.Pattern[str]]] = {
+        # npm installs a published package's own `npm-shrinkwrap.json` exactly as written.
+        "npm": re.compile(r"(?:^|!)package/npm-shrinkwrap\.json$"),
+        # Maven resolves the jar's pom, and its `<version>` is the version it fetches.
+        "maven": re.compile(r"(?:^|!)META-INF/maven/[^!]+/pom\.xml$"),
+        # NuGet picks the LOWEST version a dependency range allows: the `.nuspec` pin is the install.
+        "nuget": re.compile(r"(?:^|!)[^/!]+\.nuspec$"),
+        # Go's minimal version selection starts from the module's own `go.mod` requirements.
+        "gomod": re.compile(r"(?:^|!)[^!]*@v[^/!]+/go\.mod$"),
+    }
+
+    @staticmethod
+    def in_published_package(path: str) -> bool:
+        """Whether a file is a published package's own pinned manifest by where it sits: a jar's
+        embedded POM, an npm tarball's shrinkwrap, a `.nuspec`, a module's `@v` go.mod."""
+        return any(p.search(path) for p in SourcePaths.PUBLISHED_PINS.values())
 
     @staticmethod
     def is_editor_extension(path: str) -> bool:

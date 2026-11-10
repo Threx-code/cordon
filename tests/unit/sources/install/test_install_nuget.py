@@ -14,7 +14,7 @@ from xml.etree import ElementTree
 import pytest
 
 from cordon_scanner.cli.commands.install.dotnet import DotnetTools
-from cordon_scanner.sources.install.nuget import NuGetPlanner
+from cordon_scanner.sources.install.managers.nuget import NuGetPlanner
 from cordon_scanner.sources.install.plan import InstallRefused
 from cordon_scanner.sources.install.registries import InstallRegistries
 
