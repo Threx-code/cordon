@@ -431,7 +431,15 @@ class TestConda:
             ],
             Path("/s/explicit.txt"),
         )
-        assert command == ["create", "-y", "-n", "demo", "--file", "/s/explicit.txt", "--offline"]
+        assert command == [
+            "create",
+            "-y",
+            "-n",
+            "demo",
+            "--file",
+            str(Path("/s/explicit.txt")),
+            "--offline",
+        ]
 
     def test_what_counts_as_an_install(self) -> None:
         from cordon_scanner.sources.install.managers.conda import CondaPlanner

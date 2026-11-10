@@ -33,7 +33,12 @@
     "cdc739734f6d7024",
     "e31e0a079192e2bb",
     "ebdb31c4aaadbc0f",
-    "ec901eb952ef50d8"
+    "ec901eb952ef50d8",
+    "b8230cbd7f41dc92",
+    "26df0d89d764952b",
+    "978fb9a4c0c1b435",
+    "0b8b4730510bbc1c",
+    "3593fc438a1bfa4d"
   ],
   "entries": [
     {
@@ -293,6 +298,36 @@
       "rule": "SECRET.GENERIC.ASSIGNMENT.001",
       "path": "src/cordon_scanner/foundation/samples.py",
       "note": "git history only (61fdfa7c7c0e): the two-line sample semgrep-rules publishes to be detected (adafruit-api-token), once quoted in this docstring and now described instead. Reviewed 2026-11-04; nothing to rotate."
+    },
+    {
+      "fingerprint": "b8230cbd7f41dc92",
+      "rule": "SECRET.TELEGRAM.BOT_TOKEN.001",
+      "path": "tests/unit/detect/agents/test_agents.py",
+      "note": "git history only (5dfde24c): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-11-10: the value's shape checked masked, it is the fixture of a detector test."
+    },
+    {
+      "fingerprint": "26df0d89d764952b",
+      "rule": "SECRET.STRIPE.WEBHOOK_SECRET.001",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
+      "note": "git history only (90f343bb): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-11-10: the value's shape checked masked, it is the fixture of a detector test."
+    },
+    {
+      "fingerprint": "978fb9a4c0c1b435",
+      "rule": "SECRET.GENERIC.ASSIGNMENT.001",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
+      "note": "git history only (90f343bb): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-11-10: the value's shape checked masked, it is the fixture of a detector test."
+    },
+    {
+      "fingerprint": "0b8b4730510bbc1c",
+      "rule": "SECRET.GOOGLE.API_KEY.001",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
+      "note": "git history only (90f343bb): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-11-10: the value's shape checked masked, it is the fixture of a detector test."
+    },
+    {
+      "fingerprint": "3593fc438a1bfa4d",
+      "rule": "SECRET.URL.CREDENTIAL.001",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
+      "note": "git history only (90f343bb): a detector test fixture - fabricated, assembled from parts, a placeholder, or a public third-party string used as a test case. Reviewed 2026-11-10: the value's shape checked masked, it is the fixture of a detector test."
     }
   ]
 }
