@@ -110,3 +110,100 @@ class TestAPackageScan:
         (pkg / "imports.py").write_text(MAKER, encoding="utf-8")
         (pkg / "entry.py").write_text(SENDER, encoding="utf-8")
         assert ("SUSPECT.EXFIL.ENVIRONMENT.001", "entry.py") in self.rules(tmp_path)
+
+
+RUNNER = (
+    "import subprocess\n"
+    "def run_cmd(cmd):\n"
+    "    return subprocess.check_output(cmd.split())\n"
+    "def run_in(directory, cmd):\n"
+    "    return subprocess.run(cmd, shell=True, cwd=directory)\n"
+)
+HANDLER = (
+    "import asyncio\n"
+    "from telegram.ext import ContextTypes\n"
+    "from .utils import run_cmd\n"
+    "async def com(update, context):\n"
+    "    await asyncio.to_thread(run_cmd, update.message.text.strip())\n"
+)
+
+
+class TestWhichFunctionsAFileTakesThatRunAParameter:
+    def test_the_helper_a_handler_imports_is_a_runner(self) -> None:
+        found = ImportedClients.runners_of({"p/utils.py": RUNNER, "p/bot.py": HANDLER})
+        assert found == {"p/bot.py": {"run_cmd": "0"}}
+
+    def test_the_position_that_is_run_is_the_one_named(self) -> None:
+        found = ImportedClients.runners_of(
+            {"p/utils.py": RUNNER, "p/bot.py": "from .utils import run_in\n"}
+        )
+        assert found == {"p/bot.py": {"run_in": "1"}}
+
+    def test_a_re_export_is_followed(self) -> None:
+        found = ImportedClients.runners_of(
+            {
+                "p/utils.py": RUNNER,
+                "p/__init__.py": "from .utils import run_cmd\n",
+                "p/bot.py": "from . import run_cmd\n",
+            }
+        )
+        assert found["p/bot.py"] == {"run_cmd": "0"}
+
+    def test_a_helper_that_runs_a_fixed_command_is_not(self) -> None:
+        helper = "import subprocess\ndef refresh():\n    subprocess.run(['git', 'pull'])\n"
+        assert not ImportedClients.runners_of(
+            {"p/utils.py": helper, "p/bot.py": "from .utils import refresh\n"}
+        )
+
+    def test_a_helper_that_takes_the_text_as_data_is_not(self) -> None:
+        helper = "import subprocess\ndef lookup(q):\n    subprocess.run(['whois', q])\n"
+        assert not ImportedClients.runners_of(
+            {"p/utils.py": helper, "p/bot.py": "from .utils import lookup\n"}
+        )
+
+    def test_a_name_the_file_defines_itself_keeps_its_own_meaning(self) -> None:
+        own = "from .utils import run_cmd\ndef run_cmd(c):\n    return c\n"
+        assert not ImportedClients.runners_of({"p/utils.py": RUNNER, "p/bot.py": own})
+
+    def test_a_single_file_has_nothing_to_import(self) -> None:
+        assert not ImportedClients.runners_of({"p/utils.py": RUNNER})
+
+
+class TestTheAnalyserRunsWhatAHandlerHandsAnImportedRunner:
+    @staticmethod
+    def runs(source: str, runners: dict[str, str] | None) -> list[str]:
+        return [
+            h.detail
+            for h in PythonAnalyzer.analyse(source, imported_runners=runners)
+            if h.detail.startswith("received run:")
+        ]
+
+    def test_the_text_of_a_message_handed_to_the_runner_is_a_run(self) -> None:
+        assert not self.runs(HANDLER, None)
+        assert self.runs(HANDLER, {"run_cmd": "0"}) == [
+            "received run: run_cmd runs a received command at=call"
+        ]
+
+    def test_a_value_at_a_position_that_is_not_run_is_not(self) -> None:
+        source = (
+            "from telegram.ext import ContextTypes\n"
+            "from .utils import run_in\n"
+            "async def com(update, context):\n"
+            "    run_in(update.message.text, 'ls')\n"
+        )
+        assert not self.runs(source, {"run_in": "1"})
+        assert self.runs(
+            source.replace(
+                "run_in(update.message.text, 'ls')", "run_in('/tmp', update.message.text)"
+            ),
+            {"run_in": "1"},
+        )
+
+    def test_a_handler_that_hands_it_a_fixed_command_is_not_a_run(self) -> None:
+        source = (
+            "from telegram.ext import ContextTypes\n"
+            "from .utils import run_cmd\n"
+            "async def com(update, context):\n"
+            "    run_cmd('uptime')\n"
+        )
+        assert not self.runs(source, {"run_cmd": "0"})

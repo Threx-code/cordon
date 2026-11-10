@@ -29,6 +29,9 @@ class AnalyzerCore:
         # Alias -> dotted primitive. `import base64 as b` gives `b -> base64`;
         # `from os import system as s` gives `s -> os.system`.
         self._aliases: dict[str, str] = {}
+        # Functions another file of the package defines that run their own parameters as a command,
+        # by position (`ImportedClients.runners_of`): a call to one with a received value is a run.
+        self._imported_runners: dict[str, set[int]] = {}
         # Local name -> dotted primitive, from `f = os.system`.
         self._bindings: dict[str, str] = {}
         # `self.x` / `cls.x` -> what it is bound to in this file: `self._session = requests.Session()`

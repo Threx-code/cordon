@@ -277,6 +277,12 @@ class ScanContext:
     httpx.Client()`. Found before detection from every Python file of the package, so a file's
     analyser starts with them bound. None when there are none, or for a single-file scan."""
 
+    python_imported_runners: Mapping[str, Mapping[str, str]] | None = None
+    """Per Python file, the functions it imports from another of the package's files that run one of
+    their own parameters as a command, by position (`ImportedClients.runners_of`): a bot handler
+    in `bot.py` that hands the message text to `run_cmd` from `utils.py`. Found before detection
+    from every Python file, like the clients; None when there are none."""
+
     cross_file_unresolved: bool = False
     """Whether some file of the package calls into it in a way the join cannot follow (a computed
     `require`, a file not read whole, facts refused): set for the re-grade only. What needs the join

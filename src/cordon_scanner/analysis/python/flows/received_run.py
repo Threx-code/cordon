@@ -98,7 +98,7 @@ class ReceivedRuns(ExecutionFlows):
             return self._received_by(tainted, node) or self._message_source(tainted, node, sockets)
 
         tainted.spread(received)
-        runners = self._runners(tree)
+        runners = {**self._imported_runners, **self._runners(tree)}
         for node in calls:
             resolved = self._resolve_callee(node)
             if resolved is None:

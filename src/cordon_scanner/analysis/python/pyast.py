@@ -184,6 +184,7 @@ class PythonAnalyzer(
         *,
         follow_literals: bool = True,
         imported_clients: Mapping[str, str] | None = None,
+        imported_runners: Mapping[str, str] | None = None,
     ) -> list[AstHit]:
         """Capabilities resolvable from this source, or none if it will not parse.
 
@@ -193,7 +194,9 @@ class PythonAnalyzer(
 
         `imported_clients` are the names this file takes from another of its package's files
         that are HTTP clients made there (`ImportedClients`, which leaves out a name the file
-        binds itself): bound before the walk.
+        binds itself): bound before the walk. `imported_runners` are the functions it takes from
+        another of its package's files that run a parameter as a command (`name: "0,1"`, the
+        positions): a received value handed to one is a run (`ReceivedRuns`).
         """
         try:
             tree = PythonSyntax.shared(source)
@@ -204,6 +207,8 @@ class PythonAnalyzer(
         analyzer._follow_literals = follow_literals
         for name, client in (imported_clients or {}).items():
             analyzer._bindings.setdefault(name, client)
+        for name, positions in (imported_runners or {}).items():
+            analyzer._imported_runners[name] = {int(i) for i in positions.split(",")}
         analyzer._walk(tree)
         analyzer._downloaded_and_run(tree)
         analyzer._decoded_dropped_and_run(tree)

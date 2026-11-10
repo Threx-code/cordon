@@ -70,11 +70,21 @@ SCALARS: dict[str, type] = {
 }
 DEFERRED_LINES = ("install_deferred_lines", "import_deferred_lines")
 """Context fields that are `(path, first_line, last_line)` sets: bodies a hook or an import never runs."""
+RUNNER_MAPS = ("python_imported_runners",)
+"""Context fields that are `{path: {function: "0,2"}}`: the positions of the parameters it runs."""
 CLIENT_MAPS = ("python_imported_clients",)
 """Context fields that are `{path: {name: client constructor}}`: crossing as `[path, name, client]`
 triples, each path one of the scan's units, each name an identifier, each client one of
 `HTTP_CLIENTS`."""
-CONTEXT_FIELDS = (*PATH_SETS, *NAME_SETS, *SCALARS, *DEFERRED_LINES, *CLIENT_MAPS, "dependencies")
+CONTEXT_FIELDS = (
+    *PATH_SETS,
+    *NAME_SETS,
+    *SCALARS,
+    *DEFERRED_LINES,
+    *CLIENT_MAPS,
+    *RUNNER_MAPS,
+    "dependencies",
+)
 """Every context field a context worker may set. A step that changes any other field fails the
 worker (`ContextWork.encode_context`): a new field is declared here, with its shape, or not sent."""
 
@@ -248,7 +258,7 @@ class ContextWork:
                 out[f.name] = sorted([path, first, last] for path, first, last in value)
             elif f.name in SCALARS:
                 out[f.name] = value
-            elif f.name in CLIENT_MAPS:
+            elif f.name in (*CLIENT_MAPS, *RUNNER_MAPS):
                 out[f.name] = sorted(
                     [path, name, client]
                     for path, names in (value or {}).items()
@@ -672,6 +682,18 @@ class ContextFacts:
                 ):  # fmt: skip
                     return None, f"{name} of the wrong shape"
                 out[name] = frozenset((p, first, last) for p, first, last in value)
+            elif name in RUNNER_MAPS:
+                if not isinstance(value, list) or len(value) > LIST_ENTRIES or not all(
+                    isinstance(t, list) and len(t) == 3 and t[0] in known
+                    and isinstance(t[1], str) and len(t[1]) <= 256 and t[1].isidentifier()
+                    and isinstance(t[2], str) and re.fullmatch(r"\d{1,3}(,\d{1,3}){0,15}", t[2])
+                    for t in value
+                ):  # fmt: skip
+                    return None, f"{name} of the wrong shape"
+                runners: dict[str, dict[str, str]] = {}
+                for path, function, positions in value:
+                    runners.setdefault(path, {})[function] = positions
+                out[name] = runners or None
             elif name in CLIENT_MAPS:
                 from cordon_scanner.analysis.python.flows.http_clients import HTTP_CLIENTS
 

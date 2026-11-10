@@ -276,6 +276,7 @@ class ArchiveStages:
             ctx,
             verdict_dependency_names=Ceilings.verdict_dependency_names(units),
             python_imported_clients=ImportedClients.of_units(units),
+            python_imported_runners=ImportedClients.runners_of_units(units),
         )
         ctx = self.unparsed(units, acc, ctx, python_closure)
         ctx = self.import_context(units, ctx, early_format)
