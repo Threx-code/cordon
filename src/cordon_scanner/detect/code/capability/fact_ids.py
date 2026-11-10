@@ -18,6 +18,10 @@ class PythonFactIds:
 
     #: Facts named by how their detail starts, in the order they are tried.
     PREFIXES: ClassVar[tuple[tuple[str, str], ...]] = (
+        # A credential store's contents sent outside the store's own service: to a hidden, chat,
+        # raw-IP or unknown host, or a fixed-home store (aws, ssh) off its home. An upload tool
+        # sending .pypirc to the index it names is not this (MALWARE.EXFIL.CREDENTIAL_STORE.002).
+        ("secret sent: CREDENTIAL_FILE outside=", "AST.PY.CREDSTORE_SENT"),
         ("identity sent", "AST.PY.IDENTITY_SENT"),
         ("environment sent", "AST.PY.ENVIRONMENT_SENT"),
         ("secret sent", "AST.PY.SECRET_SENT"),

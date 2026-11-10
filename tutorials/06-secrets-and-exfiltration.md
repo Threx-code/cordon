@@ -2,7 +2,7 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-**61 secret rules and 28 exfiltration rules**: the part of the rule pack where
+**61 secret rules and 29 exfiltration rules**: the part of the rule pack where
 the tool that finds the problem must not become the problem.
 
 ```
@@ -115,13 +115,14 @@ something live, all of them are in git history and in every clone.
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-The 28 exfiltration rules divide on **where the data goes**. `MALWARE.` is the
+The 29 exfiltration rules divide on **where the data goes**. `MALWARE.` is the
 install-time form of a rule, `SUSPECT.` the same behaviour in ordinary code:
 
 | rule | the channel |
 |---|---|
 | `MALWARE.EXFIL.001` / `SUSPECT.EXFIL.001` | any outbound send of read data |
 | `*.EXFIL.CREDENTIAL_STORE.001` | `~/.npmrc`, `~/.aws`, `~/.gem/credentials`, keychains, `.env` |
+| `MALWARE.EXFIL.CREDENTIAL_STORE.002` | a credential store's contents sent outside the store's own service (hidden, chat, raw-IP or unnamed host), wherever the code runs |
 | `*.EXFIL.DROP_POINT.001` | paste sites, Discord/Telegram webhooks |
 | `SUSPECT.EXFIL.ENVIRONMENT.001` | the whole environment sent over the network |
 | `SUSPECT.EXFIL.NAMED_SECRET.001` | one named token (AWS secret key, GitHub, npm, PyPI, ...) sent to a host outside its own service |
