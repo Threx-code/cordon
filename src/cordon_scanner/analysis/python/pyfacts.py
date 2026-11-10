@@ -10,6 +10,8 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.analysis.python.flows.containers import Containers
+from cordon_scanner.analysis.python.flows.http_clients import CLIENT_REQUESTS
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.foundation.capabilities import Capability
 
@@ -108,34 +110,8 @@ PRIMITIVES: dict[str, Capability] = {
     "http.client.HTTPSConnection": Capability.EGRESS,
 }
 
-#: Constructors of an HTTP client object, and the methods on it that send a request. A request sent
-#: through a client (`client = httpx.Client(); client.post(url, json=data)`, `with requests.Session()
-#: as s`, `self._session = requests.Session()`) is a request as `requests.post` is: group A (a),
-#: 2026-11-10, where 13 of 17 PyPI units sent what they gathered through one and no flow fact fired.
-HTTP_CLIENTS: frozenset[str] = frozenset(
-    {
-        "requests.Session",
-        "requests.session",
-        "requests.sessions.Session",
-        "httpx.Client",
-        "httpx.AsyncClient",
-        "urllib3.PoolManager",
-        "urllib3.HTTPConnectionPool",
-        "urllib3.HTTPSConnectionPool",
-        "aiohttp.ClientSession",
-    }
-)
-HTTP_CLIENT_METHODS: frozenset[str] = frozenset(
-    {"get", "post", "put", "patch", "delete", "head", "options", "request", "send", "stream",
-     "urlopen"}
-)  # fmt: skip
-PRIMITIVES.update(
-    {
-        f"{client}.{method}": Capability.EGRESS
-        for client in HTTP_CLIENTS
-        for method in HTTP_CLIENT_METHODS
-    }
-)
+# Requests through an HTTP client object (`flows/http_clients.py`): its methods are egress.
+PRIMITIVES.update(dict.fromkeys(CLIENT_REQUESTS, Capability.EGRESS))
 
 
 ENVIRONMENT = frozenset({"os.environ", "os.getenv", "os.environb"})
@@ -909,7 +885,7 @@ class PythonFacts:
                     attributes.update(
                         key for t in node.targets if (key := attribute_key(t)) is not None
                     )
-                for filled in PythonFacts._filled_by(node, holds):
+                for filled in Containers.filled_by(node, holds):
                     if isinstance(filled, ast.Name):
                         carrying.add((scope(filled, filled.id), filled.id))
                     elif (key := attribute_key(filled)) is not None:
@@ -923,31 +899,6 @@ class PythonFacts:
             if (len(carrying), len(returning), len(attributes)) == before:
                 break
         return holds
-
-    #: Methods that put their argument into their receiver.
-    FILLS: ClassVar[frozenset[str]] = frozenset(
-        {"append", "extend", "update", "add", "insert", "setdefault", "appendleft", "write",
-         "writelines", "writestr"}
-    )  # fmt: skip
-
-    @staticmethod
-    def _filled_by(node: ast.AST, holds: Callable[..., bool]) -> list[ast.AST]:
-        """The container a statement puts a held value into: `box[k] = v` (item assignment),
-        `box += v`, `box.append(v)` and the other `FILLS`. A dict or list built up a key at a time
-        and sent whole is how a collector is written as often as a literal is (group A (a))."""
-        if isinstance(node, ast.Assign) and holds(node.value):
-            return [t.value for t in node.targets if isinstance(t, ast.Subscript)]
-        if isinstance(node, ast.AugAssign) and holds(node.value):
-            target = node.target
-            return [target.value if isinstance(target, ast.Subscript) else target]
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr in PythonFacts.FILLS
-            and any(holds(a) for a in [*node.args, *(k.value for k in node.keywords)])
-        ):
-            return [node.func.value]
-        return []
 
     @staticmethod
     def url_literal(node: ast.AST) -> str | None:

@@ -7,9 +7,9 @@ from __future__ import annotations
 import ast
 from typing import ClassVar
 
+from cordon_scanner.analysis.python.flows.http_clients import HTTP_CLIENTS
 from cordon_scanner.analysis.python.py_identity import IDENTITY_COMMANDS, IdentityVariables
 from cordon_scanner.analysis.python.pyfacts import (
-    HTTP_CLIENTS,
     PRIMITIVES,
     AstHit,
     PythonFacts,
