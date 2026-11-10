@@ -149,6 +149,12 @@ class TestWhichFunctionsAFileTakesThatRunAParameter:
         )
         assert found["p/bot.py"] == {"run_cmd": "0"}
 
+    def test_a_module_taken_whole_offers_its_runners_by_their_names(self) -> None:
+        found = ImportedClients.runners_of(
+            {"p/core.py": RUNNER, "p/handlers.py": "from . import core\n"}
+        )
+        assert found == {"p/handlers.py": {"run_cmd": "0", "run_in": "1"}}
+
     def test_a_helper_that_runs_a_fixed_command_is_not(self) -> None:
         helper = "import subprocess\ndef refresh():\n    subprocess.run(['git', 'pull'])\n"
         assert not ImportedClients.runners_of(
@@ -181,6 +187,16 @@ class TestTheAnalyserRunsWhatAHandlerHandsAnImportedRunner:
     def test_the_text_of_a_message_handed_to_the_runner_is_a_run(self) -> None:
         assert not self.runs(HANDLER, None)
         assert self.runs(HANDLER, {"run_cmd": "0"}) == [
+            "received run: run_cmd runs a received command at=call"
+        ]
+
+    def test_the_runner_reached_as_an_attribute_of_its_module(self) -> None:
+        source = (
+            "import asyncio\nfrom telegram.ext import ContextTypes\nfrom . import core\n"
+            "async def com(update, context):\n"
+            "    await asyncio.to_thread(core.run_cmd, update.message.text)\n"
+        )
+        assert self.runs(source, {"run_cmd": "0"}) == [
             "received run: run_cmd runs a received command at=call"
         ]
 

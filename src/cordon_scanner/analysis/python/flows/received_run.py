@@ -64,6 +64,10 @@ class ReceivedRuns(ExecutionFlows):
             "pytgcalls", "pyTelegramBotAPI", "fbchat", "wechat", "itchat", "wxpy",
         }
     )  # fmt: skip
+    #: Parameter names for the connection a handler's messages arrive on.
+    _CONNECTIONS: ClassVar[frozenset[str]] = frozenset(
+        {"conn", "connection", "sock", "socket", "ws", "websocket", "client", "writer", "stream"}
+    )
     #: Methods that return the command's text in another shape.
     _SAME_TEXT: ClassVar[frozenset[str]] = frozenset(
         {"split", "strip", "lower", "decode", "rstrip"}
@@ -142,6 +146,9 @@ class ReceivedRuns(ExecutionFlows):
         by_name = {f.name: f for f in functions}
         found: dict[int, ast.FunctionDef | ast.AsyncFunctionDef] = {}
         chat = self._talks_to_a_chat_library(tree)
+        for function in functions:
+            if self._takes_a_message_over_a_connection(function):
+                found[id(function)] = function
         for function in functions if chat else ():
             for decorator in function.decorator_list:
                 target = decorator.func if isinstance(decorator, ast.Call) else decorator
@@ -175,6 +182,19 @@ class ReceivedRuns(ExecutionFlows):
             if any(m.split(".")[0] in self._CHAT_LIBRARIES for m in modules):
                 return True
         return False
+
+    def _takes_a_message_over_a_connection(
+        self, function: ast.FunctionDef | ast.AsyncFunctionDef
+    ) -> bool:
+        """`handle_command(conn, message)`: a handler of a peer's messages that is given the
+        connection they came in on, in a program with no chat library (its own wire protocol)."""
+        args = [a.arg for a in function.args.args if a.arg not in ("self", "cls")]
+        return (
+            function.name.startswith(("handle_", "on_"))
+            and len(args) >= 2
+            and args[0] in self._CONNECTIONS
+            and args[1] in ("message", "msg", "data", "payload")
+        )
 
     def _takes_a_message(self, function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
         """The signature of a chat handler: `(update, context)`, a parameter typed as the library's

@@ -56,7 +56,9 @@ class ImportedClients:
         trees = cls._trees(sources)
         if len(trees) < 2:
             return {}
-        return cls._follow(trees, {path: cls._runs_here(tree) for path, tree in trees.items()})
+        return cls._follow(
+            trees, {path: cls._runs_here(tree) for path, tree in trees.items()}, modules=True
+        )
 
     @staticmethod
     def _trees(sources: Mapping[str, str]) -> dict[str, ast.Module]:
@@ -76,7 +78,11 @@ class ImportedClients:
 
     @classmethod
     def _follow(
-        cls, trees: Mapping[str, ast.Module], exported: dict[str, dict[str, str]]
+        cls,
+        trees: Mapping[str, ast.Module],
+        exported: dict[str, dict[str, str]],
+        *,
+        modules: bool = False,
     ) -> dict[str, dict[str, str]]:
         """What each file takes of `exported` (each file's own names) through the package's imports,
         re-exports included, to a fixed point."""
@@ -86,7 +92,7 @@ class ImportedClients:
             changed = False
             for path, tree in trees.items():
                 own = owned[path]
-                for name, client in cls._taken(path, tree, exported, trees):
+                for name, client in cls._taken(path, tree, exported, trees, modules=modules):
                     if (
                         name not in own
                         and exported[path].get(name) is None
@@ -228,17 +234,23 @@ class ImportedClients:
         tree: ast.Module,
         exported: Mapping[str, Mapping[str, str]],
         trees: Mapping[str, ast.Module],
+        *,
+        modules: bool = False,
     ) -> list[tuple[str, str]]:
-        """The client names this file's `from ... import` statements take from the package."""
+        """The names this file's `from ... import` statements take from the package. With
+        `modules`, `from . import core` also takes what `core.py` exports, by its bare names: the
+        file reaches them as `core.run_cmd`, and the analyser matches a call by that last name."""
         out: list[tuple[str, str]] = []
         for node in ast.walk(tree):
             if not isinstance(node, ast.ImportFrom):
                 continue
             source = cls._module_file(path, node, trees)
-            if source is None or source == path:
+            if source == path:
                 continue
-            offered = exported.get(source, {})
+            offered = exported.get(source, {}) if source is not None else {}
             for alias in node.names:
+                if source is None and not modules:
+                    break
                 if alias.name == "*":
                     out.extend(
                         (name, client)
@@ -247,6 +259,19 @@ class ImportedClients:
                     )
                 elif alias.name in offered:
                     out.append((alias.asname or alias.name, offered[alias.name]))
+                elif modules:
+                    named = ast.ImportFrom(
+                        module=f"{node.module}.{alias.name}" if node.module else alias.name,
+                        names=[],
+                        level=node.level,
+                    )
+                    member = cls._module_file(path, named, trees)
+                    if member is not None and member != path:
+                        out.extend(
+                            (name, value)
+                            for name, value in exported.get(member, {}).items()
+                            if not name.startswith("_")
+                        )
         return out
 
     @staticmethod
