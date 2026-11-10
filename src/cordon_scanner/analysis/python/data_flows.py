@@ -103,9 +103,12 @@ class EnvironmentCarry:
             # review 2026-11-10).
             if isinstance(node, ast.IfExp):
                 return whole(node.body) or whole(node.orelse)
-            # A comparison that is itself sent (`{"ci": "CI" in env}`, `any(k in env for k in
-            # markers)`) still tells the receiver what the environment holds; one that only
-            # steers control flow is never a sent value (runtime-readout, review 2026-11-10).
+            # A comparison is one bool, never the environment: `{"ci": "CI" in env}` is a CI
+            # flag, the shape of Rasa's Segment telemetry (convo-new-version-abdo, review
+            # 2026-11-10). Host identity sent unasked from an import, runtime-readout's beacon,
+            # is the beacon rules' (`SUSPECT/MALWARE.EXFIL.BEACON.001`), not this fact's.
+            if isinstance(node, ast.Compare):
+                return False
             if isinstance(node, ast.Call):
                 return call_whole(node)
             return any(whole(child) for child in ast.iter_child_nodes(node))
