@@ -16,13 +16,13 @@ one command at a terminal.
 
 ## Scan and inspect
 
-- `scan`: scan a directory, file or archive
+- `scan`: scan a folder, file or archive
 - `clone`: clone, scanned before checkout
 - `pull`: pull, scanned before the merge
 - `inventory`: what the repository is, and why
 - `deps`: dependency graph and findings
 - `review`: what a dependency update adds
-- `sbom`: CycloneDX or SPDX bill of materials
+- `sbom`: CycloneDX or SPDX SBOM
 - `report`: re-render a saved JSON result
 
 ## scan
@@ -361,10 +361,10 @@ Re-render a saved JSON result in another format.
 ## Policy
 
 - `rules`: list, test and show the rules
-- `config`: check the repository configuration
-- `baseline`: record findings, adopt gradually
+- `config`: check the repo configuration
+- `baseline`: record findings, adopt slowly
 - `suppress`: reviewed, expiring exceptions
-- `guard`: git hooks, shims, self-integrity
+- `guard`: git hooks, shims, integrity
 - `verify`: check this install is genuine
 - `notify`: test the notification channels
 
@@ -649,24 +649,28 @@ Notification channels: send a test message to each.
 
 ## Install, checked first
 
-- `npm`: npm install, scanned before it runs
+- `npm`: npm install, scanned first
 - `pnpm`: pnpm install, scanned first
 - `yarn`: yarn install, scanned first
-- `pip`: pip install, scanned before it runs
+- `pip`: pip install, scanned first
 - `pip3`: pip3 install, scanned first
 - `uv`: uv add/sync/pip, scanned first
-- `poetry`: poetry add/install, scanned first
-- `cargo`: cargo build/install, scanned first
-- `go`: go get/build/install, scanned first
+- `poetry`: poetry add/install, scanned
+- `cargo`: cargo build/install, scanned
+- `go`: go get/build/install, scanned
 - `gem`: gem install, scanned first
 - `bundler`: bundle install, scanned first
-- `dotnet`: dotnet restore/build/tool, scanned
+- `dotnet`: restore/build/tool, scanned
 - `dart`: dart pub get/add, scanned first
-- `flutter`: flutter pub get/add, scanned first
-- `conda`: conda install/create, scanned first
-- `mamba`: mamba install/create, scanned first
-- `composer`: composer install/require, scanned
+- `flutter`: flutter pub get/add, scanned
+- `conda`: conda install/create, scanned
+- `mamba`: mamba install/create, scanned
+- `composer`: composer install, scanned
 - `mvn`: mvn builds, every jar scanned
+- `terraform`: terraform init, then scanned
+- `tofu`: tofu init, then scanned
+- `helm`: helm dependency build, scanned
+- `ansible-galaxy`: galaxy install, scanned
 
 ## npm
 
@@ -884,11 +888,59 @@ Run mvn, scanning every package before anything is installed.
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## terraform
+
+Run terraform, scanning every package before anything is installed.
+
+`cordon-scanner terraform ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 terraform's own arguments                        │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## tofu
+
+Run tofu, scanning every package before anything is installed.
+
+`cordon-scanner tofu ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 tofu's own arguments                             │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## helm
+
+Run helm, scanning every package before anything is installed.
+
+`cordon-scanner helm ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 helm's own arguments                             │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## ansible-galaxy
+
+Run ansible-galaxy, scanning every package before anything is installed.
+
+`cordon-scanner ansible-galaxy ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 ansible-galaxy's own arguments                   │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
 ## Threat intel
 
 - `advisories`: the advisory database
 - `intel`: the signed threat-intel feed
-- `bundle`: offline bundle for air-gapped use
+- `bundle`: offline bundle, air-gapped use
 
 ## advisories
 
@@ -1061,7 +1113,7 @@ Serve Cordon to AI agents over the Model Context Protocol (stdio).
 - `logout`: end the Cordon Cloud sign-in
 - `whoami`: the Cordon Cloud sign-in in use
 - `runner`: run Cloud jobs in your network
-- `agent`: AI agents and MCP servers, for MDM
+- `agent`: AI agents and MCP servers (MDM)
 
 ## login
 
@@ -1141,7 +1193,7 @@ This machine's AI agents and MCP servers, for an organisation's MDM (read-only, 
 
 ## General
 
-- `help`: this screen, or one command's help
+- `help`: this screen or a command's help
 - `completion`: shell completion script
 
 ## help
