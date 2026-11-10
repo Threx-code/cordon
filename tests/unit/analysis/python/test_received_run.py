@@ -65,7 +65,9 @@ class TestWhatAMessageHandlerRuns:
     def test_a_handler_by_its_signature_with_the_runner_in_another_module(self) -> None:
         source = (
             "import asyncio\n"
-            "from .core import run_cmd\n"
+            "import subprocess\n"
+            "def run_cmd(cmd):\n"
+            "    return subprocess.check_output(cmd.split())\n"
             "async def com_command(update, context):\n"
             "    text = update.message.text\n"
             "    await asyncio.to_thread(run_cmd, text)\n"
@@ -75,22 +77,27 @@ class TestWhatAMessageHandlerRuns:
     def test_the_runner_named_through_its_module(self) -> None:
         source = (
             "import asyncio\n"
-            "from . import core\n"
+            "import subprocess\n"
+            "def run_cmd(cmd):\n"
+            "    return subprocess.check_output(cmd.split())\n"
             "async def com(update, context):\n"
-            "    await asyncio.to_thread(core.run_cmd, update.message.text.strip())\n"
+            "    await asyncio.to_thread(run_cmd, update.message.text.strip())\n"
         )
         assert RunKit.received(source) == ["received run: run_cmd runs a received command at=call"]
 
     def test_a_message_decoded_and_handed_to_a_command_runner(self) -> None:
         source = (
             "import base64\n"
-            "from .command import execute_command\n"
+            "import subprocess\n"
+            "def execute_command(cmd):\n"
+            "    subprocess.run(cmd, shell=True)\n"
             "def handle_command(message):\n"
             "    cmd = base64.b64decode(message.get('command')).decode()\n"
             "    execute_command(cmd)\n"
         )
         assert RunKit.received(source) == [
-            "received run: execute_command runs a received command at=call"
+            "received run: subprocess.run at=call",
+            "received run: execute_command runs a received command at=call",
         ]
 
 

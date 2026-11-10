@@ -52,14 +52,6 @@ class ReceivedRuns(ExecutionFlows):
     _OFFLOADS: ClassVar[frozenset[str]] = frozenset({"to_thread", "run_in_executor", "submit"})
     #: Parameter types a chat library hands a handler: the message, update or callback it received.
     _MESSAGE_TYPES: ClassVar[frozenset[str]] = frozenset({"Message", "Update", "CallbackQuery"})
-    #: Names a function that runs the command it is given goes by, when it lives in another module
-    #: and its body is not here to read. Narrow by design: `run_query` and `run_task` are not here.
-    _RUNNER_NAMES: ClassVar[frozenset[str]] = frozenset(
-        {
-            "run_cmd", "run_command", "execute_command", "exec_command", "execute_cmd",
-            "run_shell", "shell_exec", "shell_command",
-        }
-    )  # fmt: skip
     #: Methods that return the command's text in another shape.
     _SAME_TEXT: ClassVar[frozenset[str]] = frozenset(
         {"split", "strip", "lower", "decode", "rstrip"}
@@ -103,15 +95,9 @@ class ReceivedRuns(ExecutionFlows):
             if command is not None and received(command):
                 self._run_of(tainted, tree, node, resolved[0], command)
             for name, args in self._reached(node):
-                local = name in runners and any(
+                if name in runners and any(
                     i in runners[name] for i, a in enumerate(args) if received(a)
-                )
-                imported = (
-                    name in self._RUNNER_NAMES
-                    and name not in runners
-                    and any(received(a) for a in args)
-                )
-                if local or imported:
+                ):
                     self._record(
                         Capability.FETCH_EXEC,
                         node,
