@@ -1128,6 +1128,7 @@
   "test_slopsquat.py": "detect/supply",
   "test_store_flow.py": "detect/code",
   "test_store_flow_python.py": "detect/code",
+  "test_silent_drops.py": "detect",
   "test_streamed_jar.py": "images",
   "test_streamed_sweep.py": "engine/pipeline",
   "test_submodules_and_sbom_ingest.py": "engine",

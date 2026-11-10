@@ -420,10 +420,9 @@ class PythonDownloads:
 
     @staticmethod
     def _name(node: ast.AST) -> str:
-        try:
-            return ast.unparse(node)
-        except Exception:  # noqa: BLE001
-            return ""
+        # A name too deep to unparse (RecursionError) escapes to OPERATIONAL.DETECTOR.FAILED: an
+        # empty callee would hide the download it names (S2, reviews/release-080).
+        return ast.unparse(node)
 
     def _callee(self, call: ast.Call) -> tuple[str, str]:
         func = call.func

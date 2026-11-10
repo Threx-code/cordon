@@ -153,6 +153,8 @@ class ReachedFlows:
                 try:
                     hooks = ecosystem.parse_manifest(unit.content).hooks if ecosystem else ()
                 except Exception:  # noqa: BLE001, S112
+                    # S2: covered. The same manifest's parse raising is recorded once in this scan
+                    # as OPERATIONAL.PARSER.FAILED by engine/pipeline/graph.py, a blocking gap.
                     continue
                 files += [
                     (f"{unit.path}#{hook.name}.sh", hook.command.encode())
@@ -231,10 +233,9 @@ class ReachedFlows:
             for source, sink, destination in PythonFlowFacts.of(text):
                 out[f"{place}_flow_{source}_{sink}_{destination}"] = 1.0
             return out
-        try:
-            flows = JsFlow.flows(text)
-        except Exception:  # a fact is evidence, never a scan failure  # noqa: BLE001
-            flows = []
+        # A reader that raises escapes to its caller's recorder (a worker's OPERATIONAL.FILE.WORKER_*,
+        # the rule-file pass's RULEFILE.UNAVAILABLE): these facts feed rules that block (S2).
+        flows = JsFlow.flows(text)
         for flow in flows:
             for source in sorted(flow.sources):
                 out[f"{place}_flow_{source}_{flow.sink}_{flow.destination}"] = 1.0
