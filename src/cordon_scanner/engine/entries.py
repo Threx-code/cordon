@@ -121,8 +121,9 @@ class PythonScripts:
     setup.cfg, and a literal `entry_points=` in setup.py."""
 
     GROUPS: ClassVar[tuple[str, ...]] = ("console_scripts", "gui_scripts")
-    #: A setup.py whose `entry_points=` is not a literal: its commands could name any module, so
-    #: every non-test module of that archive is running for the unparsed check (fail closed).
+    #: A setup.py whose `entry_points=` or `scripts=` is not a literal: its commands could name
+    #: any module, test files included, so every `.py` of that archive is running for the
+    #: unparsed check (fail closed; lead, 2026-11-10).
     UNKNOWN: ClassVar[str] = "*"
 
     @staticmethod
@@ -143,7 +144,7 @@ class PythonScripts:
             archive, sep, member = unit.path.rpartition("!")
             if not sep or not member.endswith(".py"):
                 continue
-            if archive in unknown and not PythonScripts._test_or_setup(member):
+            if archive in unknown:
                 found.add(unit.path)
                 continue
             for owner, module in modules:
@@ -153,17 +154,6 @@ class PythonScripts:
                 if ("/" + member).endswith((f"/{stem}.py", f"/{stem}/__init__.py")):
                     found.add(unit.path)
         return frozenset(found)
-
-    @staticmethod
-    def _test_or_setup(member: str) -> bool:
-        parts = member.split("/")
-        name = parts[-1]
-        return (
-            name == "setup.py"
-            or name.startswith("test_")
-            or name.endswith("_test.py")
-            or any(p in ("tests", "test", "testing") for p in parts[:-1])
-        )
 
     @staticmethod
     def _declared(name: str, text: str) -> list[str]:

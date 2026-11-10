@@ -200,24 +200,27 @@ class TestPackageSourceThatDoesNotParse:
         assert UnparsedKit.gapped(result)
         assert not result.content_complete
 
+    @pytest.mark.parametrize("module", ["pkg/cli.py", "tests/test_util.py"])
     @pytest.mark.parametrize(
         "entry_points",
         ["ENTRY_POINTS", "entries()", "{'console_scripts': [f'pkg-run = {target}']}"],
     )
     def test_commands_setup_py_hides_make_every_module_running(
-        self, tmp_path: Path, entry_points: str
+        self, tmp_path: Path, entry_points: str, module: str
     ) -> None:
-        # A non-literal entry_points= hides which modules the commands run: fail closed, every
-        # non-test module of the package is running for this check (lead, 2026-11-10).
+        # A non-literal entry_points= hides which modules the commands run, so the attacker picks
+        # them: fail closed, every module of the package is running for this check, test files
+        # included, since a computed command can name one (lead, 2026-11-10).
         newer = UnparsedKit.newer_than_this_python()
+        target = module.removesuffix(".py").replace("/", ".") + ":main"
         setup = (
             "from setuptools import setup\n"
-            "target = 'pkg.cli:main'\nENTRY_POINTS = {}\n"
+            f"target = '{target}'\nENTRY_POINTS = {{}}\n"
             "def entries():\n    return {}\n"
             f"setup(name='pkg', packages=['pkg'], entry_points={entry_points})\n"
         )
         result = UnparsedKit.sdist(
-            tmp_path, {"setup.py": setup, "pkg/__init__.py": "VERSION = '1'\n", "pkg/cli.py": newer}
+            tmp_path, {"setup.py": setup, "pkg/__init__.py": "VERSION = '1'\n", module: newer}
         )
         assert UnparsedKit.gapped(result)
         assert not result.content_complete
