@@ -671,6 +671,7 @@ Notification channels: send a test message to each.
 - `tofu`: tofu init, then scanned
 - `helm`: helm dependency build, scanned
 - `ansible-galaxy`: galaxy install, scanned
+- `mix`: mix deps.get from the lock
 
 ## npm
 
@@ -933,6 +934,18 @@ Run ansible-galaxy, scanning every package before anything is installed.
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ arguments                 ansible-galaxy's own arguments                   │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## mix
+
+Run mix, scanning every package before anything is installed.
+
+`cordon-scanner mix ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 mix's own arguments                              │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 

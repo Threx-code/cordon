@@ -33,7 +33,7 @@ class InstallGuardCommand:
     TOOLS: ClassVar[tuple[str, ...]] = (
         "npm", "pnpm", "yarn", "pip", "pip3", "uv", "poetry", "cargo", "go", "gem", "bundler",
         "dotnet", "dart", "flutter", "conda", "mamba", "composer", "mvn",
-        "terraform", "tofu", "helm", "ansible-galaxy",
+        "terraform", "tofu", "helm", "ansible-galaxy", "mix",
     )  # fmt: skip
     #: The executable each tool runs, where its name here differs (`bundle` is Cordon's own command).
     EXECUTABLES: ClassVar[dict[str, str]] = {"bundler": "bundle"}
@@ -87,6 +87,7 @@ class InstallGuardCommand:
         from cordon_scanner.cli.commands.install.composer import ComposerTools
         from cordon_scanner.cli.commands.install.dotnet import DotnetTools
         from cordon_scanner.cli.commands.install.fetched import FetchedTools
+        from cordon_scanner.cli.commands.install.hex import HexTools
         from cordon_scanner.cli.commands.install.maven import MavenTools
         from cordon_scanner.cli.commands.install.native import NativeTools
         from cordon_scanner.cli.commands.install.node import NodeTools
@@ -115,6 +116,7 @@ class InstallGuardCommand:
             "tofu": (FetchedTools.terraform_installs, FetchedTools.run),
             "helm": (FetchedTools.helm_installs, FetchedTools.run),
             "ansible-galaxy": (FetchedTools.galaxy_installs, FetchedTools.run),
+            "mix": (HexTools.installs, HexTools.mix),
         }
 
 
