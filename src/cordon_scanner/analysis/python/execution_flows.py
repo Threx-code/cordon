@@ -9,7 +9,7 @@ import ast
 import base64
 import posixpath
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.python.pyfacts import (
     PRIMITIVES,
@@ -214,6 +214,87 @@ class ExecutionFlows(AnalyzerCore):
                 )
             elif call.args and self._evaluates_output(call.args[0], fetched_output):
                 self._record(Capability.FETCH_EXEC, node, f"{resolved[0]} evaluates fetched text")
+
+    #: Capabilities whose call yields bytes the file carried hidden: what a dropper writes out.
+    _DECODING: ClassVar[frozenset[Capability]] = frozenset(
+        {Capability.DECODE, Capability.DECOMPRESS}
+    )
+    #: `stat` bits that let a file run.
+    _EXEC_BITS: ClassVar[frozenset[str]] = frozenset(
+        {"S_IXUSR", "S_IXGRP", "S_IXOTH", "S_IRWXU", "S_IRWXG", "S_IRWXO", "S_IEXEC"}
+    )
+
+    def _decoded_dropped_and_run(self, tree: ast.AST) -> None:
+        """A payload the file carries encoded, written out and then made runnable or run.
+
+        `p = b64decode(BLOB)`, `open(P, "wb").write(p)`, then `os.chmod(P, 0o777)` or
+        `Popen([P])`: the same join as a download written and run (`_downloaded_and_run`), with
+        the bytes decoded from the package instead of fetched (group C: data_harvester 0.3.1 and
+        defi_tools 0.8.0 drop an agent from a 657 KB base64 module, make it executable and install
+        a crontab line for it, at import). Decoding a resource and writing it is ordinary; making
+        what was written executable, or starting it, is the dropper."""
+        decoded: set[str] = set()
+        for _ in range(3):
+            for node in PythonSyntax.of(tree, ast.Assign):
+                if any(
+                    (isinstance(part, ast.Name) and part.id in decoded)
+                    or (
+                        isinstance(part, ast.Call)
+                        and (resolved := self._resolve_callee(part)) is not None
+                        and PRIMITIVES.get(resolved[0]) in self._DECODING
+                    )
+                    for part in PythonSyntax.within(node.value, ast.Name, ast.Call)
+                ):
+                    decoded.update(t.id for t in node.targets if isinstance(t, ast.Name))
+        if not decoded:
+            return
+        writers: dict[str, str] = {}
+        for node in PythonSyntax.of(tree, ast.Call):
+            if self._dotted(node.func) == "open" and node.args:
+                mode = PythonFacts.constant(node.args[1]) if len(node.args) > 1 else None
+                key = self._file_key(node.args[0])
+                if key and mode and ("w" in mode or "a" in mode):
+                    writers[f"{getattr(node, 'lineno', 0)}:{getattr(node, 'col_offset', 0)}"] = key
+        dropped: set[str] = set()
+        self._run_on_downloaded(tree, decoded, writers, dropped)
+        if not dropped:
+            return
+        for node in PythonSyntax.of(tree, ast.Call):
+            resolved = self._resolve_callee(node)
+            if resolved is None:
+                continue
+            call = resolved[1]
+            if resolved[0] in ("os.chmod", "pathlib.Path.chmod") or (
+                isinstance(node.func, ast.Attribute) and node.func.attr == "chmod"
+            ):
+                path = call.args[0] if resolved[0] == "os.chmod" and call.args else node.func
+                path = path.value if isinstance(path, ast.Attribute) else path
+                bits = (
+                    call.args[1]
+                    if resolved[0] == "os.chmod" and len(call.args) > 1
+                    else (call.args[0] if call.args else None)
+                )
+                if self._file_key(path) in dropped and self._executable_mode(bits):
+                    self._record(
+                        Capability.FETCH_EXEC, node, f"{resolved[0]} makes a decoded file runnable"
+                    )
+            elif PRIMITIVES.get(resolved[0]) is Capability.SPAWN and call.args:
+                if self._runs_one_of(call.args[0], dropped):
+                    self._record(Capability.FETCH_EXEC, node, f"{resolved[0]} runs a decoded file")
+
+    def _executable_mode(self, mode: ast.AST | None) -> bool:
+        """A chmod mode that sets an execute bit: a number with 0o111 in it, or `stat` names that
+        include one."""
+        if isinstance(mode, ast.Constant) and isinstance(mode.value, int):
+            return bool(mode.value & 0o111)
+        if mode is None:
+            return False
+        names = {
+            part.attr if isinstance(part, ast.Attribute) else part.id
+            for part in PythonSyntax.within(mode, ast.Attribute, ast.Name)
+            if isinstance(part, ast.Attribute | ast.Name)
+        }
+        return bool(names & self._EXEC_BITS)
 
     def _run_on_downloaded(
         self, tree: ast.AST, fetched: set[str], writers: dict[str, str], downloaded: set[str]

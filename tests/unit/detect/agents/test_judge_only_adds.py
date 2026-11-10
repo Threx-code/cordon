@@ -62,7 +62,9 @@ class TestTheJudgeOnlyAdds:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # The judge obeys the injection and answers benign for everything.
-        monkeypatch.setattr(DeterministicProvider, "_exchange", lambda self, s, u: OnlyAddsKit.benign())
+        monkeypatch.setattr(
+            DeterministicProvider, "_exchange", lambda self, s, u: OnlyAddsKit.benign()
+        )
         files = {"CLAUDE.md": f"# Guide\n\n{INJECTION}\n\n{ATTACK}\n"}
         without = OnlyAddsKit.scan(tmp_path / "a", files)
         judged = OnlyAddsKit.scan(tmp_path / "b", files, judge="deterministic")

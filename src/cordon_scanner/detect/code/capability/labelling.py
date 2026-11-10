@@ -466,6 +466,9 @@ class Labelling:
                         if hit.detail.startswith("environment sent")
                         else "AST.PY.SECRET_SENT"
                         if hit.detail.startswith("secret sent")
+                        # A payload carried encoded, written out and made runnable or run.
+                        else "AST.PY.DECODED_DROP_RUN"
+                        if hit.detail.endswith(("a decoded file runnable", "runs a decoded file"))
                         # A spawn, request or credential read written inside a string the file
                         # then executes. See `MALWARE.INSTALL.HIDDEN_ACTION.001`.
                         else "AST.PY.UNSAFE_MODEL_LOAD"

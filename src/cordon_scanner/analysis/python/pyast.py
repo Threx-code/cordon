@@ -189,6 +189,7 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, SourcedFlows, AnalyzerCore):
         analyzer._follow_literals = follow_literals
         analyzer._walk(tree)
         analyzer._downloaded_and_run(tree)
+        analyzer._decoded_dropped_and_run(tree)
         analyzer._received_and_run(tree)
         analyzer._received_into_process(tree)
         analyzer._download_run_through_helpers(tree)

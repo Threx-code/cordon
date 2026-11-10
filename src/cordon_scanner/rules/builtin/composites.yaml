@@ -523,6 +523,41 @@ rules:
         - path_glob: "test/**"
         - path_glob: "__tests__/**"
 
+  - id: MALWARE.DROPPER.DECODED.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: Code writes out a payload it carries encoded, then makes it runnable or runs it
+    message: >
+      This file decodes bytes it carries hidden (base64, hex, zlib, marshal), writes them to a file,
+      and then marks that file executable or starts it. Shipping a resource encoded is ordinary;
+      unpacking it into a program and arranging for it to run is how a dropper installs its agent,
+      with nothing for a reviewer to read and no network request to see.
+    remediation: >
+      Do not install this package. Treat the machine as exposed: look for the written file, any
+      scheduled task or crontab line that runs it, and remove both.
+    provenance:
+      kind: research
+      reference: >
+        Group C of the PyPI UNKNOWN misses (reviews/pypi-98/18-UNKNOWN-MISSES.md, 2026-11-10):
+        data_harvester 0.3.1 and defi_tools 0.8.0 decode a 657 KB base64 module, write it under
+        the home directory, chmod it 0777 and add a crontab line for it, at import.
+    evidence_policy: hash_only
+    references:
+      - https://attack.mitre.org/techniques/T1027/
+      - https://attack.mitre.org/techniques/T1105/
+    match:
+      kind: composite
+      scope: file
+      proximity: 60
+      any:
+        - rule: AST.PY.DECODED_DROP_RUN
+      unless:
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+        - path_glob: "test/**"
+
   - id: MALWARE.EXFIL.BEACON.001
     version: 1.0.0
     category: malicious
