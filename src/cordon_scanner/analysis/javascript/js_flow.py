@@ -98,7 +98,7 @@ class JsFlow:
             analysis = _Analysis(text)
             flows = analysis.run()
         except RecursionError:
-            return []
+            raise  # S2: too deep to read is not empty: escapes to OPERATIONAL.DETECTOR.FAILED, a gap
         # The cross-file summaries (item 60) come from this same analysis: kept beside the flows so
         # the worker's facts never run it a second time for a file the flow rules read.
         JsFlow.MEMO.get("summaries", text, lambda: [JsSummaries.shared(analysis)])
@@ -116,7 +116,8 @@ class JsFlow:
             analysis = _Analysis(text)
             analysis.run()
             return analysis.requests()
-        except (RecursionError, _OverBudget):
+        except _OverBudget:
+            # S2: too deep to read is not empty: escapes to OPERATIONAL.DETECTOR.FAILED, a gap
             return []
 
     @classmethod
@@ -139,6 +140,7 @@ class JsFlow:
         try:
             return _Analysis(text).deferred()
         except RecursionError:
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
             return None
 
     @classmethod
@@ -156,6 +158,7 @@ class JsFlow:
             analysis.run()
             return analysis.clean_spawns()
         except (RecursionError, _OverBudget):
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
             return frozenset()
 
     @classmethod
@@ -194,6 +197,7 @@ class JsFlow:
             analysis = _Analysis(text)
             analysis.run()
         except (RecursionError, _OverBudget):
+            # S2: unresolved, not empty; an unresolved require keeps the join incomplete
             return {"js.require": [JsSummaries.UNRESOLVED]}
         return JsSummaries.shared(analysis)
 
@@ -217,7 +221,8 @@ class JsFlow:
             analysis = _Analysis(text)
             flows = analysis.run()
             return sorted(analysis.parameter_commands(flows))
-        except (RecursionError, _OverBudget):
+        except _OverBudget:
+            # S2: too deep to read is not empty: escapes to OPERATIONAL.DETECTOR.FAILED, a gap
             return []
 
     @staticmethod
@@ -227,6 +232,7 @@ class JsFlow:
             analysis.run()
             return sorted(analysis.fixed_spawns())
         except (RecursionError, _OverBudget):
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
             return []
 
 

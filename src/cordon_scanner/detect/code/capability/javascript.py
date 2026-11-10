@@ -265,7 +265,8 @@ class JavaScriptCapabilities:
                 # binding. Both are read (review 98, 17-PROOF-REVIEW).
                 seen = {(f.line, f.sink, f.sources) for f in flows}
                 flows += [f for f in JsFlow.flows(text) if (f.line, f.sink, f.sources) not in seen]
-        except (IndexError, KeyError, ValueError, TypeError, RecursionError):
+        except (IndexError, KeyError, ValueError, TypeError):
+            # S2: too deep to read is not empty: escapes to OPERATIONAL.DETECTOR.FAILED, a gap
             return []  # read as written: every other rule still applies
         starts = [0]
         for index, char in enumerate(text):

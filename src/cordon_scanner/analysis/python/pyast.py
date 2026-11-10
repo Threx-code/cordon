@@ -135,6 +135,7 @@ class PythonSource:
         try:
             tree = PythonSyntax.shared(source)
         except (SyntaxError, ValueError, RecursionError):
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
             return frozenset()
 
         analyzer = PythonAnalyzer._prepared(tree)
@@ -180,7 +181,8 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, SourcedFlows, AnalyzerCore):
         """
         try:
             tree = PythonSyntax.shared(source)
-        except (SyntaxError, ValueError, RecursionError):
+        except (SyntaxError, ValueError):
+            # S2: SOURCE.UNPARSED covers a running file; a file no CPython parses runs nothing
             return []
         analyzer = PythonAnalyzer._prepared(tree)
         analyzer._follow_literals = follow_literals
@@ -205,7 +207,8 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, SourcedFlows, AnalyzerCore):
         decoded), or None when the source does not parse (`SourcedFlows.sourced_sinks`)."""
         try:
             tree = PythonSyntax.shared(source)
-        except (SyntaxError, ValueError, RecursionError):
+        except (SyntaxError, ValueError):
+            # S2: SOURCE.UNPARSED covers a running file; a file no CPython parses runs nothing
             return None
         return cls._prepared(tree).sourced_sinks(tree)
 
@@ -475,7 +478,8 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, SourcedFlows, AnalyzerCore):
             return
         try:
             inner_tree = PythonSyntax.parse(value)
-        except (SyntaxError, ValueError, RecursionError):
+        except (SyntaxError, ValueError):
+            # S2: SOURCE.UNPARSED covers a running file; a file no CPython parses runs nothing
             return
         inner = type(self)()
         inner._collect_names(inner_tree)
@@ -669,6 +673,7 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, SourcedFlows, AnalyzerCore):
         try:
             tree = PythonSyntax.shared(source)
         except (SyntaxError, ValueError, RecursionError):
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
             return {}
         analyzer = PythonAnalyzer._prepared(tree)
         analyzer._walk(tree)
@@ -720,7 +725,8 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, SourcedFlows, AnalyzerCore):
         """
         try:
             tree = PythonSyntax.shared(source)
-        except (SyntaxError, ValueError, RecursionError):
+        except (SyntaxError, ValueError):
+            # S2: SOURCE.UNPARSED covers a running file; a file no CPython parses runs nothing
             return []
         analyzer = PythonAnalyzer._prepared(tree)
         # `_invoked` maps an inner call to the call that invokes its result, so
@@ -803,6 +809,7 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, SourcedFlows, AnalyzerCore):
         try:
             tree = PythonSyntax.shared(source)
         except (SyntaxError, ValueError, RecursionError):
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
             return frozenset()
         analyzer = PythonAnalyzer._prepared(tree)
         analyzer._walk(tree)

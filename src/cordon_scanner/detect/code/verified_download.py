@@ -668,6 +668,7 @@ class VerifiedDownload:
         try:
             tree = PythonSyntax.parse(code)
         except (SyntaxError, ValueError, RecursionError):
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
             return None
         starts = [0]
         for line in code.split("\n"):

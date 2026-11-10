@@ -244,6 +244,7 @@ class PythonStoreFlow:
         try:
             tree = ast.parse(text)
         except (SyntaxError, ValueError, RecursionError, MemoryError):
+            # S2: a fallback; the next reader (or SOURCE.UNPARSED for running files) reads it
             return None
         inside, docs = cls._string_lines(tree)
         store = {n for n in store_lines if n not in docs}

@@ -76,6 +76,7 @@ class PythonTwoReader:
             try:
                 PythonSyntax.parse(joined)
             except SyntaxError as exc:
+                # S2: a fallback; the next reader (or SOURCE.UNPARSED for running files) reads it
                 at = exc.lineno
                 if at is None or not 1 <= at <= len(lines):
                     return Reading(None, at, joined)
@@ -89,6 +90,7 @@ class PythonTwoReader:
                     return Reading(None, None, joined)
                 continue
             except (ValueError, RecursionError, MemoryError):
+                # S2: a fallback; the next reader (or SOURCE.UNPARSED for running files) reads it
                 return Reading(None, None, joined)
             return Reading(joined)
         # Past the bound: an attacker can pad a file with failures, so this is never "not Python
@@ -112,6 +114,7 @@ class PythonTwoReader:
             try:
                 PythonSyntax.parse(joined)
             except SyntaxError as exc:
+                # S2: a fallback; the next reader (or SOURCE.UNPARSED for running files) reads it
                 at = exc.lineno
                 if (
                     at is None
@@ -126,6 +129,7 @@ class PythonTwoReader:
                 changed = True
                 continue
             except (ValueError, RecursionError):
+                # S2: a fallback; the next reader (or SOURCE.UNPARSED for running files) reads it
                 return False
             return changed
         return False

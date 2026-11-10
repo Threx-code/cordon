@@ -138,7 +138,8 @@ class PythonFlowFacts(PythonValueFlow):
     def of(cls, source: str) -> set[tuple[str, str, str]]:
         try:
             tree = PythonSyntax.parse(source)
-        except (SyntaxError, ValueError, RecursionError):
+        except (SyntaxError, ValueError):
+            # S2: SOURCE.UNPARSED covers a running file; a file no CPython parses runs nothing
             return set()
         analysis = cls(tree)
         if not analysis.index():
@@ -146,7 +147,7 @@ class PythonFlowFacts(PythonValueFlow):
         try:
             analysis.flow()
         except RecursionError:
-            return set()
+            raise  # S2: too deep to read is not empty: escapes to OPERATIONAL.DETECTOR.FAILED, a gap
         out: set[tuple[str, str, str]] = set()
         for node in analysis.calls:
             sink = analysis._sink(node)

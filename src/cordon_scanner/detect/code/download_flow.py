@@ -410,7 +410,8 @@ class PythonDownloads:
     def runs(cls, text: str) -> list[int] | None:
         try:
             tree = PythonSyntax.parse(text)
-        except (SyntaxError, ValueError, RecursionError):
+        except (SyntaxError, ValueError):
+            # S2: SOURCE.UNPARSED covers a running file; a file no CPython parses runs nothing
             return None
         flow = cls(tree)
         # Twice: a helper defined below its caller taints on the second pass.

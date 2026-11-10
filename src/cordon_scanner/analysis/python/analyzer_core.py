@@ -214,7 +214,8 @@ class AnalyzerCore:
             return None
         try:
             expression = PythonSyntax.parse(source.strip(), mode="eval").body
-        except (SyntaxError, ValueError, RecursionError):
+        except (SyntaxError, ValueError):
+            # S2: SOURCE.UNPARSED covers a running file; a file no CPython parses runs nothing
             return None
         if isinstance(expression, ast.Name | ast.Attribute | ast.Call):
             return self._dotted(expression)

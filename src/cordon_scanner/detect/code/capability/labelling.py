@@ -80,7 +80,8 @@ class Labelling:
         ):
             try:
                 folded, decoded_lines = JsEval.resolve_with_decodes(folded)
-            except (IndexError, KeyError, ValueError, TypeError, RecursionError):
+            except (IndexError, KeyError, ValueError, TypeError):
+                # S2: too deep to read is not empty: escapes to OPERATIONAL.DETECTOR.FAILED, a gap
                 # The evaluator reads hostile, malformed and unusual code. If it ever trips on a
                 # file, the file is read as written -- every other rule still applies -- rather
                 # than the scan failing.

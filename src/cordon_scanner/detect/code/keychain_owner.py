@@ -100,6 +100,7 @@ class KeychainOwner:
         try:
             tree = PythonSyntax.shared(text)
         except (SyntaxError, ValueError, RecursionError):
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
             return False
         spans = cls._named_lookups(tree)
         if not spans:

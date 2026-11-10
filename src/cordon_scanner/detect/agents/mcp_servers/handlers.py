@@ -65,7 +65,8 @@ class McpCode:
         try:
             tree: ast.Module = PythonSyntax.parse(text)
             return tree
-        except (SyntaxError, ValueError, RecursionError):
+        except (SyntaxError, ValueError):
+            # S2: SOURCE.UNPARSED covers a running file; a file no CPython parses runs nothing
             return None
 
     @staticmethod

@@ -84,8 +84,10 @@ class UnparsedSource:
             PythonSyntax.parse(text)
             return Decision("parses")
         except SyntaxError:
+            # S2: this is the recorder; the file becomes SOURCE.UNPARSED
             pass
         except (ValueError, RecursionError, MemoryError):
+            # S2: this is the recorder; the file becomes SOURCE.UNPARSED
             return Decision("gap")
         reading = PythonTwoReader.read(text)
         if reading.text is not None:

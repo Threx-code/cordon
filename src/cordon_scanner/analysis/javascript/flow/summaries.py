@@ -81,6 +81,7 @@ class JsSummaries:
         try:
             return cls.joined(cls.of_analysis(a))
         except (RecursionError, _OverBudget, IndexError, KeyError, ValueError, TypeError):
+            # S2: unresolved, not empty; an unresolved require keeps the join incomplete
             return {"js.require": [cls.UNRESOLVED]}
 
     @classmethod

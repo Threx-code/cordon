@@ -84,7 +84,8 @@ class ModuleFacts:
                 for tree, index in StatementTrees.each(text, pieces):
                     analyzer._collect_statement(tree)
                     StatementTrees.release(index)
-            except (SyntaxError, ValueError, RecursionError):
+            except (SyntaxError, ValueError):
+                # S2: SOURCE.UNPARSED covers a running file; a file no CPython parses runs nothing
                 pieces = (
                     None  # a cut that is not between statements, or a module that does not parse
                 )

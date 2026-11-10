@@ -24,6 +24,7 @@ class Statements(TokenStream):
         try:
             return self.statement()
         except (ParseError, RecursionError):
+            # S2: recovery; the span becomes an Error node, read by the rules as unparsed
             self.depth = state_depth
             self.errors += 1
             self._skip_statement()

@@ -352,6 +352,7 @@ class CodeFeatures:
                 else:
                     yield ("punct", t.string)
         except (tokenize.TokenError, SyntaxError, ValueError):
+            # S2: model features only; the model can only add a block
             return
 
     @staticmethod

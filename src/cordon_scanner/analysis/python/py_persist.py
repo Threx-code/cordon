@@ -292,6 +292,7 @@ class PythonPersistence(PythonValueFlow):
         try:
             tokens = list(tokenize.generate_tokens(io.StringIO(source).readline))
         except (tokenize.TokenError, IndentationError, SyntaxError):
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
             return frozenset()
         # A string, a comment, and the literal text of an f-string (3.12 splits it into pieces).
         kinds = {tokenize.STRING, tokenize.COMMENT, getattr(tokenize, "FSTRING_MIDDLE", -1)}

@@ -310,6 +310,7 @@ class PythonFacts:
         try:
             tree = PythonSyntax.shared(source)
         except (SyntaxError, ValueError, RecursionError):
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
             return None
         for node in PythonSyntax.of(tree, ast.Name, ast.Attribute):
             if (node.id if isinstance(node, ast.Name) else node.attr) in PythonFacts.PROBE_NAMES:
@@ -549,7 +550,8 @@ class PythonFacts:
         """
         try:
             tree = PythonSyntax.shared(source)
-        except (SyntaxError, ValueError, RecursionError):
+        except (SyntaxError, ValueError):
+            # S2: SOURCE.UNPARSED covers a running file; a file no CPython parses runs nothing
             return []
 
         found: list[Assembled] = []
@@ -600,6 +602,7 @@ class PythonFacts:
         try:
             PythonSyntax.shared(source)
         except (SyntaxError, ValueError, RecursionError):
+            # S2: a fallback; the next reader (or SOURCE.UNPARSED for running files) reads it
             return False
         return True
 

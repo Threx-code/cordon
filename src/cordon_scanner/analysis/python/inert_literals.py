@@ -174,6 +174,7 @@ class InertLiterals(PythonValueFlow):
         try:
             tree = PythonSyntax.parse(source)
         except (SyntaxError, ValueError):
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
             return frozenset()
         analysis = cls(tree, focus=focus)
         if not analysis.index():
