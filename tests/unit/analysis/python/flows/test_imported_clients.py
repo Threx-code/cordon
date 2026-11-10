@@ -223,3 +223,80 @@ class TestTheAnalyserRunsWhatAHandlerHandsAnImportedRunner:
             "    run_cmd('uptime')\n"
         )
         assert not self.runs(source, {"run_cmd": "0"})
+
+
+class TestFilesInsideAnArchive:
+    """A shipped file is named `archive!member`; imports resolve inside the archive."""
+
+    def test_an_absolute_import_inside_a_wheel_finds_its_module(self) -> None:
+        wheel = "relaykit-0.1.2-py3-none-any.whl!"
+        found = ImportedClients.runners_of(
+            {
+                wheel + "relaykit/command.py": RUNNER,
+                wheel + "relaykit/handlers.py": "from relaykit.command import run_cmd\n",
+            }
+        )
+        assert found == {wheel + "relaykit/handlers.py": {"run_cmd": "0"}}
+
+    def test_a_client_taken_the_same_way_inside_a_wheel(self) -> None:
+        wheel = "kit-1.0-py3-none-any.whl!"
+        found = ImportedClients.of(
+            {
+                wheel + "kit/imports.py": MAKER,
+                wheel + "kit/entry.py": SENDER.replace(".imports", "kit.imports").replace(
+                    "from kit.imports", "from kit.imports"
+                ),
+            }
+        )
+        assert found == {wheel + "kit/entry.py": {"session": "httpx.Client"}}
+
+
+class TestAWheelAndASourceArchiveScan:
+    """The helper and its caller are in different files of a shipped archive (inert, hand-written)."""
+
+    COMMAND = (
+        "import subprocess\ndef execute_command(cmd):\n    return subprocess.run(cmd, shell=True)\n"
+    )
+    HANDLERS = (
+        "from relaykit.command import execute_command\n"
+        "def handle_command(conn, message):\n"
+        "    execute_command(message['command'])\n"
+    )
+
+    @staticmethod
+    def rules(path: Path) -> set[str]:
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(path)
+        return {f.rule_id for f in result.findings}
+
+    def test_a_wheel_whose_handler_imports_the_runner_is_found(self, tmp_path: Path) -> None:
+        import zipfile
+
+        wheel = tmp_path / "relaykit-0.1.2-py3-none-any.whl"
+        with zipfile.ZipFile(wheel, "w") as z:
+            z.writestr("relaykit/__init__.py", "")
+            z.writestr("relaykit/command.py", self.COMMAND)
+            z.writestr("relaykit/handlers.py", self.HANDLERS)
+            z.writestr(
+                "relaykit-0.1.2.dist-info/METADATA",
+                "Metadata-Version: 2.1\nName: relaykit\nVersion: 0.1.2\n",
+            )
+        assert "SUSPECT.DROPPER.001" in self.rules(wheel)
+
+    def test_the_same_files_in_a_directory_are_found(self, tmp_path: Path) -> None:
+        pkg = tmp_path / "relaykit"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text("", encoding="utf-8")
+        (pkg / "command.py").write_text(self.COMMAND, encoding="utf-8")
+        (pkg / "handlers.py").write_text(self.HANDLERS, encoding="utf-8")
+        assert "SUSPECT.DROPPER.001" in self.rules(tmp_path)
+
+    def test_a_helper_that_runs_a_fixed_command_raises_nothing(self, tmp_path: Path) -> None:
+        pkg = tmp_path / "relaykit"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text("", encoding="utf-8")
+        (pkg / "command.py").write_text(
+            "import subprocess\ndef execute_command(cmd):\n    return subprocess.run(['uptime'])\n",
+            encoding="utf-8",
+        )
+        (pkg / "handlers.py").write_text(self.HANDLERS, encoding="utf-8")
+        assert "SUSPECT.DROPPER.001" not in self.rules(tmp_path)
