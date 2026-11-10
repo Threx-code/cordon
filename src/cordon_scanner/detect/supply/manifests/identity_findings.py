@@ -32,6 +32,11 @@ if TYPE_CHECKING:
 
 
 class IdentityFindings:
+    #: A Python package's own manifests: its `__init__.py` and `setup.py` are not code files of
+    #: its own when the code is counted (`PackageIdentities._code_files`).
+    PYTHON_MANIFESTS: ClassVar[frozenset[str]] = frozenset(
+        {"setup.py", "PKG-INFO", "METADATA", "pyproject.toml", "setup.cfg"}
+    )
     """The manifest findings about a published package's name and version."""
 
     OWN_NAME_MEASURED_ON: ClassVar[frozenset[str]] = frozenset({"pypi", "npm"})
@@ -137,7 +142,8 @@ class IdentityFindings:
         # rules; its name alone is reported below the gate (pypi-benign F472: 14 of 21).
         from cordon_scanner.detect.supply.name_risk import NameRisk, PackageIdentities
 
-        code_files = PackageIdentities._code_files(unit, ctx, python=ecosystem_id == "pypi")
+        python = posixpath.basename(unit.path) in IdentityFindings.PYTHON_MANIFESTS
+        code_files = PackageIdentities._code_files(unit, ctx, python=python)
         stub = code_files <= NameRisk.MAX_CODE_FILES_TO_BLOCK
         yield ManifestFinding.finding(
             rule_id="SUSPECT.TYPOSQUAT.PACKAGE_NAME.001",

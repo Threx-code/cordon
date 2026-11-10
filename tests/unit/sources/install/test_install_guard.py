@@ -13,6 +13,7 @@ import base64
 import hashlib
 import io
 import json
+import os
 import subprocess
 import tarfile
 import threading
@@ -545,7 +546,7 @@ class TestTheCommand:
         (real / "npm").write_text("#!/bin/sh\necho real\n", encoding="utf-8")
         for p in (shims / "npm", real / "npm"):
             p.chmod(0o755)
-        found = Subprocesses.executable("npm", path=f"{shims}:{real}")
+        found = Subprocesses.executable("npm", path=os.pathsep.join([str(shims), str(real)]))
         assert found == str(real / "npm")
 
 

