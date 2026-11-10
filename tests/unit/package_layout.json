@@ -431,6 +431,7 @@
   "engine/netguard": "engine/netguard",
   "engine/package_format": "engine/package_format",
   "engine/parallel": "engine/parallel",
+  "engine/isolation/platform_limits": "engine/isolation/platform_limits",
   "engine/isolation/supervisor": "engine/isolation/supervisor",
   "engine/isolation/analysis_facts": "engine/isolation/analysis_facts",
   "engine/isolation/facts": "engine/isolation/facts",

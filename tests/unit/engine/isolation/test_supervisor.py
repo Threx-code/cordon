@@ -124,7 +124,6 @@ class TestTheSupervisor:
         assert outcome.results == {i: i * i for i in range(12)}
         assert not outcome.failed
 
-    @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="RLIMIT_AS is Linux's")
     def test_a_unit_past_the_memory_limit_costs_only_itself(self) -> None:
         units = [Unit(0, ("echo", "a"), 1), Unit(1, ("hog", 2 << 30), 1), Unit(2, ("echo", "b"), 1)]
         outcome = Harness.supervisor(Bounds(memory_bytes=1 << 30)).run(units)
@@ -132,14 +131,12 @@ class TestTheSupervisor:
         assert outcome.failed == {1: Reason.MEMORY}
         assert outcome.isolation["memory_limit"] == "enforced"
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="no RLIMIT_CPU on Windows")
     def test_a_unit_past_its_cpu_budget_is_ended_by_the_kernel(self) -> None:
         units = [Unit(0, ("spin", None), 1), Unit(1, ("echo", "after"), 1)]
         outcome = Harness.supervisor(Bounds(cpu_floor=1.0, wall_factor=60.0)).run(units)
         assert outcome.failed == {0: Reason.CPU}
         assert outcome.results == {1: "after"}
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="no RLIMIT_CPU on Windows")
     def test_an_idle_worker_is_not_ended_for_the_cpu_before(self) -> None:
         """Each unit uses most of a 2 s budget; one worker runs them all, so the CPU it has used
         passes any one unit's budget many times over: the limit is per unit, released between."""
