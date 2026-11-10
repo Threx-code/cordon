@@ -13625,7 +13625,7 @@ class TestAPackageNamedLikeAPopularOne:
         from cordon_scanner.foundation.config.settings import Config
 
         root = tmp_path / directory
-        root.mkdir(parents=True)
+        root.mkdir(parents=True, exist_ok=True)
         (root / "setup.py").write_text(
             f"from setuptools import setup\nsetup(name='{name}', version='0.1')\n", encoding="utf-8"
         )
@@ -13648,6 +13648,24 @@ class TestAPackageNamedLikeAPopularOne:
 
     def test_an_unrelated_name_is_quiet(self, tmp_path) -> None:
         assert self._found(tmp_path, "lighthouse-ledger-0.1", "lighthouse-ledger") == []
+
+    def test_a_stub_with_a_few_code_files_still_blocks(self, tmp_path) -> None:
+        """The squats in the malicious sets ship one or two code files: the name is the evidence."""
+        root = tmp_path / "aiiohttp-0.1" / "aiiohttp"
+        root.mkdir(parents=True)
+        for name in ("client.py", "util.py", "web.py"):
+            (root / name).write_text("x = 1\n", encoding="utf-8")
+        assert self._found(tmp_path, "aiiohttp-0.1", "aiiohttp") == ["HIGH"]
+
+    def test_a_project_with_code_of_its_own_is_below_the_gate(self, tmp_path) -> None:
+        """adjango, btorch, dredis, scopy: a real project one edit from a popular name ships its
+        own code, which the content rules judge; the name alone does not block it (pypi-benign
+        F472: 14 of 21 typosquat-only blocks)."""
+        root = tmp_path / "aiiohttp-0.1" / "aiiohttp"
+        root.mkdir(parents=True)
+        for name in ("client.py", "util.py", "web.py", "server.py"):
+            (root / name).write_text("x = 1\n", encoding="utf-8")
+        assert self._found(tmp_path, "aiiohttp-0.1", "aiiohttp") == ["MEDIUM"]
 
 
 class TestMoreDecodersAndDestinations:

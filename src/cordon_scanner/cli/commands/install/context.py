@@ -104,9 +104,17 @@ class InstallContext:
 
         count = len(plan.files)
         noun = "package" if count == 1 else "packages"
-        print(f"{PROGRAM}: resolved {count} {noun}; fetching and scanning them", file=self.out)
+        if count or not plan.local:
+            print(f"{PROGRAM}: resolved {count} {noun}; fetching and scanning them", file=self.out)
+        else:
+            print(
+                f"{PROGRAM}: scanning what {plan.ecosystem} fetched, before anything runs it",
+                file=self.out,
+            )
         verdict = InstallGuard.check(plan, self.scan, self.registries.fetch, scratch, self.cache)
-        if verdict.ok:
+        if verdict.ok and not count and plan.local:
+            print(f"{PROGRAM}: what {plan.ecosystem} fetched passed", file=self.out)
+        elif verdict.ok:
             remembered = f" ({verdict.remembered} remembered clean)" if verdict.remembered else ""
             print(
                 f"{PROGRAM}: {count} {noun} passed{remembered}; installing exactly those",
