@@ -200,6 +200,15 @@ class EcosystemRegistry:
     The instances are stateless, so one shared tuple serves every scan.
     """
 
+    #: Registries whose installer runs the lifecycle scripts of an npm tree its archive ships, and
+    #: through which an agent skill may be distributed. pip, Maven and the rest install neither
+    #: where it would run.
+    BUNDLED_SCRIPTS: ClassVar[frozenset[str]] = frozenset({"npm"})
+
+    @staticmethod
+    def runs_bundled_scripts(ecosystem: str) -> bool:
+        return ecosystem in EcosystemRegistry.BUNDLED_SCRIPTS
+
     ECOSYSTEMS: ClassVar[tuple[Ecosystem, ...]] = (
         NpmEcosystem(),
         PypiEcosystem(),

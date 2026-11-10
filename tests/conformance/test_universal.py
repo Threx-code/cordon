@@ -324,6 +324,14 @@ class TestScale:
         report, large = TestScale.timed(profile, pkgs, tmp_path / f"b{4 * count}")
         _, after = TestScale.timed(profile, TestScale.packages(profile, count), tmp_path / "c")
         small = (before + after) / 2
+        if large >= small * 8:
+            # Measured once more before failing: on a macOS runner short of memory, one large scan
+            # was charged 74 s of thread CPU where it takes 8 s (Helm 5 Nov, Hex 10 Nov), never
+            # twice running. A read that really grows faster than linearly fails both times.
+            _, again = TestScale.timed(profile, pkgs, tmp_path / f"d{4 * count}")
+            _, after = TestScale.timed(profile, TestScale.packages(profile, count), tmp_path / "e")
+            if again < large:
+                large, small = again, (before + after) / 2
         # The packages written; not what the format records about its own tooling (Bundler's
         # `BUNDLED WITH`), the runtime, or Go's standard library.
         written = {p.name.lower() for p in pkgs}

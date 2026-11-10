@@ -26,6 +26,10 @@ class VerdictCache:
     identity: str
 
     TTL_SECONDS: ClassVar[int] = 24 * 3600
+    #: How far an entry's modification time may sit after the clock and still count as written
+    #: now: Windows stamped an entry just written later than `time.time()` read after it, so the
+    #: cache never answered there (tests (windows), 10 Nov). Anything later is not trusted.
+    SKEW_SECONDS: ClassVar[float] = 2.0
 
     @classmethod
     def default(cls, identity: str) -> VerdictCache:
@@ -54,7 +58,7 @@ class VerdictCache:
             age = (now if now is not None else time.time()) - entry.stat().st_mtime
         except OSError:
             return False
-        return 0 <= age < self.TTL_SECONDS
+        return -self.SKEW_SECONDS <= age < self.TTL_SECONDS
 
     def remember(self, keys: list[str]) -> None:
         for key in keys:

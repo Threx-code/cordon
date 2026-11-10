@@ -298,7 +298,10 @@ jobs:
       - run: pip install -e .
       # `cryptography` is a RELEASE-only dependency: it signs the bundle here and
       # never ships. The scanner verifies with the vendored `intel/_ed25519`.
-      - run: pip install "cryptography>=42"
+      # Pinned by version and hash, wheels only: the next step holds the signing key, and
+      # anything installed here would run beside it.
+      - run: |
+          pip install --require-hashes --only-binary :all: -r ci/release-signing-requirements.txt
       - name: Build and sign the bundle
         # Skips cleanly when the signing key is not yet configured, so the
         # release itself is never blocked on this opt-in feature being set up.
@@ -682,13 +685,13 @@ jobs:
     name: build the JetBrains plugin, attach it to the release, publish it to the JetBrains Marketplace
     # Built by the plugin's own Dockerfile (pinned Gradle image, tests and the Plugin Verifier run in
     # the build), from the tagged commit, after the GitHub release exists. The zip is attested and
-    # attached to the release, and published only when the token is configured, from a protected
-    # environment that needs a reviewer. JetBrains takes a plugin's FIRST upload through its website
-    # (the `dev.cordon.jetbrains` id is claimed then); every release after that goes through here.
+    # attached to the release. The Marketplace token is not in this job: the build runs Gradle and
+    # its plugins, third-party code, so the publish is its own job (jetbrains-publish) that runs no
+    # build at all. JetBrains takes a plugin's FIRST upload through its website (the
+    # `dev.cordon.jetbrains` id is claimed then); every release after that goes through here.
     needs: github-release
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    environment: marketplace
     permissions:
       contents: write
       id-token: write
@@ -723,9 +726,43 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$GITHUB_REF_NAME" out/*.zip --repo "$GITHUB_REPOSITORY" --clobber
 
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: jetbrains-plugin
+          path: out/*.zip
+          if-no-files-found: error
+
+  jetbrains-publish:
+    name: publish the JetBrains plugin to the JetBrains Marketplace
+    # The one job that holds the Marketplace token, from a protected environment that needs a
+    # reviewer. It checks nothing out and builds nothing: it takes the zip the build job attested,
+    # checks that attestation, and sends the zip to JetBrains' upload endpoint, the token's only
+    # destination. Skipped, with a notice, until the token is configured: a release must not fail
+    # because the Marketplace listing has not been claimed yet, and the notice says it has not.
+    needs: jetbrains-marketplace
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: marketplace
+    permissions:
+      contents: read
+      attestations: read
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: jetbrains-plugin
+          path: out
+
+      - name: The zip is the one this release's build attested
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for plugin in out/*.zip; do
+            gh attestation verify "$plugin" --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
+          done
+
       - name: Publish
-        # Skipped, with a notice, until the token is configured: a release must not fail because the
-        # Marketplace listing has not been claimed yet, and the notice says it has not.
         env:
           JETBRAINS_MARKETPLACE_TOKEN: ${{ secrets.JETBRAINS_MARKETPLACE_TOKEN }}
         run: |
@@ -734,12 +771,16 @@ jobs:
             echo "::notice::JETBRAINS_MARKETPLACE_TOKEN is not set; the JetBrains Marketplace was not published to"
             exit 0
           fi
-          plugin="$(ls out/*.zip)"
-          curl --fail-with-body --silent --show-error \
+          plugins=(out/*.zip)
+          if [ "${#plugins[@]}" -ne 1 ]; then
+            echo "::error::expected one plugin zip, found ${#plugins[@]}"
+            exit 1
+          fi
+          curl --fail-with-body --silent --show-error --proto '=https' \
             -H "Authorization: Bearer ${JETBRAINS_MARKETPLACE_TOKEN}" \
             -F xmlId=dev.cordon.jetbrains \
             -F channel=stable \
-            -F "file=@${plugin}" \
+            -F "file=@${plugins[0]}" \
             https://plugins.jetbrains.com/plugin/uploadPlugin
 
   github-action-mirror:
