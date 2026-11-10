@@ -110,6 +110,17 @@ class TestAPythonTwoFileIsReadAsCode:
         source = "import os\nprint 'go'\nos.system('id')\n"
         assert "os.system('id')" in ReaderKit.read(source)
 
+    @pytest.mark.parametrize(
+        "separator", ["\x0c", "\x0b", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029"]
+    )
+    def test_a_character_str_splitlines_breaks_on_moves_no_rewrite(self, separator: str) -> None:
+        # str.splitlines breaks a line at a form feed (and these others); Python's tokenizer does
+        # not. Split that way, each rewrite after it landed one line early: lava-test 0.14's
+        # commands.py (a form feed in a docstring) came out as `def invok((self):` (S2 probe).
+        source = f'class A:\n    """one{separator}two"""\n\n    def f(self):\n        print "x"\n'
+        text = ReaderKit.read(source)
+        assert "    def f(self):\n" in text and 'print("x")' in text
+
 
 class TestWhatIsNotPythonTwo:
     def test_garbage_is_not_read_and_the_line_is_named(self) -> None:

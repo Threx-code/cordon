@@ -102,7 +102,10 @@ class UnparsedSource:
         a newer or modelled grammar's construct on the line it stopped at, or an act anywhere."""
         if line is None:
             return True
-        lines = partial.splitlines()
+        from cordon_scanner.analysis.python.python_two_reader import PythonTwoReader
+
+        # numbered as the parser numbered `line`, not as str.splitlines would (a form feed)
+        lines = [ln.rstrip("\r\n") for ln in PythonTwoReader.source_lines(partial)]
         stopped = lines[line - 1] if 1 <= line <= len(lines) else ""
         if UnparsedSource.NEWER.search(stopped) or PythonTwo.construct(partial, line):
             return True

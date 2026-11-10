@@ -69,7 +69,7 @@ class PythonTwoReader:
         from cordon_scanner.analysis.python.pysyntax import PythonSyntax
         from cordon_scanner.analysis.python.statements import PythonTwo
 
-        lines = PythonTwoReader.lexical(text).splitlines(keepends=True)
+        lines = PythonTwoReader.source_lines(PythonTwoReader.lexical(text))
         lines = PythonTwoReader.statements(lines)
         for _ in range(PythonTwoReader.RETRIES):
             joined = "".join(lines)
@@ -98,6 +98,13 @@ class PythonTwoReader:
         return Reading(None, None, "".join(lines))
 
     @staticmethod
+    def source_lines(text: str) -> list[str]:
+        """`text`'s lines as Python's tokenizer counts them, ends kept: broken at `\\n`, `\\r\\n` and
+        `\\r` only. `str.splitlines` also breaks at a form feed, `\\x0b`, `\\x1c`-`\\x1e`, `\\x85`,
+        U+2028 and U+2029, and each rewrite after one landed on the wrong line (lava-test 0.14)."""
+        return io.StringIO(text, newline="").readlines()
+
+    @staticmethod
     def wholly(text: str) -> bool:
         """Whether a file Python 3 refuses is Python 2 through and through with no rewrite at all,
         not merely a file with one Python 2 token in it: every line the parse fails on carries a
@@ -107,7 +114,7 @@ class PythonTwoReader:
         from cordon_scanner.analysis.python.pysyntax import PythonSyntax
         from cordon_scanner.analysis.python.statements import PythonTwo
 
-        lines = text.splitlines(keepends=True)
+        lines = PythonTwoReader.source_lines(text)
         changed = False
         for _ in range(len(lines) + 1):
             joined = "".join(lines)
