@@ -46,8 +46,17 @@ class TestOrdinaryImports:
         source = "import subprocess\nproc = subprocess.Popen(['helper-tool'])\nwhile True:\n    pass\n"
         assert Kit.started(source) == ["program started at import"]
 
-    def test_a_program_whose_output_is_read(self) -> None:
-        source = "import subprocess\nproc = subprocess.Popen(['helper-tool'], stdout=subprocess.PIPE)\nout = proc.communicate()\n"
+    def test_a_launcher_that_pipes_the_output_and_loops_over_it(self) -> None:
+        source = (
+            "import subprocess\n"
+            "proc = subprocess.Popen(['helper-tool'], stdout=subprocess.PIPE, universal_newlines=True)\n"
+            "while True:\n"
+            "    line = proc.stdout.readline()\n"
+        )
+        assert Kit.started(source) == ["program started at import"]
+
+    def test_the_permission_tools(self) -> None:
+        source = "import subprocess\nsubprocess.Popen(['chmod', '+x', 'run.sh'])\nsubprocess.Popen(['sudo', 'true'])\n"
         assert Kit.started(source) == []
 
     def test_the_terminal_the_interpreter_and_git(self) -> None:
