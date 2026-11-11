@@ -46,6 +46,12 @@ class PythonFactIds:
         ("concealed name resolved", "AST.PY.CONCEALED_NAME"),
         # A value decoded (base64, hex, XOR) and then never read: carried for something else.
         ("decoded and left unused", "AST.PY.DORMANT_DECODE"),
+        # Files written into a directory, and the files listed there executed (scrapetools2).
+        ("dropped into a directory and executed", "AST.PY.DIRECTORY_DROP_RUN"),
+        # Text decoded out of bytes and executed (rasterkit_demo).
+        ("bytes decoded and executed", "AST.PY.BYTES_EXEC"),
+        # Mail sent at import from an account the module logs into with literal credentials.
+        ("mail sent on import", "AST.PY.IMPORT_MAIL"),
         # A persistence location written by code that runs when the file is loaded.
         ("persist at load", "AST.PY.PERSIST_AT_LOAD"),
         # The clipboard read, matched against a pattern, and set to a value the package brings.

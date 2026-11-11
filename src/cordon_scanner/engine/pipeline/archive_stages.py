@@ -16,6 +16,7 @@ from cordon_scanner.analysis.python.flows.carried_calls import CarriedCalls
 from cordon_scanner.analysis.python.flows.imported_clients import ImportedClients
 from cordon_scanner.analysis.python.unparsed_source import UnparsedSource
 from cordon_scanner.analysis.shared.languages import LanguageRegistry
+from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.decide.code_model import CodeModelPass
 from cordon_scanner.detect.base import (
     FileUnit,
@@ -46,7 +47,7 @@ from cordon_scanner.engine.pipeline.releases import ReleaseChecks
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.errors import ArchiveError
 from cordon_scanner.foundation.formats.served_json import ServedJson
-from cordon_scanner.foundation.models import Scope, Severity
+from cordon_scanner.foundation.models import Confidence, Scope, Severity
 from cordon_scanner.foundation.paths import ContainerPaths
 from cordon_scanner.foundation.results import Dependency, OperationalFinding
 from cordon_scanner.foundation.text.confusion_versions import ConfusionVersions
@@ -365,6 +366,9 @@ class ArchiveStages:
             decision = UnparsedSource.decide(unit.content.text)
             if decision.kind == "gap":
                 acc.incomplete(UnparsedSource.gap(unit.path))
+                if not SourcePaths.is_test_material(unit.path.rpartition("!")[2]):
+                    risk = ctx.scorer.score(Severity.HIGH, Confidence.HIGH)
+                    acc.append(UnparsedSource.running(unit.path, risk))
             elif decision.kind == "broken":
                 acc.append(UnparsedSource.broken(unit.path))
             elif decision.reading is not None:

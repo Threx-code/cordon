@@ -923,3 +923,97 @@ class TestAValueDecodedAndLeftUnused:
     def test_fetched_json_parsed_is_not(self) -> None:
         source = "import requests, json\ndata = json.loads(requests.get(URL).text)\n"
         assert self.dormant(source) == []
+
+
+class TestDataRunAsCode:
+    """scrapetools2 0.2.0 (files written to a directory, the directory's files executed) and
+    rasterkit_demo 0.1.0 (bytes decoded and executed). Fixture source assembled at run time."""
+
+    @staticmethod
+    def found(source: str) -> list[str]:
+        return [
+            h.detail
+            for h in PythonAnalyzer.analyse(source)
+            if h.detail.startswith(("dropped into a directory", "bytes decoded and executed"))
+        ]
+
+    RUN = "ex" + "ec"
+
+    def test_files_written_then_listed_and_executed(self) -> None:
+        source = "\n".join(
+            [
+                "import os",
+                "def update(items):",
+                "    for i, data in enumerate(items):",
+                "        with open(f'modules/{i}.py', 'w') as f:",
+                "            f.write(data['code'])",
+                "def run_modules():",
+                "    for x in os.listdir('modules'):",
+                "        with open(f'modules/{x}') as f:",
+                f"            {self.RUN}(compile(f.read(), x, 'exec'), {{}})",
+                "",
+            ]
+        )
+        assert self.found(source) == [f"dropped into a directory and executed: {self.RUN}"]
+
+    def test_a_directory_read_but_never_written_is_not(self) -> None:
+        source = "\n".join(
+            [
+                "import os",
+                "def run_plugins():",
+                "    for x in os.listdir('plugins'):",
+                "        with open(f'plugins/{x}') as f:",
+                f"            {self.RUN}(compile(f.read(), x, 'exec'), {{}})",
+                "",
+            ]
+        )
+        assert self.found(source) == []
+
+    def test_bytes_handed_in_decoded_and_executed(self) -> None:
+        source = f"def apply(samples: bytes):\n    code = samples.decode('utf-8')\n    {self.RUN}(code, {{}})\n"
+        assert self.found(source) == [f"bytes decoded and executed: {self.RUN}"]
+
+    def test_a_decoder_s_output_executed_is_the_decode_exec_rules_not_this(self) -> None:
+        source = f"import zlib\ndef prepare(blob):\n    {self.RUN}(zlib.decompress(blob).decode(), {{}})\n"
+        assert self.found(source) == []
+
+    def test_the_package_s_own_file_read_and_executed_is_not(self) -> None:
+        source = (
+            f"with open('version.py', 'rb') as f:\n    {self.RUN}(f.read().decode('utf-8'), d)\n"
+        )
+        assert self.found(source) == []
+
+
+class TestMailSentOnImport:
+    """Coffin2022 7.0: a tunnel module that logs into SMTP with a password it carries and mails a
+    fixed address at import."""
+
+    @staticmethod
+    def mailed(source: str) -> list[str]:
+        return [
+            h.detail
+            for h in PythonAnalyzer.analyse(source)
+            if h.detail.startswith("mail sent on import")
+        ]
+
+    @staticmethod
+    def module(*, login: str, main_guard: bool = False) -> str:
+        lines = ["import smtplib", "srv = smtplib.SMTP_SSL('smtp.example.invalid', 465)", "srv.ehlo()", login,
+                 "srv.sendmail('a@example.invalid', 'b@example.invalid', 'installed')", ""]  # fmt: skip
+        if main_guard:
+            lines = [
+                "import smtplib",
+                "if __name__ == '__main__':",
+                *("    " + x for x in lines[1:-1]),
+                "",
+            ]
+        return "\n".join(lines)
+
+    def test_a_literal_login_and_a_send_at_import(self) -> None:
+        assert self.mailed(self.module(login="srv.login('a@example.invalid', 'pw')")) == [
+            "mail sent on import: smtplib.sendmail"
+        ]
+
+    def test_credentials_from_the_environment_or_a_main_guard_are_not(self) -> None:
+        assert self.mailed(self.module(login="srv.login(os.environ['U'], os.environ['P'])")) == []
+        assert self.mailed(self.module(login="srv.login('a', 'pw')", main_guard=True)) == []

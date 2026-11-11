@@ -208,6 +208,8 @@ _SIGNALS_BY_PREFIX: tuple[tuple[str, frozenset[Signal]], ...] = tuple(
         # Concealment.
         ("MALWARE.DECODE_EXEC.", {_S.CONCEAL}),
         ("SUSPECT.DECODE_EXEC.", {_S.CONCEAL}),
+        ("SUSPECT.EXECUTE.DECODED_BYTES.", {_S.CONCEAL}),
+        ("SUSPECT.SOURCE.UNPARSED_RUNNING.", {_S.CONCEAL}),
         ("SUSPECT.DECODE_CHAIN.", {_S.CONCEAL}),
         ("MALWARE.DYNAMIC_DISPATCH.", {_S.CONCEAL}),
         ("SUSPECT.DYNAMIC_DISPATCH.", {_S.CONCEAL}),

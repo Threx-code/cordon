@@ -73,7 +73,9 @@ from cordon_scanner.analysis.python.flows.data_file_code import DataFileCode
 from cordon_scanner.analysis.python.flows.decoded_drops import DecodedDrops
 from cordon_scanner.analysis.python.flows.dns_tunnels import DnsTunnels
 from cordon_scanner.analysis.python.flows.dormant_decodes import DormantDecodes
+from cordon_scanner.analysis.python.flows.executed_data import ExecutedData
 from cordon_scanner.analysis.python.flows.implants.implant_facts import ImplantFacts
+from cordon_scanner.analysis.python.flows.import_mail import ImportMail
 from cordon_scanner.analysis.python.flows.received_run import ReceivedRuns
 from cordon_scanner.analysis.python.flows.relayed_sends import RelayedSends
 from cordon_scanner.analysis.python.flows.startup_files import StartupFiles
@@ -189,6 +191,8 @@ class PythonAnalyzer(
     RelayedSends,
     ComputedCommands,
     DormantDecodes,
+    ExecutedData,
+    ImportMail,
     ClientBindings,
     SourcedFlows,
     AnalyzerCore,
@@ -245,6 +249,8 @@ class PythonAnalyzer(
         analyzer._computed_commands(tree)
         analyzer._concealed_names(tree)
         analyzer._dormant_decodes(tree)
+        analyzer._data_executed(tree)
+        analyzer._import_mail(tree)
         analyzer._hits.extend(ImplantFacts.hits(tree, source, analyzer._hits))
         if analyzer._sends(tree):
             # Each of these records only at a call that sends (an egress primitive) or through a

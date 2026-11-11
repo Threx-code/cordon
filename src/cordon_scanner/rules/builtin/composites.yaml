@@ -893,6 +893,97 @@ rules:
         - path_glob: "**/test_*.py"
         - path_glob: "tests/**"
 
+  - id: MALWARE.DROPPER.DIRECTORY.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: Files written into a directory are then executed from it
+    message: >
+      This file writes files whose content it did not write down into a fixed directory, and
+      elsewhere lists that directory and executes every file it finds there. No single function both
+      receives the code and runs it, so no download-and-run pairing sees it; the directory joins the
+      two: whatever the first half writes, the second half runs.
+    remediation: >
+      Treat the package as hostile. Do not install it, and look in the directory for what it
+      already wrote.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package whose updater fetches a tar, decrypts its lines into .py files under one
+        directory, and whose module runner execs every file listed there (scrapetools2 0.2.0,
+        2026-11-11).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.DIRECTORY_DROP_RUN
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: SUSPECT.EXECUTE.DECODED_BYTES.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: Bytes handed to the code are decoded to text and executed
+    message: >
+      This file decodes bytes it is handed, or that a call returns, into text and runs it with
+      exec, eval or compile. Whatever the bytes are called -- samples, windows, a payload -- running
+      them as code means their author, not this file, decides what happens.
+    remediation: >
+      Find where the bytes come from and read them as code before running this.
+    provenance:
+      kind: research
+      reference: >
+        A wheel exec-ing "windows" of bytes from a module it does not ship, a thread per window
+        (rasterkit_demo 0.1.0, 2026-11-11).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.BYTES_EXEC
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: SUSPECT.EXFIL.MAIL_ON_IMPORT.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Importing the module sends mail from an account whose password it carries
+    message: >
+      At module level, this file opens an SMTP connection, logs in with a user and password
+      written in its source, and sends a message. Importing it tells the account's owner that the
+      package was installed and imported, and anything else the message carries, from every machine
+      that loads it.
+    remediation: >
+      Do not import this package. A library has no reason to send mail when it is loaded.
+    provenance:
+      kind: research
+      reference: >
+        A tunnel tool whose module mails a fixed address at import, and mails the public port of
+        every tunnel it opens (Coffin2022 7.0, Coffin-Codes-2022 7.2, 2026-11-11).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.IMPORT_MAIL
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: SUSPECT.OBFUSCATION.DORMANT_PAYLOAD.001
     version: 1.0.0
     category: suspicious
