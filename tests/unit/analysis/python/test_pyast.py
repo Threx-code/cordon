@@ -1203,7 +1203,7 @@ class TestAMachineFingerprintAnsweredWithAProgram:
         )
 
     def test_the_collector_map_crosses_files(self) -> None:
-        from cordon_scanner.analysis.python.flows.staged.machine_reports import MachineCollectors
+        from cordon_scanner.analysis.python.flows.staged.machine_collectors import MachineCollectors
 
         found = MachineCollectors.of(
             {"pkg/context.py": self.COLLECTOR, "pkg/verifier.py": self.sender("get_context()")}
