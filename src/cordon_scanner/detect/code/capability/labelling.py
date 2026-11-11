@@ -569,6 +569,7 @@ class Labelling:
         try:
             return PersistAtLoad.load_time_lines(PythonSyntax.shared(text))
         except (SyntaxError, ValueError):
+            # S2: covered by SOURCE.UNPARSED at every running file; a file that does not parse has no load-time lines
             return frozenset()
 
     @staticmethod

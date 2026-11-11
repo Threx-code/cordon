@@ -6,7 +6,6 @@ a well-known service's name, and how a release differs from the one before it.
 
 from __future__ import annotations
 
-import ast
 import io
 import re
 from dataclasses import replace
@@ -680,13 +679,15 @@ class ReleaseChecks:
         if not programs:
             return []
         from cordon_scanner.analysis.python.flows.implants.shipped_programs import ShippedPrograms
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 
         for unit in units:
             if not unit.path.endswith(".py"):
                 continue
             try:
-                tree = ast.parse(unit.content.text)
+                tree = PythonSyntax.shared(unit.content.text)
             except (SyntaxError, ValueError):
+                # S2: covered by SOURCE.UNPARSED at every running file; a file that does not parse starts nothing here
                 continue
             runs = ShippedPrograms.lines(tree)
             if not runs:
