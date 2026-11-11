@@ -33,6 +33,8 @@ class PythonFactIds:
         # Encoded data resolved as DNS names: a channel out that no firewall rule for HTTP sees.
         ("dns tunnel", "AST.PY.DNS_TUNNEL"),
     )
+    #: The suffix the analyser puts on a downloaded program's start when it hides the window.
+    HIDDEN_START: ClassVar[str] = "hidden=1"
     #: A payload carried encoded, written out and made runnable or run.
     DROPPED: ClassVar[tuple[str, ...]] = (
         "a decoded file runnable",
@@ -53,6 +55,10 @@ class PythonFactIds:
     @classmethod
     def rule_id(cls, detail: str, capability: Capability) -> str:
         """The rule id this fact is labelled with."""
+        if " runs a downloaded " in detail and detail.split()[-1] == cls.HIDDEN_START:
+            # A downloaded program started with its window hidden: concealment on top of a
+            # dropper (MALWARE.DROPPER.HIDDEN.001), never lowered for running only when called.
+            return "AST.PY.HIDDEN_FETCH_EXEC"
         for prefix, rule in cls.PREFIXES:
             if detail.startswith(prefix):
                 return rule

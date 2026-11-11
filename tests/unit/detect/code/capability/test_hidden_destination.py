@@ -349,3 +349,29 @@ class TestACommandReceivedOnAChannel:
             "app.add_handler(MessageHandler(filters.TEXT, on_message))\n"
         )
         assert "SUSPECT.DROPPER.001" not in self.severities(tmp_path, module)
+
+
+class TestADownloadStartedHidden:
+    @staticmethod
+    def rules(tmp_path: Path, module: str) -> set[str]:
+        return TestADestinationOnlyWrittenAtImport.rules(tmp_path, module)
+
+    def test_a_downloaded_program_started_hidden_blocks(self, tmp_path: Path) -> None:
+        module = (
+            "import os, subprocess, tempfile, urllib.request\n"
+            "def fetch(url):\n"
+            "    path = os.path.join(tempfile.gettempdir(), 'u.exe')\n"
+            "    urllib.request.urlretrieve(url, path)\n"
+            "    subprocess.Popen([path], creationflags=0x08000000)\n"
+        )
+        assert "MALWARE.DROPPER.HIDDEN.001" in self.rules(tmp_path, module)
+
+    def test_a_downloaded_program_started_visibly_does_not(self, tmp_path: Path) -> None:
+        module = (
+            "import os, subprocess, tempfile, urllib.request\n"
+            "def fetch(url):\n"
+            "    path = os.path.join(tempfile.gettempdir(), 'u.exe')\n"
+            "    urllib.request.urlretrieve(url, path)\n"
+            "    subprocess.Popen([path])\n"
+        )
+        assert "MALWARE.DROPPER.HIDDEN.001" not in self.rules(tmp_path, module)

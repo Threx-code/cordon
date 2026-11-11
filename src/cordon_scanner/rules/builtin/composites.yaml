@@ -2960,6 +2960,39 @@ rules:
         - path_glob: "**/test_*.py"
         - path_glob: "tests/**"
 
+  - id: MALWARE.DROPPER.HIDDEN.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: Code downloads a program and starts it with its window hidden
+    message: >
+      This file downloads a program and starts it with its window hidden -- a STARTUPINFO that
+      hides it, CREATE_NO_WINDOW, DETACHED_PROCESS or a literal creation flag. Installers that
+      fetch a tool run it where the user can see it; hiding the window of a program just downloaded
+      keeps whoever ran the code from noticing that something else is now running. Graded the
+      same whether the code runs on import, as a command, or only when a function is called.
+    remediation: >
+      Do not run this code. Find the program it downloaded and what that program did.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package whose fetch function downloads an executable to the temp folder and starts
+        it with wShowWindow hidden (group A (d), 2026-11-10); benign 0/1,063.
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1564/003/
+    match:
+      kind: composite
+      scope: file
+      proximity: 4000
+      any:
+        - rule: AST.PY.HIDDEN_FETCH_EXEC
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: MALWARE.INSTALL.FOREIGN_PROGRAM.001
     version: 1.0.0
     category: malicious
