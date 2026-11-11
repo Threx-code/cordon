@@ -251,7 +251,9 @@ class PythonAnalyzer(
         runs = frozenset(h.line for h in analyzer._hits if any(d in h.detail for d in RUN_DETAILS))
         for line in PersistRuns.lines(tree, runs):
             analyzer._hits.append(AstHit(Capability.FLOW, line, "persist and run"))
-        for line in PersistRuns.lines(tree, frozenset(HiddenLaunch.lines(tree)), source, AUTOSTART_WORD):
+        hidden = set(PersistRuns.lines(tree, frozenset(HiddenLaunch.script_host_lines(tree)), source, AUTOSTART_WORD))
+        hidden &= set(PersistRuns.lines(tree, frozenset(ShippedPrograms.path_lines(tree)), source, AUTOSTART_WORD))
+        for line in sorted(hidden):
             analyzer._hits.append(AstHit(Capability.FLOW, line, "autostart hidden"))
         for line in KeyCapture.lines(tree):
             analyzer._hits.append(AstHit(Capability.FLOW, line, "keystrokes logged"))

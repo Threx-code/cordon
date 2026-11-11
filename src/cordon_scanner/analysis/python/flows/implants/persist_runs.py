@@ -90,9 +90,12 @@ class PersistRuns:
         """The text of the innermost function holding `line`, or of the whole module."""
         best: ast.AST | None = None
         for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.lineno <= line <= (node.end_lineno or node.lineno):
-                if best is None or node.lineno >= best.lineno:  # type: ignore[attr-defined]
-                    best = node
+            if (
+                isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+                and node.lineno <= line <= (node.end_lineno or node.lineno)
+                and (best is None or node.lineno >= best.lineno)  # type: ignore[attr-defined]
+            ):
+                best = node
         if best is None:
             return source
         lines = source.splitlines()

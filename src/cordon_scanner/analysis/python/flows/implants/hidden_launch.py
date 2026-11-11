@@ -16,6 +16,11 @@ import ast
 import re
 from typing import ClassVar, Final
 
+#: The script hosts and hidden-window forms, without the creation flags and without `pythonw` alone: a tool
+#: that registers its own console entry point with `pythonw` is not starting a script it brought.
+SCRIPT_HOST_TEXT: Final = re.compile(
+    r"(?i)\bwscript(?:\.exe)?\b|\bcscript(?:\.exe)?\b|\.(?:vbs|wsf|hta)\b|\bwindowstyle[ =]{1,3}hidden\b"
+)
 HIDDEN_TEXT: Final = re.compile(
     r"(?i)\bpythonw(?:\.exe)?\b|\bwscript(?:\.exe)?\b|\bcscript(?:\.exe)?\b|\.vbs\b|\bnohup\b"
     r"|\bwindowstyle[ =]{1,3}hidden\b|\bstart /b\b"
@@ -28,6 +33,18 @@ class HiddenLaunch:
     NAMES: ClassVar[frozenset[str]] = frozenset(
         {"CREATE_NO_WINDOW", "DETACHED_PROCESS"}
     )
+
+    @classmethod
+    def script_host_lines(cls, tree: ast.AST) -> list[int]:
+        """The lines that name a script host or ask for a hidden window with a script: a `.vbs` run by
+        `wscript`, `-WindowStyle Hidden`."""
+        return sorted(
+            {
+                n.lineno
+                for n in ast.walk(tree)
+                if isinstance(n, ast.Constant) and isinstance(n.value, str) and SCRIPT_HOST_TEXT.search(n.value)
+            }
+        )
 
     @classmethod
     def lines(cls, tree: ast.AST) -> list[int]:

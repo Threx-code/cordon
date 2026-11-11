@@ -57,6 +57,13 @@ class ShippedPrograms(PythonValueFlow):
         return sorted(out)
 
     @classmethod
+    def path_lines(cls, tree: ast.AST) -> list[int]:
+        """The lines that build a path from the file or from the package's resources."""
+        analysis = cls(tree)
+        analysis.index()
+        return sorted(set(analysis.seeds.values()))
+
+    @classmethod
     def made_executable(cls, tree: ast.AST) -> list[int]:
         analysis = cls(tree)
         if not analysis.index() or not analysis.seeds:

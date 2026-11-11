@@ -106,28 +106,37 @@ class TestAutostartThatHides:
     def hidden(source: str) -> list[str]:
         return [h.detail for h in PythonAnalyzer.analyse(source) if h.detail == "autostart hidden"]
 
-    def test_a_desktop_entry_and_a_launcher_run_with_no_window(self) -> None:
+    def test_a_desktop_entry_and_a_shipped_launcher_script_run_by_a_script_host(self) -> None:
         source = (
             "import os, subprocess\n"
+            "def launcher():\n"
+            "    return os.path.join(os.path.dirname(__file__), 'launch.vbs')\n"
             "def install_registry_entry():\n"
             "    path = os.path.join(os.path.expanduser('~'), '.config/autostart', 'x.desktop')\n"
             "    open(path, 'w').write('[Desktop Entry]')\n"
-            "    subprocess.Popen(['wscript', 'launch.vbs'], creationflags=subprocess.CREATE_NO_WINDOW)\n"
+            "    subprocess.Popen(['wscript', launcher()])\n"
         )
         assert "autostart hidden" in self.hidden(source)
 
-    def test_the_flags_in_a_helper(self) -> None:
+    def test_an_installed_entry_point_registered_with_pythonw_is_not(self) -> None:
         source = (
             "import os, subprocess\n"
-            "def _flags():\n"
-            "    return subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS\n"
             "def install():\n"
             "    open(os.path.expanduser('~/.config/autostart/x.desktop'), 'w').write('x')\n"
-            "    subprocess.Popen(['app'], creationflags=_flags())\n"
+            "    subprocess.Popen(['pythonw', '-m', 'tool'])\n"
         )
-        assert "autostart hidden" in self.hidden(source)
+        assert self.hidden(source) == []
 
-    def test_an_autostart_with_a_visible_program_is_not(self) -> None:
+    def test_creation_flags_alone_are_not(self) -> None:
+        source = (
+            "import os, subprocess\n"
+            "def install():\n"
+            "    open(os.path.expanduser('~/.config/autostart/x.desktop'), 'w').write('x')\n"
+            "    subprocess.Popen(['app'], creationflags=subprocess.CREATE_NO_WINDOW)\n"
+        )
+        assert self.hidden(source) == []
+
+    def test_a_visible_program_is_not(self) -> None:
         source = (
             "import os, subprocess\n"
             "def install():\n"
@@ -137,5 +146,8 @@ class TestAutostartThatHides:
         assert self.hidden(source) == []
 
     def test_a_hidden_launch_with_no_persistence_is_not(self) -> None:
-        source = "import subprocess\nsubprocess.Popen(['tool'], creationflags=subprocess.CREATE_NO_WINDOW)\n"
+        source = (
+            "import os, subprocess\n"
+            "subprocess.Popen(['wscript', os.path.join(os.path.dirname(__file__), 'x.vbs')])\n"
+        )
         assert self.hidden(source) == []
