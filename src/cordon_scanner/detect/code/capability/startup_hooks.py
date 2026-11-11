@@ -18,6 +18,7 @@ from __future__ import annotations
 import ast
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.foundation.capabilities import Capability
 
 if TYPE_CHECKING:
@@ -94,7 +95,7 @@ class StartupHooks:
             if not stripped.startswith(("import ", "import\t")):
                 continue
             try:
-                tree = ast.parse(stripped)
+                tree = PythonSyntax.parse(stripped)
             except (SyntaxError, ValueError, RecursionError):
                 # S2: a `.pth` import line that does not parse fails at interpreter start (site
                 # reports it and skips the file); it runs nothing to judge.

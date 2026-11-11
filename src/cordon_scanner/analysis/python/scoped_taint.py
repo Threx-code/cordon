@@ -35,10 +35,22 @@ class BindingForms:
     """Each way Python binds a name to a value, read by the node's type."""
 
     @staticmethod
+    def names(target: ast.AST) -> list[str]:
+        """The names a target binds: `a`, and each name of `a, (b, *c)` (a datagram read as
+        `data, addr = sock.recvfrom(n)` binds `data` to what arrived)."""
+        if isinstance(target, ast.Name):
+            return [target.id]
+        if isinstance(target, ast.Starred):
+            return BindingForms.names(target.value)
+        if isinstance(target, ast.Tuple | ast.List):
+            return [name for element in target.elts for name in BindingForms.names(element)]
+        return []
+
+    @staticmethod
     def assign(node: ast.AST) -> Iterator[tuple[list[str], ast.AST]]:
         if not isinstance(node, ast.Assign):
             return
-        yield [t.id for t in node.targets if isinstance(t, ast.Name)], node.value
+        yield [name for t in node.targets for name in BindingForms.names(t)], node.value
 
     @staticmethod
     def annotated(node: ast.AST) -> Iterator[tuple[list[str], ast.AST]]:
@@ -65,8 +77,9 @@ class BindingForms:
     def for_target(node: ast.AST) -> Iterator[tuple[list[str], ast.AST]]:
         if not isinstance(node, ast.For | ast.AsyncFor):
             return
-        if isinstance(node.target, ast.Name):
-            yield [node.target.id], node.iter
+        names = BindingForms.names(node.target)
+        if names:
+            yield names, node.iter
 
     READERS: ClassVar[dict[type, Callable[[ast.AST], Iterator[tuple[list[str], ast.AST]]]]] = {}
 

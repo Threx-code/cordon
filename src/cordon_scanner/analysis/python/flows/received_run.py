@@ -214,12 +214,27 @@ class ReceivedRuns(ExecutionFlows):
             a.arg in ("message", "msg") for a in args
         )
 
+    #: A DNS answer: records a name server chose to return (dnspython, any record type: code is
+    #: carried in TXT answers, and in NULL, CNAME chains or A records as well).
+    _DNS_ANSWERS: ClassVar[frozenset[str]] = frozenset(
+        {"dns.resolver.resolve", "dns.resolver.query", "dns.asyncresolver.resolve"}
+    )
+    #: A datagram read: a raw DNS (or any UDP) reply (tinkoff_cloud_apis_internal 8.5.4's
+    #: `_txt_lookup` queries TXT over a raw socket and joins the answers it decodes).
+    _DATAGRAM_READS: ClassVar[frozenset[str]] = frozenset({"recvfrom", "recvfrom_into", "recvmsg"})
+
     def _source_call(self, call: ast.Call) -> bool:
         """A call whose result is what a service or a peer sent."""
         func = call.func
+        if self._dotted(func) in self._DNS_ANSWERS:
+            return True
         if not isinstance(func, ast.Attribute):
             return False
-        if func.attr in self._POLLS:
+        if func.attr in self._POLLS or func.attr in self._DATAGRAM_READS:
+            return True
+        if func.attr in ("resolve", "query", "resolve_name") and (
+            self._resolver_receiver(func.value) or self._asks_a_record_type(call)
+        ):
             return True
         if func.attr == "execute":
             links: set[str] = set()
@@ -229,6 +244,29 @@ class ReceivedRuns(ExecutionFlows):
                 link = link.value if isinstance(link, ast.Attribute) else link.func
             return {"spreadsheets", "values"} <= links
         return func.attr == "recv" and not call.args
+
+    #: Record types a resolver is asked for by name.
+    _RECORD_TYPES: ClassVar[frozenset[str]] = frozenset(
+        {"TXT", "A", "AAAA", "CNAME", "MX", "NULL", "NS", "SRV", "PTR", "SOA", "ANY"}
+    )
+
+    def _asks_a_record_type(self, call: ast.Call) -> bool:
+        """`.resolve(name, "TXT")`: the second argument names a DNS record type."""
+        kind = call.args[1] if len(call.args) > 1 else None
+        kind = kind or next((k.value for k in call.keywords if k.arg == "rdtype"), None)
+        return (
+            isinstance(kind, ast.Constant)
+            and isinstance(kind.value, str)
+            and kind.value.upper() in self._RECORD_TYPES
+        )
+
+    def _resolver_receiver(self, node: ast.AST) -> bool:
+        """`dns.resolver.Resolver()` itself, or a name bound from it: what `.resolve()` asks."""
+        if isinstance(node, ast.Call):
+            return (self._dotted(node.func) or "").endswith("resolver.Resolver")
+        return (self._dotted(node) or "") in ("dns.resolver", "resolver") or (
+            isinstance(node, ast.Name) and "resolver" in node.id.lower()
+        )
 
     def _socket_names(self, tainted: ScopedTaint) -> set[str]:
         """Names bound from a connection whose frames the program reads (`ws = await connect(...)`)."""
