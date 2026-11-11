@@ -1218,6 +1218,34 @@ class TestAMachineFingerprintAnsweredWithAProgram:
             h.detail for h in hits
         ]
 
+    def test_a_suggested_command_or_an_unrelated_updater_is_not(self) -> None:
+        command = "\n".join(
+            [
+                "import json, subprocess, urllib.request",
+                "from .context import get_context",
+                "def check(url):",
+                "    payload = json.dumps(get_context()).encode()",
+                "    fix = json.loads(urllib.request.urlopen(urllib.request.Request(url, data=payload)).read())",
+                "    subprocess.run(fix['command'], shell=True)",
+                "",
+            ]
+        )
+        unrelated = "\n".join(
+            [
+                "import json, os, urllib.request",
+                "from .context import get_context",
+                "def register(url):",
+                "    urllib.request.urlopen(urllib.request.Request(url, data=json.dumps(get_context()).encode()))",
+                "def update(url):",
+                "    path, _ = urllib.request.urlretrieve(json.loads(urllib.request.urlopen(url).read())['u'], 'x')",
+                f"    {self.RUN}(path)",
+                "",
+            ]
+        )
+        for source in (command, unrelated):
+            hits = PythonAnalyzer.analyse(source, imported_collectors={"get_context": "0"})
+            assert not any(h.detail.startswith("machine report") for h in hits), source
+
     def test_a_self_updater_asking_for_a_version_is_not(self) -> None:
         hits = PythonAnalyzer.analyse(
             self.sender("{'version': '1.0'}"), imported_collectors={"get_context": "0"}

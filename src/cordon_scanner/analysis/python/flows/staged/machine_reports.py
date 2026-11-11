@@ -16,13 +16,17 @@ of the package, a top-level function that reads machine context (`os.environ`, `
 own file it calls (`ScanContext.python_imported_collectors`; the runner map's shape).
 
 `machine report answered with a program: <sink>`: a request whose arguments carry the result of a
-call to such a function (directly or through one binding), in a file whose own analysis found a
-fetched program run (FETCH_EXEC).
+call to such a function (directly or through one binding), made in a function that is, or calls,
+a function holding a fetched run (FETCH_EXEC) that downloads to a file or makes one runnable
+(urlretrieve, chmod, startfile, write_bytes). helixor reports in one function and updates itself
+in an unrelated one; env-doctor runs a fix command a server suggests, with no program on disk: 2
+of 16,274 that way, quiet now.
 """
 
 from __future__ import annotations
 
 import ast
+from typing import ClassVar
 
 from cordon_scanner.analysis.python.analyzer_core import AnalyzerCore
 from cordon_scanner.analysis.python.pyfacts import PRIMITIVES
@@ -35,12 +39,17 @@ class MachineReports(AnalyzerCore):
 
     def _machine_reports(self, tree: ast.AST) -> None:
         collectors = self._imported_collectors
-        if not collectors or not any(h.capability is Capability.FETCH_EXEC for h in self._hits):
+        fetch_lines = {h.line for h in self._hits if h.capability is Capability.FETCH_EXEC}
+        if not collectors or not fetch_lines:
             return
-        for scope in [
+        functions = [
             *PythonSyntax.of(tree, ast.FunctionDef),
             *PythonSyntax.of(tree, ast.AsyncFunctionDef),
-        ]:
+        ]
+        droppers = {f.name for f in functions if self._drops_a_program(f, fetch_lines)}
+        for scope in functions:
+            if not self._reaches_a_dropper(scope, droppers):
+                continue
             carriers = self._report_carriers(scope, collectors)
             for call in PythonSyntax.within(scope, ast.Call):
                 resolved = self._resolve_callee(call)
@@ -54,6 +63,37 @@ class MachineReports(AnalyzerCore):
                         f"machine report answered with a program: {resolved[0]}",
                     )
                     return
+
+    #: Calls that put a downloaded program on disk or make a file runnable.
+    _DROP: ClassVar[frozenset[str]] = frozenset(
+        {"urlretrieve", "chmod", "startfile", "write_bytes"}
+    )
+
+    def _drops_a_program(self, function: ast.AST, fetch_lines: set[int]) -> bool:
+        """A function holding a fetched run that also downloads to a file or makes one runnable:
+        a program delivered, not a command (env-doctor runs a fix command a server suggests)."""
+        first = getattr(function, "lineno", 0)
+        last = getattr(function, "end_lineno", first) or first
+        if not any(first <= line <= last for line in fetch_lines):
+            return False
+        return any(
+            isinstance(c, ast.Call)
+            and (self._dotted(c.func) or "").rsplit(".", 1)[-1] in self._DROP
+            for c in ast.walk(function)
+        )
+
+    @staticmethod
+    def _reaches_a_dropper(scope: ast.AST, droppers: set[str]) -> bool:
+        """The report's function is the dropper or calls it: the answer is what gets run
+        (helixor reports in one function and updates itself in an unrelated one)."""
+        if getattr(scope, "name", None) in droppers:
+            return True
+        return any(
+            isinstance(c, ast.Call)
+            and isinstance(c.func, ast.Name | ast.Attribute)
+            and (c.func.id if isinstance(c.func, ast.Name) else c.func.attr) in droppers
+            for c in ast.walk(scope)
+        )
 
     @staticmethod
     def _report_collector_call(node: ast.AST, collectors: set[str]) -> bool:
