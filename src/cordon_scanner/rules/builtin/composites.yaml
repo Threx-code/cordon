@@ -3114,6 +3114,46 @@ rules:
         - path_glob: "**/test_*.py"
         - path_glob: "tests/**"
 
+  - id: MALWARE.PERSIST.BACKDOOR.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Writes a file that lets someone else in, with content the package carries
+    message: >
+      This code writes `authorized_keys`, a sudoers file, `/etc/passwd` or `/etc/shadow`, or an SSH
+      login script, and what it writes is the package's own: a literal, a constant, or a decode of
+      one. A key line the package brings, put into the user's `authorized_keys`, lets whoever holds
+      the key in without a password, whoever calls it. The same write at install or import blocks
+      for any content.
+    remediation: >
+      Do not run this code. Look at the account files of any machine that did: remove the key or the
+      sudoers entry it added, and treat the account as accessed.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package that stripped a public key from a module constant and appended it to
+        ~/.ssh/authorized_keys from a function its initialiser reaches, creating the directory with
+        mode 0700 and setting the file's mode through a helper (graphicsctxr, 2026-11-11).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1098/004/
+    match:
+      kind: composite
+      scope: file
+      any:
+        - rule: AST.PY.BACKDOOR_CARRIED
+        - all:
+            - any:
+                - context: install_entry
+                - context: install_hook
+                - context: import_entry
+            - rule: AST.PY.BACKDOOR_WRITE
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: MALWARE.DROPPER.HIDDEN.001
     version: 1.0.0
     category: malicious

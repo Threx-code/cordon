@@ -33,6 +33,7 @@ class PythonFactIds:
         # Encoded data resolved as DNS names: a channel out that no firewall rule for HTTP sees.
         ("dns tunnel", "AST.PY.DNS_TUNNEL"),
         ("code from a data file", "AST.PY.CODE_FROM_DATA"),
+        # A file that gives someone else a way in written: authorized_keys, sudoers, passwd/shadow, ssh rc.
     )
     #: The suffix the analyser puts on a downloaded program's start when it hides the window.
     HIDDEN_START: ClassVar[str] = "hidden=1"
@@ -63,6 +64,10 @@ class PythonFactIds:
         for prefix, rule in cls.PREFIXES:
             if detail.startswith(prefix):
                 return rule
+        if detail.startswith("backdoor write"):
+            # A file that gives someone else a way in, written. `carried`: what is written is the
+            # package's own (a literal, a module constant, a decode of one), whoever calls it.
+            return "AST.PY.BACKDOOR_CARRIED" if detail.endswith(" carried") else "AST.PY.BACKDOOR_WRITE"
         if detail.endswith(cls.DROPPED):
             return "AST.PY.DECODED_DROP_RUN"
         for prefix, rule in cls.MODEL:
