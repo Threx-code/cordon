@@ -28,11 +28,13 @@ class TestMachineFactsInABucket:
         )
         assert Kit.leaked(source) == ["machine facts uploaded"]
 
-    def test_the_host_and_platform_put_in_s3(self) -> None:
+    def test_the_host_and_platform_put_in_a_blob(self) -> None:
         source = (
-            "import boto3, platform, socket\n"
+            "import platform, socket\n"
+            "from google.cloud import storage\n"
             "def beacon():\n"
-            "    boto3.client('s3').put_object(Bucket='b', Key='k', Body=socket.gethostname() + platform.system())\n"
+            "    blob = storage.Client().bucket('b').blob('k')\n"
+            "    blob.upload_from_string(socket.gethostname() + platform.system())\n"
         )
         assert Kit.leaked(source) == ["machine facts uploaded"]
 

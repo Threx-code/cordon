@@ -151,10 +151,21 @@ class AnalyzerCore:
                 return f"{namespace}.{attribute}", self._invoked.get(id(node), node)
             return None
 
-        method = node.func.attr if isinstance(node.func, ast.Attribute) else None
-        if method in CLOUD_UPLOAD_METHODS and self._imports_cloud_storage():
-            return f"cloud_storage.{method}", node
+        cloud = self._cloud_callee(node)
+        if cloud is not None:
+            return cloud, node
         return (dotted, node) if dotted else None
+
+    def _cloud_callee(self, node: ast.Call) -> str | None:
+        """`cloud_storage.<method>` for a call of an upload method in a file that imports a
+        cloud-storage library: the receiver is rarely written down (`bucket.blob(n).upload_from_string`)."""
+        if (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr in CLOUD_UPLOAD_METHODS
+            and self._imports_cloud_storage()
+        ):
+            return f"cloud_storage.{node.func.attr}"
+        return None
 
     def _imports_cloud_storage(self) -> bool:
         """Whether the file imports a cloud-storage library (`CLOUD_STORAGE_LIBRARIES`)."""

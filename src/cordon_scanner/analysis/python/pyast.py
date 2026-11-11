@@ -41,7 +41,7 @@ import ast
 import re
 from typing import TYPE_CHECKING, ClassVar
 
-from cordon_scanner.analysis.python.flows.http_clients import CLOUD_UPLOAD_METHODS, HTTP_CLIENTS
+from cordon_scanner.analysis.python.flows.http_clients import HTTP_CLIENTS
 from cordon_scanner.analysis.python.pyfacts import (
     DNS_LOOKUPS,
     ENVIRONMENT,
@@ -566,12 +566,7 @@ class PythonAnalyzer(
 
     def _call(self, node: ast.Call) -> None:
         dotted = self._dotted(node.func)
-        if (
-            isinstance(node.func, ast.Attribute)
-            and node.func.attr in CLOUD_UPLOAD_METHODS
-            and self._imports_cloud_storage()
-        ):
-            dotted = f"cloud_storage.{node.func.attr}"
+        dotted = self._cloud_callee(node) or dotted
         if dotted == "open" and node.args:
             self._opened_for_persistence(node)
         if dotted in UNSAFE_LOADERS and self._loads_a_bundled_file(node, dotted):

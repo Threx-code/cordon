@@ -98,10 +98,13 @@ class CloudLeak(PythonValueFlow):
             method = analysis.name(node.func) or ""
             if method not in CLOUD_UPLOAD_METHODS:
                 continue
-            payload: list[ast.AST] = [k.value for k in node.keywords if k.arg in cls.PAYLOAD_KEYWORDS]
+            payload: list[ast.AST] = []
             position = cls.PAYLOAD_POSITION.get(method)
-            if position is not None and len(node.args) > position:
+            if position is None:
+                continue  # `put_object`/`upload_blob` carry data a program made: 15 of 16,274 benign units read the environment beside one
+            if len(node.args) > position:
                 payload.append(node.args[position])
+            payload += [k.value for k in node.keywords if k.arg in cls.PAYLOAD_KEYWORDS]
             if any(analysis.taint(part) for part in payload):
                 out.add(node.lineno)
         return sorted(out)
