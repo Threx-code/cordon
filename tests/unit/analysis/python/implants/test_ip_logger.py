@@ -30,12 +30,7 @@ class TestALinkHandedToACall:
         assert Kit.fetched(source) == ["ip logger fetched"]
 
     def test_the_link_held_in_a_name_first(self) -> None:
-        source = (
-            "import os\n"
-            f"URL = 'https://{LOGGER}/q'\n"
-            "def go():\n"
-            "    os.system('curl ' + URL)\n"
-        )
+        source = f"import os\nURL = 'https://{LOGGER}/q'\ndef go():\n    os.system('curl ' + URL)\n"
         assert Kit.fetched(source) == ["ip logger fetched"]
 
 

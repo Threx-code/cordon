@@ -136,10 +136,7 @@ class TestProgramsThatOnlyReadOrWriteTheirOwn:
 
     def test_a_mode_change_and_an_existence_check(self) -> None:
         source = (
-            "import os\n"
-            f"p = '/root/.ssh/{KEYS}'\n"
-            "if os.path.exists(p):\n"
-            "    os.chmod(p, 0o600)\n"
+            f"import os\np = '/root/.ssh/{KEYS}'\nif os.path.exists(p):\n    os.chmod(p, 0o600)\n"
         )
         assert Kit.written(source) == []
 
@@ -200,10 +197,11 @@ class TestTheBackdoorWriteBlocks:
 
     def test_a_test_that_writes_a_fixture_does_not(self, tmp_path: Path) -> None:
         module = (
-            "def test_keys(tmp_path):\n"
-            f"    (tmp_path / '{KEYS}').write_text('ssh-rsa AAAA\\n')\n"
+            f"def test_keys(tmp_path):\n    (tmp_path / '{KEYS}').write_text('ssh-rsa AAAA\\n')\n"
         )
-        assert "MALWARE.PERSIST.BACKDOOR.001" not in self.rules(tmp_path, module, "tests/test_keys.py")
+        assert "MALWARE.PERSIST.BACKDOOR.001" not in self.rules(
+            tmp_path, module, "tests/test_keys.py"
+        )
 
     def test_the_write_run_at_import_blocks(self, tmp_path: Path) -> None:
         module = (

@@ -49,11 +49,15 @@ class PersistRuns:
             return []
         written = PythonPersistence.written_lines(tree)
         if written and only is not None and source is not None:
-            written = frozenset(line for line in written if only.search(cls._scope_text(tree, source, line)))
+            written = frozenset(
+                line for line in written if only.search(cls._scope_text(tree, source, line))
+            )
         if not written:
             return []
         functions = {
-            n.name: n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
+            n.name: n
+            for n in ast.walk(tree)
+            if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
         }
         calls = {name: cls._called(fn.body, functions) for name, fn in functions.items()}
         callers: dict[str, set[str]] = {}
@@ -122,7 +126,11 @@ class PersistRuns:
             if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                 continue
             if isinstance(node, ast.Call):
-                name = node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", None)
+                name = (
+                    node.func.id
+                    if isinstance(node.func, ast.Name)
+                    else getattr(node.func, "attr", None)
+                )
                 if name in functions:
                     out.add(name)
             stack.extend(ast.iter_child_nodes(node))

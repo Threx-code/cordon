@@ -254,8 +254,16 @@ class PythonAnalyzer(
         runs = frozenset(h.line for h in analyzer._hits if any(d in h.detail for d in RUN_DETAILS))
         for line in PersistRuns.lines(tree, runs):
             analyzer._hits.append(AstHit(Capability.FLOW, line, "persist and run"))
-        hidden = set(PersistRuns.lines(tree, frozenset(HiddenLaunch.script_host_lines(tree)), source, AUTOSTART_WORD))
-        hidden &= set(PersistRuns.lines(tree, frozenset(ShippedPrograms.path_lines(tree)), source, AUTOSTART_WORD))
+        hidden = set(
+            PersistRuns.lines(
+                tree, frozenset(HiddenLaunch.script_host_lines(tree)), source, AUTOSTART_WORD
+            )
+        )
+        hidden &= set(
+            PersistRuns.lines(
+                tree, frozenset(ShippedPrograms.path_lines(tree)), source, AUTOSTART_WORD
+            )
+        )
         for line in sorted(hidden):
             analyzer._hits.append(AstHit(Capability.FLOW, line, "autostart hidden"))
         for line in IpLoggerFetch.lines(tree):
@@ -270,7 +278,11 @@ class PythonAnalyzer(
             analyzer._hits.append(AstHit(Capability.FLOW, line, "persist at load"))
         for line, kind, carried in BackdoorWrites.hits(tree):
             analyzer._hits.append(
-                AstHit(Capability.PERSIST, line, f"backdoor write: {kind}" + (" carried" if carried else ""))
+                AstHit(
+                    Capability.PERSIST,
+                    line,
+                    f"backdoor write: {kind}" + (" carried" if carried else ""),
+                )
             )
         if analyzer._sends(tree):
             # Each of these records only at a call that sends (an egress primitive) or through a

@@ -21,18 +21,33 @@ from typing import ClassVar, Final
 
 from cordon_scanner.analysis.python.flows.implants.backdoor_writes import ContentOrigin
 
-READ_SHELL: Final = re.compile(r"\bpbpaste\b|\bxclip\b[^;&|]*\s-o\b|\bxsel\b[^;&|]*\s-o\b|\bwl-paste\b|Get-Clipboard", re.I)
-WRITE_SHELL: Final = re.compile(r"\bpbcopy\b|\bxclip\b|\bxsel\b|\bwl-copy\b|\bclip(?:\.exe)?\b|Set-Clipboard", re.I)
+READ_SHELL: Final = re.compile(
+    r"\bpbpaste\b|\bxclip\b[^;&|]*\s-o\b|\bxsel\b[^;&|]*\s-o\b|\bwl-paste\b|Get-Clipboard", re.I
+)
+WRITE_SHELL: Final = re.compile(
+    r"\bpbcopy\b|\bxclip\b|\bxsel\b|\bwl-copy\b|\bclip(?:\.exe)?\b|Set-Clipboard", re.I
+)
 
 
 class ClipboardReplace:
     """The replacements of a clipboard's content in one syntax tree."""
 
-    READS: ClassVar[frozenset[str]] = frozenset({"paste", "GetClipboardData", "clipboard_get", "get_clipboard", "GetClipboardText"})
-    WRITES: ClassVar[frozenset[str]] = frozenset(
-        {"copy", "SetClipboardText", "SetClipboardData", "clipboard_append", "set_clipboard", "SetText"}
+    READS: ClassVar[frozenset[str]] = frozenset(
+        {"paste", "GetClipboardData", "clipboard_get", "get_clipboard", "GetClipboardText"}
     )
-    REGEX: ClassVar[frozenset[str]] = frozenset({"match", "search", "fullmatch", "sub", "subn", "findall", "finditer", "split"})
+    WRITES: ClassVar[frozenset[str]] = frozenset(
+        {
+            "copy",
+            "SetClipboardText",
+            "SetClipboardData",
+            "clipboard_append",
+            "set_clipboard",
+            "SetText",
+        }
+    )
+    REGEX: ClassVar[frozenset[str]] = frozenset(
+        {"match", "search", "fullmatch", "sub", "subn", "findall", "finditer", "split"}
+    )
     PROCESS: ClassVar[frozenset[str]] = frozenset(
         {"run", "call", "check_output", "check_call", "Popen", "system", "popen", "getoutput"}
     )
@@ -40,7 +55,9 @@ class ClipboardReplace:
     @classmethod
     def lines(cls, tree: ast.AST) -> list[int]:
         scopes: list[ast.AST] = [tree]
-        scopes += [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)]
+        scopes += [
+            n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
+        ]
         origin = ContentOrigin(tree)
         out: set[int] = set()
         for scope in scopes:
@@ -54,7 +71,9 @@ class ClipboardReplace:
                 continue
             func = scope if not isinstance(scope, ast.Module) else None
             for call in calls:
-                if (cls._is_write(call) and call.args and origin.carried(call.args[0], func, 0)) or (cls._is_shell_write(call) and cls._literal_input(call)):
+                if (
+                    cls._is_write(call) and call.args and origin.carried(call.args[0], func, 0)
+                ) or (cls._is_shell_write(call) and cls._literal_input(call)):
                     out.add(call.lineno)
         return sorted(out)
 
@@ -98,7 +117,11 @@ class ClipboardReplace:
         argv = call.args[0] if call.args else None
         if argv is None:
             return ""
-        return " ".join(p.value for p in ast.walk(argv) if isinstance(p, ast.Constant) and isinstance(p.value, str))
+        return " ".join(
+            p.value
+            for p in ast.walk(argv)
+            if isinstance(p, ast.Constant) and isinstance(p.value, str)
+        )
 
     @staticmethod
     def _literal_input(call: ast.Call) -> bool:
@@ -116,7 +139,9 @@ class ClipboardReplace:
                     if value is None:
                         continue
                     parts = list(ast.walk(value))
-                    if any(id(p) in read_ids for p in parts) or any(isinstance(p, ast.Name) and p.id in names for p in parts):
+                    if any(id(p) in read_ids for p in parts) or any(
+                        isinstance(p, ast.Name) and p.id in names for p in parts
+                    ):
                         targets = node.targets if isinstance(node, ast.Assign) else [node.target]
                         for t in targets:
                             if isinstance(t, ast.Name):

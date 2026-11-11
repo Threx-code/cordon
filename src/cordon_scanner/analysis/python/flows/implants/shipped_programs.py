@@ -26,7 +26,19 @@ class ShippedPrograms(PythonValueFlow):
     )
     #: Calls that start a program in place of this one.
     REPLACES: ClassVar[frozenset[str]] = frozenset(
-        {"os.execv", "os.execve", "os.execvp", "os.execvpe", "os.execl", "os.execle", "os.execlp", "os.execlpe", "os.startfile", "os.spawnv", "os.spawnl"}
+        {
+            "os.execv",
+            "os.execve",
+            "os.execvp",
+            "os.execvpe",
+            "os.execl",
+            "os.execle",
+            "os.execlp",
+            "os.execlpe",
+            "os.startfile",
+            "os.spawnv",
+            "os.spawnl",
+        }
     )
 
     def seed(self, node: ast.AST) -> Label | None:
@@ -36,7 +48,9 @@ class ShippedPrograms(PythonValueFlow):
             name = self.name(node.func)
             dotted = self.dotted(node.func) or ""
             if name in self.RESOURCES and (
-                "resources" in dotted or "pkg_resources" in dotted or name in ("resource_filename", "get_resource_filename", "resource_path")
+                "resources" in dotted
+                or "pkg_resources" in dotted
+                or name in ("resource_filename", "get_resource_filename", "resource_path")
             ):
                 return node.lineno
         return None
@@ -51,7 +65,9 @@ class ShippedPrograms(PythonValueFlow):
         for node in analysis.calls:
             dotted = analysis.dotted(node.func) or ""
             name = analysis.name(node.func) or ""
-            starts = dotted in analysis.PROCESS or name in analysis.PROCESS or dotted in cls.REPLACES
+            starts = (
+                dotted in analysis.PROCESS or name in analysis.PROCESS or dotted in cls.REPLACES
+            )
             if starts and node.args and analysis.taint(node.args[0]):
                 out.add(node.lineno)
         return sorted(out)

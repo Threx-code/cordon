@@ -29,13 +29,27 @@ class IpLoggerFetch(PythonPersistence):
     """The calls handed an IP-logger link in one syntax tree."""
 
     def seed(self, node: ast.AST) -> Label | None:
-        if isinstance(node, ast.Constant) and isinstance(node.value, str) and IP_LOGGER_LINK.search(node.value):
+        if (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and IP_LOGGER_LINK.search(node.value)
+        ):
             self.texts.setdefault(node.lineno, []).append(node.value)
             return node.lineno
         return None
 
     #: The head of a request call whose `get` / `post` is a request, not a dictionary's `get`.
-    CLIENTS: ClassVar[tuple[str, ...]] = ("requests", "httpx", "urllib", "aiohttp", "http", "session", "client", "browser", "webbrowser")
+    CLIENTS: ClassVar[tuple[str, ...]] = (
+        "requests",
+        "httpx",
+        "urllib",
+        "aiohttp",
+        "http",
+        "session",
+        "client",
+        "browser",
+        "webbrowser",
+    )
 
     def _written_by(self, node: ast.Call) -> set[Label]:
         head = (self.dotted(node.func) or "").lower().split(".")

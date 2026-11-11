@@ -647,7 +647,9 @@ class ReleaseChecks:
         return out
 
     @staticmethod
-    def native_program_in_a_pure_wheel(units: Sequence[FileUnit], ctx: ScanContext) -> list[Finding]:
+    def native_program_in_a_pure_wheel(
+        units: Sequence[FileUnit], ctx: ScanContext
+    ) -> list[Finding]:
         """A pure-Python wheel that carries a native program and starts it.
 
         A wheel tagged `py3-none-any` declares that it holds no compiled code, which is what lets one

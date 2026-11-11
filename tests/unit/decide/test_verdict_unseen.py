@@ -107,6 +107,11 @@ class TestTheAdmittedRulesAreKept:
         "MALWARE.PERSIST.HIDDEN.001",  # ailaunchkit; 1 of 16,274
         "MALWARE.KEYLOGGER.001",  # aiassistcore; 0 of 16,274
         "MALWARE.CLIPPER.001",  # aiassistcore; 0 of 16,274
+        "MALWARE.EXFIL.IP_LOGGER.001",  # audio_separator_fork (6 releases); 0 of 16,274
+        "SUSPECT.BINARY.NATIVE_PROGRAM_IN_PURE_WHEEL.001",  # the bundled-executable group; 1 added of 16,274
+        # The analysis team's relay and sweep (11 Nov): 0 of the 1,063 and 0 of the 16,274 each.
+        "MALWARE.EXFIL.SWEPT_FILES.001",  # graphicsctxr
+        "MALWARE.EXFIL.RELAYED_HIDDEN.001",  # snapshot-photo, snapshot_date
     )
 
     def test_each_is_in_keep(self) -> None:

@@ -99,8 +99,6 @@ class TestPersistenceBesideARun:
         assert "persist and run" not in Kit.facts(source)
 
 
-
-
 class TestAutostartThatHides:
     @staticmethod
     def hidden(source: str) -> list[str]:

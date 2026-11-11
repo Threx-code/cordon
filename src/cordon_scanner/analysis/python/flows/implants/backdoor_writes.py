@@ -109,7 +109,9 @@ class BackdoorWrites(PythonPersistence):
     def _os_open_writes(self, node: ast.Call) -> set[Label]:
         """`os.open(path, os.O_WRONLY | os.O_APPEND)`: the path, when the flags write."""
         flags = node.args[1] if len(node.args) > 1 else None
-        names = {n.attr for n in ast.walk(flags) if isinstance(n, ast.Attribute)} if flags else set()
+        names = (
+            {n.attr for n in ast.walk(flags) if isinstance(n, ast.Attribute)} if flags else set()
+        )
         if names & {"O_WRONLY", "O_RDWR", "O_APPEND", "O_CREAT", "O_TRUNC"}:
             return self.taint(node.args[0])
         return set()
@@ -132,7 +134,9 @@ class BackdoorWrites(PythonPersistence):
                     match = BACKDOOR_NAME.search(text)
                     if match and node.lineno not in seen:
                         seen.add(node.lineno)
-                        out.append((node.lineno, cls._kind(match.group(0)), content.carried_by(node)))
+                        out.append(
+                            (node.lineno, cls._kind(match.group(0)), content.carried_by(node))
+                        )
         return sorted(out)
 
     @staticmethod
@@ -152,11 +156,39 @@ class ContentOrigin:
 
     #: Methods that return the text they are given, changed in form only.
     SHAPES: ClassVar[frozenset[str]] = frozenset(
-        {"strip", "lstrip", "rstrip", "encode", "decode", "format", "join", "replace", "lower", "upper", "title", "casefold", "removeprefix", "removesuffix"}
+        {
+            "strip",
+            "lstrip",
+            "rstrip",
+            "encode",
+            "decode",
+            "format",
+            "join",
+            "replace",
+            "lower",
+            "upper",
+            "title",
+            "casefold",
+            "removeprefix",
+            "removesuffix",
+        }
     )
     #: Calls that decode a literal.
     DECODERS: ClassVar[frozenset[str]] = frozenset(
-        {"b64decode", "urlsafe_b64decode", "b32decode", "b16decode", "a85decode", "b85decode", "fromhex", "unhexlify", "a2b_base64", "a2b_hex", "decompress", "loads"}
+        {
+            "b64decode",
+            "urlsafe_b64decode",
+            "b32decode",
+            "b16decode",
+            "a85decode",
+            "b85decode",
+            "fromhex",
+            "unhexlify",
+            "a2b_base64",
+            "a2b_hex",
+            "decompress",
+            "loads",
+        }
     )
     WRITES: ClassVar[frozenset[str]] = frozenset({"write", "writelines"})
 
@@ -172,7 +204,10 @@ class ContentOrigin:
             for child in ast.iter_child_nodes(node):
                 self.parent[id(child)] = node
         for node in ast.walk(tree):
-            if isinstance(node, ast.Assign | ast.AnnAssign) and getattr(node, "value", None) is not None:
+            if (
+                isinstance(node, ast.Assign | ast.AnnAssign)
+                and getattr(node, "value", None) is not None
+            ):
                 targets = node.targets if isinstance(node, ast.Assign) else [node.target]
                 scope = self._function_of(node)
                 table = self.module if scope is None else self.function.setdefault(id(scope), {})
@@ -181,12 +216,22 @@ class ContentOrigin:
                         table.setdefault(target.id, []).append(node.value)
             if isinstance(node, ast.Assign):
                 for target in node.targets:
-                    if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name) and target.value.id == "self":
-                        self.attrs.setdefault(target.attr, []).append((node.value, self._function_of(node)))
+                    if (
+                        isinstance(target, ast.Attribute)
+                        and isinstance(target.value, ast.Name)
+                        and target.value.id == "self"
+                    ):
+                        self.attrs.setdefault(target.attr, []).append(
+                            (node.value, self._function_of(node))
+                        )
             if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                 self.functions.setdefault(node.name, node)
             if isinstance(node, ast.Call):
-                called = node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", None)
+                called = (
+                    node.func.id
+                    if isinstance(node.func, ast.Name)
+                    else getattr(node.func, "attr", None)
+                )
                 if called:
                     self.calls.setdefault(called, []).append(node)
             if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
@@ -211,7 +256,11 @@ class ContentOrigin:
         return bool(values) and all(self.carried(v, scope, 0) for v in values)
 
     def _contents(self, call: ast.Call) -> list[ast.AST]:
-        name = call.func.attr if isinstance(call.func, ast.Attribute) else getattr(call.func, "id", None)
+        name = (
+            call.func.attr
+            if isinstance(call.func, ast.Attribute)
+            else getattr(call.func, "id", None)
+        )
         if name in ("write_text", "write_bytes") and call.args:
             return [call.args[0]]
         if name in BackdoorWrites.DESTINATION_SECOND and call.args:
@@ -219,7 +268,12 @@ class ContentOrigin:
         if name == "open":
             attr = self.parent.get(id(call))
             outer = self.parent.get(id(attr)) if attr is not None else None
-            if isinstance(attr, ast.Attribute) and attr.attr in self.WRITES and isinstance(outer, ast.Call) and outer.args:
+            if (
+                isinstance(attr, ast.Attribute)
+                and attr.attr in self.WRITES
+                and isinstance(outer, ast.Call)
+                and outer.args
+            ):
                 return [outer.args[0]]  # open(p, "a").write(x)
             handle = self._handle(call)
             if handle is None:
@@ -237,14 +291,28 @@ class ContentOrigin:
                 ):
                     out.append(n.args[0])
             return out
-        if name in BackdoorWrites.PROCESS or (isinstance(call.func, ast.Attribute) and BackdoorWrites.dotted(call.func) in BackdoorWrites.PROCESS):
+        if name in BackdoorWrites.PROCESS or (
+            isinstance(call.func, ast.Attribute)
+            and BackdoorWrites.dotted(call.func) in BackdoorWrites.PROCESS
+        ):
             argv = call.args[0] if call.args else None
-            text = " ".join(
-                p.value for p in ast.walk(argv) if isinstance(p, ast.Constant) and isinstance(p.value, str)
-            ) if argv is not None else ""
-            return [ast.Constant(value=text)] if re.search(r"\b(?:echo|printf)\b", text) and not any(
-                isinstance(p, ast.Name | ast.Attribute | ast.Subscript) for p in ast.walk(argv)
-            ) else []
+            text = (
+                " ".join(
+                    p.value
+                    for p in ast.walk(argv)
+                    if isinstance(p, ast.Constant) and isinstance(p.value, str)
+                )
+                if argv is not None
+                else ""
+            )
+            return (
+                [ast.Constant(value=text)]
+                if re.search(r"\b(?:echo|printf)\b", text)
+                and not any(
+                    isinstance(p, ast.Name | ast.Attribute | ast.Subscript) for p in ast.walk(argv)
+                )
+                else []
+            )
         return []
 
     def _root(self, node: ast.AST) -> ast.AST:
@@ -258,7 +326,11 @@ class ContentOrigin:
         parent = self.parent.get(id(call))
         if isinstance(parent, ast.withitem) and isinstance(parent.optional_vars, ast.Name):
             return parent.optional_vars.id
-        if isinstance(parent, ast.Assign) and len(parent.targets) == 1 and isinstance(parent.targets[0], ast.Name):
+        if (
+            isinstance(parent, ast.Assign)
+            and len(parent.targets) == 1
+            and isinstance(parent.targets[0], ast.Name)
+        ):
             return parent.targets[0].id
         return None
 
@@ -288,20 +360,28 @@ class ContentOrigin:
         return True
 
     def _unsupplied(self, node: ast.AST, scope: ast.AST | None) -> bool:
-        if not (isinstance(node, ast.Name) and scope is not None and node.id in self.params.get(id(scope), set())):
+        if not (
+            isinstance(node, ast.Name)
+            and scope is not None
+            and node.id in self.params.get(id(scope), set())
+        ):
             return False
         args = scope.args  # type: ignore[attr-defined]
         positional = [x.arg for x in (*args.posonlyargs, *args.args)]
         if positional and positional[0] in ("self", "cls"):
             positional = positional[1:]
         name = scope.name  # type: ignore[attr-defined]
-        sites = self.calls.get(getattr(self.parent.get(id(scope)), "name", "") if name == "__init__" else name, [])
+        sites = self.calls.get(
+            getattr(self.parent.get(id(scope)), "name", "") if name == "__init__" else name, []
+        )
         if node.id not in positional:
             return False
         defaults = dict(zip(reversed(positional), reversed(args.defaults), strict=False))
         default = defaults.get(node.id)
         fills = any(
-            any(k.arg == node.id for k in site.keywords) or positional.index(node.id) < len(site.args) for site in sites
+            any(k.arg == node.id for k in site.keywords)
+            or positional.index(node.id) < len(site.args)
+            for site in sites
         )
         return isinstance(default, ast.Constant) and default.value is None and not fills
 
@@ -324,9 +404,14 @@ class ContentOrigin:
         if isinstance(node, ast.Constant):
             return isinstance(node.value, str | bytes)
         if isinstance(node, ast.JoinedStr):
-            return all(self.carried(v.value if isinstance(v, ast.FormattedValue) else v, scope, depth + 1) for v in node.values)
+            return all(
+                self.carried(v.value if isinstance(v, ast.FormattedValue) else v, scope, depth + 1)
+                for v in node.values
+            )
         if isinstance(node, ast.BinOp):
-            return self.carried(node.left, scope, depth + 1) and self.carried(node.right, scope, depth + 1)
+            return self.carried(node.left, scope, depth + 1) and self.carried(
+                node.right, scope, depth + 1
+            )
         if isinstance(node, ast.Subscript):
             return self.carried(node.value, scope, depth + 1)
         if isinstance(node, ast.List | ast.Tuple):
@@ -335,15 +420,28 @@ class ContentOrigin:
             func = node.func
             name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
             if name in self.SHAPES and isinstance(func, ast.Attribute):
-                return self.carried(func.value, scope, depth + 1) and all(self.carried(a, scope, depth + 1) for a in node.args)
+                return self.carried(func.value, scope, depth + 1) and all(
+                    self.carried(a, scope, depth + 1) for a in node.args
+                )
             if name in self.DECODERS or name in ("reversed", "bytes", "str", "bytearray"):
                 return bool(node.args) and all(self.carried(a, scope, depth + 1) for a in node.args)
             helper = self.functions.get(name) if isinstance(func, ast.Name) else None
             if helper is not None:
                 # The file's own helper over carried arguments: `_d("<b64>")` returns what it was given, changed.
-                returns = [n.value for n in ast.walk(helper) if isinstance(n, ast.Return) and n.value is not None]
-                args_ok = all(self.carried(a, scope, depth + 1) for a in (*node.args, *(k.value for k in node.keywords)))
-                return args_ok and bool(returns) and all(self._helper_returns(r, helper, depth) for r in returns)
+                returns = [
+                    n.value
+                    for n in ast.walk(helper)
+                    if isinstance(n, ast.Return) and n.value is not None
+                ]
+                args_ok = all(
+                    self.carried(a, scope, depth + 1)
+                    for a in (*node.args, *(k.value for k in node.keywords))
+                )
+                return (
+                    args_ok
+                    and bool(returns)
+                    and all(self._helper_returns(r, helper, depth) for r in returns)
+                )
             return False
         if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or):
             # `supplied or DEFAULT`: a parameter that defaults to nothing and that no call in the file
@@ -351,14 +449,24 @@ class ContentOrigin:
             present = [v for v in node.values if not self._unsupplied(v, scope)]
             return bool(present) and all(self.carried(v, scope, depth + 1) for v in present)
         if isinstance(node, ast.Dict):
-            return all(self.carried(v, scope, depth + 1) for v in (*node.keys, *node.values) if v is not None)
-        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "self":
+            return all(
+                self.carried(v, scope, depth + 1)
+                for v in (*node.keys, *node.values)
+                if v is not None
+            )
+        if (
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "self"
+        ):
             assigned = self.attrs.get(node.attr, [])
             return bool(assigned) and all(self.carried(v, fn, depth + 1) for v, fn in assigned)
         if isinstance(node, ast.Name):
             if scope is not None and node.id in self.params.get(id(scope), set()):
                 return self._argument_carried(scope, node.id, depth)
-            sources = list(self.function.get(id(scope), {}).get(node.id, [])) if scope is not None else []
+            sources = (
+                list(self.function.get(id(scope), {}).get(node.id, [])) if scope is not None else []
+            )
             sources += self.module.get(node.id, [])
             return bool(sources) and all(self.carried(v, scope, depth + 1) for v in sources)
         return False

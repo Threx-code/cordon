@@ -30,9 +30,7 @@ HIDDEN_TEXT: Final = re.compile(
 class HiddenLaunch:
     """The hidden-launch requests in one syntax tree."""
 
-    NAMES: ClassVar[frozenset[str]] = frozenset(
-        {"CREATE_NO_WINDOW", "DETACHED_PROCESS"}
-    )
+    NAMES: ClassVar[frozenset[str]] = frozenset({"CREATE_NO_WINDOW", "DETACHED_PROCESS"})
 
     @classmethod
     def script_host_lines(cls, tree: ast.AST) -> list[int]:
@@ -42,7 +40,9 @@ class HiddenLaunch:
             {
                 n.lineno
                 for n in ast.walk(tree)
-                if isinstance(n, ast.Constant) and isinstance(n.value, str) and SCRIPT_HOST_TEXT.search(n.value)
+                if isinstance(n, ast.Constant)
+                and isinstance(n.value, str)
+                and SCRIPT_HOST_TEXT.search(n.value)
             }
         )
 
@@ -50,7 +50,15 @@ class HiddenLaunch:
     def lines(cls, tree: ast.AST) -> list[int]:
         out: set[int] = set()
         for node in ast.walk(tree):
-            if (isinstance(node, ast.Name) and node.id in cls.NAMES) or (isinstance(node, ast.Attribute) and node.attr in cls.NAMES) or (isinstance(node, ast.Constant) and isinstance(node.value, str) and HIDDEN_TEXT.search(node.value)):
+            if (
+                (isinstance(node, ast.Name) and node.id in cls.NAMES)
+                or (isinstance(node, ast.Attribute) and node.attr in cls.NAMES)
+                or (
+                    isinstance(node, ast.Constant)
+                    and isinstance(node.value, str)
+                    and HIDDEN_TEXT.search(node.value)
+                )
+            ):
                 out.add(node.lineno)
         return sorted(out)
 

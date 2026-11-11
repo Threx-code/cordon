@@ -86,7 +86,11 @@ class PythonFactIds:
         if detail.startswith("backdoor write"):
             # A file that gives someone else a way in, written. `carried`: what is written is the
             # package's own (a literal, a module constant, a decode of one), whoever calls it.
-            return "AST.PY.BACKDOOR_CARRIED" if detail.endswith(" carried") else "AST.PY.BACKDOOR_WRITE"
+            return (
+                "AST.PY.BACKDOOR_CARRIED"
+                if detail.endswith(" carried")
+                else "AST.PY.BACKDOOR_WRITE"
+            )
         if detail.endswith(cls.DROPPED):
             return "AST.PY.DECODED_DROP_RUN"
         for prefix, rule in cls.MODEL:

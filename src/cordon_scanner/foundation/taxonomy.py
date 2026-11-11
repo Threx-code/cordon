@@ -281,7 +281,7 @@ _DOMAIN_BY_PREFIX: tuple[tuple[str, ThreatDomain], ...] = (
     ("MALWARE.PERSIST.", ThreatDomain.MALWARE),
     ("MALWARE.IMPLANT.", ThreatDomain.MALWARE),
     ("MALWARE.IMPORT.PERSIST.", ThreatDomain.MALWARE),
-    ("MALWARE.KEYLOGGER.", ThreatDomain.CREDENTIAL),
+    ("MALWARE.KEYLOGGER.", ThreatDomain.MALWARE),
     ("MALWARE.CLIPPER.", ThreatDomain.MALWARE),
     ("OPERATIONAL.", ThreatDomain.SCANNER),
     ("POLICY.COVERAGE.", ThreatDomain.SCANNER),

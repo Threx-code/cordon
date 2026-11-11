@@ -17,7 +17,9 @@ class Kit:
     def labels(text: str) -> list[str]:
         raw = text.encode()
         content = FileContent(path="pkg/mod.py", raw=raw, size=len(raw))
-        return [hit.rule_id for hit in DestinationLabels.destination_capabilities(content, "python")]
+        return [
+            hit.rule_id for hit in DestinationLabels.destination_capabilities(content, "python")
+        ]
 
 
 class TestAnIpLoggerLink:
@@ -39,7 +41,11 @@ class TestAnIpLoggerLink:
 
 class TestOrdinaryHostsThatLookLikeOne:
     def test_a_host_that_only_ends_in_the_same_letters(self) -> None:
-        for host in ("notgrabify.link.example.com", "grabify.example.org", "myiplogger.example.net"):
+        for host in (
+            "notgrabify.link.example.com",
+            "grabify.example.org",
+            "myiplogger.example.net",
+        ):
             assert not Destinations.is_interaction_host(host)
 
     def test_a_logging_library_site(self) -> None:

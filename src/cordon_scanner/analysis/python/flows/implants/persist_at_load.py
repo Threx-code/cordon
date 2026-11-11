@@ -31,10 +31,7 @@ class PersistAtLoad:
                 functions.setdefault(node.name, node)
         loaded = cls._loaded_names(tree, functions)
         out: list[int] = []
-        spans = [
-            (fn.lineno, fn.end_lineno or fn.lineno, name)
-            for name, fn in functions.items()
-        ]
+        spans = [(fn.lineno, fn.end_lineno or fn.lineno, name) for name, fn in functions.items()]
         for line in sorted(written):
             inside = [name for start, end, name in spans if start <= line <= end]
             if not inside:
@@ -88,7 +85,9 @@ class PersistAtLoad:
     @classmethod
     def _under_main_guard(cls, tree: ast.Module, line: int) -> bool:
         return any(
-            isinstance(n, ast.If) and cls._is_main_guard(n) and n.lineno <= line <= (n.end_lineno or n.lineno)
+            isinstance(n, ast.If)
+            and cls._is_main_guard(n)
+            and n.lineno <= line <= (n.end_lineno or n.lineno)
             for n in tree.body
         )
 

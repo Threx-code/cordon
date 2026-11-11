@@ -21,22 +21,71 @@ from cordon_scanner.analysis.python.py_flow import Label, PythonValueFlow
 
 class KeyCapture(PythonValueFlow):
     #: Registrations of a key handler: the call names, and the keyword that carries the handler.
-    REGISTER: ClassVar[frozenset[str]] = frozenset({"Listener", "on_press", "on_release", "hook", "on_key", "add_hotkey_all"})
-    HANDLER_KEYWORDS: ClassVar[frozenset[str]] = frozenset({"on_press", "on_release", "on_key", "callback"})
+    REGISTER: ClassVar[frozenset[str]] = frozenset(
+        {"Listener", "on_press", "on_release", "hook", "on_key", "add_hotkey_all"}
+    )
+    HANDLER_KEYWORDS: ClassVar[frozenset[str]] = frozenset(
+        {"on_press", "on_release", "on_key", "callback"}
+    )
     #: Calls whose result is a keystroke or the keyboard's state.
     POLLS: ClassVar[frozenset[str]] = frozenset(
-        {"GetAsyncKeyState", "GetKeyState", "GetKeyboardState", "read_key", "read_event", "GetKeyNameText"}
+        {
+            "GetAsyncKeyState",
+            "GetKeyState",
+            "GetKeyboardState",
+            "read_key",
+            "read_event",
+            "GetKeyNameText",
+        }
     )
     #: Modules a registration or poll must come from.
-    MODULES: ClassVar[tuple[str, ...]] = ("pynput", "keyboard", "pyHook", "pyhook", "user32", "ctypes", "Xlib", "Quartz")
+    MODULES: ClassVar[tuple[str, ...]] = (
+        "pynput",
+        "keyboard",
+        "pyHook",
+        "pyhook",
+        "user32",
+        "ctypes",
+        "Xlib",
+        "Quartz",
+    )
     #: Calls that put what they are given in a file or send it.
     SINKS: ClassVar[frozenset[str]] = frozenset(
-        {"write", "writelines", "write_text", "write_bytes", "post", "send", "sendall", "sendto", "send_message", "send_document", "sendMessage", "urlopen", "request"}
+        {
+            "write",
+            "writelines",
+            "write_text",
+            "write_bytes",
+            "post",
+            "send",
+            "sendall",
+            "sendto",
+            "send_message",
+            "send_document",
+            "sendMessage",
+            "urlopen",
+            "request",
+        }
     )
     #: A write whose receiver is one of these shows the text (a terminal) or hands it to another thread; it keeps nothing.
-    DISPLAYS: ClassVar[frozenset[str]] = frozenset({"stdout", "stderr", "console", "terminal", "term", "screen"})
+    DISPLAYS: ClassVar[frozenset[str]] = frozenset(
+        {"stdout", "stderr", "console", "terminal", "term", "screen"}
+    )
     #: A request or a send needs one of these as the head of the call, or a socket-like receiver.
-    NETWORK: ClassVar[tuple[str, ...]] = ("requests", "httpx", "urllib", "aiohttp", "http", "session", "client", "sock", "conn", "bot", "webhook", "smtp")
+    NETWORK: ClassVar[tuple[str, ...]] = (
+        "requests",
+        "httpx",
+        "urllib",
+        "aiohttp",
+        "http",
+        "session",
+        "client",
+        "sock",
+        "conn",
+        "bot",
+        "webhook",
+        "smtp",
+    )
 
     def __init__(self, tree: ast.AST) -> None:
         super().__init__(tree)
@@ -51,15 +100,24 @@ class KeyCapture(PythonValueFlow):
     def _collect(self, tree: ast.AST) -> None:
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom | ast.Import):
-                names = [node.module or ""] if isinstance(node, ast.ImportFrom) else [a.name for a in node.names]
-                if any(m.split(".")[0] in ("pynput", "keyboard", "pyHook", "pyhook", "Xlib", "Quartz") for m in names):
+                names = (
+                    [node.module or ""]
+                    if isinstance(node, ast.ImportFrom)
+                    else [a.name for a in node.names]
+                )
+                if any(
+                    m.split(".")[0] in ("pynput", "keyboard", "pyHook", "pyhook", "Xlib", "Quartz")
+                    for m in names
+                ):
                     self.uses_capture = True
                     self.imports_capture = True
             if isinstance(node, ast.Call):
                 name = self.name(node.func) or ""
                 if self.imports_capture and name in self.REGISTER:
                     for k in node.keywords:
-                        if k.arg in self.HANDLER_KEYWORDS and isinstance(k.value, ast.Name | ast.Attribute):
+                        if k.arg in self.HANDLER_KEYWORDS and isinstance(
+                            k.value, ast.Name | ast.Attribute
+                        ):
                             self.handlers.add(self.name(k.value) or "")
                     if name in ("on_press", "on_release", "hook", "on_key") and node.args:
                         first = node.args[0]
@@ -78,12 +136,19 @@ class KeyCapture(PythonValueFlow):
             return not any(part in cls.DISPLAYS for part in head[:-1])
         if name in ("write_text", "write_bytes"):
             return True
-        return any(part.startswith(cls.NETWORK) for part in head[:-1]) or name in ("urlopen", "send_message", "send_document", "sendMessage")
+        return any(part.startswith(cls.NETWORK) for part in head[:-1]) or name in (
+            "urlopen",
+            "send_message",
+            "send_document",
+            "sendMessage",
+        )
 
     def _in_loop(self, line: int) -> bool:
         if self._loops is None:
             self._loops = [
-                (n.lineno, n.end_lineno or n.lineno) for n in ast.walk(self.tree) if isinstance(n, ast.For | ast.While)
+                (n.lineno, n.end_lineno or n.lineno)
+                for n in ast.walk(self.tree)
+                if isinstance(n, ast.For | ast.While)
             ]
         return any(start <= line <= end for start, end in self._loops)
 
@@ -104,8 +169,13 @@ class KeyCapture(PythonValueFlow):
         if self._branches is None:
             found: list[tuple[int, int]] = []
             for n in ast.walk(self.tree):
-                if isinstance(n, ast.If) and self._in_loop(n.lineno) and any(
-                    isinstance(c, ast.Call) and (self.name(c.func) or "") in self.POLLS for c in ast.walk(n.test)
+                if (
+                    isinstance(n, ast.If)
+                    and self._in_loop(n.lineno)
+                    and any(
+                        isinstance(c, ast.Call) and (self.name(c.func) or "") in self.POLLS
+                        for c in ast.walk(n.test)
+                    )
                 ):
                     last = n.body[-1]
                     found.append((n.body[0].lineno, last.end_lineno or last.lineno))
@@ -116,8 +186,15 @@ class KeyCapture(PythonValueFlow):
         if self._params_cache is None:
             found: list[tuple[int, int, str]] = []
             for fn in ast.walk(self.tree):
-                if isinstance(fn, ast.FunctionDef | ast.AsyncFunctionDef) and fn.name in self.handlers:
-                    params = [a for a in (*fn.args.posonlyargs, *fn.args.args) if a.arg not in ("self", "cls")]
+                if (
+                    isinstance(fn, ast.FunctionDef | ast.AsyncFunctionDef)
+                    and fn.name in self.handlers
+                ):
+                    params = [
+                        a
+                        for a in (*fn.args.posonlyargs, *fn.args.args)
+                        if a.arg not in ("self", "cls")
+                    ]
                     if params:
                         found.append((fn.lineno, fn.end_lineno or fn.lineno, params[0].arg))
             self._params_cache = found

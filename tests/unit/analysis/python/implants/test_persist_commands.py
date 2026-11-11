@@ -81,11 +81,10 @@ class TestOrdinaryUses:
     def test_a_query_or_a_build_is_not(self, tmp_path: Path, body: str) -> None:
         assert "MALWARE.INSTALL.PERSIST.001" not in Kit.rules(tmp_path, INSTALL.format(body=body))
 
-    def test_a_scheduler_library_nothing_installs_is_not_an_install_finding(self, tmp_path: Path) -> None:
-        setup = (
-            "from setuptools import setup\n"
-            "setup(name='demo')\n"
-        )
+    def test_a_scheduler_library_nothing_installs_is_not_an_install_finding(
+        self, tmp_path: Path
+    ) -> None:
+        setup = "from setuptools import setup\nsetup(name='demo')\n"
         members = {
             "PKG-INFO": "Metadata-Version: 2.1\nName: demo\nVersion: 1.0\n",
             "setup.py": setup,

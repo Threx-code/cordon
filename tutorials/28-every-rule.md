@@ -2,7 +2,7 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,515 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,527 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -129,17 +129,19 @@ rule's own samples.
 
 ## Binary
 
-10 rules.
+12 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `POLICY.BINARY.COMMITTED.001` | low | Executable committed to a source repository |
+| `SUSPECT.BINARY.CHAT_ENDPOINT.001` | high | Compiled module names a chat bot's or webhook's API |
 | `SUSPECT.BINARY.CREDENTIAL_THEFT.001` | high | Committed binary imports credential-store and network calls |
 | `SUSPECT.BINARY.EXECUTABLE_PATH.001` | high | Executable committed where a lifecycle step will run it |
 | `SUSPECT.BINARY.HIDDEN_IMPORTS.001` | medium | Committed binary resolves its imports at run time |
 | `SUSPECT.BINARY.IMPLANT.001` | high | Committed binary imports download-and-run calls |
 | `SUSPECT.BINARY.KEYLOGGER.001` | high | Committed binary imports keyboard-capture and network calls |
 | `SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001` | high | A pure-Python wheel loads a native library it carries |
+| `SUSPECT.BINARY.NATIVE_PROGRAM_IN_PURE_WHEEL.001` | high | A pure-Python wheel carries a native program and starts it |
 | `SUSPECT.BINARY.PACKED.001` | medium | Committed binary is packed |
 | `SUSPECT.BINARY.PROCESS_INJECTION.001` | high | Committed binary imports process-injection calls |
 | `SUSPECT.BINARY.STRINGS.001` | medium | Committed binary contains a URL, command or credential path |
@@ -207,6 +209,14 @@ rule's own samples.
 | `MALWARE.CLAMAV.SIGNATURE.001` | critical | ClamAV recognises the file as malware |
 | `OPERATIONAL.CLAMAV.STATUS` | info | ClamAV examined the scan's files |
 | `OPERATIONAL.CLAMAV.UNAVAILABLE` | info | ClamAV was asked for and could not be used |
+
+## Clipper
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.CLIPPER.001` | critical | Replaces what the user copied with a value the package carries |
 
 ## CloudFormation
 
@@ -622,7 +632,7 @@ rule's own samples.
 
 ## Exfiltration
 
-31 rules.
+34 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -640,7 +650,10 @@ rule's own samples.
 | `MALWARE.EXFIL.HIDDEN_DESTINATION.001` | critical | Install script contacts an address it spells out in character codes |
 | `MALWARE.EXFIL.HIDDEN_DESTINATION.002` | high | Code sends the machine's identity, environment or a credential to a host it hides |
 | `MALWARE.EXFIL.INSTALL_CALLBACK.001` | critical | Install script calls back to a drop point |
+| `MALWARE.EXFIL.IP_LOGGER.001` | critical | Opens a link that logs the address of whoever opens it |
+| `MALWARE.EXFIL.RELAYED_HIDDEN.001` | high | A class stores what its caller hands it and sends it to a destination it hides |
 | `MALWARE.EXFIL.SCRIPT_CALLBACK.001` | high | Package script calls back to an interaction service |
+| `MALWARE.EXFIL.SWEPT_FILES.001` | high | Files gathered by walking the drives or home, sent to a destination the code hides |
 | `MALWARE.EXFIL.TRACKING_CALLBACK.001` | critical | Install script reports to a host named for this install |
 | `SUSPECT.EXFIL.001` | medium | Credential access combined with network egress and execution |
 | `SUSPECT.EXFIL.BEACON.001` | high | Code reports the machine it runs on |
@@ -709,11 +722,20 @@ rule's own samples.
 
 ## Implant
 
-1 rules.
+2 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.IMPLANT.INSTALL.001` | high | Code downloads and runs something and makes itself start again |
+| `MALWARE.IMPLANT.PERSIST_RUN.001` | critical | Registers itself to run again and runs a program it brings |
+
+## Import
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.IMPORT.PERSIST.001` | critical | Code that runs on import plants code that runs again later |
 
 ## Infrastructure as code
 
@@ -1543,7 +1565,7 @@ rule's own samples.
 
 ## Install-time code
 
-23 rules.
+24 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -1552,6 +1574,7 @@ rule's own samples.
 | `MALWARE.INSTALL.DECODED_LAUNCH.001` | critical | An install script decodes content and starts a process |
 | `MALWARE.INSTALL.DISGUISED_PROGRAM.001` | critical | Install code turns a file shipped as data into a program |
 | `MALWARE.INSTALL.FETCH_EXEC.001` | critical | Install script fetches and executes remote content |
+| `MALWARE.INSTALL.FOREIGN_INDEX.001` | critical | Install script installs packages from an index the user did not choose |
 | `MALWARE.INSTALL.FOREIGN_PROGRAM.001` | high | Install code starts a desktop application or an identity command |
 | `MALWARE.INSTALL.GYP_COMMAND.001` | critical | Native-build file runs a script at install |
 | `MALWARE.INSTALL.HIDDEN_ACTION.001` | critical | An install script hides a process, request or credential read inside a string it executes |
@@ -1589,6 +1612,14 @@ rule's own samples.
 | `OPERATIONAL.JUDGE.STATUS` | info | A language model judged the scan's agent-facing text |
 | `OPERATIONAL.JUDGE.TRUNCATED` | info | Agent-facing text was longer than the judge reads |
 | `OPERATIONAL.JUDGE.UNAVAILABLE` | info | The judge was asked for and could not be used |
+
+## Keylogger
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.KEYLOGGER.001` | critical | Captures keystrokes and writes them down or sends them |
 
 ## Kubernetes
 
@@ -1738,10 +1769,12 @@ rule's own samples.
 
 ## Persistence
 
-1 rules.
+3 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
+| `MALWARE.PERSIST.BACKDOOR.001` | critical | Writes a file that lets someone else in, with content the package carries |
+| `MALWARE.PERSIST.HIDDEN.001` | critical | Registers a program to start at login and starts it without a window |
 | `SUSPECT.PERSIST.001` | high | Network access combined with a persistence mechanism |
 
 ## Polyglot

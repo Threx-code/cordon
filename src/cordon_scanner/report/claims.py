@@ -196,6 +196,7 @@ _SIGNALS_BY_PREFIX: tuple[tuple[str, frozenset[Signal]], ...] = tuple(
         ("SUSPECT.BINARY.CREDENTIAL_THEFT.", {_S.THEFT}),
         ("SUSPECT.BINARY.KEYLOGGER.", {_S.THEFT}),
         ("SUSPECT.BINARY.CHAT_ENDPOINT.", {_S.THEFT}),
+        ("SUSPECT.BINARY.NATIVE_PROGRAM_IN_PURE_WHEEL.", {_S.FETCH_RUN}),
         ("MALWARE.KEYLOGGER.", {_S.THEFT}),
         ("MALWARE.CLIPPER.", {_S.THEFT}),
         ("SUSPECT.MCP.SECRET_HARVEST.", {_S.THEFT}),

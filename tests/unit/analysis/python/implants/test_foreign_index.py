@@ -32,7 +32,11 @@ INSTALL = (
 class Kit:
     @staticmethod
     def rules(tmp_path: Path, members: dict[str, str]) -> set[str]:
-        files = {"PKG-INFO": "Metadata-Version: 2.1\nName: demo\nVersion: 1.0\n", "demo/__init__.py": "", **members}
+        files = {
+            "PKG-INFO": "Metadata-Version: 2.1\nName: demo\nVersion: 1.0\n",
+            "demo/__init__.py": "",
+            **members,
+        }
         archive = tmp_path / "demo-1.0.tar.gz"
         with tarfile.open(archive, "w:gz") as tgz:
             for name, text in files.items():
@@ -75,9 +79,7 @@ class TestAnInstallHookThatPullsFromAnotherIndex:
             "setup(name='demo', cmdclass={'install': Post})\n"
         )
         utils = (
-            "def update(token):\n"
-            "    p = PInst(trust_all_hosts=True)\n"
-            "    p.install(['a'], ['b'])\n"
+            "def update(token):\n    p = PInst(trust_all_hosts=True)\n    p.install(['a'], ['b'])\n"
         )
         rules = Kit.rules(tmp_path, {"setup.py": setup, "utils.py": utils})
         assert "MALWARE.INSTALL.FOREIGN_INDEX.001" in rules
@@ -94,11 +96,16 @@ class TestOrdinaryInstalls:
         rules = Kit.rules(tmp_path, {"setup.py": INSTALL.format(body=body)})
         assert "MALWARE.INSTALL.FOREIGN_INDEX.001" not in rules
 
-    def test_the_same_flag_in_a_tool_nothing_installs_is_not_an_install_finding(self, tmp_path: Path) -> None:
+    def test_the_same_flag_in_a_tool_nothing_installs_is_not_an_install_finding(
+        self, tmp_path: Path
+    ) -> None:
         tool = (
             "import subprocess\n"
             "def add(package, index):\n"
             "    subprocess.run(['pip', 'install', '--extra-index-url', index, package])\n"
         )
-        members = {"setup.py": "from setuptools import setup\nsetup(name='demo')\n", "demo/tool.py": tool}
+        members = {
+            "setup.py": "from setuptools import setup\nsetup(name='demo')\n",
+            "demo/tool.py": tool,
+        }
         assert "MALWARE.INSTALL.FOREIGN_INDEX.001" not in Kit.rules(tmp_path, members)

@@ -28,7 +28,9 @@ RULE = "SUSPECT.BINARY.NATIVE_PROGRAM_IN_PURE_WHEEL.001"
 
 class Kit:
     @staticmethod
-    def rules(tmp_path: Path, members: dict[str, bytes | str], tag: str = "py3-none-any") -> set[str]:
+    def rules(
+        tmp_path: Path, members: dict[str, bytes | str], tag: str = "py3-none-any"
+    ) -> set[str]:
         archive = tmp_path / f"demo-1.0-{tag}.whl"
         with zipfile.ZipFile(archive, "w") as z:
             for name, body in members.items():
@@ -64,7 +66,9 @@ class TestOrdinaryWheels:
         }
         assert RULE not in Kit.rules(tmp_path, members, "py3-none-manylinux_2_17_x86_64")
 
-    def test_a_pure_wheel_with_an_extension_module_that_it_does_not_run_is_not(self, tmp_path: Path) -> None:
+    def test_a_pure_wheel_with_an_extension_module_that_it_does_not_run_is_not(
+        self, tmp_path: Path
+    ) -> None:
         members = {
             "demo-1.0.dist-info/WHEEL": PURE,
             "demo/_speed.so": b"\x7fELF" + b"PyInit__speed" + bytes(40),

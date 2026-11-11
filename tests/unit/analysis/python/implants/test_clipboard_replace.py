@@ -23,7 +23,9 @@ ADDRESS = "bc1" + "q" + "x" * 30
 class Kit:
     @staticmethod
     def replaced(source: str) -> list[str]:
-        return [h.detail for h in PythonAnalyzer.analyse(source) if h.detail == "clipboard replaced"]
+        return [
+            h.detail for h in PythonAnalyzer.analyse(source) if h.detail == "clipboard replaced"
+        ]
 
 
 class TestAClipperInAnyLibrary:
@@ -105,7 +107,9 @@ class TestOrdinaryClipboardTools:
         assert Kit.replaced(source) == []
 
     def test_a_reader_with_no_write(self) -> None:
-        source = "import re, pyperclip\ndef find():\n    return re.findall(r'\\d+', pyperclip.paste())\n"
+        source = (
+            "import re, pyperclip\ndef find():\n    return re.findall(r'\\d+', pyperclip.paste())\n"
+        )
         assert Kit.replaced(source) == []
 
     def test_a_writer_with_no_read(self) -> None:

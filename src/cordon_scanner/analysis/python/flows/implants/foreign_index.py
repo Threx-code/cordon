@@ -40,18 +40,27 @@ class ForeignIndex:
             if not isinstance(node, ast.Call):
                 continue
             if any(
-                k.arg in TRUST_KEYWORDS and not (isinstance(k.value, ast.Constant) and k.value.value in (False, None, ""))
+                k.arg in TRUST_KEYWORDS
+                and not (isinstance(k.value, ast.Constant) and k.value.value in (False, None, ""))
                 for k in node.keywords
             ):
                 out.add(node.lineno)
                 continue
             name = PythonValueFlow.dotted(node.func) or ""
             short = PythonValueFlow.name(node.func) or ""
-            if (name in cls.PROCESS or short in cls.PROCESS or name.endswith("pip.main")) and node.args:
+            if (
+                name in cls.PROCESS or short in cls.PROCESS or name.endswith("pip.main")
+            ) and node.args:
                 text = " ".join(
-                    p.value for p in ast.walk(node.args[0]) if isinstance(p, ast.Constant) and isinstance(p.value, str)
+                    p.value
+                    for p in ast.walk(node.args[0])
+                    if isinstance(p, ast.Constant) and isinstance(p.value, str)
                 )
-                if (name.endswith("pip.main") and "install" in text and INDEX_FLAG.search(text)) or (PIP_WORD.search(text) and INSTALL_WORD.search(text) and INDEX_FLAG.search(text)):
+                if (
+                    name.endswith("pip.main") and "install" in text and INDEX_FLAG.search(text)
+                ) or (
+                    PIP_WORD.search(text) and INSTALL_WORD.search(text) and INDEX_FLAG.search(text)
+                ):
                     out.add(node.lineno)
         return sorted(out)
 
