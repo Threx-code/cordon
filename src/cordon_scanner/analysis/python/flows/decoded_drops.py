@@ -40,7 +40,7 @@ class DecodedDrops(ExecutionFlows):
         Only what the file carries: a decode of a function's parameter decodes what a caller hands
         it (bee-mesh 1.0.0's batch worker runs the executable a task sends, by design), which is
         received data, not a payload in the package."""
-        received = self._parameter_reads(tree)
+        received = self._parameter_reads(tree, self._carried_calls)
 
         def decoding(part: ast.AST) -> bool:
             return (
@@ -128,7 +128,9 @@ class DecodedDrops(ExecutionFlows):
         return node
 
     @classmethod
-    def _parameter_reads(cls, tree: ast.AST) -> set[int]:
+    def _parameter_reads(
+        cls, tree: ast.AST, carried_calls: dict[str, set[int]] | None = None
+    ) -> set[int]:
         """Calls whose arguments read a received parameter of the function that makes them, by
         node id: what a caller hands in, not what the file carries. A parameter is received only
         when no call of the function in this file passes it a carried value (a literal, a module
@@ -148,6 +150,12 @@ class DecodedDrops(ExecutionFlows):
             params = set(ordered) | {a.arg for a in arguments.kwonlyargs}
             params |= {a.arg for a in (arguments.vararg, arguments.kwarg) if a is not None}
             params -= cls._carried_parameters(tree, function.name, ordered, module_names)
+            # And the positions another file of the package passes carried (`CarriedCalls`).
+            params -= {
+                ordered[i]
+                for i in (carried_calls or {}).get(function.name, set())
+                if i < len(ordered)
+            }
             if not params:
                 continue
             # And what the function derives from them (`payload = task["blob"]`), to a fixed point.

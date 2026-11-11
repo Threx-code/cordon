@@ -285,6 +285,9 @@ class ScanContext:
     analyser starts with them bound. None when there are none, or for a single-file scan."""
 
     python_imported_runners: Mapping[str, Mapping[str, str]] | None = None
+    python_carried_calls: Mapping[str, Mapping[str, str]] | None = None
+    """Per file, its functions and the parameter positions another of the package's files passes
+    a carried value (`CarriedCalls`), in the runner map's shape."""
     """Per Python file, the functions it imports from another of the package's files that run one of
     their own parameters as a command, by position (`ImportedClients.runners_of`): a bot handler
     in `bot.py` that hands the message text to `run_cmd` from `utils.py`. Found before detection

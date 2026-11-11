@@ -12,6 +12,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.analysis.python.flows.carried_calls import CarriedCalls
 from cordon_scanner.analysis.python.flows.imported_clients import ImportedClients
 from cordon_scanner.analysis.python.unparsed_source import UnparsedSource
 from cordon_scanner.analysis.shared.languages import LanguageRegistry
@@ -279,6 +280,7 @@ class ArchiveStages:
             verdict_dependency_names=Ceilings.verdict_dependency_names(units),
             python_imported_clients=ImportedClients.of_units(units),
             python_imported_runners=ImportedClients.runners_of_units(units),
+            python_carried_calls=CarriedCalls.of_units(units),
         )
         ctx = self.unparsed(units, acc, ctx, python_closure)
         ctx = self.import_context(units, ctx, early_format)

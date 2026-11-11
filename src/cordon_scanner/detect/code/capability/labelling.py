@@ -462,6 +462,7 @@ class Labelling:
             follow_literals=not SourcePaths.is_test_material_here(content.path, ctx),
             imported_clients=(ctx.python_imported_clients or {}).get(content.path),
             imported_runners=(ctx.python_imported_runners or {}).get(content.path),
+            carried_calls=(ctx.python_carried_calls or {}).get(content.path),
         )
         hits = [
             CapabilityHit(

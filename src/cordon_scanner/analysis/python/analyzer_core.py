@@ -32,6 +32,9 @@ class AnalyzerCore:
         # Functions another file of the package defines that run their own parameters as a command,
         # by position (`ImportedClients.runners_of`): a call to one with a received value is a run.
         self._imported_runners: dict[str, set[int]] = {}
+        #: This file's functions and the parameter positions another file of the package passes a
+        #: carried value (`CarriedCalls`): a decode of those is a carried payload's.
+        self._carried_calls: dict[str, set[int]] = {}
         # Local name -> dotted primitive, from `f = os.system`.
         self._bindings: dict[str, str] = {}
         # `self.x` / `cls.x` -> what it is bound to in this file: `self._session = requests.Session()`
