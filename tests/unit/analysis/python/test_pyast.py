@@ -1044,7 +1044,8 @@ class TestStagesLeftLooseAtModuleLevel:
         guarded = f"if PY2:\n    decript({self.BLOB!r})\n"
         star = f"from helpers import *\ndecript({self.BLOB!r})\n"
         defined = f"def decript(s):\n    return s\ndecript({self.BLOB!r})\n"
-        for source in (short, guarded, star, defined):
+        translated = f"_({self.BLOB!r})\n"
+        for source in (short, guarded, star, defined, translated):
             assert self.found(source) == [], source
 
     def test_a_literal_command_on_a_temp_path(self) -> None:

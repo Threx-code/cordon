@@ -41,6 +41,22 @@ class LooseStages(AnalyzerCore):
     PAYLOAD: ClassVar[int] = 64
     #: Prefixes matched in a command, never paths this code uses.
     TEMP: ClassVar[tuple[str, ...]] = ("/tmp/", "/var/tmp/", "/dev/shm/")  # noqa: S108
+    #: Names `gettext.install()` and translation frameworks put into builtins: `_("<long text>")` is
+    #: a message to translate (mu-sb's logic.py), never a payload for a missing decoder.
+    _TRANSLATORS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "_",
+            "N_",
+            "_l",
+            "_n",
+            "gettext",
+            "ngettext",
+            "pgettext",
+            "ugettext",
+            "lazy_gettext",
+            "gettext_lazy",
+        }
+    )
     _BUILTIN: ClassVar[frozenset[str]] = frozenset(
         {
             *dir(builtins),
@@ -87,7 +103,7 @@ class LooseStages(AnalyzerCore):
 
     def _defined(self, tree: ast.AST) -> set[str] | None:
         """Every name the file could resolve; None with a star import (anything could be)."""
-        names = set(self._BUILTIN)
+        names = set(self._BUILTIN) | self._TRANSLATORS
         for n in ast.walk(tree):
             if isinstance(n, ast.ImportFrom) and any(a.name == "*" for a in n.names):
                 return None
