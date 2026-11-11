@@ -56,7 +56,7 @@ class TestOrdinaryUploads:
         )
         assert Kit.leaked(source) == []
 
-    def test_a_setting_read_from_the_environment_beside_the_data(self) -> None:
+    def test_a_setting_read_from_the_environment_in_the_key_not_the_body(self) -> None:
         source = (
             "import os\n"
             "import boto3\n"

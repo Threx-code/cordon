@@ -43,20 +43,8 @@ class CloudLeak(PythonValueFlow):
     )
     #: The upload calls whose argument is the content: the methods that take a path name a file, and a
     #: path from the environment or the working directory is where the file is, not what it holds.
-    PAYLOAD_POSITION: ClassVar[dict[str, int]] = {
-        "upload_from_string": 0,
-        "upload_blob": 0,
-        "upload_data": 0,
-        "put_blob": 1,
-    }
+    PAYLOAD_POSITION: ClassVar[dict[str, int]] = {"upload_from_string": 0}
     PAYLOAD_KEYWORDS: ClassVar[frozenset[str]] = frozenset({"Body", "data", "content", "body"})
-
-    #: The variables that say who and where the machine is. Any other variable is a setting (a bucket
-    #: name, a region, a prefix), which 22 of the 410 benign uploads read and send beside their data.
-    MACHINE_VARIABLES: ClassVar[frozenset[str]] = frozenset(
-        {"USER", "USERNAME", "LOGNAME", "HOME", "USERPROFILE", "PWD", "HOSTNAME", "COMPUTERNAME",
-         "USERDOMAIN", "SHELL", "OS", "PROCESSOR_ARCHITECTURE", "LANG", "PATH", "TERM"}
-    )  # fmt: skip
 
     def __init__(self, tree: ast.AST) -> None:
         super().__init__(tree)
@@ -75,7 +63,9 @@ class CloudLeak(PythonValueFlow):
                     self.whole.add(id(node.func.value))
 
     def _machine_key(self, key: ast.AST | None) -> bool:
-        return isinstance(key, ast.Constant) and isinstance(key.value, str) and key.value.upper() in self.MACHINE_VARIABLES
+        """Any literal key: a collector reads whatever the environment holds, and the payload position
+        (below) is what keeps a setting read beside the data out."""
+        return isinstance(key, ast.Constant) and isinstance(key.value, str)
 
     def seed(self, node: ast.AST) -> Label | None:
         if isinstance(node, ast.Call):
