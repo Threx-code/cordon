@@ -78,8 +78,8 @@ class ComputedCommands(AnalyzerCore):
             argument = call.args[position]
             if isinstance(argument, ast.Constant):
                 continue
-            text, concealed = LiteralProgram.folded(module, argument)
-            if text is not None and concealed:
+            text, spelled = LiteralProgram.spelled_out(module, argument)
+            if text is not None and spelled:
                 self._record(
                     Capability.DYNAMIC_DISPATCH,
                     call,

@@ -34,6 +34,8 @@ from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 
 #: The environment key holding the names whose folded value took a hiding step.
 _MARKS = "\x00concealed"
+#: The names whose value was spelled character by character (`chr`, picks, XOR).
+_SPELLED = "\x00spelled"
 
 
 class _Unknown(Exception):
@@ -75,6 +77,9 @@ class LiteralExpressions:
     def __init__(self, functions: dict[str, ast.FunctionDef], depth: int = 0) -> None:
         self._steps = 0
         self.concealed = False
+        # Spelled character by character (`chr`, single characters picked, XOR): reversing or
+        # slicing a whole literal hides it too, but does not spell it.
+        self.spelled = False
         self._functions = functions
         self._depth = depth
 
@@ -106,6 +111,7 @@ class LiteralExpressions:
     def _name(self, node: ast.Name, env: dict[str, Any]) -> Any:
         # A name computed with a hiding step by an earlier statement hides what reads it.
         self.concealed |= node.id in env.get(_MARKS, ())
+        self.spelled |= node.id in env.get(_SPELLED, ())
         return self._known(env, node.id)
 
     def _items(self, node: ast.List | ast.Tuple, env: dict[str, Any]) -> Any:
@@ -126,6 +132,7 @@ class LiteralExpressions:
             if apply is None or (isinstance(op, ast.Mod | ast.FloorDiv) and right == 0):
                 raise _Unknown
             self.concealed |= isinstance(op, ast.BitXor)
+            self.spelled |= isinstance(op, ast.BitXor)
             return apply(left, right)
         if (
             isinstance(op, ast.Add)
@@ -175,6 +182,7 @@ class LiteralExpressions:
                 raise _Unknown
             # One character picked out of a text: an alphabet indexed to spell another.
             self.concealed |= isinstance(value, str | bytes)
+            self.spelled |= isinstance(value, str | bytes)
             return value[position]
         except IndexError as error:
             raise _Unknown from error
@@ -207,6 +215,7 @@ class LiteralExpressions:
         if not isinstance(argument, int) or not 0 <= argument <= 0x10FFFF:
             raise _Unknown
         self.concealed = True
+        self.spelled = True
         return chr(argument)
 
     def _reversed(self, argument: Any) -> Any:
@@ -276,6 +285,7 @@ class LiteralExpressions:
         except _Returned as returned:
             self._steps = inner._steps
             self.concealed |= inner.concealed
+            self.spelled |= inner.spelled
             return returned.value
         raise _Unknown
 
@@ -310,15 +320,27 @@ class LiteralProgram(LiteralExpressions):
     @classmethod
     def folded(cls, tree: ast.AST, node: ast.AST) -> tuple[str | None, bool]:
         """(the string `node` evaluates to or None, whether computing it took a hiding step)."""
-        functions = cls._functions_of(tree)
-        program = cls(functions)
+        value, program = cls._evaluated(tree, node)
+        return (value, program.concealed) if value is not None else (None, False)
+
+    @classmethod
+    def spelled_out(cls, tree: ast.AST, node: ast.AST) -> tuple[str | None, bool]:
+        """(the string or None, whether it was spelled character by character: `chr`, single
+        characters picked out of a text, XOR). celery's `getattr(sys, "<9>"[::-1])` reverses a
+        whole literal, which hides less than it seems and is no spelling."""
+        value, program = cls._evaluated(tree, node)
+        return (value, program.spelled) if value is not None else (None, False)
+
+    @classmethod
+    def _evaluated(cls, tree: ast.AST, node: ast.AST) -> tuple[str | None, LiteralProgram]:
+        program = cls(cls._functions_of(tree))
         try:
             value = program._expr(node, dict(cls._environment(tree, getattr(node, "lineno", 0))))
         except (_Unknown, _Returned):
-            return None, False
+            return None, program
         if isinstance(value, bytes):
             value = value.decode("utf-8", "replace")
-        return (value, program.concealed) if isinstance(value, str) else (None, False)
+        return (value if isinstance(value, str) else None), program
 
     @staticmethod
     def _functions_of(tree: ast.AST) -> dict[str, ast.FunctionDef]:
@@ -368,10 +390,11 @@ class LiteralProgram(LiteralExpressions):
         if handler is None:
             raise _Unknown
         before, self.concealed = self.concealed, False
+        spelled_before, self.spelled = self.spelled, False
         try:
             handler(self, node, env)
         finally:
-            if self.concealed:
+            if self.concealed or self.spelled:
                 bound = {
                     n.id
                     for n in PythonSyntax.nodes(node)
@@ -381,8 +404,12 @@ class LiteralProgram(LiteralExpressions):
                     bound |= {
                         n.id for n in PythonSyntax.nodes(node.value.func) if isinstance(n, ast.Name)
                     }
-                env[_MARKS] = frozenset(env.get(_MARKS, frozenset()) | bound)
+                if self.concealed:
+                    env[_MARKS] = frozenset(env.get(_MARKS, frozenset()) | bound)
+                if self.spelled:
+                    env[_SPELLED] = frozenset(env.get(_SPELLED, frozenset()) | bound)
             self.concealed |= before
+            self.spelled |= spelled_before
 
     def _assign(self, node: ast.Assign, env: dict[str, Any]) -> None:
         if not all(isinstance(t, ast.Name) for t in node.targets):

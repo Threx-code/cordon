@@ -848,6 +848,7 @@ class TestANameSpelledSoThatNoLiteralIsIt:
             "m = importlib.import_module('js' + 'on')\n"
             "f = getattr(m, '_'.join(['load', 's']))\n"
             "g = getattr(m, name)\n"
+            "h = getattr(sys, 'ofni_noisrev'[::-1], None)\n"
         )
         assert self.concealed(source) == []
 
