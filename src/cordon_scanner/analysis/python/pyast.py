@@ -83,6 +83,7 @@ from cordon_scanner.analysis.python.flows.implants.persist_runs import (
 )
 from cordon_scanner.analysis.python.flows.implants.shipped_programs import ShippedPrograms
 from cordon_scanner.analysis.python.flows.received_run import ReceivedRuns
+from cordon_scanner.analysis.python.flows.relayed_sends import RelayedSends
 from cordon_scanner.analysis.python.flows.startup_files import StartupFiles
 from cordon_scanner.analysis.python.sourced_flows import SourcedFlows
 
@@ -193,6 +194,7 @@ class PythonAnalyzer(
     DnsTunnels,
     DataFileCode,
     StartupFiles,
+    RelayedSends,
     ClientBindings,
     SourcedFlows,
     AnalyzerCore,
@@ -276,6 +278,8 @@ class PythonAnalyzer(
             analyzer._environment_sent(tree)
             analyzer._secret_sent(tree)
             analyzer._hidden_requests(tree)
+            analyzer._swept_sends(tree)
+            analyzer._relayed_to_hidden(tree)
         return analyzer._hits
 
     @classmethod

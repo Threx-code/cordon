@@ -97,6 +97,22 @@ class TestTheRuleShips:
         assert HiddenDestination.FACT in repr(rule)
 
 
+class TestTheSweepAndRelayRulesShip:
+    @pytest.mark.parametrize(
+        ("rule_id", "fact"),
+        [
+            ("MALWARE.EXFIL.SWEPT_FILES.001", "AST.PY.SWEPT_SENT"),
+            ("MALWARE.EXFIL.RELAYED_HIDDEN.001", "AST.PY.RELAYED_HIDDEN"),
+        ],
+    )
+    def test_the_rule_is_built_in_and_matches_its_fact(self, rule_id: str, fact: str) -> None:
+        from cordon_scanner.rules.loader import RuleLoader
+
+        compiled = {c.rule.id: c for pack in RuleLoader.load_builtin() for c in pack.rules}
+        assert compiled[rule_id].rule.category.value == "malicious"
+        assert fact in repr(compiled[rule_id])
+
+
 class TestEachFactNamesItsRule:
     @pytest.mark.parametrize(
         ("detail", "capability", "rule"),
@@ -110,6 +126,16 @@ class TestEachFactNamesItsRule:
             ("environment sent: urlopen", Capability.EGRESS, "AST.PY.ENVIRONMENT_SENT"),
             ("secret sent: GITHUB_TOKEN to h", Capability.EGRESS, "AST.PY.SECRET_SENT"),
             ("hidden request: urlopen dest=decoded", Capability.EGRESS, "AST.PY.HIDDEN_REQUEST"),
+            (
+                "swept files sent: urlopen dest=decoded",
+                Capability.EGRESS,
+                "AST.PY.SWEPT_SENT",
+            ),
+            (
+                "relayed to hidden: urlopen dest=decoded",
+                Capability.EGRESS,
+                "AST.PY.RELAYED_HIDDEN",
+            ),
             (
                 "os.chmod makes a decoded file runnable",
                 Capability.EXECUTE,

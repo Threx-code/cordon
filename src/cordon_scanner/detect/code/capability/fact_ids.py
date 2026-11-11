@@ -28,6 +28,10 @@ class PythonFactIds:
         # A request whose destination the code decodes, reverses or builds from character codes,
         # whatever it sends (`HiddenDestination`).
         ("hidden request", "AST.PY.HIDDEN_REQUEST"),
+        # Files swept from the disk, sent through a helper to a destination the code hides.
+        ("swept files sent", "AST.PY.SWEPT_SENT"),
+        # What a caller hands a class, sent on by the class to a destination it hides.
+        ("relayed to hidden", "AST.PY.RELAYED_HIDDEN"),
         # What arrives on a connection, a bot update or a fetched sheet, run as a command.
         ("received run", "AST.PY.RECEIVED_RUN"),
         # Encoded data resolved as DNS names: a channel out that no firewall rule for HTTP sees.

