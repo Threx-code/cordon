@@ -105,18 +105,19 @@ class PackageEntries:
 
     @staticmethod
     def version(units: list[FileUnit], distribution: str) -> str:
-        """The version the published package declares, or "": npm's manifest `version`, a Python
-        sdist's `PKG-INFO` or a wheel's `METADATA` `Version:` header."""
-        if distribution == "npm":
-            value = PackageEntries.manifest(units, distribution).get("version")
-            return value if isinstance(value, str) else ""
+        """The version the published package declares, or "": its manifest's `version` where the
+        ecosystem keeps one, else the `Version:` header of the core-metadata file at the archive's
+        top (the file that opens with `Metadata-Version:`)."""
+        value = PackageEntries.manifest(units, distribution).get("version")
+        if isinstance(value, str):
+            return value
         for unit in units:
             member = unit.path.rsplit("!", 1)[-1]
-            depth = member.count("/")
-            if (member.endswith("/PKG-INFO") and depth == 1) or (
-                member.endswith(".dist-info/METADATA") and depth == 1
-            ):
-                found = re.search(r"(?m)^Version:[ \t]*(\S{1,64})", unit.content.text_head(8_192))
+            if member.count("/") != 1 or unit.content.is_binary:
+                continue
+            head = unit.content.text_head(8_192)
+            if head.startswith("Metadata-Version:"):
+                found = re.search(r"(?m)^Version:[ \t]*(\S{1,64})", head)
                 if found:
                     return found.group(1)
         return ""

@@ -57,6 +57,7 @@
   "analysis/python/flows/client_bindings": "analysis/python/flows/client_bindings",
   "analysis/python/flows/containers": "analysis/python/flows/containers",
   "analysis/python/flows/data_file_code": "analysis/python/flows/data_file_code",
+  "foundation/text/confusion_versions": "foundation/text/confusion_versions",
   "analysis/python/flows/decoded_drops": "analysis/python/flows/decoded_drops",
   "analysis/python/flows/dns_tunnels": "analysis/python/flows/dns_tunnels",
   "analysis/python/flows/hidden_start": "analysis/python/flows/hidden_start",
