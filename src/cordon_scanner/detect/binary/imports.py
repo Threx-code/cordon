@@ -309,6 +309,16 @@ class ImportCapabilities:
         return tuple(str(n).encode() for n in names)
 
     @staticmethod
+    @OneOff.cache
+    def chat_endpoints() -> tuple[bytes, ...]:
+        """The chat and webhook APIs stolen data is posted to: a bot's `sendMessage`, a channel's
+        webhook. Data, for the reason the browser stores are."""
+        names = ScannedJson.loads(
+            (ImportCapabilities.DATA / "chat-endpoints.json").read_text(encoding="utf-8")
+        )
+        return tuple(str(n).encode() for n in names)
+
+    @staticmethod
     def verdicts(profile: ImportProfile, strings: bytes = b"") -> list[tuple[str, str]]:
         """`(rule id, detail)` for each combination worth reporting."""
         out: list[tuple[str, str]] = []
@@ -340,6 +350,19 @@ class ImportCapabilities:
             )
         if profile.has("keylog", "network"):
             out.append(("SUSPECT.BINARY.KEYLOGGER.001", f"imports {named('keylog', 'network')}"))
+        # A compiled module that names a chat bot's or a webhook's API: what it sends goes to a
+        # channel its author reads, and compiling it keeps the address from the source a reviewer
+        # reads. 0 of 704 benign wheels with native modules carry one (2026-11-11).
+        endpoints = [e for e in ImportCapabilities.chat_endpoints() if e in strings]
+        if endpoints:
+            out.append(
+                (
+                    "SUSPECT.BINARY.CHAT_ENDPOINT.001",
+                    "names a chat or webhook API in its compiled code ("
+                    + ", ".join(sorted(e.decode().split("/", 1)[0] for e in endpoints))
+                    + ")",
+                )
+            )
         # Not network + execute + registry: that is every installer. Downloading a file and
         # running it, or doing both while checking for a debugger, is what a dropper does --
         # a check the program makes itself. `IsDebuggerPresent` and `OutputDebugStringA` alone are

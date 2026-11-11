@@ -235,6 +235,24 @@ class TestVerdicts:
             "SUSPECT.BINARY.CREDENTIAL_THEFT.001"
         ]
 
+    def test_a_compiled_module_naming_a_chat_bots_api_is_reported(self) -> None:
+        # sherpy 0.1.0: a Python extension whose native code posts to a chat bot. The endpoint is
+        # read from the data file, so this test does not itself carry it.
+        endpoint = ImportCapabilities.chat_endpoints()[0]
+        profile = ImportCapabilities.profile(
+            ImportTable("Mach-O", (), ("_PyInit__core", "connect"))
+        )
+        found = [
+            r for r, _ in ImportCapabilities.verdicts(profile, b"\0https://" + endpoint + b"/bot\0")
+        ]
+        assert found == ["SUSPECT.BINARY.CHAT_ENDPOINT.001"]
+
+    def test_a_compiled_module_naming_an_ordinary_api_is_not(self) -> None:
+        profile = ImportCapabilities.profile(
+            ImportTable("Mach-O", (), ("_PyInit__core", "connect"))
+        )
+        assert ImportCapabilities.verdicts(profile, b"\0https://api.github.com/repos\0") == []
+
     def test_download_and_execute(self) -> None:
         assert "SUSPECT.BINARY.IMPLANT.001" in self.rules(["URLDownloadToFileA", "ShellExecuteA"])
 

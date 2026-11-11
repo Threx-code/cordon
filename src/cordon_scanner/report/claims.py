@@ -195,6 +195,7 @@ _SIGNALS_BY_PREFIX: tuple[tuple[str, frozenset[Signal]], ...] = tuple(
         ("SUSPECT.CRYPTOMINER.", {_S.THEFT}),
         ("SUSPECT.BINARY.CREDENTIAL_THEFT.", {_S.THEFT}),
         ("SUSPECT.BINARY.KEYLOGGER.", {_S.THEFT}),
+        ("SUSPECT.BINARY.CHAT_ENDPOINT.", {_S.THEFT}),
         ("SUSPECT.MCP.SECRET_HARVEST.", {_S.THEFT}),
         ("SUSPECT.ARCHIVE.LINK_TO_SECRET.", {_S.THEFT}),
         ("SUSPECT.REGISTRY.SELF_PUBLISH.", {_S.PROPAGATE}),

@@ -157,6 +157,20 @@ DECLARED_RULES: tuple[DeclaredRule, ...] = (
         remediation="Remove it and find out how it entered the repository.",
     ),
     DeclaredRule(
+        id="SUSPECT.BINARY.CHAT_ENDPOINT.001",
+        title="Compiled module names a chat bot's or webhook's API",
+        # 0 of 704 benign wheels with native modules (16,274 gate + bench, 2026-11-11).
+        severity=Severity.HIGH,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        detector=DETECTOR,
+        message=(
+            "Its compiled code names a chat bot's or a webhook's API (Telegram's, a Discord or Slack webhook). What it sends goes to a channel its author reads, and compiling it keeps that address out of the source a reviewer reads."
+        ),
+        references=(references.OBSCURED_SECURITY_DATA,),
+        remediation="Confirm what it sends there. A library has no reason to hide a chat channel in native code.",
+    ),
+    DeclaredRule(
         id="SUSPECT.BINARY.HIDDEN_IMPORTS.001",
         title="Committed binary resolves its imports at run time",
         severity=Severity.MEDIUM,

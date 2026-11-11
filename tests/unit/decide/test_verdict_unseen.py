@@ -97,6 +97,8 @@ class TestTheAdmittedRulesAreKept:
         # 2 of 17,337 for STARTUP_CODE (tld, dagz-suite), 0 for STARTUP_NETWORK once startup-reached.
         "MALWARE.INSTALL.STARTUP_NETWORK.001",
         "MALWARE.INSTALL.STARTUP_CODE.001",
+        # 1 unseen unit (sherpy); 0 of 704 benign wheels with native modules.
+        "SUSPECT.BINARY.CHAT_ENDPOINT.001",
     )
 
     def test_each_is_in_keep(self) -> None:
