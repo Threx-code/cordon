@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from cordon_scanner.analysis.python.flows.implants.backdoor_writes import BackdoorWrites
 from cordon_scanner.analysis.python.flows.implants.clipboard_replace import ClipboardReplace
+from cordon_scanner.analysis.python.flows.implants.cloud_leak import CloudLeak
 from cordon_scanner.analysis.python.flows.implants.foreign_index import ForeignIndex
 from cordon_scanner.analysis.python.flows.implants.hidden_launch import HiddenLaunch
 from cordon_scanner.analysis.python.flows.implants.ip_logger import IpLoggerFetch
@@ -35,6 +36,7 @@ class ImplantFacts:
 
     #: Flows that report one detail per line they find.
     LINE_FLOWS = (
+        (CloudLeak, Capability.FLOW, "machine facts uploaded"),
         (IpLoggerFetch, Capability.FLOW, "ip logger fetched"),
         (KeyCapture, Capability.FLOW, "keystrokes logged"),
         (ClipboardReplace, Capability.FLOW, "clipboard replaced"),

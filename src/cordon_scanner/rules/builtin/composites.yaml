@@ -2470,6 +2470,37 @@ rules:
         - path_glob: "**/test_*.py"
         - path_glob: "tests/**"
 
+  - id: MALWARE.EXFIL.CLOUD_UPLOAD.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Uploads what the machine knows to a cloud store
+    message: >
+      This code reads the environment or facts about the machine (variables, the host and user
+      names, the platform) and uploads them with a cloud-storage client. The bucket belongs to whoever
+      wrote the code, and what it receives is what the code learned about the machine. A program that
+      uploads files it was asked to or data it made does not start from the environment.
+    remediation: >
+      Do not run this code. Treat the values the machine holds as read by whoever owns the bucket.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package whose function read three environment values and uploaded them to a Google
+        Cloud Storage blob from a thread (dlty, 2026-11-11).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1567/002/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: AST.PY.MACHINE_FACTS_UPLOADED
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: MALWARE.EXFIL.INSTALL_CALLBACK.001
     version: 1.0.0
     category: malicious
