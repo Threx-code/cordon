@@ -63,6 +63,7 @@
   "foundation/text/confusion_versions": "foundation/text/confusion_versions",
   "analysis/python/flows/decoded_drops": "analysis/python/flows/decoded_drops",
   "analysis/python/flows/dns_tunnels": "analysis/python/flows/dns_tunnels",
+  "analysis/python/flows/free_host_credentials": "analysis/python/flows/free_host_credentials",
   "analysis/python/flows/staged/dormant_decodes": "analysis/python/flows/staged/dormant_decodes",
   "analysis/python/flows/staged/executed_data": "analysis/python/flows/staged/executed_data",
   "analysis/python/flows/staged/import_mail": "analysis/python/flows/staged/import_mail",

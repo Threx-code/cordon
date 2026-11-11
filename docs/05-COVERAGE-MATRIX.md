@@ -443,6 +443,7 @@ rather than a document.
 | `MALWARE.EXFIL.CLOUD_UPLOAD.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.COMMAND_OUTPUT.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.CONFUSION_BEACON.001` | high | `composites` | exfiltration |
+| `MALWARE.EXFIL.CREDENTIALS_TO_FREE_HOST.001` | high | `composites` | exfiltration |
 | `MALWARE.EXFIL.CREDENTIAL_STORE.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.CREDENTIAL_STORE.002` | high | `composites` | exfiltration |
 | `MALWARE.EXFIL.DNS_CALLBACK.001` | critical | `composites` | exfiltration |
