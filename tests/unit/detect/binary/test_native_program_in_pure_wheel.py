@@ -79,3 +79,51 @@ class TestOrdinaryWheels:
             "demo/__init__.py": "import subprocess\ndef run(args):\n    return subprocess.run(['git', *args])\n",
         }
         assert RULE not in Kit.rules(tmp_path, members)
+
+
+class TestASourceDistribution:
+    @staticmethod
+    def rules(tmp_path: Path, members: dict[str, bytes | str]) -> set[str]:
+        import io
+        import tarfile
+
+        archive = tmp_path / "demo-1.0.tar.gz"
+        with tarfile.open(archive, "w:gz") as tgz:
+            for name, body in members.items():
+                data = body if isinstance(body, bytes) else body.encode()
+                info = tarfile.TarInfo(f"demo-1.0/{name}")
+                info.size = len(data)
+                tgz.addfile(info, io.BytesIO(data))
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(archive)
+        return {f.rule_id for f in result.findings}
+
+    def test_a_prebuilt_program_run_from_the_sources_blocks(self, tmp_path: Path) -> None:
+        members = {
+            "PKG-INFO": "Metadata-Version: 2.1\nName: demo\nVersion: 1.0\n",
+            "setup.py": "from setuptools import setup\nsetup(name='demo')\n",
+            "demo/bin/tool": b"\x7fELF" + bytes(60),
+            "demo/__init__.py": RUNNER,
+        }
+        assert RULE in self.rules(tmp_path, members)
+
+    def test_sources_with_a_fixture_binary_nothing_runs_is_not(self, tmp_path: Path) -> None:
+        members = {
+            "PKG-INFO": "Metadata-Version: 2.1\nName: demo\nVersion: 1.0\n",
+            "demo/data/sample.bin": b"\x7fELF" + bytes(60),
+            "demo/__init__.py": "import subprocess\ndef run():\n    return subprocess.run(['git', 'status'])\n",
+        }
+        assert RULE not in self.rules(tmp_path, members)
+
+    def test_sources_that_run_a_shipped_program_without_making_it_executable_are_not(self, tmp_path: Path) -> None:
+        runner = (
+            "import os, subprocess\n"
+            "def run(*args):\n"
+            "    exe = os.path.join(os.path.dirname(__file__), 'bin', 'tool')\n"
+            "    return subprocess.run([exe, *args])\n"
+        )
+        members = {
+            "PKG-INFO": "Metadata-Version: 2.1\nName: demo\nVersion: 1.0\n",
+            "demo/bin/tool": b"\x7fELF" + bytes(60),
+            "demo/__init__.py": runner,
+        }
+        assert RULE not in self.rules(tmp_path, members)

@@ -648,20 +648,27 @@ class ReleaseChecks:
 
     @staticmethod
     def native_program_in_a_pure_wheel(units: Sequence[FileUnit], ctx: ScanContext) -> list[Finding]:
-        """A pure-Python wheel that carries a native program and starts it.
+        """A pure-Python wheel or a source distribution that carries a native program and starts it.
 
         A wheel tagged `py3-none-any` declares that it holds no compiled code, which is what lets one
         file serve every platform. A package that wraps a program it needs (ruff, uv, a driver) ships
         a platform wheel with the binary for that platform. A pure wheel that carries an executable
         and runs it, one made from `__file__` or the package's resources, has hidden a program in a
         package that said it had none: the executable member is not a Python extension (no `PyInit_`
-        symbol, not `.so` / `.pyd`), and a `.py` file starts a path built from where it lives.
+        symbol, not `.so` / `.pyd`), and a `.py` file starts a path built from where it lives. A source
+        distribution is held to the same: what it ships is sources a reviewer can read, and a prebuilt
+        program run from one is code nothing in the archive explains.
         """
         wheel = next(
             (u for u in units if u.path.rsplit("/", 1)[-1] == "WHEEL" and ".dist-info/" in u.path),
             None,
         )
-        if wheel is None or not PURE_WHEEL.search(wheel.content.text):
+        # A pure wheel, or a source distribution (PKG-INFO beside the sources, no WHEEL): neither is
+        # a place for a prebuilt program, and a platform wheel is the one that is.
+        source_distribution = wheel is None and any(
+            u.path.count("/") <= 1 and u.path.rsplit("/", 1)[-1] == "PKG-INFO" for u in units
+        )
+        if not source_distribution and (wheel is None or not PURE_WHEEL.search(wheel.content.text)):
             return []
         programs = [
             u
@@ -684,16 +691,20 @@ class ReleaseChecks:
             runs = ShippedPrograms.lines(tree)
             if not runs:
                 continue
+            # From sources the run alone is common (61 of 16,274 benign sources run a program they
+            # ship, mostly test fixtures and tools); making it executable first, as a prebuilt
+            # program must be, is the part a source distribution has no use for.
+            if source_distribution and not ShippedPrograms.made_executable(tree):
+                continue
             return [
                 replace(
                     OperationalFinding.build(
                         path=unit.path,
                         rule_id=NATIVE_PROGRAM_IN_PURE_WHEEL_RULE,
                         message=(
-                            "This wheel declares itself pure Python (`none-any`), yet it carries a "
-                            "native program and this file starts a path built from where it lives. "
-                            "Compiled code no reviewer can read runs as a program, in a package that "
-                            "said it had none."
+                            "This package carries a native program (and says it holds no compiled "
+                            "code: a pure wheel, or sources) and this file starts a path built from "
+                            "where it lives. Compiled code no reviewer can read runs as a program."
                         ),
                         remediation=(
                             "Do not install it. A package that needs a native program ships a "

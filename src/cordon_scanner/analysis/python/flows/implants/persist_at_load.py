@@ -45,6 +45,23 @@ class PersistAtLoad:
         return out
 
     @classmethod
+    def load_time_lines(cls, tree: ast.AST) -> frozenset[int]:
+        """The lines of every call that runs when the file is loaded: those at module level (and in
+        a class body), and every line of a function the module level calls, through the file's own
+        helpers. Not the main guard, not a function nothing calls."""
+        if not isinstance(tree, ast.Module):
+            return frozenset()
+        functions: dict[str, ast.AST] = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                functions.setdefault(node.name, node)
+        lines = {c.lineno for c in cls._top_level_calls(tree.body)}
+        for name in cls._loaded_names(tree, functions):
+            fn = functions[name]
+            lines.update(range(fn.lineno, (fn.end_lineno or fn.lineno) + 1))  # type: ignore[attr-defined]
+        return frozenset(lines)
+
+    @classmethod
     def _top_level_calls(cls, body: list[ast.stmt]) -> list[ast.Call]:
         """The calls the statements make when they run, leaving out function bodies and the main guard."""
         calls: list[ast.Call] = []

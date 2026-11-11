@@ -28,6 +28,14 @@ class InstallPrograms:
         {"calc", "notepad", "mspaint", "wordpad", "write", "gnome-calculator", "kcalc", "xcalc",
          "gedit", "kate", "textedit", "calculator"}
     )  # fmt: skip
+    #: Commands that list who, where and what the machine is, and what is on it: the reconnaissance
+    #: that `id` and `whoami` start. Across the 7,800 benign setup.py files of the gate none starts
+    #: one (`echo` is not here: three of them print a message and it stays a harmless command).
+    RECON: ClassVar[frozenset[str]] = frozenset(
+        {"ls", "dir", "cat", "type", "set", "pwd", "printenv", "ipconfig", "ifconfig", "netstat", "arp", "route", "ps",
+         "tasklist", "systeminfo", "ver", "uname", "lsb_release", "who", "w", "last", "users",
+         "df", "mount", "nslookup", "net", "tree", "getent", "lscpu", "lsblk", "lsusb", "dmidecode"}
+    )  # fmt: skip
     #: Wrappers whose argument is the program that really runs.
     WRAPPERS: ClassVar[frozenset[str]] = frozenset(
         {"cmd", "sh", "bash", "zsh", "powershell", "pwsh", "start", "nohup", "env", "open"}
@@ -50,9 +58,11 @@ class InstallPrograms:
 
     @classmethod
     def foreign(cls, command: str | None) -> bool:
-        """A desktop application or an identity command."""
+        """A desktop application, an identity command or a command that surveys the machine."""
         program = cls.program(command) if command else None
-        return program is not None and (program in cls.DESKTOP or program in IDENTITY_COMMANDS)
+        return program is not None and (
+            program in cls.DESKTOP or program in IDENTITY_COMMANDS or program in cls.RECON
+        )
 
 
 __all__ = ["InstallPrograms"]
