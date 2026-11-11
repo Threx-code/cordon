@@ -556,7 +556,7 @@ class CapabilityDetector(BaseDetector):
 
             rule_hits = CapabilityDetector._rule_hits(compiled, unit, hits, decode_excused)
             window = CapabilityDetector._window(
-                evaluator, compiled, rule_hits, unit.path, (in_hook, in_ci, in_consumer),
+                evaluator, compiled, rule_hits, unit, (in_hook, in_ci, in_consumer),
                 deferred, import_deferred,
             )  # fmt: skip
             if window is None:
@@ -599,13 +599,14 @@ class CapabilityDetector(BaseDetector):
         evaluator: CompositeEvaluator,
         compiled: CompiledRule,
         rule_hits: list[CapabilityHit],
-        path: str,
+        unit: FileUnit,
         where: tuple[bool, bool, bool],
         deferred: frozenset[tuple[int, int]],
         import_deferred: frozenset[tuple[int, int]] | None,
     ) -> list[CapabilityHit] | None:
         """The window of hits that satisfies the composite, read in the context it runs in."""
         in_hook, in_ci, in_consumer = where
+        path = unit.path
         if compiled.rule.id in CompositeRuleIds.CONTEXT_FREE:
             return evaluator.satisfying_window(
                 compiled, rule_hits, path, False, False, False, frozenset()
@@ -618,7 +619,9 @@ class CapabilityDetector(BaseDetector):
             # counts as egress only on a line where a request is made (evidently 0.7.23).
             return evaluator.satisfying_window(
                 compiled,
-                DestinationLabels.sent_at_import(rule_hits),
+                DestinationLabels.sent_at_import(
+                    rule_hits, None if unit.content.is_binary else unit.content.text
+                ),
                 path,
                 True,
                 in_ci,

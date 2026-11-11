@@ -32,22 +32,56 @@ class DestinationLabels:
     INTERACTION_RULE = "INTEL.EGRESS.INTERACTION.001"
     """Egress to an out-of-band interaction service. See `intel.hosts.INTERACTION_HOSTS`."""
 
+    #: A line that binds a value to one name: `URL = ...`, `const URL = ...`, `URL: str = ...`.
+    _BINDING: ClassVar[re.Pattern[str]] = re.compile(
+        r"^\s*(?:export\s+)?(?:const|let|var|final)?\s*([A-Za-z_$][\w$]*)\s*(?::[^=]*)?=(?!=)"
+    )
+
     @classmethod
-    def sent_at_import(cls, hits: list[CapabilityHit]) -> list[CapabilityHit]:
+    def sent_at_import(
+        cls, hits: list[CapabilityHit], source: str | None = None
+    ) -> list[CapabilityHit]:
         """The hits, less a destination label on a line where nothing is sent: what import makes
         of a URL written as a constant or passed to a constructor is a destination named, not a
-        request. A label on a request's own line (`urlopen("http://1.2.3.4", data)`) stays."""
+        request. A label on a request's own line (`urlopen("http://1.2.3.4", data)`) stays, and so
+        does one whose line binds the URL to a name that a sending line uses (`HOOK = "<drop
+        point>"` then `requests.post(HOOK, ...)`): the request goes there, from another line
+        (loveclose 0.0.1 and sf_th_requests 0.1.0 lost INSTALL_CALLBACK without it)."""
+        labels = (cls.DROP_POINT_RULE, cls.INTERACTION_RULE)
         sending = {
             hit.line
             for hit in hits
-            if hit.capability is Capability.EGRESS
-            and hit.rule_id not in (cls.DROP_POINT_RULE, cls.INTERACTION_RULE)
+            if hit.capability is Capability.EGRESS and hit.rule_id not in labels
         }
+        bound = cls._bound_to_a_send(
+            {hit.line for hit in hits if hit.rule_id in labels} - sending, sending, source
+        )
         return [
             hit
             for hit in hits
-            if hit.rule_id not in (cls.DROP_POINT_RULE, cls.INTERACTION_RULE) or hit.line in sending
+            if hit.rule_id not in labels or hit.line in sending or hit.line in bound
         ]
+
+    @classmethod
+    def _bound_to_a_send(
+        cls, label_lines: set[int], sending: set[int], source: str | None
+    ) -> set[int]:
+        """Label lines that bind their value to a name a sending line uses, as a whole word."""
+        if not source or not label_lines or not sending:
+            return set()
+        lines = source.splitlines()
+        sent_text = [lines[n - 1] for n in sending if 0 < n <= len(lines)]
+        kept: set[int] = set()
+        for line in label_lines:
+            if not 0 < line <= len(lines):
+                continue
+            binding = cls._BINDING.match(lines[line - 1])
+            if binding is None:
+                continue
+            name = re.compile(rf"(?<![\w$.]){re.escape(binding.group(1))}(?![\w$])")
+            if any(name.search(text) for text in sent_text):
+                kept.add(line)
+        return kept
 
     @classmethod
     def destination_capabilities(

