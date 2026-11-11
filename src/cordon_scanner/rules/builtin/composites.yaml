@@ -2167,6 +2167,207 @@ rules:
         - path_glob: "**/*.dockerfile"
         - path_glob: "**/Containerfile"
 
+  - id: MALWARE.IMPORT.PERSIST.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Code that runs on import plants code that runs again later
+    message: >
+      Importing this package writes a shell profile, a scheduled task, a service, a LaunchAgent, a
+      crontab line, a login item, an autostart entry or a Run key: a foothold that runs again at the
+      next login or on a schedule. Loading a library has no reason to change what runs when the user
+      logs in. Graded like the install-time form, because import is as unprompted as install.
+    remediation: >
+      Do not import this package. Inspect the profiles, scheduled tasks, services, LaunchAgents and
+      crontab of machines that did, and remove what it added.
+    provenance:
+      kind: research
+      reference: >
+        A persistence location written at module level, or by a function the module level calls, in
+        a file that runs when the package is imported: a package that registers itself the first
+        time it is loaded rather than when it is installed.
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1546/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: import_entry
+        - rule: AST.PY.PERSIST_AT_LOAD
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+        - path_glob: "**/Dockerfile"
+
+  - id: MALWARE.INSTALL.FOREIGN_INDEX.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install script installs packages from an index the user did not choose
+    message: >
+      Code that runs at install time runs `pip install` with `--index-url`, `--extra-index-url`,
+      `--find-links` or `--trusted-host`, or hands a library `trust_all_hosts=True`. The second index
+      is searched alongside the user's and the higher version wins, so whoever runs it puts code on
+      the machine: the dependency-confusion shape. An install script that needs a package names it
+      as a requirement and leaves the index to the user.
+    remediation: >
+      Do not install this package. Look at what the named index served and treat the machine as
+      having run it.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package whose install command ran a package installer with host checks turned off from
+        its install-time update call (pyregions_snowflake, 2026-11-11).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1195/001/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - any:
+            - context: install_entry
+            - context: install_hook
+        - rule: AST.PY.FOREIGN_INDEX
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.IMPLANT.PERSIST_RUN.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Registers itself to run again and runs a program it brings
+    message: >
+      In one function, or one function and the helpers it calls, this code runs a program it
+      downloaded or decoded and writes a persistence location (a Run key, a scheduled task, a
+      LaunchAgent, a crontab line, a service, a profile): an implant installing its payload and
+      arranging for it to start again. Either alone is ordinary; together in one place they are the
+      shape of an implant registering itself.
+    remediation: >
+      Do not run this code. Inspect the persistence locations of any machine that did, and remove
+      what it added and the program it started.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package whose launcher wrote a Run key, a scheduled task or a LaunchAgent in a
+        function beside the run of the program it brings (ailaunchkit, 2026-11-11).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1547/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: AST.PY.PERSIST_RUN
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.CLIPPER.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Replaces what the user copied with a value the package carries
+    message: >
+      This code reads the clipboard, matches what it read against a pattern and writes a value the
+      package carries back: the clipper shape. A user who copies a cryptocurrency address and pastes
+      it pays the address the package chose. A clipboard tool writes what it read or what the user
+      picked; this writes a fixed value when what it read matched a pattern.
+    remediation: >
+      Do not run this code. Check where a payment made while it ran was sent.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package that read the Windows clipboard, tested it against address patterns and set a
+        constant replacement (aiassistcore, 2026-11-11).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1115/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: AST.PY.CLIPBOARD_REPLACED
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.KEYLOGGER.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Captures keystrokes and writes them down or sends them
+    message: >
+      This code hooks or polls the keyboard and the keys it captures reach a file write or a request.
+      A hotkey library maps a key to an action and a game reads a key to move something; neither
+      keeps what was typed. Keeping it is a keylogger, and what it kept includes passwords and
+      messages.
+    remediation: >
+      Do not run this code. Treat what was typed while it ran as read, change the passwords, and look
+      for the file or the host the keys went to.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package with a key-code-to-name map, a buffer and a flusher thread writing the typed
+        text to a log path under the user's profile (aiassistcore, 2026-11-11).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1056/001/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: AST.PY.KEYSTROKES_LOGGED
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.PERSIST.HIDDEN.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Registers a program to start at login and starts it without a window
+    message: >
+      In one function, or one function and the helpers it calls, this code writes a persistence
+      location (an autostart entry, an agent, a Run key, a scheduled task, a crontab line) and asks for
+      a launch with no window: a `.vbs` run by `wscript`, `CREATE_NO_WINDOW`, `DETACHED_PROCESS`,
+      `SW_HIDE`, `pythonw`, `nohup`. A program the user keeps at login shows a window or an icon; one
+      that hides itself is not one they chose.
+    remediation: >
+      Do not run this code. Remove the autostart entry or scheduled task it wrote and the program it
+      starts.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package whose installer wrote an XDG autostart file, a LaunchAgents plist and a
+        Windows launcher script run with creation flags that hide the window (ailaunchkit,
+        2026-11-11).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1547/001/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: AST.PY.AUTOSTART_HIDDEN
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: MALWARE.EXFIL.INSTALL_CALLBACK.001
     version: 1.0.0
     category: malicious
@@ -3109,6 +3310,46 @@ rules:
       proximity: 4000
       any:
         - rule: AST.PY.DNS_TUNNEL
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.PERSIST.BACKDOOR.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Writes a file that lets someone else in, with content the package carries
+    message: >
+      This code writes `authorized_keys`, a sudoers file, `/etc/passwd` or `/etc/shadow`, or an SSH
+      login script, and what it writes is the package's own: a literal, a constant, or a decode of
+      one. A key line the package brings, put into the user's `authorized_keys`, lets whoever holds
+      the key in without a password, whoever calls it. The same write at install or import blocks
+      for any content.
+    remediation: >
+      Do not run this code. Look at the account files of any machine that did: remove the key or the
+      sudoers entry it added, and treat the account as accessed.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package that stripped a public key from a module constant and appended it to
+        ~/.ssh/authorized_keys from a function its initialiser reaches, creating the directory with
+        mode 0700 and setting the file's mode through a helper (graphicsctxr, 2026-11-11).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1098/004/
+    match:
+      kind: composite
+      scope: file
+      any:
+        - rule: AST.PY.BACKDOOR_CARRIED
+        - all:
+            - any:
+                - context: install_entry
+                - context: install_hook
+                - context: import_entry
+            - rule: AST.PY.BACKDOOR_WRITE
       unless:
         - path_glob: "**/*.test.*"
         - path_glob: "**/test_*.py"

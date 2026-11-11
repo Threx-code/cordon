@@ -38,6 +38,9 @@ from cordon_scanner.analysis.python.py_flow import Label, PythonValueFlow
 PERSIST_WORD: Final = re.compile(
     r"(?i)bashrc|bash_profile|zshrc|\.profile|crontab|/etc/cron|launch(?:agents|daemons)|systemd"
     r"|systemctl|wantedby|currentversion|sitecustomize|usercustomize|startup"
+    r"|schtasks|\bsc(?:\.exe)?\W{1,8}create|launchctl|login\s+item|__eventfilter|commandlineeventconsumer"
+    r"|activescripteventconsumer|register-wmievent|powershell_profile|windowspowershell"
+    r"|\.config/autostart|x-gnome-autostart|/etc/udev/rules\.d|/lib/udev/rules\.d"
 )
 
 #: A command, folded whole, that only reads what a persistence location holds. Read with

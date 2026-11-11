@@ -33,7 +33,7 @@ class CompositeEvaluator:
     #: literal is the act itself -- a calculator or `whoami` started at install
     #: (`InstallPrograms`), as `safe_spawn_lines` keeps a bare shell or a `start x.vbs`.
     LITERAL_IS_THE_ACT: ClassVar[frozenset[str]] = frozenset(
-        {"AST.PY.INSTALL_FOREIGN_PROGRAM", "AST.PY.CODE_FROM_DATA"}
+        {"AST.PY.INSTALL_FOREIGN_PROGRAM", "AST.PY.CODE_FROM_DATA", "AST.PY.FOREIGN_INDEX", "AST.PY.SHIPPED_RUN"}
     )
 
     def __init__(

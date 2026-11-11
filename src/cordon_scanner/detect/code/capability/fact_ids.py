@@ -33,6 +33,20 @@ class PythonFactIds:
         # Encoded data resolved as DNS names: a channel out that no firewall rule for HTTP sees.
         ("dns tunnel", "AST.PY.DNS_TUNNEL"),
         ("code from a data file", "AST.PY.CODE_FROM_DATA"),
+        # A persistence location written by code that runs when the file is loaded.
+        ("persist at load", "AST.PY.PERSIST_AT_LOAD"),
+        # The clipboard read, matched against a pattern, and set to a value the package brings.
+        ("clipboard replaced", "AST.PY.CLIPBOARD_REPLACED"),
+        # Keystrokes captured and written down or sent.
+        ("keystrokes logged", "AST.PY.KEYSTROKES_LOGGED"),
+        # A persistence write with a hidden launch (no window) beside it.
+        ("autostart hidden", "AST.PY.AUTOSTART_HIDDEN"),
+        # A persistence write with a run of a program the package downloaded, decoded or ships beside it.
+        ("persist and run", "AST.PY.PERSIST_RUN"),
+        ("shipped program run", "AST.PY.SHIPPED_RUN"),
+        # Packages installed from an index the user did not choose, or with host checks off.
+        ("foreign index install", "AST.PY.FOREIGN_INDEX"),
+        # A file that gives someone else a way in written: authorized_keys, sudoers, passwd/shadow, ssh rc.
     )
     #: The suffix the analyser puts on a downloaded program's start when it hides the window.
     HIDDEN_START: ClassVar[str] = "hidden=1"
@@ -63,6 +77,10 @@ class PythonFactIds:
         for prefix, rule in cls.PREFIXES:
             if detail.startswith(prefix):
                 return rule
+        if detail.startswith("backdoor write"):
+            # A file that gives someone else a way in, written. `carried`: what is written is the
+            # package's own (a literal, a module constant, a decode of one), whoever calls it.
+            return "AST.PY.BACKDOOR_CARRIED" if detail.endswith(" carried") else "AST.PY.BACKDOOR_WRITE"
         if detail.endswith(cls.DROPPED):
             return "AST.PY.DECODED_DROP_RUN"
         for prefix, rule in cls.MODEL:

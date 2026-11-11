@@ -177,7 +177,36 @@ a project integrating with the platform it says it integrates with:
 wrapper, and both were reported as contacting a drop point. What it saves is the
 split-string shape for those three, which nothing in the corpus has produced."""
 
-ALL_HOSTS: Final = WEBHOOK_HOSTS | WEBHOOK_ONLY_HOSTS | PASTE_HOSTS | TUNNEL_HOSTS
+IP_LOGGER_HOSTS: Final = frozenset(
+    {
+        # Grabify: a short link that records the IP address of whoever opens it.
+        "grabify.link",
+        "leancoding.co",
+        "stopify.co",
+        "freegiftcards.co",
+        "joinmy.site",
+        "curiouscat.club",
+        "catsnthings.fun",
+        "catsnthing.com",
+        # IPLogger: the same service under several names.
+        "iplogger.org",
+        "iplogger.com",
+        "iplogger.ru",
+        "iplogger.co",
+        "2no.co",
+        "yip.su",
+        # Blasze and the PS3 pages that front the same link recorder.
+        "blasze.com",
+        "blasze.tk",
+        "ps3cfw.com",
+    }
+)
+"""IP-address logging services: a link whose only purpose is to tell whoever made it the address
+the request came from, and what sent it. They are listed in the vendors' own documentation and in
+public abuse trackers as IP loggers, and a library has no reason to fetch one. They count as
+interaction hosts: a request to one is a request made to report that code ran somewhere."""
+
+ALL_HOSTS: Final = WEBHOOK_HOSTS | WEBHOOK_ONLY_HOSTS | PASTE_HOSTS | TUNNEL_HOSTS | IP_LOGGER_HOSTS
 
 INTERACTION_HOSTS: Final = frozenset(
     {
@@ -202,6 +231,7 @@ INTERACTION_HOSTS: Final = frozenset(
         "bxss.me",
         "interactsh.com",
     }
+    | IP_LOGGER_HOSTS
 )
 """Out-of-band interaction services: a request to one exists to tell whoever minted the subdomain
 that some code ran somewhere, and from where. Tunnels are not here -- developers run ngrok."""
