@@ -64,6 +64,7 @@
   "analysis/python/flows/startup_files": "analysis/python/flows/startup_files",
   "analysis/python/flows/hidden_destinations": "analysis/python/flows/hidden_destinations",
   "analysis/python/flows/backdoor_writes": "analysis/python/flows/backdoor_writes",
+  "analysis/python/flows/persist_at_load": "analysis/python/flows/persist_at_load",
   "analysis/python/flows/secret_sources": "analysis/python/flows/secret_sources",
   "analysis/python/flows/received_run": "analysis/python/flows/received_run",
   "analysis/python/flows/http_clients": "analysis/python/flows/http_clients",
