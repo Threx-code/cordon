@@ -645,6 +645,11 @@ class ReleaseChecks:
                     break
         return out
 
+    WHOLE_PROGRAM_BYTES: ClassVar[int] = 30_000_000
+    """The size past which a prebuilt executable in a source distribution is a whole program shipped
+    for running, not a test fixture or a helper: with no chmod beside the run, 3 of the 16,274 benign
+    sources carry one that large (a 32 MB ELF run from `__file__` is the kimitalk family)."""
+
     @staticmethod
     def native_program_in_a_pure_wheel(units: Sequence[FileUnit], ctx: ScanContext) -> list[Finding]:
         """A pure-Python wheel or a source distribution that carries a native program and starts it.
@@ -695,7 +700,11 @@ class ReleaseChecks:
             # From sources the run alone is common (61 of 16,274 benign sources run a program they
             # ship, mostly test fixtures and tools); making it executable first, as a prebuilt
             # program must be, is the part a source distribution has no use for.
-            if source_distribution and not ShippedPrograms.made_executable(tree):
+            if (
+                source_distribution
+                and not ShippedPrograms.made_executable(tree)
+                and max(p.content.size for p in programs) < ReleaseChecks.WHOLE_PROGRAM_BYTES
+            ):
                 continue
             return [
                 replace(

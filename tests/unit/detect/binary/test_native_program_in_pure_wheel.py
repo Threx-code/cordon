@@ -127,3 +127,31 @@ class TestASourceDistribution:
             "demo/__init__.py": runner,
         }
         assert RULE not in self.rules(tmp_path, members)
+
+    def test_a_large_prebuilt_program_run_from_the_sources_with_no_chmod_blocks(self, tmp_path: Path) -> None:
+        runner = (
+            "import os, subprocess\n"
+            "def run(*args):\n"
+            "    exe = os.path.join(os.path.dirname(__file__), 'bin', 'tool')\n"
+            "    return subprocess.run([exe, *args], env=os.environ.copy())\n"
+        )
+        members = {
+            "PKG-INFO": "Metadata-Version: 2.1\nName: demo\nVersion: 1.0\n",
+            "demo/bin/tool": b"\x7fELF" + bytes(31_000_000),
+            "demo/__init__.py": runner,
+        }
+        assert RULE in self.rules(tmp_path, members)
+
+    def test_a_small_prebuilt_helper_run_from_the_sources_with_no_chmod_is_not(self, tmp_path: Path) -> None:
+        runner = (
+            "import os, subprocess\n"
+            "def run(*args):\n"
+            "    exe = os.path.join(os.path.dirname(__file__), 'bin', 'tool')\n"
+            "    return subprocess.run([exe, *args])\n"
+        )
+        members = {
+            "PKG-INFO": "Metadata-Version: 2.1\nName: demo\nVersion: 1.0\n",
+            "demo/bin/tool": b"\x7fELF" + bytes(100_000),
+            "demo/__init__.py": runner,
+        }
+        assert RULE not in self.rules(tmp_path, members)
