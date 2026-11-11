@@ -747,6 +747,7 @@
   "test_credential_sweep.py": "detect/code",
   "test_rule_material_here.py": "analysis/shared",
   "test_destination_candidates.py": "analysis/shared",
+  "test_ip_logger_hosts.py": "analysis/shared",
   "test_scanner_facts.py": "detect/binary/modules",
   "test_upstream_port.py": "intel/ports",
   "test_exploited_port.py": "intel/ports",
