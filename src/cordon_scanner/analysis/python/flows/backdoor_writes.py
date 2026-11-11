@@ -166,6 +166,8 @@ class ContentOrigin:
         self.function: dict[int, dict[str, list[ast.AST]]] = {}
         self.params: dict[int, set[str]] = {}
         self.calls: dict[str, list[ast.Call]] = {}
+        self.attrs: dict[str, list[tuple[ast.AST, ast.AST | None]]] = {}
+        self.functions: dict[str, ast.AST] = {}
         for node in ast.walk(tree):
             for child in ast.iter_child_nodes(node):
                 self.parent[id(child)] = node
@@ -177,6 +179,12 @@ class ContentOrigin:
                 for target in targets:
                     if isinstance(target, ast.Name):
                         table.setdefault(target.id, []).append(node.value)
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name) and target.value.id == "self":
+                        self.attrs.setdefault(target.attr, []).append((node.value, self._function_of(node)))
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                self.functions.setdefault(node.name, node)
             if isinstance(node, ast.Call):
                 called = node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", None)
                 if called:
@@ -262,14 +270,48 @@ class ContentOrigin:
         if positional and positional[0] in ("self", "cls"):
             positional = positional[1:]
         sites = self.calls.get(function.name, [])  # type: ignore[attr-defined]
-        if not sites or param not in (*positional, *(x.arg for x in args.kwonlyargs)):
+        if function.name == "__init__":  # type: ignore[attr-defined]
+            klass = self.parent.get(id(function))
+            sites = self.calls.get(getattr(klass, "name", ""), [])
+        if param not in (*positional, *(x.arg for x in args.kwonlyargs)):
             return False
+        if not sites:
+            defaults = dict(zip(reversed(positional), reversed(args.defaults), strict=False))
+            default = defaults.get(param)
+            return default is not None and self.carried(default, None, depth + 1)
         for site in sites:
             value = next((k.value for k in site.keywords if k.arg == param), None)
             if value is None and param in positional and positional.index(param) < len(site.args):
                 value = site.args[positional.index(param)]
             if value is None or not self.carried(value, self._function_of(site), depth + 1):
                 return False
+        return True
+
+    def _unsupplied(self, node: ast.AST, scope: ast.AST | None) -> bool:
+        if not (isinstance(node, ast.Name) and scope is not None and node.id in self.params.get(id(scope), set())):
+            return False
+        args = scope.args  # type: ignore[attr-defined]
+        positional = [x.arg for x in (*args.posonlyargs, *args.args)]
+        if positional and positional[0] in ("self", "cls"):
+            positional = positional[1:]
+        name = scope.name  # type: ignore[attr-defined]
+        sites = self.calls.get(getattr(self.parent.get(id(scope)), "name", "") if name == "__init__" else name, [])
+        if node.id not in positional:
+            return False
+        defaults = dict(zip(reversed(positional), reversed(args.defaults), strict=False))
+        default = defaults.get(node.id)
+        fills = any(
+            any(k.arg == node.id for k in site.keywords) or positional.index(node.id) < len(site.args) for site in sites
+        )
+        return isinstance(default, ast.Constant) and default.value is None and not fills
+
+    def _helper_returns(self, value: ast.AST, helper: ast.AST, depth: int) -> bool:
+        """A return that is made of the helper's parameters and constants only."""
+        params = self.params.get(id(helper), set())
+        for part in ast.walk(value):
+            if isinstance(part, ast.Name) and part.id not in params and part.id not in self.module:
+                if part.id not in ("base64", "bytes", "str", "codecs", "binascii", "reversed"):
+                    return False
         return True
 
     def carried(self, node: ast.AST | None, scope: ast.AST | None, depth: int) -> bool:
@@ -292,7 +334,23 @@ class ContentOrigin:
                 return self.carried(func.value, scope, depth + 1) and all(self.carried(a, scope, depth + 1) for a in node.args)
             if name in self.DECODERS or name in ("reversed", "bytes", "str", "bytearray"):
                 return bool(node.args) and all(self.carried(a, scope, depth + 1) for a in node.args)
+            helper = self.functions.get(name) if isinstance(func, ast.Name) else None
+            if helper is not None:
+                # The file's own helper over carried arguments: `_d("<b64>")` returns what it was given, changed.
+                returns = [n.value for n in ast.walk(helper) if isinstance(n, ast.Return) and n.value is not None]
+                args_ok = all(self.carried(a, scope, depth + 1) for a in (*node.args, *(k.value for k in node.keywords)))
+                return args_ok and bool(returns) and all(self._helper_returns(r, helper, depth) for r in returns)
             return False
+        if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or):
+            # `supplied or DEFAULT`: a parameter that defaults to nothing and that no call in the file
+            # fills in is not supplied, so the value is the default's.
+            present = [v for v in node.values if not self._unsupplied(v, scope)]
+            return bool(present) and all(self.carried(v, scope, depth + 1) for v in present)
+        if isinstance(node, ast.Dict):
+            return all(self.carried(v, scope, depth + 1) for v in (*node.keys, *node.values) if v is not None)
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "self":
+            assigned = self.attrs.get(node.attr, [])
+            return bool(assigned) and all(self.carried(v, fn, depth + 1) for v, fn in assigned)
         if isinstance(node, ast.Name):
             if scope is not None and node.id in self.params.get(id(scope), set()):
                 return self._argument_carried(scope, node.id, depth)
