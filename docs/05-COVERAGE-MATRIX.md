@@ -271,7 +271,9 @@ rather than a document.
 | `MALWARE.DROPPER.DECODED.001` | high | `composites` | dropper |
 | `MALWARE.DROPPER.DIRECTORY.001` | high | `composites` | dropper |
 | `MALWARE.DROPPER.HIDDEN.001` | high | `composites` | dropper |
+| `MALWARE.DROPPER.MACHINE_REPORT.001` | high | `composites` | dropper |
 | `MALWARE.DROPPER.SHIPPED_PAYLOAD.001` | critical | `composites` | dropper |
+| `MALWARE.IMPLANT.AV_EXCLUSION.001` | high | `composites` | anti_analysis |
 | `MALWARE.IMPLANT.INSTALL.001` | high | `composites` | persistence |
 | `MALWARE.IMPLANT.PERSIST_RUN.001` | critical | `composites` | persistence |
 | `MALWARE.IMPORT.PERSIST.001` | critical | `composites` | persistence |

@@ -113,6 +113,9 @@ class TestTheAdmittedRulesAreKept:
         # The analysis team's relay and sweep (11 Nov): 0 of the 1,063 and 0 of the 16,274 each.
         "MALWARE.EXFIL.SWEPT_FILES.001",  # graphicsctxr
         "MALWARE.EXFIL.RELAYED_HIDDEN.001",  # snapshot-photo, snapshot_date
+        # The analysis team's fresh-validation rules (11 Nov): 0 of the 1,062 and 0 of the 16,274.
+        "MALWARE.IMPLANT.AV_EXCLUSION.001",  # rainbowcolors
+        "MALWARE.DROPPER.MACHINE_REPORT.001",  # is-it-ai 0.1.1
         "MALWARE.EXFIL.CLOUD_UPLOAD.001",  # dlty (4 archives); 3 of 16,274
         "MALWARE.EXFIL.SWEPT_TO_HOST.001",  # renderkit, renderkitcore; 0 of 16,274
         "MALWARE.IMPORT.PROGRAM_START.001",  # lobomarinopython; 0 of 16,274

@@ -2,7 +2,7 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,540 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,542 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -608,7 +608,7 @@ rule's own samples.
 
 ## Dropper
 
-9 rules.
+10 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -617,6 +617,7 @@ rule's own samples.
 | `MALWARE.DROPPER.DECODED.001` | high | Code writes out a payload it carries encoded, then makes it runnable or runs it |
 | `MALWARE.DROPPER.DIRECTORY.001` | high | Files written into a directory are then executed from it |
 | `MALWARE.DROPPER.HIDDEN.001` | high | Code downloads a program and starts it with its window hidden |
+| `MALWARE.DROPPER.MACHINE_REPORT.001` | high | A fingerprint of the machine is sent and the program the answer names is run |
 | `MALWARE.DROPPER.SHIPPED_PAYLOAD.001` | critical | Code decrypts bytes it carries into a program, writes it and runs it |
 | `SUSPECT.DROPPER.001` | high | Content fetched from the network and executed |
 | `SUSPECT.DROPPER.REMOTE_CODE.001` | high | Code runs what a server sends it |
@@ -736,10 +737,11 @@ rule's own samples.
 
 ## Implant
 
-2 rules.
+3 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
+| `MALWARE.IMPLANT.AV_EXCLUSION.001` | high | The code tells the antivirus to stop scanning a folder or a program |
 | `MALWARE.IMPLANT.INSTALL.001` | high | Code downloads and runs something and makes itself start again |
 | `MALWARE.IMPLANT.PERSIST_RUN.001` | critical | Registers itself to run again and runs a program it brings |
 
