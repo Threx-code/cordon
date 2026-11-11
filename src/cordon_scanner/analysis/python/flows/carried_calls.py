@@ -16,7 +16,12 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from cordon_scanner.analysis.python.flows.decoded_drops import DecodedDrops
-from cordon_scanner.analysis.python.flows.imported_clients import ImportedClients, ScannedFile
+from cordon_scanner.analysis.python.flows.imported_clients import (
+    FileSummaries,
+    FileSummary,
+    ImportedClients,
+    ScannedFile,
+)
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 
 
@@ -25,15 +30,28 @@ class CarriedCalls:
 
     @classmethod
     def of(cls, sources: Mapping[str, str]) -> dict[str, dict[str, str]]:
-        trees = ImportedClients._trees(sources)
-        if len(trees) < 2:
+        return cls.from_summaries(sources, FileSummaries.build(sources, {}))
+
+    @classmethod
+    def from_summaries(
+        cls, sources: Mapping[str, str], summaries: Mapping[str, FileSummary]
+    ) -> dict[str, dict[str, str]]:
+        """Each importing file parsed again, alone, for its calls: the summaries say which file
+        defines what, so no two trees are alive at once."""
+        if len(summaries) < 2:
             return {}
         found: dict[str, dict[str, set[int]]] = {}
-        for path, tree in trees.items():
-            module_names = DecodedDrops._module_bound_names(tree)
-            imported = cls._imported_functions(path, tree, trees)
+        for path, summary in summaries.items():
+            imported = cls._imported_functions(path, summary, summaries)
             if not imported:
                 continue
+            try:
+                tree = PythonSyntax.parse(sources[path])
+            except (SyntaxError, ValueError, RecursionError):
+                # S2: summarised from this very text a moment ago; a parse that fails now offers
+                # nothing to carry, and the file's own analyser reports it.
+                continue
+            module_names = DecodedDrops._module_bound_names(tree)
             for call in PythonSyntax.of(tree, ast.Call):
                 if not isinstance(call.func, ast.Name) or call.func.id not in imported:
                     continue
@@ -46,6 +64,7 @@ class CarriedCalls:
                 }
                 if positions:
                     found.setdefault(source, {}).setdefault(name, set()).update(positions)
+            del tree
         return {
             path: {name: ",".join(str(i) for i in sorted(p)[:16]) for name, p in names.items()}
             for path, names in found.items()
@@ -53,24 +72,18 @@ class CarriedCalls:
 
     @staticmethod
     def _imported_functions(
-        path: str, tree: ast.Module, trees: Mapping[str, ast.Module]
+        path: str, summary: FileSummary, summaries: Mapping[str, FileSummary]
     ) -> dict[str, tuple[str, str]]:
         """Local name -> (defining file, function name) for `from <package module> import f`."""
         out: dict[str, tuple[str, str]] = {}
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.ImportFrom):
-                continue
-            source = ImportedClients._module_file(path, node, trees)
+        for node in summary.imports:
+            source = ImportedClients._module_file(path, node, summaries)
             if source is None or source == path:
                 continue
-            defined = {
-                f.name
-                for f in trees[source].body
-                if isinstance(f, ast.FunctionDef | ast.AsyncFunctionDef)
-            }
-            for alias in node.names:
-                if alias.name in defined:
-                    out[alias.asname or alias.name] = (source, alias.name)
+            defined = summaries[source].functions
+            for name, asname in node.names:
+                if name in defined:
+                    out[asname or name] = (source, name)
         return out
 
     @classmethod

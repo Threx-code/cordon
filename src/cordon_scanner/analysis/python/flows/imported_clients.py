@@ -18,6 +18,7 @@ from __future__ import annotations
 import ast
 import re
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any, ClassVar, Protocol
 
@@ -35,6 +36,80 @@ class ScannedFile(Protocol):
     def content(self) -> Any: ...
 
 
+@dataclass(frozen=True, slots=True)
+class ImportLine:
+    """One `from <module> import <names>` of a file, kept without its tree."""
+
+    module: str | None
+    level: int
+    names: tuple[tuple[str, str | None], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class FileSummary:
+    """What the cross-file maps read of one file: the names it binds, its `from ... import` lines,
+    its top-level functions, and what each exporter found it offers (`{kind: {name: value}}`)."""
+
+    bound: frozenset[str]
+    imports: tuple[ImportLine, ...]
+    functions: frozenset[str]
+    exported: Mapping[str, Mapping[str, str]]
+
+
+#: An exporter: the words a file must hold for it to run (None: always), and what it reads of a tree.
+Exporter = tuple["re.Pattern[str] | None", Callable[[ast.Module], dict[str, str]]]
+
+
+class FileSummaries:
+    """One parse per file, one file at a time, its tree dropped before the next is parsed.
+
+    The cross-file maps used to keep every file's tree of the package alive together: a package of
+    11,766 Python files or 74 MB of source (datadog_api_client, kubernetes in the 16,274 benign gate
+    units) took a scan past 4 GB, the scanner-DoS class. A summary is the names and import lines a
+    file holds, a small fraction of its tree, so the peak is the largest single file's parse.
+    """
+
+    @staticmethod
+    def build(
+        sources: Mapping[str, str], exporters: Mapping[str, Exporter]
+    ) -> dict[str, FileSummary]:
+        summaries: dict[str, FileSummary] = {}
+        for path, text in sources.items():
+            if not path.endswith(".py"):
+                continue
+            try:
+                tree = PythonSyntax.parse(text)
+            except (SyntaxError, ValueError, RecursionError):
+                # S2: a file that will not parse offers nothing to import; its own analyser
+                # reports the unparsed file, so nothing is dropped silently here.
+                continue
+            if not isinstance(tree, ast.Module):
+                continue
+            summaries[path] = FileSummary(
+                bound=ImportedClients._bound_here(tree),
+                imports=FileSummaries._import_lines(tree),
+                functions=frozenset(
+                    f.name
+                    for f in tree.body
+                    if isinstance(f, ast.FunctionDef | ast.AsyncFunctionDef)
+                ),
+                exported={
+                    kind: (read(tree) if words is None or words.search(text) else {})
+                    for kind, (words, read) in exporters.items()
+                },
+            )
+            del tree
+        return summaries
+
+    @staticmethod
+    def _import_lines(tree: ast.Module) -> tuple[ImportLine, ...]:
+        return tuple(
+            ImportLine(node.module, node.level, tuple((a.name, a.asname) for a in node.names))
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom)
+        )
+
+
 class ImportedClients:
     """Per file, the names it imports that are HTTP clients made in another of the package's files."""
 
@@ -44,8 +119,8 @@ class ImportedClients:
     @classmethod
     def of(cls, sources: Mapping[str, str]) -> dict[str, dict[str, str]]:
         """`{path: {name: client constructor}}` for each file that imports a client, and only those."""
-        trees = cls._trees(sources)
-        return cls._follow(trees, {path: cls._made_here(tree) for path, tree in trees.items()})
+        summaries = FileSummaries.build(sources, {"made": (None, cls._made_here)})
+        return cls.follow(summaries, "made")
 
     @classmethod
     def runners_of(cls, sources: Mapping[str, str]) -> dict[str, dict[str, str]]:
@@ -54,54 +129,43 @@ class ImportedClients:
         (`ReceivedRuns._runners`): `def run_cmd(cmd): subprocess.check_output(cmd.split())` in
         `utils.py`, called from the bot handler that took it with `from .utils import run_cmd`.
         Followed through imports and re-exports like the clients."""
-        trees = cls._trees(sources)
-        if len(trees) < 2:
+        summaries = FileSummaries.build(sources, {"runs": (cls._SINK_WORDS, cls._runs_here)})
+        if len(summaries) < 2:
             return {}
-        runs = {
-            path: cls._runs_here(trees[path])
-            for path, text in sources.items()
-            if path in trees and cls._SINK_WORDS.search(text)
-        }
-        return cls._follow(trees, {path: runs.get(path, {}) for path in trees}, modules=True)
+        return cls.follow(summaries, "runs", modules=True)
+
+    @classmethod
+    def follow(
+        cls, summaries: Mapping[str, FileSummary], kind: str, *, modules: bool = False
+    ) -> dict[str, dict[str, str]]:
+        """`_follow` over one exporter's findings in a set of summaries."""
+        return cls._follow(
+            summaries,
+            {path: dict(s.exported.get(kind, {})) for path, s in summaries.items()},
+            modules=modules,
+        )
 
     #: A file with none of these cannot run a command, so its analyser is not started for it.
     _SINK_WORDS: ClassVar[re.Pattern[str]] = re.compile(
         r"subprocess|system|popen|Popen|exec|eval|spawn|compile|getoutput|check_(?:call|output)"
     )
 
-    @staticmethod
-    def _trees(sources: Mapping[str, str]) -> dict[str, ast.Module]:
-        trees: dict[str, ast.Module] = {}
-        for path, text in sources.items():
-            if not path.endswith(".py"):
-                continue
-            try:
-                tree = PythonSyntax.parse(text)
-            except (SyntaxError, ValueError, RecursionError):
-                # S2: a file that will not parse offers no client to import; its own analyser
-                # reports the unparsed file, so nothing is dropped silently here.
-                continue
-            if isinstance(tree, ast.Module):
-                trees[path] = tree
-        return trees
-
     @classmethod
     def _follow(
         cls,
-        trees: Mapping[str, ast.Module],
+        summaries: Mapping[str, FileSummary],
         exported: dict[str, dict[str, str]],
         *,
         modules: bool = False,
     ) -> dict[str, dict[str, str]]:
         """What each file takes of `exported` (each file's own names) through the package's imports,
         re-exports included, to a fixed point."""
-        owned = {path: cls._bound_here(tree) for path, tree in trees.items()}
         imported: dict[str, dict[str, str]] = {}
         for _ in range(cls.MAX_ROUNDS):
             changed = False
-            for path, tree in trees.items():
-                own = owned[path]
-                for name, client in cls._taken(path, tree, exported, trees, modules=modules):
+            for path, summary in summaries.items():
+                own = summary.bound
+                for name, client in cls._taken(path, summary, exported, summaries, modules=modules):
                     if (
                         name not in own
                         and exported[path].get(name) is None
@@ -240,9 +304,9 @@ class ImportedClients:
     def _taken(
         cls,
         path: str,
-        tree: ast.Module,
+        summary: FileSummary,
         exported: Mapping[str, Mapping[str, str]],
-        trees: Mapping[str, ast.Module],
+        paths: Mapping[str, Any],
         *,
         modules: bool = False,
     ) -> list[tuple[str, str]]:
@@ -250,31 +314,27 @@ class ImportedClients:
         `modules`, `from . import core` also takes what `core.py` exports, by its bare names: the
         file reaches them as `core.run_cmd`, and the analyser matches a call by that last name."""
         out: list[tuple[str, str]] = []
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.ImportFrom):
-                continue
-            source = cls._module_file(path, node, trees)
+        for node in summary.imports:
+            source = cls._module_file(path, node, paths)
             if source == path:
                 continue
             offered = exported.get(source, {}) if source is not None else {}
-            for alias in node.names:
+            for alias_name, alias_as in node.names:
                 if source is None and not modules:
                     break
-                if alias.name == "*":
+                if alias_name == "*":
                     out.extend(
                         (name, client)
                         for name, client in offered.items()
                         if not name.startswith("_")
                     )
-                elif alias.name in offered:
-                    out.append((alias.asname or alias.name, offered[alias.name]))
+                elif alias_name in offered:
+                    out.append((alias_as or alias_name, offered[alias_name]))
                 elif modules:
-                    named = ast.ImportFrom(
-                        module=f"{node.module}.{alias.name}" if node.module else alias.name,
-                        names=[],
-                        level=node.level,
+                    named = ImportLine(
+                        f"{node.module}.{alias_name}" if node.module else alias_name, node.level, ()
                     )
-                    member = cls._module_file(path, named, trees)
+                    member = cls._module_file(path, named, paths)
                     if member is not None and member != path:
                         out.extend(
                             (name, value)
@@ -284,9 +344,7 @@ class ImportedClients:
         return out
 
     @staticmethod
-    def _module_file(
-        path: str, node: ast.ImportFrom, trees: Mapping[str, ast.Module]
-    ) -> str | None:
+    def _module_file(path: str, node: ImportLine, paths: Mapping[str, Any]) -> str | None:
         """The package file `from <module> import ...` names, relative or absolute, if shipped.
 
         A file inside an archive is named `archive!member` (`pkg-1.0-py3-none-any.whl!pkg/a.py`):
@@ -309,9 +367,9 @@ class ImportedClients:
         for stem in stems:
             for candidate in (f"{stem}.py", f"{stem}/__init__.py"):
                 key = prefix + (candidate[2:] if candidate.startswith("./") else candidate)
-                if key in trees:
+                if key in paths:
                     return key
         return None
 
 
-__all__ = ["ImportedClients"]
+__all__ = ["FileSummaries", "FileSummary", "ImportLine", "ImportedClients"]

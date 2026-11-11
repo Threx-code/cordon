@@ -29,7 +29,11 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, ClassVar
 
-from cordon_scanner.analysis.python.flows.imported_clients import ImportedClients
+from cordon_scanner.analysis.python.flows.imported_clients import (
+    Exporter,
+    FileSummaries,
+    ImportedClients,
+)
 
 if TYPE_CHECKING:
     from cordon_scanner.analysis.python.flows.imported_clients import ScannedFile
@@ -61,17 +65,15 @@ class MachineCollectors:
 
     @classmethod
     def of(cls, sources: Mapping[str, str]) -> dict[str, dict[str, str]]:
-        trees = ImportedClients._trees(sources)
-        if len(trees) < 2:
+        summaries = FileSummaries.build(sources, {"collects": cls.exporter()})
+        if len(summaries) < 2:
             return {}
-        collects = {
-            path: cls._collects_here(trees[path])
-            for path, text in sources.items()
-            if path in trees and cls._WORDS.search(text)
-        }
-        return ImportedClients._follow(
-            trees, {path: collects.get(path, {}) for path in trees}, modules=True
-        )
+        return ImportedClients.follow(summaries, "collects", modules=True)
+
+    @classmethod
+    def exporter(cls) -> Exporter:
+        """What `FileSummaries.build` runs for this map: the context words, and the reader."""
+        return (cls._WORDS, cls._collects_here)
 
     @classmethod
     def _collects_here(cls, tree: ast.Module) -> dict[str, str]:

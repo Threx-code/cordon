@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import ClassVar
 
 from cordon_scanner import Scanner
 from cordon_scanner.analysis.python.flows.imported_clients import ImportedClients
@@ -300,3 +301,49 @@ class TestAWheelAndASourceArchiveScan:
         )
         (pkg / "handlers.py").write_text(self.HANDLERS, encoding="utf-8")
         assert "SUSPECT.DROPPER.001" not in self.rules(tmp_path)
+
+
+class TestTheCrossFileMapsHoldNoTrees:
+    """The maps are built from one summary per file, parsed one at a time: a package of thousands
+    of files took a scan past 4 GB when every file's tree was kept alive together."""
+
+    PACKAGE: ClassVar[dict[str, str]] = {
+        "p/__init__.py": "",
+        "p/imports.py": "import httpx\nsession = httpx.Client()\n",
+        "p/entry.py": "from .imports import *\nsession.post(URL, data=b'x')\n",
+        "p/utils.py": "import subprocess\ndef run_cmd(cmd):\n    subprocess.check_output(cmd.split())\n",
+        "p/bot.py": "from .utils import run_cmd\ndef handle(m):\n    run_cmd(m.text)\n    run_cmd('ls')\n",
+    }
+
+    def test_the_one_pass_maps_are_the_separate_maps(self) -> None:
+        from types import SimpleNamespace
+
+        from cordon_scanner.analysis.python.flows.carried_calls import CarriedCalls
+        from cordon_scanner.analysis.python.flows.cross_file import CrossFileMaps
+        from cordon_scanner.analysis.python.flows.staged.machine_collectors import MachineCollectors
+
+        units = [
+            SimpleNamespace(path=path, content=SimpleNamespace(text=text, is_binary=False))
+            for path, text in self.PACKAGE.items()
+        ]
+        maps = CrossFileMaps.of(units)
+        assert maps["python_imported_clients"] == (ImportedClients.of(self.PACKAGE) or None)
+        assert maps["python_imported_runners"] == (ImportedClients.runners_of(self.PACKAGE) or None)
+        assert maps["python_carried_calls"] == (CarriedCalls.of(self.PACKAGE) or None)
+        assert maps["python_imported_collectors"] == (MachineCollectors.of(self.PACKAGE) or None)
+        assert maps["python_imported_clients"] and maps["python_imported_runners"]
+
+    def test_a_summary_keeps_no_syntax_tree(self) -> None:
+        import ast
+        import dataclasses
+
+        from cordon_scanner.analysis.python.flows.imported_clients import FileSummaries
+
+        summaries = FileSummaries.build(self.PACKAGE, {"made": (None, ImportedClients._made_here)})
+        for summary in summaries.values():
+            for field in dataclasses.fields(summary):
+                value = getattr(summary, field.name)
+                assert not isinstance(value, ast.AST)
+                assert not any(
+                    isinstance(v, ast.AST) for v in getattr(value, "__iter__", lambda: ())()
+                )
