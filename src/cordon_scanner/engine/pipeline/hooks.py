@@ -481,6 +481,7 @@ class Hooks:
         file to judge, and following imports out of the tree would make the
         closure unbounded and mostly irrelevant.
         """
+        from cordon_scanner.analysis.python.pyast import PythonSource
         from cordon_scanner.engine.closure import ImportClosure
 
         sources = {
@@ -488,6 +489,16 @@ class Hooks:
             for unit in units
             if unit.path.endswith(".py") and not unit.content.is_binary
         }
+        # A `.pth` hook's `import` lines run at every interpreter start: what they import is
+        # startup code too (data_proxy_for_test 0.1.1: `import mcp_proxy.caching`, which sends at
+        # module level). Its other lines are path entries, blanked as `site` skips them.
+        sources.update(
+            {
+                unit.path: PythonSource.startup_lines(unit.content.text)
+                for unit in units
+                if unit.path.endswith(".pth") and unit.path in hooks and not unit.content.is_binary
+            }
+        )
         if not sources:
             return set()
         by_path = {unit.path: unit for unit in units}

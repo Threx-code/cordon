@@ -78,6 +78,22 @@ class ImportClosure:
             str(base / joined / "__init__.py") if str(base) != "." else f"{joined}/__init__.py",
         ]
 
+    @staticmethod
+    def installed_module(module: str, importer: str, texts: Mapping[str, str]) -> list[str]:
+        """For a `.pth` importer, the package's own files a module name is, wherever the package
+        keeps them: a `.pth` runs from site-packages, where `src/pkg/mod.py` and
+        `purelib/pkg/mod.py` are installed as `pkg/mod.py`. Only within the importer's archive."""
+        if not importer.endswith(".pth") or module.startswith("/"):
+            return []
+        archive = importer.rpartition("!")[0]
+        joined = "/".join(module.split("."))
+        ends = (f"/{joined}.py", f"/{joined}/__init__.py")
+        return sorted(
+            path
+            for path in texts
+            if path.rpartition("!")[0] == archive and f"/{path.rpartition('!')[2]}".endswith(ends)
+        )
+
     @classmethod
     def imported_by(cls, source: str, importer: str) -> list[str]:
         """Module names a file imports, with relative imports resolved.
@@ -341,7 +357,11 @@ class ImportClosure:
                     for suffix in (".py", "/__init__.py")
                 ]
                 shipped_here = False
-                for candidate in [*cls.candidates(module, path), *rooted]:
+                for candidate in [
+                    *cls.candidates(module, path),
+                    *rooted,
+                    *cls.installed_module(module, path, texts),
+                ]:
                     normalised = re.sub(r"^(?:\./)+", "", candidate)
                     if normalised in texts:
                         shipped_here = True
