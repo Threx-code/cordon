@@ -212,7 +212,7 @@ class ContentOrigin:
                 scope = self._function_of(node)
                 table = self.module if scope is None else self.function.setdefault(id(scope), {})
                 for target in targets:
-                    if isinstance(target, ast.Name):
+                    if isinstance(target, ast.Name) and node.value is not None:
                         table.setdefault(target.id, []).append(node.value)
             if isinstance(node, ast.Assign):
                 for target in node.targets:
@@ -308,6 +308,7 @@ class ContentOrigin:
             return (
                 [ast.Constant(value=text)]
                 if re.search(r"\b(?:echo|printf)\b", text)
+                and argv is not None
                 and not any(
                     isinstance(p, ast.Name | ast.Attribute | ast.Subscript) for p in ast.walk(argv)
                 )
@@ -425,7 +426,7 @@ class ContentOrigin:
                 )
             if name in self.DECODERS or name in ("reversed", "bytes", "str", "bytearray"):
                 return bool(node.args) and all(self.carried(a, scope, depth + 1) for a in node.args)
-            helper = self.functions.get(name) if isinstance(func, ast.Name) else None
+            helper = self.functions.get(func.id) if isinstance(func, ast.Name) else None
             if helper is not None:
                 # The file's own helper over carried arguments: `_d("<b64>")` returns what it was given, changed.
                 returns = [

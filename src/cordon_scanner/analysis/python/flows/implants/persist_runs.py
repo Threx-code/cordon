@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import ast
 import re
+from collections.abc import Mapping
 from typing import Final
 
 from cordon_scanner.analysis.python.py_persist import PythonPersistence
@@ -118,7 +119,7 @@ class PersistRuns:
         return "\n".join(lines[best.lineno - 1 : best.end_lineno])  # type: ignore[attr-defined]
 
     @classmethod
-    def _called(cls, body: list[ast.stmt], functions: dict[str, ast.AST]) -> set[str]:
+    def _called(cls, body: list[ast.stmt], functions: Mapping[str, ast.AST]) -> set[str]:
         out: set[str] = set()
         stack: list[ast.AST] = list(body)
         while stack:
@@ -131,7 +132,7 @@ class PersistRuns:
                     if isinstance(node.func, ast.Name)
                     else getattr(node.func, "attr", None)
                 )
-                if name in functions:
+                if isinstance(name, str) and name in functions:
                     out.add(name)
             stack.extend(ast.iter_child_nodes(node))
         return out

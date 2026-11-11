@@ -13,6 +13,7 @@ loading, and a class body is: it runs when the class is defined.
 from __future__ import annotations
 
 import ast
+from collections.abc import Mapping
 
 from cordon_scanner.analysis.python.py_persist import PythonPersistence
 
@@ -25,7 +26,7 @@ class PersistAtLoad:
         written = PythonPersistence.written_lines(tree)
         if not written or not isinstance(tree, ast.Module):
             return []
-        functions: dict[str, ast.AST] = {}
+        functions: dict[str, ast.FunctionDef | ast.AsyncFunctionDef] = {}
         for node in ast.walk(tree):
             if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                 functions.setdefault(node.name, node)
@@ -58,7 +59,7 @@ class PersistAtLoad:
         return calls
 
     @classmethod
-    def _loaded_names(cls, tree: ast.Module, functions: dict[str, ast.AST]) -> set[str]:
+    def _loaded_names(cls, tree: ast.Module, functions: Mapping[str, ast.AST]) -> set[str]:
         loaded: set[str] = set()
         pending = [cls._called(c) for c in cls._top_level_calls(tree.body)]
         while pending:
