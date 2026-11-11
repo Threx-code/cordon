@@ -13229,6 +13229,22 @@ class TestWhatAPthImportsRunsAtStartup:
         )
         assert "MALWARE.INSTALL.STARTUP_NETWORK.001" in found
 
+    def test_a_request_in_a_function_the_startup_never_calls_is_not(self, tmp_path) -> None:
+        # fattummy: the .pth imports the package; its adapters call out only when asked.
+        found = self.scan(
+            tmp_path,
+            {
+                "app.pth": "import app.adapters\n",
+                "src/app/__init__.py": "",
+                "src/app/adapters.py": (
+                    "import urllib.request\n"
+                    "def fetch(url):\n"
+                    "    return urllib.request.urlopen(url).read()\n"
+                ),
+            },
+        )
+        assert "MALWARE.INSTALL.STARTUP_NETWORK.001" not in found
+
     def test_a_pth_line_that_changes_the_process(self, tmp_path) -> None:
         found = self.scan(tmp_path, {"pkg-setup.pth": "\n\nimport os; os.umask(0)\n"})
         assert "MALWARE.INSTALL.STARTUP_CODE.001" in found

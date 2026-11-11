@@ -481,7 +481,6 @@ class Hooks:
         file to judge, and following imports out of the tree would make the
         closure unbounded and mostly irrelevant.
         """
-        from cordon_scanner.analysis.python.pyast import PythonSource
         from cordon_scanner.engine.closure import ImportClosure
 
         sources = {
@@ -489,16 +488,6 @@ class Hooks:
             for unit in units
             if unit.path.endswith(".py") and not unit.content.is_binary
         }
-        # A `.pth` hook's `import` lines run at every interpreter start: what they import is
-        # startup code too (data_proxy_for_test 0.1.1: `import mcp_proxy.caching`, which sends at
-        # module level). Its other lines are path entries, blanked as `site` skips them.
-        sources.update(
-            {
-                unit.path: PythonSource.startup_lines(unit.content.text)
-                for unit in units
-                if unit.path.endswith(".pth") and unit.path in hooks and not unit.content.is_binary
-            }
-        )
         if not sources:
             return set()
         by_path = {unit.path: unit for unit in units}
@@ -510,12 +499,35 @@ class Hooks:
         return ImportClosure.resolve(hooks, sources, other, shipped=by_path, unshipped=unshipped)
 
     @staticmethod
-    def startup_closure(units: Sequence[FileUnit], entries: Iterable[str]) -> frozenset[str]:
-        """The `.pth` hooks among `entries` and every file their import lines reach."""
+    def startup_closure(
+        units: Sequence[FileUnit], entries: Iterable[str]
+    ) -> tuple[frozenset[str], frozenset[tuple[str, int, int]]]:
+        """The `.pth` hooks among `entries` and every file their import lines reach, and the bodies
+        those imports never run. A `.pth`'s `import X` imports X at every interpreter start, so
+        what runs is what importing runs (`LoadReach`), not an install hook's reach: an install
+        closure would make every function of an imported package install code (fattummy 1.0.1)."""
+        from cordon_scanner.analysis.python.pyast import PythonSource
+        from cordon_scanner.analysis.python.reachability import LoadReach
+        from cordon_scanner.engine.closure import ImportClosure
+
         startup = {path for path in entries if path.endswith(".pth")}
         if not startup:
-            return frozenset()
-        return frozenset(startup | Hooks.hook_import_closure(units, startup))
+            return frozenset(), frozenset()
+        sources = {
+            unit.path: unit.content.text
+            for unit in units
+            if unit.path.endswith(".py") and not unit.content.is_binary
+        }
+        sources.update(
+            {
+                unit.path: PythonSource.startup_lines(unit.content.text)
+                for unit in units
+                if unit.path in startup and not unit.content.is_binary
+            }
+        )
+        reached = ImportClosure.resolve(startup, sources)
+        modules = sorted(path for path in reached if path.endswith(".py"))
+        return frozenset(startup | reached), LoadReach.deferred_lines(modules, sources)
 
     @staticmethod
     def executed_as_python(units: list[FileUnit], closure: set[str]) -> None:

@@ -245,7 +245,8 @@ class ArchiveStages:
         ctx = replace(
             ctx,
             install_hook_paths=frozenset(hook_paths),
-            startup_closure_paths=Hooks.startup_closure(units, entries) & frozenset(hook_paths),
+            startup_closure_paths=(startup := Hooks.startup_closure(units, entries))[0],
+            startup_deferred_lines=startup[1],
             tree_paths=frozenset(unit.path for unit in units),
             shipped_native_paths=TreeFacts.shipped_native(units),
             install_entry_paths=entries,

@@ -214,6 +214,8 @@ class ScanContext:
     Client`, and its top level runs then), with what they import. Not tests, documentation, build
     tooling or vendored copies (`PackageEntries.importable_modules`)."""
     import_deferred_lines: frozenset[tuple[str, int, int]] = frozenset()
+    startup_deferred_lines: frozenset[tuple[str, int, int]] = frozenset()
+    """Bodies in `startup_closure_paths` that importing them at interpreter start never runs."""
     """`(path, first_line, last_line)` for function bodies in `import_closure_paths` that importing
     never runs (`analysis.python.reachability.LoadReach`): reached only when someone calls them."""
 
@@ -323,6 +325,17 @@ class ScanContext:
 
     def in_startup_closure(self, path: str) -> bool:
         return path in self.startup_closure_paths
+
+    def startup_reaches(self, path: str, line: int) -> bool:
+        """Whether this line runs at every interpreter start: the file is one a `.pth` hook's
+        imports reach, and the line is not in a body those imports never call."""
+        if path not in self.startup_closure_paths:
+            return False
+        return not any(
+            first <= line <= last
+            for deferred_path, first, last in self.startup_deferred_lines
+            if deferred_path == path
+        )
 
     def install_hook_reaches(self, path: str, line: int) -> bool:
         """Whether install-time context applies at this line of this file.

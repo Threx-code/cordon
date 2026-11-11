@@ -72,7 +72,9 @@ class StartupHooks:
     def network(
         cls, hits: list[CapabilityHit], path: str, ctx: ScanContext | None
     ) -> list[CapabilityHit]:
-        """A network hit in a file a `.pth` hook reaches, as the startup network fact."""
+        """A network hit on a line the startup runs, in a file a `.pth` hook reaches, as the startup
+        network fact. A request in a function nothing on the startup path calls is not made at
+        every start (`ScanContext.startup_reaches`: what importing the `.pth`'s modules runs): fattummy's inference adapters, imported by its `.pth`, call out only when asked."""
         import dataclasses
 
         if ctx is None or not ctx.in_startup_closure(path):
@@ -80,7 +82,7 @@ class StartupHooks:
         return [
             dataclasses.replace(hit, rule_id=cls.NETWORK_FACT)
             for hit in hits
-            if hit.capability in cls.NETWORK
+            if hit.capability in cls.NETWORK and ctx.startup_reaches(path, hit.line)
         ]
 
     @classmethod
