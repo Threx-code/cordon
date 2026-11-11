@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from cordon_scanner.analysis.python.flows.hidden_start import HiddenStart
 from cordon_scanner.analysis.python.flows.loop_reads import LoopReads
-from cordon_scanner.analysis.python.literal_program import LiteralProgram
+from cordon_scanner.analysis.python.flows.staged.literal_program import LiteralProgram
 from cordon_scanner.analysis.python.pyfacts import (
     PRIMITIVES,
     PythonFacts,

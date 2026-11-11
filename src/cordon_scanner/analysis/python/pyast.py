@@ -42,7 +42,7 @@ import re
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.python.flows.http_clients import HTTP_CLIENTS
-from cordon_scanner.analysis.python.literal_program import LiteralProgram
+from cordon_scanner.analysis.python.flows.staged.literal_program import LiteralProgram
 from cordon_scanner.analysis.python.pyfacts import (
     DNS_LOOKUPS,
     ENVIRONMENT,
@@ -68,17 +68,17 @@ if TYPE_CHECKING:
 from cordon_scanner.analysis.python.analyzer_core import AnalyzerCore
 from cordon_scanner.analysis.python.data_flows import DataFlows
 from cordon_scanner.analysis.python.flows.client_bindings import ClientBindings
-from cordon_scanner.analysis.python.flows.computed_commands import ComputedCommands
 from cordon_scanner.analysis.python.flows.data_file_code import DataFileCode
 from cordon_scanner.analysis.python.flows.decoded_drops import DecodedDrops
 from cordon_scanner.analysis.python.flows.dns_tunnels import DnsTunnels
-from cordon_scanner.analysis.python.flows.dormant_decodes import DormantDecodes
-from cordon_scanner.analysis.python.flows.executed_data import ExecutedData
 from cordon_scanner.analysis.python.flows.implants.implant_facts import ImplantFacts
-from cordon_scanner.analysis.python.flows.import_mail import ImportMail
-from cordon_scanner.analysis.python.flows.loose_stages import LooseStages
 from cordon_scanner.analysis.python.flows.received_run import ReceivedRuns
 from cordon_scanner.analysis.python.flows.relayed_sends import RelayedSends
+from cordon_scanner.analysis.python.flows.staged.computed_commands import ComputedCommands
+from cordon_scanner.analysis.python.flows.staged.dormant_decodes import DormantDecodes
+from cordon_scanner.analysis.python.flows.staged.executed_data import ExecutedData
+from cordon_scanner.analysis.python.flows.staged.import_mail import ImportMail
+from cordon_scanner.analysis.python.flows.staged.loose_stages import LooseStages
 from cordon_scanner.analysis.python.flows.startup_files import StartupFiles
 from cordon_scanner.analysis.python.sourced_flows import SourcedFlows
 

@@ -19,7 +19,7 @@ import ast
 from typing import ClassVar
 
 from cordon_scanner.analysis.python.analyzer_core import AnalyzerCore
-from cordon_scanner.analysis.python.literal_program import LiteralProgram
+from cordon_scanner.analysis.python.flows.staged.literal_program import LiteralProgram
 from cordon_scanner.analysis.python.pyfacts import PRIMITIVES
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.foundation.capabilities import Capability

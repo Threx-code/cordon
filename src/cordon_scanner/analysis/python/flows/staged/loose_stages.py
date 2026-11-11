@@ -27,7 +27,8 @@ from __future__ import annotations
 
 import ast
 import builtins
-from typing import ClassVar
+from collections.abc import Callable
+from typing import Any, ClassVar
 
 from cordon_scanner.analysis.python.analyzer_core import AnalyzerCore
 from cordon_scanner.analysis.python.pyfacts import PRIMITIVES
@@ -71,22 +72,28 @@ class LooseStages(AnalyzerCore):
             )
         ]
 
+    #: The names each kind of node binds.
+    _BINDS: ClassVar[dict[type, Callable[[Any], set[str]]]] = {
+        ast.FunctionDef: lambda n: {n.name},
+        ast.AsyncFunctionDef: lambda n: {n.name},
+        ast.ClassDef: lambda n: {n.name},
+        ast.Import: lambda n: {(a.asname or a.name).split(".")[0] for a in n.names},
+        ast.ImportFrom: lambda n: {(a.asname or a.name).split(".")[0] for a in n.names},
+        ast.Name: lambda n: {n.id} if isinstance(n.ctx, ast.Store | ast.Del) else set(),
+        ast.arg: lambda n: {n.arg},
+        ast.Global: lambda n: set(n.names),
+        ast.Nonlocal: lambda n: set(n.names),
+    }
+
     def _defined(self, tree: ast.AST) -> set[str] | None:
         """Every name the file could resolve; None with a star import (anything could be)."""
         names = set(self._BUILTIN)
         for n in ast.walk(tree):
             if isinstance(n, ast.ImportFrom) and any(a.name == "*" for a in n.names):
                 return None
-            if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
-                names.add(n.name)
-            elif isinstance(n, ast.Import | ast.ImportFrom):
-                names |= {(a.asname or a.name).split(".")[0] for a in n.names}
-            elif isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store | ast.Del):
-                names.add(n.id)
-            elif isinstance(n, ast.arg):
-                names.add(n.arg)
-            elif isinstance(n, ast.Global | ast.Nonlocal):
-                names |= set(n.names)
+            binds = self._BINDS.get(type(n))
+            if binds is not None:
+                names |= binds(n)
         return names
 
     def _payload_to_nothing(self, call: ast.Call, defined: set[str] | None) -> None:
