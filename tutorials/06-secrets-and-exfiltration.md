@@ -2,7 +2,7 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-**61 secret rules and 31 exfiltration rules**: the part of the rule pack where
+**61 secret rules and 33 exfiltration rules**: the part of the rule pack where
 the tool that finds the problem must not become the problem.
 
 ```
@@ -115,7 +115,7 @@ something live, all of them are in git history and in every clone.
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-The 31 exfiltration rules divide on **where the data goes**. `MALWARE.` is the
+The 33 exfiltration rules divide on **where the data goes**. `MALWARE.` is the
 install-time form of a rule, `SUSPECT.` the same behaviour in ordinary code:
 
 | rule | the channel |
@@ -130,6 +130,8 @@ install-time form of a rule, `SUSPECT.` the same behaviour in ordinary code:
 | `SUSPECT.EXFIL.DNS.001` | data encoded into DNS lookups |
 | `MALWARE.EXFIL.CONFUSION_BEACON.001` | the machine's identity sent by a package whose own version is a dependency-confusion version (99.0.0, 99999999.0.0, 7.7.7), wherever the code runs |
 | `MALWARE.EXFIL.DNS_TUNNEL.001` | encoded data resolved a label at a time as host names: a DNS tunnel, wherever the code runs |
+| `MALWARE.EXFIL.SWEPT_FILES.001` | files gathered by walking the drives or home, sent through the code's own helpers to a destination it hides |
+| `MALWARE.EXFIL.RELAYED_HIDDEN.001` | a class stores what its caller hands it and sends it to a destination it hides: a relay |
 | `SUSPECT.EXFIL.WALLET_SECRET.001` | a wallet's mnemonic, seed or private key in a request to a fixed outside address |
 | `*.EXFIL.BEACON.001` | hostname/user/cwd reported to the publisher |
 | `MALWARE.EXFIL.INSTALL_CALLBACK.001` / `SUSPECT.EXFIL.CALLBACK.001` | a call to an interaction or canary host |
