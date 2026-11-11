@@ -167,7 +167,8 @@ class TestAProgramNoInstallNeeds:
     @pytest.mark.parametrize(
         "command",
         ["calc", "calc.exe", "cmd /c calc", "C:\\Windows\\System32\\notepad.exe", "id",
-         Spelled.of("who", "ami"), Spelled.of("sh", " -c ", "host", "name"), "start /b mspaint"],
+         Spelled.of("who", "ami"), Spelled.of("sh", " -c ", "host", "name"), "start /b mspaint",
+         "ls -la", "cmd /c dir", "type notes.txt", "ipconfig /all", "systeminfo", "uname -a", "printenv", "cmd /c tasklist"],
     )  # fmt: skip
     def test_a_desktop_application_or_identity_command(self, command: str) -> None:
         assert InstallPrograms.foreign(command)
@@ -175,7 +176,7 @@ class TestAProgramNoInstallNeeds:
     @pytest.mark.parametrize(
         "command",
         ["git rev-parse HEAD", "cmake ..", "make", "python setup.py build_ext", "echo done",
-         "touch build/stamp", "cmd /c dir", None, ""],
+         "touch build/stamp", "cmd /c echo done", None, ""],
     )  # fmt: skip
     def test_build_tooling_and_harmless_commands(self, command: str | None) -> None:
         assert not InstallPrograms.foreign(command)
@@ -658,3 +659,34 @@ class TestADownloadStartedHidden:
             "    subprocess.Popen([path])\n"
         )
         assert "MALWARE.DROPPER.HIDDEN.001" not in self.rules(tmp_path, module)
+
+
+class TestAProgramNoImportNeeds:
+    @staticmethod
+    def rules(tmp_path: Path, init: str) -> set[str]:
+        members = {
+            "PKG-INFO": "Metadata-Version: 2.1\nName: demo\nVersion: 1.0\n",
+            "pyproject.toml": "[project]\nname = 'demo'\nversion = '1.0'\n",
+            "src/demo/__init__.py": init,
+        }
+        archive = tmp_path / "demo-1.0.tar.gz"
+        with tarfile.open(archive, "w:gz") as tgz:
+            for name, text in members.items():
+                data = text.encode("utf-8")
+                info = tarfile.TarInfo(f"demo-1.0/{name}")
+                info.size = len(data)
+                tgz.addfile(info, io.BytesIO(data))
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(archive)
+        return {f.rule_id for f in result.findings}
+
+    def test_a_calculator_started_when_the_package_is_imported(self, tmp_path: Path) -> None:
+        init = "import subprocess\nsubprocess.Popen(['calc.exe'])\n"
+        assert InstallPrograms.RULE in self.rules(tmp_path, init)
+
+    def test_an_identity_command_in_a_helper_the_module_level_calls(self, tmp_path: Path) -> None:
+        init = f"import os\ndef _probe():\n    os.system('{Spelled.of('who', 'ami')}')\n_probe()\n"
+        assert InstallPrograms.RULE in self.rules(tmp_path, init)
+
+    def test_the_same_in_a_function_nothing_calls_is_not(self, tmp_path: Path) -> None:
+        init = "import subprocess\ndef open_calculator():\n    subprocess.Popen(['calc.exe'])\n"
+        assert InstallPrograms.RULE not in self.rules(tmp_path, init)

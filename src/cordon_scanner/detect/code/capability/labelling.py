@@ -504,7 +504,12 @@ class Labelling:
             for labelled, hit in facts
             if hit.capability is Capability.SPAWN
             and InstallPrograms.foreign(hit.command)
-            and ctx.install_hook_reaches(content.path, hit.line)
+            and (
+                ctx.install_hook_reaches(content.path, hit.line)
+                or (
+                    content.path in ctx.import_entry_paths and hit.line in cls._loaded(content.text)
+                )
+            )
         ]
         # What runs in every interpreter once installed (`StartupHooks`): the network reached from
         # a `.pth`, and a `.pth` line doing more than set up imports.
@@ -556,6 +561,18 @@ class Labelling:
                 )
             )
         return hits
+
+    @staticmethod
+    def _loaded(text: str) -> frozenset[int]:
+        """The lines that run when the module is imported (`PersistAtLoad.load_time_lines`)."""
+        from cordon_scanner.analysis.python.flows.implants.persist_at_load import PersistAtLoad
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
+        try:
+            return PersistAtLoad.load_time_lines(PythonSyntax.shared(text))
+        except (SyntaxError, ValueError):
+            # S2: covered by SOURCE.UNPARSED at every running file; a file that does not parse has no load-time lines
+            return frozenset()
 
     @staticmethod
     def _span_of_line(content: FileContent, line: int) -> tuple[int, int]:
