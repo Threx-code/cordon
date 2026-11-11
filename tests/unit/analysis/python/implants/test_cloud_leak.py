@@ -56,6 +56,25 @@ class TestOrdinaryUploads:
         )
         assert Kit.leaked(source) == []
 
+    def test_a_setting_read_from_the_environment_beside_the_data(self) -> None:
+        source = (
+            "import os\n"
+            "import boto3\n"
+            "def put(data):\n"
+            "    prefix = os.environ.get('S3_PREFIX', '')\n"
+            "    boto3.client('s3').put_object(Bucket='b', Key=prefix + 'k', Body=data)\n"
+        )
+        assert Kit.leaked(source) == []
+
+    def test_the_whole_environment_uploaded(self) -> None:
+        source = (
+            "import os\n"
+            "from google.cloud import storage\n"
+            "def go():\n"
+            "    storage.Client().bucket('b').blob('k').upload_from_string(str(dict(os.environ)))\n"
+        )
+        assert Kit.leaked(source) == ["machine facts uploaded"]
+
     def test_no_cloud_library_in_the_file(self) -> None:
         source = "import os\ndef go(store):\n    store.upload_from_string(os.getenv('USER'))\n"
         assert Kit.leaked(source) == []

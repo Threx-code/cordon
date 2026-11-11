@@ -28,8 +28,6 @@ class CloudLeak(PythonValueFlow):
 
     READS: ClassVar[frozenset[str]] = frozenset(
         {
-            "os.getenv",
-            "os.environ.get",
             "os.getlogin",
             "getpass.getuser",
             "socket.gethostname",
@@ -53,12 +51,42 @@ class CloudLeak(PythonValueFlow):
     }
     PAYLOAD_KEYWORDS: ClassVar[frozenset[str]] = frozenset({"Body", "data", "content", "body"})
 
+    #: The variables that say who and where the machine is. Any other variable is a setting (a bucket
+    #: name, a region, a prefix), which 22 of the 410 benign uploads read and send beside their data.
+    MACHINE_VARIABLES: ClassVar[frozenset[str]] = frozenset(
+        {"USER", "USERNAME", "LOGNAME", "HOME", "USERPROFILE", "PWD", "HOSTNAME", "COMPUTERNAME",
+         "USERDOMAIN", "SHELL", "OS", "PROCESSOR_ARCHITECTURE", "LANG", "PATH", "TERM"}
+    )  # fmt: skip
+
+    def __init__(self, tree: ast.AST) -> None:
+        super().__init__(tree)
+        #: `os.environ` taken whole: handed to a call (`dict(os.environ)`), or copied or listed.
+        self.whole: set[int] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                for arg in node.args:
+                    if (self.dotted(arg) or "") in ("os.environ", "os.environb"):
+                        self.whole.add(id(arg))
+                if (
+                    isinstance(node.func, ast.Attribute)
+                    and node.func.attr in ("copy", "items", "values", "keys")
+                    and (self.dotted(node.func.value) or "") in ("os.environ", "os.environb")
+                ):
+                    self.whole.add(id(node.func.value))
+
+    def _machine_key(self, key: ast.AST | None) -> bool:
+        return isinstance(key, ast.Constant) and isinstance(key.value, str) and key.value.upper() in self.MACHINE_VARIABLES
+
     def seed(self, node: ast.AST) -> Label | None:
-        if isinstance(node, ast.Call) and (self.dotted(node.func) or "") in self.READS:
-            return node.lineno
+        if isinstance(node, ast.Call):
+            dotted = self.dotted(node.func) or ""
+            if dotted in ("os.getenv", "os.environ.get"):
+                return node.lineno if node.args and self._machine_key(node.args[0]) else None
+            if dotted in self.READS:
+                return node.lineno
         if isinstance(node, ast.Subscript) and (self.dotted(node.value) or "") in ("os.environ", "os.environb"):
-            return node.lineno
-        if isinstance(node, ast.Attribute) and (self.dotted(node) or "") in ("os.environ", "os.environb"):
+            return node.lineno if self._machine_key(node.slice) else None
+        if isinstance(node, ast.Attribute) and id(node) in self.whole:
             return node.lineno
         return None
 
