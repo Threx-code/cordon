@@ -2368,6 +2368,37 @@ rules:
         - path_glob: "**/test_*.py"
         - path_glob: "tests/**"
 
+  - id: MALWARE.EXFIL.IP_LOGGER.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Opens a link that logs the address of whoever opens it
+    message: >
+      This code hands a link on an IP-logging service to a request or a command (`wget`, `curl`, a
+      browser). Whoever made the link is told the address of the machine that opened it, and when. No
+      program has a reason to open one; a host that is only named, in a list or a comment, is not
+      this.
+    remediation: >
+      Do not run this code. Treat the machine as having reported its address to whoever owns the link.
+    provenance:
+      kind: research
+      reference: >
+        A fork of an audio-separation package whose entry function ran a download command on an IP
+        logging link (audio_separator_fork, 2026-11-11).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1592/002/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: AST.PY.IP_LOGGER_FETCHED
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: MALWARE.EXFIL.INSTALL_CALLBACK.001
     version: 1.0.0
     category: malicious
