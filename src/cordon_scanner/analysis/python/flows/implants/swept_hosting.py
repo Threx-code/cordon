@@ -33,7 +33,9 @@ from cordon_scanner.analysis.shared.destinations import (
 )
 
 URL_HOST: Final = re.compile(r"(?i)https?://([A-Za-z0-9.-]+)")
-HOSTS: Final = FREE_HOSTING | PASTE_HOSTS | TUNNEL_HOSTS | INTERACTION_HOSTS
+#: `github.io` hosts project documentation (3 of 16,274 benign units name one beside a directory walk and a
+#: request), so it is left out of the rentable hosts here; the lists themselves are the shared ones.
+HOSTS: Final = (FREE_HOSTING | PASTE_HOSTS | TUNNEL_HOSTS | INTERACTION_HOSTS) - {"github.io"}
 #: Modules whose client sends a request.
 CLIENT_MODULES: Final = ("httpx", "requests", "aiohttp", "urllib", "urllib3")
 
@@ -50,14 +52,25 @@ class SweptToHosting(PythonValueFlow):
     #: Calls that run another function of the file with the arguments after it.
     HOPS: ClassVar[dict[str, int]] = {"to_thread": 0, "submit": 0, "run_in_executor": 1, "start_soon": 0, "create_task": -1}
 
+    #: Which stage this flow is: 1 follows what a walker yields, 2 follows the contents of the files
+    #: a stage-1 path was read from.
+    def __init__(self, tree: ast.AST, *, reads: frozenset[int] | None = None) -> None:
+        super().__init__(tree)
+        #: Stage 2: the ids of the read calls whose path came from a walker.
+        self.reads = reads
+
     def seed(self, node: ast.AST) -> Label | None:
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr in self.READS
-        ):
+        if not isinstance(node, ast.Call):
+            return None
+        if self.reads is not None:
+            return node.lineno if id(node) in self.reads else None
+        if isinstance(node.func, ast.Attribute) and node.func.attr in self.WALK_METHODS:
             return node.lineno
-        return None
+        return node.lineno if self._dotted_name(node.func) in self.WALKERS else None
+
+    @staticmethod
+    def _dotted_name(func: ast.AST) -> str:
+        return SweptToHosting._dotted(func)
 
     def _hop(self, node: ast.Call) -> tuple[str, list[ast.AST]] | None:
         """`(function, arguments)` when this call runs a function of the file through a hop."""
@@ -99,7 +112,20 @@ class SweptToHosting(PythonValueFlow):
     def lines(cls, tree: ast.AST) -> list[int]:
         if not (cls._walks(tree) and cls._names_a_rentable_host(tree) and cls._imports_a_client(tree)):
             return []
-        analysis = cls(tree)
+        walked = cls(tree)
+        if not walked.index() or not walked.seeds:
+            return []
+        walked.flow()
+        # the reads whose path a walker yielded: `path.read_text()`, `open(path).read()`
+        reads: set[int] = set()
+        for node in walked.calls:
+            if not (isinstance(node.func, ast.Attribute) and node.func.attr in cls.READS):
+                continue
+            if walked.taint(node.func.value) or any(walked.taint(part) for part in ast.walk(node.func.value)):
+                reads.add(id(node))
+        if not reads:
+            return []
+        analysis = cls(tree, reads=frozenset(reads))
         if not analysis.index() or not analysis.seeds:
             return []
         analysis.flow()
@@ -134,8 +160,16 @@ class SweptToHosting(PythonValueFlow):
 
     @staticmethod
     def _names_a_rentable_host(tree: ast.AST) -> bool:
+        docstrings = {
+            id(n.body[0].value)
+            for n in ast.walk(tree)
+            if isinstance(n, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef)
+            and n.body
+            and isinstance(n.body[0], ast.Expr)
+            and isinstance(n.body[0].value, ast.Constant)
+        }  # a host in a docstring is documentation, not a destination
         for node in ast.walk(tree):
-            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docstrings:
                 for match in URL_HOST.finditer(node.value):
                     host = match.group(1).lower().rstrip(".")
                     if any(host == known or host.endswith("." + known) for known in HOSTS):

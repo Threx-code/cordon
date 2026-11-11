@@ -724,40 +724,43 @@ class ReleaseChecks:
                 and not ReleaseChecks._wraps_its_one_program(units, programs, unit.content.text)
             ):
                 continue
-            return [
-                replace(
-                    OperationalFinding.build(
-                        path=unit.path,
-                        rule_id=NATIVE_PROGRAM_IN_PURE_WHEEL_RULE,
-                        message=(
-                            "This package carries a native program (and says it holds no compiled "
-                            "code: a pure wheel, or sources) and this file starts a path built from "
-                            "where it lives. Compiled code no reviewer can read runs as a program."
-                        ),
-                        remediation=(
-                            "Do not install it. A package that needs a native program ships a "
-                            "platform wheel built from published source."
-                        ),
-                        category=Category.SUSPICIOUS,
-                        severity=Severity.HIGH,
-                    ),
-                    location=replace(
-                        OperationalFinding.build(
-                            path=unit.path,
-                            rule_id=NATIVE_PROGRAM_IN_PURE_WHEEL_RULE,
-                            message="",
-                            remediation="",
-                            category=Category.SUSPICIOUS,
-                            severity=Severity.HIGH,
-                        ).location,
-                        line=runs[0],
-                    ),
-                    confidence=Confidence.HIGH,
-                    risk=ctx.scorer.score(Severity.HIGH, Confidence.HIGH),
-                    detector="binary",
-                )
-            ]
+            return [ReleaseChecks._native_program_finding(unit, runs[0], ctx)]
         return []
+
+    @staticmethod
+    def _native_program_finding(unit: FileUnit, line: int, ctx: ScanContext) -> Finding:
+        """The finding for a package that carries a native program and starts it."""
+        return replace(
+            OperationalFinding.build(
+                path=unit.path,
+                rule_id=NATIVE_PROGRAM_IN_PURE_WHEEL_RULE,
+                message=(
+                    "This package carries a native program (and says it holds no compiled "
+                    "code: a pure wheel, or sources) and this file starts a path built from "
+                    "where it lives. Compiled code no reviewer can read runs as a program."
+                ),
+                remediation=(
+                    "Do not install it. A package that needs a native program ships a "
+                    "platform wheel built from published source."
+                ),
+                category=Category.SUSPICIOUS,
+                severity=Severity.HIGH,
+            ),
+            location=replace(
+                OperationalFinding.build(
+                    path=unit.path,
+                    rule_id=NATIVE_PROGRAM_IN_PURE_WHEEL_RULE,
+                    message="",
+                    remediation="",
+                    category=Category.SUSPICIOUS,
+                    severity=Severity.HIGH,
+                ).location,
+                line=line,
+            ),
+            confidence=Confidence.HIGH,
+            risk=ctx.scorer.score(Severity.HIGH, Confidence.HIGH),
+            detector="binary",
+        )
 
 
 __all__ = ["ReleaseChecks"]
