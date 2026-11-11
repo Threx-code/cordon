@@ -521,7 +521,74 @@ class StartupClosure:
         )
         reached = ImportClosure.resolve(startup, sources)
         modules = sorted(path for path in reached if path.endswith(".py"))
-        return frozenset(startup | reached), LoadReach.deferred_lines(modules, sources)
+        deferred = LoadReach.deferred_lines(modules, sources)
+        return frozenset(startup | reached), StartupClosure._through_instances(
+            modules, sources, deferred
+        )
+
+    #: Rounds of reach widened through instances and the calls their methods make.
+    ROUNDS: ClassVar[int] = 6
+
+    @staticmethod
+    def _through_instances(
+        modules: list[str], sources: Mapping[str, str], deferred: frozenset[tuple[str, int, int]]
+    ) -> frozenset[tuple[str, int, int]]:
+        """`deferred`, less the bodies a startup reaches through an instance. LoadReach does not
+        resolve `client = Client(...)` then `client.initialize()`; at startup, a class of the
+        closure constructed on a reached line makes its methods reached, and what a reached body
+        calls by name, among the closure's functions and methods, is reached in turn
+        (tinkoff_cloud_apis_internal 8.5.4: a thread target builds a `Client`, whose methods
+        start the loop that sends). Scoped to the startup closure: import grading is untouched."""
+        trees: dict[str, ast.Module] = {}
+        for path in modules:
+            try:
+                tree = PythonSyntax.parse(sources[path])
+            except (SyntaxError, ValueError, RecursionError):
+                # S2: an unparsed closure file defers nothing here; SOURCE.UNPARSED reports it.
+                continue
+            if isinstance(tree, ast.Module):
+                trees[path] = tree
+        classes: dict[str, list[tuple[str, ast.ClassDef]]] = {}
+        functions: dict[str, list[tuple[str, ast.FunctionDef | ast.AsyncFunctionDef]]] = {}
+        for path, tree in trees.items():
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ClassDef):
+                    classes.setdefault(node.name, []).append((path, node))
+                elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                    functions.setdefault(node.name, []).append((path, node))
+        left = set(deferred)
+
+        def reached(path: str, line: int) -> bool:
+            return not any(p == path and first <= line <= last for p, first, last in left)
+
+        for _ in range(StartupClosure.ROUNDS):
+            opened: set[tuple[str, int, int]] = set()
+            for path, tree in trees.items():
+                for call in PythonSyntax.of(tree, ast.Call):
+                    if not reached(path, call.lineno):
+                        continue
+                    func = call.func
+                    name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", None)
+                    for owner, cls in classes.get(name or "", []):
+                        opened.update(
+                            span
+                            for item in cls.body
+                            if isinstance(item, ast.FunctionDef | ast.AsyncFunctionDef)
+                            for span in left
+                            if item.body and span[0] == owner and span[1] == item.body[0].lineno
+                        )
+                    for owner, function in functions.get(name or "", []):
+                        opened.update(
+                            span
+                            for span in left
+                            if function.body
+                            and span[0] == owner
+                            and span[1] == function.body[0].lineno
+                        )
+            if not opened:
+                break
+            left -= opened
+        return frozenset(left)
 
 
 __all__ = ["ImportClosure", "StartupClosure"]
