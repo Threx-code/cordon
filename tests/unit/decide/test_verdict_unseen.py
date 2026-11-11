@@ -93,6 +93,10 @@ class TestTheAdmittedRulesAreKept:
         "MALWARE.IMPLANT.INSTALL.001",  # 1 unseen unit; run leg narrowed to analyser facts
         "MALWARE.DROPPER.DATA_FILE_CODE.001",  # 1 unseen unit (houdus); benign measured at the gate
         "MALWARE.EXFIL.CONFUSION_BEACON.001",  # 1 unseen unit (promptflow_runtime); benign at the gate
+        # The analysis team's startup rules (11 Nov): data_proxy_for_test and chroma_client; benign
+        # 2 of 17,337 for STARTUP_CODE (tld, dagz-suite), 0 for STARTUP_NETWORK once startup-reached.
+        "MALWARE.INSTALL.STARTUP_NETWORK.001",
+        "MALWARE.INSTALL.STARTUP_CODE.001",
     )
 
     def test_each_is_in_keep(self) -> None:

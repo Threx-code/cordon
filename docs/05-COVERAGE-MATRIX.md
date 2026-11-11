@@ -284,6 +284,8 @@ rather than a document.
 | `MALWARE.INSTALL.REMOTE_CODE.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.SHELL_EVASION.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.SPELLED_CODE.001` | critical | `composites` | install_hook |
+| `MALWARE.INSTALL.STARTUP_CODE.001` | high | `composites` | install_hook |
+| `MALWARE.INSTALL.STARTUP_NETWORK.001` | high | `composites` | install_hook |
 | `MALWARE.INSTALL.WINDOWS_LOADER.001` | critical | `composites` | install_hook |
 | `MALWARE.MOBILE.ATTRIBUTION_CLOAK.001` | critical | `composites` | malicious_code |
 | `MALWARE.MODEL.PICKLE_EXEC.001` | critical | `formats` | malicious_code |
@@ -423,6 +425,7 @@ rather than a document.
 | `MALWARE.EXFIL.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.BEACON.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.COMMAND_OUTPUT.001` | critical | `composites` | exfiltration |
+| `MALWARE.EXFIL.CONFUSION_BEACON.001` | high | `composites` | exfiltration |
 | `MALWARE.EXFIL.CREDENTIAL_STORE.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.CREDENTIAL_STORE.002` | high | `composites` | exfiltration |
 | `MALWARE.EXFIL.DNS_CALLBACK.001` | critical | `composites` | exfiltration |
