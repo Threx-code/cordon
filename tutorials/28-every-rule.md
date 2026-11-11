@@ -2,7 +2,7 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,530 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,539 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -608,13 +608,14 @@ rule's own samples.
 
 ## Dropper
 
-8 rules.
+9 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.DROPPER.001` | critical | Install script fetches and executes remote content |
 | `MALWARE.DROPPER.DATA_FILE_CODE.001` | high | Code is loaded from a file named as data |
 | `MALWARE.DROPPER.DECODED.001` | high | Code writes out a payload it carries encoded, then makes it runnable or runs it |
+| `MALWARE.DROPPER.DIRECTORY.001` | high | Files written into a directory are then executed from it |
 | `MALWARE.DROPPER.HIDDEN.001` | high | Code downloads a program and starts it with its window hidden |
 | `MALWARE.DROPPER.SHIPPED_PAYLOAD.001` | critical | Code decrypts bytes it carries into a program, writes it and runs it |
 | `SUSPECT.DROPPER.001` | high | Content fetched from the network and executed |
@@ -623,16 +624,25 @@ rule's own samples.
 
 ## Dynamic Dispatch
 
-2 rules.
+3 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.DYNAMIC_DISPATCH.001` | critical | Install-time code reaches a function by a computed name |
 | `SUSPECT.DYNAMIC_DISPATCH.001` | high | A function is reached by a name computed at runtime |
+| `SUSPECT.DYNAMIC_DISPATCH.002` | high | A module or function is reached by a name the code spells so that no literal is it |
+
+## Execute
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.EXECUTE.DECODED_BYTES.001` | high | Bytes handed to the code are decoded to text and executed |
 
 ## Exfiltration
 
-36 rules.
+37 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -670,6 +680,7 @@ rule's own samples.
 | `SUSPECT.EXFIL.ENVIRONMENT.001` | high | Code sends the whole environment over the network |
 | `SUSPECT.EXFIL.FLOW_IDENTITY.001` | high | Sends who and where this machine is |
 | `SUSPECT.EXFIL.FLOW_SECRET.001` | high | Sends a credential file off the machine |
+| `SUSPECT.EXFIL.MAIL_ON_IMPORT.001` | high | Importing the module sends mail from an account whose password it carries |
 | `SUSPECT.EXFIL.NAMED_SECRET.001` | high | Code sends a named credential to a host outside its service |
 | `SUSPECT.EXFIL.WALLET_SECRET.001` | high | Sends a wallet's secret to an outside address |
 
@@ -1568,7 +1579,7 @@ rule's own samples.
 
 ## Install-time code
 
-24 rules.
+26 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -1591,10 +1602,12 @@ rule's own samples.
 | `MALWARE.INSTALL.STARTUP_NETWORK.001` | high | Code a .pth file loads reaches the network in every Python process |
 | `MALWARE.INSTALL.WINDOWS_LOADER.001` | critical | Install script starts a Windows loader |
 | `SUSPECT.INSTALL.AUTOSTART.001` | high | Install-time code makes something start at every login |
+| `SUSPECT.INSTALL.COMPUTED_CODE.001` | high | Code that runs at install executes or starts a program it assembles so that no literal is it |
 | `SUSPECT.INSTALL.DEPENDENCY_CONFUSION.001` | high | A version made to win resolution runs code on install |
 | `SUSPECT.INSTALL.OBFUSCATED_HOOK.001` | high | An install hook runs a file too obfuscated to read |
 | `SUSPECT.INSTALL.SCRIPT.001` | high | Package declares an install-time lifecycle script |
 | `SUSPECT.INSTALL.STRING_CODE.001` | high | An install script runs a program it carries as a string |
+| `SUSPECT.INSTALL.TEMP_COMMAND.001` | high | The install runs a command on a system temp path |
 | `SUSPECT.INSTALL.UNEXAMINED.001` | high | Install-time code too large or slow to examine |
 
 ## Intent
@@ -1741,17 +1754,19 @@ rule's own samples.
 
 ## Obfuscation
 
-7 rules.
+9 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `SUSPECT.OBFUSCATION.BIDI.001` | high | Bidirectional or invisible Unicode in source |
+| `SUSPECT.OBFUSCATION.DORMANT_PAYLOAD.001` | high | Data fetched or carried by the package is decoded and then never used |
 | `SUSPECT.OBFUSCATION.ENCODED.001` | medium | Large encoded blob embedded in source |
 | `SUSPECT.OBFUSCATION.LONGLINE.001` | low | Line far longer than any hand-written source |
 | `SUSPECT.OBFUSCATION.MANGLED.001` | high | Output of obfuscator.io outside the package's build output |
 | `SUSPECT.OBFUSCATION.PACKED.001` | medium | Packer or minifier signature in hand-written source |
 | `SUSPECT.OBFUSCATION.REQUIRE_ALIAS.001` | high | Node's require hidden behind a global name |
 | `SUSPECT.OBFUSCATION.TAG_SMUGGLING.001` | high | Invisible text written in Unicode Tag characters |
+| `SUSPECT.OBFUSCATION.UNRESOLVED_PAYLOAD.001` | high | A payload is handed at import to a function nothing defines |
 
 ## Package
 
@@ -1958,6 +1973,14 @@ rule's own samples.
 | `SECRET.TWILIO.KEY.001` | high | Committed credential: Twilio API key |
 | `SECRET.URL.CREDENTIAL.001` | high | Credential embedded in a URL |
 | `SECRET.VAULT.TOKEN.001` | critical | Committed credential: HashiCorp Vault token |
+
+## Source
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.SOURCE.UNPARSED_RUNNING.001` | high | A module the package runs does not parse |
 
 ## Source and history
 

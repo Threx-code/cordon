@@ -61,6 +61,9 @@ class AnalyzerCore:
         self._follow_literals = True
         # Name -> the string literal it is bound to, for names bound exactly once.
         self._strings: dict[str, str | None] = {}
+        # The module being analysed, for values its top-level statements compute from literals
+        # (`LiteralProgram`).
+        self._module_tree: ast.AST | None = None
         # Name -> the f-string or concatenation it is bound to, for names bound exactly once.
         self._sketches: dict[str, ast.AST] = {}
         # Names bound only ever to a plain string literal. See `_assembled_name`.

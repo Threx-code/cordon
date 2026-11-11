@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from cordon_scanner.analysis.python.flows.hidden_start import HiddenStart
 from cordon_scanner.analysis.python.flows.loop_reads import LoopReads
+from cordon_scanner.analysis.python.flows.staged.literal_program import LiteralProgram
 from cordon_scanner.analysis.python.pyfacts import (
     PRIMITIVES,
     PythonFacts,
@@ -695,6 +696,15 @@ class ExecutionFlows(AnalyzerCore):
             if isinstance(value, bytes):
                 return value.decode("utf-8", "replace")
             return value if isinstance(value, str) else None
+        if (
+            not isinstance(node, ast.Call) or self._dotted(node.func) not in BASE64_DECODERS
+        ) and self._module_tree is not None:
+            # `exec(code)` or `exec("".join(...)[::-1])` where the module's own statements build
+            # the text from literals alone (easyIoCtl 1.0: an alphabet indexed by a list of
+            # literals in a loop). A computed literal is still a literal.
+            folded = PythonFacts.constant(node) or LiteralProgram.value(self._module_tree, node)
+            if folded is not None:
+                return folded
         if (
             not isinstance(node, ast.Call)
             or not node.args

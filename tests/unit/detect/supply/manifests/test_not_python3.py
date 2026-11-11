@@ -91,9 +91,29 @@ class TestPackageSourceThatDoesNotParse:
         )
         assert UnparsedKit.gapped(result)
 
+    def test_a_running_module_that_does_not_parse_blocks(self, tmp_path) -> None:
+        # timeweave 1.0.0: the module `__init__` imports does not parse (owner's fail-closed rule).
+        result = UnparsedKit.sdist(
+            tmp_path, {"pkg/__init__.py": "from .core import run\n", "pkg/core.py": self.BROKEN}
+        )
+        running = [f for f in result.findings if f.rule_id == "SUSPECT.SOURCE.UNPARSED_RUNNING.001"]
+        assert [f.location.path.rpartition("/")[2] for f in running] == ["core.py"]
+        assert running[0].category.value == "suspicious"
+
+    def test_a_test_module_that_does_not_parse_does_not_block(self, tmp_path) -> None:
+        result = UnparsedKit.sdist(
+            tmp_path,
+            {
+                "pkg/__init__.py": "from .tests.test_core import run\n",
+                "pkg/tests/test_core.py": self.BROKEN,
+            },
+        )
+        assert not any(f.rule_id == "SUSPECT.SOURCE.UNPARSED_RUNNING.001" for f in result.findings)
+
     def test_a_python_2_init_is_said_not_gapped(self, tmp_path) -> None:
         result = UnparsedKit.sdist(tmp_path, {"pkg/__init__.py": 'print "hello"\n'})
         assert not UnparsedKit.gapped(result)
+        assert not any(f.rule_id == "SUSPECT.SOURCE.UNPARSED_RUNNING.001" for f in result.findings)
 
     def test_a_python_2_init_is_read_as_code_where_it_runs(self, tmp_path: Path) -> None:
         init = 'import os\nprint "loading"\nos.system("id")\n'

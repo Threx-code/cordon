@@ -120,6 +120,7 @@ rather than a document.
 |---|---|---|---|
 | `POLICY.VCS.BINARY_ADDED.001` | low | `vcs` | policy |
 | `SUSPECT.POLYGLOT.MISMATCH.001` | high | `binary` | obfuscation |
+| `SUSPECT.SOURCE.UNPARSED_RUNNING.001` | high | `manifest` | obfuscation |
 | `SUSPECT.SUBMODULE.UNTRUSTED.001` | medium | `config` | integrity |
 | `SUSPECT.VCS.HOOKS_PATH.001` | medium | `config` | integrity |
 | `SUSPECT.VCS.HOOK_ADDED.001` | medium | `vcs` | integrity |
@@ -268,6 +269,7 @@ rather than a document.
 | `MALWARE.DROPPER.001` | critical | `composites` | dropper |
 | `MALWARE.DROPPER.DATA_FILE_CODE.001` | high | `composites` | dropper |
 | `MALWARE.DROPPER.DECODED.001` | high | `composites` | dropper |
+| `MALWARE.DROPPER.DIRECTORY.001` | high | `composites` | dropper |
 | `MALWARE.DROPPER.HIDDEN.001` | high | `composites` | dropper |
 | `MALWARE.DROPPER.SHIPPED_PAYLOAD.001` | critical | `composites` | dropper |
 | `MALWARE.IMPLANT.INSTALL.001` | high | `composites` | persistence |
@@ -321,10 +323,12 @@ rather than a document.
 | `SUSPECT.DROPPER.REMOTE_COMMAND.001` | high | `composites` | dropper |
 | `SUSPECT.FILE.DISGUISED_PROGRAM.001` | high | `composites` | dropper |
 | `SUSPECT.INSTALL.AUTOSTART.001` | high | `composites` | install_hook |
+| `SUSPECT.INSTALL.COMPUTED_CODE.001` | high | `composites` | install_hook |
 | `SUSPECT.INSTALL.DEPENDENCY_CONFUSION.001` | high | `manifest` | dependency_confusion |
 | `SUSPECT.INSTALL.OBFUSCATED_HOOK.001` | high | `obfuscated-hook` | obfuscation |
 | `SUSPECT.INSTALL.SCRIPT.001` | high | `manifest` | install_hook |
 | `SUSPECT.INSTALL.STRING_CODE.001` | high | `composites` | install_hook |
+| `SUSPECT.INSTALL.TEMP_COMMAND.001` | high | `composites` | install_hook |
 | `SUSPECT.INSTALL.UNEXAMINED.001` | high | `manifest` | install_hook |
 | `SUSPECT.INTENT.UNEXPLAINED_EFFECT.001` | high | `intent` | malicious_code |
 | `SUSPECT.MODEL.LOADED_ON_IMPORT.001` | high | `composites` | malicious_code |
@@ -349,16 +353,20 @@ rather than a document.
 | `SUSPECT.ANTI_ANALYSIS.001` | high | `composites` | anti_analysis |
 | `SUSPECT.DECODE_EXEC.001` | high | `composites` | obfuscation |
 | `SUSPECT.DYNAMIC_DISPATCH.001` | high | `composites` | obfuscation |
+| `SUSPECT.DYNAMIC_DISPATCH.002` | high | `composites` | obfuscation |
+| `SUSPECT.EXECUTE.DECODED_BYTES.001` | high | `composites` | obfuscation |
 | `SUSPECT.MEDIA.APPENDED_PAYLOAD.001` | high | `formats` | obfuscation |
 | `SUSPECT.MEDIA.OPAQUE_TRAILER.001` | medium | `formats` | obfuscation |
 | `SUSPECT.MEDIA.TRAILING_DATA.001` | low | `formats` | obfuscation |
 | `SUSPECT.OBFUSCATION.BIDI.001` | high | `obfuscation` | obfuscation |
+| `SUSPECT.OBFUSCATION.DORMANT_PAYLOAD.001` | high | `composites` | obfuscation |
 | `SUSPECT.OBFUSCATION.ENCODED.001` | medium | `obfuscation` | obfuscation |
 | `SUSPECT.OBFUSCATION.LONGLINE.001` | low | `obfuscation` | obfuscation |
 | `SUSPECT.OBFUSCATION.MANGLED.001` | high | `obfuscation` | obfuscation |
 | `SUSPECT.OBFUSCATION.PACKED.001` | medium | `obfuscation` | obfuscation |
 | `SUSPECT.OBFUSCATION.REQUIRE_ALIAS.001` | high | `obfuscation` | obfuscation |
 | `SUSPECT.OBFUSCATION.TAG_SMUGGLING.001` | high | `obfuscation` | obfuscation |
+| `SUSPECT.OBFUSCATION.UNRESOLVED_PAYLOAD.001` | high | `composites` | obfuscation |
 
 ### Domain 8 — Credentials and secret stores
 
@@ -464,6 +472,7 @@ rather than a document.
 | `SUSPECT.EXFIL.ENVIRONMENT.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.FLOW_IDENTITY.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.FLOW_SECRET.001` | high | `composites` | exfiltration |
+| `SUSPECT.EXFIL.MAIL_ON_IMPORT.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.NAMED_SECRET.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.WALLET_SECRET.001` | high | `composites` | exfiltration |
 

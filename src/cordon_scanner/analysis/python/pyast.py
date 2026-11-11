@@ -42,6 +42,7 @@ import re
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.python.flows.http_clients import HTTP_CLIENTS
+from cordon_scanner.analysis.python.flows.staged.literal_program import LiteralProgram
 from cordon_scanner.analysis.python.pyfacts import (
     DNS_LOOKUPS,
     ENVIRONMENT,
@@ -73,6 +74,11 @@ from cordon_scanner.analysis.python.flows.dns_tunnels import DnsTunnels
 from cordon_scanner.analysis.python.flows.implants.implant_facts import ImplantFacts
 from cordon_scanner.analysis.python.flows.received_run import ReceivedRuns
 from cordon_scanner.analysis.python.flows.relayed_sends import RelayedSends
+from cordon_scanner.analysis.python.flows.staged.computed_commands import ComputedCommands
+from cordon_scanner.analysis.python.flows.staged.dormant_decodes import DormantDecodes
+from cordon_scanner.analysis.python.flows.staged.executed_data import ExecutedData
+from cordon_scanner.analysis.python.flows.staged.import_mail import ImportMail
+from cordon_scanner.analysis.python.flows.staged.loose_stages import LooseStages
 from cordon_scanner.analysis.python.flows.startup_files import StartupFiles
 from cordon_scanner.analysis.python.sourced_flows import SourcedFlows
 
@@ -184,6 +190,11 @@ class PythonAnalyzer(
     DataFileCode,
     StartupFiles,
     RelayedSends,
+    ComputedCommands,
+    DormantDecodes,
+    ExecutedData,
+    ImportMail,
+    LooseStages,
     ClientBindings,
     SourcedFlows,
     AnalyzerCore,
@@ -237,6 +248,12 @@ class PythonAnalyzer(
         analyzer._dns_tunnel(tree)
         analyzer._code_from_data_file(tree)
         analyzer._startup_file_written(tree)
+        analyzer._computed_commands(tree)
+        analyzer._concealed_names(tree)
+        analyzer._dormant_decodes(tree)
+        analyzer._data_executed(tree)
+        analyzer._import_mail(tree)
+        analyzer._loose_stages(tree)
         analyzer._hits.extend(ImplantFacts.hits(tree, source, analyzer._hits))
         if analyzer._sends(tree):
             # Each of these records only at a call that sends (an egress primitive) or through a
@@ -412,6 +429,7 @@ class PythonAnalyzer(
         order of execution, and matching on the first would miss the ordinary
         case of a helper defined above its imports.
         """
+        self._module_tree = tree
         self._collect_statement(tree)
         self._names_complete()
 
@@ -540,6 +558,18 @@ class PythonAnalyzer(
         if not written and self._dotted(node.func) not in ("exec", "eval", "compile"):
             return
         value = self._written_text(node.args[0])
+        if (
+            value is not None
+            and not written
+            and self._module_tree is not None
+            and LiteralProgram.folded(self._module_tree, node.args[0])[1]
+        ):
+            # The program is fixed by the file's literals but written so that none of them is
+            # it: indexed out of an alphabet, joined from codes, reversed (easyIoCtl 1.0). What
+            # it does is read below; that it was assembled to be unreadable is a fact of its own.
+            self._record(
+                Capability.EXECUTE, node, f"computed code executed: {self._dotted(node.func)}"
+            )
         if (
             value is None
             or not WRITTEN_CODE_MIN <= len(value) <= WRITTEN_CODE_MAX

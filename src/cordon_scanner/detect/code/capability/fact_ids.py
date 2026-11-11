@@ -37,6 +37,25 @@ class PythonFactIds:
         # Encoded data resolved as DNS names: a channel out that no firewall rule for HTTP sees.
         ("dns tunnel", "AST.PY.DNS_TUNNEL"),
         ("code from a data file", "AST.PY.CODE_FROM_DATA"),
+        # A program the file assembles from its literals (indexed, joined from codes,
+        # reversed) and executes: fixed, but written so that no literal is it.
+        ("computed code executed", "AST.PY.COMPUTED_EXEC"),
+        # A process start whose command holds a piece spelled the same way (openblox 1.0.0).
+        ("computed command run", "AST.PY.COMPUTED_COMMAND"),
+        # A module or function reached by a name spelled the same way (apkeep 1.0.1).
+        ("concealed name resolved", "AST.PY.CONCEALED_NAME"),
+        # A value decoded (base64, hex, XOR) and then never read: carried for something else.
+        ("decoded and left unused", "AST.PY.DORMANT_DECODE"),
+        # Files written into a directory, and the files listed there executed (scrapetools2).
+        ("dropped into a directory and executed", "AST.PY.DIRECTORY_DROP_RUN"),
+        # Text decoded out of bytes and executed (rasterkit_demo).
+        ("bytes decoded and executed", "AST.PY.BYTES_EXEC"),
+        # Mail sent at import from an account the module logs into with literal credentials.
+        ("mail sent on import", "AST.PY.IMPORT_MAIL"),
+        # A payload literal handed at import to a function nothing defines (cubaflixdownload).
+        ("unresolved call on a payload literal", "AST.PY.UNRESOLVED_PAYLOAD"),
+        # A literal command on a system temp path, at module level (maliciouspackage 0.1).
+        ("literal command on a temp path", "AST.PY.TEMP_COMMAND"),
         # A persistence location written by code that runs when the file is loaded.
         ("persist at load", "AST.PY.PERSIST_AT_LOAD"),
         # The clipboard read, matched against a pattern, and set to a value the package brings.

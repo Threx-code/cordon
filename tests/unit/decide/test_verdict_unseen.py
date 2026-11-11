@@ -115,6 +115,16 @@ class TestTheAdmittedRulesAreKept:
         "MALWARE.EXFIL.CLOUD_UPLOAD.001",  # dlty (4 archives); 3 of 16,274
         "MALWARE.EXFIL.SWEPT_TO_HOST.001",  # renderkit, renderkitcore; 0 of 16,274
         "MALWARE.IMPORT.PROGRAM_START.001",  # lobomarinopython; 0 of 16,274
+        # The analysis team's staged-payload and install rules (11-12 Nov), 0 of the 1,063 each:
+        "SUSPECT.INSTALL.COMPUTED_CODE.001",  # easyIoCtl, openblox
+        "SUSPECT.DYNAMIC_DISPATCH.002",  # apkeep
+        "SUSPECT.OBFUSCATION.DORMANT_PAYLOAD.001",  # ethercheck, spellcheckerpy
+        "MALWARE.DROPPER.DIRECTORY.001",  # scrapetools2
+        "SUSPECT.EXECUTE.DECODED_BYTES.001",  # rasterkit_demo
+        "SUSPECT.EXFIL.MAIL_ON_IMPORT.001",  # Coffin2022, Coffin-Codes
+        "SUSPECT.SOURCE.UNPARSED_RUNNING.001",  # timeweave; at most 10 of 16,267
+        "SUSPECT.OBFUSCATION.UNRESOLVED_PAYLOAD.001",  # cubaflixdownload
+        "SUSPECT.INSTALL.TEMP_COMMAND.001",  # maliciouspackage 0.1; 0 of 16,274
     )
 
     def test_each_is_in_keep(self) -> None:

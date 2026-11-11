@@ -37,7 +37,7 @@ from cordon_scanner.analysis.python.statements import PythonTwo
 from cordon_scanner.foundation.paths import ContainerPaths
 
 if TYPE_CHECKING:
-    from cordon_scanner.foundation.models import Finding
+    from cordon_scanner.foundation.models import Finding, RiskScore
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +51,10 @@ class Decision:
 class UnparsedSource:
     RULE = "OPERATIONAL.SOURCE.UNPARSED"
     BROKEN = "OPERATIONAL.SOURCE.BROKEN"
+    #: The gap as a verdict (owner's fail-closed rule): code that will run and cannot be read
+    #: blocks. 17 of 16,267 benign units carry the gap, 7 already blocking (package-37's gate
+    #: rows, 2026-11-11): at most 10 added.
+    RUNNING = "SUSPECT.SOURCE.UNPARSED_RUNNING.001"
 
     #: Syntax newer than this Python (3.13, 3.14) on a line: type-parameter defaults, template
     #: strings. Not readable here, so a gap, never "broken".
@@ -126,6 +130,28 @@ class UnparsedSource:
             remediation="Vet this file by hand before installing the package.",
             severity=Severity.MEDIUM,
         )
+
+    @staticmethod
+    def running(path: str, risk: RiskScore) -> Finding:
+        """The gap's verdict: a module this package runs does not parse (timeweave 1.0.0's
+        `updater.py`, which its `__init__` imports)."""
+        from dataclasses import replace
+
+        from cordon_scanner.foundation.models import Category, Confidence, Severity
+        from cordon_scanner.foundation.results import OperationalFinding
+
+        finding = OperationalFinding.build(
+            path=path,
+            rule_id=UnparsedSource.RUNNING,
+            message=(
+                f"A module this package runs does not parse, so its code was not read: {path} "
+                "runs when the package is installed, imported or invoked."
+            ),
+            remediation="Do not install the package until the module has been read by hand.",
+            category=Category.SUSPICIOUS,
+            severity=Severity.HIGH,
+        )
+        return replace(finding, confidence=Confidence.HIGH, risk=risk, detector="manifest")
 
     @staticmethod
     def broken(path: str) -> Finding:

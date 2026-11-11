@@ -688,3 +688,380 @@ class TestSafeSpawnLines:
     def test_a_bare_shell_literal_is_not(self) -> None:
         source = "import os\nos." + SYSTEM + '("sh -i")\n'
         assert self._safe(source) == frozenset()
+
+
+class TestCodeTheModuleComputesFromLiteralsAndExecutes:
+    """easyIoCtl 1.0: an alphabet indexed by a list of literals, added up in a loop, executed. The
+    program is fixed by the file's literals, so it is read as code like any executed literal."""
+
+    PAYLOAD = "import os\nos.sys" + "tem('id')\n"
+
+    @staticmethod
+    def indexed(payload: str, *, indices: str | None = None, run: str = "exec(code)") -> str:
+        alphabet = "".join(sorted(set(payload))) + "xyz"
+        positions = indices or repr([alphabet.index(c) for c in payload])
+        return "\n".join(
+            [
+                "import os",
+                f"alphabet = {alphabet!r}",
+                f"mappers = {positions}",
+                "code = ''",
+                "for i in mappers:",
+                "    code += alphabet[i]",
+                run,
+                "",
+            ]
+        )
+
+    @staticmethod
+    def executed(source: str) -> list[tuple[Capability, str]]:
+        return [
+            (c, d)
+            for c, d in PyastHelpers._capabilities(source)
+            if d.startswith("executed literal")
+        ]
+
+    def test_a_loop_built_program_is_read(self) -> None:
+        assert (Capability.SPAWN, "executed literal: os.system") in self.executed(
+            self.indexed(self.PAYLOAD)
+        )
+
+    def test_a_joined_comprehension_and_a_reversed_slice_are_read(self) -> None:
+        reversed_payload = self.PAYLOAD[::-1]
+        codes = [ord(c) for c in reversed_payload]
+        source = f"import os\nk = {codes}\nexec(''.join(chr(c) for c in k)[::-1])\n"
+        assert any(c is Capability.SPAWN for c, _ in self.executed(source))
+        named = f"import os\nk = {codes}\ncode = ''.join(chr(c) for c in k)[::-1]\nexec(code)\n"
+        assert any(c is Capability.SPAWN for c, _ in self.executed(named))
+
+    def test_indices_the_file_does_not_state_are_not_folded(self) -> None:
+        source = self.indexed(self.PAYLOAD, indices="[int(x) for x in os.environ['M'].split()]")
+        assert self.executed(source) == []
+
+    def test_a_program_rebound_after_the_loop_is_not_the_loop_s(self) -> None:
+        source = self.indexed(self.PAYLOAD, run="code = input()\nexec(code)")
+        assert self.executed(source) == []
+
+    def test_the_assembly_is_a_fact_of_its_own(self) -> None:
+        found = PyastHelpers._capabilities(self.indexed("print(1)"))
+        assert (Capability.EXECUTE, "computed code executed: exec") in found
+
+    def test_a_literal_written_out_is_not_computed(self) -> None:
+        found = PyastHelpers._capabilities("exec('print(1)')\n")
+        assert not any(d.startswith("computed code executed") for _, d in found)
+
+    def test_a_computation_past_the_budget_is_not_folded(self) -> None:
+        source = "import os\ncode = 'a' * 10**7\nexec(code)\n"
+        assert self.executed(source) == []
+
+
+class TestACommandSpelledInCharacterCodes:
+    """openblox 1.0.0: a helper returns a program name built with `chr(t + base)`; the install
+    runs it with `subprocess.check_output`, dressed as a git-hash lookup."""
+
+    @staticmethod
+    def program(name: str, *, plain: bool = False) -> str:
+        base = 7
+        codes = [ord(c) - base for c in name]
+        policy = (
+            f"    return {name!r}"
+            if plain
+            else "\n".join(
+                [
+                    f"    thresholds = {codes}",
+                    f"    baseline = {base}",
+                    "    parts = []",
+                    "    for t in thresholds:",
+                    "        parts.append(chr(t + baseline))",
+                    "    ident = ''.join(parts)",
+                    f"    if len(ident) == {len(name)}:",
+                    "        return ident",
+                ]
+            )
+        )
+        return "\n".join(
+            [
+                "import os, subprocess",
+                "def policy():",
+                policy,
+                "def commit_hash():",
+                "    windows = os.name == 'nt'",
+                "    cmd = [policy(), 'rev-parse', 'HEAD'] if windows else [policy(), 'log']",
+                "    return subprocess.check_output(cmd, shell=windows)",
+                "",
+            ]
+        )
+
+    @staticmethod
+    def computed(source: str) -> list[tuple[str, str | None]]:
+        return [
+            (h.detail, h.command)
+            for h in PythonAnalyzer.analyse(source)
+            if h.detail.startswith("computed command run")
+        ]
+
+    def test_the_spelled_program_is_found_and_folded(self) -> None:
+        from cordon_scanner.detect.code.capability.install_programs import InstallPrograms
+
+        [(detail, command)] = self.computed(self.program("calc"))
+        assert detail == "computed command run: subprocess.check_output"
+        assert InstallPrograms.program(command or "") == "calc"
+        assert InstallPrograms.foreign(command)
+
+    def test_git_written_plainly_is_not(self) -> None:
+        assert self.computed(self.program("git", plain=True)) == []
+
+    def test_a_version_joined_from_numbers_and_printed_is_not(self) -> None:
+        source = "import subprocess\nv = '.'.join(map(str, (1, 2, 3)))\nprint(v)\nsubprocess.run(['git', 'tag', v])\n"
+        assert self.computed(source) == []
+
+
+class TestANameSpelledSoThatNoLiteralIsIt:
+    """apkeep 1.0.1: `import_module` and `getattr` handed names spelled in character codes."""
+
+    @staticmethod
+    def concealed(source: str) -> list[str]:
+        return [
+            h.detail
+            for h in PythonAnalyzer.analyse(source)
+            if h.detail.startswith("concealed name resolved")
+        ]
+
+    @staticmethod
+    def spelled(name: str) -> str:
+        return "''.join(chr(c) for c in " + repr([ord(c) for c in name]) + ")"
+
+    def test_a_module_and_a_function_spelled_in_codes(self) -> None:
+        source = (
+            "import importlib\n"
+            f"m = importlib.import_module({self.spelled('json')})\n"
+            f"f = getattr(m, {self.spelled('loads')})\n"
+        )
+        assert self.concealed(source) == [
+            "concealed name resolved: importlib.import_module",
+            "concealed name resolved: getattr",
+        ]
+
+    def test_names_written_or_joined_plainly_are_not(self) -> None:
+        source = (
+            "import importlib\n"
+            "m = importlib.import_module('js' + 'on')\n"
+            "f = getattr(m, '_'.join(['load', 's']))\n"
+            "g = getattr(m, name)\n"
+            "h = getattr(sys, 'ofni_noisrev'[::-1], None)\n"
+        )
+        assert self.concealed(source) == []
+
+
+class TestAValueDecodedAndLeftUnused:
+    """ethercheck 1.1.1 and spellcheckerpy 1.0.0: a payload decoded from a fetched page or a
+    shipped data file, then never read. Fixture source assembled at run time."""
+
+    @staticmethod
+    def dormant(source: str) -> list[str]:
+        return [
+            h.detail
+            for h in PythonAnalyzer.analyse(source)
+            if h.detail.startswith("decoded and left unused")
+        ]
+
+    FETCH = "import requests\ntext = requests.get(URL).text\nkey = text[0:8]\nblob = text[8:]\n"
+
+    def test_a_fetched_payload_xored_with_a_fetched_key_and_dropped(self) -> None:
+        source = self.FETCH + (
+            "try:\n"
+            "    enc = bytearray.fromhex(blob)\n"
+            "    k = bytearray.fromhex(key)\n"
+            "    out = bytearray([enc[i] ^ k[i % len(k)] for i in range(len(enc))])\n"
+            "except Exception:\n"
+            "    pass\n"
+        )
+        assert self.dormant(source) == ["decoded and left unused: bytearray.fromhex"]
+
+    def test_a_value_decoded_in_a_constructor_and_dropped(self) -> None:
+        source = (
+            "import base64\n"
+            "class C:\n"
+            "    def __init__(self):\n"
+            "        v = load('a', 'b', 'k')\n"
+            "        v = base64.b64decode(v).decode('utf-8')\n"
+            "        self.n = 0\n"
+        )
+        assert self.dormant(source) == ["decoded and left unused: base64.b64decode"]
+
+    def test_a_decoded_value_that_is_returned_stored_or_used_is_not(self) -> None:
+        returned = "import base64\ndef f(v):\n    d = base64.b64decode(v)\n    return d\n"
+        stored = "import base64\nclass C:\n    def __init__(self, v):\n        d = base64.b64decode(v)\n        self.d = d\n"
+        used = self.FETCH + "data = bytes.fromhex(blob)\nprint(len(data))\n"
+        module_read = "import base64\nTOKEN = base64.b64decode(B)\ndef f():\n    return TOKEN\n"
+        discard = (
+            "import base64\ndef f():\n    _ = base64.b64decode(B, validate=True)\n    return True\n"
+        )
+        for source in (returned, stored, used, module_read, discard):
+            assert self.dormant(source) == [], source
+
+    def test_a_parameter_decoded_and_dropped_is_not(self) -> None:
+        handed = "import base64\ndef check(token):\n    raw = token.strip()\n    v = base64.b64decode(raw)\n    return True\n"
+        held = "import base64\nclass C:\n    def m(self):\n        v = base64.b64decode(self.blob)\n        return 1\n"
+        assert self.dormant(handed) == []
+        assert self.dormant(held) == []
+
+    def test_an_sdk_secret_decoded_into_a_template_local_is_not(self) -> None:
+        source = (
+            "import base64, boto3\n"
+            "def get_secret():\n"
+            "    client = boto3.session.Session().client(service_name='secretsmanager')\n"
+            "    secret_name = 'prod/db'\n"
+            "    response = client.get_secret_value(SecretId=secret_name)\n"
+            "    decoded_binary_secret = base64.b64decode(response['SecretBinary'])\n"
+        )
+        assert self.dormant(source) == []
+
+    def test_a_module_constant_decoded_for_importers_is_not(self) -> None:
+        source = "import base64\nAPI_SECRET = base64.b64decode('c2VjcmV0').decode()\n"
+        assert self.dormant(source) == []
+
+    def test_fetched_json_parsed_is_not(self) -> None:
+        source = "import requests, json\ndata = json.loads(requests.get(URL).text)\n"
+        assert self.dormant(source) == []
+
+
+class TestDataRunAsCode:
+    """scrapetools2 0.2.0 (files written to a directory, the directory's files executed) and
+    rasterkit_demo 0.1.0 (bytes decoded and executed). Fixture source assembled at run time."""
+
+    @staticmethod
+    def found(source: str) -> list[str]:
+        return [
+            h.detail
+            for h in PythonAnalyzer.analyse(source)
+            if h.detail.startswith(("dropped into a directory", "bytes decoded and executed"))
+        ]
+
+    RUN = "ex" + "ec"
+
+    def test_files_written_then_listed_and_executed(self) -> None:
+        source = "\n".join(
+            [
+                "import os",
+                "def update(items):",
+                "    for i, data in enumerate(items):",
+                "        with open(f'modules/{i}.py', 'w') as f:",
+                "            f.write(data['code'])",
+                "def run_modules():",
+                "    for x in os.listdir('modules'):",
+                "        with open(f'modules/{x}') as f:",
+                f"            {self.RUN}(compile(f.read(), x, 'exec'), {{}})",
+                "",
+            ]
+        )
+        assert self.found(source) == [f"dropped into a directory and executed: {self.RUN}"]
+
+    def test_a_directory_read_but_never_written_is_not(self) -> None:
+        source = "\n".join(
+            [
+                "import os",
+                "def run_plugins():",
+                "    for x in os.listdir('plugins'):",
+                "        with open(f'plugins/{x}') as f:",
+                f"            {self.RUN}(compile(f.read(), x, 'exec'), {{}})",
+                "",
+            ]
+        )
+        assert self.found(source) == []
+
+    def test_bytes_handed_in_decoded_and_executed(self) -> None:
+        source = f"def apply(samples: bytes):\n    code = samples.decode('utf-8')\n    {self.RUN}(code, {{}})\n"
+        assert self.found(source) == [f"bytes decoded and executed: {self.RUN}"]
+
+    def test_a_decoder_s_output_executed_is_the_decode_exec_rules_not_this(self) -> None:
+        source = f"import zlib\ndef prepare(blob):\n    {self.RUN}(zlib.decompress(blob).decode(), {{}})\n"
+        assert self.found(source) == []
+
+    def test_the_package_s_own_file_read_and_executed_is_not(self) -> None:
+        source = (
+            f"with open('version.py', 'rb') as f:\n    {self.RUN}(f.read().decode('utf-8'), d)\n"
+        )
+        assert self.found(source) == []
+
+
+class TestMailSentOnImport:
+    """Coffin2022 7.0: a tunnel module that logs into SMTP with a password it carries and mails a
+    fixed address at import."""
+
+    @staticmethod
+    def mailed(source: str) -> list[str]:
+        return [
+            h.detail
+            for h in PythonAnalyzer.analyse(source)
+            if h.detail.startswith("mail sent on import")
+        ]
+
+    @staticmethod
+    def module(*, login: str, main_guard: bool = False) -> str:
+        lines = ["import smtplib", "srv = smtplib.SMTP_SSL('smtp.example.invalid', 465)", "srv.ehlo()", login,
+                 "srv.sendmail('a@example.invalid', 'b@example.invalid', 'installed')", ""]  # fmt: skip
+        if main_guard:
+            lines = [
+                "import smtplib",
+                "if __name__ == '__main__':",
+                *("    " + x for x in lines[1:-1]),
+                "",
+            ]
+        return "\n".join(lines)
+
+    def test_a_literal_login_and_a_send_at_import(self) -> None:
+        assert self.mailed(self.module(login="srv.login('a@example.invalid', 'pw')")) == [
+            "mail sent on import: smtplib.sendmail"
+        ]
+
+    def test_credentials_from_the_environment_or_a_main_guard_are_not(self) -> None:
+        assert self.mailed(self.module(login="srv.login(os.environ['U'], os.environ['P'])")) == []
+        assert self.mailed(self.module(login="srv.login('a', 'pw')", main_guard=True)) == []
+
+
+class TestStagesLeftLooseAtModuleLevel:
+    """cubaflixdownload 1.0.1 (a payload handed at import to a function nothing defines) and
+    maliciouspackage 0.1 (a literal command on a temp path). Fixture source assembled at run
+    time."""
+
+    @staticmethod
+    def found(source: str) -> list[str]:
+        return [
+            h.detail
+            for h in PythonAnalyzer.analyse(source)
+            if h.detail.startswith(("unresolved call on a payload", "literal command on a temp"))
+        ]
+
+    BLOB = "QUJD" * 40
+
+    def test_a_payload_handed_to_a_function_nothing_defines(self) -> None:
+        source = f"import requests\nimport platforms\ndecript({self.BLOB!r})\n"
+        assert self.found(source) == ["unresolved call on a payload literal: 7"]
+
+    def test_framework_names_short_arguments_and_guards_are_not(self) -> None:
+        short = "register('cmath')\n"
+        guarded = f"if PY2:\n    decript({self.BLOB!r})\n"
+        star = f"from helpers import *\ndecript({self.BLOB!r})\n"
+        defined = f"def decript(s):\n    return s\ndecript({self.BLOB!r})\n"
+        translated = f"_({self.BLOB!r})\n"
+        for source in (short, guarded, star, defined, translated):
+            assert self.found(source) == [], source
+
+    def test_a_literal_command_on_a_temp_path(self) -> None:
+        source = "import os\nos.system('touch /tmp/marker')\n"
+        assert self.found(source) == ["literal command on a temp path: os.system"]
+
+    def test_windows_shell_and_computed_temp_paths(self) -> None:
+        commands = ["start %TEMP%\\a.exe", "sh $TMPDIR/a", "C:\\Windows\\Temp\\a.exe /s"]
+        sources = [f"import os\nos.system({c!r})\n" for c in commands]
+        sources.append(
+            "import os, subprocess, tempfile\n"
+            "subprocess.call(['sh', os.path.join(tempfile.gettempdir(), 'a')])\n"
+        )
+        for source in sources:
+            assert len(self.found(source)) == 1, source
+
+    def test_a_build_command_inside_the_tree_is_not(self) -> None:
+        source = "import os, subprocess\nos.system('make -C src')\nsubprocess.call(['rm', '-rf', 'build'])\n"
+        assert self.found(source) == []

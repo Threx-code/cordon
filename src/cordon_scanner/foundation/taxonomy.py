@@ -274,6 +274,10 @@ _DOMAIN_BY_PREFIX: tuple[tuple[str, ThreatDomain], ...] = (
     ("SUSPECT.FILE.", ThreatDomain.MALWARE),
     ("MALWARE.DROPPER.", ThreatDomain.MALWARE),
     ("SUSPECT.DECODE_EXEC.", ThreatDomain.OBFUSCATION),
+    # Bytes decoded and run as code: the decode-exec family without a named decoder.
+    ("SUSPECT.EXECUTE.", ThreatDomain.OBFUSCATION),
+    # A module the package runs that no reader could read (fail closed).
+    ("SUSPECT.SOURCE.", ThreatDomain.SOURCE),
     ("MALWARE.DECODE_EXEC.", ThreatDomain.OBFUSCATION),
     ("SUSPECT.CRYPTOMINER.", ThreatDomain.MALWARE),
     ("MALWARE.CRYPTOMINER.", ThreatDomain.MALWARE),
@@ -381,6 +385,8 @@ _CATEGORY_BY_PREFIX: tuple[tuple[str, AttackCategory], ...] = (
     ("SUSPECT.DYNAMIC_DISPATCH.", AttackCategory.OBFUSCATION),
     ("MALWARE.DYNAMIC_DISPATCH.", AttackCategory.OBFUSCATION),
     ("SUSPECT.DECODE_EXEC.", AttackCategory.OBFUSCATION),
+    ("SUSPECT.EXECUTE.", AttackCategory.OBFUSCATION),
+    ("SUSPECT.SOURCE.", AttackCategory.OBFUSCATION),
     ("MALWARE.DECODE_EXEC.", AttackCategory.OBFUSCATION),
     ("SUSPECT.PROVENANCE.", AttackCategory.INTEGRITY),
     ("POLICY.PROVENANCE.", AttackCategory.INTEGRITY),

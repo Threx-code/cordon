@@ -241,6 +241,20 @@ _DECLARED: tuple[DeclaredRule, ...] = (
         remediation="Install the service's own server instead.",
     ),
     DeclaredRule(
+        id="SUSPECT.SOURCE.UNPARSED_RUNNING.001",
+        title="A module the package runs does not parse",
+        severity=Severity.HIGH,
+        confidence=Confidence.HIGH,
+        category=Category.SUSPICIOUS,
+        detector=ManifestFinding.DETECTOR,
+        message=(
+            "A module this package runs -- at install, on import, or as a command -- does not "
+            "parse, so its code was not read. Code that will run and cannot be read blocks."
+        ),
+        references=(references.OBSCURED_SECURITY_DATA,),
+        remediation="Do not install the package until the module has been read by hand.",
+    ),
+    DeclaredRule(
         id="SUSPECT.INSTALL.UNEXAMINED.001",
         title="Install-time code too large or slow to examine",
         severity=Severity.HIGH,
