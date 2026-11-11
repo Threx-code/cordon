@@ -510,6 +510,14 @@ class Hooks:
         return ImportClosure.resolve(hooks, sources, other, shipped=by_path, unshipped=unshipped)
 
     @staticmethod
+    def startup_closure(units: Sequence[FileUnit], entries: Iterable[str]) -> frozenset[str]:
+        """The `.pth` hooks among `entries` and every file their import lines reach."""
+        startup = {path for path in entries if path.endswith(".pth")}
+        if not startup:
+            return frozenset()
+        return frozenset(startup | Hooks.hook_import_closure(units, startup))
+
+    @staticmethod
     def executed_as_python(units: list[FileUnit], closure: set[str]) -> None:
         """A file the install-time Python closure runs by its path, read as Python, in place:
         `exec(open("run.txt").read())` makes `run.txt` Python whatever its name, as `node

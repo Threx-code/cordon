@@ -27,6 +27,7 @@ from cordon_scanner.detect.code.capability.hits import CapabilityHit
 from cordon_scanner.detect.code.capability.install_programs import InstallPrograms
 from cordon_scanner.detect.code.capability.javascript import JavaScriptCapabilities
 from cordon_scanner.detect.code.capability.memo import CapabilityMemo
+from cordon_scanner.detect.code.capability.startup_hooks import StartupHooks
 from cordon_scanner.detect.code.capability.text_position import TextPosition
 from cordon_scanner.detect.secrets.secrets import SourceSpans
 from cordon_scanner.foundation.capabilities import Capability, MatchKind
@@ -504,6 +505,23 @@ class Labelling:
             and InstallPrograms.foreign(hit.command)
             and ctx.install_hook_reaches(content.path, hit.line)
         ]
+        # What runs in every interpreter once installed (`StartupHooks`): the network reached from
+        # a `.pth`, and a `.pth` line doing more than set up imports.
+        hits += StartupHooks.network(hits, content.path, ctx)
+        if content.path.endswith(".pth"):
+            hits += [
+                CapabilityHit(
+                    # FLOW: a fact of its own, which no install composite pairs (PERSIST would
+                    # also raise MALWARE.INSTALL.PERSIST.001 for the same line).
+                    capability=Capability.FLOW,
+                    rule_id=StartupHooks.CODE_FACT,
+                    byte_start=cls._span_of_line(content, line)[0],
+                    byte_end=cls._span_of_line(content, line)[1],
+                    line=line,
+                    resolved=True,
+                )
+                for line in StartupHooks.code_lines(content.text)
+            ]
         return (
             hits,
             [embedded.Command(text=hit.command, line=hit.line) for hit in resolved if hit.command],

@@ -48,6 +48,7 @@ location, evidence, explanation and risk), and slack. Checked before decoding (`
 
 PATH_SETS = (
     "install_hook_paths",
+    "startup_closure_paths",
     "import_entry_paths",
     "library_entry_paths",
     "library_closure_paths",

@@ -163,6 +163,7 @@ class ScanStages:
             ctx,
             dependencies=Graph.packages(dependencies),
             install_hook_paths=frozenset(hook_paths),
+            startup_closure_paths=Hooks.startup_closure(units, entries) & frozenset(hook_paths),
             tree_paths=frozenset(unit.path for unit in units),
             shipped_native_paths=TreeFacts.shipped_native(units),
             install_entry_paths=entries,

@@ -138,6 +138,11 @@ class ScanContext:
     """Skill scripts and MCP server sources: in `install_hook_paths` because an agent runs them
     unasked, but tools, not install scripts -- a bundle read to its end is not padding."""
 
+    startup_closure_paths: frozenset[str] = frozenset()
+    """The `.pth` startup hooks and the files their import lines reach: code that runs in every
+    Python process the machine starts once the package is installed (a subset of
+    `install_hook_paths`). Read by the startup facts (`StartupHooks`)."""
+
     ci_hook_paths: frozenset[str] = frozenset()
     """Paths that execute in the project's own pipeline.
 
@@ -315,6 +320,9 @@ class ScanContext:
 
     def in_install_hook(self, path: str) -> bool:
         return path in self.install_hook_paths
+
+    def in_startup_closure(self, path: str) -> bool:
+        return path in self.startup_closure_paths
 
     def install_hook_reaches(self, path: str, line: int) -> bool:
         """Whether install-time context applies at this line of this file.

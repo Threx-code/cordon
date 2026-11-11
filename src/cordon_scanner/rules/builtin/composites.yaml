@@ -484,6 +484,73 @@ rules:
         - path_glob: "**/test_*.py"
         - path_glob: "tests/**"
 
+  - id: MALWARE.INSTALL.STARTUP_NETWORK.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: Code a .pth file loads reaches the network in every Python process
+    message: >
+      A .pth file the package installs imports a module, and that module (or what it imports)
+      makes a request or downloads. Python runs a .pth file's import lines at the start of every
+      interpreter on the machine, so this reaches the network each time any Python program starts,
+      without the package ever being imported. That is an implant's shape, whatever it sends today.
+    remediation: >
+      Remove the .pth file from site-packages and read what its module fetches or sends. If this
+      is not your code, treat every Python process on the machine since install as exposed.
+    provenance:
+      kind: research
+      reference: >
+        PyPI packages whose installed .pth imports a module that downloads or calls out at module
+        level (data_proxy_for_test 0.1.1, 2026-11-11).
+    evidence_policy: hash_only
+    references:
+      - https://cwe.mitre.org/data/definitions/506.html
+      - https://docs.python.org/3/library/site.html
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.STARTUP_NETWORK
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.INSTALL.STARTUP_CODE.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: A .pth file runs code beyond import setup in every Python process
+    message: >
+      An import line in this .pth file calls something that is not import machinery: not an
+      import, a sys.path edit, site.addsitedir, an importlib finder, or the distutils-precedence,
+      virtualenv and namespace-package shapes. Python runs these lines in every interpreter the
+      machine starts once the package is installed. A process-wide change, a command, or code
+      computed at startup there acts on everything Python does on the machine.
+    remediation: >
+      Remove the .pth file from site-packages and read what its line does. If this is not your
+      code, treat the machine's Python processes since install as affected.
+    provenance:
+      kind: research
+      reference: >
+        A wheel's .pth line that resets the process umask in every interpreter (chroma_client
+        0.5.7, 2026-11-11); benign .pth lines measured on 17,337 packages.
+    evidence_policy: hash_only
+    references:
+      - https://cwe.mitre.org/data/definitions/506.html
+      - https://docs.python.org/3/library/site.html
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.STARTUP_CODE
+      unless:
+        - path_glob: "tests/**"
+
   - id: MALWARE.EXFIL.HIDDEN_DESTINATION.002
     version: 1.0.0
     category: malicious

