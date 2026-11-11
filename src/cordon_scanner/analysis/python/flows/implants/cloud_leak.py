@@ -18,7 +18,6 @@ from typing import ClassVar
 
 from cordon_scanner.analysis.python.flows.http_clients import (
     CLOUD_STORAGE_LIBRARIES,
-    CLOUD_UPLOAD_METHODS,
 )
 from cordon_scanner.analysis.python.py_flow import Label, PythonValueFlow
 
@@ -41,13 +40,33 @@ class CloudLeak(PythonValueFlow):
             "os.uname",
         }
     )
-    #: The upload calls whose argument is the content: the methods that take a path name a file, and a
-    #: path from the environment or the working directory is where the file is, not what it holds.
-    PAYLOAD_POSITION: ClassVar[dict[str, int]] = {"upload_from_string": 0}
+    #: Where the content of each upload is, by position; the keywords below carry it too. The methods
+    #: that take a path (`upload_file`, `upload_from_filename`, `fput_object`) name a file, and a path
+    #: from the environment is where the file is, not what it holds.
+    PAYLOAD_POSITION: ClassVar[dict[str, int]] = {
+        "upload_from_string": 0,
+        "upload_blob": 0,
+        "upload_data": 0,
+        "upload_fileobj": 0,
+        "put_blob": 1,
+        "put_object": 99,  # boto3 and minio's content travels in `Body` / `data`, by keyword
+    }
     PAYLOAD_KEYWORDS: ClassVar[frozenset[str]] = frozenset({"Body", "data", "content", "body"})
+    #: The variables that say who and where the machine is, and which CI run it is. Any other variable
+    #: is a setting (a bucket, a region, a prefix), which 15 of 16,274 benign units read and send beside
+    #: their own data through `put_object` and `upload_blob`.
+    MACHINE_VARIABLES: ClassVar[frozenset[str]] = frozenset(
+        {"USER", "USERNAME", "LOGNAME", "HOME", "USERPROFILE", "PWD", "HOSTNAME", "COMPUTERNAME",
+         "USERDOMAIN", "SHELL", "OS", "PROCESSOR_ARCHITECTURE", "LANG", "PATH", "TERM", "CI",
+         "GITHUB_ACTOR", "GITHUB_REPOSITORY", "GITHUB_RUN_ID", "RUNNER_NAME", "RUNNER_OS",
+         "GITLAB_USER_LOGIN", "BUILD_USER", "JENKINS_URL", "BUILD_URL"}
+    )  # fmt: skip
 
-    def __init__(self, tree: ast.AST) -> None:
+    def __init__(self, tree: ast.AST, *, any_key: bool = False) -> None:
         super().__init__(tree)
+        #: Whether any literal key of the environment is a machine fact (the payload of
+        #: `upload_from_string`, where a setting is never the content), or only the machine variables.
+        self.any_key = any_key
         #: `os.environ` taken whole: handed to a call (`dict(os.environ)`), or copied or listed.
         self.whole: set[int] = set()
         for node in ast.walk(tree):
@@ -63,9 +82,9 @@ class CloudLeak(PythonValueFlow):
                     self.whole.add(id(node.func.value))
 
     def _machine_key(self, key: ast.AST | None) -> bool:
-        """Any literal key: a collector reads whatever the environment holds, and the payload position
-        (below) is what keeps a setting read beside the data out."""
-        return isinstance(key, ast.Constant) and isinstance(key.value, str)
+        if not (isinstance(key, ast.Constant) and isinstance(key.value, str)):
+            return False
+        return self.any_key or key.value.upper() in self.MACHINE_VARIABLES
 
     def seed(self, node: ast.AST) -> Label | None:
         if isinstance(node, ast.Call):
@@ -82,32 +101,40 @@ class CloudLeak(PythonValueFlow):
 
     @classmethod
     def lines(cls, tree: ast.AST) -> list[int]:
-        imported = any(
-            (isinstance(n, ast.ImportFrom) and any((n.module or "") == lib or (n.module or "").startswith(lib + ".") for lib in CLOUD_STORAGE_LIBRARIES))
-            or (isinstance(n, ast.Import) and any(a.name == lib or a.name.startswith(lib + ".") for a in n.names for lib in CLOUD_STORAGE_LIBRARIES))
-            for n in ast.walk(tree)
-        )
-        if not imported:
+        if not cls._imports_a_store(tree):
             return []
-        analysis = cls(tree)
-        if not analysis.index() or not analysis.seeds:
-            return []
-        analysis.flow()
         out: set[int] = set()
-        for node in analysis.calls:
-            method = analysis.name(node.func) or ""
-            if method not in CLOUD_UPLOAD_METHODS:
+        for any_key in (True, False):
+            analysis = cls(tree, any_key=any_key)
+            if not analysis.index() or not analysis.seeds:
                 continue
-            payload: list[ast.AST] = []
-            position = cls.PAYLOAD_POSITION.get(method)
-            if position is None:
-                continue  # `put_object`/`upload_blob` carry data a program made: 15 of 16,274 benign units read the environment beside one
-            if len(node.args) > position:
-                payload.append(node.args[position])
-            payload += [k.value for k in node.keywords if k.arg in cls.PAYLOAD_KEYWORDS]
-            if any(analysis.taint(part) for part in payload):
-                out.add(node.lineno)
+            analysis.flow()
+            for node in analysis.calls:
+                method = analysis.name(node.func) or ""
+                # a setting read from the environment is content only for `upload_from_string`
+                if method not in cls.PAYLOAD_POSITION or (any_key and method != "upload_from_string"):
+                    continue
+                payload: list[ast.AST] = [k.value for k in node.keywords if k.arg in cls.PAYLOAD_KEYWORDS]
+                position = cls.PAYLOAD_POSITION[method]
+                if len(node.args) > position:
+                    payload.append(node.args[position])
+                if any(analysis.taint(part) for part in payload):
+                    out.add(node.lineno)
         return sorted(out)
+
+    @staticmethod
+    def _imports_a_store(tree: ast.AST) -> bool:
+        for n in ast.walk(tree):
+            names = (
+                [n.module or ""]
+                if isinstance(n, ast.ImportFrom)
+                else [a.name for a in n.names]
+                if isinstance(n, ast.Import)
+                else []
+            )
+            if any(m == lib or m.startswith(lib + ".") for m in names for lib in CLOUD_STORAGE_LIBRARIES):
+                return True
+        return False
 
 
 __all__ = ["CloudLeak"]

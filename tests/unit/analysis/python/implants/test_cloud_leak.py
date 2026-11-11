@@ -39,6 +39,34 @@ class TestMachineFactsInABucket:
         assert Kit.leaked(source) == ["machine facts uploaded"]
 
 
+class TestTheOtherUploadMethods:
+    def test_the_host_name_in_the_body_of_a_put_object(self) -> None:
+        source = (
+            "import boto3, socket\n"
+            "def beacon():\n"
+            "    boto3.client('s3').put_object(Bucket='b', Key='k', Body=socket.gethostname())\n"
+        )
+        assert Kit.leaked(source) == ["machine facts uploaded"]
+
+    def test_the_user_name_in_an_upload_blob(self) -> None:
+        source = (
+            "import os\n"
+            "from azure.storage.blob import BlobClient\n"
+            "def beacon(client):\n"
+            "    BlobClient.from_connection_string('x', 'c', 'b').upload_blob(os.environ['USERNAME'])\n"
+        )
+        assert Kit.leaked(source) == ["machine facts uploaded"]
+
+    def test_a_setting_in_the_body_of_a_put_object_is_not(self) -> None:
+        source = (
+            "import os, boto3\n"
+            "def put(data):\n"
+            "    region = os.environ.get('AWS_REGION')\n"
+            "    boto3.client('s3').put_object(Bucket='b', Key='k', Body=data + (region or ''))\n"
+        )
+        assert Kit.leaked(source) == []
+
+
 class TestOrdinaryUploads:
     def test_a_file_the_user_named(self) -> None:
         source = (

@@ -2501,6 +2501,40 @@ rules:
         - path_glob: "**/test_*.py"
         - path_glob: "tests/**"
 
+  - id: MALWARE.EXFIL.SWEPT_TO_HOST.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Sweeps files and sends their contents to a host anyone can rent
+    message: >
+      This code walks a directory tree, reads the files it finds and sends their contents in a request
+      to a free-hosting subdomain, a paste site, a tunnel or an out-of-band interaction host written in
+      the file. A backup or search tool keeps what it reads and an uploader sends a file to its own
+      service; reading a tree and posting it to a host that costs the sender nothing is the shape of a
+      stealer.
+    remediation: >
+      Do not run this code. Treat the files under the directories it walks as read by whoever owns the
+      host, and look at what was in them.
+    provenance:
+      kind: research
+      reference: >
+        Two PyPI packages that walked the driver folders for text logs and posted each file's text to a
+        subdomain of a free-hosting platform through an async client and `asyncio.to_thread`
+        (funkratov_renderkit and renderkitcore, 2026-11-11).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1005/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: AST.PY.SWEPT_TO_RENTABLE_HOST
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: MALWARE.EXFIL.INSTALL_CALLBACK.001
     version: 1.0.0
     category: malicious

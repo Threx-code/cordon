@@ -47,6 +47,8 @@ class PythonFactIds:
         ("ip logger fetched", "AST.PY.IP_LOGGER_FETCHED"),
         # What the machine knows (environment, host and user names, platform) put in a cloud store.
         ("machine facts uploaded", "AST.PY.MACHINE_FACTS_UPLOADED"),
+        # Files swept from a directory and sent to a free-hosting, paste, tunnel or interaction host.
+        ("swept files sent to a rentable host", "AST.PY.SWEPT_TO_RENTABLE_HOST"),
         # A persistence write with a hidden launch (no window) beside it.
         ("autostart hidden", "AST.PY.AUTOSTART_HIDDEN"),
         # A persistence write with a run of a program the package downloaded, decoded or ships beside it.

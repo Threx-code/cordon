@@ -24,6 +24,7 @@ from cordon_scanner.analysis.python.flows.implants.persist_runs import (
     PersistRuns,
 )
 from cordon_scanner.analysis.python.flows.implants.shipped_programs import ShippedPrograms
+from cordon_scanner.analysis.python.flows.implants.swept_hosting import SweptToHosting
 from cordon_scanner.analysis.python.pyfacts import AstHit
 from cordon_scanner.foundation.capabilities import Capability
 
@@ -37,6 +38,7 @@ class ImplantFacts:
     #: Flows that report one detail per line they find.
     LINE_FLOWS = (
         (CloudLeak, Capability.FLOW, "machine facts uploaded"),
+        (SweptToHosting, Capability.FLOW, "swept files sent to a rentable host"),
         (IpLoggerFetch, Capability.FLOW, "ip logger fetched"),
         (KeyCapture, Capability.FLOW, "keystrokes logged"),
         (ClipboardReplace, Capability.FLOW, "clipboard replaced"),
