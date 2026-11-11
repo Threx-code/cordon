@@ -2167,6 +2167,41 @@ rules:
         - path_glob: "**/*.dockerfile"
         - path_glob: "**/Containerfile"
 
+  - id: MALWARE.IMPORT.PERSIST.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Code that runs on import plants code that runs again later
+    message: >
+      Importing this package writes a shell profile, a scheduled task, a service, a LaunchAgent, a
+      crontab line, a login item, an autostart entry or a Run key: a foothold that runs again at the
+      next login or on a schedule. Loading a library has no reason to change what runs when the user
+      logs in. Graded like the install-time form, because import is as unprompted as install.
+    remediation: >
+      Do not import this package. Inspect the profiles, scheduled tasks, services, LaunchAgents and
+      crontab of machines that did, and remove what it added.
+    provenance:
+      kind: research
+      reference: >
+        A persistence location written at module level, or by a function the module level calls, in
+        a file that runs when the package is imported: a package that registers itself the first
+        time it is loaded rather than when it is installed.
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1546/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: import_entry
+        - rule: AST.PY.PERSIST_AT_LOAD
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+        - path_glob: "**/Dockerfile"
+
   - id: MALWARE.EXFIL.INSTALL_CALLBACK.001
     version: 1.0.0
     category: malicious

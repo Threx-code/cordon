@@ -73,6 +73,7 @@ from cordon_scanner.analysis.python.flows.dns_tunnels import DnsTunnels
 from cordon_scanner.analysis.python.flows.received_run import ReceivedRuns
 from cordon_scanner.analysis.python.flows.startup_files import StartupFiles
 from cordon_scanner.analysis.python.flows.backdoor_writes import BackdoorWrites
+from cordon_scanner.analysis.python.flows.persist_at_load import PersistAtLoad
 from cordon_scanner.analysis.python.sourced_flows import SourcedFlows
 
 CREDENTIAL_VARIABLE = re.compile(
@@ -235,6 +236,8 @@ class PythonAnalyzer(
         analyzer._dns_tunnel(tree)
         analyzer._code_from_data_file(tree)
         analyzer._startup_file_written(tree)
+        for line in PersistAtLoad.lines(tree):
+            analyzer._hits.append(AstHit(Capability.PERSIST, line, "persist at load"))
         for line, kind, carried in BackdoorWrites.hits(tree):
             analyzer._hits.append(
                 AstHit(Capability.PERSIST, line, f"backdoor write: {kind}" + (" carried" if carried else ""))

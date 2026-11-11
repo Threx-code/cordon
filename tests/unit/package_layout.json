@@ -774,6 +774,7 @@
   "test_install_guard.py": "sources/install",
   "test_received_run.py": "analysis/python",
   "test_backdoor_writes.py": "analysis/python",
+  "test_persist_commands.py": "analysis/python",
   "test_sourced_flows.py": "analysis/python",
   "test_environment_keyed.py": "analysis/python",
   "test_install_native.py": "sources/install",
