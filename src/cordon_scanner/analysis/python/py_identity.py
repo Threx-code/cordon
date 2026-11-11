@@ -79,10 +79,10 @@ class IpLookup:
     @staticmethod
     def in_command(command: str) -> bool:
         """A command line that fetches a lookup service's page: `curl -s https://ifconfig.me`."""
-        return any(
-            IpLookup.names(url) for url in re.findall(r"https?://[^\s\"']+", command)
-        ) or any(
-            re.search(r"(^|\s)" + re.escape(host) + r"(/|\s|$)", command)
+        words = command.replace('"', " ").replace("'", " ").split()
+        return any(IpLookup.names(word) for word in words) or any(
+            word == host or word.startswith(host + "/")
+            for word in words
             for host in IP_LOOKUP_HOSTS
         )
 

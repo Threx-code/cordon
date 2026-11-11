@@ -142,6 +142,26 @@ class AnalyzerCore:
         # The tables are complete: from here a name resolves the same way every time it is asked.
         self._dotted_cache: dict[int, str | None] = {}
 
+    def _helper_runners(
+        self, functions: list[ast.FunctionDef | ast.AsyncFunctionDef]
+    ) -> dict[str, int]:
+        """Each helper that runs a path its caller hands it: name -> the parameter it starts."""
+        runners: dict[str, int] = {}
+        for function in functions:
+            names = PythonFacts.parameter_names(function)
+            for node in PythonSyntax.of(function, ast.Call):
+                resolved = self._resolve_callee(node)
+                if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.SPAWN:
+                    continue
+                call = resolved[1]
+                if not call.args:
+                    continue
+                used = {x.id for x in PythonSyntax.within(call.args[0], ast.Name)}
+                for index, name in enumerate(names):
+                    if name in used:
+                        runners[function.name] = index
+        return runners
+
     def _resolve_callee(self, node: ast.Call) -> tuple[str, ast.Call] | None:
         """This call's dotted name, and the call whose arguments belong to it.
 

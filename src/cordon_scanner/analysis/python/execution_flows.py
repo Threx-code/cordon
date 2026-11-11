@@ -345,26 +345,6 @@ class ExecutionFlows(AnalyzerCore):
                         f"{node.func.id} runs the file a helper downloaded",
                     )
 
-    def _helper_runners(
-        self, functions: list[ast.FunctionDef | ast.AsyncFunctionDef]
-    ) -> dict[str, int]:
-        """Each helper that runs a path its caller hands it: name -> the parameter it starts."""
-        runners: dict[str, int] = {}
-        for function in functions:
-            names = PythonFacts.parameter_names(function)
-            for node in PythonSyntax.of(function, ast.Call):
-                resolved = self._resolve_callee(node)
-                if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.SPAWN:
-                    continue
-                call = resolved[1]
-                if not call.args:
-                    continue
-                used = {x.id for x in PythonSyntax.within(call.args[0], ast.Name)}
-                for index, name in enumerate(names):
-                    if name in used:
-                        runners[function.name] = index
-        return runners
-
     def _helper_downloads(
         self,
         functions: list[ast.FunctionDef | ast.AsyncFunctionDef],
