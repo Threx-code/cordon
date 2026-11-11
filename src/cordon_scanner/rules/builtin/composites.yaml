@@ -2202,6 +2202,42 @@ rules:
         - path_glob: "tests/**"
         - path_glob: "**/Dockerfile"
 
+  - id: MALWARE.INSTALL.FOREIGN_INDEX.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install script installs packages from an index the user did not choose
+    message: >
+      Code that runs at install time runs `pip install` with `--index-url`, `--extra-index-url`,
+      `--find-links` or `--trusted-host`, or hands a library `trust_all_hosts=True`. The second index
+      is searched alongside the user's and the higher version wins, so whoever runs it puts code on
+      the machine: the dependency-confusion shape. An install script that needs a package names it
+      as a requirement and leaves the index to the user.
+    remediation: >
+      Do not install this package. Look at what the named index served and treat the machine as
+      having run it.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package whose install command ran a package installer with host checks turned off from
+        its install-time update call (pyregions_snowflake, 2026-11-11).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1195/001/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - any:
+            - context: install_entry
+            - context: install_hook
+        - rule: AST.PY.FOREIGN_INDEX
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: MALWARE.EXFIL.INSTALL_CALLBACK.001
     version: 1.0.0
     category: malicious
