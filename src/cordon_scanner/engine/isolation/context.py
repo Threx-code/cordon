@@ -68,6 +68,7 @@ SCALARS: dict[str, type] = {
     "package_distribution": bool,
     "package_repository": str,
     "distribution": str,
+    "confusion_version": str,
 }
 DEFERRED_LINES = ("install_deferred_lines", "import_deferred_lines", "startup_deferred_lines")
 """Context fields that are `(path, first_line, last_line)` sets: bodies a hook or an import never runs."""

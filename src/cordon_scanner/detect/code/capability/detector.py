@@ -536,6 +536,7 @@ class CapabilityDetector(BaseDetector):
         evaluator = CompositeEvaluator(
             in_entry=unit.path in ctx.install_entry_paths,
             in_import_entry=unit.path in ctx.import_entry_paths,
+            confusion=bool(ctx.confusion_version),
         )
         # Install-time context is decided per WINDOW, not per file. A file is in
         # the closure because a hook imports it, and importing a module defines

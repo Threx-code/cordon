@@ -23,6 +23,7 @@ from cordon_scanner.detect.base import (
     ScanContext,
 )
 from cordon_scanner.detect.registry import ComposerPluginHooks, ServerSources
+from cordon_scanner.detect.supply.name_risk import NameSignals
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.engine.closure import ImportClosure, StartupClosure
 from cordon_scanner.engine.entries import PackageEntries
@@ -274,6 +275,10 @@ class ArchiveStages:
             library_closure_paths=frozenset(Hooks.hook_js_closure(units, set(used | project))),
             declared_dependencies=EcosystemRegistry.declared_dependencies(units, early_format),
             package_repository=PackageEntries.repository(units, early_format),
+            confusion_version=NameSignals.confusion_version(
+                PackageEntries.version(units, early_format)
+            )
+            or "",
         )
         ctx = replace(
             ctx,

@@ -36,11 +36,15 @@ class CompositeEvaluator:
         {"AST.PY.INSTALL_FOREIGN_PROGRAM", "AST.PY.CODE_FROM_DATA"}
     )
 
-    def __init__(self, *, in_entry: bool = False, in_import_entry: bool = False) -> None:
+    def __init__(
+        self, *, in_entry: bool = False, in_import_entry: bool = False, confusion: bool = False
+    ) -> None:
         #: The file is an install hook's own entry (the `install_entry` term).
         self.in_entry = in_entry
         #: The file is a published package's entry point, run on `require()`/`import` (REC-2).
         self.in_import_entry = in_import_entry
+        #: The package's own version is a dependency-confusion version (`confusion_version`).
+        self.confusion = confusion
 
     @staticmethod
     def satisfying_region(content: FileContent, hits: list[CapabilityHit]) -> bytes:
@@ -579,6 +583,8 @@ class CompositeEvaluator:
                 return in_hook and self.in_entry
             if named == "import_entry":
                 return self.in_import_entry
+            if named == "confusion_version":
+                return self.confusion
             return False
 
         return False

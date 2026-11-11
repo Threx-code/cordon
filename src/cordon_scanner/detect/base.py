@@ -251,6 +251,10 @@ class ScanContext:
     Its lockfiles then describe its maintainers' development environment, not what installing it
     brings in."""
 
+    confusion_version: str = ""
+    """Why the published package's own version looks chosen to outrank a private registry's
+    (`NameSignals.confusion_version`: 99.0.0, 99999999.0.0, 7.7.7), or "": the dependency-confusion
+    probe's version. Read by the `confusion_version` composite term."""
     package_repository: str = ""
     """The published package's own `repository` URL (npm's `package.json`), as the registry shows
     it; empty when there is none or the target is not a package. Lets a detector tell the

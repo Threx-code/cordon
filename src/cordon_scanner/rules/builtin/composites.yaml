@@ -3039,6 +3039,46 @@ rules:
         - path_glob: "**/test_*.py"
         - path_glob: "tests/**"
 
+  - id: MALWARE.EXFIL.CONFUSION_BEACON.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: A dependency-confusion package reports the machine it runs on
+    message: >
+      This package's own version is one chosen to outrank a private registry's -- 99.0.0,
+      99999999.0.0, a run of one digit -- and its code puts who and where this machine is into a
+      request. A version nobody releases, on a package that tells its publisher which hosts
+      installed it, is the dependency-confusion probe: a public package named after an internal
+      one, reporting each machine that took it by mistake. Graded the same wherever the code
+      runs.
+    remediation: >
+      Do not install this package. Check whether its name is one of your internal packages, pin
+      your private index first, and treat the machines that installed it as known to its
+      publisher.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package at version 99999999.0.0 under an internal framework's name whose runtime
+        collects the host and domain names for what it sends (static zero-signal group,
+        2026-11-11).
+    evidence_policy: hash_only
+    references:
+      - https://cwe.mitre.org/data/definitions/427.html
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      all:
+        - context: confusion_version
+        - any:
+            - rule: AST.PY.IDENTITY_SENT
+            - rule: FLOW.JS.IDENTITY_SENT
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: MALWARE.EXFIL.DNS_TUNNEL.001
     version: 1.0.0
     category: malicious

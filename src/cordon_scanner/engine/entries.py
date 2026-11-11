@@ -104,6 +104,24 @@ class PackageEntries:
         return document if isinstance(document, dict) else {}
 
     @staticmethod
+    def version(units: list[FileUnit], distribution: str) -> str:
+        """The version the published package declares, or "": npm's manifest `version`, a Python
+        sdist's `PKG-INFO` or a wheel's `METADATA` `Version:` header."""
+        if distribution == "npm":
+            value = PackageEntries.manifest(units, distribution).get("version")
+            return value if isinstance(value, str) else ""
+        for unit in units:
+            member = unit.path.rsplit("!", 1)[-1]
+            depth = member.count("/")
+            if (member.endswith("/PKG-INFO") and depth == 1) or (
+                member.endswith(".dist-info/METADATA") and depth == 1
+            ):
+                found = re.search(r"(?m)^Version:[ \t]*(\S{1,64})", unit.content.text_head(8_192))
+                if found:
+                    return found.group(1)
+        return ""
+
+    @staticmethod
     def repository(units: list[FileUnit], distribution: str) -> str:
         """The published package's own `repository` URL, or "": a string, or an object's `url`, as
         its manifest declares it (review 98, FP-2)."""

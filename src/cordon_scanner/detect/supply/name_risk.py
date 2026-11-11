@@ -447,6 +447,16 @@ class NameSignals:
         return found if latin and other else None
 
     @staticmethod
+    def _dated(major: str) -> bool:
+        """A major that is a date: `YYYYMM` (202606) or `YYYYMMDD` (20261111). 99999999 is not one:
+        it is the all-nines a dependency-confusion probe picks so nothing outranks it."""
+        if len(major) not in (6, 8) or not 1990 <= int(major[:4]) <= 2100:
+            return False
+        if not 1 <= int(major[4:6]) <= 12:
+            return False
+        return len(major) == 6 or 1 <= int(major[6:8]) <= 31
+
+    @staticmethod
     def confusion_version(version: str) -> str | None:
         """Why this version looks chosen to outrank a private registry's, or None.
 
@@ -459,7 +469,7 @@ class NameSignals:
         if found is None:
             return None
         major, minor, patch = (int(x) for x in found.groups())
-        calendar = 1990 <= major <= 2100 or major >= 199000
+        calendar = 1990 <= major <= 2100 or NameSignals._dated(found.group(1))
         if major >= 90 and not calendar:
             return f"major version {major}"
         if major == minor == patch and major >= 4:
