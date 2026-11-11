@@ -34,11 +34,17 @@ class DecodedDrops(ExecutionFlows):
         the bytes decoded from the package instead of fetched (group C: data_harvester 0.3.1 and
         defi_tools 0.8.0 drop an agent from a 657 KB base64 module, make it executable and install
         a crontab line for it, at import). Decoding a resource and writing it is ordinary; making
-        what was written executable, or starting it, is the dropper."""
+        what was written executable, or starting it, is the dropper.
+
+        Only what the file carries: a decode of a function's parameter decodes what a caller hands
+        it (bee-mesh 1.0.0's batch worker runs the executable a task sends, by design), which is
+        received data, not a payload in the package."""
+        received = self._parameter_reads(tree)
 
         def decoding(part: ast.AST) -> bool:
             return (
                 isinstance(part, ast.Call)
+                and id(part) not in received
                 and (resolved := self._resolve_callee(part)) is not None
                 and PRIMITIVES.get(resolved[0]) in self._DECODING
             )
@@ -119,6 +125,89 @@ class DecodedDrops(ExecutionFlows):
             else:
                 break
         return node
+
+    @classmethod
+    def _parameter_reads(cls, tree: ast.AST) -> set[int]:
+        """Calls whose arguments read a received parameter of the function that makes them, by
+        node id: what a caller hands in, not what the file carries. A parameter is received only
+        when no call of the function in this file passes it a carried value (a literal, a module
+        name or attribute, a decode of one, a file read): `def drop(blob): ...` called as
+        `drop(BLOB)` drops a carried payload (the lead, 11-11). A function nothing here calls (a
+        framework's handler) has none. Direct reads only, the innermost function's parameters."""
+        found: set[int] = set()
+        module_names = cls._module_bound_names(tree)
+        functions = list(PythonSyntax.of(tree, ast.FunctionDef, ast.AsyncFunctionDef))
+        for function in functions:
+            arguments = function.args
+            ordered = [
+                a.arg
+                for a in (*arguments.posonlyargs, *arguments.args)
+                if a.arg not in ("self", "cls")
+            ]
+            params = set(ordered) | {a.arg for a in arguments.kwonlyargs}
+            params |= {a.arg for a in (arguments.vararg, arguments.kwarg) if a is not None}
+            params -= cls._carried_parameters(tree, function.name, ordered, module_names)
+            if not params:
+                continue
+            for call in PythonSyntax.within(function, ast.Call):
+                inputs = [*call.args, *(k.value for k in call.keywords)]
+                if any(
+                    isinstance(n, ast.Name) and n.id in params
+                    for a in inputs
+                    for n in PythonSyntax.nodes(a)
+                ):
+                    found.add(id(call))
+        return found
+
+    @staticmethod
+    def _module_bound_names(tree: ast.AST) -> frozenset[str]:
+        """Names the module binds at its top level (constants, imports, module objects)."""
+        if not isinstance(tree, ast.Module):
+            return frozenset()
+        names: set[str] = set()
+        for stmt in tree.body:
+            if isinstance(stmt, ast.Assign):
+                names.update(t.id for t in stmt.targets if isinstance(t, ast.Name))
+            elif isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
+                names.add(stmt.target.id)
+            elif isinstance(stmt, ast.Import | ast.ImportFrom):
+                names.update((a.asname or a.name).split(".")[0] for a in stmt.names)
+        return frozenset(names)
+
+    @classmethod
+    def _carried_parameters(
+        cls, tree: ast.AST, name: str, ordered: list[str], module_names: frozenset[str]
+    ) -> set[str]:
+        """The parameters some call of `name` in this file passes a carried value."""
+        carried: set[str] = set()
+        for call in PythonSyntax.of(tree, ast.Call):
+            func = call.func
+            called = func.id if isinstance(func, ast.Name) else getattr(func, "attr", None)
+            if called != name:
+                continue
+            for position, argument in enumerate(call.args):
+                if position < len(ordered) and cls._carried(argument, module_names):
+                    carried.add(ordered[position])
+            carried.update(
+                k.arg for k in call.keywords if k.arg and cls._carried(k.value, module_names)
+            )
+        return carried
+
+    @staticmethod
+    def _carried(node: ast.AST, module_names: frozenset[str]) -> bool:
+        """A value the package carries: a literal, a module-level name or attribute of one, a
+        call over only those (a decode of a blob), or a file read."""
+        if isinstance(node, ast.Constant):
+            return isinstance(node.value, str | bytes)
+        names = [n for n in PythonSyntax.nodes(node) if isinstance(n, ast.Name)]
+        if any(
+            isinstance(n, ast.Call)
+            and isinstance(n.func, ast.Attribute)
+            and n.func.attr in ("read", "read_bytes", "read_text")
+            for n in PythonSyntax.nodes(node)
+        ):
+            return True
+        return bool(names) and all(n.id in module_names for n in names)
 
     def _compiled_from(self, tree: ast.AST, dropped: set[str]) -> None:
         """A file compiled from a dropped one is dropped too: `py_compile.compile(str(src),
