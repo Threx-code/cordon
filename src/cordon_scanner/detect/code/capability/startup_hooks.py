@@ -22,8 +22,11 @@ from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.foundation.capabilities import Capability
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from cordon_scanner.detect.base import ScanContext
     from cordon_scanner.detect.code.capability.hits import CapabilityHit
+    from cordon_scanner.foundation.content import FileContent
 
 
 class StartupHooks:
@@ -85,6 +88,34 @@ class StartupHooks:
             for hit in hits
             if hit.capability in cls.NETWORK and ctx.startup_reaches(path, hit.line)
         ]
+
+    @classmethod
+    def hits(
+        cls,
+        hits: list[CapabilityHit],
+        content: FileContent,
+        ctx: ScanContext | None,
+        span: Callable[[FileContent, int], tuple[int, int]],
+    ) -> list[CapabilityHit]:
+        """Both startup facts for one file: the network fact on its hits, and the code fact on a
+        `.pth`'s lines. FLOW is a capability of its own, which no install composite pairs (PERSIST
+        would also raise MALWARE.INSTALL.PERSIST.001 for the same line)."""
+        from cordon_scanner.detect.code.capability.hits import CapabilityHit
+
+        found = cls.network(hits, content.path, ctx)
+        if content.path.endswith(".pth"):
+            found += [
+                CapabilityHit(
+                    capability=Capability.FLOW,
+                    rule_id=cls.CODE_FACT,
+                    byte_start=span(content, line)[0],
+                    byte_end=span(content, line)[1],
+                    line=line,
+                    resolved=True,
+                )
+                for line in cls.code_lines(content.text)
+            ]
+        return found
 
     @classmethod
     def code_lines(cls, text: str) -> list[int]:

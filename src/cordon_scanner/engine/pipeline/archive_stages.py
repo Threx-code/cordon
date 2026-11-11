@@ -24,7 +24,7 @@ from cordon_scanner.detect.base import (
 )
 from cordon_scanner.detect.registry import ComposerPluginHooks, ServerSources
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
-from cordon_scanner.engine.closure import ImportClosure
+from cordon_scanner.engine.closure import ImportClosure, StartupClosure
 from cordon_scanner.engine.entries import PackageEntries
 from cordon_scanner.engine.package_format import PackageFormat
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
@@ -246,7 +246,7 @@ class ArchiveStages:
         ctx = replace(
             ctx,
             install_hook_paths=frozenset(hook_paths),
-            startup_closure_paths=(startup := Hooks.startup_closure(units, entries))[0],
+            startup_closure_paths=(startup := StartupClosure.of(units, entries))[0],
             startup_deferred_lines=startup[1],
             tree_paths=frozenset(unit.path for unit in units),
             shipped_native_paths=TreeFacts.shipped_native(units),

@@ -214,10 +214,10 @@ class ScanContext:
     Client`, and its top level runs then), with what they import. Not tests, documentation, build
     tooling or vendored copies (`PackageEntries.importable_modules`)."""
     import_deferred_lines: frozenset[tuple[str, int, int]] = frozenset()
-    startup_deferred_lines: frozenset[tuple[str, int, int]] = frozenset()
-    """Bodies in `startup_closure_paths` that importing them at interpreter start never runs."""
     """`(path, first_line, last_line)` for function bodies in `import_closure_paths` that importing
     never runs (`analysis.python.reachability.LoadReach`): reached only when someone calls them."""
+    startup_deferred_lines: frozenset[tuple[str, int, int]] = frozenset()
+    """Bodies in `startup_closure_paths` that importing them at interpreter start never runs."""
 
     scorer: RiskScorer = field(default_factory=RiskScorer)
     offline: bool = True
@@ -285,13 +285,13 @@ class ScanContext:
     analyser starts with them bound. None when there are none, or for a single-file scan."""
 
     python_imported_runners: Mapping[str, Mapping[str, str]] | None = None
-    python_carried_calls: Mapping[str, Mapping[str, str]] | None = None
-    """Per file, its functions and the parameter positions another of the package's files passes
-    a carried value (`CarriedCalls`), in the runner map's shape."""
     """Per Python file, the functions it imports from another of the package's files that run one of
     their own parameters as a command, by position (`ImportedClients.runners_of`): a bot handler
     in `bot.py` that hands the message text to `run_cmd` from `utils.py`. Found before detection
     from every Python file, like the clients; None when there are none."""
+    python_carried_calls: Mapping[str, Mapping[str, str]] | None = None
+    """Per file, its functions and the parameter positions another of the package's files passes
+    a carried value (`CarriedCalls`), in the runner map's shape."""
 
     cross_file_unresolved: bool = False
     """Whether some file of the package calls into it in a way the join cannot follow (a computed

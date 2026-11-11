@@ -6,7 +6,8 @@ Moved out of `ExecutionFlows` whole (its method limit); the join reuses its down
 from __future__ import annotations
 
 import ast
-from typing import ClassVar
+from collections.abc import Callable
+from typing import Any, ClassVar
 
 from cordon_scanner.analysis.python.execution_flows import ExecutionFlows
 from cordon_scanner.analysis.python.pyfacts import PRIMITIVES, PythonFacts
@@ -187,13 +188,18 @@ class DecodedDrops(ExecutionFlows):
             return frozenset()
         names: set[str] = set()
         for stmt in tree.body:
-            if isinstance(stmt, ast.Assign):
-                names.update(t.id for t in stmt.targets if isinstance(t, ast.Name))
-            elif isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
-                names.add(stmt.target.id)
-            elif isinstance(stmt, ast.Import | ast.ImportFrom):
-                names.update((a.asname or a.name).split(".")[0] for a in stmt.names)
+            read = DecodedDrops._TOP_LEVEL_BINDS.get(type(stmt))
+            if read is not None:
+                names.update(read(stmt))
         return frozenset(names)
+
+    #: What each top-level statement binds, by its type.
+    _TOP_LEVEL_BINDS: ClassVar[dict[type, Callable[[Any], list[str]]]] = {
+        ast.Assign: lambda s: [n for t in s.targets for n in BindingForms.names(t)],
+        ast.AnnAssign: lambda s: BindingForms.names(s.target),
+        ast.Import: lambda s: [(a.asname or a.name).split(".")[0] for a in s.names],
+        ast.ImportFrom: lambda s: [(a.asname or a.name).split(".")[0] for a in s.names],
+    }
 
     @classmethod
     def _carried_parameters(

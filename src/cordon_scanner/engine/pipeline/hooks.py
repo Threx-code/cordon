@@ -499,37 +499,6 @@ class Hooks:
         return ImportClosure.resolve(hooks, sources, other, shipped=by_path, unshipped=unshipped)
 
     @staticmethod
-    def startup_closure(
-        units: Sequence[FileUnit], entries: Iterable[str]
-    ) -> tuple[frozenset[str], frozenset[tuple[str, int, int]]]:
-        """The `.pth` hooks among `entries` and every file their import lines reach, and the bodies
-        those imports never run. A `.pth`'s `import X` imports X at every interpreter start, so
-        what runs is what importing runs (`LoadReach`), not an install hook's reach: an install
-        closure would make every function of an imported package install code (fattummy 1.0.1)."""
-        from cordon_scanner.analysis.python.pyast import PythonSource
-        from cordon_scanner.analysis.python.reachability import LoadReach
-        from cordon_scanner.engine.closure import ImportClosure
-
-        startup = {path for path in entries if path.endswith(".pth")}
-        if not startup:
-            return frozenset(), frozenset()
-        sources = {
-            unit.path: unit.content.text
-            for unit in units
-            if unit.path.endswith(".py") and not unit.content.is_binary
-        }
-        sources.update(
-            {
-                unit.path: PythonSource.startup_lines(unit.content.text)
-                for unit in units
-                if unit.path in startup and not unit.content.is_binary
-            }
-        )
-        reached = ImportClosure.resolve(startup, sources)
-        modules = sorted(path for path in reached if path.endswith(".py"))
-        return frozenset(startup | reached), LoadReach.deferred_lines(modules, sources)
-
-    @staticmethod
     def executed_as_python(units: list[FileUnit], closure: set[str]) -> None:
         """A file the install-time Python closure runs by its path, read as Python, in place:
         `exec(open("run.txt").read())` makes `run.txt` Python whatever its name, as `node
