@@ -109,6 +109,8 @@ class TestTheSweepAndRelayRulesShip:
             ("MALWARE.DROPPER.DIRECTORY.001", "AST.PY.DIRECTORY_DROP_RUN"),
             ("SUSPECT.EXECUTE.DECODED_BYTES.001", "AST.PY.BYTES_EXEC"),
             ("SUSPECT.EXFIL.MAIL_ON_IMPORT.001", "AST.PY.IMPORT_MAIL"),
+            ("SUSPECT.OBFUSCATION.UNRESOLVED_PAYLOAD.001", "AST.PY.UNRESOLVED_PAYLOAD"),
+            ("SUSPECT.INSTALL.TEMP_COMMAND.001", "AST.PY.TEMP_COMMAND"),
         ],
     )
     def test_the_rule_is_built_in_and_matches_its_fact(self, rule_id: str, fact: str) -> None:

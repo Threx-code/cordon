@@ -1018,3 +1018,49 @@ class TestMailSentOnImport:
     def test_credentials_from_the_environment_or_a_main_guard_are_not(self) -> None:
         assert self.mailed(self.module(login="srv.login(os.environ['U'], os.environ['P'])")) == []
         assert self.mailed(self.module(login="srv.login('a', 'pw')", main_guard=True)) == []
+
+
+class TestStagesLeftLooseAtModuleLevel:
+    """cubaflixdownload 1.0.1 (a payload handed at import to a function nothing defines) and
+    maliciouspackage 0.1 (a literal command on a temp path). Fixture source assembled at run
+    time."""
+
+    @staticmethod
+    def found(source: str) -> list[str]:
+        return [
+            h.detail
+            for h in PythonAnalyzer.analyse(source)
+            if h.detail.startswith(("unresolved call on a payload", "literal command on a temp"))
+        ]
+
+    BLOB = "QUJD" * 40
+
+    def test_a_payload_handed_to_a_function_nothing_defines(self) -> None:
+        source = f"import requests\nimport platforms\ndecript({self.BLOB!r})\n"
+        assert self.found(source) == ["unresolved call on a payload literal: 7"]
+
+    def test_framework_names_short_arguments_and_guards_are_not(self) -> None:
+        short = "register('cmath')\n"
+        guarded = f"if PY2:\n    decript({self.BLOB!r})\n"
+        star = f"from helpers import *\ndecript({self.BLOB!r})\n"
+        defined = f"def decript(s):\n    return s\ndecript({self.BLOB!r})\n"
+        for source in (short, guarded, star, defined):
+            assert self.found(source) == [], source
+
+    def test_a_literal_command_on_a_temp_path(self) -> None:
+        source = "import os\nos.system('touch /tmp/marker')\n"
+        assert self.found(source) == ["literal command on a temp path: os.system"]
+
+    def test_windows_shell_and_computed_temp_paths(self) -> None:
+        commands = ["start %TEMP%\\a.exe", "sh $TMPDIR/a", "C:\\Windows\\Temp\\a.exe /s"]
+        sources = [f"import os\nos.system({c!r})\n" for c in commands]
+        sources.append(
+            "import os, subprocess, tempfile\n"
+            "subprocess.call(['sh', os.path.join(tempfile.gettempdir(), 'a')])\n"
+        )
+        for source in sources:
+            assert len(self.found(source)) == 1, source
+
+    def test_a_build_command_inside_the_tree_is_not(self) -> None:
+        source = "import os, subprocess\nos.system('make -C src')\nsubprocess.call(['rm', '-rf', 'build'])\n"
+        assert self.found(source) == []

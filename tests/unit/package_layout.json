@@ -65,6 +65,7 @@
   "analysis/python/flows/dormant_decodes": "analysis/python/flows/dormant_decodes",
   "analysis/python/flows/executed_data": "analysis/python/flows/executed_data",
   "analysis/python/flows/import_mail": "analysis/python/flows/import_mail",
+  "analysis/python/flows/loose_stages": "analysis/python/flows/loose_stages",
   "analysis/python/flows/hidden_start": "analysis/python/flows/hidden_start",
   "analysis/python/flows/startup_files": "analysis/python/flows/startup_files",
   "analysis/python/flows/computed_commands": "analysis/python/flows/computed_commands",

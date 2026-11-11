@@ -984,6 +984,66 @@ rules:
         - path_glob: "**/test_*.py"
         - path_glob: "tests/**"
 
+  - id: SUSPECT.OBFUSCATION.UNRESOLVED_PAYLOAD.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: A payload is handed at import to a function nothing defines
+    message: >
+      A payload is handed at import to a function nothing defines: the decoder was stripped, or
+      ships elsewhere. At module level, outside any guard, this file calls a name no statement
+      of it defines, imports or binds, and passes it a long literal. Code that names a decoder it
+      does not have, beside an encoded blob, is the run step of a payload whose other half is
+      missing from what was published.
+    remediation: >
+      Do not install the package. Find where the called name was meant to come from, and read
+      the literal as the payload it is.
+    provenance:
+      kind: research
+      reference: >
+        A package whose __init__ imports a module it does not ship and calls decript() on a
+        186-character literal at import (cubaflixdownload 1.0.1, 2026-11-11).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.UNRESOLVED_PAYLOAD
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: SUSPECT.INSTALL.TEMP_COMMAND.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: The install runs a command on a system temp path
+    message: >
+      The install runs a command on a system temp path: a build works inside its own tree. Code
+      that runs at install starts a command naming /tmp, %TEMP%, $TMPDIR or the Windows temp
+      directory, or a path built on tempfile.gettempdir(). Compilers and packaging tools read and
+      write the package's own directory; reaching the system temp directory from the install
+      script is the install leaving or running something outside it.
+    remediation: >
+      Read what the command does before installing. A build step writes inside the build tree.
+    provenance:
+      kind: research
+      reference: >
+        A setup.py running a two-word literal command on a /tmp path at module level
+        (maliciouspackage 0.1, 2026-11-11); 0 of 16,274 benign setup.py files do.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 200
+      all:
+        - context: install_hook
+        - rule: AST.PY.TEMP_COMMAND
+
   - id: SUSPECT.OBFUSCATION.DORMANT_PAYLOAD.001
     version: 1.0.0
     category: suspicious

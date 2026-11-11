@@ -52,6 +52,10 @@ class PythonFactIds:
         ("bytes decoded and executed", "AST.PY.BYTES_EXEC"),
         # Mail sent at import from an account the module logs into with literal credentials.
         ("mail sent on import", "AST.PY.IMPORT_MAIL"),
+        # A payload literal handed at import to a function nothing defines (cubaflixdownload).
+        ("unresolved call on a payload literal", "AST.PY.UNRESOLVED_PAYLOAD"),
+        # A literal command on a system temp path, at module level (maliciouspackage 0.1).
+        ("literal command on a temp path", "AST.PY.TEMP_COMMAND"),
         # A persistence location written by code that runs when the file is loaded.
         ("persist at load", "AST.PY.PERSIST_AT_LOAD"),
         # The clipboard read, matched against a pattern, and set to a value the package brings.
