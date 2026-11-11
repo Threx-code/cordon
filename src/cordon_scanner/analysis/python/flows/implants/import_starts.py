@@ -3,8 +3,9 @@
 Importing a library loads code; it has no reason to start a program and walk away. A library that
 asks the machine something at import (`gdal-config`, `nvcc`, `xcrun`) runs it and reads the answer,
 and one that clears the screen waits for it. A package that starts a program with `Popen` and
-discards the handle (no wait, no output read, no variable) has launched something that outlives
-the import: `subprocess.Popen(["<program>", ...])` as a statement of `__init__.py`.
+does not read what it prints (no `stdout=` or `stderr=` pipe) has launched something that outlives
+the import: `subprocess.Popen(["<program>", ...])` in `__init__.py`, with or without a variable
+for the handle.
 
 `lines` returns the line of each such statement that runs when the file is loaded: at module level,
 in a class body, or in a function the module level calls. The interpreter, pip and the version
@@ -29,9 +30,11 @@ class ImportStarts:
         loaded = PersistAtLoad.load_time_lines(tree)
         out: list[int] = []
         for node in ast.walk(tree):
-            if not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call) and node.lineno in loaded):
+            if not (isinstance(node, ast.Expr | ast.Assign) and isinstance(node.value, ast.Call) and node.lineno in loaded):
                 continue
             call = node.value
+            if any(k.arg in ("stdout", "stderr") for k in call.keywords):
+                continue  # its output is read: the program is asked a question
             name = call.func.attr if isinstance(call.func, ast.Attribute) else getattr(call.func, "id", "")
             argv = call.args[0] if call.args else None
             if name != "Popen" or not isinstance(argv, ast.List | ast.Tuple) or not argv.elts:

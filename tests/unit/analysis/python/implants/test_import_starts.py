@@ -42,8 +42,12 @@ class TestOrdinaryImports:
         source = "import subprocess\nout = subprocess.check_output(['gdal-config', '--version'])\n"
         assert Kit.started(source) == []
 
-    def test_a_handle_that_is_kept(self) -> None:
-        source = "import subprocess\nproc = subprocess.Popen(['helper-tool'])\nproc.wait()\n"
+    def test_a_handle_that_is_kept_still_leaves_it_running(self) -> None:
+        source = "import subprocess\nproc = subprocess.Popen(['helper-tool'])\nwhile True:\n    pass\n"
+        assert Kit.started(source) == ["program started at import"]
+
+    def test_a_program_whose_output_is_read(self) -> None:
+        source = "import subprocess\nproc = subprocess.Popen(['helper-tool'], stdout=subprocess.PIPE)\nout = proc.communicate()\n"
         assert Kit.started(source) == []
 
     def test_the_terminal_the_interpreter_and_git(self) -> None:
