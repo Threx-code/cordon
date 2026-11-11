@@ -70,6 +70,7 @@ class DestinationLabels:
         if not source or not label_lines or not sending:
             return set()
         lines = source.splitlines()
+        sending = sending | cls._helper_send_lines(source, sending)
         sent_text = [lines[n - 1] for n in sending if 0 < n <= len(lines)]
         kept: set[int] = set()
         for line in label_lines:
@@ -82,6 +83,48 @@ class DestinationLabels:
             if any(name.search(text) for text in sent_text):
                 kept.add(line)
         return kept
+
+    #: Rounds of helper followed: `send_to_beacon` -> `post` -> `_make_request` -> `urlopen`.
+    HELPER_HOPS: ClassVar[int] = 3
+
+    @classmethod
+    def _helper_send_lines(cls, source: str, sending: set[int]) -> set[int]:
+        """Lines that call one of the file's own functions whose body sends, directly or through
+        another such function (sf_th_requests 0.1.0: `post(BEACON_URL, creds)` -> `_make_request`
+        -> `urlopen`, run at import). Python only; a file that does not parse adds nothing."""
+        import ast
+
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
+        try:
+            tree = PythonSyntax.shared(source)
+        except (SyntaxError, ValueError, RecursionError):
+            # S2: a file that does not parse is reported as SOURCE.UNPARSED where it runs (its own
+            # analyser); here it keeps the line-only reading of `_bound_to_a_send`, nothing more.
+            return set()
+        functions = list(PythonSyntax.of(tree, ast.FunctionDef, ast.AsyncFunctionDef))
+
+        def called(node: ast.Call) -> str | None:
+            func = node.func
+            if isinstance(func, ast.Name):
+                return func.id
+            return func.attr if isinstance(func, ast.Attribute) else None
+
+        senders = {
+            f.name
+            for f in functions
+            if any(f.lineno <= n <= (f.end_lineno or f.lineno) for n in sending)
+        }
+        for _ in range(cls.HELPER_HOPS):
+            grown = senders | {
+                f.name
+                for f in functions
+                if any(called(c) in senders for c in PythonSyntax.within(f, ast.Call))
+            }
+            if grown == senders:
+                break
+            senders = grown
+        return {c.lineno for c in PythonSyntax.of(tree, ast.Call) if called(c) in senders}
 
     @classmethod
     def destination_capabilities(
