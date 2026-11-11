@@ -86,6 +86,8 @@ class PythonFactIds:
         "a decoded file runnable",
         "runs a decoded file",
         "decoded file as code",
+        # The same drop with the program carried as plain source, started detached (CarriedPrograms).
+        "starts a carried program detached",
     )
     #: Model loading facts (see `MALWARE.INSTALL.HIDDEN_ACTION.001` for executed literals).
     MODEL: ClassVar[tuple[tuple[str, str], ...]] = (

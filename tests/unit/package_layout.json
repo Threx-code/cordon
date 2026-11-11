@@ -55,6 +55,7 @@
   "analysis/python/pyast": "analysis/python/pyast",
   "analysis/python/pyfacts": "analysis/python/pyfacts",
   "analysis/python/flows/carried_calls": "analysis/python/flows/carried_calls",
+  "analysis/python/flows/carried_programs": "analysis/python/flows/carried_programs",
   "analysis/python/flows/client_bindings": "analysis/python/flows/client_bindings",
   "analysis/python/flows/containers": "analysis/python/flows/containers",
   "analysis/python/flows/data_file_code": "analysis/python/flows/data_file_code",

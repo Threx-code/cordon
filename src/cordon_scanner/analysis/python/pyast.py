@@ -67,6 +67,7 @@ if TYPE_CHECKING:
 
 from cordon_scanner.analysis.python.analyzer_core import AnalyzerCore
 from cordon_scanner.analysis.python.data_flows import DataFlows
+from cordon_scanner.analysis.python.flows.carried_programs import CarriedPrograms
 from cordon_scanner.analysis.python.flows.client_bindings import ClientBindings
 from cordon_scanner.analysis.python.flows.data_file_code import DataFileCode
 from cordon_scanner.analysis.python.flows.decoded_drops import DecodedDrops
@@ -185,6 +186,7 @@ ordinary; `getattr(os, something_decoded)` is not."""
 class PythonAnalyzer(
     DataFlows,
     DecodedDrops,
+    CarriedPrograms,
     ReceivedRuns,
     DnsTunnels,
     DataFileCode,
@@ -241,6 +243,7 @@ class PythonAnalyzer(
         analyzer._walk(tree)
         analyzer._downloaded_and_run(tree)
         analyzer._decoded_dropped_and_run(tree)
+        analyzer._carried_program_started(tree)
         analyzer._received_and_run(tree)
         analyzer._received_message_run(tree)
         analyzer._received_into_process(tree)
