@@ -309,9 +309,13 @@ class ContentOrigin:
         """A return that is made of the helper's parameters and constants only."""
         params = self.params.get(id(helper), set())
         for part in ast.walk(value):
-            if isinstance(part, ast.Name) and part.id not in params and part.id not in self.module:
-                if part.id not in ("base64", "bytes", "str", "codecs", "binascii", "reversed"):
-                    return False
+            if (
+                isinstance(part, ast.Name)
+                and part.id not in params
+                and part.id not in self.module
+                and part.id not in ("base64", "bytes", "str", "codecs", "binascii", "reversed")
+            ):
+                return False
         return True
 
     def carried(self, node: ast.AST | None, scope: ast.AST | None, depth: int) -> bool:
