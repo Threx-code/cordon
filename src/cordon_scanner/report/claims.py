@@ -275,6 +275,7 @@ _SIGNALS_BY_PREFIX: tuple[tuple[str, frozenset[Signal]], ...] = tuple(
         ("MALWARE.IMPLANT.", {_S.FETCH_RUN, _S.PERSIST}),
         ("MALWARE.PERSIST.", {_S.PERSIST}),
         ("MALWARE.IMPORT.PERSIST.", {_S.PERSIST}),
+        ("MALWARE.IMPORT.PROGRAM_START.", {_S.RUNS_AT_INSTALL}),
         ("MALWARE.INSTALL.PERSIST.", {_S.PERSIST}),
         ("MALWARE.INSTALL.BACKGROUND.", {_S.PERSIST}),
         ("SUSPECT.PERSIST.", {_S.PERSIST}),

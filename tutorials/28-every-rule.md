@@ -2,7 +2,7 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,527 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,530 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -632,12 +632,13 @@ rule's own samples.
 
 ## Exfiltration
 
-34 rules.
+36 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.EXFIL.001` | critical | Install script reads credentials and transmits them |
 | `MALWARE.EXFIL.BEACON.001` | critical | Install script reports the machine it is installing on |
+| `MALWARE.EXFIL.CLOUD_UPLOAD.001` | critical | Uploads what the machine knows to a cloud store |
 | `MALWARE.EXFIL.COMMAND_OUTPUT.001` | critical | An install script runs a command and sends what it printed |
 | `MALWARE.EXFIL.CONFUSION_BEACON.001` | high | A dependency-confusion package reports the machine it runs on |
 | `MALWARE.EXFIL.CREDENTIAL_STORE.001` | critical | Install-time code reads a credential store and reaches the network |
@@ -654,6 +655,7 @@ rule's own samples.
 | `MALWARE.EXFIL.RELAYED_HIDDEN.001` | high | A class stores what its caller hands it and sends it to a destination it hides |
 | `MALWARE.EXFIL.SCRIPT_CALLBACK.001` | high | Package script calls back to an interaction service |
 | `MALWARE.EXFIL.SWEPT_FILES.001` | high | Files gathered by walking the drives or home, sent to a destination the code hides |
+| `MALWARE.EXFIL.SWEPT_TO_HOST.001` | critical | Sweeps files and sends their contents to a host anyone can rent |
 | `MALWARE.EXFIL.TRACKING_CALLBACK.001` | critical | Install script reports to a host named for this install |
 | `SUSPECT.EXFIL.001` | medium | Credential access combined with network egress and execution |
 | `SUSPECT.EXFIL.BEACON.001` | high | Code reports the machine it runs on |
@@ -731,11 +733,12 @@ rule's own samples.
 
 ## Import
 
-1 rules.
+2 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.IMPORT.PERSIST.001` | critical | Code that runs on import plants code that runs again later |
+| `MALWARE.IMPORT.PROGRAM_START.001` | critical | Importing the package starts a program and leaves it running |
 
 ## Infrastructure as code
 

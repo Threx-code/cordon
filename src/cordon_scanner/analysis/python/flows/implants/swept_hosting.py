@@ -46,11 +46,21 @@ class SweptToHosting(PythonValueFlow):
     WALKERS: ClassVar[frozenset[str]] = frozenset(
         {"os.walk", "os.scandir", "os.listdir", "glob.glob", "glob.iglob"}
     )
-    WALK_METHODS: ClassVar[frozenset[str]] = frozenset({"rglob", "glob", "walk", "iterdir", "scandir"})
+    WALK_METHODS: ClassVar[frozenset[str]] = frozenset(
+        {"rglob", "glob", "walk", "iterdir", "scandir"}
+    )
     READS: ClassVar[frozenset[str]] = frozenset({"read_text", "read_bytes", "read", "readlines"})
-    BODY_KEYWORDS: ClassVar[frozenset[str]] = frozenset({"data", "json", "files", "content", "body", "params"})
+    BODY_KEYWORDS: ClassVar[frozenset[str]] = frozenset(
+        {"data", "json", "files", "content", "body", "params"}
+    )
     #: Calls that run another function of the file with the arguments after it.
-    HOPS: ClassVar[dict[str, int]] = {"to_thread": 0, "submit": 0, "run_in_executor": 1, "start_soon": 0, "create_task": -1}
+    HOPS: ClassVar[dict[str, int]] = {
+        "to_thread": 0,
+        "submit": 0,
+        "run_in_executor": 1,
+        "start_soon": 0,
+        "create_task": -1,
+    }
 
     #: Which stage this flow is: 1 follows what a walker yields, 2 follows the contents of the files
     #: a stage-1 path was read from.
@@ -110,7 +120,9 @@ class SweptToHosting(PythonValueFlow):
 
     @classmethod
     def lines(cls, tree: ast.AST) -> list[int]:
-        if not (cls._walks(tree) and cls._names_a_rentable_host(tree) and cls._imports_a_client(tree)):
+        if not (
+            cls._walks(tree) and cls._names_a_rentable_host(tree) and cls._imports_a_client(tree)
+        ):
             return []
         walked = cls(tree)
         if not walked.index() or not walked.seeds:
@@ -121,7 +133,9 @@ class SweptToHosting(PythonValueFlow):
         for node in walked.calls:
             if not (isinstance(node.func, ast.Attribute) and node.func.attr in cls.READS):
                 continue
-            if walked.taint(node.func.value) or any(walked.taint(part) for part in ast.walk(node.func.value)):
+            if walked.taint(node.func.value) or any(
+                walked.taint(part) for part in ast.walk(node.func.value)
+            ):
                 reads.add(id(node))
         if not reads:
             return []
@@ -133,7 +147,9 @@ class SweptToHosting(PythonValueFlow):
         for node in analysis.calls:
             if not (isinstance(node.func, ast.Attribute) and node.func.attr in HTTP_CLIENT_METHODS):
                 continue
-            body = [k.value for k in node.keywords if k.arg in cls.BODY_KEYWORDS] + list(node.args[1:])
+            body = [k.value for k in node.keywords if k.arg in cls.BODY_KEYWORDS] + list(
+                node.args[1:]
+            )
             if any(analysis.taint(part) for part in body):
                 out.add(node.lineno)
         return sorted(out)
@@ -169,7 +185,11 @@ class SweptToHosting(PythonValueFlow):
             and isinstance(n.body[0].value, ast.Constant)
         }  # a host in a docstring is documentation, not a destination
         for node in ast.walk(tree):
-            if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docstrings:
+            if (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and id(node) not in docstrings
+            ):
                 for match in URL_HOST.finditer(node.value):
                     host = match.group(1).lower().rstrip(".")
                     if any(host == known or host.endswith("." + known) for known in HOSTS):

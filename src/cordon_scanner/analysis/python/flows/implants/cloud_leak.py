@@ -93,7 +93,10 @@ class CloudLeak(PythonValueFlow):
                 return node.lineno if node.args and self._machine_key(node.args[0]) else None
             if dotted in self.READS:
                 return node.lineno
-        if isinstance(node, ast.Subscript) and (self.dotted(node.value) or "") in ("os.environ", "os.environb"):
+        if isinstance(node, ast.Subscript) and (self.dotted(node.value) or "") in (
+            "os.environ",
+            "os.environb",
+        ):
             return node.lineno if self._machine_key(node.slice) else None
         if isinstance(node, ast.Attribute) and id(node) in self.whole:
             return node.lineno
@@ -112,9 +115,13 @@ class CloudLeak(PythonValueFlow):
             for node in analysis.calls:
                 method = analysis.name(node.func) or ""
                 # a setting read from the environment is content only for `upload_from_string`
-                if method not in cls.PAYLOAD_POSITION or (any_key and method != "upload_from_string"):
+                if method not in cls.PAYLOAD_POSITION or (
+                    any_key and method != "upload_from_string"
+                ):
                     continue
-                payload: list[ast.AST] = [k.value for k in node.keywords if k.arg in cls.PAYLOAD_KEYWORDS]
+                payload: list[ast.AST] = [
+                    k.value for k in node.keywords if k.arg in cls.PAYLOAD_KEYWORDS
+                ]
                 position = cls.PAYLOAD_POSITION[method]
                 if len(node.args) > position:
                     payload.append(node.args[position])
@@ -132,7 +139,11 @@ class CloudLeak(PythonValueFlow):
                 if isinstance(n, ast.Import)
                 else []
             )
-            if any(m == lib or m.startswith(lib + ".") for m in names for lib in CLOUD_STORAGE_LIBRARIES):
+            if any(
+                m == lib or m.startswith(lib + ".")
+                for m in names
+                for lib in CLOUD_STORAGE_LIBRARIES
+            ):
                 return True
         return False
 

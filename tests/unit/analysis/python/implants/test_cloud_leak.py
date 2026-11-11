@@ -11,7 +11,9 @@ from cordon_scanner.analysis.python.pyast import PythonAnalyzer
 class Kit:
     @staticmethod
     def leaked(source: str) -> list[str]:
-        return [h.detail for h in PythonAnalyzer.analyse(source) if h.detail == "machine facts uploaded"]
+        return [
+            h.detail for h in PythonAnalyzer.analyse(source) if h.detail == "machine facts uploaded"
+        ]
 
 
 class TestMachineFactsInABucket:

@@ -19,7 +19,11 @@ if TYPE_CHECKING:
 class Kit:
     @staticmethod
     def started(source: str) -> list[str]:
-        return [h.detail for h in PythonAnalyzer.analyse(source) if h.detail == "program started at import"]
+        return [
+            h.detail
+            for h in PythonAnalyzer.analyse(source)
+            if h.detail == "program started at import"
+        ]
 
 
 class TestAProgramLeftRunning:
@@ -28,12 +32,7 @@ class TestAProgramLeftRunning:
         assert Kit.started(source) == ["program started at import"]
 
     def test_through_a_helper_the_module_level_calls(self) -> None:
-        source = (
-            "import subprocess\n"
-            "def _boot():\n"
-            "    subprocess.Popen(['helper-tool'])\n"
-            "_boot()\n"
-        )
+        source = "import subprocess\ndef _boot():\n    subprocess.Popen(['helper-tool'])\n_boot()\n"
         assert Kit.started(source) == ["program started at import"]
 
 
@@ -43,7 +42,9 @@ class TestOrdinaryImports:
         assert Kit.started(source) == []
 
     def test_a_handle_that_is_kept_still_leaves_it_running(self) -> None:
-        source = "import subprocess\nproc = subprocess.Popen(['helper-tool'])\nwhile True:\n    pass\n"
+        source = (
+            "import subprocess\nproc = subprocess.Popen(['helper-tool'])\nwhile True:\n    pass\n"
+        )
         assert Kit.started(source) == ["program started at import"]
 
     def test_a_launcher_that_pipes_the_output_and_loops_over_it(self) -> None:

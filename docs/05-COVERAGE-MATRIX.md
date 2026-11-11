@@ -273,6 +273,7 @@ rather than a document.
 | `MALWARE.IMPLANT.INSTALL.001` | high | `composites` | persistence |
 | `MALWARE.IMPLANT.PERSIST_RUN.001` | critical | `composites` | persistence |
 | `MALWARE.IMPORT.PERSIST.001` | critical | `composites` | persistence |
+| `MALWARE.IMPORT.PROGRAM_START.001` | critical | `composites` | malicious_code |
 | `MALWARE.INSTALL.BACKGROUND.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.CONSUMER_CODE.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.DECODED_LAUNCH.001` | critical | `composites` | install_hook |
@@ -431,6 +432,7 @@ rather than a document.
 |---|---|---|---|
 | `MALWARE.EXFIL.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.BEACON.001` | critical | `composites` | exfiltration |
+| `MALWARE.EXFIL.CLOUD_UPLOAD.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.COMMAND_OUTPUT.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.CONFUSION_BEACON.001` | high | `composites` | exfiltration |
 | `MALWARE.EXFIL.CREDENTIAL_STORE.001` | critical | `composites` | exfiltration |
@@ -447,6 +449,7 @@ rather than a document.
 | `MALWARE.EXFIL.RELAYED_HIDDEN.001` | high | `composites` | exfiltration |
 | `MALWARE.EXFIL.SCRIPT_CALLBACK.001` | high | `manifest` | exfiltration |
 | `MALWARE.EXFIL.SWEPT_FILES.001` | high | `composites` | exfiltration |
+| `MALWARE.EXFIL.SWEPT_TO_HOST.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.TRACKING_CALLBACK.001` | critical | `composites` | exfiltration |
 | `SUSPECT.EXFIL.001` | medium | `composites` | exfiltration |
 | `SUSPECT.EXFIL.BEACON.001` | high | `composites` | exfiltration |

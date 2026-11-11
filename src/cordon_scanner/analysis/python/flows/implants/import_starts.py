@@ -25,17 +25,27 @@ from cordon_scanner.analysis.python.flows.implants.persist_at_load import Persis
 class ImportStarts:
     """The fire-and-forget starts at load in one syntax tree."""
 
-    OWN: ClassVar[re.Pattern[str]] = re.compile(r"(?:python[0-9.]*|pip[0-9.]*|git|hg|svn|clear|cls|sudo|dzdo|doas|su|chown|chmod|chgrp)(?:\.exe)?")
+    OWN: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?:python[0-9.]*|pip[0-9.]*|git|hg|svn|clear|cls|sudo|dzdo|doas|su|chown|chmod|chgrp)(?:\.exe)?"
+    )
 
     @classmethod
     def lines(cls, tree: ast.AST) -> list[int]:
         loaded = PersistAtLoad.load_time_lines(tree)
         out: list[int] = []
         for node in ast.walk(tree):
-            if not (isinstance(node, ast.Expr | ast.Assign) and isinstance(node.value, ast.Call) and node.lineno in loaded):
+            if not (
+                isinstance(node, ast.Expr | ast.Assign)
+                and isinstance(node.value, ast.Call)
+                and node.lineno in loaded
+            ):
                 continue
             call = node.value
-            name = call.func.attr if isinstance(call.func, ast.Attribute) else getattr(call.func, "id", "")
+            name = (
+                call.func.attr
+                if isinstance(call.func, ast.Attribute)
+                else getattr(call.func, "id", "")
+            )
             argv = call.args[0] if call.args else None
             if name != "Popen" or not isinstance(argv, ast.List | ast.Tuple) or not argv.elts:
                 continue

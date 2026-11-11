@@ -649,7 +649,9 @@ class ReleaseChecks:
     _COMPILED_SOURCES: ClassVar[tuple[str, ...]] = (
         ".c", ".cc", ".cpp", ".cxx", ".h", ".hpp", ".rs", ".pyx", ".go", ".f90", ".java", ".cu",
     )  # fmt: skip
-    _CAPTURE: ClassVar[re.Pattern[str]] = re.compile(r"capture_output|stdout\s*=|stderr\s*=|\bPIPE\b")
+    _CAPTURE: ClassVar[re.Pattern[str]] = re.compile(
+        r"capture_output|stdout\s*=|stderr\s*=|\bPIPE\b"
+    )
 
     @staticmethod
     def _wraps_its_one_program(
@@ -660,7 +662,9 @@ class ReleaseChecks:
         environment and its output left to the terminal (an interactive wrapper). Of the 61 benign
         sources that carry a native program and run it, none has all of these; the kimichat family
         (kimitalk, vantrala) has them all."""
-        if len(programs) != 1 or any(u.path.endswith(ReleaseChecks._COMPILED_SOURCES) for u in units):
+        if len(programs) != 1 or any(
+            u.path.endswith(ReleaseChecks._COMPILED_SOURCES) for u in units
+        ):
             return False
         passes_environment = "environ.copy" in text or "env=" in text
         return passes_environment and ReleaseChecks._CAPTURE.search(text) is None

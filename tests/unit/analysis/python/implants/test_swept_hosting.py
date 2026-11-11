@@ -12,7 +12,11 @@ HOST = "https://render" + "kit1.vercel.app"
 class Kit:
     @staticmethod
     def swept(source: str) -> list[str]:
-        return [h.detail for h in PythonAnalyzer.analyse(source) if h.detail == "sweep sent to a rentable host"]
+        return [
+            h.detail
+            for h in PythonAnalyzer.analyse(source)
+            if h.detail == "sweep sent to a rentable host"
+        ]
 
 
 class TestASweepSentToAFreeHost:
