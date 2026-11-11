@@ -2302,6 +2302,72 @@ rules:
         - path_glob: "**/test_*.py"
         - path_glob: "tests/**"
 
+  - id: MALWARE.KEYLOGGER.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Captures keystrokes and writes them down or sends them
+    message: >
+      This code hooks or polls the keyboard and the keys it captures reach a file write or a request.
+      A hotkey library maps a key to an action and a game reads a key to move something; neither
+      keeps what was typed. Keeping it is a keylogger, and what it kept includes passwords and
+      messages.
+    remediation: >
+      Do not run this code. Treat what was typed while it ran as read, change the passwords, and look
+      for the file or the host the keys went to.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package with a key-code-to-name map, a buffer and a flusher thread writing the typed
+        text to a log path under the user's profile (aiassistcore, 2026-11-11).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1056/001/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: AST.PY.KEYSTROKES_LOGGED
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.PERSIST.HIDDEN.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Registers a program to start at login and starts it without a window
+    message: >
+      In one function, or one function and the helpers it calls, this code writes a persistence
+      location (an autostart entry, an agent, a Run key, a scheduled task, a crontab line) and asks for
+      a launch with no window: a `.vbs` run by `wscript`, `CREATE_NO_WINDOW`, `DETACHED_PROCESS`,
+      `SW_HIDE`, `pythonw`, `nohup`. A program the user keeps at login shows a window or an icon; one
+      that hides itself is not one they chose.
+    remediation: >
+      Do not run this code. Remove the autostart entry or scheduled task it wrote and the program it
+      starts.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package whose installer wrote an XDG autostart file, a LaunchAgents plist and a
+        Windows launcher script run with creation flags that hide the window (ailaunchkit,
+        2026-11-11).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1547/001/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: AST.PY.AUTOSTART_HIDDEN
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: MALWARE.EXFIL.INSTALL_CALLBACK.001
     version: 1.0.0
     category: malicious

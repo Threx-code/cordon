@@ -37,6 +37,10 @@ class PythonFactIds:
         ("persist at load", "AST.PY.PERSIST_AT_LOAD"),
         # The clipboard read, matched against a pattern, and set to a value the package brings.
         ("clipboard replaced", "AST.PY.CLIPBOARD_REPLACED"),
+        # Keystrokes captured and written down or sent.
+        ("keystrokes logged", "AST.PY.KEYSTROKES_LOGGED"),
+        # A persistence write with a hidden launch (no window) beside it.
+        ("autostart hidden", "AST.PY.AUTOSTART_HIDDEN"),
         # A persistence write with a run of a program the package downloaded, decoded or ships beside it.
         ("persist and run", "AST.PY.PERSIST_RUN"),
         ("shipped program run", "AST.PY.SHIPPED_RUN"),

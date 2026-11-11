@@ -1,0 +1,40 @@
+"""A program started so that the user does not see it.
+
+A program that registers itself to start at login and runs with no window is one the user did not
+choose to keep: a `.vbs` launched through `wscript`, `CREATE_NO_WINDOW`, `DETACHED_PROCESS` or
+`SW_HIDE` creation flags, `pythonw`, `nohup ... &`, PowerShell's `-WindowStyle Hidden`. A desktop
+application that autostarts shows a window; a tray tool shows an icon. Hidden is the stealth part, so
+this records the lines that ask for it, and `persist_runs.py` relates them to a persistence write.
+
+`lines` returns the line of each name, string or flag that asks for a hidden launch.
+"""
+
+from __future__ import annotations
+
+import ast
+import re
+from typing import ClassVar, Final
+
+HIDDEN_TEXT: Final = re.compile(
+    r"(?i)\bpythonw(?:\.exe)?\b|\bwscript(?:\.exe)?\b|\bcscript(?:\.exe)?\b|\.vbs\b|\bnohup\b"
+    r"|-WindowStyle\s+Hidden|\bwindowstyle\s*=?\s*hidden|\bstart\s+/b\b|\s&\s*disown\b|/b\s+/min"
+)
+
+
+class HiddenLaunch:
+    """The hidden-launch requests in one syntax tree."""
+
+    NAMES: ClassVar[frozenset[str]] = frozenset(
+        {"CREATE_NO_WINDOW", "DETACHED_PROCESS", "SW_HIDE", "STARTF_USESHOWWINDOW", "CREATE_NEW_CONSOLE_HIDDEN"}
+    )
+
+    @classmethod
+    def lines(cls, tree: ast.AST) -> list[int]:
+        out: set[int] = set()
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Name) and node.id in cls.NAMES) or (isinstance(node, ast.Attribute) and node.attr in cls.NAMES) or (isinstance(node, ast.Constant) and isinstance(node.value, str) and HIDDEN_TEXT.search(node.value)):
+                out.add(node.lineno)
+        return sorted(out)
+
+
+__all__ = ["HiddenLaunch"]

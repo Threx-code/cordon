@@ -99,3 +99,43 @@ class TestPersistenceBesideARun:
         assert "persist and run" not in Kit.facts(source)
 
 
+
+
+class TestAutostartThatHides:
+    @staticmethod
+    def hidden(source: str) -> list[str]:
+        return [h.detail for h in PythonAnalyzer.analyse(source) if h.detail == "autostart hidden"]
+
+    def test_a_desktop_entry_and_a_launcher_run_with_no_window(self) -> None:
+        source = (
+            "import os, subprocess\n"
+            "def install_registry_entry():\n"
+            "    path = os.path.join(os.path.expanduser('~'), '.config/autostart', 'x.desktop')\n"
+            "    open(path, 'w').write('[Desktop Entry]')\n"
+            "    subprocess.Popen(['wscript', 'launch.vbs'], creationflags=subprocess.CREATE_NO_WINDOW)\n"
+        )
+        assert "autostart hidden" in self.hidden(source)
+
+    def test_the_flags_in_a_helper(self) -> None:
+        source = (
+            "import os, subprocess\n"
+            "def _flags():\n"
+            "    return subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS\n"
+            "def install():\n"
+            "    open(os.path.expanduser('~/.config/autostart/x.desktop'), 'w').write('x')\n"
+            "    subprocess.Popen(['app'], creationflags=_flags())\n"
+        )
+        assert "autostart hidden" in self.hidden(source)
+
+    def test_an_autostart_with_a_visible_program_is_not(self) -> None:
+        source = (
+            "import os, subprocess\n"
+            "def install():\n"
+            "    open(os.path.expanduser('~/.config/autostart/x.desktop'), 'w').write('x')\n"
+            "    subprocess.Popen(['app', '--show'])\n"
+        )
+        assert self.hidden(source) == []
+
+    def test_a_hidden_launch_with_no_persistence_is_not(self) -> None:
+        source = "import subprocess\nsubprocess.Popen(['tool'], creationflags=subprocess.CREATE_NO_WINDOW)\n"
+        assert self.hidden(source) == []
