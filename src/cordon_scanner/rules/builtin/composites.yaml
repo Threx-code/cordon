@@ -1092,6 +1092,38 @@ rules:
         - path_glob: "**/test_*.py"
         - path_glob: "tests/**"
 
+  - id: POLICY.ABUSE_TOOLING.PLATFORM_FORGERY.001
+    version: 1.0.0
+    category: policy
+    severity: medium
+    confidence: high
+    title: Computes a social platform app's request signature for its API
+    message: >
+      This file writes down several of a social platform app's request-signature headers or
+      parameters and names the platform's API host. Code that computes those passes as the
+      platform's own app, which its terms forbid and which platforms treat as abuse. It is a tool
+      someone runs on purpose against the platform, not something done to the machine that
+      installs it: reported as policy, not as malware.
+    remediation: >
+      Use it only if the platform's terms allow it. Organisations that do not want signature
+      forgery or fake-device tools on their machines can fail builds on this rule.
+    provenance:
+      kind: research
+      reference: >
+        A TikTok request-signing and fake-device-registration kit that both audit readers labelled
+        abuse tooling (afriton 1.5, 2026-11-11).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.PLATFORM_FORGERY
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: SUSPECT.OBFUSCATION.UNRESOLVED_PAYLOAD.001
     version: 1.0.0
     category: suspicious

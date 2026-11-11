@@ -67,6 +67,7 @@
   "analysis/python/flows/sent_names": "analysis/python/flows/sent_names",
   "analysis/python/flows/dns_tunnels": "analysis/python/flows/dns_tunnels",
   "analysis/python/flows/free_host_credentials": "analysis/python/flows/free_host_credentials",
+  "analysis/python/flows/platform_forgery": "analysis/python/flows/platform_forgery",
   "analysis/python/flows/staged/dormant_decodes": "analysis/python/flows/staged/dormant_decodes",
   "analysis/python/flows/staged/executed_data": "analysis/python/flows/staged/executed_data",
   "analysis/python/flows/staged/import_mail": "analysis/python/flows/staged/import_mail",
@@ -113,6 +114,7 @@
   "analysis/shared/deobfuscation": "analysis/shared/deobfuscation",
   "analysis/shared/deobfuscator": "analysis/shared/deobfuscator",
   "analysis/shared/destinations": "analysis/shared/destinations",
+  "analysis/shared/platform_signing": "analysis/shared/platform_signing",
   "analysis/shared/documentation": "analysis/shared/documentation",
   "analysis/shared/embedded": "analysis/shared/embedded",
   "analysis/shared/inline_programs": "analysis/shared/inline_programs",
@@ -783,6 +785,7 @@
   "version": "version"
  },
  "tests": {
+  "test_abuse_tooling.py": "analysis/python/flows",
   "test_accept_no_feed.py": "foundation/config",
   "test_adversarial_package.py": "cloud",
   "test_attribution.py": "repository/release",

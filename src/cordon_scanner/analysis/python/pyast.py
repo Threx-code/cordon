@@ -74,6 +74,7 @@ from cordon_scanner.analysis.python.flows.decoded_drops import DecodedDrops
 from cordon_scanner.analysis.python.flows.dns_tunnels import DnsTunnels
 from cordon_scanner.analysis.python.flows.free_host_credentials import FreeHostCredentials
 from cordon_scanner.analysis.python.flows.implants.implant_facts import ImplantFacts
+from cordon_scanner.analysis.python.flows.platform_forgery import PlatformForgery
 from cordon_scanner.analysis.python.flows.received_run import ReceivedRuns
 from cordon_scanner.analysis.python.flows.relayed_sends import RelayedSends
 from cordon_scanner.analysis.python.flows.staged.av_exclusions import AvExclusions
@@ -203,6 +204,7 @@ class PythonAnalyzer(
     AvExclusions,
     MachineReports,
     FreeHostCredentials,
+    PlatformForgery,
     ClientBindings,
     SourcedFlows,
     AnalyzerCore,
@@ -280,6 +282,7 @@ class PythonAnalyzer(
             analyzer._relayed_to_hidden(tree)
             analyzer._credentials_to_free_hosts(tree)
         analyzer._machine_reports(tree)
+        analyzer._platform_forgery(tree)
         return analyzer._hits
 
     @classmethod
