@@ -2913,10 +2913,16 @@ rules:
     match:
       kind: composite
       scope: file
-      proximity: 4000
+      # One installer's worth of code: the fetch, the run and the persistence write together.
+      # Across a whole module the three are a large tool's unrelated features (benign gate
+      # 2026-11-11: six modules of 500 to 2,800 lines with each hundreds of lines apart).
+      proximity: 40
       all:
         - capability: egress
         - capability: persist
+        - any:
+            - capability: fetch_exec
+            - capability: execute
         # The run is the analyser's own reading of the code (a fetched or decoded value reaching
         # an interpreter, a received value reaching a command), never the words: a package's
         # long description that quotes code and a minified documentation bundle carry fetch,

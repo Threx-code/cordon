@@ -345,6 +345,20 @@ class TestAnImplantInstaller:
         )
         assert "MALWARE.IMPLANT.INSTALL.001" not in self.rules(tmp_path, module)
 
+    def test_a_large_module_whose_three_parts_are_far_apart_does_not(self, tmp_path: Path) -> None:
+        # A tool's download, its shell-profile helper and its plugin runner, each a feature.
+        filler = "".join(f"def helper_{i}():\n    return {i}\n" for i in range(60))
+        module = (
+            "import os, subprocess, urllib.request\n"
+            "def fetch(url):\n    return urllib.request.urlopen(url).read()\n"
+            + filler
+            + "def add_to_profile(line):\n"
+            "    with open(os.path.expanduser('~/.bashrc'), 'a') as rc:\n        rc.write(line)\n"
+            + filler.replace("helper_", "more_")
+            + "def run_plugin(code):\n    exec(compile(code, 'plugin', 'exec'))\n"
+        )
+        assert "MALWARE.IMPLANT.INSTALL.001" not in self.rules(tmp_path, module)
+
     IMPLANT_TEXT = (
         "def attach(url):\n"
         "    path = os.path.expanduser('~/.cache/agent')\n"
