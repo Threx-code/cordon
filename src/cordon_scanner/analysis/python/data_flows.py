@@ -7,6 +7,7 @@ from __future__ import annotations
 import ast
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.analysis.python.py_identity import IpLookup
 from cordon_scanner.analysis.python.pyfacts import (
     DNS_LOOKUPS,
     ENVIRONMENT,
@@ -600,6 +601,44 @@ class DataFlows(SecretSources, HiddenDestinations):
                 )
         for node, function in self._handed_to_a_sender(tree, holds):
             self._record(Capability.RECONNAISSANCE, node, f"identity sent: through {function}")
+        self._address_sent(tree, holds)
+
+    def _address_sent(self, tree: ast.AST, holds_identity: Callable[..., bool]) -> None:
+        """This machine's public address, in the arguments of a request at import.
+
+        Looking up its own address and sending it is what a weather or geolocation client does;
+        what a collector does is send it where the file runs at install or import, to a drop
+        host, or with the rest of the identity in the same body.
+        """
+        functions = list(PythonSyntax.of(tree, ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda))
+        self._command_runners = self._helper_runners(
+            [f for f in functions if not isinstance(f, ast.Lambda)]
+        )
+        calls = list(PythonSyntax.of(tree, ast.Call))
+        if not any(self._is_address_lookup(call) for call in calls):
+            return
+        holds = PythonFacts.carried(tree, self._is_address_lookup, ast.Subscript)
+        inside = {id(part) for function in functions for part in ast.walk(function)}
+        for node in calls:
+            resolved = self._resolve_callee(node)
+            if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.EGRESS:
+                continue
+            arguments = [*node.args, *(k.value for k in node.keywords)]
+            if not any(holds(argument) for argument in arguments):
+                continue
+            if (
+                id(node) not in inside
+                or any(holds_identity(argument) for argument in arguments)
+                or IpLookup.drop_destination(node)
+            ):
+                self._record(
+                    Capability.RECONNAISSANCE,
+                    node,
+                    f"identity sent: {resolved[0]}{self._dest(tree, resolved[1])}",
+                )
+        for node, function in self._handed_to_a_sender(tree, holds):
+            if id(node) not in inside:
+                self._record(Capability.RECONNAISSANCE, node, f"identity sent: through {function}")
 
     def _environment_sent(self, tree: ast.AST) -> None:
         """The whole environment, in the arguments of a request.
