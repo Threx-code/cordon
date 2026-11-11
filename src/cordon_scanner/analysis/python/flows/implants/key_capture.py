@@ -42,8 +42,10 @@ class KeyCapture(PythonValueFlow):
         super().__init__(tree)
         self.handlers: set[str] = set()
         self.uses_capture = False
+        self.imports_capture = False
         self._params_cache: list[tuple[int, int, str]] | None = None
         self._branches: list[tuple[int, int]] | None = None
+        self._loops: list[tuple[int, int]] | None = None
         self._collect(tree)
 
     def _collect(self, tree: ast.AST) -> None:
@@ -52,10 +54,10 @@ class KeyCapture(PythonValueFlow):
                 names = [node.module or ""] if isinstance(node, ast.ImportFrom) else [a.name for a in node.names]
                 if any(m.split(".")[0] in ("pynput", "keyboard", "pyHook", "pyhook", "Xlib", "Quartz") for m in names):
                     self.uses_capture = True
+                    self.imports_capture = True
             if isinstance(node, ast.Call):
                 name = self.name(node.func) or ""
-                dotted = self.dotted(node.func) or ""
-                if (name in self.REGISTER and any(m in dotted for m in ("pynput", "keyboard", "Listener", "hook"))) or name == "Listener":
+                if self.imports_capture and name in self.REGISTER:
                     for k in node.keywords:
                         if k.arg in self.HANDLER_KEYWORDS and isinstance(k.value, ast.Name | ast.Attribute):
                             self.handlers.add(self.name(k.value) or "")
@@ -78,9 +80,16 @@ class KeyCapture(PythonValueFlow):
             return True
         return any(part.startswith(cls.NETWORK) for part in head[:-1]) or name in ("urlopen", "send_message", "send_document", "sendMessage")
 
+    def _in_loop(self, line: int) -> bool:
+        if self._loops is None:
+            self._loops = [
+                (n.lineno, n.end_lineno or n.lineno) for n in ast.walk(self.tree) if isinstance(n, ast.For | ast.While)
+            ]
+        return any(start <= line <= end for start, end in self._loops)
+
     def seed(self, node: ast.AST) -> Label | None:
         if isinstance(node, ast.Call) and (self.name(node.func) or "") in self.POLLS:
-            return node.lineno
+            return node.lineno if self._in_loop(node.lineno) else None
         if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
             for start, end, param in self._handler_params():
                 if param == node.id and start <= node.lineno <= end:
@@ -95,7 +104,7 @@ class KeyCapture(PythonValueFlow):
         if self._branches is None:
             found: list[tuple[int, int]] = []
             for n in ast.walk(self.tree):
-                if isinstance(n, ast.If) and any(
+                if isinstance(n, ast.If) and self._in_loop(n.lineno) and any(
                     isinstance(c, ast.Call) and (self.name(c.func) or "") in self.POLLS for c in ast.walk(n.test)
                 ):
                     last = n.body[-1]

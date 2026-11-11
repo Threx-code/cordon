@@ -131,3 +131,21 @@ class TestOrdinaryKeyHandling:
             "    l.join()\n"
         )
         assert Kit.logged(source) == ["keystrokes logged"]
+
+    def test_a_modifier_check_outside_a_loop_is_not_a_poll_of_the_keyboard(self) -> None:
+        source = (
+            "import ctypes\n"
+            "def on_click(f):\n"
+            "    if ctypes.windll.user32.GetKeyState(0x11):\n"
+            "        f.write('ctrl-click')\n"
+        )
+        assert Kit.logged(source) == []
+
+    def test_a_listener_class_that_is_not_the_keyboard(self) -> None:
+        source = (
+            "from watchers import Listener\n"
+            "def store_key(event):\n"
+            "    open('keys.csv', 'a').write(str(event))\n"
+            "Listener(on_press=store_key)\n"
+        )
+        assert Kit.logged(source) == []
