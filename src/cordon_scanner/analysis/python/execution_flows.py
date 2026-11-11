@@ -11,6 +11,7 @@ import posixpath
 import re
 from typing import TYPE_CHECKING
 
+from cordon_scanner.analysis.python.flows.hidden_start import HiddenStart
 from cordon_scanner.analysis.python.flows.loop_reads import LoopReads
 from cordon_scanner.analysis.python.pyfacts import (
     PRIMITIVES,
@@ -206,13 +207,17 @@ class ExecutionFlows(AnalyzerCore):
             if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.SPAWN:
                 continue
             call = resolved[1]
+            # A start that hides its window adds ` hidden=1` (`HiddenStart`, group D).
+            hidden = " hidden=1" if HiddenStart.of(tree, call) else ""
             if call.args and self._runs_one_of(call.args[0], downloaded):
-                self._record(Capability.FETCH_EXEC, node, f"{resolved[0]} runs a downloaded file")
+                self._record(
+                    Capability.FETCH_EXEC, node, f"{resolved[0]} runs a downloaded file{hidden}"
+                )
             elif call.args and executable_download and self._starts_an_executable(call):
                 # A download saved as `main.exe`, moved, then started under its new name: the
                 # rename breaks the link by path, not the shape -- a fetched executable, run.
                 self._record(
-                    Capability.FETCH_EXEC, node, f"{resolved[0]} runs a downloaded program"
+                    Capability.FETCH_EXEC, node, f"{resolved[0]} runs a downloaded program{hidden}"
                 )
             elif call.args and self._evaluates_output(call.args[0], fetched_output):
                 self._record(Capability.FETCH_EXEC, node, f"{resolved[0]} evaluates fetched text")
