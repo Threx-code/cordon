@@ -10,6 +10,7 @@ is recorded in the commit; these tests pin the parsers and the rules.
 from __future__ import annotations
 
 import struct
+import zlib
 from pathlib import Path
 from typing import Any
 
@@ -246,6 +247,19 @@ class TestVerdicts:
             r for r, _ in ImportCapabilities.verdicts(profile, b"\0https://" + endpoint + b"/bot\0")
         ]
         assert found == ["SUSPECT.BINARY.CHAT_ENDPOINT.001"]
+
+    def test_a_chat_api_inside_a_compressed_string_table_is_reported(self) -> None:
+        # bittensor_burn 1.8.0: Cython 3 compressed the module's strings, the bot's URL with them.
+        endpoint = ImportCapabilities.chat_endpoints()[0]
+        table = zlib.compress(b"send\0telegram\0https://" + endpoint + b"/bot\0" + b"x" * 400)
+        profile = ImportCapabilities.profile(ImportTable("Mach-O", (), ("_PyInit_core", "connect")))
+        found = [r for r, _ in ImportCapabilities.verdicts(profile, b"\0\1header" + table + b"\0")]
+        assert found == ["SUSPECT.BINARY.CHAT_ENDPOINT.001"]
+
+    def test_a_compressed_table_of_ordinary_names_is_not(self) -> None:
+        table = zlib.compress(b"send\0requests\0https://api.github.com/\0" + b"x" * 400)
+        profile = ImportCapabilities.profile(ImportTable("Mach-O", (), ("_PyInit_core", "connect")))
+        assert ImportCapabilities.verdicts(profile, b"\0" + table) == []
 
     def test_a_compiled_module_naming_an_ordinary_api_is_not(self) -> None:
         profile = ImportCapabilities.profile(

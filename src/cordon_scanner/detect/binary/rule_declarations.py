@@ -159,7 +159,8 @@ DECLARED_RULES: tuple[DeclaredRule, ...] = (
     DeclaredRule(
         id="SUSPECT.BINARY.CHAT_ENDPOINT.001",
         title="Compiled module names a chat bot's or webhook's API",
-        # 0 of 704 benign wheels with native modules (16,274 gate + bench, 2026-11-11).
+        # 0 of 704 benign wheels with native modules, in their bytes or their inflated zlib string
+        # tables (16,274 gate + bench, 2026-11-11/12).
         severity=Severity.HIGH,
         confidence=Confidence.MEDIUM,
         category=Category.SUSPICIOUS,

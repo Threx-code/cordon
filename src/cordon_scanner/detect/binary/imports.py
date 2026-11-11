@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import re
 import struct
+import zlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import ClassVar
@@ -318,6 +319,34 @@ class ImportCapabilities:
         )
         return tuple(str(n).encode() for n in names)
 
+    #: zlib stream headers, by compression level: Cython 3 keeps a module's names and string
+    #: constants in one compressed table, which is where a compiled module's URLs then live.
+    _ZLIB_HEADERS: ClassVar[re.Pattern[bytes]] = re.compile(rb"\x78[\x01\x5e\x9c\xda]")
+    #: Bounds: stream starts tried, bytes out per stream, bytes out in all.
+    TABLE_ATTEMPTS: ClassVar[int] = 256
+    TABLE_BYTES: ClassVar[int] = 4 << 20
+    TABLES_BYTES: ClassVar[int] = 8 << 20
+
+    @classmethod
+    def compressed_tables(cls, data: bytes) -> bytes:
+        """What the zlib streams inside a compiled module inflate to, bounded: the string tables a
+        compiler compressed (Cython 3), read so a URL in them is not hidden by the compression."""
+        out: list[bytes] = []
+        total = 0
+        for attempt, found in enumerate(cls._ZLIB_HEADERS.finditer(data)):
+            if attempt >= cls.TABLE_ATTEMPTS or total >= cls.TABLES_BYTES:
+                break
+            try:
+                plain = zlib.decompressobj().decompress(
+                    data[found.start() : found.start() + cls.TABLE_BYTES], cls.TABLE_BYTES
+                )
+            except zlib.error:
+                continue
+            if len(plain) >= 256:
+                out.append(plain)
+                total += len(plain)
+        return b"\0".join(out)
+
     @staticmethod
     def verdicts(profile: ImportProfile, strings: bytes = b"") -> list[tuple[str, str]]:
         """`(rule id, detail)` for each combination worth reporting."""
@@ -353,7 +382,11 @@ class ImportCapabilities:
         # A compiled module that names a chat bot's or a webhook's API: what it sends goes to a
         # channel its author reads, and compiling it keeps the address from the source a reviewer
         # reads. 0 of 704 benign wheels with native modules carry one (2026-11-11).
-        endpoints = [e for e in ImportCapabilities.chat_endpoints() if e in strings]
+        endpoints = [e for e in ImportCapabilities.chat_endpoints() if e in strings] or [
+            e
+            for e in ImportCapabilities.chat_endpoints()
+            if e in ImportCapabilities.compressed_tables(strings)
+        ]
         if endpoints:
             out.append(
                 (
