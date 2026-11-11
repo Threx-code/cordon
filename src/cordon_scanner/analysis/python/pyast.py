@@ -70,19 +70,7 @@ from cordon_scanner.analysis.python.flows.client_bindings import ClientBindings
 from cordon_scanner.analysis.python.flows.data_file_code import DataFileCode
 from cordon_scanner.analysis.python.flows.decoded_drops import DecodedDrops
 from cordon_scanner.analysis.python.flows.dns_tunnels import DnsTunnels
-from cordon_scanner.analysis.python.flows.implants.backdoor_writes import BackdoorWrites
-from cordon_scanner.analysis.python.flows.implants.clipboard_replace import ClipboardReplace
-from cordon_scanner.analysis.python.flows.implants.foreign_index import ForeignIndex
-from cordon_scanner.analysis.python.flows.implants.hidden_launch import HiddenLaunch
-from cordon_scanner.analysis.python.flows.implants.ip_logger import IpLoggerFetch
-from cordon_scanner.analysis.python.flows.implants.key_capture import KeyCapture
-from cordon_scanner.analysis.python.flows.implants.persist_at_load import PersistAtLoad
-from cordon_scanner.analysis.python.flows.implants.persist_runs import (
-    AUTOSTART_WORD,
-    RUN_DETAILS,
-    PersistRuns,
-)
-from cordon_scanner.analysis.python.flows.implants.shipped_programs import ShippedPrograms
+from cordon_scanner.analysis.python.flows.implants.implant_facts import ImplantFacts
 from cordon_scanner.analysis.python.flows.received_run import ReceivedRuns
 from cordon_scanner.analysis.python.flows.relayed_sends import RelayedSends
 from cordon_scanner.analysis.python.flows.startup_files import StartupFiles
@@ -249,41 +237,7 @@ class PythonAnalyzer(
         analyzer._dns_tunnel(tree)
         analyzer._code_from_data_file(tree)
         analyzer._startup_file_written(tree)
-        for line in ShippedPrograms.lines(tree):
-            analyzer._hits.append(AstHit(Capability.SPAWN, line, "shipped program run"))
-        runs = frozenset(h.line for h in analyzer._hits if any(d in h.detail for d in RUN_DETAILS))
-        for line in PersistRuns.lines(tree, runs):
-            analyzer._hits.append(AstHit(Capability.FLOW, line, "persist and run"))
-        hidden = set(
-            PersistRuns.lines(
-                tree, frozenset(HiddenLaunch.script_host_lines(tree)), source, AUTOSTART_WORD
-            )
-        )
-        hidden &= set(
-            PersistRuns.lines(
-                tree, frozenset(ShippedPrograms.path_lines(tree)), source, AUTOSTART_WORD
-            )
-        )
-        for line in sorted(hidden):
-            analyzer._hits.append(AstHit(Capability.FLOW, line, "autostart hidden"))
-        for line in IpLoggerFetch.lines(tree):
-            analyzer._hits.append(AstHit(Capability.FLOW, line, "ip logger fetched"))
-        for line in KeyCapture.lines(tree):
-            analyzer._hits.append(AstHit(Capability.FLOW, line, "keystrokes logged"))
-        for line in ClipboardReplace.lines(tree):
-            analyzer._hits.append(AstHit(Capability.FLOW, line, "clipboard replaced"))
-        for line in ForeignIndex.lines(tree):
-            analyzer._hits.append(AstHit(Capability.SPAWN, line, "foreign index install"))
-        for line in PersistAtLoad.lines(tree):
-            analyzer._hits.append(AstHit(Capability.FLOW, line, "persist at load"))
-        for line, kind, carried in BackdoorWrites.hits(tree):
-            analyzer._hits.append(
-                AstHit(
-                    Capability.PERSIST,
-                    line,
-                    f"backdoor write: {kind}" + (" carried" if carried else ""),
-                )
-            )
+        analyzer._hits.extend(ImplantFacts.hits(tree, source, analyzer._hits))
         if analyzer._sends(tree):
             # Each of these records only at a call that sends (an egress primitive) or through a
             # helper holding one (`_handed_to_a_sender`): a file that sends nothing has none of

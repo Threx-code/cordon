@@ -51,11 +51,21 @@ class IpLoggerFetch(PythonPersistence):
         "webbrowser",
     )
 
+    #: Calls that open a URL they are handed, without a client object in front of them.
+    OPENERS: ClassVar[frozenset[str]] = frozenset(
+        {"urlopen", "urlretrieve", "Request", "open_new", "open_new_tab"}
+    )
+
     def _written_by(self, node: ast.Call) -> set[Label]:
+        """Only a request, a URL opener or a process start fetches the link. A host list handed to
+        a set, a matcher or a lookup table names IP loggers, as a scanner's own tables do."""
         head = (self.dotted(node.func) or "").lower().split(".")
         if len(head) > 1 and head[0].startswith(self.CLIENTS):
             return self.given(node)
-        return super()._written_by(node)
+        name = self.name(node.func)
+        if name in self.OPENERS or self.dotted(node.func) in self.PROCESS or name in self.PROCESS:
+            return self.given(node)
+        return set()
 
     @classmethod
     def lines(cls, tree: ast.AST) -> list[int]:

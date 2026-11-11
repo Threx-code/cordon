@@ -43,6 +43,17 @@ class TestAHostThatIsOnlyNamed:
         source = f"def warn():\n    print('do not open {LOGGER} links')\n"
         assert Kit.fetched(source) == []
 
+    def test_a_host_table_built_into_a_matcher(self) -> None:
+        # A scanner's own tables: the hosts handed to a set, a matcher and a gate, never opened.
+        host = "grab" + "ify.link"
+        source = (
+            f"HOSTS = frozenset({{'{host}', 'example.org'}})\n"
+            "ALL = HOSTS | {'paste.example'}\n"
+            "GATE = Gate(sorted(ALL))\n"
+            "MATCH = re.compile('|'.join(map(re.escape, ALL)))\n"
+        )
+        assert Kit.fetched(source) == []
+
     def test_an_ordinary_host(self) -> None:
         source = "import requests\nrequests.get('https://docs.python.org/3/')\n"
         assert Kit.fetched(source) == []

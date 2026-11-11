@@ -12,10 +12,19 @@ The program is read from the command the analyser resolved, through a shell wrap
 
 from __future__ import annotations
 
+import dataclasses
 import posixpath
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.python.py_identity import IDENTITY_COMMANDS
+from cordon_scanner.foundation.capabilities import Capability
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+
+    from cordon_scanner.analysis.python.pyfacts import AstHit
+    from cordon_scanner.detect.base import ScanContext
+    from cordon_scanner.detect.code.capability.hits import CapabilityHit
 
 
 class InstallPrograms:
@@ -55,6 +64,31 @@ class InstallPrograms:
                 continue
             return name
         return None
+
+    @classmethod
+    def hits(
+        cls,
+        facts: Sequence[tuple[CapabilityHit, AstHit]],
+        path: str,
+        ctx: ScanContext,
+        loaded: Callable[[], frozenset[int]],
+    ) -> list[CapabilityHit]:
+        """The fact beside each process start of a foreign program where the install reaches, or
+        at the module level of an import entry. The command written out whole is the evidence
+        here, not an excuse (`fixed`)."""
+        out: list[CapabilityHit] = []
+        lines: frozenset[int] | None = None
+        for labelled, hit in facts:
+            if hit.capability is not Capability.SPAWN or not cls.foreign(hit.command):
+                continue
+            if not ctx.install_hook_reaches(path, hit.line):
+                if path not in ctx.import_entry_paths:
+                    continue
+                lines = loaded() if lines is None else lines
+                if hit.line not in lines:
+                    continue
+            out.append(dataclasses.replace(labelled, rule_id=cls.FACT, fixed=False))
+        return out
 
     @classmethod
     def foreign(cls, command: str | None) -> bool:

@@ -238,7 +238,9 @@ class ScanStages:
                 return
             acc.add(ReleaseChecks.unexamined_install_code(acc.findings, ctx))
             acc.add(ReleaseChecks.native_code_in_a_pure_wheel(units, ctx))
-            acc.add(ReleaseChecks.native_program_in_a_pure_wheel(units, ctx))
+            # Not `native_program_in_a_pure_wheel`: a directory is not one release. An installed
+            # environment holds many `.dist-info` WHEEL files (and a source tree may commit its own),
+            # so reading the tree as one wheel would join one package's program to another's run.
             acc.add(ReleaseChecks.known_malicious_release(units, ctx))
             acc.add(ReleaseChecks.known_vulnerable_release(units, ctx, dependencies))
             acc.add(ReleaseChecks.placeholder_release(units, ctx))

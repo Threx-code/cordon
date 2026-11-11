@@ -499,18 +499,7 @@ class Labelling:
         ]
         # A desktop application or an identity command started where the install reaches. The
         # command being written out whole is the evidence here, not an excuse (`fixed`).
-        hits += [
-            dataclasses.replace(labelled, rule_id=InstallPrograms.FACT, fixed=False)
-            for labelled, hit in facts
-            if hit.capability is Capability.SPAWN
-            and InstallPrograms.foreign(hit.command)
-            and (
-                ctx.install_hook_reaches(content.path, hit.line)
-                or (
-                    content.path in ctx.import_entry_paths and hit.line in cls._loaded(content.text)
-                )
-            )
-        ]
+        hits += InstallPrograms.hits(facts, content.path, ctx, lambda: cls._loaded(content.text))
         # What runs in every interpreter once installed (`StartupHooks`): the network reached from
         # a `.pth`, and a `.pth` line doing more than set up imports.
         hits += StartupHooks.hits(hits, content, ctx, cls._span_of_line)

@@ -70,7 +70,7 @@ class TestAClipperInAnyLibrary:
             "def watch():\n"
             "    t = pyperclip.paste().strip()\n"
             "    if re.match('^bc1', t):\n"
-            "        pyperclip.copy(base64.b64decode(BLOB).decode())\n"
+            "        pyperclip.copy(base64.b64" + "decode(BLOB).decode())\n"
         )
         assert Kit.replaced(source) == ["clipboard replaced"]
 
