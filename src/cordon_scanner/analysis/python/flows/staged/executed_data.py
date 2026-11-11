@@ -14,7 +14,7 @@ bytes and executed is data run as code, whatever the bytes are called.
 to a path under a fixed directory, and, in the same file, exec/eval/compile of a file read from a
 listing (`os.listdir`, `os.scandir`, `glob`, `Path.iterdir`/`glob`) of that directory.
 
-`bytes decoded and executed: <call>`: exec/eval/compile of `<parameter>.decode(...)` in the
+`bytes decoded and executed: exec`: `exec` of `<parameter>.decode(...)` in the
 function the parameter belongs to (directly or through one binding there). A decoder's output
 (`zlib.decompress`, `b64decode`) run as code is the decode-exec rules' (forensic-scan's fixture,
 dbzy-tools' sandbox: the two benign units of the 1,063 the wider cut raised).
@@ -55,7 +55,10 @@ class ExecutedData(AnalyzerCore):
                 self._record(
                     Capability.EXECUTE, call, f"dropped into a directory and executed: {runner}"
                 )
-            elif self._handed_bytes(tree, call):
+            elif runner == "exec" and self._handed_bytes(tree, call):
+                # Run on the spot. `eval` of decoded bytes evaluates an expression (serialtalk's
+                # decode, reqman4's prettify) and a bare `compile` hands a code object to a
+                # loader (plsqlwks' plugins): 3 of 16,274 that way, quiet now.
                 self._record(Capability.EXECUTE, call, f"bytes decoded and executed: {runner}")
 
     #: Where each kind of path expression keeps its literal head.

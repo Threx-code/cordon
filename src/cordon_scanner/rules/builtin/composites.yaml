@@ -551,6 +551,39 @@ rules:
       unless:
         - path_glob: "tests/**"
 
+  - id: MALWARE.IMPLANT.AV_EXCLUSION.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: The code tells the antivirus to stop scanning a folder or a program
+    message: >
+      This code runs a command that adds a Defender exclusion (Add-MpPreference or
+      Set-MpPreference with an -Exclusion option), switches a Defender protection off, or writes
+      under the Windows Defender exclusions key. A library has no reason to tell the antivirus to
+      stop looking at a folder or a process: the exclusion is there so that what lands there next
+      is not scanned.
+    remediation: >
+      Treat the package as hostile. Remove it, remove the exclusion (Get-MpPreference lists them),
+      and scan the excluded folder.
+    provenance:
+      kind: research
+      reference: >
+        A terminal-colour library that, from its print function, excludes a folder and an
+        executable from Defender with no window, downloads the executable from a file-drop host
+        into that folder and starts it (rainbowcolors 0.1.0, 2026-11-11).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.AV_EXCLUSION
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: MALWARE.EXFIL.CREDENTIALS_TO_FREE_HOST.001
     version: 1.0.0
     category: malicious

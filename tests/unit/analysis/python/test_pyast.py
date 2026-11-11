@@ -974,6 +974,12 @@ class TestDataRunAsCode:
         source = f"def apply(samples: bytes):\n    code = samples.decode('utf-8')\n    {self.RUN}(code, {{}})\n"
         assert self.found(source) == [f"bytes decoded and executed: {self.RUN}"]
 
+    def test_handed_bytes_evaluated_or_compiled_for_a_loader_is_not(self) -> None:
+        evaluated = "def prettify(body):\n    return eval(body.decode())\n"
+        compiled = "def load(payload, name):\n    source = payload.decode()\n    return compile(source, name, 'exec')\n"
+        assert self.found(evaluated) == []
+        assert self.found(compiled) == []
+
     def test_a_decoder_s_output_executed_is_the_decode_exec_rules_not_this(self) -> None:
         source = f"import zlib\ndef prepare(blob):\n    {self.RUN}(zlib.decompress(blob).decode(), {{}})\n"
         assert self.found(source) == []
@@ -1128,3 +1134,38 @@ class TestTheHostSetsLeaveTheRegistriesOut:
             if registry == host or registry.endswith("." + host)
         }
         assert not clash
+
+
+class TestAnAntivirusExclusionRunAsACommand:
+    """rainbowcolors 0.1.0: a colour library excludes its payload folder from Defender before it
+    downloads an executable there and starts it. Fixture source assembled at run time."""
+
+    @staticmethod
+    def found(source: str) -> list[str]:
+        return [
+            h.detail
+            for h in PythonAnalyzer.analyse(source)
+            if h.detail.startswith("antivirus exclusion")
+        ]
+
+    PREFERENCE = "Add-" + "MpPreference"
+
+    def test_an_exclusion_path_through_an_f_string(self) -> None:
+        source = "\n".join(
+            [
+                "import subprocess",
+                "def _excl(folder):",
+                f"    cmd = f'{self.PREFERENCE} -ExclusionPath \"{{folder}}\"'",
+                "    subprocess.run(['powershell', '-ExecutionPolicy', 'Bypass', '-Command', cmd])",
+                "",
+            ]
+        )
+        assert self.found(source) == ["antivirus exclusion added: subprocess.run"]
+
+    def test_reading_preferences_or_unrelated_powershell_is_not(self) -> None:
+        reading = (
+            "import subprocess\nsubprocess.run(['powershell', '-Command', 'Get-MpPreference'])\n"
+        )
+        other = "import subprocess\nsubprocess.run(['powershell', '-Command', 'Get-ChildItem -Exclude x'])\n"
+        assert self.found(reading) == []
+        assert self.found(other) == []

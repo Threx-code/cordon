@@ -375,6 +375,7 @@ _CATEGORY_BY_PREFIX: tuple[tuple[str, AttackCategory], ...] = (
     ("MALWARE.CRYPTOMINER.", AttackCategory.CRYPTOMINING),
     ("SUSPECT.PERSIST.", AttackCategory.PERSISTENCE),
     ("MALWARE.PERSIST.", AttackCategory.PERSISTENCE),
+    ("MALWARE.IMPLANT.AV_EXCLUSION.", AttackCategory.ANTI_ANALYSIS),
     ("MALWARE.IMPLANT.", AttackCategory.PERSISTENCE),
     ("MALWARE.IMPORT.PERSIST.", AttackCategory.PERSISTENCE),
     ("MALWARE.IMPORT.", AttackCategory.MALICIOUS_CODE),

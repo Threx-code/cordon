@@ -76,6 +76,7 @@ from cordon_scanner.analysis.python.flows.free_host_credentials import FreeHostC
 from cordon_scanner.analysis.python.flows.implants.implant_facts import ImplantFacts
 from cordon_scanner.analysis.python.flows.received_run import ReceivedRuns
 from cordon_scanner.analysis.python.flows.relayed_sends import RelayedSends
+from cordon_scanner.analysis.python.flows.staged.av_exclusions import AvExclusions
 from cordon_scanner.analysis.python.flows.staged.computed_commands import ComputedCommands
 from cordon_scanner.analysis.python.flows.staged.dormant_decodes import DormantDecodes
 from cordon_scanner.analysis.python.flows.staged.executed_data import ExecutedData
@@ -198,6 +199,7 @@ class PythonAnalyzer(
     ExecutedData,
     ImportMail,
     LooseStages,
+    AvExclusions,
     FreeHostCredentials,
     ClientBindings,
     SourcedFlows,
@@ -259,6 +261,7 @@ class PythonAnalyzer(
         analyzer._data_executed(tree)
         analyzer._import_mail(tree)
         analyzer._loose_stages(tree)
+        analyzer._antivirus_exclusions(tree)
         analyzer._hits.extend(ImplantFacts.hits(tree, source, analyzer._hits))
         if analyzer._sends(tree):
             # Each of these records only at a call that sends (an egress primitive) or through a

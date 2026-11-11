@@ -112,6 +112,7 @@ class TestTheSweepAndRelayRulesShip:
             ("SUSPECT.OBFUSCATION.UNRESOLVED_PAYLOAD.001", "AST.PY.UNRESOLVED_PAYLOAD"),
             ("SUSPECT.INSTALL.TEMP_COMMAND.001", "AST.PY.TEMP_COMMAND"),
             ("MALWARE.EXFIL.CREDENTIALS_TO_FREE_HOST.001", "AST.PY.CREDENTIALS_FREE_HOST"),
+            ("MALWARE.IMPLANT.AV_EXCLUSION.001", "AST.PY.AV_EXCLUSION"),
         ],
     )
     def test_the_rule_is_built_in_and_matches_its_fact(self, rule_id: str, fact: str) -> None:
