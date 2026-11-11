@@ -8,7 +8,11 @@ import ast
 from typing import ClassVar
 
 from cordon_scanner.analysis.python.flows.http_clients import HTTP_CLIENTS
-from cordon_scanner.analysis.python.py_identity import IDENTITY_COMMANDS, IdentityVariables
+from cordon_scanner.analysis.python.py_identity import (
+    IDENTITY_COMMANDS,
+    IdentityVariables,
+    IpLookup,
+)
 from cordon_scanner.analysis.python.pyfacts import (
     PRIMITIVES,
     AstHit,
@@ -315,6 +319,8 @@ class AnalyzerCore:
             return isinstance(node, ast.Subscript) and IdentityVariables.read(
                 node, self._dotted(node.value)
             )
+        if self._runner_asked_for_identity(node):
+            return True
         resolved = self._resolve_callee(node)
         if resolved is None:
             return False
@@ -323,11 +329,34 @@ class AnalyzerCore:
         capability = PRIMITIVES.get(resolved[0])
         if capability is Capability.RECONNAISSANCE:
             return True
+        if capability is Capability.EGRESS:
+            return self._asks_for_own_address(node)
         if capability is not Capability.SPAWN:
             return False
         command = self._command(node) or ""
         first = command.strip().split(" ", 1)[0].rsplit("/", 1)[-1].lower()
-        return first.removesuffix(".exe") in IDENTITY_COMMANDS
+        return first.removesuffix(".exe") in IDENTITY_COMMANDS or IpLookup.in_command(command)
+
+    def _runner_asked_for_identity(self, node: ast.Call) -> bool:
+        """`run("whoami")` or `run("curl -s https://ifconfig.me")` where `def run(cmd)` starts its
+        parameter: the helper's output is the identity the command names."""
+        runners = getattr(self, "_identity_runners", None) or {}
+        index = runners.get(node.func.id) if isinstance(node.func, ast.Name) else None
+        if index is None or index >= len(node.args):
+            return False
+        command = self._sketch(node.args[index]) or ""
+        first = command.strip().split(" ", 1)[0].rsplit("/", 1)[-1].lower()
+        return first.removesuffix(".exe") in IDENTITY_COMMANDS or IpLookup.in_command(command)
+
+    def _asks_for_own_address(self, node: ast.Call) -> bool:
+        """A request to a public-address lookup service, plain or wrapped in `Request(url)`:
+        its reply is where this machine is."""
+        for argument in (*node.args[:1], *(k.value for k in node.keywords if k.arg == "url")):
+            if isinstance(argument, ast.Call) and argument.args:
+                argument = argument.args[0]
+            if IpLookup.names(self._sketch(argument)):
+                return True
+        return False
 
     def _record(
         self,

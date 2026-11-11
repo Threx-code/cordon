@@ -582,6 +582,9 @@ class DataFlows(SecretSources, HiddenDestinations):
         thirty lines is what a telemetry plugin, a socket demo and a browser installer all do;
         putting the hostname in the request is the probe.
         """
+        self._identity_runners = self._helper_runners(
+            list(PythonSyntax.of(tree, ast.FunctionDef, ast.AsyncFunctionDef))
+        )
         holds = PythonFacts.carried(tree, self._is_recon_call, ast.Subscript)
         for node in PythonSyntax.of(tree, ast.Call):
             resolved = self._resolve_callee(node)
