@@ -551,6 +551,37 @@ rules:
       unless:
         - path_glob: "tests/**"
 
+  - id: MALWARE.EXFIL.CREDENTIALS_TO_FREE_HOST.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: A password is sent to a free-hosting, paste or tunnel host
+    message: >
+      This code sends a password-named value to a host anyone can register for nothing -- a free
+      web-hosting subdomain, a paste site, a tunnel or an interaction service. A client sends a
+      password to the service it logs into; one sent to a free subdomain goes to whoever
+      registered it. That is credential theft, whoever ships it.
+    remediation: >
+      Do not use the package. Change every password it was given, and the passwords of any
+      account it logged into.
+    provenance:
+      kind: research
+      reference: >
+        A Python 2 account tool that sends the email and password of the accounts it handles to
+        tik-tok.rf.gd, a free-hosting subdomain dressed as TikTok (project47 1.0, 2026-11-11).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.CREDENTIALS_FREE_HOST
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: MALWARE.EXFIL.SWEPT_FILES.001
     version: 1.0.0
     category: malicious

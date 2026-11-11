@@ -71,6 +71,7 @@ from cordon_scanner.analysis.python.flows.client_bindings import ClientBindings
 from cordon_scanner.analysis.python.flows.data_file_code import DataFileCode
 from cordon_scanner.analysis.python.flows.decoded_drops import DecodedDrops
 from cordon_scanner.analysis.python.flows.dns_tunnels import DnsTunnels
+from cordon_scanner.analysis.python.flows.free_host_credentials import FreeHostCredentials
 from cordon_scanner.analysis.python.flows.implants.implant_facts import ImplantFacts
 from cordon_scanner.analysis.python.flows.received_run import ReceivedRuns
 from cordon_scanner.analysis.python.flows.relayed_sends import RelayedSends
@@ -195,6 +196,7 @@ class PythonAnalyzer(
     ExecutedData,
     ImportMail,
     LooseStages,
+    FreeHostCredentials,
     ClientBindings,
     SourcedFlows,
     AnalyzerCore,
@@ -266,6 +268,7 @@ class PythonAnalyzer(
             analyzer._hidden_requests(tree)
             analyzer._swept_sends(tree)
             analyzer._relayed_to_hidden(tree)
+            analyzer._credentials_to_free_hosts(tree)
         return analyzer._hits
 
     @classmethod

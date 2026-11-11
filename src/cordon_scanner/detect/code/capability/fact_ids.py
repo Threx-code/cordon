@@ -56,6 +56,8 @@ class PythonFactIds:
         ("unresolved call on a payload literal", "AST.PY.UNRESOLVED_PAYLOAD"),
         # A literal command on a system temp path, at module level (maliciouspackage 0.1).
         ("literal command on a temp path", "AST.PY.TEMP_COMMAND"),
+        # A password sent to a free-hosting, paste, tunnel or interaction host (project47).
+        ("credentials sent to a free host", "AST.PY.CREDENTIALS_FREE_HOST"),
         # A persistence location written by code that runs when the file is loaded.
         ("persist at load", "AST.PY.PERSIST_AT_LOAD"),
         # The clipboard read, matched against a pattern, and set to a value the package brings.
