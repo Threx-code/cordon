@@ -11,6 +11,7 @@ from typing import ClassVar
 from cordon_scanner.analysis.python.execution_flows import ExecutionFlows
 from cordon_scanner.analysis.python.pyfacts import PRIMITIVES, PythonFacts
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+from cordon_scanner.analysis.python.scoped_taint import BindingForms
 from cordon_scanner.foundation.capabilities import Capability
 
 
@@ -149,6 +150,18 @@ class DecodedDrops(ExecutionFlows):
             params -= cls._carried_parameters(tree, function.name, ordered, module_names)
             if not params:
                 continue
+            # And what the function derives from them (`payload = task["blob"]`), to a fixed point.
+            for _ in range(4):
+                grown = set(params)
+                for node in PythonSyntax.within(function, ast.Assign):
+                    if any(
+                        isinstance(n, ast.Name) and n.id in params
+                        for n in PythonSyntax.nodes(node.value)
+                    ):
+                        grown.update(name for t in node.targets for name in BindingForms.names(t))
+                if grown == params:
+                    break
+                params = grown
             for call in PythonSyntax.within(function, ast.Call):
                 inputs = [*call.args, *(k.value for k in call.keywords)]
                 if any(
