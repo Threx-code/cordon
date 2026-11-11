@@ -37,6 +37,15 @@ class PythonFactIds:
         # Encoded data resolved as DNS names: a channel out that no firewall rule for HTTP sees.
         ("dns tunnel", "AST.PY.DNS_TUNNEL"),
         ("code from a data file", "AST.PY.CODE_FROM_DATA"),
+        # A program the file assembles from its literals (indexed, joined from codes,
+        # reversed) and executes: fixed, but written so that no literal is it.
+        ("computed code executed", "AST.PY.COMPUTED_EXEC"),
+        # A process start whose command holds a piece spelled the same way (openblox 1.0.0).
+        ("computed command run", "AST.PY.COMPUTED_COMMAND"),
+        # A module or function reached by a name spelled the same way (apkeep 1.0.1).
+        ("concealed name resolved", "AST.PY.CONCEALED_NAME"),
+        # A value decoded (base64, hex, XOR) and then never read: carried for something else.
+        ("decoded and left unused", "AST.PY.DORMANT_DECODE"),
         # A persistence location written by code that runs when the file is loaded.
         ("persist at load", "AST.PY.PERSIST_AT_LOAD"),
         # The clipboard read, matched against a pattern, and set to a value the package brings.

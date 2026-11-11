@@ -103,13 +103,16 @@ class TestTheSweepAndRelayRulesShip:
         [
             ("MALWARE.EXFIL.SWEPT_FILES.001", "AST.PY.SWEPT_SENT"),
             ("MALWARE.EXFIL.RELAYED_HIDDEN.001", "AST.PY.RELAYED_HIDDEN"),
+            ("SUSPECT.INSTALL.COMPUTED_CODE.001", "AST.PY.COMPUTED_EXEC"),
+            ("SUSPECT.DYNAMIC_DISPATCH.002", "AST.PY.CONCEALED_NAME"),
+            ("SUSPECT.OBFUSCATION.DORMANT_PAYLOAD.001", "AST.PY.DORMANT_DECODE"),
         ],
     )
     def test_the_rule_is_built_in_and_matches_its_fact(self, rule_id: str, fact: str) -> None:
         from cordon_scanner.rules.loader import RuleLoader
 
         compiled = {c.rule.id: c for pack in RuleLoader.load_builtin() for c in pack.rules}
-        assert compiled[rule_id].rule.category.value == "malicious"
+        assert compiled[rule_id].rule.category.value in ("malicious", "suspicious")
         assert fact in repr(compiled[rule_id])
 
 

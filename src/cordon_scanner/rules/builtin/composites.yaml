@@ -893,6 +893,72 @@ rules:
         - path_glob: "**/test_*.py"
         - path_glob: "tests/**"
 
+  - id: SUSPECT.OBFUSCATION.DORMANT_PAYLOAD.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Data fetched or carried by the package is decoded and then never used
+    message: >
+      Data fetched or carried by the package is decoded and then never used: the staged half of a
+      dropper, kept where its payload can be switched on later. This code fetches a page, reads a
+      file it ships or holds a literal, decodes it (base64, hex, XOR), and discards the result. A
+      decode is work done to recover a value; recovering one and dropping it keeps the payload
+      carried and encoded, ready for a later version or a second stage to run.
+    remediation: >
+      Read what the decoded value is. If the package has no use for it, it should not be carrying
+      or fetching it.
+    provenance:
+      kind: research
+      reference: >
+        A package hex-decoding and XORing a payload and a key cut from two pages it fetches at
+        import (ethercheck 1.1.1), and a spell checker base64-decoding one value from a data file
+        it ships, in its constructor, for nothing (spellcheckerpy 1.0.0), 2026-11-11.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.DORMANT_DECODE
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: SUSPECT.DYNAMIC_DISPATCH.002
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: A module or function is reached by a name the code spells so that no literal is it
+    message: >
+      This file hands import_module, __import__ or getattr a name it builds from character codes,
+      from characters picked out of another string, or by reversing one. The name is fixed by the
+      file, so it could have been written; spelling it this way serves only to keep a reader, or
+      a scanner, from seeing which module is loaded or which function is called. The call is read
+      as what the name resolves to as well; this finding is that the name was hidden.
+    remediation: >
+      Read what the name resolves to and what the code does with it. A program that needs a
+      module or function by name writes the name.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package importing a standard-library reader and fetching one of its functions by
+        names spelled in character codes, to read a user file whose path it keeps encrypted
+        (apkeep 1.0.1, 2026-11-11).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.CONCEALED_NAME
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: MALWARE.DYNAMIC_DISPATCH.001
     version: 1.0.0
     category: malicious
@@ -1251,6 +1317,43 @@ rules:
       all:
         - context: install_entry
         - rule: AST.PY.HIDDEN_ACTION
+
+  - id: SUSPECT.INSTALL.COMPUTED_CODE.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Code that runs at install executes or starts a program it assembles so that no literal is it
+    message: >
+      Code that runs when the package is installed builds a program out of its own literals --
+      indexing an alphabet with a list of numbers, joining character codes, reversing a string --
+      and hands the result to exec, eval or compile, or starts it as a command. The program is
+      fixed by the file, so it
+      could have been written as code; assembling it this way serves only to keep it from being
+      read, by a reviewer or by a scanner. What the program does is judged as well; this finding
+      is that it was hidden.
+    remediation: >
+      Do not install it until the assembled program has been read. A build step that needs to
+      run code writes it as code.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI upload whose setup.py imports a module that adds alphabet[i] for each of 13
+        literal indices to a string and executes it at install (easyIoCtl 1.0, 2026-11-11); a
+        setup.py running a command whose program a helper spells in character codes, dressed as
+        a git-hash lookup (openblox 1.0.0, sqligen 1.0.0).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 200
+      all:
+        # What runs at install: the hook script and the modules it imports (easyIoCtl's
+        # setup.py imports the module that assembles and executes the program).
+        - context: install_hook
+        - any:
+            - rule: AST.PY.COMPUTED_EXEC
+            - rule: AST.PY.COMPUTED_COMMAND
 
   - id: SUSPECT.INSTALL.STRING_CODE.001
     version: 1.0.0

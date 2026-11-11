@@ -42,6 +42,7 @@ import re
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.python.flows.http_clients import HTTP_CLIENTS
+from cordon_scanner.analysis.python.literal_program import LiteralProgram
 from cordon_scanner.analysis.python.pyfacts import (
     DNS_LOOKUPS,
     ENVIRONMENT,
@@ -67,9 +68,11 @@ if TYPE_CHECKING:
 from cordon_scanner.analysis.python.analyzer_core import AnalyzerCore
 from cordon_scanner.analysis.python.data_flows import DataFlows
 from cordon_scanner.analysis.python.flows.client_bindings import ClientBindings
+from cordon_scanner.analysis.python.flows.computed_commands import ComputedCommands
 from cordon_scanner.analysis.python.flows.data_file_code import DataFileCode
 from cordon_scanner.analysis.python.flows.decoded_drops import DecodedDrops
 from cordon_scanner.analysis.python.flows.dns_tunnels import DnsTunnels
+from cordon_scanner.analysis.python.flows.dormant_decodes import DormantDecodes
 from cordon_scanner.analysis.python.flows.implants.implant_facts import ImplantFacts
 from cordon_scanner.analysis.python.flows.received_run import ReceivedRuns
 from cordon_scanner.analysis.python.flows.relayed_sends import RelayedSends
@@ -184,6 +187,8 @@ class PythonAnalyzer(
     DataFileCode,
     StartupFiles,
     RelayedSends,
+    ComputedCommands,
+    DormantDecodes,
     ClientBindings,
     SourcedFlows,
     AnalyzerCore,
@@ -237,6 +242,9 @@ class PythonAnalyzer(
         analyzer._dns_tunnel(tree)
         analyzer._code_from_data_file(tree)
         analyzer._startup_file_written(tree)
+        analyzer._computed_commands(tree)
+        analyzer._concealed_names(tree)
+        analyzer._dormant_decodes(tree)
         analyzer._hits.extend(ImplantFacts.hits(tree, source, analyzer._hits))
         if analyzer._sends(tree):
             # Each of these records only at a call that sends (an egress primitive) or through a
@@ -412,6 +420,7 @@ class PythonAnalyzer(
         order of execution, and matching on the first would miss the ordinary
         case of a helper defined above its imports.
         """
+        self._module_tree = tree
         self._collect_statement(tree)
         self._names_complete()
 
@@ -540,6 +549,18 @@ class PythonAnalyzer(
         if not written and self._dotted(node.func) not in ("exec", "eval", "compile"):
             return
         value = self._written_text(node.args[0])
+        if (
+            value is not None
+            and not written
+            and self._module_tree is not None
+            and LiteralProgram.folded(self._module_tree, node.args[0])[1]
+        ):
+            # The program is fixed by the file's literals but written so that none of them is
+            # it: indexed out of an alphabet, joined from codes, reversed (easyIoCtl 1.0). What
+            # it does is read below; that it was assembled to be unreadable is a fact of its own.
+            self._record(
+                Capability.EXECUTE, node, f"computed code executed: {self._dotted(node.func)}"
+            )
         if (
             value is None
             or not WRITTEN_CODE_MIN <= len(value) <= WRITTEN_CODE_MAX
