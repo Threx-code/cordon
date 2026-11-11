@@ -13245,6 +13245,42 @@ class TestWhatAPthImportsRunsAtStartup:
         )
         assert "MALWARE.INSTALL.STARTUP_NETWORK.001" not in found
 
+    SETUP = (
+        "import os, shutil, site\n"
+        "from setuptools import setup\n"
+        "from setuptools.command.install import install\n"
+        "class _Install(install):\n"
+        "    def run(self):\n"
+        "        install.run(self)\n"
+        "        sp = site.getsitepackages()[0]\n"
+        "        src = os.path.join(os.path.dirname(__file__), {name!r})\n"
+        "        shutil.copy2(src, {dest})\n"
+        "setup(name='t', version='1', cmdclass={{'install': _Install}})\n"
+    )
+
+    def test_an_install_that_copies_a_pth_into_site_packages(self, tmp_path) -> None:
+        # tinkoff_cloud_apis_internal 8.5.4: telemetry.pth copied into site by `_Install.run`.
+        found = self.scan(
+            tmp_path,
+            {
+                "setup.py": self.SETUP.format(name="telemetry.pth", dest="sp"),
+                "telemetry.pth": "import _telemetry_init\n",
+                "_telemetry_init.py": "",
+            },
+        )
+        assert "MALWARE.INSTALL.PERSIST.001" in found
+
+    def test_an_install_that_copies_data_into_site_packages_is_not(self, tmp_path) -> None:
+        found = self.scan(tmp_path, {"setup.py": self.SETUP.format(name="LICENSE.txt", dest="sp")})
+        assert "MALWARE.INSTALL.PERSIST.001" not in found
+
+    def test_a_pth_copied_into_the_build_tree_is_not(self, tmp_path) -> None:
+        found = self.scan(
+            tmp_path,
+            {"setup.py": self.SETUP.format(name="paths.pth", dest="os.path.join('build', 'x')")},
+        )
+        assert "MALWARE.INSTALL.PERSIST.001" not in found
+
     def test_a_pth_line_that_changes_the_process(self, tmp_path) -> None:
         found = self.scan(tmp_path, {"pkg-setup.pth": "\n\nimport os; os.umask(0)\n"})
         assert "MALWARE.INSTALL.STARTUP_CODE.001" in found

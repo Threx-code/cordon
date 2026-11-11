@@ -71,6 +71,7 @@ from cordon_scanner.analysis.python.flows.data_file_code import DataFileCode
 from cordon_scanner.analysis.python.flows.decoded_drops import DecodedDrops
 from cordon_scanner.analysis.python.flows.dns_tunnels import DnsTunnels
 from cordon_scanner.analysis.python.flows.received_run import ReceivedRuns
+from cordon_scanner.analysis.python.flows.startup_files import StartupFiles
 from cordon_scanner.analysis.python.sourced_flows import SourcedFlows
 
 CREDENTIAL_VARIABLE = re.compile(
@@ -179,6 +180,7 @@ class PythonAnalyzer(
     ReceivedRuns,
     DnsTunnels,
     DataFileCode,
+    StartupFiles,
     ClientBindings,
     SourcedFlows,
     AnalyzerCore,
@@ -226,6 +228,7 @@ class PythonAnalyzer(
         analyzer._download_run_through_helpers(tree)
         analyzer._dns_tunnel(tree)
         analyzer._code_from_data_file(tree)
+        analyzer._startup_file_written(tree)
         if analyzer._sends(tree):
             # Each of these records only at a call that sends (an egress primitive) or through a
             # helper holding one (`_handed_to_a_sender`): a file that sends nothing has none of

@@ -59,6 +59,7 @@
   "analysis/python/flows/decoded_drops": "analysis/python/flows/decoded_drops",
   "analysis/python/flows/dns_tunnels": "analysis/python/flows/dns_tunnels",
   "analysis/python/flows/hidden_start": "analysis/python/flows/hidden_start",
+  "analysis/python/flows/startup_files": "analysis/python/flows/startup_files",
   "analysis/python/flows/hidden_destinations": "analysis/python/flows/hidden_destinations",
   "analysis/python/flows/secret_sources": "analysis/python/flows/secret_sources",
   "analysis/python/flows/received_run": "analysis/python/flows/received_run",
