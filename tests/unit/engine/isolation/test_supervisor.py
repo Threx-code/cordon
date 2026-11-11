@@ -280,3 +280,34 @@ class TestTheBudgetIsOnTopOfWhatTheWorkerInherits:
             assert Limits.address_space() > 0
         else:
             assert Limits.address_space() == 0
+
+
+class TestTheWindowsJobIsDeclaredForSixtyFourBitHandles:
+    """S8 on Windows: undeclared, ctypes passes a HANDLE as a 32-bit int, so the current-process
+    pseudo-handle (-1) is truncated, AssignProcessToJobObject names no process, and the worker
+    runs unlimited. Checked on every platform with a stand-in for the DLL."""
+
+    def test_every_handle_crosses_as_a_pointer(self, monkeypatch) -> None:
+        import ctypes
+
+        from cordon_scanner.engine.isolation.platform_limits import JobLimits
+
+        class Function:
+            restype: object = ctypes.c_int
+            argtypes: object = None
+
+        class Dll:
+            def __init__(self, *_: object, **__: object) -> None:
+                self.functions: dict[str, Function] = {}
+
+            def __getattr__(self, name: str) -> Function:
+                return self.functions.setdefault(name, Function())
+
+        monkeypatch.setattr(ctypes, "WinDLL", Dll, raising=False)
+        monkeypatch.setattr(JobLimits, "_dlls", {})
+        kernel32 = JobLimits._kernel32()
+        assert kernel32.GetCurrentProcess.restype is ctypes.c_void_p
+        assert kernel32.CreateJobObjectW.restype is ctypes.c_void_p
+        assert kernel32.AssignProcessToJobObject.argtypes == [ctypes.c_void_p, ctypes.c_void_p]
+        assert kernel32.SetInformationJobObject.argtypes[0] is ctypes.c_void_p
+        assert JobLimits._psapi().GetProcessMemoryInfo.argtypes[0] is ctypes.c_void_p

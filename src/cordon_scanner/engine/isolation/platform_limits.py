@@ -125,9 +125,37 @@ class JobLimits:
     _job: ClassVar[Any] = None
     _info: ClassVar[Any] = None
 
-    @staticmethod
-    def _kernel32() -> Any:
-        return ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+    _dlls: ClassVar[dict[str, Any]] = {}
+
+    @classmethod
+    def _kernel32(cls) -> Any:
+        """kernel32 with every function this class calls declared. Undeclared, ctypes passes and
+        returns a HANDLE as a 32-bit int: GetCurrentProcess's pseudo-handle (-1) comes back
+        truncated, AssignProcessToJobObject then names no process, fails, and the worker runs
+        with no limit at all (S8's Windows CI, 2026-11-10: a 2 GB allocation went through)."""
+        if "kernel32" not in cls._dlls:
+            dll = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+            handle, dword, address = ctypes.c_void_p, ctypes.c_uint32, ctypes.c_void_p
+            dll.GetCurrentProcess.restype, dll.GetCurrentProcess.argtypes = handle, []
+            dll.CreateJobObjectW.restype = handle
+            dll.CreateJobObjectW.argtypes = [address, ctypes.c_wchar_p]
+            dll.SetInformationJobObject.restype = ctypes.c_int
+            dll.SetInformationJobObject.argtypes = [handle, ctypes.c_int, address, dword]
+            dll.AssignProcessToJobObject.restype = ctypes.c_int
+            dll.AssignProcessToJobObject.argtypes = [handle, handle]
+            dll.GetProcessTimes.restype = ctypes.c_int
+            dll.GetProcessTimes.argtypes = [handle, address, address, address, address]
+            cls._dlls["kernel32"] = dll
+        return cls._dlls["kernel32"]
+
+    @classmethod
+    def _psapi(cls) -> Any:
+        if "psapi" not in cls._dlls:
+            dll = ctypes.WinDLL("psapi", use_last_error=True)  # type: ignore[attr-defined]
+            dll.GetProcessMemoryInfo.restype = ctypes.c_int
+            dll.GetProcessMemoryInfo.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32]
+            cls._dlls["psapi"] = dll
+        return cls._dlls["psapi"]
 
     @classmethod
     def apply(cls, memory_bytes: int) -> bool:
@@ -149,7 +177,7 @@ class JobLimits:
             if not kernel32.SetInformationJobObject(
                 job,
                 cls.JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
-                ctypes.byref(info),
+                ctypes.addressof(info),
                 ctypes.sizeof(info),
             ):
                 return False
@@ -196,7 +224,7 @@ class JobLimits:
             kernel32.SetInformationJobObject(
                 cls._job,
                 cls.JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
-                ctypes.byref(cls._info),
+                ctypes.addressof(cls._info),
                 ctypes.sizeof(cls._info),
             )
         )
@@ -212,10 +240,10 @@ class JobLimits:
         )
         kernel32.GetProcessTimes(
             kernel32.GetCurrentProcess(),
-            ctypes.byref(created),
-            ctypes.byref(ended),
-            ctypes.byref(kernel),
-            ctypes.byref(user),
+            ctypes.addressof(created),
+            ctypes.addressof(ended),
+            ctypes.addressof(kernel),
+            ctypes.addressof(user),
         )
         return int(user.value)
 
@@ -240,10 +268,10 @@ class JobLimits:
         try:
             counters = Counters()
             counters.cb = ctypes.sizeof(counters)
-            psapi = ctypes.WinDLL("psapi", use_last_error=True)  # type: ignore[attr-defined]
+            psapi = JobLimits._psapi()
             kernel32 = JobLimits._kernel32()
             if psapi.GetProcessMemoryInfo(
-                kernel32.GetCurrentProcess(), ctypes.byref(counters), counters.cb
+                kernel32.GetCurrentProcess(), ctypes.addressof(counters), counters.cb
             ):
                 return int(counters.PagefileUsage)
         except (OSError, AttributeError):
