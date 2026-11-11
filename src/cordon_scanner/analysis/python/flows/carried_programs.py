@@ -86,7 +86,7 @@ class CarriedPrograms(ExecutionFlows):
         if len(text) < cls.LENGTH:
             return False
         try:
-            body = ast.parse(text).body
+            body = PythonSyntax.parse(text).body
         except (SyntaxError, ValueError):
             # S2: a literal that does not parse is not a program, so nothing here is dropped;
             # every other rule still reads the literal as text
