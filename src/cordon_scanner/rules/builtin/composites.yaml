@@ -2535,6 +2535,39 @@ rules:
         - path_glob: "**/test_*.py"
         - path_glob: "tests/**"
 
+  - id: MALWARE.IMPORT.PROGRAM_START.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Importing the package starts a program and leaves it running
+    message: >
+      When this package is imported it starts a program with `Popen` and discards the handle: no
+      wait, no output read. A library that asks the machine something at import runs the program and
+      reads the answer; one that launches something that outlives the import is running code the
+      importer did not ask for.
+    remediation: >
+      Do not import this package. Find the program it starts and what it does.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package whose `__init__` started a literal program with `subprocess.Popen` as its
+        first statement, with a develop/install command that ran a message beside it
+        (lobomarinopython, 2026-11-11); benign 0 of 16,274.
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1204/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: import_entry
+        - rule: AST.PY.PROGRAM_STARTED_AT_IMPORT
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: MALWARE.EXFIL.INSTALL_CALLBACK.001
     version: 1.0.0
     category: malicious

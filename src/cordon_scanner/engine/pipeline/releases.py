@@ -645,6 +645,26 @@ class ReleaseChecks:
                     break
         return out
 
+    #: Sources of compiled code: a package that has them may ship what it built.
+    _COMPILED_SOURCES: ClassVar[tuple[str, ...]] = (
+        ".c", ".cc", ".cpp", ".cxx", ".h", ".hpp", ".rs", ".pyx", ".go", ".f90", ".java", ".cu",
+    )  # fmt: skip
+    _CAPTURE: ClassVar[re.Pattern[str]] = re.compile(r"capture_output|stdout\s*=|stderr\s*=|\bPIPE\b")
+
+    @staticmethod
+    def _wraps_its_one_program(
+        units: Sequence[FileUnit], programs: Sequence[FileUnit], text: str
+    ) -> bool:
+        """A pure-Python source distribution whose whole use is to launch one opaque program: no
+        compiled-code sources beside it, exactly one prebuilt executable, started with the user's
+        environment and its output left to the terminal (an interactive wrapper). Of the 61 benign
+        sources that carry a native program and run it, none has all of these; the kimichat family
+        (kimitalk, vantrala) has them all."""
+        if len(programs) != 1 or any(u.path.endswith(ReleaseChecks._COMPILED_SOURCES) for u in units):
+            return False
+        passes_environment = "environ.copy" in text or "env=" in text
+        return passes_environment and ReleaseChecks._CAPTURE.search(text) is None
+
     @staticmethod
     def native_program_in_a_pure_wheel(
         units: Sequence[FileUnit], ctx: ScanContext
@@ -695,9 +715,14 @@ class ReleaseChecks:
             if not runs:
                 continue
             # From sources the run alone is common (61 of 16,274 benign sources run a program they
-            # ship, mostly test fixtures and tools); making it executable first, as a prebuilt
-            # program must be, is the part a source distribution has no use for.
-            if source_distribution and not ShippedPrograms.made_executable(tree):
+            # ship, mostly test fixtures and tools): making it executable first, as a prebuilt
+            # program must be, is the part a source distribution has no use for; so is the wrapper
+            # shape, below.
+            if (
+                source_distribution
+                and not ShippedPrograms.made_executable(tree)
+                and not ReleaseChecks._wraps_its_one_program(units, programs, unit.content.text)
+            ):
                 continue
             return [
                 replace(
