@@ -35,6 +35,11 @@ class PythonFactIds:
         ("code from a data file", "AST.PY.CODE_FROM_DATA"),
         # A persistence location written by code that runs when the file is loaded.
         ("persist at load", "AST.PY.PERSIST_AT_LOAD"),
+        # The clipboard read, matched against a pattern, and set to a value the package brings.
+        ("clipboard replaced", "AST.PY.CLIPBOARD_REPLACED"),
+        # A persistence write with a run of a program the package downloaded, decoded or ships beside it.
+        ("persist and run", "AST.PY.PERSIST_RUN"),
+        ("shipped program run", "AST.PY.SHIPPED_RUN"),
         # Packages installed from an index the user did not choose, or with host checks off.
         ("foreign index install", "AST.PY.FOREIGN_INDEX"),
         # A file that gives someone else a way in written: authorized_keys, sudoers, passwd/shadow, ssh rc.

@@ -2238,6 +2238,70 @@ rules:
         - path_glob: "**/test_*.py"
         - path_glob: "tests/**"
 
+  - id: MALWARE.IMPLANT.PERSIST_RUN.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Registers itself to run again and runs a program it brings
+    message: >
+      In one function, or one function and the helpers it calls, this code runs a program it
+      downloaded or decoded and writes a persistence location (a Run key, a scheduled task, a
+      LaunchAgent, a crontab line, a service, a profile): an implant installing its payload and
+      arranging for it to start again. Either alone is ordinary; together in one place they are the
+      shape of an implant registering itself.
+    remediation: >
+      Do not run this code. Inspect the persistence locations of any machine that did, and remove
+      what it added and the program it started.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package whose launcher wrote a Run key, a scheduled task or a LaunchAgent in a
+        function beside the run of the program it brings (ailaunchkit, 2026-11-11).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1547/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: AST.PY.PERSIST_RUN
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.CLIPPER.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Replaces what the user copied with a value the package carries
+    message: >
+      This code reads the clipboard, matches what it read against a pattern and writes a value the
+      package carries back: the clipper shape. A user who copies a cryptocurrency address and pastes
+      it pays the address the package chose. A clipboard tool writes what it read or what the user
+      picked; nothing else has a reason to substitute a fixed value for a match.
+    remediation: >
+      Do not run this code. Check where a payment made while it ran was sent.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package that read the Windows clipboard, tested it against address patterns and set a
+        constant replacement (aiassistcore, 2026-11-11).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1115/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: AST.PY.CLIPBOARD_REPLACED
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: MALWARE.EXFIL.INSTALL_CALLBACK.001
     version: 1.0.0
     category: malicious

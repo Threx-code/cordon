@@ -123,7 +123,7 @@ class BackdoorWrites(PythonPersistence):
         if not analysis.index() or not analysis.seeds:
             return []
         analysis.flow()
-        content = _Content(tree)
+        content = ContentOrigin(tree)
         out: list[tuple[int, str, bool]] = []
         seen: set[int] = set()
         for node in analysis.calls:
@@ -147,7 +147,7 @@ class BackdoorWrites(PythonPersistence):
         return "account file"
 
 
-class _Content:
+class ContentOrigin:
     """What a write puts in the file, and whether the package itself supplies it."""
 
     #: Methods that return the text they are given, changed in form only.
@@ -302,4 +302,4 @@ class _Content:
         return False
 
 
-__all__ = ["BackdoorWrites"]
+__all__ = ["BackdoorWrites", "ContentOrigin"]
