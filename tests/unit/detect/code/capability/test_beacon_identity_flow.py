@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from cordon_scanner import Scanner
 from cordon_scanner.analysis.python.pyast import PythonAnalyzer
 from cordon_scanner.decide.policy import PolicyGate
@@ -772,3 +774,30 @@ class TestWhatACallerHandsAClassSentToAHiddenDestination:
 
     def test_a_fixed_status_to_a_reversed_endpoint_is_not(self) -> None:
         assert self.relayed(self.module(self.REVERSED, "b'ping'")) == []
+
+    @pytest.mark.parametrize(
+        "endpoint",
+        [
+            "'{}{}'.format(" + REVERSED + "[::-1], '/')",
+            "'https://{}/'.format(" + REVERSED + "[::-1])",
+            "'' + " + REVERSED + "[::-1]",
+            "'https://evil.co' + 'm/'[::-1]",
+        ],
+    )
+    def test_a_host_that_only_the_hidden_piece_completes_still_counts(self, endpoint: str) -> None:
+        body = "json.dumps({'d': self.day}).encode()"
+        assert self.relayed(self.module(endpoint, body)) == [
+            "relayed to hidden: urllib.request.urlopen dest=decoded"
+        ]
+
+    def test_a_base_url_another_object_holds_is_not(self) -> None:
+        # pygitconnect: the URL template comes plain from the user object it was handed.
+        endpoint = "day.base.format('atad'[::-1])"
+        body = "json.dumps({'d': self.day}).encode()"
+        assert self.relayed(self.module(endpoint, body)) == []
+
+    def test_a_reversed_path_on_a_host_written_down_is_not(self) -> None:
+        # ailever and pygitconnect: the host is plain; only a path piece is reversed.
+        endpoint = "'https://api.example.invalid/' + 'atad'[::-1] + '/'"
+        body = "json.dumps({'d': self.day}).encode()"
+        assert self.relayed(self.module(endpoint, body)) == []

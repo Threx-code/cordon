@@ -8,12 +8,19 @@ relay: whatever it is given goes to a host its source does not show.
 
 `relayed to hidden: <sink> dest=decoded`: a method of a class makes a request whose destination is
 hidden (`HiddenDestinations._hidden`, which folds attribute-held constants) and whose body is built
-from `self.<attr>`, where `__init__` stores a constructor parameter in that attribute.
+from `self.<attr>`, where `__init__` stores a constructor parameter in that attribute. A
+destination whose head writes the whole host down (`"https://api.github.com/repos/{}".format(...)`,
+`"https://host/" + path[::-1]`, a signed query on a named host), or takes it plain from a
+parameter or another object (`self.user.url.format(...)`), hides no destination (ailever,
+pygitconnect, a TikTok signing client: 3 of 16,274 before this). Any other head still counts: a
+hidden value, a parameter, `"" + host`, `"{}{}".format(host, path)` or `"https://{}/".format(host)`.
 """
 
 from __future__ import annotations
 
 import ast
+from collections.abc import Callable
+from typing import Any, ClassVar
 
 from cordon_scanner.analysis.python.flows.swept_sends import SweptSends
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
@@ -34,7 +41,11 @@ class RelayedSends(SweptSends):
                 if not isinstance(method, ast.FunctionDef | ast.AsyncFunctionDef):
                     continue
                 for sink, destination, body in self._request_parts(method):
-                    if hidden(destination) and self._body_reads_stored(method, body, stored):
+                    if (
+                        hidden(destination)
+                        and self._head_hides_host(hidden, cls, method, destination)
+                        and self._body_reads_stored(method, body, stored)
+                    ):
                         self._record(
                             Capability.EGRESS, method, f"relayed to hidden: {sink} dest=decoded"
                         )
@@ -69,6 +80,92 @@ class RelayedSends(SweptSends):
                 ):
                     stored.add(target.attr)
         return stored
+
+    #: Characters a host label is made of; the scheme also allows `+ . -`.
+    _LABEL: ClassVar[frozenset[str]] = frozenset("abcdefghijklmnopqrstuvwxyz0123456789-")
+
+    @classmethod
+    def _host_written(cls, text: str) -> bool:
+        """Whether a literal names the whole host and ends it (`https://a.b/`, `:`, `?`, `#`):
+        the destination is in plain sight. String operations only, no pattern."""
+        scheme, sep, rest = text.lower().partition("://")
+        if not sep or not scheme[:1].isalpha() or not set(scheme) <= cls._LABEL | {"+", "."}:
+            return False
+        end = min((i for i in (rest.find(c) for c in "/?#") if i >= 0), default=-1)
+        if end < 0:
+            return False
+        host, _, port = rest[:end].partition(":")
+        labels = host.split(".")
+        return (
+            len(labels) > 1
+            and all(label and set(label) <= cls._LABEL for label in labels)
+            and (not port or port.isdigit())
+        )
+
+    def _head_hides_host(
+        self,
+        hidden: Callable[..., bool],
+        cls: ast.ClassDef,
+        method: ast.AST,
+        destination: ast.AST,
+    ) -> bool:
+        """Whether the host comes from the hidden part: the head is itself hidden, or is a literal
+        that leaves the host to what follows it (`""`, `"{}{}"`, `"https://{}/"`). A head the file
+        writes down, or takes plain from a parameter or another object, names the host itself."""
+        head = self._destination_head(cls, method, destination)
+        if isinstance(head, ast.Constant) and isinstance(head.value, str):
+            return not self._host_written(head.value)
+        return bool(hidden(head))
+
+    @staticmethod
+    def _binding_key(node: ast.AST) -> str | None:
+        """`x` for a name, `self.x` for an attribute of self; None otherwise."""
+        if isinstance(node, ast.Name):
+            return node.id
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+            return f"self.{node.attr}" if node.value.id == "self" else None
+        return None
+
+    #: How each kind of expression steps toward its leftmost piece.
+    _STEPS: ClassVar[dict[type, Callable[[Any], ast.AST | None]]] = {
+        ast.BinOp: lambda n: n.left,
+        ast.JoinedStr: lambda n: n.values[0] if n.values else None,
+        ast.FormattedValue: lambda n: n.value,
+    }
+
+    @staticmethod
+    def _leftmost(node: ast.AST) -> ast.AST | None:
+        """One step toward a destination's head: the left of `+`, an f-string's first piece, a
+        formatted value's expression, a `.format()` call's template; None when there is none."""
+        step = RelayedSends._STEPS.get(type(node))
+        if step is not None:
+            return step(node)
+        func = getattr(node, "func", None)
+        if isinstance(node, ast.Call) and isinstance(func, ast.Attribute) and func.attr == "format":
+            return func.value
+        return None
+
+    @classmethod
+    def _destination_head(
+        cls, owner: ast.ClassDef, method: ast.AST, destination: ast.AST
+    ) -> ast.AST:
+        """The leftmost piece of a destination, the one that names the host: through `+`, f-strings
+        and `.format()` templates, and through a local or `self.<attr>` binding to its value."""
+        bound: dict[str, ast.AST] = {}
+        for scope, attributes in ((owner, True), (method, False)):
+            for node in PythonSyntax.within(scope, ast.Assign):
+                for target in node.targets:
+                    key = cls._binding_key(target)
+                    if key is not None and key.startswith("self.") is attributes:
+                        bound.setdefault(key, node.value)
+        head = destination
+        for _ in range(8):
+            key = cls._binding_key(head)
+            following = bound.pop(key) if key in bound else cls._leftmost(head)
+            if following is None:
+                break
+            head = following
+        return head
 
     @staticmethod
     def _body_reads_stored(method: ast.AST, body: list[ast.AST], stored: set[str]) -> bool:

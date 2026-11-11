@@ -110,7 +110,7 @@ class SweptSends(HiddenDestinations):
             # the destination and the body.
             built = self._request_object(function, destination)
             if built is not None:
-                destination = built.args[0] if built.args else destination
+                destination = self._destination_of(built) or destination
                 body += [
                     *built.args[1:],
                     *(k.value for k in built.keywords if k.arg in self.BODY_KEYWORDS),
