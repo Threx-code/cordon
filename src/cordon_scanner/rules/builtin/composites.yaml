@@ -2281,7 +2281,7 @@ rules:
       This code reads the clipboard, matches what it read against a pattern and writes a value the
       package carries back: the clipper shape. A user who copies a cryptocurrency address and pastes
       it pays the address the package chose. A clipboard tool writes what it read or what the user
-      picked; nothing else has a reason to substitute a fixed value for a match.
+      picked; this writes a fixed value when what it read matched a pattern.
     remediation: >
       Do not run this code. Check where a payment made while it ran was sent.
     provenance:

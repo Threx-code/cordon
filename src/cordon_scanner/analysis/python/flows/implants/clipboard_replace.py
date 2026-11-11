@@ -19,7 +19,7 @@ import ast
 import re
 from typing import ClassVar, Final
 
-from cordon_scanner.analysis.python.flows.backdoor_writes import ContentOrigin
+from cordon_scanner.analysis.python.flows.implants.backdoor_writes import ContentOrigin
 
 READ_SHELL: Final = re.compile(r"\bpbpaste\b|\bxclip\b[^;&|]*\s-o\b|\bxsel\b[^;&|]*\s-o\b|\bwl-paste\b|Get-Clipboard", re.I)
 WRITE_SHELL: Final = re.compile(r"\bpbcopy\b|\bxclip\b|\bxsel\b|\bwl-copy\b|\bclip(?:\.exe)?\b|Set-Clipboard", re.I)

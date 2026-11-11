@@ -17,7 +17,7 @@ from typing import ClassVar, Final
 
 HIDDEN_TEXT: Final = re.compile(
     r"(?i)\bpythonw(?:\.exe)?\b|\bwscript(?:\.exe)?\b|\bcscript(?:\.exe)?\b|\.vbs\b|\bnohup\b"
-    r"|-WindowStyle\s+Hidden|\bwindowstyle\s*=?\s*hidden|\bstart\s+/b\b|\s&\s*disown\b|/b\s+/min"
+    r"|\bwindowstyle[ =]{1,3}hidden\b|\bstart /b\b"
 )
 
 

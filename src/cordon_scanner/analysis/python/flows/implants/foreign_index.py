@@ -20,7 +20,8 @@ from typing import ClassVar, Final
 
 from cordon_scanner.analysis.python.py_flow import PythonValueFlow
 
-PIP_INSTALL: Final = re.compile(r"\bpip[0-9.]*\b.{0,80}?\binstall\b|\binstall\b.{0,80}?\bpip\b", re.S)
+PIP_WORD: Final = re.compile(r"\bpip[0-9.]*\b")
+INSTALL_WORD: Final = re.compile(r"\binstall\b")
 INDEX_FLAG: Final = re.compile(
     r"(?<![\w-])(?:--index-url|--extra-index-url|--trusted-host|--find-links|-i|-f)(?![\w-])", re.I
 )
@@ -50,7 +51,7 @@ class ForeignIndex:
                 text = " ".join(
                     p.value for p in ast.walk(node.args[0]) if isinstance(p, ast.Constant) and isinstance(p.value, str)
                 )
-                if (name.endswith("pip.main") and "install" in text and INDEX_FLAG.search(text)) or (PIP_INSTALL.search(text) and INDEX_FLAG.search(text)):
+                if (name.endswith("pip.main") and "install" in text and INDEX_FLAG.search(text)) or (PIP_WORD.search(text) and INSTALL_WORD.search(text) and INDEX_FLAG.search(text)):
                     out.add(node.lineno)
         return sorted(out)
 
