@@ -551,6 +551,38 @@ rules:
       unless:
         - path_glob: "tests/**"
 
+  - id: MALWARE.DROPPER.MACHINE_REPORT.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: A fingerprint of the machine is sent and the program the answer names is run
+    message: >
+      The package sends a fingerprint of the machine -- its environment, and hashes of the user's
+      files -- and runs the program the server's answer names: a server choosing, per machine, what
+      to install. A self-updater asks which version to fetch; it does not send the environment or
+      the user's files, and telemetry that reports a platform does not run what comes back.
+    remediation: >
+      Do not install or import the package. Treat the machine as compromised if it ran: what was
+      started was chosen by whoever holds the server.
+    provenance:
+      kind: research
+      reference: >
+        A package whose context module reads the environment and hashes files at paths a shipped
+        config names, and whose verifier posts that and downloads, makes executable and starts the
+        URL the answer names (is-it-ai 0.1.1, 2026-11-11).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 200
+      any:
+        - rule: AST.PY.MACHINE_REPORT_RUN
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: MALWARE.IMPLANT.AV_EXCLUSION.001
     version: 1.0.0
     category: malicious

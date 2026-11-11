@@ -60,6 +60,8 @@ class PythonFactIds:
         ("credentials sent to a free host", "AST.PY.CREDENTIALS_FREE_HOST"),
         # A Defender exclusion or switch-off run as a command (rainbowcolors 0.1.0).
         ("antivirus exclusion added", "AST.PY.AV_EXCLUSION"),
+        # A fingerprint of the machine posted, and the answer's program run (is-it-ai 0.1.1).
+        ("machine report answered with a program", "AST.PY.MACHINE_REPORT_RUN"),
         # A persistence location written by code that runs when the file is loaded.
         ("persist at load", "AST.PY.PERSIST_AT_LOAD"),
         # The clipboard read, matched against a pattern, and set to a value the package brings.

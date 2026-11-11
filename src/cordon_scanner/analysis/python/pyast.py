@@ -82,6 +82,7 @@ from cordon_scanner.analysis.python.flows.staged.dormant_decodes import DormantD
 from cordon_scanner.analysis.python.flows.staged.executed_data import ExecutedData
 from cordon_scanner.analysis.python.flows.staged.import_mail import ImportMail
 from cordon_scanner.analysis.python.flows.staged.loose_stages import LooseStages
+from cordon_scanner.analysis.python.flows.staged.machine_reports import MachineReports
 from cordon_scanner.analysis.python.flows.startup_files import StartupFiles
 from cordon_scanner.analysis.python.sourced_flows import SourcedFlows
 
@@ -200,6 +201,7 @@ class PythonAnalyzer(
     ImportMail,
     LooseStages,
     AvExclusions,
+    MachineReports,
     FreeHostCredentials,
     ClientBindings,
     SourcedFlows,
@@ -216,6 +218,7 @@ class PythonAnalyzer(
         imported_clients: Mapping[str, str] | None = None,
         imported_runners: Mapping[str, str] | None = None,
         carried_calls: Mapping[str, str] | None = None,
+        imported_collectors: Mapping[str, str] | None = None,
     ) -> list[AstHit]:
         """Capabilities resolvable from this source, or none if it will not parse.
 
@@ -244,6 +247,7 @@ class PythonAnalyzer(
             analyzer._imported_runners[name] = {int(i) for i in positions.split(",")}
         for name, positions in (carried_calls or {}).items():
             analyzer._carried_calls[name] = {int(i) for i in positions.split(",")}
+        analyzer._imported_collectors = set(imported_collectors or {})
         analyzer._walk(tree)
         analyzer._downloaded_and_run(tree)
         analyzer._decoded_dropped_and_run(tree)
@@ -275,6 +279,7 @@ class PythonAnalyzer(
             analyzer._swept_sends(tree)
             analyzer._relayed_to_hidden(tree)
             analyzer._credentials_to_free_hosts(tree)
+        analyzer._machine_reports(tree)
         return analyzer._hits
 
     @classmethod

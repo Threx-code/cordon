@@ -296,6 +296,10 @@ class ScanContext:
     python_carried_calls: Mapping[str, Mapping[str, str]] | None = None
     """Per file, its functions and the parameter positions another of the package's files passes
     a carried value (`CarriedCalls`), in the runner map's shape."""
+    python_imported_collectors: Mapping[str, Mapping[str, str]] | None = None
+    """Per Python file, the functions it imports from another of the package's files that collect a
+    fingerprint of the machine: environment, platform, and files read or hashed
+    (`MachineCollectors`), in the runner map's shape."""
 
     cross_file_unresolved: bool = False
     """Whether some file of the package calls into it in a way the join cannot follow (a computed

@@ -68,6 +68,7 @@
   "analysis/python/flows/staged/executed_data": "analysis/python/flows/staged/executed_data",
   "analysis/python/flows/staged/import_mail": "analysis/python/flows/staged/import_mail",
   "analysis/python/flows/staged/loose_stages": "analysis/python/flows/staged/loose_stages",
+  "analysis/python/flows/staged/machine_reports": "analysis/python/flows/staged/machine_reports",
   "analysis/python/flows/hidden_start": "analysis/python/flows/hidden_start",
   "analysis/python/flows/startup_files": "analysis/python/flows/startup_files",
   "analysis/python/flows/staged/av_exclusions": "analysis/python/flows/staged/av_exclusions",

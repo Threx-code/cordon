@@ -113,6 +113,7 @@ class TestTheSweepAndRelayRulesShip:
             ("SUSPECT.INSTALL.TEMP_COMMAND.001", "AST.PY.TEMP_COMMAND"),
             ("MALWARE.EXFIL.CREDENTIALS_TO_FREE_HOST.001", "AST.PY.CREDENTIALS_FREE_HOST"),
             ("MALWARE.IMPLANT.AV_EXCLUSION.001", "AST.PY.AV_EXCLUSION"),
+            ("MALWARE.DROPPER.MACHINE_REPORT.001", "AST.PY.MACHINE_REPORT_RUN"),
         ],
     )
     def test_the_rule_is_built_in_and_matches_its_fact(self, rule_id: str, fact: str) -> None:

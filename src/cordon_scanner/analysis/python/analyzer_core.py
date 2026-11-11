@@ -68,6 +68,9 @@ class AnalyzerCore:
         # The module being analysed, for values its top-level statements compute from literals
         # (`LiteralProgram`).
         self._module_tree: ast.AST | None = None
+        # Names this file imports from another file of the package that collect a fingerprint
+        # of the machine (`MachineCollectors`).
+        self._imported_collectors: set[str] = set()
         # Name -> the f-string or concatenation it is bound to, for names bound exactly once.
         self._sketches: dict[str, ast.AST] = {}
         # Names bound only ever to a plain string literal. See `_assembled_name`.

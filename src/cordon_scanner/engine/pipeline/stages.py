@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.analysis.python.flows.carried_calls import CarriedCalls
 from cordon_scanner.analysis.python.flows.imported_clients import ImportedClients
+from cordon_scanner.analysis.python.flows.staged.machine_reports import MachineCollectors
 from cordon_scanner.decide.code_model import CodeModelPass
 from cordon_scanner.detect.base import (
     FileUnit,
@@ -180,6 +181,7 @@ class ScanStages:
             python_imported_clients=ImportedClients.of_units(units),
             python_imported_runners=ImportedClients.runners_of_units(units),
             python_carried_calls=CarriedCalls.of_units(units),
+            python_imported_collectors=MachineCollectors.of_units(units),
         )
         return Hooks.lifted_inherit(ctx)
 

