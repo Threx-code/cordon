@@ -3,7 +3,7 @@
 An implant installs its payload and arranges for it to start again: it downloads or decodes a program,
 runs it, and writes the Run key, the scheduled task, the LaunchAgent or the
 crontab line that starts it next time. The three facts in one file mean little (a library with a
-scheduler and a downloader); in one function, or one function and the helpers it calls, they are one
+scheduler and a downloader); in one function, or one function and the helpers it calls, through any depth,, they are one
 act. This module relates the lines: a persistence write (`py_persist.py`) and a run of something the
 package downloaded or decoded (the analyser's own facts) that sit in the same function, or one
 helper hop from each other.
@@ -75,15 +75,27 @@ class PersistRuns:
             where = inside(line)
             near: set[str | None] = {where}
             if where is not None:
-                near |= set(calls.get(where, ())) | callers.get(where, set())
+                near |= cls._reach(where, calls) | callers.get(where, set())
                 # a sibling the same caller starts: `install()` calls both `plant()` and `persist()`
                 for parent in callers.get(where, ()):
-                    near |= set(calls.get(parent, ()))
+                    near |= cls._reach(parent, calls)
             else:
                 near |= top_calls
             if any(inside(run) in near for run in run_lines):
                 out.append(line)
         return out
+
+    @staticmethod
+    def _reach(start: str, calls: dict[str, set[str]]) -> set[str]:
+        """The functions `start` calls, through any number of the file's own helpers."""
+        seen: set[str] = set()
+        pending = [start]
+        while pending:
+            for target in calls.get(pending.pop(), ()):
+                if target not in seen:
+                    seen.add(target)
+                    pending.append(target)
+        return seen
 
     @staticmethod
     def _scope_text(tree: ast.Module, source: str, line: int) -> str:
