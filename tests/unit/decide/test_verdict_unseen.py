@@ -99,6 +99,14 @@ class TestTheAdmittedRulesAreKept:
         "MALWARE.INSTALL.STARTUP_CODE.001",
         # 1 unseen unit (sherpy); 0 of 704 benign wheels with native modules.
         "SUSPECT.BINARY.CHAT_ENDPOINT.001",
+        # The skills team's static-miss rules (11 Nov), each measured on the 16,274 benign gate units:
+        "MALWARE.PERSIST.BACKDOOR.001",  # graphicsctxr's key write; 2 benign (tools that ship a key)
+        "MALWARE.IMPORT.PERSIST.001",  # 2 of 199 with persistence words at import
+        "MALWARE.INSTALL.FOREIGN_INDEX.001",  # pyregions_snowflake; 0 of 332
+        "MALWARE.IMPLANT.PERSIST_RUN.001",  # 1-3 at the analyser level
+        "MALWARE.PERSIST.HIDDEN.001",  # ailaunchkit; 1 of 16,274
+        "MALWARE.KEYLOGGER.001",  # aiassistcore; 0 of 16,274
+        "MALWARE.CLIPPER.001",  # aiassistcore; 0 of 16,274
     )
 
     def test_each_is_in_keep(self) -> None:

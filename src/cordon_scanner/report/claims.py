@@ -196,6 +196,8 @@ _SIGNALS_BY_PREFIX: tuple[tuple[str, frozenset[Signal]], ...] = tuple(
         ("SUSPECT.BINARY.CREDENTIAL_THEFT.", {_S.THEFT}),
         ("SUSPECT.BINARY.KEYLOGGER.", {_S.THEFT}),
         ("SUSPECT.BINARY.CHAT_ENDPOINT.", {_S.THEFT}),
+        ("MALWARE.KEYLOGGER.", {_S.THEFT}),
+        ("MALWARE.CLIPPER.", {_S.THEFT}),
         ("SUSPECT.MCP.SECRET_HARVEST.", {_S.THEFT}),
         ("SUSPECT.ARCHIVE.LINK_TO_SECRET.", {_S.THEFT}),
         ("SUSPECT.REGISTRY.SELF_PUBLISH.", {_S.PROPAGATE}),
@@ -270,6 +272,8 @@ _SIGNALS_BY_PREFIX: tuple[tuple[str, frozenset[Signal]], ...] = tuple(
         ("SUSPECT.MODEL.REMOTE_CODE.", {_S.FETCH_RUN}),
         # Persistence.
         ("MALWARE.IMPLANT.", {_S.FETCH_RUN, _S.PERSIST}),
+        ("MALWARE.PERSIST.", {_S.PERSIST}),
+        ("MALWARE.IMPORT.PERSIST.", {_S.PERSIST}),
         ("MALWARE.INSTALL.PERSIST.", {_S.PERSIST}),
         ("MALWARE.INSTALL.BACKGROUND.", {_S.PERSIST}),
         ("SUSPECT.PERSIST.", {_S.PERSIST}),
