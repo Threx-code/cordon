@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.python.flows.containers import Containers
-from cordon_scanner.analysis.python.flows.http_clients import CLIENT_REQUESTS
+from cordon_scanner.analysis.python.flows.http_clients import CLIENT_REQUESTS, CLOUD_UPLOADS
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.foundation.capabilities import Capability
 
@@ -112,6 +112,7 @@ PRIMITIVES: dict[str, Capability] = {
 
 # Requests through an HTTP client object (`flows/http_clients.py`): its methods are egress.
 PRIMITIVES.update(dict.fromkeys(CLIENT_REQUESTS, Capability.EGRESS))
+PRIMITIVES.update(dict.fromkeys(CLOUD_UPLOADS, Capability.EGRESS))
 
 
 ENVIRONMENT = frozenset({"os.environ", "os.getenv", "os.environb"})

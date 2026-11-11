@@ -45,6 +45,12 @@ class PythonFactIds:
         ("keystrokes logged", "AST.PY.KEYSTROKES_LOGGED"),
         # A link that logs the address of whoever opens it, handed to a request or a command.
         ("ip logger fetched", "AST.PY.IP_LOGGER_FETCHED"),
+        # What the machine knows (environment, host and user names, platform) put in a cloud store.
+        ("machine facts uploaded", "AST.PY.MACHINE_FACTS_UPLOADED"),
+        # A program started and left running when the package is imported.
+        ("program started at import", "AST.PY.PROGRAM_STARTED_AT_IMPORT"),
+        # Files swept from a directory and sent to a free-hosting, paste, tunnel or interaction host.
+        ("sweep sent to a rentable host", "AST.PY.SWEPT_TO_RENTABLE_HOST"),
         # A persistence write with a hidden launch (no window) beside it.
         ("autostart hidden", "AST.PY.AUTOSTART_HIDDEN"),
         # A persistence write with a run of a program the package downloaded, decoded or ships beside it.

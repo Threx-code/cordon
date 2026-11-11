@@ -12,8 +12,10 @@ from typing import TYPE_CHECKING
 
 from cordon_scanner.analysis.python.flows.implants.backdoor_writes import BackdoorWrites
 from cordon_scanner.analysis.python.flows.implants.clipboard_replace import ClipboardReplace
+from cordon_scanner.analysis.python.flows.implants.cloud_leak import CloudLeak
 from cordon_scanner.analysis.python.flows.implants.foreign_index import ForeignIndex
 from cordon_scanner.analysis.python.flows.implants.hidden_launch import HiddenLaunch
+from cordon_scanner.analysis.python.flows.implants.import_starts import ImportStarts
 from cordon_scanner.analysis.python.flows.implants.ip_logger import IpLoggerFetch
 from cordon_scanner.analysis.python.flows.implants.key_capture import KeyCapture
 from cordon_scanner.analysis.python.flows.implants.persist_at_load import PersistAtLoad
@@ -23,6 +25,7 @@ from cordon_scanner.analysis.python.flows.implants.persist_runs import (
     PersistRuns,
 )
 from cordon_scanner.analysis.python.flows.implants.shipped_programs import ShippedPrograms
+from cordon_scanner.analysis.python.flows.implants.swept_hosting import SweptToHosting
 from cordon_scanner.analysis.python.pyfacts import AstHit
 from cordon_scanner.foundation.capabilities import Capability
 
@@ -35,6 +38,9 @@ class ImplantFacts:
 
     #: Flows that report one detail per line they find.
     LINE_FLOWS = (
+        (CloudLeak, Capability.FLOW, "machine facts uploaded"),
+        (ImportStarts, Capability.FLOW, "program started at import"),
+        (SweptToHosting, Capability.FLOW, "sweep sent to a rentable host"),
         (IpLoggerFetch, Capability.FLOW, "ip logger fetched"),
         (KeyCapture, Capability.FLOW, "keystrokes logged"),
         (ClipboardReplace, Capability.FLOW, "clipboard replaced"),

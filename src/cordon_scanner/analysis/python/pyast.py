@@ -566,6 +566,7 @@ class PythonAnalyzer(
 
     def _call(self, node: ast.Call) -> None:
         dotted = self._dotted(node.func)
+        dotted = self._cloud_callee(node) or dotted
         if dotted == "open" and node.args:
             self._opened_for_persistence(node)
         if dotted in UNSAFE_LOADERS and self._loads_a_bundled_file(node, dotted):

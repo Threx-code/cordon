@@ -7,7 +7,11 @@ from __future__ import annotations
 import ast
 from typing import ClassVar
 
-from cordon_scanner.analysis.python.flows.http_clients import HTTP_CLIENTS
+from cordon_scanner.analysis.python.flows.http_clients import (
+    CLOUD_STORAGE_LIBRARIES,
+    CLOUD_UPLOAD_METHODS,
+    HTTP_CLIENTS,
+)
 from cordon_scanner.analysis.python.py_identity import IDENTITY_COMMANDS, IdentityVariables
 from cordon_scanner.analysis.python.pyfacts import (
     PRIMITIVES,
@@ -63,6 +67,8 @@ class AnalyzerCore:
         self._plain_literals: set[str] = set()
         # Names bound to a path built from `__file__`. See `_loads_a_bundled_file`.
         self._bundled_paths: set[str] = set()
+        #: Whether the file imports a cloud-storage library (read once, on the first upload-like call).
+        self._cloud_storage: bool | None = None
         # Names bound to the text of a local file. See `_read_from_local_file`.
         self._local_reads: set[str] = set()
         # Lines whose `exec`/`eval` runs the package's own file. See `own_file_exec_lines`.
@@ -145,7 +151,31 @@ class AnalyzerCore:
                 return f"{namespace}.{attribute}", self._invoked.get(id(node), node)
             return None
 
+        cloud = self._cloud_callee(node)
+        if cloud is not None:
+            return cloud, node
         return (dotted, node) if dotted else None
+
+    def _cloud_callee(self, node: ast.Call) -> str | None:
+        """`cloud_storage.<method>` for a call of an upload method in a file that imports a
+        cloud-storage library: the receiver is rarely written down (`bucket.blob(n).upload_from_string`)."""
+        if (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr in CLOUD_UPLOAD_METHODS
+            and self._imports_cloud_storage()
+        ):
+            return f"cloud_storage.{node.func.attr}"
+        return None
+
+    def _imports_cloud_storage(self) -> bool:
+        """Whether the file imports a cloud-storage library (`CLOUD_STORAGE_LIBRARIES`)."""
+        if self._cloud_storage is None:
+            self._cloud_storage = any(
+                target == lib or target.startswith(lib + ".")
+                for target in self._aliases.values()
+                for lib in CLOUD_STORAGE_LIBRARIES
+            )
+        return self._cloud_storage
 
     def _dotted(self, node: ast.AST) -> str | None:
         """The dotted name an expression refers to, unwinding aliases.

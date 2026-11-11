@@ -30,4 +30,35 @@ CLIENT_REQUESTS: frozenset[str] = frozenset(
     f"{client}.{method}" for client in HTTP_CLIENTS for method in HTTP_CLIENT_METHODS
 )
 
-__all__ = ["CLIENT_REQUESTS", "HTTP_CLIENTS", "HTTP_CLIENT_METHODS"]
+#: Libraries that put an object in a cloud store, and the methods of a bucket, blob or container that
+#: do it. A store is somebody's server: `blob.upload_from_string(os.getenv(...))` sends the value to
+#: whoever owns the bucket as `requests.post` sends it to a host. The receiver is rarely written down
+#: (`bucket.blob(name).upload_from_string(...)`), so the method counts when the file imports one of
+#: the libraries and not otherwise: `upload_file` is also what a web framework calls.
+CLOUD_STORAGE_LIBRARIES: tuple[str, ...] = (
+    "google.cloud.storage",
+    "google.cloud",
+    "boto3",
+    "botocore",
+    "boto",
+    "azure.storage",
+    "minio",
+    "oss2",
+    "qcloud_cos",
+    "swiftclient",
+    "b2sdk",
+)
+CLOUD_UPLOAD_METHODS: frozenset[str] = frozenset(
+    {"upload_from_string", "upload_from_filename", "upload_from_file", "upload_blob", "put_object",
+     "upload_file", "upload_fileobj", "fput_object", "put_blob", "upload_data", "put_object_from_file"}
+)  # fmt: skip
+CLOUD_UPLOADS: frozenset[str] = frozenset(f"cloud_storage.{m}" for m in CLOUD_UPLOAD_METHODS)
+
+__all__ = [
+    "CLIENT_REQUESTS",
+    "CLOUD_STORAGE_LIBRARIES",
+    "CLOUD_UPLOADS",
+    "CLOUD_UPLOAD_METHODS",
+    "HTTP_CLIENTS",
+    "HTTP_CLIENT_METHODS",
+]

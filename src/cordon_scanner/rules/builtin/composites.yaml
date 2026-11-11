@@ -2470,6 +2470,104 @@ rules:
         - path_glob: "**/test_*.py"
         - path_glob: "tests/**"
 
+  - id: MALWARE.EXFIL.CLOUD_UPLOAD.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Uploads what the machine knows to a cloud store
+    message: >
+      This code reads the environment or facts about the machine (variables, the host and user
+      names, the platform) and uploads them with a cloud-storage client. The bucket belongs to whoever
+      wrote the code, and what it receives is what the code learned about the machine. A program that
+      uploads files it was asked to or data it made does not start from the environment.
+    remediation: >
+      Do not run this code. Treat the values the machine holds as read by whoever owns the bucket.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package whose function read three environment values and uploaded them to a Google
+        Cloud Storage blob from a thread (dlty, 2026-11-11).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1567/002/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: AST.PY.MACHINE_FACTS_UPLOADED
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.EXFIL.SWEPT_TO_HOST.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Sweeps files and sends their contents to a host anyone can rent
+    message: >
+      This code walks a directory tree, reads the files it finds and sends their contents in a request
+      to a free-hosting subdomain, a paste site, a tunnel or an out-of-band interaction host written in
+      the file. A backup or search tool keeps what it reads and an uploader sends a file to its own
+      service; reading a tree and posting it to a host that costs the sender nothing is the shape of a
+      stealer.
+    remediation: >
+      Do not run this code. Treat the files under the directories it walks as read by whoever owns the
+      host, and look at what was in them.
+    provenance:
+      kind: research
+      reference: >
+        Two PyPI packages that walked the driver folders for text logs and posted each file's text to a
+        subdomain of a free-hosting platform through an async client and `asyncio.to_thread`
+        (funkratov_renderkit and renderkitcore, 2026-11-11).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1005/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: AST.PY.SWEPT_TO_RENTABLE_HOST
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.IMPORT.PROGRAM_START.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Importing the package starts a program and leaves it running
+    message: >
+      When this package is imported it starts a program with `Popen` and discards the handle: no
+      wait, no output read. A library that asks the machine something at import runs the program and
+      reads the answer; one that launches something that outlives the import is running code the
+      importer did not ask for.
+    remediation: >
+      Do not import this package. Find the program it starts and what it does.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package whose `__init__` started a literal program with `subprocess.Popen` as its
+        first statement, with a develop/install command that ran a message beside it
+        (lobomarinopython, 2026-11-11); benign 0 of 16,274.
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1204/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: import_entry
+        - rule: AST.PY.PROGRAM_STARTED_AT_IMPORT
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: MALWARE.EXFIL.INSTALL_CALLBACK.001
     version: 1.0.0
     category: malicious
