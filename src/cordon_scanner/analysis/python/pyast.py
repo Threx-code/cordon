@@ -72,6 +72,7 @@ from cordon_scanner.analysis.python.flows.decoded_drops import DecodedDrops
 from cordon_scanner.analysis.python.flows.dns_tunnels import DnsTunnels
 from cordon_scanner.analysis.python.flows.received_run import ReceivedRuns
 from cordon_scanner.analysis.python.flows.startup_files import StartupFiles
+from cordon_scanner.analysis.python.flows.swept_sends import SweptSends
 from cordon_scanner.analysis.python.sourced_flows import SourcedFlows
 
 CREDENTIAL_VARIABLE = re.compile(
@@ -181,6 +182,7 @@ class PythonAnalyzer(
     DnsTunnels,
     DataFileCode,
     StartupFiles,
+    SweptSends,
     ClientBindings,
     SourcedFlows,
     AnalyzerCore,
@@ -243,6 +245,7 @@ class PythonAnalyzer(
             analyzer._environment_sent(tree)
             analyzer._secret_sent(tree)
             analyzer._hidden_requests(tree)
+            analyzer._swept_sends(tree)
         return analyzer._hits
 
     @classmethod

