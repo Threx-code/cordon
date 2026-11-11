@@ -13274,6 +13274,57 @@ class TestWhatAPthImportsRunsAtStartup:
         found = self.scan(tmp_path, {"setup.py": self.SETUP.format(name="LICENSE.txt", dest="sp")})
         assert "MALWARE.INSTALL.PERSIST.001" not in found
 
+    BOOTSTRAP = (
+        "import os, site\n"
+        "from setuptools import setup\n"
+        "def _create_fake_pth(placeholder):\n"
+        "    pth = os.path.join(site.getsitepackages()[0], {name!r})\n"
+        "    with open(pth, 'w') as f:\n"
+        "        f.write({content})\n"
+        "_create_fake_pth('x')\n"
+        "setup(name='t', version='1')\n"
+    )
+
+    def test_the_legacy_bootstrap_writing_a_path_pth_is_not(self, tmp_path) -> None:
+        # nose3 1.3.8, RTMPy 0.1.1: distribute_setup.py writes setuptools.pth holding a directory.
+        content = "os.path.join(os.curdir, 'setuptools-0.6c11-py2.7.egg')"
+        found = self.scan(
+            tmp_path, {"setup.py": self.BOOTSTRAP.format(name="setuptools.pth", content=content)}
+        )
+        assert "MALWARE.INSTALL.PERSIST.001" not in found
+
+    def test_the_bootstrap_in_its_real_open_then_write_form_is_not(self, tmp_path) -> None:
+        setup = (
+            "import os, site\n"
+            "from setuptools import setup\n"
+            "def _create_fake_setuptools_pkg_info(placeholder):\n"
+            "    f = open(os.path.join(placeholder, 'PKG-INFO'), 'w')\n"
+            "    f.write('Metadata-Version: 1.0\\n')\n"
+            "    pth_file = os.path.join(site.getsitepackages()[0], 'setuptools.pth')\n"
+            "    f = open(pth_file, 'w')\n"
+            "    try:\n"
+            "        f.write(os.path.join(os.curdir, 'setuptools.egg-info'))\n"
+            "    finally:\n"
+            "        f.close()\n"
+            "_create_fake_setuptools_pkg_info('x')\n"
+            "setup(name='t', version='1')\n"
+        )
+        assert "MALWARE.INSTALL.PERSIST.001" not in self.scan(tmp_path, {"setup.py": setup})
+
+    def test_writing_an_import_line_into_a_site_pth_still_is(self, tmp_path) -> None:
+        found = self.scan(
+            tmp_path,
+            {"setup.py": self.BOOTSTRAP.format(name="x.pth", content="'import evil\\n'")},
+        )
+        assert "MALWARE.INSTALL.PERSIST.001" in found
+
+    def test_writing_computed_content_into_a_site_pth_still_is(self, tmp_path) -> None:
+        content = "bytes([105, 109, 112]).decode() + placeholder"
+        found = self.scan(
+            tmp_path, {"setup.py": self.BOOTSTRAP.format(name="x.pth", content=content)}
+        )
+        assert "MALWARE.INSTALL.PERSIST.001" in found
+
     def test_a_pth_copied_into_the_build_tree_is_not(self, tmp_path) -> None:
         found = self.scan(
             tmp_path,
