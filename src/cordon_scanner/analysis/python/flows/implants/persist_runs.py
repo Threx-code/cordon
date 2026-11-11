@@ -14,6 +14,7 @@ helper hop from each other.
 from __future__ import annotations
 
 import ast
+import re
 from typing import Final
 
 from cordon_scanner.analysis.python.py_persist import PythonPersistence
@@ -23,14 +24,32 @@ from cordon_scanner.analysis.python.py_persist import PythonPersistence
 RUN_DETAILS: Final = ("runs a downloaded", "runs a decoded file", "makes a decoded file runnable")
 
 
+#: The places a program is registered to start by itself: what `autostart hidden` reads. A shell profile
+#: or a service enabled is persistence, but not the registration of a program the user would see.
+AUTOSTART_WORD: Final = re.compile(
+    r"(?i)currentversion|launchagents|launchdaemons|\.config/autostart|schtasks|launchctl|crontab|/etc/cron"
+    r"|@reboot|\bsc(?:\.exe)?\W{1,8}create|start[ _]menu|shell:startup|systemctl|wantedby"
+)
+
+
 class PersistRuns:
     """The persistence writes with a brought program's run beside them."""
 
     @classmethod
-    def lines(cls, tree: ast.AST, run_lines: frozenset[int]) -> list[int]:
+    def lines(
+        cls,
+        tree: ast.AST,
+        run_lines: frozenset[int],
+        source: str | None = None,
+        only: re.Pattern[str] | None = None,
+    ) -> list[int]:
+        """`only` narrows which persistence writes count: those whose function (or the module, at
+        module level) names a place that pattern matches, in `source`."""
         if not run_lines or not isinstance(tree, ast.Module):
             return []
         written = PythonPersistence.written_lines(tree)
+        if written and only is not None and source is not None:
+            written = frozenset(line for line in written if only.search(cls._scope_text(tree, source, line)))
         if not written:
             return []
         functions = {
@@ -65,6 +84,19 @@ class PersistRuns:
             if any(inside(run) in near for run in run_lines):
                 out.append(line)
         return out
+
+    @staticmethod
+    def _scope_text(tree: ast.Module, source: str, line: int) -> str:
+        """The text of the innermost function holding `line`, or of the whole module."""
+        best: ast.AST | None = None
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.lineno <= line <= (node.end_lineno or node.lineno):
+                if best is None or node.lineno >= best.lineno:  # type: ignore[attr-defined]
+                    best = node
+        if best is None:
+            return source
+        lines = source.splitlines()
+        return "\n".join(lines[best.lineno - 1 : best.end_lineno])  # type: ignore[attr-defined]
 
     @classmethod
     def _called(cls, body: list[ast.stmt], functions: dict[str, ast.AST]) -> set[str]:

@@ -1,10 +1,11 @@
 """A program started so that the user does not see it.
 
 A program that registers itself to start at login and runs with no window is one the user did not
-choose to keep: a `.vbs` launched through `wscript`, `CREATE_NO_WINDOW`, `DETACHED_PROCESS` or
-`SW_HIDE` creation flags, `pythonw`, `nohup ... &`, PowerShell's `-WindowStyle Hidden`. A desktop
+choose to keep: a `.vbs` launched through `wscript`, `CREATE_NO_WINDOW` or
+`DETACHED_PROCESS` creation flags, `pythonw`, `nohup ... &`, PowerShell's `-WindowStyle Hidden`. A desktop
 application that autostarts shows a window; a tray tool shows an icon. Hidden is the stealth part, so
-this records the lines that ask for it, and `persist_runs.py` relates them to a persistence write.
+this records the lines (not `STARTF_USESHOWWINDOW` or `SW_HIDE` on a startup-info structure: 27 and 5 of the 16,274 benign
+units set them to keep a console from flashing) that ask for it, and `persist_runs.py` relates them to a persistence write.
 
 `lines` returns the line of each name, string or flag that asks for a hidden launch.
 """
@@ -25,7 +26,7 @@ class HiddenLaunch:
     """The hidden-launch requests in one syntax tree."""
 
     NAMES: ClassVar[frozenset[str]] = frozenset(
-        {"CREATE_NO_WINDOW", "DETACHED_PROCESS", "SW_HIDE", "STARTF_USESHOWWINDOW", "CREATE_NEW_CONSOLE_HIDDEN"}
+        {"CREATE_NO_WINDOW", "DETACHED_PROCESS"}
     )
 
     @classmethod

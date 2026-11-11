@@ -76,7 +76,11 @@ from cordon_scanner.analysis.python.flows.implants.foreign_index import ForeignI
 from cordon_scanner.analysis.python.flows.implants.hidden_launch import HiddenLaunch
 from cordon_scanner.analysis.python.flows.implants.key_capture import KeyCapture
 from cordon_scanner.analysis.python.flows.implants.persist_at_load import PersistAtLoad
-from cordon_scanner.analysis.python.flows.implants.persist_runs import RUN_DETAILS, PersistRuns
+from cordon_scanner.analysis.python.flows.implants.persist_runs import (
+    AUTOSTART_WORD,
+    RUN_DETAILS,
+    PersistRuns,
+)
 from cordon_scanner.analysis.python.flows.implants.shipped_programs import ShippedPrograms
 from cordon_scanner.analysis.python.flows.received_run import ReceivedRuns
 from cordon_scanner.analysis.python.flows.startup_files import StartupFiles
@@ -247,7 +251,7 @@ class PythonAnalyzer(
         runs = frozenset(h.line for h in analyzer._hits if any(d in h.detail for d in RUN_DETAILS))
         for line in PersistRuns.lines(tree, runs):
             analyzer._hits.append(AstHit(Capability.FLOW, line, "persist and run"))
-        for line in PersistRuns.lines(tree, frozenset(HiddenLaunch.lines(tree))):
+        for line in PersistRuns.lines(tree, frozenset(HiddenLaunch.lines(tree)), source, AUTOSTART_WORD):
             analyzer._hits.append(AstHit(Capability.FLOW, line, "autostart hidden"))
         for line in KeyCapture.lines(tree):
             analyzer._hits.append(AstHit(Capability.FLOW, line, "keystrokes logged"))
