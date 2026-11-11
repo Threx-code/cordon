@@ -85,3 +85,18 @@ class IpLookup:
             re.search(r"(^|\s)" + re.escape(host) + r"(/|\s|$)", command)
             for host in IP_LOOKUP_HOSTS
         )
+
+    @staticmethod
+    def drop_destination(call: ast.Call) -> bool:
+        """The request's first literal URL is a drop host (webhook, paste site, tunnel) or a bare
+        address: where a collector sends, not where a client's API lives."""
+        from cordon_scanner.analysis.javascript.js_flow import JsFlow
+
+        for argument in (*call.args, *(k.value for k in call.keywords)):
+            for part in ast.walk(argument):
+                if isinstance(part, ast.Constant) and isinstance(part.value, str):
+                    text = part.value if "://" in part.value else f"http://{part.value}"
+                    host, kind = JsFlow.classify(text)
+                    if host is not None and "." in host:
+                        return kind in ("drop", "ip")
+        return False
