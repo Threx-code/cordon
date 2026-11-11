@@ -2,7 +2,7 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,511 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,512 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -598,11 +598,12 @@ rule's own samples.
 
 ## Dropper
 
-7 rules.
+8 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.DROPPER.001` | critical | Install script fetches and executes remote content |
+| `MALWARE.DROPPER.DATA_FILE_CODE.001` | high | Code is loaded from a file named as data |
 | `MALWARE.DROPPER.DECODED.001` | high | Code writes out a payload it carries encoded, then makes it runnable or runs it |
 | `MALWARE.DROPPER.HIDDEN.001` | high | Code downloads a program and starts it with its window hidden |
 | `MALWARE.DROPPER.SHIPPED_PAYLOAD.001` | critical | Code decrypts bytes it carries into a program, writes it and runs it |

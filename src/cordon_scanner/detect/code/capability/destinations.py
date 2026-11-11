@@ -34,7 +34,7 @@ class DestinationLabels:
 
     #: A line that binds a value to one name: `URL = ...`, `const URL = ...`, `URL: str = ...`.
     _BINDING: ClassVar[re.Pattern[str]] = re.compile(
-        r"^\s*(?:export\s+)?(?:const|let|var|final)?\s*([A-Za-z_$][\w$]*)\s*(?::[^=]*)?=(?!=)"
+        r"^\s*(?:export\s+)?(?:(?:const|let|var|final)\s+)?([A-Za-z_$][\w$]*)\s*(?::[^=]*)?=(?!=)"
     )
 
     @classmethod

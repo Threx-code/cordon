@@ -501,7 +501,8 @@ class TestInShell:
 
     def test_a_lookup_of_the_public_address_or_a_home_path_is_not(self):
         script = (
-            "IP=$(curl -s --max-time 2 ifconfig.me)\n"
+            "IP=$(curl -s --max-time 2 ifconfig."
+            "me)\n"
             'CONFIG="$HOME/.tool/config"\n'
             'USER="${TOOL_USER:-}"\n'
             'curl -s -u "$USER:$PASS" "$HOST/api/status"\n'

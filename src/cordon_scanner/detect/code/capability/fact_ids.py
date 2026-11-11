@@ -32,6 +32,7 @@ class PythonFactIds:
         ("received run", "AST.PY.RECEIVED_RUN"),
         # Encoded data resolved as DNS names: a channel out that no firewall rule for HTTP sees.
         ("dns tunnel", "AST.PY.DNS_TUNNEL"),
+        ("code from a data file", "AST.PY.CODE_FROM_DATA"),
     )
     #: The suffix the analyser puts on a downloaded program's start when it hides the window.
     HIDDEN_START: ClassVar[str] = "hidden=1"

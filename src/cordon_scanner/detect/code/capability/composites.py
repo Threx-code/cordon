@@ -32,7 +32,9 @@ class CompositeEvaluator:
     #: normally data (`fixed_lines`: `git rev-parse` is not a decode-and-run); for these facts the
     #: literal is the act itself -- a calculator or `whoami` started at install
     #: (`InstallPrograms`), as `safe_spawn_lines` keeps a bare shell or a `start x.vbs`.
-    LITERAL_IS_THE_ACT: ClassVar[frozenset[str]] = frozenset({"AST.PY.INSTALL_FOREIGN_PROGRAM"})
+    LITERAL_IS_THE_ACT: ClassVar[frozenset[str]] = frozenset(
+        {"AST.PY.INSTALL_FOREIGN_PROGRAM", "AST.PY.CODE_FROM_DATA"}
+    )
 
     def __init__(self, *, in_entry: bool = False, in_import_entry: bool = False) -> None:
         #: The file is an install hook's own entry (the `install_entry` term).

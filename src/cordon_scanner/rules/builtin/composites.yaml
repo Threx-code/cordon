@@ -2857,8 +2857,8 @@ rules:
     confidence: high
     title: Code sends a credential store's contents outside the store's own service
     message: >
-      This file reads a credential store -- SSH keys, ~/.aws/credentials, .npmrc, .pypirc, .netrc,
-      a kube, docker, gh, gcloud or azure config, .git-credentials -- and what it read reaches a
+      This file reads a credential store -- SSH keys, a cloud provider's credentials, a package
+      registry's, container's or cluster's login, a git credential file -- and what it read reaches a
       request to somewhere the store does not belong: a host the code hides, a chat or webhook
       drop point, a raw IP address, a host the file never names, or (for AWS, cloud and SSH keys)
       anywhere off the provider's own service. A client authenticates with a credential at its own
@@ -2917,9 +2917,50 @@ rules:
       all:
         - capability: egress
         - capability: persist
+        # The run is the analyser's own reading of the code (a fetched or decoded value reaching
+        # an interpreter, a received value reaching a command), never the words: a package's
+        # long description that quotes code and a minified documentation bundle carry fetch,
+        # eval and a profile path as text (benign gate 2026-11-11: PKG-INFO, redoc.min.js).
         - any:
-            - capability: fetch_exec
-            - capability: execute
+            - rule: AST.PY.FETCH_EXEC
+            - rule: AST.PY.EXECUTE
+            - rule: AST.PY.HIDDEN_FETCH_EXEC
+            - rule: AST.PY.DECODED_DROP_RUN
+            - rule: AST.PY.RECEIVED_RUN
+            - rule: AST.PY.HIDDEN_ACTION
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.DROPPER.DATA_FILE_CODE.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: Code is loaded from a file named as data
+    message: >
+      This file imports or runs a file whose name says it is data -- a sound, an image, a text or
+      a data file -- through a module loader, `exec`, `compile` or `marshal`. Python keeps code in
+      source and compiled files; a loader pointed at a `.wav` or a `.png` is running a payload
+      carried where no reader of the source looks. Graded the same wherever the code runs.
+    remediation: >
+      Do not run this code. Treat the named file as the payload and review what it does.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package that imported a module from a `.wav` it shipped through
+        `spec_from_file_location` and ran it with `exec_module` (static zero-signal group,
+        2026-11-11).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1027/003/
+    match:
+      kind: composite
+      scope: file
+      proximity: 4000
+      any:
+        - rule: AST.PY.CODE_FROM_DATA
       unless:
         - path_glob: "**/*.test.*"
         - path_glob: "**/test_*.py"

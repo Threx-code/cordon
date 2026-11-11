@@ -268,6 +268,7 @@ _SIGNALS_BY_PREFIX: tuple[tuple[str, frozenset[Signal]], ...] = tuple(
         ("SUSPECT.DEPENDENCY.REMOTE_TARBALL", {_S.FETCH_RUN}),
         ("SUSPECT.MODEL.REMOTE_CODE.", {_S.FETCH_RUN}),
         # Persistence.
+        ("MALWARE.IMPLANT.", {_S.FETCH_RUN, _S.PERSIST}),
         ("MALWARE.INSTALL.PERSIST.", {_S.PERSIST}),
         ("MALWARE.INSTALL.BACKGROUND.", {_S.PERSIST}),
         ("SUSPECT.PERSIST.", {_S.PERSIST}),

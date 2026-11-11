@@ -80,6 +80,18 @@ class TestTheAdmittedRulesAreKept:
         # Declared HIGH (cordon-47, 7 Nov), kept from the start: 2 dev-half malicious skills (context-loader,
         # an injected .notebook-profile), 0 dev benign; 1 of 154,808 public skills, the same proof of concept.
         "SUSPECT.AGENT.SKILL_DISGUISED_ARCHIVE.001",
+        # PyPI v0.8.0 grades, kept from the start (11 Nov): content misses of the 158 unseen PyPI
+        # units each newly blocks on a799c5d2. Benign units carrying each at any severity on the
+        # full gate (16,249 units, a799c5d2): DECODED 5, CREDENTIAL_STORE.002 1, HIDDEN_DESTINATION
+        # 2, FOREIGN_PROGRAM 1, IMPLANT 57 before its run leg was narrowed, the others 0.
+        "MALWARE.INSTALL.FOREIGN_PROGRAM.001",  # 5 unseen units
+        "MALWARE.DROPPER.HIDDEN.001",  # 1 unseen unit
+        "MALWARE.DROPPER.DECODED.001",  # analysis team, decoded payload compiled and imported
+        "MALWARE.EXFIL.HIDDEN_DESTINATION.002",  # 1 unseen unit
+        "MALWARE.EXFIL.CREDENTIAL_STORE.002",  # 1 unseen unit
+        "MALWARE.EXFIL.DNS_TUNNEL.001",  # 1 unseen unit
+        "MALWARE.IMPLANT.INSTALL.001",  # 1 unseen unit; run leg narrowed to analyser facts
+        "MALWARE.DROPPER.DATA_FILE_CODE.001",  # 1 unseen unit (houdus); benign measured at the gate
     )
 
     def test_each_is_in_keep(self) -> None:

