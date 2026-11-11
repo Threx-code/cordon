@@ -74,6 +74,7 @@ from cordon_scanner.analysis.python.flows.implants.backdoor_writes import Backdo
 from cordon_scanner.analysis.python.flows.implants.clipboard_replace import ClipboardReplace
 from cordon_scanner.analysis.python.flows.implants.foreign_index import ForeignIndex
 from cordon_scanner.analysis.python.flows.implants.hidden_launch import HiddenLaunch
+from cordon_scanner.analysis.python.flows.implants.ip_logger import IpLoggerFetch
 from cordon_scanner.analysis.python.flows.implants.key_capture import KeyCapture
 from cordon_scanner.analysis.python.flows.implants.persist_at_load import PersistAtLoad
 from cordon_scanner.analysis.python.flows.implants.persist_runs import (
@@ -257,6 +258,8 @@ class PythonAnalyzer(
         hidden &= set(PersistRuns.lines(tree, frozenset(ShippedPrograms.path_lines(tree)), source, AUTOSTART_WORD))
         for line in sorted(hidden):
             analyzer._hits.append(AstHit(Capability.FLOW, line, "autostart hidden"))
+        for line in IpLoggerFetch.lines(tree):
+            analyzer._hits.append(AstHit(Capability.FLOW, line, "ip logger fetched"))
         for line in KeyCapture.lines(tree):
             analyzer._hits.append(AstHit(Capability.FLOW, line, "keystrokes logged"))
         for line in ClipboardReplace.lines(tree):

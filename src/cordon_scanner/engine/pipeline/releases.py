@@ -6,6 +6,7 @@ a well-known service's name, and how a release differs from the one before it.
 
 from __future__ import annotations
 
+import ast
 import io
 import re
 from dataclasses import replace
@@ -23,6 +24,7 @@ from cordon_scanner.engine.pipeline.constants import (
     NATIVE_IN_PURE_WHEEL_RULE,
     NATIVE_LOAD,
     NATIVE_MAGIC,
+    NATIVE_PROGRAM_IN_PURE_WHEEL_RULE,
     NPM_PLACEHOLDER_VERSION,
     PURE_WHEEL,
     SWEPT_NOTE,
@@ -643,6 +645,80 @@ class ReleaseChecks:
                     )
                     break
         return out
+
+    @staticmethod
+    def native_program_in_a_pure_wheel(units: Sequence[FileUnit], ctx: ScanContext) -> list[Finding]:
+        """A pure-Python wheel that carries a native program and starts it.
+
+        A wheel tagged `py3-none-any` declares that it holds no compiled code, which is what lets one
+        file serve every platform. A package that wraps a program it needs (ruff, uv, a driver) ships
+        a platform wheel with the binary for that platform. A pure wheel that carries an executable
+        and runs it, one made from `__file__` or the package's resources, has hidden a program in a
+        package that said it had none: the executable member is not a Python extension (no `PyInit_`
+        symbol, not `.so` / `.pyd`), and a `.py` file starts a path built from where it lives.
+        """
+        wheel = next(
+            (u for u in units if u.path.rsplit("/", 1)[-1] == "WHEEL" and ".dist-info/" in u.path),
+            None,
+        )
+        if wheel is None or not PURE_WHEEL.search(wheel.content.text):
+            return []
+        programs = [
+            u
+            for u in units
+            if (u.content.raw[:4] in NATIVE_MAGIC or u.content.raw[:4] in MACHO_MAGIC)
+            and not u.path.endswith((".so", ".pyd", ".dylib"))
+            and b"PyInit_" not in u.content.raw
+        ]
+        if not programs:
+            return []
+        from cordon_scanner.analysis.python.flows.implants.shipped_programs import ShippedPrograms
+
+        for unit in units:
+            if not unit.path.endswith(".py"):
+                continue
+            try:
+                tree = ast.parse(unit.content.text)
+            except (SyntaxError, ValueError):
+                continue
+            runs = ShippedPrograms.lines(tree)
+            if not runs:
+                continue
+            return [
+                replace(
+                    OperationalFinding.build(
+                        path=unit.path,
+                        rule_id=NATIVE_PROGRAM_IN_PURE_WHEEL_RULE,
+                        message=(
+                            "This wheel declares itself pure Python (`none-any`), yet it carries a "
+                            "native program and this file starts a path built from where it lives. "
+                            "Compiled code no reviewer can read runs as a program, in a package that "
+                            "said it had none."
+                        ),
+                        remediation=(
+                            "Do not install it. A package that needs a native program ships a "
+                            "platform wheel built from published source."
+                        ),
+                        category=Category.SUSPICIOUS,
+                        severity=Severity.HIGH,
+                    ),
+                    location=replace(
+                        OperationalFinding.build(
+                            path=unit.path,
+                            rule_id=NATIVE_PROGRAM_IN_PURE_WHEEL_RULE,
+                            message="",
+                            remediation="",
+                            category=Category.SUSPICIOUS,
+                            severity=Severity.HIGH,
+                        ).location,
+                        line=runs[0],
+                    ),
+                    confidence=Confidence.HIGH,
+                    risk=ctx.scorer.score(Severity.HIGH, Confidence.HIGH),
+                    detector="binary",
+                )
+            ]
+        return []
 
 
 __all__ = ["ReleaseChecks"]
