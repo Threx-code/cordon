@@ -60,8 +60,14 @@ class PythonTwoReader:
     #: `async def/for/with`. Applied only to the line the parse failed on.
     OLD_NAME: re.Pattern[str] = re.compile(
         r"(?:(?<=\.)|(?<=\bdef )|(?<=\bimport )|(?<=\bfrom \.))(async|await)\b"
-        r"|\b(async|await)\b(?=\s*(?:=[^=]|[,:)\]]|\.))"
+        r"|\b(async|await)\b(?=\s*(?:=[^=]|[,:)\]]|\.|$|(?:is|in|and|or|not|if|else)\b|[!=<>+*/%-]))"
     )
+    #: A definition's own type-parameter list: `def f[T = int](...)`, `class C[T = int]`, `type A[T = int]`.
+    TYPE_PARAMETERS: re.Pattern[str] = re.compile(
+        r"^(\s*(?:async\s+)?(?:def|class|type)\s+\w+\s*)\["
+    )
+    #: `x.None`: Python 2 let `None` be an attribute name.
+    NONE_ATTRIBUTE: re.Pattern[str] = re.compile(r"(?<=\.)None\b")
 
     @staticmethod
     def read(text: str) -> Reading:
@@ -392,14 +398,41 @@ class PythonTwoReader:
         if "parameters cannot be parenthesized" in message:
             new = PythonTwoReader.TUPLE_LAMBDA.sub(r"lambda \1", new)
             new = PythonTwoReader.TUPLE_PARAMETER.sub(r"\1\2", new)
+        elif (stripped := PythonTwoReader.without_type_defaults(line)) != line:
+            new = stripped
         else:
+            code = PythonTwoReader.NONE_ATTRIBUTE.sub("None_", new.split("#", 1)[0])
             new = PythonTwoReader.OLD_NAME.sub(
-                lambda m: (m.group(1) or m.group(2)) + "_", new.split("#", 1)[0]
+                lambda m: (m.group(1) or m.group(2)) + "_", code
             ) + (("#" + new.split("#", 1)[1]) if "#" in new else "")
         if new == line:
             return False
         lines[at - 1] = new
         return True
+
+    @staticmethod
+    def without_type_defaults(line: str) -> str:
+        """`line` with the defaults of its type parameters taken out (Python 3.13 syntax this Python
+        does not parse): what the definition does is what it does without them."""
+        found = PythonTwoReader.TYPE_PARAMETERS.match(line)
+        if found is None:
+            return line
+        out: list[str] = [line[: found.end()]]
+        depth, skipping = 1, False
+        for char in line[found.end() :]:
+            if char in "([{":
+                depth += 1
+            elif char in ")]}":
+                depth -= 1
+            if depth == 0:
+                skipping = False
+            if depth == 1 and char == "=" and not skipping:
+                skipping = True
+            elif depth == 1 and char == "," and skipping:
+                skipping = False
+            if not skipping:
+                out.append(char)
+        return "".join(out)
 
     @staticmethod
     def neutralise(lines: list[str], at: int) -> None:

@@ -69,6 +69,15 @@ class TestAPythonTwoFileIsReadAsCode:
             ("import asyncio\nasyncio.async(f())\n", "asyncio.async_(f())"),
             ("def async(n):\n    return n\n", "def async_(n):"),
             ("async = True\nif async:\n    pass\n", "if async_:"),
+            ("async = f('x')\nif async is None:\n    pass\n", "if async_ is None:"),
+            ("def f(async):\n    return async or 1\n", "return async_ or 1"),
+            ("def f(async):\n    if not async and 1:\n        pass\n", "if not async_ and 1:"),
+            ("def f(async):\n    return async\n", "return async_"),
+            ("def f(a):\n    return a.None\n", "return a.None_"),
+            # Python 3.13: a default for a type parameter. This Python does not parse it; what the
+            # statement does without the default is what is read.
+            ("class Box[T = int]:\n    x = 1\n", "class Box[T ]:"),
+            ("def first[T: str = str, *Ts = *tuple[int]](a):\n    return a\n", "def first[T: str , *Ts ](a):"),
             pytest.param(
                 "try:\n    pass\nexcept IOError, (no, why):\n    pass\n",
                 "except IOError:",
