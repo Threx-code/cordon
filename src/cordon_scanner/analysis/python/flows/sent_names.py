@@ -22,6 +22,7 @@ from cordon_scanner.analysis.python.flows.imported_clients import (
     Exporter,
     FileSummary,
     ImportedClients,
+    ImportLine,
 )
 from cordon_scanner.analysis.python.pyfacts import PRIMITIVES
 from cordon_scanner.foundation.capabilities import Capability
@@ -94,15 +95,44 @@ class SentNames:
             if not sent:
                 continue
             for line in summary.imports:
-                source = ImportedClients._module_file(path, line, summaries)
-                if source is None or source == path:
-                    continue
-                bound = summaries[source].bound
                 for name, asname in line.names:
-                    if (asname or name) in sent and name in bound:
+                    if (asname or name) not in sent:
+                        continue
+                    source = next(
+                        (
+                            s
+                            for s in cls._sources(path, line, summaries)
+                            if s != path and name in summaries[s].bound
+                        ),
+                        None,
+                    )
+                    if source is not None:
                         names = out.setdefault(source, {})
                         names[name] = str(min(int(names.get(name, "0")) + 1, cls._MOST))
         return out
+
+    @staticmethod
+    def _sources(path: str, line: ImportLine, summaries: Mapping[str, FileSummary]) -> list[str]:
+        """The files `from <module> import ...` may name: the one `_module_file` resolves first,
+        then, for an absolute import, the package or module of that dotted name anywhere under the
+        importing file's top directory. A package that ships `pkg/pkg.py` beside `pkg/__init__.py`
+        has `from pkg import HOOK` resolved to the sibling by the nearest-directory search, where
+        Python's absolute import takes the package (loveclose 0.0.1)."""
+        first = ImportedClients._module_file(path, line, summaries)
+        found = [first] if first is not None else []
+        if line.level or not line.module:
+            return found
+        archive, bang, member = path.rpartition("!")
+        top = f"{archive}{bang}{member.split('/', 1)[0]}/"
+        stem = line.module.replace(".", "/")
+        found += sorted(
+            p
+            for p in summaries
+            if p != first
+            and p.startswith(top)
+            and p.endswith((f"/{stem}/__init__.py", f"/{stem}.py"))
+        )
+        return found
 
 
 __all__ = ["SentNames"]

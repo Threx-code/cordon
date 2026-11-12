@@ -407,6 +407,25 @@ class TestADestinationOnlyWrittenAtImport:
         )
         assert "MALWARE.EXFIL.INSTALL_CALLBACK.001" in rules
 
+    def test_the_same_with_a_module_named_like_its_package_beside_it(self, tmp_path: Path) -> None:
+        # `telem/telem.py` beside `telem/__init__.py`: `from telem import HOOK` is the package's.
+        report = (
+            "import json, socket, urllib.request\n"
+            "from telem import HOOK\n"
+            "def report():\n"
+            "    body = json.dumps({'host': socket.gethostname()}).encode()\n"
+            "    urllib.request.urlopen(HOOK, body)\n"
+        )
+        rules = self.package_rules(
+            tmp_path,
+            {
+                "src/telem/__init__.py": self.INIT,
+                "src/telem/telem.py": "def helper():\n    return 1\n",
+                "src/telem/report.py": report,
+            },
+        )
+        assert "MALWARE.EXFIL.INSTALL_CALLBACK.001" in rules
+
     def test_a_drop_point_in_init_another_module_only_hands_to_a_client_is_not(
         self, tmp_path: Path
     ) -> None:
@@ -458,6 +477,19 @@ class TestNamesSentForAnotherFile:
             }
         )
         assert maps == {"pkg/config.py": {"URL": "1"}}
+
+    def test_an_absolute_import_takes_the_package_over_a_sibling_of_its_name(self) -> None:
+        # `pkg/pkg.py` beside `pkg/__init__.py`: the nearest-directory search finds the sibling
+        # first, Python's absolute import takes the package.
+        maps = self.maps(
+            {
+                "proj-1.0/pkg/__init__.py": "URL = 'x'\n",
+                "proj-1.0/pkg/pkg.py": "def helper():\n    return 1\n",
+                "proj-1.0/pkg/report.py": "import requests\nfrom pkg import URL\n"
+                "def go(data):\n    requests.post(URL, json=data)\n",
+            }
+        )
+        assert maps == {"proj-1.0/pkg/__init__.py": {"URL": "1"}}
 
     def test_a_name_only_constructed_printed_or_imported_is_not_sent(self) -> None:
         maps = self.maps(
