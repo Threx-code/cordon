@@ -41,7 +41,6 @@ class Pending:
 
     NAMES: ClassVar[frozenset[str]] = frozenset(
         {
-            "js_wallet_secret_sent",
             "js_spelled_names",
             "js_computed_require",
             "js_agent_config_planted",

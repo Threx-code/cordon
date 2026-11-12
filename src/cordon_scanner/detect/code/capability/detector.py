@@ -438,7 +438,7 @@ class CapabilityDetector(BaseDetector):
         hits.extend(DestinationLabels.destination_capabilities(content, unit.language))
         viewed = ViewRunner.bound(content, unit.language)  # raw text and decoded view (note 18)
         hits.extend(viewed(JavaScriptCapabilities.js_downloaded_and_run))
-        hits.extend(JavaScriptCapabilities.js_wallet_secret_sent(content, unit.language))
+        hits.extend(viewed(JavaScriptCapabilities.js_wallet_secret_sent))
         hits.extend(JavaScriptCapabilities.js_flows(content, unit.language))
         crossing = (ctx.cross_file_flows or {}).get(unit.path)
         if crossing:
