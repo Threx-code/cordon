@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, ClassVar
 from cordon_scanner.analysis.python.pyast import PythonSource
 from cordon_scanner.analysis.shared import embedded
 from cordon_scanner.analysis.shared.source_paths import SourcePaths
+from cordon_scanner.analysis.shared.text_gate import TextGate
 from cordon_scanner.detect.base import (
     FileUnit,
     RuleSelector,
@@ -80,7 +81,7 @@ class Labelling:
         # BigQuery extension's 480-line bundle).
         if (
             len(text) <= JavaScriptCapabilities.JS_EVAL_MAX_BYTES
-            and JavaScriptCapabilities.JS_EVAL_MARKERS.search(text)
+            and TextGate.may_hold(JavaScriptCapabilities.JS_EVAL_MARKERS, text, language)
             and not BuildOutput.bundled(content)
         ):
             try:

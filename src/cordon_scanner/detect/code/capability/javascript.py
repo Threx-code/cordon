@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.analysis.shared.text_gate import TextGate
 from cordon_scanner.detect.code.capability.build_output import BuildOutput
 from cordon_scanner.detect.code.capability.hits import CapabilityHit
 from cordon_scanner.detect.code.wasm_glue import WasmBindgenGlue
@@ -239,8 +240,10 @@ class JavaScriptCapabilities:
         if language not in ("javascript", "typescript"):
             return []
         text = content.text
-        if cls._JS_FLOW_SINK.search(text) is None or (
-            cls._JS_FLOW_SOURCE.search(text) is None and cls._JS_FLOW_EXECUTES.search(text) is None
+        # Searched as the parser reads the file (`TextGate`: `\u` and `\x` escapes decoded).
+        if not TextGate.may_hold(cls._JS_FLOW_SINK, text, language) or not (
+            TextGate.may_hold(cls._JS_FLOW_SOURCE, text, language)
+            or TextGate.may_hold(cls._JS_FLOW_EXECUTES, text, language)
         ):
             # A request is a source too (`network_response`), judged where it is executed.
             return []
@@ -253,7 +256,7 @@ class JavaScriptCapabilities:
             view = (
                 JsEval.resolve(JsFold.fold(text))
                 if len(text) <= cls.JS_EVAL_MAX_BYTES
-                and cls.JS_EVAL_MARKERS.search(text)
+                and TextGate.may_hold(cls.JS_EVAL_MARKERS, text, language)
                 and not BuildOutput.bundled(content)
                 else text
             )

@@ -7,6 +7,7 @@ import re
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.shared.documentation import DocumentationSpans
+from cordon_scanner.analysis.shared.text_gate import TextGate
 from cordon_scanner.detect.code.addresses import PublicAddress
 from cordon_scanner.detect.code.capability.hits import CapabilityHit
 from cordon_scanner.detect.code.capability.text_position import TextPosition
@@ -86,21 +87,39 @@ class DestinationLabels:
         lines = source.splitlines()
         if sending:
             sending = sending | cls._helper_send_lines(source, sending)
-        sent_text = [lines[n - 1] for n in sending if 0 < n <= len(lines)]
+        # Names compared as the parser reads them too (`_readings`): `HOOK = ...` in fullwidth
+        # letters binds the `HOOK` that `requests.post(HOOK)` sends and another file imports.
+        sent_text = [
+            view for n in sending if 0 < n <= len(lines) for view in cls._readings(lines[n - 1])
+        ]
+        elsewhere = {view for name in sent_elsewhere for view in cls._readings(name)}
         kept: set[int] = set()
         for line in label_lines:
             if not 0 < line <= len(lines):
                 continue
-            binding = cls._BINDING.match(lines[line - 1])
-            if binding is None:
+            bindings = [
+                found.group(1)
+                for view in cls._readings(lines[line - 1])
+                if (found := cls._BINDING.match(view)) is not None
+            ]
+            if not bindings:
                 continue
-            if binding.group(1) in sent_elsewhere:
+            names = tuple(dict.fromkeys(n for b in bindings for n in cls._readings(b)))
+            if any(name in elsewhere for name in names):
                 kept.add(line)
                 continue
-            name = re.compile(rf"(?<![\w$.]){re.escape(binding.group(1))}(?![\w$])")
-            if any(name.search(text) for text in sent_text):
+            patterns = [re.compile(rf"(?<![\w$.]){re.escape(n)}(?![\w$])") for n in names]
+            if any(p.search(text) for p in patterns for text in sent_text):
                 kept.add(line)
         return kept
+
+    @staticmethod
+    def _readings(text: str) -> tuple[str, ...]:
+        """`text`, and how Python (NFKC) or JavaScript (escapes decoded) would read it where that
+        differs: the file's language is not known here, and keeping a label is the closed side."""
+        return tuple(
+            dict.fromkeys((*TextGate.views(text, "python"), *TextGate.views(text, "javascript")))
+        )
 
     #: Rounds of helper followed: `send_to_beacon` -> `post` -> `_make_request` -> `urlopen`.
     HELPER_HOPS: ClassVar[int] = 3

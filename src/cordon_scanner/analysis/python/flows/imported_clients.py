@@ -24,6 +24,7 @@ from typing import Any, ClassVar, Protocol
 
 from cordon_scanner.analysis.python.flows.http_clients import HTTP_CLIENTS
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+from cordon_scanner.analysis.shared.text_gate import TextGate
 
 
 class ScannedFile(Protocol):
@@ -94,7 +95,8 @@ class FileSummaries:
                     if isinstance(f, ast.FunctionDef | ast.AsyncFunctionDef)
                 ),
                 exported={
-                    kind: (read(tree) if words is None or words.search(text) else {})
+                    # the words searched as Python reads names (`TextGate`: NFKC, PEP 3131)
+                    kind: (read(tree) if TextGate.may_hold(words, text, "python") else {})
                     for kind, (words, read) in exporters.items()
                 },
             )

@@ -391,6 +391,74 @@ class TestTheCrossFileMapsHoldNoTrees:
                 )
 
 
+class TestAWordGateReadsIdentifiersAsPythonDoes:
+    """Python reads identifiers NFKC-normalised: a call spelt in fullwidth letters is the call, so a
+    file's words are searched in its NFKC reading too (`TextGate`)."""
+
+    @staticmethod
+    def fullwidth(word: str) -> str:
+        return "".join(chr(ord(c) + 0xFEE0) if c.isascii() and c.isalpha() else c for c in word)
+
+    def test_a_fullwidth_send_and_runner_are_summarised(self) -> None:
+        import ast
+
+        from cordon_scanner.analysis.python.flows.imported_clients import FileSummaries
+        from cordon_scanner.analysis.python.flows.sent_names import SentNames
+
+        fw = self.fullwidth
+        sends = (
+            f"from pkg import HOOK\nimport {fw('requests')}\n{fw('requests')}.{fw('post')}(HOOK)\n"
+        )
+        runs = (
+            f"import {fw('subprocess')}\ndef run_cmd(cmd):\n"
+            f"    {fw('subprocess')}.{fw('check_output')}(cmd)\n"
+        )
+        collects = (
+            f"import {fw('os')}\ndef grab():\n    v = {fw('os')}.{fw('getenv')}('HOME')\n"
+            f"    return open('/etc/hostname').read() + v\n"
+        )
+        assert [n.attr for n in ast.walk(ast.parse(sends)) if isinstance(n, ast.Attribute)] == [
+            "post"
+        ]
+        from cordon_scanner.analysis.python.flows.staged.machine_collectors import (
+            MachineCollectors,
+        )
+
+        assert not SentNames._WORDS.search(sends)
+        assert not ImportedClients._SINK_WORDS.search(runs)
+        assert not MachineCollectors._WORDS.search(collects)
+        ascii_collects = collects.translate({ord(fw(c)): c for c in "osgetnv"})
+        exporters = {
+            "sends": SentNames.exporter(),
+            "runs": (ImportedClients._SINK_WORDS, ImportedClients._runs_here),
+            "collects": MachineCollectors.exporter(),
+        }
+        summaries = FileSummaries.build(
+            {
+                "pkg/__init__.py": "HOOK = 1\n",
+                "pkg/r.py": sends,
+                "pkg/u.py": runs,
+                "pkg/c.py": collects,
+            },
+            exporters,
+        )
+        plain = FileSummaries.build({"pkg/__init__.py": "", "pkg/c.py": ascii_collects}, exporters)
+        assert summaries["pkg/r.py"].exported["sends"] == {"HOOK": "1"}
+        assert summaries["pkg/u.py"].exported["runs"] == {"run_cmd": "0"}
+        assert plain["pkg/c.py"].exported["collects"] == {"grab": "0"}
+        assert summaries["pkg/c.py"].exported["collects"] == {"grab": "0"}
+
+    def test_a_text_without_the_words_in_any_reading_is_still_ruled_out(self) -> None:
+        from cordon_scanner.analysis.python.flows.imported_clients import FileSummaries
+
+        read: list[str] = []
+        exporters = {"runs": (ImportedClients._SINK_WORDS, lambda t: read.append("x") or {})}
+        FileSummaries.build({"a.py": "x = 1\n", "b.py": "x = 'é'  # café\n"}, exporters)
+        assert read == []  # ASCII, and a non-ASCII text whose NFKC reading holds no word
+        FileSummaries.build({"a.py": "import subprocess\n"}, exporters)
+        assert read == ["x"]
+
+
 class TestTheCarriedCallsInTheOnePass:
     """`CarriedCalls` read in the summaries' one parse (`CarriedCalls.exporter`), where each
     importing file was parsed again for it: the map, in its order, is the second reading's."""

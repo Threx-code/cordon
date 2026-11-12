@@ -28,6 +28,7 @@ import re
 from typing import Any, ClassVar
 
 from cordon_scanner.analysis.javascript.flow.vocabulary import SOURCES
+from cordon_scanner.analysis.shared.text_gate import TextGate
 
 
 class JsSummaries:
@@ -71,7 +72,7 @@ class JsSummaries:
     @classmethod
     def reaches_out(cls, text: str) -> bool:
         """Whether a file calls into, or loads, any other file by a local or a computed name."""
-        return cls._REACHES_OUT.search(text) is not None
+        return TextGate.may_hold(cls._REACHES_OUT, text, "javascript")
 
     @classmethod
     def shared(cls, a: Any) -> dict[str, list[Any]]:
