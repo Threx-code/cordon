@@ -472,7 +472,7 @@ class CapabilityDetector(BaseDetector):
             from cordon_scanner.detect.code.js_runs import JsRuns
 
             hits.extend(viewed(lambda c, _: JsRuns.received_and_run(c)))
-            hits.extend(JsRuns.decoded_program_run(content))
+            hits.extend(viewed(lambda c, _: JsRuns.decoded_program_run(c)))
             hits.extend(JsRuns.command_output_sent(content, ctx))
         hits.extend(ScriptFetchedThenEvaluated.hits(content, unit.language))
         # A truncated file is reported by the engine, which reads every file and so sees every
