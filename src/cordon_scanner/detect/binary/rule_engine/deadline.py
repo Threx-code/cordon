@@ -53,20 +53,29 @@ class MatchDeadline:
     @staticmethod
     def timeout(deadline: Until) -> TimeoutError:
         """The error for a deadline that has passed: `MatchStalled` when only the wall backstop ran out."""
-        if isinstance(deadline, MatchDeadline) and not deadline.cpu_spent():
+        if isinstance(deadline, MatchDeadline) and deadline.wall_spent() and not deadline.cpu_spent():
             return MatchStalled(MESSAGE)
         return TimeoutError(MESSAGE)
 
     @staticmethod
     def left(deadline: Until) -> float:
-        """Seconds a native call may take: -1.0 for no deadline. A native call is timed by the wall
-        clock in C, so it is given what is left of the wall backstop, never of the CPU budget (which
-        it would spend faster on a loaded machine); the CPU budget is read between native calls."""
+        """Seconds of CPU a native call may use: -1.0 for no deadline. The C side reads the calling
+        thread's CPU clock (`CLOCK_THREAD_CPUTIME_ID`, `GetThreadTimes` on Windows), so the native part
+        of a match has the same budget as the Python part, never a tenth of the backstop. A plain float
+        is a monotonic deadline: its remaining seconds, as before."""
         if deadline is None:
             return -1.0
         if isinstance(deadline, MatchDeadline):
-            return max(deadline.wall_end - time.monotonic(), 0.0)
+            return max(deadline.cpu_end - time.thread_time(), 0.0)
         return max(deadline - time.monotonic(), 0.0)
+
+    @staticmethod
+    def wall_left(deadline: Until) -> float:
+        """Seconds of the wall backstop a native call has left, its second limit: -1.0 for none (a
+        plain float has only its one limit)."""
+        if isinstance(deadline, MatchDeadline):
+            return max(deadline.wall_end - time.monotonic(), 0.0)
+        return -1.0
 
 
 Until = float | MatchDeadline | None

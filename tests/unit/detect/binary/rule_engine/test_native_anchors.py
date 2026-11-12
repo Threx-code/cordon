@@ -313,6 +313,30 @@ class TestHexHitsArguments:
         assert bytes(got[0]) == (1).to_bytes(8, "little")
         assert peak < 1 << 20  # a table sized by max_hits was about 48 MB
 
+    def heavy(self, left: float, wall: float) -> float:
+        """Seconds a many-lane native match runs before TimeoutError, given a CPU budget and a wall backstop."""
+        import time
+
+        data = b"a" + b"b" * 70_000
+        forward = self.layout(
+            (self.BYTE, 0x61, 0), (self.SKIP, 0, 65_000), (self.BYTE, 0x62, 0), (self.BYTE, 0x63, 0),
+            (self.DONE, 0, 0),
+        )  # fmt: skip
+        began = time.monotonic()
+        with pytest.raises(TimeoutError):
+            Automaton.MODULE.hex_hits(
+                data, [([0], 1, 1, 0, 0, -1)], forward, self.layout((self.DONE, 0, 0)),
+                1 << 17, 0, 10, -1, left, wall,
+            )  # fmt: skip
+        return time.monotonic() - began
+
+    def test_a_cpu_heavy_native_match_ends_at_the_cpu_budget_not_the_backstop(self) -> None:
+        """The budget is the thread's CPU time: a wall backstop of 60 s must not be what ends it."""
+        assert self.heavy(left=0.05, wall=60.0) < 10
+
+    def test_the_wall_backstop_ends_a_native_match_with_no_cpu_budget(self) -> None:
+        assert self.heavy(left=-1.0, wall=0.05) < 10
+
     def test_one_event_of_many_lanes_runs_out_of_time(self) -> None:
         import time
 
@@ -346,3 +370,35 @@ class TestHexHitsArguments:
             # 4,096th step, inside this one run (Lanes has no reading between runs of its own)
             Lanes(ops).run(0, data, 0, deadline=time.monotonic() - 1)
         assert time.monotonic() - began < 5
+
+
+class TestTheNativeClockIsTheThreadsCpu:
+    """A native call is timed by the calling thread's CPU clock (`anchors.c: cpu_seconds`), with the
+    monotonic clock only as the second limit, the wall backstop. Linux and macOS read
+    CLOCK_THREAD_CPUTIME_ID, Windows GetThreadTimes; only a platform with neither falls back to the
+    monotonic clock for the CPU reading too (and so is bounded by wall time alone)."""
+
+    @staticmethod
+    def source() -> str:
+        from pathlib import Path
+
+        import cordon_scanner._native as native
+
+        path = Path(native.__file__).with_name("anchors.c")
+        if not path.exists():
+            pytest.skip("the C source is not shipped in this install")
+        return path.read_text(encoding="utf-8")
+
+    def test_the_cpu_clock_is_the_threads_where_the_platform_has_one(self) -> None:
+        text = self.source()
+        windows = text.index("GetThreadTimes(GetCurrentThread()")
+        posix = text.index("clock_gettime(CLOCK_THREAD_CPUTIME_ID")
+        fallback = text.index("static double cpu_seconds(void) { return now_seconds(); }")
+        assert text.index("#ifdef _WIN32", text.index("seconds of CPU the calling thread")) < windows
+        assert "#elif defined(CLOCK_THREAD_CPUTIME_ID)" in text
+        assert windows < posix < fallback
+
+    def test_every_native_entry_that_takes_a_time_takes_both_limits(self) -> None:
+        text = self.source()
+        assert text.count('"y*Oy*llnn|dd"') == 1 and text.count('"y*OOOnlnn|dd"') == 1
+        assert "|d\"" not in text.replace("|dd\"", "")

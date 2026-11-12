@@ -57,9 +57,11 @@ class TestTheBudgetIsCpuTime:
         assert not MatchDeadline.passed(None)
         assert MatchDeadline.left(None) == -1.0
 
-    def test_a_native_call_is_given_the_wall_backstop_not_the_cpu_budget(self) -> None:
-        left = MatchDeadline.left(MatchDeadline(1.0))
-        assert 9.0 < left <= 10.0
+    def test_a_native_call_is_given_the_cpu_budget_and_the_wall_backstop(self) -> None:
+        deadline = MatchDeadline(1.0)
+        assert 0.9 < MatchDeadline.left(deadline) <= 1.0
+        assert 9.0 < MatchDeadline.wall_left(deadline) <= 10.0
+        assert MatchDeadline.wall_left(time.monotonic() + 5) == -1.0
 
 
 class TestAMatchUnderLoad:
