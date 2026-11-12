@@ -39,11 +39,8 @@ class Pending:
     and the move takes its case out of here, so its test must then pass (a strict xfail that passed
     fails the run)."""
 
-    NAMES: ClassVar[frozenset[str]] = frozenset(
-        {
-            "extra_spawn_name",
-        }
-    )
+    #: Empty since every reader of note 18 §1, §1b and §6 moved (step 3); kept for the next one.
+    NAMES: ClassVar[frozenset[str]] = frozenset()
 
     @classmethod
     def marks(cls, name: str) -> list[pytest.MarkDecorator]:

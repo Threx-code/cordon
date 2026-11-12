@@ -383,7 +383,7 @@ class CapabilityDetector(BaseDetector):
                 # A command assembled from a table of characters is read as the command it
                 # becomes (`detect/go_eval.py`): the 2025 Go typosquats never wrote theirs down.
                 source = run_time_view(source)
-            commands = embedded.EmbeddedCommands.extract(source, unit.language)
+            commands = CapabilityDetector._viewed_commands(source, unit.language)
         # And the plaintext of any encoded command among them, so the shell rules
         # see what `powershell -EncodedCommand` was given rather than only that it
         # was given something. See `embedded.decode_encoded_commands`: this is the
@@ -396,6 +396,20 @@ class CapabilityDetector(BaseDetector):
             )
         commands = embedded.EmbeddedCommands.decode_encoded_commands(commands)
         return commands, hits, matched_content, resolved
+
+    @staticmethod
+    def _viewed_commands(source: str, language: str | None) -> list[embedded.Command]:
+        """The command lines handed to spawn calls, read in the source and in its decoded view
+        (note 18 §1b): `ssh.\\u0065xec('curl ... | sh')` is a spawn to the language, and its command
+        reaches the shell rules. The view keeps every line, so a command found in both is one."""
+        found = embedded.EmbeddedCommands.extract(source, language)
+        seen = {(c.text, c.line) for c in found}
+        for reading in ViewRunner.texts(source, language)[1:]:
+            for command in embedded.EmbeddedCommands.extract(reading, language):
+                if (command.text, command.line) not in seen:
+                    seen.add((command.text, command.line))
+                    found.append(command)
+        return found
 
     @staticmethod
     def _tree_capabilities(
