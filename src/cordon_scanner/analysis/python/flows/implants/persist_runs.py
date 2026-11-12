@@ -19,6 +19,7 @@ from collections.abc import Mapping
 from typing import Final
 
 from cordon_scanner.analysis.python.py_persist import PythonPersistence
+from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 
 #: The analyser's details for a run of a program the package got by download or decoding. A program
 #: the package ships is not here: 8% of the benign long tail runs one (a wrapper for its own binary).
@@ -57,7 +58,7 @@ class PersistRuns:
             return []
         functions = {
             n.name: n
-            for n in ast.walk(tree)
+            for n in PythonSyntax.walked(tree)
             if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
         }
         calls = {name: cls._called(fn.body, functions) for name, fn in functions.items()}
@@ -106,7 +107,7 @@ class PersistRuns:
     def _scope_text(tree: ast.Module, source: str, line: int) -> str:
         """The text of the innermost function holding `line`, or of the whole module."""
         best: ast.AST | None = None
-        for node in ast.walk(tree):
+        for node in PythonSyntax.walked(tree):
             if (
                 isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
                 and node.lineno <= line <= (node.end_lineno or node.lineno)

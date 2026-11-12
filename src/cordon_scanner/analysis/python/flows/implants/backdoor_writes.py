@@ -24,6 +24,7 @@ from typing import ClassVar, Final
 
 from cordon_scanner.analysis.python.py_flow import Label
 from cordon_scanner.analysis.python.py_persist import PythonPersistence
+from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 
 #: The files, as one path piece or a whole path names them. A bare `passwd` or `shadow` is a word
 #: (a password prompt, a CSS property), so those two count only with their directory.
@@ -200,10 +201,10 @@ class ContentOrigin:
         self.calls: dict[str, list[ast.Call]] = {}
         self.attrs: dict[str, list[tuple[ast.AST, ast.AST | None]]] = {}
         self.functions: dict[str, ast.AST] = {}
-        for node in ast.walk(tree):
+        for node in PythonSyntax.walked(tree):
             for child in ast.iter_child_nodes(node):
                 self.parent[id(child)] = node
-        for node in ast.walk(tree):
+        for node in PythonSyntax.walked(tree):
             if (
                 isinstance(node, ast.Assign | ast.AnnAssign)
                 and getattr(node, "value", None) is not None

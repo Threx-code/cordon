@@ -32,6 +32,7 @@ from typing import Any, ClassVar
 
 from cordon_scanner.analysis.python.analyzer_core import AnalyzerCore
 from cordon_scanner.analysis.python.pyfacts import PRIMITIVES
+from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.foundation.capabilities import Capability
 
 
@@ -104,7 +105,7 @@ class LooseStages(AnalyzerCore):
     def _defined(self, tree: ast.AST) -> set[str] | None:
         """Every name the file could resolve; None with a star import (anything could be)."""
         names = set(self._BUILTIN) | self._TRANSLATORS
-        for n in ast.walk(tree):
+        for n in PythonSyntax.walked(tree):
             if isinstance(n, ast.ImportFrom) and any(a.name == "*" for a in n.names):
                 return None
             binds = self._BINDS.get(type(n))

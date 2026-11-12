@@ -16,6 +16,7 @@ import ast
 from collections.abc import Mapping
 
 from cordon_scanner.analysis.python.py_persist import PythonPersistence
+from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 
 
 class PersistAtLoad:
@@ -27,7 +28,7 @@ class PersistAtLoad:
         if not written or not isinstance(tree, ast.Module):
             return []
         functions: dict[str, ast.FunctionDef | ast.AsyncFunctionDef] = {}
-        for node in ast.walk(tree):
+        for node in PythonSyntax.walked(tree):
             if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                 functions.setdefault(node.name, node)
         loaded = cls._loaded_names(tree, functions)
@@ -50,7 +51,7 @@ class PersistAtLoad:
         if not isinstance(tree, ast.Module):
             return frozenset()
         functions: dict[str, ast.AST] = {}
-        for node in ast.walk(tree):
+        for node in PythonSyntax.walked(tree):
             if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                 functions.setdefault(node.name, node)
         lines = {c.lineno for c in cls._top_level_calls(tree.body)}

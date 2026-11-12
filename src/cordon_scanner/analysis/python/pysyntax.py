@@ -211,6 +211,26 @@ class PythonSyntax:
         return walked
 
     @staticmethod
+    def walked(tree: ast.AST) -> list[ast.AST]:
+        """`list(ast.walk(tree))`, the same nodes in the same (breadth-first) order, computed once per
+        tree: for the many readers of one tree that each walked all of it (the implant analysers,
+        about fifteen full walks of each file -- litellm 1.88.0rc2, 0.8.0). A reader iterates the
+        list and must not change it. `nodes` is this list except at the root of an indexed tree,
+        whose `nodes` are depth-first; there it is kept beside them in the tree's index."""
+        place: tuple[Any, int, int] | None = tree.__dict__.get("_cordon_place")
+        if place is not None and place[1] == 0 and place[0]() is not None:
+            found: list[ast.AST] = PythonSyntax.memo(tree, "walked", lambda: list(ast.walk(tree)))
+            return found
+        return PythonSyntax.nodes(tree)
+
+    @staticmethod
+    def forget(tree: ast.AST) -> None:
+        """Drop what `memo` kept on an unindexed tree's root (`walked`, `nodes`): a list of a tree's
+        nodes held by its root is a cycle, so a reader that lets the tree go clears it first and the
+        tree is freed by reference counts (`FileSummaries`: one file's tree at a time)."""
+        tree.__dict__.pop("_cordon_memo", None)
+
+    @staticmethod
     def memo(node: ast.AST, key: object, compute: Callable[[], Any]) -> Any:
         """`compute()`, once per node and key: something made of `node`'s subtree -- a list of its
         nodes, its parents' table, an analyser's name tables.

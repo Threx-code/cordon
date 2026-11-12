@@ -25,6 +25,7 @@ from typing import ClassVar, Final
 
 from cordon_scanner.analysis.python.flows.http_clients import HTTP_CLIENT_METHODS
 from cordon_scanner.analysis.python.py_flow import Label, PythonValueFlow
+from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.analysis.shared.destinations import (
     FREE_HOSTING,
     INTERACTION_HOSTS,
@@ -156,7 +157,7 @@ class SweptToHosting(PythonValueFlow):
 
     @classmethod
     def _walks(cls, tree: ast.AST) -> bool:
-        for node in ast.walk(tree):
+        for node in PythonSyntax.walked(tree):
             if isinstance(node, ast.Call):
                 if isinstance(node.func, ast.Attribute) and node.func.attr in cls.WALK_METHODS:
                     return True
@@ -178,13 +179,13 @@ class SweptToHosting(PythonValueFlow):
     def _names_a_rentable_host(tree: ast.AST) -> bool:
         docstrings = {
             id(n.body[0].value)
-            for n in ast.walk(tree)
+            for n in PythonSyntax.walked(tree)
             if isinstance(n, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef)
             and n.body
             and isinstance(n.body[0], ast.Expr)
             and isinstance(n.body[0].value, ast.Constant)
         }  # a host in a docstring is documentation, not a destination
-        for node in ast.walk(tree):
+        for node in PythonSyntax.walked(tree):
             if (
                 isinstance(node, ast.Constant)
                 and isinstance(node.value, str)
@@ -198,7 +199,7 @@ class SweptToHosting(PythonValueFlow):
 
     @staticmethod
     def _imports_a_client(tree: ast.AST) -> bool:
-        for node in ast.walk(tree):
+        for node in PythonSyntax.walked(tree):
             names = (
                 [node.module or ""]
                 if isinstance(node, ast.ImportFrom)

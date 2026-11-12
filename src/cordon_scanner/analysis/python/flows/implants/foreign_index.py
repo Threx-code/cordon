@@ -19,6 +19,7 @@ import re
 from typing import ClassVar, Final
 
 from cordon_scanner.analysis.python.py_flow import PythonValueFlow
+from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 
 PIP_WORD: Final = re.compile(r"\bpip[0-9.]*\b")
 INSTALL_WORD: Final = re.compile(r"\binstall\b")
@@ -36,7 +37,7 @@ class ForeignIndex:
     @classmethod
     def lines(cls, tree: ast.AST) -> list[int]:
         out: set[int] = set()
-        for node in ast.walk(tree):
+        for node in PythonSyntax.walked(tree):
             if not isinstance(node, ast.Call):
                 continue
             if any(

@@ -16,6 +16,8 @@ import ast
 import re
 from typing import ClassVar, Final
 
+from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
 #: The script hosts and hidden-window forms, without the creation flags and without `pythonw` alone: a tool
 #: that registers its own console entry point with `pythonw` is not starting a script it brought.
 SCRIPT_HOST_TEXT: Final = re.compile(
@@ -39,7 +41,7 @@ class HiddenLaunch:
         return sorted(
             {
                 n.lineno
-                for n in ast.walk(tree)
+                for n in PythonSyntax.walked(tree)
                 if isinstance(n, ast.Constant)
                 and isinstance(n.value, str)
                 and SCRIPT_HOST_TEXT.search(n.value)
@@ -49,7 +51,7 @@ class HiddenLaunch:
     @classmethod
     def lines(cls, tree: ast.AST) -> list[int]:
         out: set[int] = set()
-        for node in ast.walk(tree):
+        for node in PythonSyntax.walked(tree):
             if (
                 (isinstance(node, ast.Name) and node.id in cls.NAMES)
                 or (isinstance(node, ast.Attribute) and node.attr in cls.NAMES)

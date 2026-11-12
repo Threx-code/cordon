@@ -17,6 +17,7 @@ import ast
 from typing import ClassVar
 
 from cordon_scanner.analysis.python.py_flow import Label, PythonValueFlow
+from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 
 
 class KeyCapture(PythonValueFlow):
@@ -98,7 +99,7 @@ class KeyCapture(PythonValueFlow):
         self._collect(tree)
 
     def _collect(self, tree: ast.AST) -> None:
-        for node in ast.walk(tree):
+        for node in PythonSyntax.walked(tree):
             if isinstance(node, ast.ImportFrom | ast.Import):
                 names = (
                     [node.module or ""]
@@ -147,7 +148,7 @@ class KeyCapture(PythonValueFlow):
         if self._loops is None:
             self._loops = [
                 (n.lineno, n.end_lineno or n.lineno)
-                for n in ast.walk(self.tree)
+                for n in PythonSyntax.walked(self.tree)
                 if isinstance(n, ast.For | ast.While)
             ]
         return any(start <= line <= end for start, end in self._loops)
@@ -168,7 +169,7 @@ class KeyCapture(PythonValueFlow):
     def _polled_branches(self) -> list[tuple[int, int]]:
         if self._branches is None:
             found: list[tuple[int, int]] = []
-            for n in ast.walk(self.tree):
+            for n in PythonSyntax.walked(self.tree):
                 if (
                     isinstance(n, ast.If)
                     and self._in_loop(n.lineno)
@@ -185,7 +186,7 @@ class KeyCapture(PythonValueFlow):
     def _handler_params(self) -> list[tuple[int, int, str]]:
         if self._params_cache is None:
             found: list[tuple[int, int, str]] = []
-            for fn in ast.walk(self.tree):
+            for fn in PythonSyntax.walked(self.tree):
                 if (
                     isinstance(fn, ast.FunctionDef | ast.AsyncFunctionDef)
                     and fn.name in self.handlers

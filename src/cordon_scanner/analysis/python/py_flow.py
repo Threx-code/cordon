@@ -232,7 +232,9 @@ class PythonValueFlow(ValueFlowSteps):
                     return False
             self.scope_of[id(node)] = scope
             stack.extend((child, inner) for child in ast.iter_child_nodes(node))
-        for node in ast.walk(self.tree):
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
+        for node in PythonSyntax.walked(self.tree):
             if isinstance(node, ast.Global | ast.Nonlocal):
                 self.local.get(self.scope_of.get(id(node), module), set()).difference_update(
                     node.names
@@ -307,7 +309,9 @@ class PythonValueFlow(ValueFlowSteps):
     # -- the fixpoint ----------------------------------------------------------------------------
 
     def flow(self) -> None:
-        nodes = list(ast.walk(self.tree))
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
+        nodes = PythonSyntax.walked(self.tree)
         for _ in range(self.ROUNDS):
             changed = False
             for node in nodes:

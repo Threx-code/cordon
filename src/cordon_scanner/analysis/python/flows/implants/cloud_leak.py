@@ -20,6 +20,7 @@ from cordon_scanner.analysis.python.flows.http_clients import (
     CLOUD_STORAGE_LIBRARIES,
 )
 from cordon_scanner.analysis.python.py_flow import Label, PythonValueFlow
+from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 
 
 class CloudLeak(PythonValueFlow):
@@ -69,7 +70,7 @@ class CloudLeak(PythonValueFlow):
         self.any_key = any_key
         #: `os.environ` taken whole: handed to a call (`dict(os.environ)`), or copied or listed.
         self.whole: set[int] = set()
-        for node in ast.walk(tree):
+        for node in PythonSyntax.walked(tree):
             if isinstance(node, ast.Call):
                 for arg in node.args:
                     if (self.dotted(arg) or "") in ("os.environ", "os.environb"):
@@ -131,7 +132,7 @@ class CloudLeak(PythonValueFlow):
 
     @staticmethod
     def _imports_a_store(tree: ast.AST) -> bool:
-        for n in ast.walk(tree):
+        for n in PythonSyntax.walked(tree):
             names = (
                 [n.module or ""]
                 if isinstance(n, ast.ImportFrom)

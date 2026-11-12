@@ -32,6 +32,7 @@ import tokenize
 from typing import ClassVar, Final
 
 from cordon_scanner.analysis.python.py_flow import Label, PythonValueFlow
+from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 
 #: Text any persistence pattern of `CAP.PY.PERSIST.001` contains, case-insensitively: a superset,
 #: so that a line this does not seed is a line that rule cannot match inside a literal either.
@@ -239,7 +240,7 @@ class PythonPersistence(PythonValueFlow):
         #: stores what it is given. A class with its own `__init__` is a call like any other.
         self.records = {
             node.name
-            for node in ast.walk(tree)
+            for node in PythonSyntax.walked(tree)
             if isinstance(node, ast.ClassDef)
             and not any(
                 isinstance(s, ast.FunctionDef | ast.AsyncFunctionDef)

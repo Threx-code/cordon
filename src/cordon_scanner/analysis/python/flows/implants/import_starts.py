@@ -20,6 +20,7 @@ import re
 from typing import ClassVar
 
 from cordon_scanner.analysis.python.flows.implants.persist_at_load import PersistAtLoad
+from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 
 
 class ImportStarts:
@@ -33,7 +34,7 @@ class ImportStarts:
     def lines(cls, tree: ast.AST) -> list[int]:
         loaded = PersistAtLoad.load_time_lines(tree)
         out: list[int] = []
-        for node in ast.walk(tree):
+        for node in PythonSyntax.walked(tree):
             if not (
                 isinstance(node, ast.Expr | ast.Assign)
                 and isinstance(node.value, ast.Call)

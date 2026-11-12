@@ -20,6 +20,7 @@ import re
 from typing import ClassVar, Final
 
 from cordon_scanner.analysis.python.flows.implants.backdoor_writes import ContentOrigin
+from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 
 READ_SHELL: Final = re.compile(
     r"\bpbpaste\b|\bxclip\b[^;&|]*\s-o\b|\bxsel\b[^;&|]*\s-o\b|\bwl-paste\b|Get-Clipboard", re.I
@@ -56,7 +57,9 @@ class ClipboardReplace:
     def lines(cls, tree: ast.AST) -> list[int]:
         scopes: list[ast.AST] = [tree]
         scopes += [
-            n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
+            n
+            for n in PythonSyntax.walked(tree)
+            if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
         ]
         origin = ContentOrigin(tree)
         out: set[int] = set()

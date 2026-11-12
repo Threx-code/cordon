@@ -25,6 +25,7 @@ from cordon_scanner.analysis.python.flows.imported_clients import (
     ImportLine,
 )
 from cordon_scanner.analysis.python.pyfacts import PRIMITIVES
+from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.foundation.capabilities import Capability
 
 
@@ -62,7 +63,7 @@ class SentNames:
     def _sent_here(cls, tree: ast.Module) -> dict[str, str]:
         taken = {
             alias.asname or alias.name
-            for node in ast.walk(tree)
+            for node in PythonSyntax.walked(tree)
             if isinstance(node, ast.ImportFrom)
             for alias in node.names
             if alias.name != "*"
@@ -70,7 +71,7 @@ class SentNames:
         if not taken:
             return {}
         sent: dict[str, str] = {}
-        for call in ast.walk(tree):
+        for call in PythonSyntax.walked(tree):
             if not isinstance(call, ast.Call) or cls._last_name(call.func) not in cls.SENDS:
                 continue
             for part in [*call.args, *(k.value for k in call.keywords)]:
