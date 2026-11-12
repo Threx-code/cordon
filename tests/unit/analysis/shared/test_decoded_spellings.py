@@ -55,6 +55,16 @@ CP = "child_" + "process"
 EXEC = "ex" + "ec"
 EXEC_SYNC = "ex" + "ecSync"
 B64DECODE = "b64" + "decode"
+# Store names and a scheduler word, assembled here so this file spells no credential or persistence
+# shape in any reading (Cordon scans Cordon: tests/integration/test_corpus.py, TestSelfScan). Joined
+# with `+`, never as adjacent literals, which the decoded view itself joins.
+W32 = "win32" + "crypt"
+UNPROTECT = "Crypt" + "Unprotect" + "Data"
+LOGIN = "Login" + " " + "Data"
+SSH_KEY = "~/." + "ssh/" + "id_rsa"
+AWS = "~/." + "aws/" + "credentials"
+NPMRC = "~/." + "npm" + "rc"
+CRON = "cron" + "tab"
 
 
 class Case(NamedTuple):
@@ -225,23 +235,26 @@ CASES = (
         "py_browser_store_decrypted",
         "pkg/a.py",
         PY,
-        "import os, win32crypt\n"
-        "p = os.path.join(os.environ['LOCALAPPDATA'], 'Google', 'Chrome', 'User Data', 'Default', 'Login Data')\n"
-        "k = win32crypt.CryptUnprotectData(open(p, 'rb').read(), None, None, None, 0)\n",
+        f"import os, {W32}\n"
+        f"p = os.path.join(os.environ['LOCALAPPDATA'], 'Google', 'Chrome', 'User Data', 'Default', '{LOGIN}')\n"
+        f"k = {W32}.{UNPROTECT}(open(p, 'rb').read(), None, None, None, 0)\n",
         "CAP.CREDENTIAL.BROWSER_DECRYPT",
-        (("'Login Data'", "'Login\\x20Data'"), ("'Login Data'", "'Login' ' Data'")),
+        (
+            (f"'{LOGIN}'", "'" + LOGIN.replace(" ", "\\x20") + "'"),
+            (f"'{LOGIN}'", "'" + LOGIN.replace(" ", "' ' ") + "'"),
+        ),
     ),
     Case(
         "py_credential_sweep",
         "pkg/a.py",
         PY,
-        "import os\nPATHS = ['~/.ssh/id_rsa', '~/.aws/credentials', '~/.npmrc']\n"
+        f"import os\nPATHS = ['{SSH_KEY}', '{AWS}', '{NPMRC}']\n"
         "for p in PATHS:\n    open(os.path.expanduser(p)).read()\n",
         "CAP.CREDENTIAL.SWEEP",
         (
-            ("'~/.ssh/id_rsa'", "'~/\\x2essh/id_rsa'"),
-            ("'~/.aws/credentials'", "'~/.aw' 's/credentials'"),
-            ("'~/.npmrc'", "'~/\\N{FULL STOP}npmrc'"),
+            (f"'{SSH_KEY}'", "'" + SSH_KEY.replace("/.", "/\\x2e", 1) + "'"),
+            (f"'{AWS}'", "'" + AWS.replace("aws", "aw' 's", 1) + "'"),
+            (f"'{NPMRC}'", "'" + NPMRC.replace("/.", "/\\N{FULL STOP}", 1) + "'"),
         ),
     ),
     Case(
@@ -437,13 +450,13 @@ class TestTheRunner:
         return FileContent.from_bytes(path, text.encode())
 
     def test_a_file_with_no_difference_is_read_once(self) -> None:
-        rule = Finds("crontab")
-        hits = ViewRunner.run(rule, self.content("x = 'crontab'\n"), "python")
+        rule = Finds(CRON)
+        hits = ViewRunner.run(rule, self.content(f"x = '{CRON}'\n"), "python")
         assert len(rule.read) == 1 and len(hits) == 1
 
     def test_a_view_hit_cites_the_raw_span_and_line(self) -> None:
         raw = "# é\ny = 1\nx = '\\x63ron' 'tab'  # z\n"
-        rule = Finds("crontab")
+        rule = Finds(CRON)
         hits = ViewRunner.run(rule, self.content(raw), "python")
         assert len(rule.read) == 2 and len(hits) == 1
         data = raw.encode()
@@ -451,8 +464,8 @@ class TestTheRunner:
         assert data[hits[0].byte_start : hits[0].byte_end].decode() == "'\\x63ron' 'tab'"
 
     def test_one_finding_read_both_ways_is_the_raw_one(self) -> None:
-        raw = "a = 'crontab'\nb = '\\x41'\n"
-        rule = Finds("crontab")
+        raw = f"a = '{CRON}'\nb = '\\x41'\n"
+        rule = Finds(CRON)
         hits = ViewRunner.run(rule, self.content(raw), "python")
         assert len(rule.read) == 2
         assert [(h.byte_start, h.byte_end) for h in hits] == [(5, 12)]
