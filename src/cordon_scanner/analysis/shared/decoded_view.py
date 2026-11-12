@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import ast
 import bisect
+import functools
 import io
 import re
 import tokenize
@@ -40,6 +41,8 @@ from array import array
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import ClassVar
+
+from cordon_scanner.foundation.collector import ScanCaches
 
 
 class ViewOverBudget(Exception):
@@ -98,6 +101,15 @@ class DecodedView:
             if offset >= ve:
                 return re_ + (offset - ve)
         return offset
+
+    @staticmethod
+    @ScanCaches.register  # holds files' texts: emptied after each scan (foundation/collector)
+    @functools.lru_cache(maxsize=8)
+    def readings(text: str, language: str | None) -> tuple[str, ...]:
+        """The text, and the view's text where it differs: what an excuse granted on an absence must
+        find nothing in (note 18 §6). Raises `ViewOverBudget` for a text past the budget."""
+        view = DecodedView.of(text, language)
+        return (text, view.text) if view.differs else (text,)
 
     # -- building ---------------------------------------------------------------------------------
 

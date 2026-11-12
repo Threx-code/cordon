@@ -332,7 +332,7 @@ class CapabilityDetector(BaseDetector):
         hits = CapabilityDetector._tree_capabilities(
             candidates, commands, content, ctx, hits, matched_content, resolved, unit
         )
-        hits = TextPosition.off_this_machine(content, hits)
+        hits = TextPosition.off_this_machine(content, hits, language)
         if BuildOutput.bundled(content):
             # A compiled tool that schedules its own jobs (an agent runner's LaunchAgent, a
             # crontab writer) registers autostart entries as its feature; three Open VSX agent

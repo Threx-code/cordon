@@ -63,8 +63,14 @@ class ViewRunner:
     def readings(cls, content: FileContent, language: str | None) -> tuple[str, ...]:
         """The raw text, and the view's text where it differs: what an excuse granted on an
         absence must find nothing in."""
-        view = cls.view(content, language)
-        return (content.text,) if view is None else (content.text, view.text)
+        return cls.texts(content.text, language)
+
+    @classmethod
+    def texts(cls, text: str, language: str | None) -> tuple[str, ...]:
+        """`readings` for a reader handed a text rather than a file."""
+        if language not in cls.LANGUAGES:
+            return (text,)
+        return DecodedView.readings(text, language)
 
     @classmethod
     def run(cls, rule: Rule, content: FileContent, language: str | None) -> list[CapabilityHit]:
