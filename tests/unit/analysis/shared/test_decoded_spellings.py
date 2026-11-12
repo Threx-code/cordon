@@ -41,7 +41,6 @@ class Pending:
 
     NAMES: ClassVar[frozenset[str]] = frozenset(
         {
-            "go_ci_env_write",
             "excuse_remote_session",
             "excuse_verified_decode",
             "excuse_verified_egress",

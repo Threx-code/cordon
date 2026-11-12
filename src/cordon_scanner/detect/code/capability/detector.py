@@ -720,7 +720,8 @@ class CapabilityDetector(BaseDetector):
     def _go_hits(content: FileContent, matched: FileContent) -> list[CapabilityHit]:
         from cordon_scanner.detect.code.go_runs import GoRuns
 
-        return GoRuns.ci_environment_write(matched) + GoRuns.received_and_run(content)
+        written = ViewRunner.run(GoRuns.ci_environment_write, matched, "go")  # note 18
+        return written + GoRuns.received_and_run(content)
 
     #: The source as a language's file builds it at run time, read by the rules in its place.
     RUN_TIME_VIEWS: ClassVar[dict[str, Callable[[str], str]]] = {"go": _go_run_time}
