@@ -694,7 +694,7 @@ class ContextFacts:
                 if not isinstance(value, list) or len(value) > LIST_ENTRIES or not all(
                     isinstance(t, list) and len(t) == 3 and t[0] in known
                     and isinstance(t[1], str) and len(t[1]) <= 256 and t[1].isidentifier()
-                    and isinstance(t[2], str) and re.fullmatch(r"\d{1,3}(,\d{1,3}){0,15}", t[2])
+                    and isinstance(t[2], str) and re.fullmatch(r"\d{1,3}(,\d{1,3}){0,255}", t[2])
                     for t in value
                 ):  # fmt: skip
                     return None, f"{name} of the wrong shape"
