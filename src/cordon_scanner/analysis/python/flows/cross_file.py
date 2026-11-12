@@ -10,7 +10,11 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.analysis.python.flows.carried_calls import CarriedCalls
-from cordon_scanner.analysis.python.flows.imported_clients import FileSummaries, ImportedClients
+from cordon_scanner.analysis.python.flows.imported_clients import (
+    FileSummaries,
+    ImportedClients,
+    ModuleResolver,
+)
 from cordon_scanner.analysis.python.flows.sent_names import SentNames
 from cordon_scanner.analysis.python.flows.staged.machine_collectors import MachineCollectors
 
@@ -41,13 +45,18 @@ class CrossFileMaps:
         )
         if len(summaries) < 2:
             return dict.fromkeys(CrossFileMaps.FIELDS)
+        # Each import line resolved once for the three follows (`ModuleResolver`).
+        resolve = ModuleResolver(summaries)
         return {
-            "python_imported_clients": ImportedClients.follow(summaries, "made") or None,
-            "python_imported_runners": ImportedClients.follow(summaries, "runs", modules=True)
+            "python_imported_clients": ImportedClients.follow(summaries, "made", resolve=resolve)
+            or None,
+            "python_imported_runners": ImportedClients.follow(
+                summaries, "runs", modules=True, resolve=resolve
+            )
             or None,
             "python_carried_calls": CarriedCalls.from_summaries(sources, summaries) or None,
             "python_imported_collectors": ImportedClients.follow(
-                summaries, "collects", modules=True
+                summaries, "collects", modules=True, resolve=resolve
             )
             or None,
             "python_sent_names": SentNames.from_summaries(summaries) or None,

@@ -333,6 +333,48 @@ class TestTheCrossFileMapsHoldNoTrees:
         assert maps["python_imported_collectors"] == (MachineCollectors.of(self.PACKAGE) or None)
         assert maps["python_imported_clients"] and maps["python_imported_runners"]
 
+    def test_each_import_line_is_resolved_once_for_every_follow(self, monkeypatch) -> None:
+        from cordon_scanner.analysis.python.flows.imported_clients import (
+            FileSummaries,
+            ModuleResolver,
+        )
+
+        summaries = FileSummaries.build(
+            self.PACKAGE,
+            {
+                "made": (None, ImportedClients._made_here),
+                "runs": (None, ImportedClients._runs_here),
+            },
+        )
+        expected = {
+            (path, line): ImportedClients._module_file(path, line, summaries)
+            for path, summary in summaries.items()
+            for line in summary.imports
+        }
+        # The maps each follow gives on its own, before resolutions are counted.
+        alone = {
+            kind: ImportedClients.follow(summaries, kind, modules=modules)
+            for kind, modules in (("made", False), ("runs", True))
+        }
+        asked: list[tuple[str, object]] = []
+        real = ImportedClients._module_file
+        monkeypatch.setattr(
+            ImportedClients,
+            "_module_file",
+            staticmethod(lambda p, n, paths: asked.append((p, n)) or real(p, n, paths)),
+        )
+        resolve = ModuleResolver(summaries)
+        clients = ImportedClients.follow(summaries, "made", resolve=resolve)
+        runners = ImportedClients.follow(summaries, "runs", modules=True, resolve=resolve)
+        assert clients == alone["made"]
+        assert runners == alone["runs"]
+        assert runners and clients
+        assert asked
+        assert len(asked) == len(set(asked))
+        assert all(
+            resolve.known[key] == value for key, value in expected.items() if key in resolve.known
+        )
+
     def test_a_summary_keeps_no_syntax_tree(self) -> None:
         import ast
         import dataclasses

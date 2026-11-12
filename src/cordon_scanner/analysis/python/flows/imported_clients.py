@@ -110,6 +110,26 @@ class FileSummaries:
         )
 
 
+class ModuleResolver:
+    """`ImportedClients._module_file` over one set of package paths, each import line resolved once.
+
+    `_follow` reads every file's import lines on each of up to `MAX_ROUNDS` rounds, for each of the
+    cross-file maps, and the answer depends only on the importing path, the line and the package's
+    paths: 187,619 resolutions on litellm 1.88.0rc2 (34 s), for a few thousand lines."""
+
+    __slots__ = ("known", "paths")
+
+    def __init__(self, paths: Mapping[str, Any]) -> None:
+        self.paths = paths
+        self.known: dict[tuple[str, ImportLine], str | None] = {}
+
+    def __call__(self, path: str, node: ImportLine) -> str | None:
+        key = (path, node)
+        if key not in self.known:
+            self.known[key] = ImportedClients._module_file(path, node, self.paths)
+        return self.known[key]
+
+
 class ImportedClients:
     """Per file, the names it imports that are HTTP clients made in another of the package's files."""
 
@@ -136,13 +156,20 @@ class ImportedClients:
 
     @classmethod
     def follow(
-        cls, summaries: Mapping[str, FileSummary], kind: str, *, modules: bool = False
+        cls,
+        summaries: Mapping[str, FileSummary],
+        kind: str,
+        *,
+        modules: bool = False,
+        resolve: ModuleResolver | None = None,
     ) -> dict[str, dict[str, str]]:
-        """`_follow` over one exporter's findings in a set of summaries."""
+        """`_follow` over one exporter's findings in a set of summaries. `resolve`, made over these
+        summaries, may be shared by several calls (`CrossFileMaps`)."""
         return cls._follow(
             summaries,
             {path: dict(s.exported.get(kind, {})) for path, s in summaries.items()},
             modules=modules,
+            resolve=resolve,
         )
 
     #: A file with none of these cannot run a command, so its analyser is not started for it.
@@ -157,15 +184,19 @@ class ImportedClients:
         exported: dict[str, dict[str, str]],
         *,
         modules: bool = False,
+        resolve: ModuleResolver | None = None,
     ) -> dict[str, dict[str, str]]:
         """What each file takes of `exported` (each file's own names) through the package's imports,
         re-exports included, to a fixed point."""
+        resolve = resolve or ModuleResolver(summaries)
         imported: dict[str, dict[str, str]] = {}
         for _ in range(cls.MAX_ROUNDS):
             changed = False
             for path, summary in summaries.items():
                 own = summary.bound
-                for name, client in cls._taken(path, summary, exported, summaries, modules=modules):
+                for name, client in cls._taken(
+                    path, summary, exported, summaries, modules=modules, resolve=resolve
+                ):
                     if (
                         name not in own
                         and exported[path].get(name) is None
@@ -309,13 +340,15 @@ class ImportedClients:
         paths: Mapping[str, Any],
         *,
         modules: bool = False,
+        resolve: ModuleResolver | None = None,
     ) -> list[tuple[str, str]]:
         """The names this file's `from ... import` statements take from the package. With
         `modules`, `from . import core` also takes what `core.py` exports, by its bare names: the
         file reaches them as `core.run_cmd`, and the analyser matches a call by that last name."""
+        resolve = resolve or ModuleResolver(paths)
         out: list[tuple[str, str]] = []
         for node in summary.imports:
-            source = cls._module_file(path, node, paths)
+            source = resolve(path, node)
             if source == path:
                 continue
             offered = exported.get(source, {}) if source is not None else {}
@@ -334,7 +367,7 @@ class ImportedClients:
                     named = ImportLine(
                         f"{node.module}.{alias_name}" if node.module else alias_name, node.level, ()
                     )
-                    member = cls._module_file(path, named, paths)
+                    member = resolve(path, named)
                     if member is not None and member != path:
                         out.extend(
                             (name, value)
