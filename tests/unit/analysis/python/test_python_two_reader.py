@@ -122,6 +122,24 @@ class TestAPythonTwoFileIsReadAsCode:
         assert "    def f(self):\n" in text and 'print("x")' in text
 
 
+class TestANeutralisedStatementKeepsItsLines:
+    """A statement the reader makes inert keeps its line's own ending, so the reading has the file's
+    line count (tests/fuzz/test_code_parsers.py found a lone backquote read as `pass\\n`)."""
+
+    @pytest.mark.parametrize(
+        "source",
+        ["`", "a`", "`\n", "print 'x'\n`", "x = 1\r\n`\r\ny = 2", "if a:\n    `", "f(1,\n  `)"],
+    )
+    def test_the_line_count_is_the_file_s(self, source: str) -> None:
+        reading = PythonTwoReader.read(source)
+        assert reading.text is not None
+        assert reading.text.count("\n") == source.count("\n")
+
+    def test_a_line_ending_is_kept_as_written(self) -> None:
+        reading = PythonTwoReader.read("x = 1\r\n`\r\ny = 2\r\n")
+        assert reading.text == "x = 1\r\npass\r\ny = 2\r\n"
+
+
 class TestWhatIsNotPythonTwo:
     def test_garbage_is_not_read_and_the_line_is_named(self) -> None:
         reading = PythonTwoReader.read('print "x"\ndef run(:\n    pass\n')

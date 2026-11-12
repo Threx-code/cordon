@@ -405,7 +405,9 @@ class PythonTwoReader:
     def neutralise(lines: list[str], at: int) -> None:
         """The whole logical statement holding line `at`, made inert: its first line becomes
         `except Exception:`, `if True:` or `pass` (indentation kept), its continuation lines empty,
-        so the statement's line count and every line after it stay where they were."""
+        so the statement's line count and every line after it stay where they were. Each line keeps
+        its own ending -- `\\n`, `\\r\\n`, `\\r`, or none on a file's last line, which a `\\n` written
+        there would have turned into one line more (found by tests/fuzz: a lone backquote)."""
         start, end = PythonTwoReader.span(lines, at)
         original = lines[start - 1]
         indent = original[: len(original) - len(original.lstrip())]
@@ -417,9 +419,14 @@ class PythonTwoReader:
             neutral = "if True:"
         else:
             neutral = "pass"
-        lines[start - 1] = f"{indent}{neutral}\n"
+        lines[start - 1] = f"{indent}{neutral}{PythonTwoReader._ending(original)}"
         for index in range(start, end):
-            lines[index] = "\n"
+            lines[index] = PythonTwoReader._ending(lines[index])
+
+    @staticmethod
+    def _ending(line: str) -> str:
+        """The line break `line` ends with, as `source_lines` kept it: empty for a last line."""
+        return line[len(line.rstrip("\r\n")) :]
 
     @staticmethod
     def span(lines: list[str], at: int) -> tuple[int, int]:
