@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 import time
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -52,6 +52,45 @@ class HostileKit:
     RATIO, NOISE = 9.0, 0.1
     #: The most CPU any rule may spend on LARGE: a quarter of the smallest budget.
     CEILING = CompiledMatch.BUDGET_FLOOR / 4
+
+    #: The machine's speed, from a fixed linear workload timed in the same run: what `REFERENCE`
+    #: takes here against what it took where CEILING and NOISE were set (a 2026-11-12 container,
+    #: Python 3.11-3.13: 0.17-0.19 s, every bundled rule under CEILING). On PR #71's Windows
+    #: runners linear rules measured 0.547-0.578 s, three times this machine's 0.15-0.20 s: the
+    #: runner was slower, not the rule. Both are scaled by it, never below 1 -- the budget, the
+    #: inputs and the ratio a super-linear rule fails on are unchanged.
+    REFERENCE_SECONDS = 0.18
+    _speed: ClassVar[float | None] = None
+
+    @staticmethod
+    def reference() -> float:
+        """The least CPU time of five runs of the reference workload: a 48-word alternation behind
+        a lookbehind, the shape of the bundled rules, over 8 MB of calls."""
+        words = b"|".join(f"name{i:02d}x".encode() for i in range(48))
+        regex = re.compile(rb"(?<![\w$.])(?:" + words + rb")\s{0,4}\(\s{0,4}[\w$]{1,40}")
+        data = (b"call(name07, value) { x = name1(y); } " * 220000)[: 8 << 20]
+        best = float("inf")
+        for _ in range(5):
+            started = time.thread_time()
+            for _ in regex.finditer(data):
+                pass
+            best = min(best, time.thread_time() - started)
+        return best
+
+    @classmethod
+    def speed(cls) -> float:
+        """How much slower than the reference machine this one is, at least 1; measured once."""
+        if cls._speed is None:
+            cls._speed = max(1.0, cls.reference() / cls.REFERENCE_SECONDS)
+        return cls._speed
+
+    @classmethod
+    def ceiling(cls) -> float:
+        return cls.CEILING * cls.speed()
+
+    @classmethod
+    def noise(cls) -> float:
+        return cls.NOISE * cls.speed()
 
     @staticmethod
     def rules() -> list[tuple[str, re.Pattern[bytes]]]:
@@ -127,7 +166,7 @@ class HostileKit:
             for _ in regex.finditer(data):
                 pass
             best = min(best, time.thread_time() - started)
-            if run >= 1 and best < HostileKit.CEILING / 2:
+            if run >= 1 and best < HostileKit.ceiling() / 2:
                 break
         return best
 
@@ -141,7 +180,7 @@ class HostileKit:
             t_small = HostileKit.cpu(regex, small + b"\x01")
             t_large = HostileKit.cpu(regex, large + b"\x01")
             ratio = t_large / t_small if t_small > 0 else 0.0
-            if t_large > worst[0] or (t_large > HostileKit.NOISE and ratio > worst[1]):
+            if t_large > worst[0] or (t_large > HostileKit.noise() and ratio > worst[1]):
                 worst = (t_large, ratio, piece)
         return worst
 
@@ -156,7 +195,11 @@ class TestEveryRuleOnHostileInput:
     @pytest.mark.parametrize(("rule_id", "regex"), RULES, ids=[r for r, _ in RULES])
     def test_linear_and_under_budget(self, rule_id: str, regex: re.Pattern[bytes]) -> None:
         large, ratio, piece = HostileKit.worst(regex)
-        assert large < HostileKit.CEILING, f"{rule_id}: {large:.3f}s on {piece[:12]!r} runs"
-        assert large < HostileKit.NOISE or ratio < HostileKit.RATIO, (
+        ceiling = HostileKit.ceiling()
+        assert large < ceiling, (
+            f"{rule_id}: {large:.3f}s on {piece[:12]!r} runs (ceiling {ceiling:.3f}s: "
+            f"{HostileKit.CEILING}s at {HostileKit.speed():.2f}x the reference machine)"
+        )
+        assert large < HostileKit.noise() or ratio < HostileKit.RATIO, (
             f"{rule_id}: super-linear on {piece[:12]!r} runs ({ratio:.1f}x for 4x the input)"
         )
