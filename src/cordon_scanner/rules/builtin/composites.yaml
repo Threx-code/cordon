@@ -17,7 +17,7 @@ rules:
   # Second-stage loaders
   # ---------------------------------------------------------------------
   - id: SUSPECT.DECODE_EXEC.001
-    version: 1.1.0
+    version: 1.2.0
     category: suspicious
     severity: high
     confidence: medium
@@ -50,31 +50,41 @@ rules:
       # for this rule have the decode and the execution on the same line or the one
       # after it -- which is what "passed to" looks like when it is true.
       proximity: 10
-      all:
-        - capability: decode
-        - any:
+      any:
+        - all:
+            - capability: decode
+            - any:
+                - capability: execute
+                # Or a process start, which is what `subprocess.run(b64decode(...),
+                # shell=True)` is and is the shape `corpus/malicious/
+                # anti-analysis-gated` carries.
+                #
+                # Not the shell's, and that exception is the rule. `CAP.SH.SPAWN.001`
+                # matches a command substitution, and its own message says it is
+                # ubiquitous in shell and only a label -- so pairing it with a decode
+                # says that a shell script decoded something, which is what
+                # `key=$(echo "$b" | base64 -d)` is and is how every shell script
+                # decodes anything. Measured against Azure's quickstart templates:
+                # eight findings, and every one of them a script decoding a pull
+                # secret, a licence key or an admin password into a variable, under a
+                # message saying the value was executed. `| bash` and `eval` are
+                # `execute` above and are unaffected, which the same measurement
+                # confirms.
+                - all:
+                    - capability: spawn
+                    - not:
+                        rule: CAP.SH.SPAWN.001
+                    - not:
+                        rule: CAP.MK.SPAWN.001
+        # Code compressed rather than encoded and handed to an execution is the same loader:
+        # `exec(zlib.decompress(blob))`, `exec(marshal.loads(gzip.decompress(blob)))` (half B: 10
+        # packages run their payload so at import). Only `execute` pairs with a decompression -- a
+        # process started beside an unpacked archive is the self-updater measured above. And only a
+        # decompression the parser resolved to a call: a packer writes the word into the text of the
+        # loader stub it compiles, and nothing there decompresses (pyc-zipper 1.0.8, benign rescan).
+        - all:
+            - rule: AST.PY.DECOMPRESS
             - capability: execute
-            # Or a process start, which is what `subprocess.run(b64decode(...),
-            # shell=True)` is and is the shape `corpus/malicious/
-            # anti-analysis-gated` carries.
-            #
-            # Not the shell's, and that exception is the rule. `CAP.SH.SPAWN.001`
-            # matches a command substitution, and its own message says it is
-            # ubiquitous in shell and only a label -- so pairing it with a decode
-            # says that a shell script decoded something, which is what
-            # `key=$(echo "$b" | base64 -d)` is and is how every shell script
-            # decodes anything. Measured against Azure's quickstart templates:
-            # eight findings, and every one of them a script decoding a pull
-            # secret, a licence key or an admin password into a variable, under a
-            # message saying the value was executed. `| bash` and `eval` are
-            # `execute` above and are unaffected, which the same measurement
-            # confirms.
-            - all:
-                - capability: spawn
-                - not:
-                    rule: CAP.SH.SPAWN.001
-                - not:
-                    rule: CAP.MK.SPAWN.001
 
   # ---------------------------------------------------------------------
   # Exfiltration

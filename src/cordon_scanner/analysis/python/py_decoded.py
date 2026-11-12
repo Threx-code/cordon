@@ -197,6 +197,27 @@ class PythonDecodedRun(PythonValueFlow):
         return cls.unreached_run_lines(tree)
 
     @classmethod
+    def run_positions(cls, source: str) -> frozenset[tuple[int, int]]:
+        """Where the runs this reads by name start, as (line, column in bytes): what an excused line
+        may hold. A run it does not model (a name bound to `eval("exec")`) is not among them, so
+        `DecodeRun` keeps such a line paired. Empty when the source does not parse."""
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
+        try:
+            tree = PythonSyntax.shared(source)
+        except (SyntaxError, ValueError, RecursionError):
+            # S2: nothing modelled means every parsed run on an excused line is unmodelled, so no
+            # line is excused and the pairing stands (fail closed); `unreached_runs` excuses nothing
+            # on the same source anyway
+            return frozenset()
+        analysis = cls(tree)
+        return frozenset(
+            (node.lineno, node.col_offset)
+            for node in PythonSyntax.walked_of(tree, ast.Call)
+            if analysis._runs(node)
+        )
+
+    @classmethod
     def unreached_run_lines(cls, tree: ast.AST) -> frozenset[int]:
         """Lines of runs no decoded value in the file can reach; empty when one may reach any."""
         analysis = cls(tree)

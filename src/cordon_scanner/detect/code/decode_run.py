@@ -95,6 +95,8 @@ class DecodeRun:
             safe_spawn = PythonAnalyzer.safe_spawn_lines(
                 content.text
             ) | PythonDecodedRun.unreached_runs(content.text)
+            if safe_spawn:
+                safe_spawn -= cls._unmodelled_run_lines(content, hits, safe_spawn)
         written = cls._written_literal_paths(content) if hits else frozenset()
         if written and safe_spawn:
             # A run naming a file this unit writes may run what was written there, however literal
@@ -117,6 +119,36 @@ class DecodeRun:
                 if not any(p in text for p in written) and not cls._DECODE_CALL.search(text):
                     fixed.add(h.line)
         return safe_spawn | fixed
+
+    @staticmethod
+    def _unmodelled_run_lines(
+        content: FileContent, hits: list[CapabilityHit], lines: frozenset[int]
+    ) -> frozenset[int]:
+        """Lines among `lines` that hold a parsed spawn or execute the Python excuses did not model.
+
+        Both excuses are taken by line and read runs by name, so on a line they excuse, a run they
+        cannot name would be excused with the one they can: `go = eval("exec"); go(b64decode(x))`
+        holds an `eval` of a literal (unreached, rightly) and a run of the decoded value through a
+        name the AST resolves to `exec` (half B: 50 packages run their payload so at import). Such a
+        line keeps its pairing (fail closed)."""
+        from cordon_scanner.analysis.python.py_decoded import PythonDecodedRun
+
+        parsed = [
+            h
+            for h in hits
+            if h.resolved
+            and h.line in lines
+            and h.capability in (Capability.SPAWN, Capability.EXECUTE)
+        ]
+        if not parsed:
+            return frozenset()
+        modelled = PythonDecodedRun.run_positions(content.text)
+        starts = [0, *(m.end() for m in re.finditer(rb"\n", content.raw))]
+        return frozenset(
+            h.line
+            for h in parsed
+            if h.line <= len(starts) and (h.line, h.byte_start - starts[h.line - 1]) not in modelled
+        )
 
     @classmethod
     def hits_for(
