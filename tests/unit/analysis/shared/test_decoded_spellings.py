@@ -41,7 +41,6 @@ class Pending:
 
     NAMES: ClassVar[frozenset[str]] = frozenset(
         {
-            "reader_obfuscator_io",
             "extra_spawn_name",
         }
     )
