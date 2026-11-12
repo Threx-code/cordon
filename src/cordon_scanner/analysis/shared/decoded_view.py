@@ -36,6 +36,8 @@ import io
 import re
 import tokenize
 import unicodedata
+from array import array
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import ClassVar
 
@@ -44,20 +46,42 @@ class ViewOverBudget(Exception):
     """The file is past what the view may read: the caller reports the file INCOMPLETE."""
 
 
+class _Starts:
+    """The view starts of a flat segment array, read in place by `bisect`."""
+
+    def __init__(self, flat: array[int]) -> None:
+        self.flat = flat
+
+    def __len__(self) -> int:
+        return len(self.flat) // 4
+
+    def __getitem__(self, i: int) -> int:
+        return self.flat[4 * i]
+
+
 @dataclass
 class DecodedView:
     text: str
     raw: str
-    segments: list[tuple[int, int, int, int]] = field(default_factory=list)
+    #: Every re-spelt piece as view start, view end, raw start, raw end, flat: four 8-byte ints a
+    #: piece, so a file of a million escaped literals keeps a map of 32 MB, not of a million tuples.
+    flat: array[int] = field(default_factory=lambda: array("q"))
     partial: bool = False
 
     #: A view past these is refused (`ViewOverBudget`), not built in part.
     MAX_TOKENS: ClassVar[int] = 2_000_000
     MAX_CHARS: ClassVar[int] = 16_000_000
+    #: Adjacent literals joined into one: a run past this is refused, not held.
+    MAX_RUN: ClassVar[int] = 100_000
 
     @property
     def differs(self) -> bool:
-        return bool(self.segments)
+        return bool(self.flat)
+
+    @property
+    def segments(self) -> list[tuple[int, int, int, int]]:
+        f = self.flat
+        return [(f[i], f[i + 1], f[i + 2], f[i + 3]) for i in range(0, len(f), 4)]
 
     # -- positions --------------------------------------------------------------------------------
 
@@ -66,10 +90,9 @@ class DecodedView:
         return self._raw_point(start, low=True), self._raw_point(max(start, end), low=False)
 
     def _raw_point(self, offset: int, *, low: bool) -> int:
-        starts = [s[0] for s in self.segments]
-        i = bisect.bisect_right(starts, offset) - 1
+        i = bisect.bisect_right(_Starts(self.flat), offset) - 1
         if i >= 0:
-            vs, ve, rs, re_ = self.segments[i]
+            vs, ve, rs, re_ = self.flat[4 * i : 4 * i + 4]
             if vs <= offset < ve or (not low and vs < offset <= ve):
                 return rs if low else re_
             if offset >= ve:
@@ -92,18 +115,18 @@ class DecodedView:
 
 
 class _Builder:
+    """The view written as it is read: the text into one buffer, the map into one flat array."""
+
     def __init__(self, raw: str) -> None:
         self.raw = raw
-        self.out: list[str] = []
-        self.segments: list[tuple[int, int, int, int]] = []
+        self.out = io.StringIO()
+        self.flat: array[int] = array("q")
         self.cursor = 0
         self.length = 0
 
     def copy_to(self, raw_offset: int) -> None:
         if raw_offset > self.cursor:
-            piece = self.raw[self.cursor : raw_offset]
-            self.out.append(piece)
-            self.length += len(piece)
+            self.length += self.out.write(self.raw[self.cursor : raw_offset])
             self.cursor = raw_offset
 
     def replace(self, raw_start: int, raw_end: int, text: str) -> None:
@@ -111,19 +134,21 @@ class _Builder:
         if text == self.raw[raw_start:raw_end]:
             self.copy_to(raw_end)
             return
-        self.out.append(text)
-        self.segments.append((self.length, self.length + len(text), raw_start, raw_end))
+        self.out.write(text)
+        self.flat.extend((self.length, self.length + len(text), raw_start, raw_end))
         self.length += len(text)
         self.cursor = raw_end
 
     def view(self, *, partial: bool = False) -> DecodedView:
         self.copy_to(len(self.raw))
-        return DecodedView(
-            text="".join(self.out), raw=self.raw, segments=self.segments, partial=partial
-        )
+        return DecodedView(text=self.out.getvalue(), raw=self.raw, flat=self.flat, partial=partial)
 
 
 # -- Python ---------------------------------------------------------------------------------------
+
+#: 3.12's f-string tokens; -1 (no token has it) before.
+_FSTRING_START: int = getattr(tokenize, "FSTRING_START", -1)
+_FSTRING_END: int = getattr(tokenize, "FSTRING_END", -1)
 
 _PREFIX = re.compile(r"(?i)^([rbuf]{0,3})('''|\"\"\"|'|\")")
 
@@ -225,9 +250,12 @@ class _FString:
 class _Python:
     def __init__(self, raw: str) -> None:
         self.raw = raw
-        self.lines = [0]
-        for line in raw.splitlines(keepends=True):
-            self.lines.append(self.lines[-1] + len(line))
+        self.partial = False
+        #: Where each line starts, as `tokenize` counts them: it reads through `StringIO.readline`,
+        #: which ends a line at "\n" only -- not at a form feed or U+2028, as `str.splitlines`
+        #: does. Eight bytes a line, and no list of the lines.
+        self.lines: array[int] = array("q", [0])
+        self.lines.extend(m.end() for m in re.finditer("\n", raw))
 
     def at(self, position: tuple[int, int]) -> int:
         row, col = position
@@ -251,81 +279,70 @@ class _Python:
                 out.append(ch)
         return "".join(out)
 
-    def tokens(self) -> tuple[list[tokenize.TokenInfo], bool]:
-        out: list[tokenize.TokenInfo] = []
+    def tokens(self) -> Iterator[tokenize.TokenInfo]:
+        """The file's tokens, one at a time: nothing but the current run of literals is held, so
+        a file of millions of tokens is read in the memory of a few. Past `MAX_TOKENS` the file is
+        refused; where `tokenize` stops, the view is `partial` and the rest stays raw."""
+        count = 0
         try:
             for tok in tokenize.generate_tokens(io.StringIO(self.raw).readline):
-                out.append(tok)
-                if len(out) > DecodedView.MAX_TOKENS:
+                count += 1
+                if count > DecodedView.MAX_TOKENS:
                     raise ViewOverBudget(f"more than {DecodedView.MAX_TOKENS} tokens")
+                yield tok
         except (tokenize.TokenError, SyntaxError):
-            return out, True
-        return out, False
+            self.partial = True
 
     def view(self) -> DecodedView:
-        toks, partial = self.tokens()
+        self.partial = False
         b = _Builder(self.raw)
-        i, n = 0, len(toks)
-        fstart = getattr(tokenize, "FSTRING_START", None)
-        fend = getattr(tokenize, "FSTRING_END", None)
-        while i < n:
-            tok = toks[i]
+        stream = self.tokens()
+        tok = next(stream, None)
+        run: list[tuple[int, int]] = []
+        while tok is not None:
+            if self._opens_literal(tok):
+                run.append(self._span(tok, stream))
+                # The run goes on past line breaks inside brackets and comments, to the next literal:
+                # what is skipped re-spells nothing, so it is not kept.
+                tok = next(stream, None)
+                while tok is not None and tok.type in (tokenize.NL, tokenize.COMMENT):
+                    tok = next(stream, None)
+                if tok is not None and self._opens_literal(tok):
+                    if len(run) >= DecodedView.MAX_RUN:
+                        raise ViewOverBudget(f"a run of more than {DecodedView.MAX_RUN} literals")
+                    continue
+                self._literals(b, run)
+                run = []
+                continue
             if tok.type == tokenize.NAME:
                 normal = unicodedata.normalize("NFKC", tok.string)
                 if normal != tok.string:
                     b.replace(self.at(tok.start), self.at(tok.end), normal)
-                i += 1
-                continue
-            if tok.type == tokenize.STRING or (fstart is not None and tok.type == fstart):
-                run, i = self._run(toks, i, fstart, fend)
-                self._literals(b, run)
-                continue
-            i += 1
-        return b.view(partial=partial)
+            tok = next(stream, None)
+        if run:
+            self._literals(b, run)
+        return b.view(partial=self.partial)
 
-    def _string_span(
-        self, toks: list[tokenize.TokenInfo], i: int, fstart: int | None, fend: int | None
-    ) -> tuple[int, int, int]:
-        """(raw start, raw end, next index) of the literal at `i`: one STRING token, or a whole
-        f-string from FSTRING_START to its FSTRING_END (3.12), nested ones included."""
-        tok = toks[i]
-        if fstart is None or tok.type != fstart:
-            return self.at(tok.start), self.at(tok.end), i + 1
-        depth, j = 0, i
-        while j < len(toks):
-            if toks[j].type == fstart:
+    @staticmethod
+    def _opens_literal(tok: tokenize.TokenInfo) -> bool:
+        return tok.type == tokenize.STRING or tok.type == _FSTRING_START
+
+    def _span(
+        self, tok: tokenize.TokenInfo, stream: Iterator[tokenize.TokenInfo]
+    ) -> tuple[int, int]:
+        """The raw span of the literal `tok` opens: one STRING token, or a whole f-string from
+        FSTRING_START to its FSTRING_END (3.12), nested ones included, read off the stream."""
+        if tok.type != _FSTRING_START:
+            return self.at(tok.start), self.at(tok.end)
+        depth = 1
+        for inner in stream:
+            if inner.type == _FSTRING_START:
                 depth += 1
-            elif toks[j].type == fend:
+            elif inner.type == _FSTRING_END:
                 depth -= 1
                 if depth == 0:
-                    return self.at(tok.start), self.at(toks[j].end), j + 1
-            j += 1
-        return self.at(tok.start), len(self.raw), len(toks)
-
-    def _run(
-        self, toks: list[tokenize.TokenInfo], i: int, fstart: int | None, fend: int | None
-    ) -> tuple[list[tuple[int, int]], int]:
-        """Adjacent literals from `i` (implicit concatenation): spans, separated only by line breaks
-        inside brackets and comments."""
-        spans: list[tuple[int, int]] = []
-        while i < len(toks):
-            tok = toks[i]
-            if tok.type == tokenize.STRING or (fstart is not None and tok.type == fstart):
-                s, e, i = self._string_span(toks, i, fstart, fend)
-                spans.append((s, e))
-                continue
-            if tok.type in (tokenize.NL, tokenize.COMMENT) and spans:
-                j = i
-                while j < len(toks) and toks[j].type in (tokenize.NL, tokenize.COMMENT):
-                    j += 1
-                if j < len(toks) and (
-                    toks[j].type == tokenize.STRING
-                    or (fstart is not None and toks[j].type == fstart)
-                ):
-                    i = j
-                    continue
-            break
-        return spans, i
+                    return self.at(tok.start), self.at(inner.end)
+        return self.at(tok.start), len(self.raw)
 
     @staticmethod
     def _is_f(source: str) -> bool:
@@ -537,45 +554,56 @@ class _Go:
             if raw[j] != "\\":
                 j += 1
                 continue
-            run = []
-            k = j
-            while (m := _GO_ESCAPE.match(raw, k)) is not None:
-                run.append(m)
-                k = m.end()
-            if not run:
+            data, k = self._run(j)
+            if k == j:
                 j += 2  # another escape (`\\n`, `\\\\`, `\\"`) stays as written
                 continue
-            self._run(b, run)
+            text = self._text(data)
+            if text is not None:
+                b.replace(j, k, text)
             j = k
         return j + 1
 
-    @staticmethod
-    def _run(b: _Builder, run: list[re.Match[str]]) -> None:
-        data = bytearray()
-        for m in run:
+    def _run(self, j: int) -> tuple[bytearray | None, int]:
+        """The bytes a run of escapes from `j` spells, and where the run ends; None for bytes
+        when one is no character (a surrogate, past U+10FFFF). Read in place: only the bytes held."""
+        raw, data, k = self.raw, bytearray(), j
+        ok = True
+        while (m := _GO_ESCAPE.match(raw, k)) is not None:
+            k = m.end()
             byte, octal, short, long = m.groups()
             if byte is not None or octal is not None:
                 data.append(int(byte, 16) if byte is not None else int(octal, 8) & 0xFF)
                 continue
             point = int(short or long, 16)
             if point > 0x10FFFF or 0xD800 <= point <= 0xDFFF:
-                return
-            data += chr(point).encode("utf-8")
+                ok = False
+            elif ok:
+                data += chr(point).encode("utf-8")
+        return (data if ok else None), k
+
+    @staticmethod
+    def _text(data: bytearray | None) -> str | None:
+        """What the run is written as: its UTF-8 text, or None (left as written) when it is not
+        UTF-8 or holds a character that would break a line."""
+        if data is None:
+            return None
         try:
             text = data.decode("utf-8")
         except UnicodeDecodeError:
-            return
-        if not all(_Lines.kept(ch) for ch in text):
-            return
-        b.replace(run[0].start(), run[-1].end(), text)
+            return None
+        return None if _Lines.BREAKS.search(text) else text
 
 
 class _Lines:
-    @staticmethod
-    def kept(ch: str) -> bool:
-        """Whether a decoded character may be written as itself: not one that breaks a line
-        (`str.splitlines`) and not another control character, so the view's lines are the file's."""
-        return not (unicodedata.category(ch) == "Cc" or ch in "\u2028\u2029")
+    #: A character that breaks a line (`str.splitlines`) or is another control character: the
+    #: Unicode category Cc (U+0000-001F, U+007F-009F) and the line and paragraph separators.
+    BREAKS: ClassVar[re.Pattern[str]] = re.compile("[\x00-\x1f\x7f-\x9f\u2028\u2029]")
+
+    @classmethod
+    def kept(cls, ch: str) -> bool:
+        """Whether a decoded character may be written as itself, so the view's lines are the file's."""
+        return cls.BREAKS.match(ch) is None
 
 
 __all__ = ["DecodedView", "ViewOverBudget"]

@@ -63,6 +63,13 @@ class TestAPythonView:
         assert parts == [("lit", "a"), ("field", "{b['k']}"), ("lit", "c{d}")]
         assert _FString.decoded("f'{x}'") is None  # nothing to re-spell
 
+    def test_a_line_separator_inside_a_comment_or_literal_moves_nothing(self) -> None:
+        """`tokenize` ends a line at a newline only; a form feed or U+2028 in a comment or a
+        literal is a character of its line, so what follows is still found where it is."""
+        for odd in ("\u2028", "\x0c", "\x1c"):
+            v = self.view(f"a = 1  # x{odd}y\ns = '{odd}'\nb = '\\x41'\n")
+            assert v.text.endswith("b = 'A'\n"), repr(odd)
+
     def test_a_file_tokenize_stops_on_keeps_the_view_before_it(self) -> None:
         v = self.view("a = '\\x41'\nb = (\n")
         assert v.partial
