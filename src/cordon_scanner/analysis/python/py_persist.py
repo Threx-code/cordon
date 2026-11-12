@@ -267,10 +267,23 @@ class PythonPersistence(PythonValueFlow):
     @classmethod
     def written_lines(cls, tree: ast.AST) -> frozenset[int] | None:
         """Lines where a persistence location named by a literal is written; None when the file
-        holds too many such literals to follow."""
+        holds too many such literals to follow. Answered once per tree: the persistence facts, the
+        load-time persistence and the persist-and-run implants all ask it of every file."""
+        found: tuple[frozenset[int] | None] = PythonSyntax.memo(
+            tree, ("py_persist", "written_lines", cls), lambda: (cls._written_lines(tree),)
+        )
+        return found[0]
+
+    @classmethod
+    def _written_lines(cls, tree: ast.AST) -> frozenset[int] | None:
         analysis = cls(tree)
         if not analysis.index():
             return None
+        if not analysis.seeds:
+            # No literal names a persistence location: every value the flow moves is a seed's
+            # (`bind`, `_returned`, `_bind_param` keep only what `taint` found, and `taint` finds
+            # only seeds), so nothing is written and the fixpoint would move nothing.
+            return frozenset()
         analysis.flow()
         # A literal that is itself a whole read-only command (`"crontab -l"`, `"ls /etc/cron.d/"`,
         # from a table run one by one, or saved as the header of the evidence it gave) names the

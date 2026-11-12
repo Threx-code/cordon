@@ -128,6 +128,21 @@ class TestTheWalkIsTheTreesOnce:
             assert want  # `isinstance` by value: a Constant holding a str
             assert [id(n) for n in PythonSyntax.walked_of(tree, kind)] == want
 
+    def test_the_trees_parents_are_the_walks_for_every_node_but_the_ctx_markers(self) -> None:
+        """`BackdoorWrites` reads `PythonSyntax.parents` where it built the map from the walk: for
+        every node it can start from (any but the shared `ctx` markers) the parent is the same."""
+        import ast
+
+        for tree in (PythonSyntax.parse(self.SOURCE), PythonSyntax.shared(self.SOURCE)):
+            walked: dict[int, ast.AST] = {}
+            for node in self.walk(tree):
+                for child in ast.iter_child_nodes(node):
+                    walked[id(child)] = node
+            parents = PythonSyntax.parents(tree)
+            for node in self.walk(tree):
+                if not isinstance(node, ast.expr_context):
+                    assert parents.get(id(node)) is walked.get(id(node)), type(node).__name__
+
     def test_a_forgotten_tree_is_walked_again_the_same(self) -> None:
         tree = PythonSyntax.parse(self.SOURCE)
         before = [id(n) for n in PythonSyntax.walked(tree)]

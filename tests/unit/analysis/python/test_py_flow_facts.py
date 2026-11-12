@@ -114,3 +114,75 @@ class TestTheIndexIsTheTreesOnce:
         assert shared.index() is False
         assert walked._index_walk() is False
         assert self.tables(shared) == self.tables(walked)
+
+    def test_the_shape_s_order_is_a_stack_walk_by_iter_child_nodes(self) -> None:
+        """The walk reads each node's fields itself (`ctx` markers included): the order it records,
+        which seeds are asked in, is the stack walk over `ast.iter_child_nodes` it replaced."""
+        tree = ast.parse(self.SOURCE)
+        want: list[int] = []
+        stack: list[ast.AST] = [tree]
+        while stack:
+            node = stack.pop()
+            want.append(id(node))
+            stack.extend(ast.iter_child_nodes(node))
+        assert [id(n) for n in IndexShape.of(tree).order] == want
+
+
+class TestWrittenLinesOncePerTree:
+    """`PythonPersistence.written_lines`: kept per tree for its three readers, and a file with no
+    persistence literal answered without running the flow. Each is the full reading's answer."""
+
+    SOURCES = (
+        "import os\nx = os.getcwd()\nprint(x)\n",  # no persistence word: no seed
+        "import subprocess\nsubprocess.run(['crontab', '-l'])\n",  # a listing only
+        "def keep(text):\n    with open('/etc/cron.d/job', 'w') as fh:\n        fh.write(text)\n"
+        "keep('* * * * * true')\n",  # a location written
+        "P = '~/.bashrc'\nprint(P)\n",  # named, not written
+    )
+
+    @staticmethod
+    def full(tree: ast.AST) -> frozenset[int] | None:
+        """The reading before the change: the flow always run, nothing kept."""
+        from cordon_scanner.analysis.python.py_persist import READ_ONLY_COMMAND, PythonPersistence
+
+        analysis = PythonPersistence(tree)
+        if not analysis.index():
+            return None
+        analysis.flow()
+        listing = {
+            label
+            for label, texts in analysis.texts.items()
+            if all(READ_ONLY_COMMAND.fullmatch(t) for t in texts)
+        }
+        out: set[int] = set()
+        for node in analysis.calls:
+            reached = analysis._written_by(node) - listing
+            if reached:
+                out |= reached
+                out.update(range(node.lineno, (node.end_lineno or node.lineno) + 1))
+        return frozenset(out)
+
+    def test_each_file_s_lines_are_the_full_reading_s(self) -> None:
+        from cordon_scanner.analysis.python.py_persist import PythonPersistence
+
+        answers = []
+        for source in self.SOURCES:
+            want = self.full(ast.parse(source))
+            assert PythonPersistence.written_lines(ast.parse(source)) == want, source
+            answers.append(want)
+        assert answers[0] == frozenset() and answers[2], "the cases cover none and a write"
+
+    def test_a_tree_is_read_once_for_every_reader(self, monkeypatch) -> None:
+        from cordon_scanner.analysis.python.py_persist import PythonPersistence
+
+        tree = ast.parse(self.SOURCES[2])
+        runs: list[int] = []
+        real = PythonPersistence._written_lines.__func__
+        monkeypatch.setattr(
+            PythonPersistence,
+            "_written_lines",
+            classmethod(lambda cls, t: runs.append(1) or real(cls, t)),
+        )
+        first = PythonPersistence.written_lines(tree)
+        assert PythonPersistence.written_lines(tree) == first
+        assert runs == [1]

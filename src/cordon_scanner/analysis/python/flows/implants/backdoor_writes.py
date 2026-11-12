@@ -194,16 +194,16 @@ class ContentOrigin:
     WRITES: ClassVar[frozenset[str]] = frozenset({"write", "writelines"})
 
     def __init__(self, tree: ast.AST) -> None:
-        self.parent: dict[int, ast.AST] = {}
+        #: `id(node) -> parent`, the tree's own table (`PythonSyntax.parents`), read and never
+        #: changed here. An indexed tree's leaves out the `ctx` markers, one shared object per kind
+        #: whose "parent" was only the last node walked; no lookup here starts from one.
+        self.parent: dict[int, ast.AST] = PythonSyntax.parents(tree)
         self.module: dict[str, list[ast.AST]] = {}
         self.function: dict[int, dict[str, list[ast.AST]]] = {}
         self.params: dict[int, set[str]] = {}
         self.calls: dict[str, list[ast.Call]] = {}
         self.attrs: dict[str, list[tuple[ast.AST, ast.AST | None]]] = {}
         self.functions: dict[str, ast.AST] = {}
-        for node in PythonSyntax.walked(tree):
-            for child in ast.iter_child_nodes(node):
-                self.parent[id(child)] = node
         for node in PythonSyntax.walked_of(
             tree, ast.Assign, ast.AnnAssign, ast.FunctionDef, ast.AsyncFunctionDef, ast.Call
         ):

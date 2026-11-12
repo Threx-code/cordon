@@ -231,7 +231,17 @@ class PythonValueFlow(ValueFlowSteps):
                 if len(self.seeds) > self.MAX_SEEDS:
                     return False
             self.scope_of[id(node)] = scope
-            stack.extend((child, inner) for child in ast.iter_child_nodes(node))
+            # `ast.iter_child_nodes`, inlined: the same children in the same order, `ctx` markers
+            # included, read from each field directly rather than through two generators a node.
+            for field in node._fields:
+                try:
+                    value = getattr(node, field)
+                except AttributeError:
+                    continue
+                if isinstance(value, ast.AST):
+                    stack.append((value, inner))
+                elif isinstance(value, list):
+                    stack.extend((item, inner) for item in value if isinstance(item, ast.AST))
         from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 
         for node in PythonSyntax.walked_of(self.tree, ast.Global, ast.Nonlocal):
