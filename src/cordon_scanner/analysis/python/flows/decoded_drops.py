@@ -165,7 +165,7 @@ class DecodedDrops(ExecutionFlows):
                 for node in PythonSyntax.within(function, ast.Assign):
                     if any(
                         isinstance(n, ast.Name) and n.id in params
-                        for n in PythonSyntax.nodes(node.value)
+                        for n in PythonSyntax.within(node.value, ast.Name)
                     ):
                         grown.update(name for t in node.targets for name in BindingForms.names(t))
                 if grown == params:
@@ -176,7 +176,7 @@ class DecodedDrops(ExecutionFlows):
                 if any(
                     isinstance(n, ast.Name) and n.id in params
                     for a in inputs
-                    for n in PythonSyntax.nodes(a)
+                    for n in PythonSyntax.within(a, ast.Name)
                 ):
                     found.add(id(call))
         return found
@@ -226,12 +226,12 @@ class DecodedDrops(ExecutionFlows):
         call over only those (a decode of a blob), or a file read."""
         if isinstance(node, ast.Constant):
             return isinstance(node.value, str | bytes)
-        names = [n for n in PythonSyntax.nodes(node) if isinstance(n, ast.Name)]
+        names = [n for n in PythonSyntax.within(node, ast.Name) if isinstance(n, ast.Name)]
         if any(
             isinstance(n, ast.Call)
             and isinstance(n.func, ast.Attribute)
             and n.func.attr in ("read", "read_bytes", "read_text")
-            for n in PythonSyntax.nodes(node)
+            for n in PythonSyntax.within(node, ast.Call)
         ):
             return True
         return bool(names) and all(n.id in module_names for n in names)

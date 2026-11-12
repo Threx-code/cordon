@@ -143,6 +143,42 @@ class TestTheWalkIsTheTreesOnce:
                 if not isinstance(node, ast.expr_context):
                     assert parents.get(id(node)) is walked.get(id(node)), type(node).__name__
 
+    def test_the_analyser_reads_the_same_with_subtrees_answered_from_the_index(
+        self, monkeypatch
+    ) -> None:
+        """The decoded-drop and dormant-decode readers ask order-free questions of subtrees ("is
+        any name here a parameter") of `within`, the index's range lookup, where they filtered a
+        kept list of each subtree's nodes: the hits are the same as with every subtree walked."""
+        from cordon_scanner.analysis.python.pyast import PythonAnalyzer
+        from cordon_scanner.foundation.collector import ScanCaches
+
+        source = (
+            "import base64, subprocess\nBLOB = 'aGVsbG8='\n"
+            "def drop(blob, path):\n    data = base64.b64decode(blob)\n"
+            "    open(path, 'wb').write(data)\n    subprocess.run([path])\n"
+            "drop(BLOB, 'x')\n"
+            "def handler(task):\n    payload = task['blob']\n    raw = base64.b64decode(payload)\n"
+            "    open('y', 'wb').write(raw)\n"
+            "def unused():\n    k = base64.b64decode('aGk=')\n    v = k ^ 3\n"
+        )
+
+        def hits() -> list[tuple[str, int, str]]:
+            ScanCaches.after_scan()
+            return sorted(
+                (str(h.capability), h.line, h.detail) for h in PythonAnalyzer.analyse(source)
+            )
+
+        indexed = hits()
+        monkeypatch.setattr(
+            PythonSyntax,
+            "within",
+            staticmethod(
+                lambda node, *types: [n for n in PythonSyntax.nodes(node) if isinstance(n, types)]
+            ),
+        )
+        assert hits() == indexed
+        assert indexed
+
     def test_a_forgotten_tree_is_walked_again_the_same(self) -> None:
         tree = PythonSyntax.parse(self.SOURCE)
         before = [id(n) for n in PythonSyntax.walked(tree)]

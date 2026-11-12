@@ -95,7 +95,8 @@ class DormantDecodes(AnalyzerCore):
                 isinstance(node, ast.BinOp)
                 and isinstance(node.op, ast.BitXor)
                 and any(
-                    isinstance(n, ast.Name) and n.id in decoded for n in PythonSyntax.nodes(node)
+                    isinstance(n, ast.Name) and n.id in decoded
+                    for n in PythonSyntax.within(node, ast.Name)
                 )
             ):
                 return "xor"
@@ -166,7 +167,7 @@ class DormantDecodes(AnalyzerCore):
             isinstance(n, ast.Call)
             and (resolved := self._resolve_callee(n)) is not None
             and PRIMITIVES.get(resolved[0]) is Capability.EGRESS
-            for n in PythonSyntax.nodes(value)
+            for n in PythonSyntax.within(value, ast.Call)
         )
 
     def _scope_dormant(
@@ -185,7 +186,11 @@ class DormantDecodes(AnalyzerCore):
         fetched: set[str] = set()
         carried: set[str] = set()
         for statement in statements:
-            names = {n.id for n in PythonSyntax.nodes(statement.value) if isinstance(n, ast.Name)}
+            names = {
+                n.id
+                for n in PythonSyntax.within(statement.value, ast.Name)
+                if isinstance(n, ast.Name)
+            }
             target_name = statement.targets[0].id  # type: ignore[attr-defined]
             if self._fetches(statement.value) or names & fetched:
                 fetched.add(target_name)
@@ -198,7 +203,7 @@ class DormantDecodes(AnalyzerCore):
             target = statement.targets[0].id  # type: ignore[attr-defined]
             if any(
                 isinstance(n, ast.Name) and n.id in handed
-                for n in PythonSyntax.nodes(statement.value)
+                for n in PythonSyntax.within(statement.value, ast.Name)
             ):
                 # A value the caller handed in, decoded and dropped, is sloppy code; a payload is
                 # fetched, shipped in a file or written in the source (cordon-a9, 2026-11-11).
@@ -209,7 +214,7 @@ class DormantDecodes(AnalyzerCore):
                 decoded.setdefault(target, (statement, decoder))
             elif any(
                 isinstance(n, ast.Name) and n.id in decoded.keys() | derived
-                for n in PythonSyntax.nodes(statement.value)
+                for n in PythonSyntax.within(statement.value, ast.Name)
             ):
                 derived.add(target)
         if not decoded:
@@ -219,7 +224,7 @@ class DormantDecodes(AnalyzerCore):
             id(n)
             for statement in statements
             if statement.targets[0].id in carried  # type: ignore[attr-defined]
-            for n in PythonSyntax.nodes(statement.value)
+            for n in PythonSyntax.within(statement.value, ast.Name)
         }
         if any(read.id in carried and id(read) not in inside for read in reads):
             return
