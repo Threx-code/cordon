@@ -74,12 +74,12 @@ class TestAPythonTwoFileIsReadAsCode:
             ("def f(async):\n    if not async and 1:\n        pass\n", "if not async_ and 1:"),
             ("def f(async):\n    return async\n", "return async_"),
             ("def f(a):\n    return a.None\n", "return a.None_"),
-            # Python 3.13: a default for a type parameter. This Python does not parse it; what the
-            # statement does without the default is what is read.
-            ("class Box[T = int]:\n    x = 1\n", "class Box[T ]:"),
+            # Python 3.13: a default for a type parameter. This Python does not parse it; the
+            # default is code, so it is kept, on its line, as a bound.
+            ("class Box[T = int]:\n    x = 1\n", "class Box[T: (int)]:"),
             (
                 "def first[T: str = str, *Ts = *tuple[int]](a):\n    return a\n",
-                "def first[T: str , *Ts ](a):",
+                "def first[T: (str, str), Ts: (*tuple[int],)](a):",
             ),
             pytest.param(
                 "try:\n    pass\nexcept IOError, (no, why):\n    pass\n",
@@ -92,6 +92,29 @@ class TestAPythonTwoFileIsReadAsCode:
     )
     def test_each_construct_is_rewritten_to_what_it_means(self, source: str, kept: str) -> None:
         assert kept in ReaderKit.read(source)
+
+    @pytest.mark.skipif(sys.version_info < (3, 12), reason="PEP 695 syntax parses from 3.12")
+    @pytest.mark.skipif(sys.version_info >= (3, 13), reason="3.13 parses a type default itself")
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "import os\ndef first[T = os.getcwd()](a):\n    return a\n",
+            "import os\nclass Box[T: object = os.getcwd()]:\n    pass\n",
+            "import os\ntype Alias[*Ts = *os.environ] = tuple[*Ts]\n",
+        ],
+    )
+    def test_a_type_default_is_code_and_stays_in_the_tree(self, source: str) -> None:
+        """The default is evaluated when it is read, so a call in it is a call the analysers see."""
+        calls = {
+            ast.unparse(node.func)
+            for node in ast.walk(ast.parse(ReaderKit.read(source)))
+            if isinstance(node, ast.Call)
+        } | {
+            ast.unparse(node)
+            for node in ast.walk(ast.parse(ReaderKit.read(source)))
+            if isinstance(node, ast.Attribute)
+        }
+        assert "os.getcwd" in calls or "os.environ" in calls
 
     def test_tabs_in_indentation_count_eight_columns_as_python_2_did(self) -> None:
         source = "def f():\n        x = 1\n\treturn x\n"

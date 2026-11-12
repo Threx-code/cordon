@@ -398,7 +398,7 @@ class PythonTwoReader:
         if "parameters cannot be parenthesized" in message:
             new = PythonTwoReader.TUPLE_LAMBDA.sub(r"lambda \1", new)
             new = PythonTwoReader.TUPLE_PARAMETER.sub(r"\1\2", new)
-        elif (stripped := PythonTwoReader.without_type_defaults(line)) != line:
+        elif (stripped := PythonTwoReader.with_type_defaults_kept(line)) != line:
             new = stripped
         else:
             code = PythonTwoReader.NONE_ATTRIBUTE.sub("None_", new.split("#", 1)[0])
@@ -411,28 +411,77 @@ class PythonTwoReader:
         return True
 
     @staticmethod
-    def without_type_defaults(line: str) -> str:
-        """`line` with the defaults of its type parameters taken out (Python 3.13 syntax this Python
-        does not parse): what the definition does is what it does without them."""
+    def with_type_defaults_kept(line: str) -> str:
+        """`line` with each type parameter's default (Python 3.13 syntax this Python does not parse)
+        moved into a bound this Python does parse: `T = expr` -> `T: (expr)`, `T: b = expr` ->
+        `T: (b, expr)`, `*Ts = *x` -> `Ts: (*x,)`. The default is code, evaluated when it is read
+        (`T.__default__`), so it stays in the tree, on its line, for every analyser; the parameter's
+        kind is not what a reader of what the code does needs."""
         found = PythonTwoReader.TYPE_PARAMETERS.match(line)
         if found is None:
             return line
-        out: list[str] = [line[: found.end()]]
-        depth, skipping = 1, False
-        for char in line[found.end() :]:
-            if char in "([{":
+        rest = line[found.end() :]
+        parts: list[str] = []
+        depth, quote, start, close = 1, "", 0, None
+        for index, char in enumerate(rest):
+            if quote:
+                quote = "" if char == quote else quote
+            elif char in "'\"":
+                quote = char
+            elif char in "([{":
                 depth += 1
             elif char in ")]}":
                 depth -= 1
-            if depth == 0:
-                skipping = False
-            if depth == 1 and char == "=" and not skipping:
-                skipping = True
-            elif depth == 1 and char == "," and skipping:
-                skipping = False
-            if not skipping:
-                out.append(char)
-        return "".join(out)
+                if depth == 0:
+                    parts.append(rest[start:index])
+                    close = index
+                    break
+            elif char == "," and depth == 1:
+                parts.append(rest[start:index])
+                start = index + 1
+        if close is None:
+            return line
+        out = []
+        for part in parts:
+            equals = PythonTwoReader.default_equals(part)
+            if equals is None:
+                out.append(part)
+                continue
+            text = part[:equals]
+            space = text[: len(text) - len(text.lstrip())]
+            name, colon, bound = text.strip().partition(":")
+            name, bound = name.strip().lstrip("*"), bound.strip()
+            default = part[equals + 1 :].strip()
+            if not name.isidentifier() or not default or (colon and not bound):
+                return line
+            if bound:
+                out.append(f"{space}{name}: ({bound}, {default})")
+            elif default.startswith("*"):
+                out.append(f"{space}{name}: ({default},)")
+            else:
+                out.append(f"{space}{name}: ({default})")
+        return line[: found.end()] + ",".join(out) + rest[close:]
+
+    @staticmethod
+    def default_equals(part: str) -> int | None:
+        """Where a type parameter's `=` is: at the part's own depth, outside a string, and not the
+        `=` of `==`, `<=`, `>=` or `!=`."""
+        depth, quote = 0, ""
+        for index, char in enumerate(part):
+            if quote:
+                quote = "" if char == quote else quote
+            elif char in "'\"":
+                quote = char
+            elif char in "([{":
+                depth += 1
+            elif char in ")]}":
+                depth -= 1
+            elif char == "=" and depth == 0:
+                before = part[index - 1] if index else ""
+                after = part[index + 1] if index + 1 < len(part) else ""
+                if before not in "=<>!" and after != "=":
+                    return index
+        return None
 
     @staticmethod
     def neutralise(lines: list[str], at: int) -> None:

@@ -55,10 +55,13 @@ class UnparsedKit:
                 tar.addfile(info, io.BytesIO(data))
         return Scanner(Config.default().with_overrides(use_cache=False, offline=True)).scan(path)
 
-    #: Syntax by the Python that first runs it: a type-parameter default (3.13), a t-string (3.14).
+    #: Syntax by the Python that first runs it, that this reader cannot read on any Python before it:
+    #: a t-string (3.14), then a stand-in for the syntax of a Python not yet released (an operator no
+    #: Python has), so that every CI Python from 3.11 on has a fixture and none skips. A type
+    #: parameter's default (3.13) is not here: the reader reads it, keeping its expression.
     NEWER = (
-        ((3, 13), "def first[T = int](items: list[T]) -> T:\n    return items[0]\n"),
         ((3, 14), "def greet(name):\n    return t'hello {name}'\n"),
+        ((99, 0), "def pipe(x, g):\n    return x |> g\n"),
     )
 
     @staticmethod
