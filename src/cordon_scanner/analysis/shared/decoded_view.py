@@ -12,6 +12,11 @@ parser itself rewrites, never an expression:
   template literals, and `\\xXX` in strings and templates, are written as the characters. Other
   escapes (`\\n`, `\\t`, ...) stay as written, so no line moves. Comments and regex literals are left
   alone where the scan can tell.
+- Go (a scan of the text): `\\xXX`, octal, `\\uXXXX` and `\\UXXXXXXXX` in interpreted strings and
+  rune literals are written as what they spell; a run of them is read as UTF-8 together (`\\x` and
+  octal are bytes), and left as written when it is not. Raw (backquoted) strings, comments and
+  identifiers are exact in Go. A character that would break a line or is a control character stays
+  as written, so no line moves.
 
 `segments` lists every re-spelt piece as (view start, view end, raw start, raw end), in characters of the
 text; everything between is the raw text unchanged. `to_raw` sends a view span to the raw span of every
@@ -81,6 +86,8 @@ class DecodedView:
             return _Python(text).view()
         if language in ("javascript", "typescript"):
             return _Script(text).view()
+        if language == "go":
+            return _Go(text).view()
         return cls(text=text, raw=text)
 
 
@@ -487,6 +494,86 @@ class _Script:
                 return j + 1
             j += 1
         return j
+
+
+# -- Go -------------------------------------------------------------------------------------------
+
+_GO_ESCAPE = re.compile(r"\\(?:x([0-9A-Fa-f]{2})|([0-7]{3})|u([0-9A-Fa-f]{4})|U([0-9A-Fa-f]{8}))")
+
+
+class _Go:
+    """Go's interpreted strings and rune literals with their byte and code-point escapes decoded."""
+
+    def __init__(self, raw: str) -> None:
+        self.raw = raw
+
+    def view(self) -> DecodedView:
+        b = _Builder(self.raw)
+        if "\\" not in self.raw:
+            return b.view()
+        raw, i, n = self.raw, 0, len(self.raw)
+        while i < n:
+            c = raw[i]
+            if raw.startswith("//", i):
+                j = raw.find("\n", i)
+                i = n if j < 0 else j
+            elif raw.startswith("/*", i):
+                j = raw.find("*/", i + 2)
+                i = n if j < 0 else j + 2
+            elif c == "`":
+                j = raw.find("`", i + 1)
+                i = n if j < 0 else j + 1
+            elif c in "\"'":
+                i = self._literal(b, i, c)
+            else:
+                i += 1
+        return b.view()
+
+    def _literal(self, b: _Builder, i: int, quote: str) -> int:
+        raw, j, n = self.raw, i + 1, len(self.raw)
+        while j < n and raw[j] != quote and raw[j] != "\n":
+            if raw[j] != "\\":
+                j += 1
+                continue
+            run = []
+            k = j
+            while (m := _GO_ESCAPE.match(raw, k)) is not None:
+                run.append(m)
+                k = m.end()
+            if not run:
+                j += 2  # another escape (`\\n`, `\\\\`, `\\"`) stays as written
+                continue
+            self._run(b, run)
+            j = k
+        return j + 1
+
+    @staticmethod
+    def _run(b: _Builder, run: list[re.Match[str]]) -> None:
+        data = bytearray()
+        for m in run:
+            byte, octal, short, long = m.groups()
+            if byte is not None or octal is not None:
+                data.append(int(byte, 16) if byte is not None else int(octal, 8) & 0xFF)
+                continue
+            point = int(short or long, 16)
+            if point > 0x10FFFF or 0xD800 <= point <= 0xDFFF:
+                return
+            data += chr(point).encode("utf-8")
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            return
+        if not all(_Lines.kept(ch) for ch in text):
+            return
+        b.replace(run[0].start(), run[-1].end(), text)
+
+
+class _Lines:
+    @staticmethod
+    def kept(ch: str) -> bool:
+        """Whether a decoded character may be written as itself: not one that breaks a line
+        (`str.splitlines`) and not another control character, so the view's lines are the file's."""
+        return not (unicodedata.category(ch) == "Cc" or ch in "\u2028\u2029")
 
 
 __all__ = ["DecodedView", "ViewOverBudget"]

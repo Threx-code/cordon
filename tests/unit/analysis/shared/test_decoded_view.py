@@ -117,3 +117,42 @@ class TestAScriptView:
 
     def test_another_language_is_its_text(self) -> None:
         assert not DecodedView.of("echo \\x41\n", "shell").differs
+
+
+class TestAGoView:
+    @staticmethod
+    def view(text: str) -> DecodedView:
+        return DecodedView.of(text, "go")
+
+    def test_byte_octal_and_code_point_escapes_are_decoded(self) -> None:
+        v = self.view('a := os.Getenv("\\x47ITHUB_ENV")\nb := "\\107O\\u0050ATH\\U0000002e"\n')
+        assert v.text == 'a := os.Getenv("GITHUB_ENV")\nb := "GOPATH."\n'
+
+    def test_a_run_of_byte_escapes_is_read_as_utf8_or_left_as_written(self) -> None:
+        assert self.view('s := "caf\\xc3\\xa9"\n').text == 's := "café"\n'
+        text = 's := "\\xff\\xfe"\n'
+        assert self.view(text).text == text
+
+    def test_raw_strings_comments_and_other_escapes_stay_as_written(self) -> None:
+        text = "r := `\\x41`\n// \\x41\n/* \\x41 */\ns := \"a\\tb\\\\x41\"\nc := '\\''\n"
+        v = self.view(text)
+        assert v.text == text and not v.differs
+
+    def test_a_character_that_breaks_a_line_stays_as_written(self) -> None:
+        text = 's := "a\\x0ab\\u2028c"\nz := 1\n'
+        v = self.view(text)
+        assert v.text == text
+
+    def test_a_rune_literal_is_decoded(self) -> None:
+        assert self.view("r := '\\x41'\n").text == "r := 'A'\n"
+
+    def test_positions_map_back_to_the_raw_text(self) -> None:
+        raw = 'f := "\\x47ITHUB_ENV" + x\n'
+        v = self.view(raw)
+        start = v.text.index("G")
+        assert raw[slice(*v.to_raw(start, start + 1))] == "\\x47"
+        after = v.text.index("+ x")
+        assert raw[slice(*v.to_raw(after, after + 3))] == "+ x"
+
+    def test_a_file_without_a_backslash_is_its_text(self) -> None:
+        assert not self.view('package x\n\nvar s = "GITHUB_ENV"\n').differs
