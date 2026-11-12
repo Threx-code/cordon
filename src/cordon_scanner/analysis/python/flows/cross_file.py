@@ -41,11 +41,13 @@ class CrossFileMaps:
                 "runs": (ImportedClients._SINK_WORDS, ImportedClients._runs_here),
                 "collects": MachineCollectors.exporter(),
                 "sends": SentNames.exporter(),
+                CarriedCalls.KIND: CarriedCalls.exporter(),
             },
         )
         if len(summaries) < 2:
             return dict.fromkeys(CrossFileMaps.FIELDS)
-        # Each import line resolved once for the three follows (`ModuleResolver`).
+        # Each import line resolved once for the three follows and the carried calls
+        # (`ModuleResolver`).
         resolve = ModuleResolver(summaries)
         return {
             "python_imported_clients": ImportedClients.follow(summaries, "made", resolve=resolve)
@@ -54,7 +56,7 @@ class CrossFileMaps:
                 summaries, "runs", modules=True, resolve=resolve
             )
             or None,
-            "python_carried_calls": CarriedCalls.from_summaries(sources, summaries) or None,
+            "python_carried_calls": CarriedCalls.from_summaries(summaries, resolve) or None,
             "python_imported_collectors": ImportedClients.follow(
                 summaries, "collects", modules=True, resolve=resolve
             )

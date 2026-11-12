@@ -389,3 +389,101 @@ class TestTheCrossFileMapsHoldNoTrees:
                 assert not any(
                     isinstance(v, ast.AST) for v in getattr(value, "__iter__", lambda: ())()
                 )
+
+
+class TestTheCarriedCallsInTheOnePass:
+    """`CarriedCalls` read in the summaries' one parse (`CarriedCalls.exporter`), where each
+    importing file was parsed again for it: the map, in its order, is the second reading's."""
+
+    PACKAGES: ClassVar[tuple[dict[str, str], ...]] = (
+        {
+            "p/__init__.py": (
+                "from .drop import drop as d, other, CONST\nimport os\nBLOB = b'x'\n"
+                "d(BLOB, 'w')\nd(name)\nother(*rest)\nother(os.sep, 2)\nCONST('x')\n"
+                "def later():\n    from .drop import other as o\n    o(BLOB)\n"
+            ),
+            "p/drop.py": "CONST = 1\ndef drop(blob, mode):\n    pass\ndef other(a, b=0):\n    pass\n",
+            "p/b.py": "from p.drop import drop\nimport os\ndrop(os.environ, open('f').read())\n",
+            "p/c.py": (
+                "from .drop import drop\nfrom .alt import drop\ndrop('a')\n"
+                "drop(" + ", ".join(str(i) for i in range(18)) + ")\n"
+            ),
+            "p/alt.py": "def drop(*parts):\n    pass\n",
+            "p/self.py": "from .self import own\ndef own(x):\n    pass\nown(1)\n",
+        },
+        {
+            "q/__init__.py": "import os\nprint(os.sep)\n",
+            "q/a.py": "def f(x):\n    return x\nf(1)\n",
+        },
+    )
+
+    @staticmethod
+    def second_reading(sources: dict[str, str]) -> dict[str, dict[str, str]]:
+        """The map as it was read before: each importing file parsed again for its calls."""
+        import ast
+
+        from cordon_scanner.analysis.python.flows.decoded_drops import DecodedDrops
+        from cordon_scanner.analysis.python.flows.imported_clients import FileSummaries
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
+        summaries = FileSummaries.build(sources, {})
+        if len(summaries) < 2:
+            return {}
+        found: dict[str, dict[str, set[int]]] = {}
+        for path, summary in summaries.items():
+            imported: dict[str, tuple[str, str]] = {}
+            for node in summary.imports:
+                source = ImportedClients._module_file(path, node, summaries)
+                if source is None or source == path:
+                    continue
+                for name, asname in node.names:
+                    if name in summaries[source].functions:
+                        imported[asname or name] = (source, name)
+            if not imported:
+                continue
+            tree = PythonSyntax.parse(sources[path])
+            module_names = DecodedDrops._module_bound_names(tree)
+            for call in PythonSyntax.of(tree, ast.Call):
+                if not isinstance(call.func, ast.Name) or call.func.id not in imported:
+                    continue
+                source, name = imported[call.func.id]
+                positions = {
+                    i
+                    for i, argument in enumerate(call.args)
+                    if not isinstance(argument, ast.Starred)
+                    and DecodedDrops._carried(argument, module_names)
+                }
+                if positions:
+                    found.setdefault(source, {}).setdefault(name, set()).update(positions)
+        return {
+            path: {name: ",".join(str(i) for i in sorted(p)[:16]) for name, p in names.items()}
+            for path, names in found.items()
+        }
+
+    def test_the_map_is_the_second_reading_s_in_its_order(self) -> None:
+        from cordon_scanner.analysis.python.flows.carried_calls import CarriedCalls
+
+        for package in self.PACKAGES:
+            want = self.second_reading(package)
+            got = CarriedCalls.of(package)
+            assert got == want
+            assert [(p, list(n.items())) for p, n in got.items()] == [
+                (p, list(n.items())) for p, n in want.items()
+            ]
+        assert self.second_reading(self.PACKAGES[0]), "the first package carries calls"
+        assert not self.second_reading(self.PACKAGES[1]), "the second carries none"
+
+    def test_no_file_is_parsed_a_second_time(self, monkeypatch) -> None:
+        from cordon_scanner.analysis.python.flows.carried_calls import CarriedCalls
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
+        parsed: list[str] = []
+        real = PythonSyntax.parse
+
+        def counted(source, *args, **kwargs):
+            parsed.append(source)
+            return real(source, *args, **kwargs)
+
+        monkeypatch.setattr(PythonSyntax, "parse", staticmethod(counted))
+        CarriedCalls.of(self.PACKAGES[0])
+        assert sorted(parsed) == sorted(self.PACKAGES[0].values())
