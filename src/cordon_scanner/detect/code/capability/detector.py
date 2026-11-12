@@ -465,7 +465,7 @@ class CapabilityDetector(BaseDetector):
         hits.extend(JavaScriptCapabilities.js_string_code_run(content, unit.language))
         matched = ViewRunner.bound(matched_content, unit.language)
         hits.extend(matched(lambda c, _: CredentialSweep.hits(c)))
-        hits.extend(Labelling.browser_secrets_decrypted(matched_content))
+        hits.extend(matched(lambda c, _: Labelling.browser_secrets_decrypted(c)))
         language_hits = CapabilityDetector.LANGUAGE_HITS.get(unit.language or "")
         if language_hits is not None:
             hits.extend(language_hits(content, matched_content))
