@@ -42,7 +42,6 @@ class Pending:
     NAMES: ClassVar[frozenset[str]] = frozenset(
         {
             "js_spelled_names",
-            "js_computed_require",
             "js_received_run",
             "js_decoded_program_run",
             "js_command_output_sent",
