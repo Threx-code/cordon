@@ -23,11 +23,12 @@ from __future__ import annotations
 
 import dataclasses
 import functools
+import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from cordon_scanner.analysis.shared.decoded_view import DecodedView, ViewOverBudget
-from cordon_scanner.foundation.collector import ScanCaches
+from cordon_scanner.foundation.collector import ScanCaches, ScanCounts
 from cordon_scanner.foundation.content import FileContent
 
 if TYPE_CHECKING:
@@ -125,12 +126,20 @@ class ViewRunner:
     ) -> tuple[DecodedView, FileContent | None] | ViewOverBudget:
         """The view of one file, and the content a rule reads it through (same path), made once for
         all of the file's rules; a refusal is kept too, so it is not rebuilt per rule."""
+        started = time.process_time()
+        ScanCounts.once("view.files", path)
         try:
             view = DecodedView.of(text, language)
         except ViewOverBudget as refused:
+            ScanCounts.once("view.refused", path)
             return refused
+        finally:
+            ScanCounts.add("view.cpu_ms", int((time.process_time() - started) * 1000))
+        if view.partial:
+            ScanCounts.once("view.partial", path)
         if not view.differs:
             return view, None
+        ScanCounts.once("view.differs", path)
         return view, FileContent.from_bytes(path, view.text.encode("utf-8"))
 
 

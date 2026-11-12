@@ -426,6 +426,9 @@ class ScanStats:
     detector_cpu_ms: Mapping[str, int] | None = None
     """CPU milliseconds by detector id, only with `CORDON_DETECTOR_CLOCK=1`
     (`engine/detector_clock`); absent otherwise, so a scan's output does not vary by run."""
+    view_files: Mapping[str, int] | None = None
+    """What the decoded view read (`foundation/collector` ScanCounts, note 18): files viewed, differing,
+    partial, refused, and its CPU milliseconds; only with `CORDON_DETECTOR_CLOCK=1`."""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -445,6 +448,7 @@ class ScanStats:
                 if self.detector_cpu_ms is not None
                 else {}
             ),
+            **({"view_files": dict(self.view_files)} if self.view_files is not None else {}),
         }
 
 

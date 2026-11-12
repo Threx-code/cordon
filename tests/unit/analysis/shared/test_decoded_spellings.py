@@ -466,3 +466,44 @@ class TestTheRunner:
         monkeypatch.setattr(DecodedView, "MAX_CHARS", 10)
         with pytest.raises(ViewOverBudget):
             ViewRunner.run(Finds("x"), self.content("z = '\\x41' # over budget\n"), "python")
+
+
+class TestTheViewIsCounted:
+    """Note 18 §2 and §5.6: the share of files whose view differs, is partial or is refused, and
+    its CPU, in the scan's stats as `view_files` -- only with the detector clock on, so a scan's
+    output is otherwise unchanged."""
+
+    @staticmethod
+    def scan(tmp_path: Path) -> dict | None:
+        (tmp_path / "a.js").write_text("const s = '\\x41';\n", encoding="utf-8")
+        (tmp_path / "b.js").write_text("const t = 'B';\n", encoding="utf-8")
+        from cordon_scanner.foundation.collector import ScanCaches
+
+        ScanCaches.after_scan()  # what a runner test read outside a scan is not this scan's
+        stats = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path).stats
+        return stats.to_dict().get("view_files")
+
+    def test_with_the_clock_on_the_view_is_counted(self, tmp_path: Path, monkeypatch) -> None:
+        monkeypatch.setenv("CORDON_DETECTOR_CLOCK", "1")
+        counts = self.scan(tmp_path)
+        assert counts is not None
+        assert counts["view.files"] == 2 and counts["view.differs"] == 1
+        assert counts.get("view.partial", 0) == 0 and counts.get("view.refused", 0) == 0
+
+    def test_with_the_clock_off_the_stats_are_as_they_were(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        monkeypatch.delenv("CORDON_DETECTOR_CLOCK", raising=False)
+        assert self.scan(tmp_path) is None
+
+    def test_a_worker_hands_its_counts_back_with_its_times(self) -> None:
+        from cordon_scanner.engine.detector_clock import DetectorClock
+        from cordon_scanner.foundation.collector import ScanCounts
+
+        ScanCounts.taken()
+        ScanCounts.add("view.files", 3)
+        handed = DetectorClock.taken()  # in the worker
+        assert ScanCounts.snapshot() == {}
+        DetectorClock.add(handed)  # in the parent
+        assert ScanCounts.taken() == {"view.files": 3}
+        DetectorClock.taken()
