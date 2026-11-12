@@ -1048,7 +1048,7 @@
   "test_js_leak.py": "detect/code",
   "test_js_persist.py": "analysis/javascript",
   "test_js_reach.py": "analysis/javascript",
-  "test_js_spelling_matrix.py": "detect/code/capability",
+  "test_js_spelling_matrix.py": "detect/code/capability/javascript",
   "test_keychain_owner.py": "detect/code",
   "test_js_values.py": "analysis/javascript",
   "test_jvm_class.py": "analysis/jvm",
