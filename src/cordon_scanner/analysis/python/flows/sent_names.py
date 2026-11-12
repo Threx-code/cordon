@@ -46,7 +46,7 @@ class SentNames:
 
     #: A file holding none of these makes no request, so it is not read for this map.
     _WORDS: ClassVar[re.Pattern[str]] = re.compile(
-        "|".join(re.escape(name) for name in sorted(SENDS, key=len, reverse=True))
+        "|".join(re.escape(name) for name in sorted(SENDS, key=lambda n: (-len(n), n)))
     )
 
     #: Importing files counted per name, at most (the value crosses isolation as up to 3 digits).
