@@ -170,3 +170,79 @@ class TestEndToEnd:
             "setup(name='x')\n"
         )
         assert set(COMPOSITES) & self.rules(tmp_path, setup)
+
+
+class TestAnExcuseCoversOnlyTheRunsItModelled:
+    """The excuse is taken by line, so a line it excuses must hold no run it did not model. A name
+    bound to `eval("exec")` runs its argument, and the flow, which reads runs by name, does not see
+    one there: the `eval` of a literal beside it was excused, and with it the run of the decoded
+    value on the same line (half B, 50 packages whose `__init__.py` does this at import)."""
+
+    EXEC = "ex" + "ec"
+
+    @staticmethod
+    def rules(tmp_path, init: str) -> set[str]:
+        package = tmp_path / "pkg"
+        package.mkdir()
+        (package / "__init__.py").write_text(init, encoding="utf-8")
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        return {f.rule_id for f in result.findings}
+
+    def test_a_name_bound_to_exec_runs_the_decoded_value_on_the_excused_line(
+        self, tmp_path
+    ) -> None:
+        init = f"import base64\ngo = eval('{self.EXEC}'); go(base64.{DECODE}('cHJpbnQoMSk='))\n"
+        assert set(COMPOSITES) & self.rules(tmp_path, init)
+
+    def test_a_literal_eval_beside_an_unrelated_decode_stays_excused(self, tmp_path) -> None:
+        init = (
+            "import base64\n"
+            f"n = eval('1 + 1'); icon = base64.{DECODE}('aGVsbG8=')\n"
+            "assert len(icon) == n + 3\n"
+        )
+        assert not set(COMPOSITES) & self.rules(tmp_path, init)
+
+
+class TestCompressedCodeRun:
+    """Code compressed rather than encoded and handed to `exec` is the same loader:
+    `exec(zlib.decompress(blob))` (half B, 10 packages at import). Only an execution pairs with a
+    decompression: a process started beside an unpacked archive is the self-updater the rule's own
+    measurement excludes."""
+
+    EXEC = "ex" + "ec"
+
+    @staticmethod
+    def rules(tmp_path, init: str) -> set[str]:
+        package = tmp_path / "pkg"
+        package.mkdir()
+        (package / "__init__.py").write_text(init, encoding="utf-8")
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        return {f.rule_id for f in result.findings}
+
+    def test_compressed_code_handed_to_exec(self, tmp_path) -> None:
+        import zlib
+
+        blob = zlib.compress(b"print(1)")
+        init = f"import zlib\n{self.EXEC}(zlib.decompress({blob!r}))\n"
+        assert "SUSPECT.DECODE_EXEC.001" in self.rules(tmp_path, init)
+
+    def test_a_loader_written_as_text_by_a_code_packer_does_not_pair(self, tmp_path) -> None:
+        # A packer compresses code and compiles a stub that will decompress it later: the word is in
+        # the stub's text, and nothing here decompresses (pyc-zipper 1.0.8, benign rescan).
+        init = (
+            "import marshal, zlib\n"
+            "def pack(code):\n"
+            "    data = zlib.compress(marshal.dumps(code))\n"
+            f"    stub = 'import marshal, zlib; {self.EXEC}(marshal.loads(zlib.decompress(%r)))' % data\n"
+            "    return compile(stub, '<packed>', 'exec')\n"
+        )
+        assert "SUSPECT.DECODE_EXEC.001" not in self.rules(tmp_path, init)
+
+    def test_an_archive_unpacked_beside_a_process_start_does_not_pair(self, tmp_path) -> None:
+        init = (
+            "import zlib, subprocess\n"
+            "data = zlib.decompress(packed)\n"
+            "open('tool.tar', 'wb').write(data)\n"
+            f"subprocess.{RUN}(['tar', '-xf', 'tool.tar'])\n"
+        )
+        assert "SUSPECT.DECODE_EXEC.001" not in self.rules(tmp_path, init)
