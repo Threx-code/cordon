@@ -53,6 +53,7 @@ from cordon_scanner.detect.code.capability.legitimate_use import LegitimateUse
 from cordon_scanner.detect.code.capability.memo import CapabilityMemo
 from cordon_scanner.detect.code.capability.rule_ids import CompositeRuleIds
 from cordon_scanner.detect.code.capability.text_position import TextPosition
+from cordon_scanner.detect.code.capability.view_runner import ViewRunner
 from cordon_scanner.detect.code.credential_sweep import CredentialSweep
 from cordon_scanner.detect.code.decode_run import DecodeRun
 from cordon_scanner.detect.code.install_payload import InstallPayload
@@ -331,7 +332,7 @@ class CapabilityDetector(BaseDetector):
         hits = CapabilityDetector._tree_capabilities(
             candidates, commands, content, ctx, hits, matched_content, resolved, unit
         )
-        hits = TextPosition.off_this_machine(content, hits)
+        hits = TextPosition.off_this_machine(content, hits, language)
         if BuildOutput.bundled(content):
             # A compiled tool that schedules its own jobs (an agent runner's LaunchAgent, a
             # crontab writer) registers autostart entries as its feature; three Open VSX agent
@@ -382,7 +383,7 @@ class CapabilityDetector(BaseDetector):
                 # A command assembled from a table of characters is read as the command it
                 # becomes (`detect/go_eval.py`): the 2025 Go typosquats never wrote theirs down.
                 source = run_time_view(source)
-            commands = embedded.EmbeddedCommands.extract(source, unit.language)
+            commands = CapabilityDetector._viewed_commands(source, unit.language)
         # And the plaintext of any encoded command among them, so the shell rules
         # see what `powershell -EncodedCommand` was given rather than only that it
         # was given something. See `embedded.decode_encoded_commands`: this is the
@@ -395,6 +396,20 @@ class CapabilityDetector(BaseDetector):
             )
         commands = embedded.EmbeddedCommands.decode_encoded_commands(commands)
         return commands, hits, matched_content, resolved
+
+    @staticmethod
+    def _viewed_commands(source: str, language: str | None) -> list[embedded.Command]:
+        """The command lines handed to spawn calls, read in the source and in its decoded view
+        (note 18 §1b): `ssh.\\u0065xec('curl ... | sh')` is a spawn to the language, and its command
+        reaches the shell rules. The view keeps every line, so a command found in both is one."""
+        found = embedded.EmbeddedCommands.extract(source, language)
+        seen = {(c.text, c.line) for c in found}
+        for reading in ViewRunner.texts(source, language)[1:]:
+            for command in embedded.EmbeddedCommands.extract(reading, language):
+                if (command.text, command.line) not in seen:
+                    seen.add((command.text, command.line))
+                    found.append(command)
+        return found
 
     @staticmethod
     def _tree_capabilities(
@@ -435,8 +450,9 @@ class CapabilityDetector(BaseDetector):
             hits = GradleBuildAuth.drop_build_auth(content.text, hits, Capability.CREDENTIAL)
         hits.extend(Labelling.embedded_capabilities(ctx, content, commands))
         hits.extend(DestinationLabels.destination_capabilities(content, unit.language))
-        hits.extend(JavaScriptCapabilities.js_downloaded_and_run(content, unit.language))
-        hits.extend(JavaScriptCapabilities.js_wallet_secret_sent(content, unit.language))
+        viewed = ViewRunner.bound(content, unit.language)  # raw text and decoded view (note 18)
+        hits.extend(viewed(JavaScriptCapabilities.js_downloaded_and_run))
+        hits.extend(viewed(JavaScriptCapabilities.js_wallet_secret_sent))
         hits.extend(JavaScriptCapabilities.js_flows(content, unit.language))
         crossing = (ctx.cross_file_flows or {}).get(unit.path)
         if crossing:
@@ -448,10 +464,10 @@ class CapabilityDetector(BaseDetector):
             )
         from cordon_scanner.detect.code.js_campaigns import JsCampaigns
 
-        hits.extend(JsCampaigns.channel_follow(content, unit.language))
-        hits.extend(JsCampaigns.plants_agent_config(ctx, content, unit.language))
-        hits.extend(JsCampaigns.attribution_cloak(content, unit.language))
-        computed = JavaScriptCapabilities.js_computed_require(content, unit.language)
+        hits.extend(viewed(JsCampaigns.channel_follow))
+        hits.extend(viewed(lambda c, lang: JsCampaigns.plants_agent_config(ctx, c, lang)))
+        hits.extend(viewed(JsCampaigns.attribution_cloak))
+        computed = viewed(JavaScriptCapabilities.js_computed_require)
         hits.extend(computed)
         if computed and not BuildOutput.bundled(content):
             # The same, in a hand-written file: the install-time composite may convict on this alone.
@@ -459,19 +475,20 @@ class CapabilityDetector(BaseDetector):
             # dist/extension.js).
             first = computed[0]
             hits.append(replace(first, rule_id="CAP.JS.COMPUTED_REQUIRE_SOURCE"))
-        hits.extend(JavaScriptCapabilities.js_spelled_names(content, unit.language))
+        hits.extend(viewed(JavaScriptCapabilities.js_spelled_names))
         hits.extend(JavaScriptCapabilities.js_string_code_run(content, unit.language))
-        hits.extend(CredentialSweep.hits(matched_content))
-        hits.extend(Labelling.browser_secrets_decrypted(matched_content))
+        matched = ViewRunner.bound(matched_content, unit.language)
+        hits.extend(matched(lambda c, _: CredentialSweep.hits(c)))
+        hits.extend(matched(lambda c, _: Labelling.browser_secrets_decrypted(c)))
         language_hits = CapabilityDetector.LANGUAGE_HITS.get(unit.language or "")
         if language_hits is not None:
             hits.extend(language_hits(content, matched_content))
         if unit.language in ("javascript", "typescript"):
             from cordon_scanner.detect.code.js_runs import JsRuns
 
-            hits.extend(JsRuns.received_and_run(content))
-            hits.extend(JsRuns.decoded_program_run(content))
-            hits.extend(JsRuns.command_output_sent(content, ctx))
+            hits.extend(viewed(lambda c, _: JsRuns.received_and_run(c)))
+            hits.extend(viewed(lambda c, _: JsRuns.decoded_program_run(c)))
+            hits.extend(viewed(lambda c, _: JsRuns.command_output_sent(c, ctx)))
         hits.extend(ScriptFetchedThenEvaluated.hits(content, unit.language))
         # A truncated file is reported by the engine, which reads every file and so sees every
         # truncation; this detector returns early for some.
@@ -717,7 +734,8 @@ class CapabilityDetector(BaseDetector):
     def _go_hits(content: FileContent, matched: FileContent) -> list[CapabilityHit]:
         from cordon_scanner.detect.code.go_runs import GoRuns
 
-        return GoRuns.ci_environment_write(matched) + GoRuns.received_and_run(content)
+        written = ViewRunner.run(GoRuns.ci_environment_write, matched, "go")  # note 18
+        return written + GoRuns.received_and_run(content)
 
     #: The source as a language's file builds it at run time, read by the rules in its place.
     RUN_TIME_VIEWS: ClassVar[dict[str, Callable[[str], str]]] = {"go": _go_run_time}

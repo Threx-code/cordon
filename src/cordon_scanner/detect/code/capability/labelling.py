@@ -30,6 +30,7 @@ from cordon_scanner.detect.code.capability.javascript import JavaScriptCapabilit
 from cordon_scanner.detect.code.capability.memo import CapabilityMemo
 from cordon_scanner.detect.code.capability.startup_hooks import StartupHooks
 from cordon_scanner.detect.code.capability.text_position import TextPosition
+from cordon_scanner.detect.code.capability.view_runner import ViewRunner
 from cordon_scanner.detect.secrets.secrets import SourceSpans
 from cordon_scanner.foundation.capabilities import Capability, MatchKind
 from cordon_scanner.foundation.text.comments import SourceComments
@@ -447,7 +448,8 @@ class Labelling:
         than a line of code, and it is not taken here.
         """
         if unit.language in ("javascript", "typescript"):
-            return cls._javascript_secret_flow(content, ctx), []
+            viewed = ViewRunner.bound(content, unit.language)  # and its decoded view (note 18)
+            return viewed(lambda c, _: cls._javascript_secret_flow(c, ctx)), []
         if unit.language != "python":
             return [], []
 
