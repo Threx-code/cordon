@@ -39,14 +39,20 @@ class DestinationLabels:
 
     @classmethod
     def sent_at_import(
-        cls, hits: list[CapabilityHit], source: str | None = None
+        cls,
+        hits: list[CapabilityHit],
+        source: str | None = None,
+        sent_elsewhere: frozenset[str] = frozenset(),
     ) -> list[CapabilityHit]:
         """The hits, less a destination label on a line where nothing is sent: what import makes
         of a URL written as a constant or passed to a constructor is a destination named, not a
         request. A label on a request's own line (`urlopen("http://1.2.3.4", data)`) stays, and so
         does one whose line binds the URL to a name that a sending line uses (`HOOK = "<drop
         point>"` then `requests.post(HOOK, ...)`): the request goes there, from another line
-        (loveclose 0.0.1 and sf_th_requests 0.1.0 lost INSTALL_CALLBACK without it)."""
+        (sf_th_requests 0.1.0 lost INSTALL_CALLBACK without it). `sent_elsewhere` are the names
+        this file binds that another file of the package imports and sends (`SentNames`): the
+        hook written in `__init__.py` and posted from the modules that import it (loveclose 0.0.1,
+        whose `__init__.py` sends nothing itself)."""
         labels = (cls.DROP_POINT_RULE, cls.INTERACTION_RULE)
         sending = {
             hit.line
@@ -54,7 +60,10 @@ class DestinationLabels:
             if hit.capability is Capability.EGRESS and hit.rule_id not in labels
         }
         bound = cls._bound_to_a_send(
-            {hit.line for hit in hits if hit.rule_id in labels} - sending, sending, source
+            {hit.line for hit in hits if hit.rule_id in labels} - sending,
+            sending,
+            source,
+            sent_elsewhere,
         )
         return [
             hit
@@ -64,13 +73,19 @@ class DestinationLabels:
 
     @classmethod
     def _bound_to_a_send(
-        cls, label_lines: set[int], sending: set[int], source: str | None
+        cls,
+        label_lines: set[int],
+        sending: set[int],
+        source: str | None,
+        sent_elsewhere: frozenset[str] = frozenset(),
     ) -> set[int]:
-        """Label lines that bind their value to a name a sending line uses, as a whole word."""
-        if not source or not label_lines or not sending:
+        """Label lines that bind their value to a name a sending line uses, as a whole word, or
+        to a name another file of the package imports and sends."""
+        if not source or not label_lines or not (sending or sent_elsewhere):
             return set()
         lines = source.splitlines()
-        sending = sending | cls._helper_send_lines(source, sending)
+        if sending:
+            sending = sending | cls._helper_send_lines(source, sending)
         sent_text = [lines[n - 1] for n in sending if 0 < n <= len(lines)]
         kept: set[int] = set()
         for line in label_lines:
@@ -78,6 +93,9 @@ class DestinationLabels:
                 continue
             binding = cls._BINDING.match(lines[line - 1])
             if binding is None:
+                continue
+            if binding.group(1) in sent_elsewhere:
+                kept.add(line)
                 continue
             name = re.compile(rf"(?<![\w$.]){re.escape(binding.group(1))}(?![\w$])")
             if any(name.search(text) for text in sent_text):

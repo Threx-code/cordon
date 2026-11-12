@@ -72,8 +72,14 @@ SCALARS: dict[str, type] = {
 }
 DEFERRED_LINES = ("install_deferred_lines", "import_deferred_lines", "startup_deferred_lines")
 """Context fields that are `(path, first_line, last_line)` sets: bodies a hook or an import never runs."""
-RUNNER_MAPS = ("python_imported_runners", "python_carried_calls", "python_imported_collectors")
-"""Context fields that are `{path: {function: "0,2"}}`: the positions of the parameters it runs."""
+RUNNER_MAPS = (
+    "python_imported_runners",
+    "python_carried_calls",
+    "python_imported_collectors",
+    "python_sent_names",
+)
+"""Context fields that are `{path: {function: "0,2"}}`: the positions of the parameters it runs
+(for `python_sent_names`, `{path: {name: "3"}}`: how many other files send the name)."""
 CLIENT_MAPS = ("python_imported_clients",)
 """Context fields that are `{path: {name: client constructor}}`: crossing as `[path, name, client]`
 triples, each path one of the scan's units, each name an identifier, each client one of

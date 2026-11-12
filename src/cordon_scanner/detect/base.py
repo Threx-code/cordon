@@ -300,6 +300,10 @@ class ScanContext:
     """Per Python file, the functions it imports from another of the package's files that collect a
     fingerprint of the machine: environment, platform, and files read or hashed
     (`MachineCollectors`), in the runner map's shape."""
+    python_sent_names: Mapping[str, Mapping[str, str]] | None = None
+    """Per Python file, the names it binds that other files of the package import by name and pass
+    to a request, with how many files do (`SentNames`), in the runner map's shape: a destination
+    written down in `__init__.py` and posted from the modules that import it."""
 
     cross_file_unresolved: bool = False
     """Whether some file of the package calls into it in a way the join cannot follow (a computed
