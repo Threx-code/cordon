@@ -240,7 +240,7 @@ class PythonPersistence(PythonValueFlow):
         #: stores what it is given. A class with its own `__init__` is a call like any other.
         self.records = {
             node.name
-            for node in PythonSyntax.walked(tree)
+            for node in PythonSyntax.walked_of(tree, ast.ClassDef)
             if isinstance(node, ast.ClassDef)
             and not any(
                 isinstance(s, ast.FunctionDef | ast.AsyncFunctionDef)

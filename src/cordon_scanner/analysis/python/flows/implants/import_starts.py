@@ -34,7 +34,7 @@ class ImportStarts:
     def lines(cls, tree: ast.AST) -> list[int]:
         loaded = PersistAtLoad.load_time_lines(tree)
         out: list[int] = []
-        for node in PythonSyntax.walked(tree):
+        for node in PythonSyntax.walked_of(tree, ast.Expr, ast.Assign):
             if not (
                 isinstance(node, ast.Expr | ast.Assign)
                 and isinstance(node.value, ast.Call)

@@ -234,7 +234,7 @@ class PythonValueFlow(ValueFlowSteps):
             stack.extend((child, inner) for child in ast.iter_child_nodes(node))
         from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 
-        for node in PythonSyntax.walked(self.tree):
+        for node in PythonSyntax.walked_of(self.tree, ast.Global, ast.Nonlocal):
             if isinstance(node, ast.Global | ast.Nonlocal):
                 self.local.get(self.scope_of.get(id(node), module), set()).difference_update(
                     node.names
@@ -311,7 +311,7 @@ class PythonValueFlow(ValueFlowSteps):
     def flow(self) -> None:
         from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 
-        nodes = PythonSyntax.walked(self.tree)
+        nodes = PythonSyntax.walked_of(self.tree, *self.FLOW)
         for _ in range(self.ROUNDS):
             changed = False
             for node in nodes:

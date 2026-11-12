@@ -95,6 +95,39 @@ class TestTheWalkIsTheTreesOnce:
         finally:
             gc.enable()
 
+    def test_the_nodes_of_some_types_are_the_walks_in_its_order(self) -> None:
+        import ast
+
+        for tree in (PythonSyntax.parse(self.SOURCE), PythonSyntax.shared(self.SOURCE)):
+            for types in (
+                (ast.Call,),
+                (ast.FunctionDef, ast.AsyncFunctionDef),
+                (ast.Import, ast.ImportFrom, ast.Call),
+                (ast.Name, ast.Attribute, ast.Constant),
+                (ast.expr,),  # an abstract kind: every node that is one
+                (ast.Global, ast.Nonlocal),
+                (ast.While,),  # none in the file
+            ):
+                want = [id(n) for n in self.walk(tree) if isinstance(n, types)]
+                assert [id(n) for n in PythonSyntax.walked_of(tree, *types)] == want, types
+                assert PythonSyntax.walked_of(tree, *types) is PythonSyntax.walked_of(tree, *types)
+
+    def test_a_constant_kind_matched_by_value_is_filtered_as_isinstance_does(self) -> None:
+        import ast
+        import warnings
+
+        import pytest
+
+        tree = PythonSyntax.parse(self.SOURCE + "S = 'text'\nN = 3\n")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            kind = getattr(ast, "Str", None)
+            if kind is None:
+                pytest.skip("this Python has no ast.Str (removed in 3.14)")
+            want = [id(n) for n in self.walk(tree) if isinstance(n, kind)]
+            assert want  # `isinstance` by value: a Constant holding a str
+            assert [id(n) for n in PythonSyntax.walked_of(tree, kind)] == want
+
     def test_a_forgotten_tree_is_walked_again_the_same(self) -> None:
         tree = PythonSyntax.parse(self.SOURCE)
         before = [id(n) for n in PythonSyntax.walked(tree)]

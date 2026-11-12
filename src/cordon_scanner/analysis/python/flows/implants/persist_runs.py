@@ -58,7 +58,7 @@ class PersistRuns:
             return []
         functions = {
             n.name: n
-            for n in PythonSyntax.walked(tree)
+            for n in PythonSyntax.walked_of(tree, ast.FunctionDef, ast.AsyncFunctionDef)
             if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
         }
         calls = {name: cls._called(fn.body, functions) for name, fn in functions.items()}
@@ -107,7 +107,7 @@ class PersistRuns:
     def _scope_text(tree: ast.Module, source: str, line: int) -> str:
         """The text of the innermost function holding `line`, or of the whole module."""
         best: ast.AST | None = None
-        for node in PythonSyntax.walked(tree):
+        for node in PythonSyntax.walked_of(tree, ast.FunctionDef, ast.AsyncFunctionDef):
             if (
                 isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
                 and node.lineno <= line <= (node.end_lineno or node.lineno)

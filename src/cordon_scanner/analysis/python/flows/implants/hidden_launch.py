@@ -41,7 +41,7 @@ class HiddenLaunch:
         return sorted(
             {
                 n.lineno
-                for n in PythonSyntax.walked(tree)
+                for n in PythonSyntax.walked_of(tree, ast.Constant)
                 if isinstance(n, ast.Constant)
                 and isinstance(n.value, str)
                 and SCRIPT_HOST_TEXT.search(n.value)
@@ -51,7 +51,7 @@ class HiddenLaunch:
     @classmethod
     def lines(cls, tree: ast.AST) -> list[int]:
         out: set[int] = set()
-        for node in PythonSyntax.walked(tree):
+        for node in PythonSyntax.walked_of(tree, ast.Name, ast.Attribute, ast.Constant):
             if (
                 (isinstance(node, ast.Name) and node.id in cls.NAMES)
                 or (isinstance(node, ast.Attribute) and node.attr in cls.NAMES)

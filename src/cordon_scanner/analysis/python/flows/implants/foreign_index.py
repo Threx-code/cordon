@@ -37,7 +37,7 @@ class ForeignIndex:
     @classmethod
     def lines(cls, tree: ast.AST) -> list[int]:
         out: set[int] = set()
-        for node in PythonSyntax.walked(tree):
+        for node in PythonSyntax.walked_of(tree, ast.Call):
             if not isinstance(node, ast.Call):
                 continue
             if any(

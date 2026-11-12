@@ -58,7 +58,7 @@ class ClipboardReplace:
         scopes: list[ast.AST] = [tree]
         scopes += [
             n
-            for n in PythonSyntax.walked(tree)
+            for n in PythonSyntax.walked_of(tree, ast.FunctionDef, ast.AsyncFunctionDef)
             if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
         ]
         origin = ContentOrigin(tree)

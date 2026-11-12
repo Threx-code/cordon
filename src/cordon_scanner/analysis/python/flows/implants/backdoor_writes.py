@@ -204,7 +204,9 @@ class ContentOrigin:
         for node in PythonSyntax.walked(tree):
             for child in ast.iter_child_nodes(node):
                 self.parent[id(child)] = node
-        for node in PythonSyntax.walked(tree):
+        for node in PythonSyntax.walked_of(
+            tree, ast.Assign, ast.AnnAssign, ast.FunctionDef, ast.AsyncFunctionDef, ast.Call
+        ):
             if (
                 isinstance(node, ast.Assign | ast.AnnAssign)
                 and getattr(node, "value", None) is not None

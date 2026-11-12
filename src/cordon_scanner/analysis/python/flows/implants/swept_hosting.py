@@ -157,7 +157,7 @@ class SweptToHosting(PythonValueFlow):
 
     @classmethod
     def _walks(cls, tree: ast.AST) -> bool:
-        for node in PythonSyntax.walked(tree):
+        for node in PythonSyntax.walked_of(tree, ast.Call):
             if isinstance(node, ast.Call):
                 if isinstance(node.func, ast.Attribute) and node.func.attr in cls.WALK_METHODS:
                     return True
@@ -179,13 +179,15 @@ class SweptToHosting(PythonValueFlow):
     def _names_a_rentable_host(tree: ast.AST) -> bool:
         docstrings = {
             id(n.body[0].value)
-            for n in PythonSyntax.walked(tree)
+            for n in PythonSyntax.walked_of(
+                tree, ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef
+            )
             if isinstance(n, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef)
             and n.body
             and isinstance(n.body[0], ast.Expr)
             and isinstance(n.body[0].value, ast.Constant)
         }  # a host in a docstring is documentation, not a destination
-        for node in PythonSyntax.walked(tree):
+        for node in PythonSyntax.walked_of(tree, ast.Constant):
             if (
                 isinstance(node, ast.Constant)
                 and isinstance(node.value, str)
@@ -199,7 +201,7 @@ class SweptToHosting(PythonValueFlow):
 
     @staticmethod
     def _imports_a_client(tree: ast.AST) -> bool:
-        for node in PythonSyntax.walked(tree):
+        for node in PythonSyntax.walked_of(tree, ast.Import, ast.ImportFrom):
             names = (
                 [node.module or ""]
                 if isinstance(node, ast.ImportFrom)

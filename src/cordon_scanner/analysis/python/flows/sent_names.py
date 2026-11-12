@@ -63,7 +63,7 @@ class SentNames:
     def _sent_here(cls, tree: ast.Module) -> dict[str, str]:
         taken = {
             alias.asname or alias.name
-            for node in PythonSyntax.walked(tree)
+            for node in PythonSyntax.walked_of(tree, ast.ImportFrom)
             if isinstance(node, ast.ImportFrom)
             for alias in node.names
             if alias.name != "*"
@@ -71,7 +71,7 @@ class SentNames:
         if not taken:
             return {}
         sent: dict[str, str] = {}
-        for call in PythonSyntax.walked(tree):
+        for call in PythonSyntax.walked_of(tree, ast.Call):
             if not isinstance(call, ast.Call) or cls._last_name(call.func) not in cls.SENDS:
                 continue
             for part in [*call.args, *(k.value for k in call.keywords)]:

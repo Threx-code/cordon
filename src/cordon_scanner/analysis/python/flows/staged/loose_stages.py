@@ -105,7 +105,7 @@ class LooseStages(AnalyzerCore):
     def _defined(self, tree: ast.AST) -> set[str] | None:
         """Every name the file could resolve; None with a star import (anything could be)."""
         names = set(self._BUILTIN) | self._TRANSLATORS
-        for n in PythonSyntax.walked(tree):
+        for n in PythonSyntax.walked_of(tree, *self._BINDS):
             if isinstance(n, ast.ImportFrom) and any(a.name == "*" for a in n.names):
                 return None
             binds = self._BINDS.get(type(n))

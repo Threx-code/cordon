@@ -108,7 +108,7 @@ class FileSummaries:
     def _import_lines(tree: ast.Module) -> tuple[ImportLine, ...]:
         return tuple(
             ImportLine(node.module, node.level, tuple((a.name, a.asname) for a in node.names))
-            for node in PythonSyntax.walked(tree)
+            for node in PythonSyntax.walked_of(tree, ast.ImportFrom)
             if isinstance(node, ast.ImportFrom)
         )
 
@@ -271,7 +271,7 @@ class ImportedClients:
     def _bound_here(cls, tree: ast.Module) -> frozenset[str]:
         """Names the file binds itself."""
         names: set[str] = set()
-        for node in PythonSyntax.walked(tree):
+        for node in PythonSyntax.walked_of(tree, *cls._BINDS):
             binds = cls._BINDS.get(type(node))
             if binds is not None:
                 names.update(binds(node))

@@ -223,6 +223,40 @@ class PythonSyntax:
             return found
         return PythonSyntax.nodes(tree)
 
+    #: The deprecated constant classes, whose `isinstance` is by value, not by type: a reader that
+    #: asks for one is given `walked` filtered by `isinstance` itself.
+    _BY_VALUE: ClassVar[frozenset[str]] = frozenset(
+        {"Num", "Str", "Bytes", "NameConstant", "Ellipsis"}
+    )
+
+    @staticmethod
+    def walked_of(tree: ast.AST, *types: type) -> list[Any]:
+        """`[n for n in walked(tree) if isinstance(n, types)]`, the same nodes in the same order, made
+        once per tree and set of types from one table of each node type's places in the walk: a reader
+        that wants only calls, or only functions, reads those, not every node of the file."""
+
+        def compute() -> list[Any]:
+            walk = PythonSyntax.walked(tree)
+            if any(t.__module__ == "ast" and t.__name__ in PythonSyntax._BY_VALUE for t in types):
+                return [node for node in walk if isinstance(node, types)]
+            places: dict[type, list[int]] = PythonSyntax.memo(
+                tree, "walked_places", lambda: PythonSyntax._places(walk)
+            )
+            kinds = [kind for kind in places if issubclass(kind, types)]
+            if len(kinds) == 1:
+                return [walk[p] for p in places[kinds[0]]]
+            return [walk[p] for p in sorted(p for kind in kinds for p in places[kind])]
+
+        found: list[Any] = PythonSyntax.memo(tree, ("walked_of", types), compute)
+        return found
+
+    @staticmethod
+    def _places(walk: list[ast.AST]) -> dict[type, list[int]]:
+        places: dict[type, list[int]] = {}
+        for place, node in enumerate(walk):
+            places.setdefault(type(node), []).append(place)
+        return places
+
     @staticmethod
     def forget(tree: ast.AST) -> None:
         """Drop what `memo` kept on an unindexed tree's root (`walked`, `nodes`): a list of a tree's
