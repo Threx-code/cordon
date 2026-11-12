@@ -117,13 +117,8 @@ class DecodedView:
     def of(cls, text: str, language: str | None) -> DecodedView:
         if len(text) > cls.MAX_CHARS:
             raise ViewOverBudget(f"{len(text)} characters")
-        if language == "python":
-            return _Python(text).view()
-        if language in ("javascript", "typescript"):
-            return _Script(text).view()
-        if language == "go":
-            return _Go(text).view()
-        return cls(text=text, raw=text)
+        reader = _READERS.get(language or "")
+        return cls(text=text, raw=text) if reader is None else reader(text).view()
 
 
 class _Builder:
@@ -252,6 +247,7 @@ class _FString:
             try:
                 value = ast.literal_eval(f"{plain}{quote}{part}{quote}")
             except (ValueError, SyntaxError, MemoryError, RecursionError):
+                # S2: a fallback; the f-string stays as written, which the raw reading reads
                 return None
             if isinstance(value, bytes):
                 value = value.decode("latin-1")
@@ -303,6 +299,8 @@ class _Python:
                     raise ViewOverBudget(f"more than {DecodedView.MAX_TOKENS} tokens")
                 yield tok
         except (tokenize.TokenError, SyntaxError):
+            # S2: recorded; the view stops where tokenize did, the rest is read raw, and the file
+            # is counted partial (stats.view_files)
             self.partial = True
 
     def view(self) -> DecodedView:
@@ -376,6 +374,7 @@ class _Python:
                 try:
                     v = ast.literal_eval(src)
                 except (ValueError, SyntaxError, MemoryError, RecursionError):
+                    # S2: a fallback; the run is read literal by literal below, as written if not
                     values = []
                     break
                 values.append(v.decode("latin-1") if isinstance(v, bytes) else v)
@@ -399,6 +398,7 @@ class _Python:
             try:
                 v = ast.literal_eval(src)
             except (ValueError, SyntaxError, MemoryError, RecursionError):
+                # S2: a fallback; the literal stays as written, which the raw reading reads
                 continue
             if isinstance(v, bytes):
                 v = v.decode("latin-1")
@@ -617,5 +617,13 @@ class _Lines:
         """Whether a decoded character may be written as itself, so the view's lines are the file's."""
         return cls.BREAKS.match(ch) is None
 
+
+#: The reader of each language the view knows; every other language's file is its own view.
+_READERS: dict[str, type[_Python] | type[_Script] | type[_Go]] = {
+    "python": _Python,
+    "javascript": _Script,
+    "typescript": _Script,
+    "go": _Go,
+}
 
 __all__ = ["DecodedView", "ViewOverBudget"]
