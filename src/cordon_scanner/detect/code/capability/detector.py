@@ -471,7 +471,7 @@ class CapabilityDetector(BaseDetector):
         if unit.language in ("javascript", "typescript"):
             from cordon_scanner.detect.code.js_runs import JsRuns
 
-            hits.extend(JsRuns.received_and_run(content))
+            hits.extend(viewed(lambda c, _: JsRuns.received_and_run(c)))
             hits.extend(JsRuns.decoded_program_run(content))
             hits.extend(JsRuns.command_output_sent(content, ctx))
         hits.extend(ScriptFetchedThenEvaluated.hits(content, unit.language))
