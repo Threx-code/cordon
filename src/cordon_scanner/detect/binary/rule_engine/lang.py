@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import binascii
 import dataclasses
-import time
 from collections.abc import Callable, Iterator, Sequence
 from typing import Any, ClassVar
 
@@ -31,6 +30,7 @@ from cordon_scanner.detect.binary.modules.builtin import Builtin
 from cordon_scanner.detect.binary.modules.values import Module
 from cordon_scanner.detect.binary.rule_engine.anchoring.places import Places
 from cordon_scanner.detect.binary.rule_engine.build import Builder, Frame
+from cordon_scanner.detect.binary.rule_engine.deadline import MatchDeadline, Until
 from cordon_scanner.detect.binary.rule_engine.gates import Gates, MagicIndex
 from cordon_scanner.detect.binary.rule_engine.hits import Hits, Match
 from cordon_scanner.detect.binary.rule_engine.pack_cache import PackCache
@@ -113,7 +113,7 @@ class Strings:
                 raise RuleError(f"string {s.name}: {exc}") from exc
 
     @staticmethod
-    def search(s: StringDef, data: bytes, deadline: float | None, seen: dict[Any, Any]) -> Hits:
+    def search(s: StringDef, data: bytes, deadline: Until, seen: dict[Any, Any]) -> Hits:
         """Where `s` matches in `data`, as (offset, length) pairs in offset order (`Hits`). Running
         out of time, or a pattern needing more than its bounds allow, or more matches in the file
         than `Hits.MOST`, refuses the file."""
@@ -370,7 +370,7 @@ class Rules:
         match split over workers; the caller keeps rules a reference joins, and global rules, in
         each share they bear on). `spent`, when given, is filled with what the match used of the
         file's bounds: "places" (of `Places.MOST`) and "matches" (of `Hits.MOST`)."""
-        deadline = time.monotonic() + timeout if timeout is not None else None
+        deadline = MatchDeadline(timeout) if timeout is not None else None
         modules = self.modules
         if given:
             unknown = set(given) - set(modules)

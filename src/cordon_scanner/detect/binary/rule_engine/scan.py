@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import bisect
 import re
-import time
 from collections.abc import Iterable, Iterator, Sequence
 from typing import Any, ClassVar
 
@@ -27,6 +26,7 @@ from cordon_scanner.detect.binary.rule_engine.anchoring.places import Places
 from cordon_scanner.detect.binary.rule_engine.anchoring.stream import Streams
 from cordon_scanner.detect.binary.rule_engine.anchors import Anchor, Anchors
 from cordon_scanner.detect.binary.rule_engine.chain import Chain
+from cordon_scanner.detect.binary.rule_engine.deadline import MatchDeadline, Until
 from cordon_scanner.detect.binary.rule_engine.hits import Hits
 from cordon_scanner.detect.binary.rule_engine.pattern import (
     GAP,
@@ -250,7 +250,7 @@ class Search:
         self,
         data: bytes,
         fixed: int | None = None,
-        deadline: float | None = None,
+        deadline: Until = None,
         seen: dict[Any, Any] | None = None,
     ) -> Sequence[tuple[int, int]]:
         """(offset, length) of each match, by offset. With `fixed`, only a match there counts.
@@ -309,7 +309,7 @@ class Search:
         return hunt.run(events)
 
     def _text_find(
-        self, data: bytes, fixed: int | None, seen: dict[Any, Any], deadline: float | None
+        self, data: bytes, fixed: int | None, seen: dict[Any, Any], deadline: Until
     ) -> Hits:
         """A text string's matches in one native call (`TextFind`), from each anchor's
         occurrences, found and kept in `seen` as `find` keeps them."""
@@ -483,9 +483,7 @@ class _Hunt:
     #: Runs of one byte class `_viable` reads from each path, at most.
     SEGMENTS: ClassVar[int] = 16
 
-    def __init__(
-        self, search: Search, data: bytes, fixed: int | None, deadline: float | None
-    ) -> None:
+    def __init__(self, search: Search, data: bytes, fixed: int | None, deadline: Until) -> None:
         self.s, self.data, self.fixed, self.deadline = search, data, fixed, deadline
         self.hits: dict[int, int] = {}
         self.waiting: list[list[list[int]]] = [
@@ -572,8 +570,8 @@ class _Hunt:
 
     def _run_events(self, events: Iterable[Event], n: int) -> None:
         for count, (_, _, _, part, anchor, offset) in enumerate(events):
-            if count % 4096 == 0 and self.deadline is not None and time.monotonic() > self.deadline:
-                raise TimeoutError("matching took longer than the time allowed")
+            if count % 4096 == 0 and MatchDeadline.passed(self.deadline):
+                raise MatchDeadline.timeout(self.deadline)
             if self.full:
                 break
             if offset >= n:
