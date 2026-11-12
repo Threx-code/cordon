@@ -43,7 +43,6 @@ class Pending:
         {
             "js_spelled_names",
             "js_computed_require",
-            "js_attribution_cloak",
             "js_received_run",
             "js_decoded_program_run",
             "js_command_output_sent",

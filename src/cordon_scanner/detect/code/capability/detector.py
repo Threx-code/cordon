@@ -452,7 +452,7 @@ class CapabilityDetector(BaseDetector):
 
         hits.extend(viewed(JsCampaigns.channel_follow))
         hits.extend(viewed(lambda c, lang: JsCampaigns.plants_agent_config(ctx, c, lang)))
-        hits.extend(JsCampaigns.attribution_cloak(content, unit.language))
+        hits.extend(viewed(JsCampaigns.attribution_cloak))
         computed = JavaScriptCapabilities.js_computed_require(content, unit.language)
         hits.extend(computed)
         if computed and not BuildOutput.bundled(content):
