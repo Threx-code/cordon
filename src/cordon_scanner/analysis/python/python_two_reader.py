@@ -402,9 +402,9 @@ class PythonTwoReader:
             new = stripped
         else:
             code = PythonTwoReader.NONE_ATTRIBUTE.sub("None_", new.split("#", 1)[0])
-            new = PythonTwoReader.OLD_NAME.sub(
-                lambda m: (m.group(1) or m.group(2)) + "_", code
-            ) + (("#" + new.split("#", 1)[1]) if "#" in new else "")
+            new = PythonTwoReader.OLD_NAME.sub(lambda m: (m.group(1) or m.group(2)) + "_", code) + (
+                ("#" + new.split("#", 1)[1]) if "#" in new else ""
+            )
         if new == line:
             return False
         lines[at - 1] = new

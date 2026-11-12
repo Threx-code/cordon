@@ -689,9 +689,7 @@ class ReleaseChecks:
             return False
         directory = path.rpartition("/")[0]
         # The sdist's own root folder holds its build files; deeper, a package has an __init__.py.
-        return directory.count("/") < 1 or any(
-            u.path == f"{directory}/__init__.py" for u in units
-        )
+        return directory.count("/") < 1 or any(u.path == f"{directory}/__init__.py" for u in units)
 
     @staticmethod
     def native_program_in_a_pure_wheel(

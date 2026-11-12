@@ -77,7 +77,10 @@ class TestAPythonTwoFileIsReadAsCode:
             # Python 3.13: a default for a type parameter. This Python does not parse it; what the
             # statement does without the default is what is read.
             ("class Box[T = int]:\n    x = 1\n", "class Box[T ]:"),
-            ("def first[T: str = str, *Ts = *tuple[int]](a):\n    return a\n", "def first[T: str , *Ts ](a):"),
+            (
+                "def first[T: str = str, *Ts = *tuple[int]](a):\n    return a\n",
+                "def first[T: str , *Ts ](a):",
+            ),
             pytest.param(
                 "try:\n    pass\nexcept IOError, (no, why):\n    pass\n",
                 "except IOError:",
