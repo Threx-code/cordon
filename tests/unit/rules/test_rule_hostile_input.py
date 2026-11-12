@@ -110,16 +110,25 @@ class HostileKit:
         unique = list(dict.fromkeys(found))
         return unique[:40]
 
+    #: Runs of one input, the best kept: CPU time on a shared runner (CI, a loaded machine) is the
+    #: work plus whatever else stole the core, so the least of several runs is the work. Measured
+    #: against the same CEILING; a pattern that is slow, or super-linear, is slow on every run.
+    REPEATS = 5
+
     @staticmethod
     def cpu(regex: re.Pattern[bytes], data: bytes) -> float:
+        """The least CPU time of up to `REPEATS` runs of `regex` over `data`: at least two, so the
+        small input of a ratio is as well measured as the large, and no more once one is
+        comfortably under the ceiling. A single run over it is not taken as the answer: on PR #71's
+        runners two linear rules measured 0.502-0.512 s once against 0.5 s."""
         best = float("inf")
-        for _ in range(2):
+        for run in range(HostileKit.REPEATS):
             started = time.thread_time()
             for _ in regex.finditer(data):
                 pass
             best = min(best, time.thread_time() - started)
-            if best > HostileKit.CEILING:
-                break  # already over: a second run only costs time
+            if run >= 1 and best < HostileKit.CEILING / 2:
+                break
         return best
 
     @staticmethod
