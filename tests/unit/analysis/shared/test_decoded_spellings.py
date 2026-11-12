@@ -41,7 +41,6 @@ class Pending:
 
     NAMES: ClassVar[frozenset[str]] = frozenset(
         {
-            "js_command_output_sent",
             "js_identity_sent",
             "js_environment_sent",
             "py_browser_store_decrypted",
@@ -51,7 +50,6 @@ class Pending:
             "excuse_verified_decode",
             "excuse_verified_egress",
             "reader_obfuscator_io",
-            "reader_command_helper",
             "extra_spawn_name",
         }
     )

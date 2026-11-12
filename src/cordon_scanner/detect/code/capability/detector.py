@@ -473,7 +473,7 @@ class CapabilityDetector(BaseDetector):
 
             hits.extend(viewed(lambda c, _: JsRuns.received_and_run(c)))
             hits.extend(viewed(lambda c, _: JsRuns.decoded_program_run(c)))
-            hits.extend(JsRuns.command_output_sent(content, ctx))
+            hits.extend(viewed(lambda c, _: JsRuns.command_output_sent(c, ctx)))
         hits.extend(ScriptFetchedThenEvaluated.hits(content, unit.language))
         # A truncated file is reported by the engine, which reads every file and so sees every
         # truncation; this detector returns early for some.
