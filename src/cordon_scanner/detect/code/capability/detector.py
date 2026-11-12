@@ -450,7 +450,7 @@ class CapabilityDetector(BaseDetector):
             )
         from cordon_scanner.detect.code.js_campaigns import JsCampaigns
 
-        hits.extend(JsCampaigns.channel_follow(content, unit.language))
+        hits.extend(viewed(JsCampaigns.channel_follow))
         hits.extend(JsCampaigns.plants_agent_config(ctx, content, unit.language))
         hits.extend(JsCampaigns.attribution_cloak(content, unit.language))
         computed = JavaScriptCapabilities.js_computed_require(content, unit.language)

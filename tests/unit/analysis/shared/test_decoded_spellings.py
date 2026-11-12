@@ -45,7 +45,6 @@ class Pending:
             "js_computed_require",
             "js_agent_config_planted",
             "js_attribution_cloak",
-            "js_whatsapp_channel",
             "js_received_run",
             "js_decoded_program_run",
             "js_command_output_sent",
