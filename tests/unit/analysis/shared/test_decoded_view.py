@@ -112,6 +112,12 @@ class TestAScriptView:
         text = "s = '\\\\x41';\n"
         assert self.view(text).text == text
 
+    def test_a_character_that_breaks_a_line_stays_as_written(self) -> None:
+        text = 's = "a\\x0ab\\u2028c\\x41";\nz = 1;\n'
+        v = self.view(text)
+        assert v.text == 's = "a\\x0ab\\u2028cA";\nz = 1;\n'
+        assert len(v.text.splitlines()) == len(text.splitlines())
+
     def test_a_script_without_a_backslash_is_its_text(self) -> None:
         assert not self.view("require('./x');\n").differs
 

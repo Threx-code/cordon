@@ -442,7 +442,9 @@ class _Script:
     @staticmethod
     def _char(m: re.Match[str]) -> str:
         value = int(m.group(1) or m.group(2) or m.group(3), 16)
-        return chr(value) if value <= 0x10FFFF else m.group(0)
+        if value > 0x10FFFF or not _Lines.kept(chr(value)):
+            return m.group(0)  # a line break or control character stays escaped: no line moves
+        return chr(value)
 
     def _escapes(self, b: _Builder, start: int, end: int) -> None:
         for m in _JS_ESCAPE.finditer(self.raw, start, end):
