@@ -39,7 +39,12 @@
     "978fb9a4c0c1b435",
     "0b8b4730510bbc1c",
     "3593fc438a1bfa4d",
-    "b610c5ebaa3b51e3"
+    "b610c5ebaa3b51e3",
+    "d717c1e6319dba62",
+    "97ea45f3009cf60b",
+    "c030b3f57be1d9ad",
+    "f86006ae0d931195",
+    "bf907e29591fab93"
   ],
   "entries": [
     {
@@ -335,6 +340,36 @@
       "rule": "SECRET.TELEGRAM.BOT_TOKEN.001",
       "path": "tests/unit/detect/agents/test_agents.py",
       "note": "git history only (01333eca): a detector test fixture - a fabricated bot-token shape that tests a literal token is still found. Reviewed 2026-11-10: the value's shape checked masked; the working tree now assembles it from two parts."
+    },
+    {
+      "fingerprint": "d717c1e6319dba62",
+      "rule": "SECRET.STRIPE.WEBHOOK_SECRET.001",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
+      "note": "git history only (dd3e77c6): the same fabricated detector test fixture as the pinned 1d32df38dc7918de in the current tree, at the line it held before; the history scan fingerprints the older blob apart. Reviewed 2026-11-12 (PR #71 CI): the masked value matches its pinned twin; nothing to rotate."
+    },
+    {
+      "fingerprint": "97ea45f3009cf60b",
+      "rule": "SECRET.GENERIC.ASSIGNMENT.001",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
+      "note": "git history only (dd3e77c6): the same fabricated detector test fixture as the pinned 4e46aeeba7471700 in the current tree, at the line it held before; the history scan fingerprints the older blob apart. Reviewed 2026-11-12 (PR #71 CI): the masked value matches its pinned twin; nothing to rotate."
+    },
+    {
+      "fingerprint": "c030b3f57be1d9ad",
+      "rule": "SECRET.GOOGLE.API_KEY.001",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
+      "note": "git history only (dd3e77c6): the same fabricated detector test fixture as the pinned 7af9b3444887f9cd in the current tree, at the line it held before; the history scan fingerprints the older blob apart. Reviewed 2026-11-12 (PR #71 CI): the masked value matches its pinned twin; nothing to rotate."
+    },
+    {
+      "fingerprint": "f86006ae0d931195",
+      "rule": "SECRET.URL.CREDENTIAL.001",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
+      "note": "git history only (dd3e77c6): the same fabricated detector test fixture as the pinned 7375d34d3f231330 in the current tree, at the line it held before; the history scan fingerprints the older blob apart. Reviewed 2026-11-12 (PR #71 CI): the masked value matches its pinned twin; nothing to rotate."
+    },
+    {
+      "fingerprint": "bf907e29591fab93",
+      "rule": "SECRET.GITHUB.TOKEN.001",
+      "path": "tests/unit/foundation/files/test_windows.py",
+      "note": "git history only (e6533806): a detector test fixture assembled at run time, its token reversed with a literal [::-1] that the scanner folds back; the working tree reverses it through a name the scanner does not fold. Reviewed 2026-11-12 (PR #71 CI): fabricated and inert; nothing to rotate."
     }
   ]
 }

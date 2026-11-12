@@ -91,9 +91,29 @@ class TestPackageSourceThatDoesNotParse:
         )
         assert UnparsedKit.gapped(result)
 
+    def test_a_running_module_that_does_not_parse_blocks(self, tmp_path) -> None:
+        # timeweave 1.0.0: the module `__init__` imports does not parse (owner's fail-closed rule).
+        result = UnparsedKit.sdist(
+            tmp_path, {"pkg/__init__.py": "from .core import run\n", "pkg/core.py": self.BROKEN}
+        )
+        running = [f for f in result.findings if f.rule_id == "SUSPECT.SOURCE.UNPARSED_RUNNING.001"]
+        assert [f.location.path.rpartition("/")[2] for f in running] == ["core.py"]
+        assert running[0].category.value == "suspicious"
+
+    def test_a_test_module_that_does_not_parse_does_not_block(self, tmp_path) -> None:
+        result = UnparsedKit.sdist(
+            tmp_path,
+            {
+                "pkg/__init__.py": "from .tests.test_core import run\n",
+                "pkg/tests/test_core.py": self.BROKEN,
+            },
+        )
+        assert not any(f.rule_id == "SUSPECT.SOURCE.UNPARSED_RUNNING.001" for f in result.findings)
+
     def test_a_python_2_init_is_said_not_gapped(self, tmp_path) -> None:
         result = UnparsedKit.sdist(tmp_path, {"pkg/__init__.py": 'print "hello"\n'})
         assert not UnparsedKit.gapped(result)
+        assert not any(f.rule_id == "SUSPECT.SOURCE.UNPARSED_RUNNING.001" for f in result.findings)
 
     def test_a_python_2_init_is_read_as_code_where_it_runs(self, tmp_path: Path) -> None:
         init = 'import os\nprint "loading"\nos.system("id")\n'
@@ -134,6 +154,96 @@ class TestPackageSourceThatDoesNotParse:
             ast.parse(newer)
         result = UnparsedKit.sdist(tmp_path, {"pkg/__init__.py": newer})
         assert UnparsedKit.gapped(result)
+
+    # S2 (lead, 2026-11-10): a payload written in syntax newer than the scanner's Python runs on
+    # the user's newer Python. Every producer's SyntaxError handler leans on these: a running file
+    # in that syntax is a blocking gap at each place it runs from.
+    def test_newer_syntax_in_a_module_the_init_imports_is_a_blocking_gap(
+        self, tmp_path: Path
+    ) -> None:
+        newer = UnparsedKit.newer_than_this_python()
+        result = UnparsedKit.sdist(
+            tmp_path, {"pkg/__init__.py": "from .core import run\n", "pkg/core.py": newer}
+        )
+        assert UnparsedKit.gapped(result)
+        assert not result.content_complete
+
+    def test_newer_syntax_in_a_module_setup_py_imports_is_a_blocking_gap(
+        self, tmp_path: Path
+    ) -> None:
+        newer = UnparsedKit.newer_than_this_python()
+        setup = "from setuptools import setup\nimport build_helper\nsetup(name='pkg')\n"
+        result = UnparsedKit.sdist(
+            tmp_path,
+            {"setup.py": setup, "build_helper.py": newer, "pkg/__init__.py": "VERSION = '1'\n"},
+        )
+        assert UnparsedKit.gapped(result)
+        assert not result.content_complete
+
+    def test_newer_syntax_in_a_console_script_entry_point_is_a_blocking_gap(
+        self, tmp_path: Path
+    ) -> None:
+        newer = UnparsedKit.newer_than_this_python()
+        setup = (
+            "from setuptools import setup\n"
+            "setup(name='pkg', packages=['pkg'],\n"
+            "      entry_points={'console_scripts': ['pkg-run = pkg.cli:main']})\n"
+        )
+        result = UnparsedKit.sdist(
+            tmp_path, {"setup.py": setup, "pkg/__init__.py": "VERSION = '1'\n", "pkg/cli.py": newer}
+        )
+        assert UnparsedKit.gapped(result)
+        assert not result.content_complete
+
+    @pytest.mark.parametrize(
+        ("place", "declaration"),
+        [
+            ("pkg.egg-info/entry_points.txt", "[console_scripts]\npkg-run = pkg.cli:main\n"),
+            (
+                "pyproject.toml",
+                "[project]\nname = 'pkg'\n[project.scripts]\npkg-run = 'pkg.cli:main'\n",
+            ),
+            (
+                "setup.cfg",
+                "[options.entry_points]\nconsole_scripts =\n    pkg-run = pkg.cli:main\n",
+            ),
+        ],
+    )
+    def test_a_command_declared_anywhere_runs_its_module(
+        self, tmp_path: Path, place: str, declaration: str
+    ) -> None:
+        newer = UnparsedKit.newer_than_this_python()
+        result = UnparsedKit.sdist(
+            tmp_path,
+            {place: declaration, "pkg/__init__.py": "VERSION = '1'\n", "pkg/cli.py": newer},
+        )
+        assert UnparsedKit.gapped(result)
+        assert not result.content_complete
+
+    @pytest.mark.parametrize("module", ["pkg/cli.py", "tests/test_util.py"])
+    @pytest.mark.parametrize(
+        "entry_points",
+        ["ENTRY_POINTS", "entries()", "{'console_scripts': [f'pkg-run = {target}']}"],
+    )
+    def test_commands_setup_py_hides_make_every_module_running(
+        self, tmp_path: Path, entry_points: str, module: str
+    ) -> None:
+        # A non-literal entry_points= hides which modules the commands run, so the attacker picks
+        # them: fail closed, every module of the package is running for this check, test files
+        # included, since a computed command can name one (lead, 2026-11-10).
+        newer = UnparsedKit.newer_than_this_python()
+        target = module.removesuffix(".py").replace("/", ".") + ":main"
+        setup = (
+            "from setuptools import setup\n"
+            f"target = '{target}'\nENTRY_POINTS = {{}}\n"
+            "def entries():\n    return {}\n"
+            f"setup(name='pkg', packages=['pkg'], entry_points={entry_points})\n"
+        )
+        result = UnparsedKit.sdist(
+            tmp_path, {"setup.py": setup, "pkg/__init__.py": "VERSION = '1'\n", module: newer}
+        )
+        assert UnparsedKit.gapped(result)
+        assert not result.content_complete
 
     def test_a_python_2_token_before_garbage_is_still_a_gap(self, tmp_path) -> None:
         result = UnparsedKit.sdist(tmp_path, {"pkg/__init__.py": 'print "hello"\n' + self.BROKEN})

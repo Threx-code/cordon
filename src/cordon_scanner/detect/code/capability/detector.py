@@ -536,6 +536,7 @@ class CapabilityDetector(BaseDetector):
         evaluator = CompositeEvaluator(
             in_entry=unit.path in ctx.install_entry_paths,
             in_import_entry=unit.path in ctx.import_entry_paths,
+            confusion=bool(ctx.confusion_version),
         )
         # Install-time context is decided per WINDOW, not per file. A file is in
         # the closure because a hook imports it, and importing a module defines
@@ -544,6 +545,8 @@ class CapabilityDetector(BaseDetector):
         # does. See `ScanContext.install_hook_reaches`.
         deferred = CapabilityDetector._deferred_windows(ctx, unit, in_hook)
         import_deferred = CapabilityDetector._import_windows(ctx, unit, in_hook)
+        # Names this file binds that another file of the package imports and sends (`SentNames`).
+        sent_names = frozenset((ctx.python_sent_names or {}).get(unit.path, {}))
 
         decode_excused = DecodeRun.excused_lines(
             unit, hits, BuildOutput.bundled_path(unit.path), [c.rule.id for c in candidates]
@@ -556,8 +559,8 @@ class CapabilityDetector(BaseDetector):
 
             rule_hits = CapabilityDetector._rule_hits(compiled, unit, hits, decode_excused)
             window = CapabilityDetector._window(
-                evaluator, compiled, rule_hits, unit.path, (in_hook, in_ci, in_consumer),
-                deferred, import_deferred,
+                evaluator, compiled, rule_hits, unit, (in_hook, in_ci, in_consumer),
+                deferred, import_deferred, sent_names,
             )  # fmt: skip
             if window is None:
                 continue
@@ -599,13 +602,15 @@ class CapabilityDetector(BaseDetector):
         evaluator: CompositeEvaluator,
         compiled: CompiledRule,
         rule_hits: list[CapabilityHit],
-        path: str,
+        unit: FileUnit,
         where: tuple[bool, bool, bool],
         deferred: frozenset[tuple[int, int]],
         import_deferred: frozenset[tuple[int, int]] | None,
+        sent_names: frozenset[str] = frozenset(),
     ) -> list[CapabilityHit] | None:
         """The window of hits that satisfies the composite, read in the context it runs in."""
         in_hook, in_ci, in_consumer = where
+        path = unit.path
         if compiled.rule.id in CompositeRuleIds.CONTEXT_FREE:
             return evaluator.satisfying_window(
                 compiled, rule_hits, path, False, False, False, frozenset()
@@ -613,9 +618,20 @@ class CapabilityDetector(BaseDetector):
         if import_deferred is not None and compiled.rule.id in CompositeRuleIds.IMPORT_GRADED:
             # What a published package runs at import is unasked too (reviews/pypi-98/10): the
             # install term is read against the import reach, the bodies importing never calls as
-            # the dead code -- the same per-window rule.
+            # the dead code -- the same per-window rule. A destination only written down (a URL
+            # literal handed to a telemetry client's constructor) is not a send at import: it
+            # counts as egress only on a line where a request is made (evidently 0.7.23), or bound
+            # to a name a request uses, in this file or one that imports it (loveclose 0.0.1).
             return evaluator.satisfying_window(
-                compiled, rule_hits, path, True, in_ci, in_consumer, import_deferred
+                compiled,
+                DestinationLabels.sent_at_import(
+                    rule_hits, None if unit.content.is_binary else unit.content.text, sent_names
+                ),
+                path,
+                True,
+                in_ci,
+                in_consumer,
+                import_deferred,
             )
         return evaluator.satisfying_window(
             compiled, rule_hits, path, in_hook, in_ci, in_consumer, deferred

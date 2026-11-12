@@ -385,15 +385,42 @@ class TestTheDocumentIsChecked:
         assert accepted is not None, why
         assert accepted.context["install_hook_paths"] == frozenset({"a.js"})
 
+    def test_imported_clients_cross_as_triples(self) -> None:
+        accepted, why = ContextFacts.accept(
+            self.document(
+                context={"python_imported_clients": [["a.js", "session", "httpx.Client"]]}
+            ),
+            self.units(),
+            self.ctx(),
+        )
+        assert accepted is not None, why
+        assert accepted.context["python_imported_clients"] == {"a.js": {"session": "httpx.Client"}}
+
+    def test_imported_runners_cross_as_triples(self) -> None:
+        accepted, why = ContextFacts.accept(
+            self.document(context={"python_imported_runners": [["a.js", "run_cmd", "0,2"]]}),
+            self.units(),
+            self.ctx(),
+        )
+        assert accepted is not None, why
+        assert accepted.context["python_imported_runners"] == {"a.js": {"run_cmd": "0,2"}}
+
     @pytest.mark.parametrize(
         "over",
         [
             {"extra": []},
+            {"context": {"python_imported_runners": [["a.js", "run cmd", "0"]]}},
+            {"context": {"python_imported_runners": [["a.js", "run_cmd", "0;1"]]}},
+            {"context": {"python_imported_runners": [["b.js", "run_cmd", "0"]]}},
             {"context": {"install_hook_paths": ["/etc/passwd"]}},
             {"context": {"config": {}}},
             {"context": {"tree_paths": ["a.js", "b.js"]}},
             {"context": {"install_deferred_lines": [["a.js", 5, 1]]}},
             {"context": {"package_distribution": "yes"}},
+            {"context": {"python_imported_clients": [["b.js", "session", "httpx.Client"]]}},
+            {"context": {"python_imported_clients": [["a.js", "a b", "httpx.Client"]]}},
+            {"context": {"python_imported_clients": [["a.js", "session", "os.system"]]}},
+            {"context": {"python_imported_clients": {"a.js": {"s": "httpx.Client"}}}},
             {"languages": [[7, "javascript"]]},
             {"languages": [[0, "Java Script; rm"]]},
             {"added": [["a.js", "x", None, None]]},

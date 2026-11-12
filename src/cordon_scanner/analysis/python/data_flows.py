@@ -7,6 +7,7 @@ from __future__ import annotations
 import ast
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.analysis.python.py_identity import IpLookup
 from cordon_scanner.analysis.python.pyfacts import (
     DNS_LOOKUPS,
     ENVIRONMENT,
@@ -20,7 +21,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 
-from cordon_scanner.analysis.python.analyzer_core import AnalyzerCore
+from cordon_scanner.analysis.python.flows.hidden_destinations import HiddenDestinations
+from cordon_scanner.analysis.python.flows.secret_sources import SecretSources
 
 #: Methods of a mapping that return one value, not the mapping.
 KEYED_METHODS = frozenset({"get", "setdefault", "pop", "__getitem__", "__contains__"})
@@ -323,7 +325,7 @@ class EnvironmentCarry:
 __all__ = ["KEYED_METHODS", "SPAWNS", "EnvironmentCarry"]
 
 
-class DataFlows(AnalyzerCore):
+class DataFlows(SecretSources, HiddenDestinations):
     """The Python analyser's data flows: what a file reads and sends."""
 
     def _environment_handed_to_children(self, tree: ast.AST) -> frozenset[int]:
@@ -452,7 +454,8 @@ class DataFlows(AnalyzerCore):
         return False
 
     def _iterated_literals(self, tree: ast.AST) -> dict[str, list[str]]:
-        """Loop variables whose every value is a string literal, with those values.
+        """Loop variables whose every value is a string literal, with those values, and names bound
+        once to one string literal.
 
         From `for n in (...)` and comprehensions, iterating either a literal tuple or list, or a
         name bound once to one. A name used as a loop variable twice, over different things, is
@@ -483,6 +486,21 @@ class DataFlows(AnalyzerCore):
                     refused.add(name)
                 else:
                     found[name] = values
+        # A name bound once in the file to one string literal, and never a parameter, is that
+        # string: `DO_NOT_TRACK_ENV = "DO_NOT_TRACK"; os.environ.get(DO_NOT_TRACK_ENV)` reads
+        # one named setting, not the environment (evidently 0.7.23's telemetry opt-out was
+        # graded a credential read and paired at import into MALWARE.EXFIL.001).
+        parameters = {a.arg for a in PythonSyntax.of(tree, ast.arg)}
+        for node in PythonSyntax.of(tree, ast.Assign):
+            if (
+                len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)
+            ):
+                name = node.targets[0].id
+                if assigned.get(name) == 1 and name not in parameters and name not in found:
+                    found[name] = [node.value.value]
         return {name: values for name, values in found.items() if name not in refused}
 
     def _handed_to_a_sender(
@@ -576,9 +594,51 @@ class DataFlows(AnalyzerCore):
                 # who collects it; a name built into another domain is what DNS exfiltration is.
                 continue
             if any(holds(argument) for argument in arguments):
-                self._record(Capability.RECONNAISSANCE, node, f"identity sent: {resolved[0]}")
+                self._record(
+                    Capability.RECONNAISSANCE,
+                    node,
+                    f"identity sent: {resolved[0]}{self._dest(tree, resolved[1])}",
+                )
         for node, function in self._handed_to_a_sender(tree, holds):
             self._record(Capability.RECONNAISSANCE, node, f"identity sent: through {function}")
+        self._address_sent(tree, holds)
+
+    def _address_sent(self, tree: ast.AST, holds_identity: Callable[..., bool]) -> None:
+        """This machine's public address, in the arguments of a request at import.
+
+        Looking up its own address and sending it is what a weather or geolocation client does;
+        what a collector does is send it where the file runs at install or import, to a drop
+        host, or with the rest of the identity in the same body.
+        """
+        functions = list(PythonSyntax.of(tree, ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda))
+        self._command_runners = self._helper_runners(
+            [f for f in functions if not isinstance(f, ast.Lambda)]
+        )
+        calls = list(PythonSyntax.of(tree, ast.Call))
+        if not any(self._is_address_lookup(call) for call in calls):
+            return
+        holds = PythonFacts.carried(tree, self._is_address_lookup, ast.Subscript)
+        inside = {id(part) for function in functions for part in ast.walk(function)}
+        for node in calls:
+            resolved = self._resolve_callee(node)
+            if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.EGRESS:
+                continue
+            arguments = [*node.args, *(k.value for k in node.keywords)]
+            if not any(holds(argument) for argument in arguments):
+                continue
+            if (
+                id(node) not in inside
+                or any(holds_identity(argument) for argument in arguments)
+                or IpLookup.drop_destination(node)
+            ):
+                self._record(
+                    Capability.RECONNAISSANCE,
+                    node,
+                    f"identity sent: {resolved[0]}{self._dest(tree, resolved[1])}",
+                )
+        for node, function in self._handed_to_a_sender(tree, holds):
+            if id(node) not in inside:
+                self._record(Capability.RECONNAISSANCE, node, f"identity sent: through {function}")
 
     def _environment_sent(self, tree: ast.AST) -> None:
         """The whole environment, in the arguments of a request.
@@ -603,7 +663,11 @@ class DataFlows(AnalyzerCore):
                 continue
             arguments = [*node.args, *(k.value for k in node.keywords)]
             if any(holds(argument) for argument in arguments):
-                self._record(Capability.CREDENTIAL, node, f"environment sent: {resolved[0]}")
+                self._record(
+                    Capability.CREDENTIAL,
+                    node,
+                    f"environment sent: {resolved[0]}{self._dest(tree, resolved[1])}",
+                )
         for node, function in self._handed_to_a_sender(tree, holds):
             self._record(Capability.CREDENTIAL, node, f"environment sent: through {function}")
 
@@ -616,23 +680,7 @@ class DataFlows(AnalyzerCore):
         """
         from cordon_scanner.analysis.shared.credential_homes import SecretFlow
 
-        carrying: dict[str, str] = {}
-        urls: dict[str, str] = {}
-        for _ in range(3):
-            for node in PythonSyntax.of(tree, ast.Assign):
-                targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
-                literal = PythonFacts.url_literal(node.value)
-                if literal is not None:
-                    assigned = SecretFlow.host_of(literal)
-                    if assigned:
-                        urls.update(dict.fromkeys(targets, assigned))
-                for part in PythonSyntax.nodes(node.value):
-                    key = self._credential_read(part)
-                    if key is None and isinstance(part, ast.Name) and part.id in carrying:
-                        key = carrying[part.id]
-                    if key is not None:
-                        carrying.update(dict.fromkeys(targets, key))
-                        break
+        carrying, urls = self._secret_carrying(tree)
         for node in PythonSyntax.of(tree, ast.Call):
             resolved = self._resolve_callee(node)
             if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.EGRESS:
@@ -640,7 +688,18 @@ class DataFlows(AnalyzerCore):
             arguments = [*node.args, *(k.value for k in node.keywords)]
             keys: set[str] = set()
             for argument in arguments:
-                for part in PythonSyntax.within(argument, ast.Subscript, ast.Call, ast.Name):
+                # `private_key.public_key()` sends what the key derives, not the key: a key's name
+                # is the value only where it is not the receiver of an attribute.
+                receivers = {id(a.value) for a in PythonSyntax.within(argument, ast.Attribute)}
+                for part in PythonSyntax.within(
+                    argument, ast.Subscript, ast.Call, ast.Name, ast.Attribute
+                ):
+                    if (
+                        isinstance(part, ast.Name)
+                        and part.id in self.KEY_NAMES
+                        and id(part) in receivers
+                    ):
+                        continue
                     key = self._credential_read(part)
                     if key is None and isinstance(part, ast.Name) and part.id in carrying:
                         key = carrying[part.id]
@@ -657,36 +716,29 @@ class DataFlows(AnalyzerCore):
                 )
             )
             host: str | None = None
+            url: str | None = None
             if destination is not None:
                 literal = PythonFacts.url_literal(destination)
                 if literal is not None:
-                    host = SecretFlow.host_of(literal)
+                    host, url = SecretFlow.host_of(literal), literal
                 elif isinstance(destination, ast.Name):
                     host = urls.get(destination.id)
+            dest = self._dest(tree, node)
             for key in sorted(keys):
-                if SecretFlow.misdirected(key, host):
-                    self._record(Capability.CREDENTIAL, node, f"secret sent: {key} to {host}")
+                if key.startswith("CREDENTIAL_FILE:"):
+                    # A credential store's contents, sent outside the store's home
+                    # (`SecretSources._store_outside`).
+                    outside = self._store_outside(key, host, url, bool(dest))
+                    if outside is not None:
+                        self._record(
+                            Capability.CREDENTIAL,
+                            node,
+                            f"secret sent: CREDENTIAL_FILE outside={outside} to {host or '?'}{dest}",
+                        )
+                        break
+                elif SecretFlow.misdirected(key, host):
+                    self._record(Capability.CREDENTIAL, node, f"secret sent: {key} to {host}{dest}")
                     break
-
-    def _credential_read(self, node: ast.AST) -> str | None:
-        from cordon_scanner.analysis.shared.credential_homes import SecretFlow
-
-        name: ast.AST | None = None
-        if isinstance(node, ast.Subscript) and self._dotted(node.value) in (
-            "os.environ",
-            "os.environb",
-        ):
-            name = node.slice
-        elif isinstance(node, ast.Call):
-            dotted = self._dotted(node.func)
-            if (
-                dotted in ("os.getenv", "os.environ.get", "os.environ.setdefault", "os.environ.pop")
-                and node.args
-            ):
-                name = node.args[0]
-        if isinstance(name, ast.Constant) and isinstance(name.value, str):
-            return name.value if SecretFlow.home_of(name.value) else None
-        return None
 
     def _read_from_local_file(self, node: ast.AST) -> bool:
         """Whether every name in this expression holds text read from a local file, rather than

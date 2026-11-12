@@ -51,7 +51,8 @@ class ComposerPluginHooks:
             return None
         try:
             parsed = ScannedJson.loads(text)
-        except (ValueError, RecursionError):
+        except ValueError:
+            # S2: too deep to read is not empty: escapes to OPERATIONAL.DETECTOR.FAILED, a gap
             return None
         return parsed if isinstance(parsed, dict) else None
 

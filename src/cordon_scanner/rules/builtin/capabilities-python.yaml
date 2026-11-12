@@ -531,8 +531,24 @@ rules:
         # The Windows Startup folder, written whole or joined from parts.
         - '(?i:start[ _]menu[\x22\x27\\\\/ ,]{1,8}programs[\x22\x27\\\\/ ,]{1,8}startup\b)'
         - '(?i:shell:startup\b)'
+        # The same acts done by a command: a scheduled task or a service created, an agent loaded, a
+        # login item added, a WMI event subscription, a PowerShell profile, an XDG autostart entry, a
+        # udev rule. Written as an argv list or a shell string, either spelling matches.
+        - '(?i:schtasks(?:\.exe)?["''`, \t]{1,8}/create)'
+        - '(?i:\bsc(?:\.exe)?["''`, \t]{1,8}create\b)'
+        - '(?i:launchctl["''`, \t]{1,8}(?:load|bootstrap|enable|submit)\b)'
+        - '(?i:make[ \t]+(?:new[ \t]+)?login[ \t]+item|System[ \t]+Events.{0,80}login[ \t]+item)'
+        - '__EventFilter|CommandLineEventConsumer|ActiveScriptEventConsumer|Register-WmiEvent'
+        - '(?i:Microsoft\.PowerShell_profile|WindowsPowerShell[\\/]{1,2}profile)'
+        - '\.config/autostart|X-GNOME-Autostart-enabled'
+        - '/etc/udev/rules\.d|/lib/udev/rules\.d'
     tests:
       positive:
+        - "subprocess.run(['schtasks', '/create', '/tn', 'x', '/tr', 'y'])"
+        - "os.system('sc create svc binPath= y')"
+        - "subprocess.run(['launchctl', 'load', '/x/y.plist'])"
+        - "open('/etc/udev/rules.d/99-x.rules', 'w')"
+        - "os.path.join(home, '.config/autostart', 'x.desktop')"
         - "os.path.join(appdata, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup')"
         - "open(home + '/.bashrc', 'a').write(line)"
         - "subprocess.run(['crontab', '-'])"

@@ -65,7 +65,8 @@ class McpCode:
         try:
             tree: ast.Module = PythonSyntax.parse(text)
             return tree
-        except (SyntaxError, ValueError, RecursionError):
+        except (SyntaxError, ValueError):
+            # S2: covered by SOURCE.UNPARSED at every running file (install closure, import entries, command modules); proven by test_not_python3.py TestPackageSourceThatDoesNotParse
             return None
 
     @staticmethod

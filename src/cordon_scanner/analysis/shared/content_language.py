@@ -94,6 +94,7 @@ class ContentLanguage:
                         PythonSyntax.parse(piece)
                     del piece
             except (SyntaxError, ValueError, RecursionError, MemoryError):
+                # S2: a fallback; the next reader (or SOURCE.UNPARSED for running files) reads it
                 return False
             return True
         if language == "javascript":

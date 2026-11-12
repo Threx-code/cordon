@@ -340,10 +340,7 @@ class Verdict:
         # `mcp`). Every other area -- `skill`, `package` and the fallback included -- is add-only: it
         # may add a block, never lift one (review 98, the G7 actions regression came from lifting an
         # untrained `package` row). An older model without the allowlist keeps the former denylist.
-        lift_areas = model.get("lift_areas")
-        liftable = (
-            area in lift_areas if lift_areas is not None else area not in model.get("add_only", ())
-        )
+        liftable = Verdict.liftable(model, area)
         floor = frozenset(model["floor"])
         keep = frozenset(model.get("keep", ()))
         out: list[Finding] = []
@@ -351,6 +348,23 @@ class Verdict:
             findings, score, block, liftable, floor, keep, area, out, repository=repository
         )
         return out, summary
+
+    LIFT_AREAS_ALLOWED: ClassVar[frozenset[str]] = frozenset({"npm"})
+    """The only areas the model may lower a block in, whatever the model file lists (S6, lead
+    2026-11-10). MCP is add-only from 0.8.0 (mcp-98 gap 1). npm keeps its measured lift as a trade
+    recorded for the owner. A new lift area is a change to this line and to test_verdict_bounds.py,
+    never a model file."""
+
+    @staticmethod
+    def liftable(model: dict[str, Any], area: str) -> bool:
+        """Whether the model may lower a block in `area`: listed by the model (or, for an older
+        model, not add-only) and in `LIFT_AREAS_ALLOWED`."""
+        if area not in Verdict.LIFT_AREAS_ALLOWED:
+            return False
+        lift_areas = model.get("lift_areas")
+        return (
+            area in lift_areas if lift_areas is not None else area not in model.get("add_only", ())
+        )
 
     @staticmethod
     def _skill_claim(package: dict[str, float]) -> None:

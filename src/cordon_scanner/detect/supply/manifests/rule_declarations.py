@@ -241,6 +241,20 @@ _DECLARED: tuple[DeclaredRule, ...] = (
         remediation="Install the service's own server instead.",
     ),
     DeclaredRule(
+        id="SUSPECT.SOURCE.UNPARSED_RUNNING.001",
+        title="A module the package runs does not parse",
+        severity=Severity.HIGH,
+        confidence=Confidence.HIGH,
+        category=Category.SUSPICIOUS,
+        detector=ManifestFinding.DETECTOR,
+        message=(
+            "A module this package runs -- at install, on import, or as a command -- does not "
+            "parse, so its code was not read. Code that will run and cannot be read blocks."
+        ),
+        references=(references.OBSCURED_SECURITY_DATA,),
+        remediation="Do not install the package until the module has been read by hand.",
+    ),
+    DeclaredRule(
         id="SUSPECT.INSTALL.UNEXAMINED.001",
         title="Install-time code too large or slow to examine",
         severity=Severity.HIGH,
@@ -477,6 +491,20 @@ _DECLARED: tuple[DeclaredRule, ...] = (
         ),
         references=(references.OBSCURED_SECURITY_DATA,),
         remediation="Do not install it; genuine native code ships as platform wheels.",
+    ),
+    DeclaredRule(
+        id="SUSPECT.BINARY.NATIVE_PROGRAM_IN_PURE_WHEEL.001",
+        title="A pure-Python wheel carries a native program and starts it",
+        severity=Severity.HIGH,
+        confidence=Confidence.HIGH,
+        category=Category.SUSPICIOUS,
+        detector="binary",
+        message=(
+            "The wheel is tagged none-any, declaring no compiled code, and carries an executable "
+            "that a Python file starts from a path built from where it lives."
+        ),
+        references=(references.OBSCURED_SECURITY_DATA,),
+        remediation="Do not install it; a package that needs a native program ships platform wheels.",
     ),
     DeclaredRule(
         id="SUSPECT.TYPOSQUAT.PACKAGE_NAME.001",

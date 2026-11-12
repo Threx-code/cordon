@@ -138,6 +138,11 @@ class ScanContext:
     """Skill scripts and MCP server sources: in `install_hook_paths` because an agent runs them
     unasked, but tools, not install scripts -- a bundle read to its end is not padding."""
 
+    startup_closure_paths: frozenset[str] = frozenset()
+    """The `.pth` startup hooks and the files their import lines reach: code that runs in every
+    Python process the machine starts once the package is installed (a subset of
+    `install_hook_paths`). Read by the startup facts (`StartupHooks`)."""
+
     ci_hook_paths: frozenset[str] = frozenset()
     """Paths that execute in the project's own pipeline.
 
@@ -211,6 +216,8 @@ class ScanContext:
     import_deferred_lines: frozenset[tuple[str, int, int]] = frozenset()
     """`(path, first_line, last_line)` for function bodies in `import_closure_paths` that importing
     never runs (`analysis.python.reachability.LoadReach`): reached only when someone calls them."""
+    startup_deferred_lines: frozenset[tuple[str, int, int]] = frozenset()
+    """Bodies in `startup_closure_paths` that importing them at interpreter start never runs."""
 
     scorer: RiskScorer = field(default_factory=RiskScorer)
     offline: bool = True
@@ -244,6 +251,10 @@ class ScanContext:
     Its lockfiles then describe its maintainers' development environment, not what installing it
     brings in."""
 
+    confusion_version: str = ""
+    """Why the published package's own version looks chosen to outrank a private registry's
+    (`NameSignals.confusion_version`: 99.0.0, 99999999.0.0, 7.7.7), or "": the dependency-confusion
+    probe's version. Read by the `confusion_version` composite term."""
     package_repository: str = ""
     """The published package's own `repository` URL (npm's `package.json`), as the registry shows
     it; empty when there is none or the target is not a package. Lets a detector tell the
@@ -270,6 +281,29 @@ class ScanContext:
     (line, source kinds, sink, destination class), joined by the parent from the workers' summaries
     (`CrossFileFlows`). Set only for the re-grade of those files, after detection; None before. A
     fact like the others: carried to a worker and part of the file's cache key."""
+
+    python_imported_clients: Mapping[str, Mapping[str, str]] | None = None
+    """Per Python file, the names it imports from another of the package's files that are HTTP
+    clients made there (`ImportedClients`): `from .imports import *` taking `session =
+    httpx.Client()`. Found before detection from every Python file of the package, so a file's
+    analyser starts with them bound. None when there are none, or for a single-file scan."""
+
+    python_imported_runners: Mapping[str, Mapping[str, str]] | None = None
+    """Per Python file, the functions it imports from another of the package's files that run one of
+    their own parameters as a command, by position (`ImportedClients.runners_of`): a bot handler
+    in `bot.py` that hands the message text to `run_cmd` from `utils.py`. Found before detection
+    from every Python file, like the clients; None when there are none."""
+    python_carried_calls: Mapping[str, Mapping[str, str]] | None = None
+    """Per file, its functions and the parameter positions another of the package's files passes
+    a carried value (`CarriedCalls`), in the runner map's shape."""
+    python_imported_collectors: Mapping[str, Mapping[str, str]] | None = None
+    """Per Python file, the functions it imports from another of the package's files that collect a
+    fingerprint of the machine: environment, platform, and files read or hashed
+    (`MachineCollectors`), in the runner map's shape."""
+    python_sent_names: Mapping[str, Mapping[str, str]] | None = None
+    """Per Python file, the names it binds that other files of the package import by name and pass
+    to a request, with how many files do (`SentNames`), in the runner map's shape: a destination
+    written down in `__init__.py` and posted from the modules that import it."""
 
     cross_file_unresolved: bool = False
     """Whether some file of the package calls into it in a way the join cannot follow (a computed
@@ -303,6 +337,20 @@ class ScanContext:
 
     def in_install_hook(self, path: str) -> bool:
         return path in self.install_hook_paths
+
+    def in_startup_closure(self, path: str) -> bool:
+        return path in self.startup_closure_paths
+
+    def startup_reaches(self, path: str, line: int) -> bool:
+        """Whether this line runs at every interpreter start: the file is one a `.pth` hook's
+        imports reach, and the line is not in a body those imports never call."""
+        if path not in self.startup_closure_paths:
+            return False
+        return not any(
+            first <= line <= last
+            for deferred_path, first, last in self.startup_deferred_lines
+            if deferred_path == path
+        )
 
     def install_hook_reaches(self, path: str, line: int) -> bool:
         """Whether install-time context applies at this line of this file.

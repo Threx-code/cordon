@@ -67,10 +67,9 @@ class McpJsCode:
         """(character offset, behind a secret) for each tool handler that runs its own input."""
         if len(text) > MAX_CHARS:
             return []
-        try:
-            program = Parser(text, typescript=typescript).program()
-        except Exception:  # noqa: BLE001 -- an unread file is read by the other rules, not here
-            return []
+        # A parser that raises escapes to the engine's OPERATIONAL.DETECTOR.FAILED, a blocking gap:
+        # a file crafted to crash it must not remove this check (S2, reviews/release-080).
+        program = Parser(text, typescript=typescript).program()
         code = cls(program)
         out: list[tuple[int, bool]] = []
         for function, said in code._handlers(text):

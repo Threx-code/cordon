@@ -305,6 +305,7 @@ class RuleFileDetector(BaseDetector):
                     or 1,
                 )
             except Exception as exc:  # noqa: BLE001
+                # S2: recorded. `_failed` is reported by `inspect` as UNAVAILABLE_RULE, a gap.
                 self._failed = (
                     f"the rules could not be loaded: {type(exc).__name__}: {str(exc)[:200]}"
                 )

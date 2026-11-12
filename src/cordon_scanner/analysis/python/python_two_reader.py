@@ -69,13 +69,14 @@ class PythonTwoReader:
         from cordon_scanner.analysis.python.pysyntax import PythonSyntax
         from cordon_scanner.analysis.python.statements import PythonTwo
 
-        lines = PythonTwoReader.lexical(text).splitlines(keepends=True)
+        lines = PythonTwoReader.source_lines(PythonTwoReader.lexical(text))
         lines = PythonTwoReader.statements(lines)
         for _ in range(PythonTwoReader.RETRIES):
             joined = "".join(lines)
             try:
                 PythonSyntax.parse(joined)
             except SyntaxError as exc:
+                # S2: a fallback; the next reader (or SOURCE.UNPARSED for running files) reads it
                 at = exc.lineno
                 if at is None or not 1 <= at <= len(lines):
                     return Reading(None, at, joined)
@@ -89,11 +90,19 @@ class PythonTwoReader:
                     return Reading(None, None, joined)
                 continue
             except (ValueError, RecursionError, MemoryError):
+                # S2: a fallback; the next reader (or SOURCE.UNPARSED for running files) reads it
                 return Reading(None, None, joined)
             return Reading(joined)
         # Past the bound: an attacker can pad a file with failures, so this is never "not Python
         # 2" -- no line is named, and the caller keeps the file a gap (fail closed).
         return Reading(None, None, "".join(lines))
+
+    @staticmethod
+    def source_lines(text: str) -> list[str]:
+        """`text`'s lines as Python's tokenizer counts them, ends kept: broken at `\\n`, `\\r\\n` and
+        `\\r` only. `str.splitlines` also breaks at a form feed, `\\x0b`, `\\x1c`-`\\x1e`, `\\x85`,
+        U+2028 and U+2029, and each rewrite after one landed on the wrong line (lava-test 0.14)."""
+        return io.StringIO(text, newline="").readlines()
 
     @staticmethod
     def wholly(text: str) -> bool:
@@ -105,13 +114,14 @@ class PythonTwoReader:
         from cordon_scanner.analysis.python.pysyntax import PythonSyntax
         from cordon_scanner.analysis.python.statements import PythonTwo
 
-        lines = text.splitlines(keepends=True)
+        lines = PythonTwoReader.source_lines(text)
         changed = False
         for _ in range(len(lines) + 1):
             joined = "".join(lines)
             try:
                 PythonSyntax.parse(joined)
             except SyntaxError as exc:
+                # S2: a fallback; the next reader (or SOURCE.UNPARSED for running files) reads it
                 at = exc.lineno
                 if (
                     at is None
@@ -126,6 +136,7 @@ class PythonTwoReader:
                 changed = True
                 continue
             except (ValueError, RecursionError):
+                # S2: a fallback; the next reader (or SOURCE.UNPARSED for running files) reads it
                 return False
             return changed
         return False
@@ -394,7 +405,9 @@ class PythonTwoReader:
     def neutralise(lines: list[str], at: int) -> None:
         """The whole logical statement holding line `at`, made inert: its first line becomes
         `except Exception:`, `if True:` or `pass` (indentation kept), its continuation lines empty,
-        so the statement's line count and every line after it stay where they were."""
+        so the statement's line count and every line after it stay where they were. Each line keeps
+        its own ending -- `\\n`, `\\r\\n`, `\\r`, or none on a file's last line, which a `\\n` written
+        there would have turned into one line more (found by tests/fuzz: a lone backquote)."""
         start, end = PythonTwoReader.span(lines, at)
         original = lines[start - 1]
         indent = original[: len(original) - len(original.lstrip())]
@@ -406,9 +419,14 @@ class PythonTwoReader:
             neutral = "if True:"
         else:
             neutral = "pass"
-        lines[start - 1] = f"{indent}{neutral}\n"
+        lines[start - 1] = f"{indent}{neutral}{PythonTwoReader._ending(original)}"
         for index in range(start, end):
-            lines[index] = "\n"
+            lines[index] = PythonTwoReader._ending(lines[index])
+
+    @staticmethod
+    def _ending(line: str) -> str:
+        """The line break `line` ends with, as `source_lines` kept it: empty for a last line."""
+        return line[len(line.rstrip("\r\n")) :]
 
     @staticmethod
     def span(lines: list[str], at: int) -> tuple[int, int]:

@@ -322,6 +322,7 @@ class CallReachability:
             except (SyntaxError, ValueError, RecursionError):
                 # Unparseable: defer nothing, so every capability in it keeps
                 # the context it has today.
+                # S2: an excuse; failing excuses nothing, so the finding it would lower stands
                 continue
 
         # Methods of a command class registered only under a command somebody runs by name
@@ -469,7 +470,8 @@ class LoadReach:
                 continue
             try:
                 tree = PythonSyntax.parse(src)
-            except (SyntaxError, ValueError, RecursionError):
+            except (SyntaxError, ValueError):
+                # S2: covered by SOURCE.UNPARSED at every running file (install closure, import entries, command modules); proven by test_not_python3.py TestPackageSourceThatDoesNotParse
                 continue  # unparsed: defers nothing, every line keeps its context
             dotted, is_package = LoadReach.dotted(path)
             module = LoadModule(path, dotted, tree, is_package)

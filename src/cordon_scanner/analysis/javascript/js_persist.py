@@ -115,6 +115,7 @@ class JsPersistence:
             analysis.run()
             written = cls._written(analysis)
         except (RecursionError, _OverBudget):
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
             return frozenset()
         literal_lines: dict[int, set[str]] = {}
         for i in range(analysis.n):

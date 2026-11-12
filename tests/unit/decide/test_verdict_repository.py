@@ -97,12 +97,13 @@ class TestTheTwentyEighthOfOctober:
         assert (finding.category, finding.severity) == (Category.MALICIOUS, Severity.CRITICAL)
         assert PolicyGate._fails(finding, Policy())
 
-    def test_the_same_package_is_still_graded_by_the_verdict(self) -> None:
-        # The control: in a package the trained lowering is unchanged (measured on package rows,
-        # 2026-10-31: keeping MALICIOUS there cost ~800 benign blocks per 102.5k units).
+    def test_the_same_package_is_add_only_in_mcp_since_s6(self) -> None:
+        # Until S6 a package in area mcp had this finding lowered (measured on package rows,
+        # 2026-10-31: keeping MALICIOUS there cost ~800 benign blocks per 102.5k units). MCP is
+        # add-only from 0.8.0 (lead, 2026-11-10), so it keeps its grade and blocks.
         (finding,), _ = RepositoryKit.decide(repository=False)
-        assert (finding.category, finding.severity) == (Category.SUSPICIOUS, Severity.MEDIUM)
-        assert not PolicyGate._fails(finding, Policy())
+        assert (finding.category, finding.severity) == (Category.MALICIOUS, Severity.CRITICAL)
+        assert PolicyGate._fails(finding, Policy())
 
     def test_lowers_keeps_malicious_only_in_a_repository(self) -> None:
         def lowers(category: Category, repository: bool) -> bool:

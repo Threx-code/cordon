@@ -12,8 +12,10 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.analysis.python.flows.cross_file import CrossFileMaps
 from cordon_scanner.analysis.python.unparsed_source import UnparsedSource
 from cordon_scanner.analysis.shared.languages import LanguageRegistry
+from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.decide.code_model import CodeModelPass
 from cordon_scanner.detect.base import (
     FileUnit,
@@ -22,7 +24,7 @@ from cordon_scanner.detect.base import (
 )
 from cordon_scanner.detect.registry import ComposerPluginHooks, ServerSources
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
-from cordon_scanner.engine.closure import ImportClosure
+from cordon_scanner.engine.closure import ImportClosure, StartupClosure
 from cordon_scanner.engine.entries import PackageEntries
 from cordon_scanner.engine.package_format import PackageFormat
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
@@ -44,9 +46,10 @@ from cordon_scanner.engine.pipeline.releases import ReleaseChecks
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.errors import ArchiveError
 from cordon_scanner.foundation.formats.served_json import ServedJson
-from cordon_scanner.foundation.models import Scope, Severity
+from cordon_scanner.foundation.models import Confidence, Scope, Severity
 from cordon_scanner.foundation.paths import ContainerPaths
 from cordon_scanner.foundation.results import Dependency, OperationalFinding
+from cordon_scanner.foundation.text.confusion_versions import ConfusionVersions
 from cordon_scanner.sources.registry import ArchiveReader
 
 if TYPE_CHECKING:
@@ -244,6 +247,8 @@ class ArchiveStages:
         ctx = replace(
             ctx,
             install_hook_paths=frozenset(hook_paths),
+            startup_closure_paths=(startup := StartupClosure.of(units, entries))[0],
+            startup_deferred_lines=startup[1],
             tree_paths=frozenset(unit.path for unit in units),
             shipped_native_paths=TreeFacts.shipped_native(units),
             install_entry_paths=entries,
@@ -270,8 +275,14 @@ class ArchiveStages:
             library_closure_paths=frozenset(Hooks.hook_js_closure(units, set(used | project))),
             declared_dependencies=EcosystemRegistry.declared_dependencies(units, early_format),
             package_repository=PackageEntries.repository(units, early_format),
+            confusion_version=ConfusionVersions.reason(PackageEntries.version(units, early_format))
+            or "",
         )
-        ctx = replace(ctx, verdict_dependency_names=Ceilings.verdict_dependency_names(units))
+        ctx = replace(
+            ctx,
+            verdict_dependency_names=Ceilings.verdict_dependency_names(units),
+            **CrossFileMaps.of(units),
+        )
         ctx = self.unparsed(units, acc, ctx, python_closure)
         ctx = self.import_context(units, ctx, early_format)
         return Hooks.lifted_inherit(ctx)
@@ -340,6 +351,10 @@ class ArchiveStages:
         """What runs at install or import and does not parse is read as Python 2, or is a gap,
         fail closed (09 3a). A reading runs where its file runs (`lifted_inherit`)."""
         python_entries = {p for p in ctx.import_entry_paths if p.endswith(".py")}
+        from cordon_scanner.engine.entries import PythonScripts
+
+        # A command's module runs on every invocation, imported by `__init__` or not (S2).
+        python_entries |= PythonScripts.targets(units)
         running = python_closure | python_entries | Hooks.hook_import_closure(units, python_entries)
         readings: list[FileUnit] = []
         for unit in list(units):
@@ -348,6 +363,9 @@ class ArchiveStages:
             decision = UnparsedSource.decide(unit.content.text)
             if decision.kind == "gap":
                 acc.incomplete(UnparsedSource.gap(unit.path))
+                if not SourcePaths.is_test_material(unit.path.rpartition("!")[2]):
+                    risk = ctx.scorer.score(Severity.HIGH, Confidence.HIGH)
+                    acc.append(UnparsedSource.running(unit.path, risk))
             elif decision.kind == "broken":
                 acc.append(UnparsedSource.broken(unit.path))
             elif decision.reading is not None:
@@ -436,6 +454,7 @@ class ArchiveStages:
             return
         acc.add(ReleaseChecks.unexamined_install_code(acc.findings, ctx))
         acc.add(ReleaseChecks.native_code_in_a_pure_wheel(units, ctx))
+        acc.add(ReleaseChecks.native_program_in_a_pure_wheel(units, ctx))
         acc.add(ReleaseChecks.known_malicious_release(units, ctx))
         acc.add(ReleaseChecks.known_vulnerable_release(units, ctx))
         acc.add(ReleaseChecks.placeholder_release(units, ctx))

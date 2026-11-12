@@ -23,7 +23,7 @@ Flow-insensitive, as the analysis around it: order inside a function is not foll
 from __future__ import annotations
 
 import ast
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from typing import ClassVar
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
@@ -35,10 +35,22 @@ class BindingForms:
     """Each way Python binds a name to a value, read by the node's type."""
 
     @staticmethod
+    def names(target: ast.AST) -> list[str]:
+        """The names a target binds: `a`, and each name of `a, (b, *c)` (a datagram read as
+        `data, addr = sock.recvfrom(n)` binds `data` to what arrived)."""
+        if isinstance(target, ast.Name):
+            return [target.id]
+        if isinstance(target, ast.Starred):
+            return BindingForms.names(target.value)
+        if isinstance(target, ast.Tuple | ast.List):
+            return [name for element in target.elts for name in BindingForms.names(element)]
+        return []
+
+    @staticmethod
     def assign(node: ast.AST) -> Iterator[tuple[list[str], ast.AST]]:
         if not isinstance(node, ast.Assign):
             return
-        yield [t.id for t in node.targets if isinstance(t, ast.Name)], node.value
+        yield [name for t in node.targets for name in BindingForms.names(t)], node.value
 
     @staticmethod
     def annotated(node: ast.AST) -> Iterator[tuple[list[str], ast.AST]]:
@@ -65,8 +77,9 @@ class BindingForms:
     def for_target(node: ast.AST) -> Iterator[tuple[list[str], ast.AST]]:
         if not isinstance(node, ast.For | ast.AsyncFor):
             return
-        if isinstance(node.target, ast.Name):
-            yield [node.target.id], node.iter
+        names = BindingForms.names(node.target)
+        if names:
+            yield names, node.iter
 
     READERS: ClassVar[dict[type, Callable[[ast.AST], Iterator[tuple[list[str], ast.AST]]]]] = {}
 
@@ -232,6 +245,14 @@ class ScopedTaint:
         if key is None:
             key = self._key_cache[id(name)] = (self._owner(self.scope_of(name), name.id), name.id)
         return key
+
+    def mark(self, names: Iterable[ast.Name]) -> bool:
+        """Mark these names sourced, each in its own scope: a value a caller knows was put into
+        them though no binding shows it (`shutil.copy(src, dst)` fills `dst`). True when any was
+        new; `spread` again to carry them on."""
+        before = len(self._marked)
+        self._marked.update(self._key(name) for name in names)
+        return len(self._marked) != before
 
     def _callees(self, call: ast.Call) -> list[Function]:
         """The local functions a call can reach: by name, or a method called on `self`/`cls`."""

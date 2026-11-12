@@ -393,7 +393,8 @@ class TestSelfScan(CorpusFixtures):
             != "tests/unit/detect/code/capability/test_recovered_malware_shapes.py"
             # The spelling matrix lists every way JavaScript writes a capability primitive -- a
             # spawn, a beacon, a persistence write -- each a rule's test positive, by construction.
-            and f.location.path != "tests/unit/detect/code/capability/test_js_spelling_matrix.py"
+            and f.location.path
+            != "tests/unit/detect/code/capability/javascript/test_js_spelling_matrix.py"
             # Campaign behaviours rebuilt as inert fixtures, each a rule's test positive.
             and f.location.path != "tests/unit/detect/code/test_npm_campaign_behaviours.py"
             and f.location.path != "tests/unit/detect/agents/test_agents.py"

@@ -41,6 +41,8 @@ import ast
 import re
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.analysis.python.flows.http_clients import HTTP_CLIENTS
+from cordon_scanner.analysis.python.flows.staged.literal_program import LiteralProgram
 from cordon_scanner.analysis.python.pyfacts import (
     DNS_LOOKUPS,
     ENVIRONMENT,
@@ -60,12 +62,28 @@ from cordon_scanner.analysis.python.vocabulary import (
 from cordon_scanner.foundation.capabilities import Capability
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterator, Mapping
 
 
 from cordon_scanner.analysis.python.analyzer_core import AnalyzerCore
 from cordon_scanner.analysis.python.data_flows import DataFlows
-from cordon_scanner.analysis.python.execution_flows import ExecutionFlows
+from cordon_scanner.analysis.python.flows.carried_programs import CarriedPrograms
+from cordon_scanner.analysis.python.flows.client_bindings import ClientBindings
+from cordon_scanner.analysis.python.flows.data_file_code import DataFileCode
+from cordon_scanner.analysis.python.flows.decoded_drops import DecodedDrops
+from cordon_scanner.analysis.python.flows.dns_tunnels import DnsTunnels
+from cordon_scanner.analysis.python.flows.free_host_credentials import FreeHostCredentials
+from cordon_scanner.analysis.python.flows.implants.implant_facts import ImplantFacts
+from cordon_scanner.analysis.python.flows.received_run import ReceivedRuns
+from cordon_scanner.analysis.python.flows.relayed_sends import RelayedSends
+from cordon_scanner.analysis.python.flows.staged.av_exclusions import AvExclusions
+from cordon_scanner.analysis.python.flows.staged.computed_commands import ComputedCommands
+from cordon_scanner.analysis.python.flows.staged.dormant_decodes import DormantDecodes
+from cordon_scanner.analysis.python.flows.staged.executed_data import ExecutedData
+from cordon_scanner.analysis.python.flows.staged.import_mail import ImportMail
+from cordon_scanner.analysis.python.flows.staged.loose_stages import LooseStages
+from cordon_scanner.analysis.python.flows.staged.machine_reports import MachineReports
+from cordon_scanner.analysis.python.flows.startup_files import StartupFiles
 from cordon_scanner.analysis.python.sourced_flows import SourcedFlows
 
 CREDENTIAL_VARIABLE = re.compile(
@@ -135,6 +153,7 @@ class PythonSource:
         try:
             tree = PythonSyntax.shared(source)
         except (SyntaxError, ValueError, RecursionError):
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
             return frozenset()
 
         analyzer = PythonAnalyzer._prepared(tree)
@@ -167,28 +186,87 @@ analogue worth the silence. `getattr(self, method_name)` on a plugin object is
 ordinary; `getattr(os, something_decoded)` is not."""
 
 
-class PythonAnalyzer(DataFlows, ExecutionFlows, SourcedFlows, AnalyzerCore):
+class PythonAnalyzer(
+    DataFlows,
+    DecodedDrops,
+    CarriedPrograms,
+    ReceivedRuns,
+    DnsTunnels,
+    DataFileCode,
+    StartupFiles,
+    RelayedSends,
+    ComputedCommands,
+    DormantDecodes,
+    ExecutedData,
+    ImportMail,
+    LooseStages,
+    AvExclusions,
+    MachineReports,
+    FreeHostCredentials,
+    ClientBindings,
+    SourcedFlows,
+    AnalyzerCore,
+):
     """Resolves capability primitives through aliases, bindings and constants."""
 
     @classmethod
-    def analyse(cls, source: str, *, follow_literals: bool = True) -> list[AstHit]:
+    def analyse(
+        cls,
+        source: str,
+        *,
+        follow_literals: bool = True,
+        imported_clients: Mapping[str, str] | None = None,
+        imported_runners: Mapping[str, str] | None = None,
+        carried_calls: Mapping[str, str] | None = None,
+        imported_collectors: Mapping[str, str] | None = None,
+    ) -> list[AstHit]:
         """Capabilities resolvable from this source, or none if it will not parse.
 
         `follow_literals=False` leaves code held in string literals unread (see `_written_code`).
         A test suite writes code fixtures to disk as its ordinary business, and what such a
         fixture would do is not something the suite does.
+
+        `imported_clients` are the names this file takes from another of its package's files
+        that are HTTP clients made there (`ImportedClients`, which leaves out a name the file
+        binds itself): bound before the walk. `imported_runners` are the functions it takes from
+        another of its package's files that run a parameter as a command (`name: "0,1"`, the
+        positions): a received value handed to one is a run (`ReceivedRuns`). `carried_calls` are
+        this file's functions whose parameters another file passes a carried value at those
+        positions (`CarriedCalls`).
         """
         try:
             tree = PythonSyntax.shared(source)
-        except (SyntaxError, ValueError, RecursionError):
+        except (SyntaxError, ValueError):
+            # S2: covered by SOURCE.UNPARSED at every running file (install closure, import entries, command modules); proven by test_not_python3.py TestPackageSourceThatDoesNotParse
             return []
         analyzer = PythonAnalyzer._prepared(tree)
         analyzer._follow_literals = follow_literals
+        for name, client in (imported_clients or {}).items():
+            analyzer._bindings.setdefault(name, client)
+        for name, positions in (imported_runners or {}).items():
+            analyzer._imported_runners[name] = {int(i) for i in positions.split(",")}
+        for name, positions in (carried_calls or {}).items():
+            analyzer._carried_calls[name] = {int(i) for i in positions.split(",")}
+        analyzer._imported_collectors = set(imported_collectors or {})
         analyzer._walk(tree)
         analyzer._downloaded_and_run(tree)
+        analyzer._decoded_dropped_and_run(tree)
+        analyzer._carried_program_started(tree)
         analyzer._received_and_run(tree)
+        analyzer._received_message_run(tree)
         analyzer._received_into_process(tree)
         analyzer._download_run_through_helpers(tree)
+        analyzer._dns_tunnel(tree)
+        analyzer._code_from_data_file(tree)
+        analyzer._startup_file_written(tree)
+        analyzer._computed_commands(tree)
+        analyzer._concealed_names(tree)
+        analyzer._dormant_decodes(tree)
+        analyzer._data_executed(tree)
+        analyzer._import_mail(tree)
+        analyzer._loose_stages(tree)
+        analyzer._antivirus_exclusions(tree)
+        analyzer._hits.extend(ImplantFacts.hits(tree, source, analyzer._hits))
         if analyzer._sends(tree):
             # Each of these records only at a call that sends (an egress primitive) or through a
             # helper holding one (`_handed_to_a_sender`): a file that sends nothing has none of
@@ -197,6 +275,11 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, SourcedFlows, AnalyzerCore):
             analyzer._identity_sent(tree)
             analyzer._environment_sent(tree)
             analyzer._secret_sent(tree)
+            analyzer._hidden_requests(tree)
+            analyzer._swept_sends(tree)
+            analyzer._relayed_to_hidden(tree)
+            analyzer._credentials_to_free_hosts(tree)
+        analyzer._machine_reports(tree)
         return analyzer._hits
 
     @classmethod
@@ -205,7 +288,8 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, SourcedFlows, AnalyzerCore):
         decoded), or None when the source does not parse (`SourcedFlows.sourced_sinks`)."""
         try:
             tree = PythonSyntax.shared(source)
-        except (SyntaxError, ValueError, RecursionError):
+        except (SyntaxError, ValueError):
+            # S2: covered by SOURCE.UNPARSED at every running file (install closure, import entries, command modules); proven by test_not_python3.py TestPackageSourceThatDoesNotParse
             return None
         return cls._prepared(tree).sourced_sinks(tree)
 
@@ -276,6 +360,8 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, SourcedFlows, AnalyzerCore):
         ast.ImportFrom: "_bind_import_from",
         ast.Assign: "_bind_assignment",
         ast.For: "_bind_loop",
+        ast.With: "_bind_with",
+        ast.AsyncWith: "_bind_with",
     }
 
     def _bind_import(self, node: ast.Import) -> None:
@@ -285,12 +371,29 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, SourcedFlows, AnalyzerCore):
     def _bind_import_from(self, node: ast.ImportFrom) -> None:
         if node.module and not node.level:
             for alias in node.names:
+                if alias.name == "*":
+                    # `from base64 import *` binds every public name of the module: each primitive
+                    # it holds resolves bare (`b16decode(x)` is `base64.b16decode`; nai 1.4).
+                    prefix = f"{node.module}."
+                    for primitive in PRIMITIVES:
+                        tail = primitive[len(prefix) :]
+                        if primitive.startswith(prefix) and "." not in tail:
+                            self._aliases.setdefault(tail, primitive)
+                    continue
                 self._aliases[alias.asname or alias.name] = f"{node.module}.{alias.name}"
 
     def _bind_assignment(self, node: ast.Assign) -> None:
         if len(node.targets) != 1:
             return
         target = node.targets[0]
+        if (
+            isinstance(target, ast.Attribute)
+            and isinstance(target.value, ast.Name)
+            and target.value.id in ("self", "cls")
+        ):
+            client = self._dotted(node.value)
+            if client in HTTP_CLIENTS:
+                self._attribute_bindings[f"{target.value.id}.{target.attr}"] = client
         if isinstance(target, ast.Name):
             dotted = self._dotted(node.value)
             if dotted:
@@ -340,6 +443,7 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, SourcedFlows, AnalyzerCore):
         order of execution, and matching on the first would miss the ordinary
         case of a helper defined above its imports.
         """
+        self._module_tree = tree
         self._collect_statement(tree)
         self._names_complete()
 
@@ -367,6 +471,7 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, SourcedFlows, AnalyzerCore):
         self._probes_vetoed = self._probes_vetoed or vetoed
         for node in PythonSyntax.of(tree, *self._BIND):
             getattr(self, self._BIND[type(node)])(node)
+        self._bind_client_factories(tree)
 
     def _collect_reads(self, tree: ast.AST) -> None:
         """The names the tree reads from local files, and the paths it bundles."""
@@ -468,6 +573,18 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, SourcedFlows, AnalyzerCore):
             return
         value = self._written_text(node.args[0])
         if (
+            value is not None
+            and not written
+            and self._module_tree is not None
+            and LiteralProgram.folded(self._module_tree, node.args[0])[1]
+        ):
+            # The program is fixed by the file's literals but written so that none of them is
+            # it: indexed out of an alphabet, joined from codes, reversed (easyIoCtl 1.0). What
+            # it does is read below; that it was assembled to be unreadable is a fact of its own.
+            self._record(
+                Capability.EXECUTE, node, f"computed code executed: {self._dotted(node.func)}"
+            )
+        if (
             value is None
             or not WRITTEN_CODE_MIN <= len(value) <= WRITTEN_CODE_MAX
             or "(" not in value
@@ -475,7 +592,8 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, SourcedFlows, AnalyzerCore):
             return
         try:
             inner_tree = PythonSyntax.parse(value)
-        except (SyntaxError, ValueError, RecursionError):
+        except (SyntaxError, ValueError):
+            # S2: covered by SOURCE.UNPARSED at every running file (install closure, import entries, command modules); proven by test_not_python3.py TestPackageSourceThatDoesNotParse
             return
         inner = type(self)()
         inner._collect_names(inner_tree)
@@ -492,6 +610,7 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, SourcedFlows, AnalyzerCore):
 
     def _call(self, node: ast.Call) -> None:
         dotted = self._dotted(node.func)
+        dotted = self._cloud_callee(node) or dotted
         if dotted == "open" and node.args:
             self._opened_for_persistence(node)
         if dotted in UNSAFE_LOADERS and self._loads_a_bundled_file(node, dotted):
@@ -669,6 +788,7 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, SourcedFlows, AnalyzerCore):
         try:
             tree = PythonSyntax.shared(source)
         except (SyntaxError, ValueError, RecursionError):
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
             return {}
         analyzer = PythonAnalyzer._prepared(tree)
         analyzer._walk(tree)
@@ -720,7 +840,8 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, SourcedFlows, AnalyzerCore):
         """
         try:
             tree = PythonSyntax.shared(source)
-        except (SyntaxError, ValueError, RecursionError):
+        except (SyntaxError, ValueError):
+            # S2: covered by SOURCE.UNPARSED at every running file (install closure, import entries, command modules); proven by test_not_python3.py TestPackageSourceThatDoesNotParse
             return []
         analyzer = PythonAnalyzer._prepared(tree)
         # `_invoked` maps an inner call to the call that invokes its result, so
@@ -803,6 +924,7 @@ class PythonAnalyzer(DataFlows, ExecutionFlows, SourcedFlows, AnalyzerCore):
         try:
             tree = PythonSyntax.shared(source)
         except (SyntaxError, ValueError, RecursionError):
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
             return frozenset()
         analyzer = PythonAnalyzer._prepared(tree)
         analyzer._walk(tree)

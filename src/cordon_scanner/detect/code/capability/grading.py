@@ -655,6 +655,7 @@ class CompositeGrading:
                 content.text,
                 [h.line for h in hits if h.rule_id == "CAP.CREDENTIAL.STORE.001"],
                 [h.line for h in hits if h.capability is Capability.EGRESS],
+                language=self.unit.language,
             )
         ):
             # Nothing the file reads from the store reaches the call (`detect/store_flow.py`):
@@ -867,7 +868,8 @@ class CompositeGrading:
             # A command channel -- what arrives on a connection, run -- is not a routine a
             # caller asks for; it is never lowered for running only when called.
             and not any(
-                hit.rule_id in ("CAP.GO.RECEIVED_RUN", "CAP.JS.RECEIVED_RUN") for hit in hits
+                hit.rule_id in ("CAP.GO.RECEIVED_RUN", "CAP.JS.RECEIVED_RUN", "AST.PY.RECEIVED_RUN")
+                for hit in hits
             )
         ):
             # Fetch-and-run is HIGH where it runs on its own: an install hook, a pipeline, a

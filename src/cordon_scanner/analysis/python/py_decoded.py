@@ -192,6 +192,7 @@ class PythonDecodedRun(PythonValueFlow):
         try:
             tree = PythonSyntax.shared(source)
         except (SyntaxError, ValueError, RecursionError):
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
             return frozenset()
         return cls.unreached_run_lines(tree)
 

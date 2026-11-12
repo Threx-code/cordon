@@ -15,6 +15,7 @@ party being judged.
 from __future__ import annotations
 
 import threading
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from cordon_scanner.detect.agents.language_model.review import (
@@ -81,6 +82,7 @@ JUDGED_RULE: Final = "SUSPECT.AGENT.JUDGED.001"
 STATUS_RULE: Final = "OPERATIONAL.JUDGE.STATUS"
 UNAVAILABLE_RULE: Final = "OPERATIONAL.JUDGE.UNAVAILABLE"
 BUDGET_RULE: Final = "OPERATIONAL.JUDGE.BUDGET"
+TRUNCATED_RULE: Final = "OPERATIONAL.JUDGE.TRUNCATED"
 
 
 class AgentText:
@@ -195,6 +197,13 @@ class AgentJudgeDetector(BaseDetector):
                 "The judge reached its call budget, so agent-facing text after that point was not judged.",
                 "Raise --judge-max-calls, or narrow the scan.",
             ),
+            operational(
+                TRUNCATED_RULE,
+                "Agent-facing text was longer than the judge reads",
+                "The judge reads a fixed number of pieces of one text; the rest of this text was "
+                "not judged.",
+                "Read the rest of the file yourself, or split it: the judge's cap is fixed.",
+            ),
         )
 
     # -- the run -----------------------------------------------------------------------------
@@ -270,12 +279,27 @@ class AgentJudgeDetector(BaseDetector):
             return ()
         findings: list[Finding] = []
         for kind, text in pieces:
-            for chunk in Chunker.split(text):
+            chunks = Chunker.split(text)
+            for chunk in chunks[: Chunker.MAX_CHUNKS]:
                 verdict = self._ask(unit, ctx, kind, chunk, findings)
                 if verdict is not None and verdict.verdict != "benign" and verdict.verified:
                     findings.append(self._finding(unit, ctx, kind, verdict))
                     break
+            else:
+                if len(chunks) > Chunker.MAX_CHUNKS:
+                    findings.append(self._truncated(unit, ctx, kind, len(chunks)))
         return findings
+
+    def _truncated(self, unit: FileUnit, ctx: ScanContext, kind: str, count: int) -> Finding:
+        """The pieces past `Chunker.MAX_CHUNKS`, never judged: a gap at this file (S6)."""
+        finding = self._operational(
+            TRUNCATED_RULE,
+            f"The {kind} at {unit.content.path} is {count} pieces long; the judge read the first "
+            f"{Chunker.MAX_CHUNKS}, and the rest was not judged.",
+            ctx,
+            incomplete=True,
+        )
+        return replace(finding, location=Location(path=unit.content.path, project=unit.project))
 
     def _ask(
         self, unit: FileUnit, ctx: ScanContext, kind: str, text: str, findings: list[Finding]
