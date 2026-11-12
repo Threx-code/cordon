@@ -68,9 +68,23 @@ class ShippedPrograms(PythonValueFlow):
             starts = (
                 dotted in analysis.PROCESS or name in analysis.PROCESS or dotted in cls.REPLACES
             )
-            if starts and node.args and analysis.taint(node.args[0]):
+            if starts and node.args and analysis.taint(cls._program(analysis, node.args[0])):
                 out.add(node.lineno)
         return sorted(out)
+
+    @classmethod
+    def _program(cls, analysis: ShippedPrograms, command: ast.AST) -> ast.AST | None:
+        """What a command hands the process-start as its program: the whole command, except when its
+        first word is the running interpreter (`[sys.executable, script]`): that starts Python, and a
+        shipped path after it is a script Python runs. Any other first word (a shell, `nohup`,
+        `sudo`) starts what follows it."""
+        if (
+            isinstance(command, ast.List | ast.Tuple)
+            and command.elts
+            and analysis.dotted(command.elts[0]) == "sys.executable"
+        ):
+            return None
+        return command
 
     @classmethod
     def path_lines(cls, tree: ast.AST) -> list[int]:
