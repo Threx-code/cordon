@@ -461,7 +461,7 @@ class CapabilityDetector(BaseDetector):
             # dist/extension.js).
             first = computed[0]
             hits.append(replace(first, rule_id="CAP.JS.COMPUTED_REQUIRE_SOURCE"))
-        hits.extend(JavaScriptCapabilities.js_spelled_names(content, unit.language))
+        hits.extend(viewed(JavaScriptCapabilities.js_spelled_names))
         hits.extend(JavaScriptCapabilities.js_string_code_run(content, unit.language))
         hits.extend(CredentialSweep.hits(matched_content))
         hits.extend(Labelling.browser_secrets_decrypted(matched_content))
