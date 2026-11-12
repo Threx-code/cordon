@@ -471,8 +471,11 @@ class _Script:
     @staticmethod
     def _char(m: re.Match[str]) -> str:
         value = int(m.group(1) or m.group(2) or m.group(3), 16)
-        if value > 0x10FFFF or not _Lines.kept(chr(value)):
-            return m.group(0)  # a line break or control character stays escaped: no line moves
+        if value > 0x10FFFF or 0xD800 <= value <= 0xDFFF or not _Lines.kept(chr(value)):
+            # Stays escaped: past Unicode; a UTF-16 surrogate, which alone is no character and
+            # would make the view text no UTF-8 (a bundle's `"\\uD800-\\uDBFF"` range); a line
+            # break or control character, so no line moves.
+            return m.group(0)
         return chr(value)
 
     def _escapes(self, b: _Builder, start: int, end: int) -> None:

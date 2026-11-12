@@ -125,6 +125,14 @@ class TestAScriptView:
         assert v.text == 's = "a\\x0ab\\u2028cA";\nz = 1;\n'
         assert len(v.text.splitlines()) == len(text.splitlines())
 
+    def test_a_surrogate_escape_stays_as_written(self) -> None:
+        """A UTF-16 surrogate alone is no character: decoded, the view would not encode as UTF-8
+        (seen in a bundled regex range, `"[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]"`)."""
+        text = 's = "[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]\\ud83d\\ude00\\x41";\n'
+        v = self.view(text)
+        assert v.text == 's = "[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]\\ud83d\\ude00A";\n'
+        v.text.encode("utf-8")
+
     def test_a_script_without_a_backslash_is_its_text(self) -> None:
         assert not self.view("require('./x');\n").differs
 
