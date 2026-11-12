@@ -63,7 +63,7 @@ class ArReader:
             if deadline is not None and time.monotonic() > deadline:
                 result.truncated = True
                 result.rejected.append(
-                    RejectedMember(path, Rejection.ENTRIES, "scan budget exhausted")
+                    RejectedMember(path, Rejection.BUDGET, "scan budget exhausted")
                 )
                 return
             header = data[position : position + _HEADER]

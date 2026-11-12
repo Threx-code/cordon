@@ -460,7 +460,7 @@ class ArchiveReader:
                         # applied outside never bound at all.
                         result.truncated = True
                         result.rejected.append(
-                            RejectedMember(member.name, Rejection.ENTRIES, "scan budget exhausted")
+                            RejectedMember(member.name, Rejection.BUDGET, "scan budget exhausted")
                         )
                         break
 

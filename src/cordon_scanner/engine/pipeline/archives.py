@@ -25,7 +25,7 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 from cordon_scanner.foundation.results import OperationalFinding
-from cordon_scanner.sources.base import Rejection
+from cordon_scanner.sources.base import REJECTION_CAUSE, Rejection
 
 if TYPE_CHECKING:
     from cordon_scanner.engine.pipeline.accumulator import Accumulator
@@ -217,29 +217,11 @@ class ArchiveMembers:
             acc.append(finding)
             acc.incomplete(ArchiveMembers.not_examined(path, reason, detail))
 
-    #: Details the expander gives when the scan's own budget, not the member, ended the read.
-    BUDGET_DETAILS: ClassVar[tuple[str, ...]] = ("scan budget exhausted", "stopped early at a limit")
-
     @staticmethod
-    def cause_class(reason: str, detail: str) -> str:
-        """What drove a refusal, so a report shows whether it was resource-driven: `budget` (the
-        scan's own budget ended the read: a time or count limit the machine, not the member, set),
-        `size` (the member's own bounds: its ratio, uncompressed size, padding, depth or the
-        archive's entry count), `unreadable` (the reader could not open it), or `content` (every
-        other refusal: a name, a path, a link, a format)."""
-        if reason == Rejection.ENTRIES and any(d in detail for d in ArchiveMembers.BUDGET_DETAILS):
-            return "budget"
-        if reason in (
-            Rejection.RATIO,
-            Rejection.SIZE,
-            Rejection.PADDED,
-            Rejection.DEPTH,
-            Rejection.ENTRIES,
-        ):
-            return "size"
-        if reason == Rejection.UNREADABLE:
-            return "unreadable"
-        return "content"
+    def cause_class(reason: str) -> str:
+        """What drove a refusal (`sources.base.REJECTION_CAUSE`): `budget`, `size`, `unreadable` or
+        `content`. A reason with no class is `content`; a test fails for one that lacks it."""
+        return REJECTION_CAUSE.get(reason, "content")
 
     @staticmethod
     def not_examined(path: str, reason: str, detail: str) -> Finding:
@@ -251,7 +233,7 @@ class ArchiveMembers:
             message=(
                 f"An archive member was refused ({reason}) and therefore not "
                 f"examined{': ' + detail if detail else ''}. "
-                f"Cause class: {ArchiveMembers.cause_class(reason, detail)}."
+                f"Cause class: {ArchiveMembers.cause_class(reason)}."
             ),
             remediation=(
                 "A refused member is not a clean member. Inspect it directly if "

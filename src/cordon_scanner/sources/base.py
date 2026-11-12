@@ -182,6 +182,34 @@ class Rejection:
     PADDED = "padded_expansion"
     """A budget reached while the archive expanded past `max_archive_ratio`: what follows the
     padding was not read, and padding is how a payload is put out of a scanner's reach."""
+    BUDGET = "scan_budget"
+    """The scan's own budget ended the read (a limit the machine's resources, not the member, set)."""
+
+
+#: What drove each refusal, so a report shows whether it was resource-driven: `budget` (the scan's own
+#: budget), `size` (the member's or archive's own bounds), `unreadable` (the reader could not open it)
+#: or `content` (a name, a path, a link, a format). Every `Rejection` reason has a class here and a
+#: test fails for one without, so a new refusal must say what drove it.
+REJECTION_CAUSE: dict[str, str] = {
+    Rejection.BUDGET: "budget",
+    Rejection.RATIO: "size",
+    Rejection.ENTRIES: "size",
+    Rejection.SIZE: "size",
+    Rejection.DEPTH: "size",
+    Rejection.PADDED: "size",
+    Rejection.UNREADABLE: "unreadable",
+    Rejection.TRAVERSAL: "content",
+    Rejection.ABSOLUTE: "content",
+    Rejection.LINK: "content",
+    Rejection.SPECIAL: "content",
+    Rejection.NAME: "content",
+    Rejection.POLYGLOT: "content",
+    Rejection.HIDDEN: "content",
+    Rejection.NOT_AN_ARCHIVE: "content",
+    Rejection.COMPRESSED_TRUNCATED: "content",
+    Rejection.UNSUPPORTED_FORMAT: "content",
+    Rejection.DIRECTORY_REBUILT: "content",
+}
 
 
 @dataclass(frozen=True, slots=True)
