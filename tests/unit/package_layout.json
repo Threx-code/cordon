@@ -312,6 +312,7 @@
   "detect/code/capability/memo": "detect/code/capability/memo",
   "detect/code/capability/rule_ids": "detect/code/capability/rule_ids",
   "detect/code/capability/text_position": "detect/code/capability/text_position",
+  "detect/code/capability/view_runner": "detect/code/capability/view_runner",
   "detect/code/credential_sweep": "detect/code/credential_sweep",
   "detect/code/decode_run": "detect/code/decode_run",
   "detect/code/download_flow": "detect/code/download_flow",

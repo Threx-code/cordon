@@ -53,6 +53,7 @@ from cordon_scanner.detect.code.capability.legitimate_use import LegitimateUse
 from cordon_scanner.detect.code.capability.memo import CapabilityMemo
 from cordon_scanner.detect.code.capability.rule_ids import CompositeRuleIds
 from cordon_scanner.detect.code.capability.text_position import TextPosition
+from cordon_scanner.detect.code.capability.view_runner import ViewRunner
 from cordon_scanner.detect.code.credential_sweep import CredentialSweep
 from cordon_scanner.detect.code.decode_run import DecodeRun
 from cordon_scanner.detect.code.install_payload import InstallPayload
@@ -435,7 +436,8 @@ class CapabilityDetector(BaseDetector):
             hits = GradleBuildAuth.drop_build_auth(content.text, hits, Capability.CREDENTIAL)
         hits.extend(Labelling.embedded_capabilities(ctx, content, commands))
         hits.extend(DestinationLabels.destination_capabilities(content, unit.language))
-        hits.extend(JavaScriptCapabilities.js_downloaded_and_run(content, unit.language))
+        viewed = ViewRunner.bound(content, unit.language)  # raw text and decoded view (note 18)
+        hits.extend(viewed(JavaScriptCapabilities.js_downloaded_and_run))
         hits.extend(JavaScriptCapabilities.js_wallet_secret_sent(content, unit.language))
         hits.extend(JavaScriptCapabilities.js_flows(content, unit.language))
         crossing = (ctx.cross_file_flows or {}).get(unit.path)

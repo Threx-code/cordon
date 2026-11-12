@@ -411,6 +411,25 @@ class TestHostileFileContent:
         )
 
 
+class TestTheDecodedViewPastItsBudget:
+    def test_a_file_the_view_refuses_makes_the_scan_incomplete(self, tmp_path, monkeypatch) -> None:
+        """A file past the decoded view's budget (note 18 §2) is the scan's gap, as a file past
+        any reader's is: never read raw-only in silence. The budget is lowered here so a small
+        fixture is past it; the shapes at the real budget are in test_rule_hostile_input."""
+        from cordon_scanner.analysis.shared.decoded_view import DecodedView
+
+        monkeypatch.setattr(DecodedView, "MAX_CHARS", 1000)
+        (tmp_path / "a.js").write_text(
+            "const s = '\\x41';\n" + "const x = 1;\n" * 200, encoding="utf-8"
+        )
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        assert result.complete is False
+        assert any(
+            f.rule_id == "OPERATIONAL.DETECTOR.FAILED" and "ViewOverBudget" in f.message
+            for f in result.findings
+        )
+
+
 # ---------------------------------------------------------------------------
 # Pattern safety
 # ---------------------------------------------------------------------------
