@@ -16,11 +16,9 @@ with `capability/detector.py`.
 
 from __future__ import annotations
 
-import ast
 import re
 from typing import TYPE_CHECKING, ClassVar
 
-from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.foundation.capabilities import Capability
 
 if TYPE_CHECKING:
@@ -69,36 +67,14 @@ class InstallPayload:
         payload capability nor a spawn of a shipped native binary. The window already excludes what
         `install_deferred_lines` proves the hook never reaches, and unparsable code counts as
         reaching everything, so holding here can only hold a block, never add one (census A)."""
-        if rule_id not in cls.GATED or not installing:
-            return False
-        caps = set(local_by_capability)
-        if Capability.FETCH_EXEC in caps and cls.execs_only_shipped_files(unit.content, window):
-            caps.discard(Capability.FETCH_EXEC)  # not a payload: the package's own text
-        return not cls.has_payload(caps) and not cls.spawns_shipped_file(
-            unit.content, window, ctx.shipped_native_paths, unit.path
+        return (
+            rule_id in cls.GATED
+            and installing
+            and not cls.has_payload(set(local_by_capability))
+            and not cls.spawns_shipped_file(
+                unit.content, window, ctx.shipped_native_paths, unit.path
+            )
         )
-
-    @classmethod
-    def execs_only_shipped_files(
-        cls, content: FileContent, window: Iterable[CapabilityHit]
-    ) -> bool:
-        """Whether every fetch-and-run hit of the install window is `exec` of text read from a file the package
-        ships (reviews/pypi-98/24, F1): the hit is `unsourced` (nothing fetched or decoded reaches it) AND the
-        path read is shown to be the package's own. `unsourced` alone is not enough: it is also true of an exec of
-        a file named on the command line or in the environment. A path is the package's own when it is a relative
-        literal, or built only from such literals, `__file__` and the working directory, through names assigned
-        once in the file; anything else (a parameter, argv, the environment, an attribute, a call, a temp or
-        absolute path) is not, and the hit stays a payload."""
-        hits = [h for h in window if h.capability is Capability.FETCH_EXEC]
-        if not hits or not all(h.unsourced for h in hits):
-            return False
-        try:
-            tree = PythonSyntax.parse(content.text)
-        except (SyntaxError, ValueError, RecursionError):
-            # S2: a fallback; a file that does not parse is unresolved and keeps the hit a payload
-            return False
-        reads = _ShippedReads(tree)
-        return all(reads.at(h.line) for h in hits)
 
     @classmethod
     def has_payload(cls, caps: set[Capability]) -> bool:
@@ -176,113 +152,6 @@ class InstallPayload:
                     return True
                 if "/" not in t and base in basenames:
                     return True
-        return False
-
-
-class _ShippedReads:
-    """Whether the `exec` or `eval` on a line reads a file whose path is the package's own."""
-
-    _OWN_CALLS: ClassVar[frozenset[str]] = frozenset(
-        {
-            "join",
-            "dirname",
-            "abspath",
-            "realpath",
-            "normpath",
-            "Path",
-            "getcwd",
-            "basename",
-            "convert_path",
-        }
-    )
-    _OWN_ATTRS: ClassVar[frozenset[str]] = frozenset({"parent", "resolve", "absolute"})
-    _READS: ClassVar[frozenset[str]] = frozenset({"read", "readlines", "read_text"})
-
-    def __init__(self, tree: ast.AST) -> None:
-        self.tree = tree
-        self.files: dict[str, ast.expr] = {}
-        self.names: dict[str, list[ast.expr]] = {}
-        for node in ast.walk(tree):
-            if isinstance(node, ast.With | ast.AsyncWith):
-                for item in node.items:
-                    path = self._opened(item.context_expr)
-                    if path is not None and isinstance(item.optional_vars, ast.Name):
-                        self.files[item.optional_vars.id] = path
-            elif isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if isinstance(target, ast.Name):
-                        self.names.setdefault(target.id, []).append(node.value)
-                        path = self._opened(node.value)
-                        if path is not None:
-                            self.files[target.id] = path
-
-    @staticmethod
-    def _opened(node: ast.AST) -> ast.expr | None:
-        """The path argument of an `open(...)` call, else None."""
-        if (
-            isinstance(node, ast.Call)
-            and node.args
-            and ast.unparse(node.func).rsplit(".", 1)[-1] == "open"
-        ):
-            return node.args[0]
-        return None
-
-    def at(self, line: int) -> bool:
-        calls = [
-            n
-            for n in ast.walk(self.tree)
-            if isinstance(n, ast.Call)
-            and getattr(n, "lineno", 0) == line
-            and isinstance(n.func, ast.Name)
-            and n.func.id in ("exec", "eval")
-            and n.args
-        ]
-        return bool(calls) and all(self._read_path(c.args[0]) for c in calls)
-
-    def _read_path(self, node: ast.AST) -> bool:
-        """`compile(<read>, ...)`, `<f>.read()` or `open(<path>).read()`: the file read is the package's own."""
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == "compile"
-            and node.args
-        ):
-            return self._read_path(node.args[0])
-        if not (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr in self._READS
-        ):
-            return False
-        source = node.func.value
-        path = self.files.get(source.id) if isinstance(source, ast.Name) else self._opened(source)
-        return path is not None and self._own(path, 0)
-
-    def _own(self, node: ast.AST, depth: int, seen: frozenset[str] = frozenset()) -> bool:
-        if depth > 6:
-            return False
-        if isinstance(node, ast.Constant):
-            value = node.value
-            return (
-                isinstance(value, str)
-                and not value.startswith(("/", "~", "\\"))
-                and "://" not in value
-                and ":" not in value[:2]
-            )
-        if isinstance(node, ast.Name):
-            if node.id == "__file__" or node.id in seen:
-                return True  # a name that depends on itself adds nothing: its other values decide
-            values = self.names.get(node.id, [])
-            return bool(values) and all(self._own(v, depth + 1, seen | {node.id}) for v in values)
-        if isinstance(node, ast.Call):
-            named = ast.unparse(node.func).rsplit(".", 1)[-1]
-            return named in self._OWN_CALLS and all(
-                self._own(a, depth + 1, seen) for a in node.args
-            )
-        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div | ast.Add):
-            return self._own(node.left, depth + 1, seen) and self._own(node.right, depth + 1, seen)
-        if isinstance(node, ast.Attribute) and node.attr in self._OWN_ATTRS:
-            return self._own(node.value, depth + 1, seen)
         return False
 
 
