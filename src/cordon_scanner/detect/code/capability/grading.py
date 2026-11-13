@@ -640,6 +640,12 @@ class CompositeGrading:
             # `core.samples.names_authentication`; scoped to this one rule, because
             # its premise is a store "this component does not own".
             ceilinged = "a file whose name says it handles authentication"
+        elif compiled.rule.id == CompositeRuleIds.CREDENTIAL_STORE_RULE and (
+            LegitimateUse.is_template_or_markup(content.path)
+        ):
+            # A store's name and a request in an HTML page or a Jinja template are text a renderer
+            # fills in, not code that reads or sends anything (reviews/pypi-98/20, shape C).
+            ceilinged = "a template or markup file, text rather than code"
         elif (
             compiled.rule.id == CompositeRuleIds.CREDENTIAL_STORE_RULE
             and not in_hook

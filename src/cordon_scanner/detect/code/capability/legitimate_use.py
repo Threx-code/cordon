@@ -150,6 +150,26 @@ class LegitimateUse:
         ".chroot",
     )
 
+    TEMPLATE_OR_MARKUP_SUFFIXES: ClassVar[tuple[str, ...]] = (
+        ".html",
+        ".htm",
+        ".j2",
+        ".jinja",
+        ".jinja2",
+        ".tmpl",
+        ".mustache",
+        ".hbs",
+    )
+    """Text a template engine or a browser renders: never executed as code at scan time, even when
+    what it renders is a script run later (reviews/pypi-98/20, shape C). Read only for
+    `SUSPECT.EXFIL.CREDENTIAL_STORE.001`; executable formats (`.sh`, `.ps1`, `.bat`, Makefile,
+    Dockerfile, CI steps) are not in it."""
+
+    @staticmethod
+    def is_template_or_markup(path: str) -> bool:
+        name = path.rpartition("!")[2].rpartition("/")[2].lower()
+        return name.endswith(LegitimateUse.TEMPLATE_OR_MARKUP_SUFFIXES)
+
     @staticmethod
     def is_hand_run_provisioning(path: str, language: str | None) -> bool:
         name = path.rpartition("!")[2].rpartition("/")[2].lower()

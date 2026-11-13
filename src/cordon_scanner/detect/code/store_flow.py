@@ -250,15 +250,18 @@ class PythonStoreFlow:
             # S2: a fallback; the next reader (or SOURCE.UNPARSED for running files) reads it
             return None
         inside, docs = cls._string_lines(tree)
-        store = {n for n in store_lines if n not in docs}
-        egress = {n for n in egress_lines if n not in docs}
-        if (store | egress) & inside:
-            return None
+        # Where the tree parses, a line that is only text inside a string -- a pattern table, a help
+        # text naming `~/.aws/credentials` -- is not a read or a send (reviews/pypi-98/20, shape A).
+        # A line where any expression starts is code, an f-string's `{...}` parts included.
+        text_only = inside - cls._code_lines(tree)
+        store = {n for n in store_lines if n not in docs and n not in text_only}
+        egress = {n for n in egress_lines if n not in docs and n not in text_only}
         if not store:
             return False
         calls = cls._calls_on(tree, egress)
         if not calls:
-            return None
+            # No call on any egress line: nothing is sent there.
+            return False
         imported = cls._imported_on(tree, store)
         taint = ScopedTaint(tree)
         written: set[str] = set()
@@ -318,6 +321,18 @@ class PythonStoreFlow:
                 if last > node.lineno:
                     inside.update(n for n in range(node.lineno + 1, last + 1) if n not in docs)
         return inside, docs
+
+    @staticmethod
+    def _code_lines(tree: ast.AST) -> set[int]:
+        """Lines where an expression that is not a string literal starts: code, even inside an
+        f-string (`{home}` in `f\'\'\'{home}/.aws/credentials\'\'\'`)."""
+        return {
+            node.lineno
+            for node in ast.walk(tree)
+            if isinstance(node, ast.expr)
+            and not isinstance(node, ast.Constant | ast.JoinedStr)
+            and hasattr(node, "lineno")
+        }
 
     @staticmethod
     def _calls_on(tree: ast.AST, egress: set[int]) -> list[ast.Call]:

