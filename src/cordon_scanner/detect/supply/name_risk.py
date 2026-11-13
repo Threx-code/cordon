@@ -799,10 +799,13 @@ class InstallFacts:
         """The strings of an inert `setup.py`'s raise, print and exit calls, else ""."""
         import ast
 
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
         try:
-            tree = ast.parse(text)
-        except (SyntaxError, ValueError, RecursionError):
-            # S2: a `setup.py` that does not parse is not shown inert; its message is not credited
+            tree = PythonSyntax.parse(text)
+        except (SyntaxError, ValueError, RecursionError, MemoryError):
+            # S2: a `setup.py` the guarded parser refuses, or that does not parse, is not shown inert; its
+            # message is not credited (fail closed)
             return ""
         said: list[str] = []
         for node in ast.walk(tree):
