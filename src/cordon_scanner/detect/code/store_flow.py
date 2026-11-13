@@ -430,7 +430,7 @@ class BoundClient:
         calls = [c for c in PythonSyntax.of(tree, ast.Call) if c.lineno == line]
         bound = cls._bound(tree, client)
         methods = [c for c in calls if isinstance(c.func, ast.Attribute)]
-        on_client = [c for c in methods if cls._dotted(c.func.value) in bound]  # type: ignore[attr-defined]
+        on_client = [c for c in methods if cls._dotted(c.func.value) in bound]
         return bool(on_client) and all(cls._host_is_configured(tree, c) for c in on_client)
 
     @classmethod
