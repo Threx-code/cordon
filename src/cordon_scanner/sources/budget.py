@@ -72,6 +72,27 @@ class ByteBudget:
     """The ceilings an archive's extraction is judged against as its members are read."""
 
     @staticmethod
+    def declared_over_budget(
+        result: ExtractionResult, limits: Limits, name: str, declared: int
+    ) -> bool:
+        """Whether a member's DECLARED size is past the total uncompressed budget, so nothing of it
+        can be read within it: refused before any byte is inflated, as padding when the size is also
+        past what the archive's own size allows to expand (`expansion_cap`), else as a size. Metering
+        applies only to what is read within the budget, never to what a header declares."""
+        if declared <= limits.max_uncompressed_bytes:
+            return False
+        padded = 0 < result.expansion_cap < declared
+        result.truncated = True
+        result.rejected.append(
+            RejectedMember(
+                name,
+                Rejection.PADDED if padded else Rejection.SIZE,
+                f"archive exceeds the total uncompressed budget (declared {declared} bytes)",
+            )
+        )
+        return True
+
+    @staticmethod
     def over_elided(result: ExtractionResult, limits: Limits, name: str, elided: int) -> bool:
         """Whether the identical-block runs of this member, or of the archive with it, pass their own
         ceilings: filler is read and metered apart from the expansion cap, but a zero bomb ends here."""

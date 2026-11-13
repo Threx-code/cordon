@@ -481,6 +481,8 @@ class ArchiveReader:
                         )
                         break
 
+                    if ByteBudget.declared_over_budget(result, limits, member.name, member.size):
+                        break  # a sequential stream would be inflated through to reach the next header
                     ArchiveReader._tar_member(archive, member, limits, result)
 
             except (ArchiveError, tarfile.TarError, OSError, ValueError, EOFError) as exc:
@@ -714,6 +716,8 @@ class ArchiveReader:
         name: str,
     ) -> bool:
         """Reject a member before reading it, where the declared size allows."""
+        if ByteBudget.declared_over_budget(result, limits, name, declared):
+            return True
         if declared > ArchiveReader.member_limit(limits):
             # A zip states each member's compressed size: sixty megabytes declared from sixty
             # kilobytes stored is padding, refused on its face before a byte is inflated.
