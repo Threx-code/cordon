@@ -327,3 +327,48 @@ class TestTheChainIsTheSamePairing:
             f"subprocess.{RUN}([target])\n"
         )
         assert self.CHAIN in self.rules(tmp_path, init)
+
+
+class TestAValueOnlyMeasuredOrLogged:
+    """A decoded value only counted, matched, logged or read as a mapping is not handed to anything
+    that may run it (0.8.0 benign: a checksum `sum(ord(c) ...)` over a decoded licence, a regex over a
+    decoded report, a logger line). A call that may run it -- one this does not know, `map` with a
+    function, a fetch of it -- still excuses nothing."""
+
+    @pytest.mark.parametrize(
+        "use",
+        [
+            "total = sum(ord(c) for c in chr(65) + raw.decode())",
+            "n = int(raw[:4]) + abs(-1) + max(range(3))",
+            "found = re.search(r'v[0-9]+', raw.decode())",
+            "log.info('got %d bytes', len(raw)); logging.debug(raw)",
+            "size = math.ceil(len(raw) / 8); head = struct.unpack('>I', raw[:4])",
+            "meta = json.loads(raw); name = meta.get('name'); keys = list(meta.keys())",
+        ],
+        ids=["builtins", "numbers", "regex", "logs", "math-struct", "mapping-reads"],
+    )
+    def test_a_run_beside_it_is_excused(self, use: str) -> None:
+        source = (
+            "import base64, subprocess, re, logging, math, struct, json\n"
+            f"raw = base64.{DECODE}(blob)\n{use}\n"
+            f"done = subprocess.{RUN}(['git', 'status'], capture_output=True)\n"
+        )
+        assert excused(source)
+
+    @pytest.mark.parametrize(
+        "use",
+        [
+            "list(map(exec, raw.decode().splitlines()))",
+            "requests.get(raw.decode())",
+            "plugin.info(raw)",
+            "handler(raw).get('x')",
+        ],
+        ids=["map-with-a-function", "fetched", "a-non-logger-info", "a-call-of-it"],
+    )
+    def test_a_call_that_may_run_it_excuses_nothing(self, use: str) -> None:
+        source = (
+            "import base64, subprocess, requests\n"
+            f"raw = base64.{DECODE}(blob)\n{use}\n"
+            f"done = subprocess.{RUN}(['git', 'status'], capture_output=True)\n"
+        )
+        assert not excused(source)
