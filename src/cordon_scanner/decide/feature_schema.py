@@ -121,6 +121,14 @@ class FeatureSchema:
             "fs1-ea0fb02ccf3bb099",
             "tests/unit/detect/test_silent_drops.py::TestTheFlowFactsAreUnchanged",
         ),
+        # The package place (`code_package_*`, measure-only) and a missing worker document being a gap,
+        # not an exit 2 (`ReachedFlows.of`). A user's scan computes no code feature, before or after; a
+        # measurement run gives every feature it gave, with the same values, and the package ones besides.
+        # Identity: test_code_features.py::TestThePackagePlaceAddsOnly.
+        "fs1-1f5e602f470b9e3a": (
+            "fs1-ea0fb02ccf3bb099",
+            "tests/unit/detect/code/test_code_features.py::TestThePackagePlaceAddsOnly",
+        ),
     }
 
     @staticmethod
@@ -284,7 +292,7 @@ class FeatureScope:
 
     #: Folded names keep these prefixes, so a folded measure-only feature is caught too.
     MEASURE_ONLY: ClassVar[re.Pattern[str]] = re.compile(
-        r"^pkg:(?:code_(?:install|import|closure)_(?:api|apih|tok)_|exe_)"
+        r"^pkg:(?:code_(?:install|import|closure|package)_(?:api|apih|tok)_|exe_)"
     )
 
     @staticmethod

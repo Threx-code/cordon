@@ -178,6 +178,12 @@ class ReachedFlows:
                 if path is not None:
                     files.append((path, ReachedFlows._whole(unit)))
             out[place] = files
+        # The unit's every Python file, reached or not (measure-only, `CodeFeatures.PLACES`).
+        out["package"] = [
+            (unit.path, ReachedFlows._whole(unit))
+            for unit in units
+            if unit.path.rsplit("!", 1)[-1].lower().endswith(".py")
+        ]
         return out
 
     @staticmethod

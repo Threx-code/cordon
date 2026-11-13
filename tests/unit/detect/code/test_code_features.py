@@ -277,3 +277,110 @@ class TestShapeIsLinear:
         # Letters, dots and dashes the domain test reads, neither hex nor a base64 run.
         assert CodeFeatures.shape("g.h-" * 500_000) == "LONG_STRING"
         assert time.process_time() - started < 5
+
+
+class TestThePackagePlace:
+    """`code_package_*`: every Python file of the unit, reached or not. A source distribution's import
+    entry and library closure are often one file or none, so the three places read almost none of its
+    code (30 PyPI packages: 0 or 1 files reached each). Measure-only, like the other places."""
+
+    FILES = (
+        ("pkg/__init__.py", PY),
+        ("pkg/unreached.py", "import socket\nsocket.create_connection(('h', 1))\nos.system('x')\n"),
+        ("pkg/readme.txt", "not python"),
+        ("pkg/index.js", JS),
+    )
+
+    @staticmethod
+    def ctx() -> object:
+        return SimpleNamespace(
+            install_hook_paths=frozenset(),
+            install_entry_paths=frozenset(),
+            import_entry_paths=frozenset({"pkg/__init__.py"}),
+            library_closure_paths=frozenset(),
+        )
+
+    @classmethod
+    def units(cls) -> list[FileUnit]:
+        return [FileUnit(content=FileContent.from_bytes(p, t.encode())) for p, t in cls.FILES]
+
+    def test_every_python_file_is_a_source_and_nothing_else(self) -> None:
+        got = ReachedFlows.sources(self.units(), self.ctx())  # type: ignore[arg-type]
+        assert [path for path, _ in got["package"]] == ["pkg/__init__.py", "pkg/unreached.py"]
+        assert [path for path, _ in got["import"]] == ["pkg/__init__.py"]
+
+    def test_an_unreached_file_is_read_under_the_package_place_only(self) -> None:
+        keys = CodeFeatures.of({"package": [("pkg/unreached.py", self.FILES[1][1].encode())]})
+        assert any(k.startswith("code_package_tok_") for k in keys)
+        assert not any(k.startswith(("code_import_", "code_closure_")) for k in keys)
+
+    def test_a_users_scan_does_not_make_them(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv(ReachedFlows.MEASURE, raising=False)
+        got = ReachedFlows.of(self.units(), self.ctx(), {})  # type: ignore[arg-type]
+        assert not any(k.startswith("code_") for k in got)
+
+    def test_a_measurement_run_makes_them(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv(ReachedFlows.MEASURE, "1")
+        got = ReachedFlows.of(self.units(), self.ctx(), {})  # type: ignore[arg-type]
+        assert any(k.startswith("code_package_tok_") for k in got)
+        assert "code_package_api_mod_socket" not in got  # `socket` is not on the named list
+        assert any(k.startswith("code_package_apih_") for k in got)
+
+    def test_the_same_files_give_the_same_features(self) -> None:
+        files = [(p, t.encode()) for p, t in self.FILES if p.endswith(".py")]
+        assert CodeFeatures.of({"package": files}) == CodeFeatures.of({"package": list(files)})
+
+    @pytest.mark.parametrize("size", [1, 7, 64, 1000])
+    def test_a_file_read_in_windows_gives_the_features_it_gives_whole(self, size: int) -> None:
+        data = (PY * 12).encode()
+
+        def windows():
+            for start in range(0, len(data), size):
+                yield data[start : start + size]
+
+        whole = CodeFeatures.of({"package": [("x.py", data)]})
+        assert CodeFeatures.of({"package": [("x.py", windows)]}) == whole
+
+    def test_files_may_be_given_lazily_one_at_a_time(self) -> None:
+        files = [(p, t.encode()) for p, t in self.FILES if p.endswith(".py")]
+        assert CodeFeatures.of({"package": iter(files)}) == CodeFeatures.of({"package": files})
+
+    def test_no_string_value_appears_in_any_key(self) -> None:
+        keys = " ".join(CodeFeatures.of({"package": [("pkg/a.py", PY.encode())]}))
+        assert not any(marker in keys for marker in MARKERS)
+        assert "code_package_" in keys
+
+    def test_a_literal_changes_nothing_but_its_shape(self) -> None:
+        one = CodeFeatures.of({"package": [("a.py", b"x = 'aaaa'\nrun(x)\n")]})
+        two = CodeFeatures.of({"package": [("a.py", b"x = 'zzzzzz'\nrun(x)\n")]})
+        assert one == two
+
+
+class TestThePackagePlaceAddsOnly:
+    """The identity test of `FeatureSchema.SAME_AS` for the package place (and for a miss in the feature
+    step being a gap): a user's scan computes no code feature, before or after; a measurement run gives
+    every feature it gave, with the same values, and the `code_package_*` ones besides."""
+
+    @staticmethod
+    def measured(monkeypatch: pytest.MonkeyPatch, places: tuple[str, ...]) -> dict[str, float]:
+        monkeypatch.setenv(ReachedFlows.MEASURE, "1")
+        monkeypatch.setattr(CodeFeatures, "PLACES", places)
+        return ReachedFlows.of(  # type: ignore[arg-type]
+            TestThePackagePlace.units(), TestThePackagePlace.ctx(), {}
+        )
+
+    def test_a_measurement_run_gives_what_it_gave_and_the_package_features_besides(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        earlier = self.measured(monkeypatch, ("install", "import", "closure"))
+        now = self.measured(monkeypatch, ("install", "import", "closure", "package"))
+        assert earlier
+        assert {k: v for k, v in now.items() if not k.startswith("code_package_")} == earlier
+        assert any(k.startswith("code_package_") for k in now)
+
+    def test_a_users_scan_computes_no_code_feature(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv(ReachedFlows.MEASURE, raising=False)
+        got = ReachedFlows.of(  # type: ignore[arg-type]
+            TestThePackagePlace.units(), TestThePackagePlace.ctx(), {}
+        )
+        assert not any(k.startswith("code_") for k in got)
