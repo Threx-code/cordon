@@ -1052,11 +1052,15 @@ class VerdictTrain:
 
         for r in data:
             add_only = r["area"] in add_only_areas
-            floor = content_block(r) if add_only else False  # add-only ORs with the content gate
-            r["kept"] = (gate_trip if add_only else untouched_trip)(r, content_only=True) or floor
+            # Not `floor`: that name holds the rule list the model ships, and a row loop that rebound
+            # it wrote the last row's bool into every model file (a PyPI scan then crashed reading it).
+            row_gate = content_block(r) if add_only else False  # add-only ORs with the content gate
+            r["kept"] = (gate_trip if add_only else untouched_trip)(
+                r, content_only=True
+            ) or row_gate
             r["kept_intel"] = (gate_trip if add_only else untouched_trip)(
                 r, content_only=False
-            ) or floor
+            ) or row_gate
             r["has_code"] = any(k.startswith("r:") for k in r["f"])
 
         groups = {x: [i for i, r in enumerate(work) if r["area"] == x] for x in a.separate}
