@@ -28,10 +28,17 @@ from typing import Any
 
 from cordon_scanner.foundation.errors import LimitError
 
+#: The most a file may be read in windows, and a scan may read in all: in code, so configuration -- a
+#: repository's, an organisation's -- cannot raise a bound until it stops bounding (`Limits.max_stream_*`).
+#: Module constants, not fields: a field would be configuration.
+HARD_MAX_STREAM_BYTES = 16 * 1024**3
+HARD_MAX_STREAM_TOTAL_BYTES = 64 * 1024**3
+
 _LIMIT_RANGES: dict[str, tuple[float, float | None, type]] = {
     # name: (minimum, maximum or None, accepted type)
     "max_file_bytes": (1, None, int),
-    "max_stream_bytes": (0, None, int),
+    "max_stream_bytes": (0, HARD_MAX_STREAM_BYTES, int),
+    "max_stream_total_bytes": (1, HARD_MAX_STREAM_TOTAL_BYTES, int),
     "max_member_bytes": (1, None, int),
     "max_line_bytes": (1, None, int),
     "max_total_bytes": (1, None, int),
@@ -79,13 +86,24 @@ class Limits:
     any hand-written source file, so the ceiling is reached by generated
     artefacts and by deliberate padding, not by real code."""
 
-    max_stream_bytes: int = 512 * 1024 * 1024
+    max_stream_bytes: int = 4 * 1024 * 1024 * 1024
     """How much of a file over `max_file_bytes` is read at all. Its first `max_file_bytes` get
     every rule, and the rest is read in windows of `max_file_bytes` by every rule that judges text
     (`core/windows.py`), from disk a window at a time -- so this bounds time, not memory. An
     editor extension ships its code as one bundle, and Amazon Q 1.84.0's 21 MB bundle carried the
     prompt that told the agent to wipe the machine near its end; a padded payload can sit anywhere.
-    Zero turns the windows off, and a larger file is read to this point and reported as such."""
+    Zero turns the windows off, and a larger file is read to this point and reported as such: the
+    scan is incomplete (exit 4), since padding a payload past the limit is the evasion. Four GiB: a
+    member the archive budgets admit (`max_uncompressed_bytes`, the elision ceilings) is read to its
+    end, where 512 MiB left a 625 MB zero-heavy member half unread. At most 16 GiB, in code.
+    Not the bound of a whole copy in memory for the binary readers, which has its own ceiling
+    (`WholeBytes.COPY_CEILING`): a window is bounded in memory, a copy is not."""
+
+    max_stream_total_bytes: int = 16 * 1024 * 1024 * 1024
+    """The most one scan reads in windows, summed over its files and its workers
+    (`foundation/files/stream_budget.py`). A file the total cannot cover is not read in windows and
+    is reported, so the scan is incomplete: a bound on the time a hostile tree can cost, never a
+    quiet skip. Sixteen GiB is hours of reading past an ordinary scan; at most 64 GiB, in code."""
 
     max_member_bytes: int = 64 * 1024 * 1024
     """The largest archive member held in memory whole. An archive is read into memory, never
@@ -298,4 +316,11 @@ depth runs at pre-push and in CI where the wait is already expected.
 """
 
 
-__all__ = ["DEFAULT_LIMITS", "DEFAULT_MAX_INTEL_AGE", "HOOK_LIMITS", "Limits"]
+__all__ = [
+    "DEFAULT_LIMITS",
+    "DEFAULT_MAX_INTEL_AGE",
+    "HARD_MAX_STREAM_BYTES",
+    "HARD_MAX_STREAM_TOTAL_BYTES",
+    "HOOK_LIMITS",
+    "Limits",
+]

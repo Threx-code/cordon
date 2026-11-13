@@ -363,7 +363,7 @@ class ArchiveStages:
         for unit in list(units):
             if unit.content.is_binary or not UnparsedSource.runs_as_source(unit.path, running):
                 continue
-            decision = WindowPass.unparsed_decision(unit) or UnparsedSource.decide(
+            decision = WindowPass.unparsed_decision(unit, ctx.copy_budget) or UnparsedSource.decide(
                 unit.content.text
             )
             if decision.kind == "gap":

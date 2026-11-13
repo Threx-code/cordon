@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import contextlib
 import gc
+import time
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -26,10 +27,13 @@ from cordon_scanner.analysis.python.unparsed_source import Decision, UnparsedSou
 from cordon_scanner.detect.base import FileUnit
 from cordon_scanner.foundation.collector import ScanCaches
 from cordon_scanner.foundation.content import FileContent
+from cordon_scanner.foundation.files.stream_budget import StreamBudget
 from cordon_scanner.foundation.files.windows import OVERLAP, Windows, WindowSourceChanged
+from cordon_scanner.foundation.models import Severity
+from cordon_scanner.foundation.results import OperationalFinding
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
+    from collections.abc import Callable, Iterable, Iterator
 
     from cordon_scanner.foundation.models import Finding
 
@@ -41,6 +45,10 @@ STATEMENT_CUTS: dict[str, Callable[[bytes], int]] = {"python": PythonStatements.
 
 STRUCTURAL_DETECTORS = frozenset({"capability", "secrets"})
 """Window detectors with a syntax-tree tier: the ones a statement-aligned window adds to."""
+
+
+class OutOfTime(Exception):
+    """The scan's time budget was spent between two windows of a file."""
 
 
 class WindowPass:
@@ -88,10 +96,19 @@ class WindowPass:
         detectors: Iterable[Any],
         inspect: Callable[[Any, Any], Iterable[Finding]],
         already: Iterable[Finding],
+        *,
+        budget: str | None = None,
+        gap: Callable[[Finding], Finding] | None = None,
+        deadline: float | None = None,
     ) -> tuple[list[Finding], bool]:
         """What the window-reading detectors find past the prefix of `unit`'s file, placed in the
         whole file and without what `already` holds. False as the second value when the file could
-        not be read again as the same file: the caller reports it, as an unreadable file is."""
+        not be read again as the same file: the caller reports it, as an unreadable file is.
+
+        `budget` is the scan's budget directory: the file's windows are charged to the scan's total
+        (`limits.max_stream_total_bytes`) first, and a file it cannot cover is not read, said by a
+        gap through `gap` (the scan's accumulator's), never passed quietly. `deadline` (this process's
+        monotonic clock) is the scan's time budget: no window is read past it, and the file is a gap."""
         content = unit.content
         source = content.window_source
         if source is None:
@@ -99,15 +116,20 @@ class WindowPass:
         picked = [d for d in detectors if getattr(d, "id", "") in WINDOW_DETECTORS]
         if not picked:
             return [], True
+        if not WindowPass.charged(unit, budget):
+            return ([] if gap is None else [gap(WindowPass.refused(unit))]), True
         seen = {(f.rule_id, f.location.line) for f in already}
         out: list[Finding] = []
         try:
-            windows = Windows.iterate(
-                source,
-                content.raw,
-                size=content.limits.max_file_bytes,
-                overlap=OVERLAP,
-                limit=content.limits.max_stream_bytes,
+            windows = WindowPass._timed(
+                Windows.iterate(
+                    source,
+                    content.raw,
+                    size=content.limits.max_file_bytes,
+                    overlap=OVERLAP,
+                    limit=content.limits.max_stream_bytes,
+                ),
+                deadline,
             )
             cut = STATEMENT_CUTS.get(unit.language or "")
             # A plain window of such a file is cut inside a statement as its prefix is: not parsed
@@ -121,17 +143,22 @@ class WindowPass:
                 # otherwise be parsed on top of them (583 MB held, an 857 MB peak at 3 MiB windows).
                 ScanCaches.after_scan()
                 gc.collect()
-                aligned = Windows.aligned(
-                    source,
-                    size=content.limits.max_file_bytes,
-                    limit=content.limits.max_stream_bytes,
-                    cut=cut,
+                aligned = WindowPass._timed(
+                    Windows.aligned(
+                        source,
+                        size=content.limits.max_file_bytes,
+                        limit=content.limits.max_stream_bytes,
+                        cut=cut,
+                    ),
+                    deadline,
                 )
                 WindowPass._read(
                     unit, source, aligned, structural, inspect, seen, out, release=True
                 )
         except WindowSourceChanged:
             return out, False
+        except OutOfTime:
+            return (out if gap is None else [*out, gap(WindowPass.out_of_time(unit))]), True
         return out, True
 
     @staticmethod
@@ -200,17 +227,72 @@ class WindowPass:
                 gc.collect()
 
     @staticmethod
-    def unparsed_decision(unit: Any) -> Decision | None:
+    def _timed(windows: Iterable[Any], deadline: float | None) -> Iterator[Any]:
+        """`windows`, each read only while the scan has time: past `deadline`, `OutOfTime`."""
+        for window in windows:
+            if deadline is not None and time.monotonic() >= deadline:
+                raise OutOfTime
+            yield window
+
+    @staticmethod
+    def out_of_time(unit: Any) -> Finding:
+        """What a file whose windows the scan's time budget cut short had examined, said exactly."""
+        return OperationalFinding.build(
+            path=unit.path,
+            rule_id="OPERATIONAL.SCAN.TIMEOUT",
+            message=(
+                f"The scan's time budget was spent while this {unit.content.size}-byte file was read "
+                "in windows: the rest of it was not read."
+            ),
+            remediation="Rescan with more time (--timeout), or on a less loaded machine.",
+            severity=Severity.MEDIUM,
+        )
+
+    @staticmethod
+    def charged(unit: Any, budget: str | None) -> bool:
+        """Whether the scan's total covers reading this file's windows (`StreamBudget`), taking them."""
+        content = unit.content
+        reach = min(content.size, content.limits.max_stream_bytes)
+        return StreamBudget.charge(
+            budget, max(0, reach - len(content.raw)), content.limits.max_stream_total_bytes
+        )
+
+    @staticmethod
+    def refused(unit: Any) -> Finding:
+        """What a file the scan's stream total could not cover had examined, said exactly."""
+        content = unit.content
+        return OperationalFinding.build(
+            path=unit.path,
+            rule_id="OPERATIONAL.FILE.TRUNCATED",
+            message=(
+                f"Only the first {len(content.raw)} bytes of this {content.size}-byte file were "
+                "examined: the scan had already read limits.max_stream_total_bytes "
+                f"({content.limits.max_stream_total_bytes}) bytes of files in windows, so the rest of "
+                "it was not read."
+            ),
+            remediation=(
+                "Raise limits.max_stream_total_bytes (at most 64 GiB), or scan fewer oversized files "
+                "at once, or exclude the file deliberately if it is a known artefact."
+            ),
+        )
+
+    @staticmethod
+    def unparsed_decision(unit: Any, budget: str | None = None) -> Decision | None:
         """What `UnparsedSource` decides about a Python file read in windows, from its statement-aligned
         windows rather than its prefix (which is cut inside a statement and does not parse): `parses`
         when every window parses and the windows cover the file, else the first window that does not
         (a reading of it counts as a gap: its text is a window, not the file). A file that does not parse
         and carries an act token in ANY window stays a gap, as the file as a whole would (cordon-47). None
-        when `unit` is not a windowed Python file, or the file could not be read again as the same file."""
+        when `unit` is not a windowed Python file, or the file could not be read again as the same file,
+        or the scan's stream total (`budget`) does not cover reading it again."""
         content = unit.content
         source = content.window_source
         if not content.truncated or source is None or getattr(unit, "language", None) != "python":
             return None
+        if not WindowPass.charged(unit, budget):
+            return (
+                None  # the scan's total does not cover reading it again: the prefix decides, a gap
+            )
         covered, failed, act = 0, None, False
         try:
             for window in Windows.aligned(
