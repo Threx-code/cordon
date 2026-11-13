@@ -45,17 +45,6 @@ class DropPointLoot:
     """The loot half and the destination half of `SUSPECT.EXFIL.DROP_POINT.001`, read by the tree."""
 
     LABEL_RULE: ClassVar[str] = "INTEL.EGRESS.DROP_POINT.001"
-    #: What a template is: markup rendered into a page or a config, not code run on its own.
-    TEMPLATE_SUFFIXES: ClassVar[tuple[str, ...]] = (
-        ".html",
-        ".htm",
-        ".j2",
-        ".jinja",
-        ".jinja2",
-        ".tmpl",
-        ".mustache",
-        ".hbs",
-    )
     #: Callees that run a string: the text handed to them is code, whatever it looks like.
     RUNNERS: ClassVar[frozenset[str]] = frozenset(
         {
@@ -231,7 +220,7 @@ class DropPointLoot:
             return False
         if LegitimateUse.a_setting(content, hit):
             return False
-        if content.path.lower().endswith(cls.TEMPLATE_SUFFIXES):
+        if LegitimateUse.is_template_or_markup(content.path):
             return False
         tree = cls.tree(content, language)
         if tree is None:
