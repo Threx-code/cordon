@@ -318,6 +318,7 @@
   "detect/code/credential_sweep": "detect/code/credential_sweep",
   "detect/code/decode_run": "detect/code/decode_run",
   "detect/code/download_flow": "detect/code/download_flow",
+  "detect/code/flows/download_reach": "detect/code/flows/download_reach",
   "detect/code/features": "detect/code/features",
   "detect/code/go_runs": "detect/code/go_runs",
   "detect/code/install_payload": "detect/code/install_payload",

@@ -184,6 +184,7 @@ class DownloadedLoaderRuns:
         try:
             tree = PythonSyntax.parse(content.text)
         except (SyntaxError, ValueError):
+            # S2: no run is added for a file that does not parse (covered by SOURCE.UNPARSED at every running file)
             return hits
         have = {h.line for h in hits if h.capability is Capability.EXECUTE}
         lines = content.text.split("\n")

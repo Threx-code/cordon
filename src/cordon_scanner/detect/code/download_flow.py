@@ -30,6 +30,7 @@ import shlex
 from typing import ClassVar
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+from cordon_scanner.detect.code.flows.download_reach import DownloadReach
 
 
 class ShellDownloads:
@@ -333,7 +334,7 @@ class ShellDownloads:
         return "."
 
 
-class PythonDownloads:
+class PythonDownloads(DownloadReach):
     """The downloaded-bytes flow in a Python file, read from its syntax tree."""
 
     _FETCH_CALLS: ClassVar[frozenset[str]] = frozenset(
@@ -405,23 +406,10 @@ class PythonDownloads:
         self.constants: dict[str, str] = {}
         self.inside_download = False
         """The working directory is a downloaded tree (`os.chdir` into a checkout)."""
-        self.imported = self._import_aliases(tree)
+        self.imported = DownloadReach.import_aliases(tree)
         """Name -> (module, original name) for what a file imports under another name or as a bare
         name (`from urllib.request import urlopen as Z`, `import requests as rq`, `from requests import
         get`): a download reached through an alias is the same download."""
-
-    @staticmethod
-    def _import_aliases(tree: ast.AST) -> dict[str, tuple[str, str]]:
-        found: dict[str, tuple[str, str]] = {}
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.module:
-                for alias in node.names:
-                    found[alias.asname or alias.name] = (node.module.rsplit(".", 1)[-1], alias.name)
-            elif isinstance(node, ast.Import):
-                for alias in node.names:
-                    if alias.asname:
-                        found[alias.asname] = ("", alias.name.rsplit(".", 1)[-1])
-        return found
 
     @classmethod
     def runs(cls, text: str) -> list[int] | None:
@@ -459,63 +447,9 @@ class PythonDownloads:
             hits = flow._walk()
         if hits or flow._leaves(tree, False, frozenset()):
             return False
-        seen = flow._fetch_lines()
         return (
-            flow._every_egress_is_seen(egress_lines, seen)
-            and not flow._runs_a_program_it_does_not_read()
+            flow.every_egress_is_seen(egress_lines) and not flow.runs_a_program_it_does_not_read()
         )
-
-    _SHELL_DOWNLOAD: ClassVar[re.Pattern[str]] = re.compile(
-        r"(?i)curl|wget|powershell|invoke-webrequest|\biwr\b|certutil|bitsadmin|downloadfile|downloadstring"
-        r"|https?://|ftp://|urlretrieve|urlopen"
-    )
-    _STARTS: ClassVar[frozenset[str]] = frozenset(
-        {"system", "popen", "run", "call", "Popen", "check_output", "check_call", "getoutput",
-         "getstatusoutput", "startfile", "create_subprocess_shell", "create_subprocess_exec"}
-    )  # fmt: skip
-
-    def _every_egress_is_seen(self, egress_lines: frozenset[int], seen: frozenset[int]) -> bool:
-        """Each egress line of the window holds a recognised download, or holds no call at all (an
-        import, a URL in a string): a call the flow cannot name is a fetch it did not follow."""
-        call_lines = {n.lineno for n in ast.walk(self.tree) if isinstance(n, ast.Call)}
-        return all(line in seen or line not in call_lines for line in egress_lines)
-
-    def _fetch_lines(self) -> frozenset[int]:
-        """Lines holding a call the flow recognises as a download."""
-        lines: set[int] = set()
-        for node in ast.walk(self.tree):
-            if isinstance(node, ast.Call) and self._is_fetch_call(node):
-                lines.update(range(node.lineno, (node.end_lineno or node.lineno) + 1))
-        return frozenset(lines)
-
-    def _is_fetch_call(self, call: ast.Call) -> bool:
-        owner, name = self._callee(call)
-        return name in ("urlopen", "urlretrieve") or (
-            name in ("get", "post", "request", "stream") and owner in self._FETCH_MODULES
-        )
-
-    def _runs_a_program_it_does_not_read(self) -> bool:
-        """`exec`/`eval`/`compile` of a string literal, or a process started with a string that names a
-        download: the program is text the outer tree does not parse."""
-        for node in ast.walk(self.tree):
-            if not isinstance(node, ast.Call):
-                continue
-            owner, name = self._callee(node)
-            if name in ("exec", "eval", "compile") and not owner:
-                first = node.args[0] if node.args else None
-                if isinstance(first, ast.Constant | ast.JoinedStr) and not (
-                    isinstance(first, ast.Constant) and not isinstance(first.value, str)
-                ):
-                    return True
-            if name in self._STARTS and any(
-                isinstance(sub, ast.Constant)
-                and isinstance(sub.value, str)
-                and self._SHELL_DOWNLOAD.search(sub.value)
-                for arg in node.args
-                for sub in ast.walk(arg)
-            ):
-                return True
-        return False
 
     #: Calls that only read a value: what is printed, measured, converted, parsed or logged does not
     #: run and does not keep it.
@@ -769,8 +703,8 @@ class PythonDownloads:
         if name == "chmod" and owner in ("os", "") and len(call.args) > 1:
             # Making a downloaded file executable has one purpose.
             return self._executable_mode(call.args[1]) and self._runs_arg(call.args[0])
-        if name in self._LOADER_RUNS:
-            return self._loader_runs_a_download(call, name, owner, args)
+        if name in self.LOADER_RUNS:
+            return self.loader_runs_a_download(call, name, owner, args)
         if name in self._RUNNERS and owner in (
             "os",
             "subprocess",
@@ -783,34 +717,6 @@ class PythonDownloads:
                 return False
             return any(self._runs_arg(a) or self._shell_runs(a) for a in args)
         return False
-
-    #: A file run as a program in this process: `runpy.run_path` / `run_module`, a loader's
-    #: `exec_module(module)`, `SourceFileLoader(name, path).load_module()`.
-    _LOADER_RUNS: ClassVar[frozenset[str]] = frozenset({"run_module", "exec_module", "load_module"})
-
-    def _loader_runs_a_download(
-        self, call: ast.Call, name: str, owner: str, args: list[ast.expr]
-    ) -> bool:
-        """Whether a loader run is handed a downloaded file: `exec_module(m)` where `m` was built from
-        a spec for a downloaded path, `load_module()` on a loader built from one, `run_module` of a
-        module name taken from a download. A plugin loader on a local path is not: nothing in the
-        call's arguments or receiver is downloaded."""
-        if name == "run_module":
-            return owner == "runpy" and any(
-                self._runs_arg(a) or self._names_a_downloaded_module(a) for a in args
-            )
-        receiver = call.func.value if isinstance(call.func, ast.Attribute) else None
-        return any(self._runs_arg(a) for a in args) or (
-            name == "load_module" and receiver is not None and self._runs_arg(receiver)
-        )
-
-    def _names_a_downloaded_module(self, node: ast.AST) -> bool:
-        """A module name (`"x"`, `"pkg.x"`) whose file is one the flow saw written from a download."""
-        name = self._path(node) if isinstance(node, ast.Constant | ast.Name) else ""
-        stem = name.rsplit(".", 1)[-1]
-        return bool(stem) and any(
-            p.rsplit("/", 1)[-1].removesuffix(".py") == stem for p in self.paths if p
-        )
 
     @staticmethod
     def _executable_mode(node: ast.AST) -> bool:
