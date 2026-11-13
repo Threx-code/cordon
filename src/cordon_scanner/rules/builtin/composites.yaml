@@ -17,7 +17,7 @@ rules:
   # Second-stage loaders
   # ---------------------------------------------------------------------
   - id: SUSPECT.DECODE_EXEC.001
-    version: 1.2.0
+    version: 1.3.0
     category: suspicious
     severity: high
     confidence: medium
@@ -84,7 +84,9 @@ rules:
         # loader stub it compiles, and nothing there decompresses (pyc-zipper 1.0.8, benign rescan).
         - all:
             - rule: AST.PY.DECOMPRESS
-            - capability: execute
+            # A parsed execution too: the word in a string (`"eval ("` in a literal) is not one,
+            # and paired with a real decompression it blocked an evaluation script (paper-preflight 0.8).
+            - rule: AST.PY.EXECUTE
 
   # ---------------------------------------------------------------------
   # Exfiltration

@@ -246,3 +246,16 @@ class TestCompressedCodeRun:
             f"subprocess.{RUN}(['tar', '-xf', 'tool.tar'])\n"
         )
         assert "SUSPECT.DECODE_EXEC.001" not in self.rules(tmp_path, init)
+
+    def test_the_word_in_a_string_and_a_results_key_do_not_pair(self, tmp_path) -> None:
+        # An evaluation script: a real decompression, the word in a literal, and a results dict
+        # keyed by it -- none of which runs anything (paper-preflight 0.8, 0.8.0 benign).
+        init = (
+            "import gzip, json\n"
+            "text = gzip.decompress(raw).decode()\n"
+            f"HINT = 'the checker calls {self.EXEC} (x) on each case'\n"
+            "payload = {}\n"
+            f"payload['{self.EXEC}'] = json.loads(text)\n"
+            f"total = payload['{self.EXEC}'].get('n', 0)\n"
+        )
+        assert "SUSPECT.DECODE_EXEC.001" not in self.rules(tmp_path, init)

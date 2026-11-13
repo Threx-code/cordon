@@ -714,6 +714,19 @@ class PythonAnalyzer(
             return False
         return not isinstance(node, ast.Attribute)
 
+    def _keyed_value_not_function(self, node: ast.Subscript) -> bool:
+        """Whether `x["eval"]` here is plainly not a function reached by name: a key written or
+        deleted (`payload["eval"] = {}` stores a value; it reaches nothing), or a value whose
+        non-dunder attribute is read (`payload["eval"].get(...)`: a builtin function has only dunder
+        attributes, so `__builtins__["exec"].__call__(code)` stays a finding). A results dict
+        keyed "eval" blocked a legitimate evaluation script (paper-preflight 0.8, 0.8.0 benign)."""
+        if isinstance(node.ctx, ast.Store | ast.Del):
+            return True
+        if self._module_tree is None:
+            return False
+        parent = PythonSyntax.parents(self._module_tree).get(id(node))
+        return isinstance(parent, ast.Attribute) and not parent.attr.startswith("__")
+
     def _subscript(self, node: ast.Subscript) -> None:
         """`__builtins__["ex" + "ec"]` and `globals()["exec"]`."""
         container = self._dotted(node.value)
@@ -723,6 +736,8 @@ class PythonAnalyzer(
         key = PythonFacts.constant(node.slice)
 
         if key is not None:
+            if self._keyed_value_not_function(node):
+                return
             if key in PRIMITIVES:
                 self._record(PRIMITIVES[key], node, key)
             elif container and f"{container}.{key}" in PRIMITIVES:
