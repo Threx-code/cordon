@@ -549,12 +549,7 @@ class CapabilityDetector(BaseDetector):
         in_hook = ctx.in_install_hook(unit.path)
         in_ci = ctx.in_ci_hook(unit.path)
         in_consumer = ctx.in_consumer_install(unit.path)
-        # Read by the `install_entry` and `import_entry` terms; the evaluator is this file's own.
-        evaluator = CompositeEvaluator(
-            in_entry=unit.path in ctx.install_entry_paths,
-            in_import_entry=unit.path in ctx.import_entry_paths,
-            confusion=bool(ctx.confusion_version),
-        )
+        evaluator = CapabilityDetector._evaluator(unit, ctx)
         # Install-time context is decided per WINDOW, not per file. A file is in
         # the closure because a hook imports it, and importing a module defines
         # its functions without calling them -- so a pair of capabilities inside
@@ -620,6 +615,15 @@ class CapabilityDetector(BaseDetector):
             ).finding()
             if finding is not None:
                 yield finding
+
+    @staticmethod
+    def _evaluator(unit: FileUnit, ctx: ScanContext) -> CompositeEvaluator:
+        """This file's own evaluator: what its `install_entry` and `import_entry` terms read."""
+        return CompositeEvaluator(
+            in_entry=unit.path in ctx.install_entry_paths,
+            in_import_entry=unit.path in ctx.import_entry_paths,
+            confusion=bool(ctx.confusion_version),
+        )
 
     @staticmethod
     def _window(

@@ -624,28 +624,22 @@ class CompositeGrading:
 
     def _ceiling_for_credentials_and_material(self) -> tuple[str, Severity] | None:
         """An authentication file, a store read that reaches nothing, rule or test material, an inert literal, documentation."""
-        compiled, ctx, hits, content, in_hook = (
-            self.compiled,
-            self.ctx,
-            self.hits,
-            self.unit.content,
-            self.in_hook,
-        )
+        compiled, ctx, hits = self.compiled, self.ctx, self.hits
+        content, in_hook = self.unit.content, self.in_hook
         ceilinged, ceiling = "", FIXTURE_CEILING
-        if (
-            compiled.rule.id == CompositeRuleIds.CREDENTIAL_STORE_RULE
-            and SampleKinds.names_authentication(content.path)
+        authentication = SampleKinds.names_authentication(content.path)
+        if compiled.rule.id == CompositeRuleIds.CREDENTIAL_STORE_RULE and (
+            authentication or LegitimateUse.is_template_or_markup(content.path)
         ):
-            # A file named for authentication, reading a credential store. See
-            # `core.samples.names_authentication`; scoped to this one rule, because
-            # its premise is a store "this component does not own".
-            ceilinged = "a file whose name says it handles authentication"
-        elif compiled.rule.id == CompositeRuleIds.CREDENTIAL_STORE_RULE and (
-            LegitimateUse.is_template_or_markup(content.path)
-        ):
-            # A store's name and a request in an HTML page or a Jinja template are text a renderer
-            # fills in, not code that reads or sends anything (reviews/pypi-98/20, shape C).
-            ceilinged = "a template or markup file, text rather than code"
+            # A file named for authentication reading a credential store (`core.samples.
+            # names_authentication`; this rule only, its premise being a store "this component does
+            # not own"), or an HTML page or Jinja template: text a renderer fills in, not code that
+            # reads or sends anything (reviews/pypi-98/20, shape C).
+            ceilinged = (
+                "a file whose name says it handles authentication"
+                if authentication
+                else "a template or markup file, text rather than code"
+            )
         elif (
             compiled.rule.id == CompositeRuleIds.CREDENTIAL_STORE_RULE
             and not in_hook
