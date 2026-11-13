@@ -118,10 +118,26 @@ class SettingsFileFindings:
                 yield AgentFinding.at_text(
                     "POLICY.AGENT.AUTO_APPROVE.001", unit, ctx, text, "bypassPermissions"
                 )
-        if settings.get("enableAllProjectMcpServers") is True:
+        if settings.get("enableAllProjectMcpServers") is True and cls._servers_to_approve(
+            unit, ctx
+        ):
             yield AgentFinding.at_text(
                 "POLICY.AGENT.AUTO_APPROVE.001", unit, ctx, text, "enableAllProjectMcpServers"
             )
+
+    @staticmethod
+    def _servers_to_approve(unit: FileUnit, ctx: ScanContext) -> bool:
+        """Whether `enableAllProjectMcpServers` in this file approves anything: the project it sits in
+        declares servers (a `.mcp.json` at its root). It approves what that file declares and nothing
+        else, so a developer's `settings.local.json` shipped in a published package with no `.mcp.json`
+        approves nothing there. A directory or repository is judged as written -- its `.mcp.json` can
+        arrive at any commit -- and so is a file outside a `.claude` directory, whose project is not
+        known."""
+        if not ctx.package_distribution:
+            return True
+        path = unit.content.path.replace("\\", "/")
+        root, found, _ = path.rpartition(".claude/")
+        return not found or f"{root}.mcp.json" in ctx.tree_paths
 
     _HELPER_KEYS: Final = (
         "apiKeyHelper",
