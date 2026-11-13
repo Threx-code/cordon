@@ -241,7 +241,7 @@ class ObfuscationText:
     _SPAN_BREAKERS: ClassVar[frozenset[str]] = frozenset("{}\\")
 
     #: A paragraph of text ends at a line break: a control's effect ends with it.
-    _PARAGRAPH: ClassVar[re.Pattern[str]] = re.compile(r"[\n\r\x1c-\x1e\x85\u2029]")
+    _PARAGRAPH: ClassVar[re.Pattern[str]] = re.compile("[\n\r\x1c-\x1e\x85\u2029]")
 
     @staticmethod
     def every_control_is_inert(raw: bytes) -> bool:
