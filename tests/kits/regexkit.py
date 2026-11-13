@@ -124,6 +124,8 @@ class Sources:
     def patterns() -> tuple[Found, ...]:
         out: list[Found] = []
         for info in pkgutil.walk_packages(cordon_scanner.__path__, "cordon_scanner."):
+            if info.name == "cordon_scanner.__main__":
+                continue  # an entry point with no patterns; imported here it taints `runpy` runs of the CLI
             module = importlib.import_module(info.name)
             short = info.name.removeprefix("cordon_scanner.")
             text = Sources.texts().get(short, "")

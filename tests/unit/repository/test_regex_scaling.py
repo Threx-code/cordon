@@ -13,7 +13,10 @@ each fix, must be flagged, and their fixed forms must not be.
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
+import sys
 
 from kits.regexkit import Listed, Shape, Sources
 
@@ -111,3 +114,27 @@ class TestPatterns:
         assert not called, (
             "a pattern kept as a specification is slow; call the code that replaced it"
         )
+
+
+class TestCollectingThePatternsRunsNoEntryPoint:
+    """The collection imports every module of the package to read its patterns. `cordon_scanner.__main__`
+    is an entry point, not a module with patterns, and a process that has imported it makes every later
+    `runpy.run_module("cordon_scanner", run_name="__main__")` in that pytest process warn, which the
+    suite's warnings-as-errors turns into a failure of the tests that run the CLI that way
+    (tests/unit/detect/binary/test_rule_file_fail_closed.py, test_rule_layers.py)."""
+
+    def test_the_package_entry_point_stays_unimported(self) -> None:
+        code = (
+            "import sys\n"
+            "from kits.regexkit import Sources\n"
+            "assert Sources.patterns()\n"
+            "print('cordon_scanner.__main__' in sys.modules)\n"
+        )
+        done = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            check=True,
+            env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
+        )
+        assert done.stdout.strip() == "False"
