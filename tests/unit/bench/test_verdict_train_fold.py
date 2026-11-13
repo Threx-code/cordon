@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import sys
+from typing import ClassVar
 
 from cordon_scanner.decide.feature_schema import FeatureFold, FeatureRecord
 from support import ROOT as REPO
@@ -19,11 +20,11 @@ from verdict_train import VerdictTrain
 
 
 class VerdictTrainKit:
-    PACKAGE: dict[str, float] = {
+    PACKAGE: ClassVar[dict[str, float]] = {
         "code_import_tok_65541": 2.0,
         "code_import_tok_5": 1.0,
         "files": 3.0,
-    }  # noqa: RUF012
+    }
 
     @staticmethod
     def row(record: dict[str, float] | None = None) -> dict:
