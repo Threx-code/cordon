@@ -304,3 +304,78 @@ class TestAPlatformLookupOrANamedSetting:
         assert not InstallPayload.gate(
             CONSUMER_CODE, True, local, [platform, secret], Fixture.unit(content), Fixture.ctx()
         )
+
+
+class TestARemovalOfThePackagesOwnTree:
+    """D1 (reviews/pypi-98/24): `DESTROY.WIPE.001` in install code is a payload unless every removal in the window
+    targets the package's own tree: a path rooted in `__file__`, the working directory, a relative literal, a temp
+    directory, or a command's output-dir attribute (`self.build_dir`, `build_lib`, `build_temp`, `dist_dir`,
+    `bdist_dir`) that THIS FILE NEVER ASSIGNS (setuptools' finalize step or the user's command line decides it,
+    not the package). A `..` component, an install destination (`self.root`, `self.prefix`), the home directory,
+    an absolute path, argv, the environment, an unresolved name and a shell `rm` keep it a payload."""
+
+    @staticmethod
+    def kept(removal: str, before: str = "") -> bool:
+        lines = [before] if before else []
+        # the argv is a variable: a spawn written out in full is not read as a spawn here
+        steps = [*lines, 'cmd = ["make", "-C", "src"]', "subprocess.call(cmd)", removal]
+        body = "\n        ".join(steps)
+        with tempfile.TemporaryDirectory() as t:
+            root = Fixture.build(t, "os, sys, shutil, subprocess, tempfile", body)
+            return CONSUMER_CODE in Fixture.rules(root)
+
+    def test_a_path_rooted_in_the_package_is_its_own(self) -> None:
+        assert not self.kept('shutil.rmtree(os.path.join(os.path.dirname(__file__), "build"))')
+        assert not self.kept('shutil.rmtree("build")')
+        assert not self.kept('shutil.rmtree(os.path.join(os.getcwd(), "build", "tmp"))')
+
+    def test_a_name_bound_to_such_a_path_is_its_own(self) -> None:
+        before = 'target = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_build")'
+        assert not self.kept("shutil.rmtree(target)", before)
+
+    def test_a_temp_directory_is_the_packages_own(self) -> None:
+        assert not self.kept("shutil.rmtree(tmp)", "tmp = tempfile.mkdtemp()")
+
+    def test_a_command_output_dir_never_assigned_by_the_file_is_its_own(self) -> None:
+        for attr in ("build_dir", "build_lib", "build_temp", "dist_dir", "bdist_dir"):
+            assert not self.kept(f"shutil.rmtree(self.{attr})"), attr
+        assert not self.kept('shutil.rmtree(os.path.join(self.build_lib, "pkg"))')
+
+    # The twins: each removal can reach what the package does not own, and keeps the finding.
+    def test_an_install_destination_keeps_the_finding(self) -> None:
+        assert self.kept("shutil.rmtree(self.root)")
+        assert self.kept("shutil.rmtree(self.prefix)")
+        assert self.kept('shutil.rmtree(os.path.join(self.root, "x"))')
+
+    def test_an_output_dir_the_file_assigns_is_traced_like_any_name(self) -> None:
+        assert self.kept(
+            "shutil.rmtree(self.build_dir)", 'self.build_dir = os.path.expanduser("~")'
+        )
+        assert not self.kept(
+            "shutil.rmtree(self.build_dir)", 'self.build_dir = os.path.join("build", "x")'
+        )
+        assert self.kept("shutil.rmtree(self.dist_dir)", 'setattr(self, "dist_dir", "/")')
+        assert self.kept(
+            "shutil.rmtree(self.build_lib)",
+            "self.set_undefined_options('build', ('build_lib', 'build_lib'))",
+        )
+
+    def test_a_parent_escape_keeps_the_finding(self) -> None:
+        assert self.kept('shutil.rmtree(os.path.join(self.build_dir, "..", ".."))')
+        assert self.kept('shutil.rmtree(os.path.join(os.path.dirname(__file__), ".."))')
+        assert self.kept('shutil.rmtree("../build")')
+
+    def test_the_home_an_absolute_path_argv_and_the_environment_keep_the_finding(self) -> None:
+        assert self.kept('shutil.rmtree(os.path.expanduser("~/.ssh"))')
+        assert self.kept('shutil.rmtree("/")')
+        assert self.kept('shutil.rmtree("/etc")')
+        assert self.kept("shutil.rmtree(sys.argv[1])")
+        assert self.kept('shutil.rmtree(os.environ["TARGET"])')
+        assert self.kept("shutil.rmtree(unknown_name)")
+
+    def test_a_shell_removal_keeps_the_finding(self) -> None:
+        assert self.kept('os.system("rm -rf ~")')
+        assert self.kept('os.system("rm -rf build")')
+
+    def test_one_foreign_removal_among_own_ones_keeps_the_finding(self) -> None:
+        assert self.kept("shutil.rmtree(self.root)", 'shutil.rmtree("build")')
