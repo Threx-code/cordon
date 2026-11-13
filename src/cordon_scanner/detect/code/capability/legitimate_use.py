@@ -22,6 +22,7 @@ from cordon_scanner.detect.base import (
 )
 from cordon_scanner.detect.code.capability.hits import CapabilityHit
 from cordon_scanner.detect.code.capability.load_path import LoadPath
+from cordon_scanner.detect.code.store_flow import BoundClient
 from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
 
@@ -523,6 +524,7 @@ class LegitimateUse:
         return all(
             any(
                 client.search(content.raw[hit.byte_start : hit.byte_end + 40])
+                or BoundClient.configured(content.text, hit.line, client)
                 for client in families
             )
             for hit in egress

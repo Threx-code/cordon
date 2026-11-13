@@ -321,7 +321,11 @@ class PythonStoreFlow:
         body (reviews/pypi-98/21, shape C)."""
         positional = list(call.args)
         keywords = list(call.keywords)
-        if body_only and isinstance(call.func, ast.Attribute) and call.func.attr in cls.REQUEST_METHODS:
+        if (
+            body_only
+            and isinstance(call.func, ast.Attribute)
+            and call.func.attr in cls.REQUEST_METHODS
+        ):
             positional = positional[2 if call.func.attr == "request" else 1 :]
             keywords = [k for k in keywords if k.arg not in cls.REQUEST_SETTINGS]
         return [*positional, *(k.value for k in keywords)]
@@ -394,3 +398,107 @@ class PythonStoreFlow:
                     if path is not None:
                         literals.add(path)
         return filled, literals
+
+
+class BoundClient:
+    """A call made on a client the file built, to a host the caller configures (reviews/pypi-98/20 B2).
+
+    `self.client = paramiko.SSHClient()` in `__init__` and `self.client.connect(host, key_filename=key)`
+    forty lines on: the connect carries no mention of the client, so the text of the call alone
+    cannot say whose it is. The tree can: the receiver is bound in this file to the family's client
+    constructor. It is the user's own login only where the host is not written down in the package: a
+    parameter, an attribute the caller set, an environment or argument read. A host that is a literal,
+    or a name every binding of which is a literal, is one the package names, and a key sent there is
+    not the user's own login.
+    """
+
+    #: What names the host of a connection, positional first and then by keyword.
+    HOST_KEYWORDS: Final = ("hostname", "host", "address", "addr")
+
+    @classmethod
+    def configured(cls, text: str, line: int, client: re.Pattern[bytes]) -> bool:
+        """Whether a call starting on `line` is a method of a receiver bound to a constructor that
+        `client` names, and its host is not written down in the file. False where the file does not
+        parse, no such call is there, or any call there is not that."""
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
+        try:
+            tree = PythonSyntax.shared(text)
+        except (SyntaxError, ValueError, RecursionError, MemoryError):
+            # S2: a fallback; a file that does not parse keeps the text reading of its calls
+            return False
+        calls = [c for c in PythonSyntax.of(tree, ast.Call) if c.lineno == line]
+        bound = cls._bound(tree, client)
+        methods = [c for c in calls if isinstance(c.func, ast.Attribute)]
+        on_client = [c for c in methods if cls._dotted(c.func.value) in bound]  # type: ignore[attr-defined]
+        return bool(on_client) and all(cls._host_is_configured(tree, c) for c in on_client)
+
+    @classmethod
+    def _bound(cls, tree: ast.AST, client: re.Pattern[bytes]) -> set[str]:
+        """The names and attribute paths the file assigns the result of a constructor `client` names."""
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
+        found: set[str] = set()
+        assigns = PythonSyntax.of(tree, ast.Assign)
+        for node in assigns:
+            if isinstance(node.value, ast.Call) and client.search(
+                cls._dotted(node.value.func).encode("utf-8")
+            ):
+                found.update(cls._dotted(t) for t in node.targets)
+        for _ in range(3):  # `self.client = ssh` after `ssh = paramiko.SSHClient()`
+            grown = {
+                cls._dotted(t)
+                for node in assigns
+                if cls._dotted(node.value) in found
+                for t in node.targets
+            }
+            if grown <= found:
+                break
+            found |= grown
+        found.discard("")
+        return found
+
+    @staticmethod
+    def _dotted(node: ast.AST) -> str:
+        parts: list[str] = []
+        while isinstance(node, ast.Attribute):
+            parts.append(node.attr)
+            node = node.value
+        if isinstance(node, ast.Name):
+            parts.append(node.id)
+            return ".".join(reversed(parts))
+        return ""
+
+    @classmethod
+    def _host_is_configured(cls, tree: ast.AST, call: ast.Call) -> bool:
+        host = call.args[0] if call.args else None
+        if host is None:
+            host = next((k.value for k in call.keywords if k.arg in cls.HOST_KEYWORDS), None)
+        return host is not None and not cls._written_down(tree, host, 0)
+
+    @classmethod
+    def _written_down(cls, tree: ast.AST, host: ast.AST, depth: int) -> bool:
+        """Whether the host is a literal: a string, a join of literals, or a name or attribute every
+        assignment of which in the file is a literal. A name nothing assigns is a parameter."""
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
+        if isinstance(host, ast.Constant):
+            return True
+        if isinstance(host, ast.JoinedStr | ast.BinOp):
+            parts = [
+                n for n in ast.walk(host) if isinstance(n, ast.Name | ast.Attribute | ast.Call)
+            ]
+            return not parts
+        name = cls._dotted(host)
+        if not name or depth > 4:
+            return False
+        values: list[ast.AST] = []
+        for node in PythonSyntax.of(tree, ast.Assign):
+            for target in node.targets:
+                if cls._dotted(target) == name:
+                    values.append(node.value)
+                elif isinstance(target, ast.Tuple) and isinstance(node.value, ast.Tuple):
+                    for one, value in zip(target.elts, node.value.elts, strict=False):
+                        if cls._dotted(one) == name:
+                            values.append(value)
+        return bool(values) and all(cls._written_down(tree, v, depth + 1) for v in values)

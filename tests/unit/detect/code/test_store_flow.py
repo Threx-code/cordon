@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import re
 import textwrap
 
 import pytest
 
-from cordon_scanner.detect.code.store_flow import StoreFlow
+from cordon_scanner.detect.code.store_flow import BoundClient, StoreFlow
 
 
 class FlowKit:
@@ -401,3 +402,63 @@ class TestATemplateIsNotCode:
         from cordon_scanner.detect.code.capability.legitimate_use import LegitimateUse
 
         assert not LegitimateUse.is_template_or_markup(path)
+
+
+class TestABoundClient:
+    """`BoundClient.configured`: a call on a receiver the file bound to a client constructor, to a host the
+    caller configures (reviews/pypi-98/20 B2). The tree decides it, where the call's own text names no client."""
+
+    CLIENT = re.compile(rb"paramiko|SSHClient")
+    SOURCE = (
+        "import paramiko\n"  # 1
+        "class Session:\n"  # 2
+        "    def __init__(self, host):\n"  # 3
+        "        self.host = host\n"  # 4
+        "        self.client = paramiko.SSHClient()\n"  # 5
+        "    def open(self, other):\n"  # 6
+        "        self.client.connect({host}, username='u')\n"  # 7
+    )
+
+    def configured(self, host: str, source: str | None = None) -> bool:
+        text = (source or self.SOURCE).replace("{host}", host)
+        line = next(i for i, ln in enumerate(text.split("\n"), 1) if ".connect(" in ln)
+        return BoundClient.configured(text, line, self.CLIENT)
+
+    @pytest.mark.parametrize("host", ["self.host", "other", "os.environ['H']", "cfg.host()"])
+    def test_a_host_the_caller_configures_is_the_users_own_login(self, host) -> None:
+        assert self.configured(host)
+
+    @pytest.mark.parametrize(
+        "host", ["'build.example.invalid'", "'a.' + 'example.invalid'", "f'build.example.invalid'"]
+    )
+    def test_a_host_written_down_in_the_file_is_not(self, host) -> None:
+        assert not self.configured(host)
+
+    def test_a_name_every_binding_of_which_is_a_literal_is_written_down(self) -> None:
+        source = "TARGET = 'build.example.invalid'\n" + self.SOURCE
+        assert not self.configured("TARGET", source)
+
+    def test_an_attribute_the_file_sets_to_a_literal_is_written_down(self) -> None:
+        source = self.SOURCE.replace("self.host = host", "self.host = 'build.example.invalid'")
+        assert not self.configured("self.host", source)
+
+    def test_an_attribute_set_from_a_parameter_is_configured(self) -> None:
+        assert self.configured("self.host")
+
+    def test_a_receiver_bound_to_another_constructor_is_not_the_keys_client(self) -> None:
+        source = self.SOURCE.replace("paramiko.SSHClient()", "requests.Session()")
+        assert not self.configured("self.host", source)
+
+    def test_a_receiver_the_file_never_binds_is_not(self) -> None:
+        source = self.SOURCE.replace("        self.client = paramiko.SSHClient()\n", "")
+        assert not self.configured("self.host", source)
+
+    def test_a_receiver_bound_through_a_local_name_is_the_clients(self) -> None:
+        source = self.SOURCE.replace(
+            "        self.client = paramiko.SSHClient()\n",
+            "        ssh = paramiko.SSHClient()\n        self.client = ssh\n",
+        )
+        assert self.configured("self.host", source)
+
+    def test_a_file_that_does_not_parse_keeps_the_text_reading(self) -> None:
+        assert not BoundClient.configured("def (:\n", 1, self.CLIENT)
