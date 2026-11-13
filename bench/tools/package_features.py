@@ -161,29 +161,33 @@ class PackageFeatures:
             out.open("a", encoding="utf-8") as sink,
             multiprocessing.get_context("spawn").Pool(workers) as pool,
         ):
-            for row in pool.imap_unordered(_work, [(root, u) for u in pending], chunksize=1):
+            for row in pool.imap_unordered(
+                PackageFeatures.work, [(root, u) for u in pending], chunksize=1
+            ):
                 sink.write(json.dumps(row, sort_keys=True) + "\n")
                 sink.flush()
                 counts["errors" if "error" in row else "read"] += 1
         counts["seconds"] = round(time.monotonic() - started)
         return counts
 
+    @staticmethod
+    def work(job: tuple[Path, str]) -> dict[str, Any]:
+        """One job of the pool: `(root, unit)` to its row (a name a worker process can import)."""
+        return PackageFeatures.row(*job)
 
-def _work(job: tuple[Path, str]) -> dict[str, Any]:
-    return PackageFeatures.row(*job)
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0] if __doc__ else "")
-    parser.add_argument("--list", type=Path, required=True)
-    parser.add_argument("--root", type=Path, required=True)
-    parser.add_argument("--out", type=Path, required=True)
-    parser.add_argument("--workers", type=int, default=6)
-    args = parser.parse_args(argv)
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    print(json.dumps(PackageFeatures.run(args.list, args.root, args.out, args.workers)))
-    return 0
+    @staticmethod
+    def main(argv: list[str] | None = None) -> int:
+        parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0])
+        parser.add_argument("--list", type=Path, required=True)
+        parser.add_argument("--root", type=Path, required=True)
+        parser.add_argument("--out", type=Path, required=True)
+        parser.add_argument("--workers", type=int, default=6)
+        args = parser.parse_args(argv)
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        counts = PackageFeatures.run(args.list, args.root, args.out, args.workers)
+        print(json.dumps(counts))
+        return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(PackageFeatures.main())
