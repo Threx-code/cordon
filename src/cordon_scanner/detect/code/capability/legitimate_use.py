@@ -378,6 +378,26 @@ class LegitimateUse:
             return False
         return DownloadFlow.runs_download(content.text, unit.language) == []
 
+    @staticmethod
+    def reaches_no_sink(unit: FileUnit, ctx: ScanContext, hits: list[CapabilityHit]) -> bool:
+        """A Python module a consumer imports (no install hook, no consumer install) in which nothing
+        downloaded is run and no downloaded value leaves the file, and no received command is run
+        (reviews/pypi-98/22, shape A). Unresolved is False: the package's calls not all known, a file that
+        does not parse, another language. A decoded payload or an unpacked one that is then run is not
+        "nothing downloaded runs": a window with a decode, or a spawn beside an unpack, keeps its grade."""
+        from cordon_scanner.detect.code.download_flow import DownloadFlow
+
+        path, present = unit.content.path, {hit.capability for hit in hits}
+        return (
+            not ctx.in_install_hook(path)
+            and not ctx.in_consumer_install(path)
+            and not ctx.cross_file_unresolved
+            and not any("RECEIVED_RUN" in hit.rule_id for hit in hits)
+            and Capability.DECODE not in present
+            and not {Capability.SPAWN, Capability.DECOMPRESS} <= present
+            and DownloadFlow.nothing_reaches_a_sink(unit.content.text, unit.language)
+        )
+
     _SETTING_READ: ClassVar[re.Pattern[str]] = re.compile(
         r"""^\s{0,8}(?:
             process\.env\.(?P<dotted>[A-Za-z_][A-Za-z0-9_]{0,80})\b(?!\s{0,4}[\[(])
