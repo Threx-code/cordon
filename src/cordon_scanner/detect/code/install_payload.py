@@ -74,9 +74,6 @@ class InstallPayload:
         caps = set(local_by_capability)
         if Capability.FETCH_EXEC in caps and cls.execs_only_shipped_files(unit.content, window):
             caps.discard(Capability.FETCH_EXEC)  # not a payload: the package's own text
-        for read in (Capability.RECONNAISSANCE, Capability.CREDENTIAL):
-            if read in caps and cls.reads_only_settings(unit.content, window, read):
-                caps.discard(read)  # a platform lookup or a named setting: build work
         return not cls.has_payload(caps) and not cls.spawns_shipped_file(
             unit.content, window, ctx.shipped_native_paths, unit.path
         )
@@ -102,19 +99,6 @@ class InstallPayload:
             return False
         reads = _ShippedReads(tree)
         return all(reads.at(h.line) for h in hits)
-
-    @staticmethod
-    def reads_only_settings(
-        content: FileContent, window: Iterable[CapabilityHit], capability: Capability
-    ) -> bool:
-        """Whether every hit of `capability` in the install window is a platform lookup or the read of a setting
-        named by a literal that is not another service's credential (`LegitimateUse.a_setting`; reviews/pypi-98/24,
-        R1): a build chooses its compiler by the platform. The hostname, the user, the whole environment and a
-        well-known credential are not."""
-        from cordon_scanner.detect.code.capability.legitimate_use import LegitimateUse
-
-        hits = [h for h in window if h.capability is capability]
-        return bool(hits) and all(LegitimateUse.a_setting(content, h) for h in hits)
 
     @classmethod
     def has_payload(cls, caps: set[Capability]) -> bool:

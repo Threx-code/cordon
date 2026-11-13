@@ -14,7 +14,6 @@ import tempfile
 from types import SimpleNamespace
 
 from cordon_scanner import Scanner
-from cordon_scanner.detect.code.capability.hits import CapabilityHit
 from cordon_scanner.detect.code.install_payload import InstallPayload
 from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.content import FileContent
@@ -246,61 +245,3 @@ class TestExecOfAFileThePackageShips:
         )
         with tempfile.TemporaryDirectory() as t:
             assert CONSUMER_CODE in Fixture.rules(Fixture.build(t, "urllib.request", body))
-
-
-class TestAPlatformLookupOrANamedSetting:
-    """R1 (reviews/pypi-98/24): a reconnaissance or credential hit that is only a platform lookup or the read of a
-    setting named by a literal that is not another service's credential (`LegitimateUse.a_setting`, the test
-    SUSPECT.EXFIL.DROP_POINT.001 already uses) is not a payload in install code: a build chooses its compiler by
-    the platform. Who the machine is, the whole environment and a well-known credential still are."""
-
-    @staticmethod
-    def held(source: bytes, capability: Capability, *more: Capability) -> bool:
-        """Whether the gate holds an install window whose one hit of `capability` is `source`, beside a
-        compiler spawn and the `more` capabilities (none of which is read: only the capability set)."""
-        recon = capability is Capability.RECONNAISSANCE
-        rule = "CAP.PY.RECON.001" if recon else "CAP.PY.CREDENTIAL.001"
-        hit = CapabilityHit(capability, rule, 0, len(source), 1)
-        content = FileContent(path="setup.py", raw=source, size=len(source))
-        local = {capability: hit, Capability.SPAWN: hit, **dict.fromkeys(more, hit)}
-        return InstallPayload.gate(
-            CONSUMER_CODE, True, local, [hit], Fixture.unit(content), Fixture.ctx()
-        )
-
-    def test_a_platform_lookup_is_build_work(self) -> None:
-        assert self.held(b"platform.system()", Capability.RECONNAISSANCE)
-        assert self.held(b"platform.machine()", Capability.RECONNAISSANCE)
-        assert self.held(b"sys.platform", Capability.RECONNAISSANCE)
-
-    def test_a_named_setting_is_not_loot(self) -> None:
-        assert self.held(b'os.environ.get("CC", "cc")', Capability.CREDENTIAL)
-        assert self.held(b'os.getenv("CXXFLAGS")', Capability.RECONNAISSANCE)
-
-    # The twins: who the machine is, the whole environment, another service's credential.
-    def test_the_hostname_or_the_user_keeps_the_finding(self) -> None:
-        assert not self.held(b"socket.gethostname()", Capability.RECONNAISSANCE)
-        assert not self.held(b"getpass.getuser()", Capability.RECONNAISSANCE)
-        assert not self.held(b"os.getlogin()", Capability.RECONNAISSANCE)
-
-    def test_the_whole_environment_keeps_the_finding(self) -> None:
-        assert not self.held(b"dict(os.environ)", Capability.CREDENTIAL)
-        assert not self.held(b"os.environ.copy()", Capability.CREDENTIAL)
-
-    def test_a_well_known_credential_keeps_the_finding(self) -> None:
-        assert not self.held(b'os.environ["GITHUB_TOKEN"]', Capability.CREDENTIAL)
-        assert not self.held(b'os.environ.get("AWS_SECRET_ACCESS_KEY")', Capability.CREDENTIAL)
-        assert not self.held(b'os.getenv("NPM_TOKEN")', Capability.CREDENTIAL)
-
-    def test_a_setting_beside_a_real_payload_keeps_the_finding(self) -> None:
-        assert not self.held(b"platform.system()", Capability.RECONNAISSANCE, Capability.EGRESS)
-        assert not self.held(b"platform.system()", Capability.RECONNAISSANCE, Capability.DESTROY)
-
-    def test_a_credential_beside_a_platform_lookup_keeps_it(self) -> None:
-        platform = CapabilityHit(Capability.RECONNAISSANCE, "CAP.PY.RECON.001", 0, 17, 1)
-        secret = CapabilityHit(Capability.CREDENTIAL, "CAP.PY.CREDENTIAL.001", 18, 48, 2)
-        raw = b'platform.system()\nos.environ["GITHUB_TOKEN"]'
-        content = FileContent(path="setup.py", raw=raw, size=len(raw))
-        local = {Capability.RECONNAISSANCE: platform, Capability.CREDENTIAL: secret}
-        assert not InstallPayload.gate(
-            CONSUMER_CODE, True, local, [platform, secret], Fixture.unit(content), Fixture.ctx()
-        )
