@@ -19,6 +19,12 @@ _IDENTIFIER_LIKE: Final = re.compile(
 )
 """A snake_case or camelCase word: a tool or parameter name as an author writes one."""
 
+_CALLED: Final = re.compile(
+    r"\b(?i:call|calling|invoke|invoking|run|running|execute|use|using)\b[\s:`'\"(]{0,6}+"
+    r"(?:(?i:the|tool)\s++)?[`'\"]?+(?P<name>[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+|[a-z]+(?:[A-Z][a-z0-9]+)+)(?![\w])"
+)
+"""A tool named as something to call or use: `call list_apis`, `before using get_docs`."""
+
 _REGISTERED: Final = re.compile(
     r"""(?:\.tool\(\s*+(?:\{\s*+)?(?:name\s*:\s*+)?|\bregisterTool\(\s*|\bname\s*[:=]\s*)"""
     r"""["'`](?P<name>[A-Za-z][\w.-]{1,80})["'`]"""
@@ -58,6 +64,12 @@ class OwnVocabulary:
     def words(text: str) -> frozenset[str]:
         """The identifier-like words of a text, lower-cased."""
         return frozenset(m.group(0).lower() for m in _IDENTIFIER_LIKE.finditer(text))
+
+    @staticmethod
+    def called(text: str) -> frozenset[str]:
+        """The identifiers a text names as tools to call or use, lower-cased: the ones sequencing is
+        about (a description also names parameters and options that are no tool)."""
+        return frozenset(m.group("name").lower() for m in _CALLED.finditer(text))
 
     @staticmethod
     def names_only(own: frozenset[str], text: str) -> bool:

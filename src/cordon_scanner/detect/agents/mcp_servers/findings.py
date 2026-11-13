@@ -188,8 +188,9 @@ class McpServerFindings:
             return False
         if McpServerSource._poisoned_description(text, own) is not None:
             return False
-        if OwnVocabulary.names_only(own, text):
-            return True
+        called = OwnVocabulary.called(text)
+        if called:
+            return called <= own
         return channel == "return" and not OwnVocabulary.words(text)
 
     @staticmethod
@@ -336,6 +337,12 @@ class McpServerFindings:
                 score = McpDescriptionModel.score(returned, "return")
                 if score is None or score < limits[1]:
                     continue
+                # The learned model on its own is the weakest evidence: a message about the
+                # server's own flow is reported, not blocked.
+                about_own = McpServerFindings._about_own(returned, own) or (
+                    chain is not None
+                    and McpServerFindings._own_sequencing(returned, chain, own, "return")
+                )
                 yield AgentFinding.at_text(
                     "SUSPECT.MCP.TOOL_DESCRIPTION.001",
                     unit,
@@ -345,9 +352,7 @@ class McpServerFindings:
                     message=RULES["SUSPECT.MCP.TOOL_DESCRIPTION.001"].message
                     + " The text is what a tool returns, and it reads as instructions to the "
                     f"agent rather than a result (model score {score:.2f}).",
-                    severity=None
-                    if score >= limits[0] and not McpServerFindings._about_own(returned, own)
-                    else Severity.MEDIUM,
+                    severity=None if score >= limits[0] and not about_own else Severity.MEDIUM,
                 )
 
     @staticmethod
