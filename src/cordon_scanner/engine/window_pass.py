@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.analysis.python.statements import PythonStatements
+from cordon_scanner.analysis.python.unparsed_source import Decision, UnparsedSource
 from cordon_scanner.detect.base import FileUnit
 from cordon_scanner.foundation.collector import ScanCaches
 from cordon_scanner.foundation.content import FileContent
@@ -197,6 +198,43 @@ class WindowPass:
                 # left to the collector's thresholds, datadog's trees piled up, about 800 MB a
                 # window, to 5.7 GB. Collected here, once per window, they are gone before the next.
                 gc.collect()
+
+    @staticmethod
+    def unparsed_decision(unit: Any) -> Decision | None:
+        """What `UnparsedSource` decides about a Python file read in windows, from its statement-aligned
+        windows rather than its prefix (which is cut inside a statement and does not parse): `parses`
+        when every window parses and the windows cover the file, else the first window that does not
+        (a reading of it counts as a gap: its text is a window, not the file). A file that does not parse
+        and carries an act token in ANY window stays a gap, as the file as a whole would (cordon-47). None
+        when `unit` is not a windowed Python file, or the file could not be read again as the same file."""
+        content = unit.content
+        source = content.window_source
+        if not content.truncated or source is None or getattr(unit, "language", None) != "python":
+            return None
+        covered, failed, act = 0, None, False
+        try:
+            for window in Windows.aligned(
+                source,
+                size=content.limits.max_file_bytes,
+                limit=content.limits.max_stream_bytes,
+                cut=PythonStatements.last_cut,
+            ):
+                text = window.data.decode("utf-8", "replace")
+                act = act or UnparsedSource.ACT.search(text) is not None
+                # the first window that does not parse decides; the rest are read for acts
+                if failed is None:
+                    decision = UnparsedSource.decide(text)
+                    ScanCaches.after_scan()
+                    gc.collect()
+                    if decision.kind != "parses":
+                        failed = decision
+                covered = window.begin + len(window.data)
+        except WindowSourceChanged:
+            return None
+        if failed is None:
+            return Decision("parses") if covered >= source.size else None
+        gap = failed.kind == "reading" or (failed.kind == "broken" and act)
+        return Decision("gap") if gap else failed
 
     @staticmethod
     def shifted(finding: Finding, lines: int, offset: int) -> Finding:

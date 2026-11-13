@@ -43,6 +43,7 @@ from cordon_scanner.engine.pipeline.hooks import BuildRoots, Hooks
 from cordon_scanner.engine.pipeline.images import Images
 from cordon_scanner.engine.pipeline.publisher import Publisher
 from cordon_scanner.engine.pipeline.releases import ReleaseChecks
+from cordon_scanner.engine.window_pass import WindowPass
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.errors import ArchiveError
 from cordon_scanner.foundation.formats.served_json import ServedJson
@@ -360,7 +361,9 @@ class ArchiveStages:
         for unit in list(units):
             if unit.content.is_binary or not UnparsedSource.runs_as_source(unit.path, running):
                 continue
-            decision = UnparsedSource.decide(unit.content.text)
+            decision = WindowPass.unparsed_decision(unit) or UnparsedSource.decide(
+                unit.content.text
+            )
             if decision.kind == "gap":
                 acc.incomplete(UnparsedSource.gap(unit.path))
                 if not SourcePaths.is_test_material(unit.path.rpartition("!")[2]):
