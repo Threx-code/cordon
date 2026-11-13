@@ -85,6 +85,8 @@ class DropPointLoot:
     _CONSTRUCTORS: ClassVar[frozenset[str]] = frozenset(
         {"frozenset", "set", "list", "tuple", "dict", "sorted"}
     )
+    #: How many names a use may be followed through (`HELP = TEXT`, `for h in DENY`, `x = h`).
+    DEPTH: ClassVar[int] = 3
     _ADDRESS: ClassVar[re.Pattern[str]] = re.compile(r"\d{1,3}(?:\.\d{1,3}){3}")
     _READERS: ClassVar[frozenset[str]] = frozenset({"get", "getenv", "pop"})
     _WHOLE: ClassVar[frozenset[str]] = frozenset({"copy", "items", "keys", "values"})
@@ -383,15 +385,22 @@ class DropPointLoot:
         node = cls._string_holding(content, tree, label.byte_start, label.byte_end)
         if node is None:
             return False
-        parents = PythonSyntax.parents(tree)
-        top: ast.AST = node
+        return cls._named_only(tree, PythonSyntax.parents(tree), node, 0)
+
+    @classmethod
+    def _named_only(
+        cls, tree: ast.AST, parents: dict[int, ast.AST], start: ast.AST, depth: int
+    ) -> bool:
+        """Whether where `start` goes only names it: carried up through f-strings, joins, collections
+        and formatting to a message, a membership test, or a name every load of which is such a use."""
+        top = start
         while True:
             parent = parents.get(id(top))
             if parent is None:
                 return False
             carried = cls._carried_by(parents, top, parent)
             if carried is None:
-                return cls._consumer_names_only(tree, parents, top, parent)
+                return cls._consumer_names_only(tree, parents, top, parent, depth)
             top = carried
 
     @classmethod
@@ -413,9 +422,15 @@ class DropPointLoot:
 
     @classmethod
     def _consumer_names_only(
-        cls, tree: ast.AST, parents: dict[int, ast.AST], top: ast.AST, parent: ast.AST
+        cls,
+        tree: ast.AST,
+        parents: dict[int, ast.AST],
+        top: ast.AST,
+        parent: ast.AST,
+        depth: int,
     ) -> bool:
-        """Whether what uses the text only names it: a message, a membership test, a name that is."""
+        """Whether what uses the text only names it: a message, a membership test, a name or a loop
+        variable all of whose uses are such."""
         if isinstance(parent, ast.Call) and top is not parent.func:
             return cls._is_a_message(tree, parent)
         if isinstance(parent, ast.keyword):
@@ -428,8 +443,30 @@ class DropPointLoot:
         if isinstance(parent, ast.Compare):
             return all(isinstance(op, ast.In | ast.NotIn) for op in parent.ops)
         if isinstance(parent, ast.Assign | ast.AnnAssign):
-            return cls._only_membership(tree, parent)
+            targets: list[ast.expr] = (
+                list(parent.targets) if isinstance(parent, ast.Assign) else [parent.target]
+            )
+            return cls._loads_named_only(tree, parents, targets, depth)
+        if isinstance(parent, ast.For | ast.AsyncFor | ast.comprehension) and top is parent.iter:
+            return cls._loads_named_only(tree, parents, [parent.target], depth)
         return False
+
+    @classmethod
+    def _loads_named_only(
+        cls, tree: ast.AST, parents: dict[int, ast.AST], targets: list[ast.expr], depth: int
+    ) -> bool:
+        """A name the text is bound to (or the variable of a loop over it) that is loaded, and only in
+        uses that name it: `host in DENY`, `print(HELP)`, a loop whose variable is only compared. An
+        attribute, a name never loaded (another file may), or one used in any other way is not."""
+        names = {t.id for t in targets if isinstance(t, ast.Name)}
+        if depth >= cls.DEPTH or len(names) != len(targets) or not names:
+            return False
+        loads = [
+            use
+            for use in PythonSyntax.of(tree, ast.Name)
+            if use.id in names and isinstance(use.ctx, ast.Load)
+        ]
+        return bool(loads) and all(cls._named_only(tree, parents, u, depth + 1) for u in loads)
 
     @classmethod
     def _is_a_message(cls, tree: ast.AST, call: ast.Call) -> bool:
@@ -446,28 +483,6 @@ class DropPointLoot:
             defined = {c.name for c in PythonSyntax.of(tree, ast.ClassDef)}
             return last not in defined
         return False
-
-    @classmethod
-    def _only_membership(cls, tree: ast.AST, assign: ast.Assign | ast.AnnAssign) -> bool:
-        """A name bound to the label and loaded only as an operand of `in` / `not in`: a deny-list.
-        An attribute, a name loaded anywhere else, or one never loaded (another file may) is not."""
-        targets = assign.targets if isinstance(assign, ast.Assign) else [assign.target]
-        if len(targets) != 1 or not isinstance(targets[0], ast.Name):
-            return False
-        name = targets[0].id
-        parents = PythonSyntax.parents(tree)
-        loads = 0
-        for use in PythonSyntax.of(tree, ast.Name):
-            if use.id != name or not isinstance(use.ctx, ast.Load):
-                continue
-            loads += 1
-            parent = parents.get(id(use))
-            if not (
-                isinstance(parent, ast.Compare)
-                and all(isinstance(op, ast.In | ast.NotIn) for op in parent.ops)
-            ):
-                return False
-        return loads > 0
 
     # -- The composite ---------------------------------------------------------------------------
 

