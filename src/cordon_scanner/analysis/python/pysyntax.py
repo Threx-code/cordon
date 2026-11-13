@@ -321,6 +321,43 @@ class PythonSyntax:
         found: list[Any] = PythonSyntax.memo(tree, ("of", types), compute)
         return found
 
+    @staticmethod
+    def text_only_lines(tree: ast.AST) -> frozenset[int]:
+        """The lines of a parsed file that are only text: the lines of docstrings, and the lines a string
+        literal continues on after its first (a pattern table, a help text naming `~/.aws/credentials`),
+        less any line where an expression that is not a literal starts -- an f-string's `{...}` parts are
+        code (`{home}` in `f'''{home}/.aws/credentials'''`). A line a reader finds in this set is
+        not a read and not a send; a line that is not in it may still be text, which this does not
+        claim (reviews/pypi-98/20 shape A, 21 shape T)."""
+
+        def compute() -> frozenset[int]:
+            docs: set[int] = set()
+            for node in PythonSyntax.nodes(tree):
+                body = getattr(node, "body", None)
+                if isinstance(body, list) and body and isinstance(body[0], ast.Expr):
+                    value = body[0].value
+                    if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                        docs.update(range(value.lineno, (value.end_lineno or value.lineno) + 1))
+            inside: set[int] = set()
+            code: set[int] = set()
+            for node in PythonSyntax.nodes(tree):
+                if isinstance(node, ast.JoinedStr) or (
+                    isinstance(node, ast.Constant) and isinstance(node.value, str)
+                ):
+                    last = node.end_lineno or node.lineno
+                    if last > node.lineno:
+                        inside.update(range(node.lineno + 1, last + 1))
+                if (
+                    isinstance(node, ast.expr)
+                    and not isinstance(node, ast.Constant | ast.JoinedStr)
+                    and hasattr(node, "lineno")
+                ):
+                    code.add(node.lineno)
+            return frozenset(docs | ((inside - docs) - code))
+
+        found: frozenset[int] = PythonSyntax.memo(tree, "text-only-lines", compute)
+        return found
+
 
 class TreeIndex:
     """One depth-first pass over a tree: every node's entry and exit number, and per node type

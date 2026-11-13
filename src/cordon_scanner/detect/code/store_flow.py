@@ -249,13 +249,12 @@ class PythonStoreFlow:
         except (SyntaxError, ValueError, RecursionError, MemoryError):
             # S2: a fallback; the next reader (or SOURCE.UNPARSED for running files) reads it
             return None
-        inside, docs = cls._string_lines(tree)
         # Where the tree parses, a line that is only text inside a string -- a pattern table, a help
         # text naming `~/.aws/credentials` -- is not a read or a send (reviews/pypi-98/20, shape A).
         # A line where any expression starts is code, an f-string's `{...}` parts included.
-        text_only = inside - cls._code_lines(tree)
-        store = {n for n in store_lines if n not in docs and n not in text_only}
-        egress = {n for n in egress_lines if n not in docs and n not in text_only}
+        text_lines = PythonSyntax.text_only_lines(tree)
+        store = {n for n in store_lines if n not in text_lines}
+        egress = {n for n in egress_lines if n not in text_lines}
         if not store:
             return False
         calls = cls._calls_on(tree, egress)
@@ -301,38 +300,6 @@ class PythonStoreFlow:
             for call in calls
             for argument in [*call.args, *(k.value for k in call.keywords)]
         )
-
-    @staticmethod
-    def _string_lines(tree: ast.AST) -> tuple[set[int], set[int]]:
-        """(lines inside a string spanning lines that is not a docstring, lines of docstrings)."""
-        docs: set[int] = set()
-        for node in ast.walk(tree):
-            body = getattr(node, "body", None)
-            if isinstance(body, list) and body and isinstance(body[0], ast.Expr):
-                value = body[0].value
-                if isinstance(value, ast.Constant) and isinstance(value.value, str):
-                    docs.update(range(value.lineno, (value.end_lineno or value.lineno) + 1))
-        inside: set[int] = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.JoinedStr) or (
-                isinstance(node, ast.Constant) and isinstance(node.value, str)
-            ):
-                last = node.end_lineno or node.lineno
-                if last > node.lineno:
-                    inside.update(n for n in range(node.lineno + 1, last + 1) if n not in docs)
-        return inside, docs
-
-    @staticmethod
-    def _code_lines(tree: ast.AST) -> set[int]:
-        """Lines where an expression that is not a string literal starts: code, even inside an
-        f-string (`{home}` in `f\'\'\'{home}/.aws/credentials\'\'\'`)."""
-        return {
-            node.lineno
-            for node in ast.walk(tree)
-            if isinstance(node, ast.expr)
-            and not isinstance(node, ast.Constant | ast.JoinedStr)
-            and hasattr(node, "lineno")
-        }
 
     @staticmethod
     def _calls_on(tree: ast.AST, egress: set[int]) -> list[ast.Call]:
