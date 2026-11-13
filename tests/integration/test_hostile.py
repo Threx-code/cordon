@@ -110,7 +110,12 @@ class TestDecompressionBombs:
         """A hugely compressible member is the classic bomb. The expansion cap must stop it while
         it streams, not after it has been materialised, and say it is padding."""
         bomb = HostileHelpers.zip_of({"bomb.txt": b"\x00" * (8 * 1024 * 1024)})
-        limits = DEFAULT_LIMITS.merged(max_archive_ratio=10, max_member_bytes=1024 * 1024)
+        limits = DEFAULT_LIMITS.merged(
+            max_archive_ratio=10,
+            max_member_bytes=1024 * 1024,
+            max_elided_member_bytes=0,
+            max_elided_bytes=0,
+        )
 
         result = ArchiveReader.extract(bomb, path="bomb.zip", limits=limits)
 
@@ -125,7 +130,12 @@ class TestDecompressionBombs:
         result = ArchiveReader.extract(
             bomb,
             path="bomb.zip",
-            limits=DEFAULT_LIMITS.merged(max_archive_ratio=10, max_member_bytes=1024 * 1024),
+            limits=DEFAULT_LIMITS.merged(
+                max_archive_ratio=10,
+                max_member_bytes=1024 * 1024,
+                max_elided_member_bytes=0,
+                max_elided_bytes=0,
+            ),
         )
         assert result.rejected
         assert result.rejected[0].detail, "a rejection must explain itself"
@@ -181,7 +191,12 @@ class TestDecompressionBombs:
         result = ArchiveReader.extract(
             bomb,
             path="bomb.tar.gz",
-            limits=DEFAULT_LIMITS.merged(max_archive_ratio=10, max_member_bytes=1024 * 1024),
+            limits=DEFAULT_LIMITS.merged(
+                max_archive_ratio=10,
+                max_member_bytes=1024 * 1024,
+                max_elided_member_bytes=0,
+                max_elided_bytes=0,
+            ),
         )
         assert not result.members
         assert result.truncated

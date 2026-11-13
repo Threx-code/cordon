@@ -409,9 +409,16 @@ class TestZipRatioIsChecked:
         with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
             archive.writestr("big.txt", b"A" * (60 * 1024 * 1024))
 
+        # The run of identical bytes is read and metered apart from the ratio (`BlockRuns`); its own
+        # ceiling is what stops it here, so the zip path is shown to meet a ceiling at all.
         base = Config.default()
         config = base.with_overrides(
-            limits=base.limits.merged(max_member_bytes=32 * 1024 * 1024), use_cache=False
+            limits=base.limits.merged(
+                max_member_bytes=32 * 1024 * 1024,
+                max_elided_member_bytes=8 * 1024 * 1024,
+                max_elided_bytes=8 * 1024 * 1024,
+            ),
+            use_cache=False,
         )
         result = Scanner(config).scan(out)
         assert not result.complete

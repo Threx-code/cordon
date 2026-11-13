@@ -803,6 +803,7 @@
   "test_aibom.py": "report",
   "test_ansible_signatures.py": "intel/provenance",
   "test_archive_bombs_are_refused_while_streaming.py": "sources",
+  "test_identical_block_runs.py": "sources",
   "test_archive_damaged_member.py": "sources",
   "test_install_guard.py": "sources/install",
   "test_received_run.py": "analysis/python",

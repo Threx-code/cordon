@@ -42,6 +42,8 @@ _LIMIT_RANGES: dict[str, tuple[float, float | None, type]] = {
     "total_timeout": (0, 604800, float),
     "max_archive_ratio": (1, None, int),
     "max_archive_entries": (1, None, int),
+    "max_elided_member_bytes": (0, 8 * 1024**3, int),
+    "max_elided_bytes": (0, 8 * 1024**3, int),
     "max_archive_depth": (0, 32, int),
     "max_uncompressed_bytes": (1, None, int),
     "max_path_depth": (1, 4096, int),
@@ -146,6 +148,17 @@ class Limits:
     stream rather than after extraction. Checking afterwards means the bomb has
     already gone off. Ordinary source tarballs sit well under 200:1; a
     decompression bomb is several orders of magnitude above it."""
+
+    max_elided_member_bytes: int = 128 * 1024**2
+    """How many bytes of ONE archive member may be a run of identical 4 KB blocks beyond the first two
+    of each run. Those bytes are read and kept like any other, but are metered here instead of against
+    `max_archive_ratio`'s expansion cap and `max_uncompressed_bytes`: filler is how a payload is put
+    past a byte budget, and refusing it unread leaves the payload unread. This ceiling keeps a zero
+    bomb bounded; past it the read stops as padding. 0 turns the metering off. Never above 8 GiB, so a
+    configuration cannot switch the bomb defence off."""
+
+    max_elided_bytes: int = 256 * 1024**2
+    """The same, for one whole archive (`max_elided_member_bytes` per member)."""
 
     max_archive_entries: int = 50_000
 

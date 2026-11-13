@@ -15,7 +15,9 @@ from cordon_scanner.foundation.limits import DEFAULT_LIMITS
 from cordon_scanner.sources.archive import ArchiveReader
 from cordon_scanner.sources.base import Rejection
 
-LIMITS = DEFAULT_LIMITS.merged(max_member_bytes=4096, max_file_bytes=1024)
+LIMITS = DEFAULT_LIMITS.merged(
+    max_member_bytes=4096, max_file_bytes=1024, max_elided_member_bytes=0, max_elided_bytes=0
+)
 ELF = b"\x7fELF\x02\x01\x01" + b"\x00" * 9
 
 

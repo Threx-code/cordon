@@ -46,7 +46,9 @@ from cordon_scanner.sources.base import RejectedMember, Rejection
 from cordon_scanner.sources.budget import (
     READ_CHUNK,
     ZSTD_MAGIC,
+    BlockRuns,
     BudgetExceeded,
+    ByteBudget,
     _BudgetedStream,
     _BytesReader,
 )
@@ -123,6 +125,9 @@ class ExtractionResult:
     truncated: bool = False
     """True when a limit stopped extraction early. The caller must report it:
     a partial extraction that looks complete is a false negative."""
+    elided: int = 0
+    """Bytes read as a run of identical 4 KB blocks beyond the first two of each run, metered against
+    `Limits.max_elided_bytes` instead of the expansion cap (`BlockRuns`). The bytes are kept."""
     expansion_cap: int = 0
     """How far this archive may expand: `max(max_member_bytes, its size x max_archive_ratio)`,
     from the WHOLE archive's size, known before a byte is decompressed. Past it the read stops and
@@ -712,7 +717,11 @@ class ArchiveReader:
         if declared > ArchiveReader.member_limit(limits):
             # A zip states each member's compressed size: sixty megabytes declared from sixty
             # kilobytes stored is padding, refused on its face before a byte is inflated.
-            padded = compressed > 0 and declared > compressed * limits.max_archive_ratio
+            padded = (
+                compressed > 0
+                and declared > compressed * limits.max_archive_ratio
+                and declared > limits.max_elided_member_bytes
+            )
             result.rejected.append(
                 RejectedMember(
                     name,
@@ -751,6 +760,11 @@ class ArchiveReader:
         """
         chunks: list[bytes] = []
         read_total = 0
+        meter = (
+            BlockRuns()
+            if limits.max_elided_member_bytes > 0 and limits.max_elided_bytes > 0
+            else None
+        )
         # Past `max_file_bytes` the member is written to disk as it arrives and read from there
         # (`foundation/files/spill.py`): memory holds its prefix, and no size of member is refused.
         spill: BinaryIO | None = None
@@ -761,21 +775,27 @@ class ArchiveReader:
                 if not chunk:
                     break
                 read_total += len(chunk)
-                if ArchiveReader._over_budget(result, limits, name, read_total):
+                if meter is not None:
+                    meter.feed(chunk)
+                    if ByteBudget.over_elided(result, limits, name, meter.elided):
+                        return None
+                runs = meter.elided if meter is not None else 0
+                if ByteBudget.over_budget(result, limits, name, read_total, runs):
                     return None
-                if spill is None and read_total > limits.max_file_bytes:
-                    chunks.append(chunk)
-                    held = b"".join(chunks)
-                    prefix, chunks = held[: limits.max_file_bytes], []
+                # A member holding a run is kept on disk, whatever its size: a hostile archive of
+                # filler must not be held in memory to be read.
+                if spill is None and (read_total > limits.max_file_bytes or runs):
                     spill, spill_path = Spill.writer()
-                    spill.write(held)
-                elif spill is None:
-                    chunks.append(chunk)
-                else:
+                    spill.write(b"".join(chunks))
+                if spill is not None:
                     spill.write(chunk)
+                held = sum(map(len, chunks))
+                if held < limits.max_file_bytes or spill is None:
+                    chunks.append(chunk if spill is None else chunk[: limits.max_file_bytes - held])
             if spill is not None:
                 spill.close()
                 spill = None
+                prefix = b"".join(chunks)[: limits.max_file_bytes]
                 kept_member: bytes = SpilledBytes(prefix, spill_path, read_total)
                 spill_path = ""
             else:
@@ -789,33 +809,9 @@ class ArchiveReader:
                 Spill.remove(spill_path)
 
         result.total_uncompressed += read_total
+        result.elided += meter.elided if meter is not None else 0
         result.total_compressed += compressed_size
         return kept_member
-
-    @staticmethod
-    def _over_budget(result: ExtractionResult, limits: Limits, name: str, read_total: int) -> bool:
-        """Whether reading `read_total` bytes of `name` passes the archive's expansion cap or its
-        total budget -- the decompression-bomb ceilings, which no member is read past."""
-        if 0 < result.expansion_cap < result.total_uncompressed + read_total:
-            result.truncated = True
-            result.rejected.append(
-                RejectedMember(
-                    name,
-                    Rejection.PADDED,
-                    f"the archive expanded past {result.expansion_cap} bytes, over "
-                    f"{limits.max_archive_ratio} times its size",
-                )
-            )
-            return True
-        if result.total_uncompressed + read_total > limits.max_uncompressed_bytes:
-            result.truncated = True
-            result.rejected.append(
-                RejectedMember(
-                    name, Rejection.SIZE, "archive exceeds the total uncompressed budget"
-                )
-            )
-            return True
-        return False
 
     @staticmethod
     def walk_archive(
