@@ -378,13 +378,16 @@ class PythonStoreFlow:
         if isinstance(node, ast.Assign) and holds(node.value):
             for target in node.targets:
                 tainted |= bound(target)
-        elif isinstance(node, ast.AnnAssign | ast.AugAssign | ast.NamedExpr):
+            return
+        if isinstance(node, ast.AnnAssign | ast.AugAssign | ast.NamedExpr):
             if node.value is not None and holds(node.value):
                 tainted |= bound(node.target)
-        elif isinstance(node, ast.For | ast.AsyncFor | ast.comprehension):
+            return
+        if isinstance(node, ast.For | ast.AsyncFor | ast.comprehension):
             if holds(node.iter):
                 tainted |= bound(node.target)
-        elif isinstance(node, ast.Call):
+            return
+        if isinstance(node, ast.Call):
             PythonStoreFlow._taint_call(node, holds, bound, tainted, functions)
 
     @staticmethod
