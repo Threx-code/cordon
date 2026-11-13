@@ -769,6 +769,8 @@ class PythonDownloads:
         if name == "chmod" and owner in ("os", "") and len(call.args) > 1:
             # Making a downloaded file executable has one purpose.
             return self._executable_mode(call.args[1]) and self._runs_arg(call.args[0])
+        if name in self._LOADER_RUNS:
+            return self._loader_runs_a_download(call, name, owner, args)
         if name in self._RUNNERS and owner in (
             "os",
             "subprocess",
@@ -781,6 +783,34 @@ class PythonDownloads:
                 return False
             return any(self._runs_arg(a) or self._shell_runs(a) for a in args)
         return False
+
+    #: A file run as a program in this process: `runpy.run_path` / `run_module`, a loader's
+    #: `exec_module(module)`, `SourceFileLoader(name, path).load_module()`.
+    _LOADER_RUNS: ClassVar[frozenset[str]] = frozenset({"run_module", "exec_module", "load_module"})
+
+    def _loader_runs_a_download(
+        self, call: ast.Call, name: str, owner: str, args: list[ast.expr]
+    ) -> bool:
+        """Whether a loader run is handed a downloaded file: `exec_module(m)` where `m` was built from
+        a spec for a downloaded path, `load_module()` on a loader built from one, `run_module` of a
+        module name taken from a download. A plugin loader on a local path is not: nothing in the
+        call's arguments or receiver is downloaded."""
+        if name == "run_module":
+            return owner == "runpy" and any(
+                self._runs_arg(a) or self._names_a_downloaded_module(a) for a in args
+            )
+        receiver = call.func.value if isinstance(call.func, ast.Attribute) else None
+        return any(self._runs_arg(a) for a in args) or (
+            name == "load_module" and receiver is not None and self._runs_arg(receiver)
+        )
+
+    def _names_a_downloaded_module(self, node: ast.AST) -> bool:
+        """A module name (`"x"`, `"pkg.x"`) whose file is one the flow saw written from a download."""
+        name = self._path(node) if isinstance(node, ast.Constant | ast.Name) else ""
+        stem = name.rsplit(".", 1)[-1]
+        return bool(stem) and any(
+            p.rsplit("/", 1)[-1].removesuffix(".py") == stem for p in self.paths if p
+        )
 
     @staticmethod
     def _executable_mode(node: ast.AST) -> bool:

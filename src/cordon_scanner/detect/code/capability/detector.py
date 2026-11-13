@@ -25,6 +25,7 @@ composite rule set unchanged.
 
 from __future__ import annotations
 
+import ast
 import re
 from bisect import bisect_right
 from dataclasses import replace
@@ -157,6 +158,55 @@ class FixedJsSpawns:
             else h
             for h in hits
         ]
+
+
+class DownloadedLoaderRuns:
+    """`runpy.run_path`, `run_module`, a loader's `exec_module` and `load_module` run a file as code.
+    They are an execute hit only where the file's flow shows the file came from a download (written
+    from a fetched value, or a path the file wrote fetched bytes to): a plugin loader on a local
+    path pairs with nothing (reviews/pypi-98/26)."""
+
+    RULE_ID = "CAP.PY.EXECUTE.001"
+    NAMES: ClassVar[frozenset[str]] = frozenset(
+        {"run_path", "run_module", "exec_module", "load_module"}
+    )
+
+    @classmethod
+    def add(cls, content: FileContent, hits: list[CapabilityHit]) -> list[CapabilityHit]:
+        if not any(name in content.text for name in cls.NAMES):
+            return hits
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+        from cordon_scanner.detect.code.download_flow import DownloadFlow
+
+        runs = DownloadFlow.runs_download(content.text, "python")
+        if not runs:
+            return hits
+        try:
+            tree = PythonSyntax.parse(content.text)
+        except (SyntaxError, ValueError):
+            return hits
+        have = {h.line for h in hits if h.capability is Capability.EXECUTE}
+        lines = content.text.split("\n")
+        added: list[CapabilityHit] = []
+        for node in PythonSyntax.of(tree, ast.Call):
+            func = node.func
+            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+            if name not in cls.NAMES or node.lineno not in runs or node.lineno in have:
+                continue
+            start = len("\n".join(lines[: node.lineno - 1]).encode("utf-8")) + (
+                1 if node.lineno > 1 else 0
+            )
+            added.append(
+                CapabilityHit(
+                    capability=Capability.EXECUTE,
+                    rule_id=cls.RULE_ID,
+                    byte_start=start,
+                    byte_end=start + len(lines[node.lineno - 1].encode("utf-8")),
+                    line=node.lineno,
+                )
+            )
+            have.add(node.lineno)
+        return [*hits, *added]
 
 
 class UnsourcedPythonSinks:
@@ -439,6 +489,7 @@ class CapabilityDetector(BaseDetector):
             hits = Labelling.drop_excused_pattern_hits(content, hits)
         if unit.language == "python":
             hits = QuotedPythonProbes.drop(content, hits)
+            hits = DownloadedLoaderRuns.add(content, hits)
         if unit.language == "python" and not content.path.endswith(".pth"):
             hits = UnsourcedPythonSinks.mark(content, hits)
         if unit.language in ("javascript", "typescript"):
