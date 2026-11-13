@@ -291,7 +291,20 @@ class TestArIsRead:
         result = FormatKit.package(tmp_path, {"package/core/native.lib": archive})
         assert "SUSPECT.ARCHIVE.PATH_ESCAPE.001" not in {f.rule_id for f in result.findings}
 
-    @pytest.mark.parametrize("name", [b"../x.py/", b"a/../../x.py/", b"/etc/x.py/"])
+    def test_a_windows_build_path_naming_an_object_file_is_a_name_not_a_target(
+        self, tmp_path
+    ) -> None:
+        # MSVC records the absolute path an object was built from, drive letter and `..` included
+        # (11 names in one benign wheel's import libraries, reviews/pypi-98/26). Nothing extracts an
+        # ar member to that path; the drive letter is dropped and the rest is read as relative.
+        table = b"D:\\a\\1\\s\\build\\..\\obj\\x.obj/\n"
+        archive = FormatKit.ar([(b"//", table), (b"/0", self.PLANT)])
+        result = FormatKit.package(tmp_path, {"package/core/native.lib": archive})
+        assert "SUSPECT.ARCHIVE.PATH_ESCAPE.001" not in {f.rule_id for f in result.findings}
+
+    @pytest.mark.parametrize(
+        "name", [b"../x.py/", b"a/../../x.py/", b"/etc/x.py/", b"D:\\..\\x.py/", b"\\\\srv\\x.py/"]
+    )
     def test_a_member_name_that_leaves_the_root_is_refused(self, tmp_path, name: bytes) -> None:
         archive = FormatKit.ar([(name, self.PLANT)])
         result = FormatKit.package(tmp_path, {"package/core/native.lib": archive})

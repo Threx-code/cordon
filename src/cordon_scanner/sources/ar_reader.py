@@ -22,8 +22,9 @@ error, reported unread as any archive that fails to open is.
 
 from __future__ import annotations
 
+import re
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.foundation.errors import ArchiveError
 from cordon_scanner.sources.archive_names import MemberNames
@@ -42,6 +43,8 @@ _HEADER = 60
 
 class ArReader:
     """Reads an ar archive held in memory into the extraction result."""
+
+    _DRIVE: ClassVar[re.Pattern[str]] = re.compile(r"^[A-Za-z]:[\\/]+")
 
     @staticmethod
     def is_ar(data: bytes) -> bool:
@@ -132,9 +135,10 @@ class ArReader:
         """A member kept whole: the archive is in memory already, so a large member costs nothing
         more to hold (a tar's past the limit is spilled and read whole, for the same reason)."""
         # An object file's name is the path it was built from, and an ar archive has no links, so a
-        # `..` that stays inside resolves as it does in a tar or zip; one that climbs above the root,
-        # or an absolute name, is still refused.
-        safe = MemberNames.safe_member_name(name, collapse=True)
+        # `..` that stays inside resolves as it does in a tar or zip, and the drive letter of a
+        # Windows build path (`D:\\a\\obj\\x.obj`) is dropped: nothing extracts an ar member there. One
+        # that climbs above the root, or a root-absolute name, is still refused.
+        safe = MemberNames.safe_member_name(ArReader._DRIVE.sub("", name), collapse=True)
         if safe is None:
             result.rejected.append(
                 RejectedMember(
