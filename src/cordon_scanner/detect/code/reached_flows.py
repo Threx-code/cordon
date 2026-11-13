@@ -35,6 +35,7 @@ from cordon_scanner.detect.binary.features import BinaryFeatures
 from cordon_scanner.detect.code.features import CodeFeatures
 from cordon_scanner.foundation.dependencies import HookKinds
 from cordon_scanner.foundation.files.windows import BytesWindows, WindowSourceChanged
+from cordon_scanner.foundation.formats.served_json import DocumentUnavailable
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -101,8 +102,14 @@ class ReachedFlows:
                 for suffix in facts.get(unit.path, {}).get("reached.flow", ()):
                     out[f"{place}_{suffix}"] = 1.0
         if os.environ.get(ReachedFlows.MEASURE) == "1":
-            out.update(CodeFeatures.of(ReachedFlows.sources(units, ctx)))
-            out.update(BinaryFeatures.of(ReachedFlows.executables(units)))
+            try:
+                out.update(CodeFeatures.of(ReachedFlows.sources(units, ctx)))
+                out.update(BinaryFeatures.of(ReachedFlows.executables(units)))
+            except DocumentUnavailable:
+                # S2: covered. The miss is recorded by the store the step asked (`ServedJson.miss`)
+                # and ends the scan as a blocking gap in `Documents.report_missing`; the features
+                # it would have added are absent, as the gap says, not an exit 2.
+                return out
         return out
 
     @staticmethod

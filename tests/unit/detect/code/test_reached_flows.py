@@ -133,3 +133,33 @@ class TestBudget:
             [Fixture.unit("index.js", big)], Fixture.ctx(entries=frozenset({"index.js"}))
         )
         assert facts == {}
+
+
+class TestAMissingDocumentIsAGapNotACrash:
+    """The code features are read in the scan's parent, where scanned JSON is served by the context
+    worker. A document it did not hold is recorded and ends the scan as a blocking gap
+    (`Documents.report_missing`); it must not leave the feature step as an exception, which the CLI
+    reports as "internal error", exit 2 (reviews/pypi-98, a0's 11-13 rescan)."""
+
+    def test_a_miss_in_the_code_features_ends_as_a_gap(self, monkeypatch) -> None:
+        from cordon_scanner.detect.code.features import CodeFeatures
+        from cordon_scanner.engine.isolation.documents import Documents
+        from cordon_scanner.engine.pipeline.accumulator import Accumulator
+        from cordon_scanner.foundation.formats.served_json import ServedJson
+
+        def miss(*args, **kwargs):
+            return ServedJson.miss("pkg/data.json", "JSON document")
+
+        monkeypatch.setenv(ReachedFlows.MEASURE, "1")
+        monkeypatch.setattr(CodeFeatures, "of", staticmethod(miss))
+        Documents.end()
+        Documents.activate([])
+        try:
+            facts = ReachedFlows.of([], Fixture.ctx(), {})
+            acc = Accumulator()
+            Documents.report_missing(acc)
+        finally:
+            Documents.end()
+        assert facts == {}
+        assert [f.rule_id for f in acc.findings] == ["OPERATIONAL.WORKER.DOCUMENT_UNAVAILABLE"]
+        assert not acc.complete
