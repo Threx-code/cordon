@@ -131,7 +131,10 @@ class ArReader:
     def _keep(name: str, body: bytes, result: ExtractionResult, member: Callable[..., Any]) -> None:
         """A member kept whole: the archive is in memory already, so a large member costs nothing
         more to hold (a tar's past the limit is spilled and read whole, for the same reason)."""
-        safe = MemberNames.safe_member_name(name)
+        # An object file's name is the path it was built from, and an ar archive has no links, so a
+        # `..` that stays inside resolves as it does in a tar or zip; one that climbs above the root,
+        # or an absolute name, is still refused.
+        safe = MemberNames.safe_member_name(name, collapse=True)
         if safe is None:
             result.rejected.append(
                 RejectedMember(

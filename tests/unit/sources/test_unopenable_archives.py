@@ -282,6 +282,21 @@ class TestArIsRead:
         paths = {f.location.path for f in result.findings if f.rule_id == "SUSPECT.DECODE_EXEC.001"}
         assert any(p.endswith("long_member_name.py") and "\x00" not in p for p in paths), paths
 
+    def test_a_member_name_that_climbs_and_stays_inside_is_a_build_path(self, tmp_path) -> None:
+        # An object file's name is the path it was built from: `a/b/../c/x.obj`. The tar and zip
+        # readers resolve a `..` that stays inside the archive; an ar archive has no links, so the
+        # same rule holds (reviews/pypi-98/26: 11 names in one benign wheel's import libraries).
+        table = b"a/b/c/../d/x.obj/\n"
+        archive = FormatKit.ar([(b"//", table), (b"/0", self.PLANT)])
+        result = FormatKit.package(tmp_path, {"package/core/native.lib": archive})
+        assert "SUSPECT.ARCHIVE.PATH_ESCAPE.001" not in {f.rule_id for f in result.findings}
+
+    @pytest.mark.parametrize("name", [b"../x.py/", b"a/../../x.py/", b"/etc/x.py/"])
+    def test_a_member_name_that_leaves_the_root_is_refused(self, tmp_path, name: bytes) -> None:
+        archive = FormatKit.ar([(name, self.PLANT)])
+        result = FormatKit.package(tmp_path, {"package/core/native.lib": archive})
+        assert "SUSPECT.ARCHIVE.PATH_ESCAPE.001" in {f.rule_id for f in result.findings}
+
     def test_a_damaged_header_is_a_gap(self, tmp_path) -> None:
         archive = FormatKit.ar([(b"a.o/", b"\x7fELF" + b"\x00" * 60)]) + b"broken member header" * 4
         result = FormatKit.package(tmp_path, {"package/lib/libdemo.a": archive})
