@@ -14605,6 +14605,37 @@ class TestPayloadsTheDatasetShowedWereMissed:
             tmp_path, {"pkg/m.py": source}
         )
 
+    BUNDLED_LOAD: ClassVar[str] = (
+        "import os, pickle\n"
+        "def load():\n"
+        "    return pickle.load(open(os.path.join(os.path.dirname(__file__), 'model.pkl'), 'rb'))\n"
+    )
+
+    def test_a_load_in_a_function_nothing_calls_is_run_on_request_not_on_import(
+        self, tmp_path
+    ) -> None:
+        """The rule says "when it is imported": a body only a caller runs (a `predict()`, a CLI command) is
+        the loader a user asks for, and is lowered as every on-request composite is (7 of the 9 benign units
+        it blocked on the 16,828 rescan were this)."""
+        rules = self._rules(tmp_path, {"pkg/m.py": self.BUNDLED_LOAD})
+        assert rules.get("SUSPECT.MODEL.LOADED_ON_IMPORT.001") == "MEDIUM"
+
+    def test_the_same_function_called_where_the_module_loads_stays_high(self, tmp_path) -> None:
+        source = self.BUNDLED_LOAD + "MODEL = load()\n"
+        rules = self._rules(tmp_path, {"pkg/m.py": source})
+        assert rules.get("SUSPECT.MODEL.LOADED_ON_IMPORT.001") == "HIGH"
+
+    def test_a_class_body_and_a_try_at_module_level_are_import_time_too(self, tmp_path) -> None:
+        source = (
+            "import os, pickle\n"
+            "try:\n"
+            "    MODEL = pickle.load(open(os.path.join(os.path.dirname(__file__), 'model.pkl'), 'rb'))\n"
+            "except Exception:\n"
+            "    MODEL = None\n"
+        )
+        rules = self._rules(tmp_path, {"pkg/m.py": source})
+        assert rules.get("SUSPECT.MODEL.LOADED_ON_IMPORT.001") == "HIGH"
+
     def test_a_pure_wheel_loading_its_own_native_library(self, tmp_path) -> None:
         files = {
             "colorlib-1.0.dist-info/WHEEL": "Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
