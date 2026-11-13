@@ -21,7 +21,6 @@ from cordon_scanner.foundation.capabilities import Capability
 if TYPE_CHECKING:
     from typing import Any
 
-    from cordon_scanner.detect.base import ScanContext
     from cordon_scanner.foundation.content import FileContent
     from cordon_scanner.rules.pack import CompiledRule
 
@@ -594,21 +593,6 @@ class CompositeEvaluator:
             return False
 
         return False
-
-    def suspect_reports(
-        self,
-        ctx: ScanContext,
-        path: str,
-        hits: list[CapabilityHit],
-        rule: str = "SUSPECT.DROPPER.001",
-    ) -> bool:
-        """Whether the suspect grade of a dropper (`SUSPECT.DROPPER.001`) fires on the window its malware
-        grade matched: its `unless` excludes test paths, and withdrawing the one where the other does
-        not report would leave the file clean."""
-        suspect, fired = ctx.rules.get(rule), frozenset(hit.rule_id for hit in hits)
-        return suspect is not None and self.evaluate(
-            suspect, {hit.capability for hit in hits}, path, in_hook=True, fired=fired
-        )
 
     @staticmethod
     def capabilities_of(compiled: CompiledRule) -> tuple[Capability, ...]:
