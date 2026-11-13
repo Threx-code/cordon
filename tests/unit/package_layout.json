@@ -1018,6 +1018,7 @@
   "test_images.py": "images",
   "test_import_closure_roots.py": "engine",
   "test_import_graded.py": "detect/code/capability",
+  "test_exfil_main_reach.py": "detect/code/capability",
   "test_load_reach.py": "analysis/python",
   "test_included_files.py": "engine/pipeline",
   "test_folded_copies.py": "engine/pipeline",

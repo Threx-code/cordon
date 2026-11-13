@@ -393,10 +393,19 @@ class ArchiveStages:
             for unit in units
             if unit.path in closure and unit.path.endswith(".py") and not unit.content.is_binary
         }
+        deferred = LoadReach.deferred_lines(sorted(sources), sources)
+        has_main = any(path.rpartition("/")[2] == "__main__.py" for path in sources)
         return replace(
             ctx,
             import_closure_paths=frozenset(closure),
-            import_deferred_lines=LoadReach.deferred_lines(sorted(sources), sources),
+            import_deferred_lines=deferred,
+            # What `import pkg` runs without `python -m pkg` (reviews/pypi-98/19); the same set
+            # where the package has no `__main__.py`.
+            import_deferred_lines_without_main=(
+                LoadReach.deferred_lines(sorted(sources), sources, without_main=True)
+                if has_main
+                else deferred
+            ),
         )
 
     def parallel(

@@ -216,6 +216,9 @@ class ScanContext:
     import_deferred_lines: frozenset[tuple[str, int, int]] = frozenset()
     """`(path, first_line, last_line)` for function bodies in `import_closure_paths` that importing
     never runs (`analysis.python.reachability.LoadReach`): reached only when someone calls them."""
+    import_deferred_lines_without_main: frozenset[tuple[str, int, int]] = frozenset()
+    """The same, with `__main__.py`'s load statements not a root: what `import pkg` runs, not
+    `python -m pkg` (reviews/pypi-98/19). Read only for `CompositeRuleIds.IMPORT_REACH_WITHOUT_MAIN`."""
     startup_deferred_lines: frozenset[tuple[str, int, int]] = frozenset()
     """Bodies in `startup_closure_paths` that importing them at interpreter start never runs."""
 

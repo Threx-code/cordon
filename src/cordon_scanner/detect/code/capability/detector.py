@@ -562,6 +562,9 @@ class CapabilityDetector(BaseDetector):
         # does. See `ScanContext.install_hook_reaches`.
         deferred = CapabilityDetector._deferred_windows(ctx, unit, in_hook)
         import_deferred = CapabilityDetector._import_windows(ctx, unit, in_hook)
+        import_deferred_without_main = CapabilityDetector._import_windows(
+            ctx, unit, in_hook, without_main=True
+        )
         # Names this file binds that another file of the package imports and sends (`SentNames`).
         sent_names = frozenset((ctx.python_sent_names or {}).get(unit.path, {}))
 
@@ -577,7 +580,11 @@ class CapabilityDetector(BaseDetector):
             rule_hits = CapabilityDetector._rule_hits(compiled, unit, hits, decode_excused)
             window = CapabilityDetector._window(
                 evaluator, compiled, rule_hits, unit, (in_hook, in_ci, in_consumer),
-                deferred, import_deferred, sent_names,
+                deferred,
+                import_deferred_without_main
+                if compiled.rule.id in CompositeRuleIds.IMPORT_REACH_WITHOUT_MAIN
+                else import_deferred,
+                sent_names,
             )  # fmt: skip
             if window is None:
                 continue
@@ -656,15 +663,17 @@ class CapabilityDetector(BaseDetector):
 
     @staticmethod
     def _import_windows(
-        ctx: ScanContext, unit: FileUnit, in_hook: bool
+        ctx: ScanContext, unit: FileUnit, in_hook: bool, *, without_main: bool = False
     ) -> frozenset[tuple[int, int]] | None:
         """For a module a consumer imports (and no install hook runs), the line ranges importing
-        never runs; None for any other file."""
+        never runs; None for any other file. `without_main`: as `import pkg` runs them, not
+        `python -m pkg` (`ScanContext.import_deferred_lines_without_main`)."""
         if in_hook or unit.path not in ctx.import_closure_paths:
             return None
-        return frozenset(
-            (first, last) for path, first, last in ctx.import_deferred_lines if path == unit.path
+        lines = (
+            ctx.import_deferred_lines_without_main if without_main else ctx.import_deferred_lines
         )
+        return frozenset((first, last) for path, first, last in lines if path == unit.path)
 
     @staticmethod
     def _deferred_windows(

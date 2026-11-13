@@ -25,6 +25,14 @@ class CompositeRuleIds:
     #: package (`ScanContext.import_reaches`): admitted by their measured pair on M3 half A against
     #: the benign work half (reviews/pypi-98/10). Not INSTALL.PERSIST (1 malware for 2 benign: celery
     #: beat and cron tools schedule by design) nor the model-loading rules (no malware, 2 benign).
+    IMPORT_REACH_WITHOUT_MAIN: ClassVar[frozenset[str]] = frozenset(
+        {"MALWARE.EXFIL.001", "MALWARE.EXFIL.BEACON.001"}
+    )
+    """Read at import against what `import pkg` runs, not `python -m pkg`
+    (`ScanContext.import_deferred_lines_without_main`, reviews/pypi-98/19): a credential sent or the
+    machine reported from a body only `__main__.py` reaches is a program the user started. Only
+    these two; every other import-graded composite keeps the full reach."""
+
     IMPORT_GRADED: ClassVar[frozenset[str]] = frozenset(
         {
             "SUSPECT.DECODE_CHAIN.001",
