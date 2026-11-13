@@ -56,6 +56,7 @@ from cordon_scanner.detect.code.capability.text_position import TextPosition
 from cordon_scanner.detect.code.capability.view_runner import ViewRunner
 from cordon_scanner.detect.code.credential_sweep import CredentialSweep
 from cordon_scanner.detect.code.decode_run import DecodeRun
+from cordon_scanner.detect.code.drop_point_loot import DropPointLoot
 from cordon_scanner.detect.code.install_payload import InstallPayload
 from cordon_scanner.detect.code.keychain_owner import KeychainOwner
 from cordon_scanner.detect.infra.gradle_auth import GradleBuildAuth
@@ -507,11 +508,7 @@ class CapabilityDetector(BaseDetector):
         only while the file carries no loot. A stealer posts the environment, the user and host
         names or another service's credential through the same URL with its token read from the
         environment; once the file reads any of those, the bot URL is a drop point again."""
-        loot = any(
-            h.capability in (Capability.CREDENTIAL, Capability.RECONNAISSANCE)
-            and not LegitimateUse.a_setting(content, h)
-            for h in hits
-        )
+        loot = any(DropPointLoot.is_loot(content, language, h) for h in hits)
         if not loot:
             return hits
         held = set(hits)
@@ -703,7 +700,7 @@ class CapabilityDetector(BaseDetector):
     ) -> list[CapabilityHit]:
         """The hits a composite rule counts: settings are not loot, a verifiable dropper's unpacker is not a payload, excused decode runs do not count."""
         return (
-            [h for h in hits if not LegitimateUse.a_setting(unit.content, h)]
+            DropPointLoot.counted(unit.content, unit.language, hits)
             if compiled.rule.id in CompositeRuleIds.SETTINGS_ARE_NOT_LOOT
             else [h for h in hits if not InstallPayload.spawns_unpacker(unit.content, h)]
             if compiled.rule.id in CompositeRuleIds.VERIFIABLE_DROPPERS

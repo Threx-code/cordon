@@ -5,11 +5,10 @@ public-IP URL) with a credential or reconnaissance hit within 200 lines, and ask
 label is the egress. Measured on 26 legitimate PyPI units it blocked (reviews/pypi-98/21), the pair was
 made of text and settings, not of a read and a send:
 
-* **text** (T): a credential hit inside a string literal of a parsed file (a rule table, a payload
-  list, a help message), or in a template (`.html`, `.j2`, ...), is not a read. A string that is
+* **text** (T): a credential hit on a line that is only text in a parsed file (`PythonSyntax.text_only_lines`:
+  a docstring, a help block, the lines a multi-line string continues on), or in a template (`.html`, `.j2`, ...), is not a read. A string that is
   itself run (an argument of `exec`, `eval`, `compile`, `os.system`, `os.popen` or a `subprocess`
   call, directly or through one name) is code and keeps its hits;
-* **one token** (N3): a hit made of the destination label's own bytes is not a second signal;
 * **a destination named** (D): a label that is only a message (`print`, a logger, an exception, a
   help text) or only an operand of `in` (a deny-list) is not where anything is sent. A label whose
   use the file does not resolve counts as reached: a name loaded anywhere else, a dict item, an
@@ -69,7 +68,14 @@ class DropPointLoot:
     LOG_METHODS: ClassVar[frozenset[str]] = frozenset(
         {"debug", "info", "warning", "warn", "error", "exception", "critical", "fatal", "log", "echo", "secho"}
     )  # fmt: skip
-    LOG_RECEIVERS: ClassVar[tuple[str, ...]] = ("log", "console", "click", "typer", "warnings", "rich")
+    LOG_RECEIVERS: ClassVar[tuple[str, ...]] = (
+        "log",
+        "console",
+        "click",
+        "typer",
+        "warnings",
+        "rich",
+    )
     _READERS: ClassVar[frozenset[str]] = frozenset({"get", "getenv", "pop"})
     _WHOLE: ClassVar[frozenset[str]] = frozenset({"copy", "items", "keys", "values"})
     _COMPREHENSIONS: ClassVar[tuple[type, ...]] = (
@@ -214,13 +220,12 @@ class DropPointLoot:
 
     @classmethod
     def _is_text(cls, content: FileContent, tree: ast.AST, hit: CapabilityHit) -> bool:
-        node = cls._string_holding(content, tree, hit.byte_start, hit.byte_end)
-        if node is None:
+        """The hit sits on a line that is only text (`PythonSyntax.text_only_lines`), in a string the file
+        does not run."""
+        if hit.line not in PythonSyntax.text_only_lines(tree):
             return False
-        parent = PythonSyntax.parents(tree).get(id(node))
-        if isinstance(parent, ast.JoinedStr):
-            return False  # an f-string's parts: older parsers place them as the whole string
-        return id(node) not in cls._runs_text(tree)
+        node = cls._string_holding(content, tree, hit.byte_start, hit.byte_end)
+        return node is not None and id(node) not in cls._runs_text(tree)
 
     @classmethod
     def _is_a_setting_read(cls, tree: ast.AST, hit: CapabilityHit) -> bool:
@@ -248,9 +253,9 @@ class DropPointLoot:
                 last = name.rsplit(".", 1)[-1]
                 if last == "getenv" or (last in cls._READERS and "environ" in name):
                     out.append((node, node.args[0] if node.args else None))
-                elif last in cls._WHOLE and "environ" in name:
-                    out.append((node, None))
-                elif name == "dict" and node.args and "environ" in cls.dotted(node.args[0]):
+                elif (last in cls._WHOLE and "environ" in name) or (
+                    name == "dict" and node.args and "environ" in cls.dotted(node.args[0])
+                ):
                     out.append((node, None))
             return out
 
@@ -448,17 +453,11 @@ class DropPointLoot:
     def counted(
         cls, content: FileContent, language: str | None, hits: list[CapabilityHit]
     ) -> list[CapabilityHit]:
-        """The hits `SUSPECT.EXFIL.DROP_POINT.001` counts: loot that is loot, labels that are
-        destinations, and no hit that is a label's own bytes counted again as loot."""
-        labels = [h for h in hits if h.rule_id == cls.LABEL_RULE]
+        """The hits `SUSPECT.EXFIL.DROP_POINT.001` counts: loot that is loot, and labels that are
+        destinations."""
         out: list[CapabilityHit] = []
         for hit in hits:
             if hit.capability in (Capability.CREDENTIAL, Capability.RECONNAISSANCE):
-                if any(
-                    hit.byte_start < label.byte_end and label.byte_start < hit.byte_end
-                    for label in labels
-                ):
-                    continue
                 if not cls.is_loot(content, language, hit):
                     continue
             elif hit.rule_id == cls.LABEL_RULE and cls.destination_is_only_named(
