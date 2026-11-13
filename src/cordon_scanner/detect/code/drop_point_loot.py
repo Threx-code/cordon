@@ -231,9 +231,10 @@ class DropPointLoot:
 
     @classmethod
     def _is_text(cls, content: FileContent, tree: ast.AST, hit: CapabilityHit) -> bool:
-        """The hit sits on a line that is only text (`PythonSyntax.text_only_lines`), in a string the file
-        does not run."""
-        if hit.line not in PythonSyntax.text_only_lines(tree):
+        """The hit sits on a line that is only text (`PythonSyntax.text_only_lines`, or a table written one
+        string to a line that reaches no opener or runner), in a string the file does not run."""
+        text_lines = PythonSyntax.text_only_lines(tree) | PythonStoreFlow.table_text_lines(tree)
+        if hit.line not in text_lines:
             return False
         node = cls._string_holding(content, tree, hit.byte_start, hit.byte_end)
         return node is not None and id(node) not in cls._runs_text(tree)

@@ -36,6 +36,34 @@ class TestTextIsNotARead:
     def test_a_block_of_text_naming_stores_beside_a_notifier_is_quiet(self, tmp_path) -> None:
         assert not Kit.fires(tmp_path, self.NOTIFIER)
 
+    TABLE = (
+        "import requests\n"
+        "PATTERNS = [\n"
+        '    "cat ~/.aws/credentials",\n'
+        '    "cat ~/.ssh/id_rsa",\n'
+        "]\n"
+        "{use}"
+        "def notify(text):\n"
+        f'    requests.post("{HOOK}", json={{"text": text}})\n'
+    )
+
+    def test_a_table_only_matched_is_quiet(self, tmp_path) -> None:
+        use = "def scan(text):\n    return [p for p in PATTERNS if p in text]\n"
+        assert not Kit.fires(tmp_path, self.TABLE.replace("{use}", use))
+
+    @pytest.mark.parametrize(
+        "use",
+        [
+            "import os\nDATA = [open(os.path.expanduser(p)).read() for p in PATTERNS]\n",
+            "import os\nfor p in PATTERNS:\n    os.system(p)\n",
+            "exec('\\n'.join(PATTERNS))\n",
+            "import os\nos.system(' ; '.join(PATTERNS))\n",
+        ],
+        ids=["opened in a comprehension", "run one by one", "exec joined", "os.system joined"],
+    )
+    def test_a_table_a_loop_opens_or_a_join_runs_keeps_it(self, tmp_path, use) -> None:
+        assert Kit.fires(tmp_path, self.TABLE.replace("{use}", use))
+
     @pytest.mark.parametrize(
         "source",
         [

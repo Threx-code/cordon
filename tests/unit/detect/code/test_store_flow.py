@@ -7,7 +7,7 @@ import textwrap
 
 import pytest
 
-from cordon_scanner.detect.code.store_flow import BoundClient, StoreFlow
+from cordon_scanner.detect.code.store_flow import BoundClient, PythonStoreFlow, StoreFlow
 
 
 class FlowKit:
@@ -462,3 +462,50 @@ class TestABoundClient:
 
     def test_a_file_that_does_not_parse_keeps_the_text_reading(self) -> None:
         assert not BoundClient.configured("def (:\n", 1, self.CLIENT)
+
+
+class TestATableWrittenOneStringToALine:
+    """`PythonStoreFlow.table_text_lines`: strings, one to a line, that no opener or runner is given are text."""
+
+    TABLE = '[\n    "cat ~/.aws/credentials",\n    "cat ~/.ssh/id_rsa",\n]\n'
+
+    def lines(self, use: str) -> frozenset[int]:
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
+        source = f"import os, re\nPATTERNS = {self.TABLE}{use}\n"
+        return PythonStoreFlow.table_text_lines(PythonSyntax.parse(source))
+
+    @pytest.mark.parametrize(
+        "use",
+        [
+            "def scan(t):\n    return [p for p in PATTERNS if p in t]\n",
+            "def scan(t):\n    return [re.search(p, t) for p in PATTERNS]\n",
+            "def show():\n    for p in PATTERNS:\n        print(p)\n",
+            "",
+        ],
+        ids=["compared", "matched", "printed", "never used"],
+    )
+    def test_a_table_that_is_matched_or_shown_is_text(self, use) -> None:
+        assert self.lines(use) == {3, 4}
+
+    @pytest.mark.parametrize(
+        "use",
+        [
+            "def grab():\n    return [open(os.path.expanduser(p)).read() for p in PATTERNS]\n",
+            "def grab():\n    for p in PATTERNS:\n        data = open(p).read()\n",
+            "def go():\n    exec('\\n'.join(PATTERNS))\n",
+            "def go():\n    os.system(' ; '.join(PATTERNS))\n",
+            "from pathlib import Path\ndef go():\n    return [Path(p).read_text() for p in PATTERNS]\n",
+            "def read(p):\n    return open(p).read()\ndef go():\n    return [read(p) for p in PATTERNS]\n",
+        ],
+        ids=[
+            "opened",
+            "opened in a loop",
+            "exec joined",
+            "os.system joined",
+            "read_text",
+            "a local reader",
+        ],
+    )
+    def test_a_list_a_loop_opens_or_a_join_runs_is_code(self, use) -> None:
+        assert self.lines(use) == frozenset()

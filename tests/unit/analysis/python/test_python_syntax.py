@@ -228,3 +228,38 @@ class TestTextOnlyLines:
     def test_the_answer_is_kept_for_a_tree(self) -> None:
         tree = PythonSyntax.parse(self.SOURCE)
         assert PythonSyntax.text_only_lines(tree) is PythonSyntax.text_only_lines(tree)
+
+
+class TestStringElementLines:
+    """`PythonSyntax.string_element_lines`: where a table is written one string to a line."""
+
+    SOURCE = (
+        "PATTERNS = [\n"  # 1: a list opens: code
+        '    "cat ~/.aws/credentials",\n'  # 2: a string alone
+        '    "cat ~/.ssh/id_rsa",\n'  # 3
+        "]\n"  # 4
+        'ONE = ["a", "b"]\n'  # 5: a list starts here
+        "TABLE = {\n"  # 6
+        '    "key": "value",\n'  # 7: strings alone
+        '    "other": name,\n'  # 8: a name starts here
+        "}\n"  # 9
+        "def f():\n"  # 10
+        "    return call(\n"  # 11
+        '        "an argument",\n'  # 12
+        '        flag="a keyword",\n'  # 13
+        "    )\n"  # 14
+        'EACH = (\n    f"{x} and",\n)\n'  # 15-17: an f-string with an expression
+    )
+
+    def lines(self) -> frozenset[int]:
+        return PythonSyntax.string_element_lines(PythonSyntax.parse(self.SOURCE))
+
+    def test_a_string_alone_on_its_line_as_an_element_or_an_argument_counts(self) -> None:
+        assert {2, 3, 7, 12, 13} <= self.lines()
+
+    def test_a_line_where_anything_else_starts_does_not(self) -> None:
+        lines = self.lines()
+        assert 1 not in lines
+        assert 5 not in lines
+        assert 8 not in lines
+        assert 16 not in lines

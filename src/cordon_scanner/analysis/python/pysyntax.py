@@ -358,6 +358,39 @@ class PythonSyntax:
         found: frozenset[int] = PythonSyntax.memo(tree, "text-only-lines", compute)
         return found
 
+    @staticmethod
+    def string_element_lines(tree: ast.AST) -> frozenset[int]:
+        """The lines on which a string literal stands as an element of a list, tuple, set or dict, or as
+        an argument, and nothing but literals starts: `    "cat ~/.aws/credentials",` in a table written one
+        string to a line. What the strings are for is not said here (a table that is matched and a list
+        that is opened look alike); `PythonStoreFlow.table_text_lines` asks where they go."""
+
+        def compute() -> frozenset[int]:
+            code: set[int] = set()
+            lines: set[int] = set()
+            parents = PythonSyntax.parents(tree)
+            for node in PythonSyntax.nodes(tree):
+                if (
+                    isinstance(node, ast.expr)
+                    and not isinstance(node, ast.Constant | ast.JoinedStr)
+                    and hasattr(node, "lineno")
+                ):
+                    code.add(node.lineno)
+                if (
+                    isinstance(node, ast.Constant)
+                    and isinstance(node.value, str)
+                    and node.end_lineno == node.lineno
+                    and isinstance(
+                        parents.get(id(node)),
+                        ast.List | ast.Tuple | ast.Set | ast.Dict | ast.Call | ast.keyword,
+                    )
+                ):
+                    lines.add(node.lineno)
+            return frozenset(lines - code)
+
+        found: frozenset[int] = PythonSyntax.memo(tree, "string-element-lines", compute)
+        return found
+
 
 class TreeIndex:
     """One depth-first pass over a tree: every node's entry and exit number, and per node type
