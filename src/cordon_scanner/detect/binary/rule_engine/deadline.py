@@ -53,7 +53,11 @@ class MatchDeadline:
     @staticmethod
     def timeout(deadline: Until) -> TimeoutError:
         """The error for a deadline that has passed: `MatchStalled` when only the wall backstop ran out."""
-        if isinstance(deadline, MatchDeadline) and deadline.wall_spent() and not deadline.cpu_spent():
+        if (
+            isinstance(deadline, MatchDeadline)
+            and deadline.wall_spent()
+            and not deadline.cpu_spent()
+        ):
             return MatchStalled(MESSAGE)
         return TimeoutError(MESSAGE)
 

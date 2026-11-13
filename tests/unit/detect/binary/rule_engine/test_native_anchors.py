@@ -394,11 +394,13 @@ class TestTheNativeClockIsTheThreadsCpu:
         windows = text.index("GetThreadTimes(GetCurrentThread()")
         posix = text.index("clock_gettime(CLOCK_THREAD_CPUTIME_ID")
         fallback = text.index("static double cpu_seconds(void) { return now_seconds(); }")
-        assert text.index("#ifdef _WIN32", text.index("seconds of CPU the calling thread")) < windows
+        assert (
+            text.index("#ifdef _WIN32", text.index("seconds of CPU the calling thread")) < windows
+        )
         assert "#elif defined(CLOCK_THREAD_CPUTIME_ID)" in text
         assert windows < posix < fallback
 
     def test_every_native_entry_that_takes_a_time_takes_both_limits(self) -> None:
         text = self.source()
         assert text.count('"y*Oy*llnn|dd"') == 1 and text.count('"y*OOOnlnn|dd"') == 1
-        assert "|d\"" not in text.replace("|dd\"", "")
+        assert '|d"' not in text.replace('|dd"', "")

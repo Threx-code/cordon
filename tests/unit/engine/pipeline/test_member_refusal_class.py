@@ -17,16 +17,16 @@ from cordon_scanner.sources.base import REJECTION_CAUSE, Rejection
 CLASSES = {"budget", "size", "unreadable", "content"}
 
 
-def reasons() -> list[str]:
-    return [v for k, v in vars(Rejection).items() if k.isupper() and isinstance(v, str)]
-
-
 class TestEveryReasonStatesItsClass:
+    @staticmethod
+    def reasons() -> list[str]:
+        return [v for k, v in vars(Rejection).items() if k.isupper() and isinstance(v, str)]
+
     def test_every_reason_has_a_class_of_the_value_set(self) -> None:
-        missing = [r for r in reasons() if r not in REJECTION_CAUSE]
+        missing = [r for r in self.reasons() if r not in REJECTION_CAUSE]
         assert not missing, f"a refusal reason with no cause class: {missing}"
         assert set(REJECTION_CAUSE.values()) <= CLASSES
-        assert set(REJECTION_CAUSE) <= set(reasons())
+        assert set(REJECTION_CAUSE) <= set(self.reasons())
 
     def test_every_refusal_site_raises_a_reason_that_has_one(self) -> None:
         """Each `RejectedMember(name, <reason>, ...)` in the readers names a `Rejection.X` that has a
