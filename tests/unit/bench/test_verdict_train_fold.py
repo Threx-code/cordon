@@ -19,7 +19,11 @@ from verdict_train import VerdictTrain
 
 
 class VerdictTrainKit:
-    PACKAGE: dict[str, float] = {"code_import_tok_517": 2.0, "code_import_tok_5": 1.0, "files": 3.0}  # noqa: RUF012
+    PACKAGE: dict[str, float] = {
+        "code_import_tok_65541": 2.0,
+        "code_import_tok_5": 1.0,
+        "files": 3.0,
+    }  # noqa: RUF012
 
     @staticmethod
     def row(record: dict[str, float] | None = None) -> dict:
@@ -41,10 +45,10 @@ class TestEvidence:
         features = VerdictTrain.evidence(row)
         assert features == FeatureRecord.read(row)[1]
         assert features["pkg:code_import_tok_f5"] == 3.0
-        assert "pkg:code_import_tok_517" not in features
+        assert "pkg:code_import_tok_65541" not in features
 
     def test_the_record_is_read_only_when_asked(self) -> None:
-        record = {"pkg:code_import_tok_517": 7.0, "r:SUSPECT.Y.001": 1.0}
+        record = {"pkg:code_import_tok_65541": 7.0, "r:SUSPECT.Y.001": 1.0}
         row = VerdictTrainKit.row(record)
         assert VerdictTrain.evidence(row, record=True) == FeatureFold.apply(record)
         assert VerdictTrain.evidence(row) == VerdictTrain.evidence(VerdictTrainKit.row())
