@@ -32,6 +32,10 @@ _LTR_SAFE = frozenset(map(chr, (0x202A, 0x202C, 0x2066, 0x2069)))  # LRE PDF LRI
 
 _DIR_CONTROL = re.compile("[\u202a-\u202e\u2066-\u2069]")
 
+#: The overrides as characters (LRO, RLO), and the right-to-left and Arabic-letter marks that may not sit in a span.
+_OVERRIDES = frozenset(map(chr, (0x202D, 0x202E)))
+_RTL_MARKS = frozenset(map(chr, (0x200F, 0x061C)))
+
 #: The overrides, as UTF-8 bytes: the Trojan Source primitive. Their presence anywhere in a file
 #: keeps every directional finding in it at full severity.
 _OVERRIDE_BYTES = (b"\xe2\x80\xad", b"\xe2\x80\xae")  # LRO, RLO
@@ -223,6 +227,91 @@ class ObfuscationText:
                 # operator inside the span: it could change how the line reads. Keep the finding.
                 return False
         return False  # never closed -- unbalanced, so keep the finding
+
+    #: What closes each opener: a pop pairs with its own kind only (an embedding with PDF, an isolate with PDI).
+    _CLOSER: ClassVar[dict[str, str]] = {
+        chr(0x202A): chr(0x202C), chr(0x202B): chr(0x202C),  # LRE, RLE -> PDF
+        chr(0x2066): chr(0x2069), chr(0x2067): chr(0x2069), chr(0x2068): chr(0x2069),  # LRI, RLI, FSI -> PDI
+    }  # fmt: skip
+
+    #: What a span inside a literal may not hold, beside the enclosing quote, a newline and a directional
+    #: control: a backslash (it can escape the quote) and braces (an f-string or template literal evaluates
+    #: what is inside them, so code would sit in a reordered span). Every other character is text: inside
+    #: one literal a balanced embedding reorders only its own contents, whatever they are.
+    _SPAN_BREAKERS: ClassVar[frozenset[str]] = frozenset("{}\\")
+
+    #: A paragraph of text ends at a line break: a control's effect ends with it.
+    _PARAGRAPH: ClassVar[re.Pattern[str]] = re.compile(r"[\n\r\x1c-\x1e\x85\u2029]")
+
+    @staticmethod
+    def every_control_is_inert(raw: bytes) -> bool:
+        r"""Whether every directional control in the file reorders nothing outside a string literal
+        (reviews/pypi-98/23, E1 and E2). Each control is one of:
+
+        * an embedding or isolate opened and popped, by its own kind of pop, inside one string literal on
+          one line, with the closing quote of that literal still to come on the line and nothing between
+          that can end the literal or the line or put code in the span (the enclosing quote, a backslash,
+          `{` or `}`, a right-to-left or Arabic-letter mark, or another directional control). A
+          left-to-right mark may sit in the span;
+        * a pop with no opener before it in its paragraph, which pops nothing.
+
+        An override (LRO, RLO) is never one of these, and one control that is not makes the file
+        not inert: a harmless first pair does not lower a later opener nothing pops.
+        """
+        text = raw.decode("utf-8", "replace")
+        found = False
+        for line in ObfuscationText._PARAGRAPH.split(text):
+            if _DIR_CONTROL.search(line) is None:
+                continue
+            found = True
+            if not ObfuscationText._line_is_inert(line):
+                return False
+        return found
+
+    @staticmethod
+    def _line_is_inert(line: str) -> bool:
+        """Every directional control of one paragraph is a pop that pops nothing or a balanced pair in a literal."""
+        index = 0
+        while index < len(line):
+            char = line[index]
+            if char in _OVERRIDES:
+                return False
+            closer = ObfuscationText._CLOSER.get(char)
+            if closer is None:
+                index += 1  # text, or a pop with nothing open (this pass consumes every pair)
+                continue
+            quote = ObfuscationText._open_quote(line[:index])
+            end = line.find(closer, index + 1)
+            if quote is None or end < 0 or quote not in line[end + 1 :]:
+                return False
+            span = line[index + 1 : end]
+            if (
+                quote in span
+                or any(c in ObfuscationText._SPAN_BREAKERS or c in _RTL_MARKS for c in span)
+                or _DIR_CONTROL.search(span) is not None
+            ):
+                return False
+            index = end + 1
+        return True
+
+    @staticmethod
+    def _open_quote(prefix: str) -> str | None:
+        """The quote still open at the end of `prefix`: None if none is, or if a comment began outside a quote."""
+        quote: str | None = None
+        index = 0
+        while index < len(prefix):
+            char = prefix[index]
+            if quote is not None:
+                if char == "\\":
+                    index += 1
+                elif char == quote:
+                    quote = None
+            elif char in "\"'`":
+                quote = char
+            elif char == "#" or prefix.startswith(("//", "/*", "--"), index):
+                return None
+            index += 1
+        return quote
 
     @staticmethod
     def _longest_padding_run(text: str) -> int:
