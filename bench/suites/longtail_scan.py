@@ -95,7 +95,8 @@ class LongtailScan:
         null = os.open(os.devnull, os.O_RDWR)
         os.dup2(null, 0)
         os.dup2(fd, 1)
-        os.dup2(null, 2)
+        # stderr kept beside the result: a scan with no JSON says why in its row (`record`).
+        os.dup2(os.open(out + ".err", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 2)
         sys.stdout = open(1, "w", encoding="utf-8", closefd=False)  # noqa: SIM115 - the child's stdout for its life
         from cordon_scanner.cli.main import CommandLine
 
@@ -156,6 +157,14 @@ class LongtailScan:
             ]
         except Exception as e:  # noqa: BLE001
             rec["parse_error"] = repr(e)[:120]
+            # Why the child wrote no report: its last stderr lines (an exit 2 with empty stdout
+            # said nothing in the 0.8.0 benign run, shard 0).
+            err = out.with_name(out.name + ".err")
+            with contextlib.suppress(OSError):
+                text = err.read_text(encoding="utf-8", errors="replace")
+                lines = [x for x in text.splitlines() if x.strip()]
+                rec["stderr_tail"] = "\n".join(lines[-3:])[-400:]
+        out.with_name(out.name + ".err").unlink(missing_ok=True)
         return rec
 
     @staticmethod
