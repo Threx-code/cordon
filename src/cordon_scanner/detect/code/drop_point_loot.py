@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import ast
 import bisect
+import re
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
@@ -95,6 +96,7 @@ class DropPointLoot:
     _CONSTRUCTORS: ClassVar[frozenset[str]] = frozenset(
         {"frozenset", "set", "list", "tuple", "dict", "sorted"}
     )
+    _ADDRESS: ClassVar[re.Pattern[str]] = re.compile(r"\d{1,3}(?:\.\d{1,3}){3}")
     _READERS: ClassVar[frozenset[str]] = frozenset({"get", "getenv", "pop"})
     _WHOLE: ClassVar[frozenset[str]] = frozenset({"copy", "items", "keys", "values"})
     _COMPREHENSIONS: ClassVar[tuple[type, ...]] = (
@@ -512,6 +514,12 @@ class DropPointLoot:
         return out
 
     @classmethod
+    def _is_an_address(cls, content: FileContent, label: CapabilityHit) -> bool:
+        """Whether the label is a public IP address written as a URL or a host, not a name."""
+        text = content.raw[label.byte_start : label.byte_end].decode("utf-8", "replace")
+        return cls._ADDRESS.search(text) is not None
+
+    @classmethod
     def _reads_never_sent(
         cls,
         content: FileContent,
@@ -529,6 +537,8 @@ class DropPointLoot:
             return []
         if any(h.rule_id in cls.SENT_FACTS for h in hits):
             return []
+        if any(cls._is_an_address(content, h) for h in hits if h.rule_id == cls.LABEL_RULE):
+            return []  # a fixed public address is the rule's core shape (cordon-a0, 11-13)
         egress = [
             h.line
             for h in hits

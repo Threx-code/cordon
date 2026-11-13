@@ -569,9 +569,7 @@ class CapabilityDetector(BaseDetector):
             if compiled.match.scope not in {"file", "function"}:
                 continue
 
-            rule_hits = CapabilityDetector._rule_hits(
-                compiled, unit, hits, decode_excused, ctx.cross_file_unresolved
-            )
+            rule_hits = CapabilityDetector._rule_hits(compiled, unit, hits, decode_excused, ctx)
             window = CapabilityDetector._window(
                 evaluator, compiled, rule_hits, unit, (in_hook, in_ci, in_consumer),
                 deferred,
@@ -699,11 +697,13 @@ class CapabilityDetector(BaseDetector):
         unit: FileUnit,
         hits: list[CapabilityHit],
         decode_excused: frozenset[int],
-        unresolved: bool = False,
+        ctx: ScanContext,
     ) -> list[CapabilityHit]:
         """The hits a composite rule counts: settings are not loot, a verifiable dropper's unpacker is not a payload, excused decode runs do not count."""
         return (
-            DropPointLoot.counted(unit.content, unit.language, hits, unresolved=unresolved)
+            DropPointLoot.counted(
+                unit.content, unit.language, hits, unresolved=ctx.cross_file_unresolved
+            )
             if compiled.rule.id in CompositeRuleIds.SETTINGS_ARE_NOT_LOOT
             else [h for h in hits if not InstallPayload.spawns_unpacker(unit.content, h)]
             if compiled.rule.id in CompositeRuleIds.VERIFIABLE_DROPPERS

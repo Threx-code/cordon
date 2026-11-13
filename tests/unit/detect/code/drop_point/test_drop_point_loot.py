@@ -144,10 +144,11 @@ class TestASettingReadByTheTree:
         )
         assert not Kit.fires(tmp_path, source)
 
-    def test_a_name_from_outside_whose_value_only_builds_the_address_is_quiet(self, tmp_path) -> None:
+    def test_a_name_from_outside_whose_value_only_builds_the_address_is_quiet(
+        self, tmp_path
+    ) -> None:
         source = self.notifier(
-            "def _env(name):\n    return os.environ.get(name)\n"
-            "def notify(t, k):\n    tok = _env(k)"
+            "def _env(name):\n    return os.environ.get(name)\ndef notify(t, k):\n    tok = _env(k)"
         )
         assert not Kit.fires(tmp_path, source)
 
@@ -174,3 +175,15 @@ class TestASettingReadByTheTree:
     )
     def test_an_unbounded_name_or_a_credential_fires(self, tmp_path, body) -> None:
         assert Kit.fires(tmp_path, self.notifier(body))
+
+    def test_a_read_beside_a_fixed_public_address_stays_loot(self, tmp_path) -> None:
+        """A telemetry default to a fixed address is the rule's core shape: a read the file does not
+        send is still counted there (cordon-a0, 11-13)."""
+        source = (
+            "import os\n"
+            "class Telemetry:\n"
+            '    address = "http://144.126.133.21:8000"\n'
+            "    def __init__(self, name):\n"
+            "        self.opt_out = os.environ.get(name)\n"
+        )
+        assert Kit.fires(tmp_path, source)
