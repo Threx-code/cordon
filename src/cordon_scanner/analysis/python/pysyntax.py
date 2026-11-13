@@ -109,6 +109,20 @@ class PythonSyntax:
         return index.between(place[1], place[2], types)
 
     @staticmethod
+    def keyed_value_not_function(node: ast.Subscript, tree: ast.AST | None) -> bool:
+        """Whether `x["eval"]` here is plainly not a function reached by name: a key written or
+        deleted (`payload["eval"] = {}` stores a value; it reaches nothing), or a value whose
+        non-dunder attribute is read (`payload["eval"].get(...)`: a builtin function has only dunder
+        attributes, so `__builtins__["exec"].__call__(code)` stays a finding). A results dict
+        keyed "eval" blocked a legitimate evaluation script (paper-preflight 0.8, 0.8.0 benign)."""
+        if isinstance(node.ctx, ast.Store | ast.Del):
+            return True
+        if tree is None:
+            return False
+        parent = PythonSyntax.parents(tree).get(id(node))
+        return isinstance(parent, ast.Attribute) and not parent.attr.startswith("__")
+
+    @staticmethod
     def parents(tree: ast.AST) -> dict[int, ast.AST]:
         """`id(node) -> parent` for every node of `tree`: from its `TreeIndex` when it has one, which
         recorded them on its one traversal; built once and kept on the tree otherwise. Four passes
