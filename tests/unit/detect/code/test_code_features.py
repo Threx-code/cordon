@@ -148,7 +148,9 @@ class TestWhenMade:
         )
         return ReachedFlows.of([unit], ctx, {})  # type: ignore[arg-type]
 
-    def test_a_users_scan_does_not_make_them(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_a_users_scan_does_not_make_the_reached_places(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.delenv(ReachedFlows.MEASURE, raising=False)
         assert not any(k.startswith("code_") for k in TestWhenMade.run())
 
@@ -314,17 +316,45 @@ class TestThePackagePlace:
         assert any(k.startswith("code_package_tok_") for k in keys)
         assert not any(k.startswith(("code_import_", "code_closure_")) for k in keys)
 
-    def test_a_users_scan_does_not_make_them(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv(ReachedFlows.MEASURE, raising=False)
-        got = ReachedFlows.of(self.units(), self.ctx(), {})  # type: ignore[arg-type]
-        assert not any(k.startswith("code_") for k in got)
+    @staticmethod
+    def scanned(monkeypatch: pytest.MonkeyPatch, measure: bool) -> dict[str, float]:
+        if measure:
+            monkeypatch.setenv(ReachedFlows.MEASURE, "1")
+        else:
+            monkeypatch.delenv(ReachedFlows.MEASURE, raising=False)
+        return ReachedFlows.of(  # type: ignore[arg-type]
+            TestThePackagePlace.units(), TestThePackagePlace.ctx(), {}
+        )
 
-    def test_a_measurement_run_makes_them(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv(ReachedFlows.MEASURE, "1")
-        got = ReachedFlows.of(self.units(), self.ctx(), {})  # type: ignore[arg-type]
+    def test_a_users_scan_makes_the_package_features_and_no_other_code_feature(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        got = self.scanned(monkeypatch, measure=False)
         assert any(k.startswith("code_package_tok_") for k in got)
-        assert "code_package_api_mod_socket" not in got  # `socket` is not on the named list
         assert any(k.startswith("code_package_apih_") for k in got)
+        # The reached places and the binary features stay measure-only.
+        assert not any(
+            k.startswith(("code_install_", "code_import_", "code_closure_")) for k in got
+        )
+        assert not any(k.startswith("exe_") for k in got)
+
+    def test_a_measurement_run_adds_the_reached_places_and_the_package_features_are_the_same(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        users = self.scanned(monkeypatch, measure=False)
+        measured = self.scanned(monkeypatch, measure=True)
+        package = {k: v for k, v in measured.items() if k.startswith("code_package_")}
+        assert package == {k: v for k, v in users.items() if k.startswith("code_package_")}
+        assert any(k.startswith("code_import_tok_") for k in measured)
+        assert set(users) < set(measured)
+
+    def test_a_package_with_no_python_file_makes_no_package_feature(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv(ReachedFlows.MEASURE, raising=False)
+        units = [FileUnit(content=FileContent.from_bytes("index.js", JS.encode()))]
+        got = ReachedFlows.of(units, self.ctx(), {})  # type: ignore[arg-type]
+        assert not any(k.startswith("code_") for k in got)
 
     def test_the_same_files_give_the_same_features(self) -> None:
         files = [(p, t.encode()) for p, t in self.FILES if p.endswith(".py")]
@@ -354,33 +384,3 @@ class TestThePackagePlace:
         one = CodeFeatures.of({"package": [("a.py", b"x = 'aaaa'\nrun(x)\n")]})
         two = CodeFeatures.of({"package": [("a.py", b"x = 'zzzzzz'\nrun(x)\n")]})
         assert one == two
-
-
-class TestThePackagePlaceAddsOnly:
-    """The identity test of `FeatureSchema.SAME_AS` for the package place (and for a miss in the feature
-    step being a gap): a user's scan computes no code feature, before or after; a measurement run gives
-    every feature it gave, with the same values, and the `code_package_*` ones besides."""
-
-    @staticmethod
-    def measured(monkeypatch: pytest.MonkeyPatch, places: tuple[str, ...]) -> dict[str, float]:
-        monkeypatch.setenv(ReachedFlows.MEASURE, "1")
-        monkeypatch.setattr(CodeFeatures, "PLACES", places)
-        return ReachedFlows.of(  # type: ignore[arg-type]
-            TestThePackagePlace.units(), TestThePackagePlace.ctx(), {}
-        )
-
-    def test_a_measurement_run_gives_what_it_gave_and_the_package_features_besides(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        earlier = self.measured(monkeypatch, ("install", "import", "closure"))
-        now = self.measured(monkeypatch, ("install", "import", "closure", "package"))
-        assert earlier
-        assert {k: v for k, v in now.items() if not k.startswith("code_package_")} == earlier
-        assert any(k.startswith("code_package_") for k in now)
-
-    def test_a_users_scan_computes_no_code_feature(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv(ReachedFlows.MEASURE, raising=False)
-        got = ReachedFlows.of(  # type: ignore[arg-type]
-            TestThePackagePlace.units(), TestThePackagePlace.ctx(), {}
-        )
-        assert not any(k.startswith("code_") for k in got)

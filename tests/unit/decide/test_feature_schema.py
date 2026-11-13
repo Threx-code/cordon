@@ -194,11 +194,11 @@ class TestTheRecord:
 
 class FoldKit:
     """Raw hashed code features, and a format-3 model split on one folded bucket: 0.9 when
-    `pkg:code_install_tok_f5` (raw buckets 5, 517, 1029, ... summed) is above 2.5, else 0.1."""
+    `pkg:code_install_tok_f5` (raw buckets 5, 65541, 131077, ... summed) is above 2.5, else 0.1."""
 
     RAW: ClassVar[dict[str, float]] = {
         "code_install_tok_5": 1.0,
-        "code_install_tok_517": 2.0,
+        "code_install_tok_65541": 2.0,
         "code_import_apih_262143": 1.0,
         "code_install_api_exec": 1.0,
     }
@@ -230,7 +230,7 @@ class TestTheFold:
         folded = FeatureFold.apply({f"pkg:{k}": v for k, v in FoldKit.RAW.items()} | {"r:X#n": 2.0})
         assert folded == {
             "pkg:code_install_tok_f5": 3.0,
-            "pkg:code_import_apih_f511": 1.0,
+            "pkg:code_import_apih_f65535": 1.0,
             "pkg:code_install_api_exec": 1.0,
             "r:X#n": 2.0,
         }
@@ -238,7 +238,7 @@ class TestTheFold:
     def test_the_fit_and_the_scanner_fold_to_identical_vectors(self) -> None:
         _, summary = FoldKit.decide(FoldKit.model())
         # The row keeps the raw features; the fit's reader and scoring fold them the same way.
-        assert summary["features"]["values"]["pkg:code_install_tok_517"] == 2.0
+        assert summary["features"]["values"]["pkg:code_install_tok_65541"] == 2.0
         _, fitted = FeatureRecord.read({"verdict": {"features": summary["features"]}})
         scored = VerdictModel.inputs(FoldKit.model(), summary["features"]["values"])
         assert fitted == scored == FeatureFold.apply(summary["features"]["values"])
@@ -247,7 +247,7 @@ class TestTheFold:
 
     def test_a_model_from_before_the_fold_is_scored_on_raw_features(self) -> None:
         unfolded = {**RecordKit.model(), "format": VerdictModel.UNFOLDED}
-        features = {"pkg:code_install_tok_517": 2.0}
+        features = {"pkg:code_install_tok_65541": 2.0}
         assert VerdictModel.inputs(unfolded, features) is features
 
     def test_a_model_of_another_fold_is_refused(self, tmp_path: Path) -> None:
@@ -268,6 +268,22 @@ class TestTheFold:
             VerdictModel.load(written({**RecordKit.model(), "format": VerdictModel.UNFOLDED}))
             is not None
         )
+
+    def test_the_width_is_the_measured_one_and_divides_the_hash_space(self) -> None:
+        """65536 buckets (2026-11-13, PyPI work half, out-of-fold, family-held-out): 132k kept features
+        and benign at 98% malware 1.48%, against 1.74% at 8192 and 2.30% at 512; the 498k unfolded
+        features were no better (1.66%). It divides `CodeFeatures.HASH_MOD`, so every bucket folds the
+        same number of raw hashes."""
+        from cordon_scanner.detect.code.features import CodeFeatures
+
+        assert FeatureFold.WIDTH == 65536
+        assert CodeFeatures.HASH_MOD % FeatureFold.WIDTH == 0
+        assert FeatureFold.apply(
+            {"pkg:code_package_tok_70000": 1.0, "pkg:code_package_apih_3": 2.0}
+        ) == {
+            "pkg:code_package_tok_f4464": 1.0,
+            "pkg:code_package_apih_f3": 2.0,
+        }
 
     def test_the_width_moves_the_fold_version_and_not_the_row_version(
         self, monkeypatch: pytest.MonkeyPatch
@@ -317,15 +333,35 @@ class ScopeKit:
         "package/index.js": "module.exports = function add(a, b) { return a + b; };\n",
     }
 
+    #: A small Python source distribution: one reached file and one nothing imports.
+    PYTHON: ClassVar[dict[str, str]] = {
+        "scope-py-1.0.0/PKG-INFO": "Metadata-Version: 2.1\nName: scope-py\nVersion: 1.0.0\n",
+        "scope-py-1.0.0/setup.py": (
+            "from setuptools import setup\nsetup(name='scope-py', version='1.0.0', packages=['scope_py'])\n"
+        ),
+        "scope-py-1.0.0/scope_py/__init__.py": (
+            "import os\nimport subprocess\n\n\ndef run(cmd):\n    return subprocess.run(cmd, env=os.environ)\n"
+        ),
+        "scope-py-1.0.0/scope_py/unreached.py": (
+            "import socket\n\n\ndef ping(host):\n    return socket.create_connection((host, 80))\n"
+        ),
+    }
+
     @staticmethod
-    def features(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, measure: bool) -> set[str]:
+    def features(
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        measure: bool,
+        files: dict[str, str] | None = None,
+        archive_name: str = "scope-probe-1.0.0.tgz",
+    ) -> set[str]:
         from cordon_scanner import Scanner
         from cordon_scanner.foundation.config.settings import Config
 
-        archive = tmp_path / "scope-probe-1.0.0.tgz"
+        archive = tmp_path / archive_name
         if not archive.exists():
             with tarfile.open(archive, "w:gz") as handle:
-                for name, text in ScopeKit.FILES.items():
+                for name, text in (ScopeKit.FILES if files is None else files).items():
                     data = text.encode()
                     info = tarfile.TarInfo(name)
                     info.size = len(data)
@@ -350,14 +386,40 @@ class TestFeatureScope:
         assert added, "the probe reaches no code feature: it proves nothing"
         assert not any(FeatureScope.computed(name) for name in added)
 
+    def test_a_users_scan_of_a_python_package_writes_its_package_features_to_the_record(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`verdict.features.values` of an ordinary scan carries `pkg:code_package_*` (the unit's every
+        Python file, the unreached one too), so a training row can come from an ordinary scan; the
+        reached places and the binary features are still the measurement run's alone."""
+        kit = {"files": ScopeKit.PYTHON, "archive_name": "scope-py-1.0.0.tar.gz"}
+        users = ScopeKit.features(tmp_path, monkeypatch, measure=False, **kit)
+        measured = ScopeKit.features(tmp_path, monkeypatch, measure=True, **kit)
+        package = {n for n in users if n.startswith("pkg:code_package_")}
+        assert any(n.startswith("pkg:code_package_tok_") for n in package)
+        assert any(n.startswith("pkg:code_package_apih_") for n in package)
+        reached = ("pkg:code_install_", "pkg:code_import_", "pkg:code_closure_", "pkg:exe_")
+        assert not any(n.startswith(reached) for n in users)
+        assert package == {n for n in measured if n.startswith("pkg:code_package_")}
+        assert users < measured
+        assert all(FeatureScope.computed(n) for n in users)
+
     def test_the_predicate_names_every_place_the_code_features_read(self) -> None:
         from cordon_scanner.detect.code.features import CodeFeatures
 
         for place in CodeFeatures.PLACES:
-            assert not FeatureScope.computed(f"pkg:code_{place}_tok_1")
+            # Every place but the package's is measure-only; the package place is computed by every
+            # scan (the product model reads it), folded or not.
+            assert FeatureScope.computed(f"pkg:code_{place}_tok_1") == (place == "package")
+            assert FeatureScope.computed(f"pkg:code_{place}_apih_1") == (place == "package")
+            assert FeatureScope.computed(f"pkg:code_{place}_api_exec") == (place == "package")
         assert FeatureScope.computed("pkg:code_share")
+        assert not FeatureScope.computed("pkg:exe_imports_7")
         assert not FeatureScope.computed(
             FeatureFold.apply({"pkg:code_import_tok_517": 1.0}).popitem()[0]
+        )
+        assert FeatureScope.computed(
+            FeatureFold.apply({"pkg:code_package_tok_517": 1.0}).popitem()[0]
         )
 
 
@@ -376,10 +438,16 @@ class TestTheEquivalences:
                 f"{computed}: its identity test {name} is not in {path}"
             )
 
-    def test_this_tree_computes_the_baseline_rows_features(self) -> None:
-        """The a3b9c5f1 baseline rows carry fs1-ea0fb02ccf3bb099: this tree's features pool with
-        them because its own hash is mapped there, never by accident."""
-        assert FeatureSchema.version() == "fs1-ea0fb02ccf3bb099"
+    def test_this_tree_is_its_own_version_and_pools_with_no_earlier_rows(self) -> None:
+        """A user's scan now computes the package place (`code_package_*`) and the model reads it:
+        rows an earlier tree wrote (the a3b9c5f1 baseline's fs1-ea0fb02ccf3bb099 among them) lack
+        those features, so none of them pools with this tree's, and no `SAME_AS` entry says it does.
+        The literal moves with any change to the extractor, on purpose: a fit over rows of another
+        version is refused, and a change here is a rescan."""
+        assert FeatureSchema.version() == FeatureSchema.computed()
+        assert FeatureSchema.version() not in FeatureSchema.SAME_AS
+        assert FeatureSchema.version() != "fs1-ea0fb02ccf3bb099"
+        assert FeatureSchema.version() == "fs1-7e81bff59a9cc09a"
 
     def test_a_change_after_the_mapping_still_moves_it(self, tmp_path: Path) -> None:
         root = SchemaKit.tree(tmp_path)

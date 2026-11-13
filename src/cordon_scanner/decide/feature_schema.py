@@ -121,14 +121,6 @@ class FeatureSchema:
             "fs1-ea0fb02ccf3bb099",
             "tests/unit/detect/test_silent_drops.py::TestTheFlowFactsAreUnchanged",
         ),
-        # The package place (`code_package_*`, measure-only) and a missing worker document being a gap,
-        # not an exit 2 (`ReachedFlows.of`). A user's scan computes no code feature, before or after; a
-        # measurement run gives every feature it gave, with the same values, and the package ones besides.
-        # Identity: test_code_features.py::TestThePackagePlaceAddsOnly.
-        "fs1-1f5e602f470b9e3a": (
-            "fs1-ea0fb02ccf3bb099",
-            "tests/unit/detect/code/test_code_features.py::TestThePackagePlaceAddsOnly",
-        ),
     }
 
     @staticmethod
@@ -285,14 +277,16 @@ class FeatureSchema:
 
 
 class FeatureScope:
-    """Which features a user's scan computes. The code and binary features (`CodeFeatures`,
-    `BinaryFeatures`: `pkg:code_<place>_(api|apih|tok)_*`, `pkg:exe_*`) are computed only under
-    `CORDON_MEASURE_FEATURES=1` (`ReachedFlows.of`), which a user's scan never sets, so a model fitted
-    on them would read zeros on every scan. A fit reads only what `computed` allows."""
+    """Which features a user's scan computes. The code features of the reached places
+    (`pkg:code_<install|import|closure>_(api|apih|tok)_*`) and the binary features (`pkg:exe_*`) are
+    computed only under `CORDON_MEASURE_FEATURES=1` (`ReachedFlows.of`), which a user's scan never
+    sets, so a model fitted on them would read zeros on every scan. The package place
+    (`pkg:code_package_(api|apih|tok)_*`, every Python file of the unit) is every scan's, and a fit
+    may read it. A fit reads only what `computed` allows."""
 
     #: Folded names keep these prefixes, so a folded measure-only feature is caught too.
     MEASURE_ONLY: ClassVar[re.Pattern[str]] = re.compile(
-        r"^pkg:(?:code_(?:install|import|closure|package)_(?:api|apih|tok)_|exe_)"
+        r"^pkg:(?:code_(?:install|import|closure)_(?:api|apih|tok)_|exe_)"
     )
 
     @staticmethod
@@ -308,11 +302,14 @@ class FeatureFold:
 
     Applied only where features reach a model: the fit's reader (`FeatureRecord.read`) and the
     scanner's scoring (`Verdict.decide`, before `VerdictModel.score`), so a model is scored on the
-    features it was fitted on. WIDTH was measured (2026-10-30, out-of-fold, line at 2% benign,
-    the fit's gradient boosting): skills recall 71.72% at 512 against 71.91% [70.89, 72.90] unfolded,
-    npm 83.98% against 84.18% [83.14, 85.17]; the smallest width inside both intervals."""
+    features it was fitted on. WIDTH was measured on the package place (2026-11-13, the PyPI work
+    half of 11,011 units, out-of-fold, folds by malware family, sparse gradient boosting): benign
+    blocked at 98% malware 4.94% with no code features, 2.30% at 512 (1.5k features), 1.74% at 8192,
+    1.48% at 65536 (132k features kept), 1.66% unfolded (498k): the best width, and unfolding was no
+    better. (Before it, 512 was the smallest width inside the unfolded interval on the skills and npm
+    work halves, 2026-10-30, for the reached places alone.) It divides `CodeFeatures.HASH_MOD`."""
 
-    WIDTH: ClassVar[int] = 512
+    WIDTH: ClassVar[int] = 65536
     HASHED: ClassVar[re.Pattern[str]] = re.compile(r"^(pkg:code_[a-z]+_(?:tok|apih))_(\d+)$")
     PREFIX: ClassVar[str] = "ff1-"
 

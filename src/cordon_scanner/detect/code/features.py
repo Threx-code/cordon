@@ -46,9 +46,9 @@ if TYPE_CHECKING:
 class CodeFeatures:
     """`of(reached)`: the word and call features of the files each place runs."""
 
-    #: `package` is every Python file of the unit, reached or not (measure-only, like the others): a
-    #: source distribution's import entry and closure are often one file or none, so the three places
-    #: above read almost none of its code.
+    #: `package` is every Python file of the unit, reached or not, and is the one place every scan
+    #: computes (`FeatureScope`; the others are measure-only): a source distribution's import entry
+    #: and closure are often one file or none, so the three places read almost none of its code.
     PLACES: ClassVar[tuple[str, ...]] = ("install", "import", "closure", "package")
     HASH_MOD: ClassVar[int] = 1 << 18
     COUNT_CAP: ClassVar[int] = 20
