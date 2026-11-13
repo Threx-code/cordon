@@ -22,7 +22,7 @@ from cordon_scanner.detect.base import (
     GraphUnit,
     ScanContext,
 )
-from cordon_scanner.detect.registry import ComposerPluginHooks, ServerSources
+from cordon_scanner.detect.registry import ComposerPluginHooks, InstallFacts, ServerSources
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.engine.closure import ImportClosure, StartupClosure
 from cordon_scanner.engine.entries import PackageEntries
@@ -278,6 +278,8 @@ class ArchiveStages:
             package_repository=PackageEntries.repository(units, early_format),
             confusion_version=ConfusionVersions.reason(PackageEntries.version(units, early_format))
             or "",
+            package_code_bytes=(name_facts := InstallFacts.of(units))[0],
+            package_install_message=name_facts[1],
         )
         ctx = replace(
             ctx,

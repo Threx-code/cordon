@@ -258,6 +258,12 @@ class ScanContext:
     """Why the published package's own version looks chosen to outrank a private registry's
     (`NameSignals.confusion_version`: 99.0.0, 99999999.0.0, 7.7.7), or "": the dependency-confusion
     probe's version. Read by the `confusion_version` composite term."""
+    package_code_bytes: int = 0
+    """The bytes of a published Python package's own code files (`InstallFacts.of`; the files
+    `PackageIdentity.code_files` counts), 0 when it is not one."""
+    package_install_message: str = ""
+    """What an INERT root `setup.py` says when it refuses to install: the strings of its `raise`, `print` and
+    exit calls (`InstallFacts.of`), "" where `setup.py` could run anything or says nothing."""
     package_repository: str = ""
     """The published package's own `repository` URL (npm's `package.json`), as the registry shows
     it; empty when there is none or the target is not a package. Lets a detector tell the
@@ -731,6 +737,13 @@ class RuleFileInputs(Protocol):
     reads, for the scan cache."""
 
     def files(self, rules_path: str) -> list[Path]: ...
+
+
+class PackageInstallFacts(Protocol):
+    """What the engine uses of the class `InstallFacts`: a Python package's code bytes and the message of
+    an inert refusing `setup.py` (`ScanContext.package_code_bytes`, `package_install_message`)."""
+
+    def of(self, units: Sequence[Any]) -> tuple[int, str]: ...
 
 
 class ComposerPluginPaths(Protocol):

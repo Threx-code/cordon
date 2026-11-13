@@ -69,6 +69,8 @@ SCALARS: dict[str, type] = {
     "package_repository": str,
     "distribution": str,
     "confusion_version": str,
+    "package_code_bytes": int,
+    "package_install_message": str,
 }
 DEFERRED_LINES = (
     "install_deferred_lines",
