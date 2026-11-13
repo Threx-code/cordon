@@ -259,3 +259,32 @@ class TestCompressedCodeRun:
             f"total = payload['{self.EXEC}'].get('n', 0)\n"
         )
         assert "SUSPECT.DECODE_EXEC.001" not in self.rules(tmp_path, init)
+
+
+class TestAMethodNamedLikeTheBuiltin:
+    """`model.eval()` and `session.exec(query)` are methods, not the builtins (0.8.0 benign:
+    otter-ai, aiperture): beside a decode they are not a loader. The builtin reached through its
+    module, beside the same decode, still is."""
+
+    EXEC = "ex" + "ec"
+
+    @staticmethod
+    def rules(tmp_path, init: str) -> set[str]:
+        package = tmp_path / "pkg"
+        package.mkdir()
+        (package / "__init__.py").write_text(init, encoding="utf-8")
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        return {f.rule_id for f in result.findings}
+
+    def test_a_model_put_in_eval_mode_beside_a_decoded_image(self, tmp_path) -> None:
+        init = (
+            "import base64\n"
+            f"image = base64.{DECODE}(request_body)\n"
+            "model.eval()\n"
+            f"rows = session.{self.EXEC}(select(User)).all()\n"
+        )
+        assert "SUSPECT.DECODE_EXEC.001" not in self.rules(tmp_path, init)
+
+    def test_the_builtin_through_its_module_still_pairs(self, tmp_path) -> None:
+        init = f"import base64, builtins\nbuiltins.{self.EXEC}(base64.{DECODE}(BLOB))\n"
+        assert "SUSPECT.DECODE_EXEC.001" in self.rules(tmp_path, init)

@@ -4044,6 +4044,25 @@ class TestAFieldCalledProfileIsNotAShellProfile:
     def test_a_literal_import_is_resolvable(self, line: bytes, executes: bool) -> None:
         assert self.matches("CAP.PY.EXECUTE.001", line) is executes
 
+    @pytest.mark.parametrize(
+        ("line", "executes"),
+        [
+            (b"model.eval()", False),
+            (b"rows = session.exec(select(User)).all()", False),
+            (b"app.exec()", False),
+            (b"exec(payload)", True),
+            (b"x = eval (src)", True),
+            (b"builtins.exec(code)", True),
+            (b"__builtins__ . eval(src)", True),
+            (b'__import__("builtins").exec(code)', True),
+            (b"importlib.import_module('builtins').eval(src)", True),
+        ],
+    )
+    def test_a_method_named_eval_is_not_the_builtin(self, line: bytes, executes: bool) -> None:
+        # 0.8.0 benign: torch's `model.eval()` (otter-ai) and SQLModel's `session.exec()`
+        # (aiperture) each paired with a decode into SUSPECT.DECODE_EXEC.001.
+        assert self.matches("CAP.PY.EXECUTE.001", line) is executes
+
     def test_writing_to_the_environment_is_not_reading_it(self) -> None:
         from cordon_scanner.analysis.python.pyast import PythonAnalyzer
 
