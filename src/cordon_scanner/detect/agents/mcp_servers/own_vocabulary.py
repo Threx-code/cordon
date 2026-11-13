@@ -20,7 +20,7 @@ _IDENTIFIER_LIKE: Final = re.compile(
 """A snake_case or camelCase word: a tool or parameter name as an author writes one."""
 
 _CALLED: Final = re.compile(
-    r"\b(?i:call|calling|invoke|invoking|run|running|execute|use|using)\b[\s:`'\"(]{0,6}+"
+    r"\b(?i:call|calling|invoke|invoking|run|running|execute|use|using)\b[\s:`'\"(]{0,40}+"
     r"(?:(?i:the|tool)\s++)?[`'\"]?+(?P<name>[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+|[a-z]+(?:[A-Z][a-z0-9]+)+)(?![\w])"
 )
 """A tool named as something to call or use: `call list_apis`, `before using get_docs`."""

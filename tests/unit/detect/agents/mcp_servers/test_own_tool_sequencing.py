@@ -167,3 +167,9 @@ class TestOnlyWhatTheTextCallsCounts:
         assert chain is None or not McpServerFindings._own_sequencing(
             text, chain, OWN, "description"
         )
+
+
+class TestAToolNamedOnTheNextLine:
+    def test_a_name_after_a_colon_and_an_indent_is_called(self) -> None:
+        text = "you MUST FIRST call:\n      list_apis(language)\nBEFORE answering."
+        assert OwnVocabulary.called(text) == {"list_apis"}
