@@ -193,3 +193,21 @@ class TestWhollyNeutralisesTheWholeStatement:
     def test_a_print_over_two_lines_is_still_wholly_python_2(self) -> None:
         source = 'import x\nprint "a %s" % \\\n    x.y\n'
         assert PythonTwoReader.wholly(source)
+
+
+class TestTheLineCountOfWhatItReads:
+    """What the reader gives back stands where the file had it, line for line: every finding's line
+    number comes from it. A last line with no line ending stays without one when it is made inert."""
+
+    @staticmethod
+    def breaks(text: str) -> int:
+        return text.count("\n") + text.count("\r")
+
+    @pytest.mark.parametrize(
+        "source",
+        ["print x \\", "import a\nprint x", "print x\r\nprint y \\"],
+    )
+    def test_the_text_has_as_many_lines_as_the_file(self, source: str) -> None:
+        reading = PythonTwoReader.read(source)
+        assert reading.text is not None
+        assert self.breaks(reading.text) == self.breaks(source)
