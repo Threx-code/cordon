@@ -1,7 +1,7 @@
 """Whether a run the decode-run composites pair with could be of the decoded value.
 
-`SUSPECT.DECODE_EXEC.001` and `MALWARE.INSTALL.DECODED_LAUNCH.001` pair a decode with something that
-runs. The decoded value cannot be inside a run whose command and arguments carry nothing decoded or
+`SUSPECT.DECODE_EXEC.001`, `SUSPECT.DECODE_CHAIN.001` and `MALWARE.INSTALL.DECODED_LAUNCH.001` pair a
+decode with something that runs. The decoded value cannot be inside a run whose command and arguments carry nothing decoded or
 otherwise tracked: `execFileSync(PYTHON, ['-c', '...'])` beside an unrelated `Buffer.from(png,
 'base64')`. js_flow proves that on a hand-written JavaScript file -- its `decoded` source makes a
 real `decode -> exec` keep the pairing -- and the Python AST's `fixed` marks a wholly literal argv.
@@ -32,8 +32,16 @@ if TYPE_CHECKING:
 class DecodeRun:
     """The decode-run composites and the spawns that cannot be running their decoded value."""
 
+    #: `SUSPECT.DECODE_CHAIN.001` is the same pairing with more layers: its message says the decoded
+    #: result is executed, so a run no decoded value reaches is no more its run than DECODE_EXEC's
+    #: (0.8.0 benign: an executor packaging its own module for upload, a server extracting a
+    #: submitted tar for its tool, a computed import beside a keyring decode).
     COMPOSITES: ClassVar[frozenset[str]] = frozenset(
-        {"SUSPECT.DECODE_EXEC.001", "MALWARE.INSTALL.DECODED_LAUNCH.001"}
+        {
+            "SUSPECT.DECODE_EXEC.001",
+            "SUSPECT.DECODE_CHAIN.001",
+            "MALWARE.INSTALL.DECODED_LAUNCH.001",
+        }
     )
 
     _WRITTEN_LITERAL_PATH: ClassVar[re.Pattern[str]] = re.compile(

@@ -288,3 +288,42 @@ class TestAMethodNamedLikeTheBuiltin:
     def test_the_builtin_through_its_module_still_pairs(self, tmp_path) -> None:
         init = f"import base64, builtins\nbuiltins.{self.EXEC}(base64.{DECODE}(BLOB))\n"
         assert "SUSPECT.DECODE_EXEC.001" in self.rules(tmp_path, init)
+
+
+class TestTheChainIsTheSamePairing:
+    """SUSPECT.DECODE_CHAIN.001 is the decode-run pairing with more layers, and takes the same
+    excuse: a run no decoded value reaches is not its run (0.8.0 benign: an executor packaging its
+    own module, a server extracting a submitted tar for its tool). A layered payload run, directly
+    or through a file it is written to, still is."""
+
+    EXEC = "ex" + "ec"
+    CHAIN = "SUSPECT.DECODE_CHAIN.001"
+
+    @staticmethod
+    def rules(tmp_path, init: str) -> set[str]:
+        package = tmp_path / "pkg"
+        package.mkdir()
+        (package / "__init__.py").write_text(init, encoding="utf-8")
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        return {f.rule_id for f in result.findings}
+
+    def test_a_layered_asset_beside_an_unrelated_run_does_not_pair(self, tmp_path) -> None:
+        init = HEAD.replace("import ", "import zlib, ") + (
+            f"icon = zlib.decompress(base64.{DECODE}(ICON))\n"
+            "assert icon[:4] == b'\\x89PNG'\n"
+            "def check(where):\n"
+            f"    return subprocess.{RUN}(['git', 'status', where], capture_output=True)\n"
+        )
+        assert self.CHAIN not in self.rules(tmp_path, init)
+
+    def test_a_layered_payload_handed_to_exec_still_pairs(self, tmp_path) -> None:
+        init = f"import base64, zlib\n{self.EXEC}(zlib.decompress(base64.{DECODE}(BLOB)))\n"
+        assert self.CHAIN in self.rules(tmp_path, init)
+
+    def test_a_layered_payload_written_then_run_still_pairs(self, tmp_path) -> None:
+        init = HEAD.replace("import ", "import zlib, ") + (
+            f"data = zlib.decompress(base64.{DECODE}(BLOB))\n"
+            "with open(target, 'wb') as f:\n    f.write(data)\n"
+            f"subprocess.{RUN}([target])\n"
+        )
+        assert self.CHAIN in self.rules(tmp_path, init)
