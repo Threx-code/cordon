@@ -31,6 +31,7 @@ from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.analysis.shared.credential_homes import CREDENTIAL_HOMES
 from cordon_scanner.detect.code.capability.hits import CapabilityHit
 from cordon_scanner.detect.code.capability.legitimate_use import LegitimateUse
+from cordon_scanner.detect.code.store_flow import PythonStoreFlow
 from cordon_scanner.foundation.capabilities import Capability
 
 if TYPE_CHECKING:
@@ -66,7 +67,7 @@ class DropPointLoot:
     )  # fmt: skip
     #: Methods that write a message for a person, and what the receiver's name must hold to be one.
     LOG_METHODS: ClassVar[frozenset[str]] = frozenset(
-        {"debug", "info", "warning", "warn", "error", "exception", "critical", "fatal", "log", "echo", "secho"}
+        {"debug", "info", "warning", "warn", "error", "exception", "critical", "fatal", "log", "echo", "secho", "print"}
     )  # fmt: skip
     LOG_RECEIVERS: ClassVar[tuple[str, ...]] = (
         "log",
@@ -75,6 +76,24 @@ class DropPointLoot:
         "typer",
         "warnings",
         "rich",
+    )
+    #: The parsed flow facts that say a read value reaches what a request sends.
+    SENT_FACTS: ClassVar[frozenset[str]] = frozenset(
+        {"AST.PY.ENVIRONMENT_SENT", "AST.PY.SECRET_SENT", "AST.PY.CREDSTORE_SENT"}
+    )
+    #: Expressions a literal becomes part of, still the same text.
+    _CARRIERS: ClassVar[tuple[type, ...]] = (
+        ast.JoinedStr,
+        ast.BinOp,
+        ast.Starred,
+        ast.FormattedValue,
+        ast.List,
+        ast.Tuple,
+        ast.Set,
+        ast.Dict,
+    )
+    _CONSTRUCTORS: ClassVar[frozenset[str]] = frozenset(
+        {"frozenset", "set", "list", "tuple", "dict", "sorted"}
     )
     _READERS: ClassVar[frozenset[str]] = frozenset({"get", "getenv", "pop"})
     _WHOLE: ClassVar[frozenset[str]] = frozenset({"copy", "items", "keys", "values"})
@@ -99,6 +118,7 @@ class DropPointLoot:
         try:
             tree: ast.AST = PythonSyntax.shared(text)
         except (SyntaxError, ValueError, RecursionError, MemoryError):
+            # S2: a fallback; a file that does not parse keeps the old, text reading of its hits
             return None
         return tree
 
@@ -377,37 +397,47 @@ class DropPointLoot:
             parent = parents.get(id(top))
             if parent is None:
                 return False
-            if isinstance(
-                parent,
-                ast.JoinedStr | ast.BinOp | ast.Starred | ast.FormattedValue
-                | ast.List | ast.Tuple | ast.Set | ast.Dict,
-            ):  # fmt: skip
-                top = parent
-            elif isinstance(parent, ast.Attribute):
-                call = parents.get(id(parent))
-                if isinstance(call, ast.Call) and call.func is parent and parent.attr == "format":
-                    top = call  # "...{}".format(x): the formatted text is what goes on
-                else:
-                    return False
-            elif isinstance(parent, ast.Call) and top is not parent.func:
-                last = cls.dotted(parent.func).rsplit(".", 1)[-1]
-                if last in ("frozenset", "set", "list", "tuple", "dict", "sorted"):
-                    top = parent
-                    continue
-                return cls._is_a_message(tree, parent)
-            elif isinstance(parent, ast.keyword):
-                call = parents.get(id(parent))
-                return (
-                    isinstance(call, ast.Call)
-                    and parent.arg in ("help", "message", "description")
-                    and cls._is_a_message(tree, call)
-                )
-            elif isinstance(parent, ast.Compare):
-                return all(isinstance(op, ast.In | ast.NotIn) for op in parent.ops)
-            elif isinstance(parent, ast.Assign | ast.AnnAssign):
-                return cls._only_membership(tree, parent)
-            else:
-                return False
+            carried = cls._carried_by(parents, top, parent)
+            if carried is None:
+                return cls._consumer_names_only(tree, parents, top, parent)
+            top = carried
+
+    @classmethod
+    def _carried_by(
+        cls, parents: dict[int, ast.AST], top: ast.AST, parent: ast.AST
+    ) -> ast.AST | None:
+        """The expression the text becomes part of (an f-string, a join, a collection, a formatted
+        string, a `frozenset(...)`), or None where `parent` is what uses it."""
+        if isinstance(parent, cls._CARRIERS):
+            return parent
+        call = parents.get(id(parent))
+        if isinstance(parent, ast.Attribute) and isinstance(call, ast.Call):
+            # "...{}".format(x): the formatted text is what goes on
+            return call if call.func is parent and parent.attr == "format" else None
+        if isinstance(parent, ast.Call) and top is not parent.func:
+            last = cls.dotted(parent.func).rsplit(".", 1)[-1]
+            return parent if last in cls._CONSTRUCTORS else None
+        return None
+
+    @classmethod
+    def _consumer_names_only(
+        cls, tree: ast.AST, parents: dict[int, ast.AST], top: ast.AST, parent: ast.AST
+    ) -> bool:
+        """Whether what uses the text only names it: a message, a membership test, a name that is."""
+        if isinstance(parent, ast.Call) and top is not parent.func:
+            return cls._is_a_message(tree, parent)
+        if isinstance(parent, ast.keyword):
+            call = parents.get(id(parent))
+            return (
+                isinstance(call, ast.Call)
+                and parent.arg in ("help", "message", "description")
+                and cls._is_a_message(tree, call)
+            )
+        if isinstance(parent, ast.Compare):
+            return all(isinstance(op, ast.In | ast.NotIn) for op in parent.ops)
+        if isinstance(parent, ast.Assign | ast.AnnAssign):
+            return cls._only_membership(tree, parent)
+        return False
 
     @classmethod
     def _is_a_message(cls, tree: ast.AST, call: ast.Call) -> bool:
@@ -451,14 +481,28 @@ class DropPointLoot:
 
     @classmethod
     def counted(
-        cls, content: FileContent, language: str | None, hits: list[CapabilityHit]
+        cls,
+        content: FileContent,
+        language: str | None,
+        hits: list[CapabilityHit],
+        *,
+        unresolved: bool = False,
     ) -> list[CapabilityHit]:
         """The hits `SUSPECT.EXFIL.DROP_POINT.001` counts: loot that is loot, and labels that are
-        destinations."""
+        destinations. An environment read the file never sends is not loot (D3): where the parsed
+        file shows no environment, secret or credential-store value reaching a request, and the
+        package's calls are all known, a read is a setting the file holds."""
+        loot = [
+            h
+            for h in hits
+            if h.capability in (Capability.CREDENTIAL, Capability.RECONNAISSANCE)
+            and cls.is_loot(content, language, h)
+        ]
+        unsent = cls._reads_never_sent(content, language, hits, loot, unresolved)
         out: list[CapabilityHit] = []
         for hit in hits:
             if hit.capability in (Capability.CREDENTIAL, Capability.RECONNAISSANCE):
-                if not cls.is_loot(content, language, hit):
+                if hit not in loot or hit in unsent:
                     continue
             elif hit.rule_id == cls.LABEL_RULE and cls.destination_is_only_named(
                 content, language, hit
@@ -466,6 +510,34 @@ class DropPointLoot:
                 continue
             out.append(hit)
         return out
+
+    @classmethod
+    def _reads_never_sent(
+        cls,
+        content: FileContent,
+        language: str | None,
+        hits: list[CapabilityHit],
+        loot: list[CapabilityHit],
+        unresolved: bool,
+    ) -> list[CapabilityHit]:
+        """The environment reads of a parsed file whose value the file never puts in a request body:
+        none of the flow facts that say an environment, secret or credential store is sent holds, the
+        existing store flow (`PythonStoreFlow`, body arguments only) finds the reads in no request
+        body, and the package's calls are all known. Unresolved, or unparsed, is empty: they stay loot."""
+        reads = [h for h in loot if h.rule_id == "AST.PY.CREDENTIAL"]
+        if not reads or unresolved or cls.tree(content, language) is None:
+            return []
+        if any(h.rule_id in cls.SENT_FACTS for h in hits):
+            return []
+        egress = [
+            h.line
+            for h in hits
+            if h.capability is Capability.EGRESS and not h.rule_id.startswith("INTEL.")
+        ]
+        reached = PythonStoreFlow.reaches(
+            content.text, [h.line for h in reads], egress, body_only=True
+        )
+        return [] if reached is not False else reads
 
 
 __all__ = ["DropPointLoot"]

@@ -239,8 +239,24 @@ class PythonStoreFlow:
     #: Rounds of spreading and filling before the answer is taken as it stands.
     ROUNDS: Final = 8
 
+    #: Methods of an HTTP client whose first argument is the address (`request` has the verb first).
+    REQUEST_METHODS: Final = frozenset(
+        {"get", "post", "put", "patch", "delete", "head", "options", "request"}
+    )
+    #: Keyword arguments that say where or how a request is made, not what it carries.
+    REQUEST_SETTINGS: Final = frozenset(
+        {"url", "auth", "timeout", "verify", "proxies", "allow_redirects", "stream", "cert"}
+    )
+
     @classmethod
-    def reaches(cls, text: str, store_lines: list[int], egress_lines: list[int]) -> bool | None:
+    def reaches(
+        cls,
+        text: str,
+        store_lines: list[int],
+        egress_lines: list[int],
+        *,
+        body_only: bool = False,
+    ) -> bool | None:
         from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 
         try:
@@ -295,11 +311,20 @@ class PythonStoreFlow:
                 grew = True
             if not grew:
                 break
-        return any(
-            touches(argument)
-            for call in calls
-            for argument in [*call.args, *(k.value for k in call.keywords)]
-        )
+        return any(touches(argument) for call in calls for argument in cls._sinks(call, body_only))
+
+    @classmethod
+    def _sinks(cls, call: ast.Call, body_only: bool) -> list[ast.AST]:
+        """The arguments of an egress call that a value reaches by. With `body_only`, a request method
+        (`post`, `get`, `request`, ...) leaves out its address and the settings of how it is made: a
+        token that only builds the address of the service it belongs to is not sent in the request's
+        body (reviews/pypi-98/21, shape C)."""
+        positional = list(call.args)
+        keywords = list(call.keywords)
+        if body_only and isinstance(call.func, ast.Attribute) and call.func.attr in cls.REQUEST_METHODS:
+            positional = positional[2 if call.func.attr == "request" else 1 :]
+            keywords = [k for k in keywords if k.arg not in cls.REQUEST_SETTINGS]
+        return [*positional, *(k.value for k in keywords)]
 
     @staticmethod
     def _calls_on(tree: ast.AST, egress: set[int]) -> list[ast.Call]:
