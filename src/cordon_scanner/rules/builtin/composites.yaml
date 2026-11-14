@@ -2930,6 +2930,41 @@ rules:
         - path_glob: "**/test_*.py"
         - path_glob: "tests/**"
 
+  - id: MALWARE.IMPORT.FETCH_RUN.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Importing the package fetches something and runs code or a program
+    message: >
+      When this package is imported it both fetches something from the network and runs code or a
+      program: `exec` of what a request returned, a download written out and started, or a command
+      run beside the download in a thread the import starts. Importing a library loads code that is
+      already on the machine; one that downloads and runs while it is imported has made the import a
+      launch of code nobody reviewed.
+    remediation: >
+      Do not import this package. Find what it fetches and what it runs, and treat machines that
+      imported it as compromised.
+    provenance:
+      kind: research
+      reference: >
+        Half-A PyPI malware the 0.8.0 rules passed: an `__init__` that fetched and ran at load, through
+        a helper, a thread target or directly (the combined gate's misses, 14 Nov).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1105/
+      - https://attack.mitre.org/techniques/T1059/006/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: import_entry
+        - rule: AST.PY.FETCH_RUN_AT_LOAD
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: MALWARE.EXFIL.INSTALL_CALLBACK.001
     version: 1.0.0
     category: malicious

@@ -278,6 +278,7 @@ rather than a document.
 | `MALWARE.IMPLANT.PERSIST_RUN.001` | critical | `composites` | persistence |
 | `MALWARE.IMPORT.PERSIST.001` | critical | `composites` | persistence |
 | `MALWARE.IMPORT.PROGRAM_START.001` | critical | `composites` | malicious_code |
+| `MALWARE.IMPORT.FETCH_RUN.001` | critical | `composites` | malicious_code |
 | `MALWARE.INSTALL.BACKGROUND.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.CONSUMER_CODE.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.DECODED_LAUNCH.001` | critical | `composites` | install_hook |
