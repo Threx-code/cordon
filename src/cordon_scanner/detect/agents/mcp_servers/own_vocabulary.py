@@ -14,16 +14,45 @@ from typing import ClassVar, Final
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 
-_IDENTIFIER_LIKE: Final = re.compile(
-    r"(?<![\w.])(?:[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+|[a-z]+(?:[A-Z][a-z0-9]+)+)(?![\w])"
-)
-"""A snake_case or camelCase word: a tool or parameter name as an author writes one."""
+_WORD: Final = re.compile(r"(?<![\w.])\w++(?![\w])")
+"""One run of word characters, not part of a dotted name: the candidates for `identifier_like`."""
 
-_CALLED: Final = re.compile(
-    r"\b(?i:call|calling|invoke|invoking|run|running|execute|use|using)\b[\s:`'\"(]{0,40}+"
-    r"(?:(?i:the|tool)\s++)?[`'\"]?+(?P<name>[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+|[a-z]+(?:[A-Z][a-z0-9]+)+)(?![\w])"
-)
-"""A tool named as something to call or use: `call list_apis`, `before using get_docs`."""
+_VERBS: Final = re.compile(r"\b(?i:call|calling|invoke|invoking|run|running|execute|use|using)\b")
+"""The verbs after which a tool is named as something to call or use."""
+
+_GAP: Final = frozenset(" \t\r\n:`'\"(")
+_ARTICLES: Final = ("the ", "tool ")
+_MAX_GAP: Final = 40
+
+
+def identifier_like(word: str) -> bool:
+    """A snake_case or camelCase word: a tool or parameter name as an author writes one.
+
+    Read in code, not by one pattern: a shape of repeated groups over the same characters is the
+    superlinear kind (`reviews/release-080` 27-PERFORMANCE), and a word is short."""
+    if len(word) < 3 or not word.isascii() or not word[0].isalpha():
+        return False
+    if "_" in word:
+        parts = word.split("_")
+        return all(part.isalnum() for part in parts)
+    # camelCase: a lower-case run, then each hump an upper-case letter and at least one lower-case
+    # letter or digit, with no second capital inside it.
+    at = 0
+    while at < len(word) and word[at].islower():
+        at += 1
+    if at == 0 or at == len(word):
+        return False
+    while at < len(word):
+        if not word[at].isupper():
+            return False
+        at += 1
+        start = at
+        while at < len(word) and (word[at].islower() or word[at].isdigit()):
+            at += 1
+        if at == start:
+            return False
+    return True
+
 
 _REGISTERED: Final = re.compile(
     r"""(?:\.tool\(\s*+(?:\{\s*+)?(?:name\s*:\s*+)?|\bregisterTool\(\s*|\bname\s*[:=]\s*)"""
@@ -63,13 +92,31 @@ class OwnVocabulary:
     @staticmethod
     def words(text: str) -> frozenset[str]:
         """The identifier-like words of a text, lower-cased."""
-        return frozenset(m.group(0).lower() for m in _IDENTIFIER_LIKE.finditer(text))
+        return frozenset(
+            m.group(0).lower() for m in _WORD.finditer(text) if identifier_like(m.group(0))
+        )
 
     @staticmethod
     def called(text: str) -> frozenset[str]:
         """The identifiers a text names as tools to call or use, lower-cased: the ones sequencing is
         about (a description also names parameters and options that are no tool)."""
-        return frozenset(m.group("name").lower() for m in _CALLED.finditer(text))
+        found: set[str] = set()
+        for verb in _VERBS.finditer(text):
+            at, limit = verb.end(), min(len(text), verb.end() + _MAX_GAP)
+            while at < limit and text[at] in _GAP:
+                at += 1
+            for article in _ARTICLES:
+                if text[at : at + len(article)].lower() == article:
+                    at += len(article)
+                    while at < len(text) and text[at].isspace():
+                        at += 1
+                    break
+            if at < len(text) and text[at] in "`'\"":
+                at += 1
+            word = _WORD.match(text, at)
+            if word is not None and identifier_like(word.group(0)):
+                found.add(word.group(0).lower())
+        return frozenset(found)
 
     @staticmethod
     def names_only(own: frozenset[str], text: str) -> bool:

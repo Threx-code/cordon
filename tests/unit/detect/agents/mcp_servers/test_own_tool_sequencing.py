@@ -14,7 +14,7 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.detect.agents.mcp_servers.findings import McpServerFindings
-from cordon_scanner.detect.agents.mcp_servers.own_vocabulary import OwnVocabulary
+from cordon_scanner.detect.agents.mcp_servers.own_vocabulary import OwnVocabulary, identifier_like
 from cordon_scanner.detect.agents.mcp_servers.source import McpServerSource
 from cordon_scanner.detect.agents.semantics import AgentSemantics
 from cordon_scanner.foundation.config.settings import Config
@@ -175,3 +175,38 @@ class TestAToolNamedOnTheNextLine:
     def test_a_name_after_a_colon_and_an_indent_is_called(self) -> None:
         text = "you MUST FIRST call:\n      list_apis(language)\nBEFORE answering."
         assert OwnVocabulary.called(text) == {"list_apis"}
+
+
+class TestIdentifierLikeIsReadInCode:
+    @pytest.mark.parametrize(
+        "word", ["list_apis", "get_docs", "sdk_version", "listApis", "getSdkInfo", "a1_b2"]
+    )
+    def test_snake_and_camel_words_are_identifiers(self, word: str) -> None:
+        assert identifier_like(word)
+
+    @pytest.mark.parametrize(
+        "word",
+        [
+            "list",
+            "LIST",
+            "requestMLE",
+            "_private",
+            "trailing_",
+            "a__b",
+            "x_",
+            "tool",
+            "Tool",
+            "the",
+        ],
+    )
+    def test_plain_words_and_odd_shapes_are_not(self, word: str) -> None:
+        assert not identifier_like(word)
+
+    def test_a_long_word_is_read_in_linear_time(self) -> None:
+        import time
+
+        hostile = "a" * 200_000 + "!"
+        start = time.process_time()
+        OwnVocabulary.words(hostile + " " + "ab_" * 50_000)
+        OwnVocabulary.called("call " + "_a" * 50_000 + hostile)
+        assert time.process_time() - start < 2.0
