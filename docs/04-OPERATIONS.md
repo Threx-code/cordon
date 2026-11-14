@@ -333,7 +333,12 @@ scan using intel older than `scan.max_intel_age` (unset: 24 hours when the scan 
 from the feed or OSV's changes; a week when it cannot, as with `--offline`) is incomplete and
 says so (`OPERATIONAL.INTEL.STALE`). Stale threat intelligence that presents itself as current
 is the worst case for an air-gapped deployment: the scan passes, the report looks
-identical to a good one, and nobody has a reason to investigate.
+identical to a good one, and nobody has a reason to investigate. The index of known malware code
+files follows the same week, with one difference: in a build with no feed, nothing newer can be
+fetched, so past its week it is still used and its age is a low note
+(`OPERATIONAL.INTEL.REUSE_AGED`) that leaves the scan complete; upgrading Cordon brings a current
+one. With the feed, a stale index is refused and the scan is incomplete
+(`OPERATIONAL.INTEL.REUSE_STALE`).
 
 ### 3.3 Deployment topologies
 

@@ -533,6 +533,9 @@ class Rules:
             "one interned tuple of field names per node shape, a fixed set the grammar decides"
         ),
         "cordon_scanner.foundation.collector:ScanCaches._clearers": "the registry itself",
+        "cordon_scanner.engine.isolation.platform_limits:JobLimits._dlls": (
+            "the two Windows system DLLs (kernel32, psapi), loaded and declared once per worker"
+        ),
         "cordon_scanner.detect.binary.rule_engine.anchoring.automaton:Automaton.DIGEST": (
             "the sha256 of the one native binary the process loaded: one value, worked out once"
         ),

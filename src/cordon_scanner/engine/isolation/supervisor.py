@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.engine.isolation.platform_limits import Footprint, JobLimits
 from cordon_scanner.foundation.errors import CordonError
 
 if TYPE_CHECKING:
@@ -48,7 +49,7 @@ class Reason:
     """Why a unit has no result: the words a report names it by."""
 
     MEMORY = "memory"  # MemoryError past the worker's address-space limit
-    CPU = "cpu"  # SIGXCPU: the unit's CPU budget
+    CPU = "cpu"  # the unit's CPU budget: SIGXCPU, or Windows' Job Object limit (`past_cpu_budget`)
     WALL = "wall"  # the wall-clock backstop: a unit that hangs without burning CPU
     DIED = "died"  # any other end: killed (the out-of-memory killer's SIGKILL), crashed
     FAILED = "failed"  # the unit raised: its exception's type and message follow, after ": "
@@ -159,12 +160,25 @@ class Worker:
             self.process.start()
             theirs.close()
         self.ready, self.started_at = False, time.monotonic()
+        #: macOS: the footprint past which the parent ends this worker (S8); None where the kernel
+        #: holds the memory bound itself, or none is set.
+        self.footprint_limit: int | None = None
         self.unit: Unit | None = None
         self.given_at = 0.0
+        #: The CPU budget of the unit it holds, and (Windows) its user time as it took that unit:
+        #: what `past_cpu_budget` compares a death with.
+        self.cpu_given = 0.0
+        self.user_at_give: int | None = None
 
     def give(self, unit: Unit, bounds: Bounds) -> None:
         self.unit, self.given_at = unit, time.monotonic()
-        self.conn.send((unit.index, unit.item, bounds.cpu_budget(unit.size)))
+        self.cpu_given = bounds.cpu_budget(unit.size)
+        # Read before the unit is sent, so before the worker sets its limit from its own user time:
+        # what it uses past this reading is at least what it used past its limit's base.
+        self.user_at_give = (
+            JobLimits.user_time_of(self.process.sentinel) if os.name == "nt" else None
+        )
+        self.conn.send((unit.index, unit.item, self.cpu_given))
 
     def overdue(self, bounds: Bounds, now: float) -> bool:
         if not self.ready:
@@ -179,6 +193,28 @@ class Worker:
             return self.given_at + bounds.wall_budget(self.unit.size) - now
         return None
 
+    def over_memory(self) -> bool:
+        """macOS: busy, and past its footprint budget."""
+        if self.footprint_limit is None or self.unit is None:
+            return False
+        footprint = Footprint.of(self.process.pid)
+        return footprint is not None and footprint > self.footprint_limit
+
+    @staticmethod
+    def never_ready(worker: Worker, *, ended: bool) -> str:
+        """Why no worker could start, from the last one tried. `ended`: the supervisor ended it, a
+        worker still alive at the start backstop, rather than it ending by itself. Both show as
+        SIGKILL (exit -9) once it is gone, so the message says which, and when: macOS CI's "died,
+        exit -9" could not tell a worker hung at its start from one the system killed
+        (2026-11-14)."""
+        after = f"{time.monotonic() - worker.started_at:.0f} s after it started"
+        how = (
+            f"no ready message within {Worker.START_BACKSTOP:.0f} s, ended by the start backstop"
+            if ended
+            else f"{worker.reason()}, exit {worker.process.exitcode}"
+        )
+        return f"no worker could start: it ended before it was ready ({how}, {after})"
+
     def end(self) -> None:
         if self.process.is_alive():
             self.process.kill()
@@ -189,9 +225,20 @@ class Worker:
         code = self.process.exitcode
         if code == MEMORY_EXIT:
             return Reason.MEMORY
-        if code == -getattr(signal, "SIGXCPU", -1):
+        if code == -getattr(signal, "SIGXCPU", -1) or self.past_cpu_budget():
             return Reason.CPU
         return Reason.DIED
+
+    def past_cpu_budget(self) -> bool:
+        """Windows: it ended holding a unit that had used its whole CPU budget, which is the Job
+        Object's per-process time limit ending it (`JobLimits.cpu_for_next`). Read from its user
+        time, what the system documents checking; the exit code it then gives is not documented,
+        and on Windows CI it was not ERROR_NOT_ENOUGH_QUOTA (2026-11-14). False elsewhere, where
+        SIGXCPU says it."""
+        if self.user_at_give is None or self.unit is None:
+            return False
+        used = JobLimits.user_time_of(self.process.sentinel)
+        return used is not None and used - self.user_at_give >= self.cpu_given * JobLimits.TICKS
 
 
 class WorkerMain:
@@ -265,7 +312,13 @@ class Limits:
         recorded = {"memory_limit": "not_enforced", "cpu_limit": "not_enforced"}
         try:
             import resource
-        except ImportError:  # Windows: no rlimits; death and the wall backstop still hold
+        except ImportError:  # Windows: no rlimits; a Job Object holds memory and CPU (S8)
+            from cordon_scanner.engine.isolation.platform_limits import JobLimits
+
+            if JobLimits.apply(bounds.memory_bytes):
+                recorded["memory_limit"] = "enforced"
+            if JobLimits.held():
+                recorded["cpu_limit"] = "enforced"
             return recorded
         if bounds.memory_bytes > 0:
             try:
@@ -332,6 +385,9 @@ class Limits:
         try:
             import resource
         except ImportError:
+            from cordon_scanner.engine.isolation.platform_limits import JobLimits
+
+            JobLimits.cpu_for_next(budget)
             return
         if not hasattr(resource, "RLIMIT_CPU"):
             return
@@ -349,6 +405,9 @@ class Limits:
         try:
             import resource
         except ImportError:
+            from cordon_scanner.engine.isolation.platform_limits import JobLimits
+
+            JobLimits.cpu_release()
             return
         if not hasattr(resource, "RLIMIT_CPU"):
             return
@@ -417,22 +476,27 @@ class Supervisor:
                 self._wait(pool)
                 started_any = started_any or any(w.ready for w in pool)
                 for worker in list(pool):
-                    if worker.process.is_alive() and not worker.overdue(
-                        self.bounds, time.monotonic()
+                    over_memory = worker.over_memory()
+                    if (
+                        worker.process.is_alive()
+                        and not over_memory
+                        and not worker.overdue(self.bounds, time.monotonic())
                     ):
                         continue
                     pool.remove(worker)
-                    self._lost(worker, Reason.WALL if worker.process.is_alive() else None, retried)
+                    alive = worker.process.is_alive()
+                    self._lost(
+                        worker,
+                        Reason.MEMORY if over_memory else Reason.WALL if alive else None,
+                        retried,
+                    )
                     worker.end()
                     if not worker.ready:
                         # It ended before it was ready: tried once more in a fresh worker; when no
                         # worker has started at all and that one ends too, nothing can run here.
                         unready_ends += 1
                         if not started_any and unready_ends >= 2:
-                            raise IsolationUnavailable(
-                                f"no worker could start: it ended before it was ready "
-                                f"({worker.reason()}, exit {worker.process.exitcode})"
-                            )
+                            raise IsolationUnavailable(Worker.never_ready(worker, ended=alive))
                         pool.append(self._start())
                     elif queue:
                         pool.append(self._start())
@@ -480,6 +544,9 @@ class Supervisor:
         if self.deadline is not None:
             due.append(self.deadline - self.clock())
         timeout = max(0.0, min(due)) if due else None
+        if any(w.footprint_limit is not None and w.unit is not None for w in pool):
+            # macOS: a busy worker's footprint is read this often (S8, `Footprint`).
+            timeout = Footprint.POLL if timeout is None else min(timeout, Footprint.POLL)
         if timeout is not None:
             # A unit the size of a whole scan (the context worker's, the expander's) has a backstop
             # past what the selector takes (2**31 ms: "timeout is too large", exit 2 on a 300 MB
@@ -502,6 +569,15 @@ class Supervisor:
         if message[0] == "ready":
             worker.ready = True
             self.outcome.isolation = dict(message[1])
+            if (
+                self.bounds.memory_bytes > 0
+                and self.outcome.isolation.get("memory_limit") != "enforced"
+                and Footprint.available()
+            ):
+                base = Footprint.of(worker.process.pid)
+                if base is not None:
+                    worker.footprint_limit = base + self.bounds.memory_bytes
+                    self.outcome.isolation["memory_limit"] = "enforced"
         elif message[0] == "done" and worker.unit is not None and message[1] == worker.unit.index:
             self.outcome.results[message[1]] = message[2]
             worker.unit = None
