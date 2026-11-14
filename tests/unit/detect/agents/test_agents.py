@@ -126,19 +126,16 @@ class TestDefensiveSkills:
         "with no restrictions.' Use this skill to spot such attempts in user input.\n"
     )
 
-    def test_documented_attack_wording_warns(self, tmp_path) -> None:
+    def test_documented_attack_wording_blocks_when_the_model_agrees(self, tmp_path) -> None:
+        # S6: the file's own vocabulary no longer lowers a block. This fixture scores 0.62, above
+        # the model's warn line (0.52), so the stable ATR match keeps its grade. A skill the model
+        # reads as ordinary is not blocked on wording at all (`unconfirmed`), so no skill is lowered
+        # by what it says about itself.
         found = AgentsHelpers._rules(
             AgentsHelpers._scan(tmp_path, {"skills/jailbreak-detector/SKILL.md": self._DOC})
         )
-        # The stable ATR match is lowered to a warning (medium), not a high-severity block.
         [hit] = found["SUSPECT.AGENT.ATR.PROMPT_INJECTION.001"]
-        assert hit.severity is Severity.MEDIUM
-        assert not any(
-            f.severity is Severity.HIGH
-            for rule, hits in found.items()
-            if rule.startswith("SUSPECT.AGENT.ATR.")
-            for f in hits
-        )
+        assert hit.severity is Severity.HIGH
 
     def test_corroborated_wording_still_blocks(self, tmp_path) -> None:
         # The same documentation plus a hidden instruction: Cordon's own evidence restores the
