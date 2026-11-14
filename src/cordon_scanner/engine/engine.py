@@ -434,13 +434,29 @@ class Engine:
     def _reuse_status(self, acc: Accumulator) -> None:
         """The code-reuse index (item 54), when this build ships one: an index that is malformed,
         unsorted or past its age is not used, and that is an advisory gap, as stale intel is. A build
-        with none has no reuse check and nothing to say, as a build with no feed has no age check."""
+        with none has no reuse check and nothing to say, as a build with no feed has no age check.
+        Past its age in a build with no feed it is used, and its age is a low note, not a gap: there
+        is nothing newer to fetch (`ReuseIndex._load`, owner 2026-11-14)."""
         from cordon_scanner.intel.registry import ReuseIndex
 
         if self.config.max_intel_age == 0:
             return
         _, problem = ReuseIndex.shipped()
         if not problem:
+            return
+        if problem.startswith("aged"):
+            acc.append(
+                OperationalFinding.build(
+                    path=REPOSITORY_SCOPE,
+                    rule_id="OPERATIONAL.INTEL.REUSE_AGED",
+                    message=(
+                        f"The index of known malware code files was used, but {problem.split(': ', 1)[-1]}"
+                        ": a file copied from a campaign seen since it was built would not be matched."
+                    ),
+                    remediation="Upgrade Cordon: each release ships a current index.",
+                    severity=Severity.LOW,
+                )
+            )
             return
         acc.advisory_complete = False
         stale = problem.startswith("stale")
