@@ -76,6 +76,8 @@ class PythonFactIds:
         ("program started at import", "AST.PY.PROGRAM_STARTED_AT_IMPORT"),
         # Something fetched from the network and code or a program run, both when the file loads.
         ("fetch and run at load", "AST.PY.FETCH_RUN_AT_LOAD"),
+        # Decoded data handed to exec, eval or compile when the file loads.
+        ("decode and run at load", "AST.PY.DECODE_EXEC_AT_LOAD"),
         # Files swept from a directory and sent to a free-hosting, paste, tunnel or interaction host.
         ("sweep sent to a rentable host", "AST.PY.SWEPT_TO_RENTABLE_HOST"),
         # A persistence write with a hidden launch (no window) beside it.
