@@ -80,6 +80,55 @@ class TestTheAdmittedRulesAreKept:
         # Declared HIGH (cordon-47, 7 Nov), kept from the start: 2 dev-half malicious skills (context-loader,
         # an injected .notebook-profile), 0 dev benign; 1 of 154,808 public skills, the same proof of concept.
         "SUSPECT.AGENT.SKILL_DISGUISED_ARCHIVE.001",
+        # PyPI v0.8.0 grades, kept from the start (11 Nov): content misses of the 158 unseen PyPI
+        # units each newly blocks on a799c5d2. Benign units carrying each at any severity on the
+        # full gate (16,249 units, a799c5d2): DECODED 5, CREDENTIAL_STORE.002 1, HIDDEN_DESTINATION
+        # 2, FOREIGN_PROGRAM 1, IMPLANT 57 before its run leg was narrowed, the others 0.
+        "MALWARE.INSTALL.FOREIGN_PROGRAM.001",  # 5 unseen units
+        "MALWARE.DROPPER.HIDDEN.001",  # 1 unseen unit
+        "MALWARE.DROPPER.DECODED.001",  # analysis team, decoded payload compiled and imported
+        "MALWARE.EXFIL.HIDDEN_DESTINATION.002",  # 1 unseen unit
+        "MALWARE.EXFIL.CREDENTIAL_STORE.002",  # 1 unseen unit
+        "MALWARE.EXFIL.DNS_TUNNEL.001",  # 1 unseen unit
+        "MALWARE.IMPLANT.INSTALL.001",  # 1 unseen unit; run leg narrowed to analyser facts
+        "MALWARE.DROPPER.DATA_FILE_CODE.001",  # 1 unseen unit (houdus); benign measured at the gate
+        "MALWARE.EXFIL.CREDENTIALS_TO_FREE_HOST.001",  # 1 dev unit (project47); 0 of 1,063 and 0 of 16,274 benign
+        "MALWARE.EXFIL.CONFUSION_BEACON.001",  # 1 unseen unit (promptflow_runtime); benign at the gate
+        # The analysis team's startup rules (11 Nov): data_proxy_for_test and chroma_client; benign
+        # 2 of 17,337 for STARTUP_CODE (tld, dagz-suite), 0 for STARTUP_NETWORK once startup-reached.
+        "MALWARE.INSTALL.STARTUP_NETWORK.001",
+        "MALWARE.INSTALL.STARTUP_CODE.001",
+        # 1 unseen unit (sherpy); 0 of 704 benign wheels with native modules.
+        "SUSPECT.BINARY.CHAT_ENDPOINT.001",
+        # The skills team's static-miss rules (11 Nov), each measured on the 16,274 benign gate units:
+        "MALWARE.PERSIST.BACKDOOR.001",  # graphicsctxr's key write; 2 benign (tools that ship a key)
+        "MALWARE.IMPORT.PERSIST.001",  # 2 of 199 with persistence words at import
+        "MALWARE.INSTALL.FOREIGN_INDEX.001",  # pyregions_snowflake; 0 of 332
+        "MALWARE.IMPLANT.PERSIST_RUN.001",  # 1-3 at the analyser level
+        "MALWARE.PERSIST.HIDDEN.001",  # ailaunchkit; 1 of 16,274
+        "MALWARE.KEYLOGGER.001",  # aiassistcore; 0 of 16,274
+        "MALWARE.CLIPPER.001",  # aiassistcore; 0 of 16,274
+        "MALWARE.EXFIL.IP_LOGGER.001",  # audio_separator_fork (6 releases); 0 of 16,274
+        "SUSPECT.BINARY.NATIVE_PROGRAM_IN_PURE_WHEEL.001",  # the bundled-executable group; 1 added of 16,274
+        # The analysis team's relay and sweep (11 Nov): 0 of the 1,063 and 0 of the 16,274 each.
+        "MALWARE.EXFIL.SWEPT_FILES.001",  # graphicsctxr
+        "MALWARE.EXFIL.RELAYED_HIDDEN.001",  # snapshot-photo, snapshot_date
+        # The analysis team's fresh-validation rules (11 Nov): 0 of the 1,062 and 0 of the 16,274.
+        "MALWARE.IMPLANT.AV_EXCLUSION.001",  # rainbowcolors
+        "MALWARE.DROPPER.MACHINE_REPORT.001",  # is-it-ai 0.1.1
+        "MALWARE.EXFIL.CLOUD_UPLOAD.001",  # dlty (4 archives); 3 of 16,274
+        "MALWARE.EXFIL.SWEPT_TO_HOST.001",  # renderkit, renderkitcore; 0 of 16,274
+        "MALWARE.IMPORT.PROGRAM_START.001",  # lobomarinopython; 0 of 16,274
+        # The analysis team's staged-payload and install rules (11-12 Nov), 0 of the 1,063 each:
+        "SUSPECT.INSTALL.COMPUTED_CODE.001",  # easyIoCtl, openblox
+        "SUSPECT.DYNAMIC_DISPATCH.002",  # apkeep
+        "SUSPECT.OBFUSCATION.DORMANT_PAYLOAD.001",  # ethercheck, spellcheckerpy
+        "MALWARE.DROPPER.DIRECTORY.001",  # scrapetools2
+        "SUSPECT.EXECUTE.DECODED_BYTES.001",  # rasterkit_demo
+        "SUSPECT.EXFIL.MAIL_ON_IMPORT.001",  # Coffin2022, Coffin-Codes
+        "SUSPECT.SOURCE.UNPARSED_RUNNING.001",  # timeweave; at most 10 of 16,267
+        "SUSPECT.OBFUSCATION.UNRESOLVED_PAYLOAD.001",  # cubaflixdownload
+        "SUSPECT.INSTALL.TEMP_COMMAND.001",  # maliciouspackage 0.1; 0 of 16,274
     )
 
     def test_each_is_in_keep(self) -> None:

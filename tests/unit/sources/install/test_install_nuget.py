@@ -1,0 +1,239 @@
+"""NuGet through Cordon (`sources/install/nuget.py`, `cli/commands/install/dotnet.py`)."""
+
+from __future__ import annotations
+
+import base64
+import gzip
+import hashlib
+import json
+import subprocess
+from pathlib import Path
+from typing import Any, ClassVar
+from xml.etree import ElementTree
+
+import pytest
+
+from cordon_scanner.cli.commands.install.dotnet import DotnetTools
+from cordon_scanner.sources.install.managers.nuget import NuGetPlanner
+from cordon_scanner.sources.install.plan import InstallRefused
+from cordon_scanner.sources.install.registries import InstallRegistries
+
+NUPKG = b"PK\x03\x04 a nupkg"
+HASH = base64.b64encode(hashlib.sha512(NUPKG).digest()).decode()
+
+
+class NuGetKit:
+    CSPROJ = '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>'
+
+    @staticmethod
+    def lock(**extra: Any) -> str:
+        return json.dumps(
+            {
+                "version": 1,
+                "dependencies": {
+                    "net8.0": {
+                        "Newtonsoft.Json": {
+                            "type": "Direct",
+                            "requested": "[13.0.3, )",
+                            "resolved": "13.0.3",
+                            "contentHash": HASH,
+                        },
+                        "app.lib": {"type": "Project"},
+                        **extra,
+                    }
+                },
+            }
+        )
+
+    @staticmethod
+    def done(code: int = 0, stderr: str = "") -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess([], code, "", stderr)
+
+
+class TestWhatInstalls:
+    @pytest.mark.parametrize(
+        ("args", "installs"),
+        [
+            (["restore"], True),
+            (["build", "-c", "Release"], True),
+            (["build", "--no-restore"], False),
+            (["add", "package", "Newtonsoft.Json"], True),
+            (["add", "app.csproj", "package", "Newtonsoft.Json"], True),
+            (["add", "reference", "../lib/lib.csproj"], False),
+            (["tool", "install", "-g", "dotnet-ef"], True),
+            (["tool", "list"], False),
+            (["--info"], False),
+        ],
+    )
+    def test_the_commands_that_restore_or_install(self, args: list[str], installs: bool) -> None:
+        assert NuGetPlanner.installs(args) is installs
+
+
+class NuGetOrg:
+    """nuget.org's answers for Newtonsoft.Json 13.0.3 and dotnet-ef, the registration gzip-compressed."""
+
+    REGISTRATION = "https://api.nuget.org/v3/registration5-gz-semver2"
+    ANSWERS: ClassVar[dict[str, Any]] = {
+        f"{REGISTRATION}/newtonsoft.json/13.0.3.json": {
+            "catalogEntry": "https://api.nuget.org/v3/catalog0/nj.json"
+        },
+        "https://api.nuget.org/v3/catalog0/nj.json": {
+            "id": "Newtonsoft.Json",
+            "packageHash": HASH,
+            "packageHashAlgorithm": "SHA512",
+        },
+        "https://api.nuget.org/v3-flatcontainer/dotnet-ef/index.json": {
+            "versions": ["8.0.4", "9.0.0-rc.1"]
+        },
+        f"{REGISTRATION}/dotnet-ef/8.0.4.json": {
+            "catalogEntry": "https://api.nuget.org/v3/catalog0/ef.json"
+        },
+        "https://api.nuget.org/v3/catalog0/ef.json": {
+            "id": "dotnet-ef",
+            "packageHash": HASH,
+            "packageHashAlgorithm": "SHA512",
+        },
+    }
+
+    @classmethod
+    def answer(cls, monkeypatch: pytest.MonkeyPatch) -> InstallRegistries:
+        def fetch(self: InstallRegistries, url: str, ecosystem: str) -> bytes:
+            data = json.dumps(cls.ANSWERS[url]).encode()
+            return gzip.compress(data) if "registration5-gz" in url else data
+
+        monkeypatch.setattr(InstallRegistries, "fetch", fetch)
+        return InstallRegistries()
+
+
+class TestTheLock:
+    def test_packages_from_the_lock_and_projects_left_local(self) -> None:
+        assert NuGetPlanner.locked_packages(NuGetKit.lock()) == [("Newtonsoft.Json", "13.0.3")]
+
+    def test_each_file_is_held_to_the_catalog_hash_of_the_whole_nupkg(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        file = NuGetPlanner.published("Newtonsoft.Json", "13.0.3", NuGetOrg.answer(monkeypatch))
+        assert file.url == (
+            "https://api.nuget.org/v3-flatcontainer/newtonsoft.json/13.0.3/newtonsoft.json.13.0.3.nupkg"
+        )
+        file.verify(NUPKG)
+        with pytest.raises(InstallRefused):
+            file.verify(NUPKG + b"tampered")
+
+    def test_a_package_without_a_hash_in_the_lock_is_refused(self) -> None:
+        lock = NuGetKit.lock(Serilog={"type": "Transitive", "resolved": "3.1.1"})
+        with pytest.raises(InstallRefused, match="Serilog"):
+            NuGetPlanner.locked_packages(lock)
+
+    def test_a_name_that_is_not_a_package_id_is_refused(self) -> None:
+        with pytest.raises(InstallRefused):
+            NuGetPlanner.package_file("../../etc", "1.0.0", b"\0" * 64)
+
+
+class TestTheProjectResolve:
+    def test_the_resolve_downloads_privately_and_a_failure_puts_the_project_back(
+        self, tmp_path: Path
+    ) -> None:
+        (tmp_path / "app.csproj").write_text(NuGetKit.CSPROJ, encoding="utf-8")
+        seen: list[tuple[list[str], dict[str, str]]] = []
+
+        def runner(
+            argv: list[str], cwd: Path, env: dict[str, str]
+        ) -> subprocess.CompletedProcess[str]:
+            seen.append((argv, env))
+            (tmp_path / "app.csproj").write_text("changed", encoding="utf-8")
+            (tmp_path / "packages.lock.json").write_text("{}", encoding="utf-8")
+            return NuGetKit.done(1, "NU1101: Unable to find package")
+
+        with pytest.raises(InstallRefused, match="NU1101"):
+            NuGetPlanner.project(
+                ["restore"], runner, "dotnet", tmp_path, tmp_path / "pkgs", InstallRegistries()
+            )
+        argv, env = seen[0]
+        assert argv[:3] == ["dotnet", "restore", "--use-lock-file"]
+        assert env["NUGET_PACKAGES"] == str(tmp_path / "pkgs")
+        assert (tmp_path / "app.csproj").read_text(encoding="utf-8") == NuGetKit.CSPROJ
+        assert not (tmp_path / "packages.lock.json").exists()
+
+    def test_the_locks_under_the_project_are_read_build_output_skipped(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_path / "app.csproj").write_text(NuGetKit.CSPROJ, encoding="utf-8")
+
+        def runner(
+            argv: list[str], cwd: Path, env: dict[str, str]
+        ) -> subprocess.CompletedProcess[str]:
+            (cwd / "packages.lock.json").write_text(NuGetKit.lock(), encoding="utf-8")
+            (cwd / "obj").mkdir(exist_ok=True)
+            (cwd / "obj" / "packages.lock.json").write_text("not read", encoding="utf-8")
+            return NuGetKit.done()
+
+        registries = NuGetOrg.answer(monkeypatch)
+        plan = NuGetPlanner.project(
+            ["build"], runner, "dotnet", tmp_path, tmp_path / "p", registries
+        )
+        assert [f.name for f in plan.files] == ["Newtonsoft.Json"]
+        assert "saved:app.csproj" in plan.manifests
+
+    def test_the_command_then_runs_locked_from_the_scanned_source(self) -> None:
+        config = Path("/s/nuget.config")
+        assert NuGetPlanner.locked(["restore"], config) == [
+            "restore", "--locked-mode", "--configfile", str(config),
+        ]  # fmt: skip
+        assert NuGetPlanner.locked(["run", "--", "--port", "1"], config) == [
+            "run", "-p:RestoreLockedMode=true", f"-p:RestoreConfigFile={config}",
+            "--", "--port", "1",
+        ]  # fmt: skip
+        assert NuGetPlanner.locked(["add", "package", "x"], config)[:2] == [
+            "restore",
+            "--locked-mode",
+        ]
+
+    def test_the_scanned_files_become_the_one_source(self, tmp_path: Path) -> None:
+        file = NuGetPlanner.package_file("Newtonsoft.Json", "13.0.3", b"\0" * 64)
+        (tmp_path / file.filename).write_bytes(NUPKG)
+        NuGetPlanner.scanned_source([file], tmp_path, tmp_path / "source")
+        assert (tmp_path / "source" / "newtonsoft.json.13.0.3.nupkg").read_bytes() == NUPKG
+        sources = ElementTree.fromstring(NuGetPlanner.source_config(tmp_path / 'a "b" <c>')).find(
+            "packageSources"
+        )
+        assert sources is not None
+        assert [child.tag for child in sources] == ["clear", "add"]
+        assert sources[1].get("value") == str(tmp_path / 'a "b" <c>')
+
+
+class TestARefusalWhileChecking:
+    def test_puts_the_project_back_as_a_block_does(self) -> None:
+        from cordon_scanner.cli.commands.install.native import NativeTools
+
+        restored: list[bool] = []
+
+        class Refusing:
+            def check(self, plan: object, scratch: Path) -> None:
+                raise InstallRefused("x 1.0 does not match the sha512 its registry publishes")
+
+        with pytest.raises(InstallRefused):
+            NativeTools._checked(None, Refusing(), lambda: restored.append(True), ["x"], Path())  # type: ignore[arg-type]
+        assert restored == [True]
+
+
+class TestTools:
+    def test_the_tool_line_names_one_package_and_its_version(self) -> None:
+        names, version = DotnetTools._tool_args(
+            ["-g", "dotnet-ef", "--version", "8.0.4", "--tool-path", "/opt/t"]
+        )
+        assert (names, version) == (["dotnet-ef"], "8.0.4")
+
+    def test_the_newest_stable_tool_with_its_catalog_hash(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        plan = NuGetPlanner.tool("dotnet-ef", "", NuGetOrg.answer(monkeypatch))
+        (file,) = plan.files
+        assert (file.version, file.requested) == ("8.0.4", True)
+        file.verify(NUPKG)
+
+    def test_a_tool_from_another_source_is_refused(self) -> None:
+        with pytest.raises(InstallRefused, match=r"nuget\.org only"):
+            DotnetTools._tool(
+                "dotnet", ["install", "x", "--add-source", "https://evil.invalid"], None
+            )  # type: ignore[arg-type]

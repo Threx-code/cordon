@@ -491,9 +491,46 @@ class HelpScreen:
     GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
         (
             "SCAN AND INSPECT",
-            ("scan", "clone", "pull", "inventory", "deps", "review", "sbom", "report"),
+            (
+                "scan",
+                "clone",
+                "pull",
+                "inventory",
+                "deps",
+                "review",
+                "sbom",
+                "report",
+            ),
         ),
         ("POLICY", ("rules", "config", "baseline", "suppress", "guard", "verify", "notify")),
+        (
+            "INSTALL, CHECKED FIRST",
+            (
+                "npm",
+                "pnpm",
+                "yarn",
+                "pip",
+                "pip3",
+                "uv",
+                "poetry",
+                "cargo",
+                "go",
+                "gem",
+                "bundler",
+                "dotnet",
+                "dart",
+                "flutter",
+                "conda",
+                "mamba",
+                "composer",
+                "mvn",
+                "terraform",
+                "tofu",
+                "helm",
+                "ansible-galaxy",
+                "mix",
+            ),
+        ),
         ("THREAT INTEL", ("advisories", "intel", "bundle")),
         ("AI AGENTS", ("mcp",)),
         ("CORDON CLOUD", ("login", "logout", "whoami", "runner", "agent")),
@@ -503,31 +540,54 @@ class HelpScreen:
     parser and not to a group here, so none can silently drop off the screen."""
 
     SHORT: ClassVar[dict[str, str]] = {
-        "scan": "scan a directory, file or archive",
+        "scan": "scan a folder, file or archive",
         "inventory": "what the repository is, and why",
         "deps": "dependency graph and findings",
         "review": "what a dependency update adds",
         "clone": "clone, scanned before checkout",
         "pull": "pull, scanned before the merge",
-        "sbom": "CycloneDX or SPDX bill of materials",
+        "npm": "npm install, scanned first",
+        "pnpm": "pnpm install, scanned first",
+        "yarn": "yarn install, scanned first",
+        "pip": "pip install, scanned first",
+        "pip3": "pip3 install, scanned first",
+        "uv": "uv add/sync/pip, scanned first",
+        "poetry": "poetry add/install, scanned",
+        "cargo": "cargo build/install, scanned",
+        "go": "go get/build/install, scanned",
+        "gem": "gem install, scanned first",
+        "bundler": "bundle install, scanned first",
+        "dotnet": "restore/build/tool, scanned",
+        "dart": "dart pub get/add, scanned first",
+        "flutter": "flutter pub get/add, scanned",
+        "conda": "conda install/create, scanned",
+        "mamba": "mamba install/create, scanned",
+        "composer": "composer install, scanned",
+        "mvn": "mvn builds, every jar scanned",
+        "terraform": "terraform init, then scanned",
+        "tofu": "tofu init, then scanned",
+        "helm": "helm dependency build, scanned",
+        "ansible-galaxy": "galaxy install, scanned",
+        "mix": "mix deps.get from the lock",
+        "sbom": "CycloneDX or SPDX SBOM",
         "report": "re-render a saved JSON result",
         "rules": "list, test and show the rules",
-        "config": "check the repository configuration",
-        "baseline": "record findings, adopt gradually",
+        "config": "check the repo configuration",
+        "baseline": "record findings, adopt slowly",
         "suppress": "reviewed, expiring exceptions",
-        "guard": "git hooks and self-integrity",
+        "guard": "git hooks, shims, integrity",
         "verify": "check this install is genuine",
         "notify": "test the notification channels",
         "advisories": "the advisory database",
         "intel": "the signed threat-intel feed",
-        "bundle": "offline bundle for air-gapped use",
+        "bundle": "offline bundle, air-gapped use",
         "login": "sign in to Cordon Cloud (SSO)",
         "logout": "end the Cordon Cloud sign-in",
         "whoami": "the Cordon Cloud sign-in in use",
         "runner": "run Cloud jobs in your network",
-        "agent": "AI agents and MCP servers, for MDM",
+        "agent": "AI agents and MCP servers (MDM)",
         "mcp": "serve Cordon to AI agents (MCP)",
-        "help": "this screen, or one command's help",
+        "help": "this screen or a command's help",
         "completion": "shell completion script",
     }
     """The two-column screen's descriptions, short enough for half a terminal. The full help
@@ -567,6 +627,7 @@ class HelpScreen:
         self.block = "█" if unicode else "#"
         self.rule = "─" if unicode else "-"
         self.dot = "·" if unicode else "-"
+        self.ellipsis = "…" if unicode else "..."
 
     @classmethod
     def unlisted(cls, names: Iterable[str]) -> list[str]:
@@ -612,10 +673,14 @@ class HelpScreen:
 
     # -- the environment -------------------------------------------------------------------------
 
+    def _cut(self, text: str, room: int) -> str:
+        """Text shortened to `room` columns, ending in an ellipsis the terminal can show."""
+        return text[: max(room - len(self.ellipsis), 0)] + self.ellipsis
+
     def _fact(self, fact: Fact, width: int) -> str:
         p = self.palette
         room = width - self.LABEL_WIDTH
-        value = fact.value if len(fact.value) <= room else fact.value[: room - 1] + "…"
+        value = fact.value if len(fact.value) <= room else self._cut(fact.value, room)
         label = f"{fact.label:<{self.LABEL_WIDTH}}"
         return p.paint("muted", label) + p.paint(fact.state, value)
 
@@ -666,7 +731,7 @@ class HelpScreen:
         for name in members:
             text = self.SHORT.get(name, self.commands[name]) if short else self.commands[name]
             if len(text) > room:
-                text = text[: room - 1] + "…"
+                text = self._cut(text, room)
             lines.append(p.paint("command", f"{name:<{name_width}}") + p.paint("text", text))
         return lines
 

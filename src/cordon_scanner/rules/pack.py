@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -15,6 +16,19 @@ from cordon_scanner.rules.patterns import PatternCompiler
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
+
+
+class RuleOverBudget(TimeoutError):
+    """One rule's regex spent more CPU on one file than its budget (S7: a crafted file driving a
+    matcher to super-linear time). A TimeoutError, so the detector runner reports it as
+    OPERATIONAL.FILE.TIMEOUT, a gap: the file's checks did not finish, and it never passes."""
+
+    def __init__(self, rule_id: str, spent: float, budget: float) -> None:
+        super().__init__(
+            f"rule {rule_id or '<unnamed>'} spent {spent:.2f}s of CPU, over its {budget:.2f}s "
+            "budget for this file"
+        )
+        self.rule_id, self.spent, self.budget = rule_id, spent, budget
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,14 +96,43 @@ class CompiledMatch:
 
     SUBSETS_KEPT: ClassVar[int] = 256
 
+    BUDGET_FLOOR: ClassVar[float] = 2.0
+    """CPU seconds one rule may spend on one file, at least (S7). A linear rule takes 0.2 to 0.4 s
+    on 10 MB (`rules/anchored`); test_rule_time.py holds every bundled rule under a quarter of the
+    budget on hostile input. A constant, never configuration: a scanned tree must not raise it."""
+    BUDGET_PER_MB: ClassVar[float] = 1.0
+    """CPU seconds more per MiB of the file."""
+
+    def budget(self, size: int) -> float:
+        return max(self.BUDGET_FLOOR, self.BUDGET_PER_MB * size / (1 << 20))
+
     def matches(
         self, regex: re.Pattern[bytes], data: bytes, folded: bytes | None = None
     ) -> Iterator[re.Match[bytes]]:
         """`regex.finditer(data)`, exactly, trying `regex` only where a match can start.
-        `regex` is this rule's (`regex_for`); `folded` is `data.lower()` when the caller has it."""
+        `regex` is this rule's (`regex_for`); `folded` is `data.lower()` when the caller has it.
+        Raises RuleOverBudget once the search has spent more CPU than `budget` (S7)."""
         if regex not in self.plans:
             self.plans[regex] = AnchoredSearch.plan(regex)
-        return AnchoredSearch.matches(regex, self.plans[regex], data, folded)
+        return self._budgeted(
+            AnchoredSearch.matches(regex, self.plans[regex], data, folded), len(data)
+        )
+
+    def _budgeted(self, found: Iterator[re.Match[bytes]], size: int) -> Iterator[re.Match[bytes]]:
+        """`found`, with the CPU spent inside the search (not the caller's, between matches)
+        summed and checked after each match and at the end. One search that never returns is not
+        stopped here (`re` cannot be interrupted): the worker's RLIMIT_CPU ends that unit as
+        OPERATIONAL.FILE.WORKER_HUNG (engine/isolation/supervisor.py)."""
+        budget, spent = self.budget(size), 0.0
+        while True:
+            started = time.thread_time()
+            match = next(found, None)
+            spent += time.thread_time() - started
+            if spent > budget:
+                raise RuleOverBudget(self.rule_id, spent, budget)
+            if match is None:
+                return
+            yield match
 
     def search(
         self, regex: re.Pattern[bytes], data: bytes, folded: bytes | None = None
@@ -192,4 +235,4 @@ class RulePack:
         return iter(self.rules)
 
 
-__all__ = ["CompiledMatch", "CompiledRule", "RulePack"]
+__all__ = ["CompiledMatch", "CompiledRule", "RuleOverBudget", "RulePack"]

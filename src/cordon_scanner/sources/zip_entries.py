@@ -15,6 +15,7 @@ refused (a blocking gap) exactly as before.
 from __future__ import annotations
 
 import copy
+import io
 import struct
 import zipfile
 import zlib
@@ -93,7 +94,14 @@ class ZipEntries:
                     data.startswith(ZipEntries.LOCAL, info.header_offset)
                     for info in archive.infolist()
                 )
-        except (zipfile.BadZipFile, OSError, ValueError, EOFError, struct.error):
+        except (
+            zipfile.BadZipFile,
+            OSError,
+            ValueError,
+            EOFError,
+            struct.error,
+            NotImplementedError,
+        ):
             return False
 
     @staticmethod
@@ -167,7 +175,14 @@ class ZipRepair:
             return None
         if not ZipRepair._directory_agrees(data, offset, entries):
             return None
-        return bytes(data[:offset]) + ZipRepair._directory(data, entries, offset)
+        rebuilt = bytes(data[:offset]) + ZipRepair._directory(data, entries, offset)
+        # A directory rebuilt from headers that declare a zip version Python cannot read raised
+        # NotImplementedError when reopened (S1 fuzzing, 10 Nov): that is no repair, so refused.
+        try:
+            zipfile.ZipFile(io.BytesIO(rebuilt)).close()
+        except (zipfile.BadZipFile, OSError, ValueError, EOFError, NotImplementedError):
+            return None
+        return rebuilt
 
     @staticmethod
     def _directory_agrees(

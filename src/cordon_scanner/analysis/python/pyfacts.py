@@ -8,8 +8,10 @@ from __future__ import annotations
 import ast
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.analysis.python.flows.containers import Containers
+from cordon_scanner.analysis.python.flows.http_clients import CLIENT_REQUESTS, CLOUD_UPLOADS
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.foundation.capabilities import Capability
 
@@ -107,6 +109,10 @@ PRIMITIVES: dict[str, Capability] = {
     "http.client.HTTPConnection": Capability.EGRESS,
     "http.client.HTTPSConnection": Capability.EGRESS,
 }
+
+# Requests through an HTTP client object (`flows/http_clients.py`): its methods are egress.
+PRIMITIVES.update(dict.fromkeys(CLIENT_REQUESTS, Capability.EGRESS))
+PRIMITIVES.update(dict.fromkeys(CLOUD_UPLOADS, Capability.EGRESS))
 
 
 ENVIRONMENT = frozenset({"os.environ", "os.getenv", "os.environb"})
@@ -253,6 +259,9 @@ class AstCall:
 class PythonFacts:
     """Stateless facts about Python source."""
 
+    #: Rounds `carried` runs before taking its answer as it stands; it stops sooner at a fixed point.
+    CARRY_ROUNDS: ClassVar[int] = 10
+
     @staticmethod
     def literal_strings(node: ast.AST) -> list[str] | None:
         if not isinstance(node, ast.Tuple | ast.List) or not node.elts:
@@ -283,6 +292,79 @@ class PythonFacts:
     PATTERN_CALLS = frozenset(
         {"compile", "match", "fullmatch", "search", "findall", "finditer", "sub", "subn", "split"}
     )
+
+    #: What a check for a debugger, a sandbox or the machine it runs on reads: the names the
+    #: anti-analysis patterns look for, as code rather than text.
+    PROBE_NAMES: frozenset[str] = frozenset(
+        {
+            "gettrace",
+            "settrace",
+            "ptrace",
+            "gethostname",
+            "node",
+            "uname",
+            "getuser",
+            "getenv",
+            "environ",
+            "IsDebuggerPresent",
+            "CheckRemoteDebuggerPresent",
+        }
+    )
+
+    @staticmethod
+    def string_spans(source: str) -> tuple[tuple[int, int, int, int], ...] | None:
+        """(first line, first column, last line, end column) of every string literal, columns in
+        UTF-8 bytes as `ast` reports them; None when the source does not parse, or when the code
+        itself (not a string) names a probe in `PROBE_NAMES` -- then every match may be real."""
+        try:
+            tree = PythonSyntax.shared(source)
+        except (SyntaxError, ValueError, RecursionError):
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
+            return None
+        for node in PythonSyntax.of(tree, ast.Name, ast.Attribute):
+            if (node.id if isinstance(node, ast.Name) else node.attr) in PythonFacts.PROBE_NAMES:
+                return None
+        parents = PythonSyntax.parents(tree)
+        return tuple(
+            (node.lineno, node.col_offset, node.end_lineno, node.end_col_offset)
+            for node in PythonSyntax.of(tree, ast.Constant)
+            if isinstance(node.value, str)
+            and node.end_lineno is not None
+            and node.end_col_offset is not None
+            and PythonFacts._is_prose(node, parents.get(id(node)))
+        )
+
+    #: Calls whose string arguments are text for a person: a message, not something the code
+    #: compares, opens or runs.
+    PROSE_CALLS: ClassVar[frozenset[str]] = frozenset(
+        {"print", "echo", "secho", "warn", "warning", "info", "debug", "error", "critical",
+         "exception", "log", "add_argument", "add_option"}
+    )  # fmt: skip
+
+    @staticmethod
+    def _is_prose(node: ast.Constant, parent: ast.AST | None) -> bool:
+        """A string that is text, not a value the code tests: a docstring or other bare string,
+        a multi-line template assigned whole (`SCRIPT = \"\"\"...\"\"\"`), or a message handed to
+        print, logging, warnings or an argument parser. `'TracerPid:\\t0' not in status` and
+        `open('/proc/self/status')` are values the code uses: a probe there stays a probe."""
+        if isinstance(parent, ast.Expr):
+            return True
+        text = node.value if isinstance(node.value, str) else ""
+        if isinstance(parent, ast.Assign | ast.AnnAssign) and parent.value is node:
+            return "\n" in text
+        if isinstance(parent, ast.keyword):
+            return parent.arg in ("help", "description", "epilog", "msg", "message")
+        if isinstance(parent, ast.Call) and node in parent.args:
+            func = parent.func
+            name = (
+                func.id
+                if isinstance(func, ast.Name)
+                else func.attr
+                if isinstance(func, ast.Attribute)
+                else ""
+            )
+            return name in PythonFacts.PROSE_CALLS
+        return False
 
     @classmethod
     def _pattern_literals(cls, tree: ast.AST) -> frozenset[int]:
@@ -477,7 +559,8 @@ class PythonFacts:
         """
         try:
             tree = PythonSyntax.shared(source)
-        except (SyntaxError, ValueError, RecursionError):
+        except (SyntaxError, ValueError):
+            # S2: covered by SOURCE.UNPARSED at every running file (install closure, import entries, command modules); proven by test_not_python3.py TestPackageSourceThatDoesNotParse
             return []
 
         found: list[Assembled] = []
@@ -528,6 +611,7 @@ class PythonFacts:
         try:
             PythonSyntax.shared(source)
         except (SyntaxError, ValueError, RecursionError):
+            # S2: a fallback; the next reader (or SOURCE.UNPARSED for running files) reads it
             return False
         return True
 
@@ -601,6 +685,11 @@ class PythonFacts:
             code = PythonFacts._code_point(node.args[0])
             if code is not None:
                 return chr(code)
+        # `"moc.tsoh//:sptth"[::-1]` and `"".join(reversed("..."))`: a literal stored backwards so
+        # no rule that reads literals sees it. Folded, it is the text the program uses.
+        if PythonSyntax.reversed_slice(node) and isinstance(node, ast.Subscript):
+            inner = PythonFacts.constant(node.value)
+            return inner[::-1] if inner is not None else None
         return None
 
     @classmethod
@@ -611,6 +700,16 @@ class PythonFacts:
             return None
         separator = PythonFacts.constant(node.func.value)
         elements = node.args[0]
+        if (
+            separator is not None
+            and isinstance(elements, ast.Call)
+            and isinstance(elements.func, ast.Name)
+            and elements.func.id == "reversed"
+            and len(elements.args) == 1
+        ):
+            # `"".join(reversed("moc.tsoh"))`: the characters of a literal, backwards.
+            inner = PythonFacts.constant(elements.args[0])
+            return separator.join(inner[::-1]) if inner is not None else None
         if separator is not None and isinstance(elements, ast.List | ast.Tuple):
             pieces = [PythonFacts.constant(element) for element in elements.elts]
             if all(part is not None for part in pieces):
@@ -753,6 +852,18 @@ class PythonFacts:
         functions = PythonSyntax.of(tree, ast.FunctionDef, ast.AsyncFunctionDef)
         carrying: set[tuple[int, str]] = set()
         returning: set[str] = set()
+        # `self.x` / `cls.x` assigned what a source gives: the instance carries it to every method
+        # (`self._device_id = _get_device_id()` in one, `self._device_id` in a request in another).
+        attributes: set[str] = set()
+
+        def attribute_key(node: ast.AST) -> str | None:
+            if (
+                isinstance(node, ast.Attribute)
+                and isinstance(node.value, ast.Name)
+                and node.value.id in ("self", "cls")
+            ):
+                return f"{node.value.id}.{node.attr}"
+            return None
 
         def callee(call: ast.Call) -> str | None:
             func = call.func
@@ -765,26 +876,44 @@ class PythonFacts:
 
         def holds(node: ast.AST, *, deep: bool = True) -> bool:
             parts = PythonSyntax.within(node, kind, ast.Call, ast.Name) if deep else [node]
-            return any(
+            if any(
                 is_source(part)
                 or (isinstance(part, ast.Name) and (scope(part, part.id), part.id) in carrying)
                 or (isinstance(part, ast.Call) and callee(part) in returning)
                 for part in parts
-            )
+            ):
+                return True
+            if not attributes:
+                return False
+            held = PythonSyntax.within(node, ast.Attribute) if deep else [node]
+            return any(attribute_key(part) in attributes for part in held)
 
-        for _ in range(3):
+        # To a fixed point, bounded: a collector is often several helpers deep (tsshare 1.0.2:
+        # platform.node -> three fingerprint helpers -> a hash -> self._device_id -> the payload).
+        for _ in range(PythonFacts.CARRY_ROUNDS):
+            before = (len(carrying), len(returning), len(attributes))
             carrying.update((function, param) for arg, function, param in passed if holds(arg))
             for node in PythonSyntax.nodes(tree):
                 if isinstance(node, ast.Assign) and holds(node.value):
                     carrying.update(
                         (scope(t, t.id), t.id) for t in node.targets if isinstance(t, ast.Name)
                     )
+                    attributes.update(
+                        key for t in node.targets if (key := attribute_key(t)) is not None
+                    )
+                for filled in Containers.filled_by(node, holds):
+                    if isinstance(filled, ast.Name):
+                        carrying.add((scope(filled, filled.id), filled.id))
+                    elif (key := attribute_key(filled)) is not None:
+                        attributes.add(key)
             for function in functions:
                 if function.name not in returning and any(
                     isinstance(part, ast.Return) and part.value is not None and holds(part.value)
                     for part in PythonSyntax.within(function, ast.Return)
                 ):
                     returning.add(function.name)
+            if (len(carrying), len(returning), len(attributes)) == before:
+                break
         return holds
 
     @staticmethod

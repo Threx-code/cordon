@@ -2,7 +2,7 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,503 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,542 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -129,17 +129,19 @@ rule's own samples.
 
 ## Binary
 
-10 rules.
+12 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `POLICY.BINARY.COMMITTED.001` | low | Executable committed to a source repository |
+| `SUSPECT.BINARY.CHAT_ENDPOINT.001` | high | Compiled module names a chat bot's or webhook's API |
 | `SUSPECT.BINARY.CREDENTIAL_THEFT.001` | high | Committed binary imports credential-store and network calls |
 | `SUSPECT.BINARY.EXECUTABLE_PATH.001` | high | Executable committed where a lifecycle step will run it |
 | `SUSPECT.BINARY.HIDDEN_IMPORTS.001` | medium | Committed binary resolves its imports at run time |
 | `SUSPECT.BINARY.IMPLANT.001` | high | Committed binary imports download-and-run calls |
 | `SUSPECT.BINARY.KEYLOGGER.001` | high | Committed binary imports keyboard-capture and network calls |
 | `SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001` | high | A pure-Python wheel loads a native library it carries |
+| `SUSPECT.BINARY.NATIVE_PROGRAM_IN_PURE_WHEEL.001` | high | A pure-Python wheel carries a native program and starts it |
 | `SUSPECT.BINARY.PACKED.001` | medium | Committed binary is packed |
 | `SUSPECT.BINARY.PROCESS_INJECTION.001` | high | Committed binary imports process-injection calls |
 | `SUSPECT.BINARY.STRINGS.001` | medium | Committed binary contains a URL, command or credential path |
@@ -207,6 +209,14 @@ rule's own samples.
 | `MALWARE.CLAMAV.SIGNATURE.001` | critical | ClamAV recognises the file as malware |
 | `OPERATIONAL.CLAMAV.STATUS` | info | ClamAV examined the scan's files |
 | `OPERATIONAL.CLAMAV.UNAVAILABLE` | info | ClamAV was asked for and could not be used |
+
+## Clipper
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.CLIPPER.001` | critical | Replaces what the user copied with a value the package carries |
 
 ## CloudFormation
 
@@ -598,11 +608,16 @@ rule's own samples.
 
 ## Dropper
 
-5 rules.
+10 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.DROPPER.001` | critical | Install script fetches and executes remote content |
+| `MALWARE.DROPPER.DATA_FILE_CODE.001` | high | Code is loaded from a file named as data |
+| `MALWARE.DROPPER.DECODED.001` | high | Code writes out a payload it carries encoded, then makes it runnable or runs it |
+| `MALWARE.DROPPER.DIRECTORY.001` | high | Files written into a directory are then executed from it |
+| `MALWARE.DROPPER.HIDDEN.001` | high | Code downloads a program and starts it with its window hidden |
+| `MALWARE.DROPPER.MACHINE_REPORT.001` | high | A fingerprint of the machine is sent and the program the answer names is run |
 | `MALWARE.DROPPER.SHIPPED_PAYLOAD.001` | critical | Code decrypts bytes it carries into a program, writes it and runs it |
 | `SUSPECT.DROPPER.001` | high | Content fetched from the network and executed |
 | `SUSPECT.DROPPER.REMOTE_CODE.001` | high | Code runs what a server sends it |
@@ -610,30 +625,49 @@ rule's own samples.
 
 ## Dynamic Dispatch
 
-2 rules.
+3 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.DYNAMIC_DISPATCH.001` | critical | Install-time code reaches a function by a computed name |
 | `SUSPECT.DYNAMIC_DISPATCH.001` | high | A function is reached by a name computed at runtime |
+| `SUSPECT.DYNAMIC_DISPATCH.002` | high | A module or function is reached by a name the code spells so that no literal is it |
+
+## Execute
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.EXECUTE.DECODED_BYTES.001` | high | Bytes handed to the code are decoded to text and executed |
 
 ## Exfiltration
 
-27 rules.
+38 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.EXFIL.001` | critical | Install script reads credentials and transmits them |
 | `MALWARE.EXFIL.BEACON.001` | critical | Install script reports the machine it is installing on |
+| `MALWARE.EXFIL.CLOUD_UPLOAD.001` | critical | Uploads what the machine knows to a cloud store |
 | `MALWARE.EXFIL.COMMAND_OUTPUT.001` | critical | An install script runs a command and sends what it printed |
+| `MALWARE.EXFIL.CONFUSION_BEACON.001` | high | A dependency-confusion package reports the machine it runs on |
+| `MALWARE.EXFIL.CREDENTIALS_TO_FREE_HOST.001` | high | A password is sent to a free-hosting, paste or tunnel host |
 | `MALWARE.EXFIL.CREDENTIAL_STORE.001` | critical | Install-time code reads a credential store and reaches the network |
+| `MALWARE.EXFIL.CREDENTIAL_STORE.002` | high | Code sends a credential store's contents outside the store's own service |
 | `MALWARE.EXFIL.DNS_CALLBACK.001` | critical | Install script resolves a fixed host name |
+| `MALWARE.EXFIL.DNS_TUNNEL.001` | high | Code sends data out encoded in DNS names |
 | `MALWARE.EXFIL.DROP_POINT.001` | critical | Install-time code sends data to a drop point |
 | `MALWARE.EXFIL.FLOW_RAW_CHANNEL.001` | critical | Sends what a command printed, or the user's files, over a channel of its own |
 | `MALWARE.EXFIL.FLOW_TO_DROP.001` | critical | Sends this machine's secrets or identity to a drop point |
 | `MALWARE.EXFIL.HIDDEN_DESTINATION.001` | critical | Install script contacts an address it spells out in character codes |
+| `MALWARE.EXFIL.HIDDEN_DESTINATION.002` | high | Code sends the machine's identity, environment or a credential to a host it hides |
 | `MALWARE.EXFIL.INSTALL_CALLBACK.001` | critical | Install script calls back to a drop point |
+| `MALWARE.EXFIL.IP_LOGGER.001` | critical | Opens a link that logs the address of whoever opens it |
+| `MALWARE.EXFIL.RELAYED_HIDDEN.001` | high | A class stores what its caller hands it and sends it to a destination it hides |
 | `MALWARE.EXFIL.SCRIPT_CALLBACK.001` | high | Package script calls back to an interaction service |
+| `MALWARE.EXFIL.SWEPT_FILES.001` | high | Files gathered by walking the drives or home, sent to a destination the code hides |
+| `MALWARE.EXFIL.SWEPT_TO_HOST.001` | critical | Sweeps files and sends their contents to a host anyone can rent |
 | `MALWARE.EXFIL.TRACKING_CALLBACK.001` | critical | Install script reports to a host named for this install |
 | `SUSPECT.EXFIL.001` | medium | Credential access combined with network egress and execution |
 | `SUSPECT.EXFIL.BEACON.001` | high | Code reports the machine it runs on |
@@ -648,6 +682,7 @@ rule's own samples.
 | `SUSPECT.EXFIL.ENVIRONMENT.001` | high | Code sends the whole environment over the network |
 | `SUSPECT.EXFIL.FLOW_IDENTITY.001` | high | Sends who and where this machine is |
 | `SUSPECT.EXFIL.FLOW_SECRET.001` | high | Sends a credential file off the machine |
+| `SUSPECT.EXFIL.MAIL_ON_IMPORT.001` | high | Importing the module sends mail from an account whose password it carries |
 | `SUSPECT.EXFIL.NAMED_SECRET.001` | high | Code sends a named credential to a host outside its service |
 | `SUSPECT.EXFIL.WALLET_SECRET.001` | high | Sends a wallet's secret to an outside address |
 
@@ -699,6 +734,25 @@ rule's own samples.
 | `OPERATIONAL.IMAGE.UNMATCHED` | info | An image's packages were not all matched against advisories |
 | `VULNERABLE.IMAGE.EXPLOITED.001` | critical | An image's operating-system package has a vulnerability exploited in the wild |
 | `VULNERABLE.IMAGE.PACKAGE.001` | high | An image's operating-system package has a known vulnerability |
+
+## Implant
+
+3 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.IMPLANT.AV_EXCLUSION.001` | high | The code tells the antivirus to stop scanning a folder or a program |
+| `MALWARE.IMPLANT.INSTALL.001` | high | Code downloads and runs something and makes itself start again |
+| `MALWARE.IMPLANT.PERSIST_RUN.001` | critical | Registers itself to run again and runs a program it brings |
+
+## Import
+
+2 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.IMPORT.PERSIST.001` | critical | Code that runs on import plants code that runs again later |
+| `MALWARE.IMPORT.PROGRAM_START.001` | critical | Importing the package starts a program and leaves it running |
 
 ## Infrastructure as code
 
@@ -1528,7 +1582,7 @@ rule's own samples.
 
 ## Install-time code
 
-20 rules.
+26 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -1537,6 +1591,8 @@ rule's own samples.
 | `MALWARE.INSTALL.DECODED_LAUNCH.001` | critical | An install script decodes content and starts a process |
 | `MALWARE.INSTALL.DISGUISED_PROGRAM.001` | critical | Install code turns a file shipped as data into a program |
 | `MALWARE.INSTALL.FETCH_EXEC.001` | critical | Install script fetches and executes remote content |
+| `MALWARE.INSTALL.FOREIGN_INDEX.001` | critical | Install script installs packages from an index the user did not choose |
+| `MALWARE.INSTALL.FOREIGN_PROGRAM.001` | high | Install code starts a desktop application or an identity command |
 | `MALWARE.INSTALL.GYP_COMMAND.001` | critical | Native-build file runs a script at install |
 | `MALWARE.INSTALL.HIDDEN_ACTION.001` | critical | An install script hides a process, request or credential read inside a string it executes |
 | `MALWARE.INSTALL.NETWORK_PROBE.001` | high | Install script calls a network-probing tool |
@@ -1545,12 +1601,16 @@ rule's own samples.
 | `MALWARE.INSTALL.REMOTE_CODE.001` | critical | Install-time code runs what a server sends it |
 | `MALWARE.INSTALL.SHELL_EVASION.001` | critical | Install script hides the spaces in the command it runs |
 | `MALWARE.INSTALL.SPELLED_CODE.001` | critical | Install script spells its names in character codes |
+| `MALWARE.INSTALL.STARTUP_CODE.001` | high | A .pth file runs code beyond import setup in every Python process |
+| `MALWARE.INSTALL.STARTUP_NETWORK.001` | high | Code a .pth file loads reaches the network in every Python process |
 | `MALWARE.INSTALL.WINDOWS_LOADER.001` | critical | Install script starts a Windows loader |
 | `SUSPECT.INSTALL.AUTOSTART.001` | high | Install-time code makes something start at every login |
+| `SUSPECT.INSTALL.COMPUTED_CODE.001` | high | Code that runs at install executes or starts a program it assembles so that no literal is it |
 | `SUSPECT.INSTALL.DEPENDENCY_CONFUSION.001` | high | A version made to win resolution runs code on install |
 | `SUSPECT.INSTALL.OBFUSCATED_HOOK.001` | high | An install hook runs a file too obfuscated to read |
 | `SUSPECT.INSTALL.SCRIPT.001` | high | Package declares an install-time lifecycle script |
 | `SUSPECT.INSTALL.STRING_CODE.001` | high | An install script runs a program it carries as a string |
+| `SUSPECT.INSTALL.TEMP_COMMAND.001` | high | The install runs a command on a system temp path |
 | `SUSPECT.INSTALL.UNEXAMINED.001` | high | Install-time code too large or slow to examine |
 
 ## Intent
@@ -1563,13 +1623,22 @@ rule's own samples.
 
 ## Judge
 
-3 rules.
+4 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `OPERATIONAL.JUDGE.BUDGET` | info | The judge's call budget ran out |
 | `OPERATIONAL.JUDGE.STATUS` | info | A language model judged the scan's agent-facing text |
+| `OPERATIONAL.JUDGE.TRUNCATED` | info | Agent-facing text was longer than the judge reads |
 | `OPERATIONAL.JUDGE.UNAVAILABLE` | info | The judge was asked for and could not be used |
+
+## Keylogger
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.KEYLOGGER.001` | critical | Captures keystrokes and writes them down or sends them |
 
 ## Kubernetes
 
@@ -1688,17 +1757,19 @@ rule's own samples.
 
 ## Obfuscation
 
-7 rules.
+9 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `SUSPECT.OBFUSCATION.BIDI.001` | high | Bidirectional or invisible Unicode in source |
+| `SUSPECT.OBFUSCATION.DORMANT_PAYLOAD.001` | high | Data fetched or carried by the package is decoded and then never used |
 | `SUSPECT.OBFUSCATION.ENCODED.001` | medium | Large encoded blob embedded in source |
 | `SUSPECT.OBFUSCATION.LONGLINE.001` | low | Line far longer than any hand-written source |
 | `SUSPECT.OBFUSCATION.MANGLED.001` | high | Output of obfuscator.io outside the package's build output |
 | `SUSPECT.OBFUSCATION.PACKED.001` | medium | Packer or minifier signature in hand-written source |
 | `SUSPECT.OBFUSCATION.REQUIRE_ALIAS.001` | high | Node's require hidden behind a global name |
 | `SUSPECT.OBFUSCATION.TAG_SMUGGLING.001` | high | Invisible text written in Unicode Tag characters |
+| `SUSPECT.OBFUSCATION.UNRESOLVED_PAYLOAD.001` | high | A payload is handed at import to a function nothing defines |
 
 ## Package
 
@@ -1719,10 +1790,12 @@ rule's own samples.
 
 ## Persistence
 
-1 rules.
+3 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
+| `MALWARE.PERSIST.BACKDOOR.001` | critical | Writes a file that lets someone else in, with content the package carries |
+| `MALWARE.PERSIST.HIDDEN.001` | critical | Registers a program to start at login and starts it without a window |
 | `SUSPECT.PERSIST.001` | high | Network access combined with a persistence mechanism |
 
 ## Polyglot
@@ -1903,6 +1976,14 @@ rule's own samples.
 | `SECRET.TWILIO.KEY.001` | high | Committed credential: Twilio API key |
 | `SECRET.URL.CREDENTIAL.001` | high | Credential embedded in a URL |
 | `SECRET.VAULT.TOKEN.001` | critical | Committed credential: HashiCorp Vault token |
+
+## Source
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.SOURCE.UNPARSED_RUNNING.001` | high | A module the package runs does not parse |
 
 ## Source and history
 

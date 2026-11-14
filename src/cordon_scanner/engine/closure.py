@@ -39,6 +39,7 @@ from cordon_scanner.foundation.paths import ContainerPaths
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 
+    from cordon_scanner.detect.base import FileUnit
     from cordon_scanner.engine.pipeline.accumulator import Accumulator
 
 MAX_DEPTH = 4
@@ -65,6 +66,9 @@ class ImportClosure:
         as `a/b/__init__.py`. Relative imports resolve against the importing
         file's directory, which is what makes `from . import helper` work.
         """
+        if module.startswith("/"):  # a relative import, already a path (`imported_by`)
+            stem = module[1:]
+            return [f"{stem}.py", f"{stem}/__init__.py"]
         parts = module.split(".")
         base = PurePosixPath(importer).parent
         joined = "/".join(parts)
@@ -74,6 +78,22 @@ class ImportClosure:
             str(base / f"{joined}.py") if str(base) != "." else f"{joined}.py",
             str(base / joined / "__init__.py") if str(base) != "." else f"{joined}/__init__.py",
         ]
+
+    @staticmethod
+    def installed_module(module: str, importer: str, texts: Mapping[str, str]) -> list[str]:
+        """For a `.pth` importer, the package's own files a module name is, wherever the package
+        keeps them: a `.pth` runs from site-packages, where `src/pkg/mod.py` and
+        `purelib/pkg/mod.py` are installed as `pkg/mod.py`. Only within the importer's archive."""
+        if not importer.endswith(".pth") or module.startswith("/"):
+            return []
+        archive = importer.rpartition("!")[0]
+        joined = "/".join(module.split("."))
+        ends = (f"/{joined}.py", f"/{joined}/__init__.py")
+        return sorted(
+            path
+            for path in texts
+            if path.rpartition("!")[0] == archive and f"/{path.rpartition('!')[2]}".endswith(ends)
+        )
 
     @classmethod
     def imported_by(cls, source: str, importer: str) -> list[str]:
@@ -112,11 +132,14 @@ class ImportClosure:
                     prefix = base
                     for _ in range(node.level - 1):
                         prefix = prefix.parent
-                    stem = f"{prefix}/{node.module}" if node.module else str(prefix)
-                    found.append(stem.strip("/").replace("/", "."))
-                    found.extend(
-                        f"{stem.strip('/').replace('/', '.')}.{alias.name}" for alias in node.names
-                    )
+                    # Kept as a path, marked by a leading "/", never flattened to dots: a package
+                    # archive's directories carry dots and "!" (`pkg-1.0.tar.gz!pkg-1.0/pkg`), and
+                    # `from .core import run` there resolved to nothing (09 3a).
+                    module_path = node.module.replace(".", "/") if node.module else ""
+                    stem = f"{prefix}/{module_path}" if module_path else str(prefix)
+                    stem = stem.strip("/")
+                    found.append(f"/{stem}")
+                    found.extend(f"/{stem}/{alias.name}" for alias in node.names)
                 elif node.module:
                     found.append(node.module)
                     # `from pkg import module` may name a module rather than a
@@ -331,11 +354,15 @@ class ImportClosure:
                 rooted = [
                     f"{root}/{'/'.join(module.split('.'))}{suffix}"
                     for root in roots
-                    if root != "."
+                    if root != "." and not module.startswith("/")
                     for suffix in (".py", "/__init__.py")
                 ]
                 shipped_here = False
-                for candidate in [*cls.candidates(module, path), *rooted]:
+                for candidate in [
+                    *cls.candidates(module, path),
+                    *rooted,
+                    *cls.installed_module(module, path, texts),
+                ]:
                     normalised = re.sub(r"^(?:\./)+", "", candidate)
                     if normalised in texts:
                         shipped_here = True
@@ -343,7 +370,9 @@ class ImportClosure:
                             seen.add(normalised)
                             frontier.append((normalised, depth + 1))
                 if not shipped_here:
-                    for reading in hidden.get(module, ()):
+                    # A relative import is looked up here as it always was, dotted.
+                    dotted = module[1:].replace("/", ".") if module.startswith("/") else module
+                    for reading in hidden.get(dotted, ()):
                         if reading not in seen:
                             seen.add(reading)
                             frontier.append((reading, depth + 1))
@@ -460,4 +489,106 @@ class ImportClosure:
         return hidden
 
 
-__all__ = ["ImportClosure"]
+class StartupClosure:
+    """What runs at every interpreter start once a package is installed."""
+
+    @staticmethod
+    def of(
+        units: Sequence[FileUnit], entries: Iterable[str]
+    ) -> tuple[frozenset[str], frozenset[tuple[str, int, int]]]:
+        """The `.pth` hooks among `entries` and every file their import lines reach, and the bodies
+        those imports never run. A `.pth`'s `import X` imports X at every interpreter start, so
+        what runs is what importing runs (`LoadReach`), not an install hook's reach: an install
+        closure would make every function of an imported package install code (fattummy 1.0.1)."""
+        from cordon_scanner.analysis.python.pyast import PythonSource
+        from cordon_scanner.analysis.python.reachability import LoadReach
+        from cordon_scanner.engine.closure import ImportClosure
+
+        startup = {path for path in entries if path.endswith(".pth")}
+        if not startup:
+            return frozenset(), frozenset()
+        sources = {
+            unit.path: unit.content.text
+            for unit in units
+            if unit.path.endswith(".py") and not unit.content.is_binary
+        }
+        sources.update(
+            {
+                unit.path: PythonSource.startup_lines(unit.content.text)
+                for unit in units
+                if unit.path in startup and not unit.content.is_binary
+            }
+        )
+        reached = ImportClosure.resolve(startup, sources)
+        modules = sorted(path for path in reached if path.endswith(".py"))
+        deferred = LoadReach.deferred_lines(modules, sources)
+        return frozenset(startup | reached), StartupClosure._through_instances(
+            modules, sources, deferred
+        )
+
+    #: Rounds of reach widened through instances and the calls their methods make.
+    ROUNDS: ClassVar[int] = 6
+
+    @staticmethod
+    def _through_instances(
+        modules: list[str], sources: Mapping[str, str], deferred: frozenset[tuple[str, int, int]]
+    ) -> frozenset[tuple[str, int, int]]:
+        """`deferred`, less the bodies a startup reaches through an instance. LoadReach does not
+        resolve `client = Client(...)` then `client.initialize()`; at startup, a class of the
+        closure constructed on a reached line makes its methods reached, and what a reached body
+        calls by name, among the closure's functions and methods, is reached in turn
+        (tinkoff_cloud_apis_internal 8.5.4: a thread target builds a `Client`, whose methods
+        start the loop that sends). Scoped to the startup closure: import grading is untouched."""
+        trees: dict[str, ast.Module] = {}
+        for path in modules:
+            try:
+                tree = PythonSyntax.parse(sources[path])
+            except (SyntaxError, ValueError, RecursionError):
+                # S2: an unparsed closure file defers nothing here; SOURCE.UNPARSED reports it.
+                continue
+            if isinstance(tree, ast.Module):
+                trees[path] = tree
+        classes: dict[str, list[tuple[str, ast.ClassDef]]] = {}
+        functions: dict[str, list[tuple[str, ast.FunctionDef | ast.AsyncFunctionDef]]] = {}
+        for path, tree in trees.items():
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ClassDef):
+                    classes.setdefault(node.name, []).append((path, node))
+                elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                    functions.setdefault(node.name, []).append((path, node))
+        left = set(deferred)
+
+        def reached(path: str, line: int) -> bool:
+            return not any(p == path and first <= line <= last for p, first, last in left)
+
+        for _ in range(StartupClosure.ROUNDS):
+            opened: set[tuple[str, int, int]] = set()
+            for path, tree in trees.items():
+                for call in PythonSyntax.of(tree, ast.Call):
+                    if not reached(path, call.lineno):
+                        continue
+                    func = call.func
+                    name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", None)
+                    for owner, cls in classes.get(name or "", []):
+                        opened.update(
+                            span
+                            for item in cls.body
+                            if isinstance(item, ast.FunctionDef | ast.AsyncFunctionDef)
+                            for span in left
+                            if item.body and span[0] == owner and span[1] == item.body[0].lineno
+                        )
+                    for owner, function in functions.get(name or "", []):
+                        opened.update(
+                            span
+                            for span in left
+                            if function.body
+                            and span[0] == owner
+                            and span[1] == function.body[0].lineno
+                        )
+            if not opened:
+                break
+            left -= opened
+        return frozenset(left)
+
+
+__all__ = ["ImportClosure", "StartupClosure"]

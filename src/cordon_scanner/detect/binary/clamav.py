@@ -68,12 +68,21 @@ class Clamd:
                 loopback = False
             if not loopback or not parsed.port:
                 raise ClamdError("clamd over TCP must be on a loopback address with a port")
+            # Connected to the loopback address itself, with no name lookup: the scan phase is
+            # sealed (`engine/netguard.py` refuses every resolution), and clamd is the operator's
+            # local service, named only on the command line and only on loopback.
+            ip = ipaddress.ip_address("127.0.0.1" if host == "localhost" else host)
+            family = socket.AF_INET6 if ip.version == 6 else socket.AF_INET
+            connection = socket.socket(family, socket.SOCK_STREAM)
+            connection.settimeout(TIMEOUT_SECONDS)
             try:
-                return socket.create_connection((host, parsed.port), timeout=TIMEOUT_SECONDS)
+                connection.connect((str(ip), parsed.port))
             except OSError as exc:
+                connection.close()
                 raise ClamdError(
                     f"clamd at {host}:{parsed.port} could not be reached ({NetworkFailure.reason(exc)})"
                 ) from exc
+            return connection
         if not hasattr(socket, "AF_UNIX"):
             raise ClamdError("Unix sockets are not available here; use tcp://127.0.0.1:3310")
         connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)

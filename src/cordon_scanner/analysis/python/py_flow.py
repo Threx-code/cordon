@@ -184,12 +184,45 @@ class PythonValueFlow(ValueFlowSteps):
     # -- index -----------------------------------------------------------------------------------
 
     def index(self) -> bool:
-        """Scopes, the file's functions, its calls and the seeds. False past `MAX_SEEDS`."""
+        """Scopes, the file's functions, its calls and the seeds. False past `MAX_SEEDS`.
+
+        The scopes, functions and calls are the tree's alone (`INDEX` is never overridden, and no
+        `seed` reads them), so they are walked once per tree (`IndexShape`, kept with the tree)
+        and copied here; each analyser then asks its own `seed` of every node, in the same order.
+        A Python file is read by a dozen of these analysers: rebuilt by each, the walk was 78 s of
+        litellm 1.88.0rc2's 362 (1.5 million `_index_name` calls). Past `MAX_SEEDS` the original
+        walk runs, so what a caller reads of the partial state is unchanged."""
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
+        shape: IndexShape = PythonSyntax.memo(
+            self.tree, ("py_flow", "index"), lambda: IndexShape.of(self.tree)
+        )
+        seeds: dict[int, Label] = {}
+        for node in shape.order:
+            label = self.seed(node)
+            if label is not None:
+                seeds[id(node)] = label
+                if len(seeds) > self.MAX_SEEDS:
+                    return self._index_walk()
+        self.seeds.update(seeds)
+        self.scope_of.update(shape.scope_of)
+        for scope, names in shape.local.items():
+            self.local[scope] = set(names)
+        for name, functions in shape.functions.items():
+            self.functions.setdefault(name, []).extend(functions)
+        self.calls.extend(shape.calls)
+        return True
+
+    def _index_walk(self, order: list[ast.AST] | None = None) -> bool:
+        """The walk `index` stands for, with the seeds asked as it goes: the shape's own (`order`,
+        with this class's `seed`, which seeds nothing) and the path past `MAX_SEEDS`."""
         module = id(self.tree)
         self.local[module] = set()
         stack: list[tuple[ast.AST, int]] = [(self.tree, module)]
         while stack:
             node, scope = stack.pop()
+            if order is not None:
+                order.append(node)
             indexer = self.INDEX.get(type(node))
             inner = getattr(self, indexer)(node, scope) if indexer else scope
             label = self.seed(node)
@@ -198,8 +231,20 @@ class PythonValueFlow(ValueFlowSteps):
                 if len(self.seeds) > self.MAX_SEEDS:
                     return False
             self.scope_of[id(node)] = scope
-            stack.extend((child, inner) for child in ast.iter_child_nodes(node))
-        for node in ast.walk(self.tree):
+            # `ast.iter_child_nodes`, inlined: the same children in the same order, `ctx` markers
+            # included, read from each field directly rather than through two generators a node.
+            for field in node._fields:
+                try:
+                    value = getattr(node, field)
+                except AttributeError:
+                    continue
+                if isinstance(value, ast.AST):
+                    stack.append((value, inner))
+                elif isinstance(value, list):
+                    stack.extend((item, inner) for item in value if isinstance(item, ast.AST))
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
+        for node in PythonSyntax.walked_of(self.tree, ast.Global, ast.Nonlocal):
             if isinstance(node, ast.Global | ast.Nonlocal):
                 self.local.get(self.scope_of.get(id(node), module), set()).difference_update(
                     node.names
@@ -274,7 +319,9 @@ class PythonValueFlow(ValueFlowSteps):
     # -- the fixpoint ----------------------------------------------------------------------------
 
     def flow(self) -> None:
-        nodes = list(ast.walk(self.tree))
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
+        nodes = PythonSyntax.walked_of(self.tree, *self.FLOW)
         for _ in range(self.ROUNDS):
             changed = False
             for node in nodes:
@@ -377,4 +424,28 @@ class PythonValueFlow(ValueFlowSteps):
     )
 
 
-__all__ = ["Label", "PythonValueFlow"]
+class IndexShape:
+    """What `PythonValueFlow.index` records of a tree before any seed: the order it visits the
+    nodes in, each node's scope, the names local to each scope (`global` and `nonlocal` honoured),
+    the functions by name and the calls. Read-only; each analyser copies what it changes."""
+
+    __slots__ = ("calls", "functions", "local", "order", "scope_of")
+
+    def __init__(self, flow: PythonValueFlow, order: list[ast.AST]) -> None:
+        self.order: tuple[ast.AST, ...] = tuple(order)
+        self.scope_of: dict[int, int] = flow.scope_of
+        self.local: dict[int, frozenset[str]] = {k: frozenset(v) for k, v in flow.local.items()}
+        self.functions: dict[str, tuple[ast.FunctionDef | ast.AsyncFunctionDef, ...]] = {
+            name: tuple(fns) for name, fns in flow.functions.items()
+        }
+        self.calls: tuple[ast.Call, ...] = tuple(flow.calls)
+
+    @staticmethod
+    def of(tree: ast.AST) -> IndexShape:
+        flow = PythonValueFlow(tree)  # its `seed` seeds nothing, so the walk always completes
+        order: list[ast.AST] = []
+        flow._index_walk(order)
+        return IndexShape(flow, order)
+
+
+__all__ = ["IndexShape", "Label", "PythonValueFlow"]

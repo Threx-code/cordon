@@ -6,12 +6,16 @@ checks on the release as a whole, the dependency graph and what the archive is, 
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.analysis.python.flows.cross_file import CrossFileMaps
+from cordon_scanner.analysis.python.unparsed_source import UnparsedSource
 from cordon_scanner.analysis.shared.languages import LanguageRegistry
+from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.decide.code_model import CodeModelPass
 from cordon_scanner.detect.base import (
     FileUnit,
@@ -20,7 +24,7 @@ from cordon_scanner.detect.base import (
 )
 from cordon_scanner.detect.registry import ComposerPluginHooks, ServerSources
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
-from cordon_scanner.engine.closure import ImportClosure
+from cordon_scanner.engine.closure import ImportClosure, StartupClosure
 from cordon_scanner.engine.entries import PackageEntries
 from cordon_scanner.engine.package_format import PackageFormat
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
@@ -28,21 +32,24 @@ from cordon_scanner.engine.pipeline.archives import ArchiveMembers
 from cordon_scanner.engine.pipeline.ceilings import Ceilings
 from cordon_scanner.engine.pipeline.constants import (
     ARCHIVE_SLICE,
+    DEPENDENCY_BUILD_FILENAMES,
     HONOURED_PINS,
     REPOSITORY_SCOPE,
 )
 from cordon_scanner.engine.pipeline.facts import TreeFacts
 from cordon_scanner.engine.pipeline.graph import Graph
 from cordon_scanner.engine.pipeline.history import History
-from cordon_scanner.engine.pipeline.hooks import Hooks
+from cordon_scanner.engine.pipeline.hooks import BuildRoots, Hooks
 from cordon_scanner.engine.pipeline.images import Images
 from cordon_scanner.engine.pipeline.publisher import Publisher
 from cordon_scanner.engine.pipeline.releases import ReleaseChecks
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.errors import ArchiveError
 from cordon_scanner.foundation.formats.served_json import ServedJson
-from cordon_scanner.foundation.models import Scope, Severity
+from cordon_scanner.foundation.models import Confidence, Scope, Severity
+from cordon_scanner.foundation.paths import ContainerPaths
 from cordon_scanner.foundation.results import Dependency, OperationalFinding
+from cordon_scanner.foundation.text.confusion_versions import ConfusionVersions
 from cordon_scanner.sources.registry import ArchiveReader
 
 if TYPE_CHECKING:
@@ -205,21 +212,10 @@ class ArchiveStages:
         units.extend(self.engine.units.content_readings(units))
         units.extend(self.engine.units.deobfuscated(units))
         hook_paths, consumer_hooks, ci_scripts = Hooks.manifest_hook_paths(units, acc)
-        # The same install-time picture a directory scan builds: filename hooks (`setup.py`, a
-        # `.pth`), and everything the hooks import or run. A downloaded sdist or tarball is the
-        # commonest thing to vet, and it was the one target that skipped all three.
-        hook_paths |= {
-            unit.path
-            for unit in units
-            if not Hooks.under_fixture_directory(unit.path)
-            and any(
-                hook.kind not in ("ci", "projectbuild")
-                for hook in Hooks.hooks_for(unit.path.rpartition("!")[2])
-            )
-        }
-        hook_paths |= Hooks.nuget_hooks(units)
-        hook_paths |= Hooks.gem_extension_hooks(units)
-        hook_paths |= ComposerPluginHooks.paths(units)
+        registry = PackageFormat.of(units)
+        hook_paths = self._without_foreign_npm_hooks(units, hook_paths, registry)
+        foreign_package = self._foreign_package(registry)
+        hook_paths |= self._filename_hooks(units)
         skill_scripts = TreeFacts.skill_scripts(units)
         agent_run = skill_scripts | ServerSources.of(units)
         agent_tools = self.engine._agent_tool_paths(units, agent_run, hook_paths)
@@ -229,7 +225,14 @@ class ArchiveStages:
         # real MCP packages (review 98). What a server's handlers do with the agent's input is
         # read by `detect/mcp_code.py` instead -- a shell behind a secret prefix, a hidden copy of
         # every argument, a gate that turns the tool later, secrets gathered by name.
-        hook_paths |= skill_scripts
+        # A skill's scripts run unasked when an agent uses the skill. A SKILL.md in a registry
+        # package's source (a PyPI sdist's root, beside its PKG-INFO) is guidance for whoever
+        # works on that repository: the package manager installs none of it where an agent loads
+        # skills, so the scripts beside it are scanned as what they are, not as install code
+        # (pypi-benign F472: barangay, browser-automation-cli, moregan). npm is left out: skills
+        # are also distributed as npm packages, and that was not measured.
+        if not foreign_package:
+            hook_paths |= skill_scripts
         entries = frozenset(hook_paths)
         unshipped: list[tuple[str, str]] = []
         python_closure = Hooks.hook_import_closure(units, hook_paths, unshipped)
@@ -244,6 +247,8 @@ class ArchiveStages:
         ctx = replace(
             ctx,
             install_hook_paths=frozenset(hook_paths),
+            startup_closure_paths=(startup := StartupClosure.of(units, entries))[0],
+            startup_deferred_lines=startup[1],
             tree_paths=frozenset(unit.path for unit in units),
             shipped_native_paths=TreeFacts.shipped_native(units),
             install_entry_paths=entries,
@@ -270,9 +275,129 @@ class ArchiveStages:
             library_closure_paths=frozenset(Hooks.hook_js_closure(units, set(used | project))),
             declared_dependencies=EcosystemRegistry.declared_dependencies(units, early_format),
             package_repository=PackageEntries.repository(units, early_format),
+            confusion_version=ConfusionVersions.reason(PackageEntries.version(units, early_format))
+            or "",
         )
-        ctx = replace(ctx, verdict_dependency_names=Ceilings.verdict_dependency_names(units))
+        ctx = replace(
+            ctx,
+            verdict_dependency_names=Ceilings.verdict_dependency_names(units),
+            **CrossFileMaps.of(units),
+        )
+        ctx = self.unparsed(units, acc, ctx, python_closure)
+        ctx = self.import_context(units, ctx, early_format)
         return Hooks.lifted_inherit(ctx)
+
+    @staticmethod
+    def _filename_hooks(units: list[FileUnit]) -> set[str]:
+        """The same install-time picture a directory scan builds: filename hooks (`setup.py`, a
+        `.pth`), NuGet's, a gem's extension, a Composer plugin. A downloaded sdist or tarball is
+        the commonest thing to vet, and it was the one target that skipped them. A `setup.py` is
+        the build script only where a directory scan would take it as one (`Hooks.hook_executes`):
+        beside the sdist's `PKG-INFO`, never inside a package or below the root. Read by the
+        member's path in its archive, as the hook names it."""
+        directories: set[str] = set()
+        for unit in units:
+            BuildRoots.note(unit.path.rpartition("!")[2], directories)
+        paths = {
+            unit.path
+            for unit in units
+            if not Hooks.under_fixture_directory(unit.path)
+            and any(
+                hook.kind not in ("ci", "projectbuild") and Hooks.hook_executes(hook, directories)
+                for hook in Hooks.hooks_for(unit.path.rpartition("!")[2])
+            )
+        }
+        return (
+            paths
+            | Hooks.nuget_hooks(units)
+            | Hooks.gem_extension_hooks(units)
+            | ComposerPluginHooks.paths(units)
+        )
+
+    @staticmethod
+    def _foreign_package(registry: str) -> bool:
+        """A registry package whose installer runs no bundled npm script and loads no skill."""
+        return bool(registry) and not EcosystemRegistry.runs_bundled_scripts(registry)
+
+    #: A build step that runs npm, and with it the lifecycle scripts of what node_modules holds.
+    _RUNS_NPM: ClassVar[re.Pattern[str]] = re.compile(r"\b(?:npm|yarn|pnpm|bun)\b")
+
+    @classmethod
+    def _without_foreign_npm_hooks(
+        cls, units: list[FileUnit], hook_paths: set[str], registry: str
+    ) -> set[str]:
+        """An npm tree vendored inside another registry's package (a Python front end's
+        node_modules): pip runs no npm lifecycle script, so esbuild's install.js there is not
+        install code -- unless the package's own build runs npm (`npm rebuild`), which would run
+        them. npm's own tarballs run their bundled dependencies' scripts and keep them."""
+        if not cls._foreign_package(registry):
+            return hook_paths
+        foreign = {p for p in hook_paths if "/node_modules/" in f"/{p.rpartition('!')[2]}"}
+        if not foreign:
+            return hook_paths
+        builds = [
+            u
+            for u in units
+            if ContainerPaths.basename(u.path.rpartition("!")[2]) in DEPENDENCY_BUILD_FILENAMES
+            and not u.content.is_binary
+        ]
+        if any(cls._RUNS_NPM.search(u.content.text) for u in builds):
+            return hook_paths
+        return hook_paths - foreign
+
+    def unparsed(
+        self, units: list[FileUnit], acc: Accumulator, ctx: ScanContext, python_closure: set[str]
+    ) -> ScanContext:
+        """What runs at install or import and does not parse is read as Python 2, or is a gap,
+        fail closed (09 3a). A reading runs where its file runs (`lifted_inherit`)."""
+        python_entries = {p for p in ctx.import_entry_paths if p.endswith(".py")}
+        from cordon_scanner.engine.entries import PythonScripts
+
+        # A command's module runs on every invocation, imported by `__init__` or not (S2).
+        python_entries |= PythonScripts.targets(units)
+        running = python_closure | python_entries | Hooks.hook_import_closure(units, python_entries)
+        readings: list[FileUnit] = []
+        for unit in list(units):
+            if unit.content.is_binary or not UnparsedSource.runs_as_source(unit.path, running):
+                continue
+            decision = UnparsedSource.decide(unit.content.text)
+            if decision.kind == "gap":
+                acc.incomplete(UnparsedSource.gap(unit.path))
+                if not SourcePaths.is_test_material(unit.path.rpartition("!")[2]):
+                    risk = ctx.scorer.score(Severity.HIGH, Confidence.HIGH)
+                    acc.append(UnparsedSource.running(unit.path, risk))
+            elif decision.kind == "broken":
+                acc.append(UnparsedSource.broken(unit.path))
+            elif decision.reading is not None:
+                where = ContainerPaths.reading(unit.path, "python")
+                raw = decision.reading.encode("utf-8")
+                content = FileContent.from_bytes(where, raw, self.config.limits)
+                readings.append(FileUnit(content=content, language="python", project=unit.project))
+        if not readings:
+            return ctx
+        units.extend(readings)
+        return replace(ctx, tree_paths=ctx.tree_paths | {r.path for r in readings})
+
+    @staticmethod
+    def import_context(units: list[FileUnit], ctx: ScanContext, distribution: str) -> ScanContext:
+        """What runs when a consumer imports a published Python package: every importable module and
+        what it imports, and the bodies importing never runs (`LoadReach`, reviews/pypi-98/10)."""
+        from cordon_scanner.analysis.python.reachability import LoadReach
+
+        modules = PackageEntries.importable_modules(units, distribution)
+        if not modules:
+            return ctx
+        closure = set(modules) | Hooks.hook_import_closure(units, set(modules))
+        sources = {
+            unit.path: unit.content.text
+            for unit in units
+            if unit.path in closure and unit.path.endswith(".py") and not unit.content.is_binary
+        }
+        return replace(
+            ctx,
+            import_closure_paths=frozenset(closure),
+            import_deferred_lines=LoadReach.deferred_lines(sorted(sources), sources),
+        )
 
     def parallel(
         self, units: list[FileUnit], deadline: float, acc: Accumulator, path: Path, ctx: ScanContext
@@ -329,6 +454,7 @@ class ArchiveStages:
             return
         acc.add(ReleaseChecks.unexamined_install_code(acc.findings, ctx))
         acc.add(ReleaseChecks.native_code_in_a_pure_wheel(units, ctx))
+        acc.add(ReleaseChecks.native_program_in_a_pure_wheel(units, ctx))
         acc.add(ReleaseChecks.known_malicious_release(units, ctx))
         acc.add(ReleaseChecks.known_vulnerable_release(units, ctx))
         acc.add(ReleaseChecks.placeholder_release(units, ctx))

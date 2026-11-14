@@ -7,6 +7,7 @@ from __future__ import annotations
 import ast
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.analysis.python.py_identity import IpLookup
 from cordon_scanner.analysis.python.pyfacts import (
     DNS_LOOKUPS,
     ENVIRONMENT,
@@ -20,10 +21,311 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 
-from cordon_scanner.analysis.python.analyzer_core import AnalyzerCore
+from cordon_scanner.analysis.python.flows.hidden_destinations import HiddenDestinations
+from cordon_scanner.analysis.python.flows.secret_sources import SecretSources
+
+#: Methods of a mapping that return one value, not the mapping.
+KEYED_METHODS = frozenset({"get", "setdefault", "pop", "__getitem__", "__contains__"})
+
+#: Calls that start a child process, by module and function. Their `env=` is the child's.
+SPAWNS: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("subprocess", "Popen"),
+        ("subprocess", "run"),
+        ("subprocess", "call"),
+        ("subprocess", "check_call"),
+        ("subprocess", "check_output"),
+        ("asyncio", "create_subprocess_exec"),
+        ("asyncio", "create_subprocess_shell"),
+    }
+)
 
 
-class DataFlows(AnalyzerCore):
+class EnvironmentCarry:
+    """`carried` for the whole environment, keyed-read aware. Same signature as
+    `PythonFacts.carried`'s result: `holds(node, deep=True)`.
+
+    Which expressions hold the whole environment, as opposed to one setting read from it.
+
+    `PythonFacts.carried` answers "does this expression contain the source anywhere", which is right
+    for a hostname and wrong for a mapping: `env.get("KEY")` contains `env` and yields one value. Read
+    that way, `environ = os.environ if environ is None else environ` followed by `environ.get(name)`
+    sent "the whole environment" with every request the file made (reviews/pypi-98/
+    17-EXFIL-SCANNER-ERRORS.md: nine legitimate packages, three shapes).
+
+    Here an expression is whole when it can carry every variable:
+
+    * `os.environ` itself, a name assigned from a whole value, a parameter a whole value is handed to;
+    * a container, a spread (`{**env}`), a comprehension over one, or a method that is not a keyed read
+      (`env.items()`, `env.copy()`), or any call this file cannot see into with a whole argument;
+    * a call to a function of this file that returns a whole value, or that is handed one and does
+      anything with it but read single keys.
+
+    It is one value when it is a keyed read of a whole value -- `env[k]`, `env.get(k)`,
+    `env.setdefault(k)`, `env.pop(k)`, a bound keyed method (`E = os.environ.get; E(k)`), or
+    `os.environ(k)` written as a call -- and nothing else. `k in env` steering control flow is
+    never a sent value; sent itself, it tells what the environment holds and counts. A helper that
+    only reads keys from what it is handed returns one value; one that passes it anywhere else,
+    encodes it or returns it stays whole, and an unknown callee always does.
+    """
+
+    @classmethod
+    def carried(
+        cls,
+        tree: ast.AST,
+        is_environ: Callable[[ast.AST], bool],
+        spawns: Callable[[ast.Call], bool] | None = None,
+    ) -> Callable[..., bool]:
+        """`is_environ(node)`: whether a node is `os.environ` (or `os.environb`) as a value.
+        `spawns(call)`: whether a call starts a child process, resolved through the file's
+        imports by the caller; `is_spawn` (no imports) when not given."""
+        starts_child = spawns or cls.is_spawn
+        scope = PythonSyntax.name_scope(tree)
+        passed = PythonSyntax.passed(tree)
+        functions: dict[str, ast.FunctionDef | ast.AsyncFunctionDef] = {
+            f.name: f for f in PythonSyntax.of(tree, ast.FunctionDef, ast.AsyncFunctionDef)
+        }
+        carrying: set[tuple[int, str]] = set()
+        returning: set[str] = set()
+
+        def whole(node: ast.AST) -> bool:
+            if is_environ(node):
+                return True
+            if isinstance(node, ast.Name):
+                return (scope(node, node.id), node.id) in carrying
+            if isinstance(node, ast.Subscript):
+                return not whole(node.value) and whole(node.slice)
+            shaped = cls._by_shape(node, whole)
+            if shaped is not None:
+                return shaped
+            if isinstance(node, ast.Call):
+                return call_whole(node)
+            return any(whole(child) for child in ast.iter_child_nodes(node))
+
+        def call_whole(call: ast.Call) -> bool:
+            func = call.func
+            if is_environ(func):
+                return False  # `os.environ("KEY")`: one value, if it runs at all
+            if isinstance(func, ast.Attribute) and whole(func.value):
+                return func.attr not in KEYED_METHODS
+            # A child process's `env=` is consumed by the child: the Popen or CompletedProcess
+            # that comes back is not the environment (pull-request-view, review 2026-11-09).
+            spawned = starts_child(call)
+            arguments = [
+                *call.args,
+                *(k.value for k in call.keywords if not (spawned and k.arg == "env")),
+            ]
+            name = cls._callee(call)
+            local = functions.get(name) if name is not None else None
+            if local is None:
+                return any(whole(a) for a in arguments) or whole(func)
+            if name in returning:
+                return True
+            return any(
+                whole(argument) and not cls._reads_keys_only(local, param, functions, whole, set())
+                for argument, param in cls._bindings(call, local)
+            )
+
+        for _ in range(3):
+            carrying.update((function, param) for arg, function, param in passed if whole(arg))
+            for node in PythonSyntax.nodes(tree):
+                if isinstance(node, ast.Assign) and whole(node.value):
+                    carrying.update(
+                        (scope(t, t.id), t.id) for t in node.targets if isinstance(t, ast.Name)
+                    )
+                elif (
+                    isinstance(node, ast.AnnAssign)
+                    and node.value is not None
+                    and isinstance(node.target, ast.Name)
+                    and whole(node.value)
+                ):
+                    carrying.add((scope(node.target, node.target.id), node.target.id))
+            for function in functions.values():
+                if function.name not in returning and any(
+                    part.value is not None and whole(part.value)
+                    for part in PythonSyntax.within(function, ast.Return)
+                ):
+                    returning.add(function.name)
+
+        def holds(node: ast.AST, *, deep: bool = True) -> bool:
+            del deep  # a mapping is held structurally, never by containment alone
+            return whole(node)
+
+        return holds
+
+    @staticmethod
+    def _by_shape(node: ast.AST, whole: Callable[[ast.AST], bool]) -> bool | None:
+        """What a node's own shape decides, None where its parts do (review 2026-11-10).
+
+        * `E = os.environ.get`: a bound keyed method reads one setting per call; it is not the
+          environment (delegate-router). `items = os.environ.items` still is.
+        * An if-expression's value is one of its branches, never its test: `url = default if
+          "URL" not in os.environ else os.environ["URL"]` (c2cciutils, Finance-Ultron).
+        * A comparison is one bool, never the environment: `{"ci": "CI" in env}` is a CI flag,
+          the shape of Rasa's Segment telemetry (convo-new-version-abdo). Host identity sent
+          unasked from an import, runtime-readout's beacon, is the beacon rules' finding
+          (`SUSPECT/MALWARE.EXFIL.BEACON.001`), not this fact's.
+        """
+        if isinstance(node, ast.Attribute) and node.attr in KEYED_METHODS and whole(node.value):
+            return False
+        if isinstance(node, ast.IfExp):
+            return whole(node.body) or whole(node.orelse)
+        if isinstance(node, ast.Compare):
+            return False
+        return None
+
+    @staticmethod
+    def is_spawn(call: ast.Call) -> bool:
+        """`subprocess.Popen(...)` and its kin, or `Popen(...)` imported bare."""
+        func = call.func
+        if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+            return (func.value.id, func.attr) in SPAWNS
+        return isinstance(func, ast.Name) and func.id in {"Popen", "check_output", "check_call"}
+
+    @staticmethod
+    def _callee(call: ast.Call) -> str | None:
+        func = call.func
+        if isinstance(func, ast.Name):
+            return func.id
+        if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+            return func.attr
+        return None
+
+    @staticmethod
+    def _bindings(
+        call: ast.Call, function: ast.FunctionDef | ast.AsyncFunctionDef
+    ) -> list[tuple[ast.AST, str | None]]:
+        """Each argument with the parameter it binds; None when it binds none this can name
+        (`*args`, `**kwargs`, a starred argument), which `_reads_keys_only` treats as unknown."""
+        params = [a.arg for a in (*function.args.posonlyargs, *function.args.args)]
+        if isinstance(call.func, ast.Attribute) and params[:1] in (["self"], ["cls"]):
+            params = params[1:]
+        out: list[tuple[ast.AST, str | None]] = []
+        for index, argument in enumerate(call.args):
+            starred = isinstance(argument, ast.Starred)
+            out.append((argument, None if starred or index >= len(params) else params[index]))
+        known = {*params, *(a.arg for a in function.args.kwonlyargs)}
+        out.extend((k.value, k.arg if k.arg in known else None) for k in call.keywords)
+        return out
+
+    @classmethod
+    def _reads_keys_only(
+        cls,
+        function: ast.FunctionDef | ast.AsyncFunctionDef,
+        param: str | None,
+        functions: dict[str, ast.FunctionDef | ast.AsyncFunctionDef],
+        is_whole: Callable[[ast.AST], bool],
+        seen: set[tuple[str, str]],
+    ) -> bool:
+        """Whether every use of `param` in `function` reads a single key from it.
+
+        Allowed: `p[k]`, `p.get(k)` and its kin, `k in p`, `p is None`, rebinding it to itself
+        or the environment (`p = os.environ if p is None else p`), and handing it to a function
+        of this file whose parameter is used the same way. Anything else -- returned, iterated,
+        spread, serialised, handed to a function this file cannot see -- is not. `seen` stops a
+        recursion through mutually calling helpers, answering "not keyed-only" when it loops."""
+        if param is None or (function.name, param) in seen:
+            return False
+        seen.add((function.name, param))
+        parents = PythonSyntax.parents(function)
+        for use in (n for n in PythonSyntax.within(function, ast.Name) if n.id == param):
+            parent = parents.get(id(use))
+            if isinstance(use.ctx, ast.Store):
+                if cls._rebinds_to_itself(parent, use, param, is_whole):
+                    continue
+                return False
+            if not isinstance(use.ctx, ast.Load):
+                return False
+            if cls._keyed_use(use, parent, parents) or cls._is_none_check(use, parent):
+                continue
+            if cls._self_or_environ(parent, param, is_whole, use, parents):
+                continue
+            if (isinstance(parent, ast.Call) and use in parent.args) or isinstance(
+                parent, ast.keyword
+            ):
+                call = parent if isinstance(parent, ast.Call) else parents.get(id(parent))
+                name = cls._callee(call) if isinstance(call, ast.Call) else None
+                local = functions.get(name) if name is not None else None
+                if local is not None and isinstance(call, ast.Call):
+                    bound = {id(a): p for a, p in cls._bindings(call, local)}
+                    if cls._reads_keys_only(local, bound.get(id(use)), functions, is_whole, seen):
+                        continue
+            return False
+        return True
+
+    @staticmethod
+    def _keyed_use(use: ast.Name, parent: ast.AST | None, parents: dict[int, ast.AST]) -> bool:
+        if isinstance(parent, ast.Subscript) and parent.value is use:
+            return True
+        if isinstance(parent, ast.Compare) and use in parent.comparators:
+            return all(isinstance(op, (ast.In, ast.NotIn)) for op in parent.ops)
+        return (
+            isinstance(parent, ast.Attribute)
+            and parent.value is use
+            and parent.attr in KEYED_METHODS
+            and isinstance(parents.get(id(parent)), ast.Call)
+        )
+
+    @staticmethod
+    def _is_none_check(use: ast.Name, parent: ast.AST | None) -> bool:
+        return (
+            isinstance(parent, ast.Compare)
+            and parent.left is use
+            and all(isinstance(op, (ast.Is, ast.IsNot)) for op in parent.ops)
+            and all(isinstance(c, ast.Constant) and c.value is None for c in parent.comparators)
+        )
+
+    @staticmethod
+    def _self_or_environ(
+        node: ast.AST | None,
+        param: str,
+        is_whole: Callable[[ast.AST], bool],
+        use: ast.Name,
+        parents: dict[int, ast.AST],
+    ) -> bool:
+        """`use` is a branch of `p if p is not None else os.environ` or `p or os.environ` that is
+        itself assigned back to `p`: the same mapping under the same name."""
+        if not isinstance(node, (ast.IfExp, ast.BoolOp)):
+            return False
+        assign = parents.get(id(node))
+        if not (
+            isinstance(assign, ast.Assign)
+            and len(assign.targets) == 1
+            and isinstance(assign.targets[0], ast.Name)
+            and assign.targets[0].id == param
+        ):
+            return False
+        branches = [node.body, node.orelse] if isinstance(node, ast.IfExp) else node.values
+        return use in branches and all(
+            (isinstance(b, ast.Name) and b.id == param) or is_whole(b) for b in branches
+        )
+
+    @classmethod
+    def _rebinds_to_itself(
+        cls,
+        assign: ast.AST | None,
+        target: ast.Name,
+        param: str,
+        is_whole: Callable[[ast.AST], bool],
+    ) -> bool:
+        """`p = os.environ if p is None else p`, `p = p or os.environ`, `p = self.environ()` when
+        that returns the whole environment: still a whole mapping, still read only by key."""
+        if not isinstance(assign, ast.Assign) or assign.targets != [target]:
+            return False
+        value = assign.value
+        if isinstance(value, ast.IfExp):
+            branches = [value.body, value.orelse]
+        elif isinstance(value, ast.BoolOp):
+            branches = list(value.values)
+        else:
+            return is_whole(value)
+        return all((isinstance(b, ast.Name) and b.id == param) or is_whole(b) for b in branches)
+
+
+__all__ = ["KEYED_METHODS", "SPAWNS", "EnvironmentCarry"]
+
+
+class DataFlows(SecretSources, HiddenDestinations):
     """The Python analyser's data flows: what a file reads and sends."""
 
     def _environment_handed_to_children(self, tree: ast.AST) -> frozenset[int]:
@@ -87,13 +389,13 @@ class DataFlows(AnalyzerCore):
                     id(node)
                 )
                 continue
-            elif isinstance(parent, ast.keyword) and parent.arg == "env":
+            elif self._child_env(parent, parents):
                 direct.add(id(node))
                 continue
             if copy is None:
                 continue
             holder = parents.get(id(copy))
-            if isinstance(holder, ast.keyword) and holder.arg == "env":
+            if self._child_env(holder, parents):
                 direct.add(id(node))
             elif (
                 isinstance(holder, ast.Assign)
@@ -115,9 +417,26 @@ class DataFlows(AnalyzerCore):
                 excused.update(nodes)
         return frozenset(excused)
 
+    def _spawns(self, call: ast.Call) -> bool:
+        """Whether a call starts a child process, resolved through this file's imports
+        (`from subprocess import run` included): a spawn primitive, or `SPAWNS`."""
+        resolved = self._resolve_callee(call)
+        if resolved is not None and PRIMITIVES.get(resolved[0]) is Capability.SPAWN:
+            return True
+        return EnvironmentCarry.is_spawn(call)
+
+    def _child_env(self, node: ast.AST | None, parents: dict[int, ast.AST]) -> bool:
+        """`env=` of a call that starts a child process. The same keyword on any other callee is
+        an argument like any other, and is followed: a function named anything can be handed
+        `env=dict(os.environ)` and send it (review 2026-11-09)."""
+        if not (isinstance(node, ast.keyword) and node.arg == "env"):
+            return False
+        call = parents.get(id(node))
+        return isinstance(call, ast.Call) and self._spawns(call)
+
     def _harmless_use(self, use: ast.Name, parents: dict[int, ast.AST]) -> bool:
         parent = parents.get(id(use))
-        if isinstance(parent, ast.keyword) and parent.arg == "env":
+        if self._child_env(parent, parents):
             return True
         if isinstance(parent, ast.Attribute) and parent.value is use:
             return parent.attr in {"update", "setdefault", "pop", "get", "copy", "__setitem__"}
@@ -135,7 +454,8 @@ class DataFlows(AnalyzerCore):
         return False
 
     def _iterated_literals(self, tree: ast.AST) -> dict[str, list[str]]:
-        """Loop variables whose every value is a string literal, with those values.
+        """Loop variables whose every value is a string literal, with those values, and names bound
+        once to one string literal.
 
         From `for n in (...)` and comprehensions, iterating either a literal tuple or list, or a
         name bound once to one. A name used as a loop variable twice, over different things, is
@@ -166,6 +486,21 @@ class DataFlows(AnalyzerCore):
                     refused.add(name)
                 else:
                     found[name] = values
+        # A name bound once in the file to one string literal, and never a parameter, is that
+        # string: `DO_NOT_TRACK_ENV = "DO_NOT_TRACK"; os.environ.get(DO_NOT_TRACK_ENV)` reads
+        # one named setting, not the environment (evidently 0.7.23's telemetry opt-out was
+        # graded a credential read and paired at import into MALWARE.EXFIL.001).
+        parameters = {a.arg for a in PythonSyntax.of(tree, ast.arg)}
+        for node in PythonSyntax.of(tree, ast.Assign):
+            if (
+                len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)
+            ):
+                name = node.targets[0].id
+                if assigned.get(name) == 1 and name not in parameters and name not in found:
+                    found[name] = [node.value.value]
         return {name: values for name, values in found.items() if name not in refused}
 
     def _handed_to_a_sender(
@@ -259,9 +594,51 @@ class DataFlows(AnalyzerCore):
                 # who collects it; a name built into another domain is what DNS exfiltration is.
                 continue
             if any(holds(argument) for argument in arguments):
-                self._record(Capability.RECONNAISSANCE, node, f"identity sent: {resolved[0]}")
+                self._record(
+                    Capability.RECONNAISSANCE,
+                    node,
+                    f"identity sent: {resolved[0]}{self._dest(tree, resolved[1])}",
+                )
         for node, function in self._handed_to_a_sender(tree, holds):
             self._record(Capability.RECONNAISSANCE, node, f"identity sent: through {function}")
+        self._address_sent(tree, holds)
+
+    def _address_sent(self, tree: ast.AST, holds_identity: Callable[..., bool]) -> None:
+        """This machine's public address, in the arguments of a request at import.
+
+        Looking up its own address and sending it is what a weather or geolocation client does;
+        what a collector does is send it where the file runs at install or import, to a drop
+        host, or with the rest of the identity in the same body.
+        """
+        functions = list(PythonSyntax.of(tree, ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda))
+        self._command_runners = self._helper_runners(
+            [f for f in functions if not isinstance(f, ast.Lambda)]
+        )
+        calls = list(PythonSyntax.of(tree, ast.Call))
+        if not any(self._is_address_lookup(call) for call in calls):
+            return
+        holds = PythonFacts.carried(tree, self._is_address_lookup, ast.Subscript)
+        inside = {id(part) for function in functions for part in ast.walk(function)}
+        for node in calls:
+            resolved = self._resolve_callee(node)
+            if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.EGRESS:
+                continue
+            arguments = [*node.args, *(k.value for k in node.keywords)]
+            if not any(holds(argument) for argument in arguments):
+                continue
+            if (
+                id(node) not in inside
+                or any(holds_identity(argument) for argument in arguments)
+                or IpLookup.drop_destination(node)
+            ):
+                self._record(
+                    Capability.RECONNAISSANCE,
+                    node,
+                    f"identity sent: {resolved[0]}{self._dest(tree, resolved[1])}",
+                )
+        for node, function in self._handed_to_a_sender(tree, holds):
+            if id(node) not in inside:
+                self._record(Capability.RECONNAISSANCE, node, f"identity sent: through {function}")
 
     def _environment_sent(self, tree: ast.AST) -> None:
         """The whole environment, in the arguments of a request.
@@ -270,34 +647,27 @@ class DataFlows(AnalyzerCore):
         every token and secret the process can see, serialised and sent in one call. Reading one
         named setting and calling its service is what every API client does; sending all of them
         is the commonest exfiltration in published malware. A keyed read (`os.environ["KEY"]`,
-        `os.getenv("KEY")`) is not the whole environment, nor is a copy handed to a child
-        process, which inherits it anyway.
+        `os.getenv("KEY")`, `env.get("KEY")` on an alias, a helper that only reads keys) is not
+        the whole environment, nor is a copy handed to a child process, which inherits it anyway.
+        Which expressions are whole: `EnvironmentCarry`.
         """
-        parents = PythonSyntax.parents(tree)
         handed_on = self._environment_handed_to_children(tree)
 
-        def is_whole(node: ast.AST) -> bool:
-            if self._dotted(node) not in ("os.environ", "os.environb") or id(node) in handed_on:
-                return False
-            parent = parents.get(id(node))
-            if isinstance(parent, ast.Subscript) and parent.value is node:
-                return False
-            if isinstance(parent, ast.Compare):
-                return False
-            # `os.environ.get("KEY")` and its kin read one named setting.
-            return not (
-                isinstance(parent, ast.Attribute)
-                and parent.attr in ("get", "setdefault", "pop", "__contains__")
-            )
+        def is_environ(node: ast.AST) -> bool:
+            return self._dotted(node) in ("os.environ", "os.environb") and id(node) not in handed_on
 
-        holds = PythonFacts.carried(tree, is_whole, ast.Attribute)
+        holds = EnvironmentCarry.carried(tree, is_environ, self._spawns)
         for node in PythonSyntax.of(tree, ast.Call):
             resolved = self._resolve_callee(node)
             if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.EGRESS:
                 continue
             arguments = [*node.args, *(k.value for k in node.keywords)]
             if any(holds(argument) for argument in arguments):
-                self._record(Capability.CREDENTIAL, node, f"environment sent: {resolved[0]}")
+                self._record(
+                    Capability.CREDENTIAL,
+                    node,
+                    f"environment sent: {resolved[0]}{self._dest(tree, resolved[1])}",
+                )
         for node, function in self._handed_to_a_sender(tree, holds):
             self._record(Capability.CREDENTIAL, node, f"environment sent: through {function}")
 
@@ -310,23 +680,7 @@ class DataFlows(AnalyzerCore):
         """
         from cordon_scanner.analysis.shared.credential_homes import SecretFlow
 
-        carrying: dict[str, str] = {}
-        urls: dict[str, str] = {}
-        for _ in range(3):
-            for node in PythonSyntax.of(tree, ast.Assign):
-                targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
-                literal = PythonFacts.url_literal(node.value)
-                if literal is not None:
-                    assigned = SecretFlow.host_of(literal)
-                    if assigned:
-                        urls.update(dict.fromkeys(targets, assigned))
-                for part in PythonSyntax.nodes(node.value):
-                    key = self._credential_read(part)
-                    if key is None and isinstance(part, ast.Name) and part.id in carrying:
-                        key = carrying[part.id]
-                    if key is not None:
-                        carrying.update(dict.fromkeys(targets, key))
-                        break
+        carrying, urls = self._secret_carrying(tree)
         for node in PythonSyntax.of(tree, ast.Call):
             resolved = self._resolve_callee(node)
             if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.EGRESS:
@@ -334,7 +688,18 @@ class DataFlows(AnalyzerCore):
             arguments = [*node.args, *(k.value for k in node.keywords)]
             keys: set[str] = set()
             for argument in arguments:
-                for part in PythonSyntax.within(argument, ast.Subscript, ast.Call, ast.Name):
+                # `private_key.public_key()` sends what the key derives, not the key: a key's name
+                # is the value only where it is not the receiver of an attribute.
+                receivers = {id(a.value) for a in PythonSyntax.within(argument, ast.Attribute)}
+                for part in PythonSyntax.within(
+                    argument, ast.Subscript, ast.Call, ast.Name, ast.Attribute
+                ):
+                    if (
+                        isinstance(part, ast.Name)
+                        and part.id in self.KEY_NAMES
+                        and id(part) in receivers
+                    ):
+                        continue
                     key = self._credential_read(part)
                     if key is None and isinstance(part, ast.Name) and part.id in carrying:
                         key = carrying[part.id]
@@ -351,36 +716,29 @@ class DataFlows(AnalyzerCore):
                 )
             )
             host: str | None = None
+            url: str | None = None
             if destination is not None:
                 literal = PythonFacts.url_literal(destination)
                 if literal is not None:
-                    host = SecretFlow.host_of(literal)
+                    host, url = SecretFlow.host_of(literal), literal
                 elif isinstance(destination, ast.Name):
                     host = urls.get(destination.id)
+            dest = self._dest(tree, node)
             for key in sorted(keys):
-                if SecretFlow.misdirected(key, host):
-                    self._record(Capability.CREDENTIAL, node, f"secret sent: {key} to {host}")
+                if key.startswith("CREDENTIAL_FILE:"):
+                    # A credential store's contents, sent outside the store's home
+                    # (`SecretSources._store_outside`).
+                    outside = self._store_outside(key, host, url, bool(dest))
+                    if outside is not None:
+                        self._record(
+                            Capability.CREDENTIAL,
+                            node,
+                            f"secret sent: CREDENTIAL_FILE outside={outside} to {host or '?'}{dest}",
+                        )
+                        break
+                elif SecretFlow.misdirected(key, host):
+                    self._record(Capability.CREDENTIAL, node, f"secret sent: {key} to {host}{dest}")
                     break
-
-    def _credential_read(self, node: ast.AST) -> str | None:
-        from cordon_scanner.analysis.shared.credential_homes import SecretFlow
-
-        name: ast.AST | None = None
-        if isinstance(node, ast.Subscript) and self._dotted(node.value) in (
-            "os.environ",
-            "os.environb",
-        ):
-            name = node.slice
-        elif isinstance(node, ast.Call):
-            dotted = self._dotted(node.func)
-            if (
-                dotted in ("os.getenv", "os.environ.get", "os.environ.setdefault", "os.environ.pop")
-                and node.args
-            ):
-                name = node.args[0]
-        if isinstance(name, ast.Constant) and isinstance(name.value, str):
-            return name.value if SecretFlow.home_of(name.value) else None
-        return None
 
     def _read_from_local_file(self, node: ast.AST) -> bool:
         """Whether every name in this expression holds text read from a local file, rather than

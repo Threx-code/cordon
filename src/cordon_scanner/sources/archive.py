@@ -27,6 +27,7 @@ archive that was refused and an archive that was clean must never look alike.
 from __future__ import annotations
 
 import hashlib
+import lzma
 import struct
 import tarfile
 import time
@@ -374,7 +375,7 @@ class ArchiveReader:
     ) -> None:
         try:
             archive = zipfile.ZipFile(_BytesReader(data))
-        except (zipfile.BadZipFile, OSError, ValueError) as exc:
+        except (zipfile.BadZipFile, OSError, ValueError, NotImplementedError) as exc:
             # A directory that will not open, in front of local headers that account for every
             # byte (an Adobe XFL `.fla`, a hand-built APK): read as a streaming extractor installs
             # it, by those headers, through a directory rebuilt from them (item 76). Headers that
@@ -779,6 +780,8 @@ class ArchiveReader:
                 spill_path = ""
             else:
                 kept_member = b"".join(chunks)
+        except (zlib.error, lzma.LZMAError) as exc:  # from inside the decompressor (S1 fuzzing)
+            raise OSError(f"a damaged compressed member: {exc}") from exc
         finally:
             if spill is not None:
                 spill.close()

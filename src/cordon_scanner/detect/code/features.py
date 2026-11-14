@@ -290,7 +290,9 @@ class CodeFeatures:
         least `MARGIN` before the text's end: never inside a string, a comment or a template."""
         try:
             tokens = JsEval.tokens(text, templates=True)
-        except Exception:  # a text the tokenizer cannot read gives no features, never a failure  # noqa: BLE001
+        except Exception:  # noqa: BLE001
+            # S2: model features only. The model can only add a block (OR-combined), so missing
+            # features cannot clear one; the code rules read the same file separately.
             return [], len(text)
         limit = len(text) if last else len(text) - CodeFeatures.MARGIN
         keep = cut = depth = 0
@@ -350,6 +352,7 @@ class CodeFeatures:
                 else:
                     yield ("punct", t.string)
         except (tokenize.TokenError, SyntaxError, ValueError):
+            # S2: model features only; the model can only add a block
             return
 
     @staticmethod

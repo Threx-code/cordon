@@ -2,7 +2,7 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-**61 secret rules and 27 exfiltration rules**: the part of the rule pack where
+**61 secret rules and 38 exfiltration rules**: the part of the rule pack where
 the tool that finds the problem must not become the problem.
 
 ```
@@ -115,17 +115,28 @@ something live, all of them are in git history and in every clone.
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-The 27 exfiltration rules divide on **where the data goes**. `MALWARE.` is the
+The 38 exfiltration rules divide on **where the data goes**. `MALWARE.` is the
 install-time form of a rule, `SUSPECT.` the same behaviour in ordinary code:
 
 | rule | the channel |
 |---|---|
 | `MALWARE.EXFIL.001` / `SUSPECT.EXFIL.001` | any outbound send of read data |
 | `*.EXFIL.CREDENTIAL_STORE.001` | `~/.npmrc`, `~/.aws`, `~/.gem/credentials`, keychains, `.env` |
+| `MALWARE.EXFIL.CREDENTIAL_STORE.002` | a credential store's contents sent outside the store's own service (hidden, chat, raw-IP or unnamed host), wherever the code runs |
 | `*.EXFIL.DROP_POINT.001` | paste sites, Discord/Telegram webhooks |
 | `SUSPECT.EXFIL.ENVIRONMENT.001` | the whole environment sent over the network |
 | `SUSPECT.EXFIL.NAMED_SECRET.001` | one named token (AWS secret key, GitHub, npm, PyPI, ...) sent to a host outside its own service |
+| `MALWARE.EXFIL.HIDDEN_DESTINATION.002` | the machine's identity, environment or a credential sent to a URL the code decodes, reverses or builds from character codes, wherever the code runs |
 | `SUSPECT.EXFIL.DNS.001` | data encoded into DNS lookups |
+| `MALWARE.EXFIL.CONFUSION_BEACON.001` | the machine's identity sent by a package whose own version is a dependency-confusion version (99.0.0, 99999999.0.0, 7.7.7), wherever the code runs |
+| `MALWARE.EXFIL.IP_LOGGER.001` | an IP-logging link (grabify, iplogger and their decoys) handed to a request, a command or a browser start: the machine's address recorded, wherever the code runs |
+| `MALWARE.EXFIL.CLOUD_UPLOAD.001` | the machine's identity, host or environment uploaded to a cloud-storage bucket (GCS, S3, Azure, MinIO), wherever the code runs |
+| `MALWARE.EXFIL.SWEPT_TO_HOST.001` | files a directory walk found, read and sent (through any depth of helpers and async hops) to a free-hosting, paste, tunnel or interaction host, wherever the code runs |
+| `MALWARE.EXFIL.DNS_TUNNEL.001` | encoded data resolved a label at a time as host names: a DNS tunnel, wherever the code runs |
+| `MALWARE.EXFIL.SWEPT_FILES.001` | files gathered by walking the drives or home, sent through the code's own helpers to a destination it hides |
+| `MALWARE.EXFIL.RELAYED_HIDDEN.001` | a class stores what its caller hands it and sends it to a destination it hides: a relay |
+| `SUSPECT.EXFIL.MAIL_ON_IMPORT.001` | mail sent at import from an account whose password the module carries |
+| `MALWARE.EXFIL.CREDENTIALS_TO_FREE_HOST.001` | a password sent to a free-hosting, paste, tunnel or interaction host |
 | `SUSPECT.EXFIL.WALLET_SECRET.001` | a wallet's mnemonic, seed or private key in a request to a fixed outside address |
 | `*.EXFIL.BEACON.001` | hostname/user/cwd reported to the publisher |
 | `MALWARE.EXFIL.INSTALL_CALLBACK.001` / `SUSPECT.EXFIL.CALLBACK.001` | a call to an interaction or canary host |

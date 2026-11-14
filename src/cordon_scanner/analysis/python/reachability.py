@@ -66,7 +66,7 @@ install path reaches.
 from __future__ import annotations
 
 import ast
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 
@@ -322,6 +322,7 @@ class CallReachability:
             except (SyntaxError, ValueError, RecursionError):
                 # Unparseable: defer nothing, so every capability in it keeps
                 # the context it has today.
+                # S2: an excuse; failing excuses nothing, so the finding it would lower stands
                 continue
 
         # Methods of a command class registered only under a command somebody runs by name
@@ -389,4 +390,357 @@ class CallReachability:
         return frozenset(deferred)
 
 
-__all__ = ["CallReachability"]
+#: The import-time reach (approach 1, reviews/pypi-98/10): what runs when a consumer imports a module of
+#: a published distribution. Unlike `CallReachability` above (the install path, conservative for a small
+#: `setup.py` closure), names are resolved as Python binds them, per module: a decorated function and a
+#: dunder are not reached for being one, and `obj.f()` on an object is not the module's `f`. Measured:
+#: CallReachability's reach over a whole library blocked 47 of 1,145 benign; this one, line-precise, 7.
+
+RUNNERS: Final = frozenset(
+    {
+        "register",
+        "Thread",
+        "Timer",
+        "signal",
+        "start_new_thread",
+        "Process",
+        "submit",
+        "call_soon",
+        "run_in_executor",
+    }
+)
+DEFINITION_DUNDERS: Final = frozenset({"__init_subclass__", "__set_name__", "__class_getitem__"})
+CONSTRUCT: Final = ("__init__", "__new__", "__post_init__")
+SOURCE_ROOTS: Final = ("src", "lib", "python")
+
+
+class LoadModule:
+    """One parsed module: its dotted name, what it defines, and what its imports bind."""
+
+    def __init__(self, path: str, dotted: str, tree: ast.Module, is_package: bool) -> None:
+        self.path, self.dotted, self.tree, self.is_package = path, dotted, tree, is_package
+        self.functions: dict[str, ast.AST] = {}
+        self.classes: dict[str, ast.ClassDef] = {}
+        self.methods: dict[str, list[ast.AST]] = {}
+        for statement in tree.body:
+            if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                self.functions[statement.name] = statement
+            elif isinstance(statement, ast.ClassDef):
+                self.classes[statement.name] = statement
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef):
+                for item in node.body:
+                    if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        self.methods.setdefault(item.name, []).append(item)
+        # name -> ("module", dotted) or ("symbol", dotted, name)
+        self.bindings: dict[str, tuple[str, ...]] = {}
+        package = dotted if is_package else dotted.rpartition(".")[0]
+        for found in ast.walk(tree):
+            node = found
+            if isinstance(node, ast.Import):
+                for a in node.names:
+                    if a.asname:
+                        self.bindings[a.asname] = ("module", a.name)
+                    else:
+                        top = a.name.split(".")[0]
+                        self.bindings[top] = ("module", top)
+            elif isinstance(node, ast.ImportFrom):
+                if node.level:
+                    parts = package.split(".") if package else []
+                    base_parts = parts[: len(parts) - (node.level - 1)] if node.level > 1 else parts
+                    base = ".".join(p for p in [*base_parts, node.module or ""] if p)
+                else:
+                    base = node.module or ""
+                for a in node.names:
+                    if a.name == "*":
+                        self.bindings.setdefault("*" + base, ("star", base))
+                        continue
+                    self.bindings[a.asname or a.name] = ("from", base, a.name)
+
+
+class LoadReach:
+    """What importing a published package runs, resolved per module (`deferred_lines`)."""
+
+    def __init__(self, paths: Iterable[str], sources: Mapping[str, str]) -> None:
+        self.modules: dict[str, LoadModule] = {}
+        self.by_path: dict[str, LoadModule] = {}
+        for path in sorted(paths):
+            src = sources.get(path)
+            if src is None:
+                continue
+            try:
+                tree = PythonSyntax.parse(src)
+            except (SyntaxError, ValueError):
+                # S2: covered by SOURCE.UNPARSED at every running file (install closure, import entries, command modules); proven by test_not_python3.py TestPackageSourceThatDoesNotParse
+                continue  # unparsed: defers nothing, every line keeps its context
+            dotted, is_package = LoadReach.dotted(path)
+            module = LoadModule(path, dotted, tree, is_package)
+            self.modules.setdefault(dotted, module)
+            self.by_path[path] = module
+        self.reached: set[int] = set()
+        self.frontier: list[tuple[LoadModule, ast.AST]] = []
+
+    @staticmethod
+    def dotted(path: str) -> tuple[str, bool]:
+        """`pkg-1.0/src/pkg/sub/mod.py` -> (`pkg.sub.mod`, False); `.../pkg/__init__.py` -> (`pkg`, True)."""
+        parts = path.rpartition("!")[2].split("/")
+        parts = parts[1:] if len(parts) > 1 else parts  # the archive's top directory
+        while parts and parts[0] in SOURCE_ROOTS:
+            parts = parts[1:]
+        name = (
+            parts[-1][:-3] if parts and parts[-1].endswith(".py") else (parts[-1] if parts else "")
+        )
+        is_package = name == "__init__"
+        dotted = ".".join([*parts[:-1]] + ([] if is_package else [name]))
+        return dotted, is_package
+
+    @staticmethod
+    def _is_main_guard(node: ast.stmt) -> bool:
+        if not isinstance(node, ast.If):
+            return False
+        t = node.test
+        return (
+            isinstance(t, ast.Compare)
+            and isinstance(t.left, ast.Name)
+            and t.left.id == "__name__"
+            and any(isinstance(c, ast.Constant) and c.value == "__main__" for c in t.comparators)
+        )
+
+    @classmethod
+    def _load_statements(cls, body: Iterable[ast.stmt]) -> list[ast.AST]:
+        """What runs when a body runs at load: not function bodies; class bodies, decorators,
+        defaults and bases, which run at definition; never `if __name__ == "__main__":`."""
+        out: list[ast.AST] = []
+        for stmt in body:
+            if cls._is_main_guard(stmt):
+                continue
+            if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                out.extend(stmt.decorator_list)
+                out.extend(d for d in stmt.args.defaults + stmt.args.kw_defaults if d is not None)
+                continue
+            if isinstance(stmt, ast.ClassDef):
+                out.extend(stmt.decorator_list)
+                out.extend(stmt.bases)
+                out.extend(k.value for k in stmt.keywords)
+                out.extend(cls._load_statements(stmt.body))
+                continue
+            out.append(stmt)
+        return out
+
+    def _symbol(
+        self, module: LoadModule, name: str, depth: int = 0
+    ) -> list[tuple[LoadModule, ast.AST]]:
+        """What `name` names in `module`: a first-party function or class, followed through imports."""
+        if depth > 8:
+            return []
+        if name in module.functions:
+            return [(module, module.functions[name])]
+        if name in module.classes:
+            return [(module, module.classes[name])]
+        bound = module.bindings.get(name)
+        if bound and bound[0] == "from":
+            target = self.modules.get(bound[1])
+            if target is not None:
+                return self._symbol(target, bound[2], depth + 1)
+        for key, star in module.bindings.items():
+            if key.startswith("*"):
+                target = self.modules.get(star[1])
+                if target is not None and (name in target.functions or name in target.classes):
+                    return self._symbol(target, name, depth + 1)
+        return []
+
+    def _bound_module(self, module: LoadModule, name: str) -> LoadModule | None:
+        """The first-party module an import bound to `name`, if any."""
+        bound = module.bindings.get(name)
+        if not bound:
+            return None
+        if bound[0] == "module":
+            return self.modules.get(bound[1])
+        if bound[0] == "from":
+            return self.modules.get(f"{bound[1]}.{bound[2]}" if bound[1] else bound[2])
+        return None
+
+    @staticmethod
+    def _methods(owner: LoadModule, klass: ast.AST, name: str) -> list[tuple[LoadModule, ast.AST]]:
+        if not isinstance(klass, ast.ClassDef):
+            return []
+        return [
+            (owner, m)
+            for m in klass.body
+            if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)) and m.name == name
+        ]
+
+    def _edges(self, module: LoadModule, call: ast.Call) -> list[tuple[LoadModule, ast.AST]]:
+        """Where a call goes in first-party code, as Python binds the names it uses."""
+        func = call.func
+        if isinstance(func, ast.Name):
+            return self._symbol(module, func.id)
+        if not isinstance(func, ast.Attribute):
+            return []
+        base = func.value
+        if isinstance(base, ast.Name):
+            if base.id in ("self", "cls"):
+                return [(module, m) for m in module.methods.get(func.attr, ())]
+            target = self._bound_module(module, base.id)
+            if target is not None:
+                return self._symbol(target, func.attr)
+            found = self._symbol(module, base.id)  # Klass.f(...)
+            return self._methods(found[0][0], found[0][1], func.attr) if found else []
+        if isinstance(base, ast.Call):  # Klass().f() or super().f()
+            if isinstance(base.func, ast.Name) and base.func.id == "super":
+                return [(module, m) for m in module.methods.get(func.attr, ())]
+            out: list[tuple[LoadModule, ast.AST]] = []
+            for owner, klass in self._edges(module, base):
+                out += self._methods(owner, klass, func.attr)
+            return out
+        return []
+
+    def _runner_args(self, module: LoadModule, call: ast.Call) -> list[tuple[LoadModule, ast.AST]]:
+        """A function handed to a runner at load (`atexit.register(f)`, `Thread(target=f)`): it runs
+        without anybody asking."""
+        func = call.func
+        callee = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+        if callee not in RUNNERS:
+            return []
+        out: list[tuple[LoadModule, ast.AST]] = []
+        for arg in [*call.args, *(k.value for k in call.keywords)]:
+            if isinstance(arg, ast.Name):
+                out += self._symbol(module, arg.id)
+            elif isinstance(arg, ast.Attribute) and isinstance(arg.value, ast.Name):
+                if arg.value.id in ("self", "cls"):
+                    out += [(module, m) for m in module.methods.get(arg.attr, ())]
+                elif (target := self._bound_module(module, arg.value.id)) is not None:
+                    out += self._symbol(target, arg.attr)
+        return out
+
+    def _visit(self, module: LoadModule, node: ast.AST) -> None:
+        """Mark a function reached, or a class's constructor when the class is built."""
+        if isinstance(node, ast.ClassDef):
+            for item in node.body:
+                if (
+                    isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and item.name in CONSTRUCT
+                    and id(item) not in self.reached
+                ):
+                    self.reached.add(id(item))
+                    self.frontier.append((module, item))
+            return
+        if id(node) not in self.reached:
+            self.reached.add(id(node))
+            self.frontier.append((module, node))
+
+    @staticmethod
+    def _calls_in(nodes: Iterable[ast.AST]) -> Iterable[ast.AST]:
+        """Every node a body runs, not those of nested definitions."""
+        for root in nodes:
+            stack = [root]
+            while stack:
+                node = stack.pop()
+                nested = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+                if node is not root and isinstance(node, nested):
+                    continue
+                yield node
+                stack.extend(ast.iter_child_nodes(node))
+
+    @classmethod
+    def _local_functions(cls, nodes: list[ast.AST]) -> dict[str, ast.AST]:
+        """The functions a body defines for itself (`def _r(): ...` inside `_s`), by name."""
+        local: dict[str, ast.AST] = {}
+        for root in nodes:
+            stack = [root]
+            while stack:
+                node = stack.pop()
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    local.setdefault(node.name, node)
+                    continue
+                if isinstance(node, (ast.Lambda, ast.ClassDef)):
+                    continue
+                stack.extend(ast.iter_child_nodes(node))
+        return local
+
+    def _local_targets(self, local: dict[str, ast.AST], call: ast.Call) -> list[ast.AST]:
+        """A call to, or a runner handed, one of the body's own functions."""
+        out: list[ast.AST] = []
+        if isinstance(call.func, ast.Name) and call.func.id in local:
+            out.append(local[call.func.id])
+        callee = (
+            call.func.attr
+            if isinstance(call.func, ast.Attribute)
+            else getattr(call.func, "id", None)
+        )
+        if callee in RUNNERS:
+            out += [
+                local[a.id]
+                for a in [*call.args, *(k.value for k in call.keywords)]
+                if isinstance(a, ast.Name) and a.id in local
+            ]
+        return out
+
+    def _follow(self, module: LoadModule, nodes: list[ast.AST]) -> None:
+        local = self._local_functions(nodes)
+        for node in self._calls_in(nodes):
+            if isinstance(node, ast.Call):
+                for owner, target in [*self._edges(module, node), *self._runner_args(module, node)]:
+                    self._visit(owner, target)
+                for target in self._local_targets(local, node):
+                    self._visit(module, target)
+            elif (
+                isinstance(node, ast.Assign)
+                and any(getattr(t, "attr", None) == "excepthook" for t in node.targets)
+                and isinstance(node.value, ast.Name)
+            ):
+                for owner, target in self._symbol(module, node.value.id):
+                    self._visit(owner, target)
+
+    def _run(self) -> None:
+        pending: list[tuple[LoadModule, list[ast.AST]]] = []
+        for module in self.by_path.values():
+            pending.append((module, self._load_statements(module.tree.body)))
+            for node in ast.walk(module.tree):
+                if not isinstance(node, ast.ClassDef):
+                    continue
+                for item in node.body:
+                    if (
+                        isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+                        and item.name in DEFINITION_DUNDERS
+                    ):
+                        self.reached.add(id(item))
+                        pending.append((module, list(item.body)))
+        while pending or self.frontier:
+            while self.frontier:
+                module, fn = self.frontier.pop()
+                pending.append((module, list(getattr(fn, "body", []))))
+            module, nodes = pending.pop()
+            self._follow(module, nodes)
+
+    @staticmethod
+    def deferred_lines(
+        paths: Iterable[str], sources: Mapping[str, str]
+    ) -> frozenset[tuple[str, int, int]]:
+        """`(path, first_line, last_line)` for each function body importing these modules never runs."""
+        reach = LoadReach(paths, sources)
+        reach._run()
+        deferred: set[tuple[str, int, int]] = set()
+        for path, module in reach.by_path.items():
+            for node in ast.walk(module.tree):
+                if (
+                    isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and id(node) not in reach.reached
+                    and node.body
+                ):
+                    last = node.end_lineno or node.body[-1].lineno
+                    deferred.add((path, node.body[0].lineno, last))
+            # A module's `if __name__ == "__main__":` block runs when it is a script, never when it
+            # is imported.
+            for statement in module.tree.body:
+                if (
+                    isinstance(statement, ast.If)
+                    and LoadReach._is_main_guard(statement)
+                    and statement.body
+                ):
+                    last = statement.end_lineno or statement.body[-1].lineno
+                    deferred.add((path, statement.body[0].lineno, last))
+        return frozenset(deferred)
+
+
+__all__ = ["CallReachability", "LoadModule", "LoadReach"]

@@ -8,6 +8,7 @@ import sys
 
 import pytest
 
+from cordon_scanner.analysis.python.python_two_reader import PythonTwoReader
 from cordon_scanner.analysis.python.statements import PythonTwo
 
 
@@ -67,3 +68,35 @@ class TestAPythonTwoConstruct:
     def test_print_as_a_name_is_not_a_statement(self) -> None:
         text = "def f(print):\n    return print\nx = (\n"
         assert PythonTwoKit.construct(text) is None
+
+
+class TestAWhollyPythonTwoFile:
+    """A file is Python 2, and not merely a file holding one Python 2 token, only when every line the
+    parse fails on is a Python-2-only construct (cordon-47's review of 09 3a)."""
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            'import os\nprint "building"\n',
+            'try:\n    import x\nexcept ImportError, e:\n    print "no x", e\nraise ValueError, "m"\n',
+            'def f(a):\n    if a <> 1:\n        exec "y = 2"\n    return `a`\n',
+        ],
+    )
+    def test_python_2_through_and_through(self, text: str) -> None:
+        assert PythonTwoReader.wholly(text)
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            # one Python 2 statement, then something no Python accepts
+            'print "x"\ndef broken(:\n    pass\n',
+            # one Python 2 statement hiding a line of garbage after it
+            'print "x"\n\x00\x01 garbage (\n',
+            # no Python 2 construct at all
+            "def broken(:\n    pass\n",
+            # a file that parses is not a Python 2 file
+            "print('x')\n",
+        ],
+    )
+    def test_anything_short_of_that_is_not(self, text: str) -> None:
+        assert not PythonTwoReader.wholly(text)

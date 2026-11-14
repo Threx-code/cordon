@@ -28,11 +28,28 @@ if TYPE_CHECKING:
 class CompositeEvaluator:
     """One file's composite evaluation: windows, expressions and terms."""
 
-    def __init__(self, *, in_entry: bool = False, in_import_entry: bool = False) -> None:
+    #: Spawn facts kept on a line whose command is written out whole. A program spelled in full is
+    #: normally data (`fixed_lines`: `git rev-parse` is not a decode-and-run); for these facts the
+    #: literal is the act itself -- a calculator or `whoami` started at install
+    #: (`InstallPrograms`), as `safe_spawn_lines` keeps a bare shell or a `start x.vbs`.
+    LITERAL_IS_THE_ACT: ClassVar[frozenset[str]] = frozenset(
+        {
+            "AST.PY.INSTALL_FOREIGN_PROGRAM",
+            "AST.PY.CODE_FROM_DATA",
+            "AST.PY.FOREIGN_INDEX",
+            "AST.PY.SHIPPED_RUN",
+        }
+    )
+
+    def __init__(
+        self, *, in_entry: bool = False, in_import_entry: bool = False, confusion: bool = False
+    ) -> None:
         #: The file is an install hook's own entry (the `install_entry` term).
         self.in_entry = in_entry
         #: The file is a published package's entry point, run on `require()`/`import` (REC-2).
         self.in_import_entry = in_import_entry
+        #: The package's own version is a dependency-confusion version (`confusion_version`).
+        self.confusion = confusion
 
     @staticmethod
     def satisfying_region(content: FileContent, hits: list[CapabilityHit]) -> bytes:
@@ -349,7 +366,11 @@ class CompositeEvaluator:
         return [
             hit
             for hit in window
-            if not (hit.capability is Capability.SPAWN and hit.line in fixed_lines)
+            if not (
+                hit.capability is Capability.SPAWN
+                and hit.line in fixed_lines
+                and hit.rule_id not in CompositeEvaluator.LITERAL_IS_THE_ACT
+            )
         ]
 
     @staticmethod
@@ -567,6 +588,8 @@ class CompositeEvaluator:
                 return in_hook and self.in_entry
             if named == "import_entry":
                 return self.in_import_entry
+            if named == "confusion_version":
+                return self.confusion
             return False
 
         return False

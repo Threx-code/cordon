@@ -133,6 +133,7 @@ class DecoderHelpers:
         try:
             return cls._recover(text)
         except (ValueError, RecursionError, MemoryError):
+            # S2: a fallback; the next reader (or SOURCE.UNPARSED for running files) reads it
             return None
 
     @classmethod

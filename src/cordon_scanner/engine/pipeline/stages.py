@@ -13,6 +13,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from cordon_scanner.analysis.python.flows.cross_file import CrossFileMaps
 from cordon_scanner.decide.code_model import CodeModelPass
 from cordon_scanner.detect.base import (
     FileUnit,
@@ -22,7 +23,7 @@ from cordon_scanner.detect.base import (
 )
 from cordon_scanner.detect.registry import ComposerPluginHooks, ServerSources
 from cordon_scanner.engine.cache import CacheSignature
-from cordon_scanner.engine.closure import ImportClosure
+from cordon_scanner.engine.closure import ImportClosure, StartupClosure
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.ceilings import Ceilings
 from cordon_scanner.engine.pipeline.constants import REPOSITORY_SCOPE
@@ -162,6 +163,8 @@ class ScanStages:
             ctx,
             dependencies=Graph.packages(dependencies),
             install_hook_paths=frozenset(hook_paths),
+            startup_closure_paths=(startup := StartupClosure.of(units, entries))[0],
+            startup_deferred_lines=startup[1],
             tree_paths=frozenset(unit.path for unit in units),
             shipped_native_paths=TreeFacts.shipped_native(units),
             install_entry_paths=entries,
@@ -170,7 +173,11 @@ class ScanStages:
             install_deferred_lines=deferred,
             ci_hook_paths=ctx.ci_hook_paths | frozenset(ci_scripts),
         )
-        ctx = replace(ctx, verdict_dependency_names=Ceilings.verdict_dependency_names(units))
+        ctx = replace(
+            ctx,
+            verdict_dependency_names=Ceilings.verdict_dependency_names(units),
+            **CrossFileMaps.of(units),
+        )
         return Hooks.lifted_inherit(ctx)
 
     def detect(
@@ -228,6 +235,9 @@ class ScanStages:
                 return
             acc.add(ReleaseChecks.unexamined_install_code(acc.findings, ctx))
             acc.add(ReleaseChecks.native_code_in_a_pure_wheel(units, ctx))
+            # Not `native_program_in_a_pure_wheel`: a directory is not one release. An installed
+            # environment holds many `.dist-info` WHEEL files (and a source tree may commit its own),
+            # so reading the tree as one wheel would join one package's program to another's run.
             acc.add(ReleaseChecks.known_malicious_release(units, ctx))
             acc.add(ReleaseChecks.known_vulnerable_release(units, ctx, dependencies))
             acc.add(ReleaseChecks.placeholder_release(units, ctx))

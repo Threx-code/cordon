@@ -65,7 +65,8 @@ class McpCode:
         try:
             tree: ast.Module = PythonSyntax.parse(text)
             return tree
-        except (SyntaxError, ValueError, RecursionError):
+        except (SyntaxError, ValueError):
+            # S2: covered by SOURCE.UNPARSED at every running file (install closure, import entries, command modules); proven by test_not_python3.py TestPackageSourceThatDoesNotParse
             return None
 
     @staticmethod
@@ -253,6 +254,86 @@ class McpCode:
             if call is not None:
                 hits.append((getattr(call, "lineno", function.lineno), function.name))
         return hits
+
+    #: What takes a prefix off a string: `raw.split("://", 1)[1]`, `raw.replace(...)`, `raw.removeprefix(...)`.
+    _STRIPS: ClassVar[frozenset[str]] = frozenset(
+        {"split", "rsplit", "partition", "replace", "removeprefix", "lstrip"}
+    )
+
+    @classmethod
+    def _stripped(cls, node: ast.AST, names: set[str]) -> bool:
+        """Whether `node` is one of `names` with its start taken off: sliced, split, replaced."""
+        for n in ast.walk(node):
+            if (
+                isinstance(n, ast.Subscript)
+                and isinstance(n.slice, ast.Slice)
+                and isinstance(n.value, ast.Name)
+                and n.value.id in names
+            ):
+                return True
+            if (
+                isinstance(n, ast.Call)
+                and isinstance(n.func, ast.Attribute)
+                and n.func.attr in cls._STRIPS
+                and isinstance(n.func.value, ast.Name)
+                and n.func.value.id in names
+            ):
+                return True
+        return False
+
+    @staticmethod
+    def _prefixed(function: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
+        """The names a function tests for a marker: `x.startswith(...)`, `"://" in x`."""
+        out: set[str] = set()
+        for n in ast.walk(function):
+            if (
+                isinstance(n, ast.Call)
+                and isinstance(n.func, ast.Attribute)
+                and n.func.attr in ("startswith", "find", "index")
+                and isinstance(n.func.value, ast.Name)
+            ):
+                out.add(n.func.value.id)
+            elif (
+                isinstance(n, ast.Compare)
+                and len(n.ops) == 1
+                and isinstance(n.ops[0], ast.In)
+                and isinstance(n.left, ast.Constant)
+                and isinstance(n.left.value, str)
+                and len(n.left.value) >= 2
+                and isinstance(n.comparators[0], ast.Name)
+            ):
+                out.add(n.comparators[0].id)
+        return out
+
+    @classmethod
+    def prefix_runs(cls, text: str) -> list[tuple[int, str]]:
+        """(line, function) where a function tests a string for a marker and runs what follows the
+        marker -- `if raw.startswith("SYSTEM/"): run(raw.split("/", 1)[1], shell=True)`. The gate and
+        the command are one string: a word only its author sends, then the command. Choosing a
+        subcommand compares the whole value and runs something else, so it is not this."""
+        tree = cls._parse(text)
+        if tree is None:
+            return []
+        out: list[tuple[int, str]] = []
+        for function in (
+            n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
+        ):
+            prefixed = cls._prefixed(function)
+            if not prefixed:
+                continue
+            derived: set[str] = set()
+            for n in ast.walk(function):
+                if isinstance(n, ast.Assign) and cls._stripped(n.value, prefixed):
+                    for target in n.targets:
+                        derived |= cls._names(target)
+            for call in (n for n in ast.walk(function) if isinstance(n, ast.Call)):
+                args = cls._sink_args(call)
+                if args and any(
+                    cls._stripped(a, prefixed) or cls._names(a) & derived for a in args
+                ):
+                    out.append((call.lineno, function.name))
+                    break
+        return out
 
     @staticmethod
     def _hidden_path(node: ast.AST) -> bool:

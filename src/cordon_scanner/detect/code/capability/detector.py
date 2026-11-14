@@ -26,6 +26,7 @@ composite rule set unchanged.
 from __future__ import annotations
 
 import re
+from bisect import bisect_right
 from dataclasses import replace
 from typing import TYPE_CHECKING, ClassVar
 
@@ -154,6 +155,79 @@ class FixedJsSpawns:
             else h
             for h in hits
         ]
+
+
+class UnsourcedPythonSinks:
+    """Python execute and deserialize hits whose input was neither fetched nor decoded."""
+
+    SINKS: ClassVar[frozenset[Capability]] = frozenset({Capability.EXECUTE, Capability.DESERIALIZE})
+
+    @classmethod
+    def mark(cls, content: FileContent, hits: list[CapabilityHit]) -> list[CapabilityHit]:
+        """Each sink hit on a line where the parsed tree finds either no execute or deserialize
+        call, or one whose argument was neither fetched nor decoded, marked `unsourced`; and a
+        pattern-tier fetch-and-run on such a line, where the tree records no fetch-and-run of its
+        own (`exec(fp.read())` of an opened local file). A file that does not parse marks nothing
+        (fail closed)."""
+        if not any(h.capability in cls.SINKS for h in hits):
+            return hits
+        from cordon_scanner.analysis.python.pyast import PythonAnalyzer
+
+        found = PythonAnalyzer.sink_sources(content.text)
+        if found is None:
+            return hits
+        every, sourced = found
+        unsourced_lines = every - sourced
+        tree_fetch_exec = {
+            h.line for h in hits if h.capability is Capability.FETCH_EXEC and h.resolved
+        }
+
+        def unsourced(h: CapabilityHit) -> bool:
+            if h.capability in cls.SINKS:
+                return h.line not in every or h.line not in sourced
+            return (
+                h.capability is Capability.FETCH_EXEC
+                and not h.resolved
+                and h.line in unsourced_lines
+                and h.line not in tree_fetch_exec
+            )
+
+        return [replace(h, unsourced=True) if unsourced(h) else h for h in hits]
+
+
+class QuotedPythonProbes:
+    """Anti-analysis pattern hits that sit inside a Python string."""
+
+    @staticmethod
+    def drop(content: FileContent, hits: list[CapabilityHit]) -> list[CapabilityHit]:
+        """Each anti-analysis hit whose matched text lies wholly inside one string literal, in a
+        file whose code names no probe, dropped. `sys.gettrace()` written into a code template or
+        a help table is text the module never runs. The pattern records only its first match, so
+        a quoted decoy must not hide a real check after it: any probe named in the code itself
+        keeps every hit. A string later handed to `exec` is judged by the execute rules, not by
+        this pattern. A file that does not parse drops nothing (fail closed)."""
+        if not any(h.capability is Capability.ANTI_ANALYSIS for h in hits):
+            return hits
+        from cordon_scanner.analysis.python.pyfacts import PythonFacts
+
+        spans = PythonFacts.string_spans(content.text)
+        if not spans:
+            return hits
+        starts = content.line_starts
+
+        def position(offset: int) -> tuple[int, int]:
+            line = bisect_right(starts, offset)
+            return line, offset - starts[line - 1]
+
+        def quoted(hit: CapabilityHit) -> bool:
+            first = position(hit.byte_start)
+            last = position(max(hit.byte_end - 1, hit.byte_start))
+            return any(
+                (line, column) <= first and last < (end_line, end_column)
+                for line, column, end_line, end_column in spans
+            )
+
+        return [h for h in hits if not (h.capability is Capability.ANTI_ANALYSIS and quoted(h))]
 
 
 class CapabilityDetector(BaseDetector):
@@ -347,6 +421,10 @@ class CapabilityDetector(BaseDetector):
             for h in hits
         ):
             hits = Labelling.drop_excused_pattern_hits(content, hits)
+        if unit.language == "python":
+            hits = QuotedPythonProbes.drop(content, hits)
+        if unit.language == "python" and not content.path.endswith(".pth"):
+            hits = UnsourcedPythonSinks.mark(content, hits)
         if unit.language in ("javascript", "typescript"):
             hits = JsPersistence.drop_named_only(content, hits)
             hits = FixedJsSpawns.mark(content, hits)
@@ -402,6 +480,31 @@ class CapabilityDetector(BaseDetector):
         if NixCode.is_nix(content.path):
             # What a Nix file declares does not run (`detect/nix_code.py`).
             hits = NixCode.keep_running(content.text, hits)
+        return CapabilityDetector._restore_notifier_drop_points(content, unit.language, hits)
+
+    @staticmethod
+    def _restore_notifier_drop_points(
+        content: FileContent, language: str | None, hits: list[CapabilityHit]
+    ) -> list[CapabilityHit]:
+        """A Telegram bot URL whose token comes from a variable is a notifier, not a drop point,
+        only while the file carries no loot. A stealer posts the environment, the user and host
+        names or another service's credential through the same URL with its token read from the
+        environment; once the file reads any of those, the bot URL is a drop point again."""
+        loot = any(
+            h.capability in (Capability.CREDENTIAL, Capability.RECONNAISSANCE)
+            and not LegitimateUse.a_setting(content, h)
+            for h in hits
+        )
+        if not loot:
+            return hits
+        held = set(hits)
+        hits.extend(
+            h
+            for h in DestinationLabels.destination_capabilities(
+                content, language, notifier_exempt=False
+            )
+            if h not in held
+        )
         return hits
 
     # -- Reasoning -------------------------------------------------------
@@ -433,6 +536,7 @@ class CapabilityDetector(BaseDetector):
         evaluator = CompositeEvaluator(
             in_entry=unit.path in ctx.install_entry_paths,
             in_import_entry=unit.path in ctx.import_entry_paths,
+            confusion=bool(ctx.confusion_version),
         )
         # Install-time context is decided per WINDOW, not per file. A file is in
         # the closure because a hook imports it, and importing a module defines
@@ -440,6 +544,9 @@ class CapabilityDetector(BaseDetector):
         # a body nothing reaches does not run at install time, whatever the file
         # does. See `ScanContext.install_hook_reaches`.
         deferred = CapabilityDetector._deferred_windows(ctx, unit, in_hook)
+        import_deferred = CapabilityDetector._import_windows(ctx, unit, in_hook)
+        # Names this file binds that another file of the package imports and sends (`SentNames`).
+        sent_names = frozenset((ctx.python_sent_names or {}).get(unit.path, {}))
 
         decode_excused = DecodeRun.excused_lines(
             unit, hits, BuildOutput.bundled_path(unit.path), [c.rule.id for c in candidates]
@@ -451,14 +558,10 @@ class CapabilityDetector(BaseDetector):
                 continue
 
             rule_hits = CapabilityDetector._rule_hits(compiled, unit, hits, decode_excused)
-            if compiled.rule.id in CompositeRuleIds.CONTEXT_FREE:
-                window = evaluator.satisfying_window(
-                    compiled, rule_hits, unit.path, False, False, False, frozenset()
-                )
-            else:
-                window = evaluator.satisfying_window(
-                    compiled, rule_hits, unit.path, in_hook, in_ci, in_consumer, deferred
-                )
+            window = CapabilityDetector._window(
+                evaluator, compiled, rule_hits, unit, (in_hook, in_ci, in_consumer),
+                deferred, import_deferred, sent_names,
+            )  # fmt: skip
             if window is None:
                 continue
 
@@ -493,6 +596,58 @@ class CapabilityDetector(BaseDetector):
             ).finding()
             if finding is not None:
                 yield finding
+
+    @staticmethod
+    def _window(
+        evaluator: CompositeEvaluator,
+        compiled: CompiledRule,
+        rule_hits: list[CapabilityHit],
+        unit: FileUnit,
+        where: tuple[bool, bool, bool],
+        deferred: frozenset[tuple[int, int]],
+        import_deferred: frozenset[tuple[int, int]] | None,
+        sent_names: frozenset[str] = frozenset(),
+    ) -> list[CapabilityHit] | None:
+        """The window of hits that satisfies the composite, read in the context it runs in."""
+        in_hook, in_ci, in_consumer = where
+        path = unit.path
+        if compiled.rule.id in CompositeRuleIds.CONTEXT_FREE:
+            return evaluator.satisfying_window(
+                compiled, rule_hits, path, False, False, False, frozenset()
+            )
+        if import_deferred is not None and compiled.rule.id in CompositeRuleIds.IMPORT_GRADED:
+            # What a published package runs at import is unasked too (reviews/pypi-98/10): the
+            # install term is read against the import reach, the bodies importing never calls as
+            # the dead code -- the same per-window rule. A destination only written down (a URL
+            # literal handed to a telemetry client's constructor) is not a send at import: it
+            # counts as egress only on a line where a request is made (evidently 0.7.23), or bound
+            # to a name a request uses, in this file or one that imports it (loveclose 0.0.1).
+            return evaluator.satisfying_window(
+                compiled,
+                DestinationLabels.sent_at_import(
+                    rule_hits, None if unit.content.is_binary else unit.content.text, sent_names
+                ),
+                path,
+                True,
+                in_ci,
+                in_consumer,
+                import_deferred,
+            )
+        return evaluator.satisfying_window(
+            compiled, rule_hits, path, in_hook, in_ci, in_consumer, deferred
+        )
+
+    @staticmethod
+    def _import_windows(
+        ctx: ScanContext, unit: FileUnit, in_hook: bool
+    ) -> frozenset[tuple[int, int]] | None:
+        """For a module a consumer imports (and no install hook runs), the line ranges importing
+        never runs; None for any other file."""
+        if in_hook or unit.path not in ctx.import_closure_paths:
+            return None
+        return frozenset(
+            (first, last) for path, first, last in ctx.import_deferred_lines if path == unit.path
+        )
 
     @staticmethod
     def _deferred_windows(

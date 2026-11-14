@@ -343,11 +343,13 @@ class InstructionFileFindings:
         # blocked 44% -> 83%, benign 5.0% -> 3.3%, as ATR wording blocks only where the model or
         # Cordon's own evidence agrees; an override phrase is wording too (41 public skills).
         unconfirmed = False
+        model_agrees = False
         if ContainerPaths.basename(unit.content.path).upper() == "SKILL.MD":
             limits = SKILL_MODEL.thresholds("skill")
             score = SKILL_MODEL.score(text, "skill") if limits is not None else None
             if limits is not None and score is not None:
                 unconfirmed = score < limits[1] and not corroborated_code
+                model_agrees = score >= limits[1]
                 if score >= limits[1]:
                     blocking = third_party and score >= limits[0]
                     yield AgentFinding.finding(
@@ -372,6 +374,7 @@ class InstructionFileFindings:
             corroborated_code=corroborated_code,
             documentation=True,
             unconfirmed=unconfirmed,
+            model_agrees=model_agrees,
         )
 
 

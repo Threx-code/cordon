@@ -484,6 +484,276 @@ rules:
         - path_glob: "**/test_*.py"
         - path_glob: "tests/**"
 
+  - id: MALWARE.INSTALL.STARTUP_NETWORK.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: Code a .pth file loads reaches the network in every Python process
+    message: >
+      A .pth file the package installs imports a module, and that module (or what it imports)
+      makes a request or downloads. Python runs a .pth file's import lines at the start of every
+      interpreter on the machine, so this reaches the network each time any Python program starts,
+      without the package ever being imported. That is an implant's shape, whatever it sends today.
+    remediation: >
+      Remove the .pth file from site-packages and read what its module fetches or sends. If this
+      is not your code, treat every Python process on the machine since install as exposed.
+    provenance:
+      kind: research
+      reference: >
+        PyPI packages whose installed .pth imports a module that downloads or calls out at module
+        level (data_proxy_for_test 0.1.1, 2026-11-11).
+    evidence_policy: hash_only
+    references:
+      - https://cwe.mitre.org/data/definitions/506.html
+      - https://docs.python.org/3/library/site.html
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.STARTUP_NETWORK
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.INSTALL.STARTUP_CODE.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: A .pth file runs code beyond import setup in every Python process
+    message: >
+      An import line in this .pth file calls something that is not import machinery: not an
+      import, a sys.path edit, site.addsitedir, an importlib finder, or the distutils-precedence,
+      virtualenv and namespace-package shapes. Python runs these lines in every interpreter the
+      machine starts once the package is installed. A process-wide change, a command, or code
+      computed at startup there acts on everything Python does on the machine.
+    remediation: >
+      Remove the .pth file from site-packages and read what its line does. If this is not your
+      code, treat the machine's Python processes since install as affected.
+    provenance:
+      kind: research
+      reference: >
+        A wheel's .pth line that resets the process umask in every interpreter (chroma_client
+        0.5.7, 2026-11-11); benign .pth lines measured on 17,337 packages.
+    evidence_policy: hash_only
+    references:
+      - https://cwe.mitre.org/data/definitions/506.html
+      - https://docs.python.org/3/library/site.html
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.STARTUP_CODE
+      unless:
+        - path_glob: "tests/**"
+
+  - id: MALWARE.DROPPER.MACHINE_REPORT.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: A fingerprint of the machine is sent and the program the answer names is run
+    message: >
+      The package sends a fingerprint of the machine -- its environment, and hashes of the user's
+      files -- and runs the program the server's answer names: a server choosing, per machine, what
+      to install. A self-updater asks which version to fetch; it does not send the environment or
+      the user's files, and telemetry that reports a platform does not run what comes back.
+    remediation: >
+      Do not install or import the package. Treat the machine as compromised if it ran: what was
+      started was chosen by whoever holds the server.
+    provenance:
+      kind: research
+      reference: >
+        A package whose context module reads the environment and hashes files at paths a shipped
+        config names, and whose verifier posts that and downloads, makes executable and starts the
+        URL the answer names (is-it-ai 0.1.1, 2026-11-11).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 200
+      any:
+        - rule: AST.PY.MACHINE_REPORT_RUN
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.IMPLANT.AV_EXCLUSION.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: The code tells the antivirus to stop scanning a folder or a program
+    message: >
+      This code runs a command that adds a Defender exclusion (Add-MpPreference or
+      Set-MpPreference with an -Exclusion option), switches a Defender protection off, or writes
+      under the Windows Defender exclusions key. A library has no reason to tell the antivirus to
+      stop looking at a folder or a process: the exclusion is there so that what lands there next
+      is not scanned.
+    remediation: >
+      Treat the package as hostile. Remove it, remove the exclusion (Get-MpPreference lists them),
+      and scan the excluded folder.
+    provenance:
+      kind: research
+      reference: >
+        A terminal-colour library that, from its print function, excludes a folder and an
+        executable from Defender with no window, downloads the executable from a file-drop host
+        into that folder and starts it (rainbowcolors 0.1.0, 2026-11-11).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.AV_EXCLUSION
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.EXFIL.CREDENTIALS_TO_FREE_HOST.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: A password is sent to a free-hosting, paste or tunnel host
+    message: >
+      This code sends a password-named value to a host anyone can register for nothing -- a free
+      web-hosting subdomain, a paste site, a tunnel or an interaction service. A client sends a
+      password to the service it logs into; one sent to a free subdomain goes to whoever
+      registered it. That is credential theft, whoever ships it.
+    remediation: >
+      Do not use the package. Change every password it was given, and the passwords of any
+      account it logged into.
+    provenance:
+      kind: research
+      reference: >
+        A Python 2 account tool that sends the email and password of the accounts it handles to
+        tik-tok.rf.gd, a free-hosting subdomain dressed as TikTok (project47 1.0, 2026-11-11).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.CREDENTIALS_FREE_HOST
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.EXFIL.SWEPT_FILES.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: Files gathered by walking the drives or home, sent to a destination the code hides
+    message: >
+      This code walks the user's drives or home directory, reads the files it finds, and hands
+      their contents to a request whose destination it decodes or reverses at runtime, so the host
+      never appears in the source. A backup or sync tool names the server it uploads to; hiding
+      the host that receives the contents of a disk sweep is how a stealer keeps its collector out
+      of sight. It is graded the same wherever the code runs.
+    remediation: >
+      Do not run this code. Decode the destination, and treat every file the walk could reach as
+      sent to it.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI stealer walking every logical drive and posting each file's text to a base64-decoded
+        URL through its own helpers (graphicsctxr 1.0.3, 2026-11-11).
+    evidence_policy: hash_only
+    references:
+      - https://cwe.mitre.org/data/definitions/200.html
+      - https://cwe.mitre.org/data/definitions/506.html
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.SWEPT_SENT
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.EXFIL.RELAYED_HIDDEN.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: A class stores what its caller hands it and sends it to a destination it hides
+    message: >
+      This class keeps the values its constructor is given and sends them, from one of its methods,
+      to a destination it stores reversed, sliced or encoded, so the host never appears in the
+      source. A caller handing it a key, a token or a date expects the value to stay local; the
+      class relays it to a host the code will not write down. It is graded the same wherever the
+      code runs.
+    remediation: >
+      Do not install or call this package. Decode the destination, and rotate anything a caller
+      passed to the class.
+    provenance:
+      kind: research
+      reference: >
+        A relay package whose Dateformat(day, month, year) posts its arguments to a reversed
+        endpoint, fed cloud keys by look-alike SDKs (snapshot-photo 0.0.3, snapshot_date 1.0.3,
+        2026-11-11).
+    evidence_policy: hash_only
+    references:
+      - https://cwe.mitre.org/data/definitions/200.html
+      - https://cwe.mitre.org/data/definitions/506.html
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.RELAYED_HIDDEN
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.EXFIL.HIDDEN_DESTINATION.002
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: Code sends the machine's identity, environment or a credential to a host it hides
+    message: >
+      This file sends who the machine is, its environment, or a credential to a URL it decodes,
+      reverses or builds from character codes at runtime, so the destination never appears in the
+      source. A package's own service, a vendor's telemetry and a CI notifier name their hosts;
+      hiding the host of a request that carries what the machine holds is how a stealer keeps its
+      collector out of a reviewer's sight. It is graded the same whether the code runs on import,
+      as a command, or only when a function is called.
+    remediation: >
+      Decode the destination and read why the request carries this data. If this is not your
+      code, treat what it sends, and the environment of whatever ran it, as exposed.
+    provenance:
+      kind: research
+      reference: >
+        PyPI stealers that send the hostname, user or environment to a base64-decoded or reversed
+        collector URL from a method only a caller reaches (group A, 2026-11-10).
+    evidence_policy: hash_only
+    references:
+      - https://cwe.mitre.org/data/definitions/200.html
+      - https://cwe.mitre.org/data/definitions/506.html
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.SENT_TO_HIDDEN_HOST
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: SUSPECT.EXFIL.NAMED_SECRET.001
     version: 1.0.0
     category: suspicious
@@ -522,6 +792,41 @@ rules:
         - path_glob: "tests/**"
         - path_glob: "test/**"
         - path_glob: "__tests__/**"
+
+  - id: MALWARE.DROPPER.DECODED.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: Code writes out a payload it carries encoded, then makes it runnable or runs it
+    message: >
+      This file decodes bytes it carries hidden (base64, hex, zlib, marshal), writes them to a file,
+      and then marks that file executable or starts it. Shipping a resource encoded is ordinary;
+      unpacking it into a program and arranging for it to run is how a dropper installs its agent,
+      with nothing for a reviewer to read and no network request to see.
+    remediation: >
+      Do not install this package. Treat the machine as exposed: look for the written file, any
+      scheduled task or crontab line that runs it, and remove both.
+    provenance:
+      kind: research
+      reference: >
+        Group C of the PyPI UNKNOWN misses (reviews/pypi-98/18-UNKNOWN-MISSES.md, 2026-11-10):
+        data_harvester 0.3.1 and defi_tools 0.8.0 decode a 657 KB base64 module, write it under
+        the home directory, chmod it 0777 and add a crontab line for it, at import.
+    evidence_policy: hash_only
+    references:
+      - https://attack.mitre.org/techniques/T1027/
+      - https://attack.mitre.org/techniques/T1105/
+    match:
+      kind: composite
+      scope: file
+      proximity: 60
+      any:
+        - rule: AST.PY.DECODED_DROP_RUN
+      unless:
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+        - path_glob: "test/**"
 
   - id: MALWARE.EXFIL.BEACON.001
     version: 1.0.0
@@ -679,6 +984,223 @@ rules:
         - any:
             - capability: decode
             - capability: egress
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.DROPPER.DIRECTORY.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: Files written into a directory are then executed from it
+    message: >
+      This file writes files whose content it did not write down into a fixed directory, and
+      elsewhere lists that directory and executes every file it finds there. No single function both
+      receives the code and runs it, so no download-and-run pairing sees it; the directory joins the
+      two: whatever the first half writes, the second half runs.
+    remediation: >
+      Treat the package as hostile. Do not install it, and look in the directory for what it
+      already wrote.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package whose updater fetches a tar, decrypts its lines into .py files under one
+        directory, and whose module runner execs every file listed there (scrapetools2 0.2.0,
+        2026-11-11).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.DIRECTORY_DROP_RUN
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: SUSPECT.EXECUTE.DECODED_BYTES.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: Bytes handed to the code are decoded to text and executed
+    message: >
+      This file decodes bytes it is handed, or that a call returns, into text and runs it with
+      exec, eval or compile. Whatever the bytes are called -- samples, windows, a payload -- running
+      them as code means their author, not this file, decides what happens.
+    remediation: >
+      Find where the bytes come from and read them as code before running this.
+    provenance:
+      kind: research
+      reference: >
+        A wheel exec-ing "windows" of bytes from a module it does not ship, a thread per window
+        (rasterkit_demo 0.1.0, 2026-11-11).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.BYTES_EXEC
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: SUSPECT.EXFIL.MAIL_ON_IMPORT.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Importing the module sends mail from an account whose password it carries
+    message: >
+      At module level, this file opens an SMTP connection, logs in with a user and password
+      written in its source, and sends a message. Importing it tells the account's owner that the
+      package was installed and imported, and anything else the message carries, from every machine
+      that loads it.
+    remediation: >
+      Do not import this package. A library has no reason to send mail when it is loaded.
+    provenance:
+      kind: research
+      reference: >
+        A tunnel tool whose module mails a fixed address at import, and mails the public port of
+        every tunnel it opens (Coffin2022 7.0, Coffin-Codes-2022 7.2, 2026-11-11).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.IMPORT_MAIL
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: SUSPECT.OBFUSCATION.UNRESOLVED_PAYLOAD.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: A payload is handed at import to a function nothing defines
+    message: >
+      A payload is handed at import to a function nothing defines: the decoder was stripped, or
+      ships elsewhere. At module level, outside any guard, this file calls a name no statement
+      of it defines, imports or binds, and passes it a long literal. Code that names a decoder it
+      does not have, beside an encoded blob, is the run step of a payload whose other half is
+      missing from what was published.
+    remediation: >
+      Do not install the package. Find where the called name was meant to come from, and read
+      the literal as the payload it is.
+    provenance:
+      kind: research
+      reference: >
+        A package whose __init__ imports a module it does not ship and calls decript() on a
+        186-character literal at import (cubaflixdownload 1.0.1, 2026-11-11).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.UNRESOLVED_PAYLOAD
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: SUSPECT.INSTALL.TEMP_COMMAND.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: The install runs a command on a system temp path
+    message: >
+      The install runs a command on a system temp path: a build works inside its own tree. Code
+      that runs at install starts a command naming /tmp, %TEMP%, $TMPDIR or the Windows temp
+      directory, or a path built on tempfile.gettempdir(). Compilers and packaging tools read and
+      write the package's own directory; reaching the system temp directory from the install
+      script is the install leaving or running something outside it.
+    remediation: >
+      Read what the command does before installing. A build step writes inside the build tree.
+    provenance:
+      kind: research
+      reference: >
+        A setup.py running a two-word literal command on a /tmp path at module level
+        (maliciouspackage 0.1, 2026-11-11); 0 of 16,274 benign setup.py files do.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 200
+      all:
+        - context: install_hook
+        - rule: AST.PY.TEMP_COMMAND
+
+  - id: SUSPECT.OBFUSCATION.DORMANT_PAYLOAD.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Data fetched or carried by the package is decoded and then never used
+    message: >
+      Data fetched or carried by the package is decoded and then never used: the staged half of a
+      dropper, kept where its payload can be switched on later. This code fetches a page, reads a
+      file it ships or holds a literal, decodes it (base64, hex, XOR), and discards the result. A
+      decode is work done to recover a value; recovering one and dropping it keeps the payload
+      carried and encoded, ready for a later version or a second stage to run.
+    remediation: >
+      Read what the decoded value is. If the package has no use for it, it should not be carrying
+      or fetching it.
+    provenance:
+      kind: research
+      reference: >
+        A package hex-decoding and XORing a payload and a key cut from two pages it fetches at
+        import (ethercheck 1.1.1), and a spell checker base64-decoding one value from a data file
+        it ships, in its constructor, for nothing (spellcheckerpy 1.0.0), 2026-11-11.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.DORMANT_DECODE
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: SUSPECT.DYNAMIC_DISPATCH.002
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: A module or function is reached by a name the code spells so that no literal is it
+    message: >
+      This file hands import_module, __import__ or getattr a name it builds from character codes,
+      from characters picked out of another string, or by reversing one. The name is fixed by the
+      file, so it could have been written; spelling it this way serves only to keep a reader, or
+      a scanner, from seeing which module is loaded or which function is called. The call is read
+      as what the name resolves to as well; this finding is that the name was hidden.
+    remediation: >
+      Read what the name resolves to and what the code does with it. A program that needs a
+      module or function by name writes the name.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package importing a standard-library reader and fetching one of its functions by
+        names spelled in character codes, to read a user file whose path it keeps encrypted
+        (apkeep 1.0.1, 2026-11-11).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.CONCEALED_NAME
       unless:
         - path_glob: "**/*.test.*"
         - path_glob: "**/test_*.py"
@@ -1043,6 +1565,43 @@ rules:
         - context: install_entry
         - rule: AST.PY.HIDDEN_ACTION
 
+  - id: SUSPECT.INSTALL.COMPUTED_CODE.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Code that runs at install executes or starts a program it assembles so that no literal is it
+    message: >
+      Code that runs when the package is installed builds a program out of its own literals --
+      indexing an alphabet with a list of numbers, joining character codes, reversing a string --
+      and hands the result to exec, eval or compile, or starts it as a command. The program is
+      fixed by the file, so it
+      could have been written as code; assembling it this way serves only to keep it from being
+      read, by a reviewer or by a scanner. What the program does is judged as well; this finding
+      is that it was hidden.
+    remediation: >
+      Do not install it until the assembled program has been read. A build step that needs to
+      run code writes it as code.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI upload whose setup.py imports a module that adds alphabet[i] for each of 13
+        literal indices to a string and executes it at install (easyIoCtl 1.0, 2026-11-11); a
+        setup.py running a command whose program a helper spells in character codes, dressed as
+        a git-hash lookup (openblox 1.0.0, sqligen 1.0.0).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 200
+      all:
+        # What runs at install: the hook script and the modules it imports (easyIoCtl's
+        # setup.py imports the module that assembles and executes the program).
+        - context: install_hook
+        - any:
+            - rule: AST.PY.COMPUTED_EXEC
+            - rule: AST.PY.COMPUTED_COMMAND
+
   - id: SUSPECT.INSTALL.STRING_CODE.001
     version: 1.0.0
     category: suspicious
@@ -1220,6 +1779,7 @@ rules:
       any:
         - rule: CAP.JS.SHELL_STDIO_JOINED.001
         - rule: CAP.RB.SHELL_STDIO_JOINED.001
+        - rule: CAP.PY.SHELL_STDIO_JOINED.001
 
   - id: MALWARE.PROTESTWARE.001
     version: 1.0.0
@@ -2028,6 +2588,336 @@ rules:
         - path_glob: "**/*.dockerfile"
         - path_glob: "**/Containerfile"
 
+  - id: MALWARE.IMPORT.PERSIST.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Code that runs on import plants code that runs again later
+    message: >
+      Importing this package writes a shell profile, a scheduled task, a service, a LaunchAgent, a
+      crontab line, a login item, an autostart entry or a Run key: a foothold that runs again at the
+      next login or on a schedule. Loading a library has no reason to change what runs when the user
+      logs in. Graded like the install-time form, because import is as unprompted as install.
+    remediation: >
+      Do not import this package. Inspect the profiles, scheduled tasks, services, LaunchAgents and
+      crontab of machines that did, and remove what it added.
+    provenance:
+      kind: research
+      reference: >
+        A persistence location written at module level, or by a function the module level calls, in
+        a file that runs when the package is imported: a package that registers itself the first
+        time it is loaded rather than when it is installed.
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1546/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: import_entry
+        - rule: AST.PY.PERSIST_AT_LOAD
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+        - path_glob: "**/Dockerfile"
+
+  - id: MALWARE.INSTALL.FOREIGN_INDEX.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Install script installs packages from an index the user did not choose
+    message: >
+      Code that runs at install time runs `pip install` with `--index-url`, `--extra-index-url`,
+      `--find-links` or `--trusted-host`, or hands a library `trust_all_hosts=True`. The second index
+      is searched alongside the user's and the higher version wins, so whoever runs it puts code on
+      the machine: the dependency-confusion shape. An install script that needs a package names it
+      as a requirement and leaves the index to the user.
+    remediation: >
+      Do not install this package. Look at what the named index served and treat the machine as
+      having run it.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package whose install command ran a package installer with host checks turned off from
+        its install-time update call (pyregions_snowflake, 2026-11-11).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1195/001/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - any:
+            - context: install_entry
+            - context: install_hook
+        - rule: AST.PY.FOREIGN_INDEX
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.IMPLANT.PERSIST_RUN.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Registers itself to run again and runs a program it brings
+    message: >
+      In one function, or one function and the helpers it calls, this code runs a program it
+      downloaded or decoded and writes a persistence location (a Run key, a scheduled task, a
+      LaunchAgent, a crontab line, a service, a profile): an implant installing its payload and
+      arranging for it to start again. Either alone is ordinary; together in one place they are the
+      shape of an implant registering itself.
+    remediation: >
+      Do not run this code. Inspect the persistence locations of any machine that did, and remove
+      what it added and the program it started.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package whose launcher wrote a Run key, a scheduled task or a LaunchAgent in a
+        function beside the run of the program it brings (ailaunchkit, 2026-11-11).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1547/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: AST.PY.PERSIST_RUN
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.CLIPPER.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Replaces what the user copied with a value the package carries
+    message: >
+      This code reads the clipboard, matches what it read against a pattern and writes a value the
+      package carries back: the clipper shape. A user who copies a cryptocurrency address and pastes
+      it pays the address the package chose. A clipboard tool writes what it read or what the user
+      picked; this writes a fixed value when what it read matched a pattern.
+    remediation: >
+      Do not run this code. Check where a payment made while it ran was sent.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package that read the Windows clipboard, tested it against address patterns and set a
+        constant replacement (aiassistcore, 2026-11-11).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1115/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: AST.PY.CLIPBOARD_REPLACED
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.KEYLOGGER.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Captures keystrokes and writes them down or sends them
+    message: >
+      This code hooks or polls the keyboard and the keys it captures reach a file write or a request.
+      A hotkey library maps a key to an action and a game reads a key to move something; neither
+      keeps what was typed. Keeping it is a keylogger, and what it kept includes passwords and
+      messages.
+    remediation: >
+      Do not run this code. Treat what was typed while it ran as read, change the passwords, and look
+      for the file or the host the keys went to.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package with a key-code-to-name map, a buffer and a flusher thread writing the typed
+        text to a log path under the user's profile (aiassistcore, 2026-11-11).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1056/001/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: AST.PY.KEYSTROKES_LOGGED
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.PERSIST.HIDDEN.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Registers a program to start at login and starts it without a window
+    message: >
+      In one function, or one function and the helpers it calls, this code writes a persistence
+      location (an autostart entry, an agent, a Run key, a scheduled task, a crontab line) and asks for
+      a launch with no window: a `.vbs` run by `wscript`, `CREATE_NO_WINDOW`, `DETACHED_PROCESS`,
+      `SW_HIDE`, `pythonw`, `nohup`. A program the user keeps at login shows a window or an icon; one
+      that hides itself is not one they chose.
+    remediation: >
+      Do not run this code. Remove the autostart entry or scheduled task it wrote and the program it
+      starts.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package whose installer wrote an XDG autostart file, a LaunchAgents plist and a
+        Windows launcher script run with creation flags that hide the window (ailaunchkit,
+        2026-11-11).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1547/001/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: AST.PY.AUTOSTART_HIDDEN
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.EXFIL.IP_LOGGER.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Opens a link that logs the address of whoever opens it
+    message: >
+      This code hands a link on an IP-logging service to a request or a command (`wget`, `curl`, a
+      browser). Whoever made the link is told the address of the machine that opened it, and when. No
+      program has a reason to open one; a host that is only named, in a list or a comment, is not
+      this.
+    remediation: >
+      Do not run this code. Treat the machine as having reported its address to whoever owns the link.
+    provenance:
+      kind: research
+      reference: >
+        A fork of an audio-separation package whose entry function ran a download command on an IP
+        logging link (audio_separator_fork, 2026-11-11).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1592/002/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: AST.PY.IP_LOGGER_FETCHED
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.EXFIL.CLOUD_UPLOAD.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Uploads what the machine knows to a cloud store
+    message: >
+      This code reads the environment or facts about the machine (variables, the host and user
+      names, the platform) and uploads them with a cloud-storage client. The bucket belongs to whoever
+      wrote the code, and what it receives is what the code learned about the machine. A program that
+      uploads files it was asked to or data it made does not start from the environment.
+    remediation: >
+      Do not run this code. Treat the values the machine holds as read by whoever owns the bucket.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package whose function read three environment values and uploaded them to a Google
+        Cloud Storage blob from a thread (dlty, 2026-11-11).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1567/002/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: AST.PY.MACHINE_FACTS_UPLOADED
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.EXFIL.SWEPT_TO_HOST.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Sweeps files and sends their contents to a host anyone can rent
+    message: >
+      This code walks a directory tree, reads the files it finds and sends their contents in a request
+      to a free-hosting subdomain, a paste site, a tunnel or an out-of-band interaction host written in
+      the file. A backup or search tool keeps what it reads and an uploader sends a file to its own
+      service; reading a tree and posting it to a host that costs the sender nothing is the shape of a
+      stealer.
+    remediation: >
+      Do not run this code. Treat the files under the directories it walks as read by whoever owns the
+      host, and look at what was in them.
+    provenance:
+      kind: research
+      reference: >
+        Two PyPI packages that walked the driver folders for text logs and posted each file's text to a
+        subdomain of a free-hosting platform through an async client and `asyncio.to_thread`
+        (funkratov_renderkit and renderkitcore, 2026-11-11).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1005/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - rule: AST.PY.SWEPT_TO_RENTABLE_HOST
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.IMPORT.PROGRAM_START.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Importing the package starts a program and leaves it running
+    message: >
+      When this package is imported it starts a program with `Popen` and discards the handle: no
+      wait, no output read. A library that asks the machine something at import runs the program and
+      reads the answer; one that launches something that outlives the import is running code the
+      importer did not ask for.
+    remediation: >
+      Do not import this package. Find the program it starts and what it does.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package whose `__init__` started a literal program with `subprocess.Popen` as its
+        first statement, with a develop/install command that ran a message beside it
+        (lobomarinopython, 2026-11-11); benign 0 of 16,274.
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1204/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: import_entry
+        - rule: AST.PY.PROGRAM_STARTED_AT_IMPORT
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: MALWARE.EXFIL.INSTALL_CALLBACK.001
     version: 1.0.0
     category: malicious
@@ -2778,6 +3668,306 @@ rules:
   # ---------------------------------------------------------------------
   # AI agents as the payload
   # ---------------------------------------------------------------------
+  - id: MALWARE.EXFIL.CREDENTIAL_STORE.002
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: Code sends a credential store's contents outside the store's own service
+    message: >
+      This file reads a credential store -- SSH keys, a cloud provider's credentials, a package
+      registry's, container's or cluster's login, a git credential file -- and what it read reaches a
+      request to somewhere the store does not belong: a host the code hides, a chat or webhook
+      drop point, a raw IP address, a host the file never names, or (for AWS, cloud and SSH keys)
+      anywhere off the provider's own service. A client authenticates with a credential at its own
+      service; none ships the store elsewhere. Graded the same whether the code runs on import, as
+      a command, or only when a function is called.
+    remediation: >
+      Do not run this code. Rotate every credential in the store it read, and anything the
+      environment of whatever ran it could reach.
+    provenance:
+      kind: research
+      reference: >
+        PyPI stealers reading ~/.aws/credentials or SSH keys and posting the values to a webhook
+        from a command (group A, 2026-11-10); benign 1/1,063 after narrowing to outside the home.
+    evidence_policy: hash_only
+    references:
+      - https://attack.mitre.org/techniques/T1552/001/
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.CREDSTORE_SENT
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.IMPLANT.INSTALL.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: Code downloads and runs something and makes itself start again
+    message: >
+      One file both runs what it fetched (a download handed to an interpreter, or fetched text
+      evaluated) and writes a persistence location (a shell profile, a LaunchAgent, a crontab, a
+      systemd user unit, a startup folder or a Run key). Each alone has ordinary uses; together in
+      one file they are an implant's installer: a payload brought in and made to survive a reboot.
+      Across 33,733 published packages 4 files carried both. It is graded the same whether the code
+      runs on import, as a command, or only when a function is called: installing an implant is
+      not a routine a caller asks for.
+    remediation: >
+      Do not run this code. Check the persistence locations it names and remove what it planted.
+    provenance:
+      kind: research
+      reference: >
+        PyPI packages that fetch a payload, run it and register it for the next login from the same
+        module, reached only from a function (group A (c), 2026-11-10).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1547/
+    match:
+      kind: composite
+      scope: file
+      # One installer's worth of code: the fetch, the run and the persistence write together.
+      # Across a whole module the three are a large tool's unrelated features (benign gate
+      # 2026-11-11: six modules of 500 to 2,800 lines with each hundreds of lines apart).
+      proximity: 40
+      all:
+        - capability: egress
+        - capability: persist
+        - any:
+            - capability: fetch_exec
+            - capability: execute
+        # The run is the analyser's own reading of the code (a fetched or decoded value reaching
+        # an interpreter, a received value reaching a command), never the words: a package's
+        # long description that quotes code and a minified documentation bundle carry fetch,
+        # eval and a profile path as text (benign gate 2026-11-11: PKG-INFO, redoc.min.js).
+        - any:
+            - rule: AST.PY.FETCH_EXEC
+            - rule: AST.PY.EXECUTE
+            - rule: AST.PY.HIDDEN_FETCH_EXEC
+            - rule: AST.PY.DECODED_DROP_RUN
+            - rule: AST.PY.RECEIVED_RUN
+            - rule: AST.PY.HIDDEN_ACTION
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.DROPPER.DATA_FILE_CODE.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: Code is loaded from a file named as data
+    message: >
+      This file imports or runs a file whose name says it is data -- a sound, an image, a text or
+      a data file -- through a module loader, `exec`, `compile` or `marshal`. Python keeps code in
+      source and compiled files; a loader pointed at a `.wav` or a `.png` is running a payload
+      carried where no reader of the source looks. Graded the same wherever the code runs.
+    remediation: >
+      Do not run this code. Treat the named file as the payload and review what it does.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package that imported a module from a `.wav` it shipped through
+        `spec_from_file_location` and ran it with `exec_module` (static zero-signal group,
+        2026-11-11).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1027/003/
+    match:
+      kind: composite
+      scope: file
+      proximity: 4000
+      any:
+        - rule: AST.PY.CODE_FROM_DATA
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.EXFIL.CONFUSION_BEACON.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: A dependency-confusion package reports the machine it runs on
+    message: >
+      This package's own version is one chosen to outrank a private registry's -- 99.0.0,
+      99999999.0.0, a run of one digit -- and its code puts who and where this machine is into a
+      request. A version nobody releases, on a package that tells its publisher which hosts
+      installed it, is the dependency-confusion probe: a public package named after an internal
+      one, reporting each machine that took it by mistake. Graded the same wherever the code
+      runs.
+    remediation: >
+      Do not install this package. Check whether its name is one of your internal packages, pin
+      your private index first, and treat the machines that installed it as known to its
+      publisher.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package at version 99999999.0.0 under an internal framework's name whose runtime
+        collects the host and domain names for what it sends (static zero-signal group,
+        2026-11-11).
+    evidence_policy: hash_only
+    references:
+      - https://cwe.mitre.org/data/definitions/427.html
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      all:
+        - context: confusion_version
+        - any:
+            - rule: AST.PY.IDENTITY_SENT
+            - rule: FLOW.JS.IDENTITY_SENT
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.EXFIL.DNS_TUNNEL.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: Code sends data out encoded in DNS names
+    message: >
+      This file resolves host names built from encoded data -- base64, base32, hex -- in pieces,
+      a label at a time. The lookups are the channel: each query carries part of the data to the
+      name server of a domain the author controls, past any filter that watches HTTP. Resolving a
+      name is ordinary; resolving names made of encoded data has no use but moving that data out.
+      Graded the same wherever the code runs.
+    remediation: >
+      Do not run this code. Find what it encoded -- tokens, files, the environment -- and treat
+      it as sent.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package that read a Kubernetes service-account token, called the API with it and
+        resolved the base64 of the reply in 60-character labels under its own domain from a
+        thread started at import (group A (a), 2026-11-10); benign 0/1,063.
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1048/003/
+    match:
+      kind: composite
+      scope: file
+      proximity: 4000
+      any:
+        - rule: AST.PY.DNS_TUNNEL
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.PERSIST.BACKDOOR.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Writes a file that lets someone else in, with content the package carries
+    message: >
+      This code writes `authorized_keys`, a sudoers file, `/etc/passwd` or `/etc/shadow`, or an SSH
+      login script, and what it writes is the package's own: a literal, a constant, or a decode of
+      one. A key line the package brings, put into the user's `authorized_keys`, lets whoever holds
+      the key in without a password, whoever calls it. The same write at install or import blocks
+      for any content.
+    remediation: >
+      Do not run this code. Look at the account files of any machine that did: remove the key or the
+      sudoers entry it added, and treat the account as accessed.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package that stripped a public key from a module constant and appended it to
+        ~/.ssh/authorized_keys from a function its initialiser reaches, creating the directory with
+        mode 0700 and setting the file's mode through a helper (graphicsctxr, 2026-11-11).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1098/004/
+    match:
+      kind: composite
+      scope: file
+      any:
+        - rule: AST.PY.BACKDOOR_CARRIED
+        - all:
+            - any:
+                - context: install_entry
+                - context: install_hook
+                - context: import_entry
+            - rule: AST.PY.BACKDOOR_WRITE
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.DROPPER.HIDDEN.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: Code downloads a program and starts it with its window hidden
+    message: >
+      This file downloads a program and starts it with its window hidden -- a STARTUPINFO that
+      hides it, CREATE_NO_WINDOW, DETACHED_PROCESS or a literal creation flag. Installers that
+      fetch a tool run it where the user can see it; hiding the window of a program just downloaded
+      keeps whoever ran the code from noticing that something else is now running. Graded the
+      same whether the code runs on import, as a command, or only when a function is called.
+    remediation: >
+      Do not run this code. Find the program it downloaded and what that program did.
+    provenance:
+      kind: research
+      reference: >
+        A PyPI package whose fetch function downloads an executable to the temp folder and starts
+        it with wShowWindow hidden (group A (d), 2026-11-10); benign 0/1,063.
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1564/003/
+    match:
+      kind: composite
+      scope: file
+      proximity: 4000
+      any:
+        - rule: AST.PY.HIDDEN_FETCH_EXEC
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.INSTALL.FOREIGN_PROGRAM.001
+    version: 1.0.0
+    category: malicious
+    severity: high
+    confidence: high
+    title: Install code starts a desktop application or an identity command
+    message: >
+      The code an install runs starts a desktop application (a calculator, an editor) or a
+      command whose output is who and where the machine is (id, whoami, hostname, uname,
+      ipconfig). Builds start compilers, build systems, git, package managers and interpreters;
+      across 50,010 published packages none started either kind. A window opened at install is
+      proof that the author's code runs on the installer's machine; an identity command is the
+      first step of a reconnaissance callback.
+    remediation: >
+      Do not install this package. If it was installed, review what else its install code ran.
+    provenance:
+      kind: research
+      reference: >
+        Install-time proofs of execution and identity probes in published PyPI packages
+        (setup.py and cmdclass), 2026-11-10; benign census of setup.py programs over 50,010 sdists.
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1033/
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.INSTALL_FOREIGN_PROGRAM
+
   - id: MALWARE.AGENT.HIJACK.001
     version: 1.0.0
     category: malicious

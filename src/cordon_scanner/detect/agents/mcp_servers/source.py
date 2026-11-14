@@ -422,6 +422,7 @@ class McpServerSource:
         try:
             tree = PythonSyntax.parse(text)
         except (SyntaxError, ValueError, RecursionError):
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
             return []
         # Line starts as the parser counts lines (\n, \r\n, \r), not as `splitlines` does.
         offsets = [0, *(m.end() for m in re.finditer(r"\r\n|\r|\n", text))]

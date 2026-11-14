@@ -410,7 +410,8 @@ class PythonDownloads:
     def runs(cls, text: str) -> list[int] | None:
         try:
             tree = PythonSyntax.parse(text)
-        except (SyntaxError, ValueError, RecursionError):
+        except (SyntaxError, ValueError):
+            # S2: covered by SOURCE.UNPARSED at every running file (install closure, import entries, command modules); proven by test_not_python3.py TestPackageSourceThatDoesNotParse
             return None
         flow = cls(tree)
         # Twice: a helper defined below its caller taints on the second pass.
@@ -420,10 +421,9 @@ class PythonDownloads:
 
     @staticmethod
     def _name(node: ast.AST) -> str:
-        try:
-            return ast.unparse(node)
-        except Exception:  # noqa: BLE001
-            return ""
+        # A name too deep to unparse (RecursionError) escapes to OPERATIONAL.DETECTOR.FAILED: an
+        # empty callee would hide the download it names (S2, reviews/release-080).
+        return ast.unparse(node)
 
     def _callee(self, call: ast.Call) -> tuple[str, str]:
         func = call.func

@@ -17,8 +17,14 @@ and the finding is recorded below the gate rather than dropped.
 
 from __future__ import annotations
 
+import ast
 import re
-from typing import Final
+from typing import TYPE_CHECKING, Final
+
+from cordon_scanner.analysis.python.scoped_taint import ScopedTaint
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
@@ -97,12 +103,19 @@ class StoreFlow:
     """The flow test. See the module docstring."""
 
     @staticmethod
-    def reaches(text: str, store_lines: list[int], egress_lines: list[int]) -> bool:
-        """Whether anything read on a store line (1-based) can reach a call on an egress line."""
+    def reaches(
+        text: str, store_lines: list[int], egress_lines: list[int], language: str | None = None
+    ) -> bool:
+        """Whether anything read on a store line (1-based) can reach a call on an egress line.
+        Python is answered by value (`PythonStoreFlow`), where its tree can answer."""
         lines = text.split("\n")
         if not store_lines or not egress_lines:
             return False
         egress_lines = StoreFlow._calls_of_imports(lines, egress_lines)
+        if language == "python":
+            verdict = PythonStoreFlow.reaches(text, store_lines, egress_lines)
+            if verdict is not None:
+                return verdict
         # A call on the line that reads the store, or the line beside it: `cat ~/.aws/credentials |
         # curl -d @- ...`, `requests.post(u, files={"f": open(STORE)})`.
         if any(abs(s - e) <= 1 for s in store_lines for e in egress_lines):
@@ -199,3 +212,178 @@ class StoreFlow:
                 name = found.group("name") or found.group("shell") or found.group("arrowfn")
                 return {name} if name and name not in _KEYWORDS else set()
         return set()
+
+
+class PythonStoreFlow:
+    """`StoreFlow.reaches` for a Python file, by value, on `ScopedTaint` (review 2026-11-10).
+
+    The store's value is what an expression on a store line yields, or what a name imported on
+    one gives (`import browser_cookie3` there, `browser_cookie3.chrome()` anywhere). It is carried
+    by `ScopedTaint` -- assignments, returns, local calls' arguments, with-as, file written and
+    read back by name -- and by the two fills no binding shows: the other plain names a call is
+    handed beside the value (`shutil.copy(src, staged)`), and the receiver of a call that puts it
+    in (`found.append(...)`, `f.write(...)`), with a literal path written then opened again. A
+    flow is the value in the arguments of a call on an egress line. Words in strings and comments
+    are never names.
+
+    None, for the textual test to answer, where the tree cannot: the file does not parse, a store
+    or egress line sits inside a string spanning lines (an embedded script), or no call is on any
+    egress line.
+    """
+
+    #: Methods that put their argument into their receiver.
+    FILLS: Final = frozenset(
+        {"append", "extend", "write", "writelines", "writerow", "writerows", "update", "add",
+         "insert", "put", "setdefault", "set"}
+    )  # fmt: skip
+    #: Rounds of spreading and filling before the answer is taken as it stands.
+    ROUNDS: Final = 8
+
+    @classmethod
+    def reaches(cls, text: str, store_lines: list[int], egress_lines: list[int]) -> bool | None:
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
+        try:
+            # the guarded parse: no source warning reaches the output or, as an error, unparses it
+            tree = PythonSyntax.parse(text)
+        except (SyntaxError, ValueError, RecursionError, MemoryError):
+            # S2: a fallback; the next reader (or SOURCE.UNPARSED for running files) reads it
+            return None
+        inside, docs = cls._string_lines(tree)
+        store = {n for n in store_lines if n not in docs}
+        egress = {n for n in egress_lines if n not in docs}
+        if (store | egress) & inside:
+            return None
+        if not store:
+            return False
+        calls = cls._calls_on(tree, egress)
+        if not calls:
+            return None
+        imported = cls._imported_on(tree, store)
+        taint = ScopedTaint(tree)
+        written: set[str] = set()
+
+        def source(part: ast.AST) -> bool:
+            if isinstance(part, ast.Name):
+                return part.id in imported
+            if isinstance(part, ast.Call) and cls._opens_literal(part) in written:
+                return True
+            return isinstance(part, ast.expr) and getattr(part, "lineno", 0) in store
+
+        def touches(expr: ast.AST) -> bool:
+            stack = [expr]
+            while stack:
+                part = stack.pop()
+                if source(part):
+                    return True
+                verdict = taint.carries(part)
+                if verdict is not None:
+                    if verdict:
+                        return True
+                    continue
+                stack.extend(ast.iter_child_nodes(part))
+            return False
+
+        for _ in range(cls.ROUNDS):
+            taint.spread(touches)
+            filled, literals = cls._filled(tree, touches)
+            grew = taint.mark(filled)
+            if not literals <= written:
+                written |= literals
+                grew = True
+            if not grew:
+                break
+        return any(
+            touches(argument)
+            for call in calls
+            for argument in [*call.args, *(k.value for k in call.keywords)]
+        )
+
+    @staticmethod
+    def _string_lines(tree: ast.AST) -> tuple[set[int], set[int]]:
+        """(lines inside a string spanning lines that is not a docstring, lines of docstrings)."""
+        docs: set[int] = set()
+        for node in ast.walk(tree):
+            body = getattr(node, "body", None)
+            if isinstance(body, list) and body and isinstance(body[0], ast.Expr):
+                value = body[0].value
+                if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                    docs.update(range(value.lineno, (value.end_lineno or value.lineno) + 1))
+        inside: set[int] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.JoinedStr) or (
+                isinstance(node, ast.Constant) and isinstance(node.value, str)
+            ):
+                last = node.end_lineno or node.lineno
+                if last > node.lineno:
+                    inside.update(n for n in range(node.lineno + 1, last + 1) if n not in docs)
+        return inside, docs
+
+    @staticmethod
+    def _calls_on(tree: ast.AST, egress: set[int]) -> list[ast.Call]:
+        """The calls starting on an egress line, or where none starts there, those spanning it."""
+        calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call)]
+        starting = [c for c in calls if c.lineno in egress]
+        started = {c.lineno for c in starting}
+        spanning = [
+            c
+            for c in calls
+            if any(c.lineno < e <= (c.end_lineno or c.lineno) for e in egress - started)
+        ]
+        return starting + spanning
+
+    @staticmethod
+    def _imported_on(tree: ast.AST, store: set[int]) -> set[str]:
+        names: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)) and node.lineno in store:
+                for alias in node.names:
+                    names.add((alias.asname or alias.name).split(".")[0])
+        return names
+
+    @staticmethod
+    def _opens_literal(call: ast.Call) -> str | None:
+        """The literal path of `open("<path>", ...)`, or None."""
+        func = call.func
+        name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", None)
+        if name != "open" or not call.args:
+            return None
+        first = call.args[0]
+        return (
+            first.value
+            if isinstance(first, ast.Constant) and isinstance(first.value, str)
+            else None
+        )
+
+    @classmethod
+    def _filled(
+        cls, tree: ast.AST, touches: Callable[[ast.AST], bool]
+    ) -> tuple[list[ast.Name], set[str]]:
+        """Names a call puts the value into, and literal paths it is written to."""
+        filled: list[ast.Name] = []
+        literals: set[str] = set()
+        opened_as = {
+            item.optional_vars.id: path
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.With, ast.AsyncWith))
+            for item in node.items
+            if isinstance(item.optional_vars, ast.Name)
+            and isinstance(item.context_expr, ast.Call)
+            and (path := cls._opens_literal(item.context_expr)) is not None
+        }
+        for call in (n for n in ast.walk(tree) if isinstance(n, ast.Call)):
+            arguments = [*call.args, *(k.value for k in call.keywords)]
+            if not any(touches(a) for a in arguments):
+                continue
+            filled += [a for a in arguments if isinstance(a, ast.Name)]
+            func = call.func
+            if isinstance(func, ast.Attribute) and func.attr in cls.FILLS:
+                if isinstance(func.value, ast.Name):
+                    filled.append(func.value)
+                    if func.value.id in opened_as:
+                        literals.add(opened_as[func.value.id])
+                elif isinstance(func.value, ast.Call):
+                    path = cls._opens_literal(func.value)
+                    if path is not None:
+                        literals.add(path)
+        return filled, literals

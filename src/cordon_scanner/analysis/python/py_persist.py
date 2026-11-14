@@ -32,12 +32,16 @@ import tokenize
 from typing import ClassVar, Final
 
 from cordon_scanner.analysis.python.py_flow import Label, PythonValueFlow
+from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 
 #: Text any persistence pattern of `CAP.PY.PERSIST.001` contains, case-insensitively: a superset,
 #: so that a line this does not seed is a line that rule cannot match inside a literal either.
 PERSIST_WORD: Final = re.compile(
     r"(?i)bashrc|bash_profile|zshrc|\.profile|crontab|/etc/cron|launch(?:agents|daemons)|systemd"
     r"|systemctl|wantedby|currentversion|sitecustomize|usercustomize|startup"
+    r"|schtasks|\bsc(?:\.exe)?\W{1,8}create|launchctl|login\s+item|__eventfilter|commandlineeventconsumer"
+    r"|activescripteventconsumer|register-wmievent|powershell_profile|windowspowershell"
+    r"|\.config/autostart|x-gnome-autostart|/etc/udev/rules\.d|/lib/udev/rules\.d"
 )
 
 #: A command, folded whole, that only reads what a persistence location holds. Read with
@@ -236,7 +240,7 @@ class PythonPersistence(PythonValueFlow):
         #: stores what it is given. A class with its own `__init__` is a call like any other.
         self.records = {
             node.name
-            for node in ast.walk(tree)
+            for node in PythonSyntax.walked_of(tree, ast.ClassDef)
             if isinstance(node, ast.ClassDef)
             and not any(
                 isinstance(s, ast.FunctionDef | ast.AsyncFunctionDef)
@@ -263,10 +267,23 @@ class PythonPersistence(PythonValueFlow):
     @classmethod
     def written_lines(cls, tree: ast.AST) -> frozenset[int] | None:
         """Lines where a persistence location named by a literal is written; None when the file
-        holds too many such literals to follow."""
+        holds too many such literals to follow. Answered once per tree: the persistence facts, the
+        load-time persistence and the persist-and-run implants all ask it of every file."""
+        found: tuple[frozenset[int] | None] = PythonSyntax.memo(
+            tree, ("py_persist", "written_lines", cls), lambda: (cls._written_lines(tree),)
+        )
+        return found[0]
+
+    @classmethod
+    def _written_lines(cls, tree: ast.AST) -> frozenset[int] | None:
         analysis = cls(tree)
         if not analysis.index():
             return None
+        if not analysis.seeds:
+            # No literal names a persistence location: every value the flow moves is a seed's
+            # (`bind`, `_returned`, `_bind_param` keep only what `taint` found, and `taint` finds
+            # only seeds), so nothing is written and the fixpoint would move nothing.
+            return frozenset()
         analysis.flow()
         # A literal that is itself a whole read-only command (`"crontab -l"`, `"ls /etc/cron.d/"`,
         # from a table run one by one, or saved as the header of the evidence it gave) names the
@@ -292,6 +309,7 @@ class PythonPersistence(PythonValueFlow):
         try:
             tokens = list(tokenize.generate_tokens(io.StringIO(source).readline))
         except (tokenize.TokenError, IndentationError, SyntaxError):
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
             return frozenset()
         # A string, a comment, and the literal text of an f-string (3.12 splits it into pieces).
         kinds = {tokenize.STRING, tokenize.COMMENT, getattr(tokenize, "FSTRING_MIDDLE", -1)}

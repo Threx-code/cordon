@@ -177,7 +177,36 @@ a project integrating with the platform it says it integrates with:
 wrapper, and both were reported as contacting a drop point. What it saves is the
 split-string shape for those three, which nothing in the corpus has produced."""
 
-ALL_HOSTS: Final = WEBHOOK_HOSTS | WEBHOOK_ONLY_HOSTS | PASTE_HOSTS | TUNNEL_HOSTS
+IP_LOGGER_HOSTS: Final = frozenset(
+    {
+        # Grabify: a short link that records the IP address of whoever opens it.
+        "grabify.link",
+        "leancoding.co",
+        "stopify.co",
+        "freegiftcards.co",
+        "joinmy.site",
+        "curiouscat.club",
+        "catsnthings.fun",
+        "catsnthing.com",
+        # IPLogger: the same service under several names.
+        "iplogger.org",
+        "iplogger.com",
+        "iplogger.ru",
+        "iplogger.co",
+        "2no.co",
+        "yip.su",
+        # Blasze and the PS3 pages that front the same link recorder.
+        "blasze.com",
+        "blasze.tk",
+        "ps3cfw.com",
+    }
+)
+"""IP-address logging services: a link whose only purpose is to tell whoever made it the address
+the request came from, and what sent it. They are listed in the vendors' own documentation and in
+public abuse trackers as IP loggers, and a library has no reason to fetch one. They count as
+interaction hosts: a request to one is a request made to report that code ran somewhere."""
+
+ALL_HOSTS: Final = WEBHOOK_HOSTS | WEBHOOK_ONLY_HOSTS | PASTE_HOSTS | TUNNEL_HOSTS | IP_LOGGER_HOSTS
 
 INTERACTION_HOSTS: Final = frozenset(
     {
@@ -202,6 +231,7 @@ INTERACTION_HOSTS: Final = frozenset(
         "bxss.me",
         "interactsh.com",
     }
+    | IP_LOGGER_HOSTS
 )
 """Out-of-band interaction services: a request to one exists to tell whoever minted the subdomain
 that some code ran somewhere, and from where. Tunnels are not here -- developers run ngrok."""
@@ -221,11 +251,35 @@ FREE_HOSTING: Final = frozenset(
         "surge.sh",
         "replit.app",
         "fly.dev",
+        # Free web hosts that hand out a subdomain with no vendor's name on it: the InfinityFree
+        # family (project47 1.0 sent harvested passwords to `tik-tok.rf.gd`), 000webhost,
+        # PythonAnywhere, Replit's older domain.
+        "rf.gd",
+        "epizy.com",
+        "infinityfreeapp.com",
+        "42web.io",
+        "great-site.net",
+        "wuaze.com",
+        "unaux.com",
+        "000webhostapp.com",
+        "pythonanywhere.com",
+        "repl.co",
     }
 )
 """Hosts where anyone gets a subdomain for nothing. Not a destination to flag on its own -- a
 project's site lives there as often as not -- but a download page there carries no vendor's name:
 ClawHavoc's skills send the reader to `openclawcli.vercel.app` for the "OpenClaw CLI"."""
+
+
+PLATFORM_BRANDS: Final = frozenset(
+    {"tiktok", "facebook", "instagram", "whatsapp", "messenger", "twitter", "snapchat", "discord",
+     "telegram", "google", "gmail", "youtube", "microsoft", "outlook", "office365", "hotmail", "apple",
+     "icloud", "paypal", "netflix", "amazon", "steam", "roblox", "binance", "coinbase", "metamask",
+     "github", "gitlab", "linkedin", "yahoo", "spotify", "epicgames", "freefire", "pubg"}
+)  # fmt: skip
+"""Login platforms whose name a credential collector wears on a free subdomain: `tik-tok.rf.gd`
+(project47 1.0). A vendor's own backend on a free host names the vendor, not someone else's
+login page."""
 
 
 class Destinations:
@@ -434,6 +488,7 @@ __all__ = [
     "ALL_HOSTS",
     "FREE_HOSTING",
     "PASTE_HOSTS",
+    "PLATFORM_BRANDS",
     "PREFILTER",
     "TUNNEL_HOSTS",
     "WEBHOOK_HOSTS",

@@ -76,6 +76,21 @@ class PythonSyntax:
         return (node.lineno, node.col_offset, node.end_lineno, node.end_col_offset)
 
     @staticmethod
+    def reversed_slice(node: ast.AST) -> bool:
+        """`x[::-1]`: the whole sequence, backwards."""
+        if not (isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Slice)):
+            return False
+        step = node.slice.step
+        return (
+            node.slice.lower is None
+            and node.slice.upper is None
+            and isinstance(step, ast.UnaryOp)
+            and isinstance(step.op, ast.USub)
+            and isinstance(step.operand, ast.Constant)
+            and step.operand.value == 1
+        )
+
+    @staticmethod
     def within(node: ast.AST, *types: type) -> list[Any]:
         """The nodes of `types` in `node`'s subtree, `node` included -- what filtering
         `ast.walk(node)` gives, in depth-first rather than breadth-first order.
@@ -194,6 +209,60 @@ class PythonSyntax:
             return index.order
         walked: list[ast.AST] = PythonSyntax.memo(tree, "nodes", lambda: list(ast.walk(tree)))
         return walked
+
+    @staticmethod
+    def walked(tree: ast.AST) -> list[ast.AST]:
+        """`list(ast.walk(tree))`, the same nodes in the same (breadth-first) order, computed once per
+        tree: for the many readers of one tree that each walked all of it (the implant analysers,
+        about fifteen full walks of each file -- litellm 1.88.0rc2, 0.8.0). A reader iterates the
+        list and must not change it. `nodes` is this list except at the root of an indexed tree,
+        whose `nodes` are depth-first; there it is kept beside them in the tree's index."""
+        place: tuple[Any, int, int] | None = tree.__dict__.get("_cordon_place")
+        if place is not None and place[1] == 0 and place[0]() is not None:
+            found: list[ast.AST] = PythonSyntax.memo(tree, "walked", lambda: list(ast.walk(tree)))
+            return found
+        return PythonSyntax.nodes(tree)
+
+    #: The deprecated constant classes, whose `isinstance` is by value, not by type: a reader that
+    #: asks for one is given `walked` filtered by `isinstance` itself.
+    _BY_VALUE: ClassVar[frozenset[str]] = frozenset(
+        {"Num", "Str", "Bytes", "NameConstant", "Ellipsis"}
+    )
+
+    @staticmethod
+    def walked_of(tree: ast.AST, *types: type) -> list[Any]:
+        """`[n for n in walked(tree) if isinstance(n, types)]`, the same nodes in the same order, made
+        once per tree and set of types from one table of each node type's places in the walk: a reader
+        that wants only calls, or only functions, reads those, not every node of the file."""
+
+        def compute() -> list[Any]:
+            walk = PythonSyntax.walked(tree)
+            if any(t.__module__ == "ast" and t.__name__ in PythonSyntax._BY_VALUE for t in types):
+                return [node for node in walk if isinstance(node, types)]
+            places: dict[type, list[int]] = PythonSyntax.memo(
+                tree, "walked_places", lambda: PythonSyntax._places(walk)
+            )
+            kinds = [kind for kind in places if issubclass(kind, types)]
+            if len(kinds) == 1:
+                return [walk[p] for p in places[kinds[0]]]
+            return [walk[p] for p in sorted(p for kind in kinds for p in places[kind])]
+
+        found: list[Any] = PythonSyntax.memo(tree, ("walked_of", types), compute)
+        return found
+
+    @staticmethod
+    def _places(walk: list[ast.AST]) -> dict[type, list[int]]:
+        places: dict[type, list[int]] = {}
+        for place, node in enumerate(walk):
+            places.setdefault(type(node), []).append(place)
+        return places
+
+    @staticmethod
+    def forget(tree: ast.AST) -> None:
+        """Drop what `memo` kept on an unindexed tree's root (`walked`, `nodes`): a list of a tree's
+        nodes held by its root is a cycle, so a reader that lets the tree go clears it first and the
+        tree is freed by reference counts (`FileSummaries`: one file's tree at a time)."""
+        tree.__dict__.pop("_cordon_memo", None)
 
     @staticmethod
     def memo(node: ast.AST, key: object, compute: Callable[[], Any]) -> Any:

@@ -106,6 +106,7 @@ class SourceSpans:
         try:
             tree = PythonSyntax.shared(text)
         except (SyntaxError, ValueError, RecursionError):
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
             return ()
 
         encoded = text.encode("utf-8", errors="surrogatepass")

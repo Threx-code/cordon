@@ -110,6 +110,17 @@ class FeatureSchema:
             "fs1-ea0fb02ccf3bb099",
             "tests/unit/engine/isolation/test_analysis_facts.py::TestTheParentReadsTheWorkersFacts",
         ),
+        # S2 (c4dc1480): `ReachedFlows.facts` no longer turns a raising `JsFlow.flows` into no
+        # flows; the raise escapes to a recorder that blocks. A value changes only where the reader
+        # raised. Identity: test_silent_drops.py::TestTheFlowFactsAreUnchanged (every corpus
+        # JavaScript file reads without a raise). Rows A/B, 10 Nov: 1,055 PyPI units (ben600 + F472)
+        # on d1b75222 and 739d751b; 0 differences in any `*_flow_*` feature. The 22 units that differ
+        # do so in rule and unit counts only: C1's cleared findings, and Python 2 readings now on
+        # the running set (cordon-ef scratchpad, rows /out/security/s2-probe/).
+        "fs1-3ab72dccd73cae64": (
+            "fs1-ea0fb02ccf3bb099",
+            "tests/unit/detect/test_silent_drops.py::TestTheFlowFactsAreUnchanged",
+        ),
     }
 
     @staticmethod

@@ -36,8 +36,10 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import io
 import json
-from collections import defaultdict
+import tokenize
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import ClassVar
 
@@ -775,3 +777,108 @@ class TestDesignRules:
                             ) and "NotImplementedError" not in ast.unparse(original):
                                 found.append(f"{module}:{name}.{method.name}")
         assert not found, "an override refuses what its base does:\n" + "\n".join(found)
+
+
+# S2 silent drops. S2: no new silent drop in detect/ or analysis/ (reviews/release-080/S2-SILENT-DROPS.md).
+#
+# A handler that catches `Exception`, `BaseException`, a bare `except`, `RecursionError` or
+# `SyntaxError` and answers empty turns a crafted input's crash into a clean pass. Every such handler
+# does one of three things:
+# - re-raises;
+# - records the gap (a call naming gap, incomplete or an operational finding);
+# - carries `# S2: <the reader that covers it, or why it cannot hide content>` in its body.
+# The handlers that did none of these on 2026-11-10 are listed in silent_drop_inventory.json. The list
+# may only shrink: a new one fails here, and so does a listed one that has been fixed but not removed.
+SILENT_DROP_SRC = ROOT / "src" / "cordon_scanner"
+SILENT_DROP_INVENTORY = ROOT / "tests" / "unit" / "repository" / "silent_drop_inventory.json"
+
+
+class SilentDropRule:
+    """The rule's reading of a handler."""
+
+    CAUGHT = frozenset({"Exception", "BaseException", "RecursionError", "SyntaxError"})
+    RECORDS = ("gap", "incomplete", "operational", "unfinished", "finding")
+
+    @staticmethod
+    def caught(handler: ast.ExceptHandler) -> list[str]:
+        if handler.type is None:
+            return ["<bare>"]
+        parts = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
+        names = [
+            p.id if isinstance(p, ast.Name) else p.attr if isinstance(p, ast.Attribute) else ""
+            for p in parts
+        ]
+        return sorted(n for n in names if n in SilentDropRule.CAUGHT)
+
+    @staticmethod
+    def answered(handler: ast.ExceptHandler, comments: dict[int, str]) -> bool:
+        nodes = [n for s in handler.body for n in ast.walk(s)]
+        if any(isinstance(n, ast.Raise) for n in nodes):
+            return True
+        if any(
+            isinstance(n, ast.Call)
+            and any(w in ast.unparse(n.func).lower() for w in SilentDropRule.RECORDS)
+            for n in nodes
+        ):
+            return True
+        end = handler.end_lineno or handler.lineno
+        return any("S2:" in comments.get(line, "") for line in range(handler.lineno, end + 1))
+
+    @staticmethod
+    def comments(text: str) -> dict[int, str]:
+        out: dict[int, str] = {}
+        for tok in tokenize.generate_tokens(io.StringIO(text).readline):
+            if tok.type == tokenize.COMMENT:
+                out[tok.start[0]] = tok.string
+        return out
+
+    @staticmethod
+    def silent() -> Counter[str]:
+        """`path::function::caught` for every unanswered handler, counted."""
+        found: Counter[str] = Counter()
+        for folder in ("detect", "analysis"):
+            for path in sorted((SILENT_DROP_SRC / folder).rglob("*.py")):
+                text = path.read_text(encoding="utf-8")
+                tree = ast.parse(text)
+                comments = SilentDropRule.comments(text)
+                owner = SilentDropRule.owners(tree)
+                for node in ast.walk(tree):
+                    if not isinstance(node, ast.ExceptHandler):
+                        continue
+                    caught = SilentDropRule.caught(node)
+                    if caught and not SilentDropRule.answered(node, comments):
+                        place = f"{path.relative_to(SILENT_DROP_SRC).as_posix()}::{owner.get(id(node), '<module>')}"
+                        found[f"{place}::{'|'.join(caught)}"] += 1
+        return found
+
+    @staticmethod
+    def owners(tree: ast.AST) -> dict[int, str]:
+        """Each node's nearest enclosing function's name."""
+        out: dict[int, str] = {}
+        stack: list[tuple[ast.AST, str]] = [(tree, "<module>")]
+        while stack:
+            node, name = stack.pop()
+            for child in ast.iter_child_nodes(node):
+                inner = (
+                    child.name
+                    if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    else name
+                )
+                out[id(child)] = inner
+                stack.append((child, inner))
+        return out
+
+
+class TestNoSilentDrop:
+    def test_no_new_silent_handler(self) -> None:
+        listed = Counter(json.loads(SILENT_DROP_INVENTORY.read_text(encoding="utf-8")))
+        new = SilentDropRule.silent() - listed
+        assert not new, (
+            "a handler swallows a crash in detect/ or analysis/: re-raise, record the gap, or say "
+            f"`# S2: <reason>` in its body (reviews/release-080/S2-SILENT-DROPS.md): {sorted(new)}"
+        )
+
+    def test_the_inventory_only_shrinks(self) -> None:
+        listed = Counter(json.loads(SILENT_DROP_INVENTORY.read_text(encoding="utf-8")))
+        fixed = listed - SilentDropRule.silent()
+        assert not fixed, f"fixed: remove these from silent_drop_inventory.json: {sorted(fixed)}"

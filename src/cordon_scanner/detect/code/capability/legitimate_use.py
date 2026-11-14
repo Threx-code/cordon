@@ -197,6 +197,7 @@ class LegitimateUse:
         try:
             tree = PythonSyntax.shared(content.text)
         except (SyntaxError, ValueError, RecursionError):
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
             return False
 
         parents: dict[int, ast.AST] = {}

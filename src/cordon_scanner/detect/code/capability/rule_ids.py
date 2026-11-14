@@ -21,6 +21,24 @@ class CompositeRuleIds:
 
     PERSIST_RULE = "MALWARE.INSTALL.PERSIST.001"
 
+    #: Composites graded as code that runs unasked when a line runs at import of a published Python
+    #: package (`ScanContext.import_reaches`): admitted by their measured pair on M3 half A against
+    #: the benign work half (reviews/pypi-98/10). Not INSTALL.PERSIST (1 malware for 2 benign: celery
+    #: beat and cron tools schedule by design) nor the model-loading rules (no malware, 2 benign).
+    IMPORT_GRADED: ClassVar[frozenset[str]] = frozenset(
+        {
+            "SUSPECT.DECODE_CHAIN.001",
+            "SUSPECT.DECODE_EXEC.001",
+            "MALWARE.DROPPER.001",
+            "SUSPECT.DROPPER.001",
+            "MALWARE.EXFIL.001",
+            "MALWARE.EXFIL.BEACON.001",
+            "SUSPECT.EXFIL.BEACON.001",
+            "MALWARE.EXFIL.INSTALL_CALLBACK.001",
+            "SUSPECT.EXFIL.CREDENTIAL_STORE.001",
+        }
+    )
+
     CALLBACK_RULE = "MALWARE.EXFIL.INSTALL_CALLBACK.001"
 
     EXFIL_RULES = frozenset({"SUSPECT.EXFIL.001", "MALWARE.EXFIL.001"})

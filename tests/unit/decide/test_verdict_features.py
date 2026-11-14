@@ -301,12 +301,13 @@ class TestTheShippedVerdict:
         assert summary["score"] < summary["block"]
         assert graded == findings
 
-    def test_an_unrecognised_package_answers_to_the_strictest_line(self) -> None:
+    def test_an_unrecognised_package_answers_to_the_strictest_line_and_is_add_only(self) -> None:
         findings = [VerdictKit.finding("SUSPECT.X.001", Severity.HIGH)]
         graded, summary = VerdictKit.decide(findings, VerdictKit.model(), layout="src/")
         assert summary["area"] == Verdict.FALLBACK
         assert summary["block"] == 0.95
-        assert graded[0].severity == Severity.MEDIUM
+        # S6: only npm may lift (`Verdict.LIFT_AREAS_ALLOWED`), whatever the model lists
+        assert graded == findings
 
     def test_a_model_judges_only_the_ecosystems_in_its_scope(self) -> None:
         findings = [VerdictKit.finding("SUSPECT.X.001", Severity.HIGH)]

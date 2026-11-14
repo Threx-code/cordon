@@ -27,7 +27,9 @@ from cordon_scanner.foundation.files.windows import (
 from support import requires_forked_workers
 
 # Assembled at run time, so this file does not itself carry the shape it tests for.
-TOKEN = 'const t = "' + "ghp" + "_" + "9eU3aG0cF5dJ1sH6pY4nW7kR2bT9vX3mL8qZ"[::-1] + '";\n'
+# A step held in a name: the scanner folds a literal reversal, which would rebuild the token.
+_BACKWARDS = -1
+TOKEN = 'const t = "' + "ghp" + "_" + "9eU3aG0cF5dJ1sH6pY4nW7kR2bT9vX3mL8qZ"[::_BACKWARDS] + '";\n'
 FILLER = "function add(a, b) { return a + b; }\n"
 
 

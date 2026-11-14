@@ -67,6 +67,30 @@ _ARCHIVE_PASSWORD: Final = re.compile(
     r"(?i)\b(?:archive\s+|zip\s+|file\s+)?pass(?:word|code)?\b[*_`\s]{0,6}(?:[:=]|is\b)"
 )
 
+#: The password withheld instead of printed: "ask the publisher for the password". A password-protected
+#: archive whose password only its seller will give is how a payload keeps scanners out of the archive.
+_PASSWORD_FROM_PUBLISHER: Final = re.compile(
+    r"(?i)\b(?:ask|contact|message|request|email|dm|obtain|get)\b[^\n]{0,40}?"
+    r"\b(?:publisher|author|developer|vendor|seller|uploader|maintainer)\b[^\n]{0,40}?"
+    r"\b(?:pass(?:word|code)|passphrase|unlock\s+code)\b"
+    r"|\b(?:pass(?:word|code)|passphrase|unlock\s+code)\b[^\n]{0,80}?"
+    r"\b(?:ask|contact|message|request|obtain|get|from)\b[^\n]{0,40}?"
+    r"\b(?:the\s+)?(?:publisher|author|developer|vendor|seller|uploader|maintainer)\b"
+)
+
+#: The same, across a line break: prose wraps between "start" and the file it names.
+_OPEN_EXECUTABLE_WRAPPED: Final = re.compile(
+    r"(?i)\b(?:open|run|execute|launch|start|double[- ]?click)\b[\s`'\"*(]{1,6}"
+    r"[\w./\\-]{1,100}\.(?:exe|app|dmg|pkg|msi|scr|command|bat)\b"
+)
+
+#: A warning that the program is not trusted by the operating system, written in the instructions that
+#: have the reader run it anyway.
+_TRUST_WARNING: Final = re.compile(
+    r"(?i)\b(?:smartscreen|gatekeeper|unidentified\s+developer|unknown\s+publisher|"
+    r"not\s+(?:code[- ]?)?signed|unsigned|no\s+(?:code[- ]?signing|signature))\b"
+)
+
 _PAYLOAD_NAME: Final = re.compile(r"(?i)\b[\w.-]{1,80}\.(?:zip|7z|rar|dmg|pkg|exe|msi|scr|app)\b")
 
 _EXTRACT_VERB: Final = re.compile(r"(?i)\b(?:extract|unzip|unpack|decompress|unarchive)\w*\b")
@@ -248,6 +272,30 @@ class InstructionText:
                 _PAYLOAD_NAME.search(window)
                 and _EXTRACT_VERB.search(window)
                 and _OPEN_EXECUTABLE.search(window)
+            ):
+                continue
+            found = re.compile(r"[^\n]+").match(text, offsets[index])
+            if found is not None and not (
+                InstructionText._quoted(text, found) or InstructionText._forbidden(text, found)
+            ):
+                return found
+        return InstructionText._withheld_password(text, lines, offsets)
+
+    @staticmethod
+    def _withheld_password(text: str, lines: list[str], offsets: list[int]) -> re.Match[str] | None:
+        """The dropper whose password is not given: the reader is told to get it from the publisher,
+        and within ten lines an archive or executable is named, extracted and run, and the program
+        is said to be unsigned or untrusted by the system. Two signs of the shape beside the
+        download-and-run: either alone is a vendor's installer."""
+        for index, line in enumerate(lines):
+            if _PASSWORD_FROM_PUBLISHER.search(line) is None:
+                continue
+            window = "".join(lines[max(0, index - 10) : index + 11])
+            if not (
+                _PAYLOAD_NAME.search(window)
+                and _EXTRACT_VERB.search(window)
+                and (_OPEN_EXECUTABLE.search(window) or _OPEN_EXECUTABLE_WRAPPED.search(window))
+                and _TRUST_WARNING.search(window)
             ):
                 continue
             found = re.compile(r"[^\n]+").match(text, offsets[index])

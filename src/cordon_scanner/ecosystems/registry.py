@@ -200,6 +200,15 @@ class EcosystemRegistry:
     The instances are stateless, so one shared tuple serves every scan.
     """
 
+    #: Registries whose installer runs the lifecycle scripts of an npm tree its archive ships, and
+    #: through which an agent skill may be distributed. pip, Maven and the rest install neither
+    #: where it would run.
+    BUNDLED_SCRIPTS: ClassVar[frozenset[str]] = frozenset({"npm"})
+
+    @staticmethod
+    def runs_bundled_scripts(ecosystem: str) -> bool:
+        return ecosystem in EcosystemRegistry.BUNDLED_SCRIPTS
+
     ECOSYSTEMS: ClassVar[tuple[Ecosystem, ...]] = (
         NpmEcosystem(),
         PypiEcosystem(),
@@ -329,6 +338,12 @@ class RegistryPublishing:
         ecosystem: str, members: Mapping[str, str], manifest: Mapping[str, Any], with_bin: bool
     ) -> set[str]:
         return RegistryFacts._of(ecosystem).library_entries(members, manifest, with_bin)
+
+    @staticmethod
+    def import_modules(ecosystem: str, members: Mapping[str, str]) -> set[str]:
+        """The members a consumer imports as the package, where the ecosystem says (PyPI); none else."""
+        method = getattr(RegistryFacts._of(ecosystem), "import_modules", None)
+        return set(method(members)) if callable(method) else set()
 
     @staticmethod
     def published_repository(ecosystem: str, manifest: Mapping[str, Any]) -> str:

@@ -8,21 +8,27 @@ not accusations; the composite reasoning in the detector is what combines them."
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.python.pyast import PythonSource
 from cordon_scanner.analysis.shared import embedded
 from cordon_scanner.analysis.shared.source_paths import SourcePaths
+from cordon_scanner.analysis.shared.text_gate import TextGate
 from cordon_scanner.detect.base import (
     FileUnit,
     RuleSelector,
     ScanContext,
 )
 from cordon_scanner.detect.code.capability.build_output import BuildOutput
+from cordon_scanner.detect.code.capability.fact_ids import PythonFactIds
+from cordon_scanner.detect.code.capability.hidden_destination import HiddenDestination
 from cordon_scanner.detect.code.capability.hits import CapabilityHit
+from cordon_scanner.detect.code.capability.install_programs import InstallPrograms
 from cordon_scanner.detect.code.capability.javascript import JavaScriptCapabilities
 from cordon_scanner.detect.code.capability.memo import CapabilityMemo
+from cordon_scanner.detect.code.capability.startup_hooks import StartupHooks
 from cordon_scanner.detect.code.capability.text_position import TextPosition
 from cordon_scanner.detect.secrets.secrets import SourceSpans
 from cordon_scanner.foundation.capabilities import Capability, MatchKind
@@ -75,12 +81,13 @@ class Labelling:
         # BigQuery extension's 480-line bundle).
         if (
             len(text) <= JavaScriptCapabilities.JS_EVAL_MAX_BYTES
-            and JavaScriptCapabilities.JS_EVAL_MARKERS.search(text)
+            and TextGate.may_hold(JavaScriptCapabilities.JS_EVAL_MARKERS, text, language)
             and not BuildOutput.bundled(content)
         ):
             try:
                 folded, decoded_lines = JsEval.resolve_with_decodes(folded)
-            except (IndexError, KeyError, ValueError, TypeError, RecursionError):
+            except (IndexError, KeyError, ValueError, TypeError):
+                # S2: too deep to read is not empty: escapes to OPERATIONAL.DETECTOR.FAILED, a gap
                 # The evaluator reads hostile, malformed and unusual code. If it ever trips on a
                 # file, the file is read as written -- every other rule still applies -- rather
                 # than the scan failing.
@@ -452,49 +459,54 @@ class Labelling:
             else content.text
         )
         resolved = PythonAnalyzer.analyse(
-            source, follow_literals=not SourcePaths.is_test_material_here(content.path, ctx)
+            source,
+            follow_literals=not SourcePaths.is_test_material_here(content.path, ctx),
+            imported_clients=(ctx.python_imported_clients or {}).get(content.path),
+            imported_runners=(ctx.python_imported_runners or {}).get(content.path),
+            carried_calls=(ctx.python_carried_calls or {}).get(content.path),
+            imported_collectors=(ctx.python_imported_collectors or {}).get(content.path),
         )
+        hits = [
+            CapabilityHit(
+                capability=hit.capability,
+                rule_id=PythonFactIds.rule_id(hit.detail, hit.capability),
+                byte_start=min(
+                    cls._span_of_line(content, hit.line)[0] + hit.column,
+                    cls._span_of_line(content, hit.line)[1],
+                ),
+                byte_end=cls._span_of_line(content, hit.line)[1],
+                line=hit.line,
+                fixed=hit.fixed_command,
+                resolved=True,
+            )
+            for hit in resolved
+        ]
+        # What the machine holds sent to a destination the code hides -- a URL decoded, reversed
+        # or built from character codes (` dest=decoded`) -- is a second fact beside the send:
+        # nobody's own API is a host the code will not write down (`HiddenDestination`).
+        facts = list(zip(hits, resolved, strict=True))
+        hits += [
+            dataclasses.replace(labelled, rule_id=HiddenDestination.FACT)
+            for labelled, hit in facts
+            if HiddenDestination.applies(hit.detail)
+        ]
+        # What arrives on a channel and runs carries its channel with it, as the JavaScript and Go
+        # twins do (`CAP.JS.RECEIVED_RUN`): the receive is the network side of the same act, so a
+        # bot update or a spreadsheet cell that becomes a command satisfies egress + fetch_exec
+        # even where the receive is not a request primitive.
+        hits += [
+            dataclasses.replace(labelled, capability=Capability.EGRESS)
+            for labelled, _ in facts
+            if labelled.rule_id == "AST.PY.RECEIVED_RUN"
+        ]
+        # A desktop application or an identity command started where the install reaches. The
+        # command being written out whole is the evidence here, not an excuse (`fixed`).
+        hits += InstallPrograms.hits(facts, content.path, ctx, lambda: cls._loaded(content.text))
+        # What runs in every interpreter once installed (`StartupHooks`): the network reached from
+        # a `.pth`, and a `.pth` line doing more than set up imports.
+        hits += StartupHooks.hits(hits, content, ctx, cls._span_of_line)
         return (
-            [
-                CapabilityHit(
-                    capability=hit.capability,
-                    rule_id=(
-                        "AST.PY.IDENTITY_SENT"
-                        if hit.detail.startswith("identity sent")
-                        else "AST.PY.ENVIRONMENT_SENT"
-                        if hit.detail.startswith("environment sent")
-                        else "AST.PY.SECRET_SENT"
-                        if hit.detail.startswith("secret sent")
-                        # A spawn, request or credential read written inside a string the file
-                        # then executes. See `MALWARE.INSTALL.HIDDEN_ACTION.001`.
-                        else "AST.PY.UNSAFE_MODEL_LOAD"
-                        if hit.detail.startswith("unsafe model load")
-                        else "AST.PY.REMOTE_MODEL_CODE"
-                        if hit.detail.startswith("remote model code")
-                        else "AST.PY.UNSAFE_MODEL_OPTION"
-                        if hit.detail.startswith("unsafe model option")
-                        else "AST.PY.HIDDEN_ACTION"
-                        if hit.detail.startswith("executed literal")
-                        and hit.capability
-                        in (
-                            Capability.SPAWN,
-                            Capability.EGRESS,
-                            Capability.FETCH_EXEC,
-                            Capability.CREDENTIAL,
-                        )
-                        else f"AST.PY.{hit.capability.name}"
-                    ),
-                    byte_start=min(
-                        cls._span_of_line(content, hit.line)[0] + hit.column,
-                        cls._span_of_line(content, hit.line)[1],
-                    ),
-                    byte_end=cls._span_of_line(content, hit.line)[1],
-                    line=hit.line,
-                    fixed=hit.fixed_command,
-                    resolved=True,
-                )
-                for hit in resolved
-            ],
+            hits,
             [embedded.Command(text=hit.command, line=hit.line) for hit in resolved if hit.command],
         )
 
@@ -540,6 +552,18 @@ class Labelling:
                 )
             )
         return hits
+
+    @staticmethod
+    def _loaded(text: str) -> frozenset[int]:
+        """The lines that run when the module is imported (`PersistAtLoad.load_time_lines`)."""
+        from cordon_scanner.analysis.python.flows.implants.persist_at_load import PersistAtLoad
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
+        try:
+            return PersistAtLoad.load_time_lines(PythonSyntax.shared(text))
+        except (SyntaxError, ValueError):
+            # S2: covered by SOURCE.UNPARSED at every running file; a file that does not parse has no load-time lines
+            return frozenset()
 
     @staticmethod
     def _span_of_line(content: FileContent, line: int) -> tuple[int, int]:

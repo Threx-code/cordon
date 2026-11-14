@@ -11,6 +11,9 @@ import posixpath
 import re
 from typing import TYPE_CHECKING
 
+from cordon_scanner.analysis.python.flows.hidden_start import HiddenStart
+from cordon_scanner.analysis.python.flows.loop_reads import LoopReads
+from cordon_scanner.analysis.python.flows.staged.literal_program import LiteralProgram
 from cordon_scanner.analysis.python.pyfacts import (
     PRIMITIVES,
     PythonFacts,
@@ -36,7 +39,9 @@ from cordon_scanner.analysis.python.vocabulary import (
 from cordon_scanner.foundation.capabilities import Capability
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
+
+    from cordon_scanner.analysis.python.scoped_taint import ScopedTaint
 
 
 from cordon_scanner.analysis.python.analyzer_core import AnalyzerCore
@@ -157,6 +162,7 @@ class ExecutionFlows(AnalyzerCore):
                         item.optional_vars, ast.Name
                     ):
                         fetched.add(item.optional_vars.id)
+        LoopReads.fetched_through(tree, fetched, self._egress_call)
         # A download run as a command: `curl -o X`, `wget -O X`, `Invoke-WebRequest -OutFile X`.
         # And a command's captured output kept for later: `r = run(["curl", URL])`.
         fetched_output: set[str] = set()
@@ -202,21 +208,32 @@ class ExecutionFlows(AnalyzerCore):
             if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.SPAWN:
                 continue
             call = resolved[1]
+            # A start that hides its window adds ` hidden=1` (`HiddenStart`, group D).
+            hidden = " hidden=1" if HiddenStart.of(tree, call) else ""
             if call.args and self._runs_one_of(call.args[0], downloaded):
-                self._record(Capability.FETCH_EXEC, node, f"{resolved[0]} runs a downloaded file")
+                self._record(
+                    Capability.FETCH_EXEC, node, f"{resolved[0]} runs a downloaded file{hidden}"
+                )
             elif call.args and executable_download and self._starts_an_executable(call):
                 # A download saved as `main.exe`, moved, then started under its new name: the
                 # rename breaks the link by path, not the shape -- a fetched executable, run.
                 self._record(
-                    Capability.FETCH_EXEC, node, f"{resolved[0]} runs a downloaded program"
+                    Capability.FETCH_EXEC, node, f"{resolved[0]} runs a downloaded program{hidden}"
                 )
             elif call.args and self._evaluates_output(call.args[0], fetched_output):
                 self._record(Capability.FETCH_EXEC, node, f"{resolved[0]} evaluates fetched text")
 
     def _run_on_downloaded(
-        self, tree: ast.AST, fetched: set[str], writers: dict[str, str], downloaded: set[str]
+        self,
+        tree: ast.AST,
+        fetched: set[str],
+        writers: dict[str, str],
+        downloaded: set[str],
+        sourced: Callable[[ast.AST], bool] | None = None,
     ) -> None:
-        """A process started on a path a download wrote, directly or through a name bound to it."""
+        """A process started on a path a download wrote, directly or through a name bound to it.
+        `sourced`: a call that yields the content itself (`write_bytes(zlib.decompress(x))`), beside
+        a request's."""
         for node in PythonSyntax.of(tree, ast.Call):
             # `with open(P, "wb") as out: out.write(response.read())` and
             # `open(P, "wb").write(r.content)`, where `response` or `r` came from a request.
@@ -228,7 +245,9 @@ class ExecutionFlows(AnalyzerCore):
             ):
                 continue
             from_network = any(
-                (isinstance(part, ast.Name) and part.id in fetched) or self._egress_call(part)
+                (isinstance(part, ast.Name) and part.id in fetched)
+                or self._egress_call(part)
+                or (sourced is not None and sourced(part))
                 for part in PythonSyntax.within(node.args[0], ast.Name, ast.Call)
             )
             if not from_network:
@@ -326,26 +345,6 @@ class ExecutionFlows(AnalyzerCore):
                         f"{node.func.id} runs the file a helper downloaded",
                     )
 
-    def _helper_runners(
-        self, functions: list[ast.FunctionDef | ast.AsyncFunctionDef]
-    ) -> dict[str, int]:
-        """Each helper that runs a path its caller hands it: name -> the parameter it starts."""
-        runners: dict[str, int] = {}
-        for function in functions:
-            names = PythonFacts.parameter_names(function)
-            for node in PythonSyntax.of(function, ast.Call):
-                resolved = self._resolve_callee(node)
-                if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.SPAWN:
-                    continue
-                call = resolved[1]
-                if not call.args:
-                    continue
-                used = {x.id for x in PythonSyntax.within(call.args[0], ast.Name)}
-                for index, name in enumerate(names):
-                    if name in used:
-                        runners[function.name] = index
-        return runners
-
     def _helper_downloads(
         self,
         functions: list[ast.FunctionDef | ast.AsyncFunctionDef],
@@ -441,48 +440,16 @@ class ExecutionFlows(AnalyzerCore):
         multiprocessing pipe's `recv()` takes none and returns objects from a local process.
         """
 
-        def received(node: ast.AST) -> bool:
-            """The value IS what arrived, not a command built around it: an f-string, `+`, `%`
-            or `.format` that wraps a fetched value (`f"git checkout {sha}"`) passes it as data."""
-            if any(
-                isinstance(part, ast.JoinedStr)
-                or (isinstance(part, ast.BinOp) and isinstance(part.op, ast.Add | ast.Mod))
-                or (isinstance(part, ast.Attribute) and part.attr == "format")
-                for part in PythonSyntax.within(node, ast.JoinedStr, ast.BinOp, ast.Attribute)
-            ):
-                return False
-            for part in PythonSyntax.within(node, ast.Name, ast.Call):
-                if isinstance(part, ast.Name) and part.id in tainted:
-                    return True
-                if self._egress_call(part):
-                    return True
-                if (
-                    isinstance(part, ast.Call)
-                    and isinstance(part.func, ast.Attribute)
-                    and part.func.attr in ("recv", "recvfrom")
-                    and part.args
-                ):
-                    return True
-            return False
+        # Every binding form (`with ... as`, `for`, `:=` as well as assignment), each name in its
+        # own scope, through local returns, calls and downloaded files: see `ScopedTaint`.
+        from cordon_scanner.analysis.python.scoped_taint import ScopedTaint
 
-        tainted: set[str] = set()
-        assignments = [
-            node
-            for node in PythonSyntax.nodes(tree)
-            if isinstance(node, ast.Assign | ast.AnnAssign) and node.value is not None
-        ]
-        for _ in range(4):
-            before = len(tainted)
-            for assignment in assignments:
-                targets = (
-                    assignment.targets
-                    if isinstance(assignment, ast.Assign)
-                    else [assignment.target]
-                )
-                if assignment.value is not None and received(assignment.value):
-                    tainted.update(t.id for t in targets if isinstance(t, ast.Name))
-            if len(tainted) == before:
-                break
+        tainted = ScopedTaint(tree)
+        tainted.spread(lambda value: self._received_by(tainted, value))
+
+        def received(node: ast.AST) -> bool:
+            return self._received_by(tainted, node)
+
         for node in PythonSyntax.of(tree, ast.Call):
             if not node.args:
                 continue
@@ -499,7 +466,7 @@ class ExecutionFlows(AnalyzerCore):
                     node,
                     f"{resolved[0]} runs code received over the network",
                 )
-            elif capability is Capability.SPAWN and not isinstance(command, ast.List | ast.Tuple):
+            elif capability is Capability.SPAWN and not tainted.is_argument_list(command):
                 # A command string from the network, not an argument list naming a program: `run(
                 # ["git", "clone", url])` passes a fetched URL as data.
                 self._record(
@@ -507,6 +474,49 @@ class ExecutionFlows(AnalyzerCore):
                     node,
                     f"{resolved[0]} runs a command received over the network",
                 )
+
+    @staticmethod
+    def _wraps(node: ast.AST) -> bool:
+        """An f-string, `+`, `%` or `.format`: a value built around what is inside it."""
+        return (
+            isinstance(node, ast.JoinedStr)
+            or (isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add | ast.Mod))
+            or (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "format"
+            )
+        )
+
+    def _received_by(self, tainted: ScopedTaint, node: ast.AST) -> bool:
+        """The value IS what arrived, not a command built around it: an f-string, `+`, `%` or
+        `.format` that wraps a fetched value (`f"git checkout {sha}"`) passes it as data. Only a
+        wrapper AROUND the fetched part counts: the f-string URL a request is made to
+        (`requests.get(f"{base}/{slug}")`) is not around what the request returns. Walked without
+        recursion: a long chain of `+` is one deep tree."""
+        stack = [node]
+        while stack:
+            part = stack.pop()
+            if self._wraps(part) or isinstance(
+                part, ast.Lambda | ast.FunctionDef | ast.AsyncFunctionDef
+            ):
+                continue
+            verdict = tainted.carries(part)
+            if verdict is not None:
+                if verdict:
+                    return True
+                continue
+            if isinstance(part, ast.Call) and (
+                self._egress_call(part)
+                or (
+                    isinstance(part.func, ast.Attribute)
+                    and part.func.attr in ("recv", "recvfrom")
+                    and bool(part.args)
+                )
+            ):
+                return True
+            stack.extend(ast.iter_child_nodes(part))
+        return False
 
     def _starts_an_executable(self, call: ast.Call) -> bool:
         text = self._command(call) or PythonFacts.constant(call.args[0]) or ""
@@ -666,6 +676,15 @@ class ExecutionFlows(AnalyzerCore):
             if isinstance(value, bytes):
                 return value.decode("utf-8", "replace")
             return value if isinstance(value, str) else None
+        if (
+            not isinstance(node, ast.Call) or self._dotted(node.func) not in BASE64_DECODERS
+        ) and self._module_tree is not None:
+            # `exec(code)` or `exec("".join(...)[::-1])` where the module's own statements build
+            # the text from literals alone (easyIoCtl 1.0: an alphabet indexed by a list of
+            # literals in a loop). A computed literal is still a literal.
+            folded = PythonFacts.constant(node) or LiteralProgram.value(self._module_tree, node)
+            if folded is not None:
+                return folded
         if (
             not isinstance(node, ast.Call)
             or not node.args

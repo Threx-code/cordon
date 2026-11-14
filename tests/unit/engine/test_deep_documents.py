@@ -18,6 +18,7 @@ from typing import Any
 
 import pytest
 
+from cordon_scanner.detect.agents.text_findings import AgentTextFindings
 from cordon_scanner.foundation.errors import ExitCode
 
 
@@ -30,6 +31,7 @@ class Deep:
     #: depth of JSONTestSuite's `n_structure_100000_opening_arrays.json`, found in real packages.
     CRASHED = 20_000
     DEEPEST = 100_000
+    AGENT_TEXT = frozenset({"MCP config", "agent settings"})
     CONFIG = "version: 1\nscan:\n  limits:\n    per_file_timeout: 0\n    total_timeout: 0\n"
 
     @staticmethod
@@ -124,6 +126,11 @@ class TestDeepDocuments:
             if f["rule_id"].startswith("OPERATIONAL.")
             and f["rule_id"] != "OPERATIONAL.ADVISORY.DATABASE_SCOPE"
         ]
+        if kind in Deep.AGENT_TEXT and len(text) > AgentTextFindings.ATR_TEXT_LIMIT:
+            # Agent text past the Agent Threat Rules' read limit is a named gap, not read to its end (S1).
+            assert [rule for rule, _ in operational] == ["OPERATIONAL.FILE.TRUNCATED"], kind
+            assert report["complete"] is False, kind
+            return
         assert report["complete"] is True, (kind, operational)
         assert code != int(ExitCode.INCOMPLETE), (kind, operational)
         assert not operational, (kind, operational)

@@ -76,6 +76,8 @@ ARCHIVE_HOSTS = {
     "pub": frozenset({"pub.dev"}),
     "maven": frozenset({"repo.maven.apache.org"}),
     "openvsx": frozenset({"openvsx.eclipsecontent.org"}),
+    "conda": frozenset({"conda.anaconda.org", "repo.anaconda.com"}),
+    "composer": frozenset({"codeload.github.com"}),
 }
 MAX_ARCHIVE_BYTES = 64 << 20
 
