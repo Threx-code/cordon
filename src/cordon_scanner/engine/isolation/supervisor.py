@@ -25,12 +25,14 @@ import multiprocessing
 import multiprocessing.connection
 import os
 import signal
+import sys
 import time
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.engine.isolation.platform_limits import Footprint, JobLimits
 from cordon_scanner.foundation.errors import CordonError
 
 if TYPE_CHECKING:
@@ -159,6 +161,9 @@ class Worker:
             self.process.start()
             theirs.close()
         self.ready, self.started_at = False, time.monotonic()
+        #: macOS: the footprint past which the parent ends this worker (S8); None where the kernel
+        #: holds the memory bound itself, or none is set.
+        self.footprint_limit: int | None = None
         self.unit: Unit | None = None
         self.given_at = 0.0
 
@@ -179,6 +184,13 @@ class Worker:
             return self.given_at + bounds.wall_budget(self.unit.size) - now
         return None
 
+    def over_memory(self) -> bool:
+        """macOS: busy, and past its footprint budget."""
+        if self.footprint_limit is None or self.unit is None:
+            return False
+        footprint = Footprint.of(self.process.pid)
+        return footprint is not None and footprint > self.footprint_limit
+
     def end(self) -> None:
         if self.process.is_alive():
             self.process.kill()
@@ -190,6 +202,8 @@ class Worker:
         if code == MEMORY_EXIT:
             return Reason.MEMORY
         if code == -getattr(signal, "SIGXCPU", -1):
+            return Reason.CPU
+        if sys.platform == "win32" and code == JobLimits.ERROR_NOT_ENOUGH_QUOTA:
             return Reason.CPU
         return Reason.DIED
 
@@ -265,7 +279,13 @@ class Limits:
         recorded = {"memory_limit": "not_enforced", "cpu_limit": "not_enforced"}
         try:
             import resource
-        except ImportError:  # Windows: no rlimits; death and the wall backstop still hold
+        except ImportError:  # Windows: no rlimits; a Job Object holds memory and CPU (S8)
+            from cordon_scanner.engine.isolation.platform_limits import JobLimits
+
+            if JobLimits.apply(bounds.memory_bytes):
+                recorded["memory_limit"] = "enforced"
+            if JobLimits.held():
+                recorded["cpu_limit"] = "enforced"
             return recorded
         if bounds.memory_bytes > 0:
             try:
@@ -332,6 +352,9 @@ class Limits:
         try:
             import resource
         except ImportError:
+            from cordon_scanner.engine.isolation.platform_limits import JobLimits
+
+            JobLimits.cpu_for_next(budget)
             return
         if not hasattr(resource, "RLIMIT_CPU"):
             return
@@ -349,6 +372,9 @@ class Limits:
         try:
             import resource
         except ImportError:
+            from cordon_scanner.engine.isolation.platform_limits import JobLimits
+
+            JobLimits.cpu_release()
             return
         if not hasattr(resource, "RLIMIT_CPU"):
             return
@@ -417,12 +443,20 @@ class Supervisor:
                 self._wait(pool)
                 started_any = started_any or any(w.ready for w in pool)
                 for worker in list(pool):
-                    if worker.process.is_alive() and not worker.overdue(
-                        self.bounds, time.monotonic()
+                    over_memory = worker.over_memory()
+                    if (
+                        worker.process.is_alive()
+                        and not over_memory
+                        and not worker.overdue(self.bounds, time.monotonic())
                     ):
                         continue
                     pool.remove(worker)
-                    self._lost(worker, Reason.WALL if worker.process.is_alive() else None, retried)
+                    alive = worker.process.is_alive()
+                    self._lost(
+                        worker,
+                        Reason.MEMORY if over_memory else Reason.WALL if alive else None,
+                        retried,
+                    )
                     worker.end()
                     if not worker.ready:
                         # It ended before it was ready: tried once more in a fresh worker; when no
@@ -480,6 +514,9 @@ class Supervisor:
         if self.deadline is not None:
             due.append(self.deadline - self.clock())
         timeout = max(0.0, min(due)) if due else None
+        if any(w.footprint_limit is not None and w.unit is not None for w in pool):
+            # macOS: a busy worker's footprint is read this often (S8, `Footprint`).
+            timeout = Footprint.POLL if timeout is None else min(timeout, Footprint.POLL)
         if timeout is not None:
             # A unit the size of a whole scan (the context worker's, the expander's) has a backstop
             # past what the selector takes (2**31 ms: "timeout is too large", exit 2 on a 300 MB
@@ -502,6 +539,15 @@ class Supervisor:
         if message[0] == "ready":
             worker.ready = True
             self.outcome.isolation = dict(message[1])
+            if (
+                self.bounds.memory_bytes > 0
+                and self.outcome.isolation.get("memory_limit") != "enforced"
+                and Footprint.available()
+            ):
+                base = Footprint.of(worker.process.pid)
+                if base is not None:
+                    worker.footprint_limit = base + self.bounds.memory_bytes
+                    self.outcome.isolation["memory_limit"] = "enforced"
         elif message[0] == "done" and worker.unit is not None and message[1] == worker.unit.index:
             self.outcome.results[message[1]] = message[2]
             worker.unit = None

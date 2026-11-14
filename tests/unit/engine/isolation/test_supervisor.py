@@ -124,7 +124,6 @@ class TestTheSupervisor:
         assert outcome.results == {i: i * i for i in range(12)}
         assert not outcome.failed
 
-    @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="RLIMIT_AS is Linux's")
     def test_a_unit_past_the_memory_limit_costs_only_itself(self) -> None:
         units = [Unit(0, ("echo", "a"), 1), Unit(1, ("hog", 2 << 30), 1), Unit(2, ("echo", "b"), 1)]
         outcome = Harness.supervisor(Bounds(memory_bytes=1 << 30)).run(units)
@@ -132,14 +131,12 @@ class TestTheSupervisor:
         assert outcome.failed == {1: Reason.MEMORY}
         assert outcome.isolation["memory_limit"] == "enforced"
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="no RLIMIT_CPU on Windows")
     def test_a_unit_past_its_cpu_budget_is_ended_by_the_kernel(self) -> None:
         units = [Unit(0, ("spin", None), 1), Unit(1, ("echo", "after"), 1)]
         outcome = Harness.supervisor(Bounds(cpu_floor=1.0, wall_factor=60.0)).run(units)
         assert outcome.failed == {0: Reason.CPU}
         assert outcome.results == {1: "after"}
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="no RLIMIT_CPU on Windows")
     def test_an_idle_worker_is_not_ended_for_the_cpu_before(self) -> None:
         """Each unit uses most of a 2 s budget; one worker runs them all, so the CPU it has used
         passes any one unit's budget many times over: the limit is per unit, released between."""
@@ -283,3 +280,34 @@ class TestTheBudgetIsOnTopOfWhatTheWorkerInherits:
             assert Limits.address_space() > 0
         else:
             assert Limits.address_space() == 0
+
+
+class TestTheWindowsJobIsDeclaredForSixtyFourBitHandles:
+    """S8 on Windows: undeclared, ctypes passes a HANDLE as a 32-bit int, so the current-process
+    pseudo-handle (-1) is truncated, AssignProcessToJobObject names no process, and the worker
+    runs unlimited. Checked on every platform with a stand-in for the DLL."""
+
+    def test_every_handle_crosses_as_a_pointer(self, monkeypatch) -> None:
+        import ctypes
+
+        from cordon_scanner.engine.isolation.platform_limits import JobLimits
+
+        class Function:
+            restype: object = ctypes.c_int
+            argtypes: object = None
+
+        class Dll:
+            def __init__(self, *_: object, **__: object) -> None:
+                self.functions: dict[str, Function] = {}
+
+            def __getattr__(self, name: str) -> Function:
+                return self.functions.setdefault(name, Function())
+
+        monkeypatch.setattr(ctypes, "WinDLL", Dll, raising=False)
+        monkeypatch.setattr(JobLimits, "_dlls", {})
+        kernel32 = JobLimits._kernel32()
+        assert kernel32.GetCurrentProcess.restype is ctypes.c_void_p
+        assert kernel32.CreateJobObjectW.restype is ctypes.c_void_p
+        assert kernel32.AssignProcessToJobObject.argtypes == [ctypes.c_void_p, ctypes.c_void_p]
+        assert kernel32.SetInformationJobObject.argtypes[0] is ctypes.c_void_p
+        assert JobLimits._psapi().GetProcessMemoryInfo.argtypes[0] is ctypes.c_void_p
