@@ -226,6 +226,7 @@
   "detect/binary/features": "detect/binary/features",
   "detect/binary/formats": "detect/binary/formats",
   "detect/binary/imports": "detect/binary/imports",
+  "detect/binary/library_kind": "detect/binary/library_kind",
   "detect/binary/magic": "detect/binary/magic",
   "detect/binary/modules/builtin": "detect/binary/modules/builtin",
   "detect/binary/modules/der": "detect/binary/modules/der",
