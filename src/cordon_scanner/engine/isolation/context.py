@@ -54,6 +54,7 @@ PATH_SETS = (
     "library_closure_paths",
     "install_entry_paths",
     "agent_run_paths",
+    "skill_named_paths",
     "ci_hook_paths",
     "tree_paths",
     "shipped_native_paths",
