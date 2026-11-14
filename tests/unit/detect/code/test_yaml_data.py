@@ -38,6 +38,10 @@ class TestWhichLinesRunSomething:
         text = "attacks:\n  - {id: 1, prompt: 'please rm -rf ~/ now'}\n"
         assert not YamlCommands.runs(text, 2)
 
+    def test_tool_call_arguments_in_a_catalogue_are_data(self) -> None:
+        text = "attacks:\n  - {method: tools/call, tool: x, args: {path: 'rm -rf ~/'}}\n"
+        assert not YamlCommands.runs(text, 2)
+
     @pytest.mark.parametrize(
         "text",
         [
