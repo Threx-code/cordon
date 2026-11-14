@@ -77,9 +77,14 @@ class TestAPythonTwoFileIsReadAsCode:
             # Python 3.13: a default for a type parameter. This Python does not parse it; the
             # default is code, so it is kept, on its line, as a bound.
             ("class Box[T = int]:\n    x = 1\n", "class Box[T: (int)]:"),
-            (
+            pytest.param(
                 "def first[T: str = str, *Ts = *tuple[int]](a):\n    return a\n",
                 "def first[T: (str, str), Ts: (*tuple[int],)](a):",
+                # 3.11 parses no type-parameter list at all, so the rewrite has nothing to parse
+                # into; the file is read as not parsing, the conservative reading.
+                marks=pytest.mark.skipif(
+                    sys.version_info < (3, 12), reason="PEP 695 syntax parses from 3.12"
+                ),
             ),
             pytest.param(
                 "try:\n    pass\nexcept IOError, (no, why):\n    pass\n",
@@ -205,7 +210,18 @@ class TestTheLineCountOfWhatItReads:
 
     @pytest.mark.parametrize(
         "source",
-        ["print x \\", "import a\nprint x", "print x\r\nprint y \\"],
+        [
+            # 3.11's parser rejects a file whose one line ends in a continuation, so it is read as
+            # not parsing there (the conservative reading); 3.12 accepts it.
+            pytest.param(
+                "print x \\",
+                marks=pytest.mark.skipif(
+                    sys.version_info < (3, 12), reason="3.11 rejects a lone trailing continuation"
+                ),
+            ),
+            "import a\nprint x",
+            "print x\r\nprint y \\",
+        ],
     )
     def test_the_text_has_as_many_lines_as_the_file(self, source: str) -> None:
         reading = PythonTwoReader.read(source)
