@@ -60,8 +60,14 @@ class PythonTwoReader:
     #: `async def/for/with`. Applied only to the line the parse failed on.
     OLD_NAME: re.Pattern[str] = re.compile(
         r"(?:(?<=\.)|(?<=\bdef )|(?<=\bimport )|(?<=\bfrom \.))(async|await)\b"
-        r"|\b(async|await)\b(?=\s*(?:=[^=]|[,:)\]]|\.))"
+        r"|\b(async|await)\b(?=\s*(?:=[^=]|[,:)\]]|\.|$|(?:is|in|and|or|not|if|else)\b|[!=<>+*/%-]))"
     )
+    #: A definition's own type-parameter list: `def f[T = int](...)`, `class C[T = int]`, `type A[T = int]`.
+    TYPE_PARAMETERS: re.Pattern[str] = re.compile(
+        r"^(\s*(?:async\s+)?(?:def|class|type)\s+\w+\s*)\["
+    )
+    #: `x.None`: Python 2 let `None` be an attribute name.
+    NONE_ATTRIBUTE: re.Pattern[str] = re.compile(r"(?<=\.)None\b")
 
     @staticmethod
     def read(text: str) -> Reading:
@@ -392,14 +398,90 @@ class PythonTwoReader:
         if "parameters cannot be parenthesized" in message:
             new = PythonTwoReader.TUPLE_LAMBDA.sub(r"lambda \1", new)
             new = PythonTwoReader.TUPLE_PARAMETER.sub(r"\1\2", new)
+        elif (stripped := PythonTwoReader.with_type_defaults_kept(line)) != line:
+            new = stripped
         else:
-            new = PythonTwoReader.OLD_NAME.sub(
-                lambda m: (m.group(1) or m.group(2)) + "_", new.split("#", 1)[0]
-            ) + (("#" + new.split("#", 1)[1]) if "#" in new else "")
+            code = PythonTwoReader.NONE_ATTRIBUTE.sub("None_", new.split("#", 1)[0])
+            new = PythonTwoReader.OLD_NAME.sub(lambda m: (m.group(1) or m.group(2)) + "_", code) + (
+                ("#" + new.split("#", 1)[1]) if "#" in new else ""
+            )
         if new == line:
             return False
         lines[at - 1] = new
         return True
+
+    @staticmethod
+    def with_type_defaults_kept(line: str) -> str:
+        """`line` with each type parameter's default (Python 3.13 syntax this Python does not parse)
+        moved into a bound this Python does parse: `T = expr` -> `T: (expr)`, `T: b = expr` ->
+        `T: (b, expr)`, `*Ts = *x` -> `Ts: (*x,)`. The default is code, evaluated when it is read
+        (`T.__default__`), so it stays in the tree, on its line, for every analyser; the parameter's
+        kind is not what a reader of what the code does needs."""
+        found = PythonTwoReader.TYPE_PARAMETERS.match(line)
+        if found is None:
+            return line
+        rest = line[found.end() :]
+        parts: list[str] = []
+        depth, quote, start, close = 1, "", 0, None
+        for index, char in enumerate(rest):
+            if quote:
+                quote = "" if char == quote else quote
+            elif char in "'\"":
+                quote = char
+            elif char in "([{":
+                depth += 1
+            elif char in ")]}":
+                depth -= 1
+                if depth == 0:
+                    parts.append(rest[start:index])
+                    close = index
+                    break
+            elif char == "," and depth == 1:
+                parts.append(rest[start:index])
+                start = index + 1
+        if close is None:
+            return line
+        out = []
+        for part in parts:
+            equals = PythonTwoReader.default_equals(part)
+            if equals is None:
+                out.append(part)
+                continue
+            text = part[:equals]
+            space = text[: len(text) - len(text.lstrip())]
+            name, colon, bound = text.strip().partition(":")
+            name, bound = name.strip().lstrip("*"), bound.strip()
+            default = part[equals + 1 :].strip()
+            if not name.isidentifier() or not default or (colon and not bound):
+                return line
+            if bound:
+                out.append(f"{space}{name}: ({bound}, {default})")
+            elif default.startswith("*"):
+                out.append(f"{space}{name}: ({default},)")
+            else:
+                out.append(f"{space}{name}: ({default})")
+        return line[: found.end()] + ",".join(out) + rest[close:]
+
+    @staticmethod
+    def default_equals(part: str) -> int | None:
+        """Where a type parameter's `=` is: at the part's own depth, outside a string, and not the
+        `=` of `==`, `<=`, `>=` or `!=`."""
+        depth, quote = 0, ""
+        for index, char in enumerate(part):
+            if quote:
+                quote = "" if char == quote else quote
+            elif char in "'\"":
+                quote = char
+            elif char in "([{":
+                depth += 1
+            elif char in ")]}":
+                depth -= 1
+            elif char == "=" and depth == 0:
+                before = part[index - 1] if index else ""
+                after = part[index + 1] if index + 1 < len(part) else ""
+                if before not in "=<>!" and after != "=":
+                    return index
+        return None
 
     @staticmethod
     def neutralise(lines: list[str], at: int) -> None:

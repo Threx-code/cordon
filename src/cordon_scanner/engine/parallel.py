@@ -751,7 +751,15 @@ class ParallelScanner:
             active.append(detector)
             produced.extend(inspect(detector, unit))
         # The rest of an oversized file, a window at a time: the call the serial path makes.
-        windowed, intact = WindowPass.run(unit, active, inspect, produced)
+        windowed, intact = WindowPass.run(
+            unit,
+            active,
+            inspect,
+            produced,
+            budget=ctx.copy_budget,
+            gap=acc.gap,
+            deadline=ctx.deadline,
+        )
         ParallelScanner._verdict_facts(unit, ctx)
         # What the parent's profile, intent and reached-flow steps read of the file (item 56, sites
         # 9 and 10), with the engine's labelling detector as the parent picks it, enabled or not.

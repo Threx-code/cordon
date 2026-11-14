@@ -69,8 +69,15 @@ SCALARS: dict[str, type] = {
     "package_repository": str,
     "distribution": str,
     "confusion_version": str,
+    "package_code_bytes": int,
+    "package_install_message": str,
 }
-DEFERRED_LINES = ("install_deferred_lines", "import_deferred_lines", "startup_deferred_lines")
+DEFERRED_LINES = (
+    "install_deferred_lines",
+    "import_deferred_lines",
+    "import_deferred_lines_without_main",
+    "startup_deferred_lines",
+)
 """Context fields that are `(path, first_line, last_line)` sets: bodies a hook or an import never runs."""
 RUNNER_MAPS = (
     "python_imported_runners",
@@ -694,7 +701,7 @@ class ContextFacts:
                 if not isinstance(value, list) or len(value) > LIST_ENTRIES or not all(
                     isinstance(t, list) and len(t) == 3 and t[0] in known
                     and isinstance(t[1], str) and len(t[1]) <= 256 and t[1].isidentifier()
-                    and isinstance(t[2], str) and re.fullmatch(r"\d{1,3}(,\d{1,3}){0,15}", t[2])
+                    and isinstance(t[2], str) and re.fullmatch(r"\d{1,3}(,\d{1,3}){0,255}", t[2])
                     for t in value
                 ):  # fmt: skip
                     return None, f"{name} of the wrong shape"

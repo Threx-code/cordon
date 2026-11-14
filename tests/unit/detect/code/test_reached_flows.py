@@ -133,3 +133,38 @@ class TestBudget:
             [Fixture.unit("index.js", big)], Fixture.ctx(entries=frozenset({"index.js"}))
         )
         assert facts == {}
+
+
+class TestAMissingDocumentIsAGapNotACrash:
+    """The code features are read in the scan's parent, where scanned JSON is served by the context
+    worker. A document it did not hold is recorded and ends the scan as a blocking gap
+    (`Documents.report_missing`); it must not leave the feature step as an exception, which the CLI
+    reports as "internal error", exit 2 (reviews/pypi-98, a0's 11-13 rescan)."""
+
+    def test_a_miss_in_the_measure_only_features_ends_as_a_gap_and_keeps_the_package_features(
+        self, monkeypatch
+    ) -> None:
+        from cordon_scanner.detect.binary.features import BinaryFeatures
+        from cordon_scanner.engine.isolation.documents import Documents
+        from cordon_scanner.engine.pipeline.accumulator import Accumulator
+        from cordon_scanner.foundation.formats.served_json import ServedJson
+
+        def miss(*args, **kwargs):
+            return ServedJson.miss("pkg/data.json", "JSON document")
+
+        monkeypatch.setenv(ReachedFlows.MEASURE, "1")
+        monkeypatch.setattr(BinaryFeatures, "of", staticmethod(miss))
+        Documents.end()
+        Documents.activate([])
+        try:
+            facts = ReachedFlows.of([Fixture.unit("pkg/a.py", "import os\n")], Fixture.ctx(), {})
+            acc = Accumulator()
+            Documents.report_missing(acc)
+        finally:
+            Documents.end()
+        # The package place is every scan's and was computed before the miss; what the miss
+        # would have added is absent, as the gap says.
+        assert facts
+        assert all(k.startswith("code_package_") for k in facts)
+        assert [f.rule_id for f in acc.findings] == ["OPERATIONAL.WORKER.DOCUMENT_UNAVAILABLE"]
+        assert not acc.complete

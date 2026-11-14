@@ -22,6 +22,7 @@ from cordon_scanner.detect.base import (
 )
 from cordon_scanner.detect.code.capability.hits import CapabilityHit
 from cordon_scanner.detect.code.capability.load_path import LoadPath
+from cordon_scanner.detect.code.store_flow import BoundClient
 from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
 
@@ -149,6 +150,26 @@ class LegitimateUse:
         ".preinst",
         ".chroot",
     )
+
+    TEMPLATE_OR_MARKUP_SUFFIXES: ClassVar[tuple[str, ...]] = (
+        ".html",
+        ".htm",
+        ".j2",
+        ".jinja",
+        ".jinja2",
+        ".tmpl",
+        ".mustache",
+        ".hbs",
+    )
+    """Text a template engine or a browser renders: never executed as code at scan time, even when
+    what it renders is a script run later (reviews/pypi-98/20, shape C). Read only for
+    `SUSPECT.EXFIL.CREDENTIAL_STORE.001`; executable formats (`.sh`, `.ps1`, `.bat`, Makefile,
+    Dockerfile, CI steps) are not in it."""
+
+    @staticmethod
+    def is_template_or_markup(path: str) -> bool:
+        name = path.rpartition("!")[2].rpartition("/")[2].lower()
+        return name.endswith(LegitimateUse.TEMPLATE_OR_MARKUP_SUFFIXES)
 
     @staticmethod
     def is_hand_run_provisioning(path: str, language: str | None) -> bool:
@@ -357,6 +378,31 @@ class LegitimateUse:
             return False
         return DownloadFlow.runs_download(content.text, unit.language) == []
 
+    @staticmethod
+    def reaches_no_sink(unit: FileUnit, ctx: ScanContext, hits: list[CapabilityHit]) -> bool:
+        """A Python module a consumer imports (no install hook, no consumer install) in which nothing
+        downloaded is run and no downloaded value leaves the file, and no received command is run
+        (reviews/pypi-98/22, shape A). Unresolved is False: the package's calls not all known, a file that
+        does not parse, another language. A decoded payload or an unpacked one that is then run is not
+        "nothing downloaded runs": a window with a decode, or a spawn beside an unpack, keeps its grade."""
+        from cordon_scanner.detect.code.download_flow import DownloadFlow
+
+        path, present = unit.content.path, {hit.capability for hit in hits}
+        return (
+            not ctx.in_install_hook(path)
+            and not ctx.in_consumer_install(path)
+            and not ctx.cross_file_unresolved
+            and not any("RECEIVED_RUN" in hit.rule_id for hit in hits)
+            and Capability.DECODE not in present
+            and not {Capability.SPAWN, Capability.DECOMPRESS} <= present
+            and Capability.FETCH_EXEC not in present
+            and DownloadFlow.nothing_reaches_a_sink(
+                unit.content.text,
+                unit.language,
+                frozenset(hit.line for hit in hits if hit.capability is Capability.EGRESS),
+            )
+        )
+
     _SETTING_READ: ClassVar[re.Pattern[str]] = re.compile(
         r"""^\s{0,8}(?:
             process\.env\.(?P<dotted>[A-Za-z_][A-Za-z0-9_]{0,80})\b(?!\s{0,4}[\[(])
@@ -483,6 +529,7 @@ class LegitimateUse:
         return all(
             any(
                 client.search(content.raw[hit.byte_start : hit.byte_end + 40])
+                or BoundClient.configured(content.text, hit.line, client)
                 for client in families
             )
             for hit in egress

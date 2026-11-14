@@ -17,7 +17,7 @@ rules:
   # Second-stage loaders
   # ---------------------------------------------------------------------
   - id: SUSPECT.DECODE_EXEC.001
-    version: 1.1.0
+    version: 1.3.0
     category: suspicious
     severity: high
     confidence: medium
@@ -50,31 +50,43 @@ rules:
       # for this rule have the decode and the execution on the same line or the one
       # after it -- which is what "passed to" looks like when it is true.
       proximity: 10
-      all:
-        - capability: decode
-        - any:
-            - capability: execute
-            # Or a process start, which is what `subprocess.run(b64decode(...),
-            # shell=True)` is and is the shape `corpus/malicious/
-            # anti-analysis-gated` carries.
-            #
-            # Not the shell's, and that exception is the rule. `CAP.SH.SPAWN.001`
-            # matches a command substitution, and its own message says it is
-            # ubiquitous in shell and only a label -- so pairing it with a decode
-            # says that a shell script decoded something, which is what
-            # `key=$(echo "$b" | base64 -d)` is and is how every shell script
-            # decodes anything. Measured against Azure's quickstart templates:
-            # eight findings, and every one of them a script decoding a pull
-            # secret, a licence key or an admin password into a variable, under a
-            # message saying the value was executed. `| bash` and `eval` are
-            # `execute` above and are unaffected, which the same measurement
-            # confirms.
-            - all:
-                - capability: spawn
-                - not:
-                    rule: CAP.SH.SPAWN.001
-                - not:
-                    rule: CAP.MK.SPAWN.001
+      any:
+        - all:
+            - capability: decode
+            - any:
+                - capability: execute
+                # Or a process start, which is what `subprocess.run(b64decode(...),
+                # shell=True)` is and is the shape `corpus/malicious/
+                # anti-analysis-gated` carries.
+                #
+                # Not the shell's, and that exception is the rule. `CAP.SH.SPAWN.001`
+                # matches a command substitution, and its own message says it is
+                # ubiquitous in shell and only a label -- so pairing it with a decode
+                # says that a shell script decoded something, which is what
+                # `key=$(echo "$b" | base64 -d)` is and is how every shell script
+                # decodes anything. Measured against Azure's quickstart templates:
+                # eight findings, and every one of them a script decoding a pull
+                # secret, a licence key or an admin password into a variable, under a
+                # message saying the value was executed. `| bash` and `eval` are
+                # `execute` above and are unaffected, which the same measurement
+                # confirms.
+                - all:
+                    - capability: spawn
+                    - not:
+                        rule: CAP.SH.SPAWN.001
+                    - not:
+                        rule: CAP.MK.SPAWN.001
+        # Code compressed rather than encoded and handed to an execution is the same loader:
+        # `exec(zlib.decompress(blob))`, `exec(marshal.loads(gzip.decompress(blob)))` (half B: 10
+        # packages run their payload so at import). Only `execute` pairs with a decompression -- a
+        # process started beside an unpacked archive is the self-updater measured above. And only a
+        # decompression the parser resolved to a call: a packer writes the word into the text of the
+        # loader stub it compiles, and nothing there decompresses (pyc-zipper 1.0.8, benign rescan).
+        - all:
+            - rule: AST.PY.DECOMPRESS
+            # A parsed execution too: the word in a string (`"eval ("` in a literal) is not one,
+            # and paired with a real decompression it blocked an evaluation script (paper-preflight 0.8).
+            - rule: AST.PY.EXECUTE
 
   # ---------------------------------------------------------------------
   # Exfiltration
@@ -2913,6 +2925,76 @@ rules:
       all:
         - context: import_entry
         - rule: AST.PY.PROGRAM_STARTED_AT_IMPORT
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.IMPORT.FETCH_RUN.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Importing the package fetches something and runs code or a program
+    message: >
+      When this package is imported it both fetches something from the network and runs code or a
+      program: `exec` of what a request returned, a download written out and started, or a command
+      run beside the download in a thread the import starts. Importing a library loads code that is
+      already on the machine; one that downloads and runs while it is imported has made the import a
+      launch of code nobody reviewed.
+    remediation: >
+      Do not import this package. Find what it fetches and what it runs, and treat machines that
+      imported it as compromised.
+    provenance:
+      kind: research
+      reference: >
+        Half-A PyPI malware the 0.8.0 rules passed: an `__init__` that fetched and ran at load, through
+        a helper, a thread target or directly (the combined gate's misses, 14 Nov).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1105/
+      - https://attack.mitre.org/techniques/T1059/006/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: import_entry
+        - rule: AST.PY.FETCH_RUN_AT_LOAD
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.INSTALL.FETCH_RUN.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: The install script fetches something and runs code or a program
+    message: >
+      The install script itself (a `setup.py`) both fetches something from the network and runs code
+      or a program when it runs: `exec` of what a request returned, a download written out and
+      started, or a command run beside the download. Building or installing a package has no reason
+      to download and launch anything; this runs unreviewed code as the person installing, before
+      anything else can check it.
+    remediation: >
+      Do not install this package. Find what it fetches and what it runs, and treat machines that
+      installed it as compromised.
+    provenance:
+      kind: research
+      reference: >
+        Half-A PyPI malware the 0.8.0 rules passed: a `setup.py` that fetched and ran at module level
+        or through a helper the module level calls (the combined gate's misses, 14 Nov).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1105/
+      - https://attack.mitre.org/techniques/T1195/002/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: install_entry
+        - rule: AST.PY.FETCH_RUN_AT_LOAD
       unless:
         - path_glob: "**/*.test.*"
         - path_glob: "**/test_*.py"

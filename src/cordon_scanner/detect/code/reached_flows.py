@@ -35,6 +35,7 @@ from cordon_scanner.detect.binary.features import BinaryFeatures
 from cordon_scanner.detect.code.features import CodeFeatures
 from cordon_scanner.foundation.dependencies import HookKinds
 from cordon_scanner.foundation.files.windows import BytesWindows, WindowSourceChanged
+from cordon_scanner.foundation.formats.served_json import DocumentUnavailable
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -100,9 +101,17 @@ class ReachedFlows:
                 read += 1
                 for suffix in facts.get(unit.path, {}).get("reached.flow", ()):
                     out[f"{place}_{suffix}"] = 1.0
+        # Every scan: the unit's own Python code, which the verdict model reads (`FeatureScope`).
+        out.update(CodeFeatures.of({"package": ReachedFlows.package_sources(units)}))
         if os.environ.get(ReachedFlows.MEASURE) == "1":
-            out.update(CodeFeatures.of(ReachedFlows.sources(units, ctx)))
-            out.update(BinaryFeatures.of(ReachedFlows.executables(units)))
+            try:
+                out.update(CodeFeatures.of(ReachedFlows.reached_sources(units, ctx)))
+                out.update(BinaryFeatures.of(ReachedFlows.executables(units)))
+            except DocumentUnavailable:
+                # S2: covered. The miss is recorded by the store the step asked (`ServedJson.miss`)
+                # and ends the scan as a blocking gap in `Documents.report_missing`; the features
+                # it would have added are absent, as the gap says, not an exit 2.
+                return out
         return out
 
     @staticmethod
@@ -125,8 +134,9 @@ class ReachedFlows:
                 continue
 
     #: Set only by measurement runs (`reviews/review-98/tools/rescan_sample.py`'s containers): the
-    #: code features (`CodeFeatures`) are computed for the scan records a model is trained on, and a
-    #: user's scan neither computes nor reports them until a shipped model reads them.
+    #: code features of the reached places (`CodeFeatures`) and the binary features are computed for
+    #: the scan records a model is trained on, and a user's scan neither computes nor reports them
+    #: until a shipped model reads them. The package place (`code_package_*`) is every scan's.
     MEASURE: ClassVar[str] = "CORDON_MEASURE_FEATURES"
     CODE: ClassVar[tuple[str, ...]] = (".js", ".mjs", ".cjs", ".py")
     #: What the code features read besides: TypeScript a loader runs, and shell scripts.
@@ -134,8 +144,30 @@ class ReachedFlows:
 
     @staticmethod
     def sources(units: Sequence[FileUnit], ctx: ScanContext) -> dict[str, list[tuple[str, Source]]]:
-        """Each place's code, as the code features read it: the install hooks' own command lines
-        first (a `postinstall` is often the whole payload, and no file holds it), then every
+        """Every place's code as the code features read it: the reached places
+        (`reached_sources`) and the package's own Python (`package_sources`)."""
+        return {
+            **ReachedFlows.reached_sources(units, ctx),
+            "package": ReachedFlows.package_sources(units),
+        }
+
+    @staticmethod
+    def package_sources(units: Sequence[FileUnit]) -> list[tuple[str, Source]]:
+        """The unit's every Python file, reached or not, whole (`CodeFeatures.PLACES`): a source
+        distribution's import entry and closure are often one file or none, so the reached places
+        read almost none of its code."""
+        return [
+            (unit.path, ReachedFlows._whole(unit))
+            for unit in units
+            if unit.path.rsplit("!", 1)[-1].lower().endswith(".py")
+        ]
+
+    @staticmethod
+    def reached_sources(
+        units: Sequence[FileUnit], ctx: ScanContext
+    ) -> dict[str, list[tuple[str, Source]]]:
+        """Each reached place's code, as the code features read it: the install hooks' own command
+        lines first (a `postinstall` is often the whole payload, and no file holds it), then every
         reached JavaScript, TypeScript, Python and shell file, whole. No count or size limit: a file
         past them -- one 27 MB bundle as a package's `main` -- is given as its windows, all of them,
         so nothing padded past a limit goes unread."""

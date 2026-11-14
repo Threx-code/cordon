@@ -55,6 +55,8 @@ class CompositeGrading:
         "with nothing fetched or decoded reaching it in this file; a caller in another file could "
         "inject"
     )
+    #: The nothing-downloaded-runs lowering (`DownloadFlow`), said in the finding.
+    NO_SINK_REASON = "code in which nothing downloaded is run and no downloaded value leaves it"
     #: The unsourced-sink lowering, said in the finding.
     UNSOURCED_CODE_REASON = (
         "code that runs or loads only what this file read locally or was given as a setting: the "
@@ -155,6 +157,9 @@ class CompositeGrading:
             # Not escalated as an install-time dropper either: the hook escalation would put the
             # span straight back at CRITICAL. The ceiling below says why it is still reported.
             in_hook = False
+        self.nothing_downloaded = rule.id in CompositeRuleIds.VERIFIABLE_DROPPERS and (
+            LegitimateUse.reaches_no_sink(unit, ctx, hits)
+        )
         self.verified, self.present, self.in_hook = verified, present, in_hook
         self.no_download_runs = no_download_runs
         self.hand_run_provisioning = self.own_credential_client = self.agent_tool_client = False
@@ -182,6 +187,7 @@ class CompositeGrading:
                     or ceilinged == CompositeGrading.VERIFIED_DOWNLOAD_REASON
                     or ceilinged == CompositeGrading.PARAMETER_COMMAND_REASON
                     or ceilinged == CompositeGrading.UNSOURCED_CODE_REASON
+                    or ceilinged == CompositeGrading.NO_SINK_REASON
                     else ", where a pattern like this is usually written to be read rather than run"
                 )
             )
@@ -285,6 +291,10 @@ class CompositeGrading:
             # the same pair below the gate, and every other rule over the file still applies.
             return True
 
+        no_sink = self.nothing_downloaded and compiled.rule.id == "MALWARE.DROPPER.001"
+        if no_sink and evaluator.suspect_reports(ctx, content.path, hits):
+            return True  # two unrelated acts; `SUSPECT.DROPPER.001` reports the pair at MEDIUM
+
         # Withdrawn for the reason above, and only where `SUSPECT.DROPPER.001` reports the same
         # span, so the file is never left clean. What is withdrawn is the claim that the content
         # is whatever the host serves: the release URL is a literal, and the digest it is held
@@ -294,8 +304,7 @@ class CompositeGrading:
         return (
             verified
             and compiled.rule.id in CompositeRuleIds.WITHDRAWN_WHEN_VERIFIED
-            and self._suspect_dropper_reports(
-                evaluator,
+            and evaluator.suspect_reports(
                 ctx,
                 content.path,
                 hits,
@@ -448,6 +457,7 @@ class CompositeGrading:
             return "", FIXTURE_CEILING
         self._clients()
         for run in (
+            self._ceiling_for_nothing_downloaded,
             self._ceiling_for_unsourced_code,
             self._ceiling_for_parameter_command,
             self._ceiling_for_provisioning,
@@ -546,6 +556,13 @@ class CompositeGrading:
         )
         self.agent_tool_client = agent_tool_client
 
+    def _ceiling_for_nothing_downloaded(self) -> tuple[str, Severity] | None:
+        """`SUSPECT.DROPPER.001` where nothing downloaded is run and no downloaded value leaves the
+        file, outside an install hook: MEDIUM with the reason, never dropped."""
+        if self.nothing_downloaded and self.compiled.rule.id == CompositeRuleIds.DROPPER_RULE:
+            return CompositeGrading.NO_SINK_REASON, Severity.MEDIUM
+        return None
+
     def _ceiling_for_unsourced_code(self) -> tuple[str, Severity] | None:
         """`SUSPECT.DROPPER.001` in Python whose running half is only execute or deserialize hits the
         parsed tree shows were handed nothing fetched or decoded (`CapabilityHit.unsourced`): no
@@ -624,22 +641,22 @@ class CompositeGrading:
 
     def _ceiling_for_credentials_and_material(self) -> tuple[str, Severity] | None:
         """An authentication file, a store read that reaches nothing, rule or test material, an inert literal, documentation."""
-        compiled, ctx, hits, content, in_hook = (
-            self.compiled,
-            self.ctx,
-            self.hits,
-            self.unit.content,
-            self.in_hook,
-        )
+        compiled, ctx, hits = self.compiled, self.ctx, self.hits
+        content, in_hook = self.unit.content, self.in_hook
         ceilinged, ceiling = "", FIXTURE_CEILING
-        if (
-            compiled.rule.id == CompositeRuleIds.CREDENTIAL_STORE_RULE
-            and SampleKinds.names_authentication(content.path)
+        authentication = SampleKinds.names_authentication(content.path)
+        if compiled.rule.id == CompositeRuleIds.CREDENTIAL_STORE_RULE and (
+            authentication or LegitimateUse.is_template_or_markup(content.path)
         ):
-            # A file named for authentication, reading a credential store. See
-            # `core.samples.names_authentication`; scoped to this one rule, because
-            # its premise is a store "this component does not own".
-            ceilinged = "a file whose name says it handles authentication"
+            # A file named for authentication reading a credential store (`core.samples.
+            # names_authentication`; this rule only, its premise being a store "this component does
+            # not own"), or an HTML page or Jinja template: text a renderer fills in, not code that
+            # reads or sends anything (reviews/pypi-98/20, shape C).
+            ceilinged = (
+                "a file whose name says it handles authentication"
+                if authentication
+                else "a template or markup file, text rather than code"
+            )
         elif (
             compiled.rule.id == CompositeRuleIds.CREDENTIAL_STORE_RULE
             and not in_hook
@@ -974,22 +991,6 @@ class CompositeGrading:
             rulepack=rule.rulepack,
             references=rule.references,
             capabilities=tuple(sorted(matched, key=lambda c: c.value)),
-        )
-
-    def _suspect_dropper_reports(
-        self,
-        evaluator: CompositeEvaluator,
-        ctx: ScanContext,
-        path: str,
-        hits: list[CapabilityHit],
-        rule: str = CompositeRuleIds.DROPPER_RULE,
-    ) -> bool:
-        """Whether the suspect grade (`SUSPECT.DROPPER.001`) fires on the window its malware grade
-        matched: its `unless` excludes test paths, and withdrawing the one where the other does
-        not report would leave the file clean."""
-        suspect, fired = ctx.rules.get(rule), frozenset(hit.rule_id for hit in hits)
-        return suspect is not None and evaluator.evaluate(
-            suspect, {hit.capability for hit in hits}, path, in_hook=True, fired=fired
         )
 
 

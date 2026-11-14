@@ -203,3 +203,61 @@ class TestEveryRuleOnHostileInput:
         assert large < HostileKit.noise() or ratio < HostileKit.RATIO, (
             f"{rule_id}: super-linear on {piece[:12]!r} runs ({ratio:.1f}x for 4x the input)"
         )
+
+
+class TestTheDecodedViewOnHostileInput:
+    """The decoded view (note 18 §2, Budget) is a reader like the rules: on input built to exhaust
+    it, at the scanner's 10 MB file limit, it is refused or built inside its budget, in bounded
+    memory -- never left to grow with the file."""
+
+    MB = 10 * 1024 * 1024
+
+    @staticmethod
+    def timed(text: str, language: str) -> tuple[str, float]:
+        from cordon_scanner.analysis.shared.decoded_view import DecodedView, ViewOverBudget
+
+        started = time.process_time()
+        try:
+            DecodedView.of(text, language)
+            outcome = "built"
+        except ViewOverBudget:
+            outcome = "refused"
+        return outcome, time.process_time() - started
+
+    def test_millions_of_tokens_are_refused_in_bounded_memory(self) -> None:
+        import tracemalloc
+
+        text = "a,\n" * 700_000  # 2.1 million tokens: past the view's token budget
+        tracemalloc.start()
+        try:
+            outcome, _ = self.timed(text, "python")
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        assert outcome == "refused"
+        assert peak < 48 * 1024 * 1024, f"{peak / 1e6:.0f} MB held"  # the tokens are not
+
+    def test_one_run_of_adjacent_literals_past_its_cap_is_refused(self) -> None:
+        outcome, cpu = self.timed("x = (" + "'\\x41'" * (self.MB // 6) + ")\n", "python")
+        assert outcome == "refused" and cpu < 10
+
+    def test_an_escaped_string_at_the_file_limit_is_built_under_budget(self) -> None:
+        for language, text in (
+            ("javascript", "s = '" + "\\x41" * (self.MB // 4) + "';\n"),
+            ("go", 's := "' + "\\x41" * (self.MB // 4) + '"\n'),
+        ):
+            outcome, cpu = self.timed(text, language)
+            assert outcome == "built" and cpu < 30, language
+
+    def test_a_go_run_of_escapes_is_read_in_place(self) -> None:
+        import tracemalloc
+
+        text = 's := "' + "\\x41" * 500_000 + '"\n'
+        tracemalloc.start()
+        try:
+            outcome, _ = self.timed(text, "go")
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        assert outcome == "built"
+        assert peak < 32 * 1024 * 1024, f"{peak / 1e6:.0f} MB held"

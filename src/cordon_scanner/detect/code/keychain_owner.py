@@ -45,6 +45,15 @@ ISSUERS: tuple[frozenset[str], ...] = (
 _LOCAL = frozenset({"localhost", "127.0.0.1", "::1"})
 _URL_HOST = re.compile(r"https?://([a-z0-9.-]{1,253})", re.IGNORECASE)
 _LOOKUPS = frozenset({"find-generic-password", "find-internet-password"})
+#: A `<script>` or `<link>` loading a URL: what a person's browser fetches to draw a page the file serves.
+_ASSET_TAG = re.compile(
+    r"<(?:script|link)\b[^<>]{0,300}?\b(?:src|href)\s*=\s*[\"']?(https?://[^\s\"'<>]+)",
+    re.IGNORECASE,
+)
+_ASSET_PATH = re.compile(
+    r"\.(?:m?js|css|woff2?|ttf|png|svg|ico)(?:\?[^#]*)?(?:#.*)?$", re.IGNORECASE
+)
+_PLACEHOLDER = re.compile(r"[{}%$+]")
 
 
 class KeychainOwner:
@@ -72,13 +81,27 @@ class KeychainOwner:
         return spans
 
     @staticmethod
+    def _static_assets(text: str) -> set[int]:
+        """Where, in a string of markup, a URL is the `src` or `href` of a `<script>` or `<link>` with an
+        asset suffix and no placeholder in it: a URL the file builds from parts, or one that carries a value
+        (`{token}`, `%s`, `$TOKEN`, a join), is a request and is not in this set."""
+        return {
+            m.start(1)
+            for m in _ASSET_TAG.finditer(text)
+            if _ASSET_PATH.search(m.group(1)) and not _PLACEHOLDER.search(m.group(1))
+        }
+
+    @staticmethod
     def _issuer(tree: ast.AST) -> frozenset[str] | None:
         """The one issuer every literal URL in the file belongs to, or None."""
         found: set[frozenset[str]] = set()
         for node in PythonSyntax.nodes(tree):
             if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
                 continue
+            assets = KeychainOwner._static_assets(node.value)
             for match in _URL_HOST.finditer(node.value):
+                if match.start() in assets:
+                    continue  # fetched by a browser to draw a page, not sent the token by this file
                 host = match.group(1).lower().rstrip(".")
                 if host in _LOCAL:
                     continue

@@ -11,6 +11,7 @@ import re
 from dataclasses import replace
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.detect.base import (
     FileUnit,
     ScanContext,
@@ -670,6 +671,27 @@ class ReleaseChecks:
         return passes_environment and ReleaseChecks._CAPTURE.search(text) is None
 
     @staticmethod
+    def _run_by_installing(path: str, units: Sequence[FileUnit], ctx: ScanContext) -> bool:
+        """Whether installing a source distribution can run this file.
+
+        What the install runs is a build file or a module of the package. A test, the project's own
+        build and release tooling, a vendored environment and a script in a directory that is not
+        a package are run by the people who work on the project, not by whoever installs it; a file
+        something does run (an install hook, an import entry) is the exception to all of them.
+        """
+        if SourcePaths.runs_here(path, ctx):
+            return True
+        if (
+            SourcePaths.is_test_material(path)
+            or SourcePaths.is_build_tooling(path)
+            or SourcePaths.is_vendored(path)
+        ):
+            return False
+        directory = path.rpartition("/")[0]
+        # The sdist's own root folder holds its build files; deeper, a package has an __init__.py.
+        return directory.count("/") < 1 or any(u.path == f"{directory}/__init__.py" for u in units)
+
+    @staticmethod
     def native_program_in_a_pure_wheel(
         units: Sequence[FileUnit], ctx: ScanContext
     ) -> list[Finding]:
@@ -685,7 +707,15 @@ class ReleaseChecks:
         program run from one is code nothing in the archive explains.
         """
         wheel = next(
-            (u for u in units if u.path.rsplit("/", 1)[-1] == "WHEEL" and ".dist-info/" in u.path),
+            (
+                u
+                for u in units
+                # A wheel's own metadata sits at the top of the archive; a `.dist-info/WHEEL` deeper
+                # in is a fixture a project's tests carry.
+                if u.path.count("/") == 1
+                and u.path.rsplit("/", 1)[-1] == "WHEEL"
+                and ".dist-info/" in u.path
+            ),
             None,
         )
         # A pure wheel, or a source distribution (PKG-INFO beside the sources, no WHEEL): neither is
@@ -708,7 +738,9 @@ class ReleaseChecks:
         from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 
         for unit in units:
-            if not unit.path.endswith(".py"):
+            if not unit.path.endswith(".py") or (
+                source_distribution and not ReleaseChecks._run_by_installing(unit.path, units, ctx)
+            ):
                 continue
             try:
                 tree = PythonSyntax.shared(unit.content.text)

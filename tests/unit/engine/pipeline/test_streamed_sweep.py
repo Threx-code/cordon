@@ -110,6 +110,116 @@ class TestTheSweep:
         assert "SUSPECT.INSTALL.UNEXAMINED.001" not in {f.rule_id for f in result.findings}
 
 
+class TestTheScansStreamBudget:
+    """A scan reads at most `max_stream_total_bytes` of oversized files in windows, summed over its files and
+    its workers; the file the budget cannot cover is a gap (the scan is incomplete), never a quiet pass."""
+
+    @staticmethod
+    def two_files(tmp_path: Path) -> None:
+        (tmp_path / "dist").mkdir()
+        # Different sizes: identical files would be one finding (`_collapse_repeats`).
+        for name, size in (("a", 200_000), ("b", 201_000)):
+            (tmp_path / "dist" / f"{name}.js").write_text(
+                SweepKit.padded(size, HIJACK), encoding="utf-8"
+            )
+
+    @staticmethod
+    def run(tmp_path: Path, **limits: int):
+        return Scanner(SweepKit.config(max_file_bytes=65_536, **limits)).scan(tmp_path)
+
+    def test_with_the_budget_for_both_each_is_read_to_its_end(self, tmp_path: Path) -> None:
+        self.two_files(tmp_path)
+        result = self.run(tmp_path, max_stream_bytes=1 << 20, max_stream_total_bytes=1 << 20)
+        found = [f for f in result.findings if f.rule_id == "MALWARE.AGENT.HIJACK.001"]
+        assert {f.location.path for f in found} == {"dist/a.js", "dist/b.js"}
+        assert result.complete is True
+
+    def test_a_budget_for_one_reads_one_and_says_the_other_was_not(self, tmp_path: Path) -> None:
+        self.two_files(tmp_path)
+        # One file's windows cost about 135 KB: 200,000 covers one and not two.
+        result = self.run(tmp_path, max_stream_bytes=1 << 20, max_stream_total_bytes=200_000)
+        found = {
+            f.location.path for f in result.findings if f.rule_id == "MALWARE.AGENT.HIJACK.001"
+        }
+        refused = [
+            f
+            for f in result.findings
+            if f.rule_id == "OPERATIONAL.FILE.TRUNCATED" and "max_stream_total_bytes" in f.message
+        ]
+        assert len(found) == 1 and len(refused) == 1
+        assert refused[0].location.path not in found
+        assert result.complete is False
+
+    def test_the_budget_is_per_scan_not_per_run_of_the_scanner(self, tmp_path: Path) -> None:
+        self.two_files(tmp_path)
+        scanner = Scanner(
+            SweepKit.config(
+                max_file_bytes=65_536, max_stream_bytes=1 << 20, max_stream_total_bytes=200_000
+            )
+        )
+        first, second = scanner.scan(tmp_path), scanner.scan(tmp_path)
+        for result in (first, second):
+            found = [f for f in result.findings if f.rule_id == "MALWARE.AGENT.HIJACK.001"]
+            assert len(found) == 1
+
+    def test_the_default_total_is_far_past_an_ordinary_scan(self, tmp_path: Path) -> None:
+        self.two_files(tmp_path)
+        result = Scanner(SweepKit.config(max_file_bytes=65_536)).scan(tmp_path)
+        assert result.complete is True
+
+
+class TestWindowsStopAtTheDeadline:
+    """A scan's windows are bounded by its time budget as by its byte ceilings: past the deadline no
+    further window is read, and the file says so (the scan is incomplete), never a quiet partial read."""
+
+    @staticmethod
+    def unit(tmp_path: Path) -> object:
+        from cordon_scanner.detect.base import FileUnit
+
+        path = tmp_path / "big.js"
+        path.write_text(SweepKit.padded(200_000, HIJACK), encoding="utf-8")
+        content = FileContent.load(
+            path, "big.js", Limits(max_file_bytes=65_536, max_stream_bytes=1 << 20)
+        )
+        assert isinstance(content, FileContent) and content.window_source is not None
+        return FileUnit(content=content, language="javascript")
+
+    def test_past_the_deadline_no_window_is_read_and_the_gap_is_said(self, tmp_path: Path) -> None:
+        import time
+        from types import SimpleNamespace
+
+        from cordon_scanner.engine.window_pass import WindowPass
+
+        read: list[object] = []
+        windowed, intact = WindowPass.run(
+            self.unit(tmp_path),
+            [SimpleNamespace(id="secrets")],
+            lambda detector, part: read.append(part) or [],
+            [],
+            gap=lambda finding: finding,
+            deadline=time.monotonic() - 1,
+        )
+        assert read == [] and intact
+        assert [f.rule_id for f in windowed] == ["OPERATIONAL.SCAN.TIMEOUT"]
+
+    def test_with_time_left_every_window_is_read(self, tmp_path: Path) -> None:
+        import time
+        from types import SimpleNamespace
+
+        from cordon_scanner.engine.window_pass import WindowPass
+
+        read: list[object] = []
+        windowed, intact = WindowPass.run(
+            self.unit(tmp_path),
+            [SimpleNamespace(id="secrets")],
+            lambda detector, part: read.append(part) or [],
+            [],
+            gap=lambda finding: finding,
+            deadline=time.monotonic() + 600,
+        )
+        assert len(read) >= 2 and intact and windowed == []
+
+
 class TestUrlsAreNotComments:
     def test_a_link_in_text_carried_over_from_an_earlier_line_is_not_a_comment(self) -> None:
         line = "See [the guide](https://docs.example.invalid/x).`},run(`q --trust-all-tools`)"

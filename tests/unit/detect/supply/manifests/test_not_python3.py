@@ -4,6 +4,7 @@ text rule still read the file, so Python 2 cannot be used to hide a payload (ite
 from __future__ import annotations
 
 import ast
+import dataclasses
 import hashlib
 import io
 import sys
@@ -55,10 +56,13 @@ class UnparsedKit:
                 tar.addfile(info, io.BytesIO(data))
         return Scanner(Config.default().with_overrides(use_cache=False, offline=True)).scan(path)
 
-    #: Syntax by the Python that first runs it: a type-parameter default (3.13), a t-string (3.14).
+    #: Syntax by the Python that first runs it, that this reader cannot read on any Python before it:
+    #: a t-string (3.14), then a stand-in for the syntax of a Python not yet released (an operator no
+    #: Python has), so that every CI Python from 3.11 on has a fixture and none skips. A type
+    #: parameter's default (3.13) is not here: the reader reads it, keeping its expression.
     NEWER = (
-        ((3, 13), "def first[T = int](items: list[T]) -> T:\n    return items[0]\n"),
         ((3, 14), "def greet(name):\n    return t'hello {name}'\n"),
+        ((99, 0), "def pipe(x, g):\n    return x |> g\n"),
     )
 
     @staticmethod
@@ -287,3 +291,75 @@ class TestAPythonTwoSetupPy:
         rules = {f.rule_id for f in result.findings}
         assert "OPERATIONAL.MANIFEST.UNPARSED" in rules
         assert not result.content_complete
+
+
+class WindowedUnparsedKit:
+    """A package module larger than `max_file_bytes` is read in windows (`engine/window_pass.py`); what
+    runs when the package is imported is judged by its statement-aligned windows, not by the prefix,
+    which is cut inside a statement."""
+
+    LIMIT = 16 * 1024
+
+    @staticmethod
+    def functions(first: int, count: int) -> str:
+        return "".join(
+            f"def f{n}(a, b):\n    x = a.b.c({n}, 'text {n}', [1, 2, b])\n    return x\n\n"
+            for n in range(first, first + count)
+        )
+
+    @staticmethod
+    def sdist(tmp_path, init: str):
+        path = tmp_path / "pkg-1.0.tar.gz"
+        config = Config.default().with_overrides(use_cache=False, offline=True)
+        limits = dataclasses.replace(
+            config.limits,
+            max_file_bytes=WindowedUnparsedKit.LIMIT,
+            per_file_timeout=0,
+            total_timeout=0,
+        )
+        files = {
+            "setup.py": UnparsedKit.SETUP,
+            "PKG-INFO": UnparsedKit.PKG_INFO,
+            "pkg/__init__.py": init,
+        }
+        with tarfile.open(path, "w:gz") as tar:
+            for name, text in files.items():
+                data = text.encode()
+                info = tarfile.TarInfo(f"pkg-1.0/{name}")
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+        return Scanner(config.with_overrides(limits=limits)).scan(path)
+
+    @staticmethod
+    def unparsed(result) -> list[str]:
+        return [
+            f.rule_id
+            for f in result.findings
+            if f.rule_id in ("SUSPECT.SOURCE.UNPARSED_RUNNING.001", "OPERATIONAL.SOURCE.UNPARSED")
+        ]
+
+
+class TestAFileReadInWindowsIsJudgedByItsWindows:
+    HEAD = "import subprocess\n"  # an act token: a prefix that does not parse would be a gap
+
+    def test_a_large_module_that_parses_is_not_unparsed(self, tmp_path) -> None:
+        text = self.HEAD + WindowedUnparsedKit.functions(0, 400)
+        assert len(text) > WindowedUnparsedKit.LIMIT
+        assert not WindowedUnparsedKit.unparsed(WindowedUnparsedKit.sdist(tmp_path, text))
+
+    def test_a_cut_inside_a_bracket_or_a_string_is_not_a_failure(self, tmp_path) -> None:
+        # a multi-line list literal and a multi-line string sit where a plain cut at the limit falls
+        before = WindowedUnparsedKit.functions(0, 150)
+        body = "BIG = [\n" + "".join(f"    {n},\n" for n in range(400)) + "]\n"
+        text = self.HEAD + before + body + 'DOC = """\n' + "line\n" * 500 + '"""\n'
+        text += WindowedUnparsedKit.functions(150, 150)
+        assert len(self.HEAD + before) < WindowedUnparsedKit.LIMIT * 3
+        assert not WindowedUnparsedKit.unparsed(WindowedUnparsedKit.sdist(tmp_path, text))
+
+    def test_a_real_syntax_error_past_the_first_window_keeps_the_finding(self, tmp_path) -> None:
+        text = self.HEAD + WindowedUnparsedKit.functions(0, 400) + "def broken(:\n    pass\n"
+        assert WindowedUnparsedKit.unparsed(WindowedUnparsedKit.sdist(tmp_path, text))
+
+    def test_a_real_syntax_error_in_the_first_window_keeps_the_finding(self, tmp_path) -> None:
+        text = self.HEAD + "def broken(:\n    pass\n" + WindowedUnparsedKit.functions(0, 400)
+        assert WindowedUnparsedKit.unparsed(WindowedUnparsedKit.sdist(tmp_path, text))

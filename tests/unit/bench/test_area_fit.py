@@ -171,8 +171,11 @@ class TestALoadDependentSplitIsRefused:
 
 
 class TestTheRowsManifest:
-    def test_a_pooling_fit_records_both_versions(self) -> None:
+    def test_a_fit_records_the_rows_version_and_the_versions_the_code_hashes_to(self) -> None:
         manifest = AreaFit.rows_manifest(["rows.jsonl"], "cordon", [], {1})
         assert manifest["schema"] == FeatureSchema.current()
         assert manifest["schema_computed"] == FeatureSchema.computed()
-        assert manifest["schema_computed"] in FeatureSchema.SAME_AS
+        # No earlier version is mapped to this tree's (a user's scan computes the package place now):
+        # the two are one, and a fit pools only rows this tree wrote.
+        assert manifest["schema_computed"] not in FeatureSchema.SAME_AS
+        assert manifest["schema"] == manifest["schema_computed"]

@@ -21,13 +21,13 @@ from __future__ import annotations
 import functools
 import hashlib
 import os
-import time
 from array import array
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any, ClassVar
 
 from cordon_scanner.detect.binary.rule_engine.anchoring.needles import NeedleSet
+from cordon_scanner.detect.binary.rule_engine.deadline import MatchDeadline, Until
 from cordon_scanner.detect.binary.rule_engine.hits import Hits
 from cordon_scanner.detect.binary.rule_engine.pattern import Bytes, Op
 from cordon_scanner.detect.binary.rule_engine.threads import REACH
@@ -330,23 +330,27 @@ class TextFind:
         owners: list[tuple[list[int], int, int, int, int]],
         fixed: int | None,
         max_hits: int,
-        deadline: float | None = None,
+        deadline: Until = None,
     ) -> Hits:
         part, f = search.parts[0], search.flags
         flags = (
             (TextFind.FITS if part.fits else 0) | (TextFind.FULLWORD if "fullword" in f else 0)
             | (TextFind.GREEDY if f.get("greedy") else 0)
         )  # fmt: skip
-        starts, lengths = Automaton.MODULE.text_hits(
-            data,
-            owners,
-            part.text,
-            TextCheck.mode(f),
-            flags,
-            max_hits,
-            -1 if fixed is None else fixed,
-            -1.0 if deadline is None else max(deadline - time.monotonic(), 0.0),
-        )
+        try:
+            starts, lengths = Automaton.MODULE.text_hits(
+                data,
+                owners,
+                part.text,
+                TextCheck.mode(f),
+                flags,
+                max_hits,
+                -1 if fixed is None else fixed,
+                MatchDeadline.left(deadline),
+                MatchDeadline.wall_left(deadline),
+            )
+        except TimeoutError as exc:
+            raise MatchDeadline.timeout(deadline) from exc
         out = Hits()
         out.starts.frombytes(starts)
         out.lengths.frombytes(lengths)
@@ -397,7 +401,7 @@ class HexFind:
     @staticmethod
     def hits(
         search: Any, data: bytes, seen: dict[Any, Any], fixed: int | None, max_hits: int,
-        deadline: float | None,
+        deadline: Until,
     ) -> Hits:  # fmt: skip
         forward, backward = search.hex_layouts
         owners = []
@@ -412,12 +416,18 @@ class HexFind:
                  -1 if a[3] is None else a[3])
                 for order, _, a in holders
             ]  # fmt: skip
-        starts, lengths = Automaton.MODULE.hex_hits(
-            data, owners, forward, backward, REACH,
-            HexFind.FULLWORD if "fullword" in search.flags else 0, max_hits,
-            -1 if fixed is None else fixed,
-            -1.0 if deadline is None else max(deadline - time.monotonic(), 0.0),
-        )  # fmt: skip
+        try:
+            starts, lengths = Automaton.MODULE.hex_hits(
+                data, owners, forward, backward, REACH,
+                HexFind.FULLWORD if "fullword" in search.flags else 0, max_hits,
+                -1 if fixed is None else fixed,
+                MatchDeadline.left(deadline),
+                MatchDeadline.wall_left(deadline),
+            )  # fmt: skip
+        except TimeoutError as exc:
+            # C says only that time ran out: whether it was the CPU budget (final) or only the wall
+            # backstop (a stall, run once more) is read here, from the CPU the thread has used.
+            raise MatchDeadline.timeout(deadline) from exc
         out = Hits()
         out.starts.frombytes(starts)
         out.lengths.frombytes(lengths)

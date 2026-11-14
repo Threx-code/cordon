@@ -21,7 +21,14 @@ class DeclaredKit:
     """Zero-filled data in formats that declare their own size, small enough for a unit test:
     gzip makes each a thousandfold expansion, as the masks and volumes in 05-CENSUS C2 are."""
 
-    LIMITS = Limits(max_member_bytes=64 * 1024, max_archive_ratio=10)
+    # Identical-block metering off: these tests are about the expansion cap and the declared-size
+    # exception themselves; test_identical_block_runs.py covers the metering.
+    LIMITS = Limits(
+        max_member_bytes=64 * 1024,
+        max_archive_ratio=10,
+        max_elided_member_bytes=0,
+        max_elided_bytes=0,
+    )
 
     @staticmethod
     def fits(width: int, height: int, *, pad: bytes = b"", header_fill: bytes = b" ") -> bytes:
@@ -106,7 +113,11 @@ class TestAFormatThatDeclaresItsSizeMayExpandToIt:
 
     def test_a_declared_size_over_the_stream_limit_is_padding(self) -> None:
         limits = Limits(
-            max_member_bytes=64 * 1024, max_archive_ratio=10, max_stream_bytes=512 * 1024
+            max_member_bytes=64 * 1024,
+            max_archive_ratio=10,
+            max_stream_bytes=512 * 1024,
+            max_elided_member_bytes=0,
+            max_elided_bytes=0,
         )
         assert DeclaredKit.padded(
             DeclaredKit.read(DeclaredKit.fits(2048, 512), "m.fits.gz", limits)

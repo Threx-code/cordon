@@ -723,6 +723,8 @@ class PythonAnalyzer(
         key = PythonFacts.constant(node.slice)
 
         if key is not None:
+            if PythonSyntax.keyed_value_not_function(node, self._module_tree):
+                return
             if key in PRIMITIVES:
                 self._record(PRIMITIVES[key], node, key)
             elif container and f"{container}.{key}" in PRIMITIVES:

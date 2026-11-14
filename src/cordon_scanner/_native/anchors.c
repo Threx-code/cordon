@@ -514,6 +514,32 @@ static double now_seconds(void) {
 }
 #endif
 
+/* seconds of CPU the calling thread has used: the match's budget is this, not the wall clock, so a
+ * loaded machine does not end a match that has used little CPU (rule_engine/deadline.py). */
+#ifdef _WIN32
+static double cpu_seconds(void) {
+    FILETIME c, e, k, u;
+    if (!GetThreadTimes(GetCurrentThread(), &c, &e, &k, &u)) return now_seconds();
+    ULARGE_INTEGER kk, uu; kk.LowPart = k.dwLowDateTime; kk.HighPart = k.dwHighDateTime;
+    uu.LowPart = u.dwLowDateTime; uu.HighPart = u.dwHighDateTime;
+    return (double)(kk.QuadPart + uu.QuadPart) / 1e7;
+}
+#elif defined(CLOCK_THREAD_CPUTIME_ID)
+static double cpu_seconds(void) {
+    struct timespec t;
+    if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t) != 0) return now_seconds();
+    return (double)t.tv_sec + (double)t.tv_nsec / 1e9;
+}
+#else
+static double cpu_seconds(void) { return now_seconds(); }
+#endif
+
+/* whether the match is out of time: `left` seconds of this thread's CPU since `cpu0`, or the wall
+ * backstop `wall` seconds since `began` (a negative limit is no limit) */
+static int out_of_time(double left, double wall, double cpu0, double began) {
+    return (left >= 0.0 && cpu_seconds() - cpu0 >= left) || (wall >= 0.0 && now_seconds() - began >= wall);
+}
+
 static int cmp_event(const void *x, const void *y) {
     const Event *a = x, *b = y;
     if (a->e0 != b->e0) return a->e0 < b->e0 ? -1 : 1;
@@ -543,8 +569,8 @@ static int whole(const uint8_t *d, int64_t n, int64_t start, int64_t length, int
 
 static PyObject *text_hits(PyObject *self, PyObject *args) {
     (void)self;
-    Py_buffer data, text; PyObject *owners; long mode, flags; Py_ssize_t max_hits, fixed; double left = -1.0;
-    if (!PyArg_ParseTuple(args, "y*Oy*llnn|d", &data, &owners, &text, &mode, &flags, &max_hits, &fixed, &left)) return NULL;
+    Py_buffer data, text; PyObject *owners; long mode, flags; Py_ssize_t max_hits, fixed; double left = -1.0, wall = -1.0;
+    if (!PyArg_ParseTuple(args, "y*Oy*llnn|dd", &data, &owners, &text, &mode, &flags, &max_hits, &fixed, &left, &wall)) return NULL;
     PyObject *result = NULL, *seq = NULL;
     Event *ev = NULL; int64_t *fit = NULL, *keys = NULL, *hs = NULL, *hl = NULL, *slot = NULL;
     seq = PySequence_Tuple(owners);
@@ -604,12 +630,12 @@ static PyObject *text_hits(PyObject *self, PyObject *args) {
     const uint8_t *d = data.buf, *t = text.buf; int64_t n = data.len, mt = text.len;
     Py_ssize_t held = 0;
     int late = 0;
-    double began = now_seconds();
+    double began = now_seconds(), cpu0 = cpu_seconds();
     Py_BEGIN_ALLOW_THREADS
     qsort(ev, (size_t)count, sizeof(Event), cmp_event);
     for (Py_ssize_t i = 0; i < count; i++) {
         /* the time allowed, read where the hunt reads it: the first event and every 4096th */
-        if (i % 4096 == 0 && left >= 0.0 && now_seconds() - began >= left) { late = 1; break; }
+        if (i % 4096 == 0 && out_of_time(left, wall, cpu0, began)) { late = 1; break; }
         int64_t at = ev[i].at;
         if (at >= n) continue;
         if (fixed >= 0 && at != fixed) continue;
@@ -641,7 +667,7 @@ done:
     return result;
 }
 
-/* hex_hits(data, owners, forward, backward, reach, flags, max_hits, fixed[, left]) -> (starts,
+/* hex_hits(data, owners, forward, backward, reach, flags, max_hits, fixed[, left[, wall]]) -> (starts,
  * lengths): one plain hex string's matches (one part, no alternatives) from its anchors'
  * occurrences, as rule_engine.scan's hunt finds them with threads.Lanes. owners: a sequence of
  * (starts, anchor length, back, order, forward entry, backward entry), an entry -1 for none;
@@ -658,7 +684,7 @@ typedef struct {
     Lane *lanes; Py_ssize_t cap;
     int64_t *keys, *hs, *hl; Py_ssize_t kcap, hcap, held, max_hits;
     int full, fullword, nomem, late;
-    double began, left; int64_t steps; /* the time allowed, read every 4,096 lane steps too */
+    double began, cpu0, left, wall; int64_t steps; /* the time allowed, read every 4,096 lane steps too */
 } HexRun;
 
 /* the recorded starts: an open-addressed table kept under half full, grown with them, and the
@@ -733,7 +759,7 @@ static int64_t lanes_run(HexRun *h, const int64_t *ops, Py_ssize_t nops, int64_t
         int64_t code = op[0];
         Py_ssize_t k = 0;
         while (k < count) {
-            if (++h->steps % 4096 == 0 && h->left >= 0.0 && now_seconds() - h->began >= h->left) { /* Lanes.STEPS */
+            if (++h->steps % 4096 == 0 && out_of_time(h->left, h->wall, h->cpu0, h->began)) { /* Lanes.STEPS */
                 h->late = 1; return -1;
             }
             if (L[k].rnd != rnd) { k++; continue; }
@@ -753,7 +779,7 @@ static int64_t lanes_run(HexRun *h, const int64_t *ops, Py_ssize_t nops, int64_t
                     for (int64_t j = lo + 1; j <= hi; j++) {
                         if (done + j >= reach) break;
                         /* each insert moves the lanes after it: the time is read here as well */
-                        if (++h->steps % 4096 == 0 && h->left >= 0.0 && now_seconds() - h->began >= h->left) {
+                        if (++h->steps % 4096 == 0 && out_of_time(h->left, h->wall, h->cpu0, h->began)) {
                             h->late = 1; return -1;
                         }
                         int64_t spot = L[k].pos + j * step;
@@ -807,8 +833,8 @@ static int read_ops(PyObject *ob, Py_buffer *b, Py_ssize_t *nops) {
 
 static PyObject *hex_hits(PyObject *self, PyObject *args) {
     (void)self;
-    Py_buffer data, fb, bb; PyObject *owners, *fo, *bo; long flags; Py_ssize_t max_hits, fixed, reach; double left = -1.0;
-    if (!PyArg_ParseTuple(args, "y*OOOnlnn|d", &data, &owners, &fo, &bo, &reach, &flags, &max_hits, &fixed, &left)) return NULL;
+    Py_buffer data, fb, bb; PyObject *owners, *fo, *bo; long flags; Py_ssize_t max_hits, fixed, reach; double left = -1.0, wall = -1.0;
+    if (!PyArg_ParseTuple(args, "y*OOOnlnn|dd", &data, &owners, &fo, &bo, &reach, &flags, &max_hits, &fixed, &left, &wall)) return NULL;
     Py_ssize_t nf = 0, nb = 0;
     if (!read_ops(fo, &fb, &nf)) { PyBuffer_Release(&data); return NULL; }
     if (!read_ops(bo, &bb, &nb)) { PyBuffer_Release(&fb); PyBuffer_Release(&data); return NULL; }
@@ -866,11 +892,11 @@ static PyObject *hex_hits(PyObject *self, PyObject *args) {
     }
     const uint8_t *d = data.buf; int64_t n = data.len;
     const int64_t *fops = fb.buf, *bops = bb.buf;
-    h.began = now_seconds(); h.left = left;
+    h.began = now_seconds(); h.cpu0 = cpu_seconds(); h.left = left; h.wall = wall;
     Py_BEGIN_ALLOW_THREADS
     qsort(ev, (size_t)count, sizeof(Event), cmp_event);
     for (Py_ssize_t i = 0; i < count; i++) {
-        if (i % 4096 == 0 && left >= 0.0 && now_seconds() - h.began >= left) { h.late = 1; break; }
+        if (i % 4096 == 0 && out_of_time(left, wall, h.cpu0, h.began)) { h.late = 1; break; }
         if (h.full || h.nomem || h.late) break;
         int64_t at = ev[i].at;
         if (at >= n) continue;
@@ -907,8 +933,8 @@ done:
 
 static PyMethodDef module_methods[] = {
     {"check_text", check_text, METH_VARARGS, "check_text(data, offsets, text, mode) -> int64 lengths."},
-    {"hex_hits", hex_hits, METH_VARARGS, "hex_hits(data, owners, forward, backward, reach, flags, max_hits, fixed[, left]) -> (starts, lengths)."},
-    {"text_hits", text_hits, METH_VARARGS, "text_hits(data, owners, text, mode, flags, max_hits, fixed[, left]) -> (starts, lengths)."},
+    {"hex_hits", hex_hits, METH_VARARGS, "hex_hits(data, owners, forward, backward, reach, flags, max_hits, fixed[, left[, wall]]) -> (starts, lengths)."},
+    {"text_hits", text_hits, METH_VARARGS, "text_hits(data, owners, text, mode, flags, max_hits, fixed[, left[, wall]]) -> (starts, lengths)."},
     {NULL, NULL, 0, NULL}};
 
 /* The GIL: this module keeps it (single-phase init, so a free-threaded build turns the GIL on

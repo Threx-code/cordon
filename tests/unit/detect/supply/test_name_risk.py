@@ -286,3 +286,114 @@ class TestPublishedPackages:
         )
         found = Releases.findings(target)
         assert [f.severity.name for f in found] == ["HIGH"]
+
+
+class Sdists:
+    """A confusion-version sdist whose `setup.py` is the only thing in it (reviews/pypi-98/26)."""
+
+    @staticmethod
+    def build(tmp_path: Path, setup: str, extra: dict[str, str] | None = None) -> Path:
+        root = "vendor-thing-999.9.9"
+        pkg_info = "Metadata-Version: 2.1\nName: vendor-thing\nVersion: 999.9.9\n"
+        files = {f"{root}/PKG-INFO": pkg_info, f"{root}/setup.py": setup}
+        files.update({f"{root}/{k}": v for k, v in (extra or {}).items()})
+        return Releases.tarball(tmp_path, files, name=f"{root}.tar.gz")
+
+
+REFUSAL = (
+    "import sys\n"
+    "from distutils.core import setup\n"
+    "if not any(a in sys.argv for a in ['sdist', 'egg_info']):\n"
+    "    raise Exception('{message}')\n"
+    "setup(name='vendor-thing', version='999.9.9')\n"
+)
+HOLDING_MESSAGE = (
+    "This is a stub published to prevent dependency confusion. See https://example.invalid/x"
+)
+
+
+class TestAnInertSetupThatRefusesToInstall:
+    """An sdist whose `setup.py` can run nothing (its every call is `setup`, `any`, `print`, an exit or an
+    exception) and whose refusal message holds a defensive claim is read as that claim: the owner's
+    reservation of its own name. The claim is only credited where nothing could run."""
+
+    def test_a_holding_message_in_an_inert_setup_is_not_blocked(self, tmp_path: Path) -> None:
+        target = Sdists.build(tmp_path, REFUSAL.format(message=HOLDING_MESSAGE))
+        assert not Releases.blocked(target)
+        assert Releases.findings(target) == [] or all(
+            f.severity.name == "LOW" for f in Releases.findings(target)
+        )
+
+    def test_a_message_that_claims_nothing_still_blocks(self, tmp_path: Path) -> None:
+        assert Releases.blocked(Sdists.build(tmp_path, REFUSAL.format(message="not available")))
+
+    def test_the_same_claim_beside_a_call_that_could_run_something_still_blocks(
+        self, tmp_path: Path
+    ) -> None:
+        setup = "import os\nos.system('true')\n" + REFUSAL.format(message=HOLDING_MESSAGE)
+        assert Releases.blocked(Sdists.build(tmp_path, setup))
+
+    def test_a_claim_after_a_network_call_still_blocks(self, tmp_path: Path) -> None:
+        setup = (
+            "import urllib.request\n"
+            "urllib.request.urlopen('https://example.invalid/')\n"
+            + REFUSAL.format(message=HOLDING_MESSAGE)
+        )
+        assert Releases.blocked(Sdists.build(tmp_path, setup))
+
+    def test_an_import_of_anything_else_makes_it_not_inert(self, tmp_path: Path) -> None:
+        setup = "import subprocess\n" + REFUSAL.format(message=HOLDING_MESSAGE)
+        assert Releases.blocked(Sdists.build(tmp_path, setup))
+
+    def test_a_probe_that_says_so_in_an_inert_setup_still_blocks(self, tmp_path: Path) -> None:
+        message = "poc possible by example, a proof of concept"
+        assert Releases.blocked(Sdists.build(tmp_path, REFUSAL.format(message=message)))
+
+
+class TestACodeBytesBound:
+    """The rule's own account of "nothing to run" is code under a few hundred bytes: three files are not
+    nothing when they hold fifteen kilobytes (reviews/pypi-98/26)."""
+
+    @staticmethod
+    def identity(code_bytes: int) -> PackageIdentity:
+        return Identities.of(
+            ecosystem="pypi",
+            name="somelib",
+            version="0.1",
+            description="a proof of concept for volatility surfaces",
+            has_source=False,
+            code_files=3,
+            code_bytes=code_bytes,
+        )
+
+    def test_three_small_files_are_still_nothing_to_run(self) -> None:
+        verdict = NameRisk.assess(self.identity(1500))
+        assert verdict is not None and verdict.blocks
+
+    def test_three_large_files_are_something(self) -> None:
+        verdict = NameRisk.assess(self.identity(15_000))
+        assert verdict is None or not verdict.blocks
+
+    def test_a_confusion_version_with_two_small_files_still_blocks(self) -> None:
+        verdict = NameRisk.assess(
+            Identities.of(version="2154.0.0", has_source=False, code_files=2, code_bytes=1379)
+        )
+        assert verdict is not None and verdict.blocks
+
+    def test_an_sdist_with_big_code_files_is_not_blocked(self, tmp_path: Path) -> None:
+        pkg_info = (
+            "Metadata-Version: 2.1\nName: somelib\nVersion: 0.1\nSummary: a proof of concept\n\n"
+        )
+        body = "x = 1\n" * 3000
+        target = Releases.tarball(
+            tmp_path,
+            {
+                "somelib-0.1/PKG-INFO": pkg_info,
+                "somelib-0.1/setup.py": "from setuptools import setup\nsetup(name='somelib')\n",
+                "somelib-0.1/somelib/a.py": body,
+                "somelib-0.1/somelib/b.py": body,
+                "somelib-0.1/somelib/c.py": body,
+            },
+            name="somelib-0.1.tar.gz",
+        )
+        assert not Releases.blocked(target)

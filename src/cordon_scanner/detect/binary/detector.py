@@ -40,6 +40,7 @@ from typing import TYPE_CHECKING, ClassVar, Final
 
 from cordon_scanner.analysis.shared.source_paths import FIXTURE_CEILING, SourcePaths
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, ScanContext
+from cordon_scanner.detect.binary.library_kind import LibraryKind
 from cordon_scanner.detect.binary.magic import FORMATS, Contents, Format, MachO
 from cordon_scanner.detect.binary.rule_declarations import DECLARED_RULES, DETECTOR
 from cordon_scanner.detect.catalogue import DeclaredRule
@@ -748,13 +749,16 @@ class BinaryDetector(BaseDetector):
         lowered = f"/{path.lower()}"
 
         in_lifecycle_directory = any(
-            fragment in lowered
+            f"/{fragment}" in lowered
             for fragment in EXECUTING_DIRECTORIES
             # And not a `scripts/` that is part of a source tree. See `SOURCE_TREES`.
-            if not any(tree in lowered.split(fragment, 1)[0] + "/" for tree in SOURCE_TREES)
+            if not any(tree in lowered.split(f"/{fragment}", 1)[0] + "/" for tree in SOURCE_TREES)
         ) and not self._virtualenv_launcher(path, ctx)
+        # A library sitting in the directory is loaded by a program that asks for it, not run by the step;
+        # one an install hook names is what the hook reaches, whatever it is.
         if found.name not in NOT_LIFECYCLE_RUNNABLE and (
-            in_lifecycle_directory or ctx.in_install_hook(path)
+            (in_lifecycle_directory and not LibraryKind.of(content.raw))
+            or ctx.in_install_hook(path)
         ):
             yield self._finding(
                 "SUSPECT.BINARY.EXECUTABLE_PATH.001",

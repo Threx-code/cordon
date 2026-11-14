@@ -21,6 +21,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Any, ClassVar
 
 if TYPE_CHECKING:
+    from cordon_scanner.detect.binary.rule_engine.deadline import Until
     from cordon_scanner.detect.binary.rule_engine.scan import Search, _Hunt
     from cordon_scanner.detect.binary.rule_engine.search_parts import AnchorAt, Event
 
@@ -265,7 +266,7 @@ class Streams:
 
     @staticmethod
     def chained(chain: Any, data: bytes, anchors: Iterator[int], *, backward: bool, nocase: bool,
-                dotall: bool, deadline: float | None) -> Iterator[tuple[int, int]]:  # fmt: skip
+                dotall: bool, deadline: Until) -> Iterator[tuple[int, int]]:  # fmt: skip
         """A chain string's matches from its anchors, a window of `WINDOW` offsets at a time, by
         start: what `Chain.matches` gives over all of them at once.
 

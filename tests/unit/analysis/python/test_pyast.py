@@ -164,6 +164,18 @@ class TestReflectiveResolution:
             '__builtins__["' + EXECUTE + '"]("pass")'
         )
 
+    def test_a_results_dict_keyed_eval_is_not_a_run(self) -> None:
+        """A key written, or a value whose dict method is read, reaches no function: an evaluation
+        script's `payload["eval"]` (paper-preflight 0.8 in the 0.8.0 benign set)."""
+        source = 'payload = {}\npayload["eval"] = {}\nn = payload["eval"].get("k", 0)\ndel payload["exec"]\n'
+        assert Capability.EXECUTE not in PyastHelpers.capabilities(source)
+
+    def test_a_builtin_reached_by_key_and_called_through_a_dunder_stays(self) -> None:
+        assert Capability.EXECUTE in PyastHelpers.capabilities(
+            '__builtins__["' + EXECUTE + '"].__call__("pass")'
+        )
+        assert Capability.EXECUTE in PyastHelpers.capabilities('f = globals()["eval"]\nf("1")')
+
 
 class TestDynamicDispatch:
     """Reflection whose target cannot be resolved.

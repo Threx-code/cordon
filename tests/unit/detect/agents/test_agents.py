@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -41,6 +42,22 @@ class AgentsHelpers:
             path.write_bytes(body if isinstance(body, bytes) else body.encode())
         config = Config.default().with_overrides(use_cache=False, **overrides)
         return Scanner(config).scan(tmp_path)
+
+    @staticmethod
+    def _sdist(tmp_path: Path, files: dict[str, str | bytes]):
+        """The files as a source distribution, scanned as the download it is (not a repository root)."""
+        import io
+        import tarfile
+
+        archive = tmp_path / "pkg-1.0.tar.gz"
+        files = {"PKG-INFO": "Metadata-Version: 2.1\nName: pkg\nVersion: 1.0\n", **files}
+        with tarfile.open(archive, "w:gz") as handle:
+            for name, body in files.items():
+                data = body if isinstance(body, bytes) else body.encode()
+                info = tarfile.TarInfo(f"pkg-1.0/{name}")
+                info.size = len(data)
+                handle.addfile(info, io.BytesIO(data))
+        return Scanner(Config.default().with_overrides(use_cache=False)).scan(archive)
 
     @staticmethod
     def _rules(result) -> dict[str, list]:
@@ -200,6 +217,45 @@ class TestAgentSettings:
             AgentsHelpers._scan(tmp_path, {".claude/settings.json": json.dumps(settings)})
         )
         assert len(found["POLICY.AGENT.AUTO_APPROVE.001"]) == 2
+
+    LOCAL_SETTINGS: ClassVar[str] = json.dumps(
+        {"enabledMcpjsonServers": ["bus"], "enableAllProjectMcpServers": True}
+    )
+    MCP_CONFIG: ClassVar[str] = json.dumps({"mcpServers": {"bus": {"command": "bus-server"}}})
+
+    def test_all_project_servers_in_a_package_that_declares_none_approves_nothing(
+        self, tmp_path
+    ) -> None:
+        """`enableAllProjectMcpServers` approves what the project's `.mcp.json` declares. A package that
+        ships a developer's `settings.local.json` and no `.mcp.json` has nothing for it to approve
+        (claudecraftsman, vespera on the 16,828 benign rescan)."""
+        result = AgentsHelpers._sdist(
+            tmp_path, {".claude/settings.local.json": self.LOCAL_SETTINGS}
+        )
+        assert "POLICY.AGENT.AUTO_APPROVE.001" not in {f.rule_id for f in result.findings}
+
+    def test_all_project_servers_beside_the_servers_it_approves_is_still_blocked(
+        self, tmp_path
+    ) -> None:
+        files = {".claude/settings.local.json": self.LOCAL_SETTINGS, ".mcp.json": self.MCP_CONFIG}
+        found = AgentsHelpers._rules(AgentsHelpers._sdist(tmp_path, files))
+        assert found["POLICY.AGENT.AUTO_APPROVE.001"][0].severity is Severity.HIGH
+
+    def test_a_repository_is_judged_as_it_was(self, tmp_path) -> None:
+        """A working tree may gain its `.mcp.json` at any commit: the flag stands as written."""
+        found = AgentsHelpers._rules(
+            AgentsHelpers._scan(tmp_path, {".claude/settings.local.json": self.LOCAL_SETTINGS})
+        )
+        assert found["POLICY.AGENT.AUTO_APPROVE.001"][0].severity is Severity.HIGH
+
+    def test_bypass_mode_in_a_package_is_blocked_whatever_servers_it_declares(
+        self, tmp_path
+    ) -> None:
+        settings = json.dumps({"permissions": {"defaultMode": "bypassPermissions"}})
+        found = AgentsHelpers._rules(
+            AgentsHelpers._sdist(tmp_path, {".claude/settings.json": settings})
+        )
+        assert found["POLICY.AGENT.AUTO_APPROVE.001"][0].severity is Severity.HIGH
 
     def test_specific_permissions_are_fine(self, tmp_path) -> None:
         settings = {"permissions": {"allow": ["Bash(npm test)", "Read(./docs/**)"]}}

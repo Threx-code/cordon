@@ -25,7 +25,7 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 from cordon_scanner.foundation.results import OperationalFinding
-from cordon_scanner.sources.base import Rejection
+from cordon_scanner.sources.base import REJECTION_CAUSE, Rejection
 
 if TYPE_CHECKING:
     from cordon_scanner.engine.pipeline.accumulator import Accumulator
@@ -218,6 +218,12 @@ class ArchiveMembers:
             acc.incomplete(ArchiveMembers.not_examined(path, reason, detail))
 
     @staticmethod
+    def cause_class(reason: str) -> str:
+        """What drove a refusal (`sources.base.REJECTION_CAUSE`): `budget`, `size`, `unreadable` or
+        `content`. A reason with no class is `content`; a test fails for one that lacks it."""
+        return REJECTION_CAUSE.get(reason, "content")
+
+    @staticmethod
     def not_examined(path: str, reason: str, detail: str) -> Finding:
         """That a refused member's content was not examined: the coverage note every refusal
         carries, beside the detection finding when the refusal is itself the attack."""
@@ -226,7 +232,8 @@ class ArchiveMembers:
             rule_id="OPERATIONAL.ARCHIVE.MEMBER_REJECTED",
             message=(
                 f"An archive member was refused ({reason}) and therefore not "
-                f"examined{': ' + detail if detail else ''}."
+                f"examined{': ' + detail if detail else ''}. "
+                f"Cause class: {ArchiveMembers.cause_class(reason)}."
             ),
             remediation=(
                 "A refused member is not a clean member. Inspect it directly if "

@@ -69,6 +69,23 @@ class TestAPythonTwoFileIsReadAsCode:
             ("import asyncio\nasyncio.async(f())\n", "asyncio.async_(f())"),
             ("def async(n):\n    return n\n", "def async_(n):"),
             ("async = True\nif async:\n    pass\n", "if async_:"),
+            ("async = f('x')\nif async is None:\n    pass\n", "if async_ is None:"),
+            ("def f(async):\n    return async or 1\n", "return async_ or 1"),
+            ("def f(async):\n    if not async and 1:\n        pass\n", "if not async_ and 1:"),
+            ("def f(async):\n    return async\n", "return async_"),
+            ("def f(a):\n    return a.None\n", "return a.None_"),
+            # Python 3.13: a default for a type parameter. This Python does not parse it; the
+            # default is code, so it is kept, on its line, as a bound.
+            ("class Box[T = int]:\n    x = 1\n", "class Box[T: (int)]:"),
+            pytest.param(
+                "def first[T: str = str, *Ts = *tuple[int]](a):\n    return a\n",
+                "def first[T: (str, str), Ts: (*tuple[int],)](a):",
+                # 3.11 parses no type-parameter list at all, so the rewrite has nothing to parse
+                # into; the file is read as not parsing, the conservative reading.
+                marks=pytest.mark.skipif(
+                    sys.version_info < (3, 12), reason="PEP 695 syntax parses from 3.12"
+                ),
+            ),
             pytest.param(
                 "try:\n    pass\nexcept IOError, (no, why):\n    pass\n",
                 "except IOError:",
@@ -80,6 +97,29 @@ class TestAPythonTwoFileIsReadAsCode:
     )
     def test_each_construct_is_rewritten_to_what_it_means(self, source: str, kept: str) -> None:
         assert kept in ReaderKit.read(source)
+
+    @pytest.mark.skipif(sys.version_info < (3, 12), reason="PEP 695 syntax parses from 3.12")
+    @pytest.mark.skipif(sys.version_info >= (3, 13), reason="3.13 parses a type default itself")
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "import os\ndef first[T = os.getcwd()](a):\n    return a\n",
+            "import os\nclass Box[T: object = os.getcwd()]:\n    pass\n",
+            "import os\ntype Alias[*Ts = *os.environ] = tuple[*Ts]\n",
+        ],
+    )
+    def test_a_type_default_is_code_and_stays_in_the_tree(self, source: str) -> None:
+        """The default is evaluated when it is read, so a call in it is a call the analysers see."""
+        calls = {
+            ast.unparse(node.func)
+            for node in ast.walk(ast.parse(ReaderKit.read(source)))
+            if isinstance(node, ast.Call)
+        } | {
+            ast.unparse(node)
+            for node in ast.walk(ast.parse(ReaderKit.read(source)))
+            if isinstance(node, ast.Attribute)
+        }
+        assert "os.getcwd" in calls or "os.environ" in calls
 
     def test_tabs_in_indentation_count_eight_columns_as_python_2_did(self) -> None:
         source = "def f():\n        x = 1\n\treturn x\n"
@@ -158,3 +198,32 @@ class TestWhollyNeutralisesTheWholeStatement:
     def test_a_print_over_two_lines_is_still_wholly_python_2(self) -> None:
         source = 'import x\nprint "a %s" % \\\n    x.y\n'
         assert PythonTwoReader.wholly(source)
+
+
+class TestTheLineCountOfWhatItReads:
+    """What the reader gives back stands where the file had it, line for line: every finding's line
+    number comes from it. A last line with no line ending stays without one when it is made inert."""
+
+    @staticmethod
+    def breaks(text: str) -> int:
+        return text.count("\n") + text.count("\r")
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            # 3.11's parser rejects a file whose one line ends in a continuation, so it is read as
+            # not parsing there (the conservative reading); 3.12 accepts it.
+            pytest.param(
+                "print x \\",
+                marks=pytest.mark.skipif(
+                    sys.version_info < (3, 12), reason="3.11 rejects a lone trailing continuation"
+                ),
+            ),
+            "import a\nprint x",
+            "print x\r\nprint y \\",
+        ],
+    )
+    def test_the_text_has_as_many_lines_as_the_file(self, source: str) -> None:
+        reading = PythonTwoReader.read(source)
+        assert reading.text is not None
+        assert self.breaks(reading.text) == self.breaks(source)
