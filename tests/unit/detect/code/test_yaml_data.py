@@ -38,6 +38,10 @@ class TestWhichLinesRunSomething:
         text = "attacks:\n  - {id: 1, prompt: 'please rm -rf ~/ now'}\n"
         assert not YamlCommands.runs(text, 2)
 
+    def test_a_compose_extension_key_is_not_a_command(self) -> None:
+        text = "x-notes:\n  - rm -rf ~/\n"
+        assert not YamlCommands.runs(text, 2)
+
     def test_tool_call_arguments_in_a_catalogue_are_data(self) -> None:
         text = "attacks:\n  - {method: tools/call, tool: x, args: {path: 'rm -rf ~/'}}\n"
         assert not YamlCommands.runs(text, 2)
@@ -54,6 +58,14 @@ class TestWhichLinesRunSomething:
             "before_script:\n  - rm -rf ~/\n",
             "scripts:\n  clean: rm -rf ~/\n",
             "ExecStart: rm -rf ~/\n",
+            "repos:\n  - repo: local\n    hooks:\n      - id: x\n        entry: rm -rf ~/\n",
+            "tasks:\n  clean:\n    cmds:\n      - rm -rf ~/\n",
+            "cmds:\n  - rm -rf ~/\n",
+            "commands:\n  - rm -rf ~/\n",
+            "after_script:\n  - rm -rf ~/\n",
+            "steps:\n  - rm -rf ~/\n",
+            "lifecycle:\n  post_install: rm -rf ~/\n",
+            "rm -rf ~/\n- rm -rf /\n",
         ],
     )
     def test_a_command_key_runs_it(self, text: str) -> None:

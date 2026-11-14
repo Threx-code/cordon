@@ -21,8 +21,8 @@ _FLOW_KEY: Final = re.compile(r"""[{,][ \t]*(?P<key>[A-Za-z_][\w.-]{0,60})[ \t]*
 
 class YamlCommands:
     COMMAND_KEYS: ClassVar[frozenset[str]] = frozenset(
-        {"run", "runs", "script", "scripts", "command", "commands", "cmd", "shell", "entrypoint",
-         "exec", "before_script", "after_script", "install", "postinstall", "preinstall",
+        {"run", "runs", "script", "scripts", "command", "commands", "cmd", "cmds", "entry", "steps", "post_install", "pre_install", "post-install", "pre-install", "postinstall", "shell", "entrypoint",
+         "exec", "before_script", "after_script", "install", "preinstall",
          "pre", "post", "execstart", "execstop", "execstartpre", "execstartpost", "runcmd",
          "bootcmd", "user_data", "userdata", "hooks", "lifecycle", "healthcheck", "init",
          "setup", "build", "test", "deploy", "start", "stop", "up", "down", "clean"}
