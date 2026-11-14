@@ -17,7 +17,13 @@ registered callback -- is loaded too. The main guard and a function nothing call
 
 A run is `exec` or `eval` of something that is not a literal, or a process started (`os.system`,
 `os.popen`, `os.startfile`, the `exec*` and `spawn*` families, `subprocess`, `pty.spawn`); the
-version control tools and the screen-clearing commands are the machine's own and not counted. A fetch
+version control tools and the screen-clearing commands are the machine's own and not counted, and
+neither is a tool asked only for its version or help -- an argument list whose every argument after
+the program is such a flag (`[cc, '--version']`, a setup script checking its compiler) -- unless the
+program is something the file fetched to (a name or literal path the fetch was given or assigned to),
+which `[path, '--version']` still starts. A shell string is never read as a query: it can chain
+anything after the flag. Measured 14 Nov: 1 of the 3 benign packages the rules newly blocked (two
+readers: scanner error) was this compiler check beside a header download. A fetch
 is a request made with `requests`, `httpx`, `urllib.request` or `http.client`, through whatever name
 the file imported it as.
 """
@@ -72,6 +78,9 @@ class FetchRunAtLoad:
     )
     CODE: ClassVar[frozenset[str]] = frozenset({"exec", "eval"})
     OWN: ClassVar[re.Pattern[str]] = re.compile(r"(?:git|hg|svn|clear|cls)(?:\.exe)?")
+    QUERY: ClassVar[frozenset[str]] = frozenset(
+        {"--version", "-version", "-V", "--help", "-dumpversion", "-dumpfullversion"}
+    )
 
     @classmethod
     def lines(cls, tree: ast.AST) -> list[int]:
@@ -81,6 +90,7 @@ class FetchRunAtLoad:
         if not loaded:
             return []
         aliases = cls._aliases(tree)
+        fetched = cls._fetched(tree, aliases)
         fetches = False
         runs: list[int] = []
         for node in PythonSyntax.walked_of(tree, ast.Call):
@@ -89,23 +99,88 @@ class FetchRunAtLoad:
             name = cls._resolved(node.func, aliases)
             if name in cls.FETCH:
                 fetches = True
-            elif cls._runs(name, node):
+            elif cls._runs(name, node, fetched):
                 runs.append(node.lineno)
         return [min(runs)] if fetches and runs else []
 
     @classmethod
-    def _runs(cls, name: str, call: ast.Call) -> bool:
+    def _fetched(cls, tree: ast.Module, aliases: dict[str, str]) -> frozenset[str]:
+        """The names and literal strings a fetch was given or assigned to, and the names built
+        from them: what a later run of 'the fetched file' would have to mention. Module names and
+        the functions called (`os` in `os.path.join(d, f)`) are not data and link nothing."""
+        modules = cls._imported(tree)
+        refs: set[str] = set()
+        for node in PythonSyntax.walked_of(tree, ast.Call):
+            if isinstance(node, ast.Call) and cls._resolved(node.func, aliases) in cls.FETCH:
+                for arg in [*node.args, *(k.value for k in node.keywords)]:
+                    refs |= cls._mentions(arg, modules)
+        assigns = [n for n in PythonSyntax.walked_of(tree, ast.Assign) if isinstance(n, ast.Assign)]
+        for node in assigns:
+            if any(
+                isinstance(c, ast.Call) and cls._resolved(c.func, aliases) in cls.FETCH
+                for c in ast.walk(node.value)
+            ):
+                for target in node.targets:
+                    refs |= cls._mentions(target, modules)
+        changed = True
+        while changed:
+            changed = False
+            for node in assigns:
+                if cls._mentions(node.value, modules) & refs:
+                    for target in node.targets:
+                        new = cls._mentions(target, modules) - refs
+                        if new:
+                            refs |= new
+                            changed = True
+        return frozenset(refs)
+
+    @staticmethod
+    def _imported(tree: ast.Module) -> frozenset[str]:
+        out: set[str] = set()
+        for node in PythonSyntax.walked_of(tree, ast.Import, ast.ImportFrom):
+            if isinstance(node, ast.Import | ast.ImportFrom):
+                for a in node.names:
+                    out.add(a.asname or a.name.split(".", 1)[0])
+        return frozenset(out)
+
+    @staticmethod
+    def _mentions(node: ast.AST, skip: frozenset[str] = frozenset()) -> set[str]:
+        callees = {id(n.func) for n in ast.walk(node) if isinstance(n, ast.Call)}
+        out: set[str] = set()
+        for n in ast.walk(node):
+            if isinstance(n, ast.Name) and n.id not in skip and id(n) not in callees:
+                out.add(n.id)
+            elif isinstance(n, ast.Constant) and isinstance(n.value, str):
+                out.add(n.value)
+        return out
+
+    @classmethod
+    def _runs(cls, name: str, call: ast.Call, fetched: frozenset[str] = frozenset()) -> bool:
         if name in cls.CODE:
             return bool(call.args) and not isinstance(call.args[0], ast.Constant)
         if name not in cls.PROCESS:
             return False
         first = call.args[0] if call.args else None
         if isinstance(first, ast.List | ast.Tuple) and first.elts:
+            if cls._query(first.elts, fetched):
+                return False
             first = first.elts[0]
         if isinstance(first, ast.Constant) and isinstance(first.value, str):
             program = first.value.strip().split(" ", 1)[0].replace("\\", "/").rsplit("/", 1)[-1]
             return cls.OWN.fullmatch(program.lower()) is None
         return True
+
+    @classmethod
+    def _query(cls, argv: list[ast.expr], fetched: frozenset[str]) -> bool:
+        """An argument list that only asks a tool for its version or help, and whose program is
+        not something the file fetched to."""
+        program, rest = argv[0], argv[1:]
+        if not rest or not all(
+            isinstance(a, ast.Constant) and isinstance(a.value, str) and a.value in cls.QUERY
+            for a in rest
+        ):
+            return False
+        return not (cls._mentions(program) & fetched)
 
     @classmethod
     def _load_time_lines(cls, tree: ast.Module) -> frozenset[int]:
