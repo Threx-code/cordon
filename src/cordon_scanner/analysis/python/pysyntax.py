@@ -14,6 +14,7 @@ import bisect
 import collections
 import contextlib
 import functools
+import re
 import warnings
 import weakref
 from collections.abc import Callable, Iterator
@@ -55,7 +56,82 @@ class PythonSyntax:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", SyntaxWarning)
             warnings.simplefilter("ignore", DeprecationWarning)
-            return ast.parse(source, filename=filename, mode=mode)
+            try:
+                return ast.parse(source, filename=filename, mode=mode)
+            except SyntaxError as error:
+                tree = PythonSyntax._unparenthesised_excepts(source, filename, mode)
+                if tree is None:
+                    raise error from None
+                return tree
+
+    #: A handler's type list up to its colon (PEP 758, Python 3.14: `except A, B:`). The list is
+    #: read in Python (`_unparenthesised_excepts`), not by a pattern that repeats a repeat.
+    _EXCEPT_TYPE_LIST: ClassVar[re.Pattern[str]] = re.compile(
+        r"^([ \t]*except\*?[ \t]+)([A-Za-z_][^\n:#()\[\]'\"]{0,400})(?=:)", re.MULTILINE
+    )
+
+    @staticmethod
+    def _type_name(name: str) -> bool:
+        """An exception type a 3.14 clause lists bare: a dotted name, or a capitalised one. A bare
+        lowercase name is Python 2's variable (`except IOError, err:`), never a type."""
+        return all(part.isidentifier() for part in name.split(".")) and (
+            "." in name or name[:1].isupper()
+        )
+
+    @staticmethod
+    def _unparenthesised_excepts(source: str | bytes, filename: str, mode: str) -> Any:
+        """The tree of a file written for Python 3.14 (`except OSError, ValueError:`) that this
+        interpreter cannot parse, or None. Left unparsed, such a file was read as running whole
+        when imported: a docstring naming `~/.ssh/` beside a `paramiko.SSHClient()` in a function
+        nothing calls was `MALWARE.EXFIL.001`, critical, in an SSH tool.
+
+        Parse only: the commas of those clauses become `|` -- the same length, so every line and
+        column is the file's own -- and the handlers' types are made the tuple 3.14 itself builds.
+        A name is never made to bind or not to bind: Python 2's `except IOError, err:` is the same
+        text, and its last name is the variable the handler binds, so a clause with a bare
+        lowercase name in it is left as it is, unparsed."""
+        if isinstance(source, bytes):
+            try:
+                source = source.decode("utf-8")
+            except UnicodeDecodeError:
+                # S2: bytes that are not UTF-8 are not a file this reads; `parse` re-raises the first SyntaxError, so the file stays unparsed as before (test_python_syntax.py TestExceptTypesWithoutParentheses)
+                return None
+        if "except" not in source:
+            return None
+        rewritten: set[int] = set()
+
+        def rewrite(match: re.Match[str]) -> str:
+            names = [name.strip() for name in match.group(2).split(",")]
+            # Two or more dotted names, each a capitalised name or a dotted one: not `as`, not a call.
+            if len(names) < 2 or not all(PythonSyntax._type_name(name) for name in names):
+                return match.group(0)
+            rewritten.add(source.count("\n", 0, match.start()) + 1)
+            return match.group(1) + match.group(2).replace(",", "|")
+
+        text = PythonSyntax._EXCEPT_TYPE_LIST.sub(rewrite, source)
+        if not rewritten:
+            return None
+        try:
+            tree = ast.parse(text, filename=filename, mode=mode)
+        except (SyntaxError, ValueError):
+            # S2: the file has another error as well; `parse` re-raises the first SyntaxError, so it stays unparsed as before (test_python_syntax.py TestExceptTypesWithoutParentheses)
+            return None
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.ExceptHandler)
+                and node.lineno in rewritten
+                and isinstance(node.type, ast.BinOp)
+            ):
+                names: list[ast.expr] = []
+                pending: list[ast.expr] = [node.type]
+                while pending:
+                    item = pending.pop()
+                    if isinstance(item, ast.BinOp) and isinstance(item.op, ast.BitOr):
+                        pending += [item.right, item.left]
+                    else:
+                        names.append(item)
+                node.type = ast.copy_location(ast.Tuple(elts=names, ctx=ast.Load()), node.type)
+        return tree
 
     @staticmethod
     @ScanCaches.register  # holds files: emptied after each scan (foundation/collector)

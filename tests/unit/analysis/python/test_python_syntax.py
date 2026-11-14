@@ -7,7 +7,13 @@ log. The source below raises two such warnings under a bare `ast.parse`.
 
 from __future__ import annotations
 
+import ast
+import io
+import sys
+import tarfile
 import warnings
+
+import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
@@ -263,3 +269,94 @@ class TestStringElementLines:
         assert 5 not in lines
         assert 8 not in lines
         assert 16 not in lines
+
+
+class TestExceptTypesWithoutParentheses:
+    """Python 3.14 (PEP 758) lets `except A, B:` list its types bare. The interpreter that reads a
+    scanned file may be older, and a file it cannot parse is read as running whole when imported:
+    an SSH tool whose docstring names `~/.ssh/` and whose function builds a `paramiko.SSHClient()`
+    was `MALWARE.EXFIL.001`, critical. Python 2's `except IOError, err:` is the same text with
+    another meaning, so only a clause that cannot be that is read."""
+
+    @staticmethod
+    def handler(source: str) -> ast.ExceptHandler:
+        tree = PythonSyntax.parse(source)
+        (node,) = [n for n in ast.walk(tree) if isinstance(n, ast.ExceptHandler)]
+        return node
+
+    def test_bare_types_are_the_tuple_python_3_14_builds(self) -> None:
+        node = self.handler("try:\n    f()\nexcept OSError, ValueError:\n    pass\n")
+        assert isinstance(node.type, ast.Tuple)
+        assert [n.id for n in node.type.elts if isinstance(n, ast.Name)] == [
+            "OSError",
+            "ValueError",
+        ]
+        assert (node.type.lineno, node.type.col_offset, node.type.end_col_offset) == (3, 7, 26)
+        assert node.name is None
+
+    def test_dotted_types_and_a_star_handler(self) -> None:
+        node = self.handler(
+            "try:\n    f()\nexcept* socket.timeout, paramiko.SSHException, KeyError:\n    pass\n"
+        )
+        assert isinstance(node.type, ast.Tuple)
+        assert len(node.type.elts) == 3
+        assert (node.type.lineno, node.type.col_offset) == (3, 8)
+
+    def test_the_lines_and_columns_after_it_are_the_files_own(self) -> None:
+        tree = PythonSyntax.parse(
+            "try:\n    f()\nexcept OSError, ValueError:\n    value = 1\nz = 2\n"
+        )
+        assigns = [n for n in ast.walk(tree) if isinstance(n, ast.Assign)]
+        assert sorted((n.lineno, n.col_offset) for n in assigns) == [(4, 4), (5, 0)]
+
+    @pytest.mark.skipif(sys.version_info >= (3, 14), reason="3.14 parses this natively")
+    @pytest.mark.parametrize(
+        "clause",
+        [
+            "except IOError, err:",
+            "except socket.error, e:",
+            "except (OSError, ValueError), err:",
+            "except OSError, error:",
+            "except OSError, ValueError as err:",
+            "except OSError, ValueError, err:",
+        ],
+    )
+    def test_python_2s_binding_form_is_never_read_as_types(self, clause: str) -> None:
+        with pytest.raises(SyntaxError):
+            PythonSyntax.parse(f"try:\n    f()\n{clause}\n    pass\n")
+
+    def test_a_file_with_another_error_is_still_an_error(self) -> None:
+        with pytest.raises(SyntaxError):
+            PythonSyntax.parse("try:\n    f()\nexcept OSError, ValueError:\n    pass\ndef (:\n")
+
+    def test_a_file_that_parses_is_not_rewritten(self) -> None:
+        tree = PythonSyntax.parse('NOTE = """\nexcept A, B:\n"""\n')
+        assert isinstance(tree.body[0], ast.Assign)
+
+    def test_an_ssh_tool_in_that_syntax_is_not_an_import_time_exfiltration(self, tmp_path) -> None:
+        module = (
+            '"""Open an SSH session. Keys come from the agent, never from ~/.ssh/ directly."""\n\n'
+            "import paramiko\n\n\n"
+            "def open_session(host, user):\n"
+            "    client = paramiko.SSHClient()\n"
+            "    try:\n"
+            "        client.connect(host, username=user)\n"
+            "    except OSError, paramiko.SSHException:\n"
+            "        return None\n"
+            "    return client\n"
+        )
+        files = {
+            "pkg-1.0.0/PKG-INFO": "Metadata-Version: 2.1\nName: pkg\nVersion: 1.0.0\nSummary: ssh\n",
+            "pkg-1.0.0/pyproject.toml": '[project]\nname = "pkg"\nversion = "1.0.0"\n',
+            "pkg-1.0.0/pkg/__init__.py": "from .ssh import open_session\n",
+            "pkg-1.0.0/pkg/ssh.py": module,
+        }
+        archive = tmp_path / "pkg-1.0.0.tar.gz"
+        with tarfile.open(archive, "w:gz") as out:
+            for name, text in files.items():
+                data = text.encode()
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                out.addfile(info, io.BytesIO(data))
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(archive)
+        assert "MALWARE.EXFIL.001" not in {f.rule_id for f in result.findings}
