@@ -96,6 +96,21 @@ class TestInAScan:
         assert RULE in Scans.rules(tmp_path, "wipe.sh", "#!/bin/sh\nsudo rm -rf ~/\n")
 
 
+class Counted(str):
+    """A line that counts how often the reader indexes or slices it."""
+
+    reads: int
+
+    def __new__(cls, text: str) -> Counted:
+        self = super().__new__(cls, text)
+        self.reads = 0
+        return self
+
+    def __getitem__(self, key):  # type: ignore[no-untyped-def]
+        self.reads += 1
+        return super().__getitem__(key)
+
+
 class TestKeyIsReadInCode:
     def test_the_key_after_dashes_and_blanks(self) -> None:
         assert YamlCommands.key_of("  - - run: x") == "run"
@@ -107,10 +122,14 @@ class TestKeyIsReadInCode:
         assert YamlCommands.key_of("url: http://x") == "url"
         assert YamlCommands.key_of("a:b") is None
 
-    def test_a_long_run_of_blanks_is_read_in_linear_time(self) -> None:
-        import time
+    def test_the_blanks_before_a_key_are_visited_a_linear_number_of_times(self) -> None:
+        """Steps, not seconds: the reader indexes the line once per character it passes, so doubling the input at most doubles the count."""
 
-        line = " \t" * 200_000 + "!"
-        start = time.process_time()
-        assert YamlCommands.key_of(line) is None
-        assert time.process_time() - start < 1.0
+        def steps(n: int) -> int:
+            line = Counted(" \t" * n + "!")
+            assert YamlCommands.key_of(line) is None
+            return line.reads
+
+        small, large = steps(5_000), steps(10_000)
+        assert large <= 2 * small + 8
+        assert small <= 3 * 2 * 5_000

@@ -427,6 +427,13 @@ class TestHostileFileContent:
 
 
 class TestTheDecodedViewPastItsBudget:
+    # The lowered budget is set in this process; a worker sees it only when it starts from this
+    # process's state (a fork or the forkserver template, Linux and macOS). Windows spawns a fresh
+    # interpreter, so the patch never reaches it. The view's refusal itself is tested in-process on
+    # every platform (tests/unit/analysis/shared/test_decoded_view.py).
+    @pytest.mark.skipif(
+        sys.platform == "win32", reason="a spawned worker does not inherit a patched budget"
+    )
     def test_a_file_the_view_refuses_makes_the_scan_incomplete(self, tmp_path, monkeypatch) -> None:
         """A file past the decoded view's budget (note 18 §2) is the scan's gap, as a file past
         any reader's is: never read raw-only in silence. The budget is lowered here so a small

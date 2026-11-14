@@ -59,10 +59,13 @@ class UnparsedKit:
     #: Syntax by the Python that first runs it, that this reader cannot read on any Python before it:
     #: a t-string (3.14), then a stand-in for the syntax of a Python not yet released (an operator no
     #: Python has), so that every CI Python from 3.11 on has a fixture and none skips. A type
-    #: parameter's default (3.13) is not here: the reader reads it, keeping its expression.
+    #: parameter's default (3.13) is not here: the reader reads it, keeping its expression. The
+    #: stand-in carries an act, as a real payload does: syntax no released Python has cannot be
+    #: told from a typo, so on the newest Python it is the act that keeps the file a gap
+    #: (`UnparsedSource.blocks`); an act-free file no Python compiles is SOURCE.BROKEN by design.
     NEWER = (
         ((3, 14), "def greet(name):\n    return t'hello {name}'\n"),
-        ((99, 0), "def pipe(x, g):\n    return x |> g\n"),
+        ((99, 0), "import subprocess\ndef pipe(x, g):\n    return subprocess.run(x) |> g\n"),
     )
 
     @staticmethod

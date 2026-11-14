@@ -24,6 +24,15 @@ class ReaderKit:
     COMMA_PARSES = pytest.mark.skipif(
         sys.version_info >= (3, 14), reason="PEP 758: `except A, B:` parses on this Python"
     )
+    #: A type parameter's default is rewritten to a bound only where 3.12's grammar is the target:
+    #: 3.11 has no type parameters, and 3.13 parses the default itself.
+    TYPE_DEFAULT_ONLY_ON_312 = pytest.mark.skipif(
+        sys.version_info[:2] != (3, 12), reason="type-parameter defaults are rewritten for 3.12"
+    )
+    #: 3.11's parser rejects a file that ends in a line continuation; 3.12 accepts it.
+    TRAILING_CONTINUATION = pytest.mark.skipif(
+        sys.version_info < (3, 12), reason="3.11 rejects a trailing continuation at end of file"
+    )
 
     @staticmethod
     def read(text: str) -> str:
@@ -74,17 +83,18 @@ class TestAPythonTwoFileIsReadAsCode:
             ("def f(async):\n    if not async and 1:\n        pass\n", "if not async_ and 1:"),
             ("def f(async):\n    return async\n", "return async_"),
             ("def f(a):\n    return a.None\n", "return a.None_"),
-            # Python 3.13: a default for a type parameter. This Python does not parse it; the
-            # default is code, so it is kept, on its line, as a bound.
-            ("class Box[T = int]:\n    x = 1\n", "class Box[T: (int)]:"),
+            # Python 3.13: a default for a type parameter. Only 3.12 reads it this way: 3.11 parses
+            # no type-parameter list at all (the file is read as not parsing, the conservative
+            # reading), and 3.13 parses the default itself, so the fixture would test nothing.
+            pytest.param(
+                "class Box[T = int]:\n    x = 1\n",
+                "class Box[T: (int)]:",
+                marks=ReaderKit.TYPE_DEFAULT_ONLY_ON_312,
+            ),
             pytest.param(
                 "def first[T: str = str, *Ts = *tuple[int]](a):\n    return a\n",
                 "def first[T: (str, str), Ts: (*tuple[int],)](a):",
-                # 3.11 parses no type-parameter list at all, so the rewrite has nothing to parse
-                # into; the file is read as not parsing, the conservative reading.
-                marks=pytest.mark.skipif(
-                    sys.version_info < (3, 12), reason="PEP 695 syntax parses from 3.12"
-                ),
+                marks=ReaderKit.TYPE_DEFAULT_ONLY_ON_312,
             ),
             pytest.param(
                 "try:\n    pass\nexcept IOError, (no, why):\n    pass\n",
@@ -211,16 +221,11 @@ class TestTheLineCountOfWhatItReads:
     @pytest.mark.parametrize(
         "source",
         [
-            # 3.11's parser rejects a file whose one line ends in a continuation, so it is read as
-            # not parsing there (the conservative reading); 3.12 accepts it.
-            pytest.param(
-                "print x \\",
-                marks=pytest.mark.skipif(
-                    sys.version_info < (3, 12), reason="3.11 rejects a lone trailing continuation"
-                ),
-            ),
+            # 3.11's parser rejects a file that ends in a continuation, so it is read as not parsing
+            # there (the conservative reading); 3.12 accepts it.
+            pytest.param("print x \\", marks=ReaderKit.TRAILING_CONTINUATION),
             "import a\nprint x",
-            "print x\r\nprint y \\",
+            pytest.param("print x\r\nprint y \\", marks=ReaderKit.TRAILING_CONTINUATION),
         ],
     )
     def test_the_text_has_as_many_lines_as_the_file(self, source: str) -> None:

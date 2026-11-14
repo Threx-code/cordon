@@ -40,6 +40,21 @@ def get_docs(api: str, sdk_version: str) -> str:
 '''
 
 
+class Counted(str):
+    """A text that counts how often the reader indexes or slices it."""
+
+    reads: int
+
+    def __new__(cls, text: str) -> Counted:
+        self = super().__new__(cls, text)
+        self.reads = 0
+        return self
+
+    def __getitem__(self, key):  # type: ignore[no-untyped-def]
+        self.reads += 1
+        return super().__getitem__(key)
+
+
 class Servers:
     @staticmethod
     def blocked(tmp_path: Path, description: str, returned: str = "ok") -> list[str]:
@@ -202,11 +217,26 @@ class TestIdentifierLikeIsReadInCode:
     def test_plain_words_and_odd_shapes_are_not(self, word: str) -> None:
         assert not OwnVocabulary.identifier_like(word)
 
-    def test_a_long_word_is_read_in_linear_time(self) -> None:
-        import time
+    def test_a_long_word_is_visited_a_linear_number_of_times(self) -> None:
+        """Steps, not seconds: the reader indexes the word once per character it passes, so doubling the input at most doubles the count."""
 
-        hostile = "a" * 200_000 + "!"
-        start = time.process_time()
-        OwnVocabulary.words(hostile + " " + "ab_" * 50_000)
-        OwnVocabulary.called("call " + "_a" * 50_000 + hostile)
-        assert time.process_time() - start < 2.0
+        def steps(n: int) -> int:
+            word = Counted("a" * n + "!")
+            assert not OwnVocabulary.identifier_like(word)
+            return word.reads
+
+        small, large = steps(5_000), steps(10_000)
+        assert large <= 2 * small + 8
+        assert small <= 3 * 5_000
+
+    def test_the_gap_after_a_verb_is_bounded_whatever_the_text(self) -> None:
+        """Each verb reads a bounded gap: doubling a text made of verbs at most doubles the indexing."""
+
+        def steps(n: int) -> int:
+            text = Counted(("call" + " " * 39 + "x") * n)
+            OwnVocabulary.called(text)
+            return text.reads
+
+        small, large = steps(500), steps(1_000)
+        assert large <= 2 * small + 8
+        assert small <= 100 * 500
