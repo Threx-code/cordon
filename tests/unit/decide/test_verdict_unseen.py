@@ -129,6 +129,9 @@ class TestTheAdmittedRulesAreKept:
         "SUSPECT.SOURCE.UNPARSED_RUNNING.001",  # timeweave; at most 10 of 16,267
         "SUSPECT.OBFUSCATION.UNRESOLVED_PAYLOAD.001",  # cubaflixdownload
         "SUSPECT.INSTALL.TEMP_COMMAND.001",  # maliciouspackage 0.1; 0 of 16,274
+        # Fetch and run at load (14 Nov), measured at the flow on the 0.8.0 combined gate's rows:
+        "MALWARE.IMPORT.FETCH_RUN.001",  # 11 half-A misses newly caught; 2 of 16,828 benign
+        "MALWARE.INSTALL.FETCH_RUN.001",  # 7 half-A misses newly caught; 1 of 16,828 benign
     )
 
     def test_each_is_in_keep(self) -> None:

@@ -2965,6 +2965,41 @@ rules:
         - path_glob: "**/test_*.py"
         - path_glob: "tests/**"
 
+  - id: MALWARE.INSTALL.FETCH_RUN.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: The install script fetches something and runs code or a program
+    message: >
+      The install script itself (a `setup.py`) both fetches something from the network and runs code
+      or a program when it runs: `exec` of what a request returned, a download written out and
+      started, or a command run beside the download. Building or installing a package has no reason
+      to download and launch anything; this runs unreviewed code as the person installing, before
+      anything else can check it.
+    remediation: >
+      Do not install this package. Find what it fetches and what it runs, and treat machines that
+      installed it as compromised.
+    provenance:
+      kind: research
+      reference: >
+        Half-A PyPI malware the 0.8.0 rules passed: a `setup.py` that fetched and ran at module level
+        or through a helper the module level calls (the combined gate's misses, 14 Nov).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1105/
+      - https://attack.mitre.org/techniques/T1195/002/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: install_entry
+        - rule: AST.PY.FETCH_RUN_AT_LOAD
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: MALWARE.EXFIL.INSTALL_CALLBACK.001
     version: 1.0.0
     category: malicious

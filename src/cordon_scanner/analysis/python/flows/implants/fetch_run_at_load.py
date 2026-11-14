@@ -7,8 +7,10 @@ beside the download in a thread the import starts. Each half alone is ordinary -
 licence ping, a query of the machine's own tools -- and neither alone is reported here; it is the two
 together in what the import runs.
 
-Half-A PyPI malware the 0.8.0 rules passed carried this shape (the combined gate's misses, 14 Nov;
-the measured pair is in `reviews/pypi-98`). What runs at load is what `PersistAtLoad.load_time_lines`
+Measured at the flow (14 Nov, the 0.8.0 combined gate's rows): in a package's top-level `__init__.py`
+it newly catches 11 half-A PyPI malware the rules passed, for 2 of 16,828 benign packages; in a
+`setup.py`, 7 for 1. In other modules it was 6 for 26, so the rules read only those two entries
+(`MALWARE.IMPORT.FETCH_RUN.001`, `MALWARE.INSTALL.FETCH_RUN.001`). What runs at load is what `PersistAtLoad.load_time_lines`
 reads (module level, class bodies, and the functions the module level calls through the file's own
 helpers), and a function handed by name to a call that runs at load -- a thread's target, a timer, a
 registered callback -- is loaded too. The main guard and a function nothing calls are not.
