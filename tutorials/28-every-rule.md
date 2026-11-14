@@ -2,7 +2,7 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,542 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,544 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -747,10 +747,11 @@ rule's own samples.
 
 ## Import
 
-2 rules.
+3 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
+| `MALWARE.IMPORT.FETCH_RUN.001` | critical | Importing the package fetches something and runs code or a program |
 | `MALWARE.IMPORT.PERSIST.001` | critical | Code that runs on import plants code that runs again later |
 | `MALWARE.IMPORT.PROGRAM_START.001` | critical | Importing the package starts a program and leaves it running |
 
@@ -1582,7 +1583,7 @@ rule's own samples.
 
 ## Install-time code
 
-26 rules.
+27 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -1591,6 +1592,7 @@ rule's own samples.
 | `MALWARE.INSTALL.DECODED_LAUNCH.001` | critical | An install script decodes content and starts a process |
 | `MALWARE.INSTALL.DISGUISED_PROGRAM.001` | critical | Install code turns a file shipped as data into a program |
 | `MALWARE.INSTALL.FETCH_EXEC.001` | critical | Install script fetches and executes remote content |
+| `MALWARE.INSTALL.FETCH_RUN.001` | critical | The install script fetches something and runs code or a program |
 | `MALWARE.INSTALL.FOREIGN_INDEX.001` | critical | Install script installs packages from an index the user did not choose |
 | `MALWARE.INSTALL.FOREIGN_PROGRAM.001` | high | Install code starts a desktop application or an identity command |
 | `MALWARE.INSTALL.GYP_COMMAND.001` | critical | Native-build file runs a script at install |

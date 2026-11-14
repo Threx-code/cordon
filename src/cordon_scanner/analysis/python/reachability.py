@@ -692,10 +692,14 @@ class LoadReach:
                 for owner, target in self._symbol(module, node.value.id):
                     self._visit(owner, target)
 
-    def _run(self) -> None:
+    def _run(self, *, without_main: bool = False) -> None:
         pending: list[tuple[LoadModule, list[ast.AST]]] = []
         for module in self.by_path.values():
-            pending.append((module, self._load_statements(module.tree.body)))
+            # `pkg/__main__.py` runs when a person starts the program (`python -m pkg`), never on
+            # `import pkg`: with `without_main` its load statements are not a root. Its definitions
+            # still bind, and what else reaches them is still followed.
+            if not (without_main and module.path.rpartition("/")[2] == "__main__.py"):
+                pending.append((module, self._load_statements(module.tree.body)))
             for node in ast.walk(module.tree):
                 if not isinstance(node, ast.ClassDef):
                     continue
@@ -715,11 +719,15 @@ class LoadReach:
 
     @staticmethod
     def deferred_lines(
-        paths: Iterable[str], sources: Mapping[str, str]
+        paths: Iterable[str], sources: Mapping[str, str], *, without_main: bool = False
     ) -> frozenset[tuple[str, int, int]]:
-        """`(path, first_line, last_line)` for each function body importing these modules never runs."""
+        """`(path, first_line, last_line)` for each function body importing these modules never runs.
+
+        `without_main`: as `import pkg` runs them, not `python -m pkg` -- `__main__.py`'s load
+        statements are not a root (reviews/pypi-98/19). Read only by the composites in
+        `CompositeRuleIds.IMPORT_REACH_WITHOUT_MAIN`; every other reader keeps the full set."""
         reach = LoadReach(paths, sources)
-        reach._run()
+        reach._run(without_main=without_main)
         deferred: set[tuple[str, int, int]] = set()
         for path, module in reach.by_path.items():
             for node in ast.walk(module.tree):

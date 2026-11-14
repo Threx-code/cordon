@@ -405,10 +405,23 @@ class TestTheDocumentIsChecked:
         assert accepted is not None, why
         assert accepted.context["python_imported_runners"] == {"a.js": {"run_cmd": "0,2"}}
 
+    def test_a_function_that_runs_more_than_sixteen_parameters_crosses(self) -> None:
+        """A function with 17 parameters, all of which it runs, is a real package's shape (a
+        generated client): refusing it fails the whole context worker for the scan."""
+        positions = ",".join(str(i) for i in range(20))
+        accepted, why = ContextFacts.accept(
+            self.document(context={"python_imported_runners": [["a.js", "run_cmd", positions]]}),
+            self.units(),
+            self.ctx(),
+        )
+        assert accepted is not None, why
+        assert accepted.context["python_imported_runners"] == {"a.js": {"run_cmd": positions}}
+
     @pytest.mark.parametrize(
         "over",
         [
             {"extra": []},
+            {"context": {"python_imported_runners": [["a.js", "run_cmd", ",".join(["0"] * 300)]]}},
             {"context": {"python_imported_runners": [["a.js", "run cmd", "0"]]}},
             {"context": {"python_imported_runners": [["a.js", "run_cmd", "0;1"]]}},
             {"context": {"python_imported_runners": [["b.js", "run_cmd", "0"]]}},

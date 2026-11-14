@@ -109,7 +109,7 @@ rules:
   # EXECUTE
   # ---------------------------------------------------------------------
   - id: CAP.PY.EXECUTE.001
-    version: 1.0.0
+    version: 1.1.0
     category: policy
     severity: info
     confidence: high
@@ -128,8 +128,14 @@ rules:
     match:
       kind: regex
       patterns:
-        - '\beval\s*\('
-        - '\bexec\s*\('
+        # The builtin, not a method of the same name: torch's `model.eval()` and SQLModel's
+        # `session.exec(select(...))` run nothing, and each paired with an ordinary decode
+        # into a loader (0.8.0 benign: otter-ai, aiperture). The builtin reached through
+        # its module stays: `builtins.exec(code)`, `__import__("builtins").exec(code)`.
+        - '(?<!\.)\beval\s*\('
+        - '(?<!\.)\bexec\s*\('
+        - '\b(?:__builtins__|builtins)\s*\.\s*(?:eval|exec)\s*\('
+        - '\b(?:__import__|import_module)\s*\([^)]{0,80}\)\s*\.\s*(?:eval|exec)\s*\('
         - '\bcompile\s*\([^)]{0,120}?["'']exec["'']'
         # `marshal` stays here while `pickle` moves to `deserialize`, and the
         # difference is what the stream holds. A marshal stream holds CODE OBJECTS --
@@ -161,8 +167,13 @@ rules:
         - "subprocess.run(['sh', '-c', payload])"
         - "exec(payload)"
         - "mod = __import__(name)"
+        - "builtins.exec(code)"
+        - "__import__('builtins').exec(code)"
+        - "importlib.import_module('builtins').eval(src)"
       negative:
         - "# eval is deliberately not used"
+        - "model.eval()"
+        - "rows = session.exec(select(User)).all()"
         - "config = yaml.safe_load(stream)"
         - "obj = pickle.loads(blob)"
 

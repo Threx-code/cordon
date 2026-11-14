@@ -109,6 +109,20 @@ class PythonSyntax:
         return index.between(place[1], place[2], types)
 
     @staticmethod
+    def keyed_value_not_function(node: ast.Subscript, tree: ast.AST | None) -> bool:
+        """Whether `x["eval"]` here is plainly not a function reached by name: a key written or
+        deleted (`payload["eval"] = {}` stores a value; it reaches nothing), or a value whose
+        non-dunder attribute is read (`payload["eval"].get(...)`: a builtin function has only dunder
+        attributes, so `__builtins__["exec"].__call__(code)` stays a finding). A results dict
+        keyed "eval" blocked a legitimate evaluation script (paper-preflight 0.8, 0.8.0 benign)."""
+        if isinstance(node.ctx, ast.Store | ast.Del):
+            return True
+        if tree is None:
+            return False
+        parent = PythonSyntax.parents(tree).get(id(node))
+        return isinstance(parent, ast.Attribute) and not parent.attr.startswith("__")
+
+    @staticmethod
     def parents(tree: ast.AST) -> dict[int, ast.AST]:
         """`id(node) -> parent` for every node of `tree`: from its `TreeIndex` when it has one, which
         recorded them on its one traversal; built once and kept on the tree otherwise. Four passes
@@ -305,6 +319,76 @@ class PythonSyntax:
             return [node for node in PythonSyntax.nodes(tree) if isinstance(node, types)]
 
         found: list[Any] = PythonSyntax.memo(tree, ("of", types), compute)
+        return found
+
+    @staticmethod
+    def text_only_lines(tree: ast.AST) -> frozenset[int]:
+        """The lines of a parsed file that are only text: the lines of docstrings, and the lines a string
+        literal continues on after its first (a pattern table, a help text naming `~/.aws/credentials`),
+        less any line where an expression that is not a literal starts -- an f-string's `{...}` parts are
+        code (`{home}` in `f'''{home}/.aws/credentials'''`). A line a reader finds in this set is
+        not a read and not a send; a line that is not in it may still be text, which this does not
+        claim (reviews/pypi-98/20 shape A, 21 shape T)."""
+
+        def compute() -> frozenset[int]:
+            docs: set[int] = set()
+            for node in PythonSyntax.nodes(tree):
+                body = getattr(node, "body", None)
+                if isinstance(body, list) and body and isinstance(body[0], ast.Expr):
+                    value = body[0].value
+                    if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                        docs.update(range(value.lineno, (value.end_lineno or value.lineno) + 1))
+            inside: set[int] = set()
+            code: set[int] = set()
+            for node in PythonSyntax.nodes(tree):
+                if isinstance(node, ast.JoinedStr) or (
+                    isinstance(node, ast.Constant) and isinstance(node.value, str)
+                ):
+                    last = node.end_lineno or node.lineno
+                    if last > node.lineno:
+                        inside.update(range(node.lineno + 1, last + 1))
+                if (
+                    isinstance(node, ast.expr)
+                    and not isinstance(node, ast.Constant | ast.JoinedStr)
+                    and hasattr(node, "lineno")
+                ):
+                    code.add(node.lineno)
+            return frozenset(docs | ((inside - docs) - code))
+
+        found: frozenset[int] = PythonSyntax.memo(tree, "text-only-lines", compute)
+        return found
+
+    @staticmethod
+    def string_element_lines(tree: ast.AST) -> frozenset[int]:
+        """The lines on which a string literal stands as an element of a list, tuple, set or dict, or as
+        an argument, and nothing but literals starts: `    "cat ~/.aws/credentials",` in a table written one
+        string to a line. What the strings are for is not said here (a table that is matched and a list
+        that is opened look alike); `PythonStoreFlow.table_text_lines` asks where they go."""
+
+        def compute() -> frozenset[int]:
+            code: set[int] = set()
+            lines: set[int] = set()
+            parents = PythonSyntax.parents(tree)
+            for node in PythonSyntax.nodes(tree):
+                if (
+                    isinstance(node, ast.expr)
+                    and not isinstance(node, ast.Constant | ast.JoinedStr)
+                    and hasattr(node, "lineno")
+                ):
+                    code.add(node.lineno)
+                if (
+                    isinstance(node, ast.Constant)
+                    and isinstance(node.value, str)
+                    and node.end_lineno == node.lineno
+                    and isinstance(
+                        parents.get(id(node)),
+                        ast.List | ast.Tuple | ast.Set | ast.Dict | ast.Call | ast.keyword,
+                    )
+                ):
+                    lines.add(node.lineno)
+            return frozenset(lines - code)
+
+        found: frozenset[int] = PythonSyntax.memo(tree, "string-element-lines", compute)
         return found
 
 

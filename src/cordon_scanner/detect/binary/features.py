@@ -32,12 +32,12 @@ executable of any size held in a window source costs one pass and bounded memory
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import re
 from collections import Counter
 from typing import TYPE_CHECKING, ClassVar
 
-from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.once import OneOff
 from cordon_scanner.foundation.paths import PackagePaths
 
@@ -83,7 +83,9 @@ class BinaryFeatures:
     def groups() -> dict[str, tuple[bytes, ...]]:
         out: dict[str, tuple[bytes, ...]] = {}
         for path in sorted(BinaryFeatures.DATA.glob("exe-strings-*.json")):
-            names = ScannedJson.loads(path.read_text(encoding="utf-8"))
+            # The scanner's own data, not scanned content: read here, never served by a context worker
+            # (a scan's parent serves `ScannedJson` from the worker, which never held these files).
+            names = json.loads(path.read_text(encoding="utf-8"))
             out[path.stem.removeprefix("exe-strings-")] = tuple(str(n).encode() for n in names)
         return out
 

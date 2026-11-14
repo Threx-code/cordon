@@ -22,6 +22,7 @@ from cordon_scanner.detect.agents.mcp_servers.endpoints import (
     PLACEHOLDER,
     McpEndpoints,
 )
+from cordon_scanner.detect.agents.mcp_servers.own_vocabulary import OwnVocabulary
 from cordon_scanner.detect.agents.mcp_servers.source import (
     RESULT_SENDS_TO_URL,
     McpServerSource,
@@ -119,17 +120,20 @@ class McpServerFindings:
         """
         text = unit.content.text
         seen: set[str] = set()
+        own = OwnVocabulary.declared(text, unit.content.path)
         for description in McpServerSource._tool_descriptions(text, unit.content.path):
             if description in seen:
                 continue
             seen.add(description)
             yield from AgentTextFindings.intents(unit, ctx, description, within=text)
-            reason = McpServerSource._poisoned_description(description)
+            reason = McpServerSource._poisoned_description(description, own)
             if reason is None:
                 # The steps an attack on the agent takes, in a combination no real server's own
                 # description carries (`semantics.PRECISE`).
                 chain = AgentSemantics.precise(description)
-                if chain is not None:
+                if chain is not None and not McpServerFindings._own_sequencing(
+                    description, chain, own, "description"
+                ):
                     reason = f"gives {AgentSemantics.explain(chain)}"
             # The learned reading (`detect/agents/mcp_servers/description_model.py`): poisoning written as ordinary prose,
             # which no phrase rule narrow enough to stay quiet catches. Blocks above `block`;
@@ -167,6 +171,27 @@ class McpServerFindings:
         yield from McpServerFindings._handler_findings(ctx, text, unit)
         yield from McpServerFindings._return_findings(ctx, text, unit)
         yield from cls._server_content(unit, ctx, text)
+
+    @staticmethod
+    def _own_sequencing(
+        text: str, chain: tuple[str, ...], own: frozenset[str], channel: str
+    ) -> bool:
+        """Whether a chain of ordering steps only sequences the server's own tools (`OwnVocabulary`):
+        the chain is orders, sequencing and a pretext and nothing else; the text hides nothing from the
+        user, names no secret, runs no command, reaches no address; and it names only identifiers the
+        server declares. A returned message may name none at all ("create a session before using the
+        debugging commands"): it names no other tool."""
+        if not set(chain) <= {"order", "around_other", "other_tool", "pretext"}:
+            return False
+        found = AgentSemantics.steps(text)
+        if any(found[step] for step in ("deceive", "command", "offsite", "overrule", "banner")):
+            return False
+        if McpServerSource._poisoned_description(text, own) is not None:
+            return False
+        called = OwnVocabulary.called(text)
+        if called:
+            return called <= own
+        return channel == "return" and not OwnVocabulary.words(text)
 
     @staticmethod
     def _handler_findings(ctx: ScanContext, text: str, unit: FileUnit) -> Iterator[Finding]:
@@ -265,6 +290,7 @@ class McpServerFindings:
         # in a returned string steers it as one in a description does. The model only: the
         # phrase rules were written for descriptions, and status messages are not those.
         limits = McpDescriptionModel.thresholds("return")
+        own = OwnVocabulary.declared(text, unit.content.path)
         if limits is not None:
             for returned in dict.fromkeys(McpServerSource._tool_returns(text, unit.content.path)):
                 # A result that wraps instructions in a tag addressed to the model --
@@ -282,7 +308,9 @@ class McpServerFindings:
                     )
                     continue
                 chain = AgentSemantics.precise(returned, "return")
-                if chain is not None:
+                if chain is not None and not McpServerFindings._own_sequencing(
+                    returned, chain, own, "return"
+                ):
                     yield AgentFinding.at_text(
                         "SUSPECT.MCP.TOOL_DESCRIPTION.001",
                         unit,
@@ -309,6 +337,12 @@ class McpServerFindings:
                 score = McpDescriptionModel.score(returned, "return")
                 if score is None or score < limits[1]:
                     continue
+                # The learned model on its own is the weakest evidence: a message about the
+                # server's own flow is reported, not blocked.
+                about_own = McpServerFindings._about_own(returned, own) or (
+                    chain is not None
+                    and McpServerFindings._own_sequencing(returned, chain, own, "return")
+                )
                 yield AgentFinding.at_text(
                     "SUSPECT.MCP.TOOL_DESCRIPTION.001",
                     unit,
@@ -318,8 +352,22 @@ class McpServerFindings:
                     message=RULES["SUSPECT.MCP.TOOL_DESCRIPTION.001"].message
                     + " The text is what a tool returns, and it reads as instructions to the "
                     f"agent rather than a result (model score {score:.2f}).",
-                    severity=None if score >= limits[0] else Severity.MEDIUM,
+                    severity=None if score >= limits[0] and not about_own else Severity.MEDIUM,
                 )
+
+    @staticmethod
+    def _about_own(returned: str, own: frozenset[str]) -> bool:
+        """Whether a returned message that only the learned model reads as steering names only this
+        server's own identifiers and is no more than a usage message: no secrecy, no command, no address,
+        no overruling the user. Such a message is reported, not blocked."""
+        found = AgentSemantics.steps(returned)
+        return (
+            OwnVocabulary.names_only(own, returned)
+            and not any(
+                found[step] for step in ("deceive", "command", "offsite", "overrule", "banner")
+            )
+            and McpServerSource._poisoned_description(returned, own) is None
+        )
 
     @classmethod
     def _server_content(cls, unit: FileUnit, ctx: ScanContext, text: str) -> Iterator[Finding]:

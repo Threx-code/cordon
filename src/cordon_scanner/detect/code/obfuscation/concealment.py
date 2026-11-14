@@ -416,6 +416,9 @@ class ConcealmentFindings:
             # Or every control in the file is a bound in a table of codepoints, one that cannot
             # reverse left-to-right text. See `is_ltr_range_table`.
             or ObfuscationText.is_ltr_range_table(content.raw)
+            # Or every control is a balanced pair inside one string that cannot end the literal, or a pop
+            # that pops nothing (reviews/pypi-98/23). See `every_control_is_inert`.
+            or ObfuscationText.every_control_is_inert(content.raw)
         )
         return documented, inert_data, ordering_text
 

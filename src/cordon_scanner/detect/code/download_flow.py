@@ -30,6 +30,7 @@ import shlex
 from typing import ClassVar
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+from cordon_scanner.detect.code.flows.download_reach import DownloadReach
 
 
 class ShellDownloads:
@@ -333,7 +334,7 @@ class ShellDownloads:
         return "."
 
 
-class PythonDownloads:
+class PythonDownloads(DownloadReach):
     """The downloaded-bytes flow in a Python file, read from its syntax tree."""
 
     _FETCH_CALLS: ClassVar[frozenset[str]] = frozenset(
@@ -405,6 +406,10 @@ class PythonDownloads:
         self.constants: dict[str, str] = {}
         self.inside_download = False
         """The working directory is a downloaded tree (`os.chdir` into a checkout)."""
+        self.imported = DownloadReach.import_aliases(tree)
+        """Name -> (module, original name) for what a file imports under another name or as a bare
+        name (`from urllib.request import urlopen as Z`, `import requests as rq`, `from requests import
+        get`): a download reached through an alias is the same download."""
 
     @classmethod
     def runs(cls, text: str) -> list[int] | None:
@@ -419,6 +424,97 @@ class PythonDownloads:
             hits = flow._walk()
         return hits
 
+    @classmethod
+    def nothing_reaches_a_sink(cls, text: str, egress_lines: frozenset[int] = frozenset()) -> bool:
+        """Whether the file parses, runs nothing it downloads, and lets no downloaded value leave
+        the function or the file: not returned or yielded, not stored on an object, a class or a
+        module name, not written to a path, not handed to a call the flow does not resolve. A value
+        that leaves can be run by another part of the package, so it is unresolved, never "nothing
+        runs".
+
+        Only a file whose downloads the flow SAW can say so (reviews/pypi-98/26): every line in
+        `egress_lines` (the egress hits of the window) holds a call the flow recognises as a download
+        (through an alias too), or holds no call at all. A fetch through an unknown client or a socket
+        is not tracked, so it is unresolved. So is a program the flow does not read: `exec`, `eval` or `compile` of a string
+        literal, or a process started with a string that downloads."""
+        try:
+            tree = PythonSyntax.parse(text)
+        except (SyntaxError, ValueError):
+            # S2: a fallback; unresolved keeps the grade (covered by SOURCE.UNPARSED at every running file)
+            return False
+        flow = cls(tree)
+        for _ in range(2):
+            hits = flow._walk()
+        if hits or flow._leaves(tree, False, frozenset()):
+            return False
+        return (
+            flow.every_egress_is_seen(egress_lines) and not flow.runs_a_program_it_does_not_read()
+        )
+
+    #: Calls that only read a value: what is printed, measured, converted, parsed or logged does not
+    #: run and does not keep it.
+    _CONSUMERS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "print", "len", "str", "repr", "int", "float", "bool", "bytes", "bytearray", "list", "dict",
+            "set", "tuple", "sorted", "isinstance", "type", "min", "max", "sum", "any", "all", "enumerate",
+            "range", "info", "debug", "warning", "warn", "error", "exception",
+            "critical", "log", "format", "join", "decode", "encode", "strip", "startswith", "endswith",
+        }
+    )  # fmt: skip
+
+    def _leaves(self, node: ast.AST, in_function: bool, declared: frozenset[str]) -> bool:
+        """Whether, anywhere under `node`, a downloaded value leaves the function or the file."""
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda):
+                names = declared | {
+                    name
+                    for sub in ast.walk(child)
+                    if isinstance(sub, ast.Global | ast.Nonlocal)
+                    for name in sub.names
+                }
+                if isinstance(child, ast.Lambda) and self._carries(child.body):
+                    return True
+                if self._leaves(child, True, names):
+                    return True
+                continue
+            if self._leaf(child, in_function, declared) or self._leaves(
+                child, in_function and not isinstance(child, ast.ClassDef), declared
+            ):
+                return True
+        return False
+
+    def _leaf(self, node: ast.AST, in_function: bool, declared: frozenset[str]) -> bool:
+        if isinstance(node, ast.Return | ast.Yield | ast.YieldFrom):
+            return self._carries(node.value)
+        if isinstance(node, ast.Assign | ast.AnnAssign | ast.AugAssign):
+            if not self._carries(node.value):
+                return False
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                for leaf in ast.walk(target):
+                    if isinstance(leaf, ast.Attribute | ast.Subscript) and isinstance(
+                        leaf.ctx, ast.Store
+                    ):
+                        return True
+                    if (
+                        isinstance(leaf, ast.Name)
+                        and isinstance(leaf.ctx, ast.Store)
+                        and (not in_function or leaf.id in declared)
+                    ):
+                        return True
+            return False
+        if isinstance(node, ast.Call):
+            owner, name = self._callee(node)
+            if name == "urlretrieve":
+                return True  # writes a file
+            if owner == "json" and name in ("loads", "dumps"):
+                return False  # parsed or printed as data
+            args = [*node.args, *(k.value for k in node.keywords)]
+            if name in ("exec", "eval", "compile") and not owner:
+                return False  # a run: `_walk` reports it
+            return name not in self._CONSUMERS and any(self._carries(a) for a in args)
+        return False
+
     @staticmethod
     def _name(node: ast.AST) -> str:
         # A name too deep to unparse (RecursionError) escapes to OPERATIONAL.DETECTOR.FAILED: an
@@ -428,8 +524,13 @@ class PythonDownloads:
     def _callee(self, call: ast.Call) -> tuple[str, str]:
         func = call.func
         if isinstance(func, ast.Attribute):
-            return self._name(func.value).rsplit(".", 1)[-1], func.attr
+            owner = self._name(func.value).rsplit(".", 1)[-1]
+            module = self.imported.get(owner)
+            return (module[1] if module and not module[0] else owner), func.attr
         if isinstance(func, ast.Name):
+            module = self.imported.get(func.id)
+            if module and (module[1] != func.id or module[0] in self._FETCH_MODULES):
+                return module[0], module[1]
             return "", func.id
         return "", ""
 
@@ -602,6 +703,8 @@ class PythonDownloads:
         if name == "chmod" and owner in ("os", "") and len(call.args) > 1:
             # Making a downloaded file executable has one purpose.
             return self._executable_mode(call.args[1]) and self._runs_arg(call.args[0])
+        if name in self.LOADER_RUNS:
+            return self.loader_runs_a_download(call, name, owner, args)
         if name in self._RUNNERS and owner in (
             "os",
             "subprocess",
@@ -686,3 +789,12 @@ class DownloadFlow:
         if language == "python":
             return PythonDownloads.runs(text)
         return None
+
+    @staticmethod
+    def nothing_reaches_a_sink(
+        text: str, language: str | None, egress_lines: frozenset[int] = frozenset()
+    ) -> bool:
+        """Python only: the file parses, nothing it downloads is run, and no downloaded value
+        leaves it for another part of the package to run (`PythonDownloads.nothing_reaches_a_sink`).
+        False for every other language and for text that does not parse: unresolved."""
+        return language == "python" and PythonDownloads.nothing_reaches_a_sink(text, egress_lines)

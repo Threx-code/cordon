@@ -50,6 +50,9 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 MODEL_PATH: Final = PackagePaths.data("detect") / "verdict.json.gz"
+#: A model of the PyPI package area's own, fitted on the package-wide code features (0.8.0): a
+#: PyPI package answers to it where it ships; every other area keeps `MODEL_PATH`'s model.
+PYPI_MODEL_PATH: Final = PackagePaths.data("detect") / "verdict-pypi.json.gz"
 
 _CODE_SUFFIXES: Final = (
     ".js",
@@ -305,7 +308,7 @@ class Verdict:
             "area": area,
             "features": {"schema": FeatureSchema.current(), "values": features},
         }
-        model = VerdictModel.load()
+        model = Verdict.model_for(area)
         if model is None:
             return findings, summary
         # The second review (`intel/registry_record.py`): where the registry's record of this
@@ -349,11 +352,28 @@ class Verdict:
         )
         return out, summary
 
-    LIFT_AREAS_ALLOWED: ClassVar[frozenset[str]] = frozenset({"npm"})
+    LIFT_AREAS_ALLOWED: ClassVar[frozenset[str]] = frozenset({"npm", "pypi"})
     """The only areas the model may lower a block in, whatever the model file lists (S6, lead
     2026-11-10). MCP is add-only from 0.8.0 (mcp-98 gap 1). npm keeps its measured lift as a trade
-    recorded for the owner. A new lift area is a change to this line and to test_verdict_bounds.py,
-    never a model file."""
+    recorded for the owner. PyPI lifts from 0.8.0 with its own model (`PYPI_MODEL_PATH`; owner
+    2026-11-13: build the model into the product), the trade measured by the release gate's LOST
+    and GAINED on the PyPI sets. A new lift area is a change to this line and to
+    test_verdict_bounds.py, never a model file."""
+
+    #: Areas judged by a model of their own, where that model ships.
+    OWN_MODELS: ClassVar[dict[str, Path]] = {"pypi": PYPI_MODEL_PATH}
+
+    @staticmethod
+    def model_for(area: str) -> dict[str, Any] | None:
+        """The model `area` answers to: its own (`OWN_MODELS`) where that ships and loads at this
+        tree's fold, else the shared model. npm, MCP, skills and every other area keep exactly the
+        model they had."""
+        own = Verdict.OWN_MODELS.get(area)
+        if own is not None:
+            model = VerdictModel.load(own)
+            if model is not None:
+                return model
+        return VerdictModel.load()
 
     @staticmethod
     def liftable(model: dict[str, Any], area: str) -> bool:

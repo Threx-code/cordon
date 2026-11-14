@@ -42,6 +42,28 @@ class TestTheLoadReach:
         }
 
 
+class TestReachWithoutMain:
+    """`without_main`: the same roots minus `__main__.py`'s load statements -- what `import pkg` runs,
+    as opposed to `python -m pkg` (reviews/pypi-98/19). Used by two composites only."""
+
+    PACKAGE: ClassVar[dict[str, str]] = {
+        "p-1/pkg/__init__.py": "from pkg.core import boot\nboot()\n",
+        "p-1/pkg/__main__.py": "from pkg.cli import main\nmain()\n",
+        "p-1/pkg/cli.py": "def main():\n    pass\n",
+        "p-1/pkg/core.py": "def boot():\n    pass\n",
+    }
+
+    def test_a_body_only_main_reaches_is_deferred_without_main(self) -> None:
+        both = LoadReach.deferred_lines(self.PACKAGE, self.PACKAGE)
+        bare = LoadReach.deferred_lines(self.PACKAGE, self.PACKAGE, without_main=True)
+        assert ("p-1/pkg/cli.py", 2, 2) not in both
+        assert ("p-1/pkg/cli.py", 2, 2) in bare
+
+    def test_a_body_init_reaches_is_run_either_way(self) -> None:
+        bare = LoadReach.deferred_lines(self.PACKAGE, self.PACKAGE, without_main=True)
+        assert ("p-1/pkg/core.py", 2, 2) not in bare
+
+
 class TestWhatImportNeverRuns:
     """Code importing can never reach: a `__main__` block and a file no import statement can name
     (measured: 6 of #59's 30 newly blocked benign, reviews/pypi-98/11)."""

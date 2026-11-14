@@ -35,7 +35,7 @@ from typing import TYPE_CHECKING, ClassVar
 from cordon_scanner.analysis.javascript.js_eval import JsEval
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+    from collections.abc import Callable, Iterable, Iterator, Mapping
 
     from cordon_scanner.analysis.javascript.evaluation.values import Tok
 
@@ -46,7 +46,10 @@ if TYPE_CHECKING:
 class CodeFeatures:
     """`of(reached)`: the word and call features of the files each place runs."""
 
-    PLACES: ClassVar[tuple[str, ...]] = ("install", "import", "closure")
+    #: `package` is every Python file of the unit, reached or not, and is the one place every scan
+    #: computes (`FeatureScope`; the others are measure-only): a source distribution's import entry
+    #: and closure are often one file or none, so the three places read almost none of its code.
+    PLACES: ClassVar[tuple[str, ...]] = ("install", "import", "closure", "package")
     HASH_MOD: ClassVar[int] = 1 << 18
     COUNT_CAP: ClassVar[int] = 20
     TOP: ClassVar[int] = 1500
@@ -166,7 +169,7 @@ class CodeFeatures:
     )
 
     @staticmethod
-    def of(reached: Mapping[str, Sequence[tuple[str, Source]]]) -> dict[str, float]:
+    def of(reached: Mapping[str, Iterable[tuple[str, Source]]]) -> dict[str, float]:
         """`reached` maps a place to its files: (path, bytes), or (path, a callable giving the
         file's windows in order) for a file too large to hold. Every byte is read either way."""
         out: Counter[str] = Counter()
@@ -398,7 +401,7 @@ class CodeFeatures:
                 out[f"code_{place}_apih_{CodeFeatures.hashed('m:' + member)}"] += 1
 
     @staticmethod
-    def _place(place: str, files: Sequence[tuple[str, Source]], out: Counter[str]) -> None:
+    def _place(place: str, files: Iterable[tuple[str, Source]], out: Counter[str]) -> None:
         """Every token of every file, counted as it is read: a token and the pair it ends, hashed
         once per distinct word. Nothing but the counts is held, whatever the files' size."""
         mod, empty = CodeFeatures.HASH_MOD, ("", "")

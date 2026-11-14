@@ -168,6 +168,10 @@ class LoadPath:
                 "FLOW.JS.ENVIRONMENT_SENT",
                 # The publishing composite's one term is this rule, not a capability.
                 "CAP.JS.PUBLISH.001",
+                # The model-loading composite's one term is a fact, not a capability: a load in a
+                # body nothing on the load path runs is the loader a caller asks for
+                # (`SUSPECT.MODEL.LOADED_ON_IMPORT.001` says "when it is imported").
+                "AST.PY.UNSAFE_MODEL_LOAD",
             )
         ]
         if not offsets:

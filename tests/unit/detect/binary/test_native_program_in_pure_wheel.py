@@ -8,6 +8,8 @@ from __future__ import annotations
 import zipfile
 from typing import TYPE_CHECKING
 
+import pytest
+
 from cordon_scanner import Scanner
 from cordon_scanner.foundation.config.settings import Config
 
@@ -133,3 +135,103 @@ class TestASourceDistribution:
             "demo/__init__.py": runner,
         }
         assert RULE not in self.rules(tmp_path, members)
+
+
+class TestWhatTheCodeStarts:
+    """The program the call starts is its first word. A shipped path handed to the interpreter as an
+    argument is a script the interpreter runs, not a native program the package carries."""
+
+    INTERPRETER = (
+        "import os, subprocess, sys\n"
+        "def run():\n"
+        "    script = os.path.join(os.path.dirname(__file__), 'helper.py')\n"
+        "    os.chmod(script, 0o755)\n"
+        "    return subprocess.run([sys.executable, script])\n"
+    )
+
+    def test_a_shipped_script_run_by_the_interpreter_is_not(self, tmp_path: Path) -> None:
+        members = {
+            "demo-1.0.dist-info/WHEEL": PURE,
+            "demo/bin/tool": b"MZ\x90\x00" + bytes(60),
+            "demo/__init__.py": self.INTERPRETER,
+        }
+        assert RULE not in Kit.rules(tmp_path, members)
+
+    @pytest.mark.parametrize("launcher", ["'sh', '-c'", "'nohup'", "'sudo'", "'cmd', '/c'"])
+    def test_a_shipped_program_started_through_another_program_still_is(
+        self, tmp_path: Path, launcher: str
+    ) -> None:
+        """Only the running interpreter is exempt as the first word: a shell, `nohup` or `sudo`
+        in front starts the program the package carries."""
+        runner = (
+            "import os, subprocess\n"
+            "def run():\n"
+            "    exe = os.path.join(os.path.dirname(__file__), 'bin', 'tool')\n"
+            f"    return subprocess.Popen([{launcher}, exe])\n"
+        )
+        members = {
+            "demo-1.0.dist-info/WHEEL": PURE,
+            "demo/bin/tool": b"MZ\x90\x00" + bytes(60),
+            "demo/__init__.py": runner,
+        }
+        assert RULE in Kit.rules(tmp_path, members)
+
+    def test_the_shipped_path_as_the_first_word_still_is(self, tmp_path: Path) -> None:
+        members = {
+            "demo-1.0.dist-info/WHEEL": PURE,
+            "demo/bin/tool": b"MZ\x90\x00" + bytes(60),
+            "demo/__init__.py": RUNNER,
+        }
+        assert RULE in Kit.rules(tmp_path, members)
+
+
+class TestWhereTheSourcesRunIt:
+    """A source distribution is installed by running its build files and by importing the package it
+    builds. A file in a directory that is neither (a test, a release task, a vendored environment) is
+    not run by anyone who installs it."""
+
+    PKG = "Metadata-Version: 2.1\nName: demo\nVersion: 1.0\n"
+    EXE = b"MZ\x90\x00" + bytes(60)
+
+    def rules(self, tmp_path: Path, members: dict[str, bytes | str]) -> set[str]:
+        return TestASourceDistribution.rules(tmp_path, {"PKG-INFO": self.PKG, **members})
+
+    def test_a_launcher_exercised_by_the_projects_tests_is_not(self, tmp_path: Path) -> None:
+        members = {
+            "demo/__init__.py": "",
+            "demo/t32.exe": self.EXE,
+            "tests/test_scripts.py": RUNNER,
+        }
+        assert RULE not in self.rules(tmp_path, members)
+
+    def test_a_release_task_outside_the_package_is_not(self, tmp_path: Path) -> None:
+        members = {"demo/__init__.py": "", "demo/t32.exe": self.EXE, "tasks/release.py": RUNNER}
+        assert RULE not in self.rules(tmp_path, members)
+
+    def test_a_vendored_environment_inside_the_sources_is_not(self, tmp_path: Path) -> None:
+        deep = "venv/lib/python3.12/site-packages/lib/__init__.py"
+        members = {"demo/__init__.py": "", "demo/t32.exe": self.EXE, deep: RUNNER}
+        assert RULE not in self.rules(tmp_path, members)
+
+    def test_the_setup_file_that_runs_it_still_is(self, tmp_path: Path) -> None:
+        members = {"setup.py": RUNNER, "demo/__init__.py": "", "demo/bin/tool": self.EXE}
+        assert RULE in self.rules(tmp_path, members)
+
+    def test_the_package_in_a_src_layout_that_runs_it_still_is(self, tmp_path: Path) -> None:
+        members = {"src/demo/__init__.py": RUNNER, "src/demo/bin/tool": self.EXE}
+        assert RULE in self.rules(tmp_path, members)
+
+
+class TestAFixtureWheelInsideSources:
+    """A source distribution whose tests carry a wheel's metadata is still sources: only a
+    `.dist-info/WHEEL` at the top of the archive says the archive is a wheel."""
+
+    def test_a_wheel_fixture_does_not_make_the_sources_a_pure_wheel(self, tmp_path: Path) -> None:
+        members = {
+            "PKG-INFO": "Metadata-Version: 2.1\nName: demo\nVersion: 1.0\n",
+            "demo/__init__.py": "",
+            "demo/t32.exe": b"MZ\x90\x00" + bytes(60),
+            "tests/fixtures/old-1.0.dist-info/WHEEL": PURE,
+            "tests/test_scripts.py": RUNNER,
+        }
+        assert RULE not in TestASourceDistribution.rules(tmp_path, members)

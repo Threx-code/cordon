@@ -146,7 +146,38 @@ class PythonDecodedRun(PythonValueFlow):
             "is_file",
             "stat",
             "unlink",
+            # Builtins that turn a value into a number, a character or a range: none can run what
+            # it is given (0.8.0 benign: a checksum `sum(ord(c) ...)`, a `range(int(n))` loop bound).
+            "int",
+            "float",
+            "bool",
+            "ord",
+            "chr",
+            "sum",
+            "abs",
+            "min",
+            "max",
+            "round",
+            "range",
+            "reversed",
+            "divmod",
         ]
+    )
+    #: The same, named with their module: `math.ceil(size)`, `re.search(p, text)`, a struct unpacked,
+    #: a value compressed again or checksummed. By full dotted name, so a same-named call of another
+    #: module is not taken for one of these. Not `json.dumps`: serialised text goes on to wherever it
+    #: is sent or written, which this does not follow (a decoded path in a report stays unexcused).
+    INERT_DOTTED: ClassVar[frozenset[str]] = frozenset(
+        ["math.ceil", "math.floor", "math.log", "math.sqrt", "re.search", "re.match", "re.fullmatch",
+         "re.findall", "re.finditer", "re.split", "struct.unpack", "struct.unpack_from",
+         "struct.pack", "zlib.compress", "zlib.crc32", "gzip.compress", "bz2.compress",
+         "lzma.compress", "binascii.crc32"]
+    )  # fmt: skip
+    #: Methods that only read a mapping, when the decoded value is the mapping itself.
+    READS_OF_ITSELF: ClassVar[frozenset[str]] = frozenset(["get", "items", "keys", "values"])
+    #: A logger's methods: they format the value into a log line.
+    LOGS: ClassVar[frozenset[str]] = frozenset(
+        ["debug", "info", "warning", "warn", "error", "critical", "exception"]
     )
     #: Data parsers by module: `json.loads` turns text into values, `pickle.loads` runs code.
     PARSERS: ClassVar[frozenset[str]] = frozenset(
@@ -195,6 +226,27 @@ class PythonDecodedRun(PythonValueFlow):
             # S2: an excuse; failing excuses nothing, so the finding it would lower stands
             return frozenset()
         return cls.unreached_run_lines(tree)
+
+    @classmethod
+    def run_positions(cls, source: str) -> frozenset[tuple[int, int]]:
+        """Where the runs this reads by name start, as (line, column in bytes): what an excused line
+        may hold. A run it does not model (a name bound to `eval("exec")`) is not among them, so
+        `DecodeRun` keeps such a line paired. Empty when the source does not parse."""
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
+        try:
+            tree = PythonSyntax.shared(source)
+        except (SyntaxError, ValueError, RecursionError):
+            # S2: nothing modelled means every parsed run on an excused line is unmodelled, so no
+            # line is excused and the pairing stands (fail closed); `unreached_runs` excuses nothing
+            # on the same source anyway
+            return frozenset()
+        analysis = cls(tree)
+        return frozenset(
+            (node.lineno, node.col_offset)
+            for node in PythonSyntax.walked_of(tree, ast.Call)
+            if analysis._runs(node)
+        )
 
     @classmethod
     def unreached_run_lines(cls, tree: ast.AST) -> frozenset[int]:
@@ -344,9 +396,23 @@ class PythonDecodedRun(PythonValueFlow):
             or name in self.DECODES
             or name.startswith("assert")
             or dotted in self.PARSERS
+            or dotted in self.INERT_DOTTED
             or (name == "open" and len(node.args) > 1)
             or name.endswith(("Error", "Exception", "Warning"))
+            or (name in self.READS_OF_ITSELF and bool(self.receiver(node)) and not self.given(node))
+            or self._logs(node, name, dotted)
         )
+
+    def _logs(self, node: ast.Call, name: str, dotted: str) -> bool:
+        """Whether this is a log call: `logging.info(x)`, or a logger's method (`log.debug(x)`,
+        `self.logger.error(x)`), the receiver named as a logger."""
+        if name not in self.LOGS or not isinstance(node.func, ast.Attribute):
+            return False
+        if dotted.startswith("logging."):
+            return True
+        receiver = node.func.value
+        last = receiver.attr if isinstance(receiver, ast.Attribute) else getattr(receiver, "id", "")
+        return str(last).lower().endswith(("log", "logger"))
 
 
 __all__ = ["PythonDecodedRun"]

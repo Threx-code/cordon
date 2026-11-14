@@ -110,7 +110,12 @@ class TestDecompressionBombs:
         """A hugely compressible member is the classic bomb. The expansion cap must stop it while
         it streams, not after it has been materialised, and say it is padding."""
         bomb = HostileHelpers.zip_of({"bomb.txt": b"\x00" * (8 * 1024 * 1024)})
-        limits = DEFAULT_LIMITS.merged(max_archive_ratio=10, max_member_bytes=1024 * 1024)
+        limits = DEFAULT_LIMITS.merged(
+            max_archive_ratio=10,
+            max_member_bytes=1024 * 1024,
+            max_elided_member_bytes=0,
+            max_elided_bytes=0,
+        )
 
         result = ArchiveReader.extract(bomb, path="bomb.zip", limits=limits)
 
@@ -125,7 +130,12 @@ class TestDecompressionBombs:
         result = ArchiveReader.extract(
             bomb,
             path="bomb.zip",
-            limits=DEFAULT_LIMITS.merged(max_archive_ratio=10, max_member_bytes=1024 * 1024),
+            limits=DEFAULT_LIMITS.merged(
+                max_archive_ratio=10,
+                max_member_bytes=1024 * 1024,
+                max_elided_member_bytes=0,
+                max_elided_bytes=0,
+            ),
         )
         assert result.rejected
         assert result.rejected[0].detail, "a rejection must explain itself"
@@ -181,7 +191,12 @@ class TestDecompressionBombs:
         result = ArchiveReader.extract(
             bomb,
             path="bomb.tar.gz",
-            limits=DEFAULT_LIMITS.merged(max_archive_ratio=10, max_member_bytes=1024 * 1024),
+            limits=DEFAULT_LIMITS.merged(
+                max_archive_ratio=10,
+                max_member_bytes=1024 * 1024,
+                max_elided_member_bytes=0,
+                max_elided_bytes=0,
+            ),
         )
         assert not result.members
         assert result.truncated
@@ -408,6 +423,32 @@ class TestHostileFileContent:
         assert result.complete is False
         assert any(f.rule_id == "OPERATIONAL.SCAN.TIMEOUT" for f in result.findings), (
             "a timed-out scan must say so"
+        )
+
+
+class TestTheDecodedViewPastItsBudget:
+    # The lowered budget is set in this process; a worker sees it only when it starts from this
+    # process's state (a fork or the forkserver template, Linux and macOS). Windows spawns a fresh
+    # interpreter, so the patch never reaches it. The view's refusal itself is tested in-process on
+    # every platform (tests/unit/analysis/shared/test_decoded_view.py).
+    @pytest.mark.skipif(
+        sys.platform == "win32", reason="a spawned worker does not inherit a patched budget"
+    )
+    def test_a_file_the_view_refuses_makes_the_scan_incomplete(self, tmp_path, monkeypatch) -> None:
+        """A file past the decoded view's budget (note 18 §2) is the scan's gap, as a file past
+        any reader's is: never read raw-only in silence. The budget is lowered here so a small
+        fixture is past it; the shapes at the real budget are in test_rule_hostile_input."""
+        from cordon_scanner.analysis.shared.decoded_view import DecodedView
+
+        monkeypatch.setattr(DecodedView, "MAX_CHARS", 1000)
+        (tmp_path / "a.js").write_text(
+            "const s = '\\x41';\n" + "const x = 1;\n" * 200, encoding="utf-8"
+        )
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        assert result.complete is False
+        assert any(
+            f.rule_id == "OPERATIONAL.DETECTOR.FAILED" and "ViewOverBudget" in f.message
+            for f in result.findings
         )
 
 

@@ -22,7 +22,7 @@ from cordon_scanner.detect.base import (
     GraphUnit,
     ScanContext,
 )
-from cordon_scanner.detect.registry import ComposerPluginHooks, ServerSources
+from cordon_scanner.detect.registry import ComposerPluginHooks, InstallFacts, ServerSources
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.engine.closure import ImportClosure, StartupClosure
 from cordon_scanner.engine.entries import PackageEntries
@@ -43,6 +43,7 @@ from cordon_scanner.engine.pipeline.hooks import BuildRoots, Hooks
 from cordon_scanner.engine.pipeline.images import Images
 from cordon_scanner.engine.pipeline.publisher import Publisher
 from cordon_scanner.engine.pipeline.releases import ReleaseChecks
+from cordon_scanner.engine.window_pass import WindowPass
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.errors import ArchiveError
 from cordon_scanner.foundation.formats.served_json import ServedJson
@@ -277,6 +278,8 @@ class ArchiveStages:
             package_repository=PackageEntries.repository(units, early_format),
             confusion_version=ConfusionVersions.reason(PackageEntries.version(units, early_format))
             or "",
+            package_code_bytes=(name_facts := InstallFacts.of(units))[0],
+            package_install_message=name_facts[1],
         )
         ctx = replace(
             ctx,
@@ -360,7 +363,9 @@ class ArchiveStages:
         for unit in list(units):
             if unit.content.is_binary or not UnparsedSource.runs_as_source(unit.path, running):
                 continue
-            decision = UnparsedSource.decide(unit.content.text)
+            decision = WindowPass.unparsed_decision(unit, ctx.copy_budget) or UnparsedSource.decide(
+                unit.content.text
+            )
             if decision.kind == "gap":
                 acc.incomplete(UnparsedSource.gap(unit.path))
                 if not SourcePaths.is_test_material(unit.path.rpartition("!")[2]):
@@ -393,10 +398,19 @@ class ArchiveStages:
             for unit in units
             if unit.path in closure and unit.path.endswith(".py") and not unit.content.is_binary
         }
+        deferred = LoadReach.deferred_lines(sorted(sources), sources)
+        has_main = any(path.rpartition("/")[2] == "__main__.py" for path in sources)
         return replace(
             ctx,
             import_closure_paths=frozenset(closure),
-            import_deferred_lines=LoadReach.deferred_lines(sorted(sources), sources),
+            import_deferred_lines=deferred,
+            # What `import pkg` runs without `python -m pkg` (reviews/pypi-98/19); the same set
+            # where the package has no `__main__.py`.
+            import_deferred_lines_without_main=(
+                LoadReach.deferred_lines(sorted(sources), sources, without_main=True)
+                if has_main
+                else deferred
+            ),
         )
 
     def parallel(

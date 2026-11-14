@@ -121,20 +121,28 @@ class EmbeddedCommands:
     )
 
     @staticmethod
-    def _remote(text: str, at: int) -> bool:
+    def _remote(text: str, at: int, language: str | None = None) -> bool:
         """Whether the call at `at` is made on an SSH session, so the command it is given runs on
         another machine -- a deploy tool provisioning a server is not a dropper on this one (review
         98: a deployment library's `ssh.exec` of a server bootstrap). See `remote_session`."""
         m = EmbeddedCommands._REMOTE_RECEIVER.search(text, max(0, at - 60), at)
-        return EmbeddedCommands.remote_session(text, m.group(1)) if m else False
+        return EmbeddedCommands.remote_session(text, m.group(1), language) if m else False
 
     @staticmethod
-    def remote_session(text: str, name: str) -> bool:
+    def remote_session(text: str, name: str, language: str | None = None) -> bool:
         """Whether `name` is an SSH session in this file: the file takes one from an SSH library or
         client, and does not bind the name to `child_process` -- a local module called `ssh` is
-        still the local module."""
-        return EmbeddedCommands.SSH_SOURCE.search(text) is not None and not (
-            EmbeddedCommands.binds_child_process(text, name)
+        still the local module.
+
+        Granted on a match and an absence (note 18 §6, amended 11-12): the SSH library is read in
+        the raw text only, so a decoded spelling never earns the excuse; the binding to
+        `child_process` withholds it in any reading of the file's language, so
+        `require('\\x63hild_process')` does."""
+        from cordon_scanner.analysis.shared.decoded_view import DecodedView
+
+        return EmbeddedCommands.SSH_SOURCE.search(text) is not None and not any(
+            EmbeddedCommands.binds_child_process(reading, name)
+            for reading in DecodedView.readings(text, language)
         )
 
     @staticmethod
@@ -209,7 +217,7 @@ class EmbeddedCommands:
         for call in _SPAWN_CALL.finditer(text):
             if len(commands) >= MAX_COMMANDS:
                 break
-            if EmbeddedCommands._remote(text, call.start()):
+            if EmbeddedCommands._remote(text, call.start(), language):
                 continue
 
             window = text[call.end() : call.end() + _ARGUMENT_WINDOW]
