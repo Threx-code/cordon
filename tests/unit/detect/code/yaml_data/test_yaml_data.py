@@ -94,3 +94,23 @@ class TestInAScan:
 
     def test_a_shell_script_is_untouched(self, tmp_path: Path) -> None:
         assert RULE in Scans.rules(tmp_path, "wipe.sh", "#!/bin/sh\nsudo rm -rf ~/\n")
+
+
+class TestKeyIsReadInCode:
+    def test_the_key_after_dashes_and_blanks(self) -> None:
+        assert YamlCommands.key_of("  - - run: x") == "run"
+        assert YamlCommands.key_of("key:") == "key"
+        assert YamlCommands.key_of("a : b") == "a"
+
+    def test_a_line_that_is_not_a_key(self) -> None:
+        assert YamlCommands.key_of("- rm -rf ~/") is None
+        assert YamlCommands.key_of("url: http://x") == "url"
+        assert YamlCommands.key_of("a:b") is None
+
+    def test_a_long_run_of_blanks_is_read_in_linear_time(self) -> None:
+        import time
+
+        line = " \t" * 200_000 + "!"
+        start = time.process_time()
+        assert YamlCommands.key_of(line) is None
+        assert time.process_time() - start < 1.0

@@ -1245,7 +1245,7 @@
   "test_verdict_unseen.py": "decide",
   "test_verified_download.py": "detect/code",
   "test_wasm_glue.py": "detect/code",
-  "test_yaml_data.py": "detect/code",
+  "test_yaml_data.py": "detect/code/yaml_data",
   "test_versions.py": "intel/advisories",
   "test_vex_csaf.py": "decide",
   "test_vex_input.py": "report",

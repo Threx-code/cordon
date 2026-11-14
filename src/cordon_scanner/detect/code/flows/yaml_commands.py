@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from cordon_scanner.detect.code.capability.hits import CapabilityHit
     from cordon_scanner.foundation.content import FileContent
 
-_KEY: Final = re.compile(r"""^[ \t]*(?:-[ \t]+)*(?P<key>[A-Za-z_][\w.-]{0,60})[ \t]*:(?:[ \t]|$)""")
+_NAME: Final = re.compile(r"[A-Za-z_][\w.-]{0,60}")
 _FLOW_KEY: Final = re.compile(r"""[{,][ \t]*(?P<key>[A-Za-z_][\w.-]{0,60})[ \t]*:""")
 
 
@@ -36,6 +36,29 @@ class YamlCommands:
     """Top-level keys of a file that is itself something a tool runs."""
 
     @staticmethod
+    def key_of(line: str) -> str | None:
+        """The mapping key a line opens (after any list dashes), or None. Read in code: a pattern
+        for leading blanks then dashes then blanks repeats the same characters."""
+        at, size = 0, len(line)
+        while at < size and line[at] in " \t":
+            at += 1
+        while at < size and line[at] == "-" and at + 1 < size and line[at + 1] in " \t":
+            at += 1
+            while at < size and line[at] in " \t":
+                at += 1
+        name = _NAME.match(line, at)
+        if name is None:
+            return None
+        at = name.end()
+        while at < size and line[at] in " \t":
+            at += 1
+        if at >= size or line[at] != ":":
+            return None
+        if at + 1 < size and line[at + 1] not in " \t":
+            return None
+        return name.group(0)
+
+    @staticmethod
     def _indent(line: str) -> int:
         return len(line) - len(line.lstrip(" \t"))
 
@@ -46,14 +69,14 @@ class YamlCommands:
         if not 1 <= line <= len(lines):
             return True
         for raw in lines:
-            top = _KEY.match(raw) if raw and not raw[0].isspace() else None
-            if top is not None and top.group("key").lower() in YamlCommands.LIVE_TOP_KEYS:
+            top = YamlCommands.key_of(raw) if raw and not raw[0].isspace() else None
+            if top is not None and top.lower() in YamlCommands.LIVE_TOP_KEYS:
                 return True
         target = lines[line - 1]
         keys: list[str] = []
-        own = _KEY.match(target)
+        own = YamlCommands.key_of(target)
         if own is not None:
-            keys.append(own.group("key").lower())
+            keys.append(own.lower())
         keys.extend(m.group("key").lower() for m in _FLOW_KEY.finditer(target))
         indent = YamlCommands._indent(target)
         for at in range(line - 2, -1, -1):
@@ -64,9 +87,9 @@ class YamlCommands:
                 continue
             level = YamlCommands._indent(above)
             if level < indent:
-                found = _KEY.match(above)
+                found = YamlCommands.key_of(above)
                 if found is not None:
-                    keys.append(found.group("key").lower())
+                    keys.append(found.lower())
                 indent = level
         if not keys:
             return True  # under no key at all: nothing says it is data
