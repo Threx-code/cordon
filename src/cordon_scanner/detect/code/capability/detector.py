@@ -58,6 +58,7 @@ from cordon_scanner.detect.code.capability.view_runner import ViewRunner
 from cordon_scanner.detect.code.credential_sweep import CredentialSweep
 from cordon_scanner.detect.code.decode_run import DecodeRun
 from cordon_scanner.detect.code.drop_point_loot import DropPointLoot
+from cordon_scanner.detect.code.flows.yaml_commands import YamlCommands
 from cordon_scanner.detect.code.install_payload import InstallPayload
 from cordon_scanner.detect.code.keychain_owner import KeychainOwner
 from cordon_scanner.detect.infra.gradle_auth import GradleBuildAuth
@@ -488,6 +489,8 @@ class CapabilityDetector(BaseDetector):
             for h in hits
         ):
             hits = Labelling.drop_excused_pattern_hits(content, hits)
+        if unit.language == "yaml":
+            hits = YamlCommands.drop(content, hits)
         if unit.language == "python":
             hits = QuotedPythonProbes.drop(content, hits)
             hits = DownloadedLoaderRuns.add(content, hits)
