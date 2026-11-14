@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import multiprocessing
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -229,15 +230,19 @@ class TestTheSupervisor:
         was ready, so a scan whose workers cannot start is a scanner error, never a hang."""
         monkeypatch.setattr(Worker, "START_BACKSTOP", 2.0)
         began = time.monotonic()
-        with pytest.raises(IsolationUnavailable):
+        with pytest.raises(IsolationUnavailable, match="ended by the start backstop"):
             Harness.supervisor(Bounds(), workers=1, setup="setup_that_hangs").run(
                 [Unit(0, ("echo", 1), 1)]
             )
         assert time.monotonic() - began < 2 * 2.0 + 20
 
     def test_no_worker_that_can_start_is_said_not_run_here(self) -> None:
-        with pytest.raises(IsolationUnavailable):
+        """One that ended by itself is not said to have met the start backstop: once the backstop
+        had killed a hung worker, the two read the same ("died, exit -9", macOS CI, 2026-11-14)."""
+        with pytest.raises(IsolationUnavailable) as raised:
             Harness.supervisor(Bounds(), setup="setup_that_raises").run([Unit(0, ("echo", 1), 1)])
+        assert "start backstop" not in str(raised.value)
+        assert "s after it started)" in str(raised.value)
 
 
 class TestTheBudgetIsOnTopOfWhatTheWorkerInherits:
@@ -311,3 +316,56 @@ class TestTheWindowsJobIsDeclaredForSixtyFourBitHandles:
         assert kernel32.AssignProcessToJobObject.argtypes == [ctypes.c_void_p, ctypes.c_void_p]
         assert kernel32.SetInformationJobObject.argtypes[0] is ctypes.c_void_p
         assert JobLimits._psapi().GetProcessMemoryInfo.argtypes[0] is ctypes.c_void_p
+
+
+class TestAWindowsDeathPastItsBudgetIsTheCpuLimit:
+    """Windows ends a unit past its Job Object time limit with an exit code it does not document
+    (on Windows CI it was not ERROR_NOT_ENOUGH_QUOTA, and the unit read as "died"), so the parent
+    reads the worker's user time instead. Checked on every platform with a stand-in process."""
+
+    SECOND = 10_000_000  # user time ticks
+
+    class Ended:
+        exitcode = 1
+        sentinel = 7
+
+    @staticmethod
+    def worker(user_at_give: int | None, budget: float = 2.0) -> Worker:
+        worker = Worker.__new__(Worker)
+        worker.process = TestAWindowsDeathPastItsBudgetIsTheCpuLimit.Ended()
+        worker.unit = Unit(0, ("spin", None), 1)
+        worker.cpu_given, worker.user_at_give = budget, user_at_give
+        return worker
+
+    @staticmethod
+    def user_time(monkeypatch, ticks: int | None) -> None:
+        from cordon_scanner.engine.isolation.platform_limits import JobLimits
+
+        monkeypatch.setattr(JobLimits, "user_time_of", classmethod(lambda cls, handle: ticks))
+
+    def test_a_death_past_the_budget_is_the_cpu_limit(self, monkeypatch) -> None:
+        self.user_time(monkeypatch, 8 * self.SECOND)
+        assert self.worker(5 * self.SECOND).reason() == Reason.CPU
+
+    def test_a_death_inside_the_budget_is_a_death(self, monkeypatch) -> None:
+        self.user_time(monkeypatch, 5 * self.SECOND + self.SECOND // 2)
+        assert self.worker(5 * self.SECOND).reason() == Reason.DIED
+
+    def test_a_time_it_cannot_read_is_a_death(self, monkeypatch) -> None:
+        self.user_time(monkeypatch, None)
+        assert self.worker(5 * self.SECOND).reason() == Reason.DIED
+
+    def test_with_no_time_taken_at_give_the_exit_code_alone_decides(self, monkeypatch) -> None:
+        """Linux and macOS take no reading at give (`user_at_give` None): SIGXCPU says CPU."""
+        self.user_time(monkeypatch, 10**12)
+        assert self.worker(None).reason() == Reason.DIED
+        if hasattr(signal, "SIGXCPU"):
+            worker = self.worker(None)
+            worker.process.exitcode = -signal.SIGXCPU
+            assert worker.reason() == Reason.CPU
+
+    @pytest.mark.skipif(os.name == "nt", reason="off Windows only")
+    def test_the_parent_reads_no_user_time_off_windows(self) -> None:
+        from cordon_scanner.engine.isolation.platform_limits import JobLimits
+
+        assert JobLimits.user_time_of(os.getpid()) is None

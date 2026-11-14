@@ -14,8 +14,11 @@ the wall backstop.
   only run once the memory was already taken.
 - **Windows, memory and CPU:** the worker puts itself in a Job Object whose per-process limits the
   kernel enforces. An allocation past the memory limit fails (MemoryError, the existing
-  MEMORY_EXIT path), and a unit past its user-CPU budget is ended by the system with
-  ERROR_NOT_ENOUGH_QUOTA, which the parent reads as `Reason.CPU`.
+  MEMORY_EXIT path), and a unit past its user-CPU budget is ended by the system. The parent reads
+  that as `Reason.CPU` from the worker's user time (`JobLimits.user_time_of`), the figure the
+  system documents checking, not from the exit code: the code it gives a process ended at a
+  per-process time limit is not documented (ERROR_NOT_ENOUGH_QUOTA is the job-wide limit's), and
+  on Windows CI it was not that one (2026-11-14).
 
 Standard library only (ctypes), as everything in the scanner is.
 """
@@ -93,8 +96,8 @@ class JobLimits:
     JOB_OBJECT_LIMIT_PROCESS_TIME: ClassVar[int] = 0x00000002
     JOB_OBJECT_LIMIT_PROCESS_MEMORY: ClassVar[int] = 0x00000100
     JOB_OBJECT_EXTENDED_LIMIT_INFORMATION: ClassVar[int] = 9
-    #: The exit code the system gives a process it ended at the job's per-process time limit.
-    ERROR_NOT_ENOUGH_QUOTA: ClassVar[int] = 1816
+    #: User time, in 100 ns ticks, per second.
+    TICKS: ClassVar[int] = 10_000_000
 
     class _Basic(ctypes.Structure):
         _fields_: ClassVar[list[tuple[str, Any]]] = [
@@ -230,7 +233,20 @@ class JobLimits:
         )
 
     @classmethod
-    def _user_time_100ns(cls) -> int:
+    def user_time_of(cls, handle: int) -> int | None:
+        """The user time, in 100 ns ticks, of the process `handle` opens: the parent's view of a
+        worker, alive or ended (its handle stays valid until it is closed). None off Windows, or
+        where it cannot be read."""
+        if os.name != "nt":
+            return None
+        try:
+            return cls._user_time_100ns(handle)
+        except (OSError, AttributeError, ValueError):
+            return None
+
+    @classmethod
+    def _user_time_100ns(cls, handle: int | None = None) -> int:
+        """User time of `handle`'s process, or of this one; OSError where it cannot be read."""
         kernel32 = cls._kernel32()
         created, ended, kernel, user = (
             ctypes.c_uint64(),
@@ -238,13 +254,14 @@ class JobLimits:
             ctypes.c_uint64(),
             ctypes.c_uint64(),
         )
-        kernel32.GetProcessTimes(
-            kernel32.GetCurrentProcess(),
+        if not kernel32.GetProcessTimes(
+            kernel32.GetCurrentProcess() if handle is None else handle,
             ctypes.addressof(created),
             ctypes.addressof(ended),
             ctypes.addressof(kernel),
             ctypes.addressof(user),
-        )
+        ):
+            raise OSError(ctypes.get_last_error(), "GetProcessTimes failed")  # type: ignore[attr-defined]
         return int(user.value)
 
     @staticmethod

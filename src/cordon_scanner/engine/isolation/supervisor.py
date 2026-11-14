@@ -25,7 +25,6 @@ import multiprocessing
 import multiprocessing.connection
 import os
 import signal
-import sys
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -50,7 +49,7 @@ class Reason:
     """Why a unit has no result: the words a report names it by."""
 
     MEMORY = "memory"  # MemoryError past the worker's address-space limit
-    CPU = "cpu"  # SIGXCPU: the unit's CPU budget
+    CPU = "cpu"  # the unit's CPU budget: SIGXCPU, or Windows' Job Object limit (`past_cpu_budget`)
     WALL = "wall"  # the wall-clock backstop: a unit that hangs without burning CPU
     DIED = "died"  # any other end: killed (the out-of-memory killer's SIGKILL), crashed
     FAILED = "failed"  # the unit raised: its exception's type and message follow, after ": "
@@ -166,10 +165,20 @@ class Worker:
         self.footprint_limit: int | None = None
         self.unit: Unit | None = None
         self.given_at = 0.0
+        #: The CPU budget of the unit it holds, and (Windows) its user time as it took that unit:
+        #: what `past_cpu_budget` compares a death with.
+        self.cpu_given = 0.0
+        self.user_at_give: int | None = None
 
     def give(self, unit: Unit, bounds: Bounds) -> None:
         self.unit, self.given_at = unit, time.monotonic()
-        self.conn.send((unit.index, unit.item, bounds.cpu_budget(unit.size)))
+        self.cpu_given = bounds.cpu_budget(unit.size)
+        # Read before the unit is sent, so before the worker sets its limit from its own user time:
+        # what it uses past this reading is at least what it used past its limit's base.
+        self.user_at_give = (
+            JobLimits.user_time_of(self.process.sentinel) if os.name == "nt" else None
+        )
+        self.conn.send((unit.index, unit.item, self.cpu_given))
 
     def overdue(self, bounds: Bounds, now: float) -> bool:
         if not self.ready:
@@ -191,6 +200,21 @@ class Worker:
         footprint = Footprint.of(self.process.pid)
         return footprint is not None and footprint > self.footprint_limit
 
+    @staticmethod
+    def never_ready(worker: Worker, *, ended: bool) -> str:
+        """Why no worker could start, from the last one tried. `ended`: the supervisor ended it, a
+        worker still alive at the start backstop, rather than it ending by itself. Both show as
+        SIGKILL (exit -9) once it is gone, so the message says which, and when: macOS CI's "died,
+        exit -9" could not tell a worker hung at its start from one the system killed
+        (2026-11-14)."""
+        after = f"{time.monotonic() - worker.started_at:.0f} s after it started"
+        how = (
+            f"no ready message within {Worker.START_BACKSTOP:.0f} s, ended by the start backstop"
+            if ended
+            else f"{worker.reason()}, exit {worker.process.exitcode}"
+        )
+        return f"no worker could start: it ended before it was ready ({how}, {after})"
+
     def end(self) -> None:
         if self.process.is_alive():
             self.process.kill()
@@ -201,11 +225,20 @@ class Worker:
         code = self.process.exitcode
         if code == MEMORY_EXIT:
             return Reason.MEMORY
-        if code == -getattr(signal, "SIGXCPU", -1):
-            return Reason.CPU
-        if sys.platform == "win32" and code == JobLimits.ERROR_NOT_ENOUGH_QUOTA:
+        if code == -getattr(signal, "SIGXCPU", -1) or self.past_cpu_budget():
             return Reason.CPU
         return Reason.DIED
+
+    def past_cpu_budget(self) -> bool:
+        """Windows: it ended holding a unit that had used its whole CPU budget, which is the Job
+        Object's per-process time limit ending it (`JobLimits.cpu_for_next`). Read from its user
+        time, what the system documents checking; the exit code it then gives is not documented,
+        and on Windows CI it was not ERROR_NOT_ENOUGH_QUOTA (2026-11-14). False elsewhere, where
+        SIGXCPU says it."""
+        if self.user_at_give is None or self.unit is None:
+            return False
+        used = JobLimits.user_time_of(self.process.sentinel)
+        return used is not None and used - self.user_at_give >= self.cpu_given * JobLimits.TICKS
 
 
 class WorkerMain:
@@ -463,10 +496,7 @@ class Supervisor:
                         # worker has started at all and that one ends too, nothing can run here.
                         unready_ends += 1
                         if not started_any and unready_ends >= 2:
-                            raise IsolationUnavailable(
-                                f"no worker could start: it ended before it was ready "
-                                f"({worker.reason()}, exit {worker.process.exitcode})"
-                            )
+                            raise IsolationUnavailable(Worker.never_ready(worker, ended=alive))
                         pool.append(self._start())
                     elif queue:
                         pool.append(self._start())
