@@ -25,35 +25,6 @@ _ARTICLES: Final = ("the ", "tool ")
 _MAX_GAP: Final = 40
 
 
-def identifier_like(word: str) -> bool:
-    """A snake_case or camelCase word: a tool or parameter name as an author writes one.
-
-    Read in code, not by one pattern: a shape of repeated groups over the same characters is the
-    superlinear kind (`reviews/release-080` 27-PERFORMANCE), and a word is short."""
-    if len(word) < 3 or not word.isascii() or not word[0].isalpha():
-        return False
-    if "_" in word:
-        parts = word.split("_")
-        return all(part.isalnum() for part in parts)
-    # camelCase: a lower-case run, then each hump an upper-case letter and at least one lower-case
-    # letter or digit, with no second capital inside it.
-    at = 0
-    while at < len(word) and word[at].islower():
-        at += 1
-    if at == 0 or at == len(word):
-        return False
-    while at < len(word):
-        if not word[at].isupper():
-            return False
-        at += 1
-        start = at
-        while at < len(word) and (word[at].islower() or word[at].isdigit()):
-            at += 1
-        if at == start:
-            return False
-    return True
-
-
 _REGISTERED: Final = re.compile(
     r"""(?:\.tool\(\s*+(?:\{\s*+)?(?:name\s*:\s*+)?|\bregisterTool\(\s*|\bname\s*[:=]\s*)"""
     r"""["'`](?P<name>[A-Za-z][\w.-]{1,80})["'`]"""
@@ -90,10 +61,41 @@ class OwnVocabulary:
         return frozenset(names)
 
     @staticmethod
+    def identifier_like(word: str) -> bool:
+        """A snake_case or camelCase word: a tool or parameter name as an author writes one.
+
+        Read in code, not by one pattern: a shape of repeated groups over the same characters is the
+        superlinear kind (`reviews/release-080` 27-PERFORMANCE), and a word is short."""
+        if len(word) < 3 or not word.isascii() or not word[0].isalpha():
+            return False
+        if "_" in word:
+            parts = word.split("_")
+            return all(part.isalnum() for part in parts)
+        # camelCase: a lower-case run, then each hump an upper-case letter and at least one lower-case
+        # letter or digit, with no second capital inside it.
+        at = 0
+        while at < len(word) and word[at].islower():
+            at += 1
+        if at == 0 or at == len(word):
+            return False
+        while at < len(word):
+            if not word[at].isupper():
+                return False
+            at += 1
+            start = at
+            while at < len(word) and (word[at].islower() or word[at].isdigit()):
+                at += 1
+            if at == start:
+                return False
+        return True
+
+    @staticmethod
     def words(text: str) -> frozenset[str]:
         """The identifier-like words of a text, lower-cased."""
         return frozenset(
-            m.group(0).lower() for m in _WORD.finditer(text) if identifier_like(m.group(0))
+            m.group(0).lower()
+            for m in _WORD.finditer(text)
+            if OwnVocabulary.identifier_like(m.group(0))
         )
 
     @staticmethod
@@ -114,7 +116,7 @@ class OwnVocabulary:
             if at < len(text) and text[at] in "`'\"":
                 at += 1
             word = _WORD.match(text, at)
-            if word is not None and identifier_like(word.group(0)):
+            if word is not None and OwnVocabulary.identifier_like(word.group(0)):
                 found.add(word.group(0).lower())
         return frozenset(found)
 

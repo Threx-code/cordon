@@ -14,7 +14,7 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.detect.agents.mcp_servers.findings import McpServerFindings
-from cordon_scanner.detect.agents.mcp_servers.own_vocabulary import OwnVocabulary, identifier_like
+from cordon_scanner.detect.agents.mcp_servers.own_vocabulary import OwnVocabulary
 from cordon_scanner.detect.agents.mcp_servers.source import McpServerSource
 from cordon_scanner.detect.agents.semantics import AgentSemantics
 from cordon_scanner.foundation.config.settings import Config
@@ -182,7 +182,7 @@ class TestIdentifierLikeIsReadInCode:
         "word", ["list_apis", "get_docs", "sdk_version", "listApis", "getSdkInfo", "a1_b2"]
     )
     def test_snake_and_camel_words_are_identifiers(self, word: str) -> None:
-        assert identifier_like(word)
+        assert OwnVocabulary.identifier_like(word)
 
     @pytest.mark.parametrize(
         "word",
@@ -200,7 +200,7 @@ class TestIdentifierLikeIsReadInCode:
         ],
     )
     def test_plain_words_and_odd_shapes_are_not(self, word: str) -> None:
-        assert not identifier_like(word)
+        assert not OwnVocabulary.identifier_like(word)
 
     def test_a_long_word_is_read_in_linear_time(self) -> None:
         import time
