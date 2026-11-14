@@ -118,6 +118,7 @@ rather than a document.
 
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
+| `POLICY.ABUSE_TOOLING.PLATFORM_FORGERY.001` | medium | `composites` | policy |
 | `POLICY.VCS.BINARY_ADDED.001` | low | `vcs` | policy |
 | `SUSPECT.POLYGLOT.MISMATCH.001` | high | `binary` | obfuscation |
 | `SUSPECT.SOURCE.UNPARSED_RUNNING.001` | high | `manifest` | obfuscation |

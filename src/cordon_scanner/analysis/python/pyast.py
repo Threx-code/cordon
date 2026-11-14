@@ -72,9 +72,9 @@ from cordon_scanner.analysis.python.flows.client_bindings import ClientBindings
 from cordon_scanner.analysis.python.flows.data_file_code import DataFileCode
 from cordon_scanner.analysis.python.flows.decoded_drops import DecodedDrops
 from cordon_scanner.analysis.python.flows.dns_tunnels import DnsTunnels
+from cordon_scanner.analysis.python.flows.forgery.platform_forgery import PlatformForgery
 from cordon_scanner.analysis.python.flows.free_host_credentials import FreeHostCredentials
 from cordon_scanner.analysis.python.flows.implants.implant_facts import ImplantFacts
-from cordon_scanner.analysis.python.flows.platform_forgery import PlatformForgery
 from cordon_scanner.analysis.python.flows.received_run import ReceivedRuns
 from cordon_scanner.analysis.python.flows.relayed_sends import RelayedSends
 from cordon_scanner.analysis.python.flows.staged.av_exclusions import AvExclusions

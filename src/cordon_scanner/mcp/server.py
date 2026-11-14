@@ -171,9 +171,7 @@ class Server:
                 if line.strip():
                     try:
                         self.receive(line)
-                    except (
-                        Exception
-                    ) as exc:  # one message must never end the server  # noqa: BLE001
+                    except Exception as exc:  # one message must never end the server  # noqa: BLE001
                         print(
                             f"cordon-scanner mcp: could not handle a message: {type(exc).__name__}",
                             file=sys.stderr,

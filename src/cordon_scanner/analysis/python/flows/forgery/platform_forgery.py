@@ -14,8 +14,11 @@ from __future__ import annotations
 import ast
 
 from cordon_scanner.analysis.python.analyzer_core import AnalyzerCore
+from cordon_scanner.analysis.python.flows.forgery.platform_signing import (
+    MINIMUM_PARAMETERS,
+    PlatformSigning,
+)
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
-from cordon_scanner.analysis.shared.platform_signing import MINIMUM_PARAMETERS, PlatformSigning
 from cordon_scanner.foundation.capabilities import Capability
 
 
