@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, TypedDict
 
 from cordon_scanner.detect.base import (
     FileUnit,
@@ -40,6 +40,13 @@ if TYPE_CHECKING:
     from cordon_scanner.detect.base import CapabilityLabelling, CapabilityMark
     from cordon_scanner.engine.engine import Engine
     from cordon_scanner.engine.pipeline.accumulator import Accumulator
+
+
+class FileRoles(TypedDict):
+    """The context fields that say what kind of file a path is."""
+
+    shipped_native_paths: frozenset[str]
+    data_only_paths: frozenset[str]
 
 
 class TreeFacts:
@@ -104,7 +111,7 @@ class TreeFacts:
         return frozenset(t for t in deferred if t[0] not in agent_run)
 
     @staticmethod
-    def file_roles(units: Sequence[FileUnit]) -> dict[str, frozenset[str]]:
+    def file_roles(units: Sequence[FileUnit]) -> FileRoles:
         """What kind of file each path is, for the context fields that say so: the binaries a package
         ships (`shipped_native`) and the data files only a parser ever reads (`DataRoles`)."""
         from cordon_scanner.analysis.shared.data_roles import DataRoles

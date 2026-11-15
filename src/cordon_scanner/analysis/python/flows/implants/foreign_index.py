@@ -73,11 +73,12 @@ class ForeignIndex:
                     out.add(node.lineno)
         return sorted(out)
 
-
     @staticmethod
     def _installs(name: str, node: ast.Call) -> bool:
         """Whether the call is made to something that installs, or is handed an index beside the hosts."""
-        return bool(INSTALLER_NAME.search(name)) or any(k.arg in INDEX_KEYWORDS for k in node.keywords)
+        return bool(INSTALLER_NAME.search(name)) or any(
+            k.arg in INDEX_KEYWORDS for k in node.keywords
+        )
 
 
 __all__ = ["ForeignIndex"]

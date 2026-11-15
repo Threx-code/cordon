@@ -18,9 +18,7 @@ if TYPE_CHECKING:
 class SecretSources(AnalyzerCore):
     """The sources `DataFlows._secret_sent` reads."""
 
-    def _secret_carrying(
-        self, tree: ast.AST
-    ) -> tuple[dict[str, str], dict[tuple[int, str], str]]:
+    def _secret_carrying(self, tree: ast.AST) -> tuple[dict[str, str], dict[tuple[int, str], str]]:
         """(name -> the credential it carries, (scope, name) -> the host its URL literal names), for
         the tree: credentials read, then carried through `with … as`, receivers that take one in,
         assignment and item assignment, to a fixed point bounded at three rounds. A URL is the
