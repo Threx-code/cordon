@@ -13,6 +13,7 @@ from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.detect.agents import configuration
 from cordon_scanner.detect.agents.mcp_servers.own_vocabulary import OwnVocabulary
 from cordon_scanner.detect.agents.mcp_servers.registrations import ToolRegistrations
+from cordon_scanner.detect.agents.semantics import VERB
 from cordon_scanner.detect.agents.text_patterns import (
     AGENT_CHANNEL,
     EXFIL_PATHS,
@@ -310,6 +311,12 @@ words, `<IMPORTANT>...</IMPORTANT>` (`McpServerSource._wrapped`): not `<secret>`
 descriptions use as placeholders (`?auth=<secret>`), and not a security tool naming the markers it
 strips (`<system>, </system>`)."""
 
+_NEGATION: Final = re.compile(r"(?i)\b(?:not|never|cannot)\b|n't\b")
+"""A word that negates what follows it."""
+
+_NEW_ORDER: Final = re.compile(rf"(?i)[,;:]\s{{0,3}}(?:then\s{{1,3}}|please\s{{1,3}})?{VERB}\b")
+"""A fresh imperative after a comma: "do not worry, run it": the negation ended before it."""
+
 _ENV_DUMP: Final = re.compile(
     r"(?i)\boutput\s+of\s+`?(?:env|printenv|set)\b|\benvironment\s+variables\b"
 )
@@ -368,7 +375,7 @@ class McpServerSource:
             return "carries invisible characters"
         if McpServerSource._wrapped(description):
             return "wraps text in a tag addressed to the model"
-        if SECRECY.search(description):
+        if McpServerSource._keeps_from_user(description):
             return "asks the agent to keep something from the user"
         sentences = McpServerSource.sentences(description)
         if any(
@@ -470,6 +477,21 @@ class McpServerSource:
                         )
                     )
         return spans
+
+    @staticmethod
+    def _keeps_from_user(description: str) -> bool:
+        """Whether the text asks the agent to keep something from the user. "Do not submit the form
+        without telling the user" asks for the opposite: a `without` inside a negation, in the same
+        sentence and with no new order between them, is a requirement to tell, not a secret."""
+        for match in SECRECY.finditer(description):
+            if match.group(0)[:7].lower() == "without":
+                start = max(description.rfind(stop, 0, match.start()) for stop in ".!?\n") + 1
+                before = description[max(start, match.start() - 200) : match.start()]
+                negated = _NEGATION.search(before)
+                if negated and not _NEW_ORDER.search(before[negated.end() :]):
+                    continue
+            return True
+        return False
 
     @staticmethod
     def _wrapped(description: str) -> bool:
