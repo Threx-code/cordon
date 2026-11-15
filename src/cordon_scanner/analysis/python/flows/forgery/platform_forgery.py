@@ -5,8 +5,9 @@
 query parameters: `X-Gorgon`, `X-Argus`, `X-Bogus`, `msToken` ...) as string literals, and also
 names one of that platform's API hosts. A scraper reads a cookie by one of these names; the code
 that signs requests needs several, and the host they are for. The tool passes as the platform's
-app: it is policy (`POLICY.ABUSE_TOOLING.PLATFORM_FORGERY.001`), never malware. The names and
-hosts are in `analysis/shared/platform_signing.py`.
+app: it is policy (`POLICY.ABUSE_TOOLING.PLATFORM_FORGERY.001`), never malware. The names are in
+`platform_signing.py` and the hosts in `platform_hosts.py`, kept apart so that neither module of the
+detector is the shape it reports.
 """
 
 from __future__ import annotations

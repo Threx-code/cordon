@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from typing import Final
 
+from cordon_scanner.analysis.python.flows.forgery.platform_hosts import PLATFORM_API_HOSTS
+
 SIGNING_PARAMETERS: Final = frozenset(
     {
         "xgorgon",
@@ -27,12 +29,8 @@ SIGNING_PARAMETERS: Final = frozenset(
         "xtttokensign",
     }
 )
-"""Request-signature headers and parameters of the platform's app API."""
-
-PLATFORM_API_HOSTS: Final = frozenset(
-    {"tiktokv.com", "tiktokcdn.com", "snssdk.com", "byteoversea.com", "musical.ly", "tiktok.com"}
-)
-"""Domains the signed requests go to."""
+"""Request-signature headers and parameters of the platform's app API. The hosts they go to are in
+`platform_hosts.py`, apart, so this module is not the shape its own rule reports."""
 
 MINIMUM_PARAMETERS: Final = 2
 """One of these names in a file is a coincidence of vocabulary (a scraper reads a cookie called

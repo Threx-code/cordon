@@ -114,6 +114,7 @@
   "analysis/shared/deobfuscation": "analysis/shared/deobfuscation",
   "analysis/shared/deobfuscator": "analysis/shared/deobfuscator",
   "analysis/shared/destinations": "analysis/shared/destinations",
+  "analysis/python/flows/forgery/platform_hosts": "analysis/python/flows/forgery/platform_hosts",
   "analysis/python/flows/forgery/platform_signing": "analysis/python/flows/forgery/platform_signing",
   "analysis/shared/documentation": "analysis/shared/documentation",
   "analysis/shared/embedded": "analysis/shared/embedded",
