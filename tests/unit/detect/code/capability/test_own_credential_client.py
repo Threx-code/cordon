@@ -6,6 +6,7 @@ from __future__ import annotations
 import io
 import json
 import tarfile
+from typing import ClassVar
 
 import pytest
 
@@ -236,3 +237,111 @@ class TestTheVocabularyOfIssuers:
         for row in self.rows():
             assert row["service"] and row["names"] and row["hosts"]
             assert all(n.isupper() or n.replace("_", "").isalnum() for n in row["names"])
+
+
+class TestTheVocabularyIsReachedOnlyFromTheExfilComposites:
+    """The issuer vocabulary can change a scan only where `CapabilityDetector._authenticates` is asked about a composite whose matched
+    capabilities hold both an egress and a credential. That is a property of the code, tested here as one: which shipped composites
+    hold both, and who calls whom. A change that adds a caller or such a composite fails here, and the measurement of the vocabulary
+    (units it can touch) has to be redone."""
+
+    #: The composite rules of the shipped pack with an egress and a credential among their capabilities.
+    EGRESS_AND_CREDENTIAL: ClassVar[frozenset[str]] = frozenset(
+        {
+            "MALWARE.DYNAMIC_DISPATCH.001",
+            "MALWARE.EXFIL.001",
+            "SUSPECT.ANTI_ANALYSIS.001",
+            "SUSPECT.EXFIL.001",
+        }
+    )
+
+    def test_only_these_composites_hold_an_egress_and_a_credential(self) -> None:
+        from cordon_scanner.detect.code.capability.composites import CompositeEvaluator
+        from cordon_scanner.foundation.capabilities import Capability
+        from cordon_scanner.rules.loader import RuleLoader, RuleSet
+        from cordon_scanner.rules.pack import MatchKind
+
+        found = {
+            r.rule.id
+            for r in RuleSet(RuleLoader.load_builtin())
+            if r.match.kind is MatchKind.COMPOSITE
+            and {Capability.EGRESS, Capability.CREDENTIAL}
+            <= set(CompositeEvaluator.capabilities_of(r))
+        }
+        assert found == set(self.EGRESS_AND_CREDENTIAL)
+
+    @staticmethod
+    def references(name: str) -> set[tuple[str, str]]:
+        """(module path under the package, enclosing function) of every attribute or name reference to `name` in the package's source."""
+        import ast
+        from pathlib import Path
+
+        import cordon_scanner
+
+        root = Path(cordon_scanner.__file__).parent
+        out: set[tuple[str, str]] = set()
+        for path in root.rglob("*.py"):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for function in [
+                n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
+            ] + [tree]:
+                for node in ast.walk(function):
+                    hit = (isinstance(node, ast.Attribute) and node.attr == name) or (
+                        isinstance(node, ast.Name) and node.id == name
+                    )
+                    if hit:
+                        owner = getattr(function, "name", "<module>")
+                        out.add((path.relative_to(root).as_posix(), owner))
+        return out
+
+    def test_the_vocabulary_is_read_by_one_function(self) -> None:
+        # the definition, and the one reader
+        assert self.references("issuer_vocabulary") >= {
+            ("detect/code/capability/legitimate_use.py", "credential_reaches_its_own_issuer")
+        }
+        callers = {
+            (path, owner)
+            for path, owner in self.references("issuer_vocabulary")
+            if owner not in ("issuer_vocabulary", "<module>")
+        }
+        assert callers == {
+            ("detect/code/capability/legitimate_use.py", "credential_reaches_its_own_issuer")
+        }
+
+    def test_that_function_is_called_only_by_authenticates(self) -> None:
+        callers = {
+            (path, owner)
+            for path, owner in self.references("credential_reaches_its_own_issuer")
+            if owner not in ("credential_reaches_its_own_issuer", "<module>")
+        }
+        assert callers == {("detect/code/capability/detector.py", "_authenticates")}
+
+    def test_authenticates_is_called_only_where_a_composite_has_matched(self) -> None:
+        callers = {
+            (path, owner)
+            for path, owner in self.references("_authenticates")
+            if owner not in ("_authenticates", "<module>")
+        }
+        assert callers == {("detect/code/capability/detector.py", "_composite_findings")}
+
+    def test_without_an_egress_and_a_credential_the_vocabulary_is_not_asked(
+        self, monkeypatch
+    ) -> None:
+        from cordon_scanner.detect.code.capability.detector import CapabilityDetector
+        from cordon_scanner.detect.code.capability.legitimate_use import LegitimateUse
+        from cordon_scanner.foundation.capabilities import Capability
+
+        def asked(*_args, **_kwargs):
+            raise AssertionError("the issuer vocabulary was consulted")
+
+        monkeypatch.setattr(LegitimateUse, "issuer_vocabulary", staticmethod(asked))
+        monkeypatch.setattr(LegitimateUse, "credential_reaches_its_own_issuer", classmethod(asked))
+        for matched, in_hook in (
+            ((Capability.CREDENTIAL,), False),
+            ((Capability.EGRESS,), True),
+            ((Capability.SPAWN, Capability.DECODE), False),
+        ):
+            assert (
+                CapabilityDetector._authenticates(matched, None, [], in_hook, None, [])  # type: ignore[arg-type]
+                is False
+            )
