@@ -267,7 +267,7 @@ class TestANounIsNotAnOrder:
 
 
 class TestWithoutUnderANegation:
-    """"Do not do X without telling the user" asks the agent to tell the user: the opposite of
+    """ "Do not do X without telling the user" asks the agent to tell the user: the opposite of
     keeping something from them. "Do X without telling the user" is the secrecy."""
 
     @pytest.mark.parametrize(

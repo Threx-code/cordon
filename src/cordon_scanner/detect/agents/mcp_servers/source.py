@@ -644,9 +644,7 @@ class McpServerSource:
         if definition is None:
             return ""
         return "".join(
-            McpServerSource._statement_literals(
-                text, definition.end(), single=False, argument=True
-            )
+            McpServerSource._statement_literals(text, definition.end(), single=False, argument=True)
         )
 
     @staticmethod
