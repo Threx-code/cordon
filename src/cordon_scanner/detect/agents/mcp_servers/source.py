@@ -314,8 +314,24 @@ strips (`<system>, </system>`)."""
 _NEGATION: Final = re.compile(r"(?i)\b(?:not|never|cannot)\b|n't\b")
 """A word that negates what follows it."""
 
-_NEW_ORDER: Final = re.compile(rf"(?i)[,;:]\s{{0,3}}(?:then\s{{1,3}}|please\s{{1,3}})?{VERB}\b")
-"""A fresh imperative after a comma: "do not worry, run it": the negation ended before it."""
+_HESITATION: Final = re.compile(
+    r"(?i)(?:hesitat|wait|worr|bother|paus|stop|need|delay|forget|fear|refrain|hold)\w{0,6}|be|being"
+)
+"""The verb a negation puts first when it is not a requirement at all: "do not hesitate", "no need",
+"don't wait", "do not worry". What follows it is permission to go on, not a duty to tell."""
+
+_SCOPE_ENDS: Final = re.compile(
+    rf"(?i)[;:]|\b(?:and|then|but|so|just|also|instead)\b"
+    rf"|,\s{{0,3}}(?:(?:and|then|so|just|please)\s{{1,3}})?(?:{VERB}|proceed|continue|act|go|do|carry|keep)\b"
+)
+"""What ends the reach of a negation: a semicolon or colon, "and", "then", "but", "so", "just", or
+a comma and a fresh order. "Do not wait, proceed without telling the user": the negation is on
+waiting, and what comes after the comma is a new order."""
+
+_SCOPE_WORDS: Final = 13
+"""The negated verb and at most twelve words after it, up to the "without" it governs. A list of
+what must not be filled in runs to eight after the verb ("auto-fill values from guesses, prior
+context, or app metadata without showing the user ...")."""
 
 _ENV_DUMP: Final = re.compile(
     r"(?i)\boutput\s+of\s+`?(?:env|printenv|set)\b|\benvironment\s+variables\b"
@@ -481,17 +497,33 @@ class McpServerSource:
     @staticmethod
     def _keeps_from_user(description: str) -> bool:
         """Whether the text asks the agent to keep something from the user. "Do not submit the form
-        without telling the user" asks for the opposite: a `without` inside a negation, in the same
-        sentence and with no new order between them, is a requirement to tell, not a secret."""
+        without telling the user" asks for the opposite: a `without` under a negation that governs
+        the very verb it modifies is a requirement to tell, not a secret."""
         for match in SECRECY.finditer(description):
             if match.group(0)[:7].lower() == "without":
                 start = max(description.rfind(stop, 0, match.start()) for stop in ".!?\n") + 1
                 before = description[max(start, match.start() - 200) : match.start()]
-                negated = _NEGATION.search(before)
-                if negated and not _NEW_ORDER.search(before[negated.end() :]):
+                if McpServerSource._negation_governs(before):
                     continue
             return True
         return False
+
+    @staticmethod
+    def _negation_governs(before: str) -> bool:
+        """Whether the negation closest before a "without" is on the verb phrase it modifies: the
+        negated verb, then a few words, then "without". Not when it is a hesitation ("do not
+        hesitate to proceed without ..."), when a semicolon, "and", "then", "so" or a comma and a
+        new order sits between them, or when the verb phrase is long enough to have moved on."""
+        negations = list(_NEGATION.finditer(before))
+        if not negations:
+            return False
+        scope = before[negations[-1].end() :]
+        words = scope.split()
+        return (
+            0 < len(words) <= _SCOPE_WORDS
+            and _HESITATION.fullmatch(words[0].strip(",.;:\"'()")) is None
+            and _SCOPE_ENDS.search(scope) is None
+        )
 
     @staticmethod
     def _wrapped(description: str) -> bool:
