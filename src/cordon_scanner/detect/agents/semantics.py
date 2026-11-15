@@ -65,11 +65,11 @@ STEPS: Final[dict[str, re.Pattern[str]]] = {
     # the tool answers ("Before running git commands: what they will do").
     "opens_order": re.compile(
         r"^\s{0,4}(?:\W{0,4}\s{0,2})?(?:"
-        r"(?:before|after|when|whenever|prior to|each time|every time)\s{1,3}(?:you\s{1,3})?"
+        r"(?P<clause>(?:before|after|when|whenever|prior to|each time|every time)\s{1,3}(?:you\s{1,3})?"
         r"(?:using|calling|invoking|running|use|call|retrieving|executing)\s{1,3}"
         r"(?!this\b|it\b|the tool\b|first\b)(?![`'\"]?[\w-]{1,40}[`'\"]?\s{1,3}(?:output|option|mode|"
         r"format|parameter|flag|type|setting)s?\b)"
-        r"(?![^.;:\n]{1,60}:\s{0,3}(?:what|which|how|whether)\b)"
+        r"(?![^.;:\n]{1,60}:\s{0,3}(?:what|which|how|whether)\b))"
         r"|(?:you|the assistant|the agent)\s{1,3}(?:must|should|need to)\s{1,3}(?:first\s{1,3}|"
         r"always\s{1,3}|also\s{1,3})?(?:call|use|invoke|run|fetch|set|send|request|scan|log|mark|"
         r"trigger)\s{1,3}(?!this\b|it\b)"
@@ -127,6 +127,17 @@ STEPS: Final[dict[str, re.Pattern[str]]] = {
     ),
 }
 
+SENTENCE_END: Final = re.compile(r"(?<=[.!?])\s|\n")
+"""Where the sentence an opening clause belongs to ends."""
+
+CLAUSE_END: Final = re.compile(r"[^,:\n]{0,100}[,:]\s{0,3}")
+"""The rest of an opening clause, up to the comma or colon after which its order would come."""
+
+ORDER_FOLLOWS: Final = re.compile(
+    rf"(?:(?:please|first|always|also|then|now|immediately)\s{{1,3}}){{0,2}}{VERB}\b", re.I
+)
+"""An imperative: the verb that follows an opening clause's comma, with the usual softeners before it."""
+
 CHAINS: Final[tuple[tuple[str, ...], ...]] = (
     ("order", "other_tool"),
     ("order", "around_other"),
@@ -181,7 +192,27 @@ class AgentSemantics:
     @staticmethod
     def steps(text: str) -> dict[str, bool]:
         text = TRAILER.sub("", text)
-        return {name: STEPS[name].search(text) is not None for name in NAMES}
+        found = {name: STEPS[name].search(text) for name in NAMES}
+        return {
+            name: match is not None
+            and (name != "opens_order" or AgentSemantics._orders_after(text, match))
+            for name, match in found.items()
+        }
+
+    @staticmethod
+    def _orders_after(text: str, opener: re.Match[str]) -> bool:
+        """Whether a description that opens with a clause ("when using X", "before running Y") goes
+        on to ORDER something in that sentence: an imperative after the comma or colon, or an order
+        to the agent. A clause that goes on to say what happens ("when using multiple filters, they
+        are combined with AND") is a description. The other openers are orders in themselves."""
+        if opener.group("clause") is None:
+            return True
+        rest = text[opener.end() :]
+        sentence = SENTENCE_END.split(rest, maxsplit=1)[0]
+        if STEPS["order"].search(sentence):
+            return True
+        after = CLAUSE_END.match(sentence)
+        return after is not None and ORDER_FOLLOWS.match(sentence, after.end()) is not None
 
     @staticmethod
     def precise(text: str, channel: str = "description") -> tuple[str, ...] | None:
