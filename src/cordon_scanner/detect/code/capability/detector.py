@@ -618,13 +618,18 @@ class CapabilityDetector(BaseDetector):
         decode_excused = DecodeRun.excused_lines(
             unit, hits, BuildOutput.bundled_path(unit.path), [c.rule.id for c in candidates]
         )
+        clean_spawns = DecodeRun.clean_spawn_lines(
+            unit, hits, BuildOutput.bundled_path(unit.path), [c.rule.id for c in candidates]
+        )
         for compiled in candidates:
             if compiled.match.kind is not MatchKind.COMPOSITE:
                 continue
             if compiled.match.scope not in {"file", "function"}:
                 continue
 
-            rule_hits = CapabilityDetector._rule_hits(compiled, unit, hits, decode_excused, ctx)
+            rule_hits = CapabilityDetector._rule_hits(
+                compiled, unit, hits, (decode_excused, clean_spawns), ctx
+            )
             window = CapabilityDetector._window(
                 evaluator, compiled, rule_hits, unit, (in_hook, in_ci, in_consumer),
                 deferred,
@@ -751,19 +756,18 @@ class CapabilityDetector(BaseDetector):
         compiled: CompiledRule,
         unit: FileUnit,
         hits: list[CapabilityHit],
-        decode_excused: frozenset[int],
+        excused: tuple[frozenset[int], frozenset[int]],
         ctx: ScanContext,
     ) -> list[CapabilityHit]:
-        """The hits a composite rule counts: settings are not loot, a verifiable dropper's unpacker is not a payload, excused decode runs do not count."""
-        return (
-            DropPointLoot.counted(
+        """The hits a composite rule counts: settings are not loot, a verifiable dropper's unpacker is not a payload, excused decode runs and spawns nothing fetched or decoded reaches do not count."""
+        rule_id = compiled.rule.id
+        if rule_id in CompositeRuleIds.SETTINGS_ARE_NOT_LOOT:
+            return DropPointLoot.counted(
                 unit.content, unit.language, hits, unresolved=ctx.cross_file_unresolved
             )
-            if compiled.rule.id in CompositeRuleIds.SETTINGS_ARE_NOT_LOOT
-            else [h for h in hits if not InstallPayload.spawns_unpacker(unit.content, h)]
-            if compiled.rule.id in CompositeRuleIds.VERIFIABLE_DROPPERS
-            else DecodeRun.hits_for(compiled.rule.id, hits, decode_excused)
-        )
+        if rule_id in CompositeRuleIds.VERIFIABLE_DROPPERS:
+            hits = [h for h in hits if not InstallPayload.spawns_unpacker(unit.content, h)]
+        return DecodeRun.hits_for(rule_id, hits, *excused)
 
     @staticmethod
     def _authenticates(
