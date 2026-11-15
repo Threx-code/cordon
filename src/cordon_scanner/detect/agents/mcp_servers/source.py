@@ -598,7 +598,9 @@ class McpServerSource:
             if not ToolRegistrations.inside(spans, match.start()):
                 continue
             literal = "".join(
-                McpServerSource._statement_literals(text, match.start("arg"), single=False)
+                McpServerSource._statement_literals(
+                    text, match.start("arg"), single=False, argument=True
+                )
             )
             if match.group("arg")[0] not in "'\"`":
                 literal = McpServerSource._constant(text, match.group("arg"))
@@ -619,7 +621,11 @@ class McpServerSource:
         )
         if definition is None:
             return ""
-        return "".join(McpServerSource._statement_literals(text, definition.end(), single=False))
+        return "".join(
+            McpServerSource._statement_literals(
+                text, definition.end(), single=False, argument=True
+            )
+        )
 
     @staticmethod
     def _in_a_message(text: str, at: int) -> bool:
@@ -654,18 +660,27 @@ class McpServerSource:
         return _ROLE_KEY.search(keys) is not None
 
     @staticmethod
-    def _statement_literals(text: str, index: int, *, single: bool) -> Iterator[str]:
+    def _statement_literals(
+        text: str, index: int, *, single: bool, argument: bool = False
+    ) -> Iterator[str]:
         """String literals from `index` to the end of the statement, escapes decoded
         (`_statement_spans` without the positions)."""
         return (
-            literal for _, literal in McpServerSource._statement_spans(text, index, single=single)
+            literal
+            for _, literal in McpServerSource._statement_spans(
+                text, index, single=single, argument=argument
+            )
         )
 
     @staticmethod
-    def _statement_spans(text: str, index: int, *, single: bool) -> Iterator[tuple[int, str]]:
+    def _statement_spans(
+        text: str, index: int, *, single: bool, argument: bool = False
+    ) -> Iterator[tuple[int, str]]:
         """Each string literal from `index` to the end of the statement, with the offset of its
         opening quote, escapes decoded. The statement ends at a newline or `;` outside brackets,
-        or after the first literal when `single`; never more than `_RETURN_REACH` characters on."""
+        or after the first literal when `single`, or at the comma that ends an `argument` (a
+        description is the second argument of a registration, not the schema and handler after it
+        on a compact or bundled line); never more than `_RETURN_REACH` characters on."""
         end = min(len(text), index + _RETURN_REACH)
         depth = 0
         while index < end:
@@ -694,7 +709,7 @@ class McpServerSource:
                 if depth < 0:
                     return
             elif (depth == 0 and (char == ";" or (char == "\n" and text[index - 1] != "\\"))) or (
-                single and depth == 0 and char == ","
+                (single or argument) and depth == 0 and char == ","
             ):
                 return
             index += 1
