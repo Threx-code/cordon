@@ -618,10 +618,7 @@ class CapabilityDetector(BaseDetector):
         # Names this file binds that another file of the package imports and sends (`SentNames`).
         sent_names = frozenset((ctx.python_sent_names or {}).get(unit.path, {}))
 
-        decode_excused = DecodeRun.excused_lines(
-            unit, hits, BuildOutput.bundled_path(unit.path), [c.rule.id for c in candidates]
-        )
-        clean_spawns = DecodeRun.clean_spawn_lines(
+        excused = DecodeRun.excuses(
             unit, hits, BuildOutput.bundled_path(unit.path), [c.rule.id for c in candidates]
         )
         for compiled in candidates:
@@ -630,9 +627,7 @@ class CapabilityDetector(BaseDetector):
             if compiled.match.scope not in {"file", "function"}:
                 continue
 
-            rule_hits = CapabilityDetector._rule_hits(
-                compiled, unit, hits, (decode_excused, clean_spawns), ctx
-            )
+            rule_hits = CapabilityDetector._rule_hits(compiled, unit, hits, excused, ctx)
             window = CapabilityDetector._window(
                 evaluator, compiled, rule_hits, unit, (in_hook, in_ci, in_consumer),
                 deferred,

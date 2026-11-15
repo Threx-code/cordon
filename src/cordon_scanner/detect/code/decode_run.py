@@ -124,6 +124,18 @@ class DecodeRun:
         return cls._runs(unit, hits, bundled, decode_run=True)
 
     @classmethod
+    def excuses(
+        cls, unit: FileUnit, hits: list[CapabilityHit], bundled: bool, rule_ids: Iterable[str]
+    ) -> tuple[frozenset[int], frozenset[int]]:
+        """(`excused_lines`, `clean_spawn_lines`) for the composites among `rule_ids`: the lines a decode-run composite and
+        a `SPAWN_PAIRED` one each leave out of the pairing."""
+        ids = list(rule_ids)
+        return (
+            cls.excused_lines(unit, hits, bundled, ids),
+            cls.clean_spawn_lines(unit, hits, bundled, ids),
+        )
+
+    @classmethod
     def clean_spawn_lines(
         cls, unit: FileUnit, hits: list[CapabilityHit], bundled: bool, rule_ids: Iterable[str]
     ) -> frozenset[int]:

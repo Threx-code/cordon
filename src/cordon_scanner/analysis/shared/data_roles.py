@@ -29,16 +29,32 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
-from typing import TYPE_CHECKING, ClassVar, Final
+from typing import TYPE_CHECKING, ClassVar, Final, Protocol
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from cordon_scanner.detect.base import FileUnit
-
 MAX_CODE_BYTES: Final = 2_000_000
 #: Lines either side of a naming that count as beside it.
 BESIDE: Final = 3
+
+
+class _Content(Protocol):
+    @property
+    def text(self) -> str: ...
+
+    @property
+    def is_binary(self) -> bool: ...
+
+
+class _Unit(Protocol):
+    """What the test reads of a scanned file: its path and its content (`detect.base.FileUnit`)."""
+
+    @property
+    def path(self) -> str: ...
+
+    @property
+    def content(self) -> _Content: ...
 
 
 class DataRoles:
@@ -146,13 +162,12 @@ class DataRoles:
     _SUFFIX_NAMED: ClassVar[re.Pattern[str]] = re.compile(
         r"\.(?:jsonl?|ndjson|ya?ml|toml|[ct]sv)", re.I
     )
-    _NAME: ClassVar[re.Pattern[str]] = re.compile(r"[A-Za-z_$][\w$.]*")
     _ASSIGNED: ClassVar[re.Pattern[str]] = re.compile(
         r"^\s*(?:export\s+)?(?:const\s+|let\s+|var\s+)?([A-Za-z_$][\w$]*)\s*(?::[^=]{1,60})?=[^=]"
     )
 
     @classmethod
-    def only_parsed(cls, units: Sequence[FileUnit]) -> frozenset[str]:
+    def only_parsed(cls, units: Sequence[_Unit]) -> frozenset[str]:
         """The paths of the data files in `units` that the code of `units` names only beside a parser."""
         data: dict[str, list[str]] = defaultdict(list)
         for unit in units:
@@ -181,7 +196,7 @@ class DataRoles:
     # -- which files --------------------------------------------------------------------------
 
     @classmethod
-    def _is_data(cls, unit: FileUnit) -> bool:
+    def _is_data(cls, unit: _Unit) -> bool:
         path = unit.path.lower()
         for packed in cls.PACKED:
             if path.endswith(packed):
@@ -252,17 +267,22 @@ class DataRoles:
     def _context(cls, lines: list[str], number: int) -> bool:
         """Parser calls beside `lines[number]`, and none that runs or loads."""
         beside = "\n".join(lines[max(0, number - BESIDE) : number + BESIDE + 1])
-        names = cls._NAME.findall(beside)
+        names = cls._names(beside)
         if any(n.rsplit(".", 1)[-1] in cls.RUNNERS and n != "re.compile" for n in names):
             return False
         if any(n.startswith(("subprocess.", "child_process.")) for n in names):
             return False
         return cls._parses(beside)
 
+    @staticmethod
+    def _names(text: str) -> list[str]:
+        """The identifiers and dotted names of a text (`json.load`, `JSON.parse`): words made of letters, digits, `_`, `$` and `.`."""
+        return "".join(c if c.isalnum() or c in "_$." else " " for c in text).split()
+
     @classmethod
     def _parses(cls, text: str) -> bool:
         """Whether the text calls a parser (`require` of a `.json` file is one: Node reads it as JSON)."""
-        names = cls._NAME.findall(text)
+        names = cls._names(text)
         return any(n in cls.PARSERS for n in names) or (
             "require" in names and ".json" in text.lower()
         )
