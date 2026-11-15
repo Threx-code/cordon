@@ -299,7 +299,10 @@ class CapabilityDetector(BaseDetector):
     # the pattern tier wins -- one call is not two of a composite's capabilities.
     # 0.12.0: an encoded command's plaintext reaches the rules, and the
     # minified ceiling no longer excuses a language nobody minifies.
-    version = "0.13.0"  # decode-run composites drop a spawn nothing decoded reaches (decode_run)
+    # 0.14.0: a spawn of a tool by its name does not pair with a decode in `SUSPECT.DROPPER.001`
+    # (`DecodeRun.SPAWN_PAIRED`), a command handed to a spawn by name is its own statement's
+    # literals, and a data file the code only parses is not labelled (`DataRoles`).
+    version = "0.14.0"
     categories = frozenset(
         {Category.SUSPICIOUS, Category.MALICIOUS, Category.POLICY, Category.OPERATIONAL}
     )
@@ -330,7 +333,7 @@ class CapabilityDetector(BaseDetector):
         """
         content = unit.content
         language = unit.language
-        if Labelling.rule_pack(content):
+        if Labelling.rule_pack(content) or unit.path in ctx.data_only_paths:
             return None
         dotnet_commands: list[embedded.Command] = []
         assembly_view = False

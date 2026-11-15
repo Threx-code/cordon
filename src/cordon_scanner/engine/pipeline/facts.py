@@ -104,6 +104,17 @@ class TreeFacts:
         return frozenset(t for t in deferred if t[0] not in agent_run)
 
     @staticmethod
+    def file_roles(units: Sequence[FileUnit]) -> dict[str, frozenset[str]]:
+        """What kind of file each path is, for the context fields that say so: the binaries a package
+        ships (`shipped_native`) and the data files only a parser ever reads (`DataRoles`)."""
+        from cordon_scanner.analysis.shared.data_roles import DataRoles
+
+        return {
+            "shipped_native_paths": TreeFacts.shipped_native(units),
+            "data_only_paths": DataRoles.only_parsed(units),
+        }
+
+    @staticmethod
     def skill_surface(units: Sequence[FileUnit]) -> tuple[set[str], frozenset[str], set[str]]:
         """What an agent runs unasked: a skill's scripts, the scripts a skill that is also a package
         names (`LoadPath.named_scripts`, kept in the context for `LoadPath.skill_script`), and with

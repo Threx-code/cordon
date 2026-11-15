@@ -250,7 +250,7 @@ class ArchiveStages:
             startup_closure_paths=(startup := StartupClosure.of(units, entries))[0],
             startup_deferred_lines=startup[1],
             tree_paths=frozenset(unit.path for unit in units),
-            shipped_native_paths=TreeFacts.shipped_native(units),
+            **TreeFacts.file_roles(units),
             install_entry_paths=entries,
             agent_run_paths=agent_tools,
             skill_named_paths=skill_named,
