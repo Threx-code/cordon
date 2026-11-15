@@ -14,6 +14,7 @@ cloud-storage library (`CLOUD_STORAGE_LIBRARIES`).
 from __future__ import annotations
 
 import ast
+import re
 from typing import ClassVar
 
 from cordon_scanner.analysis.python.flows.http_clients import (
@@ -63,10 +64,16 @@ class CloudLeak(PythonValueFlow):
          "GITLAB_USER_LOGIN", "BUILD_USER", "JENKINS_URL", "BUILD_URL"}
     )  # fmt: skip
 
+    #: A variable whose name says it is a credential: content wherever it is uploaded. Any other
+    #: setting is the program's own (an owner, a namespace, a path) and is stored beside its data.
+    CREDENTIAL_NAME: ClassVar[re.Pattern[str]] = re.compile(
+        r"KEY|TOKEN|SECRET|PASS|CRED|AUTH|COOKIE|SESSION|PRIVATE|CERT|SIGN|SEED|MNEMONIC"
+    )
+
     def __init__(self, tree: ast.AST, *, any_key: bool = False) -> None:
         super().__init__(tree)
-        #: Whether any literal key of the environment is a machine fact (the payload of
-        #: `upload_from_string`, where a setting is never the content), or only the machine variables.
+        #: Whether a literal key of the environment that names a credential is a machine fact too
+        #: (the payload of `upload_from_string`), or only the machine variables.
         self.any_key = any_key
         #: `os.environ` taken whole: handed to a call (`dict(os.environ)`), or copied or listed.
         self.whole: set[int] = set()
@@ -85,7 +92,10 @@ class CloudLeak(PythonValueFlow):
     def _machine_key(self, key: ast.AST | None) -> bool:
         if not (isinstance(key, ast.Constant) and isinstance(key.value, str)):
             return False
-        return self.any_key or key.value.upper() in self.MACHINE_VARIABLES
+        name = key.value.upper()
+        return name in self.MACHINE_VARIABLES or (
+            self.any_key and self.CREDENTIAL_NAME.search(name) is not None
+        )
 
     def seed(self, node: ast.AST) -> Label | None:
         if isinstance(node, ast.Call):
