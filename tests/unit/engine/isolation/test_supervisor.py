@@ -364,6 +364,15 @@ class TestAWindowsDeathPastItsBudgetIsTheCpuLimit:
             worker.process.exitcode = -signal.SIGXCPU
             assert worker.reason() == Reason.CPU
 
+    def test_a_platform_without_sigxcpu_reads_exit_1_as_a_death(self, monkeypatch) -> None:
+        """Windows has no SIGXCPU: the old fallback made `-(-1)`, so exit code 1 read as CPU there.
+        Checked on every platform by taking SIGXCPU away."""
+        self.user_time(monkeypatch, None)
+        monkeypatch.delattr(signal, "SIGXCPU", raising=False)
+        worker = self.worker(5 * self.SECOND)
+        worker.process.exitcode = 1
+        assert worker.reason() == Reason.DIED
+
     @pytest.mark.skipif(os.name == "nt", reason="off Windows only")
     def test_the_parent_reads_no_user_time_off_windows(self) -> None:
         from cordon_scanner.engine.isolation.platform_limits import JobLimits

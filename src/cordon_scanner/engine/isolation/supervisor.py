@@ -225,7 +225,11 @@ class Worker:
         code = self.process.exitcode
         if code == MEMORY_EXIT:
             return Reason.MEMORY
-        if code == -getattr(signal, "SIGXCPU", -1) or self.past_cpu_budget():
+        # SIGXCPU only where the platform has it: the old fallback, `-getattr(signal, "SIGXCPU", -1)`,
+        # was 1 on Windows, so every worker there that exited with code 1 -- an ordinary failure --
+        # was reported as a unit past its CPU budget (Windows CI, 2026-11-15).
+        sigxcpu = getattr(signal, "SIGXCPU", None)
+        if (sigxcpu is not None and code == -sigxcpu) or self.past_cpu_budget():
             return Reason.CPU
         return Reason.DIED
 
