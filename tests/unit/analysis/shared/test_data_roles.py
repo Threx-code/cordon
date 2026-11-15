@@ -107,3 +107,22 @@ class TestAFileNotOnlyParsed:
         assert only_parsed({"pkg/.mcp-data.json": DATA, "pkg/g.py": loader}) == {
             "pkg/.mcp-data.json"
         }
+
+
+class TestATreeWithNoDataFileIsUntouched:
+    """The precondition for measuring the exemption on the units that can be touched: a tree no code names a data file in, or with no data file at all, has none."""
+
+    def test_no_data_file_at_all(self) -> None:
+        assert (
+            only_parsed({"pkg/g.py": 'import json\nDENY = json.load(open("denylist.json"))\n'})
+            == set()
+        )
+
+    def test_data_files_no_code_names(self) -> None:
+        assert (
+            only_parsed({"pkg/a.json": DATA, "pkg/b.yaml": "a: 1\n", "pkg/g.py": "print(1)\n"})
+            == set()
+        )
+
+    def test_code_that_names_no_data_file(self) -> None:
+        assert only_parsed({"pkg/a.json": DATA, "pkg/g.js": "const x = require('fs');\n"}) == set()
