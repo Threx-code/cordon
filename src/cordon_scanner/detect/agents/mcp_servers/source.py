@@ -146,10 +146,11 @@ _ALTERS: Final = re.compile(
 
 _MOVES_CONTENT: Final = re.compile(
     r"(?i)\b(?:read|cat|include|pass|send|attach|upload|copy|forward|append|paste|post|transmit|"
-    r"exfiltrat\w{0,5}|contents?\s+of)\b"
+    r"exfiltrat(?:e|es|ed|ing)|contents?\s+of)\b"
 )
 """A verb that takes a file's contents somewhere: what turns naming a credential file into an
-instruction to the agent. `Set META_ACCESS_TOKEN in your .env` names one and moves nothing."""
+instruction to the agent. `Set META_ACCESS_TOKEN in your .env` names one and moves nothing, and
+nor does a tool that hunts `.env` exfiltration: the noun names a threat, the verb is the order."""
 
 #: A tool that says it is out of service and names the one to call instead: the agent is moved
 #: off the tool the user chose (MCP-SafetyBench "Tool Redirection", review 98).
