@@ -80,21 +80,26 @@ class DecodeRun:
 
     @classmethod
     def _tools_by_name(cls, text: str, lines_excused: frozenset[int]) -> frozenset[int]:
-        """The `lines_excused` whose process call (its argument list, up to its closing parenthesis) names no path,
-        file, shell or environment location (`_RUNS_A_FILE`). A call it cannot find on the line is dropped."""
-        from cordon_scanner.analysis.shared.embedded import EmbeddedCommands
-
+        """The `lines_excused` all of whose process calls (their argument lists, up to the closing parenthesis) name no path,
+        file, shell or environment location (`_RUNS_A_FILE`). A line with no call to be found on it is dropped."""
         lines = text.split("\n")
         kept: set[int] = set()
         for n in lines_excused:
             window = "\n".join(lines[n - 1 : n + 7])
-            call = cls._PROCESS_CALL.search(window)
-            if call is None:
-                continue
-            tail = window[call.end() :]
-            if not cls._RUNS_A_FILE.search(tail[: EmbeddedCommands._close_paren(tail)]):
+            first = len(lines[n - 1])
+            calls = [c for c in cls._PROCESS_CALL.finditer(window) if c.start() <= first]
+            # every process call on the line, not the first: one line may start two
+            if calls and all(cls._is_a_tool(window, c) for c in calls):
                 kept.add(n)
         return frozenset(kept)
+
+    @classmethod
+    def _is_a_tool(cls, window: str, call: re.Match[str]) -> bool:
+        """Whether the call's argument list, up to its closing parenthesis, names no path, file, shell or environment location."""
+        from cordon_scanner.analysis.shared.embedded import EmbeddedCommands
+
+        tail = window[call.end() :]
+        return cls._RUNS_A_FILE.search(tail[: EmbeddedCommands._close_paren(tail)]) is None
 
     @classmethod
     def _written_literal_paths(cls, content: FileContent) -> frozenset[str]:

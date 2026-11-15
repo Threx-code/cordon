@@ -97,6 +97,7 @@ class TestADropperPairsAProcessOnlyWithWhatItRuns:
             "spawn('/tmp/tool', []);",
             "spawn('sh', ['-i']);",
             "spawn(process.env.TMPDIR + '/tool', []);",
+            "spawn('git', ['status']); spawn('./bin/tool', []);",
         ],
         ids=[
             "relative-path",
@@ -105,6 +106,7 @@ class TestADropperPairsAProcessOnlyWithWhatItRuns:
             "temporary-path",
             "shell",
             "environment-location",
+            "second-call-on-the-line",
         ],
     )
     def test_a_call_naming_a_file_or_a_shell_is_still_one(self, tmp_path, run: str) -> None:
