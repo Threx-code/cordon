@@ -118,6 +118,7 @@ rather than a document.
 
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
+| `POLICY.ABUSE_TOOLING.PLATFORM_FORGERY.001` | medium | `composites` | policy |
 | `POLICY.VCS.BINARY_ADDED.001` | low | `vcs` | policy |
 | `SUSPECT.POLYGLOT.MISMATCH.001` | high | `binary` | obfuscation |
 | `SUSPECT.SOURCE.UNPARSED_RUNNING.001` | high | `manifest` | obfuscation |
@@ -276,6 +277,7 @@ rather than a document.
 | `MALWARE.IMPLANT.AV_EXCLUSION.001` | high | `composites` | anti_analysis |
 | `MALWARE.IMPLANT.INSTALL.001` | high | `composites` | persistence |
 | `MALWARE.IMPLANT.PERSIST_RUN.001` | critical | `composites` | persistence |
+| `MALWARE.IMPORT.DECODE_EXEC.001` | critical | `composites` | malicious_code |
 | `MALWARE.IMPORT.FETCH_RUN.001` | critical | `composites` | malicious_code |
 | `MALWARE.IMPORT.PERSIST.001` | critical | `composites` | persistence |
 | `MALWARE.IMPORT.PROGRAM_START.001` | critical | `composites` | malicious_code |

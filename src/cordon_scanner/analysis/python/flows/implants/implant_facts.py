@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from cordon_scanner.analysis.python.flows.implants.backdoor_writes import BackdoorWrites
 from cordon_scanner.analysis.python.flows.implants.clipboard_replace import ClipboardReplace
 from cordon_scanner.analysis.python.flows.implants.cloud_leak import CloudLeak
+from cordon_scanner.analysis.python.flows.implants.decode_exec_at_load import DecodeExecAtLoad
 from cordon_scanner.analysis.python.flows.implants.fetch_run_at_load import FetchRunAtLoad
 from cordon_scanner.analysis.python.flows.implants.foreign_index import ForeignIndex
 from cordon_scanner.analysis.python.flows.implants.hidden_launch import HiddenLaunch
@@ -48,6 +49,7 @@ class ImplantFacts:
         (ForeignIndex, Capability.SPAWN, "foreign index install"),
         (PersistAtLoad, Capability.FLOW, "persist at load"),
         (FetchRunAtLoad, Capability.FLOW, "fetch and run at load"),
+        (DecodeExecAtLoad, Capability.FLOW, "decode and run at load"),
     )
 
     @classmethod

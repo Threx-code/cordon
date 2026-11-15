@@ -21,7 +21,7 @@ from cordon_scanner.detect.base import (
     RepositoryUnit,
     ScanContext,
 )
-from cordon_scanner.detect.registry import ComposerPluginHooks, ServerSources
+from cordon_scanner.detect.registry import ComposerPluginHooks
 from cordon_scanner.engine.cache import CacheSignature
 from cordon_scanner.engine.closure import ImportClosure, StartupClosure
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
@@ -127,8 +127,7 @@ class ScanStages:
         # A skill's scripts run when the agent uses the skill, on the user's machine and unasked:
         # the trust boundary an install hook has (review 98: a skill script reading files and
         # posting them out was graded as a library's, at MEDIUM).
-        skill_scripts = TreeFacts.skill_scripts(units)
-        agent_run = skill_scripts | ServerSources.of(units)
+        skill_scripts, skill_named, agent_run = TreeFacts.skill_surface(units)
         agent_tools = self.engine._agent_tool_paths(units, agent_run, hook_paths)
         # Only a skill's scripts take the install grade. An MCP server runs when the agent calls
         # a tool the user asked it to use: downloading a browser, starting a detached emulator or
@@ -169,6 +168,7 @@ class ScanStages:
             shipped_native_paths=TreeFacts.shipped_native(units),
             install_entry_paths=entries,
             agent_run_paths=agent_tools,
+            skill_named_paths=skill_named,
             consumer_install_paths=frozenset(consumer_hooks),
             install_deferred_lines=deferred,
             ci_hook_paths=ctx.ci_hook_paths | frozenset(ci_scripts),

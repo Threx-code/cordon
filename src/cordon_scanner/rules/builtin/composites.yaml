@@ -1092,6 +1092,38 @@ rules:
         - path_glob: "**/test_*.py"
         - path_glob: "tests/**"
 
+  - id: POLICY.ABUSE_TOOLING.PLATFORM_FORGERY.001
+    version: 1.0.0
+    category: policy
+    severity: medium
+    confidence: high
+    title: Computes a social platform app's request signature for its API
+    message: >
+      This file writes down several of a social platform app's request-signature headers or
+      parameters and names the platform's API host. Code that computes those passes as the
+      platform's own app, which its terms forbid and which platforms treat as abuse. It is a tool
+      someone runs on purpose against the platform, not something done to the machine that
+      installs it: reported as policy, not as malware.
+    remediation: >
+      Use it only if the platform's terms allow it. Organisations that do not want signature
+      forgery or fake-device tools on their machines can fail builds on this rule.
+    provenance:
+      kind: research
+      reference: >
+        A TikTok request-signing and fake-device-registration kit that both audit readers labelled
+        abuse tooling (afriton 1.5, 2026-11-11).
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 30
+      any:
+        - rule: AST.PY.PLATFORM_FORGERY
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
   - id: SUSPECT.OBFUSCATION.UNRESOLVED_PAYLOAD.001
     version: 1.0.0
     category: suspicious
@@ -2960,6 +2992,42 @@ rules:
       all:
         - context: import_entry
         - rule: AST.PY.FETCH_RUN_AT_LOAD
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "tests/**"
+
+  - id: MALWARE.IMPORT.DECODE_EXEC.001
+    version: 1.0.0
+    category: malicious
+    severity: critical
+    confidence: high
+    title: Importing the package decodes data and runs it as code
+    message: >
+      When this package is imported it decodes something -- base64, hex, a compressed blob or a
+      marshalled code object -- and hands the result to `exec`, `eval` or `compile`. Importing a
+      library loads code that can be read on the machine; one that runs decoded data while it is
+      imported has shipped code nobody can review until it runs, the second stage of an obfuscated
+      loader.
+    remediation: >
+      Do not import this package. Decode the data in a sandbox to see what it runs, and treat
+      machines that imported it as compromised.
+    provenance:
+      kind: research
+      reference: >
+        Half-A PyPI malware the 0.8.0 rules passed: an `__init__` that decoded and ran code at load
+        (the combined gate's misses, 14 Nov; 5 newly caught, 0 of 16,827 benign).
+    evidence_policy: masked
+    references:
+      - https://attack.mitre.org/techniques/T1027/
+      - https://attack.mitre.org/techniques/T1140/
+      - https://attack.mitre.org/techniques/T1059/006/
+    match:
+      kind: composite
+      scope: file
+      all:
+        - context: import_entry
+        - rule: AST.PY.DECODE_EXEC_AT_LOAD
       unless:
         - path_glob: "**/*.test.*"
         - path_glob: "**/test_*.py"

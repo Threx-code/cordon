@@ -138,6 +138,11 @@ class ScanContext:
     """Skill scripts and MCP server sources: in `install_hook_paths` because an agent runs them
     unasked, but tools, not install scripts -- a bundle read to its end is not padding."""
 
+    skill_named_paths: frozenset[str] = frozenset()
+    """Scripts a skill that is also a package tells the agent to run: where a package manifest
+    stands beside a `SKILL.md`, the files it names by path or by file name (`LoadPath.skill_script`).
+    The rest of such a package is its own code, read at its own grade."""
+
     startup_closure_paths: frozenset[str] = frozenset()
     """The `.pth` startup hooks and the files their import lines reach: code that runs in every
     Python process the machine starts once the package is installed (a subset of
@@ -836,6 +841,8 @@ class SkillScripts(Protocol):
     """What the engine uses of the class `LoadPath`."""
 
     def skill_script(self, path: str, ctx: ScanContext | None) -> bool: ...
+
+    def named_scripts(self, units: Sequence[FileUnit]) -> frozenset[str]: ...
 
 
 class SubmoduleDependencies(Protocol):

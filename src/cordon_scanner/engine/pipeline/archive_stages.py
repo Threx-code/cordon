@@ -22,7 +22,7 @@ from cordon_scanner.detect.base import (
     GraphUnit,
     ScanContext,
 )
-from cordon_scanner.detect.registry import ComposerPluginHooks, InstallFacts, ServerSources
+from cordon_scanner.detect.registry import ComposerPluginHooks, InstallFacts
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.engine.closure import ImportClosure, StartupClosure
 from cordon_scanner.engine.entries import PackageEntries
@@ -217,8 +217,7 @@ class ArchiveStages:
         hook_paths = self._without_foreign_npm_hooks(units, hook_paths, registry)
         foreign_package = self._foreign_package(registry)
         hook_paths |= self._filename_hooks(units)
-        skill_scripts = TreeFacts.skill_scripts(units)
-        agent_run = skill_scripts | ServerSources.of(units)
+        skill_scripts, skill_named, agent_run = TreeFacts.skill_surface(units)
         agent_tools = self.engine._agent_tool_paths(units, agent_run, hook_paths)
         # Only a skill's scripts take the install grade. An MCP server runs when the agent calls
         # a tool the user asked it to use: downloading a browser, starting a detached emulator or
@@ -254,6 +253,7 @@ class ArchiveStages:
             shipped_native_paths=TreeFacts.shipped_native(units),
             install_entry_paths=entries,
             agent_run_paths=agent_tools,
+            skill_named_paths=skill_named,
             consumer_install_paths=frozenset(consumer_hooks),
             ci_hook_paths=ctx.ci_hook_paths | frozenset(ci_scripts),
             install_deferred_lines=TreeFacts.entry_points_reached(

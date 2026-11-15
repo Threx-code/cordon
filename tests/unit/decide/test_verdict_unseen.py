@@ -132,6 +132,8 @@ class TestTheAdmittedRulesAreKept:
         # Fetch and run at load (14 Nov), measured at the flow on the 0.8.0 combined gate's rows:
         "MALWARE.IMPORT.FETCH_RUN.001",  # 11 half-A misses newly caught; 2 of 16,828 benign
         "MALWARE.INSTALL.FETCH_RUN.001",  # 7 half-A misses newly caught; 1 of 16,828 benign
+        # Decode and run at load (14 Nov), measured at the flow on the same rows:
+        "MALWARE.IMPORT.DECODE_EXEC.001",  # 5 half-A misses newly caught; 0 of 16,827 benign
     )
 
     def test_each_is_in_keep(self) -> None:

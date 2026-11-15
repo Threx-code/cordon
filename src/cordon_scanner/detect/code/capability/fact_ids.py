@@ -62,6 +62,8 @@ class PythonFactIds:
         ("antivirus exclusion added", "AST.PY.AV_EXCLUSION"),
         # A fingerprint of the machine posted, and the answer's program run (is-it-ai 0.1.1).
         ("machine report answered with a program", "AST.PY.MACHINE_REPORT_RUN"),
+        # The app's request signature written out for the platform's API host (afriton): policy.
+        ("platform request signed", "AST.PY.PLATFORM_FORGERY"),
         # A persistence location written by code that runs when the file is loaded.
         ("persist at load", "AST.PY.PERSIST_AT_LOAD"),
         # The clipboard read, matched against a pattern, and set to a value the package brings.
@@ -76,6 +78,8 @@ class PythonFactIds:
         ("program started at import", "AST.PY.PROGRAM_STARTED_AT_IMPORT"),
         # Something fetched from the network and code or a program run, both when the file loads.
         ("fetch and run at load", "AST.PY.FETCH_RUN_AT_LOAD"),
+        # Decoded data handed to exec, eval or compile when the file loads.
+        ("decode and run at load", "AST.PY.DECODE_EXEC_AT_LOAD"),
         # Files swept from a directory and sent to a free-hosting, paste, tunnel or interaction host.
         ("sweep sent to a rentable host", "AST.PY.SWEPT_TO_RENTABLE_HOST"),
         # A persistence write with a hidden launch (no window) beside it.

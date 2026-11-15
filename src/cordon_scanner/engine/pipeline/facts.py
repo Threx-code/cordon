@@ -104,13 +104,24 @@ class TreeFacts:
         return frozenset(t for t in deferred if t[0] not in agent_run)
 
     @staticmethod
-    def skill_scripts(units: Sequence[FileUnit]) -> set[str]:
+    def skill_surface(units: Sequence[FileUnit]) -> tuple[set[str], frozenset[str], set[str]]:
+        """What an agent runs unasked: a skill's scripts, the scripts a skill that is also a package
+        names (`LoadPath.named_scripts`, kept in the context for `LoadPath.skill_script`), and with
+        an MCP server's own sources, every file the agent runs."""
+        from cordon_scanner.detect.registry import LoadPath, ServerSources
+
+        named = LoadPath.named_scripts(units)
+        scripts = TreeFacts.skill_scripts(units, named)
+        return scripts, named, scripts | ServerSources.of(units)
+
+    @staticmethod
+    def skill_scripts(units: Sequence[FileUnit], named: frozenset[str] = frozenset()) -> set[str]:
         """Scripts an agent skill ships (`LoadPath.skill_script`)."""
         from types import SimpleNamespace
 
         from cordon_scanner.detect.registry import LoadPath
 
-        tree = SimpleNamespace(tree_paths=frozenset(u.path for u in units))
+        tree = SimpleNamespace(tree_paths=frozenset(u.path for u in units), skill_named_paths=named)
         return {
             u.path
             for u in units
