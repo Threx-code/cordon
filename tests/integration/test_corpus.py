@@ -410,6 +410,13 @@ class TestSelfScan(CorpusFixtures):
             # The skills measurement classifies samples by what their payloads do, with the
             # indicators it counts and annotations naming the hosts they fetch from.
             and f.location.path != "bench/suites/skills_measure.py"
+            # The abuse-tooling detector names, by construction, the platform API hosts and the
+            # request-signature headers it looks for (POLICY.ABUSE_TOOLING.PLATFORM_FORGERY.001):
+            # its own rule material, as the rule packs above are.
+            and f.location.path
+            != "src/cordon_scanner/analysis/python/flows/forgery/platform_signing.py"
+            and f.location.path
+            != "src/cordon_scanner/analysis/python/flows/forgery/platform_forgery.py"
             # The detection model's feature patterns name what they count -- a miner's binary and
             # pool protocol among them -- as the rule packs do; data, never run.
             and f.location.path != "src/cordon_scanner/model/data/patterns.json"
