@@ -142,6 +142,10 @@ class DataRoles:
             "loads_code",
         }
     )
+    #: One pass over a text for the suffix of any data file name (the lines that need a closer look).
+    _SUFFIX_NAMED: ClassVar[re.Pattern[str]] = re.compile(
+        r"\.(?:jsonl?|ndjson|ya?ml|toml|[ct]sv)", re.I
+    )
     _NAME: ClassVar[re.Pattern[str]] = re.compile(r"[A-Za-z_$][\w$.]*")
     _ASSIGNED: ClassVar[re.Pattern[str]] = re.compile(
         r"^\s*(?:export\s+)?(?:const\s+|let\s+|var\s+)?([A-Za-z_$][\w$]*)\s*(?::[^=]{1,60})?=[^=]"
@@ -161,11 +165,11 @@ class DataRoles:
             if not unit.path.lower().endswith(cls.CODE) or unit.content.is_binary:
                 continue
             text = unit.content.text
-            if len(text) > MAX_CODE_BYTES or not any(s in text for s in cls.SUFFIXES):
+            if len(text) > MAX_CODE_BYTES or cls._SUFFIX_NAMED.search(text) is None:
                 continue
             lines = text.split("\n")
             for number, line in enumerate(lines):
-                if not any(s in line for s in cls.SUFFIXES):
+                if cls._SUFFIX_NAMED.search(line) is None:
                     continue
                 for value in cls._literals(line):
                     named = cls._named(value, data)
