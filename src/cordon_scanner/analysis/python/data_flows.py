@@ -681,6 +681,7 @@ class DataFlows(SecretSources, HiddenDestinations):
         from cordon_scanner.analysis.shared.credential_homes import SecretFlow
 
         carrying, urls = self._secret_carrying(tree)
+        scope = PythonSyntax.name_scope(tree)
         for node in PythonSyntax.of(tree, ast.Call):
             resolved = self._resolve_callee(node)
             if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.EGRESS:
@@ -722,7 +723,7 @@ class DataFlows(SecretSources, HiddenDestinations):
                 if literal is not None:
                     host, url = SecretFlow.host_of(literal), literal
                 elif isinstance(destination, ast.Name):
-                    host = urls.get(destination.id)
+                    host = urls.get((scope(destination, destination.id), destination.id))
             dest = self._dest(tree, node)
             for key in sorted(keys):
                 if key.startswith("CREDENTIAL_FILE:"):

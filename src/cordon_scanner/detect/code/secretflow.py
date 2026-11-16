@@ -66,6 +66,28 @@ class JavaScriptFlow:
         return text[open_paren + 1 : end]
 
     @staticmethod
+    def _first_argument(arguments: str) -> str:
+        """The text of the first top-level argument of a call, strings and brackets set aside."""
+        depth, index, quote = 0, 0, ""
+        while index < len(arguments):
+            character = arguments[index]
+            if quote:
+                if character == "\\":
+                    index += 1
+                elif character == quote:
+                    quote = ""
+            elif character in "\"'`":
+                quote = character
+            elif character in "([{":
+                depth += 1
+            elif character in ")]}":
+                depth -= 1
+            elif character == "," and depth == 0:
+                return arguments[:index]
+            index += 1
+        return arguments
+
+    @staticmethod
     def findings(text: str) -> list[tuple[int, str, str]]:
         """`(offset of the request call, credential name, host)` for each misdirected send."""
         credentials: dict[str, str] = {}  # bound name -> credential name
@@ -100,12 +122,15 @@ class JavaScriptFlow:
             named.update(credentials[w] for w in words & set(credentials))
             if not named:
                 continue
+            # Where the request goes is its first argument (a URL, a name bound to one, or the options
+            # object that holds it); another URL in the call is a header's `Referer` or `Origin`, a
+            # documentation link, a fallback -- not the destination.
+            where = JavaScriptFlow._first_argument(arguments)
+            where_words = set(re.findall(r"(?<![\w$])[A-Za-z_$][\w$]*", where))
             destinations = {
-                h
-                for h in (SecretFlow.host_of(u) for u in JavaScriptFlow._URL.findall(arguments))
-                if h
+                h for h in (SecretFlow.host_of(u) for u in JavaScriptFlow._URL.findall(where)) if h
             }
-            destinations.update(hosts[w] for w in words & set(hosts))
+            destinations.update(hosts[w] for w in where_words & set(hosts))
             for key in sorted(named):
                 for host in sorted(destinations):
                     if SecretFlow.misdirected(key, host):
@@ -114,7 +139,148 @@ class JavaScriptFlow:
         return found
 
 
-__all__ = ["JavaScriptFlow"]
+class GoFlow:
+    """A named credential from `os.Getenv` reaching a request to a host outside its home, in Go.
+
+    The Go side of `JavaScriptFlow`, with the same narrow claim. Go separates the request from what it
+    carries (`req, _ := http.NewRequest(...)`, then `req.Header.Set("X", token)`), so the unit read is
+    the function: the credential names it uses (bound to `os.Getenv("NAME")` in the file, handed to it
+    as an argument by a caller, or read inline) against the hosts of the requests it makes, written
+    out or bound to a name. A function that also calls the credential's own service makes no claim --
+    which request carried it is not known -- and a value passed through anything else is not followed.
+    """
+
+    _BIND = re.compile(
+        r"""(?m)^[ \t]*(?:var[ \t]+)?(\w+)(?:[ \t]*,[ \t]*\w+)?[ \t]*(?::=|=)[ \t]*"""
+        r"""os\s*\.\s*(?:Getenv|LookupEnv)\s*\(\s*"([A-Z][A-Z0-9_]*)"\s*\)"""
+    )
+    _INLINE = re.compile(r"""os\s*\.\s*(?:Getenv|LookupEnv)\s*\(\s*"([A-Z][A-Z0-9_]*)"\s*\)""")
+    _URL_BIND = re.compile(
+        r"""(?m)^[ \t]*(?:(?:const|var)[ \t]+)?(\w+)[ \t]*(?::=|=)[ \t]*"((?:https?|wss?)://[^"\s]+)\""""
+    )
+    _URL = re.compile(r'''"((?:https?|wss?)://[^"\s]+)"''')
+    _FUNC = re.compile(r"""(?m)^func[ \t]+(?:\([^)]*\)[ \t]*)?(\w+)[ \t]*\(([^)]*)\)[^{\n]*\{""")
+    _REQUEST = re.compile(
+        r"""\bhttp\s*\.\s*(?:NewRequest(?:WithContext)?|Post(?:Form)?|Get|Head)\s*\("""
+        r"""|\b(\w+)\s*\.\s*(?:Post(?:Form)?|Get|Head)\s*\("""
+    )
+
+    @staticmethod
+    def _close(text: str, open_at: int, open_char: str, close_char: str, limit: int = 40000) -> int:
+        """The index of the bracket closing the one at `open_at`, strings and comments set aside."""
+        depth, index, end = 0, open_at, min(len(text), open_at + limit)
+        while index < end:
+            character = text[index]
+            if character == '"':
+                index += 1
+                while index < end and text[index] != '"' and text[index] != "\n":
+                    index += 2 if text[index] == "\\" else 1
+            elif character == "`":
+                index = text.find("`", index + 1)
+                if index == -1:
+                    return end
+            elif character == "/" and text.startswith("//", index):
+                index = text.find("\n", index)
+                if index == -1:
+                    return end
+            elif character == "/" and text.startswith("/*", index):
+                index = text.find("*/", index + 2)
+                if index == -1:
+                    return end
+            elif character == open_char:
+                depth += 1
+            elif character == close_char:
+                depth -= 1
+                if depth == 0:
+                    return index
+            index += 1
+        return end
+
+    @staticmethod
+    def _arguments(text: str, open_paren: int) -> list[str]:
+        """The top-level arguments of the call whose `(` is at `open_paren`."""
+        close = GoFlow._close(text, open_paren, "(", ")")
+        inner, depth = text[open_paren + 1 : close], 0
+        current: list[str] = []
+        out: list[str] = []
+        for character in inner:
+            if character in "([{":
+                depth += 1
+            elif character in ")]}":
+                depth -= 1
+            if character == "," and depth == 0:
+                out.append("".join(current))
+                current = []
+            else:
+                current.append(character)
+        out.append("".join(current))
+        return [a.strip() for a in out if a.strip()]
+
+    @staticmethod
+    def findings(text: str) -> list[tuple[int, str, str]]:
+        """`(offset of the request call, credential name, host)` for each misdirected send."""
+        credentials = {
+            m.group(1): m.group(2)
+            for m in GoFlow._BIND.finditer(text)
+            if SecretFlow.home_of(m.group(2))
+        }
+        hosts = {
+            m.group(1): h
+            for m in GoFlow._URL_BIND.finditer(text)
+            if (h := SecretFlow.host_of(m.group(2)))
+        }
+        functions: dict[str, tuple[list[str], int, int]] = {}
+        for m in GoFlow._FUNC.finditer(text):
+            params = [p.split()[0] for p in m.group(2).split(",") if p.split()]
+            functions[m.group(1)] = (params, m.end(), GoFlow._close(text, m.end() - 1, "{", "}"))
+        # what a caller hands a function: a bound credential, or the read itself, in an argument position
+        handed: dict[str, dict[int, str]] = {}
+        for name in functions:
+            for call in re.finditer(rf"(?<![\w.]){re.escape(name)}\s*\(", text):
+                for position, argument in enumerate(GoFlow._arguments(text, call.end() - 1)):
+                    read = GoFlow._INLINE.search(argument)
+                    key = credentials.get(argument) or (read.group(1) if read else None)
+                    if key and SecretFlow.home_of(key):
+                        handed.setdefault(name, {})[position] = key
+        found: list[tuple[int, str, str]] = []
+        for name, (params, start, end) in functions.items():
+            body = text[start:end]
+            words = set(re.findall(r"(?<!\w)[A-Za-z_]\w*", body))
+            keys = {credentials[w] for w in words & set(credentials)}
+            keys |= {
+                m.group(1) for m in GoFlow._INLINE.finditer(body) if SecretFlow.home_of(m.group(1))
+            }
+            keys |= {
+                handed.get(name, {})[i]
+                for i, p in enumerate(params)
+                if p in words and i in handed.get(name, {})
+            }
+            if not keys:
+                continue
+            requests: list[tuple[int, set[str]]] = []
+            for call in GoFlow._REQUEST.finditer(body):
+                if call.group(1) is not None and "client" not in call.group(1).lower():
+                    continue  # `x.Get(`: a request only on something named for a client
+                arguments = GoFlow._arguments(body, call.end() - 1)
+                destinations = {
+                    h
+                    for a in arguments
+                    for u in GoFlow._URL.findall(a)
+                    if (h := SecretFlow.host_of(u))
+                }
+                destinations |= {hosts[a] for a in arguments if a in hosts}
+                if destinations:
+                    requests.append((start + call.start(), destinations))
+            for key in sorted(keys):
+                every = {h for _o, hs in requests for h in hs}
+                if not every or any(not SecretFlow.misdirected(key, h) for h in every):
+                    continue  # no written-out destination, or the function also calls the key's own service
+                offset, hs = requests[0]
+                found.append((offset, key, sorted(hs)[0]))
+        return found
+
+
+__all__ = ["GoFlow", "JavaScriptFlow"]
 
 
 class JavaScriptLeak:

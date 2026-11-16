@@ -176,6 +176,11 @@ class ScanContext:
     of the install script can see, unlike a compiler spawned by bare name (census A, pypi-98). Used
     to keep a dropper of a shipped binary blocked while a compiler-spawn `setup.py` clears."""
 
+    data_only_paths: frozenset[str] = frozenset()
+    """Data files (JSON, YAML, TOML, CSV) that the package's code names only beside a parser
+    (`DataRoles`): their strings are values looked up, not acts, so the capability rules and the
+    code model do not read them."""
+
     consumer_install_paths: frozenset[str] = frozenset()
     """Paths that execute on the machine of whoever INSTALLS the package.
 

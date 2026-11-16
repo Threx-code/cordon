@@ -27,6 +27,13 @@ INDEX_FLAG: Final = re.compile(
     r"(?<![\w-])(?:--index-url|--extra-index-url|--trusted-host|--find-links|-i|-f)(?![\w-])", re.I
 )
 TRUST_KEYWORDS: Final = frozenset({"trust_all_hosts", "trusted_host", "trusted_hosts", "trust_all"})
+#: A host list is also a web server's (`ProxyHeadersMiddleware(trusted_hosts=...)`, a settings object):
+#: `trusted_host(s)` is an index's trust only on a call to something that installs, or beside an index.
+HOST_LIST_KEYWORDS: Final = frozenset({"trusted_host", "trusted_hosts"})
+INSTALLER_NAME: Final = re.compile(
+    r"pip|index|install|finder|session|download|requirement|repositor|pypi", re.I
+)
+INDEX_KEYWORDS: Final = frozenset({"index_url", "index_urls", "extra_index_urls", "find_links"})
 
 
 class ForeignIndex:
@@ -40,14 +47,15 @@ class ForeignIndex:
         for node in PythonSyntax.walked_of(tree, ast.Call):
             if not isinstance(node, ast.Call):
                 continue
+            name = PythonValueFlow.dotted(node.func) or ""
             if any(
                 k.arg in TRUST_KEYWORDS
                 and not (isinstance(k.value, ast.Constant) and k.value.value in (False, None, ""))
+                and (k.arg not in HOST_LIST_KEYWORDS or cls._installs(name, node))
                 for k in node.keywords
             ):
                 out.add(node.lineno)
                 continue
-            name = PythonValueFlow.dotted(node.func) or ""
             short = PythonValueFlow.name(node.func) or ""
             if (
                 name in cls.PROCESS or short in cls.PROCESS or name.endswith("pip.main")
@@ -64,6 +72,13 @@ class ForeignIndex:
                 ):
                     out.add(node.lineno)
         return sorted(out)
+
+    @staticmethod
+    def _installs(name: str, node: ast.Call) -> bool:
+        """Whether the call is made to something that installs, or is handed an index beside the hosts."""
+        return bool(INSTALLER_NAME.search(name)) or any(
+            k.arg in INDEX_KEYWORDS for k in node.keywords
+        )
 
 
 __all__ = ["ForeignIndex"]

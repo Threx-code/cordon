@@ -5,6 +5,7 @@ install from the default index or are a build backend doing so."""
 
 from __future__ import annotations
 
+import ast
 import io
 import tarfile
 from typing import TYPE_CHECKING
@@ -12,6 +13,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from cordon_scanner import Scanner
+from cordon_scanner.analysis.python.flows.implants.foreign_index import ForeignIndex
 from cordon_scanner.foundation.config.settings import Config
 
 if TYPE_CHECKING:
@@ -109,3 +111,31 @@ class TestOrdinaryInstalls:
             "demo/tool.py": tool,
         }
         assert "MALWARE.INSTALL.FOREIGN_INDEX.001" not in Kit.rules(tmp_path, members)
+
+
+class TestAListOfTrustedHostsIsNotAlwaysAnIndex:
+    """`trusted_hosts` is also a web server's list of proxies and hosts it believes; only a call made to
+    something that installs, or told an index beside it, is a pip index's trust."""
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "settings = Settings(name='x', port=1, trusted_hosts=['10.0.0.1'])\n",
+            "app.add_middleware(ProxyHeadersMiddleware, trusted_hosts='*')\n",
+            "config = Config(app, forwarded_allow_ips='*', trusted_host='10.0.0.1')\n",
+        ],
+    )
+    def test_a_web_server_setting_is_not(self, source: str) -> None:
+        assert ForeignIndex.lines(ast.parse(source)) == []
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "finder = PackageFinder(find_links=[], index_urls=['https://p.invalid/'], trusted_hosts=['p.invalid'])\n",
+            "session = get_pip_session(trusted_hosts=['p.invalid'])\n",
+            "installer.install(['dep'], trusted_host='p.invalid')\n",
+            "PInst(trust_all_hosts=True).install(['a'], ['b'])\n",
+        ],
+    )
+    def test_an_installer_told_to_trust_a_host_still_is(self, source: str) -> None:
+        assert ForeignIndex.lines(ast.parse(source)) == [1]

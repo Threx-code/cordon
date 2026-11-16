@@ -93,6 +93,22 @@ class TestSecretHarvest:
         )
         assert McpCode.secret_harvest(text) == []
 
+    def test_a_longer_name_that_contains_the_word_is_not_the_environment(self) -> None:
+        text = (
+            "import os\n"
+            "rows = [e for e in store.list_environments() if e.auth_mode == 'token']\n"
+            "current = next(e for e in registry.current_environment() if e.api_key)\n"
+        )
+        assert McpCode.secret_harvest(text) == []
+
+    def test_the_environment_read_through_an_import_of_the_name_is_still_one(self) -> None:
+        text = (
+            "from os import environ\n"
+            "found = {k: v for k, v in environ.items() if 'token' in k.lower()}\n"
+            "raw = [v for v in os.environb.values() if b'secret' in v]\n"
+        )
+        assert McpCode.secret_harvest(text) == [2, 3]
+
 
 class TestListener:
     def test_a_socket_taking_commands(self) -> None:

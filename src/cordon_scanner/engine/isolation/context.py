@@ -58,6 +58,7 @@ PATH_SETS = (
     "ci_hook_paths",
     "tree_paths",
     "shipped_native_paths",
+    "data_only_paths",
     "consumer_install_paths",
     "import_closure_paths",
 )

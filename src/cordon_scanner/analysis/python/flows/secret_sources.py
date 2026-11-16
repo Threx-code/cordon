@@ -18,17 +18,20 @@ if TYPE_CHECKING:
 class SecretSources(AnalyzerCore):
     """The sources `DataFlows._secret_sent` reads."""
 
-    def _secret_carrying(self, tree: ast.AST) -> tuple[dict[str, str], dict[str, str]]:
-        """(name -> the credential it carries, name -> the host its URL literal names), for the
-        tree: credentials read, then carried through `with … as`, receivers that take one in,
-        assignment and item assignment, to a fixed point bounded at three rounds."""
+    def _secret_carrying(self, tree: ast.AST) -> tuple[dict[str, str], dict[tuple[int, str], str]]:
+        """(name -> the credential it carries, (scope, name) -> the host its URL literal names), for
+        the tree: credentials read, then carried through `with … as`, receivers that take one in,
+        assignment and item assignment, to a fixed point bounded at three rounds. A URL is the
+        host of the name in the scope that binds it (`PythonSyntax.name_scope`): the `url` one
+        function assigned is not the `url` another is handed."""
         from cordon_scanner.analysis.shared.credential_homes import SecretFlow
 
         self.__dict__["_tree_for_wallets"] = tree
         self.__dict__.pop("_wallet_names", None)
         self.__dict__.pop("_path_names", None)
         carrying: dict[str, str] = {}
-        urls: dict[str, str] = {}
+        urls: dict[tuple[int, str], str] = {}
+        scope = PythonSyntax.name_scope(tree)
         # `with open(<credential store>) as f:`: the handle carries the store (`f.read()`).
         for node in PythonSyntax.of(tree, ast.With, ast.AsyncWith):
             for item in node.items:
@@ -39,18 +42,19 @@ class SecretSources(AnalyzerCore):
             for call in PythonSyntax.of(tree, ast.Call):
                 self._carried_by_receiver(call, carrying)
             for node in PythonSyntax.of(tree, ast.Assign):
-                targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
+                bound = [t for t in node.targets if isinstance(t, ast.Name)]
                 # `found[name] = secret` fills `found`, which then carries it.
-                targets += [
-                    t.value.id
+                bound += [
+                    t.value
                     for t in node.targets
                     if isinstance(t, ast.Subscript) and isinstance(t.value, ast.Name)
                 ]
+                targets = [t.id for t in bound]
                 literal = PythonFacts.url_literal(node.value)
                 if literal is not None:
                     assigned = SecretFlow.host_of(literal)
                     if assigned:
-                        urls.update(dict.fromkeys(targets, assigned))
+                        urls.update({(scope(t, t.id), t.id): assigned for t in bound})
                 self._carry_assignment(node, targets, carrying)
         return carrying, urls
 
