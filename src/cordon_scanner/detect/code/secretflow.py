@@ -126,7 +126,7 @@ class JavaScriptFlow:
             # object that holds it); another URL in the call is a header's `Referer` or `Origin`, a
             # documentation link, a fallback -- not the destination.
             where = JavaScriptFlow._first_argument(arguments)
-            where_words = set(re.findall(r"[A-Za-z_$][\w$]*", where))
+            where_words = set(re.findall(r"(?<![\w$])[A-Za-z_$][\w$]*", where))
             destinations = {
                 h for h in (SecretFlow.host_of(u) for u in JavaScriptFlow._URL.findall(where)) if h
             }
@@ -162,7 +162,7 @@ class GoFlow:
     _FUNC = re.compile(r"""(?m)^func[ \t]+(?:\([^)]*\)[ \t]*)?(\w+)[ \t]*\(([^)]*)\)[^{\n]*\{""")
     _REQUEST = re.compile(
         r"""\bhttp\s*\.\s*(?:NewRequest(?:WithContext)?|Post(?:Form)?|Get|Head)\s*\("""
-        r"""|\b\w*[Cc]lient\w*\s*\.\s*(?:Post(?:Form)?|Get|Head)\s*\("""
+        r"""|\b(\w+)\s*\.\s*(?:Post(?:Form)?|Get|Head)\s*\("""
     )
 
     @staticmethod
@@ -245,7 +245,7 @@ class GoFlow:
         found: list[tuple[int, str, str]] = []
         for name, (params, start, end) in functions.items():
             body = text[start:end]
-            words = set(re.findall(r"[A-Za-z_]\w*", body))
+            words = set(re.findall(r"(?<!\w)[A-Za-z_]\w*", body))
             keys = {credentials[w] for w in words & set(credentials)}
             keys |= {
                 m.group(1) for m in GoFlow._INLINE.finditer(body) if SecretFlow.home_of(m.group(1))
@@ -259,6 +259,8 @@ class GoFlow:
                 continue
             requests: list[tuple[int, set[str]]] = []
             for call in GoFlow._REQUEST.finditer(body):
+                if call.group(1) is not None and "client" not in call.group(1).lower():
+                    continue  # `x.Get(`: a request only on something named for a client
                 arguments = GoFlow._arguments(body, call.end() - 1)
                 destinations = {
                     h

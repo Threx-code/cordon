@@ -26,9 +26,8 @@ from collections.abc import Callable
 from typing import Any, ClassVar, Final
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+from cordon_scanner.detect.agents.mcp_servers.tool_handlers import ToolHandlers
 
-#: `@mcp.tool()`, and the SDK's low-level `@server.call_tool()` (on FastMCP's inner `_mcp_server` too).
-_TOOL_DECORATOR: Final = re.compile(r"\btool\b|\.tool\(|tool\s*$|\bcall_tool\b")
 _RUNS_COMMANDS: Final = re.compile(
     r"(?i)exec|run|shell|command|terminal|bash|\bcmd\b|script|process|subprocess|kubectl|"
     r"powershell|eval|console|ssh"
@@ -68,7 +67,7 @@ class McpCode:
     def _parse(cls, text: str) -> ast.Module | None:
         try:
             tree: ast.Module = PythonSyntax.parse(text)
-            cls._mark_registered_tools(tree)
+            ToolHandlers.mark_registered(tree)
             return tree
         except (SyntaxError, ValueError):
             # S2: covered by SOURCE.UNPARSED at every running file (install closure, import entries, command modules); proven by test_not_python3.py TestPackageSourceThatDoesNotParse
@@ -150,81 +149,6 @@ class McpCode:
                 out.append(node)
         return out
 
-    @staticmethod
-    def _mark_registered_tools(tree: ast.Module) -> None:
-        """Flag the functions the SDK's low-level `call_tool` is handed without a decorator:
-        `server.call_tool()(handler)` and `server.call_tool = handler`. The decorator form is read
-        from the function itself (`_TOOL_DECORATOR`); these two are read from where it is registered."""
-        registered: set[str] = set()
-        for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Call)
-                and isinstance(node.func.func, ast.Attribute)
-                and node.func.func.attr == "call_tool"
-                and node.args
-                and isinstance(node.args[0], ast.Name)
-            ):
-                registered.add(node.args[0].id)
-            elif (
-                isinstance(node, ast.Assign)
-                and any(
-                    isinstance(t, ast.Attribute) and t.attr == "call_tool" for t in node.targets
-                )
-                and isinstance(node.value, ast.Name)
-            ):
-                registered.add(node.value.id)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name in registered:
-                node.registered_tool = True  # type: ignore[union-attr]
-
-    @staticmethod
-    def _is_dispatcher(function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-        """Whether the function is the one handler the SDK's low-level API gives every tool, which
-        chooses among them by name."""
-        return bool(getattr(function, "registered_tool", False)) or any(
-            re.search(r"\bcall_tool\b", ast.unparse(d)) for d in function.decorator_list
-        )
-
-    @staticmethod
-    def _listed_text(tree: ast.Module) -> str:
-        """What the tool list of a low-level server says: the strings of the functions registered with
-        `list_tools`, which hold each tool's name and description."""
-        parts: list[str] = []
-        for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and any(
-                re.search(r"\blist_tools\b", ast.unparse(d)) for d in node.decorator_list
-            ):
-                parts.extend(
-                    c.value[:300]
-                    for c in ast.walk(node)
-                    if isinstance(c, ast.Constant) and isinstance(c.value, str)
-                )
-        return " ".join(parts)[:4000]
-
-    @classmethod
-    def _said(cls, function: ast.FunctionDef | ast.AsyncFunctionDef, listed: str) -> str:
-        """What a tool says of itself: its name and docstring; for a dispatcher, also the names it
-        compares its tool name with and the tool list's own words (it is one function for every tool)."""
-        said = function.name + " " + (ast.get_docstring(function) or "")[:600]
-        if cls._is_dispatcher(function):
-            said += " " + listed
-            said += (
-                " "
-                + " ".join(
-                    c.value[:300]
-                    for c in ast.walk(function)
-                    if isinstance(c, ast.Constant) and isinstance(c.value, str)
-                )[:2000]
-            )
-        return said
-
-    @staticmethod
-    def _is_tool(function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-        return getattr(function, "registered_tool", False) or any(
-            _TOOL_DECORATOR.search(ast.unparse(d)) for d in function.decorator_list
-        )
-
     @classmethod
     def triggered(
         cls,
@@ -236,7 +160,7 @@ class McpCode:
         a literal -- `x.startswith("EXEC://")`, `x == "admin_2026"`, `"://" in x`. A bug runs the
         input whatever it is; a backdoor waits for the word only its author knows."""
         tainted = cls._tainted(function)
-        if cls._is_dispatcher(function) and function.args.args:
+        if ToolHandlers.is_dispatcher(function) and function.args.args:
             # The first argument of a low-level handler is the tool's name: comparing it with a
             # literal is how the one handler chooses a tool, not a word only its author knows.
             tainted = tainted - {function.args.args[0].arg}
@@ -293,8 +217,8 @@ class McpCode:
                 if function.name not in wrappers and cls._runs_input(function, wrappers):
                     wrappers.add(function.name)
         out: list[tuple[int, str, bool]] = []
-        listed = cls._listed_text(tree)
-        for function in (f for f in functions if cls._is_tool(f)):
+        listed = ToolHandlers.listed_text(tree)
+        for function in (f for f in functions if ToolHandlers.is_tool(f)):
             calls = cls._run_calls(function, wrappers)
             if not calls:
                 continue
@@ -305,7 +229,7 @@ class McpCode:
             if gated is not None:
                 out.append((getattr(gated, "lineno", function.lineno), function.name, True))
                 continue
-            if _RUNS_COMMANDS.search(cls._said(function, listed)):
+            if _RUNS_COMMANDS.search(ToolHandlers.said(function, listed)):
                 continue
             out.append((getattr(calls[0], "lineno", function.lineno), function.name, False))
         return out
@@ -324,11 +248,11 @@ class McpCode:
             for function in functions:
                 if function.name not in wrappers and cls._runs_input(function, wrappers):
                     wrappers.add(function.name)
-        tools = [f for f in functions if cls._is_tool(f)]
-        listed = cls._listed_text(tree)
+        tools = [f for f in functions if ToolHandlers.is_tool(f)]
+        listed = ToolHandlers.listed_text(tree)
         hits: list[tuple[int, str]] = []
         for function in tools:
-            if _RUNS_COMMANDS.search(cls._said(function, listed)):
+            if _RUNS_COMMANDS.search(ToolHandlers.said(function, listed)):
                 continue
             call = cls._runs_input(function, wrappers)
             if call is not None:
@@ -493,7 +417,7 @@ class McpCode:
         if not writers:
             return []
         hits: list[tuple[int, str]] = []
-        for function in (f for f in functions if cls._is_tool(f)):
+        for function in (f for f in functions if ToolHandlers.is_tool(f)):
             tainted = cls._tainted(function)
             for node in ast.walk(function):
                 if not isinstance(node, ast.Call):
@@ -629,7 +553,7 @@ class McpCode:
             return hosts
 
         hits: list[tuple[int, str, str]] = []
-        for function in (f for f in functions.values() if cls._is_tool(f)):
+        for function in (f for f in functions.values() if ToolHandlers.is_tool(f)):
             hosts = tainted_hosts(function)
             named = sorted(h for h in hosts if h)
             untrusted = [
@@ -646,7 +570,7 @@ class McpCode:
             ]
             if untrusted:
                 hits.append((function.lineno, function.name, untrusted[0]))
-            elif len(named) >= 2 and not cls._is_dispatcher(function):
+            elif len(named) >= 2 and not ToolHandlers.is_dispatcher(function):
                 # One handler serves every tool of a low-level server, each branch calling its own
                 # service: two hosts there are two tools, not one tool's input copied to a second host.
                 hits.append((function.lineno, function.name, named[1]))
@@ -691,7 +615,7 @@ class McpCode:
             if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
         }
         hits: list[tuple[int, str]] = []
-        for function in (f for f in functions.values() if cls._is_tool(f)):
+        for function in (f for f in functions.values() if ToolHandlers.is_tool(f)):
             for node in ast.walk(function):
                 if not isinstance(node, ast.If) or not any(
                     isinstance(b, ast.Return) for b in node.body
