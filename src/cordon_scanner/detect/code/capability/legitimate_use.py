@@ -25,6 +25,9 @@ from cordon_scanner.detect.code.capability.load_path import LoadPath
 from cordon_scanner.detect.code.store_flow import BoundClient
 from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
+from cordon_scanner.foundation.once import OneOff
+from cordon_scanner.foundation.paths import PackagePaths
 
 if TYPE_CHECKING:
     from cordon_scanner.foundation.content import FileContent
@@ -472,6 +475,35 @@ class LegitimateUse:
 
     HOST_IN_URL = re.compile(rb"https?://([A-Za-z0-9._-]{4,253})")
 
+    @staticmethod
+    @OneOff.cache
+    def issuer_vocabulary() -> tuple[tuple[tuple[bytes, ...], tuple[bytes, ...]], ...]:
+        """Services that issue an API key, and the hosts that key is for (`detect/data/credential-issuers.json`):
+        a variable named `DEEPSEEK_API_KEY` is sent to `api.deepseek.com` to call that service, and that is
+        all a key like it is for. Data, not code: a row is a vocabulary change. Code-hosting and package
+        registry tokens are not in it (a token against its own forge is how a worm creates repositories and
+        publishes), and neither is any chat or webhook endpoint (`chat-endpoints.json`: the standard drop
+        points of stolen data, which a `.env` shipped in a package can name); a test pins both."""
+        rows = ScannedJson.loads(
+            (PackagePaths.data("detect") / "credential-issuers.json").read_text(encoding="utf-8")
+        )
+        return tuple(
+            (
+                tuple(str(name).encode() for name in row["names"]),
+                tuple(str(host).encode() for host in row["hosts"]),
+            )
+            for row in rows
+        )
+
+    #: Reads of the whole environment: a key sent with these beside it is not a key sent alone.
+    WHOLE_ENVIRONMENT = re.compile(
+        rb"\bdict\s*\(\s*os\s*\.\s*environ\s*\)|\bos\s*\.\s*environ\s*\.\s*(?:copy|items|keys|values)\s*\("
+        rb"|\bjson\s*\.\s*dumps\s*\(\s*(?:dict\s*\(\s*)?os\s*\.\s*environ|\*\*\s*os\s*\.\s*environ"
+        rb"|\.\.\.\s*process\s*\.\s*env\b|\bprocess\s*\.\s*env\s*[),]"
+        rb"|Object\s*\.\s*(?:entries|keys|values|assign)\s*\([^)]{0,20}process\s*\.\s*env\b"
+        rb"|JSON\s*\.\s*stringify\s*\(\s*process\s*\.\s*env\b"
+    )
+
     #: A credential store, and the clients that store exists to serve.
     STORE_CLIENTS: ClassVar[tuple[tuple[re.Pattern[bytes], re.Pattern[bytes]], ...]] = (
         (
@@ -580,6 +612,10 @@ class LegitimateUse:
         for names, owned in cls.ISSUER_HOSTS:
             if any(name in text for name in names):
                 issuers.append(owned)
+        if not cls._holds_more_than_a_key(text):
+            for names, owned in cls.issuer_vocabulary():
+                if any(name in text for name in names):
+                    issuers.append(owned)
         if not issuers:
             return False
 
@@ -589,6 +625,17 @@ class LegitimateUse:
             )
 
         return all(owned_by_some_issuer(host) for host in hosts)
+
+    @classmethod
+    def _holds_more_than_a_key(cls, text: bytes) -> bool:
+        """Whether the window also reads the whole environment or a credential store on disk: what is sent
+        is then more than the one key, and the vocabulary of issuers does not excuse it."""
+        from cordon_scanner.analysis.shared.credential_homes import SecretFlow
+
+        if cls.WHOLE_ENVIRONMENT.search(text):
+            return True
+        decoded = text.decode("utf-8", "replace")
+        return any(pattern.search(decoded) for pattern in SecretFlow.STORES.values())
 
 
 __all__ = ["LegitimateUse"]

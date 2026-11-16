@@ -32,6 +32,9 @@ _RUNS_COMMANDS: Final = re.compile(
     r"(?i)exec|run|shell|command|terminal|bash|\bcmd\b|script|process|subprocess|kubectl|"
     r"powershell|eval|console|ssh"
 )
+#: The process environment as a name, not as a piece of a longer one (`list_environments`,
+#: `current_environment` are a deployment's records, not `os.environ`).
+_ENVIRONMENT_NAME: Final = re.compile(r"\benviron[b]?\b")
 _SECRET_WORDS: Final = re.compile(r"(?i)secret|token|passw|credential|api_?key|\bkey\b|auth")
 _IGNORED_PARAMS: Final = frozenset({"self", "cls", "ctx", "context"})
 
@@ -643,7 +646,7 @@ class McpCode:
                 conditions = " ".join(ast.unparse(c) for g in node.generators for c in g.ifs)
                 kept = ast.unparse(node.value if isinstance(node, ast.DictComp) else node.elt)
                 if (
-                    "environ" in source
+                    _ENVIRONMENT_NAME.search(source)
                     and _SECRET_WORDS.search(conditions)
                     # A value kept, not replaced: redaction writes a constant in its place.
                     and not re.fullmatch(r"\s*['\"][^'\"]*['\"]\s*", kept)

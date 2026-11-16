@@ -407,6 +407,9 @@ class TestSelfScan(CorpusFixtures):
             # positive or negative a flow or drop-point rule is tested on.
             and f.location.path != "tests/unit/detect/code/test_store_flow.py"
             and f.location.path != "tests/unit/detect/code/drop_point/test_drop_point_loot.py"
+            # The data-role fixtures: a denylist of credential-store paths and paste hosts that only a parser
+            # reads, and the loader shapes (an exec of a loaded field among them) that do or do not make it data.
+            and f.location.path != "tests/unit/analysis/shared/test_data_roles.py"
             # The skills measurement classifies samples by what their payloads do, with the
             # indicators it counts and annotations naming the hosts they fetch from.
             and f.location.path != "bench/suites/skills_measure.py"

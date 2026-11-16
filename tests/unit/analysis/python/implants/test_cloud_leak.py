@@ -107,6 +107,27 @@ class TestOrdinaryUploads:
         )
         assert Kit.leaked(source) == ["machine facts uploaded"]
 
+    def test_a_setting_the_program_stores_beside_its_data_is_not(self) -> None:
+        source = (
+            "import json, os\n"
+            "from google.cloud import storage\n"
+            "def save(memory):\n"
+            "    owner = os.getenv('MEMORY_OWNER')\n"
+            "    blob = storage.Client().bucket('b').blob('k')\n"
+            "    blob.upload_from_string(json.dumps({'owner': owner, 'memory': memory}))\n"
+        )
+        assert Kit.leaked(source) == []
+
+    def test_a_credential_by_its_name_is_still_content(self) -> None:
+        source = (
+            "import os\n"
+            "from google.cloud import storage\n"
+            "def go():\n"
+            "    blob = storage.Client().bucket('b').blob('k')\n"
+            "    blob.upload_from_string(os.environ['SERVICE_API_KEY'])\n"
+        )
+        assert Kit.leaked(source) == ["machine facts uploaded"]
+
     def test_no_cloud_library_in_the_file(self) -> None:
         source = "import os\ndef go(store):\n    store.upload_from_string(os.getenv('USER'))\n"
         assert Kit.leaked(source) == []
