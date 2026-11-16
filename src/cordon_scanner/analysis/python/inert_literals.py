@@ -168,6 +168,31 @@ class InertLiterals(PythonValueFlow):
         return frozenset(set(analysis.seeds.values()) - analysis._reached())
 
     @classmethod
+    def quoted_call_spans(cls, source: str) -> tuple[tuple[int, int, int, int], ...] | None:
+        """(first line, first column, last line, end column) of every string literal that is not
+        an f-string's, for a file in which no string is run as code: None when the source does not
+        parse, or when it names `exec`, `eval`, `compile` or `execfile` anywhere -- then any text
+        in it may be a program. Call-like text in a string that nothing runs (a table of the calls
+        a scanner or a guard looks for, a docstring showing a call) is not a call."""
+        try:
+            tree = PythonSyntax.shared(source)
+        except (SyntaxError, ValueError, RecursionError):
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
+            return None
+        for node in PythonSyntax.of(tree, ast.Name, ast.Attribute):
+            if (node.id if isinstance(node, ast.Name) else node.attr) in cls._RUN | {"execfile"}:
+                return None
+        parents = PythonSyntax.parents(tree)
+        return tuple(
+            (node.lineno, node.col_offset, node.end_lineno, node.end_col_offset)
+            for node in PythonSyntax.of(tree, ast.Constant)
+            if isinstance(node.value, str)
+            and node.end_lineno is not None
+            and node.end_col_offset is not None
+            and not isinstance(parents.get(id(node)), ast.JoinedStr | ast.FormattedValue)
+        )
+
+    @classmethod
     def _spans(cls, source: str, focus: frozenset[int]) -> frozenset[tuple[int, int]]:
         """UTF-8 byte spans of the focus-line literals that reach no sink. Empty on a syntax error
         or past the seed limit, so nothing is lowered on a file this cannot read."""
