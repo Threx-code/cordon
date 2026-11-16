@@ -797,10 +797,12 @@ rules:
       any:
         - rule: AST.PY.SECRET_SENT
         - rule: FLOW.JS.SECRET_SENT
+        - rule: FLOW.GO.SECRET_SENT
       unless:
         - path_glob: "**/*.test.*"
         - path_glob: "**/*.spec.*"
         - path_glob: "**/test_*.py"
+        - path_glob: "**/*_test.go"
         - path_glob: "tests/**"
         - path_glob: "test/**"
         - path_glob: "__tests__/**"

@@ -220,6 +220,7 @@ class LoadPath:
                 "AST.PY.ENVIRONMENT_SENT",
                 "AST.PY.SECRET_SENT",
                 "FLOW.JS.SECRET_SENT",
+                "FLOW.GO.SECRET_SENT",
                 "FLOW.JS.IDENTITY_SENT",
                 "FLOW.JS.ENVIRONMENT_SENT",
                 # The publishing composite's one term is this rule, not a capability.
