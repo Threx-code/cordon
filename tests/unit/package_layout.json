@@ -878,6 +878,7 @@
   "test_recipe_digests.py": "detect/supply",
   "test_bazel_provenance.py": "intel/provenance",
   "test_beacon_identity_flow.py": "detect/code/capability",
+  "test_homedir_reconnaissance.py": "rules",
   "test_bench_as_published.py": "bench",
   "test_bench_budgets.py": "bench",
   "test_area_fit.py": "bench",
