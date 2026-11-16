@@ -219,14 +219,11 @@ class IntentSignals:
         graded as code that runs unasked; an API client that names its platform in a User-Agent
         near its request is not a beacon, as the import-time `SUSPECT.EXFIL.BEACON.001` already
         requires (review 98: Asana, Notion, search and transcription clients in MalSkillBench were
-        blocked on nearness alone). Python's flow is followed across functions and through
-        containers, so the same holds for a Python install hook that logs the host it runs on beside
-        a download. JavaScript's stops at a function's return, a DNS name and a computed property:
-        there an install hook is read by nearness (the recovered install-time beacons of
-        `test_attacker_steps` and `test_recovered_malware_shapes`)."""
-        return (agent_tool or language == "python") and not cls.identity_in_what_is_sent(
-            language, content, hits
-        )
+        blocked on nearness alone). Only an agent's tool: an install hook is read by nearness in
+        every language, because a callback from code that runs at install is a beacon with or
+        without the identity in its payload (a Python rule that required it took the block from 5
+        PyPI malware units of the development half, reviews/mcp-98/17)."""
+        return agent_tool and not cls.identity_in_what_is_sent(language, content, hits)
 
     @classmethod
     def identity_in_what_is_sent(

@@ -5,20 +5,20 @@ and an agent tool's API client reads the platform near a request it never puts i
 is followed through a function's return value and into a sender's parameter; an agent-run
 script whose flow carries no identity is not blocked as a beacon.
 
-The same holds in an install hook where the language's flow is followed far enough to say so:
+An install hook is not read by what it sends, in either language: a callback from code that runs
+at install is a beacon with or without the machine's identity in its payload. A narrower rule for
+Python install hooks (identity IN what is sent) took the block from 5 PyPI malware units of the
+development half and was dropped (reviews/mcp-98/17):
 
 ```
-  Python install script: reads the host name, prints it, downloads a release     ──► no beacon
+  Python install script: reads the host name, prints it, downloads a release     ──► a beacon (nearness)
   Python install script: puts the host name in the request                        ──► a beacon
   JavaScript install script: the host name, the user name or the home directory
                              in the request                                       ──► a beacon (nearness)
   agent's JavaScript tool: the home directory in the request                      ──► a beacon (flow)
   agent's JavaScript tool: the host name logged beside a request                  ──► no beacon
 ```
-Python's flow is followed across functions and containers, so a Python install hook that logged
-the host it ran on beside a download was blocked on nearness alone. JavaScript's stops at a
-function's return, a DNS name and a computed property: an install hook there keeps being read by
-nearness, and in an agent's tool the home directory is identity where it reaches a request, as
+In an agent's tool the home directory is identity where it reaches a request, as
 `process.env.HOME` is.
 
 Provenance (the install-hook classes at the end): every fixture there is benign carrier text
@@ -975,7 +975,8 @@ class TestAnInstallScriptInJavaScript:
 
 
 class TestAnInstallScriptInPython:
-    def test_a_host_name_printed_beside_a_download_is_not_a_beacon(self, tmp_path):
+    def test_a_host_name_printed_beside_a_download_is_still_a_beacon(self, tmp_path):
+        # A callback from an install hook is a beacon whether or not its payload names the host.
         setup = (
             "import socket\n"
             "import urllib.request\n"
@@ -984,7 +985,7 @@ class TestAnInstallScriptInPython:
             "urllib.request.urlopen('https://downloads.example.invalid/demo-tool-1.0.0.bin')\n"
             "setup(name='demo-installer', version='1.0.0')\n"
         )
-        assert not Archive.beacons(Archive.sdist(tmp_path, setup))
+        assert Archive.beacons(Archive.sdist(tmp_path, setup))
 
     def test_a_host_name_in_the_request_is_a_beacon(self, tmp_path):
         setup = (
