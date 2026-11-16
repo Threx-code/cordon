@@ -879,6 +879,7 @@
   "test_bazel_provenance.py": "intel/provenance",
   "test_beacon_identity_flow.py": "detect/code/capability",
   "test_homedir_reconnaissance.py": "rules",
+  "test_parameter_labels.py": "detect/agents/mcp_servers",
   "test_bench_as_published.py": "bench",
   "test_bench_budgets.py": "bench",
   "test_area_fit.py": "bench",

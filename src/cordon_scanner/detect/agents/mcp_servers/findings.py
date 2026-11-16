@@ -121,13 +121,17 @@ class McpServerFindings:
         text = unit.content.text
         seen: set[str] = set()
         own = OwnVocabulary.declared(text, unit.content.path)
+        labels = McpServerSource.parameter_labels(text, unit.content.path)
         for description in McpServerSource._tool_descriptions(text, unit.content.path):
             if description in seen:
                 continue
             seen.add(description)
             yield from AgentTextFindings.intents(unit, ctx, description, within=text)
             reason = McpServerSource._poisoned_description(description, own)
-            if reason is None:
+            # An argument's label of a few words (`.describe("First run ID")`) names a field: the
+            # sequence and learned readings are of descriptions, and read these as orders.
+            label = description in labels and len(description.split()) < McpServerSource.LABEL_WORDS
+            if reason is None and not label:
                 # The steps an attack on the agent takes, in a combination no real server's own
                 # description carries (`semantics.PRECISE`).
                 chain = AgentSemantics.precise(description)
@@ -138,7 +142,7 @@ class McpServerFindings:
             # The learned reading (`detect/agents/mcp_servers/description_model.py`): poisoning written as ordinary prose,
             # which no phrase rule narrow enough to stay quiet catches. Blocks above `block`;
             # reported for review between `warn` and `block`.
-            score = McpDescriptionModel.score(description)
+            score = None if label else McpDescriptionModel.score(description)
             limits = McpDescriptionModel.thresholds()
             learned = score is not None and limits is not None and score >= limits[1]
             # ATR's phrase rules, read beside the model: on 980 real MCP servers they blocked 11
