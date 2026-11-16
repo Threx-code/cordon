@@ -66,6 +66,28 @@ class JavaScriptFlow:
         return text[open_paren + 1 : end]
 
     @staticmethod
+    def _first_argument(arguments: str) -> str:
+        """The text of the first top-level argument of a call, strings and brackets set aside."""
+        depth, index, quote = 0, 0, ""
+        while index < len(arguments):
+            character = arguments[index]
+            if quote:
+                if character == "\\":
+                    index += 1
+                elif character == quote:
+                    quote = ""
+            elif character in "\"'`":
+                quote = character
+            elif character in "([{":
+                depth += 1
+            elif character in ")]}":
+                depth -= 1
+            elif character == "," and depth == 0:
+                return arguments[:index]
+            index += 1
+        return arguments
+
+    @staticmethod
     def findings(text: str) -> list[tuple[int, str, str]]:
         """`(offset of the request call, credential name, host)` for each misdirected send."""
         credentials: dict[str, str] = {}  # bound name -> credential name
@@ -100,12 +122,17 @@ class JavaScriptFlow:
             named.update(credentials[w] for w in words & set(credentials))
             if not named:
                 continue
+            # Where the request goes is its first argument (a URL, a name bound to one, or the options
+            # object that holds it); another URL in the call is a header's `Referer` or `Origin`, a
+            # documentation link, a fallback -- not the destination.
+            where = JavaScriptFlow._first_argument(arguments)
+            where_words = set(re.findall(r"[A-Za-z_$][\w$]*", where))
             destinations = {
                 h
-                for h in (SecretFlow.host_of(u) for u in JavaScriptFlow._URL.findall(arguments))
+                for h in (SecretFlow.host_of(u) for u in JavaScriptFlow._URL.findall(where))
                 if h
             }
-            destinations.update(hosts[w] for w in words & set(hosts))
+            destinations.update(hosts[w] for w in where_words & set(hosts))
             for key in sorted(named):
                 for host in sorted(destinations):
                     if SecretFlow.misdirected(key, host):

