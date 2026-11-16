@@ -131,7 +131,12 @@ class McpServerFindings:
             # An argument's label of a few words (`.describe("First run ID")`) names a field: the
             # sequence and learned readings are of descriptions, and read these as orders.
             label = description in labels and len(description.split()) < McpServerSource.LABEL_WORDS
-            if reason is None and not label:
+            # Which readings fired, as codes (`Explanation.basis`): the message says one reason in
+            # words; the basis records every reading, the model's score beside a phrase or chain too.
+            basis = ["description"]
+            if reason is not None:
+                basis.append(McpServerSource.reason_code(reason))
+            elif not label:
                 # The steps an attack on the agent takes, in a combination no real server's own
                 # description carries (`semantics.PRECISE`).
                 chain = AgentSemantics.precise(description)
@@ -139,6 +144,7 @@ class McpServerFindings:
                     description, chain, own, "description"
                 ):
                     reason = f"gives {AgentSemantics.explain(chain)}"
+                    basis.append(McpServerFindings.chain_code(chain))
             # The learned reading (`detect/agents/mcp_servers/description_model.py`): poisoning written as ordinary prose,
             # which no phrase rule narrow enough to stay quiet catches. Blocks above `block`;
             # reported for review between `warn` and `block`.
@@ -157,6 +163,8 @@ class McpServerFindings:
                     else f" It reads as instructions to the agent rather than a description of the "
                     f"tool (model score {score:.2f})."
                 )
+                if learned and score is not None and limits is not None:
+                    basis.append(McpServerFindings.model_code(score, limits[0]))
                 yield AgentFinding.at_text(
                     "SUSPECT.MCP.TOOL_DESCRIPTION.001",
                     unit,
@@ -165,6 +173,7 @@ class McpServerFindings:
                     description[:80],
                     message=RULES["SUSPECT.MCP.TOOL_DESCRIPTION.001"].message + why,
                     severity=None if blocking else Severity.MEDIUM,
+                    basis=tuple(basis),
                 )
             yield from AgentTextFindings.threat_rules(
                 unit, ctx, description, ATR_TEXT_KINDS, within=text, unconfirmed=unconfirmed
@@ -309,6 +318,7 @@ class McpServerFindings:
                         message=RULES["SUSPECT.MCP.TOOL_DESCRIPTION.001"].message
                         + " The text is what a tool returns, and it wraps text in a tag "
                         "addressed to the model.",
+                        basis=("return", "wrapped"),
                     )
                     continue
                 chain = AgentSemantics.precise(returned, "return")
@@ -324,6 +334,7 @@ class McpServerFindings:
                         message=RULES["SUSPECT.MCP.TOOL_DESCRIPTION.001"].message
                         + f" The text is what a tool returns, and it gives "
                         f"{AgentSemantics.explain(chain)}.",
+                        basis=("return", McpServerFindings.chain_code(chain)),
                     )
                     continue
                 if RESULT_SENDS_TO_URL.search(returned) or ORDERS_A_COMMAND.search(returned):
@@ -336,6 +347,7 @@ class McpServerFindings:
                         message=RULES["SUSPECT.MCP.TOOL_DESCRIPTION.001"].message
                         + " The text is what a tool returns, and it sends the agent to call a "
                         "tool on a web address the result supplies, or to run a shell command.",
+                        basis=("return", "url_or_command"),
                     )
                     continue
                 score = McpDescriptionModel.score(returned, "return")
@@ -357,7 +369,19 @@ class McpServerFindings:
                     + " The text is what a tool returns, and it reads as instructions to the "
                     f"agent rather than a result (model score {score:.2f}).",
                     severity=None if score >= limits[0] and not about_own else Severity.MEDIUM,
+                    basis=("return", McpServerFindings.model_code(score, limits[0]))
+                    + (("own_flow",) if about_own else ()),
                 )
+
+    @staticmethod
+    def chain_code(chain: tuple[str, ...]) -> str:
+        """The `explanation.basis` code of a precise chain: its step names, in order."""
+        return "chain:" + "+".join(chain)
+
+    @staticmethod
+    def model_code(score: float, block: float) -> str:
+        """The `explanation.basis` code of the learned reading: its score and the block line."""
+        return f"model={score:.2f}/{block:.4f}"
 
     @staticmethod
     def _about_own(returned: str, own: frozenset[str]) -> bool:
