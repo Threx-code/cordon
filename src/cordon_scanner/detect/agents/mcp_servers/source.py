@@ -13,6 +13,7 @@ from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.detect.agents import configuration
 from cordon_scanner.detect.agents.mcp_servers.own_vocabulary import OwnVocabulary
 from cordon_scanner.detect.agents.mcp_servers.registrations import ToolRegistrations
+from cordon_scanner.detect.agents.semantics import VERB
 from cordon_scanner.detect.agents.text_patterns import (
     AGENT_CHANNEL,
     EXFIL_PATHS,
@@ -146,10 +147,11 @@ _ALTERS: Final = re.compile(
 
 _MOVES_CONTENT: Final = re.compile(
     r"(?i)\b(?:read|cat|include|pass|send|attach|upload|copy|forward|append|paste|post|transmit|"
-    r"exfiltrat\w{0,5}|contents?\s+of)\b"
+    r"exfiltrat(?:e|es|ed|ing)|contents?\s+of)\b"
 )
 """A verb that takes a file's contents somewhere: what turns naming a credential file into an
-instruction to the agent. `Set META_ACCESS_TOKEN in your .env` names one and moves nothing."""
+instruction to the agent. `Set META_ACCESS_TOKEN in your .env` names one and moves nothing, and
+nor does a tool that hunts `.env` exfiltration: the noun names a threat, the verb is the order."""
 
 #: A tool that says it is out of service and names the one to call instead: the agent is moved
 #: off the tool the user chose (MCP-SafetyBench "Tool Redirection", review 98).
@@ -309,6 +311,28 @@ words, `<IMPORTANT>...</IMPORTANT>` (`McpServerSource._wrapped`): not `<secret>`
 descriptions use as placeholders (`?auth=<secret>`), and not a security tool naming the markers it
 strips (`<system>, </system>`)."""
 
+_NEGATION: Final = re.compile(r"(?i)\b(?:not|never|cannot)\b|n't\b")
+"""A word that negates what follows it."""
+
+_HESITATION: Final = re.compile(
+    r"(?i)(?:hesitat|wait|worr|bother|paus|stop|need|delay|forget|fear|refrain|hold)\w{0,6}|be|being"
+)
+"""The verb a negation puts first when it is not a requirement at all: "do not hesitate", "no need",
+"don't wait", "do not worry". What follows it is permission to go on, not a duty to tell."""
+
+_SCOPE_ENDS: Final = re.compile(
+    rf"(?i)[;:]|\b(?:and|then|but|so|just|also|instead)\b"
+    rf"|,\s{{0,3}}(?:(?:and|then|so|just|please)\s{{1,3}})?(?:{VERB}|proceed|continue|act|go|do|carry|keep)\b"
+)
+"""What ends the reach of a negation: a semicolon or colon, "and", "then", "but", "so", "just", or
+a comma and a fresh order. "Do not wait, proceed without telling the user": the negation is on
+waiting, and what comes after the comma is a new order."""
+
+_SCOPE_WORDS: Final = 13
+"""The negated verb and at most twelve words after it, up to the "without" it governs. A list of
+what must not be filled in runs to eight after the verb ("auto-fill values from guesses, prior
+context, or app metadata without showing the user ...")."""
+
 _ENV_DUMP: Final = re.compile(
     r"(?i)\boutput\s+of\s+`?(?:env|printenv|set)\b|\benvironment\s+variables\b"
 )
@@ -367,7 +391,7 @@ class McpServerSource:
             return "carries invisible characters"
         if McpServerSource._wrapped(description):
             return "wraps text in a tag addressed to the model"
-        if SECRECY.search(description):
+        if McpServerSource._keeps_from_user(description):
             return "asks the agent to keep something from the user"
         sentences = McpServerSource.sentences(description)
         if any(
@@ -469,6 +493,37 @@ class McpServerSource:
                         )
                     )
         return spans
+
+    @staticmethod
+    def _keeps_from_user(description: str) -> bool:
+        """Whether the text asks the agent to keep something from the user. "Do not submit the form
+        without telling the user" asks for the opposite: a `without` under a negation that governs
+        the very verb it modifies is a requirement to tell, not a secret."""
+        for match in SECRECY.finditer(description):
+            if match.group(0)[:7].lower() == "without":
+                start = max(description.rfind(stop, 0, match.start()) for stop in ".!?\n") + 1
+                before = description[max(start, match.start() - 200) : match.start()]
+                if McpServerSource._negation_governs(before):
+                    continue
+            return True
+        return False
+
+    @staticmethod
+    def _negation_governs(before: str) -> bool:
+        """Whether the negation closest before a "without" is on the verb phrase it modifies: the
+        negated verb, then a few words, then "without". Not when it is a hesitation ("do not
+        hesitate to proceed without ..."), when a semicolon, "and", "then", "so" or a comma and a
+        new order sits between them, or when the verb phrase is long enough to have moved on."""
+        negations = list(_NEGATION.finditer(before))
+        if not negations:
+            return False
+        scope = before[negations[-1].end() :]
+        words = scope.split()
+        return (
+            0 < len(words) <= _SCOPE_WORDS
+            and _HESITATION.fullmatch(words[0].strip(",.;:\"'()")) is None
+            and _SCOPE_ENDS.search(scope) is None
+        )
 
     @staticmethod
     def _wrapped(description: str) -> bool:
@@ -597,7 +652,9 @@ class McpServerSource:
             if not ToolRegistrations.inside(spans, match.start()):
                 continue
             literal = "".join(
-                McpServerSource._statement_literals(text, match.start("arg"), single=False)
+                McpServerSource._statement_literals(
+                    text, match.start("arg"), single=False, argument=True
+                )
             )
             if match.group("arg")[0] not in "'\"`":
                 literal = McpServerSource._constant(text, match.group("arg"))
@@ -618,7 +675,9 @@ class McpServerSource:
         )
         if definition is None:
             return ""
-        return "".join(McpServerSource._statement_literals(text, definition.end(), single=False))
+        return "".join(
+            McpServerSource._statement_literals(text, definition.end(), single=False, argument=True)
+        )
 
     @staticmethod
     def _in_a_message(text: str, at: int) -> bool:
@@ -653,18 +712,27 @@ class McpServerSource:
         return _ROLE_KEY.search(keys) is not None
 
     @staticmethod
-    def _statement_literals(text: str, index: int, *, single: bool) -> Iterator[str]:
+    def _statement_literals(
+        text: str, index: int, *, single: bool, argument: bool = False
+    ) -> Iterator[str]:
         """String literals from `index` to the end of the statement, escapes decoded
         (`_statement_spans` without the positions)."""
         return (
-            literal for _, literal in McpServerSource._statement_spans(text, index, single=single)
+            literal
+            for _, literal in McpServerSource._statement_spans(
+                text, index, single=single, argument=argument
+            )
         )
 
     @staticmethod
-    def _statement_spans(text: str, index: int, *, single: bool) -> Iterator[tuple[int, str]]:
+    def _statement_spans(
+        text: str, index: int, *, single: bool, argument: bool = False
+    ) -> Iterator[tuple[int, str]]:
         """Each string literal from `index` to the end of the statement, with the offset of its
         opening quote, escapes decoded. The statement ends at a newline or `;` outside brackets,
-        or after the first literal when `single`; never more than `_RETURN_REACH` characters on."""
+        or after the first literal when `single`, or at the comma that ends an `argument` (a
+        description is the second argument of a registration, not the schema and handler after it
+        on a compact or bundled line); never more than `_RETURN_REACH` characters on."""
         end = min(len(text), index + _RETURN_REACH)
         depth = 0
         while index < end:
@@ -693,7 +761,7 @@ class McpServerSource:
                 if depth < 0:
                     return
             elif (depth == 0 and (char == ";" or (char == "\n" and text[index - 1] != "\\"))) or (
-                single and depth == 0 and char == ","
+                (single or argument) and depth == 0 and char == ","
             ):
                 return
             index += 1

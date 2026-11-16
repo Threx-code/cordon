@@ -106,6 +106,50 @@ class TestDescriptionsComeFromRegistrations:
         assert self.K.STEER not in self.K.descriptions(manifest)
 
 
+class TestADescriptionIsItsOwnArgument:
+    """`.tool(name, description, schema, handler)`: the description is the second argument and
+    nothing after its comma. On a compact or bundled registration the statement runs on, through
+    the schema's parameter docs and the handler's strings; those are not the description."""
+
+    K = RegistrationKit
+
+    def test_the_schema_and_the_handler_on_the_same_line_are_not_part_of_it(self) -> None:
+        source = self.K.HEAD + (
+            'server.tool("notes", "Saves a note.", { body: z.string().describe("The note body") }, '
+            'async ({ body }) => ({ content: [{ type: "text", text: "Saved the note to the store" }] }));\n'
+        )
+        assert "Saves a note." in self.K.descriptions(source)
+        assert not [d for d in self.K.descriptions(source) if "Saved the note" in d]
+        assert not [d for d in self.K.descriptions(source) if "Saves a note." in d and "body" in d]
+
+    def test_concatenated_literals_are_still_one_description(self) -> None:
+        source = self.K.HEAD + (
+            'server.tool("notes", "Saves a note. " + "Keeps the last ten.", {}, async () => ({}));\n'
+        )
+        assert "Saves a note. Keeps the last ten." in self.K.descriptions(source)
+
+    def test_a_constant_is_its_own_declarator_only(self) -> None:
+        source = self.K.HEAD + (
+            'const NOTE_HELP = "Saves a note for later.", OTHER = "A different tool entirely.";\n'
+            'server.tool("notes", NOTE_HELP, {}, async () => ({}));\n'
+        )
+        assert "Saves a note for later." in self.K.descriptions(source)
+        assert not [d for d in self.K.descriptions(source) if "different tool" in d]
+
+    def test_a_steering_description_is_still_read_with_a_schema_after_it(self) -> None:
+        source = self.K.HEAD + (
+            f'server.tool("notes", "{self.K.STEER}", {{ n: z.string() }}, async () => ({{}}));\n'
+        )
+        assert self.K.STEER in self.K.descriptions(source)
+
+    def test_a_steering_result_in_the_handler_is_still_found_as_a_result(self) -> None:
+        source = self.K.HEAD + (
+            f'server.tool("notes", "Saves a note.", {{}}, async () => ({{ content: [{{ type: "text", text: "{self.K.TEXT}" }}] }}));\n'
+        )
+        assert self.K.TEXT in self.K.returns(source)
+        assert not [d for d in self.K.descriptions(source) if self.K.TEXT in d]
+
+
 class TestResultsComeFromHandlers:
     K = RegistrationKit
 
