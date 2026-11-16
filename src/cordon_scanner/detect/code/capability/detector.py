@@ -299,7 +299,9 @@ class QuotedPythonCalls:
         other hit in the file (the pattern records its first match, so a quoted decoy must not hide a
         real call: any call of that capability in the code keeps every hit of it), and only in a file
         that runs no string as code (`InertLiterals.quoted_call_spans`: no `exec`, `eval` or
-        `compile`). Shell text in a string (`curl ... | sh`) is not call syntax and is not touched.
+        `compile`) and in which no string with call syntax in it is handed to a process, sent or
+        written out (write-then-run: the file's call text is live, all of it). Shell text in a
+        string (`curl ... | sh`) is not call syntax and is not touched.
         A file that does not parse drops nothing (fail closed)."""
         if not any(h.capability in QuotedPythonCalls.CAPABILITIES for h in hits):
             return hits

