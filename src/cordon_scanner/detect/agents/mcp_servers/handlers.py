@@ -209,11 +209,14 @@ class McpCode:
         said = function.name + " " + (ast.get_docstring(function) or "")[:600]
         if cls._is_dispatcher(function):
             said += " " + listed
-            said += " " + " ".join(
-                c.value[:300]
-                for c in ast.walk(function)
-                if isinstance(c, ast.Constant) and isinstance(c.value, str)
-            )[:2000]
+            said += (
+                " "
+                + " ".join(
+                    c.value[:300]
+                    for c in ast.walk(function)
+                    if isinstance(c, ast.Constant) and isinstance(c.value, str)
+                )[:2000]
+            )
         return said
 
     @staticmethod

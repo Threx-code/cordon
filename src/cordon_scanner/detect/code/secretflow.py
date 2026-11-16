@@ -128,9 +128,7 @@ class JavaScriptFlow:
             where = JavaScriptFlow._first_argument(arguments)
             where_words = set(re.findall(r"[A-Za-z_$][\w$]*", where))
             destinations = {
-                h
-                for h in (SecretFlow.host_of(u) for u in JavaScriptFlow._URL.findall(where))
-                if h
+                h for h in (SecretFlow.host_of(u) for u in JavaScriptFlow._URL.findall(where)) if h
             }
             destinations.update(hosts[w] for w in where_words & set(hosts))
             for key in sorted(named):

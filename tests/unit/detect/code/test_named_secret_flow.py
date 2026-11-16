@@ -204,4 +204,3 @@ class TestJavaScript:
         [(offset, name, host)] = JavaScriptFlow.findings(text)
         assert text[offset:].startswith("fetch") and name == "GITHUB_TOKEN"
         assert host == "cdn.example.invalid"
-

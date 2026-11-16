@@ -133,7 +133,9 @@ class TestADispatcherThatSaysItRunsCommands:
         assert McpCode.shell_from_input_graded(text) == []
 
     def test_the_tool_list_says_commands(self) -> None:
-        text = LOW + self.LISTED + "@server.call_tool()\n" + self.DISPATCH.replace("run_command", "go")
+        text = (
+            LOW + self.LISTED + "@server.call_tool()\n" + self.DISPATCH.replace("run_command", "go")
+        )
         assert McpCode.shell_from_input(text) == []
 
     def test_a_dispatcher_that_names_no_command_tool_is_still_read(self) -> None:
@@ -142,4 +144,6 @@ class TestADispatcherThatSaysItRunsCommands:
 
     def test_a_prefix_gate_is_a_backdoor_whatever_the_tools_are_called(self) -> None:
         text = LOW + self.LISTED + "@server.call_tool()\n" + GATED
-        assert [name for _, name, triggered in McpCode.shell_from_input_graded(text) if triggered] == ["handler"]
+        assert [
+            name for _, name, triggered in McpCode.shell_from_input_graded(text) if triggered
+        ] == ["handler"]
