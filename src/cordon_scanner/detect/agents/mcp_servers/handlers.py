@@ -27,7 +27,8 @@ from typing import Any, ClassVar, Final
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 
-_TOOL_DECORATOR: Final = re.compile(r"\btool\b|\.tool\(|tool\s*$")
+#: `@mcp.tool()`, and the SDK's low-level `@server.call_tool()` (on FastMCP's inner `_mcp_server` too).
+_TOOL_DECORATOR: Final = re.compile(r"\btool\b|\.tool\(|tool\s*$|\bcall_tool\b")
 _RUNS_COMMANDS: Final = re.compile(
     r"(?i)exec|run|shell|command|terminal|bash|\bcmd\b|script|process|subprocess|kubectl|"
     r"powershell|eval|console|ssh"
@@ -63,10 +64,11 @@ class McpCode:
         {"system", "popen", "getoutput", "getstatusoutput"}
     )
 
-    @staticmethod
-    def _parse(text: str) -> ast.Module | None:
+    @classmethod
+    def _parse(cls, text: str) -> ast.Module | None:
         try:
             tree: ast.Module = PythonSyntax.parse(text)
+            cls._mark_registered_tools(tree)
             return tree
         except (SyntaxError, ValueError):
             # S2: covered by SOURCE.UNPARSED at every running file (install closure, import entries, command modules); proven by test_not_python3.py TestPackageSourceThatDoesNotParse
@@ -149,8 +151,38 @@ class McpCode:
         return out
 
     @staticmethod
+    def _mark_registered_tools(tree: ast.Module) -> None:
+        """Flag the functions the SDK's low-level `call_tool` is handed without a decorator:
+        `server.call_tool()(handler)` and `server.call_tool = handler`. The decorator form is read
+        from the function itself (`_TOOL_DECORATOR`); these two are read from where it is registered."""
+        registered: set[str] = set()
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Call)
+                and isinstance(node.func.func, ast.Attribute)
+                and node.func.func.attr == "call_tool"
+                and node.args
+                and isinstance(node.args[0], ast.Name)
+            ):
+                registered.add(node.args[0].id)
+            elif (
+                isinstance(node, ast.Assign)
+                and any(
+                    isinstance(t, ast.Attribute) and t.attr == "call_tool" for t in node.targets
+                )
+                and isinstance(node.value, ast.Name)
+            ):
+                registered.add(node.value.id)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name in registered:
+                node.registered_tool = True  # type: ignore[union-attr]
+
+    @staticmethod
     def _is_tool(function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-        return any(_TOOL_DECORATOR.search(ast.unparse(d)) for d in function.decorator_list)
+        return getattr(function, "registered_tool", False) or any(
+            _TOOL_DECORATOR.search(ast.unparse(d)) for d in function.decorator_list
+        )
 
     @classmethod
     def triggered(
