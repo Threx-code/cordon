@@ -97,6 +97,7 @@ class Ceilings:
         """The package verdict over everything this scan found (`core/verdict.py`), then the
         intent layer over what the package's code does (`core/intent.py`). `repository`: the
         target is no published package, so a MALICIOUS finding keeps its grade."""
+        from cordon_scanner.decide.composites import PackageComposites
         from cordon_scanner.decide.intent import Intent
         from cordon_scanner.decide.verdict import Verdict
 
@@ -133,6 +134,11 @@ class Ceilings:
         area = str(verdict.get("area", ""))
         review = Intent.review(verdict.get("package", {}), area, intent)
         Ceilings.review_verdict(review, verdict, graded, area)
+        # After everything else, over what the rules left: a package that publishes itself, decodes
+        # data to run it and fetches code to run it spreads (`decide/composites.py`).
+        worm = PackageComposites.worm(graded)
+        if worm is not None:
+            graded.append(worm)
         return graded, verdict
 
     @staticmethod

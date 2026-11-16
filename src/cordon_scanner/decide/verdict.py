@@ -145,6 +145,20 @@ class Verdict:
     RULE: ClassVar[str] = VerdictFeatures.OWN_RULE
     #: The line every package without one of its own answers to: the strictest of them all.
     FALLBACK: ClassVar[str] = "package"
+
+    #: A fraction of the model's block line, by area, that the package is held to. MCP servers are
+    #: blocked at 0.9 of it (candidate, cordon-a0 2026-11-15): on the 350-unit malicious dev set and
+    #: the legitimate dev, mcpc, other and large-harvest sets (reviews/mcp-98/17) it adds 6 of the
+    #: 66 content misses and 2 of 12,387 legitimate units (mcpc 1, harvest 1); at 1.0 nothing
+    #: changes. Pinned here, not in the model file, so the model stays what was fitted; the MCP
+    #: area is not refitted before the sealed finals decide whether the line stays.
+    LINE_SCALE: ClassVar[dict[str, float]] = {"mcp": 0.9}
+
+    @staticmethod
+    def line(areas: dict[str, Any], area: str) -> float:
+        """The score at which `area` blocks: the model's line for it, scaled by `LINE_SCALE`."""
+        return float(areas.get(area, areas[Verdict.FALLBACK])) * Verdict.LINE_SCALE.get(area, 1.0)
+
     _PYPI: ClassVar[re.Pattern[str]] = re.compile(r"^[^/]+/PKG-INFO$|^[^/]+\.dist-info/METADATA$")
     #: Each ecosystem's layout, read on the outermost archive only (a jar bundled in a Gradle
     #: repository is not a Maven release), measured on the benign corpus (2026-10-19). Release
@@ -336,7 +350,7 @@ class Verdict:
         # An area with trees of its own (agent skills read nothing like libraries) is scored by them.
         score = VerdictModel.score(model.get("by_area", {}).get(area, model), scored)
         areas = model["areas"]
-        block = float(areas.get(area, areas[Verdict.FALLBACK]))
+        block = Verdict.line(areas, area)
         summary.update(score=round(score, 4), block=block, model=model.get("version", ""))
         # The model lowers a block only in an area it was trained to separate (`lift_areas`: the
         # allowlist of areas with enough training malware -- the shipped model lists `npm` and

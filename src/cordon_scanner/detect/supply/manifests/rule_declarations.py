@@ -207,6 +207,26 @@ _DECLARED: tuple[DeclaredRule, ...] = (
         remediation="Read each finding listed. Do not install until explained.",
     ),
     DeclaredRule(
+        id="MALWARE.WORM.SELF_PROPAGATION.001",
+        title="The package publishes itself, decodes data to run it and fetches code to run it",
+        severity=Severity.CRITICAL,
+        confidence=Confidence.HIGH,
+        category=Category.MALICIOUS,
+        detector="verdict",
+        message=(
+            "This package carries all three of: publishing itself to a registry "
+            "(`SUSPECT.REGISTRY.SELF_PUBLISH.001`), decoding data and running it "
+            "(`SUSPECT.DECODE_EXEC.001`) and fetching code and running it "
+            "(`SUSPECT.DROPPER.REMOTE_CODE.001`). Each alone is ordinary in a release tool, a "
+            "loader or an updater; all three in one package are self-propagation."
+        ),
+        references=(references.OBSCURED_SECURITY_DATA,),
+        remediation=(
+            "Do not install. Read the three findings it names: a package that republishes "
+            "itself from the machine that installs it carries its payload to the next one."
+        ),
+    ),
+    DeclaredRule(
         id="SUSPECT.INTENT.UNEXPLAINED_EFFECT.001",
         title="The package's effects are not explained by what it says it is",
         severity=Severity.HIGH,
