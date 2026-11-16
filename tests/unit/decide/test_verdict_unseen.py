@@ -184,6 +184,10 @@ class TestNoRuleIsLoweredUnseenByAccident:
             "MALWARE.MODEL.PICKLE_EXEC.001",
             "MALWARE.PROTESTWARE.001",
             "MALWARE.RULEFILE.MATCH.001",
+            # Added after the verdict is decided (`decide/composites.py`), so no verdict ever lowers
+            # it; listed, as SUSPECT.REGISTRY.REVIEW.001 is, because the model has not seen it and it
+            # is not in `LATER_RULES` (that list is part of the feature version).
+            "MALWARE.WORM.SELF_PROPAGATION.001",
             "SUSPECT.AGENT.ATR.MODEL_SECURITY.001",
             "SUSPECT.AGENT.AUTH_BYPASS_EDIT.001",
             "SUSPECT.AGENT.CREDENTIAL_EXFIL.001",  # measured 2 Nov: 0 malware, 1 benign newly blocked if kept: stays

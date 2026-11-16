@@ -92,7 +92,12 @@ class TestTheTwentyEighthOfOctober:
     def test_a_repository_s_malicious_finding_beside_an_mcp_manifest_blocks(self) -> None:
         graded, summary = RepositoryKit.decide(repository=True)
         assert summary["area"] == "mcp"
-        assert summary["score"] < summary["block"] == RepositoryKit.LINE
+        # The line the package is held to is the model's, scaled for MCP (`Verdict.LINE_SCALE`).
+        assert (
+            summary["score"]
+            < summary["block"]
+            == pytest.approx(RepositoryKit.LINE * Verdict.LINE_SCALE["mcp"])
+        )
         (finding,) = graded
         assert (finding.category, finding.severity) == (Category.MALICIOUS, Severity.CRITICAL)
         assert PolicyGate._fails(finding, Policy())
