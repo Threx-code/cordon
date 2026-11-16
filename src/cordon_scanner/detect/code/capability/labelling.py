@@ -555,6 +555,29 @@ class Labelling:
             )
         return hits
 
+    @classmethod
+    def go_secret_flow(cls, content: FileContent) -> list[CapabilityHit]:
+        """`FLOW.GO.SECRET_SENT`: a named credential in a request to a host outside its home, in Go.
+        See `GoFlow` in `detect/secretflow.py`."""
+        from cordon_scanner.detect.code.secretflow import GoFlow
+
+        text = content.text
+        hits: list[CapabilityHit] = []
+        for offset, _key, _host in GoFlow.findings(text):
+            line = text.count("\n", 0, offset) + 1
+            start, end = cls._span_of_line(content, line)
+            hits.append(
+                CapabilityHit(
+                    capability=Capability.CREDENTIAL,
+                    rule_id="FLOW.GO.SECRET_SENT",
+                    byte_start=start,
+                    byte_end=end,
+                    line=line,
+                    resolved=True,
+                )
+            )
+        return hits
+
     @staticmethod
     def _loaded(text: str) -> frozenset[int]:
         """The lines that run when the module is imported (`PersistAtLoad.load_time_lines`)."""

