@@ -146,13 +146,12 @@ class Verdict:
     #: The line every package without one of its own answers to: the strictest of them all.
     FALLBACK: ClassVar[str] = "package"
 
-    #: A fraction of the model's block line, by area, that the package is held to. MCP servers are
-    #: blocked at 0.9 of it (candidate, cordon-a0 2026-11-15): on the 350-unit malicious dev set and
-    #: the legitimate dev, mcpc, other and large-harvest sets (reviews/mcp-98/17) it adds 6 of the
-    #: 66 content misses and 2 of 12,387 legitimate units (mcpc 1, harvest 1); at 1.0 nothing
-    #: changes. Pinned here, not in the model file, so the model stays what was fitted; the MCP
-    #: area is not refitted before the sealed finals decide whether the line stays.
-    LINE_SCALE: ClassVar[dict[str, float]] = {"mcp": 0.9}
+    #: A fraction of the model's block line, by area, that the package is held to; empty. MCP servers
+    #: were held to 0.9 of the shared model's line until the MCP area was fitted on its own rows
+    #: (reviews/mcp-98/20): its line is the out-of-fold score the legitimate MCP rows exceed at
+    #: 0.05%, the operating point itself, so a scale on top would apply it twice. The six malicious
+    #: units the 0.9 had gained stay blocked out of fold.
+    LINE_SCALE: ClassVar[dict[str, float]] = {}
 
     @staticmethod
     def line(areas: dict[str, Any], area: str) -> float:
