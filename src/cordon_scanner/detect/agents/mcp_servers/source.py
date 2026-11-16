@@ -241,9 +241,11 @@ _ORDERS_A_REQUEST: Final = re.compile(
 
 #: Text telling the agent to change the user's shell start-up or schedule: "update the environment
 #: by adding the following line to the .bashrc file" (MCP-SafetyBench "FileSystem Poisoning").
+#: `profile` is the shell's only as the dotted file (`.profile`, `~/.profile`): "add to
+#: profile-list" and "add a note to the profile" are a user's profile in an application.
 _ORDERS_PERSISTENCE: Final = re.compile(
     r"(?i)\b(?:add|append|write|insert)(?:ing)?\b[^.]{0,60}\b(?:to|into)\s+(?:the\s+)?(?:user'?s?\s+)?"
-    r"(?:~/)?\.?(?:bashrc|zshrc|bash_profile|profile|crontab)\b"
+    r"(?:(?:~/)?\.?(?:bashrc|zshrc|bash_profile|crontab)|(?:~/)?\.profile)\b(?!-\w)"
 )
 
 #: A description overriding what the user asked for: "sets the timeout regardless of user input".
