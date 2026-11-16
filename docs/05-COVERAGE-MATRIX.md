@@ -309,6 +309,7 @@ rather than a document.
 | `MALWARE.REVERSE_SHELL.001` | critical | `composites` | malicious_code |
 | `MALWARE.REVERSE_SHELL.002` | critical | `composites` | malicious_code |
 | `MALWARE.RULEFILE.MATCH.001` | critical | `rule-file` | malicious_code |
+| `MALWARE.WORM.SELF_PROPAGATION.001` | critical | `verdict` | malicious_code |
 | `SUSPECT.CODE.MODEL.001` | high | `code-model` | malicious_code |
 | `SUSPECT.CRYPTOMINER.001` | high | `composites` | cryptomining |
 | `SUSPECT.DECODE_CHAIN.001` | critical | `composites` | malicious_code |
