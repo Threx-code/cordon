@@ -12,6 +12,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+from cordon_scanner.detect.agents.claim_guards import ClaimGuards
 from cordon_scanner.detect.agents.defensive_doc import DefensiveDoc
 from cordon_scanner.detect.agents.findings import AgentFinding
 from cordon_scanner.detect.agents.rule_catalogue import INTENT_WORDS, RULES, AgentRules
@@ -174,7 +175,9 @@ class AgentTextFindings:
         examined = text[: AgentTextFindings.ATR_TEXT_LIMIT]
         if len(examined) < len(text):
             yield AgentTextFindings._unread(unit, len(text))
-        matches = AtrEngine.evaluate(examined, kinds)
+        # A guard against announcing a result too early is no secret (`ClaimGuards`); the blanks
+        # keep every offset, so a finding is still placed in `text`.
+        matches = AtrEngine.evaluate(ClaimGuards.masked(examined), kinds)
         by_category: dict[str, list[AtrMatchFacts]] = {}
         for match in matches:
             by_category.setdefault(match.rule.category, []).append(match)
