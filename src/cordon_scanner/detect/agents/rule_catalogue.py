@@ -878,9 +878,9 @@ RULES.update(
             "its instructions tell the agent to do (a download run from a host that is not a "
             "listed installer, a document fetched and obeyed), or the instructions do what no "
             "description can claim: hide the act from the user, act without asking the user, set "
-            "the agent's own instructions aside, switch off its permission checks. Most are acts the "
-            "instruction readers already report on their own below the gate; one a description "
-            "announces is graded as before.",
+            "the agent's own instructions aside, switch off its permission checks. Reported only "
+            "where the learned reading of the skill is also at or above its warn line; most acts "
+            "are ones the instruction readers report below the gate on their own.",
             "Read what the skill says it does against what it tells the agent to do. Install it "
             "only if the description is the whole of it.",
             (ref.OWASP_LLM_PROMPT_INJECTION,),

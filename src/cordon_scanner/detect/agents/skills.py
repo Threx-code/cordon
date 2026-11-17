@@ -10,7 +10,6 @@ from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from cordon_scanner.detect.agents.configuration import AgentSafeguards
-from cordon_scanner.detect.agents.defensive_doc import DefensiveDoc
 from cordon_scanner.detect.agents.instructions import InstructionText
 from cordon_scanner.foundation.formats.datayaml import DataYaml, DataYamlError
 from cordon_scanner.foundation.models import Severity
@@ -351,8 +350,8 @@ class SkillClaims:
     #: What a skill with no declared description is read as: `unknown` (no check, except an act that
     #: is concealed, which no claim could excuse) or `nothing` (it claims no class at all).
     NO_DESCRIPTION: ClassVar[str] = "unknown"
-    #: Findings the learned skill reading made: at or above its warn line, a quoted example is not
-    #: lowered (`DefensiveDoc.lowers`).
+    #: The finding the learned skill reading makes at or above its warn line. An act counts only in
+    #: a skill that carries it (`unclaimed`).
     SKILL_MODEL_RULE: Final = "SUSPECT.AGENT.SKILL_INSTRUCTIONS.001"
     MAX_FRONT_MATTER: ClassVar[int] = 20_000
     _CLOSE: ClassVar[re.Pattern[str]] = re.compile(r"(?m)^---[ \t]*\r?$")
@@ -396,7 +395,7 @@ class SkillClaims:
 
     @staticmethod
     def unclaimed(
-        text: str, findings: Iterable[Finding], *, concealed: bool, described: bool = True
+        text: str, findings: Iterable[Finding], *, concealed: bool
     ) -> tuple[frozenset[str] | None, list[tuple[str, int, int]]]:
         """The classes the description claims (None: none declared) and the acts it does not, each
         as (act, first byte, last byte).
@@ -404,39 +403,36 @@ class SkillClaims:
         An act is a reader's finding at MEDIUM: one already at the gate needs no help, and the
         official installer's LOW finding is recorded as an installer. Naming a switch that turns
         the agent's own checks off (`AgentSafeguards`) is an act too, unless a prohibition comes
-        before it in its sentence ("never run with ..."). A quoted example in a document about the
-        attack is not an act (`DefensiveDoc.lowers`, with the skill model's reading beside it). An
+        before it in its sentence ("never run with ..."). An
         act no description can claim (`REQUIRES` names none) and an act that is concealed are
         unclaimed whatever the description says; any other is unclaimed when the description does
-        not claim what it needs. `described` is False for an instruction file that has no
-        description to read: only the acts nobody can claim count there."""
-        front = SkillClaims.front_matter(text) if described else None
+        not claim what it needs. None of this counts unless the learned reading of the skill scores
+        it at or above its warn line (`SKILL_MODEL_RULE` among the findings): the act is one weak
+        reading and the model is another, and the pair is what the benign skills do not give."""
+        front = SkillClaims.front_matter(text)
         claimed = SkillClaims.claimed(front) if front is not None else None
         reading = claimed
-        if reading is None and described and SkillClaims.NO_DESCRIPTION == "nothing":
+        if reading is None and SkillClaims.NO_DESCRIPTION == "nothing":
             reading = frozenset()
         held = list(findings)
         model_agrees = any(f.rule_id == SkillClaims.SKILL_MODEL_RULE for f in held)
-        raw = text.encode("utf-8")
+        if not model_agrees:
+            # Two independent weak readings, not one: the act, and the learned reading of the skill
+            # at or above its warn line. Alone the act cost 30 benign wild skills for 29 malicious
+            # (skills dev half, 2.12% to 2.96%); with the model beside it, 1 for 19 (the plain
+            # form is kept in the history, reviews/mcp-98/31).
+            return claimed, []
         acts: list[tuple[str, int, int]] = []
         for finding in held:
             act = SkillClaims.ACT_RULE.get(finding.rule_id)
             if act is None or finding.severity != Severity.MEDIUM:
                 continue
             first, last = finding.location.byte_start or 0, finding.location.byte_end or 0
-            start = len(raw[:first].decode("utf-8", "ignore"))
-            end = start + len(raw[first:last].decode("utf-8", "ignore"))
-            if DefensiveDoc.lowers(True, text, start, end, model_agrees=model_agrees):
-                continue
             needs = SkillClaims.REQUIRES.get(act)
             if concealed or needs is None or (reading is not None and needs not in reading):
                 acts.append((act, first, last))
         switch = AgentSafeguards.in_text(text)
-        if (
-            switch is not None
-            and not InstructionText.prohibited(text, switch[0])
-            and not DefensiveDoc.lowers(True, text, *switch, model_agrees=model_agrees)
-        ):
+        if switch is not None and not InstructionText.prohibited(text, switch[0]):
             acts.append(
                 (
                     "switches_off_checks",

@@ -158,16 +158,15 @@ class InstructionFileFindings:
     def _unclaimed(
         cls, unit: FileUnit, ctx: ScanContext, found: list[Finding]
     ) -> Iterator[Finding]:
-        """`SUSPECT.AGENT.SKILL_CLAIM_MISMATCH.001`: instructions that are not the scanned
-        repository's own and do what no description claims -- in a `SKILL.md`, what its description
-        does not claim, in any instruction file, what nobody can claim."""
+        """`SUSPECT.AGENT.SKILL_CLAIM_MISMATCH.001`: a third-party `SKILL.md` that the learned reading
+        scores at or above its warn line and whose instructions do what its description does not
+        claim, or what no description can claim (`SkillClaims`)."""
         path = unit.content.path
-        if not SkillOrigin.installed(path, ctx):
+        if not SkillOrigin.third_party(path, ctx):
             return
-        skill = ContainerPaths.basename(path).upper() == "SKILL.MD"
         text = unit.content.text
         hidden = InstructionText.concealed(text)
-        claimed, acts = SkillClaims.unclaimed(text, found, concealed=hidden, described=skill)
+        claimed, acts = SkillClaims.unclaimed(text, found, concealed=hidden)
         if not acts:
             return
         first_start, first_end = acts[0][1], acts[0][2]
@@ -187,7 +186,7 @@ class InstructionFileFindings:
             first_start,
             first_end,
             message=RULES["SUSPECT.AGENT.SKILL_CLAIM_MISMATCH.001"].message
-            + (f" The description claims: {said}." if skill else "")
+            + f" The description claims: {said}."
             + f" The instructions tell the agent to {done}"
             + (", and not to show the user" if hidden else "")
             + ".",
