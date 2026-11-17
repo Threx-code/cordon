@@ -828,6 +828,7 @@ rather than a document.
 | `SUSPECT.AGENT.HIDDEN_INSTRUCTION.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.HIDDEN_TEXT.001` | high | `agents` | obfuscation |
 | `SUSPECT.AGENT.HOOK.001` | medium | `agents` | install_hook |
+| `SUSPECT.AGENT.INJECTION_CORROBORATED.001` | high | `verdict` | prompt_injection |
 | `SUSPECT.AGENT.INJECTION_TEXT.001` | medium | `agents` | prompt_injection |
 | `SUSPECT.AGENT.INSTALL_REDIRECT.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.INTENT.001` | high | `agents` | prompt_injection |

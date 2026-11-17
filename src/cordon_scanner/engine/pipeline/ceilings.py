@@ -139,6 +139,11 @@ class Ceilings:
         worm = PackageComposites.worm(graded)
         if worm is not None:
             graded.append(worm)
+        # An injection phrase and the learned reading of the skill's instructions agreeing: two weak
+        # readers, neither blocking alone (`decide/composites.py`, reviews/mcp-98/21 lever A(1)).
+        injection = PackageComposites.corroborated_injection(graded)
+        if injection is not None:
+            graded.append(injection)
         return graded, verdict
 
     @staticmethod

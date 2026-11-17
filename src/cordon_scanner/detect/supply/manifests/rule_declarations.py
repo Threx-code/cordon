@@ -227,6 +227,26 @@ _DECLARED: tuple[DeclaredRule, ...] = (
         ),
     ),
     DeclaredRule(
+        id="SUSPECT.AGENT.INJECTION_CORROBORATED.001",
+        title="An injection phrase and the learned reading of the skill's instructions agree",
+        severity=Severity.HIGH,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        detector="verdict",
+        message=(
+            "An instruction in this package reads as a prompt injection to the agent-threat rules "
+            "(`SUSPECT.AGENT.ATR.PROMPT_INJECTION.001`, at medium severity and low confidence) and "
+            "the learned reading of its skill instructions scores them as written to steer the agent "
+            "(`SUSPECT.AGENT.SKILL_INSTRUCTIONS.001`). Neither blocks alone, as each is common on "
+            "benign skills; the two agreeing is not."
+        ),
+        references=(references.OBSCURED_SECURITY_DATA,),
+        remediation=(
+            "Read the skill's instructions in full, and the files they tell the agent to run, before "
+            "installing it. Install it only from an author you trust."
+        ),
+    ),
+    DeclaredRule(
         id="SUSPECT.INTENT.UNEXPLAINED_EFFECT.001",
         title="The package's effects are not explained by what it says it is",
         severity=Severity.HIGH,
