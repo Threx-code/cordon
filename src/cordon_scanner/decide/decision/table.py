@@ -22,10 +22,13 @@ class Defaults(JsonRecord):
 
     STRICTNESS: ClassVar[tuple[str, ...]] = ("warn", "review", "block")
     OUTCOMES: ClassVar[tuple[str, ...]] = ("allow", "allow_with_conditions", "review", "block")
+    #: What exceptions may do, from the most they may lift to nothing: a larger index is stricter.
+    EXCEPTIONS: ClassVar[tuple[str, ...]] = ("allow", "review", "none")
 
     on_incomplete: dict[str, str]
     unresolved: str = "block"
     on_gaps: str = "block"
+    exceptions: str = "allow"
     default: str = "allow"
     max_intel_age_s: int | None = None
     bundle_max_age_s: int | None = None
@@ -39,6 +42,7 @@ class Defaults(JsonRecord):
             Checks.one_of("Defaults", f"on_incomplete.{environment}", level, self.STRICTNESS)
         Checks.one_of("Defaults", "unresolved", self.unresolved, self.STRICTNESS)
         Checks.one_of("Defaults", "on_gaps", self.on_gaps, self.STRICTNESS)
+        Checks.one_of("Defaults", "exceptions", self.exceptions, self.EXCEPTIONS)
         Checks.one_of("Defaults", "default", self.default, self.OUTCOMES)
         Checks.whole("Defaults", "clock_bucket_s", self.clock_bucket_s, low=1)
 

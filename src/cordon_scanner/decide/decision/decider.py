@@ -69,11 +69,15 @@ class Decider:
         missing = sorted(known - set(request))
         if extra or missing:
             raise DecisionError(f"decide request: unexpected {extra} missing {missing}")
+        evidence = EvidenceSet.from_json(request["evidence"])
+        problems = evidence.request_problems()
+        if problems:
+            raise DecisionError(problems[0])
         decision = cls.decide(
             ArtifactRef.from_json(request["artifact"]),
             Context.from_json(request["context"]),
             CompiledPolicy.from_json(request["policy"]),
-            EvidenceSet.from_json(request["evidence"]),
+            evidence,
             Instants.parse(request["clock"]),
         )
         return decision.to_json()
@@ -88,7 +92,7 @@ class Decider:
             draft.raise_to(Completeness.LEVEL_STATE[level])
             other_block = other_block or level == "block"
         fired = RuleStage.run(facts, policy)
-        standing, added, lifted = Overrides.apply(facts, fired)
+        standing, added, lifted = Overrides.apply(facts, fired, policy.defaults.exceptions)
         asking = [item for item in standing if Overrides.asks_for_more(item)]
         if asking:
             cls._take(draft, asking)

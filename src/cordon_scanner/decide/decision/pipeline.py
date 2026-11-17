@@ -193,7 +193,7 @@ class Overrides:
 
     @classmethod
     def apply(
-        cls, facts: Facts, fired: list[Fired]
+        cls, facts: Facts, fired: list[Fired], permitted: str = "allow"
     ) -> tuple[list[Fired], list[Reason], str | None]:
         """(the rules that still stand, the reasons the overrides add, the state an override lifts the
         outcome to, or `None` when no override applies or a blocking rule still stands)."""
@@ -215,7 +215,7 @@ class Overrides:
         added = []
         lifted: list[str] = []
         for item in fired:
-            lowered = cls._exception(facts, item) if item in blocking else None
+            lowered = cls._exception(facts, item, permitted) if item in blocking else None
             if lowered is None:
                 standing.append(item)
                 continue
@@ -250,9 +250,13 @@ class Overrides:
         return None
 
     @staticmethod
-    def _exception(facts: Facts, item: Fired) -> tuple[Approval, str] | None:
-        """The exception that covers this rule's outcome and the state it lowers it to: one step (BLOCK to
-        REVIEW; REVIEW to ALLOW, or ALLOW_WITH_CONDITIONS when the exception carries conditions)."""
+    def _exception(facts: Facts, item: Fired, permitted: str) -> tuple[Approval, str] | None:
+        """The exception that covers this rule's outcome, and the state it gives: the outcome the exception
+        names (ALLOW when it names none), no more than the policy permits (`defaults.exceptions`); an ALLOW
+        with conditions is ALLOW_WITH_CONDITIONS. A hard stop never reaches here."""
+        if permitted == "none":
+            return None
+        codes = {reason.code for reason in item.reasons}
         for entry in sorted(facts.evidence.approvals, key=lambda each: each.id):
             if entry.kind != "exception" or not entry.active(facts.clock):
                 continue
@@ -260,9 +264,12 @@ class Overrides:
                 continue
             if entry.rule_ids is not None and item.rule.id not in entry.rule_ids:
                 continue
-            if item.state == States.BLOCK:
-                return entry, States.REVIEW
-            return entry, States.ALLOW_WITH_CONDITIONS if entry.conditions else States.ALLOW
+            if entry.reason_codes is not None and not codes & set(entry.reason_codes):
+                continue
+            named = entry.outcome or "ALLOW"
+            if named == "ALLOW" and permitted == "allow":
+                return entry, States.ALLOW_WITH_CONDITIONS if entry.conditions else States.ALLOW
+            return entry, States.REVIEW
         return None
 
 

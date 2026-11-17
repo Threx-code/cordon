@@ -57,6 +57,9 @@ class TestTheVocabulariesAreClosed:
             lambda: Provenance(slsa_level=9),
             lambda: Approval("a1", "wave", "2027-01-01T00:00:00Z"),
             lambda: Approval("a1", "approve", "2027-01-01T00:00:00Z", digests=("nope",)),
+            lambda: Approval("a1", "exception", "2027-01-01T00:00:00Z", outcome="DENY"),
+            lambda: Approval("a1", "approve", "2027-01-01T00:00:00Z", outcome="ALLOW"),
+            lambda: Approval("a1", "exception", "2027-01-01T00:00:00Z", reason_codes="R400"),
         ],
     )
     def test_a_value_outside_its_vocabulary_is_refused(self, make) -> None:
@@ -85,6 +88,23 @@ class TestApprovals:
         assert not a.covers(DIGEST, ("acme", "platform"))
         assert not a.covers(ArtifactDigests.of_bytes(b"other"), ("acme", "payments"))
         assert not a.covers(None, ("acme", "payments"))
+
+
+class TestExceptionsAreRecords:
+    def test_an_exception_naming_a_hard_stop_is_a_request_problem(self) -> None:
+        bad = Approval(
+            "e1",
+            "exception",
+            "2027-01-01T00:00:00Z",
+            digests=(DIGEST,),
+            reason_codes=("R100", "R400"),
+        )
+        fine = Approval(
+            "e2", "exception", "2027-01-01T00:00:00Z", digests=(DIGEST,), reason_codes=("R400",)
+        )
+        assert bad.names_a_hard_stop() and not fine.names_a_hard_stop()
+        assert len(EvidenceSet(approvals=(bad, fine)).request_problems()) == 1
+        assert EvidenceSet(approvals=(fine,)).request_problems() == []
 
 
 class TestEvidence:

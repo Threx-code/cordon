@@ -183,6 +183,11 @@ class Approval(JsonRecord):
     scope_path: tuple[str, ...] = ()
     conditions: tuple[str, ...] = ()
     revoked: bool = False
+    #: For an exception: what the rule's outcome becomes, REVIEW or ALLOW (ALLOW when not stated), set by
+    #: the approver within what the policy permits (`defaults.exceptions`).
+    outcome: str | None = None
+    #: The reason codes an exception speaks for; `None` is every code its rules give. Never a hard stop.
+    reason_codes: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
         Checks.text("Approval", "id", self.id)
@@ -195,10 +200,22 @@ class Approval(JsonRecord):
             Checks.strings("Approval", "rule_ids", self.rule_ids)
         if any(not ArtifactDigests.is_digest(item) for item in self.digests):
             raise DecisionError("Approval.digests: every entry is a sha256 digest")
+        if self.outcome is not None:
+            Checks.one_of("Approval", "outcome", self.outcome, ("REVIEW", "ALLOW"))
+            if self.kind != "exception":
+                raise DecisionError("Approval.outcome: only an exception names an outcome")
+        if self.reason_codes is not None:
+            Checks.strings("Approval", "reason_codes", self.reason_codes)
 
     def active(self, clock: datetime) -> bool:
         """Not revoked and not expired at `clock`."""
         return not self.revoked and Instants.parse(self.expires_at) > clock
+
+    HARD_STOPS: ClassVar[tuple[str, ...]] = ("R100", "R101", "R102", "R103")
+
+    def names_a_hard_stop(self) -> bool:
+        """Whether it claims to speak for a hard stop (R100 to R103), which nothing lifts."""
+        return any(code in self.HARD_STOPS for code in self.reason_codes or ())
 
     def covers(self, digest: str | None, scope_path: tuple[str, ...]) -> bool:
         """Whether it speaks for this digest in this scope: the digest is listed (an approval by subject
@@ -257,6 +274,14 @@ class EvidenceSet(JsonRecord):
     def sha256(self) -> str:
         """The digest of the canonical evidence (`sha256:<hex>`), a part of the decision's `inputs_digest`."""
         return ArtifactDigests.of_bytes(ArtifactDigests.canonical_json(self.canonical()))
+
+    def request_problems(self) -> list[str]:
+        """What is wrong with this evidence as a request: an exception that names a hard stop."""
+        return [
+            f"Approval {item.id}: an exception cannot cover a hard stop ({', '.join(item.reason_codes or ())})"
+            for item in self.approvals
+            if item.names_a_hard_stop()
+        ]
 
     def known_malware(self) -> tuple[IntelMatch, ...]:
         return tuple(

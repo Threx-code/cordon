@@ -366,42 +366,106 @@ class TestApprovalsAndExceptions:
         evidence = F.with_(self.BLOCKED, approvals=(self.approval(),), complete=False)
         assert F.decide(evidence).state == "BLOCK"
 
-    def test_an_exception_lowers_a_block_one_step(self) -> None:
-        exception = Approval(
+    def exception(self, **kw) -> Approval:
+        return Approval(
             "e1",
             "exception",
-            "2027-01-01T00:00:00Z",
-            digests=(DIGEST,),
-            rule_ids=("deny-malicious",),
-        )
-        decision = F.decide(F.with_(self.BLOCKED, approvals=(exception,)))
-        assert (
-            decision.state == "REVIEW"
-            and "R702" in decision.reason_codes
-            and "R400" in decision.reason_codes
+            kw.pop("expires_at", "2027-01-01T00:00:00Z"),
+            digests=kw.pop("digests", (DIGEST,)),
+            **kw,
         )
 
-    def test_an_exception_for_another_rule_does_nothing(self) -> None:
-        exception = Approval(
-            "e1",
-            "exception",
-            "2027-01-01T00:00:00Z",
-            digests=(DIGEST,),
-            rule_ids=("young-release",),
-        )
+    def test_an_exception_that_names_no_outcome_allows_with_excepted_r702(self) -> None:
+        decision = F.decide(F.with_(self.BLOCKED, approvals=(self.exception(),)))
+        assert decision.state == "ALLOW" and decision.reason_codes == ("R702",)
+        assert "deny-malicious" in decision.explanation.reasons[0].text
+
+    def test_an_exception_for_one_rule_leaves_the_other_rules_standing(self) -> None:
+        only_one = self.exception(rule_ids=("deny-malicious",))
+        decision = F.decide(F.with_(self.BLOCKED, approvals=(only_one,)))
+        assert decision.state == "REVIEW" and set(decision.reason_codes) == {"R400", "R702"}
+
+    def test_an_exception_that_names_review_gives_review_and_keeps_the_reasons(self) -> None:
+        decision = F.decide(F.with_(self.BLOCKED, approvals=(self.exception(outcome="REVIEW"),)))
+        assert decision.state == "REVIEW" and set(decision.reason_codes) == {"R400", "R702"}
+
+    def test_an_exception_with_conditions_allows_with_conditions(self) -> None:
+        decision = F.decide(F.with_(self.BLOCKED, approvals=(self.exception(conditions=("log",)),)))
+        assert decision.state == "ALLOW_WITH_CONDITIONS"
+
+    @pytest.mark.parametrize(
+        "exception",
+        [
+            Approval("e1", "exception", "2026-11-17T08:00:00Z", digests=(DIGEST,)),
+            Approval("e1", "exception", "2027-01-01T00:00:00Z", digests=(DIGEST,), revoked=True),
+            Approval(
+                "e1", "exception", "2027-01-01T00:00:00Z", digests=(ArtifactDigests.of_bytes(b"x"),)
+            ),
+            Approval(
+                "e1",
+                "exception",
+                "2027-01-01T00:00:00Z",
+                digests=(DIGEST,),
+                rule_ids=("young-release",),
+            ),
+            Approval(
+                "e1", "exception", "2027-01-01T00:00:00Z", digests=(DIGEST,), reason_codes=("R401",)
+            ),
+            Approval(
+                "e1", "exception", "2027-01-01T00:00:00Z", digests=(DIGEST,), scope_path=("other",)
+            ),
+        ],
+    )
+    def test_an_expired_revoked_or_unrelated_exception_does_nothing(self, exception) -> None:
         assert F.decide(F.with_(self.BLOCKED, approvals=(exception,))).state == "BLOCK"
 
-    def test_an_exception_over_a_review_allows(self) -> None:
-        exception = Approval(
-            "e1",
-            "exception",
-            "2027-01-01T00:00:00Z",
-            digests=(DIGEST,),
-            rule_ids=("young-release",),
+    def test_an_exception_can_be_limited_to_a_reason_code(self) -> None:
+        assert (
+            F.decide(
+                F.with_(self.BLOCKED, approvals=(self.exception(reason_codes=("R400",)),))
+            ).state
+            == "ALLOW"
         )
+
+    def test_the_policy_caps_what_an_exception_may_do(self) -> None:
+        asking_allow = F.with_(self.BLOCKED, approvals=(self.exception(),))
+        assert (
+            F.decide(asking_allow, policy=F.policy(defaults={"exceptions": "review"})).state
+            == "REVIEW"
+        )
+        assert (
+            F.decide(asking_allow, policy=F.policy(defaults={"exceptions": "none"})).state
+            == "BLOCK"
+        )
+        asking_review = F.with_(self.BLOCKED, approvals=(self.exception(outcome="REVIEW"),))
+        assert (
+            F.decide(asking_review, policy=F.policy(defaults={"exceptions": "review"})).state
+            == "REVIEW"
+        )
+
+    def test_an_exception_over_a_review_allows(self) -> None:
+        exception = self.exception(rule_ids=("young-release",))
         young = F.artifact(released_at="2026-11-16T00:00:00Z")
         decision = F.decide(EvidenceSet(approvals=(exception,)), artifact=young)
         assert decision.state == "ALLOW" and decision.reason_codes == ("R702",)
+
+    def test_an_exception_that_names_a_hard_stop_is_rejected_in_the_request_and_ignored_in_the_call(
+        self,
+    ) -> None:
+        malware = EvidenceSet(
+            intel=(IntelMatch("known_malware", "M-1", "osv", "2026-11-01T00:00:00Z"),),
+            approvals=(self.exception(reason_codes=("R100",)),),
+        )
+        assert F.decide(malware).state == "BLOCK" and F.decide(malware).reason_codes == ("R100",)
+        request = {
+            "artifact": F.artifact().to_json(),
+            "context": F.context().to_json(),
+            "policy": F.policy().to_json(),
+            "evidence": malware.to_json(),
+            "clock": "2026-11-17T08:00:30Z",
+        }
+        with pytest.raises(DecisionError, match="hard stop"):
+            Decider.decide_json(request)
 
 
 class TestTheMeasuredQualityGuard:

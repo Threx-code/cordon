@@ -5,7 +5,7 @@ compiler rejects, naming the exact field and the parent, a child that
 
 ```
   restates a rule of a mandatory parent (by id)      disables one of its rules
-  weakens on_incomplete, unresolved or on_gaps       weakens the default outcome
+  weakens on_incomplete, unresolved or on_gaps       weakens the default outcome or `exceptions`
   loosens max_intel_age or bundle_max_age (or drops it)   adds an ecosystem to warn_until_measured
 ```
 
@@ -85,6 +85,9 @@ class DefaultsMerge:
             on_gaps=cls._level(
                 base.on_gaps, child.on_gaps, Defaults.STRICTNESS, "on_gaps", strict, who
             ),
+            exceptions=cls._level(
+                base.exceptions, child.exceptions, Defaults.EXCEPTIONS, "exceptions", strict, who
+            ),
             default=cls._level(
                 base.default, child.default, Defaults.OUTCOMES, "default", strict, who
             ),
@@ -116,6 +119,7 @@ class DefaultsMerge:
                 ),
                 unresolved=max(merged.unresolved, other.unresolved, key=Defaults.STRICTNESS.index),
                 on_gaps=max(merged.on_gaps, other.on_gaps, key=Defaults.STRICTNESS.index),
+                exceptions=max(merged.exceptions, other.exceptions, key=Defaults.EXCEPTIONS.index),
                 default=max(merged.default, other.default, key=Defaults.OUTCOMES.index),
                 max_intel_age_s=DefaultsMerge._smaller(
                     merged.max_intel_age_s, other.max_intel_age_s

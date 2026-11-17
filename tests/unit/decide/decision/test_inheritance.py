@@ -193,6 +193,20 @@ class Cases:
                         f"defaults.{name}",
                     )
                 )
+        for parent_level, child_level in (
+            ("none", "review"),
+            ("none", "allow"),
+            ("review", "allow"),
+        ):
+            parent = {**Policies.PARENT_DEFAULTS, "exceptions": parent_level}
+            cases.append(
+                (
+                    f"exceptions {parent_level}->{child_level}",
+                    parent,
+                    {"defaults": {"exceptions": child_level}},
+                    "defaults.exceptions",
+                )
+            )
         for parent_list, added in itertools.product(
             ([], ["pypi"], ["pypi", "npm"]), ("npm", "cargo", "skills", "mcp", "go")
         ):
@@ -291,6 +305,11 @@ class Cases:
             ("warn_until_measured shortened", None, {"defaults": {"warn_until_measured": []}}),
             ("warn_until_measured same", None, {"defaults": {"warn_until_measured": ["pypi"]}}),
             ("clock bucket changed", None, {"defaults": {"clock_bucket_s": 30}}),
+            (
+                "exceptions stricter",
+                {**Policies.PARENT_DEFAULTS, "exceptions": "allow"},
+                {"defaults": {"exceptions": "none"}},
+            ),
             (
                 "obligation on a new rule",
                 None,
