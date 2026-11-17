@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, ClassVar, Final
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.detect.agents import configuration
+from cordon_scanner.detect.agents.claim_guards import ClaimGuards
 from cordon_scanner.detect.agents.mcp_servers.own_vocabulary import OwnVocabulary
 from cordon_scanner.detect.agents.mcp_servers.registrations import ToolRegistrations
 from cordon_scanner.detect.agents.semantics import VERB
@@ -529,7 +530,9 @@ class McpServerSource:
     def _keeps_from_user(description: str) -> bool:
         """Whether the text asks the agent to keep something from the user. "Do not submit the form
         without telling the user" asks for the opposite: a `without` under a negation that governs
-        the very verb it modifies is a requirement to tell, not a secret."""
+        the very verb it modifies is a requirement to tell, not a secret. Nor is a guard against
+        announcing a result too early (`ClaimGuards`): the text is read with the guard blanked."""
+        description = ClaimGuards.masked(description)
         for match in SECRECY.finditer(description):
             if match.group(0)[:7].lower() == "without":
                 start = max(description.rfind(stop, 0, match.start()) for stop in ".!?\n") + 1

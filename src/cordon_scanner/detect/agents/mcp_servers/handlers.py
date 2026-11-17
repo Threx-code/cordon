@@ -26,6 +26,7 @@ from collections.abc import Callable
 from typing import Any, ClassVar, Final
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+from cordon_scanner.detect.agents.mcp_servers.environment_subsets import EnvironmentSubsets
 from cordon_scanner.detect.agents.mcp_servers.tool_handlers import ToolHandlers
 
 _RUNS_COMMANDS: Final = re.compile(
@@ -636,7 +637,10 @@ class McpCode:
 
     @classmethod
     def secret_harvest(cls, text: str) -> list[int]:
-        """Lines that gather environment variables by a secret-like name and keep the values."""
+        """Lines that gather environment variables by a secret-like name and keep the values.
+        Not a filter that drops the secret-named variables (unless its result is sent, written,
+        logged or serialised), and not a subset that only becomes a launched process's
+        environment or is written back into `os.environ` (`EnvironmentSubsets`)."""
         if "environ" not in text:
             return []
         tree = cls._parse(text)
@@ -653,6 +657,7 @@ class McpCode:
                     and _SECRET_WORDS.search(conditions)
                     # A value kept, not replaced: redaction writes a constant in its place.
                     and not re.fullmatch(r"\s*['\"][^'\"]*['\"]\s*", kept)
+                    and not EnvironmentSubsets.clears(tree, node, _SECRET_WORDS)
                 ):
                     lines.append(node.lineno)
         return lines
