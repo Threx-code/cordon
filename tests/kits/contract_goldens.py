@@ -5,7 +5,12 @@ n-th name, with the spellings a tool might use: upper case, scoped, with undersc
 well-known actions, images, extensions, skills, MCP servers, models, agents, repositories and artifacts.
 Nothing is drawn from a corpus. Run it after a change to a canonical form, and review the diff:
 
-    python tests/kits/contract_goldens.py src > tests/unit/contracts/golden_ids.json
+    python tests/kits/contract_goldens.py ids src > tests/unit/contracts/golden_ids.json
+
+and writes the JSON data files and the manifest that go with the schemas (`contracts/data/`,
+`contracts/manifest.json`), after a change to a reason code, a subject kind or a schema:
+
+    python tests/kits/contract_goldens.py data src/cordon_scanner/contracts
 """
 
 from __future__ import annotations
@@ -15,9 +20,15 @@ import sys
 from pathlib import Path
 from typing import ClassVar
 
+from cordon_scanner.contracts.manifest import ContractData
 from cordon_scanner.contracts.subjects import CanonicalIds, SubjectKind
 
-DATA = Path(sys.argv[1] if len(sys.argv) > 1 else "src") / "cordon_scanner" / "intel" / "data"
+DATA = (
+    Path(sys.argv[2] if len(sys.argv) > 2 and sys.argv[1] == "ids" else "src")
+    / "cordon_scanner"
+    / "intel"
+    / "data"
+)
 LISTS = {
     "npm": "npm",
     "pypi": "pypi",
@@ -167,6 +178,10 @@ class ContractGoldens:
 
 
 if __name__ == "__main__":
-    sys.stdout.write(
-        json.dumps(ContractGoldens.build(), indent=0, sort_keys=True, ensure_ascii=False) + "\n"
-    )
+    if sys.argv[1:2] == ["data"]:
+        for written in ContractData.write(Path(sys.argv[2])):
+            sys.stdout.write(f"wrote {written}\n")
+    else:
+        sys.stdout.write(
+            json.dumps(ContractGoldens.build(), indent=0, sort_keys=True, ensure_ascii=False) + "\n"
+        )

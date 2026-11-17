@@ -268,7 +268,7 @@ sources = ["src/cordon_scanner/_native/anchors.c"]
 # The detection model's feature patterns (`cordon_scanner.model`).
 "cordon_scanner.model" = ["data/*.json"]
 # The JSON schemas of the contracts (`cordon_scanner.contracts`): scan, decision and the other predicate types.
-"cordon_scanner.contracts" = ["schemas/*.json"]
+"cordon_scanner.contracts" = ["schemas/*.json", "data/*.json", "manifest.json"]
 # The generated package-name allowlist. A wheel without it falls back to the
 # curated sets in `intel/real.py`, which is a working scanner with a far smaller
 # allowlist -- so the consequence of leaving this out is not a crash, it is

@@ -34,6 +34,11 @@ class ReasonCode:
     code: str
     name: str
     group: str
+    #: A few words for a heading.
+    title: str
+    #: How serious the code reads on a screen (`info` to `critical`). For display only: the decision
+    #: comes from policy, never from this.
+    severity: str
     meaning: str
     #: Whether a decision with this code can be lifted by an approval or an exception. R1xx never.
     overridable: bool = True
@@ -53,94 +58,326 @@ class ReasonCodes:
         "R9": "allow reason",
     }
 
+    SEVERITIES: ClassVar[tuple[str, ...]] = ("info", "low", "medium", "high", "critical")
+
     ALL: ClassVar[tuple[ReasonCode, ...]] = (
         ReasonCode(
-            "R100", "known_malware", "R1", "known malware for this digest (intelligence)", False
+            "R100",
+            "known_malware",
+            "R1",
+            "Known malware",
+            "critical",
+            "known malware for this digest (intelligence)",
+            False,
         ),
         ReasonCode(
-            "R101", "revoked", "R1", "the artifact was revoked by Cordon or by the tenant", False
+            "R101",
+            "revoked",
+            "R1",
+            "Revoked",
+            "critical",
+            "the artifact was revoked by Cordon or by the tenant",
+            False,
         ),
         ReasonCode(
             "R102",
             "integrity_mismatch",
             "R1",
+            "Integrity mismatch",
+            "critical",
             "the digest is not what the registry or the lock claims",
             False,
         ),
         ReasonCode(
-            "R103", "tenant_kill_list", "R1", "the subject is on the tenant's kill list", False
+            "R103",
+            "tenant_kill_list",
+            "R1",
+            "On the kill list",
+            "critical",
+            "the subject is on the tenant's kill list",
+            False,
         ),
-        ReasonCode("R200", "evidence_missing", "R2", "required evidence is missing"),
         ReasonCode(
-            "R201", "intelligence_stale", "R2", "the intelligence is older than the policy allows"
+            "R200",
+            "evidence_missing",
+            "R2",
+            "Evidence missing",
+            "high",
+            "required evidence is missing",
+            True,
         ),
-        ReasonCode("R202", "policy_bundle_expired", "R2", "the policy bundle has expired"),
         ReasonCode(
-            "R203", "subject_unresolved", "R2", "the subject or its version could not be resolved"
+            "R201",
+            "intelligence_stale",
+            "R2",
+            "Intelligence stale",
+            "high",
+            "the intelligence is older than the policy allows",
+            True,
         ),
-        ReasonCode("R204", "scan_incomplete", "R2", "the scan did not complete (fail closed)"),
         ReasonCode(
-            "R205", "provenance_unverifiable", "R2", "provenance is present but cannot be verified"
+            "R202",
+            "policy_bundle_expired",
+            "R2",
+            "Policy bundle expired",
+            "high",
+            "the policy bundle has expired",
+            True,
+        ),
+        ReasonCode(
+            "R203",
+            "subject_unresolved",
+            "R2",
+            "Subject unresolved",
+            "high",
+            "the subject or its version could not be resolved",
+            True,
+        ),
+        ReasonCode(
+            "R204",
+            "scan_incomplete",
+            "R2",
+            "Scan incomplete",
+            "high",
+            "the scan did not complete (fail closed)",
+            True,
+        ),
+        ReasonCode(
+            "R205",
+            "provenance_unverifiable",
+            "R2",
+            "Provenance unverifiable",
+            "high",
+            "provenance is present but cannot be verified",
+            True,
         ),
         ReasonCode(
             "R300",
             "unmeasured_content_rule",
             "R3",
+            "Rule not yet measured",
+            "low",
             "a content rule in an ecosystem the policy marks warn until measured",
-        ),
-        ReasonCode("R400", "malicious_behaviour", "R4", "malicious behaviour found in the content"),
-        ReasonCode(
-            "R401", "suspicious_behaviour", "R4", "suspicious behaviour found in the content"
-        ),
-        ReasonCode("R402", "secret_exposure", "R4", "a secret is exposed in the content"),
-        ReasonCode("R403", "vulnerable_exploited", "R4", "a vulnerability known to be exploited"),
-        ReasonCode("R404", "vulnerable_known", "R4", "a known vulnerability"),
-        ReasonCode("R405", "licence_policy", "R4", "a licence the policy does not allow"),
-        ReasonCode(
-            "R500", "provenance_level_low", "R5", "below the provenance level the policy requires"
+            True,
         ),
         ReasonCode(
-            "R501", "unsigned_or_signer_not_allowed", "R5", "unsigned, or the signer is not allowed"
+            "R400",
+            "malicious_behaviour",
+            "R4",
+            "Malicious behaviour",
+            "critical",
+            "malicious behaviour found in the content",
+            True,
         ),
-        ReasonCode("R502", "new_publisher", "R5", "a publisher new to the registry"),
         ReasonCode(
-            "R503", "release_too_young", "R5", "released more recently than the policy allows"
+            "R401",
+            "suspicious_behaviour",
+            "R4",
+            "Suspicious behaviour",
+            "high",
+            "suspicious behaviour found in the content",
+            True,
         ),
-        ReasonCode("R504", "lookalike_name", "R5", "a name that looks like a popular one"),
-        ReasonCode("R505", "registry_not_allowed", "R5", "a registry the policy does not allow"),
         ReasonCode(
-            "R600", "mcp_tool_poisoning", "R6", "an MCP tool description that steers the agent"
+            "R402",
+            "secret_exposure",
+            "R4",
+            "Secret exposed",
+            "high",
+            "a secret is exposed in the content",
+            True,
+        ),
+        ReasonCode(
+            "R403",
+            "vulnerable_exploited",
+            "R4",
+            "Exploited vulnerability",
+            "critical",
+            "a vulnerability known to be exploited",
+            True,
+        ),
+        ReasonCode(
+            "R404",
+            "vulnerable_known",
+            "R4",
+            "Known vulnerability",
+            "medium",
+            "a known vulnerability",
+            True,
+        ),
+        ReasonCode(
+            "R405",
+            "licence_policy",
+            "R4",
+            "Licence not allowed",
+            "medium",
+            "a licence the policy does not allow",
+            True,
+        ),
+        ReasonCode(
+            "R500",
+            "provenance_level_low",
+            "R5",
+            "Provenance too low",
+            "medium",
+            "below the provenance level the policy requires",
+            True,
+        ),
+        ReasonCode(
+            "R501",
+            "unsigned_or_signer_not_allowed",
+            "R5",
+            "Unsigned or signer not allowed",
+            "medium",
+            "unsigned, or the signer is not allowed",
+            True,
+        ),
+        ReasonCode(
+            "R502",
+            "new_publisher",
+            "R5",
+            "New publisher",
+            "low",
+            "a publisher new to the registry",
+            True,
+        ),
+        ReasonCode(
+            "R503",
+            "release_too_young",
+            "R5",
+            "Release too young",
+            "low",
+            "released more recently than the policy allows",
+            True,
+        ),
+        ReasonCode(
+            "R504",
+            "lookalike_name",
+            "R5",
+            "Lookalike name",
+            "high",
+            "a name that looks like a popular one",
+            True,
+        ),
+        ReasonCode(
+            "R505",
+            "registry_not_allowed",
+            "R5",
+            "Registry not allowed",
+            "medium",
+            "a registry the policy does not allow",
+            True,
+        ),
+        ReasonCode(
+            "R600",
+            "mcp_tool_poisoning",
+            "R6",
+            "MCP tool poisoning",
+            "critical",
+            "an MCP tool description that steers the agent",
+            True,
         ),
         ReasonCode(
             "R601",
             "skill_instruction_attack",
             "R6",
+            "Skill instruction attack",
+            "critical",
             "a skill whose instructions attack the agent or the user",
+            True,
         ),
         ReasonCode(
-            "R602", "excessive_capability", "R6", "a capability beyond what the component declares"
+            "R602",
+            "excessive_capability",
+            "R6",
+            "Excessive capability",
+            "high",
+            "a capability beyond what the component declares",
+            True,
         ),
         ReasonCode(
             "R603",
             "model_or_provider_not_approved",
             "R6",
+            "Model or provider not approved",
+            "medium",
             "a model or provider that is not approved",
+            True,
         ),
         ReasonCode(
             "R604",
             "tool_list_changed",
             "R6",
+            "Tool list changed",
+            "high",
             "the remote MCP server's tool list changed since approval",
+            True,
         ),
-        ReasonCode("R700", "approval_required", "R7", "policy requires an approval"),
-        ReasonCode("R701", "approval_expired", "R7", "the approval has expired"),
-        ReasonCode("R702", "exception_active", "R7", "an exception is active"),
-        ReasonCode("R703", "conditions_apply", "R7", "allowed with conditions"),
-        ReasonCode("R900", "allowed_by_policy", "R9", "allowed by policy"),
-        ReasonCode("R901", "approved_digest", "R9", "approved for this digest"),
-        ReasonCode("R902", "tenant_allow_list", "R9", "on the tenant's allow list"),
         ReasonCode(
-            "R903", "no_findings_above_threshold", "R9", "no finding above the policy's threshold"
+            "R700",
+            "approval_required",
+            "R7",
+            "Approval required",
+            "info",
+            "policy requires an approval",
+            True,
+        ),
+        ReasonCode(
+            "R701",
+            "approval_expired",
+            "R7",
+            "Approval expired",
+            "info",
+            "the approval has expired",
+            True,
+        ),
+        ReasonCode(
+            "R702",
+            "exception_active",
+            "R7",
+            "Exception active",
+            "info",
+            "an exception is active",
+            True,
+        ),
+        ReasonCode(
+            "R703",
+            "conditions_apply",
+            "R7",
+            "Conditions apply",
+            "info",
+            "allowed with conditions",
+            True,
+        ),
+        ReasonCode(
+            "R900",
+            "allowed_by_policy",
+            "R9",
+            "Allowed by policy",
+            "info",
+            "allowed by policy",
+            True,
+        ),
+        ReasonCode(
+            "R901", "approved_digest", "R9", "Approved", "info", "approved for this digest", True
+        ),
+        ReasonCode(
+            "R902",
+            "tenant_allow_list",
+            "R9",
+            "On the allow list",
+            "info",
+            "on the tenant's allow list",
+            True,
+        ),
+        ReasonCode(
+            "R903",
+            "no_findings_above_threshold",
+            "R9",
+            "Nothing above the threshold",
+            "info",
+            "no finding above the policy's threshold",
+            True,
         ),
     )
 
@@ -181,6 +418,8 @@ class ReasonCodes:
                 found.append(f"{entry.code}: code or name issued twice")
             if entry.code in cls.RETIRED:
                 found.append(f"{entry.code}: retired and listed")
+            if entry.severity not in cls.SEVERITIES:
+                found.append(f"{entry.code}: unknown severity {entry.severity}")
             if entry.group == "R1" and entry.overridable:
                 found.append(f"{entry.code}: a hard stop cannot be overridable")
             seen_codes.add(entry.code)

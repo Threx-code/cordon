@@ -1,0 +1,14 @@
+{
+  "contracts_version": "1.0.0",
+  "files": {
+    "data/reason-codes.json": "sha256:b93e20ead58ce307677e226874b63053de7006072c6514ca23da5126005a9e92",
+    "data/subject-kinds.json": "sha256:ef94ffa4a63affc381d1f30c8cf238639f0f9353aa0712b510548c741e425fdc",
+    "schemas/approval-v1.json": "sha256:7dc286fe30f181d996b5b13b2e38a2a5ee1bbe95739be4ea29732c59494930ce",
+    "schemas/decision-v1.json": "sha256:534a77ddbfc57aba9fd8567347ecada82e99ef2239b7b6c493f3099fcdffbcba",
+    "schemas/intel-match-v1.json": "sha256:3157a1381ca5537225e2f37aeff98214d6af3e70dd0a3828bfde1316a9862784",
+    "schemas/inventory-v1.json": "sha256:e39d040c869c98700172bb807edb1ffcbac596c06a2efb01feca02f285132063",
+    "schemas/review-v1.json": "sha256:7fef1e9f23421cdeb0f37f4cb790c991e7a689aece8e05d9a3db833a5ee2db6f",
+    "schemas/scan-v1.json": "sha256:fba7c7efa291c049a06378fc3c6cc8c286df07ab28835bcab3953130f777478d",
+    "schemas/statement-v1.json": "sha256:9ea30875f75ddfa828bbcf4b44999e1b46565b06395f6e63d0bfcf15ad04ade8"
+  }
+}
