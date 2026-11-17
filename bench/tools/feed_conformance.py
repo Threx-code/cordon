@@ -5,11 +5,13 @@ files and a clock. No server: the client's `fetch` reads the directory, and scen
 memory from the files, so a publisher only has to write its output (root, timestamp, snapshot, targets, deltas,
 full bundle) to a folder. With test keys the same suite runs against the backend's own export.
 
-    python bench/tools/feed_conformance.py --feed DIR [--older DIR] [--root FILE] [--clock 2027-01-15T12:00:00Z]
+    python bench/tools/feed_conformance.py --feed DIR [--older DIR] [--root FILE] [--keys FILE] [--clock 2027-01-15T12:00:00Z]
 
 `--feed` is the current export; `--older` is an earlier export of the same feed (a lower version, validly signed)
-for the rollback and mix-and-match scenarios; `--root` is the pinned root (default `DIR/root.json`); `--clock` is the
-time the client runs at (default: now). Prints one line per scenario and exits non-zero if any fails.
+for the rollback and mix-and-match scenarios; `--root` is the pinned root (default `DIR/root.json`); `--keys` is the
+test keys file of a sample made by `feed_rotation.py` (throwaway keys, never a publisher's), which the scenarios that
+sign what an attacker would need; `--clock` is the time the client runs at (default: now). Prints one line per
+scenario and exits non-zero if any fails.
 
 ```
   accepts                        a clean client takes the feed: serial, versions and freshness are the feed's
@@ -26,8 +28,16 @@ time the client runs at (default: now). Prints one line per scenario and exits n
   refuses_unsigned_metadata      the same three with their signatures removed are refused
   follows_root_rotation          pinned to `1.root.json`, the client follows `<n>.root.json` to the current root
   refuses_unsigned_rotated_root  a rotated root without its signatures is refused, changing no state
+  refuses_root_without_old_threshold  a rotated root signed only by the new keys, only by the old, or by fewer old keys than
+                                 the old threshold, is refused, changing no state
+  refuses_skipped_root_version   version 3 offered where version 2 belongs, or alone with the metadata signed under it
+                                 (needs `--keys`), is refused, changing no state
+  refuses_revoked_key_after_rotation  timestamp, snapshot or targets signed by a version 1 key that version 2 dropped is
+                                 refused, by a client that follows the rotation and by one that has already taken it
+                                 (needs `--keys`)
 ```
-A scenario that needs something the directory lacks (an older export; two files of one name; rotated roots) is reported as `skip`.
+A scenario that needs something the directory lacks (an older export; two files of one name; rotated roots; the keys
+file) is reported as `skip`.
 """
 
 from __future__ import annotations
@@ -43,6 +53,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from feed_rotation import Rotation, RotationKeys
 
 from cordon_scanner.intel.base import FeedError
 from cordon_scanner.intel.malware.feed import Feed, FeedRoles, FeedState
@@ -102,9 +116,15 @@ class Served:
 
 class Conformance:
     def __init__(
-        self, feed: FeedFiles, older: FeedFiles | None, root: dict[str, Any], clock: datetime
+        self,
+        feed: FeedFiles,
+        older: FeedFiles | None,
+        root: dict[str, Any],
+        clock: datetime,
+        rotation: Rotation | None = None,
     ) -> None:
         self.feed, self.older, self.root, self.clock = feed, older, root, clock
+        self.rotation = rotation
         self.fetched: list[str] = []
 
     # -- plumbing ----------------------------------------------------------------------------------
@@ -399,6 +419,139 @@ class Conformance:
             )
         return Outcome("refuses_unsigned_rotated_root", "pass")
 
+    def _refused_all(
+        self, name: str, tries: dict[str, tuple[FeedFiles, dict[str, Any]]], needle: str
+    ) -> Outcome:
+        """Every variant refused, for the reason `needle` names, and with no state changed."""
+        bad: list[str] = []
+        for label, (files, options) in tries.items():
+            refused, message, unchanged = self._try(files, **options)
+            if not refused:
+                bad.append(f"{label}: {message or 'the client took it'}")
+            elif needle not in message:
+                bad.append(f"{label}: refused, but not as {needle!r}: {message}")
+            elif not unchanged:
+                bad.append(f"{label}: refused, but its state changed")
+        if bad:
+            return Outcome(name, "fail", "; ".join(bad))
+        return Outcome(name, "pass", f"{len(tries)} variant(s)")
+
+    def refuses_root_without_old_threshold(self) -> Outcome:
+        """A rotated root must be signed by the old root's threshold AND by its own keys. Built from the export's own
+        `2.root.json` by dropping signatures, so no key is needed."""
+        name = "refuses_root_without_old_threshold"
+        first = self._rotation(name)
+        if isinstance(first, Outcome):
+            return first
+        rotated = self.feed.signed("2.root.json")
+        old = set(first["signed"]["roles"]["root"]["keyids"])
+        new = set(rotated["signed"]["roles"]["root"]["keyids"])
+        threshold = int(first["signed"]["roles"]["root"]["threshold"])
+        from_new = [s for s in rotated["signatures"] if s.get("keyid") in new - old]
+        from_old = [s for s in rotated["signatures"] if s.get("keyid") in old - new]
+        variants = {
+            "signed only by the new keys": from_new,
+            "signed only by the old keys": from_old,
+        }
+        if threshold > 1 and from_new and from_old:
+            variants["signed by the new keys and fewer old keys than the old threshold"] = (
+                from_new + from_old[: threshold - 1]
+            )
+        tries = {
+            label: (
+                self.feed.replaced(
+                    "2.root.json", json.dumps({**rotated, "signatures": signatures}).encode()
+                ),
+                {"root": first},
+            )
+            for label, signatures in variants.items()
+            if signatures
+        }
+        if not tries:
+            return Outcome(
+                name,
+                "skip",
+                "the rotation reuses the root keys: no signature belongs to the new keys alone",
+            )
+        return self._refused_all(name, tries, "root metadata is signed by")
+
+    def _keyed(self, name: str) -> Rotation | Outcome:
+        """The test keys that sign this export's roots, or the skip (or failure) to report."""
+        if self.rotation is None:
+            return Outcome(
+                name,
+                "skip",
+                "no test keys given (--keys): the scenario signs what an attacker would",
+            )
+        first = self.feed.signed("1.root.json")["signed"]
+        second = self.feed.signed("2.root.json")["signed"]
+        if self.rotation.first()["signed"] != first or self.rotation.second()["signed"] != second:
+            return Outcome(
+                name, "fail", "the test keys are not the ones that sign this export's roots"
+            )
+        return self.rotation
+
+    def refuses_skipped_root_version(self) -> Outcome:
+        """Version 3 is signed by version 1's root keys and its own, so only the version is wrong: served where version 2
+        belongs (the client names the wrong version), or served alone with the metadata signed under it (the client
+        stays at version 1 and the metadata is not signed by its keys)."""
+        name = "refuses_skipped_root_version"
+        first = self._rotation(name)
+        if isinstance(first, Outcome):
+            return first
+        rotation = self._keyed(name)
+        if isinstance(rotation, Outcome):
+            return rotation
+        third = FeedRoles.canonical(rotation.third())
+        under_third = rotation.resign(self.feed.files, 3)
+        as_second = FeedFiles({**self.feed.files, **under_third, "2.root.json": third})
+        alone = FeedFiles(
+            {
+                **{n: b for n, b in self.feed.files.items() if n != "2.root.json"},
+                **under_third,
+                "3.root.json": third,
+            }
+        )
+        a = self._refused_all(
+            name, {"served as the second root": (as_second, {"root": first})}, "wrong version"
+        )
+        if a.status != "pass":
+            return a
+        b = self._refused_all(
+            name, {"served alone": (alone, {"root": first})}, "metadata is signed by 0"
+        )
+        return b if b.status != "pass" else Outcome(name, "pass", "2 variant(s)")
+
+    def refuses_revoked_key_after_rotation(self) -> Outcome:
+        """Version 2 dropped version 1's role keys. Metadata signed by one of them, the rest valid under version 2 and
+        every pin recomputed, is refused: by a client pinned to version 1 that follows the rotation (each role), and by
+        one that has already taken the rotated feed (the timestamp, which it checks on every update)."""
+        name = "refuses_revoked_key_after_rotation"
+        first = self._rotation(name)
+        if isinstance(first, Outcome):
+            return first
+        rotation = self._keyed(name)
+        if isinstance(rotation, Outcome):
+            return rotation
+        tries: dict[str, tuple[FeedFiles, dict[str, Any]]] = {}
+        for role in ("timestamp", "snapshot", "targets"):
+            signed = rotation.resign(self.feed.files, 2, use={role: rotation.keys.keys(1, role)})
+            tries[f"{role} signed by the revoked key"] = (
+                FeedFiles({**self.feed.files, **signed}),
+                {"root": first},
+            )
+        outcome = self._refused_all(name, tries, "metadata is signed by 0")
+        if outcome.status != "pass":
+            return outcome
+        taken = {
+            "timestamp signed by the revoked key, after the rotation was taken": (
+                tries["timestamp signed by the revoked key"][0],
+                {"root": first, "prime": self.feed},
+            )
+        }
+        later = self._refused_all(name, taken, "timestamp metadata is signed by 0")
+        return later if later.status != "pass" else Outcome(name, "pass", "4 variant(s)")
+
     def run(self) -> list[Outcome]:
         scenarios = (
             self.accepts,
@@ -415,6 +568,9 @@ class Conformance:
             self.refuses_unsigned_metadata,
             self.follows_root_rotation,
             self.refuses_unsigned_rotated_root,
+            self.refuses_root_without_old_threshold,
+            self.refuses_skipped_root_version,
+            self.refuses_revoked_key_after_rotation,
         )
         saved = os.environ.get("CORDON_CACHE_DIR")
         try:
@@ -435,6 +591,7 @@ class Command:
         parser.add_argument("--feed", type=Path, required=True)
         parser.add_argument("--older", type=Path)
         parser.add_argument("--root", type=Path)
+        parser.add_argument("--keys", type=Path)
         parser.add_argument("--clock", default=None)
         arguments = parser.parse_args(argv)
         feed = FeedFiles.read(arguments.feed)
@@ -446,7 +603,8 @@ class Command:
             if arguments.clock
             else datetime.now(UTC)
         )
-        outcomes = Conformance(feed, older, root, clock).run()
+        rotation = Rotation(RotationKeys.read(arguments.keys)) if arguments.keys else None
+        outcomes = Conformance(feed, older, root, clock, rotation).run()
         for item in outcomes:
             sys.stdout.write(
                 f"{item.status:5} {item.name}{(' - ' + item.detail) if item.detail else ''}\n"
