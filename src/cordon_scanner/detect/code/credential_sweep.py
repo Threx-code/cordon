@@ -62,6 +62,35 @@ class CredentialSweep:
     SWEEP_MIN: ClassVar[int] = 3
 
     @classmethod
+    def _found(cls, content: FileContent, present: list[str]) -> list[tuple[int, str]]:
+        """Where each present service's store is first named: for a Python file, first named outside
+        a literal that is only data (`TextLiterals`: a table the module matches text against), so a
+        scanner's list of every store is no sweep and a stealer's list its code opens still is."""
+        text = content.text
+        every = {
+            name: [m.start() for m in cls.STORES[name].finditer(text)][:200] for name in present
+        }
+        if content.path.rpartition("!")[2].endswith((".py", ".pyw")) and any(every.values()):
+            from cordon_scanner.analysis.python.inert_literals import TextLiterals
+
+            lines = frozenset(
+                text.count("\n", 0, o) + 1 for offsets in every.values() for o in offsets
+            )
+            spans = TextLiterals.data_spans(text, content.raw, lines)
+            if spans:
+
+                def data(offset: int) -> bool:
+                    at = len(text[:offset].encode("utf-8"))
+                    return any(start <= at < end for start, end in spans)
+
+                # A store named more times than were read is live: a table cannot hide a read past it.
+                every = {
+                    n: offsets if len(offsets) >= 200 else [o for o in offsets if not data(o)]
+                    for n, offsets in every.items()
+                }
+        return [(offsets[0], name) for name, offsets in every.items() if offsets]
+
+    @classmethod
     def hits(cls, content: FileContent) -> list[CapabilityHit]:
         from cordon_scanner.detect.code.capability.hits import CapabilityHit
 
@@ -71,11 +100,7 @@ class CredentialSweep:
         present = [name for name, literal in cls.LITERALS.items() if literal in text]
         if len(present) < cls.SWEEP_MIN:
             return []
-        found: list[tuple[int, str]] = []
-        for name in present:
-            match = cls.STORES[name].search(text)
-            if match:
-                found.append((match.start(), name))
+        found = cls._found(content, present)
         if len({name for _, name in found}) < cls.SWEEP_MIN:
             return []
         first = min(offset for offset, _ in found)

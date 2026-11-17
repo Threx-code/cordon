@@ -174,6 +174,11 @@ class Labelling:
 
             first = None
             distinct: set[bytes] = set()
+            data = (
+                Labelling._data_literals(content, compiled, regex, raw, folded)
+                if language == "python" and capability is Capability.CREDENTIAL
+                else ()
+            )
 
             first = Labelling._examine_matches(
                 blocks,
@@ -189,6 +194,7 @@ class Labelling:
                 raw,
                 regex,
                 tests,
+                data,
             )
 
             if first is None:
@@ -209,6 +215,43 @@ class Labelling:
             )
 
         return hits
+
+    @staticmethod
+    def _in_text_only(
+        match: re.Match[bytes],
+        tests: tuple[tuple[int, int], ...],
+        prose: tuple[tuple[int, int], ...],
+        data: tuple[tuple[int, int], ...],
+    ) -> bool:
+        """Whether a match starts in a test module or a docstring, or lies wholly inside a literal
+        the module only treats as data."""
+        return (
+            SourceComments.inside_spans(tests, match.start())
+            or SourceComments.inside_spans(prose, match.start())
+            or any(start <= match.start() and match.end() <= end for start, end in data)
+        )
+
+    @staticmethod
+    def _data_literals(
+        content: FileContent,
+        compiled: CompiledRule,
+        regex: re.Pattern[bytes],
+        raw: bytes,
+        folded: bytes | None,
+    ) -> tuple[tuple[int, int], ...]:
+        """The Python string literals holding a match of this rule that reach no use: a table of the
+        credential stores a scanner or a redactor looks for. A match inside one is text, and the
+        walk goes on to the next match, so a real read after the table is still the hit
+        (`TextLiterals`: a use is every call that does not only test, match, format or show a
+        value; a file that names a way to run a string, or does not parse, excuses nothing)."""
+        from itertools import islice
+
+        from cordon_scanner.analysis.python.inert_literals import TextLiterals
+
+        offsets = [m.start() for m in islice(compiled.match.matches(regex, raw, folded), 200)]
+        if not offsets:
+            return ()
+        return TextLiterals.spans_at(content.text, raw, offsets)
 
     @staticmethod
     def _excused_spans(
@@ -292,6 +335,7 @@ class Labelling:
         raw: bytes,
         regex: re.Pattern[bytes],
         tests: tuple[tuple[int, int], ...],
+        data: tuple[tuple[int, int], ...] = (),
     ) -> re.Match[bytes] | None:
         """Walk one rule's matches in the file, dropping each the text's position excuses, counting the distinct operations it shows, and keeping the first that stands."""
         for index, match in enumerate(compiled.match.matches(regex, raw, folded)):
@@ -317,11 +361,9 @@ class Labelling:
             if TextPosition.is_example_line(content, match.start()):
                 # A doctest or a shell transcript. See `EXAMPLE_PROMPT`.
                 continue
-            if SourceComments.inside_spans(tests, match.start()):
-                # A Rust test module. See `tests` above.
-                continue
-            if SourceComments.inside_spans(prose, match.start()):
-                # A Python docstring. See `prose` above.
+            if Labelling._in_text_only(match, tests, prose, data):
+                # A Rust test module, a Python docstring, or a Python string that is only data:
+                # see `tests` and `prose` above and `_data_literals`.
                 continue
             if (
                 capability is Capability.ANTI_ANALYSIS

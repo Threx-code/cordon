@@ -411,6 +411,10 @@ class TestSelfScan(CorpusFixtures):
             # checks off -- named as the vocabulary a skill's or a settings file's text is read
             # for; data, never run.
             and f.location.path != "src/cordon_scanner/detect/agents/configuration.py"
+            # The tables of credential stores and drop-point hosts a module only matches text
+            # against, and the reads, copies and posts that do or do not make them data: each the
+            # positive or negative a data-literal rule is tested on.
+            and f.location.path != "tests/unit/analysis/python/test_quoted_python_calls.py"
             # The data-role fixtures: a denylist of credential-store paths and paste hosts that only a parser
             # reads, and the loader shapes (an exec of a loaded field among them) that do or do not make it data.
             and f.location.path != "tests/unit/analysis/shared/test_data_roles.py"
