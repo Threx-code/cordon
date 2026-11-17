@@ -72,6 +72,7 @@ do, and each carries its own fix. The ones met most often:
 | `OPERATIONAL.FILE.UNREADABLE` | A file could not be read | Check permissions, or exclude the path deliberately |
 | `OPERATIONAL.GRAPH.LIMIT` | The dependency graph passed `max_dependencies` | Raise `limits.max_dependencies`, or scan projects separately |
 | `OPERATIONAL.ARCHIVE.REJECTED` | An archive was refused by a limit | Treat it as unexamined; raise the limit deliberately if the input is legitimate |
+| `OPERATIONAL.ARCHIVE.TEMP_SPACE` | The scan's temp space ran out expanding an archive (reason `temp_space`), or held less than the archive's own bytes | Free space under the temp directory or point `TMPDIR` at a larger volume; the archive is not known to be wrong, and the scan is incomplete until it is read |
 | `OPERATIONAL.ARCHIVE.NOT_EXPANDED` | Archives were left closed | Scan without `--no-expand` |
 | `OPERATIONAL.LOCKFILE.UNSUPPORTED` | A lockfile format Cordon does not read (Bun's binary `bun.lockb`) | Commit the text form beside it (`bun install --save-text-lockfile`) |
 | `OPERATIONAL.LOCKFILE.UNPARSED` | A lockfile could not be parsed | Regenerate it with the package manager |

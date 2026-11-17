@@ -55,6 +55,8 @@ class TestContentGaps:
         assert not Content.gap_blocked(self.row(["OPERATIONAL.SCAN.MEMORY_LIMIT"]))
         assert not Content.gap_blocked(self.row(["OPERATIONAL.DETECTOR.FAILED"]))
         assert not Content.gap_blocked(self.row(["OPERATIONAL.ARCHIVE.UNSUPPORTED_FORMAT"]))
+        # the scan's own temp space running out is the machine's, never the package's (it was ARCHIVE.REJECTED before)
+        assert not Content.gap_blocked(self.row(["OPERATIONAL.ARCHIVE.TEMP_SPACE"]))
         assert not Content.gap_blocked({"exit": "timeout", "findings": None})
         assert not Content.gap_blocked(self.row(["OPERATIONAL.SOURCE.UNPARSED"], error="Crash"))
 
