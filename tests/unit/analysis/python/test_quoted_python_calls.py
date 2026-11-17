@@ -260,9 +260,7 @@ class TestAStoreNamedInATableNothingReads:
         assert "MALWARE.EXFIL.001" in self.blocked(tmp_path, body)
 
     def test_a_function_nothing_in_the_file_calls_keeps_its_literals_live(self, tmp_path):
-        body = (
-            "def places():\n    return ['~/.aws/credentials', '~/.ssh/id_rsa', '~/.npmrc']\n"
-        )
+        body = "def places():\n    return ['~/.aws/credentials', '~/.ssh/id_rsa', '~/.npmrc']\n"
         assert "SUSPECT.EXFIL.CREDENTIAL_SWEEP.001" in self.blocked(tmp_path, body)
 
     def test_a_class_attribute_table_is_left_to_the_methods_that_read_it(self, tmp_path):
