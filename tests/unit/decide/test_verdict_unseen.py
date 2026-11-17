@@ -199,6 +199,9 @@ class TestNoRuleIsLoweredUnseenByAccident:
             "SUSPECT.AGENT.JUDGED.001",
             "SUSPECT.AGENT.PHANTOM_PREREQUISITE.001",
             "SUSPECT.AGENT.SENSITIVE_IMPORT.001",
+            # Added 17 Nov (reviews/mcp-98/31): HIGH in a skill's own area and in `mcp`, which only add;
+            # in `npm` the verdict holds it at MEDIUM until a measured pair admits it to keep.
+            "SUSPECT.AGENT.SKILL_CLAIM_MISMATCH.001",
             "SUSPECT.AGENT.SKILL_DECODE_RUN.001",
             "SUSPECT.AGENT.SKILL_HOOK_FETCH.001",
             "SUSPECT.AGENT.SKILL_INSTALLS_LOOKALIKE.001",

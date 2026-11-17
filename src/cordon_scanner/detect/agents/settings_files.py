@@ -30,6 +30,10 @@ if TYPE_CHECKING:
     from cordon_scanner.detect.base import ScanContext
 
 
+#: The agents' own switches, one definition (`configuration.AgentSafeguards`).
+_SAFEGUARDS: Final = configuration.AgentSafeguards
+
+
 class SettingsFileFindings:
     """The agent-chain findings in agent and editor settings files."""
 
@@ -114,16 +118,12 @@ class SettingsFileFindings:
                 yield AgentFinding.at_text(
                     "POLICY.AGENT.WILDCARD_PERMISSION.001", unit, ctx, text, wildcard
                 )
-            if permissions.get("defaultMode") == "bypassPermissions":
-                yield AgentFinding.at_text(
-                    "POLICY.AGENT.AUTO_APPROVE.001", unit, ctx, text, "bypassPermissions"
-                )
-        if settings.get("enableAllProjectMcpServers") is True and cls._servers_to_approve(
+            if permissions.get("defaultMode") == (bypass := _SAFEGUARDS.BYPASS_MODE):
+                yield AgentFinding.at_text("POLICY.AGENT.AUTO_APPROVE.001", unit, ctx, text, bypass)
+        if settings.get(all_mcp := _SAFEGUARDS.ENABLE_ALL_MCP) is True and cls._servers_to_approve(
             unit, ctx
         ):
-            yield AgentFinding.at_text(
-                "POLICY.AGENT.AUTO_APPROVE.001", unit, ctx, text, "enableAllProjectMcpServers"
-            )
+            yield AgentFinding.at_text("POLICY.AGENT.AUTO_APPROVE.001", unit, ctx, text, all_mcp)
 
     @staticmethod
     def _servers_to_approve(unit: FileUnit, ctx: ScanContext) -> bool:
@@ -233,37 +233,42 @@ class SettingsFileFindings:
                         severity=Severity.MEDIUM if reviewable else None,
                     )
                     break
-        # Gemini CLI's approval modes: `yolo` approves every tool call.
+        yolo = cls._approves_every_call(settings)
+        if yolo is not None:
+            yield AgentFinding.at_text("POLICY.AGENT.AUTO_APPROVE.001", unit, ctx, text, yolo)
+
+    @staticmethod
+    def _approves_every_call(settings: dict[str, Any]) -> str | None:
+        """The key of Gemini CLI's approval modes that approves every tool call (`yolo`), or None."""
         general_value, tools_value = settings.get("general"), settings.get("tools")
         general: dict[str, Any] = general_value if isinstance(general_value, dict) else {}
         tools: dict[str, Any] = tools_value if isinstance(tools_value, dict) else {}
-        yolo = next(
+        default_mode, approval_mode, yolo_key, accept = _SAFEGUARDS.GEMINI_KEYS
+        return next(
             (
                 key
                 for key, value in (
-                    ("defaultApprovalMode", general.get("defaultApprovalMode")),
-                    ("approvalMode", settings.get("approvalMode")),
-                    ("yolo", settings.get("yolo")),
-                    ("autoAccept", settings.get("autoAccept")),
-                    ("autoAccept", tools.get("autoAccept")),
+                    (default_mode, general.get(default_mode)),
+                    (approval_mode, settings.get(approval_mode)),
+                    (yolo_key, settings.get(yolo_key)),
+                    (accept, settings.get(accept)),
+                    (accept, tools.get(accept)),
                 )
                 if value is True or (isinstance(value, str) and value.lower() == "yolo")
             ),
             None,
         )
-        if yolo is not None:
-            yield AgentFinding.at_text("POLICY.AGENT.AUTO_APPROVE.001", unit, ctx, text, yolo)
 
     @classmethod
     def vscode_settings(cls, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
         settings = McpConfigs._json(unit.content)
-        if isinstance(settings, dict) and settings.get("chat.tools.autoApprove") is True:
+        if isinstance(settings, dict) and settings.get(_SAFEGUARDS.VSCODE_AUTO_APPROVE) is True:
             yield AgentFinding.at_text(
                 "POLICY.AGENT.AUTO_APPROVE.001",
                 unit,
                 ctx,
                 unit.content.text,
-                "chat.tools.autoApprove",
+                _SAFEGUARDS.VSCODE_AUTO_APPROVE,
             )
 
     @classmethod
@@ -282,11 +287,15 @@ class SettingsFileFindings:
             return
         text = unit.content.text
         if (
-            document.get("approval_policy") == "never"
-            and document.get("sandbox_mode") == "danger-full-access"
+            document.get(_SAFEGUARDS.CODEX_POLICY[0]) == _SAFEGUARDS.CODEX_POLICY[1]
+            and document.get(_SAFEGUARDS.CODEX_SANDBOX[0]) == _SAFEGUARDS.CODEX_SANDBOX[1]
         ):
             yield AgentFinding.at_text(
-                "POLICY.AGENT.AUTO_APPROVE.001", unit, ctx, text, "danger-full-access"
+                "POLICY.AGENT.AUTO_APPROVE.001",
+                unit,
+                ctx,
+                text,
+                _SAFEGUARDS.CODEX_SANDBOX[1],
             )
         providers = document.get("model_providers")
         for provider in providers.values() if isinstance(providers, dict) else ():

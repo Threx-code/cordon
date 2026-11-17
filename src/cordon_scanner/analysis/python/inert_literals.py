@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import ast
 import re
+from collections.abc import Sequence
 from typing import ClassVar
 
 from cordon_scanner.analysis.python.py_flow import Label, PythonValueFlow
@@ -284,8 +285,269 @@ class InertLiterals(PythonValueFlow):
         )
 
 
+class TextLiterals(InertLiterals):
+    """Which path or host literals of a file are only data: a table the code matches text against,
+    not a place it reads or sends to.
+
+    A secret scanner, a redactor and a security tool carry the credential stores of a dozen services
+    and the hosts a drop point is known by as STRINGS they look for in what they read; a stealer
+    carries the same strings and OPENS them. The pattern tier reads both the same way. This
+    follows each literal on the given lines (`PythonValueFlow`, as `InertLiterals` does) and calls
+    it data when it reaches no use: a use is every call except those that only test, match, format,
+    show or store a value (`CONSUMERS`), so `open`, `Path`, `glob`, `connect`, a request, a function
+    of another file and anything not named here keep the hit. A consumer's result carries the value
+    on (`carries`), so a use further along still sees it: `lower()` then `open()` is a use. A file
+    that names `exec`, `eval`, `compile` or `execfile` anywhere may run any string, so it yields no
+    data spans (the same guard as `quoted_call_spans`).
+    """
+
+    #: Calls (and method names) that only test, match, format, show or store the value they are given.
+    CONSUMERS: ClassVar[frozenset[str]] = frozenset(
+        [
+            # matching and comparing text
+            "search",
+            "match",
+            "fullmatch",
+            "sub",
+            "subn",
+            "findall",
+            "finditer",
+            "split",
+            "rsplit",
+            "splitlines",
+            "partition",
+            "rpartition",
+            "escape",
+            "fnmatch",
+            "fnmatchcase",
+            "startswith",
+            "endswith",
+            "find",
+            "rfind",
+            "index",
+            "rindex",
+            "count",
+            "removeprefix",
+            "removesuffix",
+            # formatting text
+            "lower",
+            "upper",
+            "casefold",
+            "strip",
+            "lstrip",
+            "rstrip",
+            "replace",
+            "format",
+            "format_map",
+            "join",
+            "encode",
+            "decode",
+            "title",
+            "capitalize",
+            "ljust",
+            "rjust",
+            "center",
+            "expandtabs",
+            "translate",
+            "dedent",
+            "indent",
+            "fill",
+            "wrap",
+            # keeping values in containers
+            "append",
+            "add",
+            "extend",
+            "update",
+            "insert",
+            "setdefault",
+            "get",
+            "items",
+            "keys",
+            "values",
+            "pop",
+            "sorted",
+            "list",
+            "tuple",
+            "set",
+            "frozenset",
+            "dict",
+            "enumerate",
+            "reversed",
+            "zip",
+            "len",
+            "min",
+            "max",
+            "any",
+            "all",
+            "sum",
+            "iter",
+            "next",
+            "OrderedDict",
+            "defaultdict",
+            "namedtuple",
+            "field",
+            # showing it to a person
+            "print",
+            "debug",
+            "info",
+            "warning",
+            "warn",
+            "error",
+            "exception",
+            "critical",
+            "log",
+            "repr",
+            "str",
+            "bool",
+            "int",
+            "float",
+            "isinstance",
+            "type",
+            "id",
+            "hash",
+        ]
+    )
+    #: Names an HTTP request is made through: `get` and `head` on these send what they are given.
+    _HTTP: ClassVar[frozenset[str]] = frozenset(
+        [
+            "requests",
+            "httpx",
+            "aiohttp",
+            "urllib",
+            "urllib3",
+            "http",
+            "https",
+            "session",
+            "client",
+            "curl_cffi",
+            "pycurl",
+        ]
+    )
+    #: Modules whose functions of any name only match or compare text (`re.compile`, not the builtin).
+    MATCHING: ClassVar[frozenset[str]] = frozenset(["re", "regex", "fnmatch", "difflib"])
+    #: Spans per (content hash, focus lines): its own table, as `InertLiterals._CACHE` is another analysis.
+    _DATA_CACHE: ClassVar[dict[tuple[int, frozenset[int]], frozenset[tuple[int, int]]]] = {}
+
+    def _is_sink(self, node: ast.Call) -> bool:
+        """A use: every call that is not a consumer, whatever it is called or wherever it is defined."""
+        dotted = self.dotted(node.func) or ""
+        if dotted.partition(".")[0] in self.MATCHING:
+            return False
+        return self.name(node.func) not in self.CONSUMERS
+
+    def _reached(self) -> set[Label]:
+        reached: set[Label] = set()
+        for node in self.calls:
+            if self._is_sink(node):
+                reached |= self.given(node)
+            elif self.name(node.func) in self._FETCH:
+                # `requests.get(url)` sends: a fetch verb is a use for a URL-shaped value, as in
+                # `InertLiterals`, and for any value when it is called on an HTTP client or
+                # module (`requests.get('https://' + host)`); `data.get(key)` is a lookup.
+                if (self.dotted(node.func) or "").partition(".")[0] in self._HTTP:
+                    reached |= self.given(node)
+                else:
+                    reached |= self.given(node) & self._url_seeds
+        return reached
+
+    @classmethod
+    def data_spans(
+        cls, source: str, raw: bytes, focus: frozenset[int]
+    ) -> frozenset[tuple[int, int]]:
+        """UTF-8 byte spans of the string literals on `focus` lines that reach no use; empty when
+        the source does not parse, names a way to run a string, or holds more literals than the
+        flow reads, so nothing is dropped on a file this cannot read."""
+        key = (hash(raw), focus)
+        spans = cls._DATA_CACHE.get(key)
+        if spans is None:
+            if len(cls._DATA_CACHE) > 256:
+                cls._DATA_CACHE.clear()
+            spans = cls._data(source, focus)
+            cls._DATA_CACHE[key] = spans
+        return spans
+
+    @classmethod
+    def spans_at(cls, text: str, raw: bytes, offsets: Sequence[int]) -> tuple[tuple[int, int], ...]:
+        """The data-only literals that hold any of the byte `offsets`, as sorted byte spans."""
+        focus = frozenset(raw.count(b"\n", 0, offset) + 1 for offset in offsets)
+        return tuple(sorted(cls.data_spans(text, raw, focus)))
+
+    @classmethod
+    def _runs_a_string(cls, tree: ast.AST) -> bool:
+        """Whether the file names a way to run a string: `exec`, `eval`, the builtin `compile`,
+        `execfile` or `__import__`. A method of that name (`re.compile`, `pattern.exec`) is not the
+        builtin, and `from re import compile` makes the bare name the matcher; `builtins.compile`
+        is the builtin."""
+        matcher = any(
+            isinstance(node, ast.ImportFrom)
+            and (node.module or "").partition(".")[0] in cls.MATCHING
+            and any(alias.name == "compile" for alias in node.names)
+            for node in ast.walk(tree)
+        )
+        named = cls._RUN | {"execfile", "__import__"}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and node.id in named:
+                if node.id == "compile" and matcher:
+                    continue
+                return True
+            if isinstance(node, ast.Attribute):
+                builtin = isinstance(node.value, ast.Name) and node.value.id in (
+                    "builtins",
+                    "__builtins__",
+                )
+                if node.attr in ("exec", "eval", "execfile") or (builtin and node.attr in named):
+                    return True
+        return False
+
+    @classmethod
+    def _data(cls, source: str, focus: frozenset[int]) -> frozenset[tuple[int, int]]:
+        try:
+            tree = PythonSyntax.parse(source)
+        except (SyntaxError, ValueError):
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
+            return frozenset()
+        if cls._runs_a_string(tree):
+            return frozenset()
+        return cls._spans(source, focus - cls._exported_lines(tree))
+
+    @classmethod
+    def _exported_lines(cls, tree: ast.AST) -> frozenset[int]:
+        """Lines whose literals another module may read: a module-level or class-level constant, and
+        the body of a function, that nothing in this file refers to. A constant written for an
+        importer to send to (`__init__.py` holding the host a sibling module posts to) is not a
+        table this file matches text against, whichever consumers it names, so it is never data."""
+        loaded = {
+            node.id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
+        } | {
+            node.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load)
+        }
+        lines: set[int] = set()
+        holders = [tree, *(n for n in ast.walk(tree) if isinstance(n, ast.ClassDef))]
+        for holder in holders:
+            in_class = isinstance(holder, ast.ClassDef)
+            for stmt in getattr(holder, "body", ()):
+                if isinstance(stmt, ast.Assign | ast.AnnAssign):
+                    targets = stmt.targets if isinstance(stmt, ast.Assign) else [stmt.target]
+                    named = {t.id for t in targets if isinstance(t, ast.Name)}
+                    # A class attribute is read through an instance (`self.url`) or the class, which
+                    # the flow does not follow: always left to the importers and the methods.
+                    unread = in_class or (bool(named) and not named & loaded)
+                elif isinstance(stmt, ast.FunctionDef | ast.AsyncFunctionDef):
+                    unread = stmt.name not in loaded
+                else:
+                    continue
+                if unread:
+                    lines.update(range(stmt.lineno, (stmt.end_lineno or stmt.lineno) + 1))
+        return frozenset(lines)
+
+
 # Spans of the files a scan read, keyed by their bytes: emptied after each scan with the other caches
 # that hold a scan's files (foundation/collector).
 ScanCaches.register(InertLiterals._CACHE)
+ScanCaches.register(TextLiterals._DATA_CACHE)
 
-__all__ = ["InertLiterals"]
+__all__ = ["InertLiterals", "TextLiterals"]

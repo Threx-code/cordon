@@ -163,6 +163,23 @@ class DestinationLabels:
             senders = grown
         return {c.lineno for c in PythonSyntax.of(tree, ast.Call) if called(c) in senders}
 
+    @staticmethod
+    def _data_literals(
+        content: FileContent, language: str | None, raw: bytes
+    ) -> tuple[tuple[int, int], ...]:
+        """The Python literals holding a candidate host that reach no use (`TextLiterals`): a security
+        tool's list of the drop points it knows. Empty for any other language, a file that does not
+        parse or one that names a way to run a string."""
+        if language != "python":
+            return ()
+        from itertools import islice
+
+        from cordon_scanner.analysis.python.inert_literals import TextLiterals
+        from cordon_scanner.analysis.shared.destinations import Destinations
+
+        offsets = [c.start() for c in islice(Destinations.candidates(raw), 200)]
+        return TextLiterals.spans_at(content.text, raw, offsets) if offsets else ()
+
     @classmethod
     def destination_capabilities(
         cls, content: FileContent, language: str | None = None, *, notifier_exempt: bool = True
@@ -204,15 +221,20 @@ class DestinationLabels:
         # time (a 4 MB API model: 1.6 s of spans, then no candidate; measured 2026-10-31).
         # Block comments are asked of `FileContent.in_block_comment`, indexed once per file.
         ignore: tuple[tuple[int, int], ...] | None = None
+        data: tuple[tuple[int, int], ...] = ()
 
         match = None
         for candidate in Destinations.candidates(raw):
             if ignore is None:
                 ignore = DocumentationSpans.of(raw, language)
+                data = cls._data_literals(content, language, raw)
             offset = candidate.start()
             if SourceComments.inside_spans(ignore, offset) or content.in_block_comment(
                 offset, language
             ):
+                continue
+            if any(start <= offset and candidate.end() <= end for start, end in data):
+                # A host a Python module lists to match text against, never to send to.
                 continue
             if TextPosition.is_comment(content, offset, language):
                 continue

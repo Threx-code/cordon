@@ -20,7 +20,11 @@ import bisect
 import re
 import shlex
 from dataclasses import dataclass
-from typing import Final
+from typing import ClassVar, Final
+
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
+from cordon_scanner.foundation.once import OneOff
+from cordon_scanner.foundation.paths import PackagePaths
 
 # -- Commands -------------------------------------------------------------------------------
 
@@ -548,9 +552,93 @@ _WIDE_DIRECTORIES: Final = re.compile(
 )
 
 
+class AgentSafeguards:
+    """The switches that turn an agent's own checks off, one definition for every place that reads them.
+
+    The settings files (`SettingsFileFindings`: Claude Code's `defaultMode`, Gemini CLI's approval
+    keys, VS Code's `chat.tools.autoApprove`, Codex's approval and sandbox modes), the capability
+    that finds the flags in code (`CAP.AGENT.UNATTENDED.001`, which a test holds to this list) and
+    the instruction text of a skill or an agent file (`SkillClaims`) all name the same few keys,
+    values and flags. In text an author writes for the agent, naming one is telling the agent to use
+    it, or to set it; no description claims that.
+    """
+
+    BYPASS_MODE: ClassVar[str] = "bypassPermissions"
+    ENABLE_ALL_MCP: ClassVar[str] = "enableAllProjectMcpServers"
+    VSCODE_AUTO_APPROVE: ClassVar[str] = "chat.tools.autoApprove"
+    #: Gemini CLI's keys: a true value, or `yolo`, approves every tool call.
+    GEMINI_KEYS: ClassVar[tuple[str, ...]] = (
+        "defaultApprovalMode",
+        "approvalMode",
+        "yolo",
+        "autoAccept",
+    )
+    CODEX_POLICY: ClassVar[tuple[str, str]] = ("approval_policy", "never")
+    CODEX_SANDBOX: ClassVar[tuple[str, str]] = ("sandbox_mode", "danger-full-access")
+    #: Settings keys and values, distinctive alone: no other program or setting takes these.
+    KEYS_ALONE: ClassVar[tuple[str, ...]] = (
+        BYPASS_MODE,
+        CODEX_SANDBOX[1],
+        VSCODE_AUTO_APPROVE,
+        ENABLE_ALL_MCP,
+    )
+    #: Generic words: only beside the key that gives them their meaning, on one line.
+    KEYS_BESIDE: ClassVar[tuple[tuple[str, str], ...]] = (
+        CODEX_POLICY,
+        ("approvalMode", "yolo"),
+        ("defaultApprovalMode", "yolo"),
+        ("autoAccept", "true"),
+    )
+
+    @staticmethod
+    @OneOff.cache
+    def flags() -> tuple[tuple[str, ...], tuple[tuple[str, str], ...]]:
+        """The command-line flags that start an agent with its checks off (`detect/data/agent-switch-flags.json`):
+        the ones distinctive alone, and the generic ones with the agent that gives them their meaning,
+        each pair read on one line. Data, for the reason the import groups and the chat endpoints are:
+        `CAP.AGENT.UNATTENDED.001` finds these flags in any code, so spelled in this file they read
+        as the launch they describe (the self-scan said so on 2026-11-17); a test holds the table to
+        the rule's own patterns."""
+        table = ScannedJson.loads(
+            (PackagePaths.data("detect") / "agent-switch-flags.json").read_text(encoding="utf-8")
+        )
+        alone = tuple(str(flag) for flag in table["alone"])
+        beside = tuple((str(first), str(second)) for first, second in table["beside"])
+        return alone, beside
+
+    @staticmethod
+    @OneOff.cache
+    def _patterns() -> tuple[re.Pattern[str], tuple[re.Pattern[str], ...]]:
+        """The one pattern for every token distinctive alone, and one per generic pair."""
+        flags_alone, flags_beside = AgentSafeguards.flags()
+        alone = (*flags_alone, *AgentSafeguards.KEYS_ALONE)
+        beside = (*flags_beside, *AgentSafeguards.KEYS_BESIDE)
+        return (
+            re.compile(
+                r"(?<![\w.-])(?:" + "|".join(re.escape(token) for token in alone) + r")(?![\w-])"
+            ),
+            tuple(
+                re.compile(
+                    rf"(?i)(?<![\w-]){re.escape(first)}(?![\w-])[^\n]{{0,120}}?(?<![\w-]){re.escape(second)}(?![\w-])"
+                    rf"|(?<![\w-]){re.escape(second)}(?![\w-])[^\n]{{0,120}}?(?<![\w-]){re.escape(first)}(?![\w-])"
+                )
+                for first, second in beside
+            ),
+        )
+
+    @staticmethod
+    def in_text(text: str) -> tuple[int, int] | None:
+        """Where the text first names a switch, as a character span, or None."""
+        alone, beside = AgentSafeguards._patterns()
+        spans = [m.span() for m in (alone.search(text),) if m is not None]
+        spans += [m.span() for p in beside if (m := p.search(text)) is not None]
+        return min(spans) if spans else None
+
+
 __all__ = [
     "API_BASE_VARIABLES",
     "OFFICIAL_MCP_PACKAGES",
+    "AgentSafeguards",
     "ApiTraffic",
     "CommandClassifier",
     "CommandVerdict",
