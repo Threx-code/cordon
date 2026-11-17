@@ -18,9 +18,12 @@ The CLI keeps `PolicyGate` until M4 and M5 move the entry points onto `decide()`
 from __future__ import annotations
 
 import itertools
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from typing import ClassVar
 
+from cordon_scanner.contracts.schema_check import SchemaChecker
+from cordon_scanner.contracts.schemas import ContractSchemas
 from cordon_scanner.decide.decision.compiler import PolicyCompiler
 from cordon_scanner.decide.decision.decider import Decider
 from cordon_scanner.decide.decision.evidence import (
@@ -167,23 +170,40 @@ class LegacyBridge:
 
     @classmethod
     def differences(
-        cls, result: ScanResult, policy: Policy, today: date | None = None
+        cls,
+        result: ScanResult,
+        policy: Policy,
+        today: date | None = None,
+        *,
+        check_schema: bool = False,
     ) -> list[str]:
         """Where `PolicyGate` and `Decider.decide` disagree on this pair; empty when they agree.
 
         Agreement means: BLOCK exactly when the gate's exit code is not CLEAN; for FINDINGS, the findings
         behind the content reasons are the gate's triggering findings; for INCOMPLETE, an R204 reason; for
-        CLEAN, no content reason."""
+        CLEAN, no content reason. Also: the decision is the same bytes on a second call and when the findings
+        arrive in the opposite order."""
         today = today or date.today()
         verdict = PolicyGate.evaluate(result, policy)
-        decision = Decider.decide(
-            ArtifactRef("package", "pkg:npm/legacy"),
-            Context("cli", "dev"),
-            cls.compiled(policy),
-            cls.evidence(result, policy, today),
-            datetime(today.year, today.month, today.day, 12, tzinfo=UTC),
-        )
+        artifact, context = ArtifactRef("package", "pkg:npm/legacy"), Context("cli", "dev")
+        table, evidence = cls.compiled(policy), cls.evidence(result, policy, today)
+        clock = datetime(today.year, today.month, today.day, 12, tzinfo=UTC)
+        decision = Decider.decide(artifact, context, table, evidence, clock)
         found: list[str] = []
+        # Determinism: the same call again, and the evidence assembled in the opposite order, are the same bytes.
+        again = Decider.decide(artifact, context, table, evidence, clock)
+        flipped = replace(evidence, findings=tuple(reversed(evidence.findings)))
+        if check_schema:
+            shape = decision.to_json()
+            if SchemaChecker.errors(ContractSchemas.load("decision-v1"), shape):
+                found.append("schema: the decision is not a valid decision/v1 predicate")
+        if again.canonical_bytes() != decision.canonical_bytes():
+            found.append("nondeterministic: the same call differs")
+        if (
+            Decider.decide(artifact, context, table, flipped, clock).canonical_bytes()
+            != decision.canonical_bytes()
+        ):
+            found.append("nondeterministic: the order of the findings matters")
         failed = verdict.exit_code is not ExitCode.CLEAN
         if decision.blocked != failed:
             found.append(f"state: gate {verdict.exit_code.name}, decision {decision.state}")

@@ -139,7 +139,9 @@ class Harness:
                 rows_seen += 1
                 for policy in grid:
                     pairs += 1
-                    problems = LegacyBridge.differences(result, policy, today)
+                    problems = LegacyBridge.differences(
+                        result, policy, today, check_schema=pairs % 50 == 0
+                    )
                     if problems:
                         kinds.update(problem.split(":")[0] for problem in problems)
                     else:
@@ -147,6 +149,7 @@ class Harness:
         outcomes["pairs"], outcomes["agree"], outcomes["differ"] = pairs, agree, pairs - agree
         print(
             f"groups {len(patterns)} rows {rows_seen} policies {len(grid)} pairs {pairs} agree {agree} differ {pairs - agree}"
+            f" (each also run twice and with the findings reversed; {-(-pairs // 50)} validated against decision/v1)"
         )
         print(f"findings that were not a finding's fields (skipped): {unusable}")
         print("differences by kind:", dict(kinds))

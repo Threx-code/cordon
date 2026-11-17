@@ -117,6 +117,11 @@ class TestTheLegacyPolicyAndTheDecisionAgree:
         assert set(seen) == {"CLEAN", "FINDINGS", "INCOMPLETE"}
         assert all(count > 1000 for count in seen.values())
 
+    def test_the_decisions_are_valid_decision_v1_predicates(self) -> None:
+        for name, scan in SCANS.items():
+            for policy in POLICIES[::97]:
+                assert LegacyBridge.differences(scan, policy, TODAY, check_schema=True) == [], name
+
     def test_the_default_policy_blocks_malware_and_lets_infrastructure_choices_pass(self) -> None:
         policy = Policy()
         assert LegacyBridge.differences(SCANS["infra"], policy, TODAY) == []
