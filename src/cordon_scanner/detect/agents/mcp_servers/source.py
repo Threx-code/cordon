@@ -444,6 +444,35 @@ class McpServerSource:
             return "points the agent at credential files or a command that moves them"
         return None
 
+    #: A stable code for each reason `_poisoned_description` gives, recorded in the finding's
+    #: `explanation.basis` so an audit counts findings by reason without parsing the message. Every
+    #: reason above has one (pinned by a test); a reason without a code is recorded as `phrase:other`.
+    REASON_CODES: ClassVar[dict[str, str]] = {
+        "carries invisible characters": "invisible",
+        "wraps text in a tag addressed to the model": "wrapped",
+        "asks the agent to keep something from the user": "secrecy",
+        "tells the agent how to use other tools": "other_tools",
+        "says it is out of service and sends the agent to another tool": "out_of_service",
+        "presents itself as the better version of another tool": "replaces_tool",
+        "advertises itself to the agent choosing between tools": "sales_claims",
+        "calls itself the superior edition so the agent picks it": "superior_edition",
+        "makes calling another tool a precondition of this one": "must_first_call",
+        "says it changes the user's input before using it": "rewrites_input",
+        "orders the agent to run a shell command": "orders_command",
+        "orders the agent to contact an outside address": "orders_request",
+        "orders the agent to change the user's shell start-up or schedule": "orders_persistence",
+        "says it acts regardless of what the user asked": "overrides_user",
+        "announces that another tool now behaves differently": "shadows_tool",
+        "makes calling another tool a condition of using this one": "call_around",
+        "scripts an alarm for the agent to tell the user": "scripted_alarm",
+        "points the agent at credential files or a command that moves them": "credential_files",
+    }
+
+    @staticmethod
+    def reason_code(reason: str) -> str:
+        """The `explanation.basis` code of a `_poisoned_description` reason."""
+        return "phrase:" + McpServerSource.REASON_CODES.get(reason, "other")
+
     @staticmethod
     def _overridden_arguments(text: str) -> list[tuple[int, int]]:
         """Where a decorated Python tool assigns a string literal to one of its own parameters

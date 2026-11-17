@@ -589,6 +589,7 @@ class ScanCache:
             matched_rule=explanation_data["matched_rule"],
             contributing=tuple(explanation_data.get("contributing", ())),
             escalations=tuple(explanation_data.get("escalations", ())),
+            basis=tuple(explanation_data.get("basis", ())),
         )
 
         suppression = None

@@ -48,6 +48,7 @@ class AgentFinding:
         severity: Severity | None = None,
         secret: bool = False,
         confidence: Confidence | None = None,
+        basis: tuple[str, ...] = (),
     ) -> Finding:
         index = text.find(needle)
         if index < 0:
@@ -66,6 +67,7 @@ class AgentFinding:
             severity=severity,
             secret=secret,
             confidence=confidence,
+            basis=basis,
         )
 
     #: The id every agent-chain finding carries, wherever in the family it is built.
@@ -84,6 +86,7 @@ class AgentFinding:
         severity: Severity | None = None,
         secret: bool = False,
         confidence: Confidence | None = None,
+        basis: tuple[str, ...] = (),
     ) -> Finding:
         rule = RULES[rule_id]
         content = unit.content
@@ -126,7 +129,7 @@ class AgentFinding:
                 span=(start, end),
             ),
             remediation=rule.remediation,
-            explanation=Explanation(summary=rule.title, matched_rule=rule.rule_id),
+            explanation=Explanation(summary=rule.title, matched_rule=rule.rule_id, basis=basis),
             # Install-time only where an install hook runs the file (item 51): an agent reads
             # AGENTS.md or .cursorrules when it works in the tree, no install runs them.
             risk=ctx.scorer.score(

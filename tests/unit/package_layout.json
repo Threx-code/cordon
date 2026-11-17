@@ -1110,6 +1110,7 @@
   "test_mcp_code_js.py": "detect/agents/mcp_servers",
   "test_mcp_descriptions.py": "detect/agents/mcp_servers",
   "test_own_tool_sequencing.py": "detect/agents/mcp_servers",
+  "test_description_basis.py": "detect/agents/mcp_servers",
   "test_mcp_model.py": "detect/agents/mcp_servers",
   "test_mcp_packages.py": "mcp",
   "test_mcp_protocol.py": "mcp",

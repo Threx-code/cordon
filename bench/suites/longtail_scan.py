@@ -152,6 +152,10 @@ class LongtailScan:
                     # Which detector made it: what tells a content block from an intel one
                     # (`bench/tools/content.py`). Appended, like the line.
                     f.get("detector"),
+                    # Which reading of a rule with several made it (`Explanation.basis`: codes such
+                    # as `description`, `phrase:secrecy`, `model=0.84/0.6813`; never matched text),
+                    # so an audit counts findings by reading from the rows. Appended, like the detector.
+                    (f.get("explanation") or {}).get("basis"),
                 ]
                 for f in rep.get("findings", [])
             ]

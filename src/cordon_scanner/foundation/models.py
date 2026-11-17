@@ -403,6 +403,11 @@ class Explanation:
     """Fingerprints of the findings that fed a composite rule."""
     escalations: tuple[str, ...] = ()
     """Context-driven escalations, such as execution during install."""
+    basis: tuple[str, ...] = ()
+    """Which reading of a rule with several readings decided, as stable codes: the text read
+    (`description`, `return`), then each reading that fired (`phrase:secrecy`, `chain:order+banner`,
+    `model=0.84/0.6813` for score and block line). Never matched text. Lets a consumer count findings by
+    the reading that made them without parsing the message."""
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {"summary": self.summary, "matched_rule": self.matched_rule}
@@ -410,6 +415,8 @@ class Explanation:
             out["contributing"] = list(self.contributing)
         if self.escalations:
             out["escalations"] = list(self.escalations)
+        if self.basis:
+            out["basis"] = list(self.basis)
         return out
 
 
