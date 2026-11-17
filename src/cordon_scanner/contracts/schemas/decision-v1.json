@@ -171,6 +171,9 @@
           ]
         }
       }
+    },
+    "clock_bucket": {
+      "$ref": "#/$defs/timestamp"
     }
   }
 }
