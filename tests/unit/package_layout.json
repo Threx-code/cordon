@@ -824,6 +824,7 @@
   "test_digests.py": "contracts",
   "test_evidence.py": "decide/decision",
   "test_feed_conformance.py": "intel/malware",
+  "test_golden_decisions.py": "decide/decision",
   "test_golden_ids.py": "contracts",
   "test_inheritance.py": "decide/decision",
   "test_legacy_bridge.py": "decide/decision",
