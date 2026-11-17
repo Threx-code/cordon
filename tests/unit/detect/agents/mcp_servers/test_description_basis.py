@@ -20,6 +20,7 @@ from cordon_scanner.detect.agents.mcp_servers.source import McpServerSource
 from cordon_scanner.engine.cache import ScanCache
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Explanation, Finding
+from support import requires_forked_workers
 
 RULE = "SUSPECT.MCP.TOOL_DESCRIPTION.001"
 
@@ -80,6 +81,7 @@ class TestTheBasisOnFindings:
         )
         assert ("return", "wrapped") in [f.explanation.basis for f in found]
 
+    @requires_forked_workers
     def test_the_learned_reading_records_its_score_and_line(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
