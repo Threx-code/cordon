@@ -20,7 +20,7 @@ import bisect
 import re
 import shlex
 from dataclasses import dataclass
-from typing import Final
+from typing import ClassVar, Final
 
 # -- Commands -------------------------------------------------------------------------------
 
@@ -548,9 +548,71 @@ _WIDE_DIRECTORIES: Final = re.compile(
 )
 
 
+class AgentSafeguards:
+    """The switches that turn an agent's own checks off, one definition for every place that reads them.
+
+    The settings files (`SettingsFileFindings`: Claude Code's `defaultMode`, Gemini CLI's approval
+    keys, VS Code's `chat.tools.autoApprove`, Codex's approval and sandbox modes), the capability
+    that finds the flags in code (`CAP.AGENT.UNATTENDED.001`, which a test holds to this list) and
+    the instruction text of a skill or an agent file (`SkillClaims`) all name the same few keys,
+    values and flags. In text an author writes for the agent, naming one is telling the agent to use
+    it, or to set it; no description claims that.
+    """
+
+    BYPASS_MODE: ClassVar[str] = "bypassPermissions"
+    ENABLE_ALL_MCP: ClassVar[str] = "enableAllProjectMcpServers"
+    VSCODE_AUTO_APPROVE: ClassVar[str] = "chat.tools.autoApprove"
+    #: Gemini CLI's keys: a true value, or `yolo`, approves every tool call.
+    GEMINI_KEYS: ClassVar[tuple[str, ...]] = (
+        "defaultApprovalMode",
+        "approvalMode",
+        "yolo",
+        "autoAccept",
+    )
+    CODEX_POLICY: ClassVar[tuple[str, str]] = ("approval_policy", "never")
+    CODEX_SANDBOX: ClassVar[tuple[str, str]] = ("sandbox_mode", "danger-full-access")
+    #: Distinctive alone: no other program or setting takes these.
+    ALONE: ClassVar[tuple[str, ...]] = (
+        "--dangerously-skip-permissions",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "--trust-all-tools",
+        BYPASS_MODE,
+        CODEX_SANDBOX[1],
+        VSCODE_AUTO_APPROVE,
+        ENABLE_ALL_MCP,
+    )
+    #: Generic words: only beside the agent or the key that gives them their meaning, on one line.
+    BESIDE: ClassVar[tuple[tuple[str, str], ...]] = (
+        ("--yolo", "gemini"),
+        ("--allow-all-tools", "copilot"),
+        CODEX_POLICY,
+        ("approvalMode", "yolo"),
+        ("defaultApprovalMode", "yolo"),
+        ("autoAccept", "true"),
+    )
+    _ALONE: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?<![\w.-])(?:" + "|".join(re.escape(token) for token in ALONE) + r")(?![\w-])"
+    )
+    _BESIDE: ClassVar[tuple[re.Pattern[str], ...]] = tuple(
+        re.compile(
+            rf"(?i)(?<![\w-]){re.escape(first)}(?![\w-])[^\n]{{0,120}}?(?<![\w-]){re.escape(second)}(?![\w-])"
+            rf"|(?<![\w-]){re.escape(second)}(?![\w-])[^\n]{{0,120}}?(?<![\w-]){re.escape(first)}(?![\w-])"
+        )
+        for first, second in BESIDE
+    )
+
+    @staticmethod
+    def in_text(text: str) -> tuple[int, int] | None:
+        """Where the text first names a switch, as a character span, or None."""
+        spans = [m.span() for m in (AgentSafeguards._ALONE.search(text),) if m is not None]
+        spans += [m.span() for p in AgentSafeguards._BESIDE if (m := p.search(text)) is not None]
+        return min(spans) if spans else None
+
+
 __all__ = [
     "API_BASE_VARIABLES",
     "OFFICIAL_MCP_PACKAGES",
+    "AgentSafeguards",
     "ApiTraffic",
     "CommandClassifier",
     "CommandVerdict",

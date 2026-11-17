@@ -376,10 +376,15 @@ class InstructionText:
         """Whether "without asking the user" sits under a prohibition in its own sentence: "never
         install packages without asking the user" tells the agent to ask; "push without asking the
         user" tells it not to."""
-        if not match.group(0).lower().startswith("without"):
-            return False
-        start = max(text.rfind(c, 0, match.start()) for c in ".!?\n")
-        return _PROHIBITION.search(text, start + 1, match.start()) is not None
+        return match.group(0).lower().startswith("without") and InstructionText.prohibited(
+            text, match.start()
+        )
+
+    @staticmethod
+    def prohibited(text: str, at: int) -> bool:
+        """Whether a prohibition ("never", "do not", "avoid") comes before `at` in its own sentence."""
+        start = max(text.rfind(c, 0, at) for c in ".!?\n")
+        return _PROHIBITION.search(text, start + 1, at) is not None
 
     @staticmethod
     def _decode_tags(raw: bytes) -> str:

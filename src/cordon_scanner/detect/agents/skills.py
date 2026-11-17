@@ -9,7 +9,9 @@ import re
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
+from cordon_scanner.detect.agents.configuration import AgentSafeguards
 from cordon_scanner.detect.agents.defensive_doc import DefensiveDoc
+from cordon_scanner.detect.agents.instructions import InstructionText
 from cordon_scanner.foundation.formats.datayaml import DataYaml, DataYamlError
 from cordon_scanner.foundation.models import Severity
 
@@ -395,16 +397,19 @@ class SkillClaims:
     @staticmethod
     def unclaimed(
         text: str, findings: Iterable[Finding], *, concealed: bool, described: bool = True
-    ) -> tuple[frozenset[str] | None, list[tuple[str, Finding]]]:
-        """The classes the description claims (None: none declared) and the acts it does not.
+    ) -> tuple[frozenset[str] | None, list[tuple[str, int, int]]]:
+        """The classes the description claims (None: none declared) and the acts it does not, each
+        as (act, first byte, last byte).
 
         An act is a reader's finding at MEDIUM: one already at the gate needs no help, and the
-        official installer's LOW finding is recorded as an installer. A quoted example in a
-        document about the attack is not an act (`DefensiveDoc.lowers`, with the skill model's
-        reading beside it). An act no description can claim (`REQUIRES` names none) and an act
-        that is concealed are unclaimed whatever the description says; any other is unclaimed when
-        the description does not claim what it needs. `described` is False for an instruction file
-        that has no description to read: only the acts nobody can claim count there."""
+        official installer's LOW finding is recorded as an installer. Naming a switch that turns
+        the agent's own checks off (`AgentSafeguards`) is an act too, unless a prohibition comes
+        before it in its sentence ("never run with ..."). A quoted example in a document about the
+        attack is not an act (`DefensiveDoc.lowers`, with the skill model's reading beside it). An
+        act no description can claim (`REQUIRES` names none) and an act that is concealed are
+        unclaimed whatever the description says; any other is unclaimed when the description does
+        not claim what it needs. `described` is False for an instruction file that has no
+        description to read: only the acts nobody can claim count there."""
         front = SkillClaims.front_matter(text) if described else None
         claimed = SkillClaims.claimed(front) if front is not None else None
         reading = claimed
@@ -413,22 +418,33 @@ class SkillClaims:
         held = list(findings)
         model_agrees = any(f.rule_id == SkillClaims.SKILL_MODEL_RULE for f in held)
         raw = text.encode("utf-8")
-        acts: list[tuple[str, Finding]] = []
+        acts: list[tuple[str, int, int]] = []
         for finding in held:
             act = SkillClaims.ACT_RULE.get(finding.rule_id)
             if act is None or finding.severity != Severity.MEDIUM:
                 continue
-            location = finding.location
-            start = len(raw[: location.byte_start or 0].decode("utf-8", "ignore"))
-            end = start + len(
-                raw[location.byte_start or 0 : location.byte_end or 0].decode("utf-8", "ignore")
-            )
+            first, last = finding.location.byte_start or 0, finding.location.byte_end or 0
+            start = len(raw[:first].decode("utf-8", "ignore"))
+            end = start + len(raw[first:last].decode("utf-8", "ignore"))
             if DefensiveDoc.lowers(True, text, start, end, model_agrees=model_agrees):
                 continue
             needs = SkillClaims.REQUIRES.get(act)
             if concealed or needs is None or (reading is not None and needs not in reading):
-                acts.append((act, finding))
-        return claimed, acts
+                acts.append((act, first, last))
+        switch = AgentSafeguards.in_text(text)
+        if (
+            switch is not None
+            and not InstructionText.prohibited(text, switch[0])
+            and not DefensiveDoc.lowers(True, text, *switch, model_agrees=model_agrees)
+        ):
+            acts.append(
+                (
+                    "switches_off_checks",
+                    len(text[: switch[0]].encode("utf-8")),
+                    len(text[: switch[1]].encode("utf-8")),
+                )
+            )
+        return claimed, sorted(acts, key=lambda act: act[1])
 
 
 __all__ = ["SkillClaims", "SkillOrigin", "SkillScripts"]

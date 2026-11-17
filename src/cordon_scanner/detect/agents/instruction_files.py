@@ -170,21 +170,22 @@ class InstructionFileFindings:
         claimed, acts = SkillClaims.unclaimed(text, found, concealed=hidden, described=skill)
         if not acts:
             return
-        first = acts[0][1].location
+        first_start, first_end = acts[0][1], acts[0][2]
         said = ", ".join(sorted(claimed or ())) or "nothing of this kind"
         what = {
             "fetch_run": "run a download from a host that is not a listed installer",
             "remote_instructions": "fetch a document and follow it",
             "overrides_agent": "set its own instructions aside, act without asking the user or "
             "hide what it does from the user",
+            "switches_off_checks": "switch off the agent's own permission and sandbox checks",
         }
-        done = "; ".join(dict.fromkeys(what[act] for act, _ in acts))
+        done = "; ".join(dict.fromkeys(what[act] for act, *_ in acts))
         yield AgentFinding.finding(
             "SUSPECT.AGENT.SKILL_CLAIM_MISMATCH.001",
             unit,
             ctx,
-            first.byte_start or 0,
-            first.byte_end or 0,
+            first_start,
+            first_end,
             message=RULES["SUSPECT.AGENT.SKILL_CLAIM_MISMATCH.001"].message
             + (f" The description claims: {said}." if skill else "")
             + f" The instructions tell the agent to {done}"
