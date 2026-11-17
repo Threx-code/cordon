@@ -241,9 +241,11 @@ _ORDERS_A_REQUEST: Final = re.compile(
 
 #: Text telling the agent to change the user's shell start-up or schedule: "update the environment
 #: by adding the following line to the .bashrc file" (MCP-SafetyBench "FileSystem Poisoning").
+#: `profile` is the shell's only as the dotted file (`.profile`, `~/.profile`): "add to
+#: profile-list" and "add a note to the profile" are a user's profile in an application.
 _ORDERS_PERSISTENCE: Final = re.compile(
     r"(?i)\b(?:add|append|write|insert)(?:ing)?\b[^.]{0,60}\b(?:to|into)\s+(?:the\s+)?(?:user'?s?\s+)?"
-    r"(?:~/)?\.?(?:bashrc|zshrc|bash_profile|profile|crontab)\b"
+    r"(?:(?:~/)?\.?(?:bashrc|zshrc|bash_profile|crontab)|(?:~/)?\.profile)\b(?!-\w)"
 )
 
 #: A description overriding what the user asked for: "sets the timeout regardless of user input".
@@ -576,6 +578,26 @@ class McpServerSource:
             )
             if literal:
                 yield literal
+
+    @staticmethod
+    def parameter_labels(text: str, path: str | None = None) -> frozenset[str]:
+        """The `.describe("...")` strings a source declares: the label of one argument of a tool
+        (a zod schema field), not the description of a tool. A few words name the field
+        (`First run ID`, `What you are about to do`); the learned and the sequence readings of a
+        description are not made of them (`LABEL_WORDS`)."""
+        data = not McpServerSource._scoped(text, path)
+        spans = [] if data else ToolRegistrations.spans(text)
+        return frozenset(
+            match.group("dq") or match.group("sq") or match.group("bq") or ""
+            for match in _QUOTED_DESCRIPTION.finditer(text)
+            if match.group(0).startswith(".describe(")
+            and (data or ToolRegistrations.inside(spans, match.start()))
+        )
+
+    LABEL_WORDS: ClassVar[int] = 10
+    """A parameter label shorter than this many words is a name for a field. The learned model and
+    the sequence reading skip it: on the 18 malicious units blocked by the tool-description rule,
+    every blocking text is a tool's own description of 20 words or more."""
 
     @staticmethod
     def _all_literals(text: str) -> Iterator[str]:

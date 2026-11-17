@@ -206,6 +206,26 @@ class IntentSignals:
     _SHELL_SENDER = re.compile(r"\b(?:curl|wget|nc|ncat|nslookup|dig|Invoke-WebRequest|iwr)\b")
 
     @classmethod
+    def beacon_withdraws_for_want_of_identity(
+        cls,
+        language: str | None,
+        content: FileContent,
+        hits: list[CapabilityHit],
+        *,
+        agent_tool: bool,
+    ) -> bool:
+        """Whether `MALWARE.EXFIL.BEACON.001` is withdrawn because the machine's identity is not IN
+        what the file sends. An agent's tool is in the install-hook set so that what it does is
+        graded as code that runs unasked; an API client that names its platform in a User-Agent
+        near its request is not a beacon, as the import-time `SUSPECT.EXFIL.BEACON.001` already
+        requires (review 98: Asana, Notion, search and transcription clients in MalSkillBench were
+        blocked on nearness alone). Only an agent's tool: an install hook is read by nearness in
+        every language, because a callback from code that runs at install is a beacon with or
+        without the identity in its payload (a Python rule that required it took the block from 5
+        PyPI malware units of the development half, reviews/mcp-98/17)."""
+        return agent_tool and not cls.identity_in_what_is_sent(language, content, hits)
+
+    @classmethod
     def identity_in_what_is_sent(
         cls, language: str | None, content: FileContent, hits: list[CapabilityHit]
     ) -> bool:

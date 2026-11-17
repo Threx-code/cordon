@@ -44,8 +44,13 @@ class AreaFitKit:
 
     @staticmethod
     def shipped() -> dict[str, Any]:
+        """The shipped model as the unfolded base `AreaFit.carry` takes (format 2): the base the MCP
+        refit started from, with its per-area trees and the fold stamp taken off."""
         with gzip.open(MODEL_PATH, "rt", encoding="utf-8") as handle:
             model: dict[str, Any] = json.load(handle)
+        for key in ("by_area", "schema", "width", "fold"):
+            model.pop(key, None)
+        model["format"] = VerdictModel.UNFOLDED
         return model
 
 

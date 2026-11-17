@@ -93,12 +93,8 @@ class TestTheTwentyEighthOfOctober:
     def test_a_repository_s_malicious_finding_beside_an_mcp_manifest_blocks(self) -> None:
         graded, summary = RepositoryKit.decide(repository=True)
         assert summary["area"] == "mcp"
-        # The line the package is held to is the model's, scaled for MCP (`Verdict.LINE_SCALE`).
-        assert (
-            summary["score"]
-            < summary["block"]
-            == pytest.approx(RepositoryKit.LINE * Verdict.LINE_SCALE["mcp"])
-        )
+        # The line the package is held to is the model's own for MCP (no `Verdict.LINE_SCALE`).
+        assert summary["score"] < summary["block"] == pytest.approx(RepositoryKit.LINE)
         (finding,) = graded
         assert (finding.category, finding.severity) == (Category.MALICIOUS, Severity.CRITICAL)
         assert PolicyGate._fails(finding, Policy())
@@ -124,16 +120,16 @@ class TestTheTwentyEighthOfOctober:
         assert lowers(Category.SUSPICIOUS, True)  # repository grading is option A's, not this
 
 
-class TestTheMcpLineIsNineTenthsOfTheModelsAndItBlocksThere:
-    """A score between 0.9 of the model's MCP line and the line itself blocks an MCP server and no
-    other package: `summary["block"]` is 0.9 x the model's line, and the package-level finding is
-    added only where the score reaches it."""
-
-    SCORE = 0.66  # over 0.9 x 0.7296 = 0.65664, under the fitted line
+class TestTheMcpLineIsTheModelsOwnAndItBlocksThere:
+    """A score at the model's MCP line blocks an MCP server and one under it does not: the line is
+    the fitted one, with no scale on it (it was 0.9 of it until the MCP area had trees of its own).
+    A score of 0.66, which the old 0.9 line blocked, now holds."""
 
     @staticmethod
-    def decide(dependencies: dict[str, str]) -> tuple[list[Finding], dict[str, Any]]:
-        model = {**RepositoryKit.model(), "baseline": math.log(0.66 / 0.34)}
+    def decide(
+        dependencies: dict[str, str], score: float = 0.66
+    ) -> tuple[list[Finding], dict[str, Any]]:
+        model = {**RepositoryKit.model(), "baseline": math.log(score / (1 - score))}
         manifest = json.dumps({"dependencies": dependencies}).encode()
         with mock.patch.object(VerdictModel, "load", return_value=model):
             return Verdict.decide(
@@ -142,15 +138,24 @@ class TestTheMcpLineIsNineTenthsOfTheModelsAndItBlocksThere:
                 {"package.json": manifest},
             )
 
-    def test_an_mcp_server_blocks_at_nine_tenths_of_the_models_line(self) -> None:
+    def test_an_mcp_server_blocks_at_the_models_line(self) -> None:
+        from cordon_scanner.engine.pipeline.ceilings import Ceilings
+
+        graded, summary = self.decide({"@modelcontextprotocol/sdk": "1.0.0"}, score=0.80)
+        assert summary["area"] == "mcp"
+        assert summary["block"] == pytest.approx(RepositoryKit.LINE)
+        assert summary["score"] >= RepositoryKit.LINE
+        Ceilings.score_verdict(summary["score"], summary["block"], summary, graded)
+        assert Verdict.RULE in {f.rule_id for f in graded}
+
+    def test_a_score_the_old_nine_tenths_line_blocked_now_holds(self) -> None:
         from cordon_scanner.engine.pipeline.ceilings import Ceilings
 
         graded, summary = self.decide({"@modelcontextprotocol/sdk": "1.0.0"})
         assert summary["area"] == "mcp"
-        assert summary["block"] == pytest.approx(0.9 * RepositoryKit.LINE)
-        assert summary["block"] <= summary["score"] < RepositoryKit.LINE
+        assert 0.9 * RepositoryKit.LINE <= summary["score"] < summary["block"]
         Ceilings.score_verdict(summary["score"], summary["block"], summary, graded)
-        assert Verdict.RULE in {f.rule_id for f in graded}
+        assert Verdict.RULE not in {f.rule_id for f in graded}
 
     def test_a_package_that_is_no_mcp_server_keeps_its_own_line(self) -> None:
         from cordon_scanner.engine.pipeline.ceilings import Ceilings

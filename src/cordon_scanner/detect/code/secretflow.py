@@ -287,17 +287,20 @@ class JavaScriptLeak:
     """The machine's identity, or the whole environment, reaching a request.
 
     The JavaScript side of `AST.PY.IDENTITY_SENT` and `AST.PY.ENVIRONMENT_SENT`. Sources:
-    `os.hostname()`, `os.userInfo()`, `os.networkInterfaces()` -- who and where
-    this machine is -- and `process.env` as a whole object, not one named key. A source taints the
+    `os.hostname()`, `os.userInfo()`, `os.networkInterfaces()`, `os.homedir()` -- who and where
+    this machine is, the home directory because its path embeds the user name -- and `process.env`
+    as a whole object, not one named key. A source taints the
     name a statement binds it to, object literals over several lines included. Sinks: the arguments
     of a request call (`JavaScriptFlow._CALL`), or `.write`, `.end` or `.send` on an object the file
     made with `http(s).request` or `net`/`tls` `connect` -- never a file stream's `.write`. As
     narrow as `JavaScriptFlow`: one hop through a binding, nothing through a function's return.
     """
 
-    _IDENTITY = re.compile(r"""\bos\s*\.\s*(?:hostname|userInfo|networkInterfaces)\s*\(""")
+    #: The home directory is identity where its value reaches a request, as `process.env.HOME`
+    #: is (`_IDENTITY_ENV`); as the base of a path nothing sends it (`CAP.JS.RECON.001`).
+    _IDENTITY = re.compile(r"""\bos\s*\.\s*(?:hostname|userInfo|networkInterfaces|homedir)\s*\(""")
     #: The calls themselves, for a file that names the `os` module another way.
-    _IDENTITY_CALLS: Final = r"(?:hostname|userInfo|networkInterfaces)"
+    _IDENTITY_CALLS: Final = r"(?:hostname|userInfo|networkInterfaces|homedir)"
     #: `os` under another name, in the raw text: `const o = require("os")`, `import o from "os"`,
     #: `import * as o from "node:os"`.
     _OS_NAME = re.compile(
@@ -306,7 +309,7 @@ class JavaScriptLeak:
     )
     #: The calls imported by name: `const { hostname } = require("os")`, `import { userInfo } from "os"`.
     _OS_CALLS = re.compile(
-        r"""\{[^}]{0,200}\b(?:hostname|userInfo|networkInterfaces)\b[^}]{0,200}\}\s*(?:=\s*require\s*\(\s*|from\s*)["'](?:node:)?os["']"""
+        r"""\{[^}]{0,200}\b(?:hostname|userInfo|networkInterfaces|homedir)\b[^}]{0,200}\}\s*(?:=\s*require\s*\(\s*|from\s*)["'](?:node:)?os["']"""
     )
     #: A process run for who and where this machine is: its output IS the identity. Read on the raw
     #: text, because the command is a string literal (review 98, npm bulk set: `css-*-polyfill`

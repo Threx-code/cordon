@@ -259,18 +259,14 @@ class CompositeGrading:
 
         if (
             compiled.rule.id == CompositeRuleIds.BEACON_RULE
-            and content.path in ctx.agent_run_paths
-            and content.path not in ctx.consumer_install_paths
-            and not IntentSignals.identity_in_what_is_sent(
-                unit.language, content, hits if file_hits is None else file_hits
+            and IntentSignals.beacon_withdraws_for_want_of_identity(
+                unit.language,
+                content,
+                hits if file_hits is None else file_hits,
+                agent_tool=content.path in ctx.agent_run_paths
+                and content.path not in ctx.consumer_install_paths,
             )
         ):
-            # An agent's tool is in the install-hook set so that what it does is graded as code
-            # that runs unasked; an API client that names its platform in a User-Agent near its
-            # request is not a beacon. As the import-time beacon `SUSPECT.EXFIL.BEACON.001`
-            # requires, the machine's identity has to be IN what is sent (review 98: Asana,
-            # Notion, search and transcription clients in MalSkillBench were blocked on nearness
-            # alone). Where no flow is read for the language, nearness still decides.
             return True
 
         if (

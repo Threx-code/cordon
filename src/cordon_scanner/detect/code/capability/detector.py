@@ -284,6 +284,63 @@ class QuotedPythonProbes:
         return [h for h in hits if not (h.capability is Capability.ANTI_ANALYSIS and quoted(h))]
 
 
+class QuotedPythonCalls:
+    """Call syntax inside a Python string: text, not a call."""
+
+    CAPABILITIES: ClassVar[frozenset[Capability]] = frozenset(
+        {Capability.EGRESS, Capability.EXECUTE, Capability.DECODE}
+    )
+
+    @staticmethod
+    def drop(content: FileContent, hits: list[CapabilityHit]) -> list[CapabilityHit]:
+        """Each egress, execute or decode hit of a Python pattern whose matched text is a call
+        (`requests.post(`) and lies wholly inside one string literal, dropped -- a table of the calls
+        a scanner or a guard looks for, a docstring that shows one. Only where the capability has no
+        other hit in the file (the pattern records its first match, so a quoted decoy must not hide a
+        real call: any call of that capability in the code keeps every hit of it), and only in a file
+        that runs no string as code (`InertLiterals.quoted_call_spans`: no `exec`, `eval` or
+        `compile`) and in which no string with call syntax in it is handed to a process, sent or
+        written out (write-then-run: the file's call text is live, all of it). Shell text in a
+        string (`curl ... | sh`) is not call syntax and is not touched.
+        A file that does not parse drops nothing (fail closed)."""
+        if not any(h.capability in QuotedPythonCalls.CAPABILITIES for h in hits):
+            return hits
+        from cordon_scanner.analysis.python.inert_literals import InertLiterals
+
+        spans = InertLiterals.quoted_call_spans(content.text)
+        if not spans:
+            return hits
+        starts = content.line_starts
+
+        def position(offset: int) -> tuple[int, int]:
+            line = bisect_right(starts, offset)
+            return line, offset - starts[line - 1]
+
+        def quoted(hit: CapabilityHit) -> bool:
+            if (
+                not hit.rule_id.startswith("CAP.PY.")
+                or b"(" not in content.raw[hit.byte_start : hit.byte_end]
+            ):
+                return False
+            first = position(hit.byte_start)
+            last = position(max(hit.byte_end - 1, hit.byte_start))
+            return any(
+                (line, column) <= first and last < (end_line, end_column)
+                for line, column, end_line, end_column in spans
+            )
+
+        real = {h.capability for h in hits if not quoted(h)}
+        return [
+            h
+            for h in hits
+            if not (
+                h.capability in QuotedPythonCalls.CAPABILITIES
+                and h.capability not in real
+                and quoted(h)
+            )
+        ]
+
+
 class CapabilityDetector(BaseDetector):
     """Labels files with capabilities and evaluates composite rules over them."""
 
@@ -302,7 +359,8 @@ class CapabilityDetector(BaseDetector):
     # 0.14.0: a spawn of a tool by its name does not pair with a decode in `SUSPECT.DROPPER.001`
     # (`DecodeRun.SPAWN_PAIRED`), a command handed to a spawn by name is its own statement's
     # literals, and a data file the code only parses is not labelled (`DataRoles`).
-    version = "0.14.0"
+    # 0.15.0: call syntax inside a Python string that reaches no sink is text, not a call.
+    version = "0.15.0"  # call syntax inside a Python string that reaches no sink is text
     categories = frozenset(
         {Category.SUSPICIOUS, Category.MALICIOUS, Category.POLICY, Category.OPERATIONAL}
     )
@@ -496,6 +554,7 @@ class CapabilityDetector(BaseDetector):
             hits = YamlCommands.drop(content, hits)
         if unit.language == "python":
             hits = QuotedPythonProbes.drop(content, hits)
+            hits = QuotedPythonCalls.drop(content, hits)
             hits = DownloadedLoaderRuns.add(content, hits)
         if unit.language == "python" and not content.path.endswith(".pth"):
             hits = UnsourcedPythonSinks.mark(content, hits)

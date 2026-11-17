@@ -85,14 +85,15 @@ class TestTheShippedPyPiModel:
 
 
 class TestTheMcpLine:
-    """MCP servers are held to 0.9 of the model's block line (candidate, cordon-a0 2026-11-15; the
-    sealed finals decide whether it stays). The pin is in code, so the model stays what was fitted."""
+    """MCP servers answer to the line the MCP area was fitted at (reviews/mcp-98/20): the 0.9 scale
+    that held them to nine tenths of the shared model's line is gone, so nothing sits on top of the
+    fitted line. An area with no line of its own answers to the fallback, as before."""
 
-    def test_the_pin_is_mcp_at_nine_tenths_and_nothing_else(self) -> None:
-        assert Verdict.LINE_SCALE == {"mcp": 0.9}
+    def test_no_area_is_scaled(self) -> None:
+        assert Verdict.LINE_SCALE == {}
 
-    def test_mcp_blocks_at_nine_tenths_of_its_line(self) -> None:
-        assert Verdict.line({"mcp": 1.0, "package": 0.5}, "mcp") == pytest.approx(0.9)
+    def test_mcp_blocks_at_its_own_line(self) -> None:
+        assert Verdict.line({"mcp": 0.25, "package": 0.5}, "mcp") == pytest.approx(0.25)
 
     @pytest.mark.parametrize("area", ["npm", "pypi", "skill", "package", "actions"])
     def test_every_other_area_keeps_its_line(self, area: str) -> None:
@@ -102,11 +103,10 @@ class TestTheMcpLine:
     def test_an_area_with_no_line_answers_to_the_fallback_unscaled(self) -> None:
         assert Verdict.line({"package": 0.5}, "ruby") == 0.5
 
-    def test_mcp_with_no_line_of_its_own_answers_to_the_fallback_scaled(self) -> None:
-        assert Verdict.line({"package": 0.5}, "mcp") == pytest.approx(0.45)
+    def test_mcp_with_no_line_of_its_own_answers_to_the_fallback_unscaled(self) -> None:
+        assert Verdict.line({"package": 0.5}, "mcp") == pytest.approx(0.5)
 
-    def test_the_shipped_models_mcp_line_is_scaled_by_it(self) -> None:
+    def test_the_shipped_models_mcp_line_is_its_own(self) -> None:
         model = VerdictModel.load()
-        if model is None or "mcp" not in model.get("areas", {}):
-            pytest.skip("no shipped model with an MCP line in this tree")
-        assert Verdict.line(model["areas"], "mcp") == pytest.approx(0.9 * model["areas"]["mcp"])
+        assert model is not None
+        assert Verdict.line(model["areas"], "mcp") == model["areas"]["mcp"]
