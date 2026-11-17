@@ -407,10 +407,11 @@ class TestSelfScan(CorpusFixtures):
             # positive or negative a flow or drop-point rule is tested on.
             and f.location.path != "tests/unit/detect/code/test_store_flow.py"
             and f.location.path != "tests/unit/detect/code/drop_point/test_drop_point_loot.py"
-            # The agents' own safeguard switches -- the flags and settings that turn an agent's
+            # The agents' own safeguard switches -- the command-line flags that turn an agent's
             # checks off -- named as the vocabulary a skill's or a settings file's text is read
-            # for; data, never run.
-            and f.location.path != "src/cordon_scanner/detect/agents/configuration.py"
+            # for. Rule material by construction: the table the detector matches, held to
+            # `CAP.AGENT.UNATTENDED.001`'s own patterns by a test; data, never run.
+            and f.location.path != "src/cordon_scanner/detect/data/agent-switch-flags.json"
             # The tables of credential stores and drop-point hosts a module only matches text
             # against, and the reads, copies and posts that do or do not make them data: each the
             # positive or negative a data-literal rule is tested on.
