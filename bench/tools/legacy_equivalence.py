@@ -18,8 +18,11 @@ import argparse
 import collections
 import hashlib
 import json
+import sys
 from datetime import date
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from content import CONTENT_GAPS, Content
 
