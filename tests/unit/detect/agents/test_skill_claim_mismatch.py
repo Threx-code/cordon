@@ -19,6 +19,7 @@ npm package is held at MEDIUM there until the rule is kept; reviews/mcp-98/28 se
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -459,10 +460,31 @@ class TestOneDefinitionOfTheSwitches:
         rules = Path(cordon_scanner.__file__).parent / "rules" / "builtin"
         text = (rules / "capabilities-malware-iocs.yaml").read_text(encoding="utf-8")
         block = text.split("id: CAP.AGENT.UNATTENDED.001", 1)[1].split("\n  - id:", 1)[0]
-        flags = [t for t in AgentSafeguards.ALONE if t.startswith("--")]
-        flags += [first for first, _ in AgentSafeguards.BESIDE if first.startswith("--")]
+        alone, beside = AgentSafeguards.flags()
+        flags = [*alone, *(first for first, _ in beside)]
         assert flags
         assert all(flag in block for flag in flags), [f for f in flags if f not in block]
+        patterns = block.split("patterns:", 1)[1].split("tests:", 1)[0]
+        assert set(re.findall(r"--[a-z][a-z-]*", patterns)) == set(flags)
+
+    def test_the_flags_are_data_and_the_scanner_reads_its_own_readers_as_clean(
+        self, tmp_path: Path
+    ) -> None:
+        """The capability finds a flag in any code, so a table of them in a module is read as the launch it
+        describes (the self-scan on 2026-11-17): the flags live in `detect/data/agent-switch-flags.json`,
+        and the modules that read them are scanned here as the self-scan scans them."""
+        alone, beside = AgentSafeguards.flags()
+        assert AgentSafeguards.in_text(f"run it with {alone[0]} on") is not None
+        assert AgentSafeguards.in_text(f"{beside[0][1]} {beside[0][0]}") is not None
+        agents = Path(cordon_scanner.__file__).parent / "detect" / "agents"
+        target = tmp_path / "src" / "cordon_scanner" / "detect" / "agents"
+        target.mkdir(parents=True)
+        for name in ("configuration.py", "settings_files.py", "skills.py"):
+            (target / name).write_text(
+                (agents / name).read_text(encoding="utf-8"), encoding="utf-8"
+            )
+        found = SkillKit.findings(tmp_path)
+        assert {rule for rule in found if "UNATTENDED" in rule} == set()
 
     def test_the_settings_readers_use_the_same_keys(self, tmp_path: Path) -> None:
         for name, body in (

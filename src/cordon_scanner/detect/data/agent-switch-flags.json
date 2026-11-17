@@ -1,0 +1,11 @@
+{
+  "alone": [
+    "--dangerously-skip-permissions",
+    "--dangerously-bypass-approvals-and-sandbox",
+    "--trust-all-tools"
+  ],
+  "beside": [
+    ["--yolo", "gemini"],
+    ["--allow-all-tools", "copilot"]
+  ]
+}
