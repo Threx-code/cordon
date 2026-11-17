@@ -21,7 +21,7 @@ from cordon_scanner.detect.agents.mcp_servers.endpoints import (
     McpEndpoints,
 )
 from cordon_scanner.detect.agents.rule_catalogue import RULES
-from cordon_scanner.detect.agents.skills import SkillOrigin, SkillScripts
+from cordon_scanner.detect.agents.skills import SkillClaims, SkillOrigin, SkillScripts
 from cordon_scanner.detect.agents.text_findings import AgentTextFindings
 from cordon_scanner.detect.agents.text_patterns import (
     FETCH_EXEC,
@@ -148,6 +148,51 @@ class InstructionFileFindings:
 
     @classmethod
     def instructions(cls, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
+        """Every finding of an instruction file, and for a third-party skill the acts its
+        description does not claim (`SkillClaims`)."""
+        found = list(cls._read(unit, ctx))
+        yield from found
+        yield from cls._unclaimed(unit, ctx, found)
+
+    @classmethod
+    def _unclaimed(
+        cls, unit: FileUnit, ctx: ScanContext, found: list[Finding]
+    ) -> Iterator[Finding]:
+        """`SUSPECT.AGENT.SKILL_CLAIM_MISMATCH.001`: a third-party `SKILL.md` whose instructions do
+        what its description does not claim, or do it out of the user's sight."""
+        path = unit.content.path
+        if ContainerPaths.basename(path).upper() != "SKILL.MD" or not SkillOrigin.third_party(
+            path, ctx
+        ):
+            return
+        text = unit.content.text
+        claimed, acts = SkillClaims.unclaimed(
+            text, found, concealed=InstructionText.concealed(text)
+        )
+        if not acts:
+            return
+        first = acts[0][1].location
+        hidden = InstructionText.concealed(text)
+        said = ", ".join(sorted(claimed or ())) or "nothing of this kind"
+        what = {
+            "fetch_run": "run a download from a host that is not a listed installer",
+            "remote_instructions": "fetch a document and follow it",
+        }
+        done = "; ".join(dict.fromkeys(what[act] for act, _ in acts))
+        yield AgentFinding.finding(
+            "SUSPECT.AGENT.SKILL_CLAIM_MISMATCH.001",
+            unit,
+            ctx,
+            first.byte_start or 0,
+            first.byte_end or 0,
+            message=RULES["SUSPECT.AGENT.SKILL_CLAIM_MISMATCH.001"].message
+            + f" The description claims: {said}. The instructions tell the agent to {done}"
+            + (", and not to show the user" if hidden else "")
+            + ".",
+        )
+
+    @classmethod
+    def _read(cls, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
         content = unit.content
         raw = content.raw
         flags = [m.span() for m in _FLAG_TAGS.finditer(raw)]

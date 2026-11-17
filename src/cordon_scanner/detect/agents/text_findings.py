@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Final
 from cordon_scanner.detect.agents.claim_guards import ClaimGuards
 from cordon_scanner.detect.agents.defensive_doc import DefensiveDoc
 from cordon_scanner.detect.agents.findings import AgentFinding
-from cordon_scanner.detect.agents.rule_catalogue import INTENT_WORDS, RULES, AgentRules
+from cordon_scanner.detect.agents.rule_catalogue import RULES, AgentRules
 from cordon_scanner.detect.base import FileUnit
 from cordon_scanner.foundation.models import (
     Confidence,
@@ -32,6 +32,21 @@ if TYPE_CHECKING:
     from cordon_scanner.intel.base import AtrMatchFacts
 
 _MEDIUM_INTENTS: Final = frozenset({"markdown-exfil", "persist"})
+
+
+#: What each intent is, as a finding says it.
+INTENT_WORDS: Final = {
+    "covert-exfil": "send what the user types, or other data, to an outside address -- covertly",
+    "deceive": "tell the user something false while acting behind their back",
+    "self-replicate": "copy these instructions into every reply or file it writes, so they spread",
+    "persist": "write itself into the agent's own instruction files so it loads every session",
+    "markdown-exfil": "carry data out in a markdown image URL the client fetches without asking",
+    "credential-pipe": "read key or credential files and pipe them to a network tool",
+    "secret-harvest": "collect every secret-named variable or a whole .env and send it to an outside host",
+    "credential-elsewhere": "send a credential it printed with its own tool to a host that did not issue it",
+    "concealed-override": "drop its safety rules and keep that hidden from the user",
+    "concealed-sabotage": "make the user's work fail on purpose and deny it when asked",
+}
 
 
 class AgentTextFindings:
