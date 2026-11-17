@@ -34,6 +34,17 @@ VERB: Final = (
 TRAILER: Final = re.compile(r"\n\s{0,8}Arguments:\s{0,8}\n.{0,4000}\Z", re.S)
 """A rendering of the tool's argument list appended by one benchmark: never a feature."""
 
+#: The banner as a label: capitals and a colon (`SECURITY PROTOCOL:`), the form that claims authority.
+BANNER_LABEL: Final = (
+    r"\b(?:[A-Z]{3,}\s{1,3}){0,3}(?:PROTOCOL|CHECK|REQUIREMENT|VERIFICATION|COMPLIANCE|POLICY|"
+    r"NOTICE|UPDATE|AUDIT)\s{0,2}:"
+)
+#: The banner as a phrase (`for security purposes`), which plain guidance also uses.
+BANNER_PHRASE: Final = (
+    r"\b(?:security|compliance|audit|integrity|verification)"
+    r"\s{1,3}(?:compliance|protocol|requirement|purposes|verification|check)\b"
+)
+
 STEPS: Final[dict[str, re.Pattern[str]]] = {
     # An order addressed to the agent, with an action verb: not a constraint on a value.
     "order": re.compile(
@@ -102,11 +113,7 @@ STEPS: Final[dict[str, re.Pattern[str]]] = {
         r"|\bnew\s{1,3}(?:standard|required)\s{1,3}(?:procedure|process|protocol|policy)",
         re.I,
     ),
-    "banner": re.compile(
-        r"\b(?:[A-Z]{3,}\s{1,3}){0,3}(?:PROTOCOL|CHECK|REQUIREMENT|VERIFICATION|COMPLIANCE|POLICY|"
-        r"NOTICE|UPDATE|AUDIT)\s{0,2}:|\b(?:security|compliance|audit|integrity|verification)"
-        r"\s{1,3}(?:compliance|protocol|requirement|purposes|verification|check)\b"
-    ),
+    "banner": re.compile(BANNER_LABEL + "|" + BANNER_PHRASE),
     # The user kept from knowing, or told something false.
     "deceive": re.compile(
         r"\b(?:inform|tell|assure|reassure)\s{1,3}the\s{1,3}user\s{1,3}(?:that|this)\b|\b(?:do not|"
@@ -198,6 +205,13 @@ class AgentSemantics:
             and (name != "opens_order" or AgentSemantics._orders_after(text, match))
             for name, match in found.items()
         }
+
+    @staticmethod
+    def banner_is_label(text: str) -> bool:
+        """Whether the banner step is written as a label (`SECURITY PROTOCOL:`) and not only as a
+        phrase (`for security purposes`): the label claims authority, the phrase is how plain
+        guidance says why."""
+        return re.search(BANNER_LABEL, TRAILER.sub("", text)) is not None
 
     @staticmethod
     def _orders_after(text: str, opener: re.Match[str]) -> bool:

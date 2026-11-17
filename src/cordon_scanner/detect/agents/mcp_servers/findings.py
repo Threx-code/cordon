@@ -190,14 +190,20 @@ class McpServerFindings:
         text: str, chain: tuple[str, ...], own: frozenset[str], channel: str
     ) -> bool:
         """Whether a chain of ordering steps only sequences the server's own tools (`OwnVocabulary`):
-        the chain is orders, sequencing and a pretext and nothing else; the text hides nothing from the
-        user, names no secret, runs no command, reaches no address; and it names only identifiers the
-        server declares. A returned message may name none at all ("create a session before using the
-        debugging commands"): it names no other tool."""
-        if not set(chain) <= {"order", "around_other", "other_tool", "pretext"}:
+        the chain is orders, sequencing, an opening order, a pretext and a banner written as a phrase,
+        and nothing else; the text hides nothing from the user, names no secret, runs no command,
+        reaches no address; and it names only identifiers the server declares. A returned message
+        may name none at all ("create a session before using the debugging commands"): it names no
+        other tool."""
+        allowed = {"order", "around_other", "other_tool", "pretext", "opens_order", "banner"}
+        if not set(chain) <= allowed:
             return False
         found = AgentSemantics.steps(text)
-        if any(found[step] for step in ("deceive", "command", "offsite", "overrule", "banner")):
+        if any(found[step] for step in ("deceive", "command", "offsite", "overrule")):
+            return False
+        if found["banner"] and AgentSemantics.banner_is_label(text):
+            # `for security purposes, call list_apis first` is plain guidance; `SECURITY PROTOCOL:` is
+            # a banner claiming authority, whatever it names.
             return False
         if McpServerSource._poisoned_description(text, own) is not None:
             return False
