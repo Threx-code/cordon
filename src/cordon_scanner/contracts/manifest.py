@@ -6,6 +6,7 @@ take them from the JSON files shipped as package data:
 ```
   data/subject-kinds.json   the ten subject kinds, their id prefixes and parts      (generated here)
   data/reason-codes.json    every reason code: code, title, severity, explanation, state (generated here)
+  data/obligations.json     every obligation: code, title, explanation, state             (generated here)
   schemas/*.json            the predicate schemas                                    (written by hand)
   manifest.json             the contracts version and the sha256 of every file above
 ```
@@ -25,17 +26,22 @@ from pathlib import Path
 from typing import Any, ClassVar, Final
 
 from cordon_scanner.contracts.catalogue import SubjectCatalogue
+from cordon_scanner.contracts.obligations import Obligations
 from cordon_scanner.contracts.reason_codes import ReasonCodes
 from cordon_scanner.contracts.schemas import ContractSchemas
 
 #: Bump on any change to any contract file: a new schema, a new reason code, a changed part list.
-CONTRACTS_VERSION: Final = "1.1.0"
+CONTRACTS_VERSION: Final = "1.2.0"
 
 
 class ContractData:
     """Build, write and check the JSON data files and the manifest."""
 
-    GENERATED: ClassVar[tuple[str, ...]] = ("data/subject-kinds.json", "data/reason-codes.json")
+    GENERATED: ClassVar[tuple[str, ...]] = (
+        "data/subject-kinds.json",
+        "data/reason-codes.json",
+        "data/obligations.json",
+    )
     MANIFEST: ClassVar[str] = "manifest.json"
 
     @classmethod
@@ -60,6 +66,23 @@ class ContractData:
         }
 
     @classmethod
+    def obligations(cls) -> dict[str, Any]:
+        return {
+            "contracts_version": CONTRACTS_VERSION,
+            "obligations": [
+                {
+                    "code": entry.code,
+                    "name": entry.name,
+                    "title": entry.title,
+                    "explanation": entry.meaning,
+                    "state": "active",
+                }
+                for entry in Obligations.ALL
+            ],
+            "retired": sorted(Obligations.RETIRED),
+        }
+
+    @classmethod
     def subject_kinds(cls) -> dict[str, Any]:
         return {"contracts_version": CONTRACTS_VERSION, **SubjectCatalogue.as_json()}
 
@@ -74,6 +97,7 @@ class ContractData:
         return {
             "data/subject-kinds.json": cls.text(cls.subject_kinds()),
             "data/reason-codes.json": cls.text(cls.reason_codes()),
+            "data/obligations.json": cls.text(cls.obligations()),
         }
 
     @classmethod

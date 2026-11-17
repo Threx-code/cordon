@@ -18,6 +18,10 @@ class DecisionError(ValueError):
     """A request or a record that is not well formed; the message names the record and the field."""
 
 
+class PolicyError(DecisionError):
+    """A policy source that cannot be compiled, or a compiled policy that was altered; the message names the path."""
+
+
 class JsonRecord:
     """Mixin for frozen dataclasses: `to_json` and `from_json` over the fields, nested records included."""
 
@@ -128,4 +132,4 @@ class Instants:
         return datetime.fromtimestamp(stamp - stamp % seconds, tz=UTC)
 
 
-__all__ = ["Checks", "DecisionError", "Instants", "JsonRecord"]
+__all__ = ["Checks", "DecisionError", "Instants", "JsonRecord", "PolicyError"]

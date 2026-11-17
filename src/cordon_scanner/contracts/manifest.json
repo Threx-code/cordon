@@ -1,8 +1,9 @@
 {
-  "contracts_version": "1.1.0",
+  "contracts_version": "1.2.0",
   "files": {
-    "data/reason-codes.json": "sha256:9f9b3b40645560c03271c441aef0b2c6d52f27b8f631f7a8422552e6369007d0",
-    "data/subject-kinds.json": "sha256:be481d32d444bdae826af5d6398c147ec8a9c86c62fd2cef7ffc4b0a4da8db80",
+    "data/obligations.json": "sha256:cf27b77dffb55d8bf425988023cd3954cf6de26cf87671c01f481c1cc56c5942",
+    "data/reason-codes.json": "sha256:c0dce50ee533cfeb7ea32e1405919c897e21b5cfd059f8aee4bae235986671e3",
+    "data/subject-kinds.json": "sha256:a05f9d0c4318103072e61e670539e08419bb7dbb291a5263d0d8eedd848b87e6",
     "schemas/approval-v1.json": "sha256:7dc286fe30f181d996b5b13b2e38a2a5ee1bbe95739be4ea29732c59494930ce",
     "schemas/decision-v1.json": "sha256:0768cebcb1035e13b7d7c895be58cca008fcdb2dbe38b2f8ec03dbeaa4f7bb7f",
     "schemas/intel-match-v1.json": "sha256:3157a1381ca5537225e2f37aeff98214d6af3e70dd0a3828bfde1316a9862784",
