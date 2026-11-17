@@ -79,7 +79,7 @@ rule's own samples.
 | `SUSPECT.AGENT.PLUGIN_SOURCE.001` | high | Agent plugins installed from an unverified source |
 | `SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001` | medium | An agent instruction file tells the agent to fetch and follow remote text |
 | `SUSPECT.AGENT.SENSITIVE_IMPORT.001` | high | An agent instruction file imports a credential file |
-| `SUSPECT.AGENT.SKILL_CLAIM_MISMATCH.001` | high | A skill's instructions do what its description does not claim |
+| `SUSPECT.AGENT.SKILL_CLAIM_MISMATCH.001` | high | Shipped agent instructions do what no description claims |
 | `SUSPECT.AGENT.SKILL_DECODE_RUN.001` | high | A skill's script decodes code and runs it |
 | `SUSPECT.AGENT.SKILL_DISGUISED_ARCHIVE.001` | high | A skill ships an archive under a name that says it is something else |
 | `SUSPECT.AGENT.SKILL_HOOK_FETCH.001` | high | A skill script installs an agent hook that runs a download |

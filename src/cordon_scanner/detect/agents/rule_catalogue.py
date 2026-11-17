@@ -870,16 +870,16 @@ RULES.update(
         ),
         "SUSPECT.AGENT.SKILL_CLAIM_MISMATCH.001": AgentRules._rule(
             "SUSPECT.AGENT.SKILL_CLAIM_MISMATCH.001",
-            "A skill's instructions do what its description does not claim",
+            "Shipped agent instructions do what no description claims",
             Category.SUSPICIOUS,
             Severity.HIGH,
             Confidence.MEDIUM,
-            "The front matter of this skill, which is the claim its user approves, does not claim "
-            "something its instructions tell the agent to do: a download run from a host that is "
-            "not a listed installer, a credential moved to a destination, a document fetched and "
-            "obeyed -- or the act is hidden from the user, which no description can claim. Each act "
-            "is one the instruction readers already report on its own below the gate; what a "
-            "description that announces it would excuse is graded as before.",
+            "The front matter of this skill, the claim its user approves, does not claim something "
+            "its instructions tell the agent to do (a download run from a host that is not a "
+            "listed installer, a document fetched and obeyed), or the instructions do what no "
+            "description can claim: hide the act from the user, act without asking the user, set "
+            "the agent's own instructions aside. Each is an act the instruction readers already "
+            "report on their own below the gate; one a description announces is graded as before.",
             "Read what the skill says it does against what it tells the agent to do. Install it "
             "only if the description is the whole of it.",
             (ref.OWASP_LLM_PROMPT_INJECTION,),

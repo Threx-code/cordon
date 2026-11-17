@@ -97,8 +97,13 @@ class SkillOrigin:
 
     @staticmethod
     def third_party(path: str, ctx: ScanContext) -> bool:
-        if not path.lower().endswith("skill.md"):
-            return False
+        return path.lower().endswith("skill.md") and SkillOrigin.installed(path, ctx)
+
+    @staticmethod
+    def installed(path: str, ctx: ScanContext) -> bool:
+        """Whether a file is not the scanned repository's own: an archive member, in an installed
+        or vendored folder, or in a scan that is not of a repository root. Any instruction file's
+        place, where `third_party` answers for `SKILL.md` alone."""
         if "!" in path or any(part in path.lower() for part in SkillOrigin._INSTALLED):
             return True
         repository = ctx.repository
@@ -331,6 +336,10 @@ class SkillClaims:
     ACT_RULE: ClassVar[dict[str, str]] = {
         "SUSPECT.AGENT.FETCH_EXEC.001": "fetch_run",
         "SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001": "remote_instructions",
+        # Sets the agent's instructions aside, acts without asking the user or hides from the
+        # user: no description claims it (`REQUIRES` has no entry), in a skill or in any other
+        # instruction file that is not the project's own.
+        "SUSPECT.AGENT.INJECTION_TEXT.001": "overrides_agent",
     }
     #: The claim an act needs. An act that is concealed needs one nobody can make.
     REQUIRES: ClassVar[dict[str, str]] = {
@@ -385,19 +394,22 @@ class SkillClaims:
 
     @staticmethod
     def unclaimed(
-        text: str, findings: Iterable[Finding], *, concealed: bool
+        text: str, findings: Iterable[Finding], *, concealed: bool, described: bool = True
     ) -> tuple[frozenset[str] | None, list[tuple[str, Finding]]]:
         """The classes the description claims (None: none declared) and the acts it does not.
 
         An act is a reader's finding at MEDIUM: one already at the gate needs no help, and the
         official installer's LOW finding is recorded as an installer. A quoted example in a
         document about the attack is not an act (`DefensiveDoc.lowers`, with the skill model's
-        reading beside it). Whether the description claims what the act needs decides it; an act
-        that is concealed is unclaimed whatever the description says."""
-        front = SkillClaims.front_matter(text)
+        reading beside it). An act no description can claim (`REQUIRES` names none) and an act
+        that is concealed are unclaimed whatever the description says; any other is unclaimed when
+        the description does not claim what it needs. `described` is False for an instruction file
+        that has no description to read: only the acts nobody can claim count there."""
+        front = SkillClaims.front_matter(text) if described else None
         claimed = SkillClaims.claimed(front) if front is not None else None
-        if claimed is None and SkillClaims.NO_DESCRIPTION == "unknown" and not concealed:
-            return None, []
+        reading = claimed
+        if reading is None and described and SkillClaims.NO_DESCRIPTION == "nothing":
+            reading = frozenset()
         held = list(findings)
         model_agrees = any(f.rule_id == SkillClaims.SKILL_MODEL_RULE for f in held)
         raw = text.encode("utf-8")
@@ -413,7 +425,8 @@ class SkillClaims:
             )
             if DefensiveDoc.lowers(True, text, start, end, model_agrees=model_agrees):
                 continue
-            if concealed or SkillClaims.REQUIRES[act] not in (claimed or frozenset()):
+            needs = SkillClaims.REQUIRES.get(act)
+            if concealed or needs is None or (reading is not None and needs not in reading):
                 acts.append((act, finding))
         return claimed, acts
 

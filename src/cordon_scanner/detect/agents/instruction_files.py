@@ -158,25 +158,25 @@ class InstructionFileFindings:
     def _unclaimed(
         cls, unit: FileUnit, ctx: ScanContext, found: list[Finding]
     ) -> Iterator[Finding]:
-        """`SUSPECT.AGENT.SKILL_CLAIM_MISMATCH.001`: a third-party `SKILL.md` whose instructions do
-        what its description does not claim, or do it out of the user's sight."""
+        """`SUSPECT.AGENT.SKILL_CLAIM_MISMATCH.001`: instructions that are not the scanned
+        repository's own and do what no description claims -- in a `SKILL.md`, what its description
+        does not claim, in any instruction file, what nobody can claim."""
         path = unit.content.path
-        if ContainerPaths.basename(path).upper() != "SKILL.MD" or not SkillOrigin.third_party(
-            path, ctx
-        ):
+        if not SkillOrigin.installed(path, ctx):
             return
+        skill = ContainerPaths.basename(path).upper() == "SKILL.MD"
         text = unit.content.text
-        claimed, acts = SkillClaims.unclaimed(
-            text, found, concealed=InstructionText.concealed(text)
-        )
+        hidden = InstructionText.concealed(text)
+        claimed, acts = SkillClaims.unclaimed(text, found, concealed=hidden, described=skill)
         if not acts:
             return
         first = acts[0][1].location
-        hidden = InstructionText.concealed(text)
         said = ", ".join(sorted(claimed or ())) or "nothing of this kind"
         what = {
             "fetch_run": "run a download from a host that is not a listed installer",
             "remote_instructions": "fetch a document and follow it",
+            "overrides_agent": "set its own instructions aside, act without asking the user or "
+            "hide what it does from the user",
         }
         done = "; ".join(dict.fromkeys(what[act] for act, _ in acts))
         yield AgentFinding.finding(
@@ -186,7 +186,8 @@ class InstructionFileFindings:
             first.byte_start or 0,
             first.byte_end or 0,
             message=RULES["SUSPECT.AGENT.SKILL_CLAIM_MISMATCH.001"].message
-            + f" The description claims: {said}. The instructions tell the agent to {done}"
+            + (f" The description claims: {said}." if skill else "")
+            + f" The instructions tell the agent to {done}"
             + (", and not to show the user" if hidden else "")
             + ".",
         )
