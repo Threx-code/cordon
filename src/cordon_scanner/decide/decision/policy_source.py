@@ -62,6 +62,7 @@ class DefaultsSource(JsonRecord):
 
     on_incomplete: dict[str, str] | str | None = None
     unresolved: str | None = None
+    on_gaps: str | None = None
     default: str | None = None
     max_intel_age: str | int | None = None
     bundle_max_age: str | int | None = None

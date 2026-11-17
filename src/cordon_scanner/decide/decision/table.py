@@ -25,6 +25,7 @@ class Defaults(JsonRecord):
 
     on_incomplete: dict[str, str]
     unresolved: str = "block"
+    on_gaps: str = "block"
     default: str = "allow"
     max_intel_age_s: int | None = None
     bundle_max_age_s: int | None = None
@@ -37,6 +38,7 @@ class Defaults(JsonRecord):
         for environment, level in self.on_incomplete.items():
             Checks.one_of("Defaults", f"on_incomplete.{environment}", level, self.STRICTNESS)
         Checks.one_of("Defaults", "unresolved", self.unresolved, self.STRICTNESS)
+        Checks.one_of("Defaults", "on_gaps", self.on_gaps, self.STRICTNESS)
         Checks.one_of("Defaults", "default", self.default, self.OUTCOMES)
         Checks.whole("Defaults", "clock_bucket_s", self.clock_bucket_s, low=1)
 
