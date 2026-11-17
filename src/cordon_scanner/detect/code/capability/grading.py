@@ -150,9 +150,12 @@ class CompositeGrading:
             # An agent's tool that never runs what it fetched is not escalated as an install-time
             # dropper; `SUSPECT.DROPPER.001` reports the pair below the gate.
             in_hook = False
-        if verified and rule.id in (
-            CompositeRuleIds.DROPPER_RULE,
-            CompositeRuleIds.REMOTE_CODE_RULE,
+        remote = rule.id == CompositeRuleIds.REMOTE_CODE_RULE  # V-a: `remote_code_unexternal`
+        self.unexternal = (
+            ctx.remote_code_unexternal and rule.id in CompositeRuleIds.REMOTE_CODE_RULES
+        )
+        if (verified and (remote or rule.id == CompositeRuleIds.DROPPER_RULE)) or (
+            self.unexternal and remote
         ):
             # Not escalated as an install-time dropper either: the hook escalation would put the
             # span straight back at CRITICAL. The ceiling below says why it is still reported.
@@ -185,6 +188,7 @@ class CompositeGrading:
                     if ceilinged in LoadPath.ON_REQUEST_REASONS
                     or ceilinged in ("the tool's own official installer", PublishReach.REASON)
                     or ceilinged == CompositeGrading.VERIFIED_DOWNLOAD_REASON
+                    or ceilinged == CompositeRuleIds.UNEXTERNAL_REQUEST_REASON
                     or ceilinged == CompositeGrading.PARAMETER_COMMAND_REASON
                     or ceilinged == CompositeGrading.UNSOURCED_CODE_REASON
                     or ceilinged == CompositeGrading.NO_SINK_REASON
@@ -298,7 +302,7 @@ class CompositeGrading:
         # is -- whoever owns the repository owns the release and the checksum too (`08` P3) --
         # so it stays reported at MEDIUM, and every other rule over the file still applies.
         return (
-            verified
+            (verified or self.unexternal)
             and compiled.rule.id in CompositeRuleIds.WITHDRAWN_WHEN_VERIFIED
             and evaluator.suspect_reports(
                 ctx,
@@ -862,6 +866,9 @@ class CompositeGrading:
             CompositeRuleIds.REMOTE_CODE_RULE,
         ):
             ceilinged = CompositeGrading.VERIFIED_DOWNLOAD_REASON
+            ceiling = Severity.MEDIUM
+        elif self.unexternal and compiled.rule.id == CompositeRuleIds.REMOTE_CODE_RULE:
+            ceilinged = CompositeRuleIds.UNEXTERNAL_REQUEST_REASON
             ceiling = Severity.MEDIUM
         elif (
             compiled.rule.id in CompositeRuleIds.ON_REQUEST_RULES

@@ -205,10 +205,20 @@ class CrossFileFlows:
         # Where the join is incomplete, a finding lowered on the join's word is graded again
         # without it (note 78; rule 3: unknown is never "no caller passes a reply").
         lowered = CrossFileJoin.lowered(acc.findings) if unresolved else set()
-        if not flows and not lowered:
+        # The files that carry a REMOTE_CODE composite are graded again with what the whole package says of
+        # where its requests go (V-a): reported below the gate when none goes to an external literal host
+        # and nothing decoded is run, with every file read; unchanged otherwise.
+        unexternal = CrossFileJoin.unexternal(acc.facts, acc.findings, flows)
+        carriers = CrossFileJoin.carriers(acc.findings) if unexternal else set()
+        if not flows and not lowered and not carriers:
             return
-        callers = [u for u in units if u.path in flows or u.path in lowered]
-        graded = replace(ctx, cross_file_flows=flows, cross_file_unresolved=unresolved)
+        callers = [u for u in units if u.path in flows or u.path in lowered or u.path in carriers]
+        graded = replace(
+            ctx,
+            cross_file_flows=flows,
+            cross_file_unresolved=unresolved,
+            remote_code_unexternal=unexternal,
+        )
         signature = CacheSignature.scan_signature(capability, graded, engine.config)
         again = engine.detection.parallel(
             callers, root, graded, acc, capability, signature, carry_content=carry_content,
