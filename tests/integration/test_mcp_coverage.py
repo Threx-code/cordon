@@ -26,14 +26,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+from bench.tools.content import Content
 
 from cordon_scanner import Scanner
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
 from cordon_scanner.foundation.models import Category
 from support import ROOT, requires_corpus
-
-from bench.tools.content import Content
 
 pytestmark = requires_corpus
 
@@ -68,8 +67,19 @@ class Cases:
         for expect in sorted(COVERAGE.glob("*/*/*/expect.yaml")) if COVERAGE.is_dir() else ():
             if only and expect.relative_to(COVERAGE).parts[0] not in only:
                 continue
-            spec = RestrictedYamlParser._load_yaml_subset(expect.read_text(encoding="utf-8"), source=str(expect)) or {}
-            found.append(Case(expect.parent, dict(spec.get("positive") or {}), dict(spec.get("negative") or {})))
+            spec = (
+                RestrictedYamlParser._load_yaml_subset(
+                    expect.read_text(encoding="utf-8"), source=str(expect)
+                )
+                or {}
+            )
+            found.append(
+                Case(
+                    expect.parent,
+                    dict(spec.get("positive") or {}),
+                    dict(spec.get("negative") or {}),
+                )
+            )
         return found
 
     @staticmethod
@@ -91,7 +101,10 @@ class Outcome:
         result = Scanner(cls._config).scan(directory)
         content = [f for f in result.active if Content.is_content(f.rule_id, f.detector)]
         blocked = any(
-            Content.fails(f.rule_id, f.severity.name.lower(), f.confidence.name.lower(), str(f.category)) for f in content
+            Content.fails(
+                f.rule_id, f.severity.name.lower(), f.confidence.name.lower(), str(f.category)
+            )
+            for f in content
         )
         return blocked, {str(f.category) for f in content if f.category is not Category.OPERATIONAL}
 
@@ -119,7 +132,9 @@ class TestMcpCoverage:
     def test_positive_is_flagged(self, case: Case) -> None:
         if case.id not in Cases.baseline():
             pytest.xfail(f"{case.id}: no rule flags this technique yet (a gap)")
-        assert Outcome.flagged(case), f"{case.id}: a rule that flagged this technique no longer does"
+        assert Outcome.flagged(case), (
+            f"{case.id}: a rule that flagged this technique no longer does"
+        )
 
 
 class CoverageReport:
@@ -129,14 +144,24 @@ class CoverageReport:
     def main(argv: list[str]) -> int:
         flagged_now = {case.id for case in CASES if Outcome.flagged(case)}
         false_blocks = {case.id for case in CASES if Outcome.of(case.path / "negative")[0]}
-        total, hit = Counter(c.family for c in CASES), Counter(c.family for c in CASES if c.id in flagged_now)
+        total, hit = (
+            Counter(c.family for c in CASES),
+            Counter(c.family for c in CASES if c.id in flagged_now),
+        )
         wrong = Counter(c.family for c in CASES if c.id in false_blocks)
         print("family  flagged positives   blocked negatives")
         for family in sorted(total):
-            print(f"{family:6} {hit[family]:4} / {total[family]:4}   {wrong[family]:4} / {total[family]:4}")
-        print(f"all    {len(flagged_now):4} / {len(CASES):4}   {len(false_blocks):4} / {len(CASES):4}")
+            print(
+                f"{family:6} {hit[family]:4} / {total[family]:4}   {wrong[family]:4} / {total[family]:4}"
+            )
+        print(
+            f"all    {len(flagged_now):4} / {len(CASES):4}   {len(false_blocks):4} / {len(CASES):4}"
+        )
         way = lambda c: c.id.rsplit("/", 1)[-1]  # noqa: E731
-        ways, way_hit = Counter(way(c) for c in CASES), Counter(way(c) for c in CASES if c.id in flagged_now)
+        ways, way_hit = (
+            Counter(way(c) for c in CASES),
+            Counter(way(c) for c in CASES if c.id in flagged_now),
+        )
         print("by way: " + ", ".join(f"{w} {way_hit[w]}/{ways[w]}" for w in sorted(ways)))
         print("gaps: " + " ".join(sorted(c.id for c in CASES if c.id not in flagged_now)))
         print("false blocks: " + " ".join(sorted(false_blocks)))

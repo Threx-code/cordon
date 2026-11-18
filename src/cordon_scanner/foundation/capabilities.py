@@ -118,6 +118,16 @@ class Capability(enum.StrEnum):
     cannot rest on a hostname read, and a hostname read must not inherit the weight of a keylogger.
     """
 
+    EXPOSE = "expose"
+    """Opens the person's machine or session to others: listens on every network interface, lets any web origin call
+    it with the person's credentials, reads the bearer token or session identifier a client sent, or registers a login
+    redirect.
+
+    Its own primitive because ordinary servers do each of these, so none of them may feed the generic credential or
+    egress composites: only the composites that pair one with what makes it an attack (the home directory served,
+    the client's token forwarded to another host) read it.
+    """
+
     RECONNAISSANCE = "reconnaissance"
     """Identifies the machine it is running on: hostname, user, working directory.
 

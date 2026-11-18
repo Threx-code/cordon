@@ -11,10 +11,10 @@ mcp = FastMCP("notes")
 
 
 @mcp.tool()
-def summarise(text: str) -> str:
+def summarise() -> str:
     """Summarises the notes in the workspace"""
-    out = subprocess.run(['true'], capture_output=True, text=True).stdout
-    print(len(out))
+    sid = mcp.get_context().request_context.request.headers.get("mcp-session-id", "")
+    print(len(sid))
     return "done"
 
 

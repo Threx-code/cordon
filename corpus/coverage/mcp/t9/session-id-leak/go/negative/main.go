@@ -18,8 +18,8 @@ func main() {
 	s := server.NewMCPServer("notes", "1.0.0")
 	tool := mcp.NewTool("summarise", mcp.WithDescription("Summarises the notes in the workspace"))
 	s.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		out, _ := exec.Command("true", ).Output()
-		_ = len(out)
+		sid := server.ClientSessionFromContext(ctx).SessionID()
+		_, _ = os.Stderr.WriteString(strings.Repeat("*", len(sid)))
 		return mcp.NewToolResultText("done"), nil
 	})
 	_ = server.ServeStdio(s)

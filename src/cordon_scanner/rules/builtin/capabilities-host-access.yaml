@@ -620,8 +620,279 @@ rules:
         - "curl -o tool.tar.gz https://example.invalid/tool.tar.gz"
 
   # ---------------------------------------------------------------------------------------------------------------
-  # Findings
+  # The network: what is served, which callers are let in, and the session's credentials
   # ---------------------------------------------------------------------------------------------------------------
+  - id: CAP.EXPOSE.ALL_INTERFACES.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: expose
+    title: Listens on every network interface
+    message: >
+      This file starts a server on every network interface (0.0.0.0, "::" or a port with no host), so other machines
+      on the network can reach it, not only this one.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\.listen\(\s*\d{2,5}\s*,\s*["\x27](?:0\.0\.0\.0|::)["\x27]'
+        - '\bhost\s*[:=]\s*["\x27](?:0\.0\.0\.0|::)["\x27]'
+        - '\(\s*\(\s*["\x27](?:0\.0\.0\.0|::)?["\x27]\s*,\s*\d{2,5}\s*\)'
+        - '\b(?:ListenAndServe(?:TLS)?|net\.Listen)\(\s*(?:"tcp[46]?"\s*,\s*)?"(?:0\.0\.0\.0)?:\d{2,5}"'
+        - '\bbind\(\s*"(?:0\.0\.0\.0|\[::\]):\d{2,5}"'
+        - '\bSocketAddr::from\(\(\s*\[\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\]'
+    tests:
+      positive:
+        - 'server.listen(8080, "0.0.0.0")'
+        - 'http.ListenAndServe(":8080", nil)'
+        - 'HTTPServer(("", 8000), Handler)'
+      negative:
+        - 'server.listen(8080, "127.0.0.1")'
+
+  - id: CAP.EXPOSE.SERVES_HOME.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: expose
+    title: Serves the home directory or the whole file system as files
+    message: >
+      This file starts a static file server rooted at the person's home directory or at the file-system root, so
+      whoever can reach the server can download any file the person can read, keys and tokens included.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - 'SimpleHTTPRequestHandler[^\n]{0,120}\bdirectory\s*=\s*(?:str\(\s*)?(?:Path\.home\(\)|os\.path\.expanduser\(\s*["\x27]~["\x27]\s*\)|os\.environ\[\s*["\x27]HOME["\x27]\s*\]|["\x27]/["\x27])'
+        - '\b(?:express\.static|serveStatic|sirv)\(\s*(?:os\.)?homedir\(\)'
+        - '\b(?:express\.static|serveStatic)\(\s*["\x27]/["\x27]\s*[,)]'
+        - '\bhttp\.FileServer\(\s*http\.Dir\(\s*(?:os\.Getenv\(\s*"HOME"\s*\)|home(?:Dir)?\s*\)|"/"\s*\))'
+        - '\bServeDir::new\(\s*(?:&?home\b|dirs::home_dir\(\)|"/")'
+    tests:
+      positive:
+        - 'http.FileServer(http.Dir(os.Getenv("HOME")))'
+        - 'app.use(express.static(homedir()))'
+      negative:
+        - 'http.FileServer(http.Dir("./public"))'
+
+  - id: CAP.EXPOSE.CORS_ANY_ORIGIN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: expose
+    title: Accepts requests from any web origin
+    message: >
+      This file tells browsers that any website may call this server: an Access-Control-Allow-Origin of "*", the
+      caller's own origin echoed back, or a CORS setting that allows every origin.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - 'Access-Control-Allow-Origin["\x27]?\s*[:,]\s*["\x27]\*["\x27]'
+        - 'Access-Control-Allow-Origin["\x27]?\s*[:,]\s*(?:req|request|r)\.(?:headers?\.(?:origin\b|get\(\s*["\x27][Oo]rigin["\x27])|Header\.Get\(\s*"Origin")'
+        - '\bcors\(\s*\{[^}]{0,160}\borigin\s*:\s*(?:true\b|["\x27]\*["\x27])'
+        - '\ballow_origins\s*=\s*\[\s*["\x27]\*["\x27]\s*\]'
+        - '\bAllowedOrigins\s*:\s*\[\]string\{\s*"\*"\s*\}'
+        - '\bAllowAllOrigins\s*:\s*true\b'
+        - '\.allow_origin\(\s*(?:Any\b|AllowOrigin::(?:any|mirror_request)\(\))'
+    tests:
+      positive:
+        - 'res.setHeader("Access-Control-Allow-Origin", "*")'
+        - 'app.add_middleware(CORSMiddleware, allow_origins=["*"])'
+      negative:
+        - 'res.setHeader("Access-Control-Allow-Origin", allowed)'
+
+  - id: CAP.EXPOSE.CORS_CREDENTIALS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: expose
+    title: Lets cross-origin callers send the person's cookies and credentials
+    message: >
+      This file tells browsers that cross-origin requests to this server may carry the person's cookies and
+      credentials (Access-Control-Allow-Credentials).
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - 'Access-Control-Allow-Credentials["\x27]?\s*[:,]\s*["\x27]?true\b'
+        - '\bcredentials\s*:\s*true\b'
+        - '\ballow_credentials\s*=\s*True\b'
+        - '\bAllowCredentials\s*:\s*true\b'
+        - '\.allow_credentials\(\s*true\s*\)'
+    tests:
+      positive:
+        - 'res.setHeader("Access-Control-Allow-Credentials", "true")'
+        - 'app.use(cors({ origin: true, credentials: true }))'
+      negative:
+        - 'fetch(url, { credentials: "include" })'
+
+  - id: CAP.EXPOSE.INBOUND_TOKEN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: expose
+    title: Reads the bearer token a client sent
+    message: >
+      This file reads the Authorization header of a request it received: the token the client (an MCP client, a
+      browser, another service) authenticated with.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\bheaders\??\.authorization\b'
+        - '\bheaders\s*\[\s*["\x27][Aa]uthorization["\x27]\s*\](?!\s*=[^=])'
+        - '\bheaders\.get\(\s*["\x27][Aa]uthorization["\x27]'
+        - '\.Header\.Get\(\s*"Authorization"\s*\)'
+        - '\bheaders(?:\(\))?\s*\.get\(\s*(?:(?:http::)?header::)?AUTHORIZATION\b'
+        - '\bauthInfo\??\.token\b'
+    tests:
+      positive:
+        - "const auth = req.headers.authorization;"
+        - 'auth := r.Header.Get("Authorization")'
+      negative:
+        - 'headers["Authorization"] = "Bearer " + token'
+
+  - id: CAP.EXPOSE.OUTBOUND_AUTH_HEADER.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: expose
+    title: Sets the Authorization header of a request it sends
+    message: >
+      This file puts a token into the Authorization header of an outgoing request.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\bheaders\s*[:=]\s*\{[^}\n]{0,160}["\x27]?Authorization["\x27]?\s*:'
+        - '\.Header\.(?:Set|Add)\(\s*"Authorization"'
+        - '\.header\(\s*(?:"Authorization"|(?:(?:http::)?header::)?AUTHORIZATION)\s*,'
+        - '\.bearer_auth\('
+        - '\bsetRequestHeader\(\s*["\x27]Authorization["\x27]'
+        - '\bheaders\s*\[\s*["\x27]Authorization["\x27]\s*\]\s*=[^=]'
+    tests:
+      positive:
+        - "await fetch(u, { headers: { Authorization: auth } })"
+        - 'r.Header.Set("Authorization", auth)'
+      negative:
+        - "const auth = req.headers.authorization;"
+
+  - id: CAP.EXPOSE.MCP_SESSION_ID.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: expose
+    title: Reads the MCP session identifier
+    message: >
+      This file reads the identifier of the MCP session (the Mcp-Session-Id of a Streamable HTTP transport). Whoever
+      holds it can send requests in that session.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:transport|extra|ctx|context|session)\??\.sessionId\b'
+        - '["\x27](?i:mcp-session-id)["\x27]'
+        - '\bClientSessionFromContext\([^)\n]{0,40}\)\.SessionID\(\)'
+    tests:
+      positive:
+        - "const sid = transport.sessionId;"
+        - 'sid = request.headers.get("mcp-session-id")'
+      negative:
+        - "const sid = randomUUID();"
+
+  - id: CAP.EXPOSE.OAUTH_REDIRECT.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: expose
+    title: Registers a login redirect to a host other than this machine
+    message: >
+      This file registers an OAuth client whose redirect address is a remote host rather than a loopback callback:
+      the authorisation code the person's login produces is delivered to that host.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\bredirect_uris?["\x27]?\s*[:=]\s*\[?\s*["\x27]https?://(?!localhost\b|127\.0\.0\.1\b|\[::1\])'
+        - '\bRedirectURIs?\s*:\s*\[\]string\{\s*"https?://(?!localhost\b|127\.0\.0\.1\b|\[::1\])'
+    tests:
+      positive:
+        - 'JSON.stringify({ redirect_uris: ["https://collect.invalid/cb"] })'
+      negative:
+        - 'JSON.stringify({ redirect_uris: ["http://127.0.0.1:8765/callback"] })'
+
   - id: CAP.EGRESS.CHAIN_RPC.001
     version: 1.0.0
     category: policy
@@ -656,6 +927,9 @@ rules:
       negative:
         - "const provider = getProvider()"
 
+  # ---------------------------------------------------------------------------------------------------------------
+  # Findings
+  # ---------------------------------------------------------------------------------------------------------------
   - id: SUSPECT.EXFIL.CREDENTIAL_FILE.001
     version: 1.0.0
     category: suspicious
@@ -1066,3 +1340,107 @@ rules:
       all:
         - rule: CAP.RECON.REPOSITORY_LOOP.001
         - rule: CAP.EGRESS.GIT_PUSH.001
+
+  - id: SUSPECT.EXPOSE.HOME_ON_NETWORK.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Serves the home directory or a key file on every network interface
+    message: >
+      This file listens on every network interface and serves the person's home directory, the file-system root, or a
+      key or credential file. Anyone on the same network can then download the person's keys and tokens, with no
+      login.
+    remediation: Do not install. Rotate the keys and tokens the served files held if it ran.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 5
+      all:
+        - rule: CAP.EXPOSE.ALL_INTERFACES.001
+        - any:
+            - rule: CAP.EXPOSE.SERVES_HOME.001
+            - rule: CAP.CREDENTIAL.HOME_STORES.001
+            - rule: CAP.CREDENTIAL.PASSWORD_MANAGER.001
+            - rule: CAP.WALLET.KEY_FILE.001
+
+  - id: SUSPECT.EXPOSE.ANY_ORIGIN_WITH_CREDENTIALS.001
+    version: 1.0.0
+    category: suspicious
+    severity: medium
+    confidence: medium
+    title: Lets any website call this server with the person's credentials
+    message: >
+      This file allows every web origin and also allows credentials on cross-origin requests. Any website the person
+      visits can then call this local server as the person (DNS rebinding and cross-site request attacks on local MCP
+      servers work this way).
+    remediation: Allow only the origins the server needs, and never credentials with a wildcard or echoed origin.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 5
+      all:
+        - rule: CAP.EXPOSE.CORS_ANY_ORIGIN.001
+        - rule: CAP.EXPOSE.CORS_CREDENTIALS.001
+
+  - id: SUSPECT.AUTH.TOKEN_PASSTHROUGH.001
+    version: 1.0.0
+    category: suspicious
+    severity: medium
+    confidence: medium
+    title: Forwards the token a client sent to another service
+    message: >
+      This file reads the bearer token from a request it received and puts it in the Authorization header of a request
+      it sends. The MCP specification forbids this token passthrough: the receiving host can then act as the person
+      with the client's token.
+    remediation: Obtain a token issued for the downstream service instead of forwarding the client's.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 5
+      all:
+        - rule: CAP.EXPOSE.INBOUND_TOKEN.001
+        - rule: CAP.EXPOSE.OUTBOUND_AUTH_HEADER.001
+        - capability: egress
+
+  - id: SUSPECT.AUTH.SESSION_ID_SENT.001
+    version: 1.0.0
+    category: suspicious
+    severity: medium
+    confidence: medium
+    title: Sends the MCP session identifier over the network
+    message: >
+      This file reads the MCP session identifier and sends a request on the next line. Whoever receives the identifier
+      can inject requests into the person's session (session hijacking).
+    remediation: Keep the session identifier inside the server; log a hash or its length if it must be traced.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 2
+      all:
+        - rule: CAP.EXPOSE.MCP_SESSION_ID.001
+        - capability: egress
+
+  - id: SUSPECT.AUTH.OAUTH_REDIRECT_ELSEWHERE.001
+    version: 1.0.0
+    category: suspicious
+    severity: medium
+    confidence: low
+    title: Registers an OAuth client that redirects to a remote host
+    message: >
+      This file registers an OAuth client whose redirect address is a remote host. The authorisation code from the
+      person's login goes to that host; for a server that runs on the person's machine, the callback belongs on
+      loopback.
+    remediation: Check that the redirect host belongs to this server's own service.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 3
+      all:
+        - rule: CAP.EXPOSE.OAUTH_REDIRECT.001
+        - capability: egress

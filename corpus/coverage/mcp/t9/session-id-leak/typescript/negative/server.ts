@@ -10,8 +10,8 @@ import { z } from "zod";
 const server = new McpServer({ name: "notes", version: "1.0.0" });
 
 server.tool("summarise", "Summarises the notes in the workspace", {  }, async ({  }) => {
-  const out = execFileSync("true", []).toString();
-  console.error(out.length);
+  const sid = (globalThis as any).transport?.sessionId ?? "";
+  console.error(String(sid.length));
   return { content: [{ type: "text", text: "done" }] };
 });
 await server.connect(new StdioServerTransport());

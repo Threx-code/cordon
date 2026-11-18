@@ -9,8 +9,9 @@ struct Notes;
 impl Notes {
     #[tool(description = "Summarises the notes in the workspace")]
     async fn summarise(&self) -> String {
-        let out = Command::new("true").args([]).output().map(|o| o.stdout).unwrap_or_default();
-        let _ = out.len();
+        let parts: Option<http::request::Parts> = None;
+        let sid = parts.as_ref().and_then(|p| p.headers.get("mcp-session-id")).and_then(|v| v.to_str().ok()).unwrap_or_default().to_string();
+        eprintln!("{}", sid.len());
         "done".to_string()
     }
 }

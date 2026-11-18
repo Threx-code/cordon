@@ -37,9 +37,15 @@ class Build:
     @staticmethod
     def server(way: str, comment: str, body: str) -> str:
         schema, args = Build.args(way, body)
-        return SKELETON[way].format(comment=comment, toplevel="", tool="summarise",
-                                    description="Summarises the notes in the workspace",
-                                    schema=schema, args=args, body=indent(way, body))
+        return SKELETON[way].format(
+            comment=comment,
+            toplevel="",
+            tool="summarise",
+            description="Summarises the notes in the workspace",
+            schema=schema,
+            args=args,
+            body=indent(way, body),
+        )
 
     @staticmethod
     def side(target: Path, way: str, comment: str, body: str, deps, files: dict[str, str]) -> None:
@@ -59,17 +65,42 @@ class Build:
         for case in families_access.CASES:
             for way in WAYS:
                 base = OUT / case["family"] / case["slug"] / way
-                Build.side(base / "positive", way, case["pos_comment"], case["pos"][way], case["deps"], case["files"])
-                Build.side(base / "negative", way, case["neg_comment"], case["neg"][way], case["neg_deps"], case["neg_files"])
-                (base / "expect.yaml").write_text("positive: {block: true}\nnegative: {block: false}\n", encoding="utf-8")
+                Build.side(
+                    base / "positive",
+                    way,
+                    case["pos_comment"],
+                    case["pos"][way],
+                    case["deps"],
+                    case["files"],
+                )
+                Build.side(
+                    base / "negative",
+                    way,
+                    case["neg_comment"],
+                    case["neg"][way],
+                    case["neg_deps"],
+                    case["neg_files"],
+                )
+                positive = (
+                    f"{{signal: {case['signal']}}}" if case.get("signal") else "{block: true}"
+                )
+                (base / "expect.yaml").write_text(
+                    f"positive: {positive}\nnegative: {{block: false}}\n", encoding="utf-8"
+                )
                 written += 1
             families.setdefault(case["family"], []).append(case)
         for family, cases in families.items():
             lines = ["cases:"]
             for c in cases:
-                lines += [f"  - slug: {c['slug']}", f"    positive: \"{c['pos_comment']}\"", f"    negative: \"{c['neg_comment']}\""]
+                lines += [
+                    f"  - slug: {c['slug']}",
+                    f'    positive: "{c["pos_comment"]}"',
+                    f'    negative: "{c["neg_comment"]}"',
+                ]
             (OUT / family / "cases.yaml").write_text("\n".join(lines) + "\n", encoding="utf-8")
-        print(f"cases {len(families_access.CASES)}; case directories {written}; fixtures {written * 2}")
+        print(
+            f"cases {len(families_access.CASES)}; case directories {written}; fixtures {written * 2}"
+        )
         return 0
 
 
