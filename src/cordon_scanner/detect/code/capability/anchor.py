@@ -40,6 +40,7 @@ class FindingAnchor:
         Capability.DECODE,
         Capability.DECOMPRESS,
         Capability.RECONNAISSANCE,
+        Capability.COLLECT,
         Capability.DELAY,
         Capability.SPAWN,
         Capability.EGRESS,

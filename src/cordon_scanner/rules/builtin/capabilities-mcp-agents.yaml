@@ -1,0 +1,191 @@
+pack:
+  id: cordon.capabilities.mcp-agents
+  version: 0.2.0
+  license: Apache-2.0
+  source: cordon-builtin
+  description: >
+    Capabilities that only exist because of AI agents and the Model Context Protocol, recognised by
+    the stores and protocol calls they touch rather than by a language operation. Other MCP clients'
+    configuration files hold every other server's API keys in their `env` blocks; the AI coding
+    agents keep OAuth tokens and whole conversations on disk; a server can drive the client's own
+    model through sampling, or ask the person for a secret through elicitation. Each is modelled as
+    an existing capability (credential, agent) so the behavioural composites apply unchanged: a
+    credential store read beside an outbound send is an exfiltration whatever the store.
+
+rules:
+  - id: CAP.CREDENTIAL.MCP_CLIENT_CONFIG.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: credential
+    title: Names another MCP client's configuration file
+    message: >
+      This file names the configuration file of an MCP client (Claude Desktop, Claude Code,
+      Cursor, Windsurf, Cline, Roo, Kiro, Amazon Q, Devin). Those files list every MCP server the
+      person has installed together with the API keys and tokens each one is given in its `env`
+      block, so reading one hands over every other server's credentials. Installers write their
+      own entry there; a server has no reason to read the file at run time.
+    remediation: >
+      Confirm the file is only written, to add this server's own entry. A read that leaves the
+      machine discloses every key in it: rotate them.
+    references:
+      - https://modelcontextprotocol.io/quickstart/user
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '\bclaude_desktop_config\.json\b'
+        - '[/\\"\x27]\.claude\.json\b'
+        - '[/\\"\x27]\.cursor[/\\]{1,2}mcp\.json\b'
+        - '\.cursor["\x27]\s*,\s*["\x27]mcp\.json["\x27]'
+        - '\bwindsurf[/\\]{1,2}mcp_config\.json\b'
+        - '\bcline_mcp_settings\.json\b'
+        - '[/\\"\x27]\.(?:roo|amazonq)[/\\]{1,2}mcp\.json\b'
+        - '[/\\"\x27]\.kiro[/\\]{1,2}settings[/\\]{1,2}mcp\.json\b'
+        - '\bdevin[/\\]{1,2}mcp_config\.json\b'
+    tests:
+      positive:
+        - "const p = path.join(os.homedir(), 'Library/Application Support/Claude/claude_desktop_config.json')"
+        - "cfg = json.load(open(os.path.expanduser('~/.cursor/mcp.json')))"
+        - "const f = path.join(home, '.cursor', 'mcp.json')"
+        - "const w = path.join(home, '.codeium/windsurf/mcp_config.json')"
+        - "readFileSync(join(homedir(), '.claude.json'), 'utf8')"
+      negative:
+        - "const config = loadConfig('mcp.json')"
+        - "const settings = require('./claude.json')"
+        - "server.tool('read_config', 'Reads mcp.json from the workspace', handler)"
+
+  - id: CAP.CREDENTIAL.AGENT_AUTH_STORE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: credential
+    title: Names an AI coding agent's login or conversation store
+    message: >
+      This file names where an AI coding agent keeps its login tokens or its conversations: Codex's
+      auth.json and session logs, Gemini CLI's OAuth credentials, Claude Code's credentials file
+      and project transcripts, GitHub Copilot's token files, an editor's global state database.
+      These are read by the agent that owns them and by almost nothing else; a package that reads
+      them takes the person's AI account or everything they have discussed with it.
+    remediation: >
+      Confirm this component is the agent that owns the store. If it is not, sign the agent out
+      everywhere and treat the conversation history as disclosed.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '[/\\"\x27]\.codex[/\\]{1,2}(?:auth\.json|sessions[/\\])'
+        - '[/\\"\x27]\.gemini[/\\]{1,2}oauth_creds\.json\b'
+        - '[/\\"\x27]\.claude[/\\]{1,2}(?:\.credentials\.json\b|projects[/\\])'
+        - '\bgithub-copilot[/\\]{1,2}(?:hosts|apps)\.json\b'
+        - '\bglobalStorage[/\\]{1,2}state\.vscdb\b'
+    tests:
+      positive:
+        - "token = json.load(open(Path.home() / '.codex/auth.json'))['tokens']"
+        - "const creds = readFileSync(join(homedir(), '.gemini/oauth_creds.json'))"
+        - "for f in glob(os.path.expanduser('~/.claude/projects/*/*.jsonl')):"
+        - "const t = fs.readFileSync(path.join(cfg, 'github-copilot/apps.json'))"
+        - "db = sqlite3.connect(appdata + '/Cursor/User/globalStorage/state.vscdb')"
+      negative:
+        - "const codex = require('codex')"
+        - "const projects = await listProjects()"
+        - "state = load_state('state.json')"
+
+  - id: CAP.AGENT.MCP_SAMPLING.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: agent
+    title: An MCP server asks the client's own model to generate text
+    message: >
+      This MCP server sends a sampling request (`sampling/createMessage`): it asks the client's
+      language model, on the person's account, to answer a prompt the server wrote. It is a
+      legitimate protocol feature and a direct line into the model, so the prompt's text and
+      what the server does with the answer decide whether it is used or abused.
+    remediation: >
+      Read the prompt the server sends and where the answer goes. A prompt that addresses the
+      model with instructions about other tools, files or secrets is an injection.
+    references:
+      - https://modelcontextprotocol.io/specification/2025-06-18/client/sampling
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '["\x27]sampling/createMessage["\x27]'
+        - '\b(?:server|session|ctx|context|mcp)\s*\.\s*(?:createMessage|create_message)\s*\('
+        - '\bctx\.session\.create_message\s*\('
+    tests:
+      positive:
+        - "const r = await server.createMessage({ messages, maxTokens: 500 })"
+        - "result = await ctx.session.create_message(messages=[msg], max_tokens=200)"
+        - "await this.server.request({ method: 'sampling/createMessage', params })"
+      negative:
+        - "client.setRequestHandler(CreateMessageRequestSchema, async (req) => handle(req))"
+        - "const msg = createMessage(text)"
+
+  - id: CAP.CREDENTIAL.ELICIT_SECRET.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: credential
+    title: An MCP server asks the person for a password, key or recovery phrase
+    message: >
+      This MCP server uses elicitation, the protocol's way for a server to ask the person a
+      question through their AI client, to ask for a password, an API key, a token, a private key
+      or a wallet recovery phrase. The specification says servers must not request sensitive
+      information this way; a request for a secret through a tool prompt is the phishing shape.
+    remediation: >
+      Credentials belong in the client's configuration of the server, never typed into a prompt.
+      Treat any secret already entered this way as disclosed.
+    references:
+      - https://modelcontextprotocol.io/specification/2025-06-18/client/elicitation
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:elicitInput|elicit_input|elicitation/create)\b[^\n]{0,300}?\b(?i:password|passphrase|api[_ -]?key|secret|access[_ -]?token|seed[_ -]?phrase|mnemonic|private[_ -]?key|recovery[_ -]?phrase)\b'
+        - '\b(?:ctx|context|session)\.elicit\s*\([^\n]{0,300}?\b(?i:password|passphrase|api[_ -]?key|secret|access[_ -]?token|seed[_ -]?phrase|mnemonic|private[_ -]?key|recovery[_ -]?phrase)\b'
+    tests:
+      positive:
+        - "const r = await server.elicitInput({ message: 'Enter your wallet seed phrase to continue', requestedSchema })"
+        - "answer = await ctx.elicit(message='Please provide your OpenAI API key', schema=Key)"
+        - "await this.server.request({ method: 'elicitation/create', params: { message: 'Type your password' } })"
+      negative:
+        - "const r = await server.elicitInput({ message: 'Which project should I open?', requestedSchema })"
+        - "answer = await ctx.elicit(message='Pick a colour', schema=Choice)"

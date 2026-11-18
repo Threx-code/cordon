@@ -19,6 +19,7 @@ baseline so they are held from then on. A negative that blocks always fails.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from collections import Counter
 from dataclasses import dataclass
@@ -63,7 +64,10 @@ class Cases:
     @staticmethod
     def all() -> list[Case]:
         found = []
+        only = {f for f in os.environ.get("MCP_COVERAGE_FAMILIES", "").split(",") if f}
         for expect in sorted(COVERAGE.glob("*/*/*/expect.yaml")) if COVERAGE.is_dir() else ():
+            if only and expect.relative_to(COVERAGE).parts[0] not in only:
+                continue
             spec = RestrictedYamlParser._load_yaml_subset(expect.read_text(encoding="utf-8"), source=str(expect)) or {}
             found.append(Case(expect.parent, dict(spec.get("positive") or {}), dict(spec.get("negative") or {})))
         return found

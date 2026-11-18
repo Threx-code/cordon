@@ -148,6 +148,9 @@ class TestCategoryAndCapability:
             "deserialize",
             "spawn",
             "credential",
+            # What the person sees, types or keeps (clipboard, screen, keys, audio and video, documents), separated from
+            # reconnaissance because identifying the machine is not taking its owner's content.
+            "collect",
             # Identifying the machine, separated from `credential` for the fifth
             # instance of the same mistake and the clearest of them. Nothing
             # authenticates with a hostname, so `socket.gethostname()`,

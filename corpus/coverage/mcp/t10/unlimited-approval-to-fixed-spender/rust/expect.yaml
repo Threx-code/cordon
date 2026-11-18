@@ -1,2 +1,2 @@
-positive: {block: true}
+positive: {signal: suspicious}
 negative: {block: false}

@@ -109,6 +109,15 @@ class Capability(enum.StrEnum):
     CREDENTIAL = "credential"
     """Reads environment variables, key material, or cloud and registry tokens."""
 
+    COLLECT = "collect"
+    """Takes what the person sees, types or keeps: the clipboard, the screen, keystrokes, the microphone or the camera,
+    and their documents or other projects' source.
+
+    Split out of `RECONNAISSANCE` for the reason that one was split out of `CREDENTIAL`: identifying the machine is not
+    taking the person's content. A composite whose message says "this sends what you typed or what is on your screen"
+    cannot rest on a hostname read, and a hostname read must not inherit the weight of a keylogger.
+    """
+
     RECONNAISSANCE = "reconnaissance"
     """Identifies the machine it is running on: hostname, user, working directory.
 
