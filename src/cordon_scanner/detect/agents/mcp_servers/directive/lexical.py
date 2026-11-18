@@ -1,4 +1,4 @@
-"""The texts an MCP server written in Go or Rust (and, as the profiles are added, Java and C#) hands the agent,
+"""The texts an MCP server written in Go, Rust, Java or C# hands the agent,
 read from the file's tokens (`lexer.py`) on the same seven surfaces as Python and JavaScript.
 
 ```
@@ -86,7 +86,7 @@ class Profile:
     """What carries text in one language: its calls, its composite literals (`Type{Key: text}`: type,
     key, surface, the separator of key and value), the request types that make a function a handler,
     how a statement ends (`line` or `semicolon`) and the attributes (`#[name(key = "...")]`: name, key,
-    surface) that carry text."""
+    surface) that carry text, and whether a `throw new Type("...")` is an error text."""
 
     language: str
     anchors: tuple[Anchor, ...]
@@ -94,6 +94,7 @@ class Profile:
     handlers: frozenset[str]
     statement: str
     attributes: tuple[tuple[str, str, str], ...] = ()
+    throws: bool = False
 
 
 GO: Final = Profile(
@@ -141,8 +142,56 @@ RUST: Final = Profile(
     "semicolon",
     (("tool", "description", "description"), ("schemars", "description", "schema")),
 )
-PROFILES: Final = {"go": GO, "rust": RUST}
-_SUFFIXES: Final = {".go": "go", ".rs": "rust"}
+JAVA: Final = Profile(
+    "java",
+    (
+        Anchor("Tool", "description", (1,), new=True),
+        Anchor("description", "description", (0,)),
+        Anchor("TextContent", "result", (0,), new=True, skip_inside="PromptMessage"),
+        Anchor("CallToolResult", "result", (0,), new=True),
+        Anchor("addTextContent", "result", (0,)),
+        Anchor("TextResourceContents", "resource", (2,), new=True),
+        Anchor("PromptMessage", "prompt", (1,), new=True),
+        Anchor("loggingNotification", "notification", None),
+        Anchor("progressNotification", "notification", None),
+    ),
+    (),
+    frozenset(),
+    "semicolon",
+    (
+        ("Tool", "description", "description"),
+        ("McpTool", "description", "description"),
+        ("ToolParam", "description", "schema"),
+        ("McpToolParam", "description", "schema"),
+        ("McpPrompt", "description", "description"),
+        ("McpResource", "description", "description"),
+    ),
+    True,
+)
+CSHARP: Final = Profile(
+    "csharp",
+    (
+        Anchor("ChatMessage", "prompt", (1,), new=True),
+        Anchor("SendNotificationAsync", "notification", None),
+    ),
+    (
+        ("TextContentBlock", "Text", "result", "="),
+        ("TextResourceContents", "Text", "resource", "="),
+        ("LoggingMessageNotificationParams", "Data", "notification", "="),
+    ),
+    frozenset(),
+    "semicolon",
+    (("Description", "", "description"),),
+    True,
+)
+#: The attributes that mark a C# method as serving the agent, and what its returned text is.
+_CSHARP_SERVES: Final = {
+    "McpServerTool": "result",
+    "McpServerPrompt": "prompt",
+    "McpServerResource": "resource",
+}
+PROFILES: Final = {"go": GO, "rust": RUST, "java": JAVA, "csharp": CSHARP}
+_SUFFIXES: Final = {".go": "go", ".rs": "rust", ".java": "java", ".cs": "csharp"}
 
 
 class _Fold:
@@ -213,6 +262,7 @@ class LexicalFlow:
             elif token.text in _CLOSE and stack:
                 self.close[stack.pop()] = index
         self.constants: dict[str, list[tuple[int, int]]] = {}
+        self.depths: list[int] | None = None
         self.define()
 
     def end_of_statement(self, begin: int) -> int:
@@ -254,6 +304,20 @@ class LexicalFlow:
             end = self.end_of_statement(index + 1)
             if end > index + 1:
                 self.constants.setdefault(name.text, []).append((index + 1, end))
+
+    def parameter_list(self, index: int) -> bool:
+        """Whether the token at `index` is inside a parenthesis (a parameter list), not at the level of a
+        class or a method's own attributes."""
+        if self.depths is None:
+            depth, found = 0, []
+            for token in self.tokens:
+                found.append(depth)
+                if token.kind == "op" and token.text == "(":
+                    depth += 1
+                elif token.kind == "op" and token.text == ")":
+                    depth = max(depth - 1, 0)
+            self.depths = found
+        return self.depths[index] > 0
 
     def declared(self, equals: int) -> Token | None:
         """The name an `=` at `equals` gives a value: the identifier just before it, or, after a type
@@ -404,6 +468,10 @@ class LexicalSurfaces:
         spans = flow.handlers() if any(a.scope == "handler" for a in profile.anchors) else []
         stack: list[tuple[int, str]] = []
         for index, token in enumerate(tokens):
+            if token.kind == "id":
+                if profile.throws and token.text == "throw":
+                    LexicalSurfaces.throw(flow, text, index, out)
+                continue
             if token.kind != "op":
                 continue
             if token.text == "(":
@@ -414,7 +482,7 @@ class LexicalSurfaces:
                 stack.pop()
             elif token.text == "{":
                 LexicalSurfaces.literal(flow, text, index, out)
-            elif token.text == "#" and profile.attributes:
+            elif token.text in ("#", "@", "[") and profile.attributes:
                 LexicalSurfaces.attribute(flow, text, index, out)
             if len(out) >= MAX_SERVED:
                 break
@@ -493,29 +561,122 @@ class LexicalSurfaces:
 
     @staticmethod
     def attribute(flow: LexicalFlow, source: str, index: int, out: list[Served]) -> None:
-        """`#[tool(description = "...")]`: the value of the key a profile names in an attribute it names.
-        An argument's attribute (`#[tool(param, description = "...")]`) describes the argument."""
+        """The text an attribute carries: Rust `#[tool(description = "...")]` (an argument's, with
+        `param`, describes the argument), Java `@Tool(description = "...")`, C# `[Description("...")]`
+        (on a parameter it describes the argument) and the text a C# method marked `[McpServerTool]`
+        returns."""
         tokens = flow.tokens
-        if (
-            index + 3 >= len(tokens)
-            or tokens[index + 1].text != "["
-            or tokens[index + 2].kind != "id"
-        ):
+        language = flow.profile.language
+        if language == "csharp":
+            if tokens[index].text == "[":
+                LexicalSurfaces.csharp_attribute(flow, source, index, out)
             return
-        if tokens[index + 3].text != "(":
+        if language == "rust" and tokens[index].text == "#":
+            head = index + 2 if index + 1 < len(tokens) and tokens[index + 1].text == "[" else -1
+        elif language == "java" and tokens[index].text == "@":
+            head = index + 1
+        else:
             return
-        name = tokens[index + 2].text
-        closing = flow.close.get(index + 3)
+        if head < 0 or head + 1 >= len(tokens):
+            return
+        if tokens[head].kind != "id" or tokens[head + 1].text != "(":
+            return
+        name, opening = tokens[head].text, head + 1
+        closing = flow.close.get(opening)
         if closing is None:
             return
-        argument = any(t.kind == "id" and t.text == "param" for t in tokens[index + 3 : closing])
+        argument = any(t.kind == "id" and t.text == "param" for t in tokens[opening:closing])
         for attribute, key, surface in flow.profile.attributes:
             if attribute != name:
                 continue
-            for begin, end in flow.arguments(index + 3):
+            for begin, end in flow.arguments(opening):
                 if end - begin >= 3 and tokens[begin].text == key and tokens[begin + 1].text == "=":
                     shown = "schema" if argument and surface == "description" else surface
                     LexicalSurfaces.add(flow, source, shown, begin + 2, end, out)
+
+    @staticmethod
+    def csharp_attribute(flow: LexicalFlow, source: str, index: int, out: list[Served]) -> None:
+        """`[Description("...")]`: the first argument is a description of the method, or, inside a
+        parameter list, of the argument; a method marked `[McpServerTool]` hands the agent what it
+        returns."""
+        tokens = flow.tokens
+        closing = flow.close.get(index)
+        if closing is None:
+            return
+        for position in range(index + 1, closing):
+            token = tokens[position]
+            if token.kind != "id":
+                continue
+            if token.text in _CSHARP_SERVES and position + 1 <= closing:
+                LexicalSurfaces.returned(flow, source, closing + 1, _CSHARP_SERVES[token.text], out)
+            elif (
+                token.text == "Description"
+                and position + 1 < closing
+                and tokens[position + 1].text == "("
+            ):
+                ranges = flow.arguments(position + 1)
+                if ranges:
+                    shown = "schema" if flow.parameter_list(index) else "description"
+                    LexicalSurfaces.add(flow, source, shown, ranges[0][0], ranges[0][1], out)
+
+    @staticmethod
+    def returned(
+        flow: LexicalFlow, source: str, begin: int, surface: str, out: list[Served]
+    ) -> None:
+        """The text a method returns, for the method declared after the attribute that ends at
+        `begin`: an expression body (`=> text;`) or each `return text;` of its block."""
+        tokens = flow.tokens
+        index = begin
+        while index < len(tokens) and index < begin + 60:
+            token = tokens[index]
+            if token.kind == "op" and token.text == "[":
+                index = flow.close.get(index, index) + 1
+                continue
+            if token.kind == "op" and token.text in ("{", ";", "=>"):
+                return
+            if token.kind == "op" and token.text == "(":
+                break
+            index += 1
+        else:
+            return
+        after = flow.close.get(index, index) + 1
+        while after < len(tokens) and tokens[after].kind == "id":
+            after += 1  # `where T : ...` constraints
+            while (
+                after < len(tokens)
+                and tokens[after].kind == "op"
+                and tokens[after].text in (".", ":", ",")
+            ):
+                after += 2
+        if after >= len(tokens):
+            return
+        if tokens[after].text == "=>":
+            end = flow.end_of_statement(after + 1)
+            LexicalSurfaces.add(flow, source, surface, after + 1, end, out)
+            return
+        if tokens[after].text != "{" or after not in flow.close:
+            return
+        for position in range(after + 1, flow.close[after]):
+            if tokens[position].kind == "id" and tokens[position].text == "return":
+                end = flow.end_of_statement(position + 1)
+                LexicalSurfaces.add(flow, source, surface, position + 1, end, out)
+
+    @staticmethod
+    def throw(flow: LexicalFlow, source: str, index: int, out: list[Served]) -> None:
+        """`throw new Type("...")`: the message of the exception."""
+        tokens = flow.tokens
+        if index + 2 >= len(tokens) or tokens[index + 1].text != "new":
+            return
+        position = index + 2
+        while position < len(tokens) and position < index + 12:
+            token = tokens[position]
+            if token.kind == "op" and token.text == "(":
+                for begin, end in flow.arguments(position):
+                    LexicalSurfaces.add(flow, source, "error", begin, end, out)
+                return
+            if token.kind == "op" and token.text not in (".", "<", ">", ","):
+                return
+            position += 1
 
     @staticmethod
     def until_comma(flow: LexicalFlow, begin: int, end: int) -> int:
