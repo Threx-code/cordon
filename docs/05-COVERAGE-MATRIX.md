@@ -872,7 +872,7 @@ rather than a document.
 | `SUSPECT.MCP.CONTAINER_HOST_ACCESS.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.DECODE_RUN.001` | medium | `agents` | misconfiguration |
 | `SUSPECT.MCP.DENIAL_OF_WALLET.001` | medium | `agents` | misconfiguration |
-| `SUSPECT.MCP.DESCRIPTION_FETCHED.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DESCRIPTION_FETCHED.001` | medium | `agents` | misconfiguration |
 | `SUSPECT.MCP.DETACHED_CHILD.001` | medium | `agents` | misconfiguration |
 | `SUSPECT.MCP.DOWNLOAD_RUN_TEMP.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.ELICIT_CREDENTIAL.001` | medium | `agents` | misconfiguration |
@@ -890,7 +890,7 @@ rather than a document.
 | `SUSPECT.MCP.GATED_PAYLOAD.001` | medium | `agents` | misconfiguration |
 | `SUSPECT.MCP.HANDLER_SHELL.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.HOME_WIPE.001` | medium | `agents` | misconfiguration |
-| `SUSPECT.MCP.IDENTITY_GATE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.IDENTITY_GATE.001` | medium | `agents` | misconfiguration |
 | `SUSPECT.MCP.INPUT_DROPPED.001` | medium | `agents` | misconfiguration |
 | `SUSPECT.MCP.INPUT_FORWARDED.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.INPUT_MIRROR.001` | high | `agents` | misconfiguration |
@@ -924,7 +924,7 @@ rather than a document.
 | `SUSPECT.MCP.SUBSCRIPTION_CHANNEL.001` | medium | `agents` | misconfiguration |
 | `SUSPECT.MCP.TIME_BOMB.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.TOOLS_CHANGED.001` | medium | `mcp-live` | misconfiguration |
-| `SUSPECT.MCP.TOOLS_REPLACED_AFTER_CALLS.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.TOOLS_REPLACED_AFTER_CALLS.001` | medium | `agents` | misconfiguration |
 | `SUSPECT.MCP.TOOL_DESCRIPTION.001` | high | `agents` | prompt_injection |
 | `SUSPECT.MCP.TOOL_POISONING.001` | high | `mcp-packages` | misconfiguration |
 | `SUSPECT.MCP.TOOL_SQUATTING.001` | high | `agents` | misconfiguration |

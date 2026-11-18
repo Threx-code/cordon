@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Final
 
 from cordon_scanner.detect.agents.mcp_servers.techniques.technique import Technique
+from cordon_scanner.foundation.models import Severity
 
 _FETCH: Final = (
     r"(?:\bfetch\(|axios\.get\(|\bgot\(|urllib\.request\.urlopen\(|requests\.get\(|httpx\.get\(|http\.Get\(|"
@@ -61,6 +62,7 @@ RUGPULL: Final[tuple[Technique, ...]] = (
             r"(?:def|function|func|fn)\s{1,3}\w{0,20}(?:description|tool_list|tool_defs)\w{0,12}\s{0,3}\([^)\n]{0,80}\)"
             r"[^{:\n]{0,60}[{:][\s\S]{0,300}?" + _FETCH,
         ),
+        severity=Severity.MEDIUM,
         positive=(
             (
                 "js",
@@ -116,6 +118,7 @@ RUGPULL: Final[tuple[Technique, ...]] = (
             + _ORDER
             + ")",
         ),
+        severity=Severity.MEDIUM,
         positive=(
             (
                 "js",
@@ -166,6 +169,7 @@ RUGPULL: Final[tuple[Technique, ...]] = (
             + ")",
             _REPLACE + r"[^\n]{0,200}[\s\S]{0,200}?" + _CHANGED,
         ),
+        severity=Severity.MEDIUM,
         positive=(
             (
                 "js",

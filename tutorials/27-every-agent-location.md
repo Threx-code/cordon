@@ -240,7 +240,7 @@ Workflow steps that run a coding agent, checked for untrusted triggers, write pe
 | `SUSPECT.MCP.CONTAINER_HOST_ACCESS.001` | high | An MCP server's container is given the host |
 | `SUSPECT.MCP.DECODE_RUN.001` | medium | An MCP server's source decodes or decompresses a value and runs the result as a command or as code |
 | `SUSPECT.MCP.DENIAL_OF_WALLET.001` | medium | An MCP tool's result tells the agent to call it again, deeper or for every item |
-| `SUSPECT.MCP.DESCRIPTION_FETCHED.001` | high | An MCP server's source takes the description of its own tool from a network answer |
+| `SUSPECT.MCP.DESCRIPTION_FETCHED.001` | medium | An MCP server's source takes the description of its own tool from a network answer |
 | `SUSPECT.MCP.DETACHED_CHILD.001` | medium | An MCP server's source starts a detached process from a temporary location |
 | `SUSPECT.MCP.DOWNLOAD_RUN_TEMP.001` | high | An MCP server's source downloads a program and starts it from a temporary directory |
 | `SUSPECT.MCP.ELICIT_CREDENTIAL.001` | medium | An MCP server asks the user for a credential through the protocol's own prompt |
@@ -258,7 +258,7 @@ Workflow steps that run a coding agent, checked for untrusted triggers, write pe
 | `SUSPECT.MCP.GATED_PAYLOAD.001` | medium | An MCP server's source holds a fetch-and-run or a send behind a call count, a date or a check for CI |
 | `SUSPECT.MCP.HANDLER_SHELL.001` | high | An MCP tool runs its own input as a command |
 | `SUSPECT.MCP.HOME_WIPE.001` | medium | An MCP server's source deletes the user's whole home directory |
-| `SUSPECT.MCP.IDENTITY_GATE.001` | high | An MCP server's source acts only on the machines whose host name or locale it checks |
+| `SUSPECT.MCP.IDENTITY_GATE.001` | medium | An MCP server's source acts only on the machines whose host name or locale it checks |
 | `SUSPECT.MCP.INPUT_DROPPED.001` | medium | An MCP tool posts what it is asked to an address written in its code |
 | `SUSPECT.MCP.INPUT_FORWARDED.001` | high | An MCP tool sends what it is asked to a second host |
 | `SUSPECT.MCP.INPUT_MIRROR.001` | high | An MCP tool copies what it is asked into a hidden file |
@@ -290,7 +290,7 @@ Workflow steps that run a coding agent, checked for untrusted triggers, write pe
 | `SUSPECT.MCP.SPLIT_PAYLOAD.001` | medium | An MCP server's source joins pieces of an encoded string and decodes the whole |
 | `SUSPECT.MCP.SUBSCRIPTION_CHANNEL.001` | medium | An MCP server's source carries data to the client inside the address of a resource update |
 | `SUSPECT.MCP.TIME_BOMB.001` | high | An MCP tool changes behaviour on a mixed date, chance and call-count gate |
-| `SUSPECT.MCP.TOOLS_REPLACED_AFTER_CALLS.001` | high | An MCP server's source replaces a tool's description after a number of calls |
+| `SUSPECT.MCP.TOOLS_REPLACED_AFTER_CALLS.001` | medium | An MCP server's source replaces a tool's description after a number of calls |
 | `SUSPECT.MCP.TOOL_DESCRIPTION.001` | high | A tool in this repository's MCP server instructs the agent |
 | `SUSPECT.MCP.TOOL_SQUATTING.001` | high | An MCP tool takes a well-known tool's name and claims to be the safer one |
 | `SUSPECT.MCP.TRACE_ERASE.001` | medium | An MCP server's source erases shell history or system logs |
