@@ -42,6 +42,18 @@ class CompositeEvaluator:
         }
     )
 
+    #: Markers that read the command a spawn runs and say what it does: a command written out in full
+    #: that loops over every cluster context, every known SSH host or every repository, or pushes to
+    #: them, is the act itself, as a `CAP.SH.*` reading of the command is (`fixed_lines`).
+    COMMAND_IS_THE_ACT: ClassVar[frozenset[str]] = frozenset(
+        {
+            "CAP.RECON.KUBE_CONTEXTS.001",
+            "CAP.RECON.KNOWN_HOSTS.001",
+            "CAP.RECON.REPOSITORY_LOOP.001",
+            "CAP.EGRESS.GIT_PUSH.001",
+        }
+    )
+
     def __init__(
         self, *, in_entry: bool = False, in_import_entry: bool = False, confusion: bool = False
     ) -> None:
@@ -381,7 +393,11 @@ class CompositeEvaluator:
         speaking_argv = {
             hit.line
             for hit in all_hits
-            if hit.rule_id.startswith("CAP.SH.") and hit.capability is not Capability.SPAWN
+            if (
+                hit.rule_id.startswith("CAP.SH.")
+                or hit.rule_id in CompositeEvaluator.COMMAND_IS_THE_ACT
+            )
+            and hit.capability is not Capability.SPAWN
         }
         return frozenset({hit.line for hit in all_hits if hit.fixed} - speaking_argv)
 

