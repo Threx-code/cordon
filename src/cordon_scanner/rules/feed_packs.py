@@ -3,6 +3,11 @@ which delivered files are trusted; this loads them): verified packs that fail no
 samples, adding to the bundled rules and never replacing one, shadow packs only where asked and
 demoted there, and the feed's kill switch applied to delivered rules only.
 
+A pack is checked before it is activated: it must declare an engine range this engine satisfies
+(`pack.requires_engine`, refused by the loader), fit the size limits of `PackLimits`, and pass its
+own samples. A pack that fails any check is left out and named in the log; the scan runs on what is
+bundled.
+
 Rules sit above intel, so the loading lives here and intel never imports the rules layer
 (architecture audit F1).
 """
@@ -30,6 +35,53 @@ class PackFiles(Protocol):
     """What the delivered packs are read with: the rule loader's file reader."""
 
     def load_file(self, path: str | Path) -> RulePack: ...
+
+
+class PackLimits:
+    """What one delivered pack may weigh. A signed feed is trusted for what it says, not for how
+    much of the scanner's memory and time it may take: a pack that is too large to compile cheaply
+    is refused before any of it is read, so a faulty or hostile set cannot slow every scan."""
+
+    MAX_FILE_BYTES = 1 << 20
+    """One pack file."""
+
+    MAX_RULES = 2_000
+    """Rules in one pack."""
+
+    MAX_PATTERNS_PER_RULE = 64
+    """Alternatives in one rule's match."""
+
+    MAX_PATTERN_CHARS = 2_000
+    """One pattern's source."""
+
+    @classmethod
+    def file_problem(cls, path: Path) -> str | None:
+        """Why the file is too large to read, or `None`."""
+        size = path.stat().st_size
+        if size > cls.MAX_FILE_BYTES:
+            return f"the file is {size} bytes; a pack may hold at most {cls.MAX_FILE_BYTES}"
+        return None
+
+    @classmethod
+    def pack_problem(cls, pack: RulePack) -> str | None:
+        """Why the loaded pack is too large to activate, or `None`."""
+        if len(pack.rules) > cls.MAX_RULES:
+            return f"it has {len(pack.rules)} rules; a pack may hold at most {cls.MAX_RULES}"
+        for compiled in pack.rules:
+            match = compiled.rule.raw.get("match") or {}
+            patterns = match.get("patterns") or ([match["pattern"]] if "pattern" in match else [])
+            if len(patterns) > cls.MAX_PATTERNS_PER_RULE:
+                return (
+                    f"rule {compiled.rule.id} has {len(patterns)} patterns; "
+                    f"a rule may hold at most {cls.MAX_PATTERNS_PER_RULE}"
+                )
+            longest = max((len(str(p)) for p in patterns), default=0)
+            if longest > cls.MAX_PATTERN_CHARS:
+                return (
+                    f"rule {compiled.rule.id} has a pattern of {longest} characters; "
+                    f"at most {cls.MAX_PATTERN_CHARS}"
+                )
+        return None
 
 
 class FeedPacks:
@@ -79,10 +131,18 @@ class FeedPacks:
             if path is None:
                 continue
             try:
+                problem = PackLimits.file_problem(path)
+                if problem is not None:
+                    logger.warning("feed rule pack %s not loaded: %s", name, problem)
+                    continue
                 pack = loader.load_file(path)
             except (RulePackError, OSError, ValueError) as exc:
                 # A bad delivered pack never breaks the scan: it runs on what is bundled.
                 logger.warning("feed rule pack %s not loaded: %s", name, exc)
+                continue
+            problem = PackLimits.pack_problem(pack)
+            if problem is not None:
+                logger.warning("feed rule pack %s not loaded: %s", name, problem)
                 continue
             from cordon_scanner.rules.tester import RuleTester
 
@@ -146,4 +206,4 @@ class FeedPacks:
         return frozenset(str(i) for i in listed if isinstance(i, str) and i in delivered)
 
 
-__all__ = ["FeedPacks"]
+__all__ = ["FeedPacks", "PackLimits"]
