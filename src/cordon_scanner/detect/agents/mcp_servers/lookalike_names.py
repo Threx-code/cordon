@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import re
 import tomllib
+from types import MappingProxyType
 from typing import Final
 
 from cordon_scanner.detect.agents.configuration import PackageLookalike
@@ -59,7 +60,9 @@ class ToolNameLookalike:
         """The name with case and separators removed: `read-file`, `readFile` and `read_file` are one tool."""
         return re.sub(r"[_\-.\s]", "", name).lower()
 
-    _KNOWN: Final = {re.sub(r"[_\-.\s]", "", t).lower(): t for t in WELL_KNOWN_TOOLS}
+    _KNOWN: Final = MappingProxyType(
+        {re.sub(r"[_\-.\s]", "", t).lower(): t for t in WELL_KNOWN_TOOLS}
+    )
 
     @classmethod
     def imitates(cls, name: str) -> str | None:

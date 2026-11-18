@@ -587,9 +587,9 @@ class DependencyDetector(BaseDetector):
 
         It needs no popular list to judge: it renders as a Latin name it is not (`mcp-go` spelt
         with a Cyrillic `o`), and no keyboard writes it by accident."""
-        from cordon_scanner.detect.supply.name_risk import NameSignals
+        from cordon_scanner.foundation.text.name_scripts import NameScripts
 
-        script = NameSignals.mixed_script(dep.name)
+        script = NameScripts.mixed(dep.name)
         if script is not None:
             yield self._finding(
                 rule_id="SUSPECT.DEPENDENCY.TYPOSQUAT.001",

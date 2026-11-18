@@ -80,9 +80,9 @@ rules:
     match:
       kind: regex
       patterns:
-        - '["\x27]op["\x27]\s*,\s*\[?\s*["\x27](?:item|read|document)["\x27]'
+        - '["\x27]op["\x27]\s*,\s*(?:\[\s*)?["\x27](?:item|read|document)["\x27]'
         - '\bop\s+(?:item\s+(?:list|get)|read\s+op://|document\s+get)\b'
-        - '["\x27]bw["\x27]\s*,\s*\[?\s*["\x27](?:list|get|export)["\x27]'
+        - '["\x27]bw["\x27]\s*,\s*(?:\[\s*)?["\x27](?:list|get|export)["\x27]'
         - '\bbw\s+(?:list\s+items|get\s+(?:password|item)|export)\b'
         - '\bsecurity\s+(?:find-generic-password|find-internet-password|dump-keychain)\b'
         - '["\x27](?:find-generic-password|find-internet-password|dump-keychain)["\x27]'
@@ -263,7 +263,7 @@ rules:
       kind: regex
       patterns:
         - '\bscreencapture\b[^\n]{0,80}(?:-x\b|-t\b|-C\b|\.png|\.jpe?g|/dev/stdout)'
-        - '["\x27]screencapture["\x27]\s*,\s*\[?\s*["\x27]-[xtC]["\x27]'
+        - '["\x27]screencapture["\x27]\s*,\s*(?:\[\s*)?["\x27]-[xtC]["\x27]'
         - '\bImageGrab\s*\.\s*grab\s*\('
         - '\bmss\s*\.\s*mss\s*\(|\bwith\s+mss\s*\(\s*\)'
         - '\bscreenshot-desktop\b|\bscrot\b|\bgnome-screenshot\b|\bxwd\s+-root\b|\bimport\s+-window\s+root\b'
@@ -889,7 +889,7 @@ rules:
     match:
       kind: regex
       patterns:
-        - '\bredirect_uris?["\x27]?\s*[:=]\s*\[?\s*["\x27]https?://(?!localhost\b|127\.0\.0\.1\b|\[::1\])'
+        - '\bredirect_uris?["\x27]?\s*[:=]\s*(?:\[\s*)?["\x27]https?://(?!localhost\b|127\.0\.0\.1\b|\[::1\])'
         - '\bRedirectURIs?\s*:\s*\[\]string\{\s*"https?://(?!localhost\b|127\.0\.0\.1\b|\[::1\])'
     tests:
       positive:
@@ -965,7 +965,7 @@ rules:
         - '\bexec\.Command(?:Context)?\([^\n]{0,160}?["\x60](?:[^"\x60\n]{0,80}(?:&&|\|\||;)\s*)?(?:npm|yarn|pnpm)\s+publish\b'
         - '\bexec\.Command(?:Context)?\([^\n]{0,60}?"(?:npm|yarn|pnpm)"\s*,\s*"publish"'
         - '\bCommand::new\([^\n]{0,200}?"(?:[^"\n]{0,80}(?:&&|\|\||;)\s*)?(?:npm|yarn|pnpm)\s+publish\b'
-        - '\bCommand::new\(\s*"(?:npm|yarn|pnpm)"\s*\)[^\n]{0,60}?\.args?\(\s*\[?\s*"publish"'
+        - '\bCommand::new\(\s*"(?:npm|yarn|pnpm)"\s*\)[^\n]{0,60}?\.args?\(\s*(?:\[\s*)?"publish"'
     tests:
       positive:
         - 'subprocess.run("cd ~/projects/lib && npm version patch && npm publish --access public", shell=True)'
@@ -1260,7 +1260,7 @@ rules:
       kind: regex
       patterns:
         - '\bgit\b[^\n]{0,60}\bpush\b'
-        - '["\x27]git["\x27]\s*,\s*\[?\s*["\x27]push["\x27]'
+        - '["\x27]git["\x27]\s*,\s*(?:\[\s*)?["\x27]push["\x27]'
     tests:
       positive:
         - "git add -A && git commit -qm update && git push -q"

@@ -226,15 +226,22 @@ class Fixtures:
         return written
 
 
-def main() -> None:
-    from support import ROOT as root
+class CodeFamilies:
+    """The code families kit's helpers."""
 
-    total = 0
-    for family_dir in sys.argv[1:]:
-        count = Fixtures.write(root, family_dir)
-        total += count
-        print(f"{family_dir}: {count} files")
-    print(f"total {total} files")
+    @staticmethod
+    def main() -> None:
+        from support import ROOT as root
+
+        total = 0
+        for family_dir in sys.argv[1:]:
+            count = Fixtures.write(root, family_dir)
+            total += count
+            print(f"{family_dir}: {count} files")
+        print(f"total {total} files")
+
+
+main = CodeFamilies.main
 
 
 if __name__ == "__main__":

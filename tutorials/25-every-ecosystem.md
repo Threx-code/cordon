@@ -793,21 +793,21 @@ The source Cordon reads inside any of those projects: 39 languages, each identif
 |---|---|---|
 | Batch | `*.bat`, `*.cmd` | 6 |
 | C | `*.c`, `*.h` | 0 |
-| C# | `*.cs` | 13 |
+| C# | `*.cs` | 14 |
 | C++ | `*.cc`, `*.cpp`, `*.cxx`, `*.hpp` | 0 |
 | Clojure | `*.bb`, `*.clj`, `*.cljc`, `*.cljs` | 8 |
 | CMake | `CMakeLists.txt` | 10 |
 | Dart | `*.dart` | 7 |
 | Dockerfile | `Containerfile`, `Dockerfile` | 0 |
 | Elixir | `*.ex`, `*.exs` | 8 |
-| Go | `*.go` | 14 |
+| Go | `*.go` | 15 |
 | Groovy | `Jenkinsfile`, `build.gradle` | 11 |
 | Haskell | `*.hs`, `*.lhs` | 8 |
-| Java | `*.java` | 11 |
+| Java | `*.java` | 12 |
 | JavaScript | `*.cjs`, `*.js`, `*.jsx`, `*.mjs` | 32 |
 | JSON | `*.json` | 0 |
 | Julia | `*.jl` | 8 |
-| Kotlin | `*.kt`, `*.kts`, `build.gradle.kts` | 19 |
+| Kotlin | `*.kt`, `*.kts`, `build.gradle.kts` | 20 |
 | Lua | `*.lua` | 8 |
 | Makefile | `GNUmakefile`, `Makefile` | 10 |
 | Markdown | `*.markdown`, `*.md`, `*.mdc` | 0 |
@@ -815,12 +815,12 @@ The source Cordon reads inside any of those projects: 39 languages, each identif
 | Objective-C | `*.m`, `*.mm` | 8 |
 | OCaml | `*.ml`, `*.mli` | 8 |
 | Perl | `*.pl`, `*.pm` | 10 |
-| PHP | `*.php` | 14 |
+| PHP | `*.php` | 15 |
 | PowerShell | `*.ps1`, `*.psm1` | 14 |
-| Python | `*.pth`, `*.py`, `*.pyi`, `*.pyw`, `conanfile.py`, `setup.py` | 25 |
+| Python | `*.pth`, `*.py`, `*.pyi`, `*.pyw`, `conanfile.py`, `setup.py` | 26 |
 | R | `*.r` | 8 |
-| Ruby | `*.rb`, `Gemfile`, `Podfile`, `Rakefile` | 17 |
-| Rust | `*.rs`, `build.rs` | 14 |
+| Ruby | `*.rb`, `Gemfile`, `Podfile`, `Rakefile` | 18 |
+| Rust | `*.rs`, `build.rs` | 15 |
 | Scala | `*.scala` | 10 |
 | Shell | `*.bash`, `*.sh`, `*.zsh` | 18 |
 | SQL | `*.sql` | 0 |

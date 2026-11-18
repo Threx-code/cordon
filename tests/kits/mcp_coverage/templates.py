@@ -160,9 +160,16 @@ MANIFEST = {
 }
 
 
-def indent(way: str, text: str) -> str:
-    pad = {"typescript": "  ", "python": "    ", "go": "\t\t", "rust": "        "}[way]
-    return "\n".join(pad + line if line else line for line in text.strip("\n").splitlines())
+class Templates:
+    """The templates kit's helpers."""
+
+    @staticmethod
+    def indent(way: str, text: str) -> str:
+        pad = {"typescript": "  ", "python": "    ", "go": "\t\t", "rust": "        "}[way]
+        return "\n".join(pad + line if line else line for line in text.strip("\n").splitlines())
+
+
+indent = Templates.indent
 
 
 class Body:
