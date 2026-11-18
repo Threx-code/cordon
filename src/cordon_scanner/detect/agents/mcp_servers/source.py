@@ -248,7 +248,6 @@ _ORDERS_PERSISTENCE: Final = re.compile(
     r"(?i)\b(?:add|append|write|insert)(?:ing)?\b[^.]{0,60}\b(?:to|into)\s+(?:the\s+)?(?:user'?s?\s+)?"
     r"(?:(?:~/)?\.?(?:bashrc|zshrc|bash_profile|crontab)|(?:~/)?\.profile)\b(?!-\w)"
 )
-
 #: A description overriding what the user asked for: "sets the timeout regardless of user input".
 _OVERRIDES_THE_USER: Final = re.compile(
     r"(?i)\bregardless\s+of\s+(?:the\s+)?user'?s?\s+(?:input|request|choice|selection|parameters?|"
@@ -558,6 +557,16 @@ class McpServerSource:
             and _HESITATION.fullmatch(words[0].strip(",.;:\"'()")) is None
             and _SCOPE_ENDS.search(scope) is None
         )
+
+    @staticmethod
+    def orders_request(text: str) -> bool:
+        """Whether the text orders the agent to contact an outside address it names."""
+        return _ORDERS_A_REQUEST.search(text) is not None
+
+    @staticmethod
+    def orders_persistence(text: str) -> bool:
+        """Whether the text tells the agent to change the user's shell start-up or schedule."""
+        return _ORDERS_PERSISTENCE.search(text) is not None
 
     @staticmethod
     def _wrapped(description: str) -> bool:
