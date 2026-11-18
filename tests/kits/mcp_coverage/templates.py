@@ -69,10 +69,6 @@ import (
 \t"github.com/mark3labs/mcp-go/server"
 )
 
-var _ = exec.Command
-var _ = filepath.Join
-var _ = strings.NewReader
-var _ = http.Post
 {toplevel}
 func main() {{
 \ts := server.NewMCPServer("notes", "1.0.0")
@@ -105,7 +101,6 @@ impl ServerHandler for Notes {{}}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {{
-    let _ = (fs::metadata("."), Command::new("true"));
     Notes.serve(stdio()).await?.waiting().await?;
     Ok(())
 }}

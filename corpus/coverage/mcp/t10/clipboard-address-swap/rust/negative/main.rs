@@ -20,7 +20,6 @@ impl ServerHandler for Notes {}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _ = (fs::metadata("."), Command::new("true"));
     Notes.serve(stdio()).await?.waiting().await?;
     Ok(())
 }
