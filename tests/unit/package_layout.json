@@ -1102,6 +1102,7 @@
   "test_js_flow.py": "analysis/javascript",
   "test_non_code_values.py": "analysis/javascript",
   "test_request_origins.py": "analysis/javascript",
+  "test_js_values_sealed.py": "analysis/javascript",
   "test_cross_file_flow.py": "analysis/javascript",
   "test_js_flow_fields.py": "analysis/javascript",
   "test_js_fold.py": "analysis/javascript",

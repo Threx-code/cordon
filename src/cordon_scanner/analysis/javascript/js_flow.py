@@ -454,6 +454,7 @@ class _Analysis(Calls):
                 changed |= self._grow(fn.ret, value)
             for k in calls:
                 changed |= self._call(k)
+            self.sites_complete = True  # every call has been classed once: `sink_sites` is whole
             if not changed:
                 break
 

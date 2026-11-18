@@ -401,18 +401,20 @@ class CrossFileJoin:
         flows: Mapping[str, Sequence[tuple[int, tuple[str, ...], str, str]]] | None = None,
     ) -> bool:
         """Whether every request of the package is known and none of them goes to an external literal host,
-        and no decoded value is run anywhere in it (V-a, note 70): the workers' `js.request` and `js.decoded`
+        and no decoded value is run anywhere in it : the workers' `js.request` and `js.decoded`
         facts across the package, never a file read here. The block of `SUSPECT.DROPPER.REMOTE_CODE.001` and
         `MALWARE.INSTALL.REMOTE_CODE.001` is kept for an external literal host or decoded content in the
-        package, and wherever something was not read (rule 3: unknown is never "no external host")."""
-        from cordon_scanner.analysis.javascript.flow.origins import EXTERNAL, UNREAD
+        package, and wherever something was not read (an unknown is never read as "no external host")."""
+        from cordon_scanner.analysis.javascript.flow.origins import LOCAL, UNRESOLVED
 
         if any(f.rule_id.startswith(CrossFileJoin.GAPS) for f in findings):
             return False
         for held in facts.values():
             if held.get("js.decoded"):
                 return False
-            if any(kind in (EXTERNAL, UNREAD) for kind, _count in held.get("js.request", ())):
+            # Only a request known to go nowhere external lowers: external, unread and over_budget (and any class
+            # not named here) keep the block.
+            if any(kind not in (LOCAL, UNRESOLVED) for kind, _count in held.get("js.request", ())):
                 return False
         # A decoded value that crosses files (a helper another file exports runs it) is run in the package too.
         return not any(

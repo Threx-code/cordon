@@ -206,7 +206,7 @@ class CrossFileFlows:
         # without it (note 78; rule 3: unknown is never "no caller passes a reply").
         lowered = CrossFileJoin.lowered(acc.findings) if unresolved else set()
         # The files that carry a REMOTE_CODE composite are graded again with what the whole package says of
-        # where its requests go (V-a): reported below the gate when none goes to an external literal host
+        # where its requests go: reported below the gate when none goes to an external literal host
         # and nothing decoded is run, with every file read; unchanged otherwise.
         unexternal = CrossFileJoin.unexternal(acc.facts, acc.findings, flows)
         carriers = CrossFileJoin.carriers(acc.findings) if unexternal else set()

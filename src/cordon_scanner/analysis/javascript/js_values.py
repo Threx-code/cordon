@@ -20,12 +20,18 @@ that literal: any of these makes the whole set unknown (None), and so does a set
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, Protocol
 
 if TYPE_CHECKING:
     from cordon_scanner.analysis.javascript.js_flow import _Analysis
 
 Key = tuple[int, str]
+
+
+class Spender(Protocol):
+    """A step counter that raises past its limit (`flow.origins.Steps`)."""
+
+    def spend(self, n: int = 1) -> None: ...
 
 
 class JsValues:
@@ -49,17 +55,37 @@ class JsValues:
         {"=", "+=", "-=", "||=", "??=", "&&=", "(", "[", "++", "--"}
     )
 
-    def __init__(self, analysis: _Analysis) -> None:
-        """`analysis` after `_Analysis.run`: its scopes, `bound` bindings and `fn_by_name`."""
+    def __init__(self, analysis: _Analysis, steps: Spender | None = None) -> None:
+        """`analysis` after `_Analysis.run`: its scopes, `bound` bindings and `fn_by_name`. `steps`, when given,
+        is charged for the work (a value set evaluated, a pass over the file) and raises past its limit: the
+        caller's budget (`RequestOrigins`); none, no limit."""
         self.a = analysis
+        self.steps = steps
+        if steps is not None:
+            steps.spend(len(analysis.bound) // 8)
         self._opaque = self._opaque_names()
-        self._sealed: dict[Key, bool] = {}
+        #: The keys some use of which is more than a read where it stands, made once on first need.
+        self._unsealed: set[Key] | None = None
+        #: The value set of each range at each depth, so a name or a call reached by many paths is read once (a
+        #: bundle's helpers were each read once per path to them: millions of steps for a file of tens of
+        #: thousands of tokens). The analysis is complete, so a range's value set does not change.
+        self._memo: dict[tuple[int, int, int, int], frozenset[str] | None] = {}
 
     # -- strings ---------------------------------------------------------------------------------
 
     def strings(self, s: int, e: int, scope: int, depth: int = 0) -> frozenset[str] | None:
         """Every string tokens [s, e) can evaluate to, or None when the file does not decide it."""
+        key = (s, e, scope, depth)
+        if key in self._memo:
+            return self._memo[key]
+        found = self._evaluate(s, e, scope, depth)
+        self._memo[key] = found
+        return found
+
+    def _evaluate(self, s: int, e: int, scope: int, depth: int) -> frozenset[str] | None:
         a = self.a
+        if self.steps is not None:
+            self.steps.spend(1 + max(e - s, 0) // 8)
         if depth > self.DEPTH or s >= e:
             return None
         while a.is_p(s, "(") and a.match[s] == e - 1:
@@ -184,13 +210,19 @@ class JsValues:
         """Whether every use of an object's name reads it where it stands: a field read, or a test
         (`if (!asset)`). Passed to a call, aliased, returned, spread or written through a member,
         the object may be changed where this does not look."""
-        got = self._sealed.get(key)
-        if got is not None:
-            return got
+        if self._unsealed is None:
+            self._unsealed = self._escaping()
+        return key not in self._unsealed
+
+    def _escaping(self) -> set[Key]:
+        """The keys of every name some use of which is more than a read where it stands, from one pass over the
+        file's tokens (a pass for each name made a bundle of thousands of names cost a pass each)."""
         a, t = self.a, self.a.t
-        ok = True
+        if self.steps is not None:
+            self.steps.spend(a.n)
+        out: set[Key] = set()
         for k in range(a.n):
-            if not (a.is_name(k, key[1]) and a.resolve(key[1], a.scope_of(k)) == key):
+            if not a.is_name(k):
                 continue
             if (
                 a.is_p(k - 1, ".")
@@ -212,10 +244,8 @@ class JsValues:
                 and not (a.is_p(k - 1, "(") and (a.is_name(k - 2) or a.is_p(k - 2, ")")))
             ):
                 continue
-            ok = False
-            break
-        self._sealed[key] = ok
-        return ok
+            out.add(a.resolve(str(t[k].value), a.scope_of(k)))
+        return out
 
     # -- helpers ---------------------------------------------------------------------------------
 

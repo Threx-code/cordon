@@ -333,7 +333,7 @@ class ScanContext:
     """Whether every request of the package is known, none goes to an external literal host and no decoded
     value is run anywhere in it (`CrossFileJoin.unexternal`): set for the re-grade of the files that carry
     the two REMOTE_CODE composites. Then those are reported at MEDIUM, the install-time one withdrawn for
-    the suspect one, rather than blocked alone (V-a, review 98). False otherwise: nothing is lowered."""
+    the suspect one, rather than blocked alone. False otherwise: nothing is lowered."""
 
     #: The fields that belong to the process holding the context rather than to the scan target,
     #: each with where its effect is accounted for. Everything else is a fact about the target:

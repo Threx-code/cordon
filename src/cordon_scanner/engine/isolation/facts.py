@@ -230,7 +230,7 @@ class JsShapes:
         return isinstance(value, list) and len(value) == 1 and JsShapes._name(value[0], 4096)
 
     REQUEST_CLASSES: ClassVar[frozenset[str]] = frozenset(
-        {"external", "local", "unresolved", "unread"}
+        {"external", "local", "unresolved", "unread", "over_budget"}
     )
 
     @staticmethod

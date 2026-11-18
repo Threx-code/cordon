@@ -150,7 +150,7 @@ class CompositeGrading:
             # An agent's tool that never runs what it fetched is not escalated as an install-time
             # dropper; `SUSPECT.DROPPER.001` reports the pair below the gate.
             in_hook = False
-        remote = rule.id == CompositeRuleIds.REMOTE_CODE_RULE  # V-a: `remote_code_unexternal`
+        remote = rule.id == CompositeRuleIds.REMOTE_CODE_RULE
         self.unexternal = (
             ctx.remote_code_unexternal and rule.id in CompositeRuleIds.REMOTE_CODE_RULES
         )

