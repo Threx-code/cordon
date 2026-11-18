@@ -171,16 +171,35 @@ class HostileKit:
         return best
 
     @staticmethod
-    def worst(regex: re.Pattern[bytes]) -> tuple[float, float, bytes]:
-        """The worst LARGE time and SMALL->LARGE ratio over every hostile input, and its piece."""
+    def worst(
+        regex: re.Pattern[bytes],
+        *,
+        small: int | None = None,
+        large: int | None = None,
+        floor: float | None = None,
+    ) -> tuple[float, float, bytes]:
+        """The worst LARGE time and growth ratio over every hostile input, and its piece.
+
+        A ratio above `RATIO` is confirmed before it counts: a quadratic search grows 16x at every
+        4x step, so it grows again from LARGE to four times LARGE, and a rule that sits on the noise
+        floor (a jittery runner's SMALL time sets the ratio) does not. The ratio kept for a confirmed
+        input is that second step's, so a rule is reported only when the growth repeats."""
+        small = HostileKit.SMALL if small is None else small
+        large = HostileKit.LARGE if large is None else large
+        floor = HostileKit.noise() if floor is None else floor
         worst = (0.0, 0.0, b"")
         for piece in dict.fromkeys(HostileKit.pieces(regex) + list(HostileKit.GENERIC)):
-            small = (piece * (HostileKit.SMALL // len(piece) + 1))[: HostileKit.SMALL]
-            large = (piece * (HostileKit.LARGE // len(piece) + 1))[: HostileKit.LARGE]
-            t_small = HostileKit.cpu(regex, small + b"\x01")
-            t_large = HostileKit.cpu(regex, large + b"\x01")
+
+            def built(size: int, piece: bytes = piece) -> bytes:
+                return (piece * (size // len(piece) + 1))[:size] + b"\x01"
+
+            t_small = HostileKit.cpu(regex, built(small))
+            t_large = HostileKit.cpu(regex, built(large))
             ratio = t_large / t_small if t_small > 0 else 0.0
-            if t_large > worst[0] or (t_large > HostileKit.noise() and ratio > worst[1]):
+            if ratio > HostileKit.RATIO and t_large > floor:
+                t_larger = HostileKit.cpu(regex, built(4 * large))
+                ratio = t_larger / t_large
+            if t_large > worst[0] or (t_large > floor and ratio > worst[1]):
                 worst = (t_large, ratio, piece)
         return worst
 
@@ -261,3 +280,51 @@ class TestTheDecodedViewOnHostileInput:
             tracemalloc.stop()
         assert outcome == "built"
         assert peak < 32 * 1024 * 1024, f"{peak / 1e6:.0f} MB held"
+
+
+class TestTheLinearityCheckConfirmsBeforeItFails:
+    """A rule on the noise floor can show a large ratio once, from a jittery SMALL time; a super-linear
+    rule shows it again at every step. The check fails only on the second."""
+
+    @staticmethod
+    def timed(monkeypatch: pytest.MonkeyPatch, seconds: dict[int, float]) -> None:
+        """Make `HostileKit.cpu` answer by input length, as a runner would: the same time for the
+        same size, whatever the pattern."""
+        monkeypatch.setattr(
+            HostileKit, "cpu", staticmethod(lambda _regex, data: seconds[len(data)])
+        )
+        monkeypatch.setattr(HostileKit, "noise", staticmethod(lambda: 0.1))
+        monkeypatch.setattr(HostileKit, "ceiling", staticmethod(lambda: 5.0))
+
+    def test_a_jittery_small_time_alone_is_not_super_linear(self, monkeypatch) -> None:
+        small, large = HostileKit.SMALL + 1, HostileKit.LARGE + 1
+        self.timed(monkeypatch, {small: 0.010, large: 0.120, 4 * HostileKit.LARGE + 1: 0.480})
+        _large, ratio, _piece = HostileKit.worst(re.compile(rb"name\d+x"))
+        assert ratio == pytest.approx(4.0)  # 12x the first time, 4x the second: linear
+
+    def test_growth_that_repeats_is_super_linear(self, monkeypatch) -> None:
+        small, large = HostileKit.SMALL + 1, HostileKit.LARGE + 1
+        self.timed(monkeypatch, {small: 0.010, large: 0.160, 4 * HostileKit.LARGE + 1: 2.560})
+        _large, ratio, _piece = HostileKit.worst(re.compile(rb"name\d+x"))
+        assert ratio > HostileKit.RATIO
+
+    def test_a_rule_on_the_floor_is_never_asked_to_confirm(self, monkeypatch) -> None:
+        small, large = HostileKit.SMALL + 1, HostileKit.LARGE + 1
+        # No time for 4 x LARGE: asking for it would raise. Under the floor, the ratio is not read.
+        self.timed(monkeypatch, {small: 0.001, large: 0.050})
+        _large, ratio, _piece = HostileKit.worst(re.compile(rb"name\d+x"))
+        assert ratio < HostileKit.RATIO or _large < HostileKit.noise()
+
+    def test_a_real_quadratic_pattern_is_still_found(self) -> None:
+        # `a[a-z]*b` is quadratic on a run of `a` (it passes the static validator): measured for real, at
+        # sizes small enough for a test, with no noise floor.
+        _large, ratio, piece = HostileKit.worst(
+            re.compile(rb"a[a-z]*b"), small=512, large=2048, floor=0.0
+        )
+        assert ratio > HostileKit.RATIO, (ratio, piece)
+
+    def test_a_real_linear_pattern_is_not_flagged(self) -> None:
+        _large, ratio, _piece = HostileKit.worst(
+            re.compile(rb"name\d{1,3}x"), small=512, large=2048, floor=0.0
+        )
+        assert ratio < HostileKit.RATIO
