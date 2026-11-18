@@ -332,11 +332,13 @@ rather than a document.
 | `SUSPECT.INSTALL.AUTOSTART.001` | high | `composites` | install_hook |
 | `SUSPECT.INSTALL.COMPUTED_CODE.001` | high | `composites` | install_hook |
 | `SUSPECT.INSTALL.DEPENDENCY_CONFUSION.001` | high | `manifest` | dependency_confusion |
+| `SUSPECT.INSTALL.INLINE_PROGRAM.001` | high | `manifest` | install_hook |
 | `SUSPECT.INSTALL.OBFUSCATED_HOOK.001` | high | `obfuscated-hook` | obfuscation |
 | `SUSPECT.INSTALL.SCRIPT.001` | high | `manifest` | install_hook |
 | `SUSPECT.INSTALL.STRING_CODE.001` | high | `composites` | install_hook |
 | `SUSPECT.INSTALL.TEMP_COMMAND.001` | high | `composites` | install_hook |
 | `SUSPECT.INSTALL.UNEXAMINED.001` | high | `manifest` | install_hook |
+| `SUSPECT.INSTALL.UNREAD.001` | high | `manifest` | install_hook |
 | `SUSPECT.INTENT.UNEXPLAINED_EFFECT.001` | high | `intent` | malicious_code |
 | `SUSPECT.MODEL.LOADED_ON_IMPORT.001` | high | `composites` | malicious_code |
 | `SUSPECT.MODEL.MALICIOUS_PACKAGE.001` | high | `model` | malicious_code |

@@ -2,7 +2,7 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,738 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,740 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -1602,7 +1602,7 @@ rule's own samples.
 
 ## Install-time code
 
-27 rules.
+29 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -1628,11 +1628,13 @@ rule's own samples.
 | `SUSPECT.INSTALL.AUTOSTART.001` | high | Install-time code makes something start at every login |
 | `SUSPECT.INSTALL.COMPUTED_CODE.001` | high | Code that runs at install executes or starts a program it assembles so that no literal is it |
 | `SUSPECT.INSTALL.DEPENDENCY_CONFUSION.001` | high | A version made to win resolution runs code on install |
+| `SUSPECT.INSTALL.INLINE_PROGRAM.001` | high | Install hook carries its program inline |
 | `SUSPECT.INSTALL.OBFUSCATED_HOOK.001` | high | An install hook runs a file too obfuscated to read |
 | `SUSPECT.INSTALL.SCRIPT.001` | high | Package declares an install-time lifecycle script |
 | `SUSPECT.INSTALL.STRING_CODE.001` | high | An install script runs a program it carries as a string |
 | `SUSPECT.INSTALL.TEMP_COMMAND.001` | high | The install runs a command on a system temp path |
 | `SUSPECT.INSTALL.UNEXAMINED.001` | high | Install-time code too large or slow to examine |
+| `SUSPECT.INSTALL.UNREAD.001` | high | Install hook runs a script this scan does not hold |
 
 ## Intent
 
