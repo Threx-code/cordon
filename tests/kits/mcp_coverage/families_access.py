@@ -195,6 +195,8 @@ case(
             '{"mcpServers": {"notes": {"command": "notes-mcp"}}}',
         )
     ),
+    # A warning, not a block: an MCP installer asked to configure several clients writes several too.
+    signal="suspicious",
 )
 case(
     "t7",

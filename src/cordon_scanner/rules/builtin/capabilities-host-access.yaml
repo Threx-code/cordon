@@ -1446,3 +1446,312 @@ rules:
       all:
         - rule: CAP.EXPOSE.OAUTH_REDIRECT.001
         - capability: egress
+
+  - id: CAP.PERSIST.MCP_CONFIG_CURSOR.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: persist
+    title: Writes Cursor's MCP server configuration
+    message: >
+      This file writes the file Cursor reads its MCP servers from, so the next time Cursor starts it
+      launches whatever entry was written there.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream|write_text|write_bytes|WriteFile|OpenFile|fs::write|File::create|OpenOptions)\b[^\n]{0,240}\.cursor[/\\]{1,2}mcp\.json'
+        - '\.cursor[/\\]{1,2}mcp\.json[^\n]{0,240}(?:\bwrite_text\b|\bwrite_bytes\b|["\x27][wa]\+?["\x27]|\bO_WRONLY\b|\bO_CREATE\b)'
+    tests:
+      positive:
+        - 'writeFileSync(join(homedir(), ".cursor/mcp.json"), entry)'
+      negative:
+        - 'const config = JSON.parse(readFileSync(join(homedir(), ".cursor/mcp.json"), "utf8"))'
+
+  - id: CAP.PERSIST.MCP_CONFIG_CLAUDE_DESKTOP.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: persist
+    title: Writes Claude Desktop's MCP server configuration
+    message: >
+      This file writes the file Claude Desktop reads its MCP servers from, so the next time Claude Desktop starts it
+      launches whatever entry was written there.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream|write_text|write_bytes|WriteFile|OpenFile|fs::write|File::create|OpenOptions)\b[^\n]{0,240}claude_desktop_config\.json'
+        - 'claude_desktop_config\.json[^\n]{0,240}(?:\bwrite_text\b|\bwrite_bytes\b|["\x27][wa]\+?["\x27]|\bO_WRONLY\b|\bO_CREATE\b)'
+    tests:
+      positive:
+        - 'writeFileSync(join(homedir(), "Claude/claude_desktop_config.json"), entry)'
+      negative:
+        - 'const config = JSON.parse(readFileSync(join(homedir(), "Claude/claude_desktop_config.json"), "utf8"))'
+
+  - id: CAP.PERSIST.MCP_CONFIG_WINDSURF.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: persist
+    title: Writes Windsurf's MCP server configuration
+    message: >
+      This file writes the file Windsurf reads its MCP servers from, so the next time Windsurf starts it
+      launches whatever entry was written there.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream|write_text|write_bytes|WriteFile|OpenFile|fs::write|File::create|OpenOptions)\b[^\n]{0,240}\.codeium[/\\]{1,2}windsurf[/\\]{1,2}mcp_config\.json'
+        - '\.codeium[/\\]{1,2}windsurf[/\\]{1,2}mcp_config\.json[^\n]{0,240}(?:\bwrite_text\b|\bwrite_bytes\b|["\x27][wa]\+?["\x27]|\bO_WRONLY\b|\bO_CREATE\b)'
+    tests:
+      positive:
+        - 'writeFileSync(join(homedir(), ".codeium/windsurf/mcp_config.json"), entry)'
+      negative:
+        - 'const config = JSON.parse(readFileSync(join(homedir(), ".codeium/windsurf/mcp_config.json"), "utf8"))'
+
+  - id: CAP.PERSIST.MCP_CONFIG_VSCODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: persist
+    title: Writes VS Code's MCP server configuration
+    message: >
+      This file writes the file VS Code reads its MCP servers from, so the next time VS Code starts it
+      launches whatever entry was written there.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream|write_text|write_bytes|WriteFile|OpenFile|fs::write|File::create|OpenOptions)\b[^\n]{0,240}(?:\.vscode|Code[/\\]{1,2}User)[/\\]{1,2}mcp\.json'
+        - '(?:\.vscode|Code[/\\]{1,2}User)[/\\]{1,2}mcp\.json[^\n]{0,240}(?:\bwrite_text\b|\bwrite_bytes\b|["\x27][wa]\+?["\x27]|\bO_WRONLY\b|\bO_CREATE\b)'
+    tests:
+      positive:
+        - 'writeFileSync(join(homedir(), ".vscode/mcp.json"), entry)'
+      negative:
+        - 'const config = JSON.parse(readFileSync(join(homedir(), ".vscode/mcp.json"), "utf8"))'
+
+  - id: CAP.PERSIST.MCP_CONFIG_CLAUDE_CODE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: persist
+    title: Writes Claude Code's MCP server configuration
+    message: >
+      This file writes the file Claude Code reads its MCP servers from, so the next time Claude Code starts it
+      launches whatever entry was written there.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream|write_text|write_bytes|WriteFile|OpenFile|fs::write|File::create|OpenOptions)\b[^\n]{0,240}\.claude\.json\b'
+        - '\.claude\.json\b[^\n]{0,240}(?:\bwrite_text\b|\bwrite_bytes\b|["\x27][wa]\+?["\x27]|\bO_WRONLY\b|\bO_CREATE\b)'
+    tests:
+      positive:
+        - 'writeFileSync(join(homedir(), ".claude.json"), entry)'
+      negative:
+        - 'const config = JSON.parse(readFileSync(join(homedir(), ".claude.json"), "utf8"))'
+
+  - id: CAP.PERSIST.MCP_CONFIG_GEMINI.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: persist
+    title: Writes Gemini CLI's MCP server configuration
+    message: >
+      This file writes the file Gemini CLI reads its MCP servers from, so the next time Gemini CLI starts it
+      launches whatever entry was written there.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream|write_text|write_bytes|WriteFile|OpenFile|fs::write|File::create|OpenOptions)\b[^\n]{0,240}\.gemini[/\\]{1,2}settings\.json'
+        - '\.gemini[/\\]{1,2}settings\.json[^\n]{0,240}(?:\bwrite_text\b|\bwrite_bytes\b|["\x27][wa]\+?["\x27]|\bO_WRONLY\b|\bO_CREATE\b)'
+    tests:
+      positive:
+        - 'writeFileSync(join(homedir(), ".gemini/settings.json"), entry)'
+      negative:
+        - 'const config = JSON.parse(readFileSync(join(homedir(), ".gemini/settings.json"), "utf8"))'
+
+  - id: CAP.PERSIST.MCP_CONFIG_CLINE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: persist
+    title: Writes Cline's MCP server configuration
+    message: >
+      This file writes the file Cline reads its MCP servers from, so the next time Cline starts it
+      launches whatever entry was written there.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream|write_text|write_bytes|WriteFile|OpenFile|fs::write|File::create|OpenOptions)\b[^\n]{0,240}cline_mcp_settings\.json'
+        - 'cline_mcp_settings\.json[^\n]{0,240}(?:\bwrite_text\b|\bwrite_bytes\b|["\x27][wa]\+?["\x27]|\bO_WRONLY\b|\bO_CREATE\b)'
+    tests:
+      positive:
+        - 'writeFileSync(join(homedir(), "cline_mcp_settings.json"), entry)'
+      negative:
+        - 'const config = JSON.parse(readFileSync(join(homedir(), "cline_mcp_settings.json"), "utf8"))'
+
+  - id: CAP.PERSIST.MCP_CONFIG_KIRO.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: persist
+    title: Writes Kiro's MCP server configuration
+    message: >
+      This file writes the file Kiro reads its MCP servers from, so the next time Kiro starts it
+      launches whatever entry was written there.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream|write_text|write_bytes|WriteFile|OpenFile|fs::write|File::create|OpenOptions)\b[^\n]{0,240}\.kiro[/\\]{1,2}settings[/\\]{1,2}mcp\.json'
+        - '\.kiro[/\\]{1,2}settings[/\\]{1,2}mcp\.json[^\n]{0,240}(?:\bwrite_text\b|\bwrite_bytes\b|["\x27][wa]\+?["\x27]|\bO_WRONLY\b|\bO_CREATE\b)'
+    tests:
+      positive:
+        - 'writeFileSync(join(homedir(), ".kiro/settings/mcp.json"), entry)'
+      negative:
+        - 'const config = JSON.parse(readFileSync(join(homedir(), ".kiro/settings/mcp.json"), "utf8"))'
+
+  - id: SUSPECT.PERSIST.MCP_CLIENT_SPREAD.001
+    version: 1.0.0
+    category: suspicious
+    severity: medium
+    confidence: medium
+    title: Writes an MCP server into several AI clients' configurations
+    message: >
+      This file writes MCP server entries into the configuration of two or more different AI clients (Cursor,
+      Claude Desktop, Windsurf, VS Code and others), so each of them launches that server the next time it
+      starts. A server that adds itself to every client it finds spreads the way an MCP worm does; an installer
+      asked to configure one client writes one.
+    remediation: >
+      Remove the entries this wrote from every client's configuration, and find out what asked it to.
+    match:
+      kind: composite
+      scope: file
+      proximity: 40
+      all:
+        - any:
+            - all:
+                - rule: CAP.PERSIST.MCP_CONFIG_CURSOR.001
+                - any:
+                    - rule: CAP.PERSIST.MCP_CONFIG_CLAUDE_DESKTOP.001
+                    - rule: CAP.PERSIST.MCP_CONFIG_WINDSURF.001
+                    - rule: CAP.PERSIST.MCP_CONFIG_VSCODE.001
+                    - rule: CAP.PERSIST.MCP_CONFIG_CLAUDE_CODE.001
+                    - rule: CAP.PERSIST.MCP_CONFIG_GEMINI.001
+                    - rule: CAP.PERSIST.MCP_CONFIG_CLINE.001
+                    - rule: CAP.PERSIST.MCP_CONFIG_KIRO.001
+            - all:
+                - rule: CAP.PERSIST.MCP_CONFIG_CLAUDE_DESKTOP.001
+                - any:
+                    - rule: CAP.PERSIST.MCP_CONFIG_WINDSURF.001
+                    - rule: CAP.PERSIST.MCP_CONFIG_VSCODE.001
+                    - rule: CAP.PERSIST.MCP_CONFIG_CLAUDE_CODE.001
+                    - rule: CAP.PERSIST.MCP_CONFIG_GEMINI.001
+                    - rule: CAP.PERSIST.MCP_CONFIG_CLINE.001
+                    - rule: CAP.PERSIST.MCP_CONFIG_KIRO.001
+            - all:
+                - rule: CAP.PERSIST.MCP_CONFIG_WINDSURF.001
+                - any:
+                    - rule: CAP.PERSIST.MCP_CONFIG_VSCODE.001
+                    - rule: CAP.PERSIST.MCP_CONFIG_CLAUDE_CODE.001
+                    - rule: CAP.PERSIST.MCP_CONFIG_GEMINI.001
+                    - rule: CAP.PERSIST.MCP_CONFIG_CLINE.001
+                    - rule: CAP.PERSIST.MCP_CONFIG_KIRO.001
+            - all:
+                - rule: CAP.PERSIST.MCP_CONFIG_VSCODE.001
+                - any:
+                    - rule: CAP.PERSIST.MCP_CONFIG_CLAUDE_CODE.001
+                    - rule: CAP.PERSIST.MCP_CONFIG_GEMINI.001
+                    - rule: CAP.PERSIST.MCP_CONFIG_CLINE.001
+                    - rule: CAP.PERSIST.MCP_CONFIG_KIRO.001
+            - all:
+                - rule: CAP.PERSIST.MCP_CONFIG_CLAUDE_CODE.001
+                - any:
+                    - rule: CAP.PERSIST.MCP_CONFIG_GEMINI.001
+                    - rule: CAP.PERSIST.MCP_CONFIG_CLINE.001
+                    - rule: CAP.PERSIST.MCP_CONFIG_KIRO.001
+            - all:
+                - rule: CAP.PERSIST.MCP_CONFIG_GEMINI.001
+                - any:
+                    - rule: CAP.PERSIST.MCP_CONFIG_CLINE.001
+                    - rule: CAP.PERSIST.MCP_CONFIG_KIRO.001
+            - all:
+                - rule: CAP.PERSIST.MCP_CONFIG_CLINE.001
+                - any:
+                    - rule: CAP.PERSIST.MCP_CONFIG_KIRO.001
