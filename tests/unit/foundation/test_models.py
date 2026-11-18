@@ -154,6 +154,7 @@ class TestCategoryAndCapability:
             # Opening the machine or the session to others (a listener on every interface, any origin with credentials, the
             # token or session id a client sent), its own primitive so ordinary servers feed no credential or egress composite.
             "expose",
+            "lateral",
             # Identifying the machine, separated from `credential` for the fifth
             # instance of the same mistake and the clearest of them. Nothing
             # authenticates with a hostname, so `socket.gethostname()`,

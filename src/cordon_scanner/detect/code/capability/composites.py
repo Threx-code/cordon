@@ -44,15 +44,13 @@ class CompositeEvaluator:
         }
     )
 
-    #: Markers that read the command a spawn runs and say what it does: a command written out in full
-    #: that loops over every cluster context, every known SSH host or every repository, or pushes to
-    #: them, is the act itself, as a `CAP.SH.*` reading of the command is (`fixed_lines`).
-    COMMAND_IS_THE_ACT: ClassVar[frozenset[str]] = frozenset(
+    #: Composites whose marker reads the command a spawn runs: a command written out in full that loops over
+    #: every cluster context or every known SSH host is the act itself, so these composites count the spawn on
+    #: that line. Every other composite keeps the fixed-argv discount (`_fixed_argv_window`).
+    READS_ITS_OWN_COMMAND: ClassVar[frozenset[str]] = frozenset(
         {
-            "CAP.RECON.KUBE_CONTEXTS.001",
-            "CAP.RECON.KNOWN_HOSTS.001",
-            "CAP.RECON.REPOSITORY_LOOP.001",
-            "CAP.EGRESS.GIT_PUSH.001",
+            "SUSPECT.LATERAL.KUBE_EVERY_CONTEXT.001",
+            "SUSPECT.LATERAL.SSH_KNOWN_HOSTS.001",
         }
     )
 
@@ -289,7 +287,8 @@ class CompositeEvaluator:
         *,
         fixed_lines: frozenset[int],
     ) -> bool:
-        window = CompositeEvaluator._fixed_argv_window(window, fixed_lines)
+        if compiled.rule.id not in CompositeEvaluator.READS_ITS_OWN_COMMAND:
+            window = CompositeEvaluator._fixed_argv_window(window, fixed_lines)
         # The file runs at install time; this window has to as well. If any hit
         # in it sits in a body the hooks never call, the pair the composite
         # describes is not something that happens during an install -- so the
@@ -395,11 +394,7 @@ class CompositeEvaluator:
         speaking_argv = {
             hit.line
             for hit in all_hits
-            if (
-                hit.rule_id.startswith("CAP.SH.")
-                or hit.rule_id in CompositeEvaluator.COMMAND_IS_THE_ACT
-            )
-            and hit.capability is not Capability.SPAWN
+            if hit.rule_id.startswith("CAP.SH.") and hit.capability is not Capability.SPAWN
         }
         return frozenset({hit.line for hit in all_hits if hit.fixed} - speaking_argv)
 

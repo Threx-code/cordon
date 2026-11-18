@@ -48,7 +48,7 @@ class InstallPayload:
             Capability.CREDENTIAL,
             Capability.RECONNAISSANCE,
             Capability.COLLECT,
-            Capability.EXPOSE,
+            Capability.LATERAL,
             Capability.WALLET,
             Capability.MINE,
             Capability.DESTROY,

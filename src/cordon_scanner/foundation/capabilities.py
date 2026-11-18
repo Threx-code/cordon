@@ -118,6 +118,15 @@ class Capability(enum.StrEnum):
     cannot rest on a hostname read, and a hostname read must not inherit the weight of a keylogger.
     """
 
+    LATERAL = "lateral"
+    """Reaches past this machine to the others it can log into: reads every known SSH host, loops over every
+    cluster context or every local repository, or pushes to them.
+
+    Its own primitive because developer tools do each of these, so none of them may feed the generic egress or
+    reconnaissance composites: only the lateral composites, which pair a sweep with the command run on each
+    target, read it.
+    """
+
     EXPOSE = "expose"
     """Opens the person's machine or session to others: listens on every network interface, lets any web origin call
     it with the person's credentials, reads the bearer token or session identifier a client sent, or registers a login

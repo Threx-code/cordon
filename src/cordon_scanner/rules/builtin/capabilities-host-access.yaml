@@ -464,7 +464,8 @@ rules:
       patterns:
         - '\bLibrary[/\\]{1,2}Launch(?:Agents|Daemons)[/\\]'
         - '\.config[/\\]{1,2}systemd[/\\]{1,2}user[/\\]|/etc/systemd/system/'
-        - '/etc/cron\.(?:d|daily|hourly)/|\|\s*crontab\s+-|\bcrontab\s+-l\b'
+        # Installing a crontab (piped in), never listing one: `crontab -l` only reads it.
+        - '/etc/cron\.(?:d|daily|hourly)/|\|\s*crontab\s+-(?![A-Za-z])'
         - 'CurrentVersion\\{1,2}Run(?:Once)?\b|Start\s?Menu\\{1,2}Programs\\{1,2}Startup'
         - '\.config[/\\]{1,2}autostart[/\\]'
     tests:
@@ -473,6 +474,7 @@ rules:
         - "subprocess.run('(crontab -l; echo \"*/10 * * * * run\") | crontab -', shell=True)"
       negative:
         - "const agents = await listAgents()"
+        - 'out = subprocess.run(["crontab", "-l"], capture_output=True).stdout'
 
   - id: CAP.PERSIST.SHELL_STARTUP.001
     version: 1.0.0
@@ -976,7 +978,7 @@ rules:
   - id: SUSPECT.EXFIL.CREDENTIAL_FILE.001
     version: 1.0.0
     category: suspicious
-    severity: high
+    severity: medium
     confidence: medium
     title: Reads a credential store and sends data out
     message: >
@@ -1022,7 +1024,7 @@ rules:
   - id: SUSPECT.COLLECT.EXFIL.001
     version: 1.0.0
     category: suspicious
-    severity: high
+    severity: medium
     confidence: medium
     title: Collects what the person sees, types or keeps, and sends data out
     message: >
@@ -1146,7 +1148,7 @@ rules:
     match:
       kind: regex
       patterns:
-        - '(?:clip\w*\s*\.\s*(?:write|writeText|copy|set_text)|pyperclip\s*\.\s*copy|\bpbcopy\b|\bxclip\b|Set-Clipboard)[^\n]{0,200}["\x27]0x[0-9a-fA-F]{40}["\x27]'
+        - '(?:clip\w{0,24}\s{0,4}\.\s{0,4}(?:write|writeText|copy|set_text)|pyperclip\s{0,4}\.\s{0,4}copy|\bpbcopy\b|\bxclip\b|Set-Clipboard)[^\n]{0,200}["\x27]0x[0-9a-fA-F]{40}["\x27]'
         - '\bpbcopy\b[^\n]{0,40}\n[^\n]{0,120}["\x27]0x[0-9a-fA-F]{40}["\x27]'
     tests:
       positive:
@@ -1159,7 +1161,7 @@ rules:
     category: policy
     severity: info
     confidence: high
-    capability: reconnaissance
+    capability: lateral
     title: Reads the list of hosts the person connects to over SSH
     message: This file reads the person's SSH known_hosts list.
     remediation: No action for this signal alone.
@@ -1186,7 +1188,7 @@ rules:
     category: policy
     severity: info
     confidence: high
-    capability: reconnaissance
+    capability: lateral
     title: Lists every Kubernetes context and targets each
     message: This file lists the person's Kubernetes contexts and passes each to a command.
     remediation: No action for this signal alone.
@@ -1214,7 +1216,7 @@ rules:
     category: policy
     severity: info
     confidence: medium
-    capability: reconnaissance
+    capability: lateral
     title: Loops over every project folder in the home directory
     message: This file iterates over the person's project folders rather than working in one.
     remediation: No action for this signal alone.
@@ -1241,7 +1243,7 @@ rules:
     category: policy
     severity: info
     confidence: high
-    capability: egress
+    capability: lateral
     baseline_hits: 1
     title: Pushes commits to a git remote
     message: This file runs `git push`, sending commits to a remote.
@@ -1284,7 +1286,7 @@ rules:
         - rule: CAP.WALLET.FIXED_RECIPIENT.001
         - any:
             - capability: egress
-            - capability: credential
+            - rule: CAP.WALLET.KEY_FILE.001
 
   - id: SUSPECT.WALLET.UNLIMITED_APPROVAL_FIXED.001
     version: 1.0.0
@@ -1306,7 +1308,7 @@ rules:
         - rule: CAP.WALLET.UNLIMITED_APPROVAL.001
         - any:
             - capability: egress
-            - capability: credential
+            - rule: CAP.WALLET.KEY_FILE.001
 
   - id: SUSPECT.WALLET.CLIPBOARD_SWAP.001
     version: 1.0.0

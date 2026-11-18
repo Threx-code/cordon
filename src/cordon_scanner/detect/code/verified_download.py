@@ -69,8 +69,6 @@ DISQUALIFYING_CAPABILITIES: Final = frozenset(
     {
         Capability.CREDENTIAL,
         Capability.RECONNAISSANCE,
-        Capability.COLLECT,
-        Capability.EXPOSE,
         Capability.PERSIST,
         Capability.DECODE,
         Capability.DYNAMIC_DISPATCH,

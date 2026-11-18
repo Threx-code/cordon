@@ -42,6 +42,7 @@ class FindingAnchor:
         Capability.RECONNAISSANCE,
         Capability.COLLECT,
         Capability.EXPOSE,
+        Capability.LATERAL,
         Capability.DELAY,
         Capability.SPAWN,
         Capability.EGRESS,
