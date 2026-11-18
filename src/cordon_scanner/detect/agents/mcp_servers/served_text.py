@@ -58,6 +58,12 @@ _ACTS: Final = frozenset({"orders_persistence", "credential_files"})
 _STEPS: Final = frozenset({"order", "command", "other_tool", "offsite", "overrule"})
 
 _JAILBREAK: Final[re.Pattern[str]] = McpCode._JAILBREAK
+#: A Markdown heading and a list item: the structure of a reference document.
+_HEADING: Final[re.Pattern[str]] = re.compile(r"(?m)^#{1,6}[ \t]+\S")
+_LIST_ITEM: Final[re.Pattern[str]] = re.compile(r"(?m)^[ \t]*(?:[-*+]|\d{1,3}[.)])[ \t]+\S")
+#: The least a text has to be to be a reference document: lines, and headings among them.
+_REFERENCE_LINES: Final = 12
+_REFERENCE_HEADINGS: Final = 6
 
 
 class ServedText:
@@ -113,11 +119,33 @@ class ServedText:
         return channel == "return" and not OwnVocabulary.words(text)
 
     @staticmethod
+    def reference(text: str) -> bool:
+        """Whether the text is a reference document: long, with many headings, and mostly headings
+        and list items. A catalogue of attack examples, a glossary or a checklist quotes the wording
+        it describes ("Ignore previous instructions" -- prompt injection) and is not a message to
+        the agent; a text of this shape is read for the orders that need no vocabulary (a command, a
+        request to an address, a tag addressed to the model), not for the wording it mentions."""
+        lines = [line for line in text.splitlines() if line.strip()]
+        headings = len(_HEADING.findall(text))
+        if len(lines) < _REFERENCE_LINES or headings < _REFERENCE_HEADINGS:
+            return False
+        return (headings + len(_LIST_ITEM.findall(text))) * 2 >= len(lines)
+
+    @staticmethod
     def readings(kind: str, text: str, own: frozenset[str] = frozenset()) -> list[tuple[str, str]]:
         """Every way the text orders the agent, as (code, what it does). A prompt template is read
         for the orders no template needs -- a hidden or hostile one -- and not for an order to keep
-        a secret or for a chain of steps, which a template that tells the agent how to work carries."""
+        a secret or for a chain of steps, which a template that tells the agent how to work carries.
+        A reference document (`reference`) is read for the specific orders only."""
         found: list[tuple[str, str]] = []
+        if ServedText.reference(text):
+            if McpServerSource._wrapped(text):
+                found.append(("wrapped", "wraps text in a tag addressed to the model"))
+            if ORDERS_A_COMMAND.search(text):
+                found.append(("orders_command", "orders the agent to run a shell command"))
+            if RESULT_SENDS_TO_URL.search(text) or McpServerSource.orders_request(text):
+                found.append(("orders_request", "orders the agent to contact an outside address"))
+            return found
         if McpServerSource._wrapped(text):
             found.append(("wrapped", "wraps text in a tag addressed to the model"))
         if kind != "prompt" and McpServerSource._keeps_from_user(text):

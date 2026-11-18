@@ -134,6 +134,13 @@ class TestTheAdmittedRulesAreKept:
         "MALWARE.INSTALL.FETCH_RUN.001",  # 7 half-A misses newly caught; 1 of 16,828 benign
         # Decode and run at load (14 Nov), measured at the flow on the same rows:
         "MALWARE.IMPORT.DECODE_EXEC.001",  # 5 half-A misses newly caught; 0 of 16,827 benign
+        # Text a handler serves to the agent (result, resource, prompt): 0 of 11,449 legitimate dev units
+        # newly blocked, since a catalogue of attack examples is read as reference content. The malicious
+        # dev units carry no served-text cue the older rules miss, so these are kept for the techniques
+        # the data does not hold yet.
+        "SUSPECT.MCP.RESULT_INJECTION.001",
+        "SUSPECT.MCP.RESOURCE_INJECTION.001",
+        "SUSPECT.MCP.PROMPT_INJECTION.001",
     )
 
     def test_each_is_in_keep(self) -> None:
@@ -261,11 +268,6 @@ class TestNoRuleIsLoweredUnseenByAccident:
             "SUSPECT.MCP.INPUT_FORWARDED.001",
             "SUSPECT.MCP.LIVE_TOOL_DESCRIPTION.001",
             "SUSPECT.MCP.LOOKALIKE.001",
-            # Text a handler serves to the agent (result, resource, prompt): measured on the dev sets,
-            # 1 malicious unit (blocked already), 1 of 11,449 legitimate units newly blocked.
-            "SUSPECT.MCP.PROMPT_INJECTION.001",
-            "SUSPECT.MCP.RESOURCE_INJECTION.001",
-            "SUSPECT.MCP.RESULT_INJECTION.001",
             "SUSPECT.MCP.SCHEMA_POISONING.001",  # measured 2 Nov (MCP): 0 malware, 1 benign: stays
             "SUSPECT.MCP.TOOLS_CHANGED.001",
             "SUSPECT.MCP.TOOL_POISONING.001",
