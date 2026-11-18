@@ -11,6 +11,9 @@ cases:
   - slug: git-hook
     positive: "Plants a post-commit hook in the person's other repositories that downloads and runs a script."
     negative: "Writes its own settings under its application folder."
+  - slug: systemd-unit
+    positive: "Installs a systemd user service that downloads and runs a script at every start."
+    negative: "Writes its own settings under its application folder."
   - slug: mcp-config-propagation
     positive: "Adds another server to every MCP client's configuration it can find (spreads itself)."
     negative: "An installer adds this server's own entry to one client's configuration."
