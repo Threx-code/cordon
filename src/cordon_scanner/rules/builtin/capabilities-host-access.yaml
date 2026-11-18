@@ -622,6 +622,40 @@ rules:
   # ---------------------------------------------------------------------------------------------------------------
   # Findings
   # ---------------------------------------------------------------------------------------------------------------
+  - id: CAP.EGRESS.CHAIN_RPC.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: egress
+    title: Sends to a blockchain node
+    message: >
+      This file connects to a blockchain node or sends a transaction through one: an ethers or web3 provider, a
+      signed transaction, or a JSON-RPC send.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\bnew\s+(?:ethers\s*\.\s*)?(?:providers\s*\.\s*)?(?:JsonRpcProvider|WebSocketProvider|InfuraProvider|AlchemyProvider)\s*\('
+        - '\bWeb3\s*\.\s*(?:HTTPProvider|WebsocketProvider)\s*\('
+        - '\b(?:sendTransaction|send_transaction|sendRawTransaction|send_raw_transaction)\s*\('
+        - '\beth_send(?:Raw)?Transaction\b'
+        - '\bnew\s+(?:ethers\s*\.\s*)?Contract\s*\([^\n]{0,200}\b(?:Wallet|Signer|signer|wallet)\b'
+    tests:
+      positive:
+        - "const wallet = new Wallet(key, new JsonRpcProvider(process.env.RPC_URL));"
+        - "w3 = Web3(Web3.HTTPProvider(os.environ['RPC_URL']))"
+      negative:
+        - "const provider = getProvider()"
+
   - id: SUSPECT.EXFIL.CREDENTIAL_FILE.001
     version: 1.0.0
     category: suspicious
@@ -703,8 +737,16 @@ rules:
       scope: file
       proximity: 50
       all:
-        - capability: persist
-        - capability: fetch_exec
+        - any:
+            - rule: CAP.PERSIST.AUTOSTART.001
+            - rule: CAP.PERSIST.SHELL_STARTUP.001
+            - rule: CAP.PERSIST.GIT_HOOK.001
+            - rule: CAP.PERSIST.AGENT_FILES_ELSEWHERE.001
+            - rule: CAP.PERSIST.MCP_CLIENT_CONFIG_WRITE.001
+            - capability: persist
+        - any:
+            - rule: CAP.FETCH_EXEC.PIPE_TO_SHELL.001
+            - capability: fetch_exec
 
   - id: CAP.WALLET.FIXED_RECIPIENT.001
     version: 1.0.0
