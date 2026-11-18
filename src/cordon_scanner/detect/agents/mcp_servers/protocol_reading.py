@@ -13,6 +13,7 @@ from typing import Final
 
 from cordon_scanner.analysis.javascript.front.parser import Parser
 from cordon_scanner.analysis.javascript.front.syntax import Node, Syntax
+from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 
 MAX_CHARS: Final = 2_000_000
 
@@ -127,7 +128,8 @@ class ProtocolReading:
         if len(text) > MAX_CHARS:
             return None
         try:
-            return ast.parse(text)
+            tree: ast.Module = PythonSyntax.parse(text)
+            return tree
         except (SyntaxError, ValueError, RecursionError, MemoryError):
             # S2: a file that does not parse says nothing here; the engine records its own parse gap
             return None
