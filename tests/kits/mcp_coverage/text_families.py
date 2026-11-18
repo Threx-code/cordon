@@ -31,18 +31,24 @@ SERVER_FILE = {
     "python": "server.py",
     "go": "main.go",
     "rust": "main.rs",
+    "java": "Server.java",
+    "csharp": "Program.cs",
 }
 MANIFEST_FILE = {
     "typescript": "package.json",
     "python": "pyproject.toml",
     "go": "go.mod",
     "rust": "Cargo.toml",
+    "java": "pom.xml",
+    "csharp": "Notes.csproj",
 }
 COMMENT = {
     "typescript": "//",
     "python": "#",
     "go": "//",
     "rust": "//",
+    "java": "//",
+    "csharp": "//",
 }
 STATS = {"cases": 0, "fixtures": 0}
 
@@ -51,10 +57,11 @@ class TextFamilies:
     """The text families kit's helpers."""
 
     @staticmethod
-    def lit(text):
+    def lit(text, escape="\\x1b"):
+        """A double-quoted string literal; the escape character is written as `escape`."""
         out = []
         for ch in text:
-            out.append({'"': '\\"', "\\": "\\\\", "\n": "\\n", "\x1b": "\\x1b"}.get(ch, ch))
+            out.append({'"': '\\"', "\\": "\\\\", "\n": "\\n", "\x1b": escape}.get(ch, ch))
         return '"' + "".join(out) + '"'
 
     @staticmethod
@@ -84,6 +91,23 @@ class TextFamilies:
         if lang == "go":
             extra = "".join(f"\t{k} {v}\n" for k, v in (deps or {}).items())
             return f"// fixture: {what}\nmodule {name}\n\ngo 1.22\n\nrequire (\n\tgithub.com/mark3labs/mcp-go v0.8.0\n{extra})\n"
+        if lang == "java":
+            return (
+                f"<!-- fixture: {what} -->\n"
+                '<project xmlns="http://maven.apache.org/POM/4.0.0">\n  <modelVersion>4.0.0</modelVersion>\n'
+                "  <groupId>invalid.example</groupId>\n  <artifactId>notes-mcp-server</artifactId>\n"
+                "  <version>1.0.0</version>\n  <dependencies>\n    <dependency>\n"
+                "      <groupId>io.modelcontextprotocol.sdk</groupId>\n      <artifactId>mcp</artifactId>\n"
+                "      <version>0.10.0</version>\n    </dependency>\n  </dependencies>\n</project>\n"
+            )
+        if lang == "csharp":
+            return (
+                f"<!-- fixture: {what} -->\n"
+                '<Project Sdk="Microsoft.NET.Sdk">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n'
+                "    <TargetFramework>net9.0</TargetFramework>\n  </PropertyGroup>\n  <ItemGroup>\n"
+                '    <PackageReference Include="ModelContextProtocol" Version="0.3.0-preview.1" />\n'
+                "  </ItemGroup>\n</Project>\n"
+            )
         extra = "".join(f'{k} = "{v}"\n' for k, v in (deps or {}).items())
         return f'# fixture: {what}\n[package]\nname = "{name}"\nversion = "1.0.0"\nedition = "2021"\n\n[dependencies]\nrmcp = "0.1"\n{extra}'
 
@@ -676,15 +700,102 @@ def rust_server(surface, text):
     )
 
 
+def java_server(surface, text):
+    """A Java server (the MCP Java SDK) with one text on one surface, and a plain tool beside it."""
+    t = lit(text, "\\u001b")
+    description, parameter = '"Look up a note."', "String id"
+    body = '            return new McpSchema.CallToolResult(List.of(new McpSchema.TextContent("note")), false);'
+    extra = ""
+    if surface == "description":
+        description = t
+    elif surface == "schema":
+        parameter = f"@ToolParam(description = {t}) String id"
+    elif surface == "result":
+        body = f"            return new McpSchema.CallToolResult(List.of(new McpSchema.TextContent({t})), false);"
+    elif surface == "error":
+        body = f"            if (args.isEmpty()) {{\n                throw new IllegalStateException({t});\n            }}\n{body}"
+    elif surface == "notification":
+        body = (
+            "            exchange.loggingNotification(McpSchema.LoggingMessageNotification.builder()"
+            f".level(McpSchema.LoggingLevel.INFO).data({t}).build());\n{body}"
+        )
+    elif surface == "resource":
+        extra = (
+            "\n    static McpSchema.ReadResourceResult read() {\n        return new McpSchema.ReadResourceResult("
+            f'List.of(new McpSchema.TextResourceContents("notes://today", "text/plain", {t})));\n    }}\n'
+        )
+    elif surface == "prompt":
+        extra = (
+            '\n    static McpSchema.GetPromptResult prompt() {\n        return new McpSchema.GetPromptResult("Review", '
+            f"List.of(new McpSchema.PromptMessage(McpSchema.Role.USER, new McpSchema.TextContent({t}))));\n    }}\n"
+        )
+    tool = (
+        "    static McpServerFeatures.SyncToolSpecification tool() {\n"
+        f'        var tool = new McpSchema.Tool("lookup_note", {description}, "{{}}");\n'
+        "        return new McpServerFeatures.SyncToolSpecification(tool, (exchange, args) -> {\n"
+        f"{body}\n        }});\n    }}\n"
+    )
+    method = (
+        f'\n    @Tool(description = "Look up a note.")\n    String lookup({parameter}) {{\n        return "note";\n    }}\n'
+        if surface == "schema"
+        else ""
+    )
+    return (
+        "import io.modelcontextprotocol.server.McpServerFeatures;\n"
+        "import io.modelcontextprotocol.spec.McpSchema;\nimport java.util.List;\n\n"
+        "public class Server {\n" + tool + method + extra + "}\n"
+    )
+
+
+def csharp_server(surface, text):
+    """A C# server (the ModelContextProtocol SDK) with one text on one surface, and a plain tool beside it."""
+    t = lit(text, "\\u001b")
+    description, parameter = '"Look up a note."', "string id"
+    body = '        return "note";'
+    signature = "public static string LookupNote"
+    extra = ""
+    if surface == "description":
+        description = t
+    elif surface == "schema":
+        parameter = f"[Description({t})] string id"
+    elif surface == "result":
+        body = f"        return {t};"
+    elif surface == "error":
+        body = f"        if (string.IsNullOrEmpty(id)) {{\n            throw new McpException({t});\n        }}\n{body}"
+    elif surface == "notification":
+        signature = "public static async Task<string> LookupNote"
+        parameter = "IMcpServer server, string id"
+        body = (
+            '        await server.SendNotificationAsync("notifications/message", new LoggingMessageNotificationParams '
+            f"{{ Level = LoggingLevel.Info, Data = JsonSerializer.SerializeToElement({t}) }});\n{body}"
+        )
+    elif surface == "resource":
+        extra = (
+            "\n    [McpServerResource]\n    public static TextResourceContents Today() =>\n"
+            f'        new TextResourceContents {{ Uri = "notes://today", Text = {t} }};\n'
+        )
+    elif surface == "prompt":
+        extra = f"\n    [McpServerPrompt]\n    public static ChatMessage Review() => new ChatMessage(ChatRole.User, {t});\n"
+    return (
+        "using System.ComponentModel;\nusing ModelContextProtocol.Server;\n\n"
+        "[McpServerToolType]\npublic static class Notes\n{\n"
+        f"    [McpServerTool, Description({description})]\n    {signature}({parameter})\n    {{\n{body}\n    }}\n"
+        + extra
+        + "}\n"
+    )
+
+
 SERVERS = {
     "typescript": ts_server,
     "python": py_server,
     "go": go_server,
     "rust": rust_server,
+    "java": java_server,
+    "csharp": csharp_server,
 }
 #: The languages besides `TEXT_LANGS` that each text is also written in, each as its own way: the
 #: surface and the language (`result-go`), so a case is judged on its own.
-EXTRA_LANGS = ["go", "rust"]
+EXTRA_LANGS = ["go", "rust", "java", "csharp"]
 
 
 # ---------------------------------------------------------------- data tables

@@ -1,0 +1,14 @@
+<!-- fixture: an agent card description of its own skill (schema, java) -->
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>invalid.example</groupId>
+  <artifactId>notes-mcp-server</artifactId>
+  <version>1.0.0</version>
+  <dependencies>
+    <dependency>
+      <groupId>io.modelcontextprotocol.sdk</groupId>
+      <artifactId>mcp</artifactId>
+      <version>0.10.0</version>
+    </dependency>
+  </dependencies>
+</project>
