@@ -1,6 +1,6 @@
 """Writes the MCP coverage fixtures under corpus/coverage/mcp from the case tables (one table per group of families).
 
-    PYTHONPATH=src:. python -I tests/kits/mcp_coverage/build.py
+    PYTHONPATH=src:tests:. python -m tests.kits.mcp_coverage.build
 
 For every case and every way it writes `positive/` and `negative/` (the server file, its manifest, any extra files) and
 `expect.yaml`, plus one `cases.yaml` per family listing what each case is. Re-running rewrites the same files.
@@ -9,14 +9,12 @@ For every case and every way it writes `positive/` and `negative/` (the server f
 from __future__ import annotations
 
 import re
-import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[3]
-sys.path[:0] = [str(ROOT), str(ROOT / "src")]
+from tests.kits.mcp_coverage import families_access
+from tests.kits.mcp_coverage.templates import FILE, MANIFEST, SKELETON, WAYS, indent
 
-from tests.kits.mcp_coverage import families_access  # noqa: E402
-from tests.kits.mcp_coverage.templates import FILE, MANIFEST, SKELETON, WAYS, indent  # noqa: E402
+from support import ROOT
 
 OUT = ROOT / "corpus" / "coverage" / "mcp"
 ARG_NAMES = ("recipient", "amount", "spender", "text", "host")
@@ -81,8 +79,9 @@ class Build:
                     case["neg_deps"],
                     case["neg_files"],
                 )
+                by = f", by: {case['by']}" if case.get("by") else ""
                 positive = (
-                    f"{{signal: {case['signal']}}}" if case.get("signal") else "{block: true}"
+                    f"{{signal: {case['signal']}{by}}}" if case.get("signal") else "{block: true}"
                 )
                 (base / "expect.yaml").write_text(
                     f"positive: {positive}\nnegative: {{block: false}}\n", encoding="utf-8"

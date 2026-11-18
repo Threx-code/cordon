@@ -1,6 +1,6 @@
 """Writes the coverage fixtures of one technique family from its case table.
 
-    python tests/kits/mcp_coverage/code_families.py mcp/<family> [mcp/<family> ...]
+    PYTHONPATH=src:tests:. python -m tests.kits.mcp_coverage.code_families mcp/<family> [mcp/<family> ...]
 
 The source of every fixture is `corpus/coverage/mcp/<family>/cases.yaml`; the files under
 `corpus/coverage/mcp/<family>/<sub-technique>/<way>/{positive,negative}/` are generated from it and are not edited by hand.
@@ -227,7 +227,8 @@ class Fixtures:
 
 
 def main() -> None:
-    root = Path(__file__).resolve().parents[3]
+    from support import ROOT as root
+
     total = 0
     for family_dir in sys.argv[1:]:
         count = Fixtures.write(root, family_dir)

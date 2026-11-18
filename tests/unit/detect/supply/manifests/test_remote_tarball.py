@@ -66,12 +66,37 @@ class TestRemoteTarball:
         rules = TarballKit.published(tmp_path, "git+https://github.com/example/helper.git")
         assert not {SUSPECT, MALWARE} & rules
 
-    def test_a_repository_keeps_the_policy_rule(self, tmp_path: Path) -> None:
+    def test_a_repository_keeps_the_policy_rule_for_a_release(self, tmp_path: Path) -> None:
         (tmp_path / "package.json").write_text(
-            TarballKit.manifest("https://files.example.invalid/helper.tgz"), encoding="utf-8"
+            TarballKit.manifest("https://cdn.example.invalid/helper-1.2.3.tgz"), encoding="utf-8"
         )
         rules = TarballKit.rules(tmp_path)
         assert "POLICY.DEPENDENCY.SOURCE.001" in rules and not {SUSPECT, MALWARE} & rules
+
+    def test_a_repository_warns_on_the_malware_shape(self, tmp_path: Path) -> None:
+        # A server cloned and run from its source: a version-less endpoint off any code host is
+        # what the host serves on each install, a warning one step below the published grade.
+        (tmp_path / "package.json").write_text(
+            TarballKit.manifest("https://files.example.invalid/helper.tgz"), encoding="utf-8"
+        )
+        found = [f for f in TarballKit.findings(tmp_path) if f.rule_id == SUSPECT]
+        assert [f.severity.name for f in found] == ["MEDIUM"]
+        assert "every install of this project fetches it" in found[0].message
+
+    def test_a_repository_on_a_drop_point_host_is_high_not_malware(self, tmp_path: Path) -> None:
+        (tmp_path / "package.json").write_text(
+            TarballKit.manifest("http://203.0.113.7/npm/helper"), encoding="utf-8"
+        )
+        found = [f for f in TarballKit.findings(tmp_path) if f.rule_id in (SUSPECT, MALWARE)]
+        assert [(f.rule_id, f.severity.name) for f in found] == [(SUSPECT, "HIGH")]
+
+    def test_a_python_project_warns_on_the_malware_shape(self, tmp_path: Path) -> None:
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "p"\nversion = "1.0"\n'
+            'dependencies = ["helper @ https://packages.example.invalid/pypi/helper"]\n',
+            encoding="utf-8",
+        )
+        assert SUSPECT in TarballKit.rules(tmp_path)
 
     def test_a_version_less_endpoint_blocks(self, tmp_path: Path) -> None:
         # PhantomRaven: whatever the host serves for that name, fresh on every install.

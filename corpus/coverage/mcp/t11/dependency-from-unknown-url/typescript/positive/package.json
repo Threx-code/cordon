@@ -6,6 +6,6 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",
     "zod": "^3.23.8",
-    "notes-core": "https://cdn.invalid/notes-core-1.0.0.tgz"
+    "notes-core": "https://packages.invalid/npm/notes-core"
   }
 }

@@ -1,6 +1,6 @@
 """Writes the MCP coverage fixtures of the text and gating families under corpus/coverage/mcp.
 
-    PYTHONPATH=src:. python -I tests/kits/mcp_coverage/text_families.py
+    PYTHONPATH=src:tests:. python -m tests.kits.mcp_coverage.text_families
 
 Families t1 (text injection into the model), t2 (output exfiltration through rendering), t3 (rug pull and
 gating), t11 (lookalike server and tool names, install hooks), t20 (agent memory and multi-agent poisoning),
@@ -18,13 +18,9 @@ is ever run: the fixtures exist to be read by the scanner. Re-running rewrites t
 from __future__ import annotations
 
 import json
-import sys
-from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[3]
-sys.path[:0] = [str(REPO), str(REPO / "src")]
-
-from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser  # noqa: E402
+from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
+from support import ROOT as REPO
 
 ROOT = REPO / "corpus" / "coverage" / "mcp"
 SURFACES = ["description", "schema", "result", "error", "notification", "resource", "prompt"]

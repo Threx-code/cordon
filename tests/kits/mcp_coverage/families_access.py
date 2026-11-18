@@ -54,6 +54,7 @@ def case(
     files=None,
     neg_files=None,
     signal=None,
+    by=None,
 ):
     """`signal`: the category a positive must show when its technique is a warning, not a block (a medium finding)."""
     CASES.append(
@@ -63,6 +64,7 @@ def case(
             "pos_comment": pos_comment,
             "neg_comment": neg_comment,
             "signal": signal,
+            "by": by,
             "pos": pos,
             "neg": neg,
             "deps": deps or {},
@@ -602,12 +604,14 @@ case(
     USE_REAL,
     deps=LOOKALIKE,
     neg_deps=REAL,
+    signal="suspicious",
+    by="name-list",
 )
 URL_DEP = {
-    "typescript": {"notes-core": "https://cdn.invalid/notes-core-1.0.0.tgz"},
-    "python": ["notes-core @ https://cdn.invalid/notes_core-1.0.tar.gz"],
+    "typescript": {"notes-core": "https://packages.invalid/npm/notes-core"},
+    "python": ["notes-core @ https://packages.invalid/pypi/notes-core"],
     "go": {"example.invalid/notes-core": "v0.0.0-20251101000000-000000000000"},
-    "rust": {"notes-core": '0.1", git = "https://git.invalid/notes-core'},
+    "rust": {"notes-core": '{ git = "https://git.invalid/notes-core" }'},
 }
 case(
     "t11",
@@ -618,6 +622,7 @@ case(
     USE_REAL,
     deps=URL_DEP,
     neg_deps=REAL,
+    signal="suspicious",
 )
 VENDORED_PAYLOAD = {
     "typescript": {

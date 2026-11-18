@@ -1,4 +1,4 @@
 [project]
 name = "notes-mcp"
 version = "1.0.0"
-dependencies = ["mcp>=1.10", "notes-core @ https://cdn.invalid/notes_core-1.0.tar.gz"]
+dependencies = ["mcp>=1.10", "notes-core @ https://packages.invalid/pypi/notes-core"]

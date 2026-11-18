@@ -675,6 +675,9 @@ class SourceFindings:
         """The finding for a dependency fetched as an archive from an outside host, graded by whether it is checksummed and whether the host is known for malware."""
         rule_id, host, severity = remote
         malicious = rule_id == MALICIOUS_REMOTE_TARBALL_RULE
+        # A published package's own manifest, or a project's (a directory or repository scanned
+        # as source, `ManifestScripts._remote_tarball`).
+        what = "package" if ctx.package_distribution or "!" in unit.path else "project"
         yield ManifestFinding.finding(
             rule_id=rule_id,
             category=Category.MALICIOUS if malicious else Category.SUSPICIOUS,
@@ -683,11 +686,12 @@ class SourceFindings:
             title=(
                 "A published package installs a dependency from a drop-point host"
                 if malicious
-                else "A published package installs a dependency from an arbitrary URL"
+                else f"A {'published package' if what == 'package' else 'project'} installs a "
+                "dependency from an arbitrary URL"
             ),
             message=(
                 f"{declared.name!r} is declared as {declared.spec!r}: every install of "
-                f"this package fetches it from {host} and runs it, unpinned and unreviewed"
+                f"this {what} fetches it from {host} and runs it, unpinned and unreviewed"
                 + (
                     ", and that host is a raw address or a paste, webhook or tunnel "
                     "service, which no package is distributed from."

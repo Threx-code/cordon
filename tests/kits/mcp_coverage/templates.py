@@ -150,7 +150,10 @@ MANIFEST = {
         lambda deps, scripts: (
             '[package]\nname = "notes-mcp"\nversion = "1.0.0"\nedition = "2021"\n\n[dependencies]\n'
             'rmcp = { version = "0.2", features = ["server", "transport-io"] }\ntokio = { version = "1", features = ["full"] }\n'
-            'anyhow = "1"\nreqwest = "0.12"\n' + "".join(f'{d} = "{v}"\n' for d, v in deps.items())
+            'anyhow = "1"\nreqwest = "0.12"\n'
+            + "".join(
+                f"{d} = {v}\n" if v.startswith("{") else f'{d} = "{v}"\n' for d, v in deps.items()
+            )
         ),
     ),
 }

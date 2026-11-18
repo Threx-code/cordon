@@ -977,6 +977,7 @@
   "test_content_language.py": "analysis/shared",
   "test_dependency_confusion.py": "detect/supply/manifests",
   "test_dependency_domain2.py": "detect/supply",
+  "test_mixed_script_dependency.py": "detect/supply",
   "test_package_names.py": "intel/ports",
   "test_dependency_review.py": "intel/registries",
   "test_detectors.py": "analysis/shared",
