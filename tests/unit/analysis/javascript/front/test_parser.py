@@ -165,4 +165,14 @@ class TestRecovery:
             n *= 2
         (parse_n, ref_n), (parse_4n, ref_4n) = cost(n), cost(4 * n)
         growth = (parse_4n / parse_n) / (ref_4n / ref_n)
-        assert growth < 2.5, f"parsing grew {growth:.2f} times faster than the input at {n:,} units"
+        if growth >= 2.5:
+            # Confirmed at the next step before it fails: a super-linear parser grows again from 4n
+            # to 16n, and one noisy step on a loaded runner does not (2.52 at 1,000 units on a
+            # Windows runner, 18 Nov, the same code reading near 1 everywhere else). The bound and
+            # what fails it are unchanged.
+            parse_16n, ref_16n = cost(16 * n)
+            again = (parse_16n / parse_4n) / (ref_16n / ref_4n)
+            assert again < 2.5, (
+                f"parsing grew {growth:.2f} then {again:.2f} times faster than the input from "
+                f"{n:,} units"
+            )
