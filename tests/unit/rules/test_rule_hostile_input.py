@@ -155,6 +155,13 @@ class HostileKit:
     REPEATS = 5
 
     @staticmethod
+    def clock() -> float:
+        """The clock the timings read: this thread's CPU time. A check that measures a real pattern
+        at test sizes reads a finer one instead (a Windows runner's thread clock ticks every
+        15 ms, so a small input reads as zero)."""
+        return time.thread_time()
+
+    @staticmethod
     def cpu(regex: re.Pattern[bytes], data: bytes) -> float:
         """The least CPU time of up to `REPEATS` runs of `regex` over `data`: at least two, so the
         small input of a ratio is as well measured as the large, and no more once one is
@@ -162,10 +169,10 @@ class HostileKit:
         runners two linear rules measured 0.502-0.512 s once against 0.5 s."""
         best = float("inf")
         for run in range(HostileKit.REPEATS):
-            started = time.thread_time()
+            started = HostileKit.clock()
             for _ in regex.finditer(data):
                 pass
-            best = min(best, time.thread_time() - started)
+            best = min(best, HostileKit.clock() - started)
             if run >= 1 and best < HostileKit.ceiling() / 2:
                 break
         return best
@@ -315,16 +322,32 @@ class TestTheLinearityCheckConfirmsBeforeItFails:
         _large, ratio, _piece = HostileKit.worst(re.compile(rb"name\d+x"))
         assert ratio < HostileKit.RATIO or _large < HostileKit.noise()
 
-    def test_a_real_quadratic_pattern_is_still_found(self) -> None:
-        # `a[a-z]*b` is quadratic on a run of `a` (it passes the static validator): measured for real, at
-        # sizes small enough for a test, with no noise floor.
-        _large, ratio, piece = HostileKit.worst(
-            re.compile(rb"a[a-z]*b"), small=512, large=2048, floor=0.0
-        )
-        assert ratio > HostileKit.RATIO, (ratio, piece)
+    @staticmethod
+    def readable(monkeypatch: pytest.MonkeyPatch, regex: re.Pattern[bytes], run: bytes) -> int:
+        """The smallest input size, doubling from 512 bytes, whose time reads at least twenty ticks
+        of the clock the real-pattern checks use (and 4 ms): a time of zero has no ratio, and a few
+        ticks is mostly the clock. The clock is the finest the platform has."""
+        monkeypatch.setattr(HostileKit, "clock", staticmethod(time.perf_counter))
+        monkeypatch.setattr(HostileKit, "REPEATS", 2)  # a real quadratic run is seconds long
+        wanted = max(20 * time.get_clock_info("perf_counter").resolution, 0.004)
+        size = 512
+        while size < 16384:
+            data = (run * (size // len(run) + 1))[:size] + b"\x01"
+            if HostileKit.cpu(regex, data) >= wanted:
+                break
+            size *= 2
+        return size
 
-    def test_a_real_linear_pattern_is_not_flagged(self) -> None:
-        _large, ratio, _piece = HostileKit.worst(
-            re.compile(rb"name\d{1,3}x"), small=512, large=2048, floor=0.0
-        )
-        assert ratio < HostileKit.RATIO
+    def test_a_real_quadratic_pattern_is_still_found(self, monkeypatch) -> None:
+        # `a[a-z]*b` is quadratic on a run of `a` (it passes the static validator): measured for real, at
+        # a size whose time the clock can read, with no noise floor.
+        regex = re.compile(rb"a[a-z]*b")
+        small = self.readable(monkeypatch, regex, b"a")
+        _large, ratio, piece = HostileKit.worst(regex, small=small, large=4 * small, floor=0.0)
+        assert ratio > HostileKit.RATIO, (ratio, piece, small)
+
+    def test_a_real_linear_pattern_is_not_flagged(self, monkeypatch) -> None:
+        regex = re.compile(rb"name\d{1,3}x")
+        small = self.readable(monkeypatch, regex, b"name1x")
+        _large, ratio, _piece = HostileKit.worst(regex, small=small, large=4 * small, floor=0.0)
+        assert ratio < HostileKit.RATIO, (ratio, small)
