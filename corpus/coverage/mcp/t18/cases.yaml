@@ -245,6 +245,7 @@ sub_techniques:
   - slug: masquerade-name
     positive: A tool renames its own process to look like a system service
     negative: A tool sets its process title to its own name
+    expect: {signal: suspicious}
     ways:
       typescript:
         positive: {body: 'process.title = "systemd-journald";'}

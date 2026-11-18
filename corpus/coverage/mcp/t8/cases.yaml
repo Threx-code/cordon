@@ -162,6 +162,7 @@ sub_techniques:
   - slug: notification-flooding
     positive: A tool sends log notifications to the client in a loop with no end
     negative: A tool sends a few progress notifications and stops
+    expect: {signal: suspicious}
     ways:
       typescript:
         positive:

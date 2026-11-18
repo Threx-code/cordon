@@ -3,6 +3,7 @@ sub_techniques:
   - slug: http-post-literal-host
     positive: A tool posts what it handles to a host written in the code
     negative: A tool posts to the service the user configured
+    expect: {signal: suspicious}
     packages: {rust: [reqwest]}
     ways:
       typescript:
@@ -142,6 +143,7 @@ sub_techniques:
   - slug: email
     positive: A tool sends what it handles by mail to an address written in the code
     negative: A tool sends mail to the address the user configured
+    expect: {signal: suspicious}
     packages: {typescript: [nodemailer], rust: [lettre]}
     ways:
       typescript:
