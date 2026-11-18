@@ -22,6 +22,10 @@ from cordon_scanner.detect.agents.mcp_servers.endpoints import (
     PLACEHOLDER,
     McpEndpoints,
 )
+from cordon_scanner.detect.agents.mcp_servers.lookalike_names import (
+    OwnPackageName,
+    ToolNameLookalike,
+)
 from cordon_scanner.detect.agents.mcp_servers.own_vocabulary import OwnVocabulary
 from cordon_scanner.detect.agents.mcp_servers.source import (
     RESULT_SENDS_TO_URL,
@@ -101,11 +105,15 @@ denial-of-wallet shape. A page token ("call again with next_page") names no dept
 #: Files a JavaScript or TypeScript server's handlers live in (`handlers_js.py`).
 _JS_SUFFIXES: Final = (".js", ".mjs", ".cjs", ".ts", ".mts", ".cts")
 _TOOL_NAME: Final = re.compile(
-    r"""(?:\.tool\(\s*+(?:\{\s*+)?(?:name\s*:\s*+)?|\bregisterTool\(\s*|\bname\s*[:=]\s*)"""
+    r"""(?:\.tool\(\s*+(?:\{\s*+)?(?:name\s*:\s*+)?|\bregisterTool\(\s*|\bNewTool\(\s*|\bname\s*[:=]\s*)"""
     r"""["'`](?P<name>[A-Za-z][\w.-]{1,80})["'`]"""
     r"""|@\w{1,40}(?:\.\w{1,40}){0,4}\.tool\b[^\n]{0,200}\n(?:[ \t]{0,40}@[^\n]{0,200}\n){0,5}"""
     r"""[ \t]{0,40}(?:async[ \t]{1,4})?def[ \t]{1,4}(?P<pyname>\w{1,80})"""
 )
+
+
+#: A decorator's explicit tool name: `@mcp.tool(name="read_file")`.
+_EXPLICIT_NAME: Final = re.compile(r"""\bname\s*=\s*["']([A-Za-z][\w.-]{1,80})["']""")
 
 
 class McpServerFindings:
@@ -178,12 +186,51 @@ class McpServerFindings:
             yield from AgentTextFindings.threat_rules(
                 unit, ctx, description, ATR_TEXT_KINDS, within=text, unconfirmed=unconfirmed
             )
-        names = (m.group("name") or m.group("pyname") for m in _TOOL_NAME.finditer(text))
+        names = (McpServerFindings._tool_name(m) for m in _TOOL_NAME.finditer(text))
         for name in dict.fromkeys(names):
             yield from AgentTextFindings.threat_rules(unit, ctx, name, ("tool_name",), within=text)
+            imitated = ToolNameLookalike.imitates(name)
+            if imitated is not None:
+                yield AgentFinding.at_text(
+                    "SUSPECT.MCP.TOOL_NAME_LOOKALIKE.001",
+                    unit,
+                    ctx,
+                    text,
+                    name,
+                    message=RULES["SUSPECT.MCP.TOOL_NAME_LOOKALIKE.001"].message
+                    + f" ({name!r} imitates {imitated!r})",
+                )
         yield from McpServerFindings._handler_findings(ctx, text, unit)
         yield from McpServerFindings._return_findings(ctx, text, unit)
         yield from cls._server_content(unit, ctx, text)
+
+    @staticmethod
+    def _tool_name(match: re.Match[str]) -> str:
+        """The name a registration gives its tool: a Python decorator's explicit `name=` before the function's own
+        name, which is what the agent sees only when the decorator names none."""
+        if match.group("pyname"):
+            explicit = _EXPLICIT_NAME.search(match.group(0))
+            if explicit is not None:
+                return explicit.group(1)
+            return match.group("pyname")
+        return match.group("name")
+
+    @staticmethod
+    def own_package(unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
+        """An MCP server's own manifest naming its package like a popular server's (`OwnPackageName`)."""
+        text = unit.content.text
+        name = OwnPackageName.of(unit.content.path.rsplit("/", 1)[-1].rsplit("!", 1)[-1], text)
+        imitated = configuration.PackageLookalike.lookalike_of(name) if name else None
+        if name and imitated is not None:
+            yield AgentFinding.at_text(
+                "SUSPECT.MCP.LOOKALIKE.002",
+                unit,
+                ctx,
+                text,
+                name,
+                message=RULES["SUSPECT.MCP.LOOKALIKE.002"].message
+                + f" ({name} imitates {imitated})",
+            )
 
     @staticmethod
     def _own_sequencing(

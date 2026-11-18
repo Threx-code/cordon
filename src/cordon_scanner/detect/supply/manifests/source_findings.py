@@ -21,6 +21,7 @@ from cordon_scanner.detect.supply.manifests.rule_ids import (
     MALICIOUS_REMOTE_TARBALL_RULE,
     MUTABLE_REF_RULE,
     SOURCE_PRIORITY_RULE,
+    UNKNOWN_HOST_RULE,
     WRAPPER_RULE,
 )
 from cordon_scanner.detect.supply.manifests.scripts import ManifestScripts
@@ -575,6 +576,7 @@ class SourceFindings:
             yield from SourceFindings._declared_source_findings(
                 ctx, declared, ecosystem, manifest, unit
             )
+            yield from SourceFindings._unknown_host_findings(ctx, declared, unit)
 
     @staticmethod
     def _declared_source_findings(
@@ -663,6 +665,68 @@ class SourceFindings:
             return
         yield from SourceFindings._git_dependency_finding(
             checksummed, ctx, declared, kind, manifest, pinned, unit
+        )
+
+    #: Hosts that serve source anyone can read: a dependency from one is the project's choice, which the
+    #: source policy reports.
+    _CODE_HOSTS: ClassVar[tuple[str, ...]] = (
+        "github.com",
+        "gitlab.com",
+        "bitbucket.org",
+        "codeberg.org",
+        "gitea.com",
+        "sr.ht",
+        "googlesource.com",
+        "golang.org",
+        "gopkg.in",
+        "k8s.io",
+    )
+    _GIT_HOST: ClassVar[re.Pattern[str]] = re.compile(
+        r"^(?:git\+)?(?:[a-z][a-z0-9+.-]{0,20}://)?(?:[^@/\s]{1,200}@)?([^/:?#\s]{1,253})",
+        re.IGNORECASE,
+    )
+
+    @staticmethod
+    def _unknown_host_findings(
+        ctx: ScanContext, declared: DeclaredDependency, unit: FileUnit
+    ) -> Iterator[Finding]:
+        """A project's git dependency, or Go module replaced by another host's, served from a host that is neither a
+        registry nor a public code host: whoever runs it decides what installs (a published package's URL
+        dependencies are `_remote_tarball_finding`'s)."""
+        if ctx.package_distribution or "!" in unit.path:
+            return
+        spec = declared.spec.strip()
+        if declared.field_name == "replace" and declared.alias:
+            host = declared.name.split("/", 1)[0].lower()
+            if host == declared.alias.split("/", 1)[0].lower() or "." not in host:
+                return
+            what = f"{declared.alias!r} is replaced by {declared.name!r}"
+        elif spec.lower().startswith(("git+", "git:", "git@", "ssh://")):
+            found = SourceFindings._GIT_HOST.match(spec)
+            host = found.group(1).lower() if found else ""
+            what = f"{declared.name!r} is cloned from {spec!r}"
+        else:
+            return
+        if not host or any(host == h or host.endswith("." + h) for h in SourceFindings._CODE_HOSTS):
+            return
+        if host.startswith(("gitlab.", "gitea.", "github.")) or host in ("localhost", "127.0.0.1"):
+            return
+        yield ManifestFinding.finding(
+            rule_id=UNKNOWN_HOST_RULE,
+            category=Category.SUSPICIOUS,
+            severity=Severity.MEDIUM,
+            confidence=Confidence.MEDIUM,
+            title="A dependency is fetched from a host that is neither a registry nor a code host",
+            message=(
+                f"{what}: {host} is neither the registry nor a public code host, so whoever runs it "
+                f"decides what installs, and no advisory, hash or review reaches it."
+            ),
+            remediation="Confirm the host belongs to the organisation, or depend on a registry release.",
+            unit=unit,
+            ctx=ctx,
+            detail=f"{declared.field_name}.{declared.name} = {spec}",
+            capabilities=(),
+            reasons=[f"declared in {declared.field_name}", f"served by {host}"],
         )
 
     @staticmethod

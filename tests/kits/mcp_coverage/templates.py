@@ -141,8 +141,9 @@ MANIFEST = {
         "go.mod",
         lambda deps, scripts: (
             "module example.invalid/notes\n\ngo 1.22\n\nrequire (\n\tgithub.com/mark3labs/mcp-go v0.32.0\n"
-            + "".join(f"\t{d} {v}\n" for d, v in deps.items())
+            + "".join(f"\t{d} {v}\n" for d, v in deps.items() if not v.startswith("=>"))
             + ")\n"
+            + "".join(f"\nreplace {d} {v}\n" for d, v in deps.items() if v.startswith("=>"))
         ),
     ),
     "rust": (

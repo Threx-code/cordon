@@ -610,8 +610,8 @@ case(
 URL_DEP = {
     "typescript": {"notes-core": "https://packages.invalid/npm/notes-core"},
     "python": ["notes-core @ https://packages.invalid/pypi/notes-core"],
-    "go": {"example.invalid/notes-core": "v0.0.0-20251101000000-000000000000"},
-    "rust": {"notes-core": '{ git = "https://git.invalid/notes-core" }'},
+    "go": {"github.com/mark3labs/mcp-go": "=> packages.invalid/mcp-go v0.32.1"},
+    "rust": {"notes-core": '{ git = "https://packages.invalid/notes-core" }'},
 }
 case(
     "t11",

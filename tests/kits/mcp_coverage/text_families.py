@@ -148,8 +148,10 @@ def put(family, sub, way, kind, lang, server_body, what, hook=None, manifest_nam
     STATS["fixtures"] += 1
 
 
-def expect(family, sub, way, signal=None):
+def expect(family, sub, way, signal=None, by=None):
     positive = f"  signal: {signal}\n" if signal else "  block: true\n"
+    if by:
+        positive += f"  by: {by}\n"
     (ROOT / family / sub / way / "expect.yaml").write_text(
         f"positive:\n{positive}negative:\n  block: false\n", encoding="utf-8"
     )
@@ -761,7 +763,7 @@ def main() -> int:
         "typescript": "@modelcontextprotocol/server-filesytem",
         "python": "mcp-server-fetsh",
         "go": "github.com/modelcontextprotocol/go-sdkk",
-        "rust": "rmcp-servr",
+        "rust": "rmcp-macro",
     }
     own_name = {
         "typescript": "notes-mcp-server",
@@ -827,7 +829,14 @@ def main() -> int:
                     '# fixture: a setup file with no custom install command (python)\nfrom setuptools import setup\n\nsetup(name="notes-mcp-server", version="1.0.0", install_requires=["mcp>=1.0"])\n',
                     encoding="utf-8",
                 )
-            expect("t11", sub, lang)
+            named = sub in ("lookalike-server-name", "lookalike-tool-name")
+            expect(
+                "t11",
+                sub,
+                lang,
+                signal="suspicious" if named else None,
+                by="name-list" if named else None,
+            )
             STATS["cases"] += 1
 
     print("cases:", STATS["cases"], "fixtures:", STATS["fixtures"])

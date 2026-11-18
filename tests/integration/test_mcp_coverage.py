@@ -31,7 +31,7 @@ from bench.tools.content import Content
 from cordon_scanner import Scanner
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
-from cordon_scanner.foundation.models import Category
+from cordon_scanner.foundation.models import Category, Finding
 from support import ROOT, requires_corpus
 
 pytestmark = requires_corpus
@@ -94,36 +94,49 @@ class Outcome:
 
     _config = Config.default().with_overrides(use_cache=False)
 
-    #: Rules that judge a dependency by comparing its name with popular packages'. The bar counts them under intel
-    #: (the dependency detector), so a case may count them only when its expect.yaml says `by: name-list`, and the
-    #: report lists the cases flagged that way apart from content.
-    NAME_LIST = "SUSPECT.DEPENDENCY.TYPOSQUAT."
+    #: Rules that judge a name by comparing it with a bundled list of popular packages, servers or tools: outside
+    #: knowledge about the ecosystem, not what the code does. They never count as content here; a case may count them
+    #: only when its expect.yaml says `by: name-list`, and the report lists the cases flagged that way apart.
+    NAME_LIST = (
+        "SUSPECT.DEPENDENCY.TYPOSQUAT.",
+        "SUSPECT.MCP.LOOKALIKE.",
+        "SUSPECT.MCP.TOOL_NAME_LOOKALIKE.",
+    )
+
+    @staticmethod
+    def _fails(f: Finding) -> bool:
+        return Content.fails(
+            f.rule_id, f.severity.name.lower(), f.confidence.name.lower(), str(f.category)
+        )
 
     @classmethod
-    def of(cls, directory: Path) -> tuple[bool, set[str], set[str]]:
+    def of(cls, directory: Path) -> tuple[bool, set[str], set[str], bool]:
         """Whether a CONTENT finding fails the default gate (`Content.fails` and `Content.is_content`, the bar's rule:
-        manifest policy, licence, intel and operational findings do not count), the content categories found, and the
-        categories of name-comparison findings (`NAME_LIST`)."""
+        manifest policy, licence, intel, operational and name-comparison findings do not count), the content categories
+        found, the categories of name-comparison findings (`NAME_LIST`), and whether any of the two fails the gate."""
         result = Scanner(cls._config).scan(directory)
-        content = [f for f in result.active if Content.is_content(f.rule_id, f.detector)]
-        blocked = any(
-            Content.fails(
-                f.rule_id, f.severity.name.lower(), f.confidence.name.lower(), str(f.category)
-            )
-            for f in content
-        )
-        named = {str(f.category) for f in result.active if f.rule_id.startswith(cls.NAME_LIST)}
+        named_findings = [f for f in result.active if f.rule_id.startswith(cls.NAME_LIST)]
+        content = [
+            f
+            for f in result.active
+            if Content.is_content(f.rule_id, f.detector) and not f.rule_id.startswith(cls.NAME_LIST)
+        ]
+        blocked = any(cls._fails(f) for f in content)
         return (
             blocked,
             {str(f.category) for f in content if f.category is not Category.OPERATIONAL},
-            named,
+            {str(f.category) for f in named_findings},
+            blocked
+            or any(
+                cls._fails(f) for f in named_findings if Content.is_content(f.rule_id, f.detector)
+            ),
         )
 
     @classmethod
     def verdict(cls, case: Case) -> str | None:
         """ "content" when the content rule flags the positive, "name-list" when only a name comparison its expectation
         allows does, None when nothing does."""
-        blocked, categories, named = cls.of(case.path / "positive")
+        blocked, categories, named, _ = cls.of(case.path / "positive")
         if "signal" not in case.positive:
             return "content" if blocked else None
         signal = str(case.positive["signal"])
@@ -145,7 +158,7 @@ class TestMcpCoverage:
 
     @pytest.mark.parametrize("case", CASES, ids=lambda c: c.id)
     def test_negative_is_not_blocked(self, case: Case) -> None:
-        blocked = Outcome.of(case.path / "negative")[0]
+        blocked = Outcome.of(case.path / "negative")[3]
         assert not blocked, f"{case.id}: the legitimate look-alike is blocked"
 
     @pytest.mark.parametrize("case", CASES, ids=lambda c: c.id)
@@ -165,7 +178,7 @@ class CoverageReport:
         verdicts = {case.id: Outcome.verdict(case) for case in CASES}
         flagged_now = {cid for cid, v in verdicts.items() if v is not None}
         by_name = sorted(cid for cid, v in verdicts.items() if v == "name-list")
-        false_blocks = {case.id for case in CASES if Outcome.of(case.path / "negative")[0]}
+        false_blocks = {case.id for case in CASES if Outcome.of(case.path / "negative")[3]}
         total, hit = (
             Counter(c.family for c in CASES),
             Counter(c.family for c in CASES if c.id in flagged_now),

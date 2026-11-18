@@ -1,4 +1,5 @@
 positive:
-  block: true
+  signal: suspicious
+  by: name-list
 negative:
   block: false
