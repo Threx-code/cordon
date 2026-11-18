@@ -932,6 +932,47 @@ rules:
   # ---------------------------------------------------------------------------------------------------------------
   # Findings
   # ---------------------------------------------------------------------------------------------------------------
+  - id: CAP.SPAWN.NPM_PUBLISH.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: spawn
+    title: Runs npm publish from code in another language
+    message: >
+      This file runs a package-publishing command (npm, yarn or pnpm publish) through the language's own process call:
+      subprocess, os.system, exec.Command or Command::new. Shipped code has no release to make; publishing from it is
+      how a registry worm republishes the person's packages with their saved token.
+    remediation: No action for this signal alone.
+    languages: [python, go, rust, ruby, php, csharp, java, kotlin]
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        # The command has to reach a process call, as CAP.JS.PUBLISH.001 requires it to be passed or bound: a list of
+        # command names in a linter or a message to a person is not a publish.
+        - '\b(?:subprocess\.(?:run|call|check_call|check_output|Popen)|os\.(?:system|popen))\(\s*["\x27](?:[^"\x27\n]{0,80}(?:&&|\|\||;)\s*)?(?:npm|yarn|pnpm)\s+publish\b'
+        - '\b(?:subprocess\.(?:run|call|check_call|check_output|Popen))\(\s*\[\s*["\x27](?:npm|yarn|pnpm)["\x27]\s*,\s*["\x27]publish["\x27]'
+        - '\bexec\.Command(?:Context)?\([^\n]{0,160}?["\x60](?:[^"\x60\n]{0,80}(?:&&|\|\||;)\s*)?(?:npm|yarn|pnpm)\s+publish\b'
+        - '\bexec\.Command(?:Context)?\([^\n]{0,60}?"(?:npm|yarn|pnpm)"\s*,\s*"publish"'
+        - '\bCommand::new\([^\n]{0,200}?"(?:[^"\n]{0,80}(?:&&|\|\||;)\s*)?(?:npm|yarn|pnpm)\s+publish\b'
+        - '\bCommand::new\(\s*"(?:npm|yarn|pnpm)"\s*\)[^\n]{0,60}?\.args?\(\s*\[?\s*"publish"'
+    tests:
+      positive:
+        - 'subprocess.run("cd ~/projects/lib && npm version patch && npm publish --access public", shell=True)'
+        - '_ = exec.Command("sh", "-c", "cd ~/projects/lib && npm publish").Run()'
+        - 'let _ = Command::new("sh").args(["-c", "npm publish --access public"]).status();'
+      negative:
+        - 'RISKY_COMMANDS = ["npm publish", "git push"]'
+        - 'print("next: npm publish")'
+
   - id: SUSPECT.EXFIL.CREDENTIAL_FILE.001
     version: 1.0.0
     category: suspicious

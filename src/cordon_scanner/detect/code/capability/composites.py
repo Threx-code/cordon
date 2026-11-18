@@ -39,6 +39,8 @@ class CompositeEvaluator:
             "AST.PY.CODE_FROM_DATA",
             "AST.PY.FOREIGN_INDEX",
             "AST.PY.SHIPPED_RUN",
+            # A publish command written out in full is the publishing itself, not a fixed helper call.
+            "CAP.SPAWN.NPM_PUBLISH.001",
         }
     )
 
