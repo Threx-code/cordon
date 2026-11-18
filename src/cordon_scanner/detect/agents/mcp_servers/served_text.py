@@ -198,16 +198,22 @@ class ServedText:
         return hides and acts
 
     @classmethod
-    def findings(cls, unit: FileUnit, ctx: ScanContext, text: str) -> Iterator[Finding]:
+    def findings(
+        cls, unit: FileUnit, ctx: ScanContext, text: str, served: list[Served] | None = None
+    ) -> Iterator[Finding]:
         """One finding for each served text that orders the agent, at most three to a rule: a block
-        where the readings are conclusive (`blocks`), a medium finding to review where one is not."""
-        served = cls.served(text, unit.content.path)
+        where the readings are conclusive (`blocks`), a medium finding to review where one is not.
+        `served` is the file's texts when the caller has them already (`served`)."""
+        if served is None:
+            served = cls.served(text, unit.content.path)
         if not served:
             return
         own = OwnVocabulary.declared(text, unit.content.path)
         count: dict[str, int] = {}
         for item in served:
-            rule = SERVED_RULES[item.kind]
+            rule = SERVED_RULES.get(item.kind)
+            if rule is None:
+                continue  # an error or a notification: read by `McpDirectives`
             if count.get(rule, 0) >= _PER_RULE:
                 continue
             found = cls.readings(item.kind, item.text, own)

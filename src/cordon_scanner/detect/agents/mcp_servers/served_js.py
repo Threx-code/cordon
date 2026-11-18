@@ -46,6 +46,10 @@ _REGISTER: Final = {
 }
 #: What `setRequestHandler(Schema, handler)` is told by its schema's name.
 _REQUESTS: Final = (("CallTool", "result"), ("GetPrompt", "prompt"), ("ReadResource", "resource"))
+#: The calls that send the client a log or progress message.
+_NOTIFYING: Final = frozenset(
+    {"sendLoggingMessage", "sendNotification", "sendProgress", "sendLog", "notifyProgress"}
+)
 #: The keys of a registration's object that hold served text itself.
 _SERVED_KEYS: Final = frozenset({"text", "content", "contents", "messages"})
 #: Methods that keep the text of the string they are called on.
@@ -117,6 +121,41 @@ class _Tree:
                 continue
             stack.extend(Syntax.children(node))
         return out
+
+    @staticmethod
+    def is_error(value: Node) -> bool:
+        """Whether a returned value is a tool result marked as an error: `{ isError: true, ... }`."""
+        if value.type != "ObjectExpression":
+            return False
+        for prop in value["properties"] or []:
+            key = prop["key"] if prop.type == "Property" else None
+            flag = prop["value"] if prop.type == "Property" else None
+            if (
+                key is not None
+                and key.type == "Identifier"
+                and str(key["name"]) == "isError"
+                and flag is not None
+                and flag.type == "Literal"
+                and flag["kind"] is None
+                and flag["value"] == "true"
+            ):
+                return True
+        return False
+
+    @staticmethod
+    def said(node: Node) -> list[tuple[str, list[Node]]]:
+        """What a handler says outside its return: the message of what it throws (an error the
+        agent reads as the tool's answer) and the text of a log or progress notification it sends."""
+        if node.type == "ThrowStatement" and node["argument"] is not None:
+            thrown = node["argument"]
+            if thrown.type in ("NewExpression", "CallExpression"):
+                return [("error", list(thrown["arguments"] or []))]
+            return [("error", [thrown])]
+        if node.type == "CallExpression":
+            name, receiver = _Tree.callee(node)
+            if name in _NOTIFYING and receiver is not None:
+                return [("notification", list(node["arguments"] or []))]
+        return []
 
     @staticmethod
     def root(node: Node | None) -> str | None:
@@ -446,13 +485,15 @@ class JsServed:
         flow = cls(Parser(text, typescript=typescript).program())
         out: list[Served] = []
         for kind, function in flow.handlers(text):
-            local = _Tree.assigned(_Tree.own(function))
+            own = _Tree.own(function)
+            local = _Tree.assigned(own)
             for value in cls.returned(function):
                 folder = _Folder(flow, local, 0)
                 folded = folder.fold(value)
+                shown = "error" if kind == "result" and _Tree.is_error(value) else kind
                 out.append(
                     Served(
-                        kind,
+                        shown,
                         folded,
                         value.start,
                         value.end,
@@ -461,6 +502,21 @@ class JsServed:
                 )
                 if len(out) >= MAX_SERVED:
                     return out
+            for node in own:
+                for shown, arguments in _Tree.said(node):
+                    for argument in arguments:
+                        folder = _Folder(flow, local, 0)
+                        out.append(
+                            Served(
+                                shown,
+                                folder.fold(argument),
+                                argument.start,
+                                argument.end,
+                                tuple(sorted(folder.via or {"literal"})),
+                            )
+                        )
+                        if len(out) >= MAX_SERVED:
+                            return out
         for node in Syntax.walk(flow.program):
             if node.type != "CallExpression":
                 continue
