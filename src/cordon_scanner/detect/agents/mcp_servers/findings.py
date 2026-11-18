@@ -22,11 +22,14 @@ from cordon_scanner.detect.agents.mcp_servers.endpoints import (
     PLACEHOLDER,
     McpEndpoints,
 )
+from cordon_scanner.detect.agents.mcp_servers.input_flows import McpInputFlows
+from cordon_scanner.detect.agents.mcp_servers.literal_sinks import McpLiteralSinks
 from cordon_scanner.detect.agents.mcp_servers.own_vocabulary import OwnVocabulary
 from cordon_scanner.detect.agents.mcp_servers.source import (
     RESULT_SENDS_TO_URL,
     McpServerSource,
 )
+from cordon_scanner.detect.agents.mcp_servers.techniques import McpTechniques
 from cordon_scanner.detect.agents.rule_catalogue import RULES
 from cordon_scanner.detect.agents.semantics import AgentSemantics
 from cordon_scanner.detect.agents.text_findings import AgentTextFindings
@@ -67,7 +70,8 @@ _SERVER_BUILT: Final = re.compile(
     r"\bserver\.NewMCPServer[ \t]*\(|\bMCP::Server\.new\b|\bFastMcp::Server\.new\b|"
     r"\.(?:AddTool|add_tool|registerTool|AddResource|registerResource)[ \t]*\(|"
     r"@(?:mcp|server|app)\.(?:tool|resource|prompt)\b|\[McpServerTool[(\]]|#\[tool[(\]]|"
-    r"\bNewToolResult\w{0,20}[ \t]*\(|\bCallToolResult[ \t]*[({]"
+    r"\bNewToolResult\w{0,20}[ \t]*\(|\bCallToolResult[ \t]*[({]|"
+    r"\buse[ \t]+rmcp::[^;\n]{0,120}\bServerHandler\b"
 )
 """Code that builds an MCP server or registers a tool on one, as written in each SDK."""
 
@@ -100,6 +104,8 @@ denial-of-wallet shape. A page token ("call again with next_page") names no dept
 # with only optional items between them split one stretch every way.
 #: Files a JavaScript or TypeScript server's handlers live in (`handlers_js.py`).
 _JS_SUFFIXES: Final = (".js", ".mjs", ".cjs", ".ts", ".mts", ".cts")
+_NATIVE_SUFFIXES: Final = (".go", ".rs", ".java", ".kt", ".cs", ".rb", ".php")
+"""Languages whose servers are read as text: Go, Rust, Java, Kotlin, C#, Ruby and PHP."""
 _TOOL_NAME: Final = re.compile(
     r"""(?:\.tool\(\s*+(?:\{\s*+)?(?:name\s*:\s*+)?|\bregisterTool\(\s*|\bname\s*[:=]\s*)"""
     r"""["'`](?P<name>[A-Za-z][\w.-]{1,80})["'`]"""
@@ -231,8 +237,86 @@ class McpServerFindings:
         return channel == "return" and not OwnVocabulary.words(text)
 
     @staticmethod
+    def _protocol_findings(ctx: ScanContext, text: str, unit: FileUnit) -> Iterator[Finding]:
+        """What a server does to the client through the protocol's own requests: it asks the user for a credential
+        in an elicitation (`elicitation.py`), or it tells the client's model to take a secret or hide something, or
+        carries the model's answer to an outside host, in a sampling request (`sampling.py`)."""
+        from cordon_scanner.detect.agents.mcp_servers.elicitation import McpElicitation
+        from cordon_scanner.detect.agents.mcp_servers.sampling import McpSampling
+
+        path = unit.content.path
+        found: list[
+            tuple[str, int, str | None]
+        ] = []  # (rule, character offset or line, sampling kind)
+        starts: list[int] = []
+        if path.endswith(_JS_SUFFIXES):
+            typescript = path.endswith((".ts", ".mts", ".cts"))
+            found += [
+                ("SUSPECT.MCP.ELICIT_CREDENTIAL.001", o, None)
+                for o in McpElicitation.credential_requests_js(text, typescript)[:3]
+            ]
+            found += [
+                ("SUSPECT.MCP.SAMPLING_ABUSE.001", o, kind)
+                for o, kind in McpSampling.abuse_js(text, typescript)[:3]
+            ]
+        elif path.endswith(".py"):
+            starts = [0, *(m.end() for m in re.finditer(r"\n", text))]
+            found += [
+                ("SUSPECT.MCP.ELICIT_CREDENTIAL.001", line, None)
+                for line in McpElicitation.credential_requests_py(text)[:3]
+            ]
+            found += [
+                ("SUSPECT.MCP.SAMPLING_ABUSE.001", line, kind)
+                for line, kind in McpSampling.abuse_py(text)[:3]
+            ]
+        elif path.endswith(_NATIVE_SUFFIXES):
+            found += [
+                ("SUSPECT.MCP.ELICIT_CREDENTIAL.001", o, None)
+                for o in McpElicitation.credential_requests_text(text)
+            ]
+            found += [
+                ("SUSPECT.MCP.SAMPLING_ABUSE.001", o, "directive")
+                for o in McpSampling.abuse_text(text)
+            ]
+        for rule, where, kind in found:
+            if starts:  # a Python line
+                first = starts[min(max(where, 1), len(starts)) - 1]
+                last = text.find("\n", first)
+                last = len(text) if last < 0 else last
+                begin, finish = len(text[:first].encode("utf-8")), len(text[:last].encode("utf-8"))
+            else:  # a JavaScript character offset
+                end = text.find("\n", where)
+                end = len(text) if end < 0 else end
+                begin = len(text[:where].encode("utf-8"))
+                finish = begin + len(text[where:end].encode("utf-8"))
+            if kind == "forwarded":
+                # The answer of the user's own model carried to an outside host: reported, not blocking, as
+                # a server may send a summary to its own service.
+                yield AgentFinding.finding(
+                    rule,
+                    unit,
+                    ctx,
+                    begin,
+                    finish,
+                    severity=Severity.MEDIUM,
+                    message=RULES[rule].message
+                    + " Here the model's answer is sent to a host the code names.",
+                )
+            else:
+                yield AgentFinding.finding(rule, unit, ctx, begin, finish)
+        if path.endswith((*_JS_SUFFIXES, ".py", *_NATIVE_SUFFIXES)):
+            for rule, offset in McpInputFlows.scan(text):
+                line_end = text.find("\n", offset)
+                line_end = len(text) if line_end < 0 else line_end
+                first = len(text[:offset].encode("utf-8"))
+                yield AgentFinding.finding(
+                    rule, unit, ctx, first, first + len(text[offset:line_end].encode("utf-8"))
+                )
+
+    @staticmethod
     def _handler_findings(ctx: ScanContext, text: str, unit: FileUnit) -> Iterator[Finding]:
         """The findings for what a Python server's own handler code does with the agent's input: a shell built from it, a time bomb, input mirrored or forwarded to a host, secrets harvested, a listener, arguments overridden."""
+        yield from McpServerFindings._protocol_findings(ctx, text, unit)
         if unit.content.path.endswith(_JS_SUFFIXES):
             yield from McpServerFindings._js_handler_findings(ctx, text, unit)
         if unit.content.path.endswith(".py"):
@@ -447,7 +531,8 @@ class McpServerFindings:
                 message=RULES["SUSPECT.MCP.TOOL_SQUATTING.001"].message
                 + f" The tool is named `{squat.group('name')}`.",
             )
-        hidden = schema = wallet = False
+        hidden = schema = wallet = metadata = False
+        sinks: set[str] = set()
         # A parameter is a name in the code -- a Python argument, a zod key -- as often as a string.
         for name in dict.fromkeys(_IDENTIFIER.findall(text)):
             if _SCHEMA_ORDER.fullmatch(name) and _SCHEMA_ASKS.search(name.replace("_", " ")):
@@ -457,6 +542,17 @@ class McpServerFindings:
                 )
                 break
         for literal in McpServerSource._all_literals(text):
+            if not metadata and McpLiteralSinks.metadata(literal):
+                metadata = True
+                yield AgentFinding.at_text(
+                    "SUSPECT.MCP.CLOUD_METADATA.001", unit, ctx, text, literal[:80]
+                )
+            kind = McpLiteralSinks.sink_kind(literal) if len(sinks) < 4 else None
+            if kind is not None and kind not in sinks:
+                sinks.add(kind)
+                yield AgentFinding.at_text(
+                    f"SUSPECT.MCP.EXFIL_{kind.upper()}.001", unit, ctx, text, literal[:80]
+                )
             if not hidden and ("<!--" in literal or "[//]:" in literal):
                 spans = [s for s in HiddenInstruction.find(literal) if HiddenInstruction.strong(s)]
                 if spans:
@@ -486,6 +582,14 @@ class McpServerFindings:
                 yield AgentFinding.at_text(
                     "SUSPECT.MCP.DENIAL_OF_WALLET.001", unit, ctx, text, literal[:80]
                 )
+        for technique, first, last in McpTechniques.scan(text):
+            yield AgentFinding.finding(
+                technique.rule_id,
+                unit,
+                ctx,
+                len(text[:first].encode("utf-8")),
+                len(text[:last].encode("utf-8")),
+            )
 
     @classmethod
     def mcp(cls, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
