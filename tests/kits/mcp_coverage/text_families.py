@@ -4,9 +4,9 @@
 
 Families t1 (text injection into the model), t2 (output exfiltration through rendering), t3 (rug pull and
 gating), t11 (lookalike server and tool names, install hooks), t20 (agent memory and multi-agent poisoning),
-t21 (human manipulation) and t22 (excessive agency). Each family has one data table (`cases.yaml`, or
-`cases-names-and-hooks.yaml` for t11, which shares its folder with another table) and every case is written
-as <family>/<sub-technique>/<way>/{positive,negative}/ plus an `expect.yaml`.
+t21 (human manipulation) and t22 (excessive agency). Each family has one data table: `cases.yaml`, except
+t3 (`cases-protocol.yaml`) and t11 (`cases-names-and-hooks.yaml`), whose folders hold another table too.
+Every case is written as <family>/<sub-technique>/<way>/{positive,negative}/ plus an `expect.yaml`.
 
 Text-side families put one text in each of the seven surfaces a server hands the model (description, schema,
 result, error, notification, resource, prompt), written in TypeScript and Python. Code-side families are
@@ -162,7 +162,7 @@ def expect(family, sub, way, signal=None):
 # ---------------------------------------------------------------- data tables
 ZW = "\u200b"
 FAMILIES = {}
-TABLE_FILE = {"t11": "cases-names-and-hooks.yaml"}
+TABLE_FILE = {"t3": "cases-protocol.yaml", "t11": "cases-names-and-hooks.yaml"}
 
 
 def table(family, title, kind, ways, cases):
