@@ -211,6 +211,54 @@ class TestAnInstalledFile:
         assert finding.location.line == 3
 
 
+class TestTheMeasurementEntryPoint:
+    """`InstructionDirectives.grades(path, text, installed)`: what a scan would say of one file."""
+
+    @pytest.mark.parametrize("directive", CLASSES, ids=lambda d: d.id)
+    def test_it_agrees_with_the_scan_of_an_installed_file(self, tmp_path: Path, directive) -> None:
+        text = f"{CALM}\n{directive.example}\n"
+        [grade] = InstructionDirectives.grades("CLAUDE.md", text, installed=True)
+        scanned = Scans.ours(Scans.installed(tmp_path, "CLAUDE.md", text), directive.id)
+        assert grade.rule == scanned[0].rule_id
+        assert grade.grade == scanned[0].severity.name
+        assert grade.blocks == (directive.strength == "block")
+
+    @pytest.mark.parametrize("directive", CLASSES, ids=lambda d: d.id)
+    def test_a_project_s_own_file_is_never_a_block(self, directive) -> None:
+        text = f"{CALM}\n{directive.example}\n"
+        assert [g.blocks for g in InstructionDirectives.grades("CLAUDE.md", text, False)] == [False]
+
+    def test_a_cover_and_an_act_block_together(self) -> None:
+        text = Scans.pair("pipe_to_shell", "disable_safety")
+        grades = InstructionDirectives.grades("SKILL.md", text, True)
+        assert {g.directive: g.grade for g in grades} == {
+            "pipe_to_shell": "HIGH",
+            "disable_safety": "HIGH",
+        }
+
+    @pytest.mark.parametrize(
+        ("path", "wanted"),
+        [
+            ("CLAUDE.md", True),
+            ("pkg/AGENTS.md", True),
+            ("pkg/skills/x/SKILL.md", True),
+            (".cursorrules", True),
+            (".cursor/rules/team.mdc", True),
+            (".github/copilot-instructions.md", True),
+            (".claude/commands/review.md", True),
+            (".claude/skills/helper/install.sh", False),
+            ("README.md", False),
+            ("src/index.js", False),
+        ],
+    )
+    def test_it_names_the_instruction_files(self, path: str, wanted: bool) -> None:
+        assert InstructionDirectives.wanted(path) is wanted
+
+    def test_a_file_that_is_not_an_instruction_file_gives_nothing(self) -> None:
+        text = next(d for d in CLASSES if d.id == "add_remote").example
+        assert InstructionDirectives.grades("README.md", text, True) == []
+
+
 class TestTheProjectsOwnFile:
     @pytest.mark.parametrize("directive", CLASSES, ids=lambda d: d.id)
     def test_a_class_is_reported_never_blocking(self, tmp_path: Path, directive) -> None:

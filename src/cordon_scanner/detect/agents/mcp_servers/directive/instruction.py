@@ -23,12 +23,14 @@ measured legitimate packages and skills carries a `block` class.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Final
 
 from cordon_scanner.detect.agents.mcp_servers.directive.reader import DirectiveHit, McpDirectives
 from cordon_scanner.detect.agents.mcp_servers.directive.surfaces import SurfaceText
 from cordon_scanner.detect.agents.mcp_servers.directive.table import FILE_SURFACE, DirectiveTable
+from cordon_scanner.detect.agents.paths import INSTRUCTION_PATHS, AgentPaths
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -47,7 +49,46 @@ _OWN_FILE: Final = (
 )
 
 
+@dataclass(frozen=True, slots=True)
+class InstructionGrade:
+    """What the table makes of one class read in an instruction file: its rule, its class and its grade
+    (`HIGH` blocks, `MEDIUM` is reported for review)."""
+
+    rule: str
+    directive: str
+    grade: str
+
+    @property
+    def blocks(self) -> bool:
+        return self.grade == "HIGH"
+
+
 class InstructionDirectives:
+    @staticmethod
+    def wanted(path: str) -> bool:
+        """Whether a file of a package is an agent instruction file: one of the places an agent reads its
+        instructions from (`INSTRUCTION_PATHS`) and text, not a script beside it."""
+        return AgentPaths._paths_match(
+            path.replace("\\", "/"), INSTRUCTION_PATHS
+        ) and InstructionDirectives.reads(path)
+
+    @classmethod
+    def grades(cls, path: str, text: str, installed: bool) -> list[InstructionGrade]:
+        """The classes read in a file and the grade of each, without a scan: nothing for a file that is
+        not an instruction file. `installed` is whether the file arrives inside a package, a skill, an
+        archive or a download (it can then block); false for the scanned project's own file."""
+        if not cls.wanted(path):
+            return []
+        found = cls.hits(text)
+        return [
+            InstructionGrade(
+                DirectiveTable.rule_id(FILE_SURFACE, hit.directive.id),
+                hit.directive.id,
+                "HIGH" if installed and McpDirectives.blocks(hit, found) else "MEDIUM",
+            )
+            for hit in found
+        ]
+
     @staticmethod
     def reads(path: str) -> bool:
         """Whether a file of an instruction folder is text an agent obeys, not a script beside it."""
