@@ -429,12 +429,6 @@ class TestSelfScan(CorpusFixtures):
             # managers, and each holds the shape its case proves the scanner reports: a git
             # source, an install script. `tests/conformance/test_cases.py` asserts those
             # findings; here they are not this project's own.
-            # The attack-technique tables of the MCP server rules: each row holds, as inert fixtures, the
-            # shapes of the technique it detects (a reverse shell, a fetched description, a hook that
-            # downloads and runs); rule material by construction, data never run.
-            and not f.location.path.startswith(
-                "src/cordon_scanner/detect/agents/mcp_servers/techniques/"
-            )
             and not f.location.path.startswith("tests/conformance/cases/")
         ]
         assert not offending, "Cordon does not pass its own scan:\n" + "\n".join(

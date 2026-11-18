@@ -22,10 +22,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from typing import Any, ClassVar
 
-from cordon_scanner.detect.agents.mcp_servers.techniques.table_core import CORE
-from cordon_scanner.detect.agents.mcp_servers.techniques.table_extra import EXTRA
-from cordon_scanner.detect.agents.mcp_servers.techniques.table_persist import PERSIST
-from cordon_scanner.detect.agents.mcp_servers.techniques.table_rugpull import RUGPULL
+from cordon_scanner.detect.agents.mcp_servers.techniques.data import TechniqueData
 from cordon_scanner.detect.agents.mcp_servers.techniques.technique import Fixture, Technique
 from cordon_scanner.foundation.models import Category
 
@@ -52,7 +49,7 @@ class McpTechniques:
     def all(cls) -> tuple[Technique, ...]:
         """Every row of every table."""
         if cls._all is None:
-            cls._all = CORE + EXTRA + PERSIST + RUGPULL
+            cls._all = TechniqueData.load()
         return cls._all
 
     @classmethod
