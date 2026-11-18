@@ -26,14 +26,24 @@ ROOT = REPO / "corpus" / "coverage" / "mcp"
 SURFACES = ["description", "schema", "result", "error", "notification", "resource", "prompt"]
 TEXT_LANGS = ["typescript", "python"]
 CODE_LANGS = ["typescript", "python", "go", "rust"]
-SERVER_FILE = {"typescript": "server.ts", "python": "server.py", "go": "main.go", "rust": "main.rs"}
+SERVER_FILE = {
+    "typescript": "server.ts",
+    "python": "server.py",
+    "go": "main.go",
+    "rust": "main.rs",
+}
 MANIFEST_FILE = {
     "typescript": "package.json",
     "python": "pyproject.toml",
     "go": "go.mod",
     "rust": "Cargo.toml",
 }
-COMMENT = {"typescript": "//", "python": "#", "go": "//", "rust": "//"}
+COMMENT = {
+    "typescript": "//",
+    "python": "#",
+    "go": "//",
+    "rust": "//",
+}
 STATS = {"cases": 0, "fixtures": 0}
 
 
@@ -133,7 +143,41 @@ def py_server(surface, text):
     )
 
 
-SERVERS = {"typescript": ts_server, "python": py_server}
+def go_server(surface, text):
+    """A Go server (mcp-go) with one text on one surface, and a plain tool beside it."""
+    t = lit(text)
+    plain = 's.AddTool(mcp.NewTool("lookup_note", mcp.WithDescription("Look up a note."), mcp.WithString("id", mcp.Required())), lookup)'
+    ok = '\treturn mcp.NewToolResultText("note"), nil'
+    body, register = ok, plain
+    if surface == "description":
+        register = f's.AddTool(mcp.NewTool("lookup_note", mcp.WithDescription({t}), mcp.WithString("id", mcp.Required())), lookup)'
+    elif surface == "schema":
+        register = f's.AddTool(mcp.NewTool("lookup_note", mcp.WithDescription("Look up a note."), mcp.WithString("id", mcp.Required(), mcp.Description({t}))), lookup)'
+    elif surface == "result":
+        body = f"\treturn mcp.NewToolResultText({t}), nil"
+    elif surface == "error":
+        body = f'\tif req.Params.Name == "" {{\n\t\treturn nil, errors.New({t})\n\t}}\n{ok}'
+    elif surface == "notification":
+        body = f'\t_ = server.ServerFromContext(ctx).SendNotificationToClient(ctx, "notifications/message", map[string]any{{"level": "info", "data": {t}}})\n{ok}'
+    elif surface == "resource":
+        register = f'{plain}\n\ts.AddResource(mcp.NewResource("notes://today", "today"), func(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {{\n\t\treturn []mcp.ResourceContents{{mcp.TextResourceContents{{URI: "notes://today", Text: {t}}}}}, nil\n\t}})'
+    elif surface == "prompt":
+        register = f'{plain}\n\ts.AddPrompt(mcp.NewPrompt("review"), func(ctx context.Context, req mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {{\n\t\treturn mcp.NewGetPromptResult("review", []mcp.PromptMessage{{mcp.NewPromptMessage(mcp.RoleUser, mcp.NewTextContent({t}))}}), nil\n\t}})'
+    return (
+        'package main\n\nimport (\n\t"context"\n\t"errors"\n\n\t"github.com/mark3labs/mcp-go/mcp"\n\t"github.com/mark3labs/mcp-go/server"\n)\n\nvar _ = errors.New\n\n'
+        f"func lookup(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {{\n{body}\n}}\n\n"
+        f'func main() {{\n\ts := server.NewMCPServer("notes-server", "1.0.0")\n\t{register}\n}}\n'
+    )
+
+
+SERVERS = {
+    "typescript": ts_server,
+    "python": py_server,
+    "go": go_server,
+}
+#: The languages besides `TEXT_LANGS` that each text is also written in, each as its own way: the
+#: surface and the language (`result-go`), so a case is judged on its own.
+EXTRA_LANGS = ["go"]
 
 
 def put(family, sub, way, kind, lang, server_body, what, hook=None, manifest_name=None, deps=None):
@@ -543,6 +587,23 @@ def main() -> int:
                 )
                 expect(family, row["sub_technique"], surface)
                 STATS["cases"] += 1
+                for extra in EXTRA_LANGS:
+                    way = f"{surface}-{extra}"
+                    for kind, what, said in (
+                        ("positive", pwhat, ptext),
+                        ("negative", nwhat, ntext),
+                    ):
+                        put(
+                            family,
+                            row["sub_technique"],
+                            way,
+                            kind,
+                            extra,
+                            SERVERS[extra](surface, said),
+                            f"{what} ({surface}, {extra})",
+                        )
+                    expect(family, row["sub_technique"], way)
+                    STATS["cases"] += 1
 
     # ---------------------------------------------------------------- code-side bodies
     TS = 'import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";\n\nconst server = new McpServer({ name: "notes-server", version: "1.0.0" });\n'
