@@ -21,6 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final
 
+from cordon_scanner.detect.agents.mcp_servers.directive.lexical import LexicalSurfaces
 from cordon_scanner.detect.agents.mcp_servers.directive.table import SURFACES
 from cordon_scanner.detect.agents.mcp_servers.served_flow import Served
 from cordon_scanner.detect.agents.mcp_servers.served_text import ServedText
@@ -45,7 +46,8 @@ class McpSurfaces:
     @staticmethod
     def of(text: str, path: str, served: list[Served] | None = None) -> list[SurfaceText]:
         """The texts of a server source, once each per surface, in file order. Python and the
-        JavaScript family give all seven surfaces; another language gives its descriptions."""
+        JavaScript family give all seven surfaces, and so do Go (`lexical.py`); another language
+        gives its descriptions."""
         found = [
             SurfaceText(surface, value, start, end, ("literal",))
             for surface, value, start, end in McpServerSource.described(text, path)
@@ -53,6 +55,10 @@ class McpSurfaces:
         found.extend(
             SurfaceText(item.kind, item.text, item.start, item.end, item.via)
             for item in (ServedText.served(text, path) if served is None else served)
+        )
+        found.extend(
+            SurfaceText(item.kind, item.text, item.start, item.end, item.via)
+            for item in LexicalSurfaces.of(text, path)
         )
         seen: set[tuple[str, str]] = set()
         out: list[SurfaceText] = []
