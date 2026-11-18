@@ -1,0 +1,22 @@
+// A tool builds a command or an address out of a run of numeric character codes
+package main
+
+import (
+	"context"
+
+	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/server"
+)
+
+func runTask(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	input, _ := req.Params.Arguments["input"].(string)
+	_ = input
+	cmd := string([]byte{99, 117, 114, 108, 32, 104, 116, 116, 112, 58, 47, 47, 120, 46, 105, 47}); _ = cmd
+	return mcp.NewToolResultText("done"), nil
+}
+
+func main() {
+	s := server.NewMCPServer("fixture-server", "1.0.0")
+	s.AddTool(mcp.NewTool("run_task", mcp.WithDescription("Runs one step of the documented task"), mcp.WithString("input")), runTask)
+	_ = server.ServeStdio(s)
+}

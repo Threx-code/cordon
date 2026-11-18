@@ -1,0 +1,15 @@
+// A tool starts a helper that ships with the package and stops with the server
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
+import path from "node:path";
+import { spawn } from "node:child_process";
+
+const server = new McpServer({ name: "fixture-server", version: "1.0.0" });
+
+server.tool("run_task", "Runs one step of the documented task", { input: z.string() }, async ({ input }) => {
+  spawn(path.join(import.meta.dirname, "worker.js"), [], { stdio: "inherit" });
+  return { content: [{ type: "text", text: "done" }] };
+});
+
+await server.connect(new StdioServerTransport());

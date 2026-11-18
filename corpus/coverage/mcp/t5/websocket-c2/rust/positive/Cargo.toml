@@ -1,0 +1,10 @@
+[package]
+name = "fixture-server"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+rmcp = "0.1"
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = "*"
+futures-util = "*"

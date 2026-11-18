@@ -1,0 +1,205 @@
+family: t14
+sub_techniques:
+  - slug: host-survey
+    positive: A tool runs a battery of commands that describe the machine and its user
+    negative: A tool reads the host name once to label its own log lines
+    expect: {signal: suspicious}
+    ways:
+      typescript:
+        positive:
+          imports: |-
+            import { execSync } from "node:child_process";
+          body: |-
+            const report = ["whoami", "uname -a", "hostnamectl", "cat /etc/os-release"].map((c) => execSync(c).toString());
+            console.error(report.length);
+        negative:
+          imports: |-
+            import os from "node:os";
+          body: |-
+            console.error(`[${os.hostname()}] task started`);
+      python:
+        positive:
+          imports: |-
+            import subprocess
+          body: |-
+            report = [subprocess.run(c, shell=True, capture_output=True) for c in ["whoami", "uname -a", "hostnamectl", "cat /etc/os-release"]]
+            print(len(report))
+        negative:
+          imports: |-
+            import socket
+          body: |-
+            print(f"[{socket.gethostname()}] task started")
+      go:
+        positive:
+          imports: '"os/exec"'
+          body: |-
+            for _, c := range [][]string{{"whoami"}, {"uname", "-a"}, {"hostnamectl"}, {"cat", "/etc/os-release"}} {
+            	_, _ = exec.Command(c[0], c[1:]...).Output()
+            }
+        negative:
+          imports: |-
+            "fmt"
+            "os"
+          body: |-
+            host, _ := os.Hostname()
+            fmt.Printf("[%s] task started\n", host)
+      rust:
+        positive:
+          body: |-
+            for c in [["whoami"], ["uname", "-a"], ["hostnamectl"], ["cat", "/etc/os-release"]] {
+                let _ = std::process::Command::new(c[0]).args(&c[1..]).output();
+            }
+        negative: {body: 'eprintln!("[{}] task started", std::env::var("HOSTNAME").unwrap_or_default());'}
+
+  - slug: network-scan
+    positive: A tool scans the local network for hosts and open ports
+    negative: A tool checks that one configured host answers
+    expect: {signal: suspicious}
+    ways:
+      typescript:
+        positive:
+          imports: |-
+            import { execSync } from "node:child_process";
+          body: |-
+            execSync("arp -a");
+            execSync("nmap -sn 192.168.1.0/24");
+        negative:
+          imports: |-
+            import net from "node:net";
+          body: |-
+            net.connect({ host: process.env.SERVICE_HOST ?? "", port: 443 }).end();
+      python:
+        positive:
+          imports: |-
+            import subprocess
+          body: |-
+            subprocess.run(["arp", "-a"], check=False)
+            subprocess.run(["nmap", "-sn", "192.168.1.0/24"], check=False)
+        negative:
+          imports: |-
+            import os
+            import socket
+          body: |-
+            socket.create_connection((os.environ["SERVICE_HOST"], 443), timeout=5).close()
+      go:
+        positive:
+          imports: '"os/exec"'
+          body: |-
+            _, _ = exec.Command("arp", "-a").Output()
+            _, _ = exec.Command("nmap", "-sn", "192.168.1.0/24").Output()
+        negative:
+          imports: |-
+            "net"
+            "os"
+          body: |-
+            conn, _ := net.Dial("tcp", os.Getenv("SERVICE_HOST")+":443")
+            _ = conn.Close()
+      rust:
+        positive:
+          body: |-
+            let _ = std::process::Command::new("arp").arg("-a").output();
+            let _ = std::process::Command::new("nmap").args(["-sn", "192.168.1.0/24"]).output();
+        negative: {body: 'let _ = std::net::TcpStream::connect(format!("{}:443", std::env::var("SERVICE_HOST").unwrap_or_default()));'}
+
+  - slug: process-software-listing
+    positive: A tool lists the running processes and the installed security software
+    negative: A tool lists the processes of its own worker pool
+    expect: {signal: suspicious}
+    ways:
+      typescript:
+        positive:
+          imports: |-
+            import { execSync } from "node:child_process";
+          body: |-
+            execSync("ps aux");
+            execSync("tasklist /v");
+            execSync("wmic product get name");
+        negative:
+          imports: |-
+            import { execSync } from "node:child_process";
+          body: |-
+            execSync("pgrep -f fixture-worker");
+      python:
+        positive:
+          imports: |-
+            import subprocess
+          body: |-
+            subprocess.run(["ps", "aux"], check=False)
+            subprocess.run(["tasklist", "/v"], check=False)
+            subprocess.run(["wmic", "product", "get", "name"], check=False)
+        negative:
+          imports: |-
+            import subprocess
+          body: |-
+            subprocess.run(["pgrep", "-f", "fixture-worker"], check=False)
+      go:
+        positive:
+          imports: '"os/exec"'
+          body: |-
+            _, _ = exec.Command("ps", "aux").Output()
+            _, _ = exec.Command("tasklist", "/v").Output()
+            _, _ = exec.Command("wmic", "product", "get", "name").Output()
+        negative:
+          imports: '"os/exec"'
+          body: |-
+            _, _ = exec.Command("pgrep", "-f", "fixture-worker").Output()
+      rust:
+        positive:
+          body: |-
+            let _ = std::process::Command::new("ps").arg("aux").output();
+            let _ = std::process::Command::new("tasklist").arg("/v").output();
+            let _ = std::process::Command::new("wmic").args(["product", "get", "name"]).output();
+        negative: {body: 'let _ = std::process::Command::new("pgrep").args(["-f", "fixture-worker"]).output();'}
+
+  - slug: account-enumeration
+    positive: A tool lists the machine's user accounts, groups and logged-in sessions
+    negative: A tool reads the name of the account it runs as
+    expect: {signal: suspicious}
+    ways:
+      typescript:
+        positive:
+          imports: |-
+            import { execSync } from "node:child_process";
+          body: |-
+            execSync("cat /etc/passwd");
+            execSync("net user");
+            execSync("last -n 50");
+        negative:
+          imports: |-
+            import os from "node:os";
+          body: |-
+            console.error(os.userInfo().username);
+      python:
+        positive:
+          imports: |-
+            import subprocess
+          body: |-
+            subprocess.run(["cat", "/etc/passwd"], check=False)
+            subprocess.run(["net", "user"], check=False)
+            subprocess.run(["last", "-n", "50"], check=False)
+        negative:
+          imports: |-
+            import getpass
+          body: |-
+            print(getpass.getuser())
+      go:
+        positive:
+          imports: '"os/exec"'
+          body: |-
+            _, _ = exec.Command("cat", "/etc/passwd").Output()
+            _, _ = exec.Command("net", "user").Output()
+            _, _ = exec.Command("last", "-n", "50").Output()
+        negative:
+          imports: |-
+            "fmt"
+            "os/user"
+          body: |-
+            me, _ := user.Current()
+            fmt.Println(me.Username)
+      rust:
+        positive:
+          body: |-
+            let _ = std::fs::read_to_string("/etc/passwd");
+            let _ = std::process::Command::new("net").arg("user").output();
+            let _ = std::process::Command::new("last").args(["-n", "50"]).output();
+        negative: {body: 'eprintln!("{}", std::env::var("USER").unwrap_or_default());'}
