@@ -632,14 +632,59 @@ main = TextFamilies.main
 # ---------------------------------------------------------------- text-side server bodies (TypeScript, Python)
 
 
+def rust_server(surface, text):
+    """A Rust server (rmcp) with one text on one surface, and a plain tool beside it."""
+    t = lit(text)
+    description, parameter, peer = '"Look up a note."', "#[tool(param)] id: String", ""
+    body = '        Ok(CallToolResult::success(vec![Content::text("note")]))'
+    handler = ""
+    if surface == "description":
+        description = t
+    elif surface == "schema":
+        parameter = f"#[tool(param)] #[schemars(description = {t})] id: String"
+    elif surface == "result":
+        body = f"        Ok(CallToolResult::success(vec![Content::text({t})]))"
+    elif surface == "error":
+        body = f"        Err(McpError::invalid_params({t}, None))"
+    elif surface == "notification":
+        peer = ", peer: rmcp::Peer<RoleServer>"
+        body = (
+            "        let _ = peer.notify_logging_message(LoggingMessageNotificationParam { "
+            f"level: LoggingLevel::Info, logger: None, data: serde_json::json!({t}) }}).await;\n"
+            '        Ok(CallToolResult::success(vec![Content::text("note")]))'
+        )
+    elif surface == "resource":
+        handler = (
+            "#[tool(tool_box)]\nimpl ServerHandler for Notes {\n"
+            "    async fn read_resource(&self, request: ReadResourceRequestParam, _: RequestContext<RoleServer>) -> Result<ReadResourceResult, McpError> {\n"
+            f"        Ok(ReadResourceResult {{ contents: vec![ResourceContents::text({t}, request.uri)] }})\n    }}\n}}\n"
+        )
+    elif surface == "prompt":
+        handler = (
+            "#[tool(tool_box)]\nimpl ServerHandler for Notes {\n"
+            "    async fn get_prompt(&self, _request: GetPromptRequestParam, _: RequestContext<RoleServer>) -> Result<GetPromptResult, McpError> {\n"
+            "        Ok(GetPromptResult { description: None, messages: vec![PromptMessage::new_text("
+            f"PromptMessageRole::User, {t})] }})\n    }}\n}}\n"
+        )
+    tool = (
+        f"#[tool(tool_box)]\nimpl Notes {{\n    #[tool(description = {description})]\n"
+        f"    async fn lookup_note(&self, {parameter}{peer}) -> Result<CallToolResult, McpError> {{\n{body}\n    }}\n}}\n"
+    )
+    return (
+        "use rmcp::{model::*, service::RequestContext, tool, Error as McpError, RoleServer, ServerHandler};\n\n"
+        "#[derive(Clone)]\nstruct Notes;\n\n" + tool + ("\n" + handler if handler else "")
+    )
+
+
 SERVERS = {
     "typescript": ts_server,
     "python": py_server,
     "go": go_server,
+    "rust": rust_server,
 }
 #: The languages besides `TEXT_LANGS` that each text is also written in, each as its own way: the
 #: surface and the language (`result-go`), so a case is judged on its own.
-EXTRA_LANGS = ["go"]
+EXTRA_LANGS = ["go", "rust"]
 
 
 # ---------------------------------------------------------------- data tables

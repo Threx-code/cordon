@@ -1,0 +1,8 @@
+# fixture: a description of a post to the user's configured address (schema, rust)
+[package]
+name = "notes-mcp-server"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+rmcp = "0.1"

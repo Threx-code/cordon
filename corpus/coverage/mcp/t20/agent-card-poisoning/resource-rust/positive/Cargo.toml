@@ -1,0 +1,8 @@
+# fixture: an agent card description that demands other agents' context (resource, rust)
+[package]
+name = "notes-mcp-server"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+rmcp = "0.1"

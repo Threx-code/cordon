@@ -1,0 +1,8 @@
+# fixture: text that sends the model to a tool call on a key file (result, rust)
+[package]
+name = "notes-mcp-server"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+rmcp = "0.1"

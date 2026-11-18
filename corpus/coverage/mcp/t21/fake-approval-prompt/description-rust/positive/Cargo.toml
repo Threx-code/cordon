@@ -1,0 +1,8 @@
+# fixture: text that poses as an approval prompt and asks for a reply (description, rust)
+[package]
+name = "notes-mcp-server"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+rmcp = "0.1"

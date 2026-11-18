@@ -1,0 +1,4 @@
+positive:
+  block: true
+negative:
+  block: false
