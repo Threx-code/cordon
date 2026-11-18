@@ -635,6 +635,45 @@ class McpServerSource:
             and (data or ToolRegistrations.inside(spans, match.start()))
         )
 
+    @staticmethod
+    def described(text: str, path: str | None = None) -> list[tuple[str, str, int, int]]:
+        """Every description a source declares with where it is: (`description` or `schema`, the
+        text, its start, its end). A `schema` text is the description of one argument
+        (`.describe("...")`, `Field(description=...)`); a `description` is a tool's own, from a
+        `description` value inside a registration, a constant or a positional description either
+        names, or the docstring of a decorated Python tool. What no registration hands the agent is
+        not read (`_tool_descriptions`)."""
+        data = not McpServerSource._scoped(text, path)
+        spans = [] if data else ToolRegistrations.spans(text)
+        found: list[tuple[str, str, int, int]] = []
+        for match in _QUOTED_DESCRIPTION.finditer(text):
+            if not (data or ToolRegistrations.inside(spans, match.start())):
+                continue
+            group = next(g for g in ("dq", "sq", "bq") if match.group(g) is not None)
+            argument = match.group(0).startswith(".describe(") or bool(
+                re.search(
+                    r"\b(?:Field|Param|Arg)\([^)\n]{0,80}$",
+                    text[max(0, match.start() - 90) : match.start()],
+                )
+            )
+            found.append(
+                (
+                    "schema" if argument else "description",
+                    match.group(group),
+                    match.start(group),
+                    match.end(group),
+                )
+            )
+        if not data:
+            for value in McpServerSource._named_descriptions(text, spans):
+                at = text.find(value[:40])
+                found.append(("description", value, max(at, 0), max(at, 0) + len(value)))
+        for match in _DOCSTRING_TOOL.finditer(text):
+            found.append(
+                ("description", match.group("doc")[3:-3], match.start("doc"), match.end("doc"))
+            )
+        return found
+
     LABEL_WORDS: ClassVar[int] = 10
     """A parameter label shorter than this many words is a name for a field. The learned model and
     the sequence reading skip it: on the 18 malicious units blocked by the tool-description rule,

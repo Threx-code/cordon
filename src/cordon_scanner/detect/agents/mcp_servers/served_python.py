@@ -110,6 +110,24 @@ _APPENDERS: Final = frozenset(
     {"append", "extend", "insert", "add", "write", "appendleft", "update"}
 )
 _NESTED: Final = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+#: The keywords and keys that mark a tool result as an error.
+_ERROR_FLAGS: Final = frozenset({"isError", "is_error"})
+#: The methods of a request's context or session that send the client a log or progress message,
+#: and the names such a context or session goes by in a handler.
+_NOTIFYING: Final = frozenset(
+    {
+        "info",
+        "debug",
+        "warning",
+        "error",
+        "log",
+        "report_progress",
+        "send_log_message",
+        "send_progress_notification",
+        "send_notification",
+    }
+)
+_NOTIFIERS: Final = frozenset({"ctx", "context", "session", "server", "mcp", "request_context"})
 _LINE_BREAK: Final = re.compile(r"\r\n|\r|\n")
 
 
@@ -139,6 +157,51 @@ class _Tree:
                 continue
             stack.extend(ast.iter_child_nodes(node))
         return out
+
+    @staticmethod
+    def root(node: ast.AST) -> str:
+        """The name at the base of `a`, `a.b`, `a.b().c`."""
+        while isinstance(node, ast.Attribute | ast.Call | ast.Subscript):
+            node = node.func if isinstance(node, ast.Call) else node.value
+        return node.id if isinstance(node, ast.Name) else ""
+
+    @staticmethod
+    def is_error(value: ast.expr) -> bool:
+        """Whether a returned value is a tool result marked as an error: `CallToolResult(...,
+        isError=True)` or `{"isError": True, ...}`."""
+        if isinstance(value, ast.Call):
+            return any(
+                k.arg in _ERROR_FLAGS
+                and isinstance(k.value, ast.Constant)
+                and k.value.value is True
+                for k in value.keywords
+            )
+        if isinstance(value, ast.Dict):
+            return any(
+                isinstance(key, ast.Constant)
+                and key.value in _ERROR_FLAGS
+                and isinstance(item, ast.Constant)
+                and item.value is True
+                for key, item in zip(value.keys, value.values, strict=False)
+            )
+        return False
+
+    @staticmethod
+    def said(node: ast.AST) -> list[tuple[str, list[ast.expr]]]:
+        """What a handler says outside its return: the message of an exception it raises (an
+        error the agent reads as the tool's answer) and the text of a progress or log notification
+        it sends through the request's context or session."""
+        if isinstance(node, ast.Raise) and isinstance(node.exc, ast.Call):
+            call = node.exc
+            return [("error", [*call.args, *(k.value for k in call.keywords)])]
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in _NOTIFYING
+            and _Tree.root(node.func.value) in _NOTIFIERS
+        ):
+            return [("notification", [*node.args, *(k.value for k in node.keywords)])]
+        return []
 
     @staticmethod
     def give(out: dict[str, list[ast.expr]], target: ast.expr, value: ast.expr | None) -> None:
@@ -517,15 +580,27 @@ class PythonServed:
         flow = cls(tree, text)
         out: list[Served] = []
         for kind, function in flow.handlers().values():
-            local = _Tree.assigned(_Tree.own(function))
+            own = _Tree.own(function)
+            local = _Tree.assigned(own)
             for value in cls.returned(function):
                 folder = _Folder(flow, local, 0)
                 folded = folder.fold(value)
                 start, end = flow.span(value)
                 via = folder.via or {"literal"}
-                out.append(Served(kind, folded, start, end, tuple(sorted(via))))
+                shown = "error" if kind == "result" and _Tree.is_error(value) else kind
+                out.append(Served(shown, folded, start, end, tuple(sorted(via))))
                 if len(out) >= MAX_SERVED:
                     return out
+            for node in own:
+                for shown, arguments in _Tree.said(node):
+                    for argument in arguments:
+                        folder = _Folder(flow, local, 0)
+                        folded = folder.fold(argument)
+                        start, end = flow.span(argument)
+                        via = folder.via or {"literal"}
+                        out.append(Served(shown, folded, start, end, tuple(sorted(via))))
+                        if len(out) >= MAX_SERVED:
+                            return out
         for node in ast.walk(tree):
             if (
                 isinstance(node, ast.Call)

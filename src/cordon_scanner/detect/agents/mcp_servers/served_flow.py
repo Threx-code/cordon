@@ -46,9 +46,11 @@ DECODE_LIMIT: Final = 1_000_000
 
 @dataclass(frozen=True, slots=True)
 class Served:
-    """One text a handler hands the agent: `kind` is `result`, `resource` or `prompt`; `start` and
-    `end` are character offsets of the value in the file; `via` says how the text was reached
-    (`literal`, `constant`, `joined`, `appended`, `decoded`, `helper`)."""
+    """One text a handler hands the agent: `kind` is `result`, `resource`, `prompt`, `error` (the
+    message of an exception the handler raises, or of a result marked as an error) or `notification`
+    (a log or progress message sent to the client); `start` and `end` are character offsets of the
+    value in the file; `via` says how the text was reached (`literal`, `constant`, `joined`,
+    `appended`, `decoded`, `helper`)."""
 
     kind: str
     text: str
