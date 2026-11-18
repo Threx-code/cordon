@@ -39,6 +39,10 @@ from typing import ClassVar, Final
 # The straight and the curly apostrophe. The pattern holds the character itself, not a `\u2019`
 # escape: the rule-pack validator reads every engine pattern as bytes, where `\u` is no escape.
 _APOSTROPHES: Final = "'\u2019"
+# A list bullet, and the em and en dash: likewise the characters themselves (these are plain strings, so
+# `\u` is the escape here; the compiled pattern then holds the character).
+_BULLET: Final = "\u2022"
+_DASHES: Final = "\u2014\u2013"
 
 
 class ClaimGuards:
@@ -69,7 +73,7 @@ class ClaimGuards:
     #: A single newline in the middle of a sentence: a hard wrap, not a break (a blank line or a list
     #: item ends the sentence).
     _WRAP: ClassVar[re.Pattern[str]] = re.compile(
-        r"(?<!\n)\n(?![ \t]*+(?:\n|[-*+\u2022]\s|\d{1,3}[.)]\s))"
+        r"(?<!\n)\n(?![ \t]*+(?:\n|[-*+" + _BULLET + r"]\s|\d{1,3}[.)]\s))"
     )
     #: A form the user is not shown, with what to use instead: "never show them to the user as a raw
     #: URL -- always use `download_url`".
@@ -78,11 +82,11 @@ class ClaimGuards:
         + _APOSTROPHES
         + r"]?t)\s++(?:show|display|print|present|render)\s++"
         r"(?:them|it|these|this|those)\b(?:\s++to\s++the\s++user)?\s++(?:as|in|via|using)\b"
-        r"(?:\s++[\w`" + _APOSTROPHES + r".-]++){1,8}?(?=\s*+[\u2014\u2013;,-])"
+        r"(?:\s++[\w`" + _APOSTROPHES + r".-]++){1,8}?(?=\s*+[" + _DASHES + r";,-])"
     )
     #: What the substitution says to use: an identifier, quoted or dotted or snake-cased.
     _USE: ClassVar[re.Pattern[str]] = re.compile(
-        r"(?i)^\s*+(?:[\u2014\u2013-]++|[;,])\s*+(?:always|instead|rather)\b[^.!?\n]{0,20}?"
+        r"(?i)^\s*+(?:[" + _DASHES + r"-]++|[;,])\s*+(?:always|instead|rather)\b[^.!?\n]{0,20}?"
         r"\b(?:use|show|give|return|pass|call)\s++(?:the\s++)?"
         r"(?:`[\w.-]{2,60}`|'[\w.-]{2,60}'|\"[\w.-]{2,60}\"|\w{2,40}(?:[._]\w{1,40}){1,4})"
         r"\s*+[.!?]?\s*+$"
@@ -153,7 +157,8 @@ class ClaimGuards:
         return (
             len(tail.split()) <= ClaimGuards._TAIL_WORDS
             and ClaimGuards._USE.match(tail) is not None
-            and ClaimGuards._CARRIES.search(re.sub(r"^\s*+[;,\u2014\u2013-]++", "", tail)) is None
+            and ClaimGuards._CARRIES.search(re.sub(r"^\s*+[;," + _DASHES + r"-]++", "", tail))
+            is None
         )
 
     @staticmethod
