@@ -387,6 +387,9 @@ class TestSelfScan(CorpusFixtures):
             # decided cost of that fix, as on other rule corpora; listed here, file by file.
             and f.location.path != "tests/unit/detect/secrets/test_review_defects.py"
             and f.location.path != "src/cordon_scanner/rules/builtin/capabilities-javascript.yaml"
+            # The MCP technique tables: each row carries, as inert fixtures, the shapes of the technique it
+            # detects. Data beside the rule packs, which the CI self-scan excludes for the same reason.
+            and not f.location.path.startswith("src/cordon_scanner/rules/builtin/mcp-techniques-")
             and f.location.path != "src/cordon_scanner/foundation/samples.py"
             # Recovered malware shapes, rebuilt as minimal fixtures to keep them caught.
             and f.location.path
