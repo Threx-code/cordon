@@ -32,6 +32,7 @@ from cordon_scanner.detect.agents.autorun import AUTORUN_PATHS
 from cordon_scanner.detect.agents.ci_workflows import WorkflowFindings
 from cordon_scanner.detect.agents.extension_files import ExtensionFileFindings
 from cordon_scanner.detect.agents.findings import AgentFinding
+from cordon_scanner.detect.agents.installs.planting import AgentPlanting
 from cordon_scanner.detect.agents.instruction_files import InstructionFileFindings
 from cordon_scanner.detect.agents.instructions import InstructionText
 from cordon_scanner.detect.agents.mcp_servers.findings import McpServerFindings
@@ -155,7 +156,7 @@ class AgentChainDetector(BaseDetector):
         path = (
             unit.content.path.rpartition("!")[2] if "!" in unit.content.path else unit.content.path
         )
-        findings: list[Finding] = []
+        findings: list[Finding] = list(AgentPlanting.scan(unit, ctx))
         if AgentPaths._paths_match(path, _AGENT_TEXT_PATHS):
             unit, gap = AgentTextFindings.capped(unit)
             findings.extend(gap)

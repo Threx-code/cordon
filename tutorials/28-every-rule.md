@@ -2,7 +2,7 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,609 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,611 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -35,7 +35,7 @@ rule's own samples.
 
 ## AI agents
 
-52 rules.
+54 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -62,6 +62,7 @@ rule's own samples.
 | `SUSPECT.AGENT.AUTH_BYPASS_EDIT.001` | high | Tells the agent to add an access check that one fixed identity always passes |
 | `SUSPECT.AGENT.CI_PROMPT_INJECTION.001` | high | Untrusted event text passed straight into an agent's prompt |
 | `SUSPECT.AGENT.CI_UNTRUSTED_TRIGGER.001` | high | An AI agent in CI reads text an outsider can write |
+| `SUSPECT.AGENT.CODE_AND_INSTRUCTIONS.001` | high | An instruction file and the code of the same package agree on an attack on the agent |
 | `SUSPECT.AGENT.CREDENTIAL_EXFIL.001` | critical | Agent instructions that move credentials somewhere |
 | `SUSPECT.AGENT.DROPPER_PROSE.001` | high | Agent instructions that have the reader run a hidden or pasted payload |
 | `SUSPECT.AGENT.FETCH_EXEC.001` | high | Agent instructions that fetch and execute remote code |
@@ -76,6 +77,7 @@ rule's own samples.
 | `SUSPECT.AGENT.INTENT_CHAINED.001` | high | Agent instructions that send the agent to a file that acts against its user |
 | `SUSPECT.AGENT.JUDGED.001` | medium | A language model judges agent-facing text to be subverting the agent |
 | `SUSPECT.AGENT.PHANTOM_PREREQUISITE.001` | high | Agent instructions that require downloading a tool they never use |
+| `SUSPECT.AGENT.PLANTS_INSTRUCTIONS.001` | medium | A package's install or start-up code writes a file into an agent's own instruction place |
 | `SUSPECT.AGENT.PLUGIN_SOURCE.001` | high | Agent plugins installed from an unverified source |
 | `SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001` | medium | An agent instruction file tells the agent to fetch and follow remote text |
 | `SUSPECT.AGENT.SENSITIVE_IMPORT.001` | high | An agent instruction file imports a credential file |

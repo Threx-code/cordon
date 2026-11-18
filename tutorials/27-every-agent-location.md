@@ -167,7 +167,7 @@ Workflow steps that run a coding agent, checked for untrusted triggers, write pe
 
 ## Every agent rule
 
-136 rules of Cordon's own, beside the Agent Threat Rules (tutorial 28 lists those too).
+137 rules of Cordon's own, beside the Agent Threat Rules (tutorial 28 lists those too).
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -209,6 +209,7 @@ Workflow steps that run a coding agent, checked for untrusted triggers, write pe
 | `SUSPECT.AGENT.INTENT.001` | high | Text that tells the agent to act against its user |
 | `SUSPECT.AGENT.INTENT_CHAINED.001` | high | Agent instructions that send the agent to a file that acts against its user |
 | `SUSPECT.AGENT.PHANTOM_PREREQUISITE.001` | high | Agent instructions that require downloading a tool they never use |
+| `SUSPECT.AGENT.PLANTS_INSTRUCTIONS.001` | medium | A package's install or start-up code writes a file into an agent's own instruction place |
 | `SUSPECT.AGENT.PLUGIN_SOURCE.001` | high | Agent plugins installed from an unverified source |
 | `SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001` | medium | An agent instruction file tells the agent to fetch and follow remote text |
 | `SUSPECT.AGENT.SENSITIVE_IMPORT.001` | high | An agent instruction file imports a credential file |

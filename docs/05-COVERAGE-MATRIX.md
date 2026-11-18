@@ -826,6 +826,7 @@ rather than a document.
 | `SUSPECT.AGENT.ATR.SKILL_COMPROMISE.001` | medium | `agents` | malicious_code |
 | `SUSPECT.AGENT.ATR.TOOL_POISONING.001` | medium | `agents` | prompt_injection |
 | `SUSPECT.AGENT.AUTH_BYPASS_EDIT.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.CODE_AND_INSTRUCTIONS.001` | high | `verdict` | prompt_injection |
 | `SUSPECT.AGENT.CREDENTIAL_EXFIL.001` | critical | `agents` | exfiltration |
 | `SUSPECT.AGENT.DROPPER_PROSE.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.FETCH_EXEC.001` | high | `agents` | dropper |
@@ -840,6 +841,7 @@ rather than a document.
 | `SUSPECT.AGENT.INTENT_CHAINED.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.JUDGED.001` | medium | `agent-judge` | prompt_injection |
 | `SUSPECT.AGENT.PHANTOM_PREREQUISITE.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.PLANTS_INSTRUCTIONS.001` | medium | `agents` | prompt_injection |
 | `SUSPECT.AGENT.PLUGIN_SOURCE.001` | high | `agents` | integrity |
 | `SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001` | medium | `agents` | prompt_injection |
 | `SUSPECT.AGENT.SENSITIVE_IMPORT.001` | high | `agents` | exfiltration |

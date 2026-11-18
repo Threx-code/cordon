@@ -8,11 +8,21 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from cordon_scanner.detect.agents.mcp_servers.techniques import McpTechniques
 from cordon_scanner.foundation.models import Category, Confidence, Severity
 
 
 class ProtocolRules:
-    """`rules(factory, references)`: the entries, built with the caller's rule factory."""
+    """`catalogue(factory, references)`: every entry of the MCP server rules and the planting rule; `rules(...)`: the
+    protocol and address rules alone. Built with the caller's rule factory."""
+
+    @classmethod
+    def catalogue(cls, factory: Callable[..., Any], references: tuple[str, ...]) -> dict[str, Any]:
+        """The technique rows, the protocol and address rules and the planting rule, in one table."""
+        return {
+            **McpTechniques.rules(factory, references),
+            **cls.rules(factory, references),
+        }
 
     @classmethod
     def rules(cls, factory: Callable[..., Any], references: tuple[str, ...]) -> dict[str, Any]:
@@ -20,6 +30,7 @@ class ProtocolRules:
             cls._protocol(factory, references),
             cls._channels(factory, references),
             cls._inputs(factory, references),
+            cls._planting(factory, references),
         )
         return {entry.rule_id: entry for part in parts for entry in part}
 
@@ -128,6 +139,26 @@ class ProtocolRules:
                 "turns the user's own model, and the conversation it holds, into the server's tool.",
                 "Read the prompt and find where the answer goes. Do not use the server until both "
                 "are explained.",
+                references,
+            ),
+        )
+
+    @staticmethod
+    def _planting(factory: Callable[..., Any], references: tuple[str, ...]) -> tuple[Any, ...]:
+        """The rule of `detect/agents/planting.py`, whose reader imports the finding builder that imports this
+        catalogue, so its entry is built here."""
+        return (
+            factory(
+                "SUSPECT.AGENT.PLANTS_INSTRUCTIONS.001",
+                "A package's install or start-up code writes a file into an agent's own instruction place",
+                Category.SUSPICIOUS,
+                Severity.MEDIUM,
+                Confidence.MEDIUM,
+                "Code that runs when this package is installed or loaded copies or writes a file into a place an "
+                "agent reads its instructions from: a skills or rules folder, a CLAUDE.md or AGENTS.md, the "
+                "agent's settings. Skill installers do this on purpose; so does anything that wants text in "
+                "front of the agent that the user never opened.",
+                "Read what is written and where it comes from. Install it only from an author you trust.",
                 references,
             ),
         )
