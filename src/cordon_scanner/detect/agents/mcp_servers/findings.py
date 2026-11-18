@@ -23,6 +23,7 @@ from cordon_scanner.detect.agents.mcp_servers.endpoints import (
     McpEndpoints,
 )
 from cordon_scanner.detect.agents.mcp_servers.own_vocabulary import OwnVocabulary
+from cordon_scanner.detect.agents.mcp_servers.served_text import ServedText
 from cordon_scanner.detect.agents.mcp_servers.source import (
     RESULT_SENDS_TO_URL,
     McpServerSource,
@@ -188,6 +189,7 @@ class McpServerFindings:
             yield from AgentTextFindings.threat_rules(unit, ctx, name, ("tool_name",), within=text)
         yield from McpServerFindings._handler_findings(ctx, text, unit)
         yield from McpServerFindings._return_findings(ctx, text, unit)
+        yield from ServedText.findings(unit, ctx, text)
         yield from cls._server_content(unit, ctx, text)
 
     @staticmethod
@@ -207,28 +209,9 @@ class McpServerFindings:
     def _own_sequencing(
         text: str, chain: tuple[str, ...], own: frozenset[str], channel: str
     ) -> bool:
-        """Whether a chain of ordering steps only sequences the server's own tools (`OwnVocabulary`):
-        the chain is orders, sequencing, an opening order, a pretext and a banner written as a phrase,
-        and nothing else; the text hides nothing from the user, names no secret, runs no command,
-        reaches no address; and it names only identifiers the server declares. A returned message
-        may name none at all ("create a session before using the debugging commands"): it names no
-        other tool."""
-        allowed = {"order", "around_other", "other_tool", "pretext", "opens_order", "banner"}
-        if not set(chain) <= allowed:
-            return False
-        found = AgentSemantics.steps(text)
-        if any(found[step] for step in ("deceive", "command", "offsite", "overrule")):
-            return False
-        if found["banner"] and AgentSemantics.banner_is_label(text):
-            # `for security purposes, call list_apis first` is plain guidance; `SECURITY PROTOCOL:` is
-            # a banner claiming authority, whatever it names.
-            return False
-        if McpServerSource._poisoned_description(text, own) is not None:
-            return False
-        called = OwnVocabulary.called(text)
-        if called:
-            return called <= own
-        return channel == "return" and not OwnVocabulary.words(text)
+        """Whether a chain of ordering steps only sequences the server's own tools: see
+        `ServedText.own_sequencing`, where it lives beside the reader of served text."""
+        return ServedText.own_sequencing(text, chain, own, channel)
 
     @staticmethod
     def _handler_findings(ctx: ScanContext, text: str, unit: FileUnit) -> Iterator[Finding]:

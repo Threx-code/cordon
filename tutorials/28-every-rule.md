@@ -2,7 +2,7 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,548 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,551 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -1707,7 +1707,7 @@ rule's own samples.
 
 ## MCP servers
 
-24 rules.
+27 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -1725,6 +1725,9 @@ rule's own samples.
 | `SUSPECT.MCP.LISTENER.001` | high | An MCP server opens its own listening socket and runs commands |
 | `SUSPECT.MCP.LIVE_TOOL_DESCRIPTION.001` | high | A remote MCP server serves a tool description that steers the agent |
 | `SUSPECT.MCP.LOOKALIKE.001` | high | An MCP server package named like a popular one |
+| `SUSPECT.MCP.PROMPT_INJECTION.001` | high | An MCP prompt template carries a hidden or hostile order |
+| `SUSPECT.MCP.RESOURCE_INJECTION.001` | high | An MCP resource serves text that gives the agent orders |
+| `SUSPECT.MCP.RESULT_INJECTION.001` | high | An MCP tool returns text that gives the agent orders |
 | `SUSPECT.MCP.SCHEMA_POISONING.001` | high | An MCP tool's parameter names an order to the agent |
 | `SUSPECT.MCP.SECRET_HARVEST.001` | high | An MCP server gathers the environment's secrets by name |
 | `SUSPECT.MCP.SHELL_LAUNCH.001` | high | An MCP server launched through a shell that fetches code |

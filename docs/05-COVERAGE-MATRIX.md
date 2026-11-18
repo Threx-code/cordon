@@ -864,6 +864,9 @@ rather than a document.
 | `SUSPECT.MCP.LISTENER.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.LIVE_TOOL_DESCRIPTION.001` | high | `mcp-live` | misconfiguration |
 | `SUSPECT.MCP.LOOKALIKE.001` | high | `agents` | typosquat |
+| `SUSPECT.MCP.PROMPT_INJECTION.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESOURCE_INJECTION.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESULT_INJECTION.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.SCHEMA_POISONING.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.SECRET_HARVEST.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.SHELL_LAUNCH.001` | high | `agents` | dropper |

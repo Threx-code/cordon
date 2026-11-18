@@ -261,6 +261,11 @@ class TestNoRuleIsLoweredUnseenByAccident:
             "SUSPECT.MCP.INPUT_FORWARDED.001",
             "SUSPECT.MCP.LIVE_TOOL_DESCRIPTION.001",
             "SUSPECT.MCP.LOOKALIKE.001",
+            # Text a handler serves to the agent (result, resource, prompt): measured on the dev sets,
+            # 1 malicious unit (blocked already), 1 of 11,449 legitimate units newly blocked.
+            "SUSPECT.MCP.PROMPT_INJECTION.001",
+            "SUSPECT.MCP.RESOURCE_INJECTION.001",
+            "SUSPECT.MCP.RESULT_INJECTION.001",
             "SUSPECT.MCP.SCHEMA_POISONING.001",  # measured 2 Nov (MCP): 0 malware, 1 benign: stays
             "SUSPECT.MCP.TOOLS_CHANGED.001",
             "SUSPECT.MCP.TOOL_POISONING.001",
