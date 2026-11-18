@@ -25,8 +25,10 @@ from cordon_scanner.decide.verdict import MODEL_PATH, PYPI_MODEL_PATH, Verdict, 
 #: Before the refit (the shipped files at 0469472a), see the module docstring.
 SHARED_TREES = "f0b06e434b3dee7e1442d19bef62ae332fbc659ac3f48526386d769df3cd1eaf"
 OTHER_AREA_LINES = "24a0837f36d51cb80f7201635a16d47a75a89651a2a8ece34cfee1b417a0a69f"
-POLICY_LISTS = "df853ff692582ec8e123b4f269b06c12bead8073104d3ce2141b697e50d0ddc8"
-PYPI_FILE = "7d025ecfe40bd6e8067922681c991b412708eb92aa423ec31774590c0cf6f30a"
+#: The last two follow the policy lists: a rule admitted to `keep` (with its measured pair) changes the
+#: lists of both models, so it changes both digests here.
+POLICY_LISTS = "de63a3d4ed648a6a8f268f598841cf8f4507c076ceaf01deb275c033df6b1af2"
+PYPI_FILE = "4d4da6f2c488db813f38f83019e3dae4bcd1366eca52ac961b435a163968dd3e"
 #: The pre-registered operating point (doc 20, written before any sealed number): the line the
 #: legitimate MCP rows exceed at 0.05% out of fold.
 BAR = 0.0005
