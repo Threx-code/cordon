@@ -275,6 +275,25 @@ class EvidenceSet(JsonRecord):
         """The digest of the canonical evidence (`sha256:<hex>`), a part of the decision's `inputs_digest`."""
         return ArtifactDigests.of_bytes(ArtifactDigests.canonical_json(self.canonical()))
 
+    #: The fields that are facts about the artifact's own bytes. Everything else in the set is what one
+    #: tenant adds (approvals, a revocation, a kill list, a required-evidence list).
+    ANALYSIS_FIELDS: ClassVar[tuple[str, ...]] = (
+        "findings",
+        "gaps",
+        "complete",
+        "intel",
+        "provenance",
+    )
+
+    def analysis_sha256(self) -> str:
+        """The digest of what is known about the artifact itself: its findings, gaps, completeness,
+        intelligence matches and provenance, and nothing a tenant decides. Two tenants with different
+        approvals or kill lists share this key for a public digest, so the analysis is stored once;
+        the decision key (`Decision.inputs_digest`) still differs, because it covers the whole set."""
+        document = self.canonical()
+        shared = {name: document[name] for name in self.ANALYSIS_FIELDS if name in document}
+        return ArtifactDigests.of_bytes(ArtifactDigests.canonical_json(shared))
+
     def request_problems(self) -> list[str]:
         """What is wrong with this evidence as a request: an exception that names a hard stop."""
         return [

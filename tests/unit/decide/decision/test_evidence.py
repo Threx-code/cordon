@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
@@ -13,6 +14,7 @@ from cordon_scanner.decide.decision.evidence import (
     Context,
     EvidenceSet,
     FindingFact,
+    GapFact,
     IntelMatch,
     Provenance,
 )
@@ -114,6 +116,53 @@ class TestEvidence:
         second = EvidenceSet(findings=(b, a), required_missing=("provenance", "sbom"))
         assert first.sha256() == second.sha256()
         assert first.sha256() != EvidenceSet(findings=(a,)).sha256()
+
+    def test_the_analysis_key_ignores_what_a_tenant_adds_and_the_decision_key_does_not(
+        self,
+    ) -> None:
+        one = EvidenceSet(
+            findings=(finding("A.1", line=1),),
+            intel=(IntelMatch("advisory", "GHSA-1", "osv", "2026-11-01T00:00:00Z"),),
+            provenance=Provenance(2, "signer", True),
+        )
+        other = replace(
+            one,
+            approvals=(Approval("a1", "exception", "2027-01-01T00:00:00Z", digests=(DIGEST,)),),
+            kill_listed=True,
+            revoked=True,
+            required_missing=("sbom",),
+        )
+        assert one.analysis_sha256() == other.analysis_sha256()
+        assert one.sha256() != other.sha256()
+
+    def test_the_analysis_key_moves_with_each_fact_about_the_bytes(self) -> None:
+        base = EvidenceSet(findings=(finding("A.1", line=1),))
+        key = base.analysis_sha256()
+        assert EvidenceSet(findings=(finding("A.1", line=2),)).analysis_sha256() != key
+        assert EvidenceSet(findings=base.findings, complete=False).analysis_sha256() != key
+        assert (
+            EvidenceSet(
+                findings=base.findings, gaps=(GapFact("SUSPECT.SOURCE.UNPARSED_RUNNING.001"),)
+            ).analysis_sha256()
+            != key
+        )
+        assert (
+            EvidenceSet(
+                findings=base.findings,
+                intel=(IntelMatch("known_malware", "M-1", "osv", "2026-11-01T00:00:00Z"),),
+            ).analysis_sha256()
+            != key
+        )
+        assert (
+            EvidenceSet(findings=base.findings, provenance=Provenance(1)).analysis_sha256() != key
+        )
+
+    def test_the_analysis_key_does_not_depend_on_the_order_evidence_was_assembled_in(self) -> None:
+        a, b = finding("A.1", line=1), finding("B.1", path="b.js", line=9)
+        assert (
+            EvidenceSet(findings=(a, b)).analysis_sha256()
+            == EvidenceSet(findings=(b, a)).analysis_sha256()
+        )
 
     def test_a_scan_json_predicate_round_trips(self) -> None:
         evidence = EvidenceSet(
