@@ -7,8 +7,10 @@ with no code of any kind.
 
 from __future__ import annotations
 
+import io
 import json
 import subprocess
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -127,6 +129,27 @@ class TestClone(GitWorld):
         check = Incoming.clone(str(upstream), target, Repo.config())
         assert check is not None and not check.ok
         assert {f.rule_id for f in check.blocking} >= {"MALWARE.DEPENDENCY.KNOWN.001"}
+        assert not target.exists()
+
+    def test_a_repository_with_an_archive_it_cannot_read_is_never_checked_out(
+        self, upstream, tmp_path
+    ) -> None:
+        # A nested archive that does not open: its content is unread, so the clone is refused,
+        # as `scan` refuses it with exit 4, and not passed for having no finding.
+        inner = b"\x1f\x8b\x08\x00" + b"\x00" * 6 + b"not a deflate stream at all"
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as tar:
+            info = tarfile.TarInfo("pkg/inner.tgz")
+            info.size = len(inner)
+            tar.addfile(info, io.BytesIO(inner))
+        (upstream / "vendor").mkdir()
+        (upstream / "vendor" / "pkg-1.0.tar.gz").write_bytes(buffer.getvalue())
+        Repo.git(upstream, "add", "-A")
+        Repo.git(upstream, "commit", "-q", "-m", "vendor")
+        target = tmp_path / "clone"
+        check = Incoming.clone(str(upstream), target, Repo.config())
+        assert check is not None and not check.ok
+        assert any(f.rule_id == "OPERATIONAL.ARCHIVE.MEMBER_REJECTED" for f in check.blocking)
         assert not target.exists()
 
     def test_the_checked_repository_is_closed_before_the_clone_is_removed(
