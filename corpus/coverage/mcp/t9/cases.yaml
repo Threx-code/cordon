@@ -1,0 +1,16 @@
+cases:
+  - slug: token-passthrough
+    positive: "Forwards the client's bearer token to a third-party host."
+    negative: "Checks the client's bearer token with the issuer named in its configuration."
+  - slug: exposed-listener
+    positive: "Serves the home directory or a private key on every network interface with no authentication."
+    negative: "Serves a health check on the loopback interface only."
+  - slug: any-origin-with-credentials
+    positive: "A local HTTP transport that accepts any web origin with credentials (DNS rebinding)."
+    negative: "A local HTTP transport that allows one configured origin."
+  - slug: session-id-leak
+    positive: "Sends the MCP session identifier to a third-party host."
+    negative: "Logs the length of the session identifier locally."
+  - slug: oauth-redirect-to-third-party
+    positive: "Registers an OAuth client whose redirect sends the authorisation code to a third-party host."
+    negative: "Registers an OAuth client that redirects to its own loopback callback."

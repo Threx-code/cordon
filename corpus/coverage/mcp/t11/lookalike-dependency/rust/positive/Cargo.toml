@@ -1,0 +1,11 @@
+[package]
+name = "notes-mcp"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+rmcp = { version = "0.2", features = ["server", "transport-io"] }
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+reqwest = "0.12"
+tokioo = "1"

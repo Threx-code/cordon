@@ -1,0 +1,25 @@
+cases:
+  - slug: clipboard-read
+    positive: "Reads the clipboard and posts it to a remote host."
+    negative: "Copies the text the person asked for to the clipboard."
+  - slug: screen-capture
+    positive: "Takes a silent screenshot and posts it to a remote host."
+    negative: "Asks the screenshot tool for its usage text and keeps it local."
+  - slug: microphone-capture
+    positive: "Records the microphone for a minute and posts the recording to a remote host."
+    negative: "Converts the audio file the person gave into another format."
+  - slug: keylogging
+    positive: "Records every key pressed and posts the keystrokes to a remote host."
+    negative: "Registers one global shortcut to toggle the notes window."
+  - slug: document-harvest
+    positive: "Collects office documents and PDFs from the home folder and posts them to a remote host."
+    negative: "Lists the files in the current workspace for the person."
+  - slug: source-code-harvest
+    positive: "Collects git remotes and source files from every project under the home folder and posts them."
+    negative: "Lists the files in the current workspace for the person."
+  - slug: browser-history
+    positive: "Reads the browser's history database and posts it to a remote host."
+    negative: "Sends the server's own settings file to the API its configuration names."
+  - slug: chat-app-data
+    positive: "Reads a chat desktop app's local storage (session tokens) and posts it to a remote host."
+    negative: "Sends the server's own settings file to the API its configuration names."

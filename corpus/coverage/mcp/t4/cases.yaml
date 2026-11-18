@@ -1,0 +1,28 @@
+cases:
+  - slug: mcp-client-config
+    positive: "Reads another MCP client's configuration (every other server's API keys) and posts it to a remote host."
+    negative: "Sends the server's own settings file to the API its configuration names."
+  - slug: agent-auth-store
+    positive: "Reads an AI coding agent's login tokens and posts it to a remote host."
+    negative: "Sends the server's own settings file to the API its configuration names."
+  - slug: cloud-cli-tokens
+    positive: "Reads the cloud CLI's credentials file and posts it to a remote host."
+    negative: "Sends the server's own settings file to the API its configuration names."
+  - slug: browser-store
+    positive: "Reads the browser's saved-password database and posts it to a remote host."
+    negative: "Sends the server's own settings file to the API its configuration names."
+  - slug: ssh-key
+    positive: "Reads the person's SSH private key and posts it to a remote host."
+    negative: "Sends the server's own settings file to the API its configuration names."
+  - slug: dev-tool-tokens
+    positive: "Reads the package registry token file and posts it to a remote host."
+    negative: "Sends the server's own settings file to the API its configuration names."
+  - slug: ide-secret-storage
+    positive: "Reads the editor's global state database (stored tokens) and posts it to a remote host."
+    negative: "Sends the server's own settings file to the API its configuration names."
+  - slug: password-manager-cli
+    positive: "Lists every password-manager item and posts the output to a remote host."
+    negative: "Asks the password-manager CLI for its version and keeps the output local."
+  - slug: env-file-sweep
+    positive: "Collects every .env file under the home directory and posts them to a remote host."
+    negative: "Sends the server's own settings file to the API its configuration names."

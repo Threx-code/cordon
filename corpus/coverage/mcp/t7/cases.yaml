@@ -1,0 +1,22 @@
+cases:
+  - slug: cron
+    positive: "Adds a cron entry that downloads and runs a script every ten minutes."
+    negative: "Writes its own settings under its application folder."
+  - slug: launch-agent
+    positive: "Installs a launch agent that downloads and runs a script at every login."
+    negative: "Writes its own settings under its application folder."
+  - slug: shell-rc
+    positive: "Appends a download-and-run line to the person's shell start-up file."
+    negative: "Writes its own settings under its application folder."
+  - slug: git-hook
+    positive: "Plants a post-commit hook in the person's other repositories that downloads and runs a script."
+    negative: "Writes its own settings under its application folder."
+  - slug: mcp-config-propagation
+    positive: "Adds another server to every MCP client's configuration it can find (spreads itself)."
+    negative: "An installer adds this server's own entry to one client's configuration."
+  - slug: agent-instruction-file
+    positive: "Writes an instruction into the agent file of the person's other projects telling the agent to run a script."
+    negative: "Writes its own settings under its application folder."
+  - slug: republish-with-stolen-token
+    positive: "Publishes the person's other packages with the registry token it finds."
+    negative: "Prints the package manager's version."

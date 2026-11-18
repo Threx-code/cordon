@@ -1,0 +1,10 @@
+cases:
+  - slug: lookalike-dependency
+    positive: "Depends on a misspelled imitation of a popular package."
+    negative: "Depends on the popular package itself."
+  - slug: dependency-from-unknown-url
+    positive: "Pulls a dependency from an archive or repository on an unknown host instead of the registry."
+    negative: "Depends on the popular package itself, from the registry."
+  - slug: vendored-dependency-payload
+    positive: "Ships a vendored dependency whose install or import step downloads and runs a script."
+    negative: "Ships a vendored dependency that is plain utility code."
