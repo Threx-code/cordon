@@ -51,6 +51,28 @@ _ESCAPE: Final = re.compile(
     re.S,
 )
 
+#: A name a Rust format string substitutes: `{name}` (not `{{`, not `{0}`, not `{name:?}`).
+_INLINE_NAME: Final = re.compile(r"(?<!\{)\{([A-Za-z_]\w*)\}(?!\})")
+_CONTINUATION: Final = re.compile(r"\\\n[ \t\r\n]*")
+
+_RUST: Final = re.compile(
+    r"""
+    (?P<comment>//[^\n]*|/\*.*?(?:\*/|\Z))
+   |(?P<rawstr>b?r(?P<hashes>\#*)".*?"(?P=hashes))
+   |(?P<str>b?"(?:[^"\\]|\\.)*")
+   |(?P<char>'(?:\\(?:x[0-9a-fA-F]{2}|u\{[0-9a-fA-F_]{1,8}\}|.)|[^'\\\n])')
+   |(?P<life>'[A-Za-z_]\w*)
+   |(?P<id>(?:r\#)?[^\W\d]\w*)
+   |(?P<num>\d[\w.]*)
+   |(?P<op>=>|->|::|\.\.=|"""
+    + _COMMON_OPS
+    + r""")
+   |(?P<nl>\n)
+   |(?P<other>.)
+    """,
+    re.X | re.S,
+)
+
 _GO: Final = re.compile(
     r"""
     (?P<comment>//[^\n]*|/\*.*?(?:\*/|\Z))
@@ -121,8 +143,36 @@ class Lexer:
                 break
         return out
 
+    @staticmethod
+    def rust(text: str) -> list[Token]:
+        out: list[Token] = []
+        line = 1
+        for match in _RUST.finditer(text):
+            kind = match.lastgroup
+            value = match.group()
+            start = match.start()
+            if kind == "nl":
+                line += 1
+                continue
+            if kind in ("comment", "char", "life", "num", "other"):
+                line += value.count("\n")
+                continue
+            if kind in ("str", "rawstr"):
+                if kind == "rawstr":
+                    body = value.split('"', 1)[1].rsplit('"', 1)[0]
+                else:
+                    body = Lexer.unescape(_CONTINUATION.sub("", value[value.index('"') + 1 : -1]))
+                body = _INLINE_NAME.sub(lambda m: MARK + m.group(1) + MARK, body)
+                out.append(Token("str", body, start, match.end(), line))
+                line += value.count("\n")
+            else:
+                out.append(Token(str(kind), value, start, match.end(), line))
+            if len(out) >= MAX_TOKENS:
+                break
+        return out
+
 
 #: The tokenizer of each language.
-LANGUAGES: Final = {"go": Lexer.go}
+LANGUAGES: Final = {"go": Lexer.go, "rust": Lexer.rust}
 
 __all__ = ["LANGUAGES", "MARK", "MAX_CHARS", "Lexer", "Token"]

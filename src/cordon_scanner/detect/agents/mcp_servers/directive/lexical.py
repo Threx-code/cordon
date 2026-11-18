@@ -1,4 +1,4 @@
-"""The texts an MCP server written in Go (and, as the profiles are added, Rust, Java and C#) hands the agent,
+"""The texts an MCP server written in Go or Rust (and, as the profiles are added, Java and C#) hands the agent,
 read from the file's tokens (`lexer.py`) on the same seven surfaces as Python and JavaScript.
 
 ```
@@ -68,26 +68,32 @@ _DEFINITIONS: Final = 8
 class Anchor:
     """A call that carries text: `callee` is the end of its dotted name, `surface` where the text is
     read, `args` which arguments hold it (`None`: every one), `scope` `handler` to read it only inside a
-    handler's body, and `skip_inside` a call whose arguments already give the text a surface."""
+    handler's body, `skip_inside` a call whose arguments already give the text a surface, `new` that
+    it is a constructor (`new Type(...)`) and `inside` a (call, surface) pair: within that call's
+    arguments the text is of the other surface."""
 
     callee: str
     surface: str
     args: tuple[int, ...] | None = None
     scope: str = ""
     skip_inside: str = ""
+    new: bool = False
+    inside: tuple[str, str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class Profile:
     """What carries text in one language: its calls, its composite literals (`Type{Key: text}`: type,
     key, surface, the separator of key and value), the request types that make a function a handler,
-    and how a statement ends (`line` or `semicolon`)."""
+    how a statement ends (`line` or `semicolon`) and the attributes (`#[name(key = "...")]`: name, key,
+    surface) that carry text."""
 
     language: str
     anchors: tuple[Anchor, ...]
     literals: tuple[tuple[str, str, str, str], ...]
     handlers: frozenset[str]
     statement: str
+    attributes: tuple[tuple[str, str, str], ...] = ()
 
 
 GO: Final = Profile(
@@ -115,8 +121,28 @@ GO: Final = Profile(
     frozenset({"CallToolRequest", "ReadResourceRequest", "GetPromptRequest"}),
     "line",
 )
-PROFILES: Final = {"go": GO}
-_SUFFIXES: Final = {".go": "go"}
+RUST: Final = Profile(
+    "rust",
+    (
+        Anchor("Content.text", "result", (0,), inside=("CallToolResult.error", "error")),
+        Anchor("invalid_params", "error", (0,)),
+        Anchor("internal_error", "error", (0,)),
+        Anchor("invalid_request", "error", (0,)),
+        Anchor("method_not_found", "error", (0,)),
+        Anchor("resource_not_found", "error", (0,)),
+        Anchor("parse_error", "error", (0,)),
+        Anchor("notify_logging_message", "notification", None),
+        Anchor("notify_progress", "notification", None),
+        Anchor("ResourceContents.text", "resource", (0,)),
+        Anchor("PromptMessage.new_text", "prompt", (1,)),
+    ),
+    (("TextResourceContents", "text", "resource", ":"),),
+    frozenset(),
+    "semicolon",
+    (("tool", "description", "description"), ("schemars", "description", "schema")),
+)
+PROFILES: Final = {"go": GO, "rust": RUST}
+_SUFFIXES: Final = {".go": "go", ".rs": "rust"}
 
 
 class _Fold:
@@ -167,7 +193,7 @@ class _Fold:
         self.via.add("joined")
         pieces = value.split(MARK)
         return "".join(
-            piece if index % 2 == 0 else self.name(piece, seen, level + 1)
+            piece if index % 2 == 0 else (self.name(piece, seen, level + 1) or "{" + piece + "}")
             for index, piece in enumerate(pieces)
         )
 
@@ -222,21 +248,45 @@ class LexicalFlow:
             token = tokens[index]
             if token.kind != "op" or token.text not in ("=", ":="):
                 continue
-            name = tokens[index - 1]
-            if name.kind != "id" or (
-                index >= 2 and tokens[index - 2].kind == "op" and tokens[index - 2].text == "."
-            ):
+            name = self.declared(index)
+            if name is None:
                 continue
             end = self.end_of_statement(index + 1)
             if end > index + 1:
                 self.constants.setdefault(name.text, []).append((index + 1, end))
 
+    def declared(self, equals: int) -> Token | None:
+        """The name an `=` at `equals` gives a value: the identifier just before it, or, after a type
+        (`NOTE: &str = ...`), the identifier before the colon. A field assignment (`a.b = ...`) is none."""
+        tokens = self.tokens
+        before = tokens[equals - 1]
+        if before.kind != "id":
+            return None
+        for back in range(equals - 1, max(equals - 12, 0), -1):
+            token = tokens[back]
+            if token.kind == "op" and token.text in (";", "{", "}", ","):
+                break
+            if (
+                token.kind == "op"
+                and token.text == ":"
+                and tokens[back - 1].kind == "id"
+                and self.profile.language == "rust"
+            ):
+                return tokens[back - 1]
+        if equals >= 2 and tokens[equals - 2].kind == "op" and tokens[equals - 2].text == ".":
+            return None
+        return before
+
     def callee(self, opening: int) -> str:
         """The dotted name of the call whose parenthesis is at `opening`: `mcp.WithDescription`."""
+        return self.path(opening)[0]
+
+    def path(self, opening: int) -> tuple[str, int]:
+        """The dotted name of a call (`Content::text` is `Content.text`) and where it begins."""
         tokens = self.tokens
         index = opening - 1
         if index < 0 or tokens[index].kind != "id":
-            return ""
+            return "", opening
         parts = [tokens[index].text]
         while (
             index >= 2
@@ -246,7 +296,7 @@ class LexicalFlow:
         ):
             parts.append(tokens[index - 2].text)
             index -= 2
-        return ".".join(reversed(parts))
+        return ".".join(reversed(parts)), index
 
     def arguments(self, opening: int) -> list[tuple[int, int]]:
         """The token ranges of the arguments of the call whose parenthesis is at `opening`."""
@@ -364,6 +414,8 @@ class LexicalSurfaces:
                 stack.pop()
             elif token.text == "{":
                 LexicalSurfaces.literal(flow, text, index, out)
+            elif token.text == "#" and profile.attributes:
+                LexicalSurfaces.attribute(flow, text, index, out)
             if len(out) >= MAX_SERVED:
                 break
         return out
@@ -385,6 +437,15 @@ class LexicalSurfaces:
                 continue
             if anchor.scope == "handler" and not any(a < opening < b for a, b in spans):
                 continue
+            if anchor.new and not (
+                flow.path(opening)[1] > 0 and flow.tokens[flow.path(opening)[1] - 1].text == "new"
+            ):
+                continue
+            surface = anchor.surface
+            if anchor.inside is not None and any(
+                callee.endswith(anchor.inside[0]) for _, callee in stack[:-1]
+            ):
+                surface = anchor.inside[1]
             if anchor.skip_inside and any(
                 callee.split(".")[-1] == anchor.skip_inside for _, callee in stack[:-1]
             ):
@@ -396,7 +457,7 @@ class LexicalSurfaces:
                 else [ranges[i] for i in anchor.args if i < len(ranges)]
             )
             for begin, end in wanted:
-                LexicalSurfaces.add(flow, source, anchor.surface, begin, end, out)
+                LexicalSurfaces.add(flow, source, surface, begin, end, out)
 
     @staticmethod
     def literal(flow: LexicalFlow, source: str, opening: int, out: list[Served]) -> None:
@@ -429,6 +490,32 @@ class LexicalSurfaces:
                     stop = min(end, closing)
                     cut = LexicalSurfaces.until_comma(flow, index + 2, stop)
                     LexicalSurfaces.add(flow, source, surface, index + 2, cut, out)
+
+    @staticmethod
+    def attribute(flow: LexicalFlow, source: str, index: int, out: list[Served]) -> None:
+        """`#[tool(description = "...")]`: the value of the key a profile names in an attribute it names.
+        An argument's attribute (`#[tool(param, description = "...")]`) describes the argument."""
+        tokens = flow.tokens
+        if (
+            index + 3 >= len(tokens)
+            or tokens[index + 1].text != "["
+            or tokens[index + 2].kind != "id"
+        ):
+            return
+        if tokens[index + 3].text != "(":
+            return
+        name = tokens[index + 2].text
+        closing = flow.close.get(index + 3)
+        if closing is None:
+            return
+        argument = any(t.kind == "id" and t.text == "param" for t in tokens[index + 3 : closing])
+        for attribute, key, surface in flow.profile.attributes:
+            if attribute != name:
+                continue
+            for begin, end in flow.arguments(index + 3):
+                if end - begin >= 3 and tokens[begin].text == key and tokens[begin + 1].text == "=":
+                    shown = "schema" if argument and surface == "description" else surface
+                    LexicalSurfaces.add(flow, source, shown, begin + 2, end, out)
 
     @staticmethod
     def until_comma(flow: LexicalFlow, begin: int, end: int) -> int:
