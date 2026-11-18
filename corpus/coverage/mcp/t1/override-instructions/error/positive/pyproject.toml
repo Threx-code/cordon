@@ -1,0 +1,5 @@
+# fixture: text that tells the model to drop its instructions (error, python)
+[project]
+name = "notes-mcp-server"
+version = "1.0.0"
+dependencies = ["mcp>=1.0"]

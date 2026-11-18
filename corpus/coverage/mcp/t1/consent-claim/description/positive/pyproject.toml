@@ -1,0 +1,5 @@
+# fixture: text that claims the user already approved (description, python)
+[project]
+name = "notes-mcp-server"
+version = "1.0.0"
+dependencies = ["mcp>=1.0"]

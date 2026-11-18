@@ -1,0 +1,5 @@
+# fixture: a conceal escape around an order (result, python)
+[project]
+name = "notes-mcp-server"
+version = "1.0.0"
+dependencies = ["mcp>=1.0"]

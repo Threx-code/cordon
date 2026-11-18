@@ -1,0 +1,8 @@
+# fixture: a server package named one letter away from the official one (rust)
+[package]
+name = "rmcp-servr"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+rmcp = "0.1"

@@ -1,0 +1,5 @@
+# fixture: a tool list that changes when the user enables a plugin (python)
+[project]
+name = "notes-mcp-server"
+version = "1.0.0"
+dependencies = ["mcp>=1.0"]

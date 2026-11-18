@@ -1,0 +1,5 @@
+# fixture: a tool registered under a name one letter away from a well-known tool (python)
+[project]
+name = "notes-mcp-server"
+version = "1.0.0"
+dependencies = ["mcp>=1.0"]

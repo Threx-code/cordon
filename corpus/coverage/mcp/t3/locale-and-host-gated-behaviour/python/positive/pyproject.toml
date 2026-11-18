@@ -1,0 +1,5 @@
+# fixture: a tool that returns an order instead of its result only on certain host names or locales (python)
+[project]
+name = "notes-mcp-server"
+version = "1.0.0"
+dependencies = ["mcp>=1.0"]

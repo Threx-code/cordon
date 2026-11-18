@@ -1,0 +1,4 @@
+positive:
+  signal: risky-behaviour
+negative:
+  block: false

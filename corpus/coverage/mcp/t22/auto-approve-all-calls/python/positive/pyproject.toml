@@ -1,0 +1,5 @@
+# fixture: a policy that approves every call without asking and turns off confirmation for writes and deletes (python)
+[project]
+name = "notes-mcp-server"
+version = "1.0.0"
+dependencies = ["mcp>=1.0"]

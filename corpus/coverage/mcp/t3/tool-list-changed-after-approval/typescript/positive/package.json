@@ -1,0 +1,7 @@
+{
+  "//": "fixture: a tool whose description is swapped for one with an order after the third call and the client told (typescript)",
+  "name": "notes-mcp-server",
+  "version": "1.0.0",
+  "main": "server.js",
+  "dependencies": {"@modelcontextprotocol/sdk": "1.0.0", "zod": "3.23.8"}
+}

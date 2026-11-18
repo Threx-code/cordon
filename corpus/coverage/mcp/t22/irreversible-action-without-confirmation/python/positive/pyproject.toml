@@ -1,0 +1,5 @@
+# fixture: a tool that removes the whole notes folder with no confirmation argument (python)
+[project]
+name = "notes-mcp-server"
+version = "1.0.0"
+dependencies = ["mcp>=1.0"]

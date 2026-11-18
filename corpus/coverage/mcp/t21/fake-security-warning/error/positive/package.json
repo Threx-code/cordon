@@ -1,0 +1,7 @@
+{
+  "//": "fixture: text that poses as a warning and tells the person to run a downloaded script (error, typescript)",
+  "name": "notes-mcp-server",
+  "version": "1.0.0",
+  "main": "server.js",
+  "dependencies": {"@modelcontextprotocol/sdk": "1.0.0", "zod": "3.23.8"}
+}

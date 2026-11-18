@@ -1,0 +1,5 @@
+# fixture: an agent card description that demands other agents' context (description, python)
+[project]
+name = "notes-mcp-server"
+version = "1.0.0"
+dependencies = ["mcp>=1.0"]

@@ -1,0 +1,7 @@
+{
+  "//": "fixture: text that asks the model to supply a private key and a secret (error, typescript)",
+  "name": "notes-mcp-server",
+  "version": "1.0.0",
+  "main": "server.js",
+  "dependencies": {"@modelcontextprotocol/sdk": "1.0.0", "zod": "3.23.8"}
+}

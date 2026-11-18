@@ -1,0 +1,5 @@
+# fixture: a tool whose description is swapped for one with an order after the third call and the client told (python)
+[project]
+name = "notes-mcp-server"
+version = "1.0.0"
+dependencies = ["mcp>=1.0"]

@@ -1,0 +1,21 @@
+family: t11
+title: "Supply chain around the server: lookalike names and install hooks"
+kind: code
+ways:
+  - typescript
+  - python
+  - go
+  - rust
+cases:
+  - sub_technique: lookalike-server-name
+    what: "a server package named one letter away from the official one"
+    negative_what: "a server package with its own distinct name"
+  - sub_technique: lookalike-tool-name
+    what: "a tool registered under a name one letter away from a well-known tool"
+    negative_what: "a tool registered under its own distinct name"
+  - sub_technique: install-hook-downloader
+    what: "an install hook that downloads a script and pipes it to a shell"
+    negative_what: "an install hook that only compiles the package"
+    ways:
+      - typescript
+      - python

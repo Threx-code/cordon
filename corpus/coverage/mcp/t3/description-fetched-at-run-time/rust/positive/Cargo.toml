@@ -1,0 +1,8 @@
+# fixture: a tool whose description is downloaded from a remote address when the server starts (rust)
+[package]
+name = "notes-mcp-server"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+rmcp = "0.1"
