@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cordon_scanner import Scanner
-from cordon_scanner.detect.agents.mcp_servers.elicitation import McpElicitation
+from cordon_scanner.detect.agents.mcp_servers.protocol.elicitation import McpElicitation
 from cordon_scanner.foundation.config.settings import Config
 
 RULE = "SUSPECT.MCP.ELICIT_CREDENTIAL.001"

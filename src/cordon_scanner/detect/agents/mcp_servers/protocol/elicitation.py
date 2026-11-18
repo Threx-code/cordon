@@ -25,7 +25,9 @@ import re
 from typing import ClassVar, Final
 
 from cordon_scanner.analysis.javascript.front.syntax import Syntax
-from cordon_scanner.detect.agents.mcp_servers.protocol_reading import ProtocolReading as Read
+from cordon_scanner.detect.agents.mcp_servers.protocol.protocol_reading import (
+    ProtocolReading as Read,
+)
 
 #: The calls that put a question to the user, by the name each SDK gives them.
 _ASKS: Final = frozenset(

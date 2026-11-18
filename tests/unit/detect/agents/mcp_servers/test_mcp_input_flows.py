@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.detect.agents.mcp_servers.input_flows import McpInputFlows
+from cordon_scanner.detect.agents.mcp_servers.protocol.input_flows import McpInputFlows
 from cordon_scanner.foundation.config.settings import Config
 
 TS = (

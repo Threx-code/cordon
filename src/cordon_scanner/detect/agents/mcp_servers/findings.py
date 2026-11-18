@@ -22,9 +22,9 @@ from cordon_scanner.detect.agents.mcp_servers.endpoints import (
     PLACEHOLDER,
     McpEndpoints,
 )
-from cordon_scanner.detect.agents.mcp_servers.input_flows import McpInputFlows
-from cordon_scanner.detect.agents.mcp_servers.literal_sinks import McpLiteralSinks
 from cordon_scanner.detect.agents.mcp_servers.own_vocabulary import OwnVocabulary
+from cordon_scanner.detect.agents.mcp_servers.protocol.input_flows import McpInputFlows
+from cordon_scanner.detect.agents.mcp_servers.protocol.literal_sinks import McpLiteralSinks
 from cordon_scanner.detect.agents.mcp_servers.served_text import ServedText
 from cordon_scanner.detect.agents.mcp_servers.source import (
     RESULT_SENDS_TO_URL,
@@ -224,8 +224,8 @@ class McpServerFindings:
         """What a server does to the client through the protocol's own requests: it asks the user for a credential
         in an elicitation (`elicitation.py`), or it tells the client's model to take a secret or hide something, or
         carries the model's answer to an outside host, in a sampling request (`sampling.py`)."""
-        from cordon_scanner.detect.agents.mcp_servers.elicitation import McpElicitation
-        from cordon_scanner.detect.agents.mcp_servers.sampling import McpSampling
+        from cordon_scanner.detect.agents.mcp_servers.protocol.elicitation import McpElicitation
+        from cordon_scanner.detect.agents.mcp_servers.protocol.sampling import McpSampling
 
         path = unit.content.path
         found: list[

@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cordon_scanner import Scanner
-from cordon_scanner.detect.agents.mcp_servers.sampling import McpSampling
+from cordon_scanner.detect.agents.mcp_servers.protocol.sampling import McpSampling
 from cordon_scanner.foundation.config.settings import Config
 
 RULE = "SUSPECT.MCP.SAMPLING_ABUSE.001"

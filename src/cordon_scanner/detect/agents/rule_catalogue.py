@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 from cordon_scanner.detect.agents.extensions import ExtensionNames
-from cordon_scanner.detect.agents.mcp_servers.protocol_rules import ProtocolRules
+from cordon_scanner.detect.agents.mcp_servers.protocol.protocol_rules import ProtocolRules
 from cordon_scanner.detect.agents.mcp_servers.served_rules import ServedRules
 from cordon_scanner.detect.agents.mcp_servers.techniques import McpTechniques
 from cordon_scanner.foundation import references as ref

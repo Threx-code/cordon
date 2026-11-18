@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cordon_scanner import Scanner
-from cordon_scanner.detect.agents.mcp_servers.literal_sinks import McpLiteralSinks
+from cordon_scanner.detect.agents.mcp_servers.protocol.literal_sinks import McpLiteralSinks
 from cordon_scanner.foundation.config.settings import Config
 
 HEAD = (
