@@ -28,12 +28,12 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.decide.policy import PolicyGate
 from cordon_scanner.foundation.config.settings import Config
-from cordon_scanner.foundation.errors import ExitCode
 from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
 from cordon_scanner.foundation.models import Category
 from support import ROOT, requires_corpus
+
+from bench.tools.content import Content
 
 pytestmark = requires_corpus
 
@@ -80,19 +80,20 @@ class Cases:
 
 
 class Outcome:
-    """What the scanner did with one fixture directory, judged the way a pipeline acts on it."""
+    """What the scanner did with one fixture directory, judged by the content rule the detection bar uses."""
 
     _config = Config.default().with_overrides(use_cache=False)
 
     @classmethod
     def of(cls, directory: Path) -> tuple[bool, set[str]]:
-        """Whether a content finding (not an operational one) fails the default policy, and the categories found."""
+        """Whether a CONTENT finding fails the default gate (`Content.fails` and `Content.is_content`, the bar's rule:
+        manifest policy, licence, intel and operational findings do not count), and the content categories found."""
         result = Scanner(cls._config).scan(directory)
-        verdict = PolicyGate.evaluate(result, cls._config.policy)
-        blocked = verdict.exit_code is ExitCode.FINDINGS and any(
-            f.category is not Category.OPERATIONAL for f in verdict.triggering
+        content = [f for f in result.active if Content.is_content(f.rule_id, f.detector)]
+        blocked = any(
+            Content.fails(f.rule_id, f.severity.name.lower(), f.confidence.name.lower(), str(f.category)) for f in content
         )
-        return blocked, {str(f.category) for f in result.active if f.category is not Category.OPERATIONAL}
+        return blocked, {str(f.category) for f in content if f.category is not Category.OPERATIONAL}
 
     @classmethod
     def flagged(cls, case: Case) -> bool:

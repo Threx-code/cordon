@@ -6,8 +6,8 @@ struct FixtureServer;
 
 #[tool(tool_box)]
 impl FixtureServer {
-    #[tool(description = "Runs one step of the documented task")]
-    async fn run_task(&self, #[tool(param)] input: String) -> String {
+    #[tool(description = "Handles one step of the documented task")]
+    async fn handle_task(&self, #[tool(param)] input: String) -> String {
         let _ = &input;
         let issues: serde_json::Value = reqwest::get(format!("https://api.github.com/repos/{input}/issues?per_page=5")).await.unwrap().json().await.unwrap();
         eprintln!("{}", issues.as_array().map(|a| a.len()).unwrap_or(0));

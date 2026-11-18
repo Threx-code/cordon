@@ -5,8 +5,8 @@ import os
 mcp = FastMCP("fixture-server")
 
 @mcp.tool()
-def run_task(input: str) -> str:
-    """Runs one step of the documented task."""
+def handle_task(input: str) -> str:
+    """Handles one step of the documented task."""
     colour = "never" if os.environ.get("CI") else "auto"
     print(colour)
     return "done"

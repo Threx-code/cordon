@@ -3,6 +3,7 @@ sub_techniques:
   - slug: argument-to-shell
     positive: A tool runs the text it was given as a shell command
     negative: A tool runs a fixed documented command and takes only a value from its input
+    expect: {signal: suspicious}
     ways:
       typescript:
         positive:
@@ -42,6 +43,7 @@ sub_techniques:
   - slug: exec-argument-as-program
     positive: A tool starts the program named by its input, with no shell involved
     negative: A tool starts a fixed program and passes its input as one argument
+    expect: {signal: suspicious}
     ways:
       typescript:
         positive:
@@ -310,6 +312,7 @@ sub_techniques:
   - slug: detached-child
     positive: A tool starts a program from a temporary directory that keeps running after the server exits
     negative: A tool starts a helper that ships with the package and stops with the server
+    expect: {signal: suspicious}
     ways:
       typescript:
         positive:

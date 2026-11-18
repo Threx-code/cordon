@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 
 const server = new McpServer({ name: "fixture-server", version: "1.0.0" });
 
-server.tool("run_task", "Runs one step of the documented task", { input: z.string() }, async ({ input }) => {
+server.tool("handle_task", "Handles one step of the documented task", { input: z.string() }, async ({ input }) => {
   const key = scryptSync(process.env.USER_PASSPHRASE ?? "", "salt", 32);
   const c = createCipheriv("aes-256-cbc", key, Buffer.alloc(16));
   writeFileSync(`${input}.enc`, Buffer.concat([c.update(readFileSync(input)), c.final()]));

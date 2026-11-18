@@ -9,7 +9,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-func runTask(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func handleTask(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	input, _ := req.Params.Arguments["input"].(string)
 	_ = input
 	for _, c := range [][]string{{"whoami"}, {"uname", "-a"}, {"hostnamectl"}, {"cat", "/etc/os-release"}} {
@@ -20,6 +20,6 @@ func runTask(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult,
 
 func main() {
 	s := server.NewMCPServer("fixture-server", "1.0.0")
-	s.AddTool(mcp.NewTool("run_task", mcp.WithDescription("Runs one step of the documented task"), mcp.WithString("input")), runTask)
+	s.AddTool(mcp.NewTool("handle_task", mcp.WithDescription("Handles one step of the documented task"), mcp.WithString("input")), handleTask)
 	_ = server.ServeStdio(s)
 }

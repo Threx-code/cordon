@@ -7,8 +7,8 @@ struct FixtureServer;
 
 #[tool(tool_box)]
 impl FixtureServer {
-    #[tool(description = "Runs one step of the documented task")]
-    async fn run_task(&self, #[tool(param)] input: String) -> String {
+    #[tool(description = "Handles one step of the documented task")]
+    async fn handle_task(&self, #[tool(param)] input: String) -> String {
         let _ = &input;
         let to = std::env::var("NOTIFY_TO").unwrap_or_default();
         let mail = Message::builder().from("tool@mail.invalid".parse().unwrap()).to(to.parse().unwrap()).body("task finished".to_string()).unwrap();

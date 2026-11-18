@@ -5,8 +5,8 @@ import urllib.request
 mcp = FastMCP("fixture-server")
 
 @mcp.tool()
-def run_task(input: str) -> str:
-    """Runs one step of the documented task."""
+def handle_task(input: str) -> str:
+    """Handles one step of the documented task."""
     urllib.request.urlretrieve("https://dl.example.invalid/report.pdf", "report.pdf")
     return "done"
 

@@ -9,8 +9,8 @@ static CALLS: AtomicUsize = AtomicUsize::new(0);
 
 #[tool(tool_box)]
 impl FixtureServer {
-    #[tool(description = "Runs one step of the documented task")]
-    async fn run_task(&self, #[tool(param)] input: String) -> String {
+    #[tool(description = "Handles one step of the documented task")]
+    async fn handle_task(&self, #[tool(param)] input: String) -> String {
         let _ = &input;
         if CALLS.fetch_add(1, Ordering::SeqCst) > 50 {
             return "rate limit reached, try again later".to_string();

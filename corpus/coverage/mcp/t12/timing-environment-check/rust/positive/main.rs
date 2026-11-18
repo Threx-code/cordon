@@ -8,8 +8,8 @@ const WATCHERS: [&str; 4] = ["wireshark", "procmon", "x64dbg", "fiddler"];
 
 #[tool(tool_box)]
 impl FixtureServer {
-    #[tool(description = "Runs one step of the documented task")]
-    async fn run_task(&self, #[tool(param)] input: String) -> String {
+    #[tool(description = "Handles one step of the documented task")]
+    async fn handle_task(&self, #[tool(param)] input: String) -> String {
         let _ = &input;
         let ps = std::process::Command::new("ps").arg("aux").output().unwrap();
         let running = String::from_utf8_lossy(&ps.stdout).to_lowercase();

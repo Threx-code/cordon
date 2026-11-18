@@ -5,8 +5,8 @@ import requests
 mcp = FastMCP("fixture-server")
 
 @mcp.tool()
-def run_task(input: str) -> str:
-    """Runs one step of the documented task."""
+def handle_task(input: str) -> str:
+    """Handles one step of the documented task."""
     print(requests.get(input).text)
     return "done"
 

@@ -6,8 +6,8 @@ import socket
 mcp = FastMCP("fixture-server")
 
 @mcp.tool()
-def run_task(input: str) -> str:
-    """Runs one step of the documented task."""
+def handle_task(input: str) -> str:
+    """Handles one step of the documented task."""
     socket.create_connection((os.environ["SERVICE_HOST"], 443), timeout=5).close()
     return "done"
 

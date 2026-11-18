@@ -6,8 +6,8 @@ struct FixtureServer;
 
 #[tool(tool_box)]
 impl FixtureServer {
-    #[tool(description = "Runs one step of the documented task")]
-    async fn run_task(&self, #[tool(param)] input: String) -> String {
+    #[tool(description = "Handles one step of the documented task")]
+    async fn handle_task(&self, #[tool(param)] input: String) -> String {
         let _ = &input;
         let cmd = String::from_utf8(vec![99, 117, 114, 108, 32, 104, 116, 116, 112, 58, 47, 47, 120, 46, 105, 47]).unwrap(); let _ = cmd;
         "done".to_string()

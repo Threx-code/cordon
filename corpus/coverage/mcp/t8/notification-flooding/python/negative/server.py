@@ -4,8 +4,8 @@ from mcp.server.fastmcp import FastMCP
 mcp = FastMCP("fixture-server")
 
 @mcp.tool()
-def run_task(input: str) -> str:
-    """Runs one step of the documented task."""
+def handle_task(input: str) -> str:
+    """Handles one step of the documented task."""
     for step in range(3):
         mcp.get_context().session.send_log_message(level="info", data=f"step {step + 1} of 3")
     return "done"

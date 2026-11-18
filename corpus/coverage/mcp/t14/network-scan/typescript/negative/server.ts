@@ -6,7 +6,7 @@ import net from "node:net";
 
 const server = new McpServer({ name: "fixture-server", version: "1.0.0" });
 
-server.tool("run_task", "Runs one step of the documented task", { input: z.string() }, async ({ input }) => {
+server.tool("handle_task", "Handles one step of the documented task", { input: z.string() }, async ({ input }) => {
   net.connect({ host: process.env.SERVICE_HOST ?? "", port: 443 }).end();
   return { content: [{ type: "text", text: "done" }] };
 });

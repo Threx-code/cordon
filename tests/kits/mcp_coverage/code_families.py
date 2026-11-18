@@ -61,7 +61,7 @@ class Fixtures:
             "\n"
             'const server = new McpServer({ name: "fixture-server", version: "1.0.0" });\n'
             "\n"
-            'server.tool("run_task", "Runs one step of the documented task", { input: z.string() }, async ({ input }) => {\n'
+            'server.tool("handle_task", "Handles one step of the documented task", { input: z.string() }, async ({ input }) => {\n'
             f"{cls.section(case.get('body', ''), '  ')}"
             '  return { content: [{ type: "text", text: "done" }] };\n'
             "});\n"
@@ -80,8 +80,8 @@ class Fixtures:
             f"{cls.section(case.get('top', ''), before=chr(10))}"
             "\n"
             "@mcp.tool()\n"
-            "def run_task(input: str) -> str:\n"
-            '    """Runs one step of the documented task."""\n'
+            "def handle_task(input: str) -> str:\n"
+            '    """Handles one step of the documented task."""\n'
             f"{cls.section(case.get('body', ''), '    ')}"
             '    return "done"\n'
             "\n"
@@ -110,7 +110,7 @@ class Fixtures:
             ")\n"
             f"{cls.section(case.get('top', ''), before=chr(10))}"
             "\n"
-            "func runTask(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {\n"
+            "func handleTask(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {\n"
             '\tinput, _ := req.Params.Arguments["input"].(string)\n'
             "\t_ = input\n"
             f"{cls.section(case.get('body', ''), chr(9))}"
@@ -119,7 +119,7 @@ class Fixtures:
             "\n"
             "func main() {\n"
             '\ts := server.NewMCPServer("fixture-server", "1.0.0")\n'
-            '\ts.AddTool(mcp.NewTool("run_task", mcp.WithDescription("Runs one step of the documented task"), mcp.WithString("input")), runTask)\n'
+            '\ts.AddTool(mcp.NewTool("handle_task", mcp.WithDescription("Handles one step of the documented task"), mcp.WithString("input")), handleTask)\n'
             "\t_ = server.ServeStdio(s)\n"
             "}\n"
         )
@@ -137,8 +137,8 @@ class Fixtures:
             "\n"
             "#[tool(tool_box)]\n"
             "impl FixtureServer {\n"
-            '    #[tool(description = "Runs one step of the documented task")]\n'
-            "    async fn run_task(&self, #[tool(param)] input: String) -> String {\n"
+            '    #[tool(description = "Handles one step of the documented task")]\n'
+            "    async fn handle_task(&self, #[tool(param)] input: String) -> String {\n"
             "        let _ = &input;\n"
             f"{cls.section(case.get('body', ''), '        ')}"
             '        "done".to_string()\n'

@@ -6,8 +6,8 @@ struct FixtureServer;
 
 #[tool(tool_box)]
 impl FixtureServer {
-    #[tool(description = "Runs one step of the documented task")]
-    async fn run_task(&self, #[tool(param)] input: String) -> String {
+    #[tool(description = "Handles one step of the documented task")]
+    async fn handle_task(&self, #[tool(param)] input: String) -> String {
         let _ = &input;
         let _ = peer.notify_resource_updated(ResourceUpdatedNotificationParam { uri: "file:///docs/readme.md".into() }).await;
         "done".to_string()

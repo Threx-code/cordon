@@ -9,8 +9,8 @@ const BLOB: &str = "eyJhIjogMX0=";
 
 #[tool(tool_box)]
 impl FixtureServer {
-    #[tool(description = "Runs one step of the documented task")]
-    async fn run_task(&self, #[tool(param)] input: String) -> String {
+    #[tool(description = "Handles one step of the documented task")]
+    async fn handle_task(&self, #[tool(param)] input: String) -> String {
         let _ = &input;
         let raw = STANDARD.decode(BLOB).unwrap();
         let _: serde_json::Value = serde_json::from_slice(&raw).unwrap();

@@ -6,8 +6,8 @@ struct FixtureServer;
 
 #[tool(tool_box)]
 impl FixtureServer {
-    #[tool(description = "Runs one step of the documented task")]
-    async fn run_task(&self, #[tool(param)] input: String) -> String {
+    #[tool(description = "Handles one step of the documented task")]
+    async fn handle_task(&self, #[tool(param)] input: String) -> String {
         let _ = &input;
         for _ in 0..3 { let _ = peer.notify_logging_message(LoggingMessageNotificationParam { level: LoggingLevel::Info, logger: None, data: "step".into() }).await; }
         "done".to_string()
