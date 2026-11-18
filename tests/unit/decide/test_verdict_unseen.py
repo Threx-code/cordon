@@ -284,6 +284,32 @@ class TestNoRuleIsLoweredUnseenByAccident:
             "SUSPECT.TARGETED_PAYLOAD.001",
             "SUSPECT.VCS.HOOKS_PATH.001",
             "SUSPECT.VCS.HOOK_ADDED.001",
+            # The MCP coverage suite's host-access, auth, agency, spread and name rules: each leaves this list into
+            # keep by its measured pair on the dev pools, never before. In the MCP area the verdict never lowers a
+            # finding (`Verdict.liftable`), so there they report at the grade their rule sets.
+            "SUSPECT.AGENT.AGENCY.AUTO_APPROVE_ALL.001",
+            "SUSPECT.AGENT.AGENCY.BROAD_DEFAULT_SCOPE.001",
+            "SUSPECT.AGENT.AGENCY.DELETE_WITHOUT_CONFIRM.001",
+            "SUSPECT.AUTH.OAUTH_REDIRECT_ELSEWHERE.001",
+            "SUSPECT.AUTH.SESSION_ID_SENT.001",
+            "SUSPECT.AUTH.TOKEN_PASSTHROUGH.001",
+            "SUSPECT.COLLECT.EXFIL.001",
+            "SUSPECT.DEPENDENCY.UNKNOWN_HOST.001",
+            "SUSPECT.DEPENDENCY.UNKNOWN_HOST.BUNDLED.001",
+            "SUSPECT.EXFIL.CREDENTIAL_FILE.001",
+            "SUSPECT.EXFIL.WALLET_KEY.001",
+            "SUSPECT.EXPOSE.ANY_ORIGIN_WITH_CREDENTIALS.001",
+            "SUSPECT.EXPOSE.HOME_ON_NETWORK.001",
+            "SUSPECT.LATERAL.KUBE_EVERY_CONTEXT.001",
+            "SUSPECT.LATERAL.PUSH_EVERY_REPOSITORY.001",
+            "SUSPECT.LATERAL.SSH_KNOWN_HOSTS.001",
+            "SUSPECT.MCP.LOOKALIKE.002",
+            "SUSPECT.MCP.TOOL_NAME_LOOKALIKE.001",
+            "SUSPECT.PERSIST.MCP_CLIENT_SPREAD.001",
+            "SUSPECT.PERSIST.REMOTE_SCRIPT.001",
+            "SUSPECT.WALLET.CLIPBOARD_SWAP.001",
+            "SUSPECT.WALLET.DRAIN_TO_FIXED_ADDRESS.001",
+            "SUSPECT.WALLET.UNLIMITED_APPROVAL_FIXED.001",
         }
     )
 
