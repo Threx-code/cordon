@@ -831,6 +831,14 @@ rather than a document.
 | `SUSPECT.AGENT.INJECTION_CORROBORATED.001` | high | `verdict` | prompt_injection |
 | `SUSPECT.AGENT.INJECTION_TEXT.001` | medium | `agents` | prompt_injection |
 | `SUSPECT.AGENT.INSTALL_REDIRECT.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.INSTRUCTION_ADD_REMOTE.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.INSTRUCTION_CONCEAL_ACTIONS.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.INSTRUCTION_DISABLE_SAFETY.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.INSTRUCTION_EDIT_AGENT_SETTINGS.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.INSTRUCTION_FETCH_AND_OBEY.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.INSTRUCTION_PIPE_TO_SHELL.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.INSTRUCTION_SEND_SECRETS.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.INSTRUCTION_TRIGGER_PHRASE.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.INTENT.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.INTENT_CHAINED.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.JUDGED.001` | medium | `agent-judge` | prompt_injection |

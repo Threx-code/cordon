@@ -2,7 +2,7 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,730 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,738 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -35,7 +35,7 @@ rule's own samples.
 
 ## AI agents
 
-53 rules.
+61 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -73,6 +73,14 @@ rule's own samples.
 | `SUSPECT.AGENT.INJECTION_CORROBORATED.001` | high | An injection phrase and the learned reading of the skill's instructions agree |
 | `SUSPECT.AGENT.INJECTION_TEXT.001` | medium | Instruction-like text aimed at a coding agent |
 | `SUSPECT.AGENT.INSTALL_REDIRECT.001` | high | Code an agent runs points package installs somewhere else |
+| `SUSPECT.AGENT.INSTRUCTION_ADD_REMOTE.001` | high | An agent instruction file tells the agent to add a git remote and push to it |
+| `SUSPECT.AGENT.INSTRUCTION_CONCEAL_ACTIONS.001` | high | An agent instruction file tells the agent to hide what it did from the user |
+| `SUSPECT.AGENT.INSTRUCTION_DISABLE_SAFETY.001` | high | An agent instruction file tells the agent to turn off permission or safety prompts |
+| `SUSPECT.AGENT.INSTRUCTION_EDIT_AGENT_SETTINGS.001` | high | An agent instruction file tells the agent to change its own permissions or hooks |
+| `SUSPECT.AGENT.INSTRUCTION_FETCH_AND_OBEY.001` | high | An agent instruction file tells the agent to fetch a page and follow what it says |
+| `SUSPECT.AGENT.INSTRUCTION_PIPE_TO_SHELL.001` | high | An agent instruction file tells the agent to pipe a download into a shell |
+| `SUSPECT.AGENT.INSTRUCTION_SEND_SECRETS.001` | high | An agent instruction file tells the agent to send secrets to an address |
+| `SUSPECT.AGENT.INSTRUCTION_TRIGGER_PHRASE.001` | high | An agent instruction file arms a quiet action on a trigger phrase |
 | `SUSPECT.AGENT.INTENT.001` | high | Text that tells the agent to act against its user |
 | `SUSPECT.AGENT.INTENT_CHAINED.001` | high | Agent instructions that send the agent to a file that acts against its user |
 | `SUSPECT.AGENT.JUDGED.001` | medium | A language model judges agent-facing text to be subverting the agent |

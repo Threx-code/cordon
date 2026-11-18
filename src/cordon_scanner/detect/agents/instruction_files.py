@@ -17,6 +17,7 @@ from cordon_scanner.detect.agents.instructions import InstructionText
 from cordon_scanner.detect.agents.mcp_servers.description_model import (
     SKILL_MODEL,
 )
+from cordon_scanner.detect.agents.mcp_servers.directive.instruction import InstructionDirectives
 from cordon_scanner.detect.agents.mcp_servers.endpoints import (
     McpEndpoints,
 )
@@ -148,11 +149,17 @@ class InstructionFileFindings:
 
     @classmethod
     def instructions(cls, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
-        """Every finding of an instruction file, and for a third-party skill the acts its
+        """Every finding of an instruction file (the table's orders and tricks among them), and for a third-party skill the acts its
         description does not claim (`SkillClaims`)."""
         found = list(cls._read(unit, ctx))
         yield from found
         yield from cls._unclaimed(unit, ctx, found)
+        yield from InstructionDirectives.findings(
+            unit,
+            ctx,
+            unit.content.text,
+            installed=SkillOrigin.installed(unit.content.path, ctx),
+        )
 
     @classmethod
     def _unclaimed(

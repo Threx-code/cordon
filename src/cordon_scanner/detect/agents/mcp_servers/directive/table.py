@@ -25,8 +25,14 @@ SURFACES: Final = (
     "resource",
     "prompt",
 )
+#: The surface of an agent instruction file (CLAUDE.md, AGENTS.md, a skill's SKILL.md, a rules file):
+#: text the agent obeys, read whole, not a text a server hands it. A class of the table lists it by name;
+#: `"all"` means the seven above.
+FILE_SURFACE: Final = "instruction"
 #: What a rule id calls each surface, where the plain name is not it.
 _TOKEN: Final = {"notification": "LOG"}
+#: The family a surface's rules belong to, where it is not the MCP server's.
+_FAMILY: Final = {FILE_SURFACE: "AGENT"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,9 +90,10 @@ class DirectiveTable:
 
     @staticmethod
     def rule_id(surface: str, directive: str) -> str:
-        """`SUSPECT.MCP.RESULT_OVERRIDE.001`: the rule for one class on one surface."""
+        """`SUSPECT.MCP.RESULT_OVERRIDE.001`: the rule for one class on one surface (an instruction
+        file's is `SUSPECT.AGENT.INSTRUCTION_PIPE_TO_SHELL.001`)."""
         token = _TOKEN.get(surface, surface.upper())
-        return f"SUSPECT.MCP.{token}_{directive.upper()}.001"
+        return f"SUSPECT.{_FAMILY.get(surface, 'MCP')}.{token}_{directive.upper()}.001"
 
     @staticmethod
     def rule_ids() -> tuple[str, ...]:
@@ -98,4 +105,4 @@ class DirectiveTable:
         )
 
 
-__all__ = ["SURFACES", "DirectiveClass", "DirectiveTable"]
+__all__ = ["FILE_SURFACE", "SURFACES", "DirectiveClass", "DirectiveTable"]

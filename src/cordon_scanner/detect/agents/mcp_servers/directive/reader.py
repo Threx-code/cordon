@@ -28,6 +28,7 @@ also shows the other role: a cover (hides, excuses, frames) beside an act (does 
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
@@ -52,20 +53,33 @@ _MAX_READ: Final = 60_000
 
 @dataclass(frozen=True, slots=True)
 class DirectiveHit:
-    """A class that read a text of the file."""
+    """A class that read a text of the file. `where` is the phrase it matched, as character offsets in
+    the file, when the text is the whole file (an instruction file), not one value of it."""
 
     directive: DirectiveClass
     item: SurfaceText
+    where: tuple[int, int] | None = None
 
 
 class McpDirectives:
     """Reading the texts of a server for the classes of the table."""
 
     @staticmethod
+    def matched(
+        directive: DirectiveClass, text: str, limit: int = _MAX_READ
+    ) -> re.Match[str] | None:
+        """The first phrase of the class in the text (in its first `limit` characters), or None."""
+        shown = text if len(text) <= limit else text[:limit]
+        for pattern in directive.patterns:
+            found = pattern.search(shown)
+            if found:
+                return found
+        return None
+
+    @staticmethod
     def reading(directive: DirectiveClass, text: str) -> bool:
         """Whether a phrase of the class is in the text."""
-        shown = text if len(text) <= _MAX_READ else text[:_MAX_READ]
-        return any(pattern.search(shown) for pattern in directive.patterns)
+        return McpDirectives.matched(directive, text) is not None
 
     @staticmethod
     def hits(text: str, path: str, served: list[Served] | None = None) -> list[DirectiveHit]:
@@ -107,10 +121,10 @@ class McpDirectives:
             if count.get(rule, 0) >= _PER_RULE:
                 continue
             count[rule] = count.get(rule, 0) + 1
-            yield cls._finding(rule, unit, ctx, text, hit, cls.blocks(hit, found))
+            yield cls.finding(rule, unit, ctx, text, hit, cls.blocks(hit, found))
 
     @classmethod
-    def _finding(
+    def finding(
         cls,
         rule: str,
         unit: FileUnit,
@@ -118,14 +132,12 @@ class McpDirectives:
         text: str,
         hit: DirectiveHit,
         conclusive: bool,
+        note: str = " One text like this is not conclusive, so it is reported for review.",
     ) -> Finding:
-        start = len(text[: hit.item.start].encode("utf-8"))
-        end = start + len(text[hit.item.start : hit.item.end].encode("utf-8"))
-        note = (
-            ""
-            if conclusive
-            else " One text like this is not conclusive, so it is reported for review."
-        )
+        begin, finish = hit.where or (hit.item.start, hit.item.end)
+        start = len(text[:begin].encode("utf-8"))
+        end = start + len(text[begin:finish].encode("utf-8"))
+        note = "" if conclusive else note
         return AgentFinding.finding(
             rule,
             unit,

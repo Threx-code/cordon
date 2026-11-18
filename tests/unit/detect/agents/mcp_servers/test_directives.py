@@ -17,7 +17,11 @@ from cordon_scanner import Scanner
 from cordon_scanner.decide.verdict import MODEL_PATH, PYPI_MODEL_PATH, VerdictModel
 from cordon_scanner.detect.agents.mcp_servers.directive.reader import McpDirectives
 from cordon_scanner.detect.agents.mcp_servers.directive.surfaces import McpSurfaces
-from cordon_scanner.detect.agents.mcp_servers.directive.table import SURFACES, DirectiveTable
+from cordon_scanner.detect.agents.mcp_servers.directive.table import (
+    FILE_SURFACE,
+    SURFACES,
+    DirectiveTable,
+)
 from cordon_scanner.detect.agents.mcp_servers.served_python import PythonServed
 from cordon_scanner.detect.agents.rule_catalogue import RULES
 from cordon_scanner.foundation.config.settings import Config
@@ -26,7 +30,7 @@ from cordon_scanner.rules.loader import RULE_ID
 from cordon_scanner.rules.patterns import PatternCompiler
 
 CLASSES = DirectiveTable.classes()
-CASES = [(d.id, s) for d in CLASSES for s in d.surfaces]
+CASES = [(d.id, s) for d in CLASSES for s in d.surfaces if s in SURFACES]
 
 
 class Servers:
@@ -124,11 +128,11 @@ class TestTheTable:
     def test_the_table_file_is_well_formed(self) -> None:
         data = json.loads((PackagePaths.data("detect") / "mcp-directives.json").read_text("utf-8"))
         assert data["format"] == 1
-        assert set(data["surfaces"]) == set(SURFACES)
+        assert set(data["surfaces"]) == {*SURFACES, FILE_SURFACE}
         for row in data["classes"]:
             assert row["patterns"], row["id"]
             assert row["example"] and row["control"] and row["does"] and row["why"], row["id"]
-            assert row["surfaces"] == "all" or set(row["surfaces"]) <= set(SURFACES), row["id"]
+            assert row["surfaces"] == "all" or set(row["surfaces"]) <= {*SURFACES, FILE_SURFACE}
 
     @pytest.mark.parametrize("directive", CLASSES, ids=lambda d: d.id)
     def test_the_example_is_read_and_the_control_is_not(self, directive) -> None:
@@ -146,7 +150,7 @@ class TestTheTable:
 
     def test_each_class_and_surface_has_a_declared_rule(self) -> None:
         ids = DirectiveTable.rule_ids()
-        assert len(ids) == len(set(ids)) == len(CASES)
+        assert len(ids) == len(set(ids)) == sum(len(d.surfaces) for d in CLASSES)
         for rule_id in ids:
             assert rule_id in RULES, rule_id
             assert RULE_ID.match(rule_id), rule_id
