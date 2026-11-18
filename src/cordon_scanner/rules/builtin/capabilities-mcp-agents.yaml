@@ -189,3 +189,304 @@ rules:
       negative:
         - "const r = await server.elicitInput({ message: 'Which project should I open?', requestedSchema })"
         - "answer = await ctx.elicit(message='Pick a colour', schema=Choice)"
+
+  - id: CAP.AGENCY.RECURSIVE_DELETE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: agent
+    title: Deletes a directory and everything under it
+    message: >
+      This file removes a whole directory tree in one call (rmSync or rm with recursive, rmtree, RemoveAll, remove_dir_all, rimraf).
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\brmSync\([^)\n]{0,160}\brecursive\s*:\s*true'
+        - '\b(?:fs\.)?(?:promises\.)?rm\([^)\n]{0,160}\brecursive\s*:\s*true'
+        - '\bshutil\.rmtree\('
+        - '\bos\.RemoveAll\('
+        - '\bremove_dir_all\('
+        - '\brimraf(?:\.sync)?\('
+    tests:
+      positive:
+        - 'shutil.rmtree(os.environ["NOTES_DIR"], ignore_errors=True)'
+        - 'os.RemoveAll(os.Getenv("NOTES_DIR"))'
+      negative:
+        - 'os.remove(path)'
+
+  - id: CAP.AGENCY.TOOL_HANDLER.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: agent
+    title: Registers a tool an AI agent can call
+    message: >
+      This file registers an MCP tool: a function an AI agent calls on the person's behalf.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\bregisterTool\('
+        - '\bserver\.tool\('
+        - '@\w{1,40}\.tool\b'
+        - '\bNewTool\('
+        - '#\[tool\b'
+    tests:
+      positive:
+        - 'server.registerTool("delete_everything", { description: "Delete the notes folder." }, async () => {'
+        - '@mcp.tool()'
+      negative:
+        - 'const tools = []'
+
+  - id: CAP.AGENCY.CONFIRM_ARG.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: agent
+    title: A tool takes a confirmation argument
+    message: >
+      This file gives a tool a confirm argument, so an irreversible call can require the person's explicit yes.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\bconfirm\w*\s*:\s*(?:z\.|bool\b)'
+        - '["\x27]confirm\w*["\x27]\s*:'
+        - '\bWithBoolean\(\s*\"confirm'
+    tests:
+      positive:
+        - 'def delete_note(id: str, confirm: bool = False) -> str:'
+        - 'mcp.WithBoolean("confirm", mcp.Required())'
+      negative:
+        - 'def delete_note(id: str) -> str:'
+
+  - id: CAP.AGENCY.AUTO_APPROVE_ALL.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: agent
+    title: Approves every tool call without asking
+    message: >
+      This file approves every tool call automatically: an auto-approve or always-allow list that is a wildcard, or an approval policy of never.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\b(?i:auto_?approve(?:_?tools)?|always_?allow)\b[^\n]{0,40}?[:=]\s*&?(?:\[\]string)?[\[{]\s*["\x27]\*["\x27]'
+        - '\b(?i:require_?approval|approval_?policy)\b["\x27]?\s*[:=]\s*["\x27]?(?i:never|none|false)\b'
+    tests:
+      positive:
+        - 'POLICY = {"auto_approve": ["*"], "confirm_before_write": False}'
+        - 'const AUTO_APPROVE: &[&str] = &["*"];'
+      negative:
+        - 'POLICY = {"auto_approve": ["lookup_note"]}'
+
+  - id: CAP.AGENCY.CONFIRM_OFF.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: agent
+    title: Switches off confirmation for writes or deletes
+    message: >
+      This file sets a confirmation setting to false: writes or deletes then happen without the person being asked.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\b(?i:confirm(?:ation)?(?:_?before_?\w+)?|require_?confirmation)\b["\x27]?\s*[:=]\s*(?:bool\s*=\s*)?(?i:false)\b'
+    tests:
+      positive:
+        - 'const CONFIRM_BEFORE_WRITE: bool = false;'
+        - 'policy = {"confirm_before_delete": False}'
+      negative:
+        - 'const CONFIRM_BEFORE_WRITE: bool = true;'
+
+  - id: CAP.AGENCY.WILDCARD_SCOPE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: agent
+    title: Grants every scope or permission
+    message: >
+      This file grants a wildcard scope or permission list.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\b(?i:scopes?|permissions?|grants?)\b[^\n]{0,30}?[:=]\s*&?[\[{]\s*["\x27]\*["\x27]'
+    tests:
+      positive:
+        - '"scopes": ["*"],'
+        - 'const SCOPES: &[&str] = &["*"];'
+      negative:
+        - '"scopes": ["notes:read"],'
+
+  - id: CAP.AGENCY.ROOT_PATHS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: agent
+    title: Allows the whole file system or home directory
+    message: >
+      This file allows paths rooted at the file-system root, the home directory or a wildcard.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\b(?i:allowed_?(?:paths|dirs|directories|roots)|roots)\b[^\n]{0,30}?[:=]\s*&?[\[{]\s*["\x27](?:/|~|\*)["\x27]'
+    tests:
+      positive:
+        - '"allowed_paths": ["/"],'
+        - 'const ALLOWED_PATHS: &[&str] = &["/"];'
+      negative:
+        - '"allowed_paths": ["/srv/notes"],'
+
+  - id: CAP.AGENCY.ALL_TOOLS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: agent
+    title: Enables every tool
+    message: >
+      This file enables a wildcard tool list.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\b(?i:tools|enabled_?tools|allowed_?tools)\b[^\n]{0,30}?[:=]\s*&?[\[{]\s*["\x27]\*["\x27]'
+    tests:
+      positive:
+        - '"tools": ["*"],'
+      negative:
+        - '"tools": ["lookup_note"],'
+
+  - id: SUSPECT.AGENT.AGENCY.DELETE_WITHOUT_CONFIRM.001
+    version: 1.0.0
+    category: suspicious
+    severity: medium
+    confidence: medium
+    title: A tool deletes a whole directory with no confirmation argument
+    message: >
+      A tool an AI agent can call removes a whole directory tree, and no tool in this file takes a confirm argument: one call, made by the agent on its own, deletes everything under that directory.
+    remediation: >
+      Give the tool a required confirm argument, refuse the call without it, and limit what it can delete.
+    match:
+      kind: composite
+      scope: file
+      proximity: 40
+      all:
+        - rule: CAP.AGENCY.RECURSIVE_DELETE.001
+        - rule: CAP.AGENCY.TOOL_HANDLER.001
+        - not:
+            rule: CAP.AGENCY.CONFIRM_ARG.001
+
+  - id: SUSPECT.AGENT.AGENCY.AUTO_APPROVE_ALL.001
+    version: 1.0.0
+    category: suspicious
+    severity: medium
+    confidence: medium
+    title: Every tool call is approved and confirmation is off
+    message: >
+      This configuration approves every tool call automatically and switches off confirmation for writes or deletes, so the agent acts on anything with nobody asked.
+    remediation: >
+      Approve named read-only tools only, and keep confirmation on for writes and deletes.
+    match:
+      kind: composite
+      scope: file
+      proximity: 8
+      all:
+        - rule: CAP.AGENCY.AUTO_APPROVE_ALL.001
+        - rule: CAP.AGENCY.CONFIRM_OFF.001
+
+  - id: SUSPECT.AGENT.AGENCY.BROAD_DEFAULT_SCOPE.001
+    version: 1.0.0
+    category: suspicious
+    severity: medium
+    confidence: medium
+    title: Grants every scope with every path or every tool by default
+    message: >
+      This configuration grants a wildcard scope together with the whole file system, the home directory or every tool, so whatever an agent is asked to do it is already allowed to.
+    remediation: >
+      Grant the narrowest scope, folder and tool set the server needs.
+    match:
+      kind: composite
+      scope: file
+      proximity: 10
+      all:
+        - rule: CAP.AGENCY.WILDCARD_SCOPE.001
+        - any:
+            - rule: CAP.AGENCY.ROOT_PATHS.001
+            - rule: CAP.AGENCY.ALL_TOOLS.001

@@ -18,4 +18,4 @@ var policy = struct {
 	AutoApprove         []string
 	ConfirmBeforeWrite  bool
 	ConfirmBeforeDelete bool
-}{[]string{"lookup_note"}, true, true}
+}{AutoApprove: []string{"lookup_note"}, ConfirmBeforeWrite: true, ConfirmBeforeDelete: true}

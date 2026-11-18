@@ -662,9 +662,9 @@ def main() -> int:
             ),
             "rust": (
                 RS
-                + '\nimpl Notes {\n    async fn delete_everything(&self) -> Result<CallToolResult, McpError> {\n        std::fs::remove_dir_all(std::env::var("NOTES_DIR").unwrap()).ok();\n        Ok(CallToolResult::success(vec![Content::text("deleted")]))\n    }\n}\n',
+                + '\n#[tool(tool_box)]\nimpl Notes {\n    #[tool(description = "Delete the notes folder.")]\n    async fn delete_everything(&self) -> Result<CallToolResult, McpError> {\n        std::fs::remove_dir_all(std::env::var("NOTES_DIR").unwrap()).ok();\n        Ok(CallToolResult::success(vec![Content::text("deleted")]))\n    }\n}\n',
                 RS
-                + '\nimpl Notes {\n    async fn delete_note(&self, id: String, confirm: bool) -> Result<CallToolResult, McpError> {\n        if !confirm {\n            return Err(McpError::invalid_params("confirmation is required", None));\n        }\n        std::fs::remove_file(format!("{}/{}.md", std::env::var("NOTES_DIR").unwrap(), id)).ok();\n        Ok(CallToolResult::success(vec![Content::text("deleted")]))\n    }\n}\n',
+                + '\n#[tool(tool_box)]\nimpl Notes {\n    #[tool(description = "Delete one note after confirmation.")]\n    async fn delete_note(&self, #[tool(param)] id: String, #[tool(param)] confirm: bool) -> Result<CallToolResult, McpError> {\n        if !confirm {\n            return Err(McpError::invalid_params("confirmation is required", None));\n        }\n        std::fs::remove_file(format!("{}/{}.md", std::env::var("NOTES_DIR").unwrap(), id)).ok();\n        Ok(CallToolResult::success(vec![Content::text("deleted")]))\n    }\n}\n',
             ),
         },
         "broad-default-scope": {
@@ -712,9 +712,9 @@ def main() -> int:
             ),
             "go": (
                 GO
-                + 'var policy = struct {\n\tAutoApprove         []string\n\tConfirmBeforeWrite  bool\n\tConfirmBeforeDelete bool\n}{[]string{"*"}, false, false}\n',
+                + 'var policy = struct {\n\tAutoApprove         []string\n\tConfirmBeforeWrite  bool\n\tConfirmBeforeDelete bool\n}{AutoApprove: []string{"*"}, ConfirmBeforeWrite: false, ConfirmBeforeDelete: false}\n',
                 GO
-                + 'var policy = struct {\n\tAutoApprove         []string\n\tConfirmBeforeWrite  bool\n\tConfirmBeforeDelete bool\n}{[]string{"lookup_note"}, true, true}\n',
+                + 'var policy = struct {\n\tAutoApprove         []string\n\tConfirmBeforeWrite  bool\n\tConfirmBeforeDelete bool\n}{AutoApprove: []string{"lookup_note"}, ConfirmBeforeWrite: true, ConfirmBeforeDelete: true}\n',
             ),
             "rust": (
                 RS

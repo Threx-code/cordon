@@ -104,6 +104,18 @@ class Outcome:
     )
 
     @staticmethod
+    def claims(content: list[Finding]) -> set[str]:
+        """What the content findings claim in the report (`report/claims.py`), spelled as an expectation
+        names it: `risky-behaviour` for a finding that is risky on its own and common in legitimate code."""
+        from cordon_scanner.report.claims import Claims
+
+        return {
+            str(claim).replace("_", "-")
+            for f in content
+            if (claim := Claims.of_finding(f)) is not None
+        }
+
+    @staticmethod
     def _fails(f: Finding) -> bool:
         return Content.fails(
             f.rule_id, f.severity.name.lower(), f.confidence.name.lower(), str(f.category)
@@ -124,7 +136,8 @@ class Outcome:
         blocked = any(cls._fails(f) for f in content)
         return (
             blocked,
-            {str(f.category) for f in content if f.category is not Category.OPERATIONAL},
+            {str(f.category) for f in content if f.category is not Category.OPERATIONAL}
+            | cls.claims(content),
             {str(f.category) for f in named_findings},
             blocked
             or any(

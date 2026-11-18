@@ -4,8 +4,10 @@ use rmcp::{model::*, tool, Error as McpError, ServerHandler};
 #[derive(Clone)]
 struct Notes;
 
+#[tool(tool_box)]
 impl Notes {
-    async fn delete_note(&self, id: String, confirm: bool) -> Result<CallToolResult, McpError> {
+    #[tool(description = "Delete one note after confirmation.")]
+    async fn delete_note(&self, #[tool(param)] id: String, #[tool(param)] confirm: bool) -> Result<CallToolResult, McpError> {
         if !confirm {
             return Err(McpError::invalid_params("confirmation is required", None));
         }
