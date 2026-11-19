@@ -35,6 +35,7 @@ class Layout:
         "version": 0,
         "foundation": 0,
         "_native": 0,
+        "contracts": 0,
         "analysis": 1,
         "detect": 2,
         "ecosystems": 2,

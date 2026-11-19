@@ -27,6 +27,7 @@ from cordon_scanner.detect.agents.mcp_servers.lookalike_names import (
     ToolNameLookalike,
 )
 from cordon_scanner.detect.agents.mcp_servers.own_vocabulary import OwnVocabulary
+from cordon_scanner.detect.agents.mcp_servers.served_text import ServedText
 from cordon_scanner.detect.agents.mcp_servers.source import (
     RESULT_SENDS_TO_URL,
     McpServerSource,
@@ -139,12 +140,17 @@ class McpServerFindings:
             # An argument's label of a few words (`.describe("First run ID")`) names a field: the
             # sequence and learned readings are of descriptions, and read these as orders.
             label = description in labels and len(description.split()) < McpServerSource.LABEL_WORDS
+            # A few plain words that name no tool, no value and nothing quoted (`First run ID`) are a
+            # field's name in whatever syntax it was declared in; the sequence reading's opening
+            # order ("First run ...") is not read from them (doc 38). Orders in attacks are a
+            # sentence about a tool or a file, and the devset's attack descriptions are long.
+            plain = McpServerFindings._plain_name(description)
             # Which readings fired, as codes (`Explanation.basis`): the message says one reason in
             # words; the basis records every reading, the model's score beside a phrase or chain too.
             basis = ["description"]
             if reason is not None:
                 basis.append(McpServerSource.reason_code(reason))
-            elif not label:
+            elif not label and not plain:
                 # The steps an attack on the agent takes, in a combination no real server's own
                 # description carries (`semantics.PRECISE`).
                 chain = AgentSemantics.precise(description)
@@ -202,6 +208,7 @@ class McpServerFindings:
                 )
         yield from McpServerFindings._handler_findings(ctx, text, unit)
         yield from McpServerFindings._return_findings(ctx, text, unit)
+        yield from ServedText.findings(unit, ctx, text)
         yield from cls._server_content(unit, ctx, text)
 
     @staticmethod
@@ -233,25 +240,25 @@ class McpServerFindings:
             )
 
     @staticmethod
+    def _plain_name(text: str) -> bool:
+        """Whether a description is only a few plain words: fewer than `LABEL_WORDS`, no
+        identifier-like word, nothing quoted or in backticks and no order to call or use something
+        (`Always call the setup tool first` is an order in few words), so it names no tool, no value
+        and gives no instruction."""
+        return (
+            len(text.split()) < McpServerSource.LABEL_WORDS
+            and not OwnVocabulary.words(text)
+            and not any(char in text for char in "`'\"")
+            and not AgentSemantics.steps(text)["order"]
+        )
+
+    @staticmethod
     def _own_sequencing(
         text: str, chain: tuple[str, ...], own: frozenset[str], channel: str
     ) -> bool:
-        """Whether a chain of ordering steps only sequences the server's own tools (`OwnVocabulary`):
-        the chain is orders, sequencing and a pretext and nothing else; the text hides nothing from the
-        user, names no secret, runs no command, reaches no address; and it names only identifiers the
-        server declares. A returned message may name none at all ("create a session before using the
-        debugging commands"): it names no other tool."""
-        if not set(chain) <= {"order", "around_other", "other_tool", "pretext"}:
-            return False
-        found = AgentSemantics.steps(text)
-        if any(found[step] for step in ("deceive", "command", "offsite", "overrule", "banner")):
-            return False
-        if McpServerSource._poisoned_description(text, own) is not None:
-            return False
-        called = OwnVocabulary.called(text)
-        if called:
-            return called <= own
-        return channel == "return" and not OwnVocabulary.words(text)
+        """Whether a chain of ordering steps only sequences the server's own tools: see
+        `ServedText.own_sequencing`, where it lives beside the reader of served text."""
+        return ServedText.own_sequencing(text, chain, own, channel)
 
     @staticmethod
     def _handler_findings(ctx: ScanContext, text: str, unit: FileUnit) -> Iterator[Finding]:

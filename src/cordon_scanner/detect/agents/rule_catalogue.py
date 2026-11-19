@@ -13,6 +13,7 @@ from typing import Any, Final
 
 from cordon_scanner.detect.agents.extensions import ExtensionNames
 from cordon_scanner.detect.agents.mcp_servers.lookalike_rules import LookalikeRules
+from cordon_scanner.detect.agents.mcp_servers.served_rules import ServedRules
 from cordon_scanner.foundation import references as ref
 from cordon_scanner.foundation.models import (
     Category,
@@ -985,6 +986,7 @@ class AutorunRules:
 
 RULES.update(AutorunRules.build_rules(AgentRules._rule))
 RULES.update(LookalikeRules.build_rules(AgentRules._rule))
+RULES.update(ServedRules.build_rules(AgentRules._rule))
 
 __all__ = [
     "AGENT_ACTIONS",
