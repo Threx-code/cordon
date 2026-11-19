@@ -8,6 +8,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from cordon_scanner.detect.agents.bridges.rule import BridgeRules
 from cordon_scanner.detect.agents.mcp_servers.techniques import McpTechniques
 from cordon_scanner.foundation.models import Category, Confidence, Severity
 
@@ -22,6 +23,7 @@ class ProtocolRules:
         return {
             **McpTechniques.rules(factory, references),
             **cls.rules(factory, references),
+            **BridgeRules.rules(factory, references),
         }
 
     @classmethod

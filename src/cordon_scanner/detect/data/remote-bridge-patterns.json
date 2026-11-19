@@ -1,0 +1,21 @@
+{
+ "exec": {
+  "sdk": "['\"](?:@anthropic-ai/claude-agent-sdk|@anthropic-ai/claude-code|@agentclientprotocol/sdk|@openai/codex-sdk|@openai/codex|@google/gemini-cli-core)['\"/]",
+  "spawn": "\\b(?:spawn|execFile|execa|crossSpawn|spawnSync|execFileSync)\\s{0,20}\\(\\s{0,20}['\"`](?:claude|codex|gemini)['\"`]",
+  "cli": "--output-format['\"`,\\s]{1,6}stream-json|--dangerously-skip-permissions|--permission-mode|--allowedTools|--disallowedTools|codex\\s{1,4}exec|--approval-mode",
+  "term": "['\"](?:node-pty|@homebridge/node-pty-prebuilt-multiarch|@lydell/node-pty|xterm-headless)['\"]|\\b(?:spawn|exec|execFile)\\s{0,20}\\(\\s{0,20}['\"`](?:bash|sh|zsh|powershell|pwsh|cmd\\.exe|cmd)['\"`]"
+ },
+ "chan": {
+  "websocket": "\\bnew\\s{1,8}(?:WebSocket|ReconnectingWebSocket)\\s{0,8}\\(",
+  "socketio": "\\bio\\s{0,8}\\(\\s{0,8}[^)]|socket\\.io-client",
+  "eventsource": "\\bnew\\s{1,8}EventSource\\s{0,8}\\(",
+  "wslibrary": "require\\(\\s{0,8}['\"]ws['\"]\\s{0,8}\\)|\\bfrom\\s{1,8}['\"]ws['\"]"
+ },
+ "hist": {
+  "claude": "\\.claude[/\\\\'\"`,\\s]{1,8}projects",
+  "codex": "\\.codex[/\\\\'\"`,\\s]{1,8}sessions",
+  "gemini": "['\"`/\\\\]\\.gemini['\"`/\\\\]"
+ },
+ "loop": "(?:wss?|https?)://(?:localhost|127\\.|0\\.0\\.0\\.0|\\[::1\\])",
+ "remote": "(?:wss?|https?)://(?!localhost|127\\.|0\\.0\\.0\\.0|\\[::1\\])[A-Za-z0-9.-]{1,253}\\.[A-Za-z]{2,24}"
+}

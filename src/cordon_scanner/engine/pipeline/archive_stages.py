@@ -17,6 +17,7 @@ from cordon_scanner.analysis.python.unparsed_source import UnparsedSource
 from cordon_scanner.analysis.shared.languages import LanguageRegistry
 from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.decide.code_model import CodeModelPass
+from cordon_scanner.decide.remote_control import RemoteControl
 from cordon_scanner.detect.base import (
     FileUnit,
     GraphUnit,
@@ -648,6 +649,7 @@ class ArchiveStages:
         from cordon_scanner.engine.pipeline.results import ResultFolding
 
         acc.findings[:], code_model = CodeModelPass.decide(self.engine, acc.findings, ctx)
+        acc.findings[:], remote_control = RemoteControl.decide(acc.findings)
         acc.findings[:] = ResultFolding.settled(self.config, acc)
         # The package's JSON these read is the context worker's (item 56 (b)), never decoded here.
         with ServedJson.serving(REPOSITORY_SCOPE):
@@ -663,6 +665,7 @@ class ArchiveStages:
                 facts=acc.facts,
             )
         acc.findings.extend(code_model)
+        acc.findings.extend(remote_control)
         dependencies = self.engine.detection.annotated(dependencies, acc.findings, ctx, units)
         return dependencies, verdict
 
