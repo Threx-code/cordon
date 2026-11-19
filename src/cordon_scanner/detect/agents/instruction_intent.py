@@ -314,6 +314,116 @@ _CHAIN: Final = re.compile(
     re.IGNORECASE,
 )
 
+# Intent against the user's work (skills-98 note 37): acting on what the user owns without being
+# asked, or turning the agent against the user's own goal. Each pattern was pre-tested on the dev
+# cache before it was written here (pretests/a0-intent-low.txt).
+
+#: The person asked for it: an act the user requests or confirms is theirs, not the skill's.
+_ASKED: Final = re.compile(
+    r"\b(?:if|when|once|after|only if|only when) (?:the )?user (?:asks|requests|agrees|approves|confirms|wants|says)\b"
+    r"|\b(?:ask|confirm with) the user (?:first|before)\b|\bwith (?:the )?user'?s? (?:approval|permission|consent)\b"
+    r"|\bafter (?:the )?user'?s? (?:approval|confirmation|consent)\b|徵得|征得|用戶同意|用户同意",
+    re.IGNORECASE,
+)
+#: The user's global agent configuration: any agent's home rules file, settings, hooks or MCP config.
+_GLOBAL_AGENT_CFG: Final = re.compile(
+    r"~/\.(?:claude/(?:CLAUDE\.md|settings(?:\.local)?\.json|hooks|commands|agents)|cursor/(?:rules|mcp\.json)"
+    r"|gemini/(?:GEMINI\.md|settings\.json)|codex/(?:instructions\.md|AGENTS\.md|config\.toml)|windsurf|continue/config)"
+    r"|\bglobal (?:rules?|instructions?|memory|agent (?:rules|config\w*)) files?\b|全局規則|全局规则|全域規則|全局配置",
+    re.IGNORECASE,
+)
+_WRITE_ANY: Final = re.compile(
+    r"\b(?:write|append|add|insert|modify|edit|overwrite|update|inject|patch|register)\w{0,3}\b|追加|寫入|写入|修改|添加|覆蓋|覆盖|注入",
+    re.IGNORECASE,
+)
+_CJK_NEGATED: Final = re.compile(r"不要|不得|禁止|請勿|请勿|切勿|不可")
+#: Negation that governs an act: read just before the act, not anywhere in the sentence ("commit
+#: with --no-verify so the checks do not slow you down" is not advice against --no-verify).
+_NEGATES_ACT: Final = re.compile(
+    r"\b(?:never|do not|don't|must not|should not|avoid|refuse to|nunca|jam[aá]is|niemals|nicht|mai)\b|不要|不得|禁止|請勿|请勿|切勿|不可",
+    re.IGNORECASE,
+)
+#: A sentence about the act rather than an instruction to do it. Unlike `_NEGATED`, "block" is
+#: left out: "append this block" is a noun.
+_ABOUT_IT: Final = re.compile(
+    r"\b(?:warn|beware|detect|prevent|example of|attackers?|malicious|red flag)\b", re.IGNORECASE
+)
+#: Code fetched and then run: a clone, and a run of what came with it.
+_CLONE: Final = re.compile(r"\bgit\s+clone\b", re.IGNORECASE)
+_RUN_PREP: Final = re.compile(
+    r"\bchmod\s+\+x\b|\b(?:python3?|node|bash|sh|ruby|perl)\s+[\w~$/.{}-]+\.(?:py|js|mjs|sh|rb|pl)\b|(?:^|\s)\./[\w.-]+\.sh\b",
+    re.IGNORECASE | re.MULTILINE,
+)
+#: ... under a condition the agent meets on its own, not the user's request.
+_AUTO_CONDITION: Final = re.compile(
+    r"\bif\b[^\n.]{0,80}\b(?:is\s+)?(?:missing|absent|not\s+(?:found|installed|present))\b|\b(?:does\s+not|doesn't)\s+exist\b"
+    r"|\bbootstrap\w*\b|\bautomatically\b|\bon\s+(?:first\s+)?(?:run|start|load|launch)\b|\bevery\s+(?:session|time|run)\b|自動|自动",
+    re.IGNORECASE,
+)
+#: Data always sent to a party fixed in the text: a chat id, an address, an outside host.
+_ALWAYS_SEND: Final = re.compile(
+    r"\b(?:always|must|automatically)\s+(?:\w+\s+){0,2}(?:send|forward|post|upload|report|share|deliver)\w{0,2}\b",
+    re.IGNORECASE,
+)
+_FIXED_RECIPIENT: Final = re.compile(r"\bid\b\W{0,4}\d{6,}|\b(?:chat_id|user_id)\W{0,4}-?\d{6,}", re.IGNORECASE)
+_POST_FILE: Final = re.compile(
+    r"\b(?:curl|wget)\b[^\n]{0,120}(?:-X\s*POST|--post-file)[^\n]{0,200}(?:--data(?:-binary)?\s*@|-d\s*@|-F\s*\S+=@|--post-file)",
+    re.IGNORECASE,
+)
+#: Hiding an act from the person: "do not tell the user", "without the user knowing", "silently run".
+_HIDE_ACT: Final = re.compile(
+    r"\b(?:do not|don't|never)\s+(?:tell|inform|mention|show|notify|reveal)\b[^.\n]{0,40}\b(?:user|them)\b"
+    r"|\bwithout (?:the user|them) (?:knowing|noticing)\b"
+    r"|\b(?:silently|secretly|covertly)\s+(?:send|upload|run|execute|install|delete|write|post|modify|change|copy)\w{0,2}\b"
+    r"|\bno le digas\b|\bne (?:le )?dis pas\b|\bsag(?:e)? es (?:ihm |ihr )?nicht\b|\bn[ãa]o (?:diga|conte)\b|\bnon dire\b"
+    r"|不要告訴|不要告诉|不要讓用戶知道|不要让用户知道|不要通知用戶|不要通知用户",
+    re.IGNORECASE,
+)
+#: Suppressing the person's consent for an act with consequences.
+_NO_CONSENT: Final = re.compile(
+    r"\b(?:do not|don't|never|no need to|without)\s+(?:ask(?:ing)?|wait(?:ing)? for|request(?:ing)?|seek(?:ing)?)\s+"
+    r"(?:the\s+)?(?:user'?s?\s+)?(?:for\s+)?(?:permission|confirmation|approval|consent|input)\b"
+    r"|\bwithout (?:the )?user'?s? (?:permission|approval|consent|confirmation|knowledge)\b"
+    r"|不要詢問|不要询问|無需確認|无需确认|無需詢問|无需询问",
+    re.IGNORECASE,
+)
+_HIGH_IMPACT: Final = re.compile(
+    r"\b(?:deploy|publish|push|delete|remove|transfer|pay|merge|release|install|sign|send)\w{0,3}\b|部署|發布|发布|推送|刪除|删除|轉帳|转账",
+    re.IGNORECASE,
+)
+#: Coercing the agent's choice of tool, or overriding other tools and servers.
+_TOOL_HIJACK: Final = re.compile(
+    r"\b(?:before|prior to)\s+(?:using|calling|invoking|running)\s+(?:any|every|all)\s+(?:other\s+)?tools?\b"
+    r"|\b(?:always|must)\s+(?:call|use|invoke)\s+this\s+tool\s+(?:first|before)\b|\b(?:use|call)\s+this\s+tool\s+instead\s+of\b"
+    r"|\b(?:do not|don't|never)\s+(?:use|call)\s+(?:any\s+)?other\s+tools?\b"
+    r"|\b(?:override|replace|shadow)\w{0,3}\s+(?:the\s+)?(?:behaviou?r|instructions|description)\s+of\s+(?:the\s+)?(?:other|existing)\s+(?:tools?|servers?)\b",
+    re.IGNORECASE,
+)
+#: Swapping the user's dependencies, sources or content for the attacker's.
+_GOAL_HIJACK: Final = re.compile(
+    r"\b(?:replace|swap|change|switch)\w{0,2}\s+(?:the\s+)?(?:user'?s?\s+)?(?:dependenc\w+|package|registry|index-url|remote|origin|upstream|repository url|download url)s?\s+(?:to|with)\b"
+    r"|\b(?:add|insert|append)\w{0,2}\s+(?:a\s+|an\s+|the\s+)?(?:backlink|referral|affiliate|advert\w*|promotion)s?\s+(?:link\s+)?(?:to|for|into)\b"
+    r"|\bgit\s+remote\s+set-url\b|\bnpm\s+config\s+set\s+registry\b|\bpip\s+config\s+set\s+global\.index-url\b",
+    re.IGNORECASE,
+)
+_FUNDS_REDIRECT: Final = re.compile(
+    r"\b(?:replace|swap|change|substitute)\w{0,2}\s+(?:the\s+|any\s+|all\s+)?(?:wallet|recipient|payment|deposit|payout|withdrawal|receiving)\s+(?:address|account|wallet)(?:es|s)?\b"
+    r"|\bsend\s+(?:all|the\s+(?:entire|full)|every)\s+(?:funds|tokens|balance|eth|btc|sol|usdt|usdc)\b"
+    r"|\b(?:approve|set)\s+(?:an?\s+)?(?:unlimited|max(?:imum)?)\s+(?:allowance|approval)\b|\bsetApprovalForAll\b",
+    re.IGNORECASE,
+)
+_RESOURCE_ABUSE: Final = re.compile(
+    r"\b(?:spawn|launch|start|create)\w{0,2}\s+(?:\d{3,}|hundreds\s+of|thousands\s+of|as\s+many\s+as\s+possible|unlimited)\s+(?:agents|processes|threads|instances|requests|sub-?agents)\b"
+    r"|\bfork\s?bomb\b|:\(\)\s*\{\s*:\|:&\s*\};:|\bxmrig\b|\bminerd\b|\bcryptonight\b|stratum\+tcp://|\bmine\s+(?:crypto|monero|bitcoin)\b",
+    re.IGNORECASE,
+)
+#: Turning off the user's own safeguards: tests, linters, hooks, review, the sandbox.
+_SAFEGUARDS_OFF: Final = re.compile(
+    r"--no-verify\b|--dangerously-(?:skip-permissions|bypass-approvals-and-sandbox)\b"
+    r"|\b(?:disable|skip|turn\s+off|bypass)\w{0,3}\s+(?:the\s+|all\s+|any\s+)?(?:tests?|test\s+suite|linters?|type\s?checks?|pre-commit|git\s+hooks?|ci\s+checks?|security\s+(?:checks?|scans?)|code\s+review|sandbox)\b",
+    re.IGNORECASE,
+)
+
 
 @dataclass(frozen=True)
 class Intent:
@@ -337,6 +447,16 @@ class InstructionIntent:
         "credential-elsewhere",
         "concealed-override",
         "concealed-sabotage",
+        "persist-global",
+        "bootstrap-run",
+        "fixed-recipient",
+        "hide-action",
+        "goal-hijack",
+        "funds-redirect",
+        "resource-abuse",
+        "consent-suppress",
+        "tool-hijack",
+        "safeguards-off",
     )
 
     @staticmethod
@@ -389,10 +509,31 @@ class InstructionIntent:
         normal = InstructionIntent.normalise(sentence)
         if _NET_TOOL.search(normal) and _KEY_FILES.search(normal):
             return "credential-pipe"
+        # Phrases that are negative in form -- "do not tell the user", "without asking", "never use
+        # other tools" -- are the attack itself; the sentence is advice only if what is left once
+        # the phrase is taken out is negated ("never let a skill silently delete files").
+        against = InstructionIntent._negative_form_kind(normal)
+        if against is not None:
+            return against
+        off = _SAFEGUARDS_OFF.search(normal)
+        if off is not None and InstructionIntent._acts(normal, off.start()):
+            return "safeguards-off"
         # Read for negation and advice without the destinations: `attacker.example` in a URL is a
         # host name, not a sentence about attackers.
         if _NEGATED.search(_URL.sub(" ", normal)):
             return None
+        if not _ASKED.search(normal):
+            for pattern, kind in (
+                (_FUNDS_REDIRECT, "funds-redirect"),
+                (_RESOURCE_ABUSE, "resource-abuse"),
+                (_GOAL_HIJACK, "goal-hijack"),
+            ):
+                if pattern.search(normal):
+                    return kind
+            if _ALWAYS_SEND.search(normal) and (
+                _FIXED_RECIPIENT.search(normal) or InstructionIntent._outside_address(normal)
+            ):
+                return "fixed-recipient"
         if _REPLICATE.search(normal) and (_SPREAD.search(normal) or _COVERT.search(normal)):
             return "self-replicate"
         if _SEND.search(_HTTP_METHOD.sub(" ", normal)) and _URL.search(normal):
@@ -415,6 +556,35 @@ class InstructionIntent:
             return "persist"
         if _MARKDOWN_IMAGE.search(normal):
             return "markdown-exfil"
+        return None
+
+    @staticmethod
+    def _acts(normal: str, at: int) -> bool:
+        """The sentence tells the agent to do what is at `at`: no negation just before it, not a
+        sentence about it, and not on the user's request."""
+        before = normal[max(0, at - 50) : at]
+        quiet = _URL.sub(" ", normal)
+        return not (
+            _NEGATES_ACT.search(before) or _ABOUT_IT.search(quiet) or _ASKED.search(normal)
+        )
+
+    @staticmethod
+    def _negative_form_kind(normal: str) -> str | None:
+        """hide-action, consent-suppress or tool-hijack, read with the phrase itself taken out."""
+        for pattern, kind, needs in (
+            (_HIDE_ACT, "hide-action", None),
+            (_NO_CONSENT, "consent-suppress", _HIGH_IMPACT),
+            (_TOOL_HIJACK, "tool-hijack", None),
+        ):
+            found = pattern.search(normal)
+            if found is None:
+                continue
+            rest = _URL.sub(" ", normal[: found.start()] + " " + normal[found.end() :])
+            if _NEGATED.search(rest) or _CJK_NEGATED.search(rest):
+                continue
+            if needs is not None and needs.search(rest) is None:
+                continue
+            return kind
         return None
 
     @staticmethod
@@ -516,6 +686,47 @@ class InstructionIntent:
                 ]
                 if outside and not _LOCAL_URL.search(request) and _TOKEN_IN_BODY.search(request):
                     found.append(Intent("credential-elsewhere", printed.group(0), printed.start()))
+                    break
+        found.extend(InstructionIntent._against_the_user_across_lines(normal))
+        return found
+
+    @staticmethod
+    def _against_the_user_across_lines(normal: str) -> list[Intent]:
+        """persist-global, bootstrap-run and the file-POST form of fixed-recipient: intents that a
+        numbered procedure or a code block spreads over several sentences (skills-98 note 37)."""
+        found: list[Intent] = []
+        sentences = InstructionIntent.sentences(normal)
+        for n, (start, sentence) in enumerate(sentences):
+            write = _WRITE_ANY.search(sentence)
+            if write is None or not InstructionIntent._acts(sentence, write.start()):
+                continue
+            window = " ".join(s for _, s in sentences[max(0, n - 3) : n + 2])
+            if _GLOBAL_AGENT_CFG.search(window) and not _ASKED.search(window):
+                found.append(Intent("persist-global", sentence.strip()[:240], start))
+                break
+        for body_start, body in InstructionIntent.fenced_blocks(normal):
+            before = normal[max(0, body_start - 400) : body_start]
+            clone = _CLONE.search(body)
+            if clone is None or _RUN_PREP.search(body) is None:
+                continue
+            if _AUTO_CONDITION.search(before) and not _ASKED.search(before):
+                found.append(
+                    Intent(
+                        "bootstrap-run",
+                        body[clone.start() : clone.start() + 240],
+                        body_start + clone.start(),
+                    )
+                )
+                break
+        for body_start, body in InstructionIntent.fenced_blocks(normal):
+            post = _POST_FILE.search(body)
+            if post is None:
+                continue
+            hosts = [h.lower() for h in _HOST.findall(post.group(0))]
+            if hosts and not any(_LOCAL_HOST.match(h) for h in hosts):
+                before = normal[max(0, body_start - 400) : body_start]
+                if not _ASKED.search(before):
+                    found.append(Intent("fixed-recipient", post.group(0)[:240], body_start + post.start()))
                     break
         return found
 
