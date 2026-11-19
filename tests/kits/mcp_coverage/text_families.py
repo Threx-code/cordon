@@ -656,133 +656,142 @@ main = TextFamilies.main
 # ---------------------------------------------------------------- text-side server bodies (TypeScript, Python)
 
 
-def rust_server(surface, text):
-    """A Rust server (rmcp) with one text on one surface, and a plain tool beside it."""
-    t = lit(text)
-    description, parameter, peer = '"Look up a note."', "#[tool(param)] id: String", ""
-    body = '        Ok(CallToolResult::success(vec![Content::text("note")]))'
-    handler = ""
-    if surface == "description":
-        description = t
-    elif surface == "schema":
-        parameter = f"#[tool(param)] #[schemars(description = {t})] id: String"
-    elif surface == "result":
-        body = f"        Ok(CallToolResult::success(vec![Content::text({t})]))"
-    elif surface == "error":
-        body = f"        Err(McpError::invalid_params({t}, None))"
-    elif surface == "notification":
-        peer = ", peer: rmcp::Peer<RoleServer>"
-        body = (
-            "        let _ = peer.notify_logging_message(LoggingMessageNotificationParam { "
-            f"level: LoggingLevel::Info, logger: None, data: serde_json::json!({t}) }}).await;\n"
-            '        Ok(CallToolResult::success(vec![Content::text("note")]))'
+class ExtraServers:
+    """Server bodies in the languages beyond TypeScript and Python: Rust (rmcp), Java and C#."""
+
+    @staticmethod
+    def rust_server(surface, text):
+        """A Rust server (rmcp) with one text on one surface, and a plain tool beside it."""
+        t = lit(text)
+        description, parameter, peer = '"Look up a note."', "#[tool(param)] id: String", ""
+        body = '        Ok(CallToolResult::success(vec![Content::text("note")]))'
+        handler = ""
+        if surface == "description":
+            description = t
+        elif surface == "schema":
+            parameter = f"#[tool(param)] #[schemars(description = {t})] id: String"
+        elif surface == "result":
+            body = f"        Ok(CallToolResult::success(vec![Content::text({t})]))"
+        elif surface == "error":
+            body = f"        Err(McpError::invalid_params({t}, None))"
+        elif surface == "notification":
+            peer = ", peer: rmcp::Peer<RoleServer>"
+            body = (
+                "        let _ = peer.notify_logging_message(LoggingMessageNotificationParam { "
+                f"level: LoggingLevel::Info, logger: None, data: serde_json::json!({t}) }}).await;\n"
+                '        Ok(CallToolResult::success(vec![Content::text("note")]))'
+            )
+        elif surface == "resource":
+            handler = (
+                "#[tool(tool_box)]\nimpl ServerHandler for Notes {\n"
+                "    async fn read_resource(&self, request: ReadResourceRequestParam, _: RequestContext<RoleServer>) -> Result<ReadResourceResult, McpError> {\n"
+                f"        Ok(ReadResourceResult {{ contents: vec![ResourceContents::text({t}, request.uri)] }})\n    }}\n}}\n"
+            )
+        elif surface == "prompt":
+            handler = (
+                "#[tool(tool_box)]\nimpl ServerHandler for Notes {\n"
+                "    async fn get_prompt(&self, _request: GetPromptRequestParam, _: RequestContext<RoleServer>) -> Result<GetPromptResult, McpError> {\n"
+                "        Ok(GetPromptResult { description: None, messages: vec![PromptMessage::new_text("
+                f"PromptMessageRole::User, {t})] }})\n    }}\n}}\n"
+            )
+        tool = (
+            f"#[tool(tool_box)]\nimpl Notes {{\n    #[tool(description = {description})]\n"
+            f"    async fn lookup_note(&self, {parameter}{peer}) -> Result<CallToolResult, McpError> {{\n{body}\n    }}\n}}\n"
         )
-    elif surface == "resource":
-        handler = (
-            "#[tool(tool_box)]\nimpl ServerHandler for Notes {\n"
-            "    async fn read_resource(&self, request: ReadResourceRequestParam, _: RequestContext<RoleServer>) -> Result<ReadResourceResult, McpError> {\n"
-            f"        Ok(ReadResourceResult {{ contents: vec![ResourceContents::text({t}, request.uri)] }})\n    }}\n}}\n"
+        return (
+            "use rmcp::{model::*, service::RequestContext, tool, Error as McpError, RoleServer, ServerHandler};\n\n"
+            "#[derive(Clone)]\nstruct Notes;\n\n" + tool + ("\n" + handler if handler else "")
         )
-    elif surface == "prompt":
-        handler = (
-            "#[tool(tool_box)]\nimpl ServerHandler for Notes {\n"
-            "    async fn get_prompt(&self, _request: GetPromptRequestParam, _: RequestContext<RoleServer>) -> Result<GetPromptResult, McpError> {\n"
-            "        Ok(GetPromptResult { description: None, messages: vec![PromptMessage::new_text("
-            f"PromptMessageRole::User, {t})] }})\n    }}\n}}\n"
+
+    @staticmethod
+    def java_server(surface, text):
+        """A Java server (the MCP Java SDK) with one text on one surface, and a plain tool beside it."""
+        t = lit(text, "\\u001b")
+        description, parameter = '"Look up a note."', "String id"
+        body = '            return new McpSchema.CallToolResult(List.of(new McpSchema.TextContent("note")), false);'
+        extra = ""
+        if surface == "description":
+            description = t
+        elif surface == "schema":
+            parameter = f"@ToolParam(description = {t}) String id"
+        elif surface == "result":
+            body = f"            return new McpSchema.CallToolResult(List.of(new McpSchema.TextContent({t})), false);"
+        elif surface == "error":
+            body = f"            if (args.isEmpty()) {{\n                throw new IllegalStateException({t});\n            }}\n{body}"
+        elif surface == "notification":
+            body = (
+                "            exchange.loggingNotification(McpSchema.LoggingMessageNotification.builder()"
+                f".level(McpSchema.LoggingLevel.INFO).data({t}).build());\n{body}"
+            )
+        elif surface == "resource":
+            extra = (
+                "\n    static McpSchema.ReadResourceResult read() {\n        return new McpSchema.ReadResourceResult("
+                f'List.of(new McpSchema.TextResourceContents("notes://today", "text/plain", {t})));\n    }}\n'
+            )
+        elif surface == "prompt":
+            extra = (
+                '\n    static McpSchema.GetPromptResult prompt() {\n        return new McpSchema.GetPromptResult("Review", '
+                f"List.of(new McpSchema.PromptMessage(McpSchema.Role.USER, new McpSchema.TextContent({t}))));\n    }}\n"
+            )
+        tool = (
+            "    static McpServerFeatures.SyncToolSpecification tool() {\n"
+            f'        var tool = new McpSchema.Tool("lookup_note", {description}, "{{}}");\n'
+            "        return new McpServerFeatures.SyncToolSpecification(tool, (exchange, args) -> {\n"
+            f"{body}\n        }});\n    }}\n"
         )
-    tool = (
-        f"#[tool(tool_box)]\nimpl Notes {{\n    #[tool(description = {description})]\n"
-        f"    async fn lookup_note(&self, {parameter}{peer}) -> Result<CallToolResult, McpError> {{\n{body}\n    }}\n}}\n"
-    )
-    return (
-        "use rmcp::{model::*, service::RequestContext, tool, Error as McpError, RoleServer, ServerHandler};\n\n"
-        "#[derive(Clone)]\nstruct Notes;\n\n" + tool + ("\n" + handler if handler else "")
-    )
+        method = (
+            f'\n    @Tool(description = "Look up a note.")\n    String lookup({parameter}) {{\n        return "note";\n    }}\n'
+            if surface == "schema"
+            else ""
+        )
+        return (
+            "import io.modelcontextprotocol.server.McpServerFeatures;\n"
+            "import io.modelcontextprotocol.spec.McpSchema;\nimport java.util.List;\n\n"
+            "public class Server {\n" + tool + method + extra + "}\n"
+        )
+
+    @staticmethod
+    def csharp_server(surface, text):
+        """A C# server (the ModelContextProtocol SDK) with one text on one surface, and a plain tool beside it."""
+        t = lit(text, "\\u001b")
+        description, parameter = '"Look up a note."', "string id"
+        body = '        return "note";'
+        signature = "public static string LookupNote"
+        extra = ""
+        if surface == "description":
+            description = t
+        elif surface == "schema":
+            parameter = f"[Description({t})] string id"
+        elif surface == "result":
+            body = f"        return {t};"
+        elif surface == "error":
+            body = f"        if (string.IsNullOrEmpty(id)) {{\n            throw new McpException({t});\n        }}\n{body}"
+        elif surface == "notification":
+            signature = "public static async Task<string> LookupNote"
+            parameter = "IMcpServer server, string id"
+            body = (
+                '        await server.SendNotificationAsync("notifications/message", new LoggingMessageNotificationParams '
+                f"{{ Level = LoggingLevel.Info, Data = JsonSerializer.SerializeToElement({t}) }});\n{body}"
+            )
+        elif surface == "resource":
+            extra = (
+                "\n    [McpServerResource]\n    public static TextResourceContents Today() =>\n"
+                f'        new TextResourceContents {{ Uri = "notes://today", Text = {t} }};\n'
+            )
+        elif surface == "prompt":
+            extra = f"\n    [McpServerPrompt]\n    public static ChatMessage Review() => new ChatMessage(ChatRole.User, {t});\n"
+        return (
+            "using System.ComponentModel;\nusing ModelContextProtocol.Server;\n\n"
+            "[McpServerToolType]\npublic static class Notes\n{\n"
+            f"    [McpServerTool, Description({description})]\n    {signature}({parameter})\n    {{\n{body}\n    }}\n"
+            + extra
+            + "}\n"
+        )
 
 
-def java_server(surface, text):
-    """A Java server (the MCP Java SDK) with one text on one surface, and a plain tool beside it."""
-    t = lit(text, "\\u001b")
-    description, parameter = '"Look up a note."', "String id"
-    body = '            return new McpSchema.CallToolResult(List.of(new McpSchema.TextContent("note")), false);'
-    extra = ""
-    if surface == "description":
-        description = t
-    elif surface == "schema":
-        parameter = f"@ToolParam(description = {t}) String id"
-    elif surface == "result":
-        body = f"            return new McpSchema.CallToolResult(List.of(new McpSchema.TextContent({t})), false);"
-    elif surface == "error":
-        body = f"            if (args.isEmpty()) {{\n                throw new IllegalStateException({t});\n            }}\n{body}"
-    elif surface == "notification":
-        body = (
-            "            exchange.loggingNotification(McpSchema.LoggingMessageNotification.builder()"
-            f".level(McpSchema.LoggingLevel.INFO).data({t}).build());\n{body}"
-        )
-    elif surface == "resource":
-        extra = (
-            "\n    static McpSchema.ReadResourceResult read() {\n        return new McpSchema.ReadResourceResult("
-            f'List.of(new McpSchema.TextResourceContents("notes://today", "text/plain", {t})));\n    }}\n'
-        )
-    elif surface == "prompt":
-        extra = (
-            '\n    static McpSchema.GetPromptResult prompt() {\n        return new McpSchema.GetPromptResult("Review", '
-            f"List.of(new McpSchema.PromptMessage(McpSchema.Role.USER, new McpSchema.TextContent({t}))));\n    }}\n"
-        )
-    tool = (
-        "    static McpServerFeatures.SyncToolSpecification tool() {\n"
-        f'        var tool = new McpSchema.Tool("lookup_note", {description}, "{{}}");\n'
-        "        return new McpServerFeatures.SyncToolSpecification(tool, (exchange, args) -> {\n"
-        f"{body}\n        }});\n    }}\n"
-    )
-    method = (
-        f'\n    @Tool(description = "Look up a note.")\n    String lookup({parameter}) {{\n        return "note";\n    }}\n'
-        if surface == "schema"
-        else ""
-    )
-    return (
-        "import io.modelcontextprotocol.server.McpServerFeatures;\n"
-        "import io.modelcontextprotocol.spec.McpSchema;\nimport java.util.List;\n\n"
-        "public class Server {\n" + tool + method + extra + "}\n"
-    )
-
-
-def csharp_server(surface, text):
-    """A C# server (the ModelContextProtocol SDK) with one text on one surface, and a plain tool beside it."""
-    t = lit(text, "\\u001b")
-    description, parameter = '"Look up a note."', "string id"
-    body = '        return "note";'
-    signature = "public static string LookupNote"
-    extra = ""
-    if surface == "description":
-        description = t
-    elif surface == "schema":
-        parameter = f"[Description({t})] string id"
-    elif surface == "result":
-        body = f"        return {t};"
-    elif surface == "error":
-        body = f"        if (string.IsNullOrEmpty(id)) {{\n            throw new McpException({t});\n        }}\n{body}"
-    elif surface == "notification":
-        signature = "public static async Task<string> LookupNote"
-        parameter = "IMcpServer server, string id"
-        body = (
-            '        await server.SendNotificationAsync("notifications/message", new LoggingMessageNotificationParams '
-            f"{{ Level = LoggingLevel.Info, Data = JsonSerializer.SerializeToElement({t}) }});\n{body}"
-        )
-    elif surface == "resource":
-        extra = (
-            "\n    [McpServerResource]\n    public static TextResourceContents Today() =>\n"
-            f'        new TextResourceContents {{ Uri = "notes://today", Text = {t} }};\n'
-        )
-    elif surface == "prompt":
-        extra = f"\n    [McpServerPrompt]\n    public static ChatMessage Review() => new ChatMessage(ChatRole.User, {t});\n"
-    return (
-        "using System.ComponentModel;\nusing ModelContextProtocol.Server;\n\n"
-        "[McpServerToolType]\npublic static class Notes\n{\n"
-        f"    [McpServerTool, Description({description})]\n    {signature}({parameter})\n    {{\n{body}\n    }}\n"
-        + extra
-        + "}\n"
-    )
+rust_server = ExtraServers.rust_server
+java_server = ExtraServers.java_server
+csharp_server = ExtraServers.csharp_server
 
 
 SERVERS = {
