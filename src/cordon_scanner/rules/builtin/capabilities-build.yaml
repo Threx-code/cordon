@@ -459,7 +459,7 @@ rules:
         - "\tinstall -m 0755 app /usr/local/bin"
 
   - id: CAP.BUILD.CREDENTIAL.001
-    version: 1.0.0
+    version: 1.1.0
     category: policy
     severity: info
     confidence: medium
@@ -472,6 +472,14 @@ rules:
     remediation: >
       No action for this signal alone.
     languages: [cmake, rust]
+    # Build files only. A build script has no reason to read a setting it was not given by the build tool, so any
+    # variable counts here; a program reads its own settings by name (a bot reading `BOT_TOKEN` to call its own bot),
+    # which the Python and Go packs do not count either. Rust program code is read by CAP.RUST.CREDENTIAL.001.
+    paths:
+      include:
+        - "**/build.rs"
+        - "**/CMakeLists.txt"
+        - "**/*.cmake"
     baseline_hits: 0
     evidence_policy: masked
     match:
@@ -507,6 +515,40 @@ rules:
         - "let out = std::env::var(\"OUT_DIR\").unwrap();"
         - "let target = std::env::var(\"TARGET\").unwrap();"
         - "let v = std::env::var(\"CARGO_PKG_VERSION\").unwrap();"
+
+  - id: CAP.RUST.CREDENTIAL.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: credential
+    title: Reads credentials or the whole environment
+    message: >
+      This file reads the environment as a whole, reads key material or another tool's credential file, or reads a
+      token another tool owns. Reading a named setting is normal.
+    remediation: Read named variables rather than the whole environment, and never read another tool's credentials.
+    languages: [rust]
+    paths:
+      exclude:
+        - "**/build.rs"
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        # The whole environment, which is also how a reader of every variable would index one afterwards.
+        - '\benv\s*::\s*vars(?:_os)?\s*\(\s*\)'
+        - '\.ssh/id_|\.aws/credentials|\.docker/config\.json|\.kube/config|\.cargo/credentials|\.npmrc|\.pypirc'
+        - '\benv\s*::\s*var(?:_os)?\s*\(\s*"(?:AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|GITHUB_TOKEN|GH_TOKEN|NPM_TOKEN|PYPI_TOKEN|CARGO_REGISTRY_TOKEN)"'
+    tests:
+      positive:
+        - "let all: HashMap<String, String> = std::env::vars().collect();"
+        - "for (k, v) in env::vars() { body.push_str(&k); }"
+        - "let key = fs::read_to_string(home.join(\".ssh/id_ed25519\"))?;"
+        - "let t = std::env::var(\"GITHUB_TOKEN\").unwrap_or_default();"
+      negative:
+        - "let token = std::env::var(\"BOT_TOKEN\").unwrap_or_default();"
+        - "let port = env::var(\"PORT\").unwrap_or_else(|_| \"8080\".into());"
+        - "let v = env!(\"CARGO_PKG_VERSION\");"
 
   - id: CAP.BUILD.DECODE.001
     version: 1.0.0
