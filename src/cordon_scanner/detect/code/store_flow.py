@@ -2,7 +2,7 @@
 
 `SUSPECT.EXFIL.CREDENTIAL_STORE.001` pairs a read of a credential store with an outbound call
 within two hundred lines. Theft is the store's content carried into the call; a dotfiles script
-that installs a tool with `curl | bash` forty lines after reading `~/.ssh/config` for a host name
+that installs a tool with a download piped to a shell forty lines after reading `~/.ssh/config` for a host name
 carries nothing. Measured on the review-98 corpora: the rule was the only blocking finding on
 181 of 227 benign units it fired on, and on 11 of 147 malware samples.
 

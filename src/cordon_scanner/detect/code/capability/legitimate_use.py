@@ -539,7 +539,7 @@ class LegitimateUse:
     ) -> bool:
         """Whether a credential store here is read only by the client it belongs to.
 
-        A deploy tool loads `~/.ssh/id_ed25519` into paramiko and connects; an S3 helper lets
+        A deploy tool loads an SSH private key into paramiko and connects; an S3 helper lets
         boto3 read `~/.aws/credentials`. The key goes where it authenticates, which is what it
         is for (review 98: SSH and cloud tools blocked by `SUSPECT.EXFIL.CREDENTIAL_STORE.001`).
         Every store named must belong to a family here, and EVERY outbound call in the window

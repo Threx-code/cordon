@@ -1,6 +1,6 @@
 """One file naming the credential stores of several unrelated services.
 
-A cloud SDK reads `~/.aws/credentials`; a stealer reads that, the SSH keys, `.npmrc`, `.netrc`,
+A cloud SDK reads the AWS credentials file; a stealer reads that, the SSH keys, `.npmrc`, `.netrc`,
 the kube and Docker configs and the GitHub CLI's tokens, because it takes whatever is there
 (review 98: the 2025 Go `BufferZoneCorp/*` family, its paths XOR-encoded and recovered by
 `detect/go_eval.py`). Read from the file as resolved, in any language; documentation is excluded

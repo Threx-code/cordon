@@ -416,7 +416,7 @@ class VerifiedDownload:
     @staticmethod
     def official_installs_only(raw: bytes, hits: Sequence[CapabilityHit]) -> bool:
         """Every fetch-and-run in the file names a listed official installer, and nothing is
-        decoded: storybook's script runs `curl -LsSf https://astral.sh/uv/install.sh | sh`, the
+        decoded: storybook's script runs uv's official installer piped to a shell, the
         documented way to install uv."""
         from cordon_scanner.intel.registry import OfficialInstallers
 

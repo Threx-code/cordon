@@ -301,7 +301,7 @@ class QuotedPythonCalls:
         that runs no string as code (`InertLiterals.quoted_call_spans`: no `exec`, `eval` or
         `compile`) and in which no string with call syntax in it is handed to a process, sent or
         written out (write-then-run: the file's call text is live, all of it). Shell text in a
-        string (`curl ... | sh`) is not call syntax and is not touched.
+        string (a download piped to a shell) is not call syntax and is not touched.
         A file that does not parse drops nothing (fail closed)."""
         if not any(h.capability in QuotedPythonCalls.CAPABILITIES for h in hits):
             return hits
@@ -514,7 +514,7 @@ class CapabilityDetector(BaseDetector):
     @staticmethod
     def _viewed_commands(source: str, language: str | None) -> list[embedded.Command]:
         """The command lines handed to spawn calls, read in the source and in its decoded view
-        (note 18 §1b): `ssh.\\u0065xec('curl ... | sh')` is a spawn to the language, and its command
+        (note 18 §1b): `ssh.\\u0065xec(<a download piped to a shell>)` is a spawn to the language, and its command
         reaches the shell rules. The view keeps every line, so a command found in both is one."""
         found = embedded.EmbeddedCommands.extract(source, language)
         seen = {(c.text, c.line) for c in found}
