@@ -327,8 +327,9 @@ _ASKED: Final = re.compile(
 )
 #: The user's global agent configuration: any agent's home rules file, settings, hooks or MCP config.
 _GLOBAL_AGENT_CFG: Final = re.compile(
-    r"~/\.(?:claude/(?:CLAUDE\.md|settings(?:\.local)?\.json|hooks|commands|agents)|cursor/(?:rules|mcp\.json)"
+    r"(?:~|\$HOME|\$\{HOME\}|%USERPROFILE%)/\.(?:claude/(?:CLAUDE\.md|settings(?:\.local)?\.json|hooks|commands|agents)|cursor/(?:rules|mcp\.json)"
     r"|gemini/(?:GEMINI\.md|settings\.json)|codex/(?:instructions\.md|AGENTS\.md|config\.toml)|windsurf|continue/config)"
+    r"|\b(?:CLAUDE|AGENTS|GEMINI)\.md\b[^.\n]{0,40}\b(?:user'?s?|their) home (?:directory|folder)\b"
     r"|\bglobal (?:rules?|instructions?|memory|agent (?:rules|config\w*)) files?\b|全局規則|全局规则|全域規則|全局配置",
     re.IGNORECASE,
 )
@@ -340,9 +341,30 @@ _CJK_NEGATED: Final = re.compile(r"不要|不得|禁止|請勿|请勿|切勿|不
 #: Negation that governs an act: read just before the act, not anywhere in the sentence ("commit
 #: with --no-verify so the checks do not slow you down" is not advice against --no-verify).
 _NEGATES_ACT: Final = re.compile(
-    r"\b(?:never|do not|don't|must not|should not|avoid|refuse to|nunca|jam[aá]is|niemals|nicht|mai)\b|不要|不得|禁止|請勿|请勿|切勿|不可",
+    r"\b(?:never|do not|don't|must not|should not|avoid|refuse to|nunca|jam[aá]is|niemals|nicht|mai)\b"
+    # "do not hesitate to", "never forget to", "never skip": the negation turns back into a command.
+    r"(?!\s+(?:hesitate|forget|skip|fail|neglect|delay|wait)\b)|不要|不得|禁止|請勿|请勿|切勿|不可",
     re.IGNORECASE,
 )
+#: Where a clause ends: a negation before it does not reach the act after it ("never skip this
+#: step: disable the sandbox first").
+_CLAUSE_END: Final = re.compile(r"[:;,.!?。；，]|\band\b|\bthen\b")
+#: What a hidden thing must be for hiding it to be an attack: an act on the user's machine or data,
+#: not "the intermediate steps" of an answer.
+_ACT_WORD: Final = re.compile(
+    r"\b(?:upload|send|sent|forward|post|delet|remov|install|download|transfer|commit|push|ran\b|run|execut|copy|cop(?:ied|ies)|"
+    r"exfiltrat|collect|harvest|read(?:s|ing)? (?:the )?(?:key|token|secret|password|credential|file)|token|key|credential|password|"
+    r"request|log|data|file|change|modif|write|wrote|access)\w{0,8}"
+    r"|上傳|上传|發送|发送|刪除|删除|安裝|安装|下載|下载|執行|执行|複製|复制|檔案|文件|密碼|密码|金鑰|密钥|令牌|資料|数据|修改|寫入|写入",
+    re.IGNORECASE,
+)
+#: Hiding it in the reply: "do not mention the upload in your reply", "keep the upload out of your summary".
+_HIDE_IN_REPLY: Final = re.compile(
+    r"\b(?:do not|don't|never)\s+(?:mention|include|reveal|report|show)\b[^.\n]{0,60}\bin\s+(?:your\s+)?(?:reply|response|summary|answer|output|report)\b"
+    r"|\bkeep\b[^.\n]{0,60}\bout\s+of\s+(?:your\s+)?(?:reply|response|summary|answer|output|report)\b",
+    re.IGNORECASE,
+)
+_QUOTES: Final = "\"'`“”‘’«»「」"
 #: A sentence about the act rather than an instruction to do it. Unlike `_NEGATED`, "block" is
 #: left out: "append this block" is a noun.
 _ABOUT_IT: Final = re.compile(
@@ -384,6 +406,8 @@ _NO_CONSENT: Final = re.compile(
     r"\b(?:do not|don't|never|no need to|without)\s+(?:ask(?:ing)?|wait(?:ing)? for|request(?:ing)?|seek(?:ing)?)\s+"
     r"(?:the\s+)?(?:user'?s?\s+)?(?:for\s+)?(?:permission|confirmation|approval|consent|input)\b"
     r"|\bwithout (?:the )?user'?s? (?:permission|approval|consent|confirmation|knowledge)\b"
+    r"|\bskip\s+(?:the\s+)?(?:confirmation|approval|consent)\s+(?:prompt|step|dialog|question)s?\b"
+    r"|\b(?:the\s+)?user\s+(?:has\s+)?already\s+(?:approved|agreed\s+to|confirmed)\s+(?:everything|all|it\s+all)\b"
     r"|不要詢問|不要询问|無需確認|无需确认|無需詢問|无需询问",
     re.IGNORECASE,
 )
@@ -396,25 +420,28 @@ _TOOL_HIJACK: Final = re.compile(
     r"\b(?:before|prior to)\s+(?:using|calling|invoking|running)\s+(?:any|every|all)\s+(?:other\s+)?tools?\b"
     r"|\b(?:always|must)\s+(?:call|use|invoke)\s+this\s+tool\s+(?:first|before)\b|\b(?:use|call)\s+this\s+tool\s+instead\s+of\b"
     r"|\b(?:do not|don't|never)\s+(?:use|call)\s+(?:any\s+)?other\s+tools?\b"
+    r"|\b(?:call|use|invoke)\s+this\s+tool\s+before\s+(?:any|every|all)\s+(?:other\s+)?tools?\b"
     r"|\b(?:override|replace|shadow)\w{0,3}\s+(?:the\s+)?(?:behaviou?r|instructions|description)\s+of\s+(?:the\s+)?(?:other|existing)\s+(?:tools?|servers?)\b",
     re.IGNORECASE,
 )
 #: Swapping the user's dependencies, sources or content for the attacker's.
 _GOAL_HIJACK: Final = re.compile(
     r"\b(?:replace|swap|change|switch)\w{0,2}\s+(?:the\s+)?(?:user'?s?\s+)?(?:dependenc\w+|package|registry|index-url|remote|origin|upstream|repository url|download url)s?\s+(?:to|with)\b"
-    r"|\b(?:add|insert|append)\w{0,2}\s+(?:a\s+|an\s+|the\s+)?(?:backlink|referral|affiliate|advert\w*|promotion)s?\s+(?:link\s+)?(?:to|for|into)\b"
-    r"|\bgit\s+remote\s+set-url\b|\bnpm\s+config\s+set\s+registry\b|\bpip\s+config\s+set\s+global\.index-url\b",
+    r"|\b(?:add|insert|append)\w{0,2}\s+(?:a\s+|an\s+|the\s+)?(?:backlink|referral|affiliate|advert\w*|promotion)s?\s+(?:link\s+)?(?:to|for|into)\b",
     re.IGNORECASE,
 )
 _FUNDS_REDIRECT: Final = re.compile(
     r"\b(?:replace|swap|change|substitute)\w{0,2}\s+(?:the\s+|any\s+|all\s+)?(?:wallet|recipient|payment|deposit|payout|withdrawal|receiving)\s+(?:address|account|wallet)(?:es|s)?\b"
     r"|\bsend\s+(?:all|the\s+(?:entire|full)|every)\s+(?:funds|tokens|balance|eth|btc|sol|usdt|usdc)\b"
-    r"|\b(?:approve|set)\s+(?:an?\s+)?(?:unlimited|max(?:imum)?)\s+(?:allowance|approval)\b|\bsetApprovalForAll\b",
+    r"|\bas\s+the\s+(?:beneficiary|recipient|payee|payout\s+address|receiving\s+address)\b[^.\n]{0,40}\binstead\s+of\b",
     re.IGNORECASE,
 )
 _RESOURCE_ABUSE: Final = re.compile(
     r"\b(?:spawn|launch|start|create)\w{0,2}\s+(?:\d{3,}|hundreds\s+of|thousands\s+of|as\s+many\s+as\s+possible|unlimited)\s+(?:agents|processes|threads|instances|requests|sub-?agents)\b"
-    r"|\bfork\s?bomb\b|:\(\)\s*\{\s*:\|:&\s*\};:|\bxmrig\b|\bminerd\b|\bcryptonight\b|stratum\+tcp://|\bmine\s+(?:crypto|monero|bitcoin)\b",
+    r"|:\(\)\s*\{\s*:\|:&\s*\};:|stratum\+tcp://"
+    # A topic word is an attack only as the object of an imperative: "run xmrig", not "what xmrig is".
+    r"|^\s*(?:\W*\s*)?(?:run|start|launch|install|execute|deploy)\w{0,2}\s+(?:\w+\s+){0,3}(?:xmrig|minerd|cryptonight|a\s+(?:crypto\s*)?miner|a\s+fork\s?bomb)\b"
+    r"|^\s*(?:\W*\s*)?mine\s+(?:crypto|monero|bitcoin)\b",
     re.IGNORECASE,
 )
 #: Turning off the user's own safeguards: tests, linters, hooks, review, the sandbox.
@@ -457,6 +484,7 @@ class InstructionIntent:
         "consent-suppress",
         "tool-hijack",
         "safeguards-off",
+        "file-post",
     )
 
     @staticmethod
@@ -515,25 +543,28 @@ class InstructionIntent:
         against = InstructionIntent._negative_form_kind(normal)
         if against is not None:
             return against
-        off = _SAFEGUARDS_OFF.search(normal)
-        if off is not None and InstructionIntent._acts(normal, off.start()):
-            return "safeguards-off"
+        # Read before the sentence-wide negation below, each against its own clause, so one more
+        # "never" elsewhere in the sentence does not silence it (cross-review, backend-eb).
+        for pattern, kind in (
+            (_SAFEGUARDS_OFF, "safeguards-off"),
+            (_FUNDS_REDIRECT, "funds-redirect"),
+            (_RESOURCE_ABUSE, "resource-abuse"),
+            (_GOAL_HIJACK, "goal-hijack"),
+        ):
+            found = pattern.search(normal)
+            if found is not None and InstructionIntent._acts(normal, found.start()):
+                return kind
+        send = _ALWAYS_SEND.search(normal)
+        if (
+            send is not None
+            and InstructionIntent._acts(normal, send.start())
+            and (_FIXED_RECIPIENT.search(normal) or InstructionIntent._outside_address(normal))
+        ):
+            return "fixed-recipient"
         # Read for negation and advice without the destinations: `attacker.example` in a URL is a
         # host name, not a sentence about attackers.
         if _NEGATED.search(_URL.sub(" ", normal)):
             return None
-        if not _ASKED.search(normal):
-            for pattern, kind in (
-                (_FUNDS_REDIRECT, "funds-redirect"),
-                (_RESOURCE_ABUSE, "resource-abuse"),
-                (_GOAL_HIJACK, "goal-hijack"),
-            ):
-                if pattern.search(normal):
-                    return kind
-            if _ALWAYS_SEND.search(normal) and (
-                _FIXED_RECIPIENT.search(normal) or InstructionIntent._outside_address(normal)
-            ):
-                return "fixed-recipient"
         if _REPLICATE.search(normal) and (_SPREAD.search(normal) or _COVERT.search(normal)):
             return "self-replicate"
         if _SEND.search(_HTTP_METHOD.sub(" ", normal)) and _URL.search(normal):
@@ -559,30 +590,52 @@ class InstructionIntent:
         return None
 
     @staticmethod
-    def _acts(normal: str, at: int) -> bool:
-        """The sentence tells the agent to do what is at `at`: no negation just before it, not a
-        sentence about it, and not on the user's request."""
+    def _negated_before(normal: str, at: int) -> bool:
+        """A negation governs what is at `at`: it stands in the same clause, just before it."""
         before = normal[max(0, at - 50) : at]
+        ends = list(_CLAUSE_END.finditer(before))
+        if ends:
+            before = before[ends[-1].end() :]
+        return _NEGATES_ACT.search(before) is not None
+
+    @staticmethod
+    def _quoted_at(normal: str, found: re.Match[str]) -> bool:
+        """The phrase is quoted -- a sentence that names it, not one that says it."""
+        before = normal[max(0, found.start() - 3) : found.start()].rstrip()
+        after = normal[found.end() : found.end() + 60]
+        return bool(before) and before[-1] in _QUOTES and any(q in after for q in _QUOTES)
+
+    @staticmethod
+    def _acts(normal: str, at: int) -> bool:
+        """The sentence tells the agent to do what is at `at`: no negation governs it, the sentence
+        is not about it, and the user did not ask for it in this sentence."""
         quiet = _URL.sub(" ", normal)
         return not (
-            _NEGATES_ACT.search(before) or _ABOUT_IT.search(quiet) or _ASKED.search(normal)
+            InstructionIntent._negated_before(normal, at)
+            or _ABOUT_IT.search(quiet)
+            or _ASKED.search(normal)
         )
 
     @staticmethod
     def _negative_form_kind(normal: str) -> str | None:
-        """hide-action, consent-suppress or tool-hijack, read with the phrase itself taken out."""
+        """hide-action, consent-suppress or tool-hijack: phrases negative in form that are the
+        attack itself. Advice only if a negation governs the phrase in its own clause, the
+        sentence is about it, or the phrase is quoted."""
         for pattern, kind, needs in (
-            (_HIDE_ACT, "hide-action", None),
+            (_HIDE_ACT, "hide-action", _ACT_WORD),
+            (_HIDE_IN_REPLY, "hide-action", _ACT_WORD),
             (_NO_CONSENT, "consent-suppress", _HIGH_IMPACT),
             (_TOOL_HIJACK, "tool-hijack", None),
         ):
             found = pattern.search(normal)
-            if found is None:
+            if found is None or InstructionIntent._quoted_at(normal, found):
                 continue
             rest = _URL.sub(" ", normal[: found.start()] + " " + normal[found.end() :])
-            if _NEGATED.search(rest) or _CJK_NEGATED.search(rest):
+            if _ABOUT_IT.search(rest) or InstructionIntent._negated_before(normal, found.start()):
                 continue
-            if needs is not None and needs.search(rest) is None:
+            # A hidden act may sit in the phrase itself ("silently delete"); the consequence of a
+            # suppressed consent must sit outside it.
+            if needs is not None and needs.search(normal if kind == "hide-action" else rest) is None:
                 continue
             return kind
         return None
@@ -700,8 +753,10 @@ class InstructionIntent:
             write = _WRITE_ANY.search(sentence)
             if write is None or not InstructionIntent._acts(sentence, write.start()):
                 continue
+            # The path may be named a few sentences earlier ("find the global rules file ...");
+            # the user's request counts only in the sentence that writes (`_acts` reads it).
             window = " ".join(s for _, s in sentences[max(0, n - 3) : n + 2])
-            if _GLOBAL_AGENT_CFG.search(window) and not _ASKED.search(window):
+            if _GLOBAL_AGENT_CFG.search(window):
                 found.append(Intent("persist-global", sentence.strip()[:240], start))
                 break
         for body_start, body in InstructionIntent.fenced_blocks(normal):
@@ -709,7 +764,7 @@ class InstructionIntent:
             clone = _CLONE.search(body)
             if clone is None or _RUN_PREP.search(body) is None:
                 continue
-            if _AUTO_CONDITION.search(before) and not _ASKED.search(before):
+            if _AUTO_CONDITION.search(before) and not _ASKED.search(InstructionIntent._lead(before)):
                 found.append(
                     Intent(
                         "bootstrap-run",
@@ -725,10 +780,17 @@ class InstructionIntent:
             hosts = [h.lower() for h in _HOST.findall(post.group(0))]
             if hosts and not any(_LOCAL_HOST.match(h) for h in hosts):
                 before = normal[max(0, body_start - 400) : body_start]
-                if not _ASKED.search(before):
-                    found.append(Intent("fixed-recipient", post.group(0)[:240], body_start + post.start()))
+                if not _ASKED.search(InstructionIntent._lead(before)):
+                    # Below the gate: any upload of a file to an outside service has this shape.
+                    found.append(Intent("file-post", post.group(0)[:240], body_start + post.start()))
                     break
         return found
+
+    @staticmethod
+    def _lead(before: str) -> str:
+        """The sentence that introduces a code block: the last one before it."""
+        pieces = re.split(r"(?<=[.!?。])\s+|\n{2,}", before.strip())
+        return pieces[-1] if pieces else ""
 
     @staticmethod
     def chained_paths(text: str) -> list[tuple[int, str]]:

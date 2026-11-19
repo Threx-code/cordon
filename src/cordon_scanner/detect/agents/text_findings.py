@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 #: Reported below the default gate. consent-suppress, tool-hijack and safeguards-off stay here until
 #: two readers have read the legitimate units they flag (skills-98 note 37).
 _MEDIUM_INTENTS: Final = frozenset(
-    {"markdown-exfil", "persist", "consent-suppress", "tool-hijack", "safeguards-off"}
+    {"markdown-exfil", "persist", "consent-suppress", "tool-hijack", "safeguards-off", "file-post"}
 )
 
 
@@ -60,6 +60,7 @@ INTENT_WORDS: Final = {
     "consent-suppress": "act with consequences without asking the user",
     "tool-hijack": "take over the agent's choice of tool or override other tools",
     "safeguards-off": "turn off the user's own safeguards (tests, hooks, review, sandbox)",
+    "file-post": "post a file to an outside host",
 }
 
 
