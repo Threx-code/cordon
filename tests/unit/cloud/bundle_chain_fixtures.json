@@ -1,0 +1,422 @@
+{
+ "cases": [
+  {
+   "expect": {
+    "state": "new"
+   },
+   "held_envelope": null,
+   "name": "the first bundle, nothing held",
+   "now": "2026-11-18T09:01:00+00:00",
+   "offered": [
+    {
+     "payload": "eyJjb21waWxlZF90YWJsZSI6W1siUjQwMCIsIkJMT0NLIl1dLCJleHBpcmVzX2F0IjoiMjAyNi0xMS0xOVQwOTowMDowMCswMDowMCIsImlzc3VlZF9hdCI6IjIwMjYtMTEtMThUMDk6MDA6MDArMDA6MDAiLCJsaXN0cyI6eyJhbGxvdyI6W119LCJwcmV2X3NoYSI6IiIsInNjb3BlIjoib3JnOmFjbWUvcmVwbzpsZWRnZXIiLCJzaWduZXJfa2V5aWQiOiIwNTU4MjI4YmZiY2Y5OWE3Y2EzYjAxNDZhMTA4ZDFlYzdmMDM5YTdmYTRkMjg3MGM2ZDFjZjdjYTBlZjA2NzljIiwidGVuYW50IjoiZml4dHVyZS1kNzljNWVmMyIsInZlcnNpb24iOjF9",
+     "payloadType": "application/vnd.cordon.policy-bundle+json",
+     "signatures": [
+      {
+       "keyid": "0558228bfbcf99a7ca3b0146a108d1ec7f039a7fa4d2870c6d1cf7ca0ef0679c",
+       "sig": "d005EdNZJsvQgwbDXyXf30QUdGrYyGXXvXjXUaxfQUBb7yhmXUaO8dvQ8c0UkVcWWbRJHiTSEo9TvU27zy4PDQ=="
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "expect": {
+    "state": "new"
+   },
+   "held_envelope": {
+    "payload": "eyJjb21waWxlZF90YWJsZSI6W1siUjQwMCIsIkJMT0NLIl1dLCJleHBpcmVzX2F0IjoiMjAyNi0xMS0xOVQwOTowMDowMCswMDowMCIsImlzc3VlZF9hdCI6IjIwMjYtMTEtMThUMDk6MDA6MDArMDA6MDAiLCJsaXN0cyI6eyJhbGxvdyI6W119LCJwcmV2X3NoYSI6IiIsInNjb3BlIjoib3JnOmFjbWUvcmVwbzpsZWRnZXIiLCJzaWduZXJfa2V5aWQiOiIwNTU4MjI4YmZiY2Y5OWE3Y2EzYjAxNDZhMTA4ZDFlYzdmMDM5YTdmYTRkMjg3MGM2ZDFjZjdjYTBlZjA2NzljIiwidGVuYW50IjoiZml4dHVyZS1kNzljNWVmMyIsInZlcnNpb24iOjF9",
+    "payloadType": "application/vnd.cordon.policy-bundle+json",
+    "signatures": [
+     {
+      "keyid": "0558228bfbcf99a7ca3b0146a108d1ec7f039a7fa4d2870c6d1cf7ca0ef0679c",
+      "sig": "d005EdNZJsvQgwbDXyXf30QUdGrYyGXXvXjXUaxfQUBb7yhmXUaO8dvQ8c0UkVcWWbRJHiTSEo9TvU27zy4PDQ=="
+     }
+    ]
+   },
+   "name": "the direct successor",
+   "now": "2026-11-18T12:00:00+00:00",
+   "offered": [
+    {
+     "payload": "eyJjb21waWxlZF90YWJsZSI6W1siUjQwMCIsIkJMT0NLIl1dLCJleHBpcmVzX2F0IjoiMjAyNi0xMS0xOVQxMDowMDowMCswMDowMCIsImlzc3VlZF9hdCI6IjIwMjYtMTEtMThUMTA6MDA6MDArMDA6MDAiLCJsaXN0cyI6eyJhbGxvdyI6W119LCJwcmV2X3NoYSI6InNoYTI1NjozODNjMTVmZDRlYzNkZGE5ZmM4NjE4NTU0YjAxYmRjM2YxNmMyNzNmYTlkMWY0NzJiZjlhOTVhODNkMjZjOWI3Iiwic2NvcGUiOiJvcmc6YWNtZS9yZXBvOmxlZGdlciIsInNpZ25lcl9rZXlpZCI6IjA1NTgyMjhiZmJjZjk5YTdjYTNiMDE0NmExMDhkMWVjN2YwMzlhN2ZhNGQyODcwYzZkMWNmN2NhMGVmMDY3OWMiLCJ0ZW5hbnQiOiJmaXh0dXJlLWQ3OWM1ZWYzIiwidmVyc2lvbiI6Mn0=",
+     "payloadType": "application/vnd.cordon.policy-bundle+json",
+     "signatures": [
+      {
+       "keyid": "0558228bfbcf99a7ca3b0146a108d1ec7f039a7fa4d2870c6d1cf7ca0ef0679c",
+       "sig": "gqO6BVYO5nzKx2d0gZcernCd1/t4e+UAGLz/E02OD8E0egfuPRDFrSNlCAaeagfq9I5Hs/LbYPS15y2dYgHkBw=="
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "expect": {
+    "state": "unchanged"
+   },
+   "held_envelope": {
+    "payload": "eyJjb21waWxlZF90YWJsZSI6W1siUjQwMCIsIkJMT0NLIl1dLCJleHBpcmVzX2F0IjoiMjAyNi0xMS0xOVQxMDowMDowMCswMDowMCIsImlzc3VlZF9hdCI6IjIwMjYtMTEtMThUMTA6MDA6MDArMDA6MDAiLCJsaXN0cyI6eyJhbGxvdyI6W119LCJwcmV2X3NoYSI6InNoYTI1NjozODNjMTVmZDRlYzNkZGE5ZmM4NjE4NTU0YjAxYmRjM2YxNmMyNzNmYTlkMWY0NzJiZjlhOTVhODNkMjZjOWI3Iiwic2NvcGUiOiJvcmc6YWNtZS9yZXBvOmxlZGdlciIsInNpZ25lcl9rZXlpZCI6IjA1NTgyMjhiZmJjZjk5YTdjYTNiMDE0NmExMDhkMWVjN2YwMzlhN2ZhNGQyODcwYzZkMWNmN2NhMGVmMDY3OWMiLCJ0ZW5hbnQiOiJmaXh0dXJlLWQ3OWM1ZWYzIiwidmVyc2lvbiI6Mn0=",
+    "payloadType": "application/vnd.cordon.policy-bundle+json",
+    "signatures": [
+     {
+      "keyid": "0558228bfbcf99a7ca3b0146a108d1ec7f039a7fa4d2870c6d1cf7ca0ef0679c",
+      "sig": "gqO6BVYO5nzKx2d0gZcernCd1/t4e+UAGLz/E02OD8E0egfuPRDFrSNlCAaeagfq9I5Hs/LbYPS15y2dYgHkBw=="
+     }
+    ]
+   },
+   "name": "the bundle already held",
+   "now": "2026-11-18T12:00:00+00:00",
+   "offered": [
+    {
+     "payload": "eyJjb21waWxlZF90YWJsZSI6W1siUjQwMCIsIkJMT0NLIl1dLCJleHBpcmVzX2F0IjoiMjAyNi0xMS0xOVQxMDowMDowMCswMDowMCIsImlzc3VlZF9hdCI6IjIwMjYtMTEtMThUMTA6MDA6MDArMDA6MDAiLCJsaXN0cyI6eyJhbGxvdyI6W119LCJwcmV2X3NoYSI6InNoYTI1NjozODNjMTVmZDRlYzNkZGE5ZmM4NjE4NTU0YjAxYmRjM2YxNmMyNzNmYTlkMWY0NzJiZjlhOTVhODNkMjZjOWI3Iiwic2NvcGUiOiJvcmc6YWNtZS9yZXBvOmxlZGdlciIsInNpZ25lcl9rZXlpZCI6IjA1NTgyMjhiZmJjZjk5YTdjYTNiMDE0NmExMDhkMWVjN2YwMzlhN2ZhNGQyODcwYzZkMWNmN2NhMGVmMDY3OWMiLCJ0ZW5hbnQiOiJmaXh0dXJlLWQ3OWM1ZWYzIiwidmVyc2lvbiI6Mn0=",
+     "payloadType": "application/vnd.cordon.policy-bundle+json",
+     "signatures": [
+      {
+       "keyid": "0558228bfbcf99a7ca3b0146a108d1ec7f039a7fa4d2870c6d1cf7ca0ef0679c",
+       "sig": "gqO6BVYO5nzKx2d0gZcernCd1/t4e+UAGLz/E02OD8E0egfuPRDFrSNlCAaeagfq9I5Hs/LbYPS15y2dYgHkBw=="
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "expect": {
+    "refused": "bundle_rolled_back"
+   },
+   "held_envelope": {
+    "payload": "eyJjb21waWxlZF90YWJsZSI6W1siUjQwMCIsIkJMT0NLIl1dLCJleHBpcmVzX2F0IjoiMjAyNi0xMS0xOVQxMDowMDowMCswMDowMCIsImlzc3VlZF9hdCI6IjIwMjYtMTEtMThUMTA6MDA6MDArMDA6MDAiLCJsaXN0cyI6eyJhbGxvdyI6W119LCJwcmV2X3NoYSI6InNoYTI1NjozODNjMTVmZDRlYzNkZGE5ZmM4NjE4NTU0YjAxYmRjM2YxNmMyNzNmYTlkMWY0NzJiZjlhOTVhODNkMjZjOWI3Iiwic2NvcGUiOiJvcmc6YWNtZS9yZXBvOmxlZGdlciIsInNpZ25lcl9rZXlpZCI6IjA1NTgyMjhiZmJjZjk5YTdjYTNiMDE0NmExMDhkMWVjN2YwMzlhN2ZhNGQyODcwYzZkMWNmN2NhMGVmMDY3OWMiLCJ0ZW5hbnQiOiJmaXh0dXJlLWQ3OWM1ZWYzIiwidmVyc2lvbiI6Mn0=",
+    "payloadType": "application/vnd.cordon.policy-bundle+json",
+    "signatures": [
+     {
+      "keyid": "0558228bfbcf99a7ca3b0146a108d1ec7f039a7fa4d2870c6d1cf7ca0ef0679c",
+      "sig": "gqO6BVYO5nzKx2d0gZcernCd1/t4e+UAGLz/E02OD8E0egfuPRDFrSNlCAaeagfq9I5Hs/LbYPS15y2dYgHkBw=="
+     }
+    ]
+   },
+   "name": "a rollback to an older version",
+   "now": "2026-11-18T12:00:00+00:00",
+   "offered": [
+    {
+     "payload": "eyJjb21waWxlZF90YWJsZSI6W1siUjQwMCIsIkJMT0NLIl1dLCJleHBpcmVzX2F0IjoiMjAyNi0xMS0xOVQwOTowMDowMCswMDowMCIsImlzc3VlZF9hdCI6IjIwMjYtMTEtMThUMDk6MDA6MDArMDA6MDAiLCJsaXN0cyI6eyJhbGxvdyI6W119LCJwcmV2X3NoYSI6IiIsInNjb3BlIjoib3JnOmFjbWUvcmVwbzpsZWRnZXIiLCJzaWduZXJfa2V5aWQiOiIwNTU4MjI4YmZiY2Y5OWE3Y2EzYjAxNDZhMTA4ZDFlYzdmMDM5YTdmYTRkMjg3MGM2ZDFjZjdjYTBlZjA2NzljIiwidGVuYW50IjoiZml4dHVyZS1kNzljNWVmMyIsInZlcnNpb24iOjF9",
+     "payloadType": "application/vnd.cordon.policy-bundle+json",
+     "signatures": [
+      {
+       "keyid": "0558228bfbcf99a7ca3b0146a108d1ec7f039a7fa4d2870c6d1cf7ca0ef0679c",
+       "sig": "d005EdNZJsvQgwbDXyXf30QUdGrYyGXXvXjXUaxfQUBb7yhmXUaO8dvQ8c0UkVcWWbRJHiTSEo9TvU27zy4PDQ=="
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "expect": {
+    "refused": "bundle_forked"
+   },
+   "held_envelope": {
+    "payload": "eyJjb21waWxlZF90YWJsZSI6W1siUjQwMCIsIkJMT0NLIl1dLCJleHBpcmVzX2F0IjoiMjAyNi0xMS0xOVQwOTowMDowMCswMDowMCIsImlzc3VlZF9hdCI6IjIwMjYtMTEtMThUMDk6MDA6MDArMDA6MDAiLCJsaXN0cyI6eyJhbGxvdyI6W119LCJwcmV2X3NoYSI6IiIsInNjb3BlIjoib3JnOmFjbWUvcmVwbzpsZWRnZXIiLCJzaWduZXJfa2V5aWQiOiIwNTU4MjI4YmZiY2Y5OWE3Y2EzYjAxNDZhMTA4ZDFlYzdmMDM5YTdmYTRkMjg3MGM2ZDFjZjdjYTBlZjA2NzljIiwidGVuYW50IjoiZml4dHVyZS1kNzljNWVmMyIsInZlcnNpb24iOjF9",
+    "payloadType": "application/vnd.cordon.policy-bundle+json",
+    "signatures": [
+     {
+      "keyid": "0558228bfbcf99a7ca3b0146a108d1ec7f039a7fa4d2870c6d1cf7ca0ef0679c",
+      "sig": "d005EdNZJsvQgwbDXyXf30QUdGrYyGXXvXjXUaxfQUBb7yhmXUaO8dvQ8c0UkVcWWbRJHiTSEo9TvU27zy4PDQ=="
+     }
+    ]
+   },
+   "name": "the same version signed again with another time",
+   "now": "2026-11-18T12:00:00+00:00",
+   "offered": [
+    {
+     "payload": "eyJjb21waWxlZF90YWJsZSI6W1siUjQwMCIsIkJMT0NLIl1dLCJleHBpcmVzX2F0IjoiMjAyNi0xMS0xOVQwOTozMDowMCswMDowMCIsImlzc3VlZF9hdCI6IjIwMjYtMTEtMThUMDk6MzA6MDArMDA6MDAiLCJsaXN0cyI6eyJhbGxvdyI6W119LCJwcmV2X3NoYSI6IiIsInNjb3BlIjoib3JnOmFjbWUvcmVwbzpsZWRnZXIiLCJzaWduZXJfa2V5aWQiOiIwNTU4MjI4YmZiY2Y5OWE3Y2EzYjAxNDZhMTA4ZDFlYzdmMDM5YTdmYTRkMjg3MGM2ZDFjZjdjYTBlZjA2NzljIiwidGVuYW50IjoiZml4dHVyZS1kNzljNWVmMyIsInZlcnNpb24iOjF9",
+     "payloadType": "application/vnd.cordon.policy-bundle+json",
+     "signatures": [
+      {
+       "keyid": "0558228bfbcf99a7ca3b0146a108d1ec7f039a7fa4d2870c6d1cf7ca0ef0679c",
+       "sig": "6+iox+FbTixX+l05bsmb5ngbYTZjMLJFCRINBM8G+6gikL1YS7L1lmwvnZBo2qoHCDZjjrzBYR/TD3Z6BgEVDw=="
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "expect": {
+    "refused": "bundle_chain_broken"
+   },
+   "held_envelope": {
+    "payload": "eyJjb21waWxlZF90YWJsZSI6W1siUjQwMCIsIkJMT0NLIl1dLCJleHBpcmVzX2F0IjoiMjAyNi0xMS0xOVQwOTowMDowMCswMDowMCIsImlzc3VlZF9hdCI6IjIwMjYtMTEtMThUMDk6MDA6MDArMDA6MDAiLCJsaXN0cyI6eyJhbGxvdyI6W119LCJwcmV2X3NoYSI6IiIsInNjb3BlIjoib3JnOmFjbWUvcmVwbzpsZWRnZXIiLCJzaWduZXJfa2V5aWQiOiIwNTU4MjI4YmZiY2Y5OWE3Y2EzYjAxNDZhMTA4ZDFlYzdmMDM5YTdmYTRkMjg3MGM2ZDFjZjdjYTBlZjA2NzljIiwidGVuYW50IjoiZml4dHVyZS1kNzljNWVmMyIsInZlcnNpb24iOjF9",
+    "payloadType": "application/vnd.cordon.policy-bundle+json",
+    "signatures": [
+     {
+      "keyid": "0558228bfbcf99a7ca3b0146a108d1ec7f039a7fa4d2870c6d1cf7ca0ef0679c",
+      "sig": "d005EdNZJsvQgwbDXyXf30QUdGrYyGXXvXjXUaxfQUBb7yhmXUaO8dvQ8c0UkVcWWbRJHiTSEo9TvU27zy4PDQ=="
+     }
+    ]
+   },
+   "name": "a successor that chains to another version 1",
+   "now": "2026-11-18T12:00:00+00:00",
+   "offered": [
+    {
+     "payload": "eyJjb21waWxlZF90YWJsZSI6W1siUjQwMCIsIkJMT0NLIl1dLCJleHBpcmVzX2F0IjoiMjAyNi0xMS0xOVQwOToyMDowMCswMDowMCIsImlzc3VlZF9hdCI6IjIwMjYtMTEtMThUMDk6MjA6MDArMDA6MDAiLCJsaXN0cyI6eyJhbGxvdyI6W119LCJwcmV2X3NoYSI6InNoYTI1Njo2N2JjOGI0ZjMzMTJiZWU4MmY1NWZjNzRkNjE1NTUyZjgwM2MxZmU1NmJkNWU1YjU5N2I0NzQ2ZjM2MzBlYTgxIiwic2NvcGUiOiJvcmc6YWNtZS9yZXBvOmxlZGdlciIsInNpZ25lcl9rZXlpZCI6IjA1NTgyMjhiZmJjZjk5YTdjYTNiMDE0NmExMDhkMWVjN2YwMzlhN2ZhNGQyODcwYzZkMWNmN2NhMGVmMDY3OWMiLCJ0ZW5hbnQiOiJmaXh0dXJlLWQ3OWM1ZWYzIiwidmVyc2lvbiI6Mn0=",
+     "payloadType": "application/vnd.cordon.policy-bundle+json",
+     "signatures": [
+      {
+       "keyid": "0558228bfbcf99a7ca3b0146a108d1ec7f039a7fa4d2870c6d1cf7ca0ef0679c",
+       "sig": "FR22bXc+v1Xwi1mOUGeQwytF2o9ABs9ecZvhNjh0+kIkbkhsxlqJT2R/ptj/Sa4Fdr079wx0RsfUgW5WT3+/BA=="
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "expect": {
+    "refused": "bundle_gap"
+   },
+   "held_envelope": {
+    "payload": "eyJjb21waWxlZF90YWJsZSI6W1siUjQwMCIsIkJMT0NLIl1dLCJleHBpcmVzX2F0IjoiMjAyNi0xMS0xOVQwOTowMDowMCswMDowMCIsImlzc3VlZF9hdCI6IjIwMjYtMTEtMThUMDk6MDA6MDArMDA6MDAiLCJsaXN0cyI6eyJhbGxvdyI6W119LCJwcmV2X3NoYSI6IiIsInNjb3BlIjoib3JnOmFjbWUvcmVwbzpsZWRnZXIiLCJzaWduZXJfa2V5aWQiOiIwNTU4MjI4YmZiY2Y5OWE3Y2EzYjAxNDZhMTA4ZDFlYzdmMDM5YTdmYTRkMjg3MGM2ZDFjZjdjYTBlZjA2NzljIiwidGVuYW50IjoiZml4dHVyZS1kNzljNWVmMyIsInZlcnNpb24iOjF9",
+    "payloadType": "application/vnd.cordon.policy-bundle+json",
+    "signatures": [
+     {
+      "keyid": "0558228bfbcf99a7ca3b0146a108d1ec7f039a7fa4d2870c6d1cf7ca0ef0679c",
+      "sig": "d005EdNZJsvQgwbDXyXf30QUdGrYyGXXvXjXUaxfQUBb7yhmXUaO8dvQ8c0UkVcWWbRJHiTSEo9TvU27zy4PDQ=="
+     }
+    ]
+   },
+   "name": "a jump over a version",
+   "now": "2026-11-18T12:00:00+00:00",
+   "offered": [
+    {
+     "payload": "eyJjb21waWxlZF90YWJsZSI6W1siUjQwMCIsIkJMT0NLIl1dLCJleHBpcmVzX2F0IjoiMjAyNi0xMS0xOVQxMTowMDowMCswMDowMCIsImlzc3VlZF9hdCI6IjIwMjYtMTEtMThUMTE6MDA6MDArMDA6MDAiLCJsaXN0cyI6eyJhbGxvdyI6W119LCJwcmV2X3NoYSI6InNoYTI1Njo0MGZhYTlkZWM4OWQzY2Y3NDRmZmNmNWYyNjA3ZDVkMDgyMWIxMWZkMjA2ZDJkZmNiYmMyNTIxNmIxNGMzYTc1Iiwic2NvcGUiOiJvcmc6YWNtZS9yZXBvOmxlZGdlciIsInNpZ25lcl9rZXlpZCI6IjA1NTgyMjhiZmJjZjk5YTdjYTNiMDE0NmExMDhkMWVjN2YwMzlhN2ZhNGQyODcwYzZkMWNmN2NhMGVmMDY3OWMiLCJ0ZW5hbnQiOiJmaXh0dXJlLWQ3OWM1ZWYzIiwidmVyc2lvbiI6M30=",
+     "payloadType": "application/vnd.cordon.policy-bundle+json",
+     "signatures": [
+      {
+       "keyid": "0558228bfbcf99a7ca3b0146a108d1ec7f039a7fa4d2870c6d1cf7ca0ef0679c",
+       "sig": "BVW+GEQRkJQlU0pl3flRt/AuIXGadbPBCBezj88N2mkE4PpqlG7aIiCmH0/pnDh2+oAYdnBkzCnPUTwkcvyLBg=="
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "expect": {
+    "refused": "bundle_expired"
+   },
+   "held_envelope": null,
+   "name": "an expired bundle",
+   "now": "2026-11-21T09:00:00+00:00",
+   "offered": [
+    {
+     "payload": "eyJjb21waWxlZF90YWJsZSI6W1siUjQwMCIsIkJMT0NLIl1dLCJleHBpcmVzX2F0IjoiMjAyNi0xMS0xOVQwOTowMDowMCswMDowMCIsImlzc3VlZF9hdCI6IjIwMjYtMTEtMThUMDk6MDA6MDArMDA6MDAiLCJsaXN0cyI6eyJhbGxvdyI6W119LCJwcmV2X3NoYSI6IiIsInNjb3BlIjoib3JnOmFjbWUvcmVwbzpsZWRnZXIiLCJzaWduZXJfa2V5aWQiOiIwNTU4MjI4YmZiY2Y5OWE3Y2EzYjAxNDZhMTA4ZDFlYzdmMDM5YTdmYTRkMjg3MGM2ZDFjZjdjYTBlZjA2NzljIiwidGVuYW50IjoiZml4dHVyZS1kNzljNWVmMyIsInZlcnNpb24iOjF9",
+     "payloadType": "application/vnd.cordon.policy-bundle+json",
+     "signatures": [
+      {
+       "keyid": "0558228bfbcf99a7ca3b0146a108d1ec7f039a7fa4d2870c6d1cf7ca0ef0679c",
+       "sig": "d005EdNZJsvQgwbDXyXf30QUdGrYyGXXvXjXUaxfQUBb7yhmXUaO8dvQ8c0UkVcWWbRJHiTSEo9TvU27zy4PDQ=="
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "expect": {
+    "state": "new"
+   },
+   "held_envelope": {
+    "payload": "eyJjb21waWxlZF90YWJsZSI6W1siUjQwMCIsIkJMT0NLIl1dLCJleHBpcmVzX2F0IjoiMjAyNi0xMS0xOVQwOTowMDowMCswMDowMCIsImlzc3VlZF9hdCI6IjIwMjYtMTEtMThUMDk6MDA6MDArMDA6MDAiLCJsaXN0cyI6eyJhbGxvdyI6W119LCJwcmV2X3NoYSI6IiIsInNjb3BlIjoib3JnOmFjbWUvcmVwbzpsZWRnZXIiLCJzaWduZXJfa2V5aWQiOiIwNTU4MjI4YmZiY2Y5OWE3Y2EzYjAxNDZhMTA4ZDFlYzdmMDM5YTdmYTRkMjg3MGM2ZDFjZjdjYTBlZjA2NzljIiwidGVuYW50IjoiZml4dHVyZS1kNzljNWVmMyIsInZlcnNpb24iOjF9",
+    "payloadType": "application/vnd.cordon.policy-bundle+json",
+    "signatures": [
+     {
+      "keyid": "0558228bfbcf99a7ca3b0146a108d1ec7f039a7fa4d2870c6d1cf7ca0ef0679c",
+      "sig": "d005EdNZJsvQgwbDXyXf30QUdGrYyGXXvXjXUaxfQUBb7yhmXUaO8dvQ8c0UkVcWWbRJHiTSEo9TvU27zy4PDQ=="
+     }
+    ]
+   },
+   "name": "a catch-up chain; the middle bundle has expired",
+   "now": "2026-11-19T11:00:00+00:00",
+   "offered": [
+    {
+     "payload": "eyJjb21waWxlZF90YWJsZSI6W1siUjQwMCIsIkJMT0NLIl1dLCJleHBpcmVzX2F0IjoiMjAyNi0xMS0xOVQxMDowMDowMCswMDowMCIsImlzc3VlZF9hdCI6IjIwMjYtMTEtMThUMTA6MDA6MDArMDA6MDAiLCJsaXN0cyI6eyJhbGxvdyI6W119LCJwcmV2X3NoYSI6InNoYTI1NjozODNjMTVmZDRlYzNkZGE5ZmM4NjE4NTU0YjAxYmRjM2YxNmMyNzNmYTlkMWY0NzJiZjlhOTVhODNkMjZjOWI3Iiwic2NvcGUiOiJvcmc6YWNtZS9yZXBvOmxlZGdlciIsInNpZ25lcl9rZXlpZCI6IjA1NTgyMjhiZmJjZjk5YTdjYTNiMDE0NmExMDhkMWVjN2YwMzlhN2ZhNGQyODcwYzZkMWNmN2NhMGVmMDY3OWMiLCJ0ZW5hbnQiOiJmaXh0dXJlLWQ3OWM1ZWYzIiwidmVyc2lvbiI6Mn0=",
+     "payloadType": "application/vnd.cordon.policy-bundle+json",
+     "signatures": [
+      {
+       "keyid": "0558228bfbcf99a7ca3b0146a108d1ec7f039a7fa4d2870c6d1cf7ca0ef0679c",
+       "sig": "gqO6BVYO5nzKx2d0gZcernCd1/t4e+UAGLz/E02OD8E0egfuPRDFrSNlCAaeagfq9I5Hs/LbYPS15y2dYgHkBw=="
+      }
+     ]
+    },
+    {
+     "payload": "eyJjb21waWxlZF90YWJsZSI6W1siUjQwMCIsIkJMT0NLIl1dLCJleHBpcmVzX2F0IjoiMjAyNi0xMS0xOVQxMTowMDowMCswMDowMCIsImlzc3VlZF9hdCI6IjIwMjYtMTEtMThUMTE6MDA6MDArMDA6MDAiLCJsaXN0cyI6eyJhbGxvdyI6W119LCJwcmV2X3NoYSI6InNoYTI1Njo0MGZhYTlkZWM4OWQzY2Y3NDRmZmNmNWYyNjA3ZDVkMDgyMWIxMWZkMjA2ZDJkZmNiYmMyNTIxNmIxNGMzYTc1Iiwic2NvcGUiOiJvcmc6YWNtZS9yZXBvOmxlZGdlciIsInNpZ25lcl9rZXlpZCI6IjA1NTgyMjhiZmJjZjk5YTdjYTNiMDE0NmExMDhkMWVjN2YwMzlhN2ZhNGQyODcwYzZkMWNmN2NhMGVmMDY3OWMiLCJ0ZW5hbnQiOiJmaXh0dXJlLWQ3OWM1ZWYzIiwidmVyc2lvbiI6M30=",
+     "payloadType": "application/vnd.cordon.policy-bundle+json",
+     "signatures": [
+      {
+       "keyid": "0558228bfbcf99a7ca3b0146a108d1ec7f039a7fa4d2870c6d1cf7ca0ef0679c",
+       "sig": "BVW+GEQRkJQlU0pl3flRt/AuIXGadbPBCBezj88N2mkE4PpqlG7aIiCmH0/pnDh2+oAYdnBkzCnPUTwkcvyLBg=="
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "expect": {
+    "refused": "bundle_chain_broken"
+   },
+   "held_envelope": {
+    "payload": "eyJjb21waWxlZF90YWJsZSI6W1siUjQwMCIsIkJMT0NLIl1dLCJleHBpcmVzX2F0IjoiMjAyNi0xMS0xOVQwOTowMDowMCswMDowMCIsImlzc3VlZF9hdCI6IjIwMjYtMTEtMThUMDk6MDA6MDArMDA6MDAiLCJsaXN0cyI6eyJhbGxvdyI6W119LCJwcmV2X3NoYSI6IiIsInNjb3BlIjoib3JnOmFjbWUvcmVwbzpsZWRnZXIiLCJzaWduZXJfa2V5aWQiOiIwNTU4MjI4YmZiY2Y5OWE3Y2EzYjAxNDZhMTA4ZDFlYzdmMDM5YTdmYTRkMjg3MGM2ZDFjZjdjYTBlZjA2NzljIiwidGVuYW50IjoiZml4dHVyZS1kNzljNWVmMyIsInZlcnNpb24iOjF9",
+    "payloadType": "application/vnd.cordon.policy-bundle+json",
+    "signatures": [
+     {
+      "keyid": "0558228bfbcf99a7ca3b0146a108d1ec7f039a7fa4d2870c6d1cf7ca0ef0679c",
+      "sig": "d005EdNZJsvQgwbDXyXf30QUdGrYyGXXvXjXUaxfQUBb7yhmXUaO8dvQ8c0UkVcWWbRJHiTSEo9TvU27zy4PDQ=="
+     }
+    ]
+   },
+   "name": "a catch-up chain with a broken link",
+   "now": "2026-11-18T12:00:00+00:00",
+   "offered": [
+    {
+     "payload": "eyJjb21waWxlZF90YWJsZSI6W1siUjQwMCIsIkJMT0NLIl1dLCJleHBpcmVzX2F0IjoiMjAyNi0xMS0xOVQwOToyMDowMCswMDowMCIsImlzc3VlZF9hdCI6IjIwMjYtMTEtMThUMDk6MjA6MDArMDA6MDAiLCJsaXN0cyI6eyJhbGxvdyI6W119LCJwcmV2X3NoYSI6InNoYTI1Njo2N2JjOGI0ZjMzMTJiZWU4MmY1NWZjNzRkNjE1NTUyZjgwM2MxZmU1NmJkNWU1YjU5N2I0NzQ2ZjM2MzBlYTgxIiwic2NvcGUiOiJvcmc6YWNtZS9yZXBvOmxlZGdlciIsInNpZ25lcl9rZXlpZCI6IjA1NTgyMjhiZmJjZjk5YTdjYTNiMDE0NmExMDhkMWVjN2YwMzlhN2ZhNGQyODcwYzZkMWNmN2NhMGVmMDY3OWMiLCJ0ZW5hbnQiOiJmaXh0dXJlLWQ3OWM1ZWYzIiwidmVyc2lvbiI6Mn0=",
+     "payloadType": "application/vnd.cordon.policy-bundle+json",
+     "signatures": [
+      {
+       "keyid": "0558228bfbcf99a7ca3b0146a108d1ec7f039a7fa4d2870c6d1cf7ca0ef0679c",
+       "sig": "FR22bXc+v1Xwi1mOUGeQwytF2o9ABs9ecZvhNjh0+kIkbkhsxlqJT2R/ptj/Sa4Fdr079wx0RsfUgW5WT3+/BA=="
+      }
+     ]
+    },
+    {
+     "payload": "eyJjb21waWxlZF90YWJsZSI6W1siUjQwMCIsIkJMT0NLIl1dLCJleHBpcmVzX2F0IjoiMjAyNi0xMS0xOVQxMTowMDowMCswMDowMCIsImlzc3VlZF9hdCI6IjIwMjYtMTEtMThUMTE6MDA6MDArMDA6MDAiLCJsaXN0cyI6eyJhbGxvdyI6W119LCJwcmV2X3NoYSI6InNoYTI1Njo0MGZhYTlkZWM4OWQzY2Y3NDRmZmNmNWYyNjA3ZDVkMDgyMWIxMWZkMjA2ZDJkZmNiYmMyNTIxNmIxNGMzYTc1Iiwic2NvcGUiOiJvcmc6YWNtZS9yZXBvOmxlZGdlciIsInNpZ25lcl9rZXlpZCI6IjA1NTgyMjhiZmJjZjk5YTdjYTNiMDE0NmExMDhkMWVjN2YwMzlhN2ZhNGQyODcwYzZkMWNmN2NhMGVmMDY3OWMiLCJ0ZW5hbnQiOiJmaXh0dXJlLWQ3OWM1ZWYzIiwidmVyc2lvbiI6M30=",
+     "payloadType": "application/vnd.cordon.policy-bundle+json",
+     "signatures": [
+      {
+       "keyid": "0558228bfbcf99a7ca3b0146a108d1ec7f039a7fa4d2870c6d1cf7ca0ef0679c",
+       "sig": "BVW+GEQRkJQlU0pl3flRt/AuIXGadbPBCBezj88N2mkE4PpqlG7aIiCmH0/pnDh2+oAYdnBkzCnPUTwkcvyLBg=="
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "expect": {
+    "refused": "bundle_expired"
+   },
+   "held_envelope": {
+    "payload": "eyJjb21waWxlZF90YWJsZSI6W1siUjQwMCIsIkJMT0NLIl1dLCJleHBpcmVzX2F0IjoiMjAyNi0xMS0xOVQwOTowMDowMCswMDowMCIsImlzc3VlZF9hdCI6IjIwMjYtMTEtMThUMDk6MDA6MDArMDA6MDAiLCJsaXN0cyI6eyJhbGxvdyI6W119LCJwcmV2X3NoYSI6IiIsInNjb3BlIjoib3JnOmFjbWUvcmVwbzpsZWRnZXIiLCJzaWduZXJfa2V5aWQiOiIwNTU4MjI4YmZiY2Y5OWE3Y2EzYjAxNDZhMTA4ZDFlYzdmMDM5YTdmYTRkMjg3MGM2ZDFjZjdjYTBlZjA2NzljIiwidGVuYW50IjoiZml4dHVyZS1kNzljNWVmMyIsInZlcnNpb24iOjF9",
+    "payloadType": "application/vnd.cordon.policy-bundle+json",
+    "signatures": [
+     {
+      "keyid": "0558228bfbcf99a7ca3b0146a108d1ec7f039a7fa4d2870c6d1cf7ca0ef0679c",
+      "sig": "d005EdNZJsvQgwbDXyXf30QUdGrYyGXXvXjXUaxfQUBb7yhmXUaO8dvQ8c0UkVcWWbRJHiTSEo9TvU27zy4PDQ=="
+     }
+    ]
+   },
+   "name": "a catch-up chain that expired",
+   "now": "2026-11-21T09:00:00+00:00",
+   "offered": [
+    {
+     "payload": "eyJjb21waWxlZF90YWJsZSI6W1siUjQwMCIsIkJMT0NLIl1dLCJleHBpcmVzX2F0IjoiMjAyNi0xMS0xOVQxMDowMDowMCswMDowMCIsImlzc3VlZF9hdCI6IjIwMjYtMTEtMThUMTA6MDA6MDArMDA6MDAiLCJsaXN0cyI6eyJhbGxvdyI6W119LCJwcmV2X3NoYSI6InNoYTI1NjozODNjMTVmZDRlYzNkZGE5ZmM4NjE4NTU0YjAxYmRjM2YxNmMyNzNmYTlkMWY0NzJiZjlhOTVhODNkMjZjOWI3Iiwic2NvcGUiOiJvcmc6YWNtZS9yZXBvOmxlZGdlciIsInNpZ25lcl9rZXlpZCI6IjA1NTgyMjhiZmJjZjk5YTdjYTNiMDE0NmExMDhkMWVjN2YwMzlhN2ZhNGQyODcwYzZkMWNmN2NhMGVmMDY3OWMiLCJ0ZW5hbnQiOiJmaXh0dXJlLWQ3OWM1ZWYzIiwidmVyc2lvbiI6Mn0=",
+     "payloadType": "application/vnd.cordon.policy-bundle+json",
+     "signatures": [
+      {
+       "keyid": "0558228bfbcf99a7ca3b0146a108d1ec7f039a7fa4d2870c6d1cf7ca0ef0679c",
+       "sig": "gqO6BVYO5nzKx2d0gZcernCd1/t4e+UAGLz/E02OD8E0egfuPRDFrSNlCAaeagfq9I5Hs/LbYPS15y2dYgHkBw=="
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "expect": {
+    "state": "new"
+   },
+   "held_envelope": {
+    "payload": "eyJjb21waWxlZF90YWJsZSI6W1siUjQwMCIsIkJMT0NLIl1dLCJleHBpcmVzX2F0IjoiMjAyNi0xMS0xOVQxMTowMDowMCswMDowMCIsImlzc3VlZF9hdCI6IjIwMjYtMTEtMThUMTE6MDA6MDArMDA6MDAiLCJsaXN0cyI6eyJhbGxvdyI6W119LCJwcmV2X3NoYSI6InNoYTI1Njo0MGZhYTlkZWM4OWQzY2Y3NDRmZmNmNWYyNjA3ZDVkMDgyMWIxMWZkMjA2ZDJkZmNiYmMyNTIxNmIxNGMzYTc1Iiwic2NvcGUiOiJvcmc6YWNtZS9yZXBvOmxlZGdlciIsInNpZ25lcl9rZXlpZCI6IjA1NTgyMjhiZmJjZjk5YTdjYTNiMDE0NmExMDhkMWVjN2YwMzlhN2ZhNGQyODcwYzZkMWNmN2NhMGVmMDY3OWMiLCJ0ZW5hbnQiOiJmaXh0dXJlLWQ3OWM1ZWYzIiwidmVyc2lvbiI6M30=",
+    "payloadType": "application/vnd.cordon.policy-bundle+json",
+    "signatures": [
+     {
+      "keyid": "0558228bfbcf99a7ca3b0146a108d1ec7f039a7fa4d2870c6d1cf7ca0ef0679c",
+      "sig": "BVW+GEQRkJQlU0pl3flRt/AuIXGadbPBCBezj88N2mkE4PpqlG7aIiCmH0/pnDh2+oAYdnBkzCnPUTwkcvyLBg=="
+     }
+    ]
+   },
+   "name": "a successor signed under a rotated policy key",
+   "now": "2026-11-28T16:00:00+00:00",
+   "offered": [
+    {
+     "payload": "eyJjb21waWxlZF90YWJsZSI6W1siUjQwMCIsIkJMT0NLIl1dLCJleHBpcmVzX2F0IjoiMjAyNi0xMS0yOVQxNDowMDowMCswMDowMCIsImlzc3VlZF9hdCI6IjIwMjYtMTEtMjhUMTQ6MDA6MDArMDA6MDAiLCJsaXN0cyI6eyJhbGxvdyI6W119LCJwcmV2X3NoYSI6InNoYTI1NjpjMWU1ZWE0OTc5NGIzNTQyYWMyYTFjMjY3ZjNjMmNlY2JkNDVkMTZiMzkwNzJlYjVlZTVkODg2YmQyOTQwNTk4Iiwic2NvcGUiOiJvcmc6YWNtZS9yZXBvOmxlZGdlciIsInNpZ25lcl9rZXlpZCI6IjQzMmE4OWUxMWQxZjUzZDA4M2JjNWQzMGQ3MjlhZjhjMDlhNGY0MDI2ODQ5MTJmMDhkM2YyZDlmNjlhNmEzNzYiLCJ0ZW5hbnQiOiJmaXh0dXJlLWQ3OWM1ZWYzIiwidmVyc2lvbiI6NH0=",
+     "payloadType": "application/vnd.cordon.policy-bundle+json",
+     "signatures": [
+      {
+       "keyid": "432a89e11d1f53d083bc5d30d729af8c09a4f402684912f08d3f2d9f69a6a376",
+       "sig": "ER2IZAj08ON6FyKNxftvmzpah3P9q2yH/YapojEPNT4kbk63ubTv2VNxJ9lc9ky5GGJ4y+0WrkmVaJHslOhPDw=="
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "expect": {
+    "verification_failed": true
+   },
+   "held_envelope": {
+    "payload": "eyJjb21waWxlZF90YWJsZSI6W1siUjQwMCIsIkJMT0NLIl1dLCJleHBpcmVzX2F0IjoiMjAyNi0xMS0xOVQxMDowMDowMCswMDowMCIsImlzc3VlZF9hdCI6IjIwMjYtMTEtMThUMTA6MDA6MDArMDA6MDAiLCJsaXN0cyI6eyJhbGxvdyI6W119LCJwcmV2X3NoYSI6InNoYTI1NjozODNjMTVmZDRlYzNkZGE5ZmM4NjE4NTU0YjAxYmRjM2YxNmMyNzNmYTlkMWY0NzJiZjlhOTVhODNkMjZjOWI3Iiwic2NvcGUiOiJvcmc6YWNtZS9yZXBvOmxlZGdlciIsInNpZ25lcl9rZXlpZCI6IjA1NTgyMjhiZmJjZjk5YTdjYTNiMDE0NmExMDhkMWVjN2YwMzlhN2ZhNGQyODcwYzZkMWNmN2NhMGVmMDY3OWMiLCJ0ZW5hbnQiOiJmaXh0dXJlLWQ3OWM1ZWYzIiwidmVyc2lvbiI6Mn0=",
+    "payloadType": "application/vnd.cordon.policy-bundle+json",
+    "signatures": [
+     {
+      "keyid": "0558228bfbcf99a7ca3b0146a108d1ec7f039a7fa4d2870c6d1cf7ca0ef0679c",
+      "sig": "gqO6BVYO5nzKx2d0gZcernCd1/t4e+UAGLz/E02OD8E0egfuPRDFrSNlCAaeagfq9I5Hs/LbYPS15y2dYgHkBw=="
+     }
+    ]
+   },
+   "name": "a catch-up chain whose first link is signed under the retired key",
+   "now": "2026-11-28T16:00:00+00:00",
+   "offered": [
+    {
+     "payload": "eyJjb21waWxlZF90YWJsZSI6W1siUjQwMCIsIkJMT0NLIl1dLCJleHBpcmVzX2F0IjoiMjAyNi0xMS0xOVQxMTowMDowMCswMDowMCIsImlzc3VlZF9hdCI6IjIwMjYtMTEtMThUMTE6MDA6MDArMDA6MDAiLCJsaXN0cyI6eyJhbGxvdyI6W119LCJwcmV2X3NoYSI6InNoYTI1Njo0MGZhYTlkZWM4OWQzY2Y3NDRmZmNmNWYyNjA3ZDVkMDgyMWIxMWZkMjA2ZDJkZmNiYmMyNTIxNmIxNGMzYTc1Iiwic2NvcGUiOiJvcmc6YWNtZS9yZXBvOmxlZGdlciIsInNpZ25lcl9rZXlpZCI6IjA1NTgyMjhiZmJjZjk5YTdjYTNiMDE0NmExMDhkMWVjN2YwMzlhN2ZhNGQyODcwYzZkMWNmN2NhMGVmMDY3OWMiLCJ0ZW5hbnQiOiJmaXh0dXJlLWQ3OWM1ZWYzIiwidmVyc2lvbiI6M30=",
+     "payloadType": "application/vnd.cordon.policy-bundle+json",
+     "signatures": [
+      {
+       "keyid": "0558228bfbcf99a7ca3b0146a108d1ec7f039a7fa4d2870c6d1cf7ca0ef0679c",
+       "sig": "BVW+GEQRkJQlU0pl3flRt/AuIXGadbPBCBezj88N2mkE4PpqlG7aIiCmH0/pnDh2+oAYdnBkzCnPUTwkcvyLBg=="
+      }
+     ]
+    },
+    {
+     "payload": "eyJjb21waWxlZF90YWJsZSI6W1siUjQwMCIsIkJMT0NLIl1dLCJleHBpcmVzX2F0IjoiMjAyNi0xMS0yOVQxNDowMDowMCswMDowMCIsImlzc3VlZF9hdCI6IjIwMjYtMTEtMjhUMTQ6MDA6MDArMDA6MDAiLCJsaXN0cyI6eyJhbGxvdyI6W119LCJwcmV2X3NoYSI6InNoYTI1NjpjMWU1ZWE0OTc5NGIzNTQyYWMyYTFjMjY3ZjNjMmNlY2JkNDVkMTZiMzkwNzJlYjVlZTVkODg2YmQyOTQwNTk4Iiwic2NvcGUiOiJvcmc6YWNtZS9yZXBvOmxlZGdlciIsInNpZ25lcl9rZXlpZCI6IjQzMmE4OWUxMWQxZjUzZDA4M2JjNWQzMGQ3MjlhZjhjMDlhNGY0MDI2ODQ5MTJmMDhkM2YyZDlmNjlhNmEzNzYiLCJ0ZW5hbnQiOiJmaXh0dXJlLWQ3OWM1ZWYzIiwidmVyc2lvbiI6NH0=",
+     "payloadType": "application/vnd.cordon.policy-bundle+json",
+     "signatures": [
+      {
+       "keyid": "432a89e11d1f53d083bc5d30d729af8c09a4f402684912f08d3f2d9f69a6a376",
+       "sig": "ER2IZAj08ON6FyKNxftvmzpah3P9q2yH/YapojEPNT4kbk63ubTv2VNxJ9lc9ky5GGJ4y+0WrkmVaJHslOhPDw=="
+      }
+     ]
+    },
+    {
+     "payload": "eyJjb21waWxlZF90YWJsZSI6W1siUjQwMCIsIkJMT0NLIl1dLCJleHBpcmVzX2F0IjoiMjAyNi0xMS0yOVQxNTowMDowMCswMDowMCIsImlzc3VlZF9hdCI6IjIwMjYtMTEtMjhUMTU6MDA6MDArMDA6MDAiLCJsaXN0cyI6eyJhbGxvdyI6W119LCJwcmV2X3NoYSI6InNoYTI1Njo5ZWJkZjJhNTdjNTMwZGZiOWE4ODRkNzY1YmE3NWUwNGVhMjM2NzY0ZmY0ZjU5MTc1NmZiYmFmYTQwZTVhZmM5Iiwic2NvcGUiOiJvcmc6YWNtZS9yZXBvOmxlZGdlciIsInNpZ25lcl9rZXlpZCI6IjQzMmE4OWUxMWQxZjUzZDA4M2JjNWQzMGQ3MjlhZjhjMDlhNGY0MDI2ODQ5MTJmMDhkM2YyZDlmNjlhNmEzNzYiLCJ0ZW5hbnQiOiJmaXh0dXJlLWQ3OWM1ZWYzIiwidmVyc2lvbiI6NX0=",
+     "payloadType": "application/vnd.cordon.policy-bundle+json",
+     "signatures": [
+      {
+       "keyid": "432a89e11d1f53d083bc5d30d729af8c09a4f402684912f08d3f2d9f69a6a376",
+       "sig": "vyOd86A4AlwTRZyzS3vfW3uIG9/X+XwZvSFffEddl1kncXerEOzB9Q1ofIQnRoZ6Zszqxi3s5GsevbLnZbyKCA=="
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "delegation": {
+  "payload": "eyJfdHlwZSI6ImNvcmRvbi5kZWxlZ2F0aW9uL3YxIiwiaXNzdWVkX2F0IjoiMjAyNi0xMS0yOFQxNjowMDowMCswMDowMCIsImtleXMiOlt7ImtleWlkIjoiMGNlMzA5MjRjZjVkM2UzMmMzMzljMjc1ZDk2OWI4Y2ZiZTAzZThjNmY5MjI3NmRmNmUxMmQ2NzZkODg5NWU2NiIsIm5vdF9iZWZvcmUiOiIyMDI2LTExLTI4VDE2OjAwOjAwKzAwOjAwIiwicHVibGljIjoiMmY4YTdhNWZhODM1YzA3MzgxNzk4OWVmZmI4NDVmYTRjYzQ2MTY1NTFlNWFkYjM2YWI1OWU5NjljMTJmMWEyYSIsInJvbGUiOiJkZWNpc2lvbi5jbG91ZCIsInZhbGlkX3VudGlsIjoiMjAyNi0xMi0wNVQxNjowMDowMCswMDowMCIsInZlcnNpb24iOjF9LHsia2V5aWQiOiIwNTU4MjI4YmZiY2Y5OWE3Y2EzYjAxNDZhMTA4ZDFlYzdmMDM5YTdmYTRkMjg3MGM2ZDFjZjdjYTBlZjA2NzljIiwibm90X2JlZm9yZSI6IjIwMjYtMTEtMThUMDk6MDA6MDArMDA6MDAiLCJwdWJsaWMiOiJlZTMwOGU0MGYxMWYwNmZlZjY0ZGRkYzhmZWE5NTdmNjkxNWQzN2QwZjczOWQ3NGU0YzU1YmJmMDEzMjZhNDk1Iiwicm9sZSI6InBvbGljeSIsInZhbGlkX3VudGlsIjoiMjAyNi0xMS0yOFQwOTowMDowMCswMDowMCIsInZlcnNpb24iOjF9LHsia2V5aWQiOiI0MzJhODllMTFkMWY1M2QwODNiYzVkMzBkNzI5YWY4YzA5YTRmNDAyNjg0OTEyZjA4ZDNmMmQ5ZjY5YTZhMzc2Iiwibm90X2JlZm9yZSI6IjIwMjYtMTEtMjhUMDk6MDA6MDArMDA6MDAiLCJwdWJsaWMiOiJkNDRmNWY0ODNlMmMyODg0MzJmZDUyZjI4ZDUyOTAxNTM0OWExZTM2ODk3ZjVjYTc5OTdiOTNmOTRkNTkxMzRjIiwicm9sZSI6InBvbGljeSIsInZhbGlkX3VudGlsIjoiMjAyNy0wMi0yNlQwOTowMDowMCswMDowMCIsInZlcnNpb24iOjJ9XSwidGVuYW50IjoiZml4dHVyZS1kNzljNWVmMyJ9",
+  "payloadType": "application/vnd.cordon.delegation+json",
+  "signatures": [
+   {
+    "keyid": "5bb67802094d1b6e4c8ba1752a063dc99da0d44f4fd8e953e32ad397ee5ed1ec",
+    "sig": "rybCWVhqfsxiKSvZICdBFdtIDr5g7LH46g8/dBegXRY2df5nI/wp7QabbcP06nFTOJm6KQ2wL/11fW4ASCOPDQ=="
+   }
+  ]
+ },
+ "root_public": "fb62908016a2bc0d1e7df364ff637e8e47bc26b7a32516bdc35a72641ac57df8",
+ "rules": {
+  "accept": "no held bundle: take any bundle that verifies and has not expired. Held bundle: a lower version is bundle_rolled_back; the same version with another payload is bundle_forked, with the same payload it is unchanged (nothing new, not a refusal); version+1 whose prev_sha is not the held payload's is bundle_chain_broken; a higher version than version+1 is bundle_gap; another scope is bundle_chain_broken; past expires_at is bundle_expired.",
+  "catch_up": "a client that missed versions takes the bundles since its held one, oldest first, all or nothing: every link verifies and chains, only the newest must be unexpired, and every link is verified with the keys valid at 'now', so a chain that spans a policy key rotation is refused and the client is re-bootstrapped.",
+  "names": "bundle_rolled_back, bundle_forked, bundle_chain_broken, bundle_gap, bundle_expired",
+  "prev_sha": "prev_sha is 'sha256:' plus the hex sha256 of the previous bundle's signed payload bytes; version 1 has an empty prev_sha; the chain is per tenant and scope."
+ },
+ "scope": "org:acme/repo:ledger",
+ "tenant": "fixture-d79c5ef3"
+}
