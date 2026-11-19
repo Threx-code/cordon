@@ -351,11 +351,13 @@ _NEGATES_ACT: Final = re.compile(
 _CLAUSE_END: Final = re.compile(r"[:;,.!?。；，]|\band\b|\bthen\b")
 #: What a hidden thing must be for hiding it to be an attack: an act on the user's machine or data,
 #: not "the intermediate steps" of an answer.
+#: Acts only, never data nouns: "do not include API keys in your reply" keeps a secret OUT of an
+#: answer, which is the safe direction (cross-review, backend-eb, second pass).
 _ACT_WORD: Final = re.compile(
-    r"\b(?:upload|send|sent|forward|post|delet|remov|install|download|transfer|commit|push|ran\b|run|execut|copy|cop(?:ied|ies)|"
-    r"exfiltrat|collect|harvest|read(?:s|ing)? (?:the )?(?:key|token|secret|password|credential|file)|token|key|credential|password|"
-    r"request|log|data|file|change|modif|write|wrote|access)\w{0,8}"
-    r"|上傳|上传|發送|发送|刪除|删除|安裝|安装|下載|下载|執行|执行|複製|复制|檔案|文件|密碼|密码|金鑰|密钥|令牌|資料|数据|修改|寫入|写入",
+    r"\b(?:upload|send|sent|forward|post(?:ed|ing|s)?\b|delet|remov|install|download|transfer|"
+    r"commit(?!\s+(?:hash|id|sha|message|log)\b)|push(?!\s+notification)|ran\b|run(?!\s+time)|execut|cop(?:y|ied|ies)\b|"
+    r"exfiltrat|collect|harvest|read(?:s|ing)? (?:the )?(?:key|token|secret|password|credential)|modif|wrote\b|writ(?:e|es|ing) (?:to|into)\b)\w{0,8}"
+    r"|上傳|上传|發送|发送|刪除|删除|安裝|安装|下載|下载|執行|执行|複製|复制|修改|寫入|写入",
     re.IGNORECASE,
 )
 #: Hiding it in the reply: "do not mention the upload in your reply", "keep the upload out of your summary".
@@ -433,7 +435,10 @@ _GOAL_HIJACK: Final = re.compile(
 _FUNDS_REDIRECT: Final = re.compile(
     r"\b(?:replace|swap|change|substitute)\w{0,2}\s+(?:the\s+|any\s+|all\s+)?(?:wallet|recipient|payment|deposit|payout|withdrawal|receiving)\s+(?:address|account|wallet)(?:es|s)?\b"
     r"|\bsend\s+(?:all|the\s+(?:entire|full)|every)\s+(?:funds|tokens|balance|eth|btc|sol|usdt|usdc)\b"
-    r"|\bas\s+the\s+(?:beneficiary|recipient|payee|payout\s+address|receiving\s+address)\b[^.\n]{0,40}\binstead\s+of\b",
+    # In place of the one the USER gave: "use the staging wallet as the beneficiary instead of the
+    # production one" is a test setup, "use Alice as the recipient instead of Bob" is an e-mail.
+    r"|\bas\s+the\s+(?:beneficiary|payee|payout\s+address|receiving\s+address|recipient\s+(?:address|wallet))\b"
+    r"[^.\n]{0,60}\binstead\s+of\b[^.\n]{0,40}\b(?:user|customer|they)\b",
     re.IGNORECASE,
 )
 _RESOURCE_ABUSE: Final = re.compile(
