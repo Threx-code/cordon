@@ -422,6 +422,18 @@ class TestSelfScan(CorpusFixtures):
             # The skills measurement classifies samples by what their payloads do, with the
             # indicators it counts and annotations naming the hosts they fetch from.
             and f.location.path != "bench/suites/skills_measure.py"
+            # The agent-config fetcher names the configuration files it downloads from public
+            # repositories (`.gemini/settings.json`, `.mcp.json`): paths it asks GitHub for, never a
+            # read of this machine's own store.
+            and f.location.path != "bench/tools/fetch_agent_configs.py"
+            # The MCP coverage kit writes `corpus/coverage/mcp`: each family's server bodies are the
+            # positives and negatives it writes, attack-shaped by construction like the agent benchmark.
+            and not f.location.path.startswith("tests/kits/mcp_coverage/")
+            # A package that publishes itself, built as text for the self-publish rule to read: the
+            # rule's own positives and negatives.
+            and f.location.path != "tests/unit/detect/code/test_self_publish_reach.py"
+            # The model server's tests send it an injection naming a key file, the text it must refuse.
+            and f.location.path != "model-server/tests/test_server.py"
             # The detection model's feature patterns name what they count -- a miner's binary and
             # pool protocol among them -- as the rule packs do; data, never run.
             and f.location.path != "src/cordon_scanner/model/data/patterns.json"
@@ -475,7 +487,14 @@ class TestSelfScan(CorpusFixtures):
         from cordon_scanner.sources.git import GitPathSource
 
         git = GitRepository(repository)
-        subject = sorted(set(git.tracked_files()) | set(git.untracked_files()))
+        # Not `corpus/`: excluding its findings afterwards was not enough once a package-level composite could be
+        # made of them. `MALWARE.WORM.SELF_PROPAGATION.001` is reported at the scan's root when its three parts are
+        # anywhere in the scan, and the corpus holds each part in a different sample -- a worm no package has.
+        subject = sorted(
+            path
+            for path in set(git.tracked_files()) | set(git.untracked_files())
+            if not path.startswith("corpus/")
+        )
         return _Scanner(scanner.config, source=GitPathSource(subject, mode="tracked")).scan(
             repository
         )
