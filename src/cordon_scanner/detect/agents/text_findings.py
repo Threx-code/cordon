@@ -89,7 +89,7 @@ class AgentTextFindings:
                     severity=severity,
                 )
             else:
-                start = len(text[: intent.start].encode("utf-8"))
+                start = unit.content.byte_offset(intent.start, text)
                 end = start + len(intent.sentence.encode("utf-8"))
                 yield AgentFinding.finding(
                     "SUSPECT.AGENT.INTENT.001",
@@ -119,7 +119,7 @@ class AgentTextFindings:
                     continue
                 found = InstructionIntent.find(linked)
                 if found:
-                    start = len(text[:offset].encode("utf-8"))
+                    start = unit.content.byte_offset(offset, text)
                     yield AgentFinding.finding(
                         "SUSPECT.AGENT.INTENT_CHAINED.001",
                         unit,
@@ -309,7 +309,7 @@ class AgentTextFindings:
         )
         first = found[0]
         if within is None:
-            start = len(text[: first.start].encode("utf-8"))
+            start = unit.content.byte_offset(first.start, text)
             end = start + len(text[first.start : first.end].encode("utf-8"))
             yield AgentFinding.finding(
                 rule_id,

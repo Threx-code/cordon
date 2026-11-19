@@ -112,7 +112,7 @@ class ViewRunner:
         end = len(data[: hit.byte_end].decode("utf-8", "ignore"))
         raw_start, raw_end = view.to_raw(start, max(end, start + 1))
         raw = content.text
-        byte_start = len(raw[:raw_start].encode("utf-8"))
+        byte_start = content.byte_offset(raw_start, raw)
         byte_end = byte_start + len(raw[raw_start:raw_end].encode("utf-8"))
         return dataclasses.replace(
             hit, byte_start=byte_start, byte_end=byte_end, line=raw.count("\n", 0, raw_start) + 1

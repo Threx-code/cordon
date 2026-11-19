@@ -80,7 +80,7 @@ class CredentialSweep:
             if spans:
 
                 def data(offset: int) -> bool:
-                    at = len(text[:offset].encode("utf-8"))
+                    at = content.byte_offset(offset, text)
                     return any(start <= at < end for start, end in spans)
 
                 # A store named more times than were read is live: a table cannot hide a read past it.
@@ -104,7 +104,7 @@ class CredentialSweep:
         if len({name for _, name in found}) < cls.SWEEP_MIN:
             return []
         first = min(offset for offset, _ in found)
-        start = len(text[:first].encode("utf-8"))
+        start = content.byte_offset(first, text)
         return [
             CapabilityHit(
                 capability=Capability.CREDENTIAL,

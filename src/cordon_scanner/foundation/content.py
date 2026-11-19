@@ -313,6 +313,10 @@ class LineIndex:
         """Spans over the decoded text as byte spans (`TextColumns`)."""
         return TextColumns.byte_spans(self, spans)
 
+    def byte_offset(self, char_offset: int, text: str) -> int:
+        """The byte offset of a character offset in `text`, a byte-order mark counted (`TextColumns`)."""
+        return TextColumns.byte_offset(self, char_offset, text)
+
     @cached_property
     def _ascii(self) -> bool:
         """Whether every byte is ASCII, so characters and bytes agree: once per file, not per match."""

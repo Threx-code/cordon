@@ -1001,6 +1001,7 @@
   "test_delimited.py": "foundation/text",
   "test_comments.py": "foundation/text",
   "test_crlf_detection.py": "foundation/text",
+  "test_byte_order_mark.py": "foundation/text",
   "test_commercial_bench.py": "bench",
   "test_code_features.py": "detect/code",
   "test_memo.py": "detect/code/capability",

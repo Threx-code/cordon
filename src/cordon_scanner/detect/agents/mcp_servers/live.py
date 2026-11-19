@@ -263,7 +263,7 @@ class LiveMcpDetector(BaseDetector):
         rule = next(r for r in self.declared_rules() if r.id == rule_id)
         text = unit.content.text
         index = max(text.find(f'"{server}"'), 0)
-        start = len(text[:index].encode("utf-8"))
+        start = unit.content.byte_offset(index, text)
         line = unit.content.line_of(start)
         return Finding(
             rule_id=rule.id,

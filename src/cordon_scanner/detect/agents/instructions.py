@@ -8,7 +8,7 @@ raw-address links, secrets it hands to the agent, directives hidden in comments.
 from __future__ import annotations
 
 import re
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from cordon_scanner.detect.agents.defensive_doc import DISCUSSES_INJECTION
 from cordon_scanner.detect.agents.text_patterns import (
@@ -19,6 +19,9 @@ from cordon_scanner.detect.agents.text_patterns import (
     ZERO_WIDTH_ONLY,
 )
 from cordon_scanner.intel.registry import KNOWN_INSTALLERS
+
+if TYPE_CHECKING:
+    from cordon_scanner.foundation.content import LineIndex
 
 _WORD_BYTE: Final = re.compile(rb"[A-Za-z0-9]")
 
@@ -412,8 +415,9 @@ class InstructionText:
         return found
 
     @staticmethod
-    def _byte_span(text: str, match: re.Match[str]) -> tuple[int, int]:
-        start = len(text[: match.start()].encode("utf-8"))
+    def _byte_span(text: str, match: re.Match[str], content: LineIndex) -> tuple[int, int]:
+        """A match in `text` as a byte span of the file `content` holds (`LineIndex.byte_offset`)."""
+        start = content.byte_offset(match.start(), text)
         return start, start + len(match.group(0).encode("utf-8"))
 
 

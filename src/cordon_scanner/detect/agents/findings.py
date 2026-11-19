@@ -55,7 +55,7 @@ class AgentFinding:
             index = text.find(json.dumps(needle)[1:-1])
         if index < 0:
             index = 0
-        start = len(text[:index].encode("utf-8"))
+        start = unit.content.byte_offset(index, text)
         end = start + len(needle.encode("utf-8"))
         return cls.finding(
             rule_id,
