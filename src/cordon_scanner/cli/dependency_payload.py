@@ -352,6 +352,7 @@ class DependencyPayload:
             "",
         )
         added: list[Finding] = []
+        unread: list[tuple[str, str]] = []
         with tempfile.TemporaryDirectory(prefix="cordon-deps-") as work:
             for name, spec in declared.items():
                 try:
@@ -364,12 +365,55 @@ class DependencyPayload:
                     found = None
                 if found is None:
                     continue
-                causes = cls.blocking(Scanner(config, detectors=selected).scan(found.path), config)
+                scanned = Scanner(config, detectors=selected).scan(found.path)
+                causes = cls.blocking(scanned, config)
                 if causes:
                     added.append(cls.finding(archive, found, spec, causes[0]))
-        if not added:
+                else:
+                    # Installing the vehicle installs the dependency: a part of it its own content
+                    # left unread is this package's gap too, and blocks as the vehicle's would.
+                    unread.extend(cls.unread(scanned, config, found))
+        if not added and not unread:
             return result
+        findings = (*result.findings, *added, *cls.gap_findings(unread))
         return replace(
             result,
-            findings=tuple(sorted((*result.findings, *added), key=lambda f: -f.severity.value)),
+            findings=tuple(sorted(findings, key=lambda f: -f.severity.value)),
+            complete=result.complete and not unread,
+            content_complete=result.content_complete and not unread,
+            content_gaps=(*result.content_gaps, *unread),
         )
+
+    @staticmethod
+    def unread(scanned: ScanResult, config: Any, found: Resolved) -> list[tuple[str, str]]:
+        """The content gaps of a dependency's scan no accepted gap covers, under the dependency's
+        archive name, so the vehicle's report says which dependency and which file."""
+        from cordon_scanner.decide.policy import PolicyGate
+
+        name = found.path.name
+        return [
+            (rule, path if path.startswith(name) else f"{name}!{path}")
+            for rule, path in PolicyGate._unaccepted_gaps(scanned, config.policy)
+        ]
+
+    @staticmethod
+    def gap_findings(unread: list[tuple[str, str]]) -> list[Finding]:
+        """One record per unread part of a dependency, so the gap is stated where it is reported."""
+        from cordon_scanner.foundation.results import OperationalFinding
+
+        return [
+            OperationalFinding.build(
+                path=path,
+                rule_id=rule,
+                message=(
+                    "Part of a dependency this package declares, which installing the package "
+                    "installs, was not examined, so the package cannot be called clean."
+                ),
+                remediation=(
+                    "Find out why the dependency could not be read; accept the gap only in "
+                    "policy.accepted_gaps."
+                ),
+                severity=Severity.MEDIUM,
+            )
+            for rule, path in unread
+        ]

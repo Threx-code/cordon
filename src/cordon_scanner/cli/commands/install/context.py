@@ -95,7 +95,7 @@ class InstallContext:
 
         def scan(directory: Path) -> tuple[Finding, ...]:
             result = ScanAssembly.engine(config).scan(directory)
-            return tuple(f for f in result.active if PolicyGate._fails(f, config.policy))
+            return PolicyGate.blocking(result, config.policy)
 
         return scan
 
