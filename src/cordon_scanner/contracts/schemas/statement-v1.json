@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cordonscan.com/schemas/statement-v1.json",
+  "title": "in-toto Statement v1 as Cordon writes it (the payload of a DSSE envelope, spec 7.1)",
+  "type": "object",
+  "required": [
+    "_type",
+    "subject",
+    "predicateType",
+    "predicate"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "_type": {
+      "const": "https://in-toto.io/Statement/v1"
+    },
+    "subject": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "digest"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "digest": {
+            "type": "object",
+            "required": [
+              "sha256"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          }
+        }
+      }
+    },
+    "predicateType": {
+      "enum": [
+        "https://cordonscan.com/scan/v1",
+        "https://cordonscan.com/decision/v1",
+        "https://cordonscan.com/intel-match/v1",
+        "https://cordonscan.com/review/v1",
+        "https://cordonscan.com/approval/v1",
+        "https://cordonscan.com/inventory/v1"
+      ]
+    },
+    "predicate": {
+      "type": "object"
+    }
+  }
+}

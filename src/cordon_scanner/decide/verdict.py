@@ -45,6 +45,7 @@ from cordon_scanner.decide.feature_schema import FeatureFold, FeatureRecord, Fea
 from cordon_scanner.decide.verdict_features import VerdictFeatures
 from cordon_scanner.foundation.models import Category, Confidence, Finding, Severity
 from cordon_scanner.foundation.paths import PackagePaths
+from cordon_scanner.intel.malware.feed_models import FeedModels
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -92,10 +93,27 @@ class VerdictModel:
     @staticmethod
     @functools.cache
     def load(path: Path = MODEL_PATH) -> dict[str, Any] | None:
+        """The model at `path`, or the signed feed's delivered copy of it when that loads (the same
+        format and fold checks as the bundled one) and its `version` is fresher (`FeedModels`)."""
+        bundled = VerdictModel._read(path)
+        if bundled is None:
+            return None
+        delivered = FeedModels.delivered(path.name)
+        if delivered is not None:
+            model = VerdictModel._read(delivered)
+            if model is not None and FeedModels.newer(model.get("version"), bundled.get("version")):
+                return model
+        return bundled
+
+    @staticmethod
+    def _read(path: Path) -> dict[str, Any] | None:
+        """The model file at `path` when it is one this tree can score with, else `None`."""
         try:
             with gzip.open(path, "rt", encoding="utf-8") as handle:
-                model: dict[str, Any] = json.load(handle)
-        except OSError:
+                model: Any = json.load(handle)
+        except (OSError, ValueError, EOFError):
+            return None
+        if not isinstance(model, dict):
             return None
         if model.get("format") == VerdictModel.UNFOLDED:
             return model
@@ -136,6 +154,10 @@ class VerdictModel:
                     else n["right"]
                 )
         return 1.0 / (1.0 + math.exp(-max(-60.0, min(60.0, raw))))
+
+
+# A models update installed by the feed is read at the next load, not at the next start.
+FeedModels.WATCHERS.append(VerdictModel.load.cache_clear)
 
 
 class Verdict:
