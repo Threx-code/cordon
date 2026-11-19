@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 from cordon_scanner.detect.agents.extensions import ExtensionNames
+from cordon_scanner.detect.agents.mcp_servers.protocol.protocol_rules import ProtocolRules
 from cordon_scanner.detect.agents.mcp_servers.served_rules import ServedRules
 from cordon_scanner.foundation import references as ref
 from cordon_scanner.foundation.models import (
@@ -943,6 +944,7 @@ RULES.update(
         ),
     }
 )
+RULES.update(ProtocolRules.catalogue(AgentRules._rule, (ref.MCP_SECURITY,)))
 
 
 class AutorunRules:

@@ -2,7 +2,7 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,551 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,611 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -35,7 +35,7 @@ rule's own samples.
 
 ## AI agents
 
-52 rules.
+54 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -62,6 +62,7 @@ rule's own samples.
 | `SUSPECT.AGENT.AUTH_BYPASS_EDIT.001` | high | Tells the agent to add an access check that one fixed identity always passes |
 | `SUSPECT.AGENT.CI_PROMPT_INJECTION.001` | high | Untrusted event text passed straight into an agent's prompt |
 | `SUSPECT.AGENT.CI_UNTRUSTED_TRIGGER.001` | high | An AI agent in CI reads text an outsider can write |
+| `SUSPECT.AGENT.CODE_AND_INSTRUCTIONS.001` | high | An instruction file and the code of the same package agree on an attack on the agent |
 | `SUSPECT.AGENT.CREDENTIAL_EXFIL.001` | critical | Agent instructions that move credentials somewhere |
 | `SUSPECT.AGENT.DROPPER_PROSE.001` | high | Agent instructions that have the reader run a hidden or pasted payload |
 | `SUSPECT.AGENT.FETCH_EXEC.001` | high | Agent instructions that fetch and execute remote code |
@@ -76,6 +77,7 @@ rule's own samples.
 | `SUSPECT.AGENT.INTENT_CHAINED.001` | high | Agent instructions that send the agent to a file that acts against its user |
 | `SUSPECT.AGENT.JUDGED.001` | medium | A language model judges agent-facing text to be subverting the agent |
 | `SUSPECT.AGENT.PHANTOM_PREREQUISITE.001` | high | Agent instructions that require downloading a tool they never use |
+| `SUSPECT.AGENT.PLANTS_INSTRUCTIONS.001` | medium | A package's install or start-up code writes a file into an agent's own instruction place |
 | `SUSPECT.AGENT.PLUGIN_SOURCE.001` | high | Agent plugins installed from an unverified source |
 | `SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001` | medium | An agent instruction file tells the agent to fetch and follow remote text |
 | `SUSPECT.AGENT.SENSITIVE_IMPORT.001` | high | An agent instruction file imports a credential file |
@@ -1707,37 +1709,89 @@ rule's own samples.
 
 ## MCP servers
 
-27 rules.
+79 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `OPERATIONAL.MCP.LIVE_UNREAD.001` | info | A remote MCP server could not be read |
 | `OPERATIONAL.MCP.UNRESOLVED` | info | An MCP server package was not examined |
+| `SUSPECT.MCP.ACCOUNT_ENUMERATION.001` | medium | An MCP server's source lists the machine's user accounts and who is logged in |
+| `SUSPECT.MCP.AGENT_SAFETY_OFF.001` | medium | An MCP server's source switches off the permission checks of the agent or the editor |
+| `SUSPECT.MCP.ANALYSIS_TOOL_NAMES.001` | high | An MCP server's source lists the tools used to analyse malware |
 | `SUSPECT.MCP.ARGUMENT_OVERRIDE.001` | high | An MCP tool replaces the argument it was called with |
+| `SUSPECT.MCP.BIND_SHELL.001` | medium | An MCP server's source listens for connections and hands them a shell |
 | `SUSPECT.MCP.BORROWED_NAME.001` | high | MCP server published under a service's name its code never mentions |
+| `SUSPECT.MCP.C2_DNS_TXT.001` | medium | An MCP server's source takes its orders from a DNS text record |
+| `SUSPECT.MCP.C2_TELEGRAM.001` | high | An MCP server's source takes its orders from a Telegram bot |
+| `SUSPECT.MCP.CHARCODE_BUILD.001` | high | An MCP server's source spells a string out in character codes |
+| `SUSPECT.MCP.CLOUD_METADATA.001` | medium | An MCP server's source names a cloud instance's metadata service |
+| `SUSPECT.MCP.CONTAINER_ESCAPE.001` | high | An MCP server's source reaches out of its container |
 | `SUSPECT.MCP.CONTAINER_HOST_ACCESS.001` | high | An MCP server's container is given the host |
+| `SUSPECT.MCP.DECODE_RUN.001` | medium | An MCP server's source decodes or decompresses a value and runs the result as a command or as code |
 | `SUSPECT.MCP.DENIAL_OF_WALLET.001` | medium | An MCP tool's result tells the agent to call it again, deeper or for every item |
+| `SUSPECT.MCP.DESCRIPTION_FETCHED.001` | medium | An MCP server's source takes the description of its own tool from a network answer |
+| `SUSPECT.MCP.DETACHED_CHILD.001` | medium | An MCP server's source starts a detached process from a temporary location |
+| `SUSPECT.MCP.DOWNLOAD_RUN_TEMP.001` | high | An MCP server's source downloads a program and starts it from a temporary directory |
+| `SUSPECT.MCP.ELICIT_CREDENTIAL.001` | medium | An MCP server asks the user for a credential through the protocol's own prompt |
+| `SUSPECT.MCP.EMBEDDED_WASM.001` | medium | An MCP server's source carries a WebAssembly module inside a string |
 | `SUSPECT.MCP.ENV_INJECTION.001` | high | An MCP server's environment loads code into it before it starts |
+| `SUSPECT.MCP.EXFIL_DNS.001` | high | An MCP server's source builds a DNS name out of data |
+| `SUSPECT.MCP.EXFIL_DROP.001` | medium | An MCP server's source names an anonymous paste or file-drop service |
+| `SUSPECT.MCP.EXFIL_EMAIL.001` | medium | An MCP server's source sends mail to an address written in the code |
+| `SUSPECT.MCP.EXFIL_LOGGER.001` | high | An MCP server's source names an IP-logging link |
+| `SUSPECT.MCP.EXFIL_PRESIGNED.001` | high | An MCP server's source uploads to a signed storage address written in the code |
+| `SUSPECT.MCP.EXFIL_REPO.001` | medium | An MCP server's source files what it handles as a gist or an issue in a repository written in the code |
+| `SUSPECT.MCP.EXFIL_TUNNEL.001` | medium | An MCP server's source names a tunnel, request-capture or interaction host |
+| `SUSPECT.MCP.EXFIL_WEBHOOK.001` | high | An MCP server's source carries a chat webhook with its secret written in |
+| `SUSPECT.MCP.FORK_BOMB.001` | medium | An MCP server's source contains a fork bomb |
+| `SUSPECT.MCP.GATED_PAYLOAD.001` | medium | An MCP server's source holds a fetch-and-run or a send behind a call count, a date or a check for CI |
 | `SUSPECT.MCP.HANDLER_SHELL.001` | high | An MCP tool runs its own input as a command |
+| `SUSPECT.MCP.HOME_WIPE.001` | medium | An MCP server's source deletes the user's whole home directory |
+| `SUSPECT.MCP.IDENTITY_GATE.001` | medium | An MCP server's source acts only on the machines whose host name or locale it checks |
+| `SUSPECT.MCP.INPUT_DROPPED.001` | medium | An MCP tool posts what it is asked to an address written in its code |
 | `SUSPECT.MCP.INPUT_FORWARDED.001` | high | An MCP tool sends what it is asked to a second host |
 | `SUSPECT.MCP.INPUT_MIRROR.001` | high | An MCP tool copies what it is asked into a hidden file |
+| `SUSPECT.MCP.INPUT_PROGRAM.001` | medium | An MCP tool starts the program its input names |
+| `SUSPECT.MCP.INPUT_SHELL.001` | medium | An MCP tool hands its input to a shell as a command |
 | `SUSPECT.MCP.INSECURE_TRANSPORT.001` | high | A remote MCP server over plain HTTP |
+| `SUSPECT.MCP.ISSUE_TASKING.001` | high | An MCP server's source reads orders from the issues of a repository written in the code |
+| `SUSPECT.MCP.K8S_SECRET_READ.001` | high | An MCP server's source reads the cluster's secrets with its own service-account token |
+| `SUSPECT.MCP.LIBRARY_HIJACK.001` | medium | An MCP server's source plants a library or a search path for other programs |
 | `SUSPECT.MCP.LISTENER.001` | high | An MCP server opens its own listening socket and runs commands |
 | `SUSPECT.MCP.LIVE_TOOL_DESCRIPTION.001` | high | A remote MCP server serves a tool description that steers the agent |
 | `SUSPECT.MCP.LOOKALIKE.001` | high | An MCP server package named like a popular one |
+| `SUSPECT.MCP.NATIVE_FROM_TEMP.001` | high | An MCP server's source loads a module or a shared library from a temporary place or straight from the network |
+| `SUSPECT.MCP.NOTIFICATION_FLOOD.001` | medium | An MCP server's source sends notifications to the client in a loop with no end |
+| `SUSPECT.MCP.PACKAGE_TAMPER.001` | medium | An MCP server's source writes into the files of other installed packages |
+| `SUSPECT.MCP.PASTE_TASKING.001` | high | An MCP server's source fetches a paste from a paste site and runs it |
+| `SUSPECT.MCP.PRIVILEGE_GRANT.001` | medium | An MCP server's source grants itself administrator rights |
+| `SUSPECT.MCP.PROCESS_MASQUERADE.001` | medium | An MCP server's source gives its process the name of a system service |
 | `SUSPECT.MCP.PROMPT_INJECTION.001` | high | An MCP prompt template carries a hidden or hostile order |
+| `SUSPECT.MCP.RANSOM_NOTE.001` | medium | An MCP server's source carries a ransom note |
+| `SUSPECT.MCP.RECON_BATTERY.001` | medium | An MCP server's source runs several commands that survey the machine |
 | `SUSPECT.MCP.RESOURCE_INJECTION.001` | high | An MCP resource serves text that gives the agent orders |
+| `SUSPECT.MCP.RESPONSE_RUN.001` | medium | An MCP server's source reads an answer from a host and runs it as a command |
 | `SUSPECT.MCP.RESULT_INJECTION.001` | high | An MCP tool returns text that gives the agent orders |
+| `SUSPECT.MCP.REVERSE_SHELL.001` | medium | An MCP server's source opens a reverse shell |
+| `SUSPECT.MCP.ROOTS_ESCAPE.001` | medium | An MCP server's source asks for the user's roots and then reads a credential file outside them |
+| `SUSPECT.MCP.SAMPLING_ABUSE.001` | high | An MCP server uses the client's model as its own tool through sampling |
 | `SUSPECT.MCP.SCHEMA_POISONING.001` | high | An MCP tool's parameter names an order to the agent |
 | `SUSPECT.MCP.SECRET_HARVEST.001` | high | An MCP server gathers the environment's secrets by name |
+| `SUSPECT.MCP.SECURITY_TOOL_KILL.001` | high | An MCP server's source stops or blinds security software |
 | `SUSPECT.MCP.SHELL_LAUNCH.001` | high | An MCP server launched through a shell that fetches code |
+| `SUSPECT.MCP.SHELL_PIPE_DOWNLOAD.001` | medium | An MCP server's source downloads a script and runs it in one command |
+| `SUSPECT.MCP.SPLIT_PAYLOAD.001` | medium | An MCP server's source joins pieces of an encoded string and decodes the whole |
+| `SUSPECT.MCP.SUBSCRIPTION_CHANNEL.001` | medium | An MCP server's source carries data to the client inside the address of a resource update |
 | `SUSPECT.MCP.TIME_BOMB.001` | high | An MCP tool changes behaviour on a mixed date, chance and call-count gate |
 | `SUSPECT.MCP.TOOLS_CHANGED.001` | medium | A remote MCP server's tools changed since they were approved |
+| `SUSPECT.MCP.TOOLS_REPLACED_AFTER_CALLS.001` | medium | An MCP server's source replaces a tool's description after a number of calls |
 | `SUSPECT.MCP.TOOL_DESCRIPTION.001` | high | A tool in this repository's MCP server instructs the agent |
 | `SUSPECT.MCP.TOOL_POISONING.001` | high | An MCP server's tool description hides text or instructs the agent |
 | `SUSPECT.MCP.TOOL_SQUATTING.001` | high | An MCP tool takes a well-known tool's name and claims to be the safer one |
+| `SUSPECT.MCP.TRACE_ERASE.001` | medium | An MCP server's source erases shell history or system logs |
 | `SUSPECT.MCP.UNPINNED.001` | medium | An MCP server launched from an unpinned package |
 | `SUSPECT.MCP.UNTRUSTED_REMOTE.001` | high | A remote MCP server on a tunnel, paste or interaction host |
+| `SUSPECT.MCP.WEBSOCKET_C2.001` | high | An MCP server's source takes commands from a WebSocket it opens itself |
 
 ## Media
 
@@ -1805,13 +1859,19 @@ rule's own samples.
 
 ## Persistence
 
-3 rules.
+9 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.PERSIST.BACKDOOR.001` | critical | Writes a file that lets someone else in, with content the package carries |
 | `MALWARE.PERSIST.HIDDEN.001` | critical | Registers a program to start at login and starts it without a window |
 | `SUSPECT.PERSIST.001` | high | Network access combined with a persistence mechanism |
+| `SUSPECT.PERSIST.WRITES_DOWNLOADER.001` | high | An MCP server's source schedules a job that downloads and runs a script |
+| `SUSPECT.PERSIST.WRITES_DOWNLOADER.002` | high | An MCP server's source writes a launch agent or daemon that downloads and runs a script |
+| `SUSPECT.PERSIST.WRITES_DOWNLOADER.003` | high | An MCP server's source writes a service unit that downloads and runs a script |
+| `SUSPECT.PERSIST.WRITES_DOWNLOADER.004` | high | An MCP server's source adds a line to a shell start-up file that downloads and runs a script |
+| `SUSPECT.PERSIST.WRITES_DOWNLOADER.005` | high | An MCP server's source plants a git hook that downloads and runs a script |
+| `SUSPECT.PERSIST.WRITES_DOWNLOADER.006` | high | An MCP server's source writes an instruction file for the agent that tells it to download and run a script |
 
 ## Polyglot
 

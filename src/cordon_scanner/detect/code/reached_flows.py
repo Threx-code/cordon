@@ -371,6 +371,58 @@ class CrossFileJoin:
     #: How deep a re-export chain is followed before it counts as not known (`CrossFile` follows 4).
     MAX_REEXPORT_DEPTH: ClassVar[int] = 4
 
+    #: Operational findings that say some file was not read whole (or a scan stopped early): the package's
+    #: requests are then not all known.
+    GAPS: ClassVar[tuple[str, ...]] = (
+        "OPERATIONAL.DETECTOR.",
+        "OPERATIONAL.PARSER.",
+        "OPERATIONAL.FILE.",
+        "OPERATIONAL.SCAN.",
+        "OPERATIONAL.WORKER.",
+        "OPERATIONAL.ARCHIVE.",
+    )
+
+    @staticmethod
+    def carriers(findings: Sequence[Finding]) -> set[str]:
+        """The files with a REMOTE_CODE composite finding from the capability detector: the ones graded
+        again with what the whole package says of where its requests go (`unexternal`)."""
+        from cordon_scanner.detect.code.capability.rule_ids import CompositeRuleIds
+
+        return {
+            f.location.path
+            for f in findings
+            if f.detector == "capability" and f.rule_id in CompositeRuleIds.REMOTE_CODE_RULES
+        }
+
+    @staticmethod
+    def unexternal(
+        facts: Mapping[str, Mapping[str, list[Any]]],
+        findings: Sequence[Finding],
+        flows: Mapping[str, Sequence[tuple[int, tuple[str, ...], str, str]]] | None = None,
+    ) -> bool:
+        """Whether every request of the package is known and none of them goes to an external literal host,
+        and no decoded value is run anywhere in it : the workers' `js.request` and `js.decoded`
+        facts across the package, never a file read here. The block of `SUSPECT.DROPPER.REMOTE_CODE.001` and
+        `MALWARE.INSTALL.REMOTE_CODE.001` is kept for an external literal host or decoded content in the
+        package, and wherever something was not read (an unknown is never read as "no external host")."""
+        from cordon_scanner.analysis.javascript.flow.origins import LOCAL, UNRESOLVED
+
+        if any(f.rule_id.startswith(CrossFileJoin.GAPS) for f in findings):
+            return False
+        for held in facts.values():
+            if held.get("js.decoded"):
+                return False
+            # Only a request known to go nowhere external lowers: external, unread and over_budget (and any class
+            # not named here) keep the block.
+            if any(kind not in (LOCAL, UNRESOLVED) for kind, _count in held.get("js.request", ())):
+                return False
+        # A decoded value that crosses files (a helper another file exports runs it) is run in the package too.
+        return not any(
+            "decoded" in sources and sink in ("execute", "process")
+            for held in (flows or {}).values()
+            for _line, sources, sink, _destination in held
+        )
+
     @staticmethod
     def lowered(findings: Sequence[Finding]) -> set[str]:
         """The files with a capability finding lowered as a parameter-built command (note 78)."""

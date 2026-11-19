@@ -169,6 +169,11 @@ class TestTheChannel:
             ("js.callsink", ["P0", "request", "fixed", 1]),
             ("js.export", ["", 0]),
             ("js.reexport", [""]),
+            ("js.request", ["elsewhere", 1]),
+            ("js.request", ["external", 0]),
+            ("js.request", ["external"]),
+            ("js.decoded", [2]),
+            ("js.decoded", ["yes"]),
         ],
     )
     def test_a_wrong_shape_is_refused(self, kind, value) -> None:
@@ -215,16 +220,23 @@ class TestTheChannel:
         from cordon_scanner.analysis.javascript.js_flow import JsFlow
 
         body = "x = 1;\n" * 250_000
-        assert JsFlow.summaries(body) == {"js.require": [JsSummaries.UNREAD]}
+        assert JsFlow.summaries(body) == {
+            "js.require": [JsSummaries.UNREAD],
+            "js.request": [["unread", 1]],
+        }
         for edge in (
             'require("./a");',
             "require(name);",
             'import { a } from "../a";',
             "import(x);",
         ):
-            assert JsFlow.summaries(edge + "\n" + body) == {"js.require": [JsSummaries.UNRESOLVED]}
+            assert JsFlow.summaries(edge + "\n" + body) == {
+                "js.require": [JsSummaries.UNRESOLVED],
+                "js.request": [["unread", 1]],
+            }
         assert JsFlow.summaries('require("lodash");\n' + body) == {
-            "js.require": [JsSummaries.UNREAD]
+            "js.require": [JsSummaries.UNREAD],
+            "js.request": [["unread", 1]],
         }
 
     def test_a_file_joining_nothing_sends_nothing(self) -> None:
