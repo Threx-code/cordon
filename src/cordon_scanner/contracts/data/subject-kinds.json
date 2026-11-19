@@ -1,0 +1,159 @@
+{
+  "contracts_version": "1.2.0",
+  "kinds": [
+    {
+      "kind": "package",
+      "id_prefix": "pkg:<type>/",
+      "required": [
+        "ecosystem",
+        "name"
+      ],
+      "optional": [
+        "namespace"
+      ],
+      "choices": {},
+      "description": "a package of a public or private registry, as a package URL without a version"
+    },
+    {
+      "kind": "container_image",
+      "id_prefix": "pkg:oci/",
+      "required": [
+        "name"
+      ],
+      "optional": [
+        "registry"
+      ],
+      "choices": {},
+      "description": "a container image, by repository and registry; the tag or digest is not part of the name"
+    },
+    {
+      "kind": "ci_action",
+      "id_prefix": "ci:",
+      "required": [
+        "host"
+      ],
+      "optional": [
+        "owner",
+        "repo",
+        "path",
+        "project",
+        "component"
+      ],
+      "choices": {
+        "host": [
+          "github",
+          "gitlab"
+        ]
+      },
+      "description": "a CI action or component: owner, repo and optional path on GitHub; project and component on GitLab"
+    },
+    {
+      "kind": "ide_extension",
+      "id_prefix": "ext:",
+      "required": [
+        "marketplace",
+        "publisher",
+        "name"
+      ],
+      "optional": [],
+      "choices": {
+        "marketplace": [
+          "vscode",
+          "openvsx",
+          "jetbrains"
+        ]
+      },
+      "description": "an editor extension, by marketplace, publisher and name"
+    },
+    {
+      "kind": "agent_skill",
+      "id_prefix": "skill:",
+      "required": [
+        "source",
+        "locator"
+      ],
+      "optional": [],
+      "choices": {
+        "source": [
+          "gh",
+          "registry",
+          "local",
+          "archive"
+        ]
+      },
+      "description": "an agent skill, by where it comes from and its locator"
+    },
+    {
+      "kind": "mcp_server",
+      "id_prefix": "mcp:",
+      "required": [
+        "transport",
+        "locator"
+      ],
+      "optional": [
+        "registry"
+      ],
+      "choices": {
+        "transport": [
+          "npm",
+          "pypi",
+          "oci",
+          "remote",
+          "local"
+        ]
+      },
+      "description": "an MCP server, by how it is reached and its locator"
+    },
+    {
+      "kind": "ai_model",
+      "id_prefix": "model:",
+      "required": [
+        "provider",
+        "name"
+      ],
+      "optional": [],
+      "choices": {},
+      "description": "a model, by provider and name (a Hugging Face model is a package URL of type huggingface)"
+    },
+    {
+      "kind": "agent",
+      "id_prefix": "agent:",
+      "required": [
+        "product"
+      ],
+      "optional": [],
+      "choices": {},
+      "description": "an AI agent product"
+    },
+    {
+      "kind": "source_repository",
+      "id_prefix": "repo:",
+      "required": [
+        "scm",
+        "owner",
+        "name"
+      ],
+      "optional": [],
+      "choices": {
+        "scm": [
+          "github",
+          "gitlab",
+          "bitbucket",
+          "git"
+        ]
+      },
+      "description": "a source repository"
+    },
+    {
+      "kind": "build_artifact",
+      "id_prefix": "art:",
+      "required": [
+        "scope",
+        "name"
+      ],
+      "optional": [],
+      "choices": {},
+      "description": "a build artifact of one tenant, by scope and name"
+    }
+  ]
+}
