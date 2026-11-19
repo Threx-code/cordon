@@ -5,12 +5,13 @@ files and a clock. No server: the client's `fetch` reads the directory, and scen
 memory from the files, so a publisher only has to write its output (root, timestamp, snapshot, targets, deltas,
 full bundle) to a folder. With test keys the same suite runs against the backend's own export.
 
-    python bench/tools/feed_conformance.py --feed DIR [--older DIR] [--root FILE] [--keys FILE] [--clock 2027-01-15T12:00:00Z]
+    python bench/tools/feed_conformance.py --feed DIR [--older DIR] [--root FILE] [--keys FILE] [--bundle-chain FILE] [--clock 2027-01-15T12:00:00Z]
 
 `--feed` is the current export; `--older` is an earlier export of the same feed (a lower version, validly signed)
 for the rollback and mix-and-match scenarios; `--root` is the pinned root (default `DIR/root.json`); `--keys` is the
 test keys file of a sample made by `feed_rotation.py` (throwaway keys, never a publisher's), which the scenarios that
-sign what an attacker would need; `--clock` is the time the client runs at (default: now). Prints one line per
+sign what an attacker would need; `--bundle-chain` is the platform's bundle-chain fixtures (`bundle-chain-fixtures.json`: raw signed
+envelopes, the held envelope, a clock and the expected outcome of each case); `--clock` is the time the client runs at (default: now). Prints one line per
 scenario and exits non-zero if any fails.
 
 ```
@@ -35,9 +36,11 @@ scenario and exits non-zero if any fails.
   refuses_revoked_key_after_rotation  timestamp, snapshot or targets signed by a version 1 key that version 2 dropped is
                                  refused, by a client that follows the rotation and by one that has already taken it
                                  (needs `--keys`)
+  agrees_on_bundle_chain         the policy-bundle chain client (`cloud/bundle_chain.py`) takes, refuses and names each case of
+                                 the platform's fixtures as they say (needs `--bundle-chain`)
 ```
 A scenario that needs something the directory lacks (an older export; two files of one name; rotated roots; the keys
-file) is reported as `skip`.
+file; the bundle-chain fixtures) is reported as `skip`.
 """
 
 from __future__ import annotations
@@ -58,6 +61,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from feed_rotation import Rotation, RotationKeys
 
+from cordon_scanner.cloud.bundle_chain import BundleChain, BundleError, BundleRefused
 from cordon_scanner.intel.base import FeedError
 from cordon_scanner.intel.malware.feed import Feed, FeedRoles, FeedState
 
@@ -122,9 +126,11 @@ class Conformance:
         root: dict[str, Any],
         clock: datetime,
         rotation: Rotation | None = None,
+        bundles: dict[str, Any] | None = None,
     ) -> None:
         self.feed, self.older, self.root, self.clock = feed, older, root, clock
         self.rotation = rotation
+        self.bundles = bundles
         self.fetched: list[str] = []
 
     # -- plumbing ----------------------------------------------------------------------------------
@@ -552,6 +558,55 @@ class Conformance:
         later = self._refused_all(name, taken, "timestamp metadata is signed by 0")
         return later if later.status != "pass" else Outcome(name, "pass", "4 variant(s)")
 
+    # -- the chain of policy bundles (BP-6-11) -----------------------------------------------------
+
+    @staticmethod
+    def _bundle_outcome(fixtures: dict[str, Any], case: dict[str, Any]) -> dict[str, Any]:
+        """What the client does with one fixture case, in the fixtures' own words."""
+        root = bytes.fromhex(fixtures["root_public"])
+        held_envelope = case["held_envelope"]
+        held = BundleChain.unverified_payload_document(held_envelope) if held_envelope else None
+        now = datetime.fromisoformat(case["now"])
+        offered = case["offered"]
+        try:
+            if len(offered) > 1:
+                state, _ = BundleChain.accept_chain(
+                    root_public=root,
+                    delegation=fixtures["delegation"],
+                    envelopes=offered,
+                    tenant=fixtures["tenant"],
+                    now=now,
+                    held=held,
+                )
+            else:
+                state, _ = BundleChain.accept_bundle(
+                    root_public=root,
+                    delegation=fixtures["delegation"],
+                    envelope=offered[0],
+                    tenant=fixtures["tenant"],
+                    now=now,
+                    held=held,
+                )
+        except BundleRefused as refused:
+            return {"refused": refused.name}
+        except BundleError:
+            return {"verification_failed": True}
+        return {"state": state}
+
+    def agrees_on_bundle_chain(self) -> Outcome:
+        name = "agrees_on_bundle_chain"
+        if self.bundles is None:
+            return Outcome(name, "skip", "no bundle-chain fixtures (--bundle-chain FILE)")
+        cases = self.bundles["cases"]
+        wrong = [
+            f"{case['name']}: wanted {case['expect']}, got {got}"
+            for case in cases
+            if (got := self._bundle_outcome(self.bundles, case)) != case["expect"]
+        ]
+        if wrong:
+            return Outcome(name, "fail", "; ".join(wrong))
+        return Outcome(name, "pass", f"{len(cases)} cases agree")
+
     def run(self) -> list[Outcome]:
         scenarios = (
             self.accepts,
@@ -571,6 +626,7 @@ class Conformance:
             self.refuses_root_without_old_threshold,
             self.refuses_skipped_root_version,
             self.refuses_revoked_key_after_rotation,
+            self.agrees_on_bundle_chain,
         )
         saved = os.environ.get("CORDON_CACHE_DIR")
         try:
@@ -592,6 +648,7 @@ class Command:
         parser.add_argument("--older", type=Path)
         parser.add_argument("--root", type=Path)
         parser.add_argument("--keys", type=Path)
+        parser.add_argument("--bundle-chain", type=Path)
         parser.add_argument("--clock", default=None)
         arguments = parser.parse_args(argv)
         feed = FeedFiles.read(arguments.feed)
@@ -604,7 +661,12 @@ class Command:
             else datetime.now(UTC)
         )
         rotation = Rotation(RotationKeys.read(arguments.keys)) if arguments.keys else None
-        outcomes = Conformance(feed, older, root, clock, rotation).run()
+        bundles = (
+            json.loads(arguments.bundle_chain.read_text(encoding="utf-8"))
+            if arguments.bundle_chain
+            else None
+        )
+        outcomes = Conformance(feed, older, root, clock, rotation, bundles).run()
         for item in outcomes:
             sys.stdout.write(
                 f"{item.status:5} {item.name}{(' - ' + item.detail) if item.detail else ''}\n"
