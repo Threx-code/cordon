@@ -1,22 +1,42 @@
 """The attack techniques an MCP server's own source can carry (`mcp_servers/techniques.py`).
 
-Each technique is a row of one table, read the same way in every SDK. The table's own fixtures are the tests: each
-positive is found, each look-alike that is not the technique is not, every row is in the rule catalogue and says what it
-means in product terms, and a file is read only when it builds an MCP server.
+Each technique is a row of one table, read the same way in every SDK. The fixtures are the tests: each positive is
+found, each look-alike that is not the technique is not, every row is in the rule catalogue and says what it means in
+product terms, and a file is read only when it builds an MCP server. The fixtures hold the attack shapes themselves, so
+they live here (`technique_fixtures.json`) and not in the shipped tables, which carry the patterns the reader uses and
+no working command line.
 """
 
 from __future__ import annotations
 
+import json
 import re
+from dataclasses import replace
 from pathlib import Path
 from typing import ClassVar
 
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.detect.agents.mcp_servers.techniques import TECHNIQUES, McpTechniques, Technique
+from cordon_scanner.detect.agents.mcp_servers.techniques import TECHNIQUES as SHIPPED
+from cordon_scanner.detect.agents.mcp_servers.techniques import McpTechniques, Technique
 from cordon_scanner.foundation.config.settings import Config
+from support import ROOT
 
+FIXTURES = json.loads(
+    (
+        ROOT / "tests" / "unit" / "detect" / "agents" / "mcp_servers" / "technique_fixtures.json"
+    ).read_text(encoding="utf-8")
+)
+#: The shipped rows with their fixtures attached.
+TECHNIQUES = tuple(
+    replace(
+        row,
+        positive=tuple((s, t) for s, t in FIXTURES[row.rule_id]["positive"]),
+        negative=tuple((s, t) for s, t in FIXTURES[row.rule_id]["negative"]),
+    )
+    for row in SHIPPED
+)
 IDS = [t.rule_id for t in TECHNIQUES]
 HEADERS = {
     "js": 'import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";\nconst server = new McpServer({ name: "demo", version: "1.0.0" });\n',
@@ -40,6 +60,19 @@ class Reading:
 
 
 class TestTheTable:
+    def test_the_shipped_tables_hold_no_example_of_an_attack(self) -> None:
+        from cordon_scanner.detect.agents.mcp_servers.techniques.data import TechniqueData
+
+        assert all(not row.positive and not row.negative for row in SHIPPED)
+        for table in TechniqueData.TABLES:
+            text = (TechniqueData.directory() / f"mcp-techniques-{table}.json").read_text(
+                encoding="utf-8"
+            )
+            assert '"positive"' not in text and '"negative"' not in text
+
+    def test_every_fixture_belongs_to_a_row(self) -> None:
+        assert set(FIXTURES) == {row.rule_id for row in SHIPPED}
+
     def test_every_row_has_its_own_rule_id(self) -> None:
         assert len(set(IDS)) == len(IDS)
         assert all(re.fullmatch(r"SUSPECT\.(?:MCP|PERSIST)\.[A-Z0-9_]+\.00\d", i) for i in IDS)

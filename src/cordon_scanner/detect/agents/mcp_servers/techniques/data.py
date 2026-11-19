@@ -1,8 +1,9 @@
 """The rows of the technique tables, read from the JSON files shipped beside the rule packs.
 
-Each row names a technique and carries, as inert fixtures, the shapes it detects: a reverse shell, a fetched description,
-a hook that downloads and runs. Those shapes are data, not code: kept in `rules/builtin/mcp-techniques-<table>.json`
-with the rule packs' own test cases, they are not read as this package's source by a scan of an installation.
+Each row names a technique and holds what the reader needs to find it: the patterns, what else must be there, what makes
+it something else, the grade and the words a user reads. A row holds no example of the attack: the fixtures that exercise
+a row are test data (`tests/unit/detect/agents/mcp_servers/technique_fixtures.json`), so nothing shipped carries a working
+command line, and a scan of an installation reads this package as it reads any other.
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ import json
 from pathlib import Path
 from typing import Any, ClassVar
 
-from cordon_scanner.detect.agents.mcp_servers.techniques.technique import Fixture, Technique
+from cordon_scanner.detect.agents.mcp_servers.techniques.technique import Technique
 from cordon_scanner.foundation.models import Confidence, Severity
 from cordon_scanner.foundation.paths import PackagePaths
 
@@ -37,10 +38,6 @@ class TechniqueData:
             rows.extend(cls._row(entry) for entry in document)
         return tuple(rows)
 
-    @staticmethod
-    def _fixtures(entries: list[list[str]]) -> tuple[Fixture, ...]:
-        return tuple((suffix, text) for suffix, text in entries)
-
     @classmethod
     def _row(cls, entry: dict[str, Any]) -> Technique:
         return Technique(
@@ -55,6 +52,4 @@ class TechniqueData:
             at_least=entry["at_least"],
             severity=Severity[entry["severity"]],
             confidence=Confidence[entry["confidence"]],
-            positive=cls._fixtures(entry["positive"]),
-            negative=cls._fixtures(entry["negative"]),
         )
