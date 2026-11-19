@@ -976,7 +976,7 @@ rules:
         - 'print("next: npm publish")'
 
   - id: SUSPECT.EXFIL.CREDENTIAL_FILE.001
-    version: 1.0.0
+    version: 1.1.0
     category: suspicious
     severity: medium
     confidence: medium
@@ -1002,6 +1002,16 @@ rules:
             - rule: CAP.CREDENTIAL.AGENT_AUTH_STORE.001
             - rule: CAP.CREDENTIAL.STORE.001
         - capability: egress
+      # A test module writes a store's path and a request into the files it scans or serves; the same list as
+      # `SUSPECT.EXFIL.NAMED_SECRET.001`, the other composite of a credential and a send.
+      unless:
+        - path_glob: "**/*.test.*"
+        - path_glob: "**/*.spec.*"
+        - path_glob: "**/test_*.py"
+        - path_glob: "**/*_test.go"
+        - path_glob: "tests/**"
+        - path_glob: "test/**"
+        - path_glob: "__tests__/**"
 
   - id: SUSPECT.EXFIL.WALLET_KEY.001
     version: 1.0.0
