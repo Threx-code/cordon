@@ -538,12 +538,16 @@ rules:
         # The whole environment, which is also how a reader of every variable would index one afterwards.
         - '\benv\s*::\s*vars(?:_os)?\s*\(\s*\)'
         - '\.ssh/id_|\.aws/credentials|\.docker/config\.json|\.kube/config|\.cargo/credentials|\.npmrc|\.pypirc'
+        # Any path into one of those stores under the home directory, as the build rule reads it: an SSH identity need
+        # not be named `id_*` (`~/.ssh/fleet`).
+        - '~/\.(?:aws|ssh|docker|npmrc|kube|cargo)\b'
         - '\benv\s*::\s*var(?:_os)?\s*\(\s*"(?:AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|GITHUB_TOKEN|GH_TOKEN|NPM_TOKEN|PYPI_TOKEN|CARGO_REGISTRY_TOKEN)"'
     tests:
       positive:
         - "let all: HashMap<String, String> = std::env::vars().collect();"
         - "for (k, v) in env::vars() { body.push_str(&k); }"
         - "let key = fs::read_to_string(home.join(\".ssh/id_ed25519\"))?;"
+        - "let identity = \"~/.ssh/codewhale_fleet\";"
         - "let t = std::env::var(\"GITHUB_TOKEN\").unwrap_or_default();"
       negative:
         - "let token = std::env::var(\"BOT_TOKEN\").unwrap_or_default();"
