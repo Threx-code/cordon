@@ -23,9 +23,11 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.analysis.javascript.flow.origins import RequestOrigins
-from cordon_scanner.analysis.javascript.js_flow import MAX_BYTES
+from cordon_scanner.analysis.javascript.js_flow import MAX_BYTES, JsFlow
+from cordon_scanner.detect.code.reached_flows import CrossFileJoin
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Finding, Severity
+from support import requires_forked_workers
 
 SUSPECT = "SUSPECT.DROPPER.REMOTE_CODE.001"
 INSTALL = "MALWARE.INSTALL.REMOTE_CODE.001"
@@ -201,16 +203,20 @@ class TestWhatIsNotKnownKeepsTheBlock:
         files = {"index.js": OriginScanKit.client("'http://127.0.0.1:8123/cmd'"), "lib/big.js": big}
         assert OriginScanKit.graded(tmp_path, files)[SUSPECT] >= Severity.HIGH
 
+    @requires_forked_workers
     def test_a_file_whose_origins_pass_the_step_budget_keeps_the_block(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """The loopback client is reported below the gate (above); with its origins past the step budget nothing
-        is known of where it requests, so it keeps its grade."""
+        is known of where it requests, so it keeps its grade. The budget is patched here and read in the scan's
+        workers, so this runs where workers are forked; `TestTheBudgetWithoutWorkers` holds the same decision
+        on every platform."""
         monkeypatch.setattr(RequestOrigins, "STEP_FLOOR", 0)
         monkeypatch.setattr(RequestOrigins, "STEPS_PER_TOKEN", 0)
         files = {"index.js": OriginScanKit.client("'http://127.0.0.1:8123/cmd'")}
         assert OriginScanKit.graded(tmp_path, files)[SUSPECT] >= Severity.HIGH
 
+    @requires_forked_workers
     def test_the_reason_is_not_given_when_the_budget_is_passed(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -218,3 +224,36 @@ class TestWhatIsNotKnownKeepsTheBlock:
         monkeypatch.setattr(RequestOrigins, "STEPS_PER_TOKEN", 0)
         files = {"index.js": OriginScanKit.client("'http://127.0.0.1:8123/cmd'")}
         assert not OriginScanKit.reason_given(tmp_path, files)
+
+
+class TestTheBudgetWithoutWorkers:
+    """The decision of the two scans above, with no worker process: the worker's half (`JsFlow.summaries_raw`, run in
+    this process, where a patch holds) and the parent's half (`CrossFileJoin.unexternal`). On Windows a scan's
+    workers are spawned fresh and never see a patch made in the test, so those scans run where workers are forked;
+    these run everywhere and say the same thing: what a file's origins cost past the budget is unknown, and an
+    unknown keeps the block."""
+
+    LOOPBACK = OriginScanKit.client("'http://127.0.0.1:8123/cmd'")
+
+    @staticmethod
+    def lowered(text: str) -> bool:
+        """Whether the package of this one file may have the block lowered: every request known, none external."""
+        return CrossFileJoin.unexternal({"index.js": JsFlow.summaries_raw(text)}, [])
+
+    def test_a_loopback_request_within_the_budget_may_lower_the_block(self) -> None:
+        assert self.lowered(self.LOOPBACK)
+
+    def test_a_file_past_the_budget_says_nothing_is_known(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(RequestOrigins, "STEP_FLOOR", 0)
+        monkeypatch.setattr(RequestOrigins, "STEPS_PER_TOKEN", 0)
+        assert JsFlow.summaries_raw(self.LOOPBACK)["js.request"] == [["over_budget", 1]]
+
+    def test_a_file_past_the_budget_keeps_the_block(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(RequestOrigins, "STEP_FLOOR", 0)
+        monkeypatch.setattr(RequestOrigins, "STEPS_PER_TOKEN", 0)
+        assert not self.lowered(self.LOOPBACK)
+
+    def test_an_external_host_keeps_the_block_within_the_budget_too(self) -> None:
+        assert not self.lowered(OriginScanKit.client("'https://updates.example.invalid/x'"))
