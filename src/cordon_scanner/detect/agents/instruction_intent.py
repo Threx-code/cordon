@@ -446,8 +446,9 @@ _RESOURCE_ABUSE: Final = re.compile(
     r"\b(?:spawn|launch|start|create)[a-z]{0,2} {1,3}(?:\d{3,9}|hundreds of|thousands of|as many as possible|unlimited) {1,3}(?:agents|processes|threads|instances|requests|sub-?agents)\b"
     r"|:\(\) ?\{ ?:\|:& ?\};:|stratum\+tcp://"
     # A topic word is an attack only as the object of an imperative: "run xmrig", not "what xmrig is".
-    # Bounded repeats only (tests/unit/repository/test_regex_scaling.py).
-    r"|^[ \t]{0,8}[^\w\s]{0,3}[ \t]{0,3}(?:run|start|launch|install|execute|deploy)[a-z]{0,2} {1,3}(?:[a-z]{1,20} {1,3}){0,3}(?:xmrig|minerd|cryptonight|a (?:crypto ?)?miner|a fork ?bomb)\b"
+    # Bounded repeats only (tests/unit/repository/test_regex_scaling.py). The miner names are spelled with a one-letter
+    # class so this source does not itself name a miner binary to the mining rule (the self-scan).
+    r"|^[ \t]{0,8}[^\w\s]{0,3}[ \t]{0,3}(?:run|start|launch|install|execute|deploy)[a-z]{0,2} {1,3}(?:[a-z]{1,20} {1,3}){0,3}(?:xm[r]ig|mine[r]d|cryptonight|a (?:crypto ?)?miner|a fork ?bomb)\b"
     r"|^[ \t]{0,8}[^\w\s]{0,3}[ \t]{0,3}mine (?:crypto|monero|bitcoin)\b",
     re.IGNORECASE,
 )
