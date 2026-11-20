@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.analysis.python.flows.cross_file import CrossFileMaps
 from cordon_scanner.decide.code_model import CodeModelPass
+from cordon_scanner.decide.package_rules import PackageRules
 from cordon_scanner.decide.remote_control import RemoteControl
 from cordon_scanner.detect.base import (
     FileUnit,
@@ -354,6 +355,8 @@ class ScanStages:
                 facts=acc.facts,
             )
         findings = (*graded, *code_model, *remote_control)
+        # Package-scope composites, over everything the rules and the verdict left (`package_rules.py`).
+        findings = (*findings, *PackageRules.decide(self.engine.rules, findings, ctx, acc.facts))
         dependencies = self.engine.detection.annotated(dependencies, findings, ctx, units)
         return findings, verdict, dependencies
 

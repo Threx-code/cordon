@@ -340,6 +340,8 @@ class Engine:
         findings, verdict, dependencies = self.stages.fold_and_judge(acc, units, ctx, dependencies)
         result = ScanResult(
             findings=findings,
+            unfiltered=tuple(findings),
+            capabilities=acc.capability_names(),
             verdict=verdict,
             places=ctx.places(),
             repository=inventory,
@@ -548,8 +550,11 @@ class Engine:
         ContextStage.report_unread(acc)
         acc.ended_late(ctx, path.name)
         acc.explain_incomplete()
+        findings = tuple(acc.findings)
         result = ScanResult(
-            findings=tuple(acc.findings),
+            findings=findings,
+            unfiltered=findings,
+            capabilities=acc.capability_names(),
             verdict=verdict,
             places=ctx.places(),
             # What installing it installs, then what only files outside that set record.
@@ -557,7 +562,7 @@ class Engine:
             repository=Repository(root=str(path), file_count=acc.files_scanned),
             target_kind=target_kind,
             image=image.identity.to_dict() if image is not None else None,
-            stats=self._archive_scan_stats(acc, started, len(dependencies)),
+            stats=ArchiveStages.stats(acc, started, len(self.rules), len(dependencies)),
             **acc.coverage(),
             schema_version=SCHEMA_VERSION,
             engine_version=__version__,
@@ -566,18 +571,6 @@ class Engine:
             config_hash=self.config.fingerprint(),
         )
         return PolicyGate.filter_for_reporting(result, self.config).sorted()
-
-    def _archive_scan_stats(self, acc: Accumulator, started: float, dependencies: int) -> ScanStats:
-        """What an archive scan counted: files and bytes read, dependencies, rules, and the time spent."""
-        return ScanStats(
-            files_scanned=acc.files_scanned,
-            bytes_scanned=acc.bytes_scanned,
-            dependencies=dependencies,
-            rules_evaluated=len(self.rules),
-            duration_ms=int((time.monotonic() - started) * 1000),
-            detector_cpu_ms=DetectorClock.milliseconds(),
-            view_files=DetectorClock.counts(),
-        )
 
     # -- Phase 0: inventory ----------------------------------------------
 

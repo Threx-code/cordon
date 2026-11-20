@@ -17,6 +17,7 @@ from cordon_scanner.analysis.python.unparsed_source import UnparsedSource
 from cordon_scanner.analysis.shared.languages import LanguageRegistry
 from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.decide.code_model import CodeModelPass
+from cordon_scanner.decide.package_rules import PackageRules
 from cordon_scanner.decide.remote_control import RemoteControl
 from cordon_scanner.detect.base import (
     FileUnit,
@@ -26,6 +27,7 @@ from cordon_scanner.detect.base import (
 from cordon_scanner.detect.registry import ComposerPluginHooks, InstallFacts
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.engine.closure import ImportClosure, StartupClosure
+from cordon_scanner.engine.detector_clock import DetectorClock
 from cordon_scanner.engine.entries import PackageEntries
 from cordon_scanner.engine.package_format import PackageFormat
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
@@ -50,7 +52,7 @@ from cordon_scanner.foundation.errors import ArchiveError
 from cordon_scanner.foundation.formats.served_json import ServedJson
 from cordon_scanner.foundation.models import Confidence, Scope, Severity
 from cordon_scanner.foundation.paths import ContainerPaths
-from cordon_scanner.foundation.results import Dependency, OperationalFinding
+from cordon_scanner.foundation.results import Dependency, OperationalFinding, ScanStats
 from cordon_scanner.foundation.text.confusion_versions import ConfusionVersions
 from cordon_scanner.sources.registry import ArchiveReader
 
@@ -475,6 +477,19 @@ class ArchiveStages:
         acc.add(ReleaseChecks.placeholder_release(units, ctx))
         acc.add(ReleaseChecks.borrowed_server_name(units, ctx))
 
+    @staticmethod
+    def stats(acc: Accumulator, started: float, rules: int, dependencies: int) -> ScanStats:
+        """What an archive scan counted: files and bytes read, dependencies, rules, and the time spent."""
+        return ScanStats(
+            files_scanned=acc.files_scanned,
+            bytes_scanned=acc.bytes_scanned,
+            dependencies=dependencies,
+            rules_evaluated=rules,
+            duration_ms=int((time.monotonic() - started) * 1000),
+            detector_cpu_ms=DetectorClock.milliseconds(),
+            view_files=DetectorClock.counts(),
+        )
+
     def deferred(
         self,
         units: list[FileUnit],
@@ -666,6 +681,8 @@ class ArchiveStages:
             )
         acc.findings.extend(code_model)
         acc.findings.extend(remote_control)
+        # Package-scope composites, over everything the rules and the verdict left (`package_rules.py`).
+        acc.findings.extend(PackageRules.decide(self.engine.rules, acc.findings, ctx, acc.facts))
         dependencies = self.engine.detection.annotated(dependencies, acc.findings, ctx, units)
         return dependencies, verdict
 

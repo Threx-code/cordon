@@ -261,6 +261,7 @@ class Facts:
         "verdict.modules": Shapes.module_name,
         "verdict.abilities": Shapes.ability,
         "cap.label": Shapes.capability,
+        "cap.all": Shapes.capability,
         "cap.error": Shapes.marker,
         "cap.download": Shapes.marker,
         "intent.effect": Shapes.intent_effect,

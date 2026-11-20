@@ -189,6 +189,14 @@ class Accumulator:
         self.findings.append(finding)
         return True
 
+    def capability_names(self) -> dict[str, tuple[str, ...]]:
+        """Each file's capability names from its worker's facts (`cap.all`), sorted."""
+        return {
+            path: tuple(sorted(set(held.get("cap.all", ()))))
+            for path, held in sorted(self.facts.items())
+            if held.get("cap.all")
+        }
+
     def explain_incomplete(self) -> None:
         """An incomplete scan says why: when no coverage finding names what went unexamined, a
         backstop does (`OPERATIONAL.SCAN.INCOMPLETE`). Every path that leaves a scan incomplete

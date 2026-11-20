@@ -51,7 +51,7 @@ from cordon_scanner.detect.code.capability.hits import CapabilityHit
 from cordon_scanner.detect.code.capability.javascript import JavaScriptCapabilities
 from cordon_scanner.detect.code.capability.labelling import Labelling
 from cordon_scanner.detect.code.capability.legitimate_use import LegitimateUse
-from cordon_scanner.detect.code.capability.memo import CapabilityMemo
+from cordon_scanner.detect.code.capability.memo import CapabilityMemo, LabelledNames
 from cordon_scanner.detect.code.capability.rule_ids import CompositeRuleIds
 from cordon_scanner.detect.code.capability.text_position import TextPosition
 from cordon_scanner.detect.code.capability.view_runner import ViewRunner
@@ -379,6 +379,8 @@ class CapabilityDetector(BaseDetector):
         if labelled is None:
             return ()
         hits, candidates = labelled
+        # The names for the worker's facts (`LabelledNames`): what package-scope rules read of every file.
+        LabelledNames.remember(unit.path, frozenset(h.capability.value for h in hits))
         return list(self._composite_findings(unit, ctx, hits, candidates))
 
     def labelled(

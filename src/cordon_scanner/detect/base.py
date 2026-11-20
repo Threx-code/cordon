@@ -882,6 +882,13 @@ class SkillScripts(Protocol):
     def named_scripts(self, units: Sequence[FileUnit]) -> frozenset[str]: ...
 
 
+class CapabilityNameMemo(Protocol):
+    """What the engine uses of the class `LabelledNames`: the capability names the detector's own pass found in
+    the file a worker is inspecting."""
+
+    def take(self, path: str) -> frozenset[str]: ...
+
+
 class SubmoduleDependencies(Protocol):
     """What the engine uses of the class `Submodules`."""
 

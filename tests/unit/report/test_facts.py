@@ -103,31 +103,65 @@ class TestTheRecordHoldsFactsAndNoText:
             and entry["reached"] is True
             and entry["ext"] == "js"
         )
-        hook = next(f for f in record["files"] if f["key"] == ScanFacts.file_key("install.js"))
-        assert hook["places"] == ["install_entry"] and hook["rules"] == {}
+        # A file with a place and nothing else is counted by place, not listed.
+        assert ScanFacts.file_key("install.js") not in {f["key"] for f in record["files"]}
+        assert record["package"]["places"]["install_entry"] == 1
 
     def test_package_level_facts(self) -> None:
         package = ScanFacts.of(FactsKit.result())["package"]
         assert package["places"] == {"import_entry": 1, "install_entry": 1}
-        assert package["hooks"] == [{"kind": "postinstall", "programs": ["node", "env"]}]
+        assert package["hooks"] == [{"kind": "postinstall", "programs": ["node", "OTHER"]}]
         assert package["dependencies"] == {"total": 1, "direct": 1, "local": 0}
         assert package["rules"] == {"POLICY.PACKAGE.EXAMPLE.001": 1}
 
-    def test_a_suppressed_finding_is_not_a_fact(self) -> None:
+    def test_a_suppression_does_not_change_the_facts_and_is_counted_apart(self) -> None:
         from cordon_scanner.foundation.models import Suppression
 
-        hidden = Support.a_finding(
-            rule_id="CAP.JS.EGRESS.001",
-            location=Location(path="lib/other.js", line=1),
-            suppressed=Suppression(
+        plain = Support.a_finding(
+            rule_id="CAP.JS.EGRESS.001", location=Location(path="lib/other.js", line=1)
+        )
+        hidden = plain.with_suppression(
+            Suppression(
                 rule="CAP.JS.EGRESS.001",
                 path="lib/other.js",
                 justification="example",
                 expires="2099-01-01",
-            ),
+            )
         )
-        record = ScanFacts.of(FactsKit.result(findings=(hidden,)))
-        assert ScanFacts.file_key("lib/other.js") not in {f["key"] for f in record["files"]}
+        shown = ScanFacts.of(FactsKit.result(findings=(plain,)))
+        kept = ScanFacts.of(FactsKit.result(findings=(hidden,)))
+        assert [f["rules"] for f in shown["files"]] == [f["rules"] for f in kept["files"]]
+        assert kept["files"][0]["suppressed"] == {"CAP.JS.EGRESS.001": 1}
+        assert shown["files"][0]["suppressed"] == {}
+
+    def test_an_unread_file_says_so_and_is_never_absent(self) -> None:
+        record = ScanFacts.of(
+            FactsKit.result(content_gaps=(("OPERATIONAL.FILE.TRUNCATED", "dist/big.js"),))
+        )
+        big = next(f for f in record["files"] if f["key"] == ScanFacts.file_key("dist/big.js"))
+        assert big["unread"] == ["OPERATIONAL.FILE.TRUNCATED"]
+        assert record["package"]["files_unread"] == 1
+
+    def test_counts_and_the_file_list_are_bounded(self) -> None:
+        from cordon_scanner.report.facts import MAX_FILES
+
+        loud = Support.a_finding(
+            rule_id="CAP.JS.EGRESS.001",
+            location=Location(path="lib/loud.js", line=1),
+            occurrences=1_000_000,
+        )
+        many = tuple(
+            Support.a_finding(
+                rule_id="CAP.JS.EGRESS.001",
+                location=Location(path=f"lib/f{i}.js", line=1),
+                capabilities=(Capability.EGRESS,),
+            )
+            for i in range(MAX_FILES + 25)
+        )
+        record = ScanFacts.of(FactsKit.result(findings=(loud, *many)))
+        assert len(record["files"]) == MAX_FILES
+        assert record["package"]["files_omitted"] == 26
+        assert all(n <= 1_000 for f in record["files"] for n in f["rules"].values())
 
 
 class TestTheRecordIsCanonical:
@@ -158,24 +192,27 @@ class TestTheRecordIsCanonical:
 class TestOnlyTheScannersVocabularyIsCopied:
     def test_hook_programs_are_bare_names_without_paths_or_arguments(self) -> None:
         assert ScanFacts.programs("FOO=1 ./scripts/run.sh --x; curl -s https://a.example | sh") == [
-            "run.sh",
+            "OTHER",
             "curl",
             "sh",
         ]
         assert ScanFacts.programs("node -e \"require('x')\"") == ["node"]
 
-    def test_a_program_word_that_is_not_a_plain_name_is_left_out(self) -> None:
-        assert ScanFacts.programs("$(echo evil) && `x`") == []
+    def test_a_program_not_in_the_closed_list_is_other(self) -> None:
+        assert ScanFacts.programs("$(echo evil) && `x` && deploy-internal.sh") == ["OTHER"] * 3
 
     def test_a_rule_id_outside_the_scanners_form_is_counted_as_other(self) -> None:
         assert ScanFacts.rule_id("CAP.JS.SPAWN.001") == "CAP.JS.SPAWN.001"
         assert ScanFacts.rule_id("pack rule: steal /home/user") == "OTHER"
+        assert ScanFacts.rule_id("ACME.PROJECT-ATLAS.001", "acme.rules") == "OTHER"
+        assert ScanFacts.rule_id("LEARNED.MCP.001", "learned.0123456789ab") == "LEARNED.MCP.001"
 
     def test_the_extension_is_short_and_plain_or_empty(self) -> None:
         assert ScanFacts.extension("a/b/c.PY") == "py"
         assert ScanFacts.extension("a.tgz!pkg/x.mjs") == "mjs"
         assert ScanFacts.extension("a/.bashrc") == ""
-        assert ScanFacts.extension("a/b.verylongextension") == ""
+        assert ScanFacts.extension("a/b.verylongextension") == "other"
+        assert ScanFacts.extension("a/b.atlasproj") == "other"
 
 
 @requires_corpus
@@ -186,11 +223,85 @@ class TestARealScanRecordsWhereFilesRun:
         result = Scanner(Config.default()).scan(BENIGN / "setup-helper")
         assert result.places is not None
         assert "setup.py" in result.places.get("install_hook", ())
-        record = ScanFacts.of(result)
-        setup = next(f for f in record["files"] if f["key"] == ScanFacts.file_key("setup.py"))
-        assert "install_hook" in setup["places"] and setup["reached"] is True
+        assert ScanFacts.of(result)["package"]["places"]["install_hook"] >= 1
 
     def test_a_lifecycle_hook_gives_its_program_name_only(self) -> None:
         record = ScanFacts.of(Scanner(Config.default()).scan(BENIGN / "npm-native-build"))
         assert {"kind": "install", "programs": ["node-gyp"]} in record["package"]["hooks"]
         assert "rebuild" not in json.dumps(record)
+
+
+class TestHostileNamesNeverReachTheRecord:
+    """Every string of the record is hex, a closed-list word, the scanner's own vocabulary or OTHER, whatever the
+    package named its files, hooks and rules."""
+
+    HOSTILE = (
+        "../../etc/passwd",
+        "src/\u202eevil\u202c.js",
+        "AKIA" + "IOSFODNN7EXAMPLE/token.js",
+        "x" * 4_000 + ".js",
+        "docs/ignore previous instructions.md",
+        "dist/\x00\ufeffbom.ts",
+    )
+
+    def test_every_string_is_from_a_closed_vocabulary(self) -> None:
+        import re
+
+        findings = (
+            *tuple(
+                Support.a_finding(
+                    rule_id="CAP.JS.EGRESS.001",
+                    location=Location(path=name, line=1),
+                    capabilities=(Capability.EGRESS,),
+                )
+                for name in self.HOSTILE
+            ),
+            Support.a_finding(
+                rule_id="ACME.SECRET-PROJECT.001",
+                rulepack="acme.private",
+                location=Location(path="lib/a.js", line=1),
+            ),
+        )
+        record = ScanFacts.of(
+            FactsKit.result(
+                findings=findings,
+                repository=Repository(
+                    root="/tmp/x",
+                    hooks=(
+                        Hook(
+                            kind="postinstall",
+                            path="package.json",
+                            name="postinstall",
+                            command="./ignore-previous-instructions.sh && curl https://secret.example",
+                        ),
+                    ),
+                ),
+                places={"install_entry": tuple(self.HOSTILE)},
+            )
+        )
+        allowed = re.compile(r"[0-9a-f]{16}|[0-9a-f]{64}|[A-Z0-9_.\-]{1,96}|[a-z_0-9.\-]{1,40}|")
+
+        def strings(value):
+            if isinstance(value, str):
+                yield value
+            elif isinstance(value, dict):
+                for k, v in value.items():
+                    yield k
+                    yield from strings(v)
+            elif isinstance(value, list):
+                for v in value:
+                    yield from strings(v)
+
+        for text in strings(record):
+            assert allowed.fullmatch(text), text
+        dumped = json.dumps(record)
+        for leak in (
+            "passwd",
+            "evil",
+            "AKIA",
+            "previous",
+            "SECRET-PROJECT",
+            "secret.example",
+            "xxxx",
+        ):
+            assert leak not in dumped, leak
