@@ -18,6 +18,7 @@ from cordon_scanner.engine.pipeline.constants import (
     SWEPT_NOTE,
 )
 from cordon_scanner.foundation.content import FileContent
+from cordon_scanner.foundation.files.size_ceilings import SizeCeilings
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -70,13 +71,31 @@ class ArchiveMembers:
         a bundle read whole (review 98). A file past `max_stream_bytes` is not read to its end and
         keeps the scan incomplete: padding a payload past the limit is the evasion.
         """
-        return content.window_source is not None and content.limits.max_stream_bytes >= content.size
+        return content.window_source is not None and content.stream_limit >= content.size
 
     @staticmethod
     def truncated_note(path: str, content: FileContent) -> Finding:
         """What a file over `max_file_bytes` had examined, said exactly."""
         if content.window_source is not None:
-            reach = min(content.size, content.limits.max_stream_bytes)
+            reach = min(content.size, content.stream_limit)
+            ceiling = SizeCeilings.of(content.path, content.is_binary)
+            if content.size > ceiling:
+                # Larger than any file of its kind is expected to be: the size is the anomaly, and the scan is incomplete.
+                return OperationalFinding.build(
+                    path=path,
+                    rule_id="OPERATIONAL.FILE.TRUNCATED",
+                    message=(
+                        f"Size anomaly: this {content.size}-byte file is over the {ceiling} bytes a "
+                        f"{SizeCeilings.kind(content.path, content.is_binary)} file is expected to reach. The first "
+                        f"{len(content.raw)} bytes were examined by every rule and the next "
+                        f"{max(0, reach - len(content.raw))} in windows by every rule that reads text; the rest was "
+                        "not read, so the scan is incomplete."
+                    ),
+                    remediation=(
+                        "A file this large for its kind is padding or an artefact: inspect it, split it, or exclude "
+                        "it deliberately (a model or vendored binary)."
+                    ),
+                )
             rest = (
                 "the rest"
                 if reach >= content.size
