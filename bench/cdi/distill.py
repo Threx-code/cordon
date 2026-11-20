@@ -34,6 +34,8 @@ from dataclasses import dataclass, field
 from statistics import NormalDist
 from typing import Any, Final
 
+from bench.cdi.leakage import Leakage
+
 from cordon_scanner.rules.fact_terms import FactTerms
 
 REFUSED_KINDS: Final = FactTerms.REFUSED
@@ -54,6 +56,8 @@ class Unit:
     split: str
     facts: dict[str, Any]
     missed: bool = True
+    label_tier: str = "confirmed"
+    """The label's tier (`Schemas`: confirmed, corroborated, silver ...); only a malicious unit is gated on it (`bench/cdi/leakage.py`)."""
 
 
 @dataclass
@@ -125,8 +129,12 @@ class Distiller:
 
     def distill(self, units: list[Unit]) -> Distillation:
         refused: dict[str, int] = {}
+        # LL-43 (SI-Q8, SI-Q9): a held, fresh, sealed, val or excluded release, or a malicious one without a confirmed or corroborated
+        # label, is refused with its reason before anything is counted; it is never dropped silently.
+        allowed, leaked = Leakage.admit(units)
+        refused.update(leaked)
         kept_units = []
-        for u in units:
+        for u in allowed:
             if u.label == "mal" and u.family in self.refused_families:
                 refused["unit_in_refused_family"] = refused.get("unit_in_refused_family", 0) + 1
                 continue

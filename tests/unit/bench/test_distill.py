@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import random
 import sys
+from dataclasses import replace
 
 import pytest
 
@@ -13,6 +14,7 @@ from support import ROOT as REPO
 sys.path.insert(0, str(REPO))
 
 from bench.cdi.distill import Distiller, Terms, Unit
+from bench.cdi.leakage import Leakage, LeakageRefused
 
 CAPS = ("spawn", "egress", "read_file", "write_file", "decode", "env")
 
@@ -273,3 +275,52 @@ class TestOneDistillationReadsOneFactsVersion:
         )
         with pytest.raises(ValueError, match="versions"):
             Distiller().distill([*units, old, new])
+
+
+class TestAReleaseThatMayNotInformAGeneratorIsRefusedWithItsReason:
+    """LL-43 (SI-Q8, SI-Q9): val, held, fresh, sealed and excluded releases, and malicious ones without a confirmed or corroborated
+    label, are counted with the reason and never read; none is dropped silently."""
+
+    @pytest.mark.parametrize("split", ["val", "held", "fresh", "sealed", "excluded"])
+    def test_a_split_a_generator_may_not_read_is_refused_by_name(self, split: str) -> None:
+        units = FactsKit.planted(3, 5, split=split) + FactsKit.legit(300)
+        run = Distiller().distill(units)
+        assert run.refused[f"split_{split}"] == 15
+        assert run.candidate is None
+        assert run.search["train_units"] == 300  # the planted families never reached the count
+
+    def test_a_sealed_legit_unit_is_refused_too(self) -> None:
+        run = Distiller().distill(FactsKit.legit(40, split="sealed") + FactsKit.legit(10))
+        assert run.refused["split_sealed"] == 40
+        assert run.search["train_units"] == 10
+
+    def test_a_silver_labelled_malicious_unit_in_train_is_refused_for_its_tier(self) -> None:
+        silver = [replace(u, label_tier="silver") for u in FactsKit.planted(4, 5)]
+        run = Distiller().distill(silver + FactsKit.legit(300))
+        assert run.refused["label_tier_silver"] == 20
+        assert run.candidate is None
+
+    def test_a_legit_unit_has_no_tier_to_fail(self) -> None:
+        legit = [replace(u, label_tier="silver") for u in FactsKit.legit(30)]
+        run = Distiller().distill(legit)
+        assert "label_tier_silver" not in run.refused
+        assert run.search["train_units"] == 30
+
+    def test_train_dev_and_confirm_units_are_all_read(self) -> None:
+        units = (
+            FactsKit.planted(4, 5)
+            + FactsKit.legit(12_000)
+            + FactsKit.planted(2, 3, split="confirm")
+            + FactsKit.legit(9_000, split="confirm", seed=11)
+        )
+        run = Distiller().distill(units)
+        assert run.candidate is not None
+        assert not [k for k in run.refused if k.startswith(("split_", "label_tier_"))]
+
+    def test_one_offered_at_a_time_raises_with_the_reasons(self) -> None:
+        Leakage.require("train", "confirmed")
+        Leakage.require("dev", "corroborated")
+        Leakage.require("confirm")
+        with pytest.raises(LeakageRefused) as refusal:
+            Leakage.require("held", "silver")
+        assert refusal.value.reasons == ("label_tier_silver", "split_held")

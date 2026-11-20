@@ -25,7 +25,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Final
 
-from bench.cdi.schemas import FACTORY_SPLITS, FACTORY_TIERS, Schemas
+from bench.cdi.leakage import Leakage
+from bench.cdi.schemas import FACTORY_SPLITS, Schemas
 
 from cordon_scanner.report.facts import FACTS_VERSION
 from cordon_scanner.rules.fact_terms import FactTerms
@@ -141,13 +142,9 @@ class Census:
     @staticmethod
     def eligibility(row: MissRow) -> tuple[bool, tuple[str, ...]]:
         """Whether the miss may inform a generator, and if not, why (the label tier, the split, or both)."""
-        reasons = []
-        if row.label_tier not in FACTORY_TIERS:
-            reasons.append(f"label_tier_{row.label_tier}")
-        if row.split not in FACTORY_SPLITS:
-            reasons.append(f"split_{row.split}")
+        reasons = Leakage.reasons(row.split, row.label_tier, FACTORY_SPLITS)
         eligible = Schemas.eligible_for_factory(row.label_tier, row.split)
-        return eligible, tuple(reasons)
+        return eligible, reasons
 
     @staticmethod
     def run(
