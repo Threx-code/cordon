@@ -386,7 +386,8 @@ _AUTO_CONDITION: Final = re.compile(
 )
 #: Data always sent to a party fixed in the text: a chat id, an address, an outside host.
 _ALWAYS_SEND: Final = re.compile(
-    r"\b(?:always|must|automatically)\s+(?:\w+\s+){0,2}(?:send|forward|post|upload|report|share|deliver)\w{0,2}\b",
+    # Bounded repeats only (tests/unit/repository/test_regex_scaling.py): at most two short words between.
+    r"\b(?:always|must|automatically) {1,3}(?:[a-z]{1,20} {1,3}){0,2}(?:send|forward|post|upload|report|share|deliver)[a-z]{0,2}\b",
     re.IGNORECASE,
 )
 _FIXED_RECIPIENT: Final = re.compile(r"\bid\b\W{0,4}\d{6,}|\b(?:chat_id|user_id)\W{0,4}-?\d{6,}", re.IGNORECASE)
@@ -442,11 +443,12 @@ _FUNDS_REDIRECT: Final = re.compile(
     re.IGNORECASE,
 )
 _RESOURCE_ABUSE: Final = re.compile(
-    r"\b(?:spawn|launch|start|create)\w{0,2}\s+(?:\d{3,}|hundreds\s+of|thousands\s+of|as\s+many\s+as\s+possible|unlimited)\s+(?:agents|processes|threads|instances|requests|sub-?agents)\b"
-    r"|:\(\)\s*\{\s*:\|:&\s*\};:|stratum\+tcp://"
+    r"\b(?:spawn|launch|start|create)[a-z]{0,2} {1,3}(?:\d{3,9}|hundreds of|thousands of|as many as possible|unlimited) {1,3}(?:agents|processes|threads|instances|requests|sub-?agents)\b"
+    r"|:\(\) ?\{ ?:\|:& ?\};:|stratum\+tcp://"
     # A topic word is an attack only as the object of an imperative: "run xmrig", not "what xmrig is".
-    r"|^\s*(?:\W*\s*)?(?:run|start|launch|install|execute|deploy)\w{0,2}\s+(?:\w+\s+){0,3}(?:xmrig|minerd|cryptonight|a\s+(?:crypto\s*)?miner|a\s+fork\s?bomb)\b"
-    r"|^\s*(?:\W*\s*)?mine\s+(?:crypto|monero|bitcoin)\b",
+    # Bounded repeats only (tests/unit/repository/test_regex_scaling.py).
+    r"|^[ \t]{0,8}[^\w\s]{0,3}[ \t]{0,3}(?:run|start|launch|install|execute|deploy)[a-z]{0,2} {1,3}(?:[a-z]{1,20} {1,3}){0,3}(?:xmrig|minerd|cryptonight|a (?:crypto ?)?miner|a fork ?bomb)\b"
+    r"|^[ \t]{0,8}[^\w\s]{0,3}[ \t]{0,3}mine (?:crypto|monero|bitcoin)\b",
     re.IGNORECASE,
 )
 #: Turning off the user's own safeguards: tests, linters, hooks, review, the sandbox.
@@ -793,9 +795,11 @@ class InstructionIntent:
 
     @staticmethod
     def _lead(before: str) -> str:
-        """The sentence that introduces a code block: the last one before it."""
-        pieces = re.split(r"(?<=[.!?。])\s+|\n{2,}", before.strip())
-        return pieces[-1] if pieces else ""
+        """The sentence that introduces a code block: the last one before it. A plain search for the
+        last sentence end, not a regex split, so it is linear in the text (regex-scaling rule 2)."""
+        text = before.strip()
+        cuts = [text.rfind(end) + len(end) for end in (". ", "! ", "? ", ".\n", "。", "\n\n") if text.rfind(end) >= 0]
+        return text[max(cuts, default=0) :]
 
     @staticmethod
     def chained_paths(text: str) -> list[tuple[int, str]]:
