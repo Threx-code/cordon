@@ -149,7 +149,7 @@ class ConcealmentFindings:
         """Code placed after hundreds of empty lines, so a file opens on a screen of nothing and
         reads as ending where its visible part ends (review 98: bs58lite's preinstall runs its
         collector after 2,000 blank lines). Source languages only."""
-        if language is None or language in PROSE_LANGUAGES or content.truncated:
+        if language is None or language in PROSE_LANGUAGES:
             return
         # A linear count of consecutive blank lines, then the first line with code on it.
         raw = content.raw
@@ -192,7 +192,7 @@ class ConcealmentFindings:
         cookie stealers in malregistry and `spl-types` hide plain Python after hundreds of
         spaces on an ordinary line (review 98). Source languages only; prose and data align
         columns with spaces."""
-        if language is None or language in PROSE_LANGUAGES or content.truncated:
+        if language is None or language in PROSE_LANGUAGES:
             return
         raw = content.raw
         found = next(
