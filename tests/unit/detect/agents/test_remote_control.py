@@ -182,6 +182,42 @@ class TestThePatterns:
         BridgeShape.signals(line)
         assert time.monotonic() - started < 5.0
 
+    @pytest.mark.parametrize("pattern", BridgeShape.patterns())
+    def test_no_match_is_longer_than_the_overlap_a_segment_reads_past_its_end(
+        self, pattern: str
+    ) -> None:
+        from re import _parser  # type: ignore[attr-defined]
+
+        from cordon_scanner.foundation.text.segments import OVERLAP_CHARS
+
+        assert _parser.parse(pattern).getwidth()[1] <= OVERLAP_CHARS
+
+
+def padding(chars: int) -> str:
+    """Comment lines that say nothing, `chars` characters in all."""
+    line = "// " + "x" * 77 + "\n"
+    whole, rest = divmod(chars, len(line))
+    return line * whole + "/" * rest
+
+
+class TestAFileBeyondThreeMillionCharacters:
+    """A file over three million characters was given no record at all: a bridge padded past that was no bridge."""
+
+    @pytest.mark.parametrize("before", [3_000_100, 3_500_000])
+    def test_what_it_does_past_that_is_read(self, before: int) -> None:
+        signals = BridgeShape.signals(padding(before) + Js.SDK + Js.CLIENT + Js.HISTORY)
+        assert signals is not None
+        assert signals.execs and signals.chans and signals.hists
+
+    def test_what_straddles_a_segment_edge_is_read(self) -> None:
+        edge = 1 << 20
+        signals = BridgeShape.signals(padding(edge - 40) + Js.SDK + padding(100))
+        assert signals is not None
+        assert signals.execs
+
+    def test_a_long_file_that_does_none_of_it_leaves_no_record(self) -> None:
+        assert BridgeShape.signals(padding(3_500_000)) is None
+
 
 class TestTheCatalogue:
     def test_the_rule_is_in_the_catalogue_at_high(self) -> None:

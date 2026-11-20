@@ -20,12 +20,12 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, ClassVar, Final
+from typing import Any, ClassVar
 
 from cordon_scanner.foundation.once import OneOff
 from cordon_scanner.foundation.paths import PackagePaths
+from cordon_scanner.foundation.text.segments import TextSegments
 
-_MAX_CHARS: Final = 3_000_000
 _Kinds = tuple[tuple[str, re.Pattern[str]], ...]
 
 
@@ -114,20 +114,21 @@ class BridgeShape:
 
     @staticmethod
     def _kinds(compiled: _Kinds, text: str) -> frozenset[str]:
-        return frozenset(kind for kind, pattern in compiled if pattern.search(text))
+        return frozenset(
+            kind for kind, pattern in compiled if TextSegments.search(pattern, text) is not None
+        )
 
     @classmethod
     def signals(cls, text: str) -> Signals | None:
-        """What one file does, or None when it does none of it."""
-        if len(text) > _MAX_CHARS:
-            return None
+        """What one file does, or None when it does none of it. The whole file is read, a segment at a time:
+        a file over three million characters was once given no record, and a bridge padded past that was no bridge."""
         compiled = cls._compiled()
         found = Signals(
             cls._kinds(compiled.execs, text),
             cls._kinds(compiled.chans, text),
             cls._kinds(compiled.hists, text),
-            compiled.loop.search(text) is not None,
-            compiled.remote.search(text) is not None,
+            TextSegments.search(compiled.loop, text) is not None,
+            TextSegments.search(compiled.remote, text) is not None,
         )
         return (
             found
