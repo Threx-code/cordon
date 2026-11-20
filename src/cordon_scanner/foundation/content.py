@@ -28,6 +28,7 @@ from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from cordon_scanner.foundation.files.size_ceilings import SizeCeilings
 from cordon_scanner.foundation.files.spill import SpilledBytes
 from cordon_scanner.foundation.files.windows import BytesWindows, DiskWindows, WindowSource
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS, Limits
@@ -741,6 +742,12 @@ class FileContent(LineIndex, ContentKind):
         `len(text[:i].encode("utf-8"))`, wherever a position in `text` becomes a byte span."""
         mark = len(BYTE_ORDER_MARK) if self.raw.startswith(BYTE_ORDER_MARK) else 0
         return len(self.text[:char_index].encode("utf-8")) + mark
+
+    @property
+    def stream_limit(self) -> int:
+        """How far into this file the windows read: `Limits.max_stream_bytes`, and no further than the most a file of
+        its kind is expected to be (`SizeCeilings`). A file over that is a size anomaly: read to there, then incomplete."""
+        return min(self.limits.max_stream_bytes, SizeCeilings.of(self.path, self.is_binary))
 
     # -- Construction ----------------------------------------------------
 

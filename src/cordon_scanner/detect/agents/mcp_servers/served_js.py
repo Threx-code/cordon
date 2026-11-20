@@ -23,9 +23,10 @@ from cordon_scanner.detect.agents.mcp_servers.served_flow import (
     Decode,
     Served,
 )
+from cordon_scanner.foundation.limits import WHOLE_FILE_BYTES
 
 #: Beyond this the file is not read (`McpJsCode` reads no more).
-MAX_CHARS: Final = 2_000_000
+MAX_CHARS: Final = WHOLE_FILE_BYTES
 _FUNCTIONS: Final = frozenset(
     {"FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"}
 )

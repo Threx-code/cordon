@@ -29,12 +29,13 @@ import re
 from typing import Final
 
 from cordon_scanner.analysis.shared.deobfuscation import IntegerLiteral
+from cordon_scanner.foundation.limits import WHOLE_FILE_BYTES
 
 MAX_VALUE: Final = 8_000
 #: Where `values` lists the names whose value the file does not show as written.
 HIDDEN_KEY: Final = "\x00hidden"
 MAX_TABLE: Final = 4_096
-MAX_TEXT: Final = 2_000_000
+MAX_TEXT: Final = WHOLE_FILE_BYTES
 
 _NAME: Final = r"[A-Za-z_][A-Za-z0-9_]{0,80}"
 #: Each blank run before a name, a type or `=` is possessive: none of those starts with a blank, so

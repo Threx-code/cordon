@@ -652,7 +652,9 @@ class ArchiveStages:
         acc.findings[:], remote_control = RemoteControl.decide(acc.findings)
         acc.findings[:] = ResultFolding.settled(self.config, acc)
         # The package's JSON these read is the context worker's (item 56 (b)), never decoded here.
+        blind = Ceilings.feature_blind(units, ctx)
         with ServedJson.serving(REPOSITORY_SCOPE):
+            observation = self.engine._intent_observation(units, ctx, acc.facts)
             acc.findings[:], verdict = Ceilings.verdict(
                 Ceilings.hardening_tier(
                     Hooks.onto_manifest(Publisher.test_identity_keys(acc.findings, units), units),
@@ -660,10 +662,14 @@ class ArchiveStages:
                 ),
                 units,
                 ScanFactsGathering.verdict_facts(self.engine, units, ctx, acc),
-                self.engine._intent_observation(units, ctx, acc.facts),
+                observation,
                 repository=not ctx.package_distribution,
                 facts=acc.facts,
+                blind=len(blind),
             )
+        acc.findings.extend(
+            Ceilings.unread_notes(acc, Ceilings.gap_files(units, ctx, blind), observation)
+        )
         acc.findings.extend(code_model)
         acc.findings.extend(remote_control)
         dependencies = self.engine.detection.annotated(dependencies, acc.findings, ctx, units)

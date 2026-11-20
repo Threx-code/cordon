@@ -292,6 +292,14 @@ class Limits:
 
 DEFAULT_LIMITS = Limits()
 
+#: The most an analysis that needs a whole file at once (a parse, a data flow, a reach analysis) is given of
+#: it: what the scanner itself reads whole (`Limits.max_file_bytes` by default). A private cap below this
+#: hides what lies past it from that analysis alone, and a payload padded past the cap -- 1.5 MB for the
+#: JavaScript flow analysis, a million for the planting rule -- was never read by it (review 98, doc 52).
+#: A file over `max_file_bytes` is read in windows by the engine, each at most this long. Time is bounded
+#: by the per-file limit, which fails closed (`OPERATIONAL.FILE.TIMEOUT`), not by leaving the file unread.
+WHOLE_FILE_BYTES: int = DEFAULT_LIMITS.max_file_bytes
+
 #: How old intel may be, with no feed to refresh it, before a scan says it is stale (owner, 4 Nov:
 #: a week, not a month). `intel/malware/feed.py` judges by it, and a scan target's own config may
 #: only shorten it (`foundation/config/settings.py`): a longer one is the check switched off.
@@ -322,5 +330,6 @@ __all__ = [
     "HARD_MAX_STREAM_BYTES",
     "HARD_MAX_STREAM_TOTAL_BYTES",
     "HOOK_LIMITS",
+    "WHOLE_FILE_BYTES",
     "Limits",
 ]

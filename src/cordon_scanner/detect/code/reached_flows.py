@@ -50,7 +50,8 @@ class ReachedFlows:
 
     #: Per place, as many files as the capability profile reads (`Engine._PROFILE_FILES`).
     FILES: ClassVar[int] = 50
-    #: The size past which a file is not read here: the profile's own limit.
+    #: The size past which a file is not read here: the profile's own limit. The verdict model is fitted to it
+    #: (`decide/feature_schema.py` hashes this class): raising it moves the schema and needs a refit (note 52).
     MAX_SIZE: ClassVar[int] = 1_000_000
 
     FRAMEWORK: ClassVar[dict[str, re.Pattern[str]]] = {

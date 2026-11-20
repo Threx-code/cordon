@@ -33,6 +33,7 @@ from cordon_scanner.detect.code.capability.text_position import TextPosition
 from cordon_scanner.detect.code.capability.view_runner import ViewRunner
 from cordon_scanner.detect.secrets.secrets import SourceSpans
 from cordon_scanner.foundation.capabilities import Capability, MatchKind
+from cordon_scanner.foundation.limits import WHOLE_FILE_BYTES
 from cordon_scanner.foundation.text.comments import SourceComments
 
 if TYPE_CHECKING:
@@ -809,7 +810,7 @@ class Labelling:
         from cordon_scanner.foundation.content import FileContent
 
         content = unit.content
-        if content.size > 5_000_000:
+        if content.size > WHOLE_FILE_BYTES:
             return None
         refs = JvmClass.references(content.raw)
         if refs is None:
@@ -886,7 +887,7 @@ class Labelling:
         Chrome's passwords and cookies to a file). Dual-use tools that import cookies from a
         browser do it too; measured before it may block."""
         text = content.text
-        if len(text) > 4_000_000:
+        if len(text) > WHOLE_FILE_BYTES:
             return []
         store = cls._BROWSER_STORE.search(text)
         if store is None or cls._BROWSER_DECRYPT.search(text) is None:

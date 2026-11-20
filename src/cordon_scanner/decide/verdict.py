@@ -321,8 +321,12 @@ class Verdict:
         *,
         repository: bool = False,
         source_facts: Sequence[tuple[str, frozenset[str], frozenset[str]]] | None = None,
+        blind: int = 0,
     ) -> tuple[list[Finding], dict[str, Any]]:
         """Findings re-graded by the package verdict, and the verdict to report.
+
+        `blind`: how many files where code runs on its own the features left out (`Ceilings.feature_blind`).
+        With any, the model lowers nothing: what it could not read cannot show the package harmless.
 
         `profile` is what the code that runs on its own can do (`Engine._capability_profile`),
         read as package facts beside the rest. `repository` is a scan of no published-package
@@ -379,6 +383,9 @@ class Verdict:
         # may add a block, never lift one (review 98, the G7 actions regression came from lifting an
         # untrained `package` row). An older model without the allowlist keeps the former denylist.
         liftable = Verdict.liftable(model, area)
+        if blind and liftable:
+            liftable = False
+            summary["lift_withheld"] = blind
         floor = frozenset(model["floor"])
         keep = frozenset(model.get("keep", ()))
         out: list[Finding] = []

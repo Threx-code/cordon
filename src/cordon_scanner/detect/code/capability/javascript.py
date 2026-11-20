@@ -15,6 +15,7 @@ from cordon_scanner.detect.code.capability.build_output import BuildOutput
 from cordon_scanner.detect.code.capability.hits import CapabilityHit
 from cordon_scanner.detect.code.wasm_glue import WasmBindgenGlue
 from cordon_scanner.foundation.capabilities import Capability
+from cordon_scanner.foundation.limits import WHOLE_FILE_BYTES
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -25,7 +26,7 @@ if TYPE_CHECKING:
 class JavaScriptCapabilities:
     """JavaScript capabilities resolved from the code's structure rather than its bytes."""
 
-    JS_EVAL_MAX_BYTES: ClassVar[int] = 100_000
+    JS_EVAL_MAX_BYTES: ClassVar[int] = WHOLE_FILE_BYTES
 
     #: What a file that computes its names contains; without one, there is nothing to evaluate.
     JS_EVAL_MARKERS: ClassVar[re.Pattern[str]] = re.compile(
@@ -508,7 +509,7 @@ class JavaScriptCapabilities:
         )
         aliases = (
             []
-            if bundled or len(text) > 100_000
+            if bundled or len(text) > cls.JS_EVAL_MAX_BYTES
             else [
                 m.group(1)
                 for m in re.finditer(

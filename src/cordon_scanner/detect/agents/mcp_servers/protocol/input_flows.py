@@ -20,6 +20,8 @@ from __future__ import annotations
 import re
 from typing import ClassVar, Final
 
+from cordon_scanner.foundation.limits import WHOLE_FILE_BYTES
+
 _SAYS_COMMANDS: Final = re.compile(
     r"(?i)exec|run|shell|command|terminal|bash|\bcmd\b|script|process|subprocess|powershell|eval|console|ssh"
 )
@@ -83,7 +85,7 @@ class McpInputFlows:
     @classmethod
     def scan(cls, text: str) -> list[tuple[str, int]]:
         """Each such use of a tool's arguments in the file, at most three of each kind."""
-        if len(text) > 2_000_000:
+        if len(text) > WHOLE_FILE_BYTES:
             return []
         names = cls.parameters(text)
         if not names:

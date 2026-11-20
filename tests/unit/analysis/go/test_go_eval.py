@@ -160,3 +160,15 @@ class TestGoDetections:
             "}\n"
         )
         assert "SUSPECT.EXFIL.CREDENTIAL_SWEEP.001" not in self.rules("x.go", source)
+
+
+class TestAFileBeyondTwoMillionCharacters:
+    """The run-time view was not made of a Go file over two million characters: what it built was read as written."""
+
+    def test_a_command_built_after_that_is_written_out(self):
+        padding = "// " + "x" * 77 + "\n"
+        source = TestATableOfCharacters.SOURCE.replace(
+            "func run() {", padding * 26_000 + "func run() {"
+        )
+        assert len(source) > 2_000_000
+        assert 'exec.Command("/bin/sh", "-c", "echo hi")' in GoEval.resolve(source)

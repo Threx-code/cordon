@@ -680,3 +680,60 @@ class TestIdentifyingALanguageWithoutAFilename(DetectorsFixtures):
         from cordon_scanner.analysis.shared.languages import LanguageRegistry
 
         assert LanguageRegistry.identify_from_content("x" * 200) is None
+
+
+class TestALongLineInAFileReadInPart(DetectorsFixtures):
+    """A file past `max_file_bytes` was never judged for a long line in the part read whole: the rule returned for a truncated
+    prefix ("the longest line cannot be known from a prefix"), and the windows begin after it, so a payload line written early in
+    a padded file was in neither. A line seen whole in the prefix is a line of at least that length: the prefix is enough to fire."""
+
+    @staticmethod
+    def blob(length: int = 3000) -> str:
+        import base64
+        import hashlib
+
+        raw = b"".join(hashlib.sha256(str(i).encode()).digest() for i in range(length // 40 + 2))
+        return base64.b64encode(raw).decode()[:length]
+
+    @staticmethod
+    def findings(tmp_path, rules, text: str, limit: int | None):
+        from cordon_scanner.foundation.limits import DEFAULT_LIMITS
+
+        target = tmp_path / "a.js"
+        target.write_text(text, encoding="utf-8")
+        limits = DEFAULT_LIMITS if limit is None else DEFAULT_LIMITS.merged(max_file_bytes=limit)
+        unit = FileUnit(content=FileContent.load(target, "a.js", limits), language="javascript")
+        return [
+            f
+            for f in ObfuscationDetector().inspect(unit, DetectorsHelpers.context(rules))
+            if f.rule_id == "SUSPECT.OBFUSCATION.LONGLINE.001"
+        ]
+
+    def test_the_line_in_a_whole_file_is_reported(self, tmp_path, rules) -> None:
+        text = f'const blob = "{self.blob()}";\n' + "// padding\n" * 10
+        assert self.findings(tmp_path, rules, text, None)
+
+    def test_the_same_line_early_in_a_file_read_in_part_is_reported(self, tmp_path, rules) -> None:
+        text = f'const blob = "{self.blob()}";\n' + "// padding line\n" * 20_000
+        assert len(text) > 100_000
+        assert self.findings(tmp_path, rules, text, 100_000)
+
+    def test_a_file_read_in_part_with_no_long_line_is_not(self, tmp_path, rules) -> None:
+        text = "const a = 1;\n" + "// padding line\n" * 20_000
+        assert not self.findings(tmp_path, rules, text, 100_000)
+
+    def test_code_after_hundreds_of_blank_lines_early_in_a_file_read_in_part_is_reported(
+        self, tmp_path, rules
+    ) -> None:
+        text = "const a = 1;\n" + "\n" * 500 + "run();\n" + "// padding line\n" * 20_000
+        assert self.findings(tmp_path, rules, text, 100_000)
+
+    def test_code_pushed_past_the_edge_early_in_a_file_read_in_part_is_reported(
+        self, tmp_path, rules
+    ) -> None:
+        text = "const a = 1;" + " " * 400 + "run();\n" + "// padding line\n" * 20_000
+        assert self.findings(tmp_path, rules, text, 100_000)
+
+    def test_a_file_read_in_part_with_neither_is_not(self, tmp_path, rules) -> None:
+        text = "const a = 1;\nrun();\n" + "// padding line\n" * 20_000
+        assert not self.findings(tmp_path, rules, text, 100_000)

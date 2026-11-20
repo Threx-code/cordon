@@ -40,7 +40,9 @@ import unicodedata
 from dataclasses import dataclass
 from typing import ClassVar, Final
 
-MAX_TEXT: Final = 512 << 10
+from cordon_scanner.foundation.limits import WHOLE_FILE_BYTES
+
+MAX_TEXT: Final = WHOLE_FILE_BYTES
 MAX_SENTENCE: Final = 2_000
 
 #: Characters with no visible form that change nothing a reader sees: zero-width, bidirectional
@@ -379,7 +381,14 @@ class InstructionIntent:
         for piece in InstructionIntent.split(text):
             index = text.find(piece, position) if piece else position
             if piece.strip():
-                out.append((max(index, 0), piece[:MAX_SENTENCE]))
+                start = max(index, 0)
+                out.append((start, piece[:MAX_SENTENCE]))
+                # A run longer than a sentence with nothing in it that ends one was read for its first 2,000
+                # characters only: an order written after them was never classified. The rest is read in windows
+                # that overlap by half, so words within a thousand characters of each other meet in one.
+                step = MAX_SENTENCE // 2
+                for offset in range(step, max(0, len(piece) - step), step):
+                    out.append((start + offset, piece[offset : offset + MAX_SENTENCE]))
             position = max(index, 0) + len(piece)
         return out
 
@@ -434,10 +443,13 @@ class InstructionIntent:
     @staticmethod
     def find(text: str) -> list[Intent]:
         found: list[Intent] = []
+        last: dict[str, int] = {}
         for start, sentence in InstructionIntent.sentences(text[:MAX_TEXT]):
             kind = InstructionIntent.classify(sentence)
-            if kind is not None:
+            # The same order seen again in the next window of one long run (a window starts half a sentence on) is one order.
+            if kind is not None and last.get(kind) != start - MAX_SENTENCE // 2:
                 found.append(Intent(kind, sentence.strip()[:240], start))
+                last[kind] = start
         found.extend(InstructionIntent.across_lines(text[:MAX_TEXT]))
         return found
 

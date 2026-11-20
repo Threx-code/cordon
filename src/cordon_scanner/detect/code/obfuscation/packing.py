@@ -406,8 +406,9 @@ class PackingFindings:
         patterns = (*MINIFIED_PATHS, *ctx.config.minified)
         if any(PathGlob.matches(content.path, p) for p in patterns):
             return
-        if content.truncated:
-            return  # the longest line cannot be known from a prefix
+        # A file read in part is judged on the part read whole: a line seen whole in the prefix is a line of at least that
+        # length, so the prefix is enough to fire. The rule returned here for a truncated prefix, and the windows begin
+        # after it, so a payload line early in a padded file was in neither (note 52).
         if BUNDLER_PRELUDE.search(content.raw[:GENERATED_HEADER_BYTES]) or (
             SourcePaths.is_editor_extension(content.path) and "/out/" in content.path
         ):

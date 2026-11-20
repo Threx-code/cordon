@@ -18,6 +18,7 @@ from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.detect.base import ScanContext
 from cordon_scanner.detect.code.capability.hits import CapabilityHit
 from cordon_scanner.foundation.capabilities import Capability
+from cordon_scanner.foundation.text.whole_search import WholeSearch
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -652,7 +653,7 @@ class LoadPath:
         return (
             member.endswith((".js", ".mjs", ".cjs", ".ts", ".mts", ".py"))
             and not ServerSources.NOT_A_SERVER_PATH.search(member)
-            and ServerSources.MCP_SDK_IMPORT.search(content.text_head(200_000)) is not None
+            and WholeSearch.has_match(content, ServerSources.MCP_SDK_IMPORT)
         )
 
     #: A compiled language's own test that a hit runs at load, beyond its initialisers: Go's

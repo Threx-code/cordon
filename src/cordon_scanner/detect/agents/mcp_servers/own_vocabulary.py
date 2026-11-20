@@ -13,6 +13,7 @@ import re
 from typing import ClassVar, Final
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+from cordon_scanner.foundation.limits import WHOLE_FILE_BYTES
 
 _WORD: Final = re.compile(r"(?<![\w.])\w++(?![\w])")
 """One run of word characters, not part of a dotted name: the candidates for `identifier_like`."""
@@ -35,7 +36,7 @@ _DECLARED_JS: Final = re.compile(r"\b(?:function|const|let|var)[ \t]+(?P<name>[A
 class OwnVocabulary:
     """The identifiers a server's source declares, and whether a text names only those."""
 
-    MAX_TEXT: ClassVar[int] = 2_000_000
+    MAX_TEXT: ClassVar[int] = WHOLE_FILE_BYTES
 
     @staticmethod
     def declared(text: str, path: str | None = None) -> frozenset[str]:

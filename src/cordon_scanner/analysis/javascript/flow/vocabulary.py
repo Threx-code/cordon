@@ -7,9 +7,12 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Final
 
-#: Files above this are not analysed: bundles of that size are third-party code concatenated, and
-#: the analysis is linear but not free.
-MAX_BYTES: Final = 1_500_000
+from cordon_scanner.foundation.limits import WHOLE_FILE_BYTES
+
+#: Files above this are not analysed: what the scanner reads whole. It was 1.5 MB, a size a payload was padded
+#: past to be left unread by every flow rule; the analysis has its own work bounds (`MAX_ROUNDS`, the step
+#: budget) and the per-file time limit, which fail closed.
+MAX_BYTES: Final = WHOLE_FILE_BYTES
 #: Fixpoint rounds over the bindings and summaries. Each round follows one more hop; real chains
 #: are a handful deep, and the bound keeps a pathological file linear.
 MAX_ROUNDS: Final = 8

@@ -24,6 +24,7 @@ from typing import Any, ClassVar
 
 from cordon_scanner.detect.agents.mcp_servers.techniques.data import TechniqueData
 from cordon_scanner.detect.agents.mcp_servers.techniques.technique import Fixture, Technique
+from cordon_scanner.foundation.limits import WHOLE_FILE_BYTES
 from cordon_scanner.foundation.models import Category
 
 
@@ -55,7 +56,7 @@ class McpTechniques:
     @classmethod
     def scan(cls, text: str) -> Iterator[tuple[Technique, int, int]]:
         """(technique, start, end) of each technique found in `text`."""
-        if len(text) > 4_000_000:
+        if len(text) > WHOLE_FILE_BYTES:
             return
         for technique in cls.all():
             span = technique.find(text)

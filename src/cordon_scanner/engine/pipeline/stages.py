@@ -341,7 +341,9 @@ class ScanStages:
         findings = ResultFolding.settled(self.config, acc)
 
         # The package's JSON these read is the context worker's (item 56 (b)), never decoded here.
+        blind = Ceilings.feature_blind(units, ctx)
         with ServedJson.serving(REPOSITORY_SCOPE):
+            observation = self.engine._intent_observation(units, ctx, acc.facts)
             graded, verdict = Ceilings.verdict(
                 Ceilings.hardening_tier(
                     Hooks.onto_manifest(Publisher.test_identity_keys(list(findings), units), units),
@@ -349,11 +351,13 @@ class ScanStages:
                 ),
                 units,
                 ScanFactsGathering.verdict_facts(self.engine, units, ctx, acc),
-                self.engine._intent_observation(units, ctx, acc.facts),
+                observation,
                 repository=not ctx.package_distribution,
                 facts=acc.facts,
+                blind=len(blind),
             )
-        findings = (*graded, *code_model, *remote_control)
+        notes = Ceilings.unread_notes(acc, Ceilings.gap_files(units, ctx, blind), observation)
+        findings = (*graded, *code_model, *remote_control, *notes)
         dependencies = self.engine.detection.annotated(dependencies, findings, ctx, units)
         return findings, verdict, dependencies
 

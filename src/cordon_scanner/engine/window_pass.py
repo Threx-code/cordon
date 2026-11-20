@@ -127,7 +127,7 @@ class WindowPass:
                     content.raw,
                     size=content.limits.max_file_bytes,
                     overlap=OVERLAP,
-                    limit=content.limits.max_stream_bytes,
+                    limit=content.stream_limit,
                 ),
                 deadline,
             )
@@ -147,7 +147,7 @@ class WindowPass:
                     Windows.aligned(
                         source,
                         size=content.limits.max_file_bytes,
-                        limit=content.limits.max_stream_bytes,
+                        limit=content.stream_limit,
                         cut=cut,
                     ),
                     deadline,
@@ -252,7 +252,7 @@ class WindowPass:
     def charged(unit: Any, budget: str | None) -> bool:
         """Whether the scan's total covers reading this file's windows (`StreamBudget`), taking them."""
         content = unit.content
-        reach = min(content.size, content.limits.max_stream_bytes)
+        reach = min(content.size, content.stream_limit)
         return StreamBudget.charge(
             budget, max(0, reach - len(content.raw)), content.limits.max_stream_total_bytes
         )
@@ -298,7 +298,7 @@ class WindowPass:
             for window in Windows.aligned(
                 source,
                 size=content.limits.max_file_bytes,
-                limit=content.limits.max_stream_bytes,
+                limit=content.stream_limit,
                 cut=PythonStatements.last_cut,
             ):
                 text = window.data.decode("utf-8", "replace")

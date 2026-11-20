@@ -78,9 +78,10 @@ class Kit:
         }
 
     @staticmethod
-    def scan(target: Path, model: dict | None) -> object:
+    def scan(target: Path, model: dict | None, **overrides: object) -> object:
         with mock.patch.object(IntentWeights, "load", return_value=model):
-            return Scanner(Config.default().with_overrides(use_cache=False)).scan(target)
+            config = Config.default().with_overrides(use_cache=False, **overrides)
+            return Scanner(config).scan(target)
 
     @staticmethod
     def facts(target: Path) -> set[str]:
@@ -494,7 +495,11 @@ class TestTheEngine:
             {"version": "1.0.0", "main": "index.js"},
             {"index.js": "var a = 1;\n" * 160_000},
         )
-        result = Kit.scan(pkg, Kit.model())
+        # Too large is what the scanner does not read whole (the observer reads whatever it does, 10 MiB by
+        # default, once 1.5 MB): the limit is lowered here instead of building a file past ten mebibytes.
+        from cordon_scanner.foundation.limits import DEFAULT_LIMITS
+
+        result = Kit.scan(pkg, Kit.model(), limits=DEFAULT_LIMITS.merged(max_file_bytes=1_000_000))
         assert result.verdict["intent"]["decision"] == "unknown"
         assert result.verdict["intent"]["unexamined"][0].startswith("package/index.js:")
         assert RULE not in {f.rule_id for f in result.findings}
@@ -629,3 +634,60 @@ class TestWhatACommandLoads:
         )
         result = Kit.scan(pkg, Kit.model())
         assert result.verdict["intent"].get("decision") != "unknown"
+
+
+class TestAFileBeyondOnePointFiveMegabytes:
+    """The observer did not read a first-party file over 1.5 MB, so a running file padded past it was unexamined."""
+
+    @staticmethod
+    def unit(size: int):
+        from cordon_scanner.detect.base import FileUnit
+        from cordon_scanner.foundation.content import FileContent
+
+        text = "// " + "x" * 77 + "\n"
+        return FileUnit(
+            content=FileContent.from_bytes(
+                "package/index.js", (text * (size // len(text))).encode()
+            )
+        )
+
+    def test_a_file_over_the_old_limit_is_read(self) -> None:
+        assert IntentObserver.reads(self.unit(2_000_000))
+
+    def test_a_file_over_what_the_scanner_reads_whole_is_not(self) -> None:
+        assert not IntentObserver.reads(self.unit(IntentObserver.MAX_BYTES + 1_000))
+
+
+class TestARunningFileTheObserverLeftUnread:
+    """A running file past the observer's file count, or too large for it, is a gap: its silence is never a pass."""
+
+    @staticmethod
+    def observe(count: int, size: int = 100) -> Observation:
+        from types import SimpleNamespace
+
+        from cordon_scanner.detect.base import FileUnit
+        from cordon_scanner.foundation.content import FileContent
+
+        names = [f"package/lib/f{index:04d}.js" for index in range(count)]
+        units = [FileUnit(content=FileContent(path=n, raw=b"x", size=size)) for n in names]
+        ctx = SimpleNamespace(
+            install_hook_paths=frozenset(names),
+            install_entry_paths=frozenset(),
+            import_entry_paths=frozenset(),
+            library_closure_paths=frozenset(),
+            bin_paths=frozenset(),
+        )
+        return IntentObserver.observe(units, ctx, lambda unit: ([], set()), lambda seeds: set())  # type: ignore[arg-type]
+
+    def test_the_file_past_the_count_is_unread(self) -> None:
+        observation = self.observe(IntentObserver.MAX_FILES + 1)
+        assert [path for path, _why in observation.unread] == [
+            f"package/lib/f{IntentObserver.MAX_FILES:04d}.js"
+        ]
+
+    def test_the_files_within_the_count_are_read(self) -> None:
+        assert self.observe(IntentObserver.MAX_FILES).unread == []
+
+    def test_a_file_too_large_to_read_whole_is_unread(self) -> None:
+        observation = self.observe(1, size=IntentObserver.MAX_BYTES + 1)
+        assert len(observation.unread) == 1

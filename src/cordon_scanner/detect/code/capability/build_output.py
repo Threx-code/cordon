@@ -93,9 +93,21 @@ class BuildOutput:
 
     @staticmethod
     def bundled(content: FileContent) -> bool:
-        """Compiled or bundled output: a dist/out/build directory, a .min/.bundle file, or a file
-        too large to be a hand-written script."""
-        return BuildOutput.bundled_path(content.path) or len(content.raw) > 100_000
+        """Compiled or bundled output: a dist/out/build directory, a .min/.bundle file, a bundler's own opening, or
+        lines too long to have been written. Not a size: this once also took every file over 100,000 bytes, so padding a
+        script past that switched off the evaluator that writes out its computed names and hosts (note 52)."""
+        return (
+            BuildOutput.bundled_path(content.path)
+            or BuildOutput.is_minified(content)
+            or BuildOutput.BUNDLER_HEAD.search(content.raw[:4096]) is not None
+        )
+
+    #: What a bundler writes at the top of its output (the same pattern `SUSPECT.OBFUSCATION.LONGLINE.001` trusts,
+    #: `detect/code/obfuscation/packing.py`; a test holds the two equal).
+    BUNDLER_HEAD = re.compile(
+        rb"var [\w$]{1,4}=Object\.create;var [\w$]{1,4}=Object\.defineProperty;"
+        rb"|__webpack_require__|webpackBootstrap|/\*{6}/ "
+    )
 
     @staticmethod
     def bundled_path(path: str) -> bool:

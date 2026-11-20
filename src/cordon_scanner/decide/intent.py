@@ -49,6 +49,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.formats.served_json import ServedJson
+from cordon_scanner.foundation.limits import WHOLE_FILE_BYTES
 from cordon_scanner.foundation.paths import PackagePaths
 
 if TYPE_CHECKING:
@@ -329,13 +330,16 @@ class Observation:
     facts: set[str] = field(default_factory=set)
     unexamined: list[str] = field(default_factory=list)
     files: int = 0
+    unread: list[tuple[str, str]] = field(default_factory=list)
+    """(path, why) of each running file the observer's own limits left unread -- past its file count, or too
+    large to read whole -- as opposed to one it cannot read at all (binary): those are gaps, not silence."""
 
 
 class IntentObserver:
     """The facts no rule computes: when each effect runs, concealment, and gates (19, step 2)."""
 
-    #: Files above this are not read: the reach analysis (`JsFlow.deferred_spans`) stops there.
-    MAX_BYTES: ClassVar[int] = 1_500_000
+    #: Files above this are not read: what the scanner reads whole, where the reach analysis (`JsFlow.deferred_spans`) stops.
+    MAX_BYTES: ClassVar[int] = WHOLE_FILE_BYTES
     #: Files labelled per package, running files first. The files that run on their own are a
     #: handful in any real package; a bundle of thousands is not read past this.
     MAX_FILES: ClassVar[int] = 120
@@ -452,6 +456,9 @@ class IntentObserver:
             if index >= IntentObserver.MAX_FILES:
                 if running:
                     out.unexamined.append(f"{name}: past the {IntentObserver.MAX_FILES}-file limit")
+                    out.unread.append(
+                        (unit.path, f"it is past the first {IntentObserver.MAX_FILES} files")
+                    )
                 continue
             content = unit.content
             if content.size > IntentObserver.MAX_BYTES or content.truncated or content.is_binary:
@@ -460,6 +467,10 @@ class IntentObserver:
                         "binary" if content.is_binary else f"{content.size:,} bytes, past the limit"
                     )
                     out.unexamined.append(f"{name}: {why}")
+                    if not content.is_binary:
+                        out.unread.append(
+                            (unit.path, f"it is {content.size:,} bytes, too large to read whole")
+                        )
                 continue
             try:
                 effects, extra = file_facts(unit)

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pytest
 
+from cordon_scanner.analysis.javascript.flow.vocabulary import MAX_BYTES
 from cordon_scanner.analysis.javascript.js_flow import JsFlow
 
 
@@ -42,4 +43,4 @@ class TestReach:
         assert any(a <= at < b for a, b in spans) is deferred
 
     def test_a_file_past_the_limit_rules_nothing_out(self) -> None:
-        assert JsFlow.deferred_spans("x" * 1_600_000) is None
+        assert JsFlow.deferred_spans("x" * (MAX_BYTES + 1)) is None

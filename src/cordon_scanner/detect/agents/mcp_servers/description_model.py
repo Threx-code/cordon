@@ -41,9 +41,6 @@ MAX_TEXT: Final = 8_000
 MAX_SKILL_TEXT: Final = 40_000
 """A skill's instructions are longer. Text past either limit is scored in windows of the limit's
 size (`LinearTextModel.score`), so an instruction placed past it is still read."""
-MAX_WINDOWS: Final = 24
-"""Windows scored per text. At the skill limit and half-window steps that is about half a megabyte
-of instructions; past it the text is not scored, and `windows_unread` says so."""
 
 WORD: Final = re.compile(r"\w[\w'-]{0,60}")
 
@@ -108,19 +105,14 @@ class LinearTextModel:
         """The text as the model reads it: whole when it fits the limit it was trained on, else
         overlapping windows of that size, half a window apart, so a passage that straddles one
         boundary sits whole inside the next window. A long skill was scored on its first 40,000
-        characters only -- an instruction after them was never read (review 98, `13` STEP 2b)."""
+        characters only -- an instruction after them was never read (review 98, `13` STEP 2b). Then
+        the first 24 windows only, about half a megabyte of a skill: every window now, to the end of
+        the text, so padding in front of an order no longer takes it out of reach."""
         if len(text) <= self.limit:
             return [text]
         step = max(1, self.limit // 2)
         starts = range(0, len(text) - self.limit + step, step)
-        return [text[start : start + self.limit] for start in list(starts)[:MAX_WINDOWS]]
-
-    def windows_unread(self, text: str) -> int:
-        """Characters past the last window scored (0 when the whole text was read)."""
-        if len(text) <= self.limit:
-            return 0
-        step = max(1, self.limit // 2)
-        return max(0, len(text) - ((MAX_WINDOWS - 1) * step + self.limit))
+        return [text[start : start + self.limit] for start in starts]
 
     def score(self, text: str, channel: str) -> float | None:
         """The probability that this text steers the agent, or None without a model: the highest
