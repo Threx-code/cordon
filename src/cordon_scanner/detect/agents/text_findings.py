@@ -134,7 +134,11 @@ class AgentTextFindings:
                     continue
                 found = InstructionIntent.find(linked)
                 if found:
-                    start = len(text[:offset].encode("utf-8"))
+                    start = (
+                        unit.content.byte_offset(offset)
+                        if text is unit.content.text
+                        else len(text[:offset].encode("utf-8"))
+                    )
                     yield AgentFinding.finding(
                         "SUSPECT.AGENT.INTENT_CHAINED.001",
                         unit,

@@ -124,7 +124,7 @@ class InstructionFileFindings:
                 first = starts[min(max(line, 1), len(starts)) - 1]
                 last = text.find("\n", first)
                 last = len(text) if last < 0 else last
-                return len(text[:first].encode("utf-8")), len(text[:last].encode("utf-8"))
+                return unit.content.byte_offset(first), unit.content.byte_offset(last)
 
             for line, _function in McpCode.runs_own_input(text)[:3]:
                 yield AgentFinding.finding(

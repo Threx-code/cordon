@@ -275,7 +275,7 @@ class McpServerFindings:
                 first = starts[min(max(line, 1), len(starts)) - 1]
                 last = text.find("\n", first)
                 last = len(text) if last < 0 else last
-                return len(text[:first].encode("utf-8")), len(text[:last].encode("utf-8"))
+                return unit.content.byte_offset(first), unit.content.byte_offset(last)
 
             for line, _tool, triggered in McpCode.shell_from_input_graded(text):
                 # Behind a secret prefix or value it is a backdoor and blocks; run on whatever
@@ -319,7 +319,7 @@ class McpServerFindings:
             if listening is not None:
                 yield AgentFinding.finding("SUSPECT.MCP.LISTENER.001", unit, ctx, *at(listening))
             for first, last in McpServerSource._overridden_arguments(text):
-                start = len(text[:first].encode("utf-8"))
+                start = unit.content.byte_offset(first)
                 end = start + len(text[first:last].encode("utf-8"))
                 yield AgentFinding.finding(
                     "SUSPECT.MCP.ARGUMENT_OVERRIDE.001", unit, ctx, start, end
@@ -333,7 +333,7 @@ class McpServerFindings:
 
         typescript = unit.content.path.endswith((".ts", ".mts", ".cts", ".tsx"))
         for offset, triggered in McpJsCode.shell_from_input_graded(text, typescript)[:3]:
-            start = len(text[:offset].encode("utf-8"))
+            start = unit.content.byte_offset(offset)
             end = text.find("\n", offset)
             end = len(text) if end < 0 else end
             yield AgentFinding.finding(
