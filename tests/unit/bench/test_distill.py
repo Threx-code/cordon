@@ -209,3 +209,42 @@ class TestAChoiceIsConfirmedOnRowsNeverUsedToMakeIt:
 
     def test_no_legit_rows_is_no_evidence_and_never_a_pass(self) -> None:
         assert Distiller().distill(FactsKit.planted(4, 5)).candidate is None
+
+
+class TestACandidateShipsAsAnOrdinaryRule:
+    def test_the_rendered_pack_loads_as_a_package_scope_composite_with_the_same_terms(
+        self, tmp_path
+    ) -> None:
+        from bench.cdi.distill import PackRenderer
+
+        from cordon_scanner.rules.fact_terms import FactTerms
+        from cordon_scanner.rules.loader import RuleLoader
+
+        units = (
+            FactsKit.planted(4, 5)
+            + FactsKit.legit(12_000)
+            + FactsKit.planted(2, 3, split="confirm")
+            + FactsKit.legit(9_000, split="confirm", seed=11)
+        )
+        candidate = Distiller().distill(units).candidate
+        assert candidate is not None
+        pack = tmp_path / "learned.yaml"
+        pack.write_text(PackRenderer.render(candidate, "LEARNED.MCP.001"), encoding="utf-8")
+        loaded = RuleLoader(require_tests=False).load_file(pack)
+        (rule,) = loaded.rules
+        assert rule.id == "LEARNED.MCP.001" and rule.match.scope == "package"
+        assert sorted(FactTerms.of_spec(t) for t in rule.match.all_of) == sorted(
+            tuple(t) for t in candidate["predicate"]
+        )
+
+    def test_a_rule_id_outside_the_learned_namespace_is_refused(self) -> None:
+        from bench.cdi.distill import PackRenderer
+
+        candidate = {
+            "predicate": [["file", "unreached", "egress", "spawn"]],
+            "predicate_digest": "0" * 64,
+            "train": {"families": 3, "legit_upper": 0.001},
+            "confirm": {"families": 1, "legit_upper": 0.002},
+        }
+        with pytest.raises(ValueError, match="LEARNED"):
+            PackRenderer.render(candidate, "SUSPECT.MCP.001")

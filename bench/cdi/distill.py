@@ -29,11 +29,14 @@ import hashlib
 import itertools
 import json
 import math
+import re
 from dataclasses import dataclass, field
 from statistics import NormalDist
 from typing import Any, Final
 
-REFUSED_KINDS: Final = frozenset({"name", "host", "age", "publisher", "program"})
+from cordon_scanner.rules.fact_terms import FactTerms
+
+REFUSED_KINDS: Final = FactTerms.REFUSED
 """Term kinds the distiller never uses: identities belong to intel (G1), ages and publishers only stratify."""
 METADATA_KINDS: Final = frozenset({"hook"})
 """Package metadata rather than behaviour: such a term needs support in at least two ecosystems (LL-101)."""
@@ -67,20 +70,9 @@ class Terms:
 
     @staticmethod
     def of(facts: dict[str, Any]) -> set[tuple[str, ...]]:
-        terms: set[tuple[str, ...]] = set()
-        for f in facts.get("files", ()):
-            wheres = ["any", *(["unreached"] if not f.get("reached") else []), *f.get("places", ())]
-            caps = sorted(set(f.get("capabilities", ())))
-            pairs = [(c,) for c in caps] + list(itertools.combinations(caps, 2))
-            for where in wheres:
-                for cs in pairs:
-                    terms.add(("file", where, *cs))
-        package = facts.get("package", {})
-        for rule in package.get("rules", {}):
-            terms.add(("package_rule", rule))
-        for hook in package.get("hooks", ()):
-            terms.add(("hook", str(hook.get("kind", ""))))
-        return terms
+        """The scanner's own reading of a facts record (`rules/fact_terms.py`): the terms learned here are
+        exactly the terms a package-scope rule is evaluated on."""
+        return FactTerms.of_facts(facts)
 
     @staticmethod
     def check(term: tuple[str, ...]) -> None:
@@ -283,11 +275,69 @@ class _Space:
         )
 
 
+class PackRenderer:
+    """A distilled candidate as a rule pack the scanner loads (LL-16b): one package-scope composite whose terms are
+    the predicate's, in the `LEARNED.<AREA>.<NNN>` namespace (LL-4). The pack carries no sample and no text from any
+    package: its terms are the scanner's own vocabulary, and its evidence is the counts the distiller measured."""
+
+    RULE_ID: Final = re.compile(r"LEARNED\.[A-Z][A-Z0-9_]{0,23}\.[0-9]{3}")
+
+    @staticmethod
+    def spec(term: list[str]) -> str:
+        Terms.check(tuple(term))
+        if term[0] == "file":
+            caps = ", ".join(term[2:])
+            return f"{{file: {{where: {term[1]}, capabilities: [{caps}]}}}}"
+        return f"{{{term[0]}: {term[1]}}}"
+
+    @staticmethod
+    def render(
+        candidate: dict[str, Any],
+        rule_id: str,
+        *,
+        severity: str = "high",
+        confidence: str = "medium",
+    ) -> str:
+        if not PackRenderer.RULE_ID.fullmatch(rule_id):
+            raise ValueError(f"a learned rule id is LEARNED.<AREA>.<NNN>, not {rule_id!r}")
+        train, confirm = candidate["train"], candidate["confirm"]
+        said = "; ".join(" ".join(t) for t in candidate["predicate"])
+        message = (
+            f"Machine-made detector (learning loop, distiller G2): this package has the shape {said}. Learned from "
+            f"{train['families']} families; legitimate upper bound {train['legit_upper']:.4%} on the training store "
+            f"and {confirm['legit_upper']:.4%} on rows never used to choose it."
+        )
+        terms = "\n".join(f"        - {PackRenderer.spec(t)}" for t in candidate["predicate"])
+        digest = candidate["predicate_digest"]
+        return (
+            f"pack: {{id: learned.{digest[:12]}, version: 1.0.0, license: Apache-2.0, source: cordon-learning-loop}}\n"
+            "rules:\n"
+            f"  - id: {rule_id}\n"
+            "    category: suspicious\n"
+            f"    severity: {severity}\n"
+            f"    confidence: {confidence}\n"
+            f"    title: '{PackRenderer.quoted('Machine-made: ' + said)}'\n"
+            f"    message: '{PackRenderer.quoted(message)}'\n"
+            "    remediation: 'Read what the named file does and why nothing in the package starts it; report a false "
+            "positive from the finding.'\n"
+            "    match:\n"
+            "      kind: composite\n"
+            "      scope: package\n"
+            "      all:\n"
+            f"{terms}\n"
+        )
+
+    @staticmethod
+    def quoted(text: str) -> str:
+        return text.replace("'", "''")
+
+
 __all__ = [
     "METADATA_KINDS",
     "REFUSED_KINDS",
     "Distillation",
     "Distiller",
+    "PackRenderer",
     "Terms",
     "Unit",
     "Wilson",
