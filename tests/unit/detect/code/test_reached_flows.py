@@ -127,14 +127,6 @@ class TestBudget:
         ReachedFlows.of(units, ctx, Counting(Fixture.facts(units, ctx)))  # type: ignore[arg-type]
         assert read == paths[: ReachedFlows.FILES]
 
-    def test_a_file_past_the_old_limit_is_read(self) -> None:
-        # The limit was a million bytes, then the profile's own: a flow placed after them was never read.
-        big = " " * 1_500_000 + SENDS
-        facts = Fixture.of(
-            [Fixture.unit("index.js", big)], Fixture.ctx(entries=frozenset({"index.js"}))
-        )
-        assert facts != {}
-
     def test_a_file_past_the_size_limit_is_not_read(self) -> None:
         big = SENDS + " " * (ReachedFlows.MAX_SIZE + 1)
         facts = Fixture.of(

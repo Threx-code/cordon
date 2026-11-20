@@ -18,7 +18,7 @@ order, how many) and reads these instead of running a detector over the file.
 ```
 
 A file is labelled in the worker when the parent could ask for it: in an install, import or agent
-place and within the size the scanner reads whole (the profile), or one of the intent observer's own files (first-party code,
+place and at most 1 MB (the profile), or one of the intent observer's own files (first-party code,
 within its byte limit, not truncated or binary). A label that raises is `cap.error`: the profile skips
 the file and the intent observer reports it unexamined, as when the parent's call raised.
 """
@@ -27,13 +27,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from cordon_scanner.foundation.limits import WHOLE_FILE_BYTES
-
 if TYPE_CHECKING:
     from cordon_scanner.detect.base import ScanContext
 
 #: The profile's size test (`Engine._capability_profile`): a file over this is not labelled there.
-PROFILE_BYTES = WHOLE_FILE_BYTES
+PROFILE_BYTES = 1_000_000
 
 
 class WorkerAnalysis:

@@ -33,7 +33,6 @@ from cordon_scanner.engine.pipeline.constants import (
 )
 from cordon_scanner.engine.pipeline.hooks import Hooks
 from cordon_scanner.foundation.config.policy import Policy
-from cordon_scanner.foundation.limits import WHOLE_FILE_BYTES
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -73,7 +72,7 @@ class Ceilings:
     def verdict_manifests(units: Sequence[FileUnit]) -> dict[str, bytes]:
         """The manifests the package verdict reads, by path."""
         return {
-            u.path: u.content.raw[:WHOLE_FILE_BYTES]
+            u.path: u.content.raw[:1_000_000]
             for u in units
             if u.path.rsplit("!", 1)[-1].rsplit("/", 1)[-1] in Ceilings._VERDICT_MANIFESTS
         }
@@ -736,10 +735,7 @@ class Ceilings:
                 unit = members.get(path)
                 if unit is None or unit.content.is_binary:
                     continue
-                if unit.content.truncated:
-                    # A started file read only in part could name, past what was read, the file a finding is
-                    # in. What it started is not known, so no grade is lowered for being unstarted: a file's
-                    # size must not be a way to lower a grade.
+                if unit.content.truncated:  # what it started is unknown: no grade is lowered for it
                     return findings
                 text = unit.content.text
                 base = path.rpartition("/")[0]
