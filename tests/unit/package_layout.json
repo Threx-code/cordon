@@ -881,6 +881,7 @@
   "test_skill_text_cannot_lower_a_block.py": "detect/agents",
   "test_skill_claim_mismatch.py": "detect/agents",
   "test_instruction_intent.py": "detect/agents",
+  "test_whole_text_readers.py": "detect/agents",
   "test_language_model_judge.py": "detect/agents",
   "test_judge_only_adds.py": "detect/agents",
   "test_verdict_bounds.py": "decide",

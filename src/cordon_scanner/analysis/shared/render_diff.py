@@ -22,7 +22,9 @@ import re
 from dataclasses import dataclass
 from typing import ClassVar, Final
 
-MAX_TEXT: Final = 512 << 10
+from cordon_scanner.foundation.limits import WHOLE_FILE_BYTES
+
+MAX_TEXT: Final = WHOLE_FILE_BYTES
 
 
 @dataclass(frozen=True, slots=True)
