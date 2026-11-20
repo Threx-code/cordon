@@ -1,8 +1,0 @@
-// fixture: text that tells the model to write an instruction into its memory (error, go)
-module example.invalid/notes-mcp-server
-
-go 1.22
-
-require (
-	github.com/mark3labs/mcp-go v0.8.0
-)

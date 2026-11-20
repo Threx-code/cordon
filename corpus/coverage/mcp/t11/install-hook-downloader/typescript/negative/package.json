@@ -1,8 +1,0 @@
-{
-  "//": "fixture: an install hook that only compiles the package (typescript)",
-  "name": "notes-mcp-server",
-  "version": "1.0.0",
-  "main": "server.js",
-  "scripts": { "postinstall": "tsc -p ." },
-  "dependencies": {"@modelcontextprotocol/sdk": "1.0.0", "zod": "3.23.8"}
-}

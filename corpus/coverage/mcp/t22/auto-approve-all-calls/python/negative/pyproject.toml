@@ -1,5 +1,0 @@
-# fixture: a policy that approves one read-only tool and confirms writes and deletes (python)
-[project]
-name = "notes-mcp-server"
-version = "1.0.0"
-dependencies = ["mcp>=1.0"]

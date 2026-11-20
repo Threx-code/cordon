@@ -1197,7 +1197,7 @@
   "test_description_basis.py": "detect/agents/mcp_servers",
   "test_mcp_elicitation.py": "detect/agents/mcp_servers",
   "test_mcp_input_flows.py": "detect/agents/mcp_servers",
-  "test_how_a_file_was_written.py": "detect/agents/mcp_servers",
+  "test_mcp_server_written_differently.py": "detect/agents/mcp_servers",
   "test_mcp_literal_sinks.py": "detect/agents/mcp_servers",
   "test_mcp_sampling.py": "detect/agents/mcp_servers",
   "test_mcp_techniques.py": "detect/agents/mcp_servers",

@@ -1,8 +1,0 @@
-# fixture: text that orders data to be sent to an address (result, rust)
-[package]
-name = "notes-mcp-server"
-version = "1.0.0"
-edition = "2021"
-
-[dependencies]
-rmcp = "0.1"

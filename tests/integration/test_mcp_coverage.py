@@ -31,7 +31,7 @@ from cordon_scanner import Scanner
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
 from cordon_scanner.foundation.models import Category, Finding
-from support import ROOT, requires_corpus
+from support import ROOT, CoverageTree, requires_corpus
 
 # `bench` sits at the repository root beside `src/` and `tests/`, and pytest puts only `tests/` on the path.
 if str(ROOT) not in sys.path:
@@ -40,8 +40,8 @@ from bench.tools.content import Content
 
 pytestmark = requires_corpus
 
-COVERAGE = ROOT / "corpus" / "coverage" / "mcp"
-BASELINE = COVERAGE / "coverage-baseline.json"
+COVERAGE = CoverageTree.path()
+BASELINE = CoverageTree.BASELINE
 
 
 @dataclass(frozen=True)

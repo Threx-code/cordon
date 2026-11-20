@@ -1,8 +1,0 @@
-# fixture: text that tells other agents to skip checks and hide the message (prompt, rust)
-[package]
-name = "notes-mcp-server"
-version = "1.0.0"
-edition = "2021"
-
-[dependencies]
-rmcp = "0.1"

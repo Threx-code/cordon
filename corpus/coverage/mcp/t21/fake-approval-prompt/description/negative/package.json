@@ -1,7 +1,0 @@
-{
-  "//": "fixture: a plain confirmation that asks for a note id (description, typescript)",
-  "name": "notes-mcp-server",
-  "version": "1.0.0",
-  "main": "server.js",
-  "dependencies": {"@modelcontextprotocol/sdk": "1.0.0", "zod": "3.23.8"}
-}

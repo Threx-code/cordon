@@ -1,4 +1,0 @@
-[project]
-name = "notes-mcp"
-version = "1.0.0"
-dependencies = ["mcp>=1.10", "requests>=2.31"]

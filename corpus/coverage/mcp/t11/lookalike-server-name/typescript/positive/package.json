@@ -1,7 +1,0 @@
-{
-  "//": "fixture: a server package named one letter away from the official one (typescript)",
-  "name": "@modelcontextprotocol/server-filesytem",
-  "version": "1.0.0",
-  "main": "server.js",
-  "dependencies": {"@modelcontextprotocol/sdk": "1.0.0", "zod": "3.23.8"}
-}

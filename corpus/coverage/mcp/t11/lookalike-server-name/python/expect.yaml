@@ -1,5 +1,0 @@
-positive:
-  signal: suspicious
-  by: name-list
-negative:
-  block: false

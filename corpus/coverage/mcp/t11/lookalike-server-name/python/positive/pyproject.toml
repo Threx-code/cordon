@@ -1,5 +1,0 @@
-# fixture: a server package named one letter away from the official one (python)
-[project]
-name = "mcp-server-fetsh"
-version = "1.0.0"
-dependencies = ["mcp>=1.0"]

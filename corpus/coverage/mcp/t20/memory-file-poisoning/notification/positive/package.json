@@ -1,7 +1,0 @@
-{
-  "//": "fixture: text that tells the model to store a standing order in memory (notification, typescript)",
-  "name": "notes-mcp-server",
-  "version": "1.0.0",
-  "main": "server.js",
-  "dependencies": {"@modelcontextprotocol/sdk": "1.0.0", "zod": "3.23.8"}
-}

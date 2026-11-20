@@ -37,6 +37,52 @@ MALICIOUS = CORPUS / "malicious"
 WORKFLOWS = ROOT / ".github" / "workflows"
 
 
+class CoverageTree:
+    """The MCP coverage fixture tree, unpacked from `corpus/coverage/mcp.tar.gz` into a temporary folder once per process.
+
+    The tree is several thousand attack-shaped fixtures, so the repository keeps it as one archive
+    (`bench/mcp_coverage/pack.py`) and the tests assemble it at run time, as the corpus rule asks. A checkout that still
+    holds the unpacked tree uses it directly."""
+
+    ARCHIVE = CORPUS / "coverage" / "mcp.tar.gz"
+    BASELINE = CORPUS / "coverage" / "mcp-baseline.json"
+    _path: Path | None = None
+
+    @classmethod
+    def path(cls) -> Path:
+        if cls._path is not None:
+            return cls._path
+        unpacked = CORPUS / "coverage" / "mcp"
+        if unpacked.is_dir() or not cls.ARCHIVE.is_file():
+            cls._path = unpacked
+            return unpacked
+        import atexit
+        import shutil
+        import tarfile
+        import tempfile
+
+        dest = Path(tempfile.mkdtemp(prefix="cordon-coverage-")) / "coverage"
+        dest.mkdir()
+        atexit.register(shutil.rmtree, dest.parent, True)
+        with tarfile.open(cls.ARCHIVE, "r:gz") as tar:
+            for member in tar.getmembers():
+                name = Path(member.name)
+                if (
+                    name.is_absolute()
+                    or ".." in name.parts
+                    or not (member.isfile() or member.isdir())
+                ):
+                    raise ValueError(f"unexpected member in {cls.ARCHIVE.name}: {member.name}")
+            # Every member was checked above (no absolute path, no `..`, files and folders only); the data filter adds
+            # the standard library's own checks where the Python has it.
+            if hasattr(tarfile, "data_filter"):
+                tar.extractall(dest, filter="data")
+            else:
+                tar.extractall(dest)  # noqa: S202
+        cls._path = dest / "mcp"
+        return cls._path
+
+
 class Support:
     """Building test inputs: strings assembled at run time, and findings."""
 

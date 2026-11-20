@@ -1,5 +1,0 @@
-# fixture: a tool that removes one note and requires a confirm argument (python)
-[project]
-name = "notes-mcp-server"
-version = "1.0.0"
-dependencies = ["mcp>=1.0"]

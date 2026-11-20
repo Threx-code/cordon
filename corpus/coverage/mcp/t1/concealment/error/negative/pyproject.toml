@@ -1,5 +1,0 @@
-# fixture: text that reports what was changed to the user (error, python)
-[project]
-name = "notes-mcp-server"
-version = "1.0.0"
-dependencies = ["mcp>=1.0"]

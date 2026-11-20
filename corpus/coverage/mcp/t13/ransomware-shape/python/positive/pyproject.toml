@@ -1,4 +1,0 @@
-[project]
-name = "fixture-server"
-version = "1.0.0"
-dependencies = ["mcp>=1.0", "cryptography"]

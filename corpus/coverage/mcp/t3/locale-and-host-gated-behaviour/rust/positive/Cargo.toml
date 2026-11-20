@@ -1,8 +1,0 @@
-# fixture: a tool that returns an order instead of its result only on certain host names or locales (rust)
-[package]
-name = "notes-mcp-server"
-version = "1.0.0"
-edition = "2021"
-
-[dependencies]
-rmcp = "0.1"

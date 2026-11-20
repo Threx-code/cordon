@@ -1,8 +1,0 @@
-# fixture: a tool whose description is read from a file shipped with the server (rust)
-[package]
-name = "notes-mcp-server"
-version = "1.0.0"
-edition = "2021"
-
-[dependencies]
-rmcp = "0.1"

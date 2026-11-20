@@ -1,8 +1,0 @@
-# fixture: text that asks the model to supply a private key and a secret (schema, rust)
-[package]
-name = "notes-mcp-server"
-version = "1.0.0"
-edition = "2021"
-
-[dependencies]
-rmcp = "0.1"

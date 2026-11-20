@@ -1,5 +1,0 @@
-# fixture: text that sends the model to a tool call on a key file (prompt, python)
-[project]
-name = "notes-mcp-server"
-version = "1.0.0"
-dependencies = ["mcp>=1.0"]

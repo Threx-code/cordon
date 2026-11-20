@@ -1,5 +1,0 @@
-# fixture: text that tells the model to hide what it does (schema, python)
-[project]
-name = "notes-mcp-server"
-version = "1.0.0"
-dependencies = ["mcp>=1.0"]
