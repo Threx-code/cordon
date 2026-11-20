@@ -1269,6 +1269,7 @@
   "test_py_flow_facts.py": "analysis/python",
   "test_py_persist_metadata.py": "analysis/python",
   "test_hidden_destination.py": "detect/code/capability",
+  "test_evaluator_bundle_markers.py": "detect/code/capability",
   "test_imported_clients.py": "analysis/python/flows",
   "test_statements.py": "analysis/python",
   "test_module_facts.py": "analysis/python",
