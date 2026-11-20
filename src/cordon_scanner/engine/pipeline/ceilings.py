@@ -561,7 +561,7 @@ class Ceilings:
 
         A shell, PowerShell or batch script runs only when something starts it. No installer
         starts one on its own: a hook that does is in `runs` (the install-hook paths), and code
-        or a manifest that does names it. A script that is neither -- a `curl | sh` release
+        or a manifest that does names it. A script that is neither -- a pipe-to-shell release
         installer, a CI helper -- is the maintainers' (review 98: 103 of 293 benign units
         blocked by a dropper alone, against 0 of 44 malware samples). A conda link script runs at
         install and keeps its grade.

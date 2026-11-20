@@ -232,7 +232,7 @@ class ServedText:
         item: Served,
         found: list[tuple[str, str]],
     ) -> Finding:
-        start = len(text[: item.start].encode("utf-8"))
+        start = unit.content.byte_offset(item.start, text)
         end = start + len(text[item.start : item.end].encode("utf-8"))
         conclusive = cls.blocks(item.kind, found)
         said = "; ".join(words for _code, words in found)

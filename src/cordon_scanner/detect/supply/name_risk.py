@@ -49,7 +49,6 @@ import html
 import io
 import posixpath
 import re
-import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Final
@@ -57,6 +56,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final
 from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.text.confusion_versions import ConfusionVersions
+from cordon_scanner.foundation.text.name_scripts import NameScripts
 
 if TYPE_CHECKING:
     from cordon_scanner.detect.base import FileUnit, ScanContext
@@ -440,22 +440,8 @@ class NameSignals:
 
     @staticmethod
     def mixed_script(name: str) -> str | None:
-        """The other script when a name mixes Latin letters with Cyrillic or Greek ones.
-
-        `Micr\u043esoft.EntetyFrameworkCore` on NuGet spells its `o` as Cyrillic U+043E: it reads as
-        Microsoft's and sorts beside it, and no one types it by accident (review 98). A name
-        written wholly in another script is that script's, and is not this."""
-        latin = other = False
-        found = ""
-        for char in name:
-            if not char.isalpha():
-                continue
-            script = unicodedata.name(char, "").split(" ", 1)[0]
-            if script == "LATIN":
-                latin = True
-            elif script in ("CYRILLIC", "GREEK", "ARMENIAN", "CHEROKEE"):
-                other, found = True, script.capitalize()
-        return found if latin and other else None
+        """The other script when a name mixes Latin letters with Cyrillic or Greek ones (`NameScripts.mixed`)."""
+        return NameScripts.mixed(name)
 
     @staticmethod
     def confusion_version(version: str) -> str | None:

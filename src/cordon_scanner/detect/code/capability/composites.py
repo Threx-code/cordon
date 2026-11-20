@@ -39,6 +39,18 @@ class CompositeEvaluator:
             "AST.PY.CODE_FROM_DATA",
             "AST.PY.FOREIGN_INDEX",
             "AST.PY.SHIPPED_RUN",
+            # A publish command written out in full is the publishing itself, not a fixed helper call.
+            "CAP.SPAWN.NPM_PUBLISH.001",
+        }
+    )
+
+    #: Composites whose marker reads the command a spawn runs: a command written out in full that loops over
+    #: every cluster context or every known SSH host is the act itself, so these composites count the spawn on
+    #: that line. Every other composite keeps the fixed-argv discount (`_fixed_argv_window`).
+    READS_ITS_OWN_COMMAND: ClassVar[frozenset[str]] = frozenset(
+        {
+            "SUSPECT.LATERAL.KUBE_EVERY_CONTEXT.001",
+            "SUSPECT.LATERAL.SSH_KNOWN_HOSTS.001",
         }
     )
 
@@ -275,7 +287,8 @@ class CompositeEvaluator:
         *,
         fixed_lines: frozenset[int],
     ) -> bool:
-        window = CompositeEvaluator._fixed_argv_window(window, fixed_lines)
+        if compiled.rule.id not in CompositeEvaluator.READS_ITS_OWN_COMMAND:
+            window = CompositeEvaluator._fixed_argv_window(window, fixed_lines)
         # The file runs at install time; this window has to as well. If any hit
         # in it sits in a body the hooks never call, the pair the composite
         # describes is not something that happens during an install -- so the

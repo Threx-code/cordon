@@ -61,11 +61,11 @@ class GoRuns:
                     if run["first"].startswith(('"', "`")):
                         continue
                     offset = found.end() + connection.end() + run.start()
-                    start = content.byte_offset(offset)
+                    start = content.byte_offset(offset, text)
                     # The connection it reads from is the egress: `d.Dial` on a `net.Dialer` value
                     # is a connection whatever the variable is called.
                     dialled = found.end() + connection.start()
-                    egress = content.byte_offset(dialled)
+                    egress = content.byte_offset(dialled, text)
                     return [
                         CapabilityHit(
                             capability=Capability.EGRESS,
@@ -109,7 +109,7 @@ class GoRuns:
             return []
         candidates = []
         for write in writes:
-            start = len(text[: write.start()].encode("utf-8"))
+            start = content.byte_offset(write.start(), text)
             candidates.append(
                 CapabilityHit(
                     capability=Capability.PERSIST,

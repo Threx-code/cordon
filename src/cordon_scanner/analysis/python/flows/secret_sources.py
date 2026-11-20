@@ -247,7 +247,7 @@ class SecretSources(AnalyzerCore):
 
     def _path_parts(self, path: ast.AST) -> list[str]:
         """The string pieces a path is built from: its literals, and the literals of the names it
-        uses where each is assigned once in the file (`p = os.path.expanduser("~/.aws/credentials")`
+        uses where each is assigned once in the file (`p = os.path.expanduser(CREDENTIALS_FILE)`
         then `open(p)`)."""
         tree = self.__dict__.get("_tree_for_wallets")
         named: dict[str, list[str]] | None = self.__dict__.get("_path_names")

@@ -31,7 +31,11 @@ if TYPE_CHECKING:
     from cordon_scanner.detect.base import ScanContext
     from cordon_scanner.intel.base import AtrMatchFacts
 
-_MEDIUM_INTENTS: Final = frozenset({"markdown-exfil", "persist"})
+#: Reported below the default gate. consent-suppress, tool-hijack and safeguards-off stay here until
+#: two readers have read the legitimate units they flag (skills-98 note 37).
+_MEDIUM_INTENTS: Final = frozenset(
+    {"markdown-exfil", "persist", "consent-suppress", "tool-hijack", "safeguards-off", "file-post"}
+)
 
 
 #: What each intent is, as a finding says it.
@@ -46,6 +50,17 @@ INTENT_WORDS: Final = {
     "credential-elsewhere": "send a credential it printed with its own tool to a host that did not issue it",
     "concealed-override": "drop its safety rules and keep that hidden from the user",
     "concealed-sabotage": "make the user's work fail on purpose and deny it when asked",
+    "persist-global": "write into the user's global agent configuration, unasked, so it loads everywhere",
+    "bootstrap-run": "fetch code and run it on its own initiative, without the user asking",
+    "fixed-recipient": "send the user's data to a party fixed in the text, without the user asking",
+    "hide-action": "keep what it does from the user",
+    "goal-hijack": "swap the user's dependencies, sources or content for others",
+    "funds-redirect": "redirect the user's funds or payment addresses",
+    "resource-abuse": "use the user's machine without limit (spawn floods, mining)",
+    "consent-suppress": "act with consequences without asking the user",
+    "tool-hijack": "take over the agent's choice of tool or override other tools",
+    "safeguards-off": "turn off the user's own safeguards (tests, hooks, review, sandbox)",
+    "file-post": "post a file to an outside host",
 }
 
 
@@ -89,7 +104,7 @@ class AgentTextFindings:
                     severity=severity,
                 )
             else:
-                start = len(text[: intent.start].encode("utf-8"))
+                start = unit.content.byte_offset(intent.start, text)
                 end = start + len(intent.sentence.encode("utf-8"))
                 yield AgentFinding.finding(
                     "SUSPECT.AGENT.INTENT.001",
@@ -119,11 +134,7 @@ class AgentTextFindings:
                     continue
                 found = InstructionIntent.find(linked)
                 if found:
-                    start = (
-                        unit.content.byte_offset(offset)
-                        if text is unit.content.text
-                        else len(text[:offset].encode("utf-8"))
-                    )
+                    start = unit.content.byte_offset(offset, text)
                     yield AgentFinding.finding(
                         "SUSPECT.AGENT.INTENT_CHAINED.001",
                         unit,
@@ -313,7 +324,7 @@ class AgentTextFindings:
         )
         first = found[0]
         if within is None:
-            start = len(text[: first.start].encode("utf-8"))
+            start = unit.content.byte_offset(first.start, text)
             end = start + len(text[first.start : first.end].encode("utf-8"))
             yield AgentFinding.finding(
                 rule_id,

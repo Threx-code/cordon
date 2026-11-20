@@ -87,7 +87,7 @@ class WorkflowFindings:
             if fixed and (
                 (version is not None and version < fixed) or pin.lower() in ("beta", "v0")
             ):
-                start, end = InstructionText._byte_span(text, match)
+                start, end = InstructionText._byte_span(text, match, unit.content)
                 yield AgentFinding.finding(
                     "VULNERABLE.AGENT.ACTION_VERSION.001",
                     unit,
@@ -100,7 +100,7 @@ class WorkflowFindings:
 
         injected = _UNTRUSTED_TEXT.search(text)
         if injected is not None:
-            start, end = InstructionText._byte_span(text, injected)
+            start, end = InstructionText._byte_span(text, injected, unit.content)
             yield AgentFinding.finding(
                 "SUSPECT.AGENT.CI_PROMPT_INJECTION.001", unit, ctx, start, end
             )
@@ -134,7 +134,7 @@ class WorkflowFindings:
                 "and its output posted back as a comment, a channel an injected agent can write through"
             )
         first = agents[0]
-        start, end = InstructionText._byte_span(text, first)
+        start, end = InstructionText._byte_span(text, first, unit.content)
         rule = RULES["SUSPECT.AGENT.CI_UNTRUSTED_TRIGGER.001"]
         yield AgentFinding.finding(
             rule.rule_id,

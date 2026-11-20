@@ -364,7 +364,9 @@ rules:
       # pattern, which now requires the command to be an argument rather than a
       # name in a list, and from the severity this escalation applies to it.
       all:
-        - rule: CAP.JS.PUBLISH.001
+        - any:
+            - rule: CAP.JS.PUBLISH.001
+            - rule: CAP.SPAWN.NPM_PUBLISH.001
 
   - id: MALWARE.INSTALL.CONSUMER_CODE.001
     version: 1.0.0

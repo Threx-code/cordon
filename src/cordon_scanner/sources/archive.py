@@ -14,7 +14,7 @@ declared size in a header is never trusted, because the attacker wrote it.
 destination. Every member path is resolved and must land inside the destination
 root; absolute paths and traversal segments are rejected outright.
 
-**Link attacks.** A symlink member pointing at ``~/.ssh/id_rsa``, so the scanner
+**Link attacks.** A symlink member pointing at a user's SSH private key, so the scanner
 reads it and prints it as evidence. Links are never materialised at all.
 
 **Nesting.** An archive inside an archive, repeated. Beyond a small depth the

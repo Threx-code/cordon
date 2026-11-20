@@ -37,6 +37,7 @@ from cordon_scanner.detect.agents.installs.planting import AgentPlanting
 from cordon_scanner.detect.agents.instruction_files import InstructionFileFindings
 from cordon_scanner.detect.agents.instructions import InstructionText
 from cordon_scanner.detect.agents.mcp_servers.findings import McpServerFindings
+from cordon_scanner.detect.agents.mcp_servers.lookalike_names import OwnPackageName
 from cordon_scanner.detect.agents.mcp_servers.source import (
     MCP_SDK,
     SERVER_SOURCE_SUFFIXES,
@@ -149,6 +150,16 @@ class AgentChainDetector(BaseDetector):
             ]
         return []
 
+    @staticmethod
+    def _mcp_server_files(path: str, unit: FileUnit, ctx: ScanContext) -> list[Finding]:
+        """An MCP server's own source and its own manifest."""
+        found: list[Finding] = []
+        if path.endswith(SERVER_SOURCE_SUFFIXES) and MCP_SDK.search(unit.content.text):
+            found.extend(McpServerFindings.server_source(unit, ctx))
+        if path.rsplit("/", 1)[-1] in OwnPackageName.MANIFESTS:
+            found.extend(McpServerFindings.own_package(unit, ctx))
+        return found
+
     def inspect(self, unit: Unit, ctx: ScanContext) -> Iterable[Finding]:
         if not isinstance(unit, FileUnit):
             return ()
@@ -192,8 +203,7 @@ class AgentChainDetector(BaseDetector):
                 )
         if path == VSIX_MANIFEST and ".vsix!" in unit.content.path.lower():
             findings.extend(ExtensionFileFindings.vsix_manifest(unit, ctx))
-        if path.endswith(SERVER_SOURCE_SUFFIXES) and MCP_SDK.search(unit.content.text):
-            findings.extend(McpServerFindings.server_source(unit, ctx))
+        findings.extend(self._mcp_server_files(path, unit, ctx))
         if path.lower().endswith(_SKILL_SCRIPT_SUFFIXES) and SkillScripts.in_skill(
             unit.content.path, ctx
         ):
@@ -208,7 +218,7 @@ class AgentChainDetector(BaseDetector):
                 # In code, a detector's own sample of the attack -- a scanner's test string.
                 or not _DETECTOR_VOCABULARY.search(unit.content.text)
             ):
-                start, end = InstructionText._byte_span(unit.content.text, found)
+                start, end = InstructionText._byte_span(unit.content.text, found, unit.content)
                 findings.append(
                     AgentFinding.finding(
                         "SUSPECT.AGENT.HIDDEN_DIRECTIVE.001", unit, ctx, start, end
@@ -220,7 +230,7 @@ class AgentChainDetector(BaseDetector):
                 else None
             )
             if redirect is not None:
-                start, end = InstructionText._byte_span(unit.content.text, redirect)
+                start, end = InstructionText._byte_span(unit.content.text, redirect, unit.content)
                 findings.append(
                     AgentFinding.finding(
                         "SUSPECT.AGENT.INSTALL_REDIRECT.001", unit, ctx, start, end
@@ -228,7 +238,7 @@ class AgentChainDetector(BaseDetector):
                 )
             claim = _PRIORITY_CLAIM.search(unit.content.text)
             if claim is not None:
-                start, end = InstructionText._byte_span(unit.content.text, claim)
+                start, end = InstructionText._byte_span(unit.content.text, claim, unit.content)
                 findings.append(
                     AgentFinding.finding(
                         "SUSPECT.AGENT.TOOL_PRIORITY_CLAIM.001", unit, ctx, start, end

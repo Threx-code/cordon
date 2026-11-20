@@ -226,7 +226,8 @@ class Structure:
     #: fits one of these, or a home inside one of them.
     REPOSITORY_ROOT: ClassVar[frozenset[str]] = frozenset(
         {
-            # What GitHub, PyPI and the citation tools read at the root.
+            # What GitHub, PyPI, the citation tools and FLOSS/fund read at the root.
+            ".well-known",
             ".github",
             "CITATION.cff",
             "CODE_OF_CONDUCT.md",

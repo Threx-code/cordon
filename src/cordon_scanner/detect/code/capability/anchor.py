@@ -40,6 +40,9 @@ class FindingAnchor:
         Capability.DECODE,
         Capability.DECOMPRESS,
         Capability.RECONNAISSANCE,
+        Capability.COLLECT,
+        Capability.EXPOSE,
+        Capability.LATERAL,
         Capability.DELAY,
         Capability.SPAWN,
         Capability.EGRESS,
@@ -59,7 +62,7 @@ class FindingAnchor:
         This was the earliest hit of any named capability, on the reasoning that
         the first contributing line puts the reader at the start of the
         construct. That holds when the capabilities ARE one construct, and
-        `curl ... | bash` -- where every capability is on the one line -- still
+        a download piped to a shell -- where every capability is on the one line -- still
         anchors exactly where it did. It fails at the proximity a composite
         allows: `SUSPECT.DROPPER.001` pairs hits up to two hundred lines apart,
         so the earliest is routinely nowhere near the evidence.

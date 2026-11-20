@@ -35,6 +35,16 @@ if TYPE_CHECKING:
 class AgentFinding:
     """Building an agent-chain finding from a rule and a span of a file."""
 
+    @staticmethod
+    def byte_at(unit: FileUnit, text: str, index: int) -> int:
+        """The byte offset in the file of character `index` of `text`. Where `text` is the file's own, a UTF-8 mark is counted
+        (`FileContent.byte_offset`): a span built from the encoded length of the text alone begins three bytes early in a file
+        that carries one, and the finding then reports other evidence than the same file without it."""
+        content = unit.content
+        if text is content.text:
+            return content.byte_offset(index)
+        return len(text[:index].encode("utf-8"))
+
     @classmethod
     def at_text(
         cls,
@@ -55,12 +65,7 @@ class AgentFinding:
             index = text.find(json.dumps(needle)[1:-1])
         if index < 0:
             index = 0
-        content = unit.content
-        start = (
-            content.byte_offset(index)
-            if text is content.text
-            else len(text[:index].encode("utf-8"))
-        )
+        start = unit.content.byte_offset(index, text)
         end = start + len(needle.encode("utf-8"))
         return cls.finding(
             rule_id,

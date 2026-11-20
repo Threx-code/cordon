@@ -28,7 +28,7 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.foundation.config.settings import Config
-from support import CORPUS, requires_malicious_corpus
+from support import CORPUS, CoverageTree, requires_malicious_corpus
 
 #: How the same file looks when a different editor on a different platform saves it.
 TRANSFORMS = {
@@ -45,7 +45,12 @@ class HowAFileWasWrittenHelpers:
 
     @staticmethod
     def _samples() -> list[pathlib.Path]:
-        return [path for path in sorted(CORPUS.glob("*/*")) if path.is_dir()]
+        # The MCP coverage tree is kept as an archive and unpacked at run time (`CoverageTree`); it is a sample too.
+        found = [path for path in sorted(CORPUS.glob("*/*")) if path.is_dir()]
+        coverage = CoverageTree.path()
+        if coverage.is_dir() and coverage.resolve() not in {p.resolve() for p in found}:
+            found.append(coverage)
+        return found
 
     @staticmethod
     def _rewrite(source: pathlib.Path, destination: pathlib.Path, transform) -> None:

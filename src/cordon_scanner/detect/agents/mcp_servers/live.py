@@ -15,7 +15,7 @@ listed (`intel/live_mcp.py`) and:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from cordon_scanner.detect.base import ScanContext, Unit
+    from cordon_scanner.intel.base import ToolApprovals
 
 POISONED_RULE: Final = "SUSPECT.MCP.LIVE_TOOL_DESCRIPTION.001"
 CHANGED_RULE: Final = "SUSPECT.MCP.TOOLS_CHANGED.001"
@@ -157,29 +158,112 @@ class LiveMcpDetector(BaseDetector):
                     )
             approved = (approvals or {}).get("servers", {}).get(name) if approvals else None
             if isinstance(approved, dict):
-                changed = McpApprovals.differences(approved, tools)
-                if changed:
-                    listed = ", ".join(f"{kind} `{tool}`" for kind, tool in changed[:8])
-                    findings.append(
-                        self._finding(
-                            CHANGED_RULE,
-                            unit,
-                            ctx,
-                            name,
-                            f"MCP server `{name}` serves tools that differ from the ones approved: {listed}"
-                            + (f" and {len(changed) - 8} more" if len(changed) > 8 else "")
-                            + ".",
-                        )
-                    )
+                findings.extend(self._rug_pull(unit, ctx, name, approved, tools, McpApprovals))
         return findings
 
+    def _rug_pull(
+        self,
+        unit: FileUnit,
+        ctx: ScanContext,
+        name: str,
+        approved: dict[str, Any],
+        tools: list[Any],
+        approvals: ToolApprovals,
+    ) -> list[Finding]:
+        """BP-12-5, BP-12-6: the list digest T1 against the approved T0. Equal is quiet. Different
+        names each tool added, removed, redescribed or otherwise changed, reads every new or changed
+        description with the description checks a reviewed one met, and reports both in one finding
+        (decided as REVIEW R604 with this diff). A description the checks block is also its own
+        finding."""
+        from cordon_scanner.detect.agents.mcp_servers.findings import McpServerFindings
+        from cordon_scanner.detect.agents.mcp_servers.source import McpServerSource
+
+        t1 = approvals.digest(tools)
+        if approvals.unchanged(approved, t1):
+            return []
+        changed = approvals.differences(approved, tools)
+        if not changed and t1 is not None:
+            return []
+        served = {tool.name: tool for tool in tools}
+        own = frozenset(served)
+        kinds: dict[str, list[str]] = {}
+        for kind, tool_name in changed:
+            kinds.setdefault(kind, []).append(tool_name)
+        out: list[Finding] = []
+        flagged: list[str] = []
+        basis: list[str] = ["tools-changed"]
+        reads: list[str] = []
+        for tool_name in kinds.get("added", []) + kinds.get("description changed", []):
+            verdict = McpServerFindings.judge_description(served[tool_name].description, own)
+            if not verdict.flagged:
+                continue
+            flagged.append(tool_name)
+            basis += [code for code in verdict.basis if code not in basis]
+            reads.append(
+                f" The new description of `{tool_name}` was read by the description checks:{verdict.why()}"
+            )
+            # The phrase rules already read every served description (`inspect`); a description they
+            # flag has its finding, so only what the sequence or learned reading adds is reported here.
+            already = (
+                McpServerSource._poisoned_description(served[tool_name].description) is not None
+            )
+            if verdict.blocking and not already:
+                out.append(
+                    self._finding(
+                        POISONED_RULE,
+                        unit,
+                        ctx,
+                        name,
+                        f"MCP server `{name}` now serves tool `{tool_name}` with a description that the "
+                        f"description checks block.{verdict.why()} It was not what was approved.",
+                        basis=verdict.basis,
+                    )
+                )
+        listed = ", ".join(f"{kind} `{tool}`" for kind, tool in changed[:8])
+        message = (
+            f"MCP server `{name}` serves tools that differ from the ones approved: {listed}"
+            + (f" and {len(changed) - 8} more" if len(changed) > 8 else "")
+            + "."
+        )
+        if t1 is None:
+            message += " Two tools it serves share a name, so its list has no single digest."
+        if reads:
+            message += "".join(reads)
+        elif kinds.get("added") or kinds.get("description changed"):
+            message += " The description checks find nothing in the new text."
+        t0 = approved.get("list_digest")
+        metadata = (
+            ("t0", t0 if isinstance(t0, str) else "none"),
+            ("t1", t1 or "none"),
+            ("added", ",".join(kinds.get("added", []))),
+            ("removed", ",".join(kinds.get("removed", []))),
+            ("description_changed", ",".join(kinds.get("description changed", []))),
+            ("changed", ",".join(kinds.get("changed", []))),
+            ("flagged", ",".join(flagged)),
+        )
+        out.insert(
+            0,
+            self._finding(
+                CHANGED_RULE, unit, ctx, name, message, metadata=metadata, basis=tuple(basis)
+            ),
+        )
+        return out
+
     def _finding(
-        self, rule_id: str, unit: FileUnit, ctx: ScanContext, server: str, message: str
+        self,
+        rule_id: str,
+        unit: FileUnit,
+        ctx: ScanContext,
+        server: str,
+        message: str,
+        *,
+        metadata: tuple[tuple[str, str], ...] = (),
+        basis: tuple[str, ...] = (),
     ) -> Finding:
         rule = next(r for r in self.declared_rules() if r.id == rule_id)
         text = unit.content.text
         index = max(text.find(f'"{server}"'), 0)
-        start = unit.content.byte_offset(index)
+        start = unit.content.byte_offset(index, text)
         line = unit.content.line_of(start)
         return Finding(
             rule_id=rule.id,
@@ -192,10 +276,10 @@ class LiveMcpDetector(BaseDetector):
                 kind=EvidenceKind.METADATA,
                 match_hash=Evidence.hash_bytes(f"{rule_id}:{server}:{message}".encode()),
                 redaction=RedactionMode.NONE,
-                metadata=(("server", server),),
+                metadata=(("server", server), *metadata),
             ),
             remediation=rule.remediation,
-            explanation=Explanation(summary=rule.title, matched_rule=rule.id),
+            explanation=Explanation(summary=rule.title, matched_rule=rule.id, basis=basis),
             risk=ctx.scorer.score(
                 rule.severity, rule.confidence, ScoringContext(in_install_hook=False)
             ),

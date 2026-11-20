@@ -35,4 +35,4 @@ findings:
   - {rule: SUSPECT.IAC.IAM_WILDCARD.001}
   # The packages'.
   - {rule: POLICY.DEPENDENCY.MUTABLE_REF.001, message: queue}
-  - {rule: POLICY.DEPENDENCY.SOURCE.001, message: tags-1.2.0}
+  - {rule: SUSPECT.DEPENDENCY.REMOTE_TARBALL.001, message: tags-1.2.0, severity: medium}

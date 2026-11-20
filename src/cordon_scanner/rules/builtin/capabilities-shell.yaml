@@ -461,6 +461,9 @@ rules:
         # stays.
         - '\b(?:cp|mv|install|ln|tee|touch|mkdir)\b[^\n]{0,100}?/etc/systemd/system/'
         - '>[ \t]{0,8}[^\n]{0,60}?/etc/systemd/system/'
+        # A user's own units and autostart entries, read the same way: written, never merely named.
+        - '\b(?:cp|mv|install|ln|tee|touch|mkdir)\b[^\n]{0,100}?\.config/(?:systemd/user|autostart)/'
+        - '>[ \t]{0,8}[^\n]{0,60}?\.config/(?:systemd/user|autostart)/'
         # No `path ... >` alternative. `rm -f /etc/systemd/system/x.service &>
         # /dev/null` has a redirect AFTER the path and writes nothing to it; a write
         # puts the redirect first, which the alternative above already covers.
@@ -506,7 +509,11 @@ rules:
         - "export EDITOR='sed -i 1i@reboot\\ /tmp/x'\nprepare\ncrontab -e"
         - "cp agent.service /etc/systemd/system/agent.service"
         - "systemctl enable agent.service"
+        - "cp agent.service ~/.config/systemd/user/agent.service"
+        - "cat > \"$HOME/.config/autostart/agent.desktop\" <<EOF"
       negative:
+        - "rm -f ~/.config/systemd/user/agent.service"
+        - "rm -f ~/.config/autostart/agent.desktop"
         - "pm2 list"
         - "pm2 logs svc"
         - "forever list"

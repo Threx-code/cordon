@@ -579,6 +579,37 @@ class DependencyDetector(BaseDetector):
                 ctx=ctx,
                 detail=f"{dep.name} ~ {target}",
             )
+            return
+        yield from self._mixed_script_finding(ctx, dep) if confusable else ()
+
+    def _mixed_script_finding(self, ctx: ScanContext, dep: Dependency) -> Iterator[Finding]:
+        """A name mixing Latin letters with Cyrillic or Greek ones, whichever package it imitates.
+
+        It needs no popular list to judge: it renders as a Latin name it is not (`mcp-go` spelt
+        with a Cyrillic `o`), and no keyboard writes it by accident."""
+        from cordon_scanner.foundation.text.name_scripts import NameScripts
+
+        script = NameScripts.mixed(dep.name)
+        if script is not None:
+            yield self._finding(
+                rule_id="SUSPECT.DEPENDENCY.TYPOSQUAT.001",
+                category=Category.SUSPICIOUS,
+                severity=Severity.HIGH,
+                confidence=Confidence.HIGH,
+                title="Dependency name uses look-alike characters",
+                message=(
+                    f"{dep.name!r} spells its name with {script} letters among Latin ones, so it "
+                    f"renders as a Latin name it is not. No keyboard produces this by accident; it "
+                    f"is chosen to pass for another {dep.ecosystem} package."
+                ),
+                remediation=(
+                    f"Replace {dep.name!r} with the package that was intended and treat any "
+                    f"machine that installed it as having run untrusted code."
+                ),
+                dep=dep,
+                ctx=ctx,
+                detail=f"{dep.name} ({script} letters)",
+            )
 
     def _lock_findings(
         self,

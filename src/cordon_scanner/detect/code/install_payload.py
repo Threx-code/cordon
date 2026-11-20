@@ -47,6 +47,8 @@ class InstallPayload:
             Capability.FETCH_EXEC,
             Capability.CREDENTIAL,
             Capability.RECONNAISSANCE,
+            Capability.COLLECT,
+            Capability.LATERAL,
             Capability.WALLET,
             Capability.MINE,
             Capability.DESTROY,

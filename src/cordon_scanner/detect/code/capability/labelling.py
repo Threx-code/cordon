@@ -891,7 +891,7 @@ class Labelling:
         store = cls._BROWSER_STORE.search(text)
         if store is None or cls._BROWSER_DECRYPT.search(text) is None:
             return []
-        start = len(text[: store.start()].encode("utf-8"))
+        start = content.byte_offset(store.start(), text)
         return [
             CapabilityHit(
                 capability=Capability.CREDENTIAL,
