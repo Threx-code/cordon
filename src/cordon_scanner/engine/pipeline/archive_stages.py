@@ -663,6 +663,7 @@ class ArchiveStages:
                 self.engine._intent_observation(units, ctx, acc.facts),
                 repository=not ctx.package_distribution,
                 facts=acc.facts,
+                blind=Ceilings.feature_blind(units, ctx),
             )
         acc.findings.extend(code_model)
         acc.findings.extend(remote_control)

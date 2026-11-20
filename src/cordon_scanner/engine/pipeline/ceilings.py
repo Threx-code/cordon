@@ -85,6 +85,27 @@ class Ceilings:
         return VerdictFeatures.wanted_dependencies(Ceilings.verdict_manifests(units))
 
     @staticmethod
+    def feature_blind(units: Sequence[FileUnit], ctx: ScanContext) -> int:
+        """How many files where code runs on its own the verdict model could not read: one in an install, import or
+        agent place over the profile's size, and every one past the per-place file count. The model is fitted to
+        features that leave them out (`decide/feature_schema.py` hashes the extractor, so the caps cannot move without
+        a refit), so a payload padded past the size is invisible to it: with any, the verdict lowers nothing."""
+        from cordon_scanner.detect.code.reached_flows import ReachedFlows
+        from cordon_scanner.engine.isolation.analysis_facts import PROFILE_BYTES
+
+        places = (
+            ctx.install_hook_paths | ctx.install_entry_paths,
+            ctx.import_entry_paths,
+            ctx.agent_run_paths,
+        )
+        blind = 0
+        for paths in places:
+            in_place = [u for u in units if u.path in paths]
+            read = sum(1 for u in in_place if u.content.size <= PROFILE_BYTES)
+            blind += len(in_place) - read + max(0, read - ReachedFlows.FILES)
+        return blind
+
+    @staticmethod
     def verdict(
         findings: list[Finding],
         units: Sequence[FileUnit],
@@ -93,6 +114,7 @@ class Ceilings:
         *,
         repository: bool = False,
         facts: Mapping[str, dict[str, list[Any]]] | None = None,
+        blind: int = 0,
     ) -> tuple[list[Finding], dict[str, Any]]:
         """The package verdict over everything this scan found (`core/verdict.py`), then the
         intent layer over what the package's code does (`core/intent.py`). `repository`: the
@@ -127,6 +149,7 @@ class Ceilings:
             profile or {},
             repository=repository,
             source_facts=source_facts,
+            blind=blind,
         )
         second, line = verdict.get("registry_score"), verdict.get("registry_block")
         Ceilings.second_opinion(second, line, graded, verdict)

@@ -352,6 +352,7 @@ class ScanStages:
                 self.engine._intent_observation(units, ctx, acc.facts),
                 repository=not ctx.package_distribution,
                 facts=acc.facts,
+                blind=Ceilings.feature_blind(units, ctx),
             )
         findings = (*graded, *code_model, *remote_control)
         dependencies = self.engine.detection.annotated(dependencies, findings, ctx, units)
