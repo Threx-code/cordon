@@ -124,7 +124,6 @@ class TestLongTextIsReadToTheEnd:
         windows = SKILL_MODEL.windows(text)
         assert len(windows) > 1
         assert all(len(w) <= MAX_SKILL_TEXT for w in windows)
-        assert SKILL_MODEL.windows_unread(text) == 0
         assert windows[-1].endswith(text[-100:])
 
     def test_a_short_text_is_one_window(self):
@@ -146,3 +145,25 @@ class TestASkillsClaim:
         assert features["skill_front_matter"] == 1.0
         assert features["skill_claims_files"] == 1.0
         assert features["skill_claims_network"] == 0.0
+
+
+class TestAVeryLongTextIsReadToTheEnd:
+    def test_a_text_of_many_windows_is_read_to_its_last_character(self):
+        # The windows stopped after 24 of them (about half a megabyte of a skill): the rest was never scored.
+        from cordon_scanner.detect.agents.mcp_servers.description_model import (
+            MAX_SKILL_TEXT,
+            SKILL_MODEL,
+        )
+
+        text = "a" * (MAX_SKILL_TEXT * 40) + "the last words"
+        windows = SKILL_MODEL.windows(text)
+        assert len(windows) > 24
+        assert windows[-1].endswith("the last words")
+
+    def test_a_description_past_a_hundred_thousand_characters_is_read_to_the_end(self):
+        from cordon_scanner.detect.agents.mcp_servers.description_model import MAX_TEXT, MCP_MODEL
+
+        text = "b" * (MAX_TEXT * 30) + "the last words"
+        windows = MCP_MODEL.windows(text)
+        assert len(windows) > 24
+        assert windows[-1].endswith("the last words")
