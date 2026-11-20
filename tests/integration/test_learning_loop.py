@@ -95,7 +95,13 @@ class TestTheLoopLearnsShipsAndCatches:
 
         run = Distiller(min_families=3, budget=0.5, alpha=0.5).distill(units)
         assert run.candidate is not None, run.refused
-        assert ["file", "unreached", "egress", "spawn"] in run.candidate["predicate"]
+        # The same fact two ways: in no place set, or (facts v2) reached by nothing at all.
+        assert any(
+            t[0] == "file"
+            and t[1] in ("unreached", "reach:unreached")
+            and t[2:] == ["egress", "spawn"]
+            for t in run.candidate["predicate"]
+        )
 
         pack = tmp_path / "learned.yaml"
         pack.write_text(PackRenderer.render(run.candidate, "LEARNED.NPM.001"), encoding="utf-8")

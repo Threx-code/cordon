@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING, ClassVar, Final
 
 from cordon_scanner.analysis.javascript.front.parser import Parser
 from cordon_scanner.analysis.javascript.front.syntax import Node, Syntax
+from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -334,22 +335,21 @@ class _Read:
 
     def _python(self, text: str) -> None:
         try:
-            tree = ast.parse(text)
+            tree = PythonSyntax.parse(text)
         except (SyntaxError, ValueError, RecursionError):
             return
         for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for alias in node.names:
-                    self.specs.append((alias.name, 0))
-            elif isinstance(node, ast.ImportFrom):
-                module = node.module or ""
-                self.specs.append((module, node.level))
-                self.specs.extend(
-                    ((f"{module}.{alias.name}" if module else alias.name), node.level)
-                    for alias in node.names
-                )
-            elif isinstance(node, ast.Constant) and isinstance(node.value, str):
-                self._keep(node.value)
+            match node:
+                case ast.Import(names=names):
+                    self.specs.extend((alias.name, 0) for alias in names)
+                case ast.ImportFrom(module=module, level=level, names=names):
+                    base = module or ""
+                    self.specs.append((base, level))
+                    self.specs.extend(
+                        ((f"{base}.{alias.name}" if base else alias.name), level) for alias in names
+                    )
+                case ast.Constant(value=str() as value):
+                    self._keep(value)
 
     # -- the files it loads --------------------------------------------------------------------------------
 
