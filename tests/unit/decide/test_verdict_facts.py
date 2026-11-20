@@ -72,6 +72,15 @@ class TestTheSourceFactsAreTheBytes:
         named, shows = VerdictFeatures.source_facts(data, frozenset({"left-pad", "unused"}))
         assert named == {"left-pad"} and "network" in shows
 
+    def test_what_a_file_names_after_two_million_bytes_is_read(self) -> None:
+        data = (
+            b"// "
+            + b"x" * 2_100_000
+            + b"\nconst a = require('left-pad'); fetch('https://x.invalid');\n"
+        )
+        named, shows = VerdictFeatures.source_facts(data, frozenset({"left-pad"}))
+        assert named == {"left-pad"} and "network" in shows
+
 
 class TestTheVerdictIsIdentical:
     @pytest.mark.parametrize(

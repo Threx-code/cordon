@@ -9,6 +9,7 @@ import re
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
+from cordon_scanner.foundation.limits import WHOLE_FILE_BYTES
 from cordon_scanner.foundation.models import Confidence, Finding, Severity
 from cordon_scanner.foundation.paths import PackagePaths
 
@@ -405,8 +406,8 @@ class VerdictFeatures:
     @staticmethod
     def source_facts(data: bytes, wanted: frozenset[str]) -> tuple[frozenset[str], frozenset[str]]:
         """What one source file contributes: the wanted modules it names in a quoted string, and the
-        ABILITY names whose pattern matches its first 2 MB. Computed in the worker (item 56)."""
-        head = data[:2_000_000]
+        ABILITY names whose pattern matches it, the file read whole. Computed in the worker (item 56)."""
+        head = data[:WHOLE_FILE_BYTES]
         named = frozenset(
             name
             for m in VerdictFeatures._QUOTED_MODULE.finditer(head)

@@ -36,6 +36,7 @@ from cordon_scanner.detect.code.features import CodeFeatures
 from cordon_scanner.foundation.dependencies import HookKinds
 from cordon_scanner.foundation.files.windows import BytesWindows, WindowSourceChanged
 from cordon_scanner.foundation.formats.served_json import DocumentUnavailable
+from cordon_scanner.foundation.limits import WHOLE_FILE_BYTES
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -50,8 +51,8 @@ class ReachedFlows:
 
     #: Per place, as many files as the capability profile reads (`Engine._PROFILE_FILES`).
     FILES: ClassVar[int] = 50
-    #: The size past which a file is not read here: the profile's own limit.
-    MAX_SIZE: ClassVar[int] = 1_000_000
+    #: The size past which a file is not read here: what the scanner reads whole (a file past it is read in windows by the engine).
+    MAX_SIZE: ClassVar[int] = WHOLE_FILE_BYTES
 
     FRAMEWORK: ClassVar[dict[str, re.Pattern[str]]] = {
         "framework_credential": re.compile(r"\.getCredentials\s*\("),

@@ -63,6 +63,7 @@ from cordon_scanner.detect.code.install_payload import InstallPayload
 from cordon_scanner.detect.code.keychain_owner import KeychainOwner
 from cordon_scanner.detect.infra.gradle_auth import GradleBuildAuth
 from cordon_scanner.foundation.capabilities import Capability, MatchKind
+from cordon_scanner.foundation.limits import WHOLE_FILE_BYTES
 from cordon_scanner.foundation.models import Category, Finding
 
 if TYPE_CHECKING:
@@ -470,7 +471,7 @@ class CapabilityDetector(BaseDetector):
 
         matched_content = content
         run_time_view = CapabilityDetector.RUN_TIME_VIEWS.get(unit.language or "")
-        if run_time_view is not None and content.size <= 2_000_000:
+        if run_time_view is not None and content.size <= WHOLE_FILE_BYTES:
             # What the file builds at run time -- commands added up from a table of characters,
             # paths and endpoints XOR-decoded from byte tables -- written beside where it is built
             # (`detect/go_eval.py`), so the rules read the paths and hosts the code reaches.

@@ -33,6 +33,7 @@ from cordon_scanner.engine.pipeline.constants import (
 )
 from cordon_scanner.engine.pipeline.hooks import Hooks
 from cordon_scanner.foundation.config.policy import Policy
+from cordon_scanner.foundation.limits import WHOLE_FILE_BYTES
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -72,7 +73,7 @@ class Ceilings:
     def verdict_manifests(units: Sequence[FileUnit]) -> dict[str, bytes]:
         """The manifests the package verdict reads, by path."""
         return {
-            u.path: u.content.raw[:1_000_000]
+            u.path: u.content.raw[:WHOLE_FILE_BYTES]
             for u in units
             if u.path.rsplit("!", 1)[-1].rsplit("/", 1)[-1] in Ceilings._VERDICT_MANIFESTS
         }

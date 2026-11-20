@@ -49,6 +49,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.formats.served_json import ServedJson
+from cordon_scanner.foundation.limits import WHOLE_FILE_BYTES
 from cordon_scanner.foundation.paths import PackagePaths
 
 if TYPE_CHECKING:
@@ -334,8 +335,8 @@ class Observation:
 class IntentObserver:
     """The facts no rule computes: when each effect runs, concealment, and gates (19, step 2)."""
 
-    #: Files above this are not read: the reach analysis (`JsFlow.deferred_spans`) stops there.
-    MAX_BYTES: ClassVar[int] = 1_500_000
+    #: Files above this are not read: what the scanner reads whole, where the reach analysis (`JsFlow.deferred_spans`) stops.
+    MAX_BYTES: ClassVar[int] = WHOLE_FILE_BYTES
     #: Files labelled per package, running files first. The files that run on their own are a
     #: handful in any real package; a bundle of thousands is not read past this.
     MAX_FILES: ClassVar[int] = 120
