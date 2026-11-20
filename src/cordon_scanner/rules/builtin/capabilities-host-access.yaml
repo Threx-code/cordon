@@ -441,7 +441,7 @@ rules:
   # Persistence and propagation
   # ---------------------------------------------------------------------------------------------------------------
   - id: CAP.PERSIST.AUTOSTART.001
-    version: 1.0.0
+    version: 1.1.0
     category: policy
     severity: info
     confidence: high
@@ -451,9 +451,11 @@ rules:
       This file names a location that makes a program run again by itself: a macOS launch agent or daemon, a systemd
       unit, a cron table, the Windows Run keys or Startup folder, an XDG autostart entry.
     remediation: No action for this signal alone.
+    # Code only. A shell script, a Makefile or a PowerShell script names these paths to remove them as often as to
+    # write them (an uninstaller's `rm -f /etc/systemd/system/x.service`), and the shell rules read those files with
+    # the write verb required (capabilities-shell.yaml); a bare path here undid that for every uninstaller.
+    languages: [javascript, typescript, python, go, rust, java, kotlin, scala, groovy, csharp, ruby, php, swift, perl, lua, dart, elixir]
     paths:
-      # Shell scripts and makefiles are read by the shell persistence rule, which counts a unit path only where it is
-      # written: an uninstaller names the same paths as the installer (`rm -f /etc/systemd/system/x.service`).
       exclude:
         - "**/rules/**/*.yaml"
         - "**/rules/**/*.yml"
@@ -461,14 +463,6 @@ rules:
         - "**/*.mdx"
         - "**/*.rst"
         - "**/*.txt"
-        - "**/*.sh"
-        - "**/*.bash"
-        - "**/*.zsh"
-        - "**/*.ksh"
-        - "**/*.ps1"
-        - "**/*.psm1"
-        - "**/Makefile"
-        - "**/*.mk"
     match:
       kind: regex
       patterns:

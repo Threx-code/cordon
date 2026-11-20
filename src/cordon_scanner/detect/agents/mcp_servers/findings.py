@@ -9,6 +9,7 @@ resources, prompts."""
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 
 from cordon_scanner.detect.agents import configuration
@@ -123,8 +124,84 @@ _TOOL_NAME: Final = re.compile(
 _EXPLICIT_NAME: Final = re.compile(r"""\bname\s*=\s*["']([A-Za-z][\w.-]{1,80})["']""")
 
 
+@dataclass(frozen=True)
+class DescriptionVerdict:
+    """One reading of a tool description by every description check: the phrase and shape rules, the
+    sequence of steps an attack takes, and the learned reading. The source of a server and a remote
+    server's live list are read by this one function, so changed text (a rug pull) meets every check
+    a reviewed description met."""
+
+    reason: str | None
+    """The rule or sequence reading that fired, in words for a message; None when neither did."""
+    learned: bool
+    """The learned reading is at or above its warn line."""
+    blocking: bool
+    score: float | None
+    basis: tuple[str, ...]
+    """`Explanation.basis` codes: the text read, then each reading that fired."""
+    unconfirmed: bool
+    """No rule, no sequence and no learned reading fired: ATR's phrase rules alone are then read as
+    unconfirmed (`AgentTextFindings.threat_rules`)."""
+
+    @property
+    def flagged(self) -> bool:
+        return self.reason is not None or self.learned
+
+    def why(self) -> str:
+        if self.reason is not None:
+            return f" It {self.reason}."
+        return (
+            " It reads as instructions to the agent rather than a description of the tool "
+            f"(model score {self.score or 0.0:.2f})."
+        )
+
+
 class McpServerFindings:
     """The agent-chain findings about declared MCP servers and their source."""
+
+    @staticmethod
+    def judge_description(
+        description: str, own: frozenset[str] = frozenset(), *, label: bool = False
+    ) -> DescriptionVerdict:
+        """Every description check on one tool description. `own` is the server's own vocabulary
+        (its tool names), so sequencing its own tools is not read as an attack; a `label` (a field's
+        name of a few words) is read by the phrase rules only."""
+        reason = McpServerSource._poisoned_description(description, own)
+        # A few plain words that name no tool, no value and nothing quoted (`First run ID`) are a
+        # field's name in whatever syntax it was declared in; the sequence reading's opening
+        # order ("First run ...") is not read from them (doc 38). Orders in attacks are a
+        # sentence about a tool or a file, and the devset's attack descriptions are long.
+        plain = McpServerFindings._plain_name(description)
+        # Which readings fired, as codes (`Explanation.basis`): the message says one reason in
+        # words; the basis records every reading, the model's score beside a phrase or chain too.
+        basis = ["description"]
+        if reason is not None:
+            basis.append(McpServerSource.reason_code(reason))
+        elif not label and not plain:
+            # The steps an attack on the agent takes, in a combination no real server's own
+            # description carries (`semantics.PRECISE`).
+            chain = AgentSemantics.precise(description)
+            if chain is not None and not McpServerFindings._own_sequencing(
+                description, chain, own, "description"
+            ):
+                reason = f"gives {AgentSemantics.explain(chain)}"
+                basis.append(McpServerFindings.chain_code(chain))
+        # The learned reading (`detect/agents/mcp_servers/description_model.py`): poisoning written as
+        # ordinary prose, which no phrase rule narrow enough to stay quiet catches. Blocks above
+        # `block`; reported for review between `warn` and `block`.
+        score = None if label else McpDescriptionModel.score(description)
+        limits = McpDescriptionModel.thresholds()
+        learned = score is not None and limits is not None and score >= limits[1]
+        if learned and score is not None and limits is not None:
+            basis.append(McpServerFindings.model_code(score, limits[0]))
+        blocking = reason is not None or (
+            learned and score is not None and limits is not None and score >= limits[0]
+        )
+        # ATR's phrase rules, read beside the model: on 980 real MCP servers they blocked 11
+        # on their own -- security tools quoting attacks, prompts that tell an agent how to
+        # use the tool -- and on MCP-SafetyBench none of 146 blocks needed them alone.
+        unconfirmed = limits is not None and not learned and reason is None
+        return DescriptionVerdict(reason, learned, blocking, score, tuple(basis), unconfirmed)
 
     @classmethod
     def server_source(cls, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
@@ -142,61 +219,23 @@ class McpServerFindings:
                 continue
             seen.add(description)
             yield from AgentTextFindings.intents(unit, ctx, description, within=text)
-            reason = McpServerSource._poisoned_description(description, own)
             # An argument's label of a few words (`.describe("First run ID")`) names a field: the
             # sequence and learned readings are of descriptions, and read these as orders.
             label = description in labels and len(description.split()) < McpServerSource.LABEL_WORDS
-            # A few plain words that name no tool, no value and nothing quoted (`First run ID`) are a
-            # field's name in whatever syntax it was declared in; the sequence reading's opening
-            # order ("First run ...") is not read from them (doc 38). Orders in attacks are a
-            # sentence about a tool or a file, and the devset's attack descriptions are long.
-            plain = McpServerFindings._plain_name(description)
-            # Which readings fired, as codes (`Explanation.basis`): the message says one reason in
-            # words; the basis records every reading, the model's score beside a phrase or chain too.
-            basis = ["description"]
-            if reason is not None:
-                basis.append(McpServerSource.reason_code(reason))
-            elif not label and not plain:
-                # The steps an attack on the agent takes, in a combination no real server's own
-                # description carries (`semantics.PRECISE`).
-                chain = AgentSemantics.precise(description)
-                if chain is not None and not McpServerFindings._own_sequencing(
-                    description, chain, own, "description"
-                ):
-                    reason = f"gives {AgentSemantics.explain(chain)}"
-                    basis.append(McpServerFindings.chain_code(chain))
-            # The learned reading (`detect/agents/mcp_servers/description_model.py`): poisoning written as ordinary prose,
-            # which no phrase rule narrow enough to stay quiet catches. Blocks above `block`;
-            # reported for review between `warn` and `block`.
-            score = None if label else McpDescriptionModel.score(description)
-            limits = McpDescriptionModel.thresholds()
-            learned = score is not None and limits is not None and score >= limits[1]
-            # ATR's phrase rules, read beside the model: on 980 real MCP servers they blocked 11
-            # on their own -- security tools quoting attacks, prompts that tell an agent how to
-            # use the tool -- and on MCP-SafetyBench none of 146 blocks needed them alone.
-            unconfirmed = limits is not None and not learned and reason is None
-            if reason is not None or learned:
-                blocking = reason is not None or (limits is not None and score >= limits[0])  # type: ignore[operator]  # learned implies a score
-                why = (
-                    f" It {reason}."
-                    if reason is not None
-                    else f" It reads as instructions to the agent rather than a description of the "
-                    f"tool (model score {score:.2f})."
-                )
-                if learned and score is not None and limits is not None:
-                    basis.append(McpServerFindings.model_code(score, limits[0]))
+            verdict = McpServerFindings.judge_description(description, own, label=label)
+            if verdict.flagged:
                 yield AgentFinding.at_text(
                     "SUSPECT.MCP.TOOL_DESCRIPTION.001",
                     unit,
                     ctx,
                     text,
                     description[:80],
-                    message=RULES["SUSPECT.MCP.TOOL_DESCRIPTION.001"].message + why,
-                    severity=None if blocking else Severity.MEDIUM,
-                    basis=tuple(basis),
+                    message=RULES["SUSPECT.MCP.TOOL_DESCRIPTION.001"].message + verdict.why(),
+                    severity=None if verdict.blocking else Severity.MEDIUM,
+                    basis=verdict.basis,
                 )
             yield from AgentTextFindings.threat_rules(
-                unit, ctx, description, ATR_TEXT_KINDS, within=text, unconfirmed=unconfirmed
+                unit, ctx, description, ATR_TEXT_KINDS, within=text, unconfirmed=verdict.unconfirmed
             )
         names = (McpServerFindings._tool_name(m) for m in _TOOL_NAME.finditer(text))
         for name in dict.fromkeys(names):
@@ -359,7 +398,7 @@ class McpServerFindings:
                 first = starts[min(max(line, 1), len(starts)) - 1]
                 last = text.find("\n", first)
                 last = len(text) if last < 0 else last
-                return unit.content.byte_offset(first), unit.content.byte_offset(last)
+                return unit.content.byte_offset(first, text), unit.content.byte_offset(last, text)
 
             for line, _tool, triggered in McpCode.shell_from_input_graded(text):
                 # Behind a secret prefix or value it is a backdoor and blocks; run on whatever
@@ -403,7 +442,7 @@ class McpServerFindings:
             if listening is not None:
                 yield AgentFinding.finding("SUSPECT.MCP.LISTENER.001", unit, ctx, *at(listening))
             for first, last in McpServerSource._overridden_arguments(text):
-                start = unit.content.byte_offset(first)
+                start = unit.content.byte_offset(first, text)
                 end = start + len(text[first:last].encode("utf-8"))
                 yield AgentFinding.finding(
                     "SUSPECT.MCP.ARGUMENT_OVERRIDE.001", unit, ctx, start, end
@@ -417,7 +456,7 @@ class McpServerFindings:
 
         typescript = unit.content.path.endswith((".ts", ".mts", ".cts", ".tsx"))
         for offset, triggered in McpJsCode.shell_from_input_graded(text, typescript)[:3]:
-            start = unit.content.byte_offset(offset)
+            start = unit.content.byte_offset(offset, text)
             end = text.find("\n", offset)
             end = len(text) if end < 0 else end
             yield AgentFinding.finding(

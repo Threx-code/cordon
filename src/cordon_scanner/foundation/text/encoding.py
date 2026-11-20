@@ -13,7 +13,7 @@ class TextEncoding:
         """UTF-16 text, re-encoded as UTF-8; anything else unchanged.
 
         Every detector matches bytes, and a UTF-16 file interleaves each ASCII character with a NUL:
-        `curl ... | sh` written to a PowerShell script saved as UTF-16 -- Windows PowerShell 5's
+        a download piped to a shell, written to a PowerShell script saved as UTF-16 -- Windows PowerShell 5's
         default -- matched no pattern and was then filed as binary for its NULs, so it was never
         read at all. Transcoded once here, it is read like any other script. Only with a byte-order
         mark, NULs where UTF-16 over a mostly-ASCII alphabet puts them, and a clean decode: a binary

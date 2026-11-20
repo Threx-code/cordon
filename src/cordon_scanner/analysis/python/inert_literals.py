@@ -1,7 +1,7 @@
 """A command-shaped string literal that is only data: it reaches no sink by the Python AST.
 
 A security tool's deny-list, a red-team corpus, a validator's rule table or a test case carries
-``rm -rf /``, a miner command line, a reverse-shell one-liner or a ``curl | sh`` as a STRING it
+``rm -rf /``, a miner command line, a reverse-shell one-liner or a download piped to a shell as a STRING it
 inspects, never a command it runs. `nerfstudio`'s beacon and a dropper carry theirs the other way --
 into ``os.system``, ``subprocess.run``, ``exec``, a file that is then run, or out over the network.
 The difference is reachability, not where the string sits, so a payload handed to a helper that runs

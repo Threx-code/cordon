@@ -218,7 +218,7 @@ class AgentChainDetector(BaseDetector):
                 # In code, a detector's own sample of the attack -- a scanner's test string.
                 or not _DETECTOR_VOCABULARY.search(unit.content.text)
             ):
-                start, end = InstructionText._byte_span(unit.content.text, found)
+                start, end = InstructionText._byte_span(unit.content.text, found, unit.content)
                 findings.append(
                     AgentFinding.finding(
                         "SUSPECT.AGENT.HIDDEN_DIRECTIVE.001", unit, ctx, start, end
@@ -230,7 +230,7 @@ class AgentChainDetector(BaseDetector):
                 else None
             )
             if redirect is not None:
-                start, end = InstructionText._byte_span(unit.content.text, redirect)
+                start, end = InstructionText._byte_span(unit.content.text, redirect, unit.content)
                 findings.append(
                     AgentFinding.finding(
                         "SUSPECT.AGENT.INSTALL_REDIRECT.001", unit, ctx, start, end
@@ -238,7 +238,7 @@ class AgentChainDetector(BaseDetector):
                 )
             claim = _PRIORITY_CLAIM.search(unit.content.text)
             if claim is not None:
-                start, end = InstructionText._byte_span(unit.content.text, claim)
+                start, end = InstructionText._byte_span(unit.content.text, claim, unit.content)
                 findings.append(
                     AgentFinding.finding(
                         "SUSPECT.AGENT.TOOL_PRIORITY_CLAIM.001", unit, ctx, start, end

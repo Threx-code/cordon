@@ -313,7 +313,7 @@ class Destinations:
 
         On the right, only for the entries that are a bare host. A path-qualified entry
         ends inside a URL and what follows it is the rest of the URL --
-        `api.telegram.org/bot` is followed by the bot token, which starts with digits --
+        a Telegram bot API path is followed by the bot token, which starts with digits --
         so a right boundary there would refuse every real match. A bare host is
         followed by the end of the host, which is never another letter or digit: this
         is what separates `transfer.sh` from `transfer.shop`.

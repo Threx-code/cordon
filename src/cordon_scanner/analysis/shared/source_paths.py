@@ -331,7 +331,7 @@ class SourcePaths:
         """`is_rule_material`, where it may lower this rule's finding: a configuration or posture
         finding (`POSTURE`, by the rule's attack category, declaring no capability) in a repository file
         nothing runs. Never an attack finding -- an exfiltration, a dropper, a secret, anything
-        MALICIOUS, or a posture rule that names an act (`curl | sh` in a Makefile declares egress and
+        MALICIOUS, or a posture rule that names an act (a download piped to a shell in a Makefile declares egress and
         spawn, and is a dropper however it is filed) -- never in a
         published package, and never in a file an install hook, an entry point, their closures or an
         agent runs (fail-open audit, 2 Nov, option B): the judgement is read from text the file's

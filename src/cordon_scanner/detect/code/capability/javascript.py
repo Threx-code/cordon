@@ -81,7 +81,7 @@ class JavaScriptCapabilities:
             arguments = window.split(";", 1)[0]
             if cls.RUNS_A_FILE.search(arguments) is None:
                 continue
-            start = len(text[: launch.start()].encode("utf-8"))
+            start = content.byte_offset(launch.start(), text)
             line = text.count("\n", 0, launch.start()) + 1
             return [
                 CapabilityHit(
@@ -143,7 +143,7 @@ class JavaScriptCapabilities:
             for secret in cls._JS_WALLET_SECRET.finditer(call):
                 if secret.group("name") == "seed" and not wallet_file:
                     continue
-                start = len(text[: request.start()].encode("utf-8"))
+                start = content.byte_offset(request.start(), text)
                 return [
                     CapabilityHit(
                         capability=Capability.CREDENTIAL,
@@ -154,7 +154,7 @@ class JavaScriptCapabilities:
                     )
                 ]
         if wallet_file:
-            return cls.js_wallet_secret_through_helper(text)
+            return cls.js_wallet_secret_through_helper(content, text)
         return []
 
     #: Both ends of a flow must be possible before the dataflow analysis is worth running.
@@ -220,7 +220,7 @@ class JavaScriptCapabilities:
         if found is None:
             return []
         text, (begin, finish) = content.text, found
-        start = content.byte_offset(begin)
+        start = content.byte_offset(begin, text)
         hit = CapabilityHit(
             capability=Capability.FLOW,
             rule_id="CAP.JS.STRING_CODE_RUN",
@@ -288,7 +288,7 @@ class JavaScriptCapabilities:
                     and WasmBindgenGlue.shim_at(text, offset)
                 ):
                     continue  # the crate's own code, by its own module (`wasm_glue`)
-                start = content.byte_offset(offset)
+                start = content.byte_offset(offset, text)
                 hits.append(
                     CapabilityHit(
                         capability=Capability.FLOW,
@@ -319,7 +319,7 @@ class JavaScriptCapabilities:
                 if kind not in sources or sink not in sinks:
                     continue
                 offset = starts[min(max(line, 1), len(starts)) - 1]
-                start = content.byte_offset(offset)
+                start = content.byte_offset(offset, text)
                 hits.append(
                     CapabilityHit(
                         capability=Capability.FLOW,
@@ -343,7 +343,9 @@ class JavaScriptCapabilities:
     # other split one stretch of blanks every way (review 98, 27-PERFORMANCE).
 
     @classmethod
-    def js_wallet_secret_through_helper(cls, text: str) -> list[CapabilityHit]:
+    def js_wallet_secret_through_helper(
+        cls, content: FileContent, text: str
+    ) -> list[CapabilityHit]:
         """The same, one call away: the wallet hands its key to a helper, and the helper puts
         what it was given -- or a value made from it -- into a request to a fixed outside address.
 
@@ -393,7 +395,7 @@ class JavaScriptCapabilities:
             )
             if caller is None:
                 continue
-            start = len(text[: caller.start()].encode("utf-8"))
+            start = content.byte_offset(caller.start(), text)
             return [
                 CapabilityHit(
                     capability=Capability.CREDENTIAL,
@@ -452,7 +454,7 @@ class JavaScriptCapabilities:
             if decoder in ("fromCharCode", "Array", "Uint8Array", "Buffer") or len(calls) < 4:
                 continue
             first = calls[0]
-            start = len(content.text[: first.start()].encode("utf-8"))
+            start = content.byte_offset(first.start(), content.text)
             return [
                 CapabilityHit(
                     capability=Capability.DYNAMIC_DISPATCH,
@@ -487,7 +489,7 @@ class JavaScriptCapabilities:
         # module name in hex (review 98). One is enough: there is no benign reading of it.
         decoded = cls._JS_DECODED_REQUIRE.search(text)
         if decoded is not None:
-            start = len(text[: decoded.start()].encode("utf-8"))
+            start = content.byte_offset(decoded.start(), text)
             return [
                 CapabilityHit(
                     capability=Capability.DYNAMIC_DISPATCH,
@@ -532,7 +534,7 @@ class JavaScriptCapabilities:
             uses = len(re.findall(rf"(?<![\w$.]){re.escape(decoder)}\s{{0,4}}\(", text))
             if uses < cls._JS_DECODER_CALLS:
                 continue
-            start = len(text[: match.start()].encode("utf-8"))
+            start = content.byte_offset(match.start(), text)
             return [
                 CapabilityHit(
                     capability=Capability.DYNAMIC_DISPATCH,
