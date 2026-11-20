@@ -627,6 +627,7 @@
   "foundation/text/literals": "foundation/text/literals",
   "foundation/text/prose": "foundation/text/prose",
   "foundation/text/redact": "foundation/text/redact",
+  "foundation/text/segments": "foundation/text/segments",
   "images/alas": "images/alas",
   "images/binmeta": "images/binmeta",
   "images/distrodb": "images/distrodb",

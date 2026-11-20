@@ -13,6 +13,7 @@ import re
 from typing import TYPE_CHECKING, ClassVar, Final
 
 from cordon_scanner.detect.agents.findings import AgentFinding
+from cordon_scanner.foundation.text.segments import TextSegments
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -20,7 +21,6 @@ if TYPE_CHECKING:
     from cordon_scanner.detect.base import FileUnit, ScanContext
     from cordon_scanner.foundation.models import Finding
 
-_MAX_CHARS: Final = 1_000_000
 #: Where an agent reads what it is told.
 _PLACE: Final = (
     r"(?:\.claude[\"'`/\\]{1,3}(?:skills|commands|agents|output-styles|settings(?:\.local)?\.json|CLAUDE\.md)|"
@@ -67,14 +67,16 @@ class AgentPlanting:
     @classmethod
     def scan(cls, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
         """One finding per file: where the first write into an agent's place sits."""
-        text = unit.content.text
-        if len(text) > _MAX_CHARS or not cls._on_path(unit, ctx):
+        if not cls._on_path(unit, ctx):
             return
-        found = _PLANTS.search(text)
+        # The whole file, a segment at a time (a match is under 700 characters, the overlap 64 KiB): a write
+        # placed past the million characters this once stopped at was not read.
+        content = unit.content
+        found = TextSegments.search(_PLANTS, content.text)
         if found is None:
             return
-        start = len(text[: found.start()].encode("utf-8"))
-        end = len(text[: found.end()].encode("utf-8"))
+        start = content.byte_offset(found.start())
+        end = content.byte_offset(found.end())
         yield AgentFinding.finding(cls.RULE, unit, ctx, start, end)
 
 

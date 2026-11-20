@@ -94,6 +94,39 @@ class TestWhatItIsNot:
         assert RULE not in Packages.scan(tmp_path, files)
 
 
+def padded_to(chars: int) -> str:
+    """Comment lines, exactly `chars` characters, that read as nothing."""
+    line = "// " + "x" * 77 + "\n"
+    whole, rest = divmod(chars, len(line))
+    tail = "// " + "x" * (rest - 4) + "\n" if rest >= 4 else "\n" * rest
+    return line * whole + tail
+
+
+class TestAWritePastWhereTheRuleOnceStoppedReading:
+    """A file longer than a million characters was not read at all: padding the write past that hid it."""
+
+    WRITE = 'fs.copyFileSync(path.join(__dirname, "../SKILL.md"), path.join(os.homedir(), ".claude/skills/helper/SKILL.md"));\n'
+
+    @pytest.mark.parametrize("before", [1_000_100, 1_300_000])
+    def test_a_write_after_a_million_characters_is_reported(
+        self, tmp_path: Path, before: int
+    ) -> None:
+        body = padded_to(before) + self.WRITE
+        assert RULE in Packages.scan(tmp_path, {"package.json": HOOK, "scripts/install.js": body})
+
+    def test_a_write_that_straddles_the_end_of_the_first_segment_is_reported(
+        self, tmp_path: Path
+    ) -> None:
+        body = padded_to((1 << 20) - 20) + self.WRITE
+        assert RULE in Packages.scan(tmp_path, {"package.json": HOOK, "scripts/install.js": body})
+
+    def test_a_long_file_with_no_write_is_not(self, tmp_path: Path) -> None:
+        body = padded_to(1_300_000) + 'console.log("installed");\n'
+        assert RULE not in Packages.scan(
+            tmp_path, {"package.json": HOOK, "scripts/install.js": body}
+        )
+
+
 class TestTheCatalogue:
     def test_the_rule_is_in_the_catalogue(self) -> None:
         from cordon_scanner.detect.agents.rule_catalogue import RULES
