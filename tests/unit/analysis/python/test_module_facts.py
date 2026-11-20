@@ -236,10 +236,14 @@ class TestTheRoute:
 class TestCost:
     def test_lines_are_counted_once_not_once_per_statement(self) -> None:
         """Each statement's line was counted from the module's start: over k statements about n·k/2
-        characters (outer-layer review). Four times the statements must cost about four times the
-        CPU, not sixteen (process time as a ratio, never wall time)."""
+        characters (outer-layer review). Eight times the statements must cost about eight times the
+        CPU, not sixty-four (process time as a ratio, never wall time). The sizes are far enough apart
+        that a bound two and a half times the linear cost still sits well under the quadratic one, so a busy
+        machine (a ratio of 6.8 against a bound of 6 was seen under load) cannot fail a linear pass;
+        and the two sizes are measured in turn, five rounds, each at its best, so a load that comes
+        and goes weighs on both."""
         small = "".join(f"v{i} = {i}\n" for i in range(10_000))
-        large = "".join(f"v{i} = {i}\n" for i in range(40_000))
+        large = "".join(f"v{i} = {i}\n" for i in range(80_000))
         spans_small, spans_large = StatementTrees.pieces(small), StatementTrees.pieces(large)
         assert spans_small is not None and spans_large is not None
 
@@ -248,9 +252,13 @@ class TestCost:
                 for _tree, index in StatementTrees.each(text, spans):
                     StatementTrees.release(index)
 
-            return CpuTime.per_call(each)
+            return CpuTime.per_call(each, times=1)
 
-        assert cpu(large, spans_large) < 6 * cpu(small, spans_small)
+        best_small = best_large = float("inf")
+        for _ in range(5):
+            best_small = min(best_small, cpu(small, spans_small))
+            best_large = min(best_large, cpu(large, spans_large))
+        assert best_large < 20 * best_small
 
     def test_lines_stay_the_file_s(self) -> None:
         text = "x = 1\n\n\ny = 2\nz = [\n3]\nw = 4\n"

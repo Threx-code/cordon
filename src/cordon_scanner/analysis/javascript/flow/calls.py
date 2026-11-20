@@ -242,6 +242,8 @@ class Calls(Taint):
         changed = False
         # A sink.
         kind = self._sink_kind(k, scope)
+        if kind in ("request", "connection", "dns"):
+            self.sink_sites[k] = kind  # read again by `RequestOrigins`, not walked a second time
         if kind == "process" and args and self._opens_a_link(parts[-1], args, scope):
             # The desktop opening what it is given -- a sign-in link the server sent, in the
             # browser -- runs none of it: an `open` sink, which only the send rules read.

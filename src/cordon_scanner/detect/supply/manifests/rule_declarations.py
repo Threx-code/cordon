@@ -247,6 +247,25 @@ _DECLARED: tuple[DeclaredRule, ...] = (
         ),
     ),
     DeclaredRule(
+        id="SUSPECT.AGENT.CODE_AND_INSTRUCTIONS.001",
+        title="An instruction file and the code of the same package agree on an attack on the agent",
+        severity=Severity.HIGH,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        detector="verdict",
+        message=(
+            "An instruction file of this package tells the agent to do something the rules treat as an "
+            "attack on it (`SUSPECT.AGENT.INSTRUCTION_*`), and the package's code does an agent-directed "
+            "thing (`SUSPECT.AGENT.*` in a code file). Each alone is common: an agent tool's code runs "
+            "commands, a skill's instructions say to fetch a page. The two agreeing is not."
+        ),
+        references=(references.OBSCURED_SECURITY_DATA,),
+        remediation=(
+            "Read the instruction file and the code file the findings name, together. Install the "
+            "package only from an author you trust."
+        ),
+    ),
+    DeclaredRule(
         id="SUSPECT.INTENT.UNEXPLAINED_EFFECT.001",
         title="The package's effects are not explained by what it says it is",
         severity=Severity.HIGH,

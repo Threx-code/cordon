@@ -95,12 +95,15 @@ class IntentFacts:
     #: what an install or a `require` loads); `export` is behind a function of an imported file,
     #: run when the user calls it; `bin` runs when the user runs the command; `test` is test code;
     #: `unreached` is code nothing runs on its own: a function of install code nothing calls, a
-    #: shipped file nothing loads.
+    #: shipped file nothing loads. `bin_closure` is a module a command's file loads: it runs when
+    #: the command does, so it is not `unreached`; the file also keeps the `unreached` facts the
+    #: weights are measured on.
     TRIGGERS: ClassVar[tuple[str, ...]] = (
         "install",
         "import",
         "export",
         "bin",
+        "bin_closure",
         "test",
         "unreached",
     )
@@ -422,6 +425,10 @@ class IntentObserver:
         install = set(ctx.install_hook_paths | ctx.install_entry_paths)
         imported, bins = IntentObserver.entries(units)
         imported |= closure(imported)
+        # What a command's file loads runs when the command does: the closure used to start at
+        # `main` and `exports` only, so a package with a `bin` and no `main` read all of it as
+        # unreached. Ranked as before (3), so which files a large package reads does not change.
+        loaded = (closure(bins) - bins - imported - install) if bins else set()
         own = [
             u
             for u in units
@@ -461,7 +468,7 @@ class IntentObserver:
                     out.unexamined.append(f"{name}: could not be analysed")
                 continue
             out.files += 1
-            roles = IntentObserver._roles(unit.path, name, install, imported, bins)
+            roles = IntentObserver._roles(unit.path, name, install, imported, bins, loaded)
             for cap, deferred in effects:
                 for role in roles:
                     out.facts.add(f"t:{IntentObserver._trigger(role, deferred)}:{cap}")
@@ -575,7 +582,12 @@ class IntentObserver:
 
     @staticmethod
     def _roles(
-        path: str, name: str, install: set[str], imported: set[str], bins: set[str]
+        path: str,
+        name: str,
+        install: set[str],
+        imported: set[str],
+        bins: set[str],
+        loaded: set[str] | None = None,
     ) -> list[str]:
         roles = [
             role
@@ -584,7 +596,10 @@ class IntentObserver:
         ]
         if roles:
             return roles
-        return ["test" if IntentObserver._TEST.search(name) else "unreached"]
+        if IntentObserver._TEST.search(name):
+            return ["test"]
+        # Both: the weights are measured on `unreached`, and a file a command loads is not that.
+        return ["bin_closure", "unreached"] if loaded and path in loaded else ["unreached"]
 
     @staticmethod
     def _trigger(role: str, deferred: bool) -> str:

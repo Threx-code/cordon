@@ -329,6 +329,12 @@ class ScanContext:
     `require`, a file not read whole, facts refused): set for the re-grade only. What needs the join
     to be complete -- note 78's lowering of a parameter-built command -- is then not applied."""
 
+    remote_code_unexternal: bool = False
+    """Whether every request of the package is known, none goes to an external literal host and no decoded
+    value is run anywhere in it (`CrossFileJoin.unexternal`): set for the re-grade of the files that carry
+    the two REMOTE_CODE composites. Then those are reported at MEDIUM, the install-time one withdrawn for
+    the suspect one, rather than blocked alone. False otherwise: nothing is lowered."""
+
     #: The fields that belong to the process holding the context rather than to the scan target,
     #: each with where its effect is accounted for. Everything else is a fact about the target:
     #: `facts()` carries all of it to a worker, and the scan cache keys on all of it. Named
@@ -834,6 +840,13 @@ class CrossFileJoining(Protocol):
         findings: Sequence[Finding],
     ) -> bool: ...
     def lowered(self, findings: Sequence[Finding]) -> set[str]: ...
+    def carriers(self, findings: Sequence[Finding]) -> set[str]: ...
+    def unexternal(
+        self,
+        facts: Mapping[str, Mapping[str, list[Any]]],
+        findings: Sequence[Finding],
+        flows: Mapping[str, Sequence[tuple[int, tuple[str, ...], str, str]]] | None = ...,
+    ) -> bool: ...
 
 
 class ServerSourceFinding(Protocol):
