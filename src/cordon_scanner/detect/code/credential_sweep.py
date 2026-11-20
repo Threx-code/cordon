@@ -1,6 +1,6 @@
 """One file naming the credential stores of several unrelated services.
 
-A cloud SDK reads `~/.aws/credentials`; a stealer reads that, the SSH keys, `.npmrc`, `.netrc`,
+A cloud SDK reads the AWS credentials file; a stealer reads that, the SSH keys, `.npmrc`, `.netrc`,
 the kube and Docker configs and the GitHub CLI's tokens, because it takes whatever is there
 (review 98: the 2025 Go `BufferZoneCorp/*` family, its paths XOR-encoded and recovered by
 `detect/go_eval.py`). Read from the file as resolved, in any language; documentation is excluded
@@ -80,7 +80,7 @@ class CredentialSweep:
             if spans:
 
                 def data(offset: int) -> bool:
-                    at = content.byte_offset(offset)
+                    at = content.byte_offset(offset, text)
                     return any(start <= at < end for start, end in spans)
 
                 # A store named more times than were read is live: a table cannot hide a read past it.
@@ -104,7 +104,7 @@ class CredentialSweep:
         if len({name for _, name in found}) < cls.SWEEP_MIN:
             return []
         first = min(offset for offset, _ in found)
-        start = content.byte_offset(first)
+        start = content.byte_offset(first, text)
         return [
             CapabilityHit(
                 capability=Capability.CREDENTIAL,

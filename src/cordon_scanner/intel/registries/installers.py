@@ -1,6 +1,6 @@
 """Official one-line installers of widely used developer tools.
 
-`curl https://astral.sh/uv/install.sh | sh` is how uv is installed: the vendor's own host, serving
+Piping uv's official installer to a shell is how uv is installed: the vendor's own host, serving
 the vendor's own script. A fetch-and-run naming one of these is setup, reported below the gate; the
 same line naming any other host keeps its full weight. Matched on the host and path of the URL
 actually fetched, never on a substring elsewhere on the line.

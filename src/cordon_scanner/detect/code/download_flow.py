@@ -729,7 +729,7 @@ class PythonDownloads(DownloadReach):
 
     def _shell_runs(self, node: ast.AST) -> bool:
         """A command line handed to a shell that itself downloads and runs, or names a
-        downloaded file: `os.system("curl -s URL | bash")`, `os.system("nohup /tmp/x &")`."""
+        downloaded file: `os.system(<a download piped to a shell>)`, `os.system("nohup /tmp/x &")`."""
         for sub in ast.walk(node):
             if not (isinstance(sub, ast.Constant) and isinstance(sub.value, str)):
                 continue

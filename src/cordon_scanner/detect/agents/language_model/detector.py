@@ -341,7 +341,7 @@ class AgentJudgeDetector(BaseDetector):
     def _finding(self, unit: FileUnit, ctx: ScanContext, kind: str, verdict: Verdict) -> Finding:
         content = unit.content
         index = content.text.find(verdict.evidence)
-        start = len(content.text[: max(index, 0)].encode("utf-8"))
+        start = content.byte_offset(max(index, 0), content.text)
         end = start + len(verdict.evidence.encode("utf-8")) if index >= 0 else start
         if verdict.verdict == "malicious":
             severity = (

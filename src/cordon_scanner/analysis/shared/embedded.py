@@ -304,7 +304,7 @@ class EmbeddedCommands:
         and the statements that add to the name (`cmd += "..."`, `cmd = cmd + "..."`).
 
         Not every literal in the next 2,048 characters: a launcher's help text, defined
-        beside the spawn, was joined into its command and read as a `curl ... | sh` that
+        beside the spawn, was joined into its command and read as a download piped to a shell that
         nothing runs. A name built across statements is followed through its own
         additions; a statement about something else is not part of it.
 
@@ -566,7 +566,7 @@ class EmbeddedCommands:
         """The plaintext of every encoded command written in this source.
 
         `decode_encoded_commands` reads what a spawn call was HANDED, which is the
-        right seam for `os.system("powershell -enc <blob>")` in a `setup.py`. A
+        right seam for `os.system(<an encoded PowerShell command>)` in a `setup.py`. A
         `.ps1` that runs the same thing at its top level hands it to nobody: the
         file is the script, `extract` finds no call site, and the plaintext was
         read by nothing.

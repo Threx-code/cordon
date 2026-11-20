@@ -167,7 +167,7 @@ Workflow steps that run a coding agent, checked for untrusted triggers, write pe
 
 ## Every agent rule
 
-138 rules of Cordon's own, beside the Agent Threat Rules (tutorial 28 lists those too).
+140 rules of Cordon's own, beside the Agent Threat Rules (tutorial 28 lists those too).
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -272,6 +272,7 @@ Workflow steps that run a coding agent, checked for untrusted triggers, write pe
 | `SUSPECT.MCP.LIBRARY_HIJACK.001` | medium | An MCP server's source plants a library or a search path for other programs |
 | `SUSPECT.MCP.LISTENER.001` | high | An MCP server opens its own listening socket and runs commands |
 | `SUSPECT.MCP.LOOKALIKE.001` | high | An MCP server package named like a popular one |
+| `SUSPECT.MCP.LOOKALIKE.002` | high | This MCP server's own package is named like a popular one |
 | `SUSPECT.MCP.NATIVE_FROM_TEMP.001` | high | An MCP server's source loads a module or a shared library from a temporary place or straight from the network |
 | `SUSPECT.MCP.NOTIFICATION_FLOOD.001` | medium | An MCP server's source sends notifications to the client in a loop with no end |
 | `SUSPECT.MCP.PACKAGE_TAMPER.001` | medium | An MCP server's source writes into the files of other installed packages |
@@ -297,6 +298,7 @@ Workflow steps that run a coding agent, checked for untrusted triggers, write pe
 | `SUSPECT.MCP.TIME_BOMB.001` | high | An MCP tool changes behaviour on a mixed date, chance and call-count gate |
 | `SUSPECT.MCP.TOOLS_REPLACED_AFTER_CALLS.001` | medium | An MCP server's source replaces a tool's description after a number of calls |
 | `SUSPECT.MCP.TOOL_DESCRIPTION.001` | high | A tool in this repository's MCP server instructs the agent |
+| `SUSPECT.MCP.TOOL_NAME_LOOKALIKE.001` | medium | An MCP tool is named one letter from a well-known tool |
 | `SUSPECT.MCP.TOOL_SQUATTING.001` | high | An MCP tool takes a well-known tool's name and claims to be the safer one |
 | `SUSPECT.MCP.TRACE_ERASE.001` | medium | An MCP server's source erases shell history or system logs |
 | `SUSPECT.MCP.UNPINNED.001` | medium | An MCP server launched from an unpinned package |

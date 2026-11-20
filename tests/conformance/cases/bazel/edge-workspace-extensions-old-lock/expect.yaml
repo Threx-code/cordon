@@ -39,5 +39,5 @@ sources:
   - "macro go_rules_dependencies() expands to more repositories, which only evaluating the workspace shows"
 findings:
   - {rule: POLICY.DEPENDENCY.MUTABLE_REF.001, message: com_github_acme_flags}
-  - {rule: POLICY.DEPENDENCY.SOURCE.001, message: nightly_tools, severity: medium}
+  - {rule: SUSPECT.DEPENDENCY.REMOTE_TARBALL.001, message: nightly_tools, severity: medium}
   - {rule: VULNERABLE.DEPENDENCY.KNOWN.001, message: jackson-databind}

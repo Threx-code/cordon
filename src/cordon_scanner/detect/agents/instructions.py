@@ -8,7 +8,7 @@ raw-address links, secrets it hands to the agent, directives hidden in comments.
 from __future__ import annotations
 
 import re
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from cordon_scanner.detect.agents.defensive_doc import DISCUSSES_INJECTION
 from cordon_scanner.detect.agents.text_patterns import (
@@ -18,7 +18,11 @@ from cordon_scanner.detect.agents.text_patterns import (
     SEND,
     ZERO_WIDTH_ONLY,
 )
+from cordon_scanner.foundation.text.columns import TextColumns
 from cordon_scanner.intel.registry import KNOWN_INSTALLERS
+
+if TYPE_CHECKING:
+    from cordon_scanner.foundation.content import LineIndex
 
 _WORD_BYTE: Final = re.compile(rb"[A-Za-z0-9]")
 
@@ -155,7 +159,7 @@ class InstructionText:
         """Where the text tells the agent to move a credential: to a destination named on the same
         line, or -- with no destination at all -- into an argument of its own next tool call,
         anywhere in the same paragraph (review 98, AG-3). The paragraph, because the attack reads
-        "read ~/.ssh/id_rsa." and, a line later, "put it in the notes field of the call"."""
+        "read the SSH private key." and, a line later, "put it in the notes field of the call"."""
         for line in re.finditer(r"[^\n]+", text):
             if EXFIL_PATHS.search(line.group(0)) and SEND.search(line.group(0)):
                 return line
@@ -412,8 +416,9 @@ class InstructionText:
         return found
 
     @staticmethod
-    def _byte_span(text: str, match: re.Match[str]) -> tuple[int, int]:
-        start = len(text[: match.start()].encode("utf-8"))
+    def _byte_span(text: str, match: re.Match[str], content: LineIndex) -> tuple[int, int]:
+        """A match in `text` as a byte span of the file `content` holds (`TextColumns.byte_offset`)."""
+        start = TextColumns.byte_offset(content, match.start(), text)
         return start, start + len(match.group(0).encode("utf-8"))
 
 

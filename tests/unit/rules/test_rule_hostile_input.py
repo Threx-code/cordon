@@ -202,8 +202,12 @@ class HostileKit:
 
             t_small = HostileKit.cpu(regex, built(small))
             t_large = HostileKit.cpu(regex, built(large))
-            ratio = t_large / t_small if t_small > 0 else 0.0
-            if ratio > HostileKit.RATIO and t_large > floor:
+            # A small time the clock read as zero is no ratio at all, not a ratio of zero: when the large time is
+            # readable, the step below decides it (large against four times large), as it does any high ratio.
+            ratio = t_large / t_small if t_small > 0 else (float("inf") if t_large > 0 else 0.0)
+            # `>=`, the same boundary the test fails on: Windows' thread clock ticks every 15.6 ms, so one tick against
+            # nine is a ratio of exactly RATIO, and that must be confirmed like any other ratio, not failed unconfirmed.
+            if ratio >= HostileKit.RATIO and t_large > floor:
                 t_larger = HostileKit.cpu(regex, built(4 * large))
                 ratio = t_larger / t_large
             if t_large > worst[0] or (t_large > floor and ratio > worst[1]):

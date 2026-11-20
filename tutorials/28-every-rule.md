@@ -2,7 +2,7 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,612 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,635 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -35,7 +35,7 @@ rule's own samples.
 
 ## AI agents
 
-55 rules.
+58 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -48,6 +48,9 @@ rule's own samples.
 | `POLICY.AGENT.MCP_BROAD_SCOPE.001` | medium | A filesystem MCP server given the whole disk or home directory |
 | `POLICY.AGENT.WIDE_DIRECTORY.001` | medium | Agent given the whole disk or home directory to work in |
 | `POLICY.AGENT.WILDCARD_PERMISSION.001` | medium | Agent permissions allow any shell command |
+| `SUSPECT.AGENT.AGENCY.AUTO_APPROVE_ALL.001` | medium | Every tool call is approved and confirmation is off |
+| `SUSPECT.AGENT.AGENCY.BROAD_DEFAULT_SCOPE.001` | medium | Grants every scope with every path or every tool by default |
+| `SUSPECT.AGENT.AGENCY.DELETE_WITHOUT_CONFIRM.001` | medium | A tool deletes a whole directory with no confirmation argument |
 | `SUSPECT.AGENT.API_REDIRECT.001` | high | Agent API traffic redirected to a host that is not the provider |
 | `SUSPECT.AGENT.ATR.AGENT_MANIPULATION.001` | medium | Text that impersonates an agent or hijacks the agent's task |
 | `SUSPECT.AGENT.ATR.CONTEXT_EXFILTRATION.001` | medium | Text that asks an agent to move secrets or context off the machine |
@@ -115,6 +118,16 @@ rule's own samples.
 | `SUSPECT.ARCHIVE.PADDED.001` | high | Archive padded past the scan's budget |
 | `SUSPECT.ARCHIVE.PATH_ESCAPE.001` | high | Archive member named to write outside the archive |
 | `SUSPECT.ARCHIVE.POLYGLOT.001` | high | Archive that is a tarball and a zip at once |
+
+## Auth
+
+3 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.AUTH.OAUTH_REDIRECT_ELSEWHERE.001` | medium | Registers an OAuth client that redirects to a remote host |
+| `SUSPECT.AUTH.SESSION_ID_SENT.001` | medium | Sends the MCP session identifier over the network |
+| `SUSPECT.AUTH.TOKEN_PASSTHROUGH.001` | medium | Forwards the token a client sent to another service |
 
 ## Azure
 
@@ -486,6 +499,14 @@ rule's own samples.
 |---|---|---|
 | `OPERATIONAL.CODE_MODEL.UNAVAILABLE` | info | The code model's weights could not be used |
 
+## Collect
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.COLLECT.EXFIL.001` | medium | Collects what the person sees, types or keeps, and sends data out |
+
 ## Compose files
 
 2 rules.
@@ -536,7 +557,7 @@ rule's own samples.
 
 ## Dependencies
 
-38 rules.
+40 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -564,14 +585,16 @@ rule's own samples.
 | `SUSPECT.DEPENDENCY.HALLUCINATED.BUNDLED.001` | info | A dependency the package bundles but does not install is a documented AI hallucination |
 | `SUSPECT.DEPENDENCY.LOCAL_SHADOW.001` | medium | Dependency resolved locally shares a known-malicious name |
 | `SUSPECT.DEPENDENCY.PROVISIONAL.001` | high | Dependency version is held for review |
-| `SUSPECT.DEPENDENCY.REMOTE_TARBALL.001` | high | A published package installs a dependency from an arbitrary URL |
-| `SUSPECT.DEPENDENCY.REMOTE_TARBALL.BUNDLED.001` | info | A published package installs a dependency from an arbitrary URL, in a file installing the package does not read |
+| `SUSPECT.DEPENDENCY.REMOTE_TARBALL.001` | high | A package or project installs a dependency from an arbitrary URL |
+| `SUSPECT.DEPENDENCY.REMOTE_TARBALL.BUNDLED.001` | info | A package or project installs a dependency from an arbitrary URL, in a file installing the package does not read |
 | `SUSPECT.DEPENDENCY.REMOVED_NAME.001` | medium | Dependency names a removed malicious package |
 | `SUSPECT.DEPENDENCY.SOURCE.001` | medium | Dependency resolved from outside the registry |
 | `SUSPECT.DEPENDENCY.SOURCE.BUNDLED.001` | info | A dependency the package bundles but does not install resolves from outside the registry |
 | `SUSPECT.DEPENDENCY.SOURCE_PRIORITY.001` | medium | A private package index merged with a public one |
 | `SUSPECT.DEPENDENCY.TYPOSQUAT.001` | high | Dependency name is one edit from a popular package |
 | `SUSPECT.DEPENDENCY.TYPOSQUAT.BUNDLED.001` | info | A dependency the package bundles but does not install has a lookalike name |
+| `SUSPECT.DEPENDENCY.UNKNOWN_HOST.001` | medium | A dependency is fetched from a host that is neither a registry nor a code host |
+| `SUSPECT.DEPENDENCY.UNKNOWN_HOST.BUNDLED.001` | info | A dependency is fetched from a host that is neither a registry nor a code host, in a file installing the package does not read |
 | `SUSPECT.DEPENDENCY.UNREGISTERED.001` | high | A dependency does not exist on its public registry |
 | `SUSPECT.DEPENDENCY.UNVETTED.001` | medium | A dependency is new, sourceless and unknown: the shape of a slopsquatted package |
 | `SUSPECT.DEPENDENCY.YANKED.001` | high | Dependency pins a version its publisher withdrew |
@@ -655,7 +678,7 @@ rule's own samples.
 
 ## Exfiltration
 
-38 rules.
+40 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -687,6 +710,7 @@ rule's own samples.
 | `SUSPECT.EXFIL.CALLBACK.001` | high | Code calls an out-of-band interaction service |
 | `SUSPECT.EXFIL.COMMAND_BEACON.001` | high | Code reports the user and host to a URL |
 | `SUSPECT.EXFIL.COMMAND_OUTPUT.001` | high | A package's entry point runs a command and sends what it printed |
+| `SUSPECT.EXFIL.CREDENTIAL_FILE.001` | medium | Reads a credential store and sends data out |
 | `SUSPECT.EXFIL.CREDENTIAL_STORE.001` | high | A credential store is read and the file reaches the network |
 | `SUSPECT.EXFIL.CREDENTIAL_SWEEP.001` | high | Code reads the credential stores of many services and reaches the network |
 | `SUSPECT.EXFIL.DNS.001` | high | Credential access and a hostname assembled for resolution |
@@ -696,7 +720,17 @@ rule's own samples.
 | `SUSPECT.EXFIL.FLOW_SECRET.001` | high | Sends a credential file off the machine |
 | `SUSPECT.EXFIL.MAIL_ON_IMPORT.001` | high | Importing the module sends mail from an account whose password it carries |
 | `SUSPECT.EXFIL.NAMED_SECRET.001` | high | Code sends a named credential to a host outside its service |
+| `SUSPECT.EXFIL.WALLET_KEY.001` | high | Reads a wallet's key file and sends data out |
 | `SUSPECT.EXFIL.WALLET_SECRET.001` | high | Sends a wallet's secret to an outside address |
+
+## Expose
+
+2 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.EXPOSE.ANY_ORIGIN_WITH_CREDENTIALS.001` | medium | Lets any website call this server with the person's credentials |
+| `SUSPECT.EXPOSE.HOME_ON_NETWORK.001` | high | Serves the home directory or a key file on every network interface |
 
 ## Extension
 
@@ -1681,6 +1715,16 @@ rule's own samples.
 | `SUSPECT.K8S.RUN_AS_ROOT.001` | medium | Kubernetes workload: a container runs as uid 0 |
 | `SUSPECT.K8S.SECRET_ENV_VALUE.001` | high | Kubernetes workload: a credential is written into the manifest |
 
+## Lateral
+
+3 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.LATERAL.KUBE_EVERY_CONTEXT.001` | high | Acts on every Kubernetes cluster the person can reach |
+| `SUSPECT.LATERAL.PUSH_EVERY_REPOSITORY.001` | high | Commits and pushes to every repository under the home folder |
+| `SUSPECT.LATERAL.SSH_KNOWN_HOSTS.001` | high | Runs commands on the hosts the person connects to over SSH |
+
 ## License
 
 6 rules.
@@ -1710,7 +1754,7 @@ rule's own samples.
 
 ## MCP servers
 
-79 rules.
+81 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -1761,6 +1805,7 @@ rule's own samples.
 | `SUSPECT.MCP.LISTENER.001` | high | An MCP server opens its own listening socket and runs commands |
 | `SUSPECT.MCP.LIVE_TOOL_DESCRIPTION.001` | high | A remote MCP server serves a tool description that steers the agent |
 | `SUSPECT.MCP.LOOKALIKE.001` | high | An MCP server package named like a popular one |
+| `SUSPECT.MCP.LOOKALIKE.002` | high | This MCP server's own package is named like a popular one |
 | `SUSPECT.MCP.NATIVE_FROM_TEMP.001` | high | An MCP server's source loads a module or a shared library from a temporary place or straight from the network |
 | `SUSPECT.MCP.NOTIFICATION_FLOOD.001` | medium | An MCP server's source sends notifications to the client in a loop with no end |
 | `SUSPECT.MCP.PACKAGE_TAMPER.001` | medium | An MCP server's source writes into the files of other installed packages |
@@ -1787,6 +1832,7 @@ rule's own samples.
 | `SUSPECT.MCP.TOOLS_CHANGED.001` | medium | A remote MCP server's tools changed since they were approved |
 | `SUSPECT.MCP.TOOLS_REPLACED_AFTER_CALLS.001` | medium | An MCP server's source replaces a tool's description after a number of calls |
 | `SUSPECT.MCP.TOOL_DESCRIPTION.001` | high | A tool in this repository's MCP server instructs the agent |
+| `SUSPECT.MCP.TOOL_NAME_LOOKALIKE.001` | medium | An MCP tool is named one letter from a well-known tool |
 | `SUSPECT.MCP.TOOL_POISONING.001` | high | An MCP server's tool description hides text or instructs the agent |
 | `SUSPECT.MCP.TOOL_SQUATTING.001` | high | An MCP tool takes a well-known tool's name and claims to be the safer one |
 | `SUSPECT.MCP.TRACE_ERASE.001` | medium | An MCP server's source erases shell history or system logs |
@@ -1860,13 +1906,15 @@ rule's own samples.
 
 ## Persistence
 
-9 rules.
+11 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.PERSIST.BACKDOOR.001` | critical | Writes a file that lets someone else in, with content the package carries |
 | `MALWARE.PERSIST.HIDDEN.001` | critical | Registers a program to start at login and starts it without a window |
 | `SUSPECT.PERSIST.001` | high | Network access combined with a persistence mechanism |
+| `SUSPECT.PERSIST.MCP_CLIENT_SPREAD.001` | medium | Writes an MCP server into several AI clients' configurations |
+| `SUSPECT.PERSIST.REMOTE_SCRIPT.001` | high | Installs something that downloads and runs a script on its own |
 | `SUSPECT.PERSIST.WRITES_DOWNLOADER.001` | high | An MCP server's source schedules a job that downloads and runs a script |
 | `SUSPECT.PERSIST.WRITES_DOWNLOADER.002` | high | An MCP server's source writes a launch agent or daemon that downloads and runs a script |
 | `SUSPECT.PERSIST.WRITES_DOWNLOADER.003` | high | An MCP server's source writes a service unit that downloads and runs a script |
@@ -2103,6 +2151,16 @@ rule's own samples.
 | Rule | Severity | What it catches |
 |---|---|---|
 | `SUSPECT.VERDICT.MODEL.001` | high | The package's findings together look malicious |
+
+## Wallet
+
+3 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.WALLET.CLIPBOARD_SWAP.001` | high | Replaces what is on the clipboard with a fixed wallet address |
+| `SUSPECT.WALLET.DRAIN_TO_FIXED_ADDRESS.001` | high | Sends a wallet's balance to an address written into the code |
+| `SUSPECT.WALLET.UNLIMITED_APPROVAL_FIXED.001` | medium | Approves a fixed address to spend an unlimited amount of a token |
 
 ## Worm
 

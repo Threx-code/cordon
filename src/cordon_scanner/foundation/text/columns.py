@@ -18,6 +18,8 @@ if TYPE_CHECKING:
 #: continuations to count), and the stride of `char_column`'s per-line checkpoints.
 _NOT_CONTINUATION = bytes(b for b in range(256) if not 0x80 <= b <= 0xBF)
 _STRIDE = 64
+#: The UTF-8 byte-order mark, which `TextEncoding.decoded` reads past.
+_UTF8_MARK = b"\xef\xbb\xbf"
 
 
 class TextColumns:
@@ -55,10 +57,27 @@ class TextColumns:
         file; in one with multibyte text the character spans sit earlier than the bytes they cover."""
         if index._ascii:
             return spans  # characters and bytes agree
+        # The decoded text has no byte-order mark (it is decoded past one), and the per-line character
+        # starts count it as the first line's first character: one character on, in the same frame.
+        mark = 1 if index.raw.startswith(_UTF8_MARK) else 0
         return tuple(
-            (TextColumns._byte_of(index, start), TextColumns._byte_of(index, end))
+            (TextColumns._byte_of(index, start + mark), TextColumns._byte_of(index, end + mark))
             for start, end in spans
         )
+
+    @staticmethod
+    def byte_offset(index: LineIndex, char_offset: int, text: str) -> int:
+        """The byte offset in the file of a character offset in `text`.
+
+        In the file's own decoded text (`FileContent.text`) that is every byte before it, a UTF-8
+        byte-order mark included: the text is decoded past the mark, so re-encoding the text before the
+        offset came out three bytes short in every file saved with one, and each finding placed that
+        way sat three bytes early -- its column off and its evidence three bytes of the code before
+        it. Any other string is re-encoded as it always was."""
+        before = len(text[:char_offset].encode("utf-8"))
+        if index.__dict__.get("text") is text and index.raw.startswith(_UTF8_MARK):
+            return before + len(_UTF8_MARK)
+        return before
 
     @staticmethod
     def _checkpoints(index: LineIndex, line: int) -> array[int]:

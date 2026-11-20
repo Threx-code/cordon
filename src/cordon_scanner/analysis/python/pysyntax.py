@@ -400,9 +400,9 @@ class PythonSyntax:
     @staticmethod
     def text_only_lines(tree: ast.AST) -> frozenset[int]:
         """The lines of a parsed file that are only text: the lines of docstrings, and the lines a string
-        literal continues on after its first (a pattern table, a help text naming `~/.aws/credentials`),
+        literal continues on after its first (a pattern table, a help text naming a cloud credentials file),
         less any line where an expression that is not a literal starts -- an f-string's `{...}` parts are
-        code (`{home}` in `f'''{home}/.aws/credentials'''`). A line a reader finds in this set is
+        code (`{home}` in `f'''{home}/{CREDENTIALS_FILE}'''`). A line a reader finds in this set is
         not a read and not a send; a line that is not in it may still be text, which this does not
         claim (reviews/pypi-98/20 shape A, 21 shape T)."""
 
@@ -437,7 +437,7 @@ class PythonSyntax:
     @staticmethod
     def string_element_lines(tree: ast.AST) -> frozenset[int]:
         """The lines on which a string literal stands as an element of a list, tuple, set or dict, or as
-        an argument, and nothing but literals starts: `    "cat ~/.aws/credentials",` in a table written one
+        an argument, and nothing but literals starts: `    "cat <a credentials file>",` in a table written one
         string to a line. What the strings are for is not said here (a table that is matched and a list
         that is opened look alike); `PythonStoreFlow.table_text_lines` asks where they go."""
 

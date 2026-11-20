@@ -25,4 +25,4 @@ dependencies:
 absent:
   - commented-out
 findings:
-  - {rule: POLICY.DEPENDENCY.SOURCE.001, message: unverified}
+  - {rule: SUSPECT.DEPENDENCY.REMOTE_TARBALL.001, message: unverified, severity: medium}

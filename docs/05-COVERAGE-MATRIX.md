@@ -173,6 +173,8 @@ rather than a document.
 | `SUSPECT.DEPENDENCY.SOURCE_PRIORITY.001` | medium | `manifest` | policy |
 | `SUSPECT.DEPENDENCY.TYPOSQUAT.001` | high | `dependency` | policy |
 | `SUSPECT.DEPENDENCY.TYPOSQUAT.BUNDLED.001` | info | `dependency` | policy |
+| `SUSPECT.DEPENDENCY.UNKNOWN_HOST.001` | medium | `manifest` | policy |
+| `SUSPECT.DEPENDENCY.UNKNOWN_HOST.BUNDLED.001` | info | `manifest` | policy |
 | `SUSPECT.DEPENDENCY.UNREGISTERED.001` | high | `registry` | dependency_confusion |
 | `SUSPECT.DEPENDENCY.UNVETTED.001` | medium | `registry` | typosquat |
 | `SUSPECT.DEPENDENCY.YANKED.001` | high | `registry` | policy |
@@ -338,12 +340,17 @@ rather than a document.
 | `SUSPECT.INSTALL.TEMP_COMMAND.001` | high | `composites` | install_hook |
 | `SUSPECT.INSTALL.UNEXAMINED.001` | high | `manifest` | install_hook |
 | `SUSPECT.INTENT.UNEXPLAINED_EFFECT.001` | high | `intent` | malicious_code |
+| `SUSPECT.LATERAL.KUBE_EVERY_CONTEXT.001` | high | `capabilities.host-access` | malicious_code |
+| `SUSPECT.LATERAL.PUSH_EVERY_REPOSITORY.001` | high | `capabilities.host-access` | malicious_code |
+| `SUSPECT.LATERAL.SSH_KNOWN_HOSTS.001` | high | `capabilities.host-access` | malicious_code |
 | `SUSPECT.MODEL.LOADED_ON_IMPORT.001` | high | `composites` | malicious_code |
 | `SUSPECT.MODEL.MALICIOUS_PACKAGE.001` | high | `model` | malicious_code |
 | `SUSPECT.MODEL.PICKLE_IMPORT.001` | medium | `formats` | malicious_code |
 | `SUSPECT.MODEL.REMOTE_CODE.001` | medium | `composites` | malicious_code |
 | `SUSPECT.MODEL.UNSAFE_LOAD_OPTION.001` | low | `composites` | malicious_code |
 | `SUSPECT.PERSIST.001` | high | `composites` | persistence |
+| `SUSPECT.PERSIST.MCP_CLIENT_SPREAD.001` | medium | `capabilities.host-access` | persistence |
+| `SUSPECT.PERSIST.REMOTE_SCRIPT.001` | high | `capabilities.host-access` | persistence |
 | `SUSPECT.PERSIST.WRITES_DOWNLOADER.001` | high | `agents` | persistence |
 | `SUSPECT.PERSIST.WRITES_DOWNLOADER.002` | high | `agents` | persistence |
 | `SUSPECT.PERSIST.WRITES_DOWNLOADER.003` | high | `agents` | persistence |
@@ -355,6 +362,9 @@ rather than a document.
 | `SUSPECT.RULEFILE.UNMATCHED.001` | high | `rule-file` | malicious_code |
 | `SUSPECT.TARGETED_PAYLOAD.001` | high | `composites` | malicious_code |
 | `SUSPECT.VERDICT.MODEL.001` | high | `manifest` | malicious_code |
+| `SUSPECT.WALLET.CLIPBOARD_SWAP.001` | high | `capabilities.host-access` | malicious_code |
+| `SUSPECT.WALLET.DRAIN_TO_FIXED_ADDRESS.001` | high | `capabilities.host-access` | malicious_code |
+| `SUSPECT.WALLET.UNLIMITED_APPROVAL_FIXED.001` | medium | `capabilities.host-access` | malicious_code |
 
 ### Domain 7 — Obfuscation and evasion
 
@@ -446,6 +456,11 @@ rather than a document.
 | `SECRET.TWILIO.KEY.001` | high | `secrets` | secret_exposure |
 | `SECRET.URL.CREDENTIAL.001` | high | `secrets` | secret_exposure |
 | `SECRET.VAULT.TOKEN.001` | critical | `secrets` | secret_exposure |
+| `SUSPECT.AUTH.OAUTH_REDIRECT_ELSEWHERE.001` | medium | `capabilities.host-access` | secret_exposure |
+| `SUSPECT.AUTH.SESSION_ID_SENT.001` | medium | `capabilities.host-access` | secret_exposure |
+| `SUSPECT.AUTH.TOKEN_PASSTHROUGH.001` | medium | `capabilities.host-access` | secret_exposure |
+| `SUSPECT.EXPOSE.ANY_ORIGIN_WITH_CREDENTIALS.001` | medium | `capabilities.host-access` | secret_exposure |
+| `SUSPECT.EXPOSE.HOME_ON_NETWORK.001` | high | `capabilities.host-access` | secret_exposure |
 
 ### Domain 9 — Exfiltration channels
 
@@ -473,12 +488,14 @@ rather than a document.
 | `MALWARE.EXFIL.SWEPT_FILES.001` | high | `composites` | exfiltration |
 | `MALWARE.EXFIL.SWEPT_TO_HOST.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.TRACKING_CALLBACK.001` | critical | `composites` | exfiltration |
+| `SUSPECT.COLLECT.EXFIL.001` | medium | `capabilities.host-access` | exfiltration |
 | `SUSPECT.EXFIL.001` | medium | `composites` | exfiltration |
 | `SUSPECT.EXFIL.BEACON.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.BROWSER_SECRETS.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.CALLBACK.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.COMMAND_BEACON.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.COMMAND_OUTPUT.001` | high | `composites` | exfiltration |
+| `SUSPECT.EXFIL.CREDENTIAL_FILE.001` | medium | `capabilities.host-access` | exfiltration |
 | `SUSPECT.EXFIL.CREDENTIAL_STORE.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.CREDENTIAL_SWEEP.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.DNS.001` | high | `composites` | exfiltration |
@@ -488,6 +505,7 @@ rather than a document.
 | `SUSPECT.EXFIL.FLOW_SECRET.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.MAIL_ON_IMPORT.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.NAMED_SECRET.001` | high | `composites` | exfiltration |
+| `SUSPECT.EXFIL.WALLET_KEY.001` | high | `capabilities.host-access` | exfiltration |
 | `SUSPECT.EXFIL.WALLET_SECRET.001` | high | `composites` | exfiltration |
 
 ### Domain 10 — Containers and orchestration
@@ -814,6 +832,9 @@ rather than a document.
 | `POLICY.AGENT.WIDE_DIRECTORY.001` | medium | `agents` | misconfiguration |
 | `POLICY.AGENT.WILDCARD_PERMISSION.001` | medium | `agents` | misconfiguration |
 | `SECRET.MCP.INLINE_CREDENTIAL.001` | high | `agents` | secret_exposure |
+| `SUSPECT.AGENT.AGENCY.AUTO_APPROVE_ALL.001` | medium | `capabilities.mcp-agents` | prompt_injection |
+| `SUSPECT.AGENT.AGENCY.BROAD_DEFAULT_SCOPE.001` | medium | `capabilities.mcp-agents` | prompt_injection |
+| `SUSPECT.AGENT.AGENCY.DELETE_WITHOUT_CONFIRM.001` | medium | `capabilities.mcp-agents` | prompt_injection |
 | `SUSPECT.AGENT.API_REDIRECT.001` | high | `agents` | exfiltration |
 | `SUSPECT.AGENT.ATR.AGENT_MANIPULATION.001` | medium | `agents` | prompt_injection |
 | `SUSPECT.AGENT.ATR.CONTEXT_EXFILTRATION.001` | medium | `agents` | exfiltration |
@@ -906,6 +927,7 @@ rather than a document.
 | `SUSPECT.MCP.LISTENER.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.LIVE_TOOL_DESCRIPTION.001` | high | `mcp-live` | misconfiguration |
 | `SUSPECT.MCP.LOOKALIKE.001` | high | `agents` | typosquat |
+| `SUSPECT.MCP.LOOKALIKE.002` | high | `agents` | typosquat |
 | `SUSPECT.MCP.NATIVE_FROM_TEMP.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.NOTIFICATION_FLOOD.001` | medium | `agents` | misconfiguration |
 | `SUSPECT.MCP.PACKAGE_TAMPER.001` | medium | `agents` | misconfiguration |
@@ -932,6 +954,7 @@ rather than a document.
 | `SUSPECT.MCP.TOOLS_CHANGED.001` | medium | `mcp-live` | misconfiguration |
 | `SUSPECT.MCP.TOOLS_REPLACED_AFTER_CALLS.001` | medium | `agents` | misconfiguration |
 | `SUSPECT.MCP.TOOL_DESCRIPTION.001` | high | `agents` | prompt_injection |
+| `SUSPECT.MCP.TOOL_NAME_LOOKALIKE.001` | medium | `agents` | misconfiguration |
 | `SUSPECT.MCP.TOOL_POISONING.001` | high | `mcp-packages` | misconfiguration |
 | `SUSPECT.MCP.TOOL_SQUATTING.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.TRACE_ERASE.001` | medium | `agents` | misconfiguration |

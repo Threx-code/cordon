@@ -18,6 +18,7 @@ from cordon_scanner.detect.supply.manifests.rule_ids import (
     NOT_INSTALLED_TWINS,
     REMOTE_TARBALL_RULE,
     SOURCE_PRIORITY_RULE,
+    UNKNOWN_HOST_RULE,
     WRAPPER_RULE,
 )
 from cordon_scanner.detect.supply.not_installed_files import NotInstalledFiles
@@ -147,19 +148,35 @@ _DECLARED: tuple[DeclaredRule, ...] = (
     ),
     DeclaredRule(
         id=REMOTE_TARBALL_RULE,
-        title="A published package installs a dependency from an arbitrary URL",
+        title="A package or project installs a dependency from an arbitrary URL",
         severity=Severity.HIGH,
         confidence=Confidence.MEDIUM,
         category=Category.SUSPICIOUS,
         detector="manifest",
         message=(
-            "A dependency of this published package is an http(s) URL on a host that is "
-            "not a registry. Every install fetches whatever that host serves at that "
+            "A dependency of this published package or project is an http(s) URL on a host "
+            "that is not a registry. Every install fetches whatever that host serves at that "
             "moment and runs its install scripts: no hash, no advisory and no review "
             "applies, and the package itself can be empty -- the PhantomRaven shape."
         ),
         references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
         remediation="Do not install it until the URL's content has been examined.",
+    ),
+    DeclaredRule(
+        id=UNKNOWN_HOST_RULE,
+        title="A dependency is fetched from a host that is neither a registry nor a code host",
+        severity=Severity.MEDIUM,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        detector="manifest",
+        message=(
+            "A dependency of this project is cloned with git, or a Go module is replaced by another "
+            "module, from a host that is neither the ecosystem's registry nor a public code host. "
+            "Whoever runs that host decides what installs, and no advisory, hash or review reaches "
+            "it."
+        ),
+        references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
+        remediation="Confirm the host belongs to the organisation, or depend on a registry release.",
     ),
     DeclaredRule(
         id=MALICIOUS_REMOTE_TARBALL_RULE,

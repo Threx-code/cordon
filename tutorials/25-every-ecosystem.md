@@ -793,40 +793,40 @@ The source Cordon reads inside any of those projects: 39 languages, each identif
 |---|---|---|
 | Batch | `*.bat`, `*.cmd` | 6 |
 | C | `*.c`, `*.h` | 0 |
-| C# | `*.cs` | 13 |
+| C# | `*.cs` | 15 |
 | C++ | `*.cc`, `*.cpp`, `*.cxx`, `*.hpp` | 0 |
 | Clojure | `*.bb`, `*.clj`, `*.cljc`, `*.cljs` | 8 |
 | CMake | `CMakeLists.txt` | 10 |
-| Dart | `*.dart` | 7 |
+| Dart | `*.dart` | 8 |
 | Dockerfile | `Containerfile`, `Dockerfile` | 0 |
-| Elixir | `*.ex`, `*.exs` | 8 |
-| Go | `*.go` | 14 |
-| Groovy | `Jenkinsfile`, `build.gradle` | 11 |
+| Elixir | `*.ex`, `*.exs` | 9 |
+| Go | `*.go` | 16 |
+| Groovy | `Jenkinsfile`, `build.gradle` | 12 |
 | Haskell | `*.hs`, `*.lhs` | 8 |
-| Java | `*.java` | 11 |
-| JavaScript | `*.cjs`, `*.js`, `*.jsx`, `*.mjs` | 32 |
+| Java | `*.java` | 13 |
+| JavaScript | `*.cjs`, `*.js`, `*.jsx`, `*.mjs` | 33 |
 | JSON | `*.json` | 0 |
 | Julia | `*.jl` | 8 |
-| Kotlin | `*.kt`, `*.kts`, `build.gradle.kts` | 19 |
-| Lua | `*.lua` | 8 |
+| Kotlin | `*.kt`, `*.kts`, `build.gradle.kts` | 21 |
+| Lua | `*.lua` | 9 |
 | Makefile | `GNUmakefile`, `Makefile` | 10 |
 | Markdown | `*.markdown`, `*.md`, `*.mdc` | 0 |
 | Nim | `*.nim`, `*.nimble`, `*.nims` | 7 |
 | Objective-C | `*.m`, `*.mm` | 8 |
 | OCaml | `*.ml`, `*.mli` | 8 |
-| Perl | `*.pl`, `*.pm` | 10 |
-| PHP | `*.php` | 14 |
+| Perl | `*.pl`, `*.pm` | 11 |
+| PHP | `*.php` | 16 |
 | PowerShell | `*.ps1`, `*.psm1` | 14 |
-| Python | `*.pth`, `*.py`, `*.pyi`, `*.pyw`, `conanfile.py`, `setup.py` | 25 |
+| Python | `*.pth`, `*.py`, `*.pyi`, `*.pyw`, `conanfile.py`, `setup.py` | 27 |
 | R | `*.r` | 8 |
-| Ruby | `*.rb`, `Gemfile`, `Podfile`, `Rakefile` | 17 |
-| Rust | `*.rs`, `build.rs` | 14 |
-| Scala | `*.scala` | 10 |
+| Ruby | `*.rb`, `Gemfile`, `Podfile`, `Rakefile` | 19 |
+| Rust | `*.rs`, `build.rs` | 17 |
+| Scala | `*.scala` | 11 |
 | Shell | `*.bash`, `*.sh`, `*.zsh` | 18 |
 | SQL | `*.sql` | 0 |
-| Swift | `*.swift`, `Package.swift` | 8 |
+| Swift | `*.swift`, `Package.swift` | 9 |
 | TOML | `*.toml` | 0 |
-| TypeScript | `*.cts`, `*.mts`, `*.ts`, `*.tsx` | 32 |
+| TypeScript | `*.cts`, `*.mts`, `*.ts`, `*.tsx` | 33 |
 | XML | `*.csproj`, `*.fsproj`, `*.props`, `*.targets`, `*.vbproj`, `*.xml` | 11 |
 | YAML | `*.yaml`, `*.yml` | 0 |
 | Zig | `*.zig`, `build.zig` | 7 |

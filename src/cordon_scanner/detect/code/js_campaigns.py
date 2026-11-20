@@ -63,7 +63,7 @@ class JsCampaigns:
         ):
             return []
         line = text.count("\n", 0, into.start()) + 1
-        start = len(text[: into.start()].encode("utf-8"))
+        start = content.byte_offset(into.start(), text)
         return [
             CapabilityHit(
                 capability=Capability.FLOW,
@@ -114,7 +114,7 @@ class JsCampaigns:
         if view is None:
             return []
         line = text.count("\n", 0, view.start()) + 1
-        start = len(text[: view.start()].encode("utf-8"))
+        start = content.byte_offset(view.start(), text)
         return [
             CapabilityHit(
                 capability=Capability.FLOW,
@@ -158,7 +158,7 @@ class JsCampaigns:
         if not (cls._WA_LIBRARY.search(member) or cls._WA_FOLLOW.search(text)):
             return []
         line = text.count("\n", 0, found.start()) + 1
-        start = len(text[: found.start()].encode("utf-8"))
+        start = content.byte_offset(found.start(), text)
         return [
             CapabilityHit(
                 capability=Capability.FLOW,

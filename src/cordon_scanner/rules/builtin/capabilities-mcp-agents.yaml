@@ -1,0 +1,492 @@
+pack:
+  id: cordon.capabilities.mcp-agents
+  version: 0.2.0
+  license: Apache-2.0
+  source: cordon-builtin
+  description: >
+    Capabilities that only exist because of AI agents and the Model Context Protocol, recognised by
+    the stores and protocol calls they touch rather than by a language operation. Other MCP clients'
+    configuration files hold every other server's API keys in their `env` blocks; the AI coding
+    agents keep OAuth tokens and whole conversations on disk; a server can drive the client's own
+    model through sampling, or ask the person for a secret through elicitation. Each is modelled as
+    an existing capability (credential, agent) so the behavioural composites apply unchanged: a
+    credential store read beside an outbound send is an exfiltration whatever the store.
+
+rules:
+  - id: CAP.CREDENTIAL.MCP_CLIENT_CONFIG.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: credential
+    title: Names another MCP client's configuration file
+    message: >
+      This file names the configuration file of an MCP client (Claude Desktop, Claude Code,
+      Cursor, Windsurf, Cline, Roo, Kiro, Amazon Q, Devin). Those files list every MCP server the
+      person has installed together with the API keys and tokens each one is given in its `env`
+      block, so reading one hands over every other server's credentials. Installers write their
+      own entry there; a server has no reason to read the file at run time.
+    remediation: >
+      Confirm the file is only written, to add this server's own entry. A read that leaves the
+      machine discloses every key in it: rotate them.
+    references:
+      - https://modelcontextprotocol.io/quickstart/user
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '\bclaude_desktop_config\.json\b'
+        - '[/\\"\x27]\.claude\.json\b'
+        - '[/\\"\x27]\.cursor[/\\]{1,2}mcp\.json\b'
+        - '\.cursor["\x27]\s*,\s*["\x27]mcp\.json["\x27]'
+        - '\bwindsurf[/\\]{1,2}mcp_config\.json\b'
+        - '\bcline_mcp_settings\.json\b'
+        - '[/\\"\x27]\.(?:roo|amazonq)[/\\]{1,2}mcp\.json\b'
+        - '[/\\"\x27]\.kiro[/\\]{1,2}settings[/\\]{1,2}mcp\.json\b'
+        - '\bdevin[/\\]{1,2}mcp_config\.json\b'
+    tests:
+      positive:
+        - "const p = path.join(os.homedir(), 'Library/Application Support/Claude/claude_desktop_config.json')"
+        - "cfg = json.load(open(os.path.expanduser('~/.cursor/mcp.json')))"
+        - "const f = path.join(home, '.cursor', 'mcp.json')"
+        - "const w = path.join(home, '.codeium/windsurf/mcp_config.json')"
+        - "readFileSync(join(homedir(), '.claude.json'), 'utf8')"
+      negative:
+        - "const config = loadConfig('mcp.json')"
+        - "const settings = require('./claude.json')"
+        - "server.tool('read_config', 'Reads mcp.json from the workspace', handler)"
+
+  - id: CAP.CREDENTIAL.AGENT_AUTH_STORE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: high
+    capability: credential
+    title: Names an AI coding agent's login or conversation store
+    message: >
+      This file names where an AI coding agent keeps its login tokens or its conversations: Codex's
+      auth.json and session logs, Gemini CLI's OAuth credentials, Claude Code's credentials file
+      and project transcripts, GitHub Copilot's token files, an editor's global state database.
+      These are read by the agent that owns them and by almost nothing else; a package that reads
+      them takes the person's AI account or everything they have discussed with it.
+    remediation: >
+      Confirm this component is the agent that owns the store. If it is not, sign the agent out
+      everywhere and treat the conversation history as disclosed.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '[/\\"\x27]\.codex[/\\]{1,2}(?:auth\.json|sessions[/\\])'
+        - '[/\\"\x27]\.gemini[/\\]{1,2}oauth_creds\.json\b'
+        - '[/\\"\x27]\.claude[/\\]{1,2}(?:\.credentials\.json\b|projects[/\\])'
+        - '\bgithub-copilot[/\\]{1,2}(?:hosts|apps)\.json\b'
+        - '\bglobalStorage[/\\]{1,2}state\.vscdb\b'
+    tests:
+      positive:
+        - "token = json.load(open(Path.home() / '.codex/auth.json'))['tokens']"
+        - "const creds = readFileSync(join(homedir(), '.gemini/oauth_creds.json'))"
+        - "for f in glob(os.path.expanduser('~/.claude/projects/*/*.jsonl')):"
+        - "const t = fs.readFileSync(path.join(cfg, 'github-copilot/apps.json'))"
+        - "db = sqlite3.connect(appdata + '/Cursor/User/globalStorage/state.vscdb')"
+      negative:
+        - "const codex = require('codex')"
+        - "const projects = await listProjects()"
+        - "state = load_state('state.json')"
+
+  - id: CAP.AGENT.MCP_SAMPLING.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: agent
+    title: An MCP server asks the client's own model to generate text
+    message: >
+      This MCP server sends a sampling request (`sampling/createMessage`): it asks the client's
+      language model, on the person's account, to answer a prompt the server wrote. It is a
+      legitimate protocol feature and a direct line into the model, so the prompt's text and
+      what the server does with the answer decide whether it is used or abused.
+    remediation: >
+      Read the prompt the server sends and where the answer goes. A prompt that addresses the
+      model with instructions about other tools, files or secrets is an injection.
+    references:
+      - https://modelcontextprotocol.io/specification/2025-06-18/client/sampling
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '["\x27]sampling/createMessage["\x27]'
+        - '\b(?:server|session|ctx|context|mcp)\s*\.\s*(?:createMessage|create_message)\s*\('
+        - '\bctx\.session\.create_message\s*\('
+    tests:
+      positive:
+        - "const r = await server.createMessage({ messages, maxTokens: 500 })"
+        - "result = await ctx.session.create_message(messages=[msg], max_tokens=200)"
+        - "await this.server.request({ method: 'sampling/createMessage', params })"
+      negative:
+        - "client.setRequestHandler(CreateMessageRequestSchema, async (req) => handle(req))"
+        - "const msg = createMessage(text)"
+
+  - id: CAP.CREDENTIAL.ELICIT_SECRET.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: credential
+    title: An MCP server asks the person for a password, key or recovery phrase
+    message: >
+      This MCP server uses elicitation, the protocol's way for a server to ask the person a
+      question through their AI client, to ask for a password, an API key, a token, a private key
+      or a wallet recovery phrase. The specification says servers must not request sensitive
+      information this way; a request for a secret through a tool prompt is the phishing shape.
+    remediation: >
+      Credentials belong in the client's configuration of the server, never typed into a prompt.
+      Treat any secret already entered this way as disclosed.
+    references:
+      - https://modelcontextprotocol.io/specification/2025-06-18/client/elicitation
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    evidence_policy: masked
+    match:
+      kind: regex
+      patterns:
+        - '\b(?:elicitInput|elicit_input|elicitation/create)\b[^\n]{0,300}?\b(?i:password|passphrase|api[_ -]?key|secret|access[_ -]?token|seed[_ -]?phrase|mnemonic|private[_ -]?key|recovery[_ -]?phrase)\b'
+        - '\b(?:ctx|context|session)\.elicit\s*\([^\n]{0,300}?\b(?i:password|passphrase|api[_ -]?key|secret|access[_ -]?token|seed[_ -]?phrase|mnemonic|private[_ -]?key|recovery[_ -]?phrase)\b'
+    tests:
+      positive:
+        - "const r = await server.elicitInput({ message: 'Enter your wallet seed phrase to continue', requestedSchema })"
+        - "answer = await ctx.elicit(message='Please provide your OpenAI API key', schema=Key)"
+        - "await this.server.request({ method: 'elicitation/create', params: { message: 'Type your password' } })"
+      negative:
+        - "const r = await server.elicitInput({ message: 'Which project should I open?', requestedSchema })"
+        - "answer = await ctx.elicit(message='Pick a colour', schema=Choice)"
+
+  - id: CAP.AGENCY.RECURSIVE_DELETE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: agent
+    title: Deletes a directory and everything under it
+    message: >
+      This file removes a whole directory tree in one call (rmSync or rm with recursive, rmtree, RemoveAll, remove_dir_all, rimraf).
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\brmSync\([^)\n]{0,160}\brecursive\s*:\s*true'
+        - '\b(?:fs\.)?(?:promises\.)?rm\([^)\n]{0,160}\brecursive\s*:\s*true'
+        - '\bshutil\.rmtree\('
+        - '\bos\.RemoveAll\('
+        - '\bremove_dir_all\('
+        - '\brimraf(?:\.sync)?\('
+    tests:
+      positive:
+        - 'shutil.rmtree(os.environ["NOTES_DIR"], ignore_errors=True)'
+        - 'os.RemoveAll(os.Getenv("NOTES_DIR"))'
+      negative:
+        - 'os.remove(path)'
+
+  - id: CAP.AGENCY.TOOL_HANDLER.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: agent
+    title: Registers a tool an AI agent can call
+    message: >
+      This file registers an MCP tool: a function an AI agent calls on the person's behalf.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\bregisterTool\('
+        - '\bserver\.tool\('
+        - '@\w{1,40}\.tool\b'
+        - '\bNewTool\('
+        - '#\[tool\b'
+    tests:
+      positive:
+        - 'server.registerTool("delete_everything", { description: "Delete the notes folder." }, async () => {'
+        - '@mcp.tool()'
+      negative:
+        - 'const tools = []'
+
+  - id: CAP.AGENCY.CONFIRM_ARG.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: agent
+    title: A tool takes a confirmation argument
+    message: >
+      This file gives a tool a confirm argument, so an irreversible call can require the person's explicit yes.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\bconfirm\w*\s*:\s*(?:z\.|bool\b)'
+        - '["\x27]confirm\w*["\x27]\s*:'
+        - '\bWithBoolean\(\s*\"confirm'
+    tests:
+      positive:
+        - 'def delete_note(id: str, confirm: bool = False) -> str:'
+        - 'mcp.WithBoolean("confirm", mcp.Required())'
+      negative:
+        - 'def delete_note(id: str) -> str:'
+
+  - id: CAP.AGENCY.AUTO_APPROVE_ALL.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: agent
+    title: Approves every tool call without asking
+    message: >
+      This file approves every tool call automatically: an auto-approve or always-allow list that is a wildcard, or an approval policy of never.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\b(?i:auto_?approve(?:_?tools)?|always_?allow)\b[^\n]{0,40}?[:=]\s*&?(?:\[\]string)?[\[{]\s*["\x27]\*["\x27]'
+        - '\b(?i:require_?approval|approval_?policy)\b["\x27]?\s*[:=]\s*["\x27]?(?i:never|none|false)\b'
+    tests:
+      positive:
+        - 'POLICY = {"auto_approve": ["*"], "confirm_before_write": False}'
+        - 'const AUTO_APPROVE: &[&str] = &["*"];'
+      negative:
+        - 'POLICY = {"auto_approve": ["lookup_note"]}'
+
+  - id: CAP.AGENCY.CONFIRM_OFF.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: agent
+    title: Switches off confirmation for writes or deletes
+    message: >
+      This file sets a confirmation setting to false: writes or deletes then happen without the person being asked.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\b(?i:confirm(?:ation)?(?:_?before_?\w+)?|require_?confirmation)\b["\x27]?\s*[:=]\s*(?:bool\s*=\s*)?(?i:false)\b'
+    tests:
+      positive:
+        - 'const CONFIRM_BEFORE_WRITE: bool = false;'
+        - 'policy = {"confirm_before_delete": False}'
+      negative:
+        - 'const CONFIRM_BEFORE_WRITE: bool = true;'
+
+  - id: CAP.AGENCY.WILDCARD_SCOPE.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: agent
+    title: Grants every scope or permission
+    message: >
+      This file grants a wildcard scope or permission list.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\b(?i:scopes?|permissions?|grants?)\b[^\n]{0,30}?[:=]\s*&?[\[{]\s*["\x27]\*["\x27]'
+    tests:
+      positive:
+        - '"scopes": ["*"],'
+        - 'const SCOPES: &[&str] = &["*"];'
+      negative:
+        - '"scopes": ["notes:read"],'
+
+  - id: CAP.AGENCY.ROOT_PATHS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: agent
+    title: Allows the whole file system or home directory
+    message: >
+      This file allows paths rooted at the file-system root, the home directory or a wildcard.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\b(?i:allowed_?(?:paths|dirs|directories|roots)|roots)\b[^\n]{0,30}?[:=]\s*&?[\[{]\s*["\x27](?:/|~|\*)["\x27]'
+    tests:
+      positive:
+        - '"allowed_paths": ["/"],'
+        - 'const ALLOWED_PATHS: &[&str] = &["/"];'
+      negative:
+        - '"allowed_paths": ["/srv/notes"],'
+
+  - id: CAP.AGENCY.ALL_TOOLS.001
+    version: 1.0.0
+    category: policy
+    severity: info
+    confidence: medium
+    capability: agent
+    title: Enables every tool
+    message: >
+      This file enables a wildcard tool list.
+    remediation: No action for this signal alone.
+    paths:
+      exclude:
+        - "**/rules/**/*.yaml"
+        - "**/rules/**/*.yml"
+        - "**/*.md"
+        - "**/*.mdx"
+        - "**/*.rst"
+        - "**/*.txt"
+    match:
+      kind: regex
+      patterns:
+        - '\b(?i:tools|enabled_?tools|allowed_?tools)\b[^\n]{0,30}?[:=]\s*&?[\[{]\s*["\x27]\*["\x27]'
+    tests:
+      positive:
+        - '"tools": ["*"],'
+      negative:
+        - '"tools": ["lookup_note"],'
+
+  - id: SUSPECT.AGENT.AGENCY.DELETE_WITHOUT_CONFIRM.001
+    version: 1.0.0
+    category: suspicious
+    severity: medium
+    confidence: medium
+    title: A tool deletes a whole directory with no confirmation argument
+    message: >
+      A tool an AI agent can call removes a whole directory tree, and no tool in this file takes a confirm argument: one call, made by the agent on its own, deletes everything under that directory.
+    remediation: >
+      Give the tool a required confirm argument, refuse the call without it, and limit what it can delete.
+    match:
+      kind: composite
+      scope: file
+      proximity: 40
+      all:
+        - rule: CAP.AGENCY.RECURSIVE_DELETE.001
+        - rule: CAP.AGENCY.TOOL_HANDLER.001
+        - not:
+            rule: CAP.AGENCY.CONFIRM_ARG.001
+
+  - id: SUSPECT.AGENT.AGENCY.AUTO_APPROVE_ALL.001
+    version: 1.0.0
+    category: suspicious
+    severity: medium
+    confidence: medium
+    title: Every tool call is approved and confirmation is off
+    message: >
+      This configuration approves every tool call automatically and switches off confirmation for writes or deletes, so the agent acts on anything with nobody asked.
+    remediation: >
+      Approve named read-only tools only, and keep confirmation on for writes and deletes.
+    match:
+      kind: composite
+      scope: file
+      proximity: 8
+      all:
+        - rule: CAP.AGENCY.AUTO_APPROVE_ALL.001
+        - rule: CAP.AGENCY.CONFIRM_OFF.001
+
+  - id: SUSPECT.AGENT.AGENCY.BROAD_DEFAULT_SCOPE.001
+    version: 1.0.0
+    category: suspicious
+    severity: medium
+    confidence: medium
+    title: Grants every scope with every path or every tool by default
+    message: >
+      This configuration grants a wildcard scope together with the whole file system, the home directory or every tool, so whatever an agent is asked to do it is already allowed to.
+    remediation: >
+      Grant the narrowest scope, folder and tool set the server needs.
+    match:
+      kind: composite
+      scope: file
+      proximity: 10
+      all:
+        - rule: CAP.AGENCY.WILDCARD_SCOPE.001
+        - any:
+            - rule: CAP.AGENCY.ROOT_PATHS.001
+            - rule: CAP.AGENCY.ALL_TOOLS.001

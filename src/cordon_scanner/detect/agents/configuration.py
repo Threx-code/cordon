@@ -483,6 +483,8 @@ OFFICIAL_MCP_PACKAGES: Final = frozenset(
         "figma-developer-mcp", "firecrawl-mcp", "mcp-remote", "chrome-devtools-mcp",
         "mcp-server-git", "mcp-server-fetch", "mcp-server-time", "mcp-server-sqlite",
         "awslabs.core-mcp-server", "awslabs.aws-documentation-mcp-server",
+        "fastmcp", "rmcp", "rmcp-macros", "github.com/modelcontextprotocol/go-sdk",
+        "github.com/mark3labs/mcp-go", "github.com/github/github-mcp-server",
     }
 )  # fmt: skip
 """The MCP servers people launch most, by registry name: a name one or two edits from one of them,

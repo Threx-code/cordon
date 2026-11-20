@@ -217,7 +217,7 @@ class McpPackageDetector(BaseDetector):
     @staticmethod
     def _anchor(unit: FileUnit, spec: str) -> int:
         index = unit.content.text.find(spec)
-        return len(unit.content.text[: max(index, 0)].encode())
+        return unit.content.byte_offset(max(index, 0))
 
     def _relay(
         self,

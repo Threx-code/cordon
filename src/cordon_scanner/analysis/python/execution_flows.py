@@ -146,7 +146,7 @@ class ExecutionFlows(AnalyzerCore):
         """A process started on the file a download just wrote.
 
         `urlretrieve(URL, "/tmp/x.pyz")` then `subprocess.Popen(["python3", "/tmp/x.pyz"])` runs
-        what the remote host served, as surely as `curl | sh` -- but each half alone is ordinary:
+        what the remote host served, as surely as a download piped to a shell -- but each half alone is ordinary:
         installers download, and tools start processes. The link is the file both calls name, so
         that is what is checked: a spawn whose argument list names a file that was the target of a
         download, or that was opened for writing and written from a network response.

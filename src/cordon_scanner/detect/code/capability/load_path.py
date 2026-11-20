@@ -330,7 +330,7 @@ class LoadPath:
         if not offsets:
             return False
         for opener in LoadPath._LOAD_TIME_INITIALISER.finditer(content.text):
-            start = len(content.text[: opener.end()].encode("utf-8"))
+            start = content.byte_offset(opener.end(), content.text)
             depth, index, limit = 1, start, min(len(text), start + 200_000)
             while index < limit and depth:
                 byte = text[index]

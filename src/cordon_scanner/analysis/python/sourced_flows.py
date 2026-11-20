@@ -156,7 +156,7 @@ class SourcedFlows(AnalyzerCore):
 
     def _received_into_process(self, tree: ast.AST) -> None:
         """A process handed a program that arrived over the network, in an argument list: a shell
-        given `curl ... | sh` as its command, or an interpreter given a fetched value after `-e`/`-c`
+        given a download piped to a shell as its command, or an interpreter given a fetched value after `-e`/`-c`
         (`subprocess.run(["node", "-e", r.stdout])` where `r` was a `curl` run)."""
         network = self._bound_from(tree, decoded=False)
         # The flows before this one may have found the same run already (`_evaluates_output`).
