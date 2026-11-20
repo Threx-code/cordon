@@ -217,9 +217,11 @@ class TestTheChannel:
 
     def test_a_file_past_the_limit_says_whether_it_reaches_out(self) -> None:
         from cordon_scanner.analysis.javascript.flow.summaries import JsSummaries
+        from cordon_scanner.analysis.javascript.flow.vocabulary import MAX_BYTES
         from cordon_scanner.analysis.javascript.js_flow import JsFlow
 
-        body = "x = 1;\n" * 250_000
+        body = "x = 1;\n" * (MAX_BYTES // 7 + 1)
+        assert len(body) > MAX_BYTES
         assert JsFlow.summaries(body) == {
             "js.require": [JsSummaries.UNREAD],
             "js.request": [["unread", 1]],
