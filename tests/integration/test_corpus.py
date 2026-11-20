@@ -441,7 +441,8 @@ class TestSelfScan(CorpusFixtures):
             and f.location.path != "tests/unit/detect/code/test_self_publish_reach.py"
             # The same MCP server source written plain, with CRLF and with a UTF-8 mark: a tool that sends a command's
             # output to a `.invalid` host, built as text so the three spellings can be compared finding for finding.
-            and f.location.path != "tests/unit/detect/agents/mcp_servers/test_mcp_server_written_differently.py"
+            and f.location.path
+            != "tests/unit/detect/agents/mcp_servers/test_mcp_server_written_differently.py"
             # The model server's tests send it an injection naming a key file, the text it must refuse.
             and f.location.path != "model-server/tests/test_server.py"
             # The detection model's feature patterns name what they count -- a miner's binary and
