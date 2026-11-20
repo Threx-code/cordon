@@ -191,6 +191,9 @@ class _Folder:
         self.flow, self.local, self.helpers = flow, local, helpers
         self.via: set[str] = set()
         self.budget = FOLD_BUDGET
+        #: The first value a name or a member led to: where the text is written, when it is not at the place it
+        #: is returned from (`return SETUP_GUIDE` is at the constant, not at the `return`).
+        self.origin: Node | None = None
 
     def fold(self, node: Node | None, seen: frozenset[str] = frozenset(), level: int = 0) -> str:
         if node is None or self.budget <= 0 or level > FOLD_DEPTH:
@@ -270,6 +273,8 @@ class _Folder:
             if expressions is None:
                 return " "
             self.via.add("constant")
+        if self.origin is None:
+            self.origin = expressions[0]
         return "\n".join(self.fold(e, seen | {name}, level) for e in expressions[:8])
 
     def _member(self, node: Node, seen: frozenset[str], level: int) -> str:
@@ -287,6 +292,8 @@ class _Folder:
                 and target.type in ("ThisExpression", "Identifier", "MemberExpression")
             ):
                 self.via.add("constant")
+                if self.origin is None:
+                    self.origin = members[0]
                 return "\n".join(self.fold(m, seen | {key}, level) for m in members[:8])
             if key == "length":
                 return " "
@@ -491,12 +498,13 @@ class JsServed:
                 folder = _Folder(flow, local, 0)
                 folded = folder.fold(value)
                 shown = "error" if kind == "result" and _Tree.is_error(value) else kind
+                place = folder.origin or value
                 out.append(
                     Served(
                         shown,
                         folded,
-                        value.start,
-                        value.end,
+                        place.start,
+                        place.end,
                         tuple(sorted(folder.via or {"literal"})),
                     )
                 )
@@ -506,12 +514,14 @@ class JsServed:
                 for shown, arguments in _Tree.said(node):
                     for argument in arguments:
                         folder = _Folder(flow, local, 0)
+                        folded = folder.fold(argument)
+                        place = folder.origin or argument
                         out.append(
                             Served(
                                 shown,
-                                folder.fold(argument),
-                                argument.start,
-                                argument.end,
+                                folded,
+                                place.start,
+                                place.end,
                                 tuple(sorted(folder.via or {"literal"})),
                             )
                         )

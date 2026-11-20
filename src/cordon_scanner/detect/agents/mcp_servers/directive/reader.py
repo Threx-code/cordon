@@ -124,6 +124,18 @@ class McpDirectives:
             yield cls.finding(rule, unit, ctx, text, hit, cls.blocks(hit, found))
 
     @classmethod
+    def _phrase(cls, text: str, hit: DirectiveHit) -> tuple[int, int] | None:
+        """Where the matched phrase itself is in the file, when it is written there as it was read: the line a person
+        opens is the line of the phrase, not the first line of a long text. None when the text was assembled or
+        decoded and the phrase is not in the file as it is."""
+        match = cls.matched(hit.directive, hit.item.text)
+        if match is None or not match.group(0):
+            return None
+        phrase = match.group(0)
+        at = text.find(phrase, hit.item.start, hit.item.end)
+        return (at, at + len(phrase)) if at >= 0 else None
+
+    @classmethod
     def finding(
         cls,
         rule: str,
@@ -134,7 +146,7 @@ class McpDirectives:
         conclusive: bool,
         note: str = " One text like this is not conclusive, so it is reported for review.",
     ) -> Finding:
-        begin, finish = hit.where or (hit.item.start, hit.item.end)
+        begin, finish = hit.where or cls._phrase(text, hit) or (hit.item.start, hit.item.end)
         start = len(text[:begin].encode("utf-8"))
         end = start + len(text[begin:finish].encode("utf-8"))
         note = "" if conclusive else note

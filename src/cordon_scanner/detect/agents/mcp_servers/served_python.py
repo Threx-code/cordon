@@ -256,6 +256,9 @@ class _Folder:
         self.flow, self.local, self.helpers = flow, local, helpers
         self.via: set[str] = set()
         self.budget = FOLD_BUDGET
+        #: The first value a name or an attribute led to: where the text is written, when it is not at the
+        #: place it is returned from (`return SETUP_GUIDE` is at the constant, not at the `return`).
+        self.origin: ast.AST | None = None
 
     def fold(self, node: ast.AST | None, seen: frozenset[str] = frozenset(), level: int = 0) -> str:
         if node is None or self.budget <= 0 or level > FOLD_DEPTH:
@@ -317,6 +320,8 @@ class _Folder:
             if expressions is None:
                 return " "
             self.via.add("constant")
+        if self.origin is None:
+            self.origin = expressions[0]
         return "\n".join(self.fold(e, seen | {name}, level) for e in expressions[:8])
 
     def _attribute(self, node: ast.Attribute, seen: frozenset[str], level: int) -> str:
@@ -325,6 +330,8 @@ class _Folder:
         if expressions is None or node.attr in seen:
             return " "
         self.via.add("constant")
+        if self.origin is None:
+            self.origin = expressions[0]
         return "\n".join(self.fold(e, seen | {node.attr}, level) for e in expressions[:8])
 
     def _subscript(self, node: ast.Subscript, seen: frozenset[str], level: int) -> str:
@@ -585,7 +592,7 @@ class PythonServed:
             for value in cls.returned(function):
                 folder = _Folder(flow, local, 0)
                 folded = folder.fold(value)
-                start, end = flow.span(value)
+                start, end = flow.span(folder.origin or value)
                 via = folder.via or {"literal"}
                 shown = "error" if kind == "result" and _Tree.is_error(value) else kind
                 out.append(Served(shown, folded, start, end, tuple(sorted(via))))
@@ -596,7 +603,7 @@ class PythonServed:
                     for argument in arguments:
                         folder = _Folder(flow, local, 0)
                         folded = folder.fold(argument)
-                        start, end = flow.span(argument)
+                        start, end = flow.span(folder.origin or argument)
                         via = folder.via or {"literal"}
                         out.append(Served(shown, folded, start, end, tuple(sorted(via))))
                         if len(out) >= MAX_SERVED:
@@ -609,11 +616,12 @@ class PythonServed:
             ):
                 folder = _Folder(flow, {}, 0)
                 value = next(k.value for k in node.keywords if k.arg == "text")
-                start, end = flow.span(value)
+                folded = folder.fold(value)
+                start, end = flow.span(folder.origin or value)
                 out.append(
                     Served(
                         "resource",
-                        folder.fold(value),
+                        folded,
                         start,
                         end,
                         tuple(sorted(folder.via or {"literal"})),

@@ -390,3 +390,77 @@ class TestTheScannerGivesTheFindings:
         )
         found = Servers.scan(tmp_path, "server.ts", Servers.TS_HEAD + body)
         assert len([f for f in found if f.rule_id == "SUSPECT.MCP.DESCRIPTION_OVERRIDE.001"]) == 3
+
+
+class TestTheLineOfAFinding:
+    """A finding names the line a person opens: where the matched phrase is written, not the `return` that serves it
+    and not the first line of a long text. A block that names the wrong line cannot be read by the person whose server it stops."""
+
+    FILLER = "Notes are listed by date, newest first, and every entry has a title and a body of plain text.\n"
+
+    @staticmethod
+    def line_of(source: str, phrase: str) -> int:
+        return next(n for n, line in enumerate(source.splitlines(), 1) if phrase in line)
+
+    @staticmethod
+    def example(directive: str) -> str:
+        row = next(d for d in CLASSES if d.id == directive)
+        assert not any(mark in row.example for mark in ('"', "'", "\\", "`", "$", "\n"))
+        return row.example
+
+    def found(self, tmp_path: Path, name: str, source: str, rule: str) -> list:
+        return [f for f in Servers.scan(tmp_path, name, source) if f.rule_id == rule]
+
+    def test_a_python_text_returned_through_a_constant_is_found_at_the_phrase(
+        self, tmp_path: Path
+    ) -> None:
+        phrase = self.example("link_exfil")
+        guide = 'GUIDE = """\n' + self.FILLER * 12 + phrase + "\n" + self.FILLER * 6 + '"""\n'
+        source = (
+            Servers.PY_HEAD
+            + guide
+            + '\n@mcp.tool()\ndef lookup(id: str) -> str:\n    """Look up a note."""\n    return GUIDE\n'
+        )
+        ours = self.found(tmp_path, "server.py", source, "SUSPECT.MCP.RESULT_LINK_EXFIL.001")
+        assert [f.location.line for f in ours] == [self.line_of(source, phrase)]
+
+    def test_a_typescript_text_returned_through_a_constant_is_found_at_the_phrase(
+        self, tmp_path: Path
+    ) -> None:
+        phrase = self.example("link_exfil")
+        guide = "const GUIDE = `\n" + self.FILLER * 12 + phrase + "\n" + self.FILLER * 6 + "`;\n"
+        tool = (
+            'server.registerTool("lookup", { description: "Look up a note.", inputSchema: { id: z.string() } }, '
+            'async ({ id }) => {\n  return { content: [{ type: "text", text: GUIDE }] };\n});\n'
+        )
+        source = Servers.TS_HEAD + guide + tool
+        ours = self.found(tmp_path, "server.ts", source, "SUSPECT.MCP.RESULT_LINK_EXFIL.001")
+        assert [f.location.line for f in ours] == [self.line_of(source, phrase)]
+
+    def test_a_long_description_is_found_at_the_phrase_and_not_at_its_first_line(
+        self, tmp_path: Path
+    ) -> None:
+        phrase = self.example("role_marker")
+        description = "`\n" + self.FILLER * 12 + phrase + "\n" + self.FILLER * 4 + "`"
+        tool = (
+            f'server.registerTool("lookup", {{ description: {description}, inputSchema: {{ id: z.string() }} }}, '
+            'async ({ id }) => ({ content: [{ type: "text", text: `note ${id}` }] }));\n'
+        )
+        source = Servers.TS_HEAD + tool
+        ours = self.found(tmp_path, "server.ts", source, "SUSPECT.MCP.DESCRIPTION_ROLE_MARKER.001")
+        assert [f.location.line for f in ours] == [self.line_of(source, phrase)]
+
+    def test_a_text_assembled_from_pieces_keeps_a_line_inside_its_own_text(
+        self, tmp_path: Path
+    ) -> None:
+        phrase = self.example("link_exfil")
+        half = len(phrase) // 2
+        source = (
+            Servers.PY_HEAD
+            + f'FIRST = "{phrase[:half]}"\nSECOND = "{phrase[half:]}"\n'
+            + '\n@mcp.tool()\ndef lookup(id: str) -> str:\n    """Look up a note."""\n    return FIRST + SECOND\n'
+        )
+        ours = self.found(tmp_path, "server.py", source, "SUSPECT.MCP.RESULT_LINK_EXFIL.001")
+        assert len(ours) == 1
+        first = self.line_of(source, "FIRST =")
+        assert first <= (ours[0].location.line or 0) <= self.line_of(source, "SECOND =") + 1
