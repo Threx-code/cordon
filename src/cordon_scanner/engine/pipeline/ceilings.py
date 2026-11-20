@@ -123,11 +123,19 @@ class Ceilings:
 
     @staticmethod
     def unread_notes(
-        acc: Accumulator, blind: Sequence[tuple[str, str]], observation: Any
+        acc: Accumulator,
+        blind: Sequence[tuple[str, str]],
+        observation: Any,
+        *,
+        package: bool,
     ) -> list[Finding]:
         """A gap for each file where code runs on its own that the package verdict's model (`feature_blind`) or the
         intent observer (its file count and its size) could not read: the scan is incomplete, and a file named once is
         named once. A model's or an observer's silence about a file it never saw is never a pass."""
+        if not package:
+            # A repository is no published package: its install, import and agent places are every file that could be one, and the
+            # model lowers nothing for it (`feature_blind`), but a gap for each file past the profile's count would mark every large tree incomplete.
+            return []
         seen: set[tuple[str, str]] = set()
         notes: list[Finding] = []
         for reader, files in (

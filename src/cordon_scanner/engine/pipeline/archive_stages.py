@@ -667,7 +667,9 @@ class ArchiveStages:
                 facts=acc.facts,
                 blind=len(blind),
             )
-        acc.findings.extend(Ceilings.unread_notes(acc, blind, observation))
+        acc.findings.extend(
+            Ceilings.unread_notes(acc, blind, observation, package=ctx.package_distribution)
+        )
         acc.findings.extend(code_model)
         acc.findings.extend(remote_control)
         dependencies = self.engine.detection.annotated(dependencies, acc.findings, ctx, units)
