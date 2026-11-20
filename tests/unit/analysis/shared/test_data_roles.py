@@ -17,6 +17,7 @@ from cordon_scanner.detect.base import FileUnit
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import Severity
+from kits.padding import Padding
 
 DATA = '{"hosts": ["a.example"], "paths": ["~/x"]}\n'
 
@@ -220,12 +221,6 @@ class TestAParsedDataFile:
         assert any(f.severity >= Severity.MEDIUM for f in found)
 
 
-def padded_python(chars: int) -> str:
-    """Comment lines that read as nothing, `chars` characters in all (at least)."""
-    line = "# " + "x" * 78 + "\n"
-    return line * (chars // len(line) + 1)
-
-
 class TestACodeFileBeyondWhatTheTestOnceReadNamesTheFile:
     """A code file longer than two million characters was left out of the test, so what it did with a data file
     could not veto the exemption: one small file that parses the data, one large file that runs it, and the data
@@ -237,7 +232,7 @@ class TestACodeFileBeyondWhatTheTestOnceReadNamesTheFile:
         files = {
             "pkg/denylist.json": DATA,
             "pkg/guard.py": 'import json\nDENY = json.load(open("denylist.json"))\n',
-            "pkg/large.py": self.RUNNER + padded_python(2_100_000),
+            "pkg/large.py": self.RUNNER + Padding.lines(2_100_000, "#"),
         }
         assert only_parsed(files) == set()
 
@@ -245,16 +240,16 @@ class TestACodeFileBeyondWhatTheTestOnceReadNamesTheFile:
         files = {
             "pkg/denylist.json": DATA,
             "pkg/guard.py": 'import json\nDENY = json.load(open("denylist.json"))\n',
-            "pkg/large.py": self.RUNNER + padded_python(1_000),
+            "pkg/large.py": self.RUNNER + Padding.lines(1_000, "#"),
         }
         assert only_parsed(files) == set()
 
     def test_a_large_file_that_only_parses_it_does_not_veto(self) -> None:
         parser = 'import json\nDENY = json.load(open("denylist.json"))\n'
-        files = {"pkg/denylist.json": DATA, "pkg/large.py": parser + padded_python(2_100_000)}
+        files = {"pkg/denylist.json": DATA, "pkg/large.py": parser + Padding.lines(2_100_000, "#")}
         assert only_parsed(files) == {"pkg/denylist.json"}
 
     def test_a_scan_still_reads_the_data_as_before(self, tmp_path) -> None:
-        extra = {"large.py": self.RUNNER + padded_python(2_100_000)}
+        extra = {"large.py": self.RUNNER + Padding.lines(2_100_000, "#")}
         found = DataKit.findings(tmp_path, PARSER, extra)
         assert found and all(f.rule_id in CAPABILITY for f in found)

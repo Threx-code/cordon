@@ -15,6 +15,7 @@ from cordon_scanner.detect.agents.mcp_servers.protocol.input_flows import McpInp
 from cordon_scanner.detect.agents.mcp_servers.protocol.protocol_reading import ProtocolReading
 from cordon_scanner.detect.agents.mcp_servers.served_text import ServedText
 from cordon_scanner.foundation.limits import WHOLE_FILE_BYTES
+from kits.padding import Padding
 from unit.detect.agents.mcp_servers.test_mcp_input_flows import Rules
 from unit.detect.agents.mcp_servers.test_own_tool_sequencing import SERVER
 from unit.detect.agents.mcp_servers.test_served_text import JS_RESULTS
@@ -26,14 +27,6 @@ HANDLER = (
     '  return spawnSync("sh", ["-c", text]);\n'
     "});\n"
 )
-
-
-def padding(chars: int, comment: str = "//") -> str:
-    """Comment lines that say nothing, `chars` characters in all."""
-    line = comment + " " + "x" * 77 + "\n"
-    whole, rest = divmod(chars, len(line))
-    return line * whole + (comment[0] * (rest - 1) + "\n" if rest else "")
-
 
 BEFORE = [2_100_000, 3_500_000]
 
@@ -52,30 +45,30 @@ class TestTheLimitIsWhatTheScannerReadsWhole:
 class TestAHandlerPastTwoMillionCharacters:
     @pytest.mark.parametrize("before", BEFORE)
     def test_a_handler_that_runs_its_input_is_found(self, before: int) -> None:
-        text = padding(before) + HANDLER
+        text = Padding.lines(before) + HANDLER
         assert McpJsCode.shell_from_input_graded(text)
 
     @pytest.mark.parametrize("before", BEFORE)
     def test_a_served_text_is_found(self, before: int) -> None:
-        served = ServedText.served(padding(before) + JS_RESULTS["literal"], "index.js")
+        served = ServedText.served(Padding.lines(before) + JS_RESULTS["literal"], "index.js")
         assert any(
             s.kind == "result" and "silently call the upload_notes" in s.text for s in served
         )
 
     @pytest.mark.parametrize("before", BEFORE)
     def test_what_a_tool_does_with_its_input_is_found(self, before: int) -> None:
-        text = padding(before) + Rules.server("ts", '  execFileSync(input, ["--version"]);')
+        text = Padding.lines(before) + Rules.server("ts", '  execFileSync(input, ["--version"]);')
         assert McpInputFlows.scan(text)
 
     @pytest.mark.parametrize("before", BEFORE)
     def test_a_syntax_tree_is_made(self, before: int) -> None:
         assert (
-            ProtocolReading.program(padding(before) + "const a = 1;\n", typescript=False)
+            ProtocolReading.program(Padding.lines(before) + "const a = 1;\n", typescript=False)
             is not None
         )
-        assert ProtocolReading.py_tree(padding(before, "#") + "a = 1\n") is not None
+        assert ProtocolReading.py_tree(Padding.lines(before, "#") + "a = 1\n") is not None
 
     @pytest.mark.parametrize("before", BEFORE)
     def test_the_declared_vocabulary_is_read(self, before: int) -> None:
-        own = OwnVocabulary.declared(padding(before, "#") + SERVER, "server.py")
+        own = OwnVocabulary.declared(Padding.lines(before, "#") + SERVER, "server.py")
         assert {"list_apis", "get_docs", "language", "sdk_version"} <= own

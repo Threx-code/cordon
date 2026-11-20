@@ -13,6 +13,7 @@ from cordon_scanner.analysis.javascript.flow.vocabulary import MAX_BYTES
 from cordon_scanner.analysis.javascript.js_flow import JsFlow
 from cordon_scanner.analysis.javascript.js_persist import JsPersistence
 from cordon_scanner.foundation.limits import DEFAULT_LIMITS, WHOLE_FILE_BYTES
+from kits.padding import Padding
 
 # A fetched text handed to a process: a flow the analysis names (`network_response` into `process`).
 PAYLOAD = (
@@ -22,15 +23,12 @@ PAYLOAD = (
 )
 
 
-def padding(chars: int) -> str:
-    """Comment lines that say nothing, `chars` characters in all."""
-    line = "// " + "x" * 77 + "\n"
-    whole, rest = divmod(chars, len(line))
-    return line * whole + ("/" * (rest - 1) + "\n" if rest else "")
-
-
-def has_the_flow(text: str) -> bool:
-    return any(f.sink == "process" and "network_response" in f.sources for f in JsFlow.flows(text))
+class Flows:
+    @staticmethod
+    def has_the_flow(text: str) -> bool:
+        return any(
+            f.sink == "process" and "network_response" in f.sources for f in JsFlow.flows(text)
+        )
 
 
 class TestTheLimit:
@@ -41,34 +39,36 @@ class TestTheLimit:
 
 class TestAFlowPastWhatTheAnalysisOnceRead:
     def test_a_small_file_has_the_flow(self) -> None:
-        assert has_the_flow(PAYLOAD)
+        assert Flows.has_the_flow(PAYLOAD)
 
     @pytest.mark.parametrize("before", [1_500_100, 2_500_000, 5_000_000])
     def test_a_flow_after_the_old_limit_is_found(self, before: int) -> None:
-        assert has_the_flow(padding(before) + PAYLOAD)
+        assert Flows.has_the_flow(Padding.lines(before) + PAYLOAD)
 
     def test_a_flow_before_a_large_padding_is_found(self) -> None:
-        assert has_the_flow(PAYLOAD + padding(2_500_000))
+        assert Flows.has_the_flow(PAYLOAD + Padding.lines(2_500_000))
 
     def test_a_large_file_with_no_flow_has_none(self) -> None:
-        assert not JsFlow.flows(padding(2_500_000) + "module.exports = 1;\n")
+        assert not JsFlow.flows(Padding.lines(2_500_000) + "module.exports = 1;\n")
 
 
 class TestTheOtherReadingsOfTheSameAnalysis:
     def test_the_requests_after_the_old_limit_are_found(self) -> None:
-        text = padding(1_600_000) + 'fetch("https://registry.npmjs.org/x/-/x-1.0.0.tgz");\n'
+        text = Padding.lines(1_600_000) + 'fetch("https://registry.npmjs.org/x/-/x-1.0.0.tgz");\n'
         assert JsFlow.requests(text)
 
     def test_the_summaries_of_a_large_file_are_read_not_marked_unread(self) -> None:
-        facts = JsFlow.summaries(padding(1_600_000) + PAYLOAD)
+        facts = JsFlow.summaries(Padding.lines(1_600_000) + PAYLOAD)
         assert facts.get("js.request") != [["unread", 1]]
 
     def test_the_reach_analysis_of_a_large_file_rules_something_out(self) -> None:
-        assert JsFlow.deferred_spans(padding(1_600_000) + PAYLOAD) is not None
+        assert JsFlow.deferred_spans(Padding.lines(1_600_000) + PAYLOAD) is not None
 
     def test_the_persistence_reading_of_a_large_file_is_made(self) -> None:
         # Not asserted to find lines: only that a file over the old limit is given the analysis (a frozenset, never an early return).
-        assert isinstance(JsPersistence.named_only_lines(padding(1_600_000) + PAYLOAD), frozenset)
+        assert isinstance(
+            JsPersistence.named_only_lines(Padding.lines(1_600_000) + PAYLOAD), frozenset
+        )
 
 
 class TestAFileBeyondEvenThat:

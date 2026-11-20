@@ -21,45 +21,47 @@ NEEDLE = re.compile(r"needle\d{0,3}")
 LONGEST = 9
 
 
-def spans(matches: Iterable[Match[str]]) -> list[tuple[int, int]]:
-    return [m.span() for m in matches]
+class Spans:
+    @staticmethod
+    def spans(matches: Iterable[Match[str]]) -> list[tuple[int, int]]:
+        return [m.span() for m in matches]
 
 
 class TestTheSameMatchesAsTheWholeRead:
     @pytest.mark.parametrize("position", range(140))
     def test_a_match_at_any_position_is_found_once(self, position: int) -> None:
         text = "-" * position + "needle123" + "-" * (140 - position)
-        found = spans(TextSegments.finditer(NEEDLE, text, size=16, overlap=LONGEST))
-        assert found == spans(NEEDLE.finditer(text)) == [(position, position + 9)]
+        found = Spans.spans(TextSegments.finditer(NEEDLE, text, size=16, overlap=LONGEST))
+        assert found == Spans.spans(NEEDLE.finditer(text)) == [(position, position + 9)]
 
     @pytest.mark.parametrize(("size", "overlap"), [(7, 9), (16, 9), (25, 12), (64, 9), (1000, 9)])
     def test_many_matches_are_the_whole_reads_matches(self, size: int, overlap: int) -> None:
         text = "".join(f"needle{n % 1000} --- " for n in range(90))
-        assert spans(TextSegments.finditer(NEEDLE, text, size=size, overlap=overlap)) == spans(
-            NEEDLE.finditer(text)
-        )
+        assert Spans.spans(
+            TextSegments.finditer(NEEDLE, text, size=size, overlap=overlap)
+        ) == Spans.spans(NEEDLE.finditer(text))
 
     def test_matches_that_touch_are_each_found(self) -> None:
         text = "needle1" * 60
-        assert spans(TextSegments.finditer(NEEDLE, text, size=10, overlap=LONGEST)) == spans(
-            NEEDLE.finditer(text)
-        )
+        assert Spans.spans(
+            TextSegments.finditer(NEEDLE, text, size=10, overlap=LONGEST)
+        ) == Spans.spans(NEEDLE.finditer(text))
 
     def test_a_line_start_at_the_edge_of_a_segment_is_still_a_line_start(self) -> None:
         # `^` and `$` see the real line, not the start or end of the piece being read.
         lines = re.compile(r"^a$", re.MULTILINE)
         text = "a\nab\n" * 40
-        found = spans(TextSegments.finditer(lines, text, size=7, overlap=2))
-        assert found == spans(lines.finditer(text))
+        found = Spans.spans(TextSegments.finditer(lines, text, size=7, overlap=2))
+        assert found == Spans.spans(lines.finditer(text))
         assert len(found) == 40
 
     def test_a_word_edge_at_the_edge_of_a_segment_is_still_a_word_edge(self) -> None:
         word = re.compile(r"\bcat\b")
         text = "concatenate cat scatter cat " * 30
         for size in range(5, 40):
-            assert spans(TextSegments.finditer(word, text, size=size, overlap=3)) == spans(
-                word.finditer(text)
-            )
+            assert Spans.spans(
+                TextSegments.finditer(word, text, size=size, overlap=3)
+            ) == Spans.spans(word.finditer(text))
 
     def test_the_first_match_is_the_whole_reads_first_match(self) -> None:
         text = "-" * 500 + "needle7" + "-" * 500 + "needle8"

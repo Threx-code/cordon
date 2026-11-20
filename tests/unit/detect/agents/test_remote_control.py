@@ -24,6 +24,7 @@ from cordon_scanner.detect.agents.bridges.shape import BridgeShape
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Category, Severity
 from cordon_scanner.rules.patterns import PatternCompiler
+from kits.padding import Padding
 from unit.detect.code.capability.test_npm_payload_execution import Npm
 
 RULE = RemoteControl.RULE
@@ -193,30 +194,23 @@ class TestThePatterns:
         assert _parser.parse(pattern).getwidth()[1] <= OVERLAP_CHARS
 
 
-def padding(chars: int) -> str:
-    """Comment lines that say nothing, `chars` characters in all."""
-    line = "// " + "x" * 77 + "\n"
-    whole, rest = divmod(chars, len(line))
-    return line * whole + ("/" * (rest - 1) + "\n" if rest else "")
-
-
 class TestAFileBeyondThreeMillionCharacters:
     """A file over three million characters was given no record at all: a bridge padded past that was no bridge."""
 
     @pytest.mark.parametrize("before", [3_000_100, 3_500_000])
     def test_what_it_does_past_that_is_read(self, before: int) -> None:
-        signals = BridgeShape.signals(padding(before) + Js.SDK + Js.CLIENT + Js.HISTORY)
+        signals = BridgeShape.signals(Padding.lines(before) + Js.SDK + Js.CLIENT + Js.HISTORY)
         assert signals is not None
         assert signals.execs and signals.chans and signals.hists
 
     def test_what_straddles_a_segment_edge_is_read(self) -> None:
         edge = 1 << 20
-        signals = BridgeShape.signals(padding(edge - 40) + Js.SDK + padding(100))
+        signals = BridgeShape.signals(Padding.lines(edge - 40) + Js.SDK + Padding.lines(100))
         assert signals is not None
         assert signals.execs
 
     def test_a_long_file_that_does_none_of_it_leaves_no_record(self) -> None:
-        assert BridgeShape.signals(padding(3_500_000)) is None
+        assert BridgeShape.signals(Padding.lines(3_500_000)) is None
 
 
 class TestTheCatalogue:
