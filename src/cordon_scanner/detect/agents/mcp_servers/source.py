@@ -644,10 +644,11 @@ class McpServerSource:
     @staticmethod
     def _all_literals(text: str) -> Iterator[str]:
         """Every string literal of a source file, escapes decoded: `'`, `"` and backtick
-        strings, a triple-quoted one read as one. Bounded: at most 20,000 literals."""
-        index, count, end = 0, 0, min(len(text), WHOLE_FILE_BYTES)
+        strings, a triple-quoted one read as one. All of them: the 20,000th was once the last, so a literal after
+        that many decoys was never read; the text is bounded by the file size, and the work by the per-file time limit."""
+        index, end = 0, min(len(text), WHOLE_FILE_BYTES)
         pending: list[str] = []
-        while index < end and count < 20_000:
+        while index < end:
             char = text[index]
             if char not in "'\"`":
                 index += 1
@@ -665,7 +666,6 @@ class McpServerSource:
                     break
                 buffer.append(text[cursor])
                 cursor += 1
-            count += 1
             index = cursor + len(close)
             # Literals joined by concatenation -- `"a" +\n "b"` (Go, JS), `"a" "b"` (Python),
             # `"a" \\\n "b"` (Ruby), `"a" . "b"` (PHP) -- are one string to whoever reads it.
