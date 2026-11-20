@@ -268,14 +268,20 @@ class TextFamilies:
             for f in FAMILIES
         }
         for f, spec in FAMILIES.items():
-            assert [c["sub_technique"] for c in LOADED[f]["cases"]] == [
+            if [c["sub_technique"] for c in LOADED[f]["cases"]] != [
                 c["sub_technique"] for c in spec["cases"]
-            ], f
+            ]:
+                raise SystemExit(
+                    f"{f}: the written case table does not list the same sub-techniques"
+                )
             for mine, theirs in zip(spec["cases"], LOADED[f]["cases"], strict=True):
-                assert (
-                    theirs.get("positive", "") == mine["positive"]
-                    and theirs.get("negative", "") == mine["negative"]
-                ), (f, mine["sub_technique"])
+                if (
+                    theirs.get("positive", "") != mine["positive"]
+                    or theirs.get("negative", "") != mine["negative"]
+                ):
+                    raise SystemExit(
+                        f"{f} {mine['sub_technique']}: the written case table differs from the kit"
+                    )
 
         # ---------------------------------------------------------------- text-side rendering
         for family in ("t1", "t2", "t20", "t21"):

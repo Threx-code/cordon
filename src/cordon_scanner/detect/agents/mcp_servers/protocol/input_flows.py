@@ -30,7 +30,7 @@ _ARGUMENTS_BOUND: Final = re.compile(
     r"const\s{1,5}\{\s{0,20}([\w:][\w\s,:]{0,199})\}\s{0,20}=\s{0,20}(?:request\.params\.)?arguments\b"
 )
 _PY_TOOL: Final = re.compile(
-    r"@(?:\w{1,30}\.)?tool\([^)\n]{0,200}\)[ \t]{0,10}\n[ \t]{0,40}(?:async[ \t]{1,3})?def[ \t]{1,3}\w{1,60}\(([^)]{0,300})\)"
+    r"@(?:\w{1,30}\.)?tool\([^)\n]{0,200}\)[ \t]{0,10}\r?\n[ \t]{0,40}(?:async[ \t]{1,3})?def[ \t]{1,3}\w{1,60}\(([^)]{0,300})\)"
 )
 _GO_ARGUMENT: Final = re.compile(
     r"(?<![\w.])(\w{1,40})(?:\s{0,3},\s{0,3}\w{1,40})?\s{0,3}:?=\s{0,3}(?:req|request)\.(?:Params\.Arguments\[|Require\w+\(|Get\w+\()"

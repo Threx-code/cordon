@@ -13,6 +13,7 @@ from pathlib import Path
 
 from bench.mcp_coverage import families_access
 from bench.mcp_coverage.templates import FILE, MANIFEST, SKELETON, WAYS, indent
+
 from support import ROOT
 
 OUT = ROOT / "corpus" / "coverage" / "mcp"

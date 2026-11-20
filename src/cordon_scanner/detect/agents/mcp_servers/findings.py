@@ -352,11 +352,12 @@ class McpServerFindings:
                 first = starts[min(max(where, 1), len(starts)) - 1]
                 last = text.find("\n", first)
                 last = len(text) if last < 0 else last
-                begin, finish = len(text[:first].encode("utf-8")), len(text[:last].encode("utf-8"))
+                begin = AgentFinding.byte_at(unit, text, first)
+                finish = AgentFinding.byte_at(unit, text, last)
             else:  # a JavaScript character offset
                 end = text.find("\n", where)
                 end = len(text) if end < 0 else end
-                begin = len(text[:where].encode("utf-8"))
+                begin = AgentFinding.byte_at(unit, text, where)
                 finish = begin + len(text[where:end].encode("utf-8"))
             if kind == "forwarded":
                 # The answer of the user's own model carried to an outside host: reported, not blocking, as
@@ -377,7 +378,7 @@ class McpServerFindings:
             for rule, offset in McpInputFlows.scan(text):
                 line_end = text.find("\n", offset)
                 line_end = len(text) if line_end < 0 else line_end
-                first = len(text[:offset].encode("utf-8"))
+                first = AgentFinding.byte_at(unit, text, offset)
                 yield AgentFinding.finding(
                     rule, unit, ctx, first, first + len(text[offset:line_end].encode("utf-8"))
                 )
@@ -656,8 +657,8 @@ class McpServerFindings:
                 technique.rule_id,
                 unit,
                 ctx,
-                len(text[:first].encode("utf-8")),
-                len(text[:last].encode("utf-8")),
+                AgentFinding.byte_at(unit, text, first),
+                AgentFinding.byte_at(unit, text, last),
             )
 
     @classmethod
