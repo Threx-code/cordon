@@ -38,14 +38,14 @@ WORKFLOWS = ROOT / ".github" / "workflows"
 
 
 class CoverageTree:
-    """The MCP coverage fixture tree, unpacked from `corpus/coverage/mcp.tar.gz` into a temporary folder once per process.
+    """The MCP coverage fixture tree, unpacked from `bench/mcp_coverage/fixtures.tar.gz` into a temporary folder once per process.
 
     The tree is several thousand attack-shaped fixtures, so the repository keeps it as one archive
     (`bench/mcp_coverage/pack.py`) and the tests assemble it at run time, as the corpus rule asks. A checkout that still
     holds the unpacked tree uses it directly."""
 
-    ARCHIVE = CORPUS / "coverage" / "mcp.tar.gz"
-    BASELINE = CORPUS / "coverage" / "mcp-baseline.json"
+    ARCHIVE = ROOT / "bench" / "mcp_coverage" / "fixtures.tar.gz"
+    BASELINE = ROOT / "bench" / "mcp_coverage" / "coverage-baseline.json"
     _path: Path | None = None
 
     @classmethod
