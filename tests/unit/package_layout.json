@@ -1202,6 +1202,7 @@
   "test_model_features.py": "model",
   "test_models.py": "foundation",
   "test_content_placement.py": "foundation",
+  "test_content_byte_offset.py": "foundation",
   "test_once.py": "foundation",
   "test_module_names.py": "repository",
   "test_more_registries.py": "intel/registries",
