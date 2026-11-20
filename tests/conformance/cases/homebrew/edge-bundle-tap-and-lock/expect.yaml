@@ -74,7 +74,7 @@ hooks:
 findings:
   - {rule: POLICY.DEPENDENCY.SOURCE.001, message: hashicorp/tap, severity: medium}
   - {rule: POLICY.DEPENDENCY.SOURCE.001, message: acme/internal, severity: medium}
-  - {rule: POLICY.DEPENDENCY.SOURCE.001, message: acme-plugins, severity: medium}
+  - {rule: SUSPECT.DEPENDENCY.REMOTE_TARBALL.001, message: acme-plugins, severity: medium}
   - {rule: POLICY.DEPENDENCY.SOURCE.001, message: "'six'", severity: low}
 no_findings:
   # A formula from a tap the project names is from a registry it configured on purpose.
