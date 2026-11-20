@@ -23,11 +23,10 @@ import contextlib
 import errno
 import hashlib
 import os
-import re
 from dataclasses import dataclass, field, replace
 from functools import cached_property
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.foundation.files.size_ceilings import SizeCeilings
 from cordon_scanner.foundation.files.spill import SpilledBytes
@@ -587,39 +586,6 @@ class ContentKind:
         if held is not None:
             return str(held)[:chars]
         return TextEncoding.decoded(self.raw, self.raw[: chars * 4 + 4])[:chars]
-
-    #: A file this size or smaller is decoded whole, for the length of one search; a larger one in stretches of `SEARCH_STRETCH` bytes.
-    SEARCH_WHOLE: ClassVar[int] = 8 << 20
-    SEARCH_STRETCH: ClassVar[int] = 4 << 20
-    #: Past a stretch's end: the rest of a line (so none is cut) and the look-ahead a match may run into (a line start, then a few hundred characters).
-    SEARCH_LINE_REACH: ClassVar[int] = 1 << 16
-    SEARCH_LOOK_AHEAD: ClassVar[int] = 1 << 10
-
-    def has_match(self, pattern: re.Pattern[str]) -> bool:
-        """Whether `pattern.search(text)` finds anything, anywhere in the file, without keeping the decoded text (note 80: `text` held for
-        each member was 590 MB of the parent's 1.4 GB, and a prefix read of 200,000 characters was what kept it down -- a file padded
-        past that hid its first match). A file over `SEARCH_WHOLE` is decoded in stretches that end at a line end; each is searched with a look-ahead
-        and from the character after the one before it, so a line start (`^`) is a real one and a match running over the cut is found."""
-        held = self.__dict__.get("text")
-        if held is not None:
-            return pattern.search(str(held)) is not None
-        raw = self.raw
-        if len(raw) <= self.SEARCH_WHOLE or (
-            raw.startswith((b"\xff\xfe", b"\xfe\xff")) and TextEncoding.looks_utf16(raw)
-        ):
-            return pattern.search(TextEncoding.decoded(raw, raw)) is not None
-        start = 0
-        while start < len(raw):
-            end = min(len(raw), start + self.SEARCH_STRETCH)
-            if end < len(raw):
-                newline = raw.find(b"\n", end, end + self.SEARCH_LINE_REACH)
-                end = newline + 1 if newline >= 0 else end
-            lead = 1 if start else 0
-            window = TextEncoding.decoded(raw, raw[start - lead : end + self.SEARCH_LOOK_AHEAD])
-            if pattern.search(window, lead) is not None:
-                return True
-            start = end
-        return False
 
     @property
     def extension(self) -> str:

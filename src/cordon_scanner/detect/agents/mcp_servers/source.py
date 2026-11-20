@@ -28,6 +28,7 @@ from cordon_scanner.foundation.limits import WHOLE_FILE_BYTES
 from cordon_scanner.foundation.models import (
     Finding,
 )
+from cordon_scanner.foundation.text.whole_search import WholeSearch
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
@@ -902,7 +903,7 @@ class ServerSources:
             and "/node_modules/" not in u.path
             and "site-packages/" not in u.path
             and not ServerSources.NOT_A_SERVER_PATH.search(u.path.rpartition("!")[2])
-            and u.content.has_match(ServerSources.MCP_SDK_IMPORT)
+            and WholeSearch.has_match(u.content, ServerSources.MCP_SDK_IMPORT)
         }
 
     #: An import statement of an MCP server SDK at the start of a line -- not the same words in a
