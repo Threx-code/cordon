@@ -1,6 +1,6 @@
 """Writes the MCP coverage fixtures under corpus/coverage/mcp from the case tables (one table per group of families).
 
-    PYTHONPATH=src:tests:. python -m kits.mcp_coverage.build
+    PYTHONPATH=src:tests:. python -m bench.mcp_coverage.build
 
 For every case and every way it writes `positive/` and `negative/` (the server file, its manifest, any extra files) and
 `expect.yaml`, plus one `cases.yaml` per family listing what each case is. Re-running rewrites the same files.
@@ -11,8 +11,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from kits.mcp_coverage import families_access
-from kits.mcp_coverage.templates import FILE, MANIFEST, SKELETON, WAYS, indent
+from bench.mcp_coverage import families_access
+from bench.mcp_coverage.templates import FILE, MANIFEST, SKELETON, WAYS, indent
 from support import ROOT
 
 OUT = ROOT / "corpus" / "coverage" / "mcp"

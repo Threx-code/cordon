@@ -435,7 +435,7 @@ class TestSelfScan(CorpusFixtures):
             and f.location.path != "bench/tools/fetch_agent_configs.py"
             # The MCP coverage kit writes `corpus/coverage/mcp`: each family's server bodies are the
             # positives and negatives it writes, attack-shaped by construction like the agent benchmark.
-            and not f.location.path.startswith("tests/kits/mcp_coverage/")
+            and not f.location.path.startswith("bench/mcp_coverage/")
             # A package that publishes itself, built as text for the self-publish rule to read: the
             # rule's own positives and negatives.
             and f.location.path != "tests/unit/detect/code/test_self_publish_reach.py"

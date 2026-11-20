@@ -1,6 +1,6 @@
 """Writes the MCP coverage fixtures of the text and gating families under corpus/coverage/mcp.
 
-    PYTHONPATH=src:tests:. python -m tests.kits.mcp_coverage.text_families
+    PYTHONPATH=src:tests:. python -m bench.mcp_coverage.text_families
 
 Families t1 (text injection into the model), t2 (output exfiltration through rendering), t3 (rug pull and
 gating), t11 (lookalike server and tool names, install hooks), t20 (agent memory and multi-agent poisoning),

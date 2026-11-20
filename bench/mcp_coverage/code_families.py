@@ -1,6 +1,6 @@
 """Writes the coverage fixtures of one technique family from its case table.
 
-    PYTHONPATH=src:tests:. python -m tests.kits.mcp_coverage.code_families mcp/<family> [mcp/<family> ...]
+    PYTHONPATH=src:tests:. python -m bench.mcp_coverage.code_families mcp/<family> [mcp/<family> ...]
 
 The source of every fixture is `corpus/coverage/mcp/<family>/cases.yaml`; the files under
 `corpus/coverage/mcp/<family>/<sub-technique>/<way>/{positive,negative}/` are generated from it and are not edited by hand.
