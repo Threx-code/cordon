@@ -514,6 +514,10 @@ class ScanResult:
     verdict: dict[str, Any] | None = None
     """The package verdict (`core/verdict.py`): the features it read and, with a model shipped, its
     score and thresholds."""
+    places: dict[str, tuple[str, ...]] | None = None
+    """Where the scanned package's files run from (`ScanContext.places`): each place's paths, sorted.
+    Read by the facts export (`report/facts.py`) at scan time; not in `to_dict`, so the JSON result and
+    every saved result keep their shape. None for a result built outside a package scan."""
 
     def __post_init__(self) -> None:
         if any(f.rule_id.startswith(INTERNAL_PREFIX) for f in self.findings):
