@@ -987,10 +987,8 @@ class AutorunRules:
         }
 
 
-RULES.update(AutorunRules.build_rules(AgentRules._rule))
-RULES.update(LookalikeRules.build_rules(AgentRules._rule))
-RULES.update(ServedRules.build_rules(AgentRules._rule))
-RULES.update(DirectiveRules.build_rules(AgentRules._rule))
+for _builder in (AutorunRules, LookalikeRules, ServedRules, DirectiveRules):
+    RULES.update(_builder.build_rules(AgentRules._rule))
 
 __all__ = [
     "AGENT_ACTIONS",

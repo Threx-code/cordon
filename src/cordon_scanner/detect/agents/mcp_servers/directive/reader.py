@@ -147,8 +147,8 @@ class McpDirectives:
         note: str = " One text like this is not conclusive, so it is reported for review.",
     ) -> Finding:
         begin, finish = hit.where or cls._phrase(text, hit) or (hit.item.start, hit.item.end)
-        start = len(text[:begin].encode("utf-8"))
-        end = start + len(text[begin:finish].encode("utf-8"))
+        start = AgentFinding.byte_at(unit, text, begin)
+        end = AgentFinding.byte_at(unit, text, finish)
         note = "" if conclusive else note
         return AgentFinding.finding(
             rule,
