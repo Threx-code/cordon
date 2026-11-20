@@ -6,7 +6,9 @@ bytes. So the record carries no text the package wrote: no path, no file name, n
 host. What it does carry is the scanner's own vocabulary about the package:
 
 * per file, keyed by a digest of its path: its extension class (from a closed list), the places it runs from
-  (an install hook, an import entry, an agent's tool handler ...), whether any place reaches it, the rule ids that
+  (an install hook, an import entry, an agent's tool handler ...), whether any place reaches it and how (`reach`: placed,
+  declared_entry, hook_command, require_chain, path_string, stem_only or unreached, or not_code, with its `reach_depth`;
+  `decide/reach.py`), the rule ids that
   fired on it with their counts (suppressed ones counted again apart), its capabilities (every file the capability
   detector read, reached or not), and, for a file left unread, the rule of its gap;
 * per package: the scan's completeness and the rules of its gaps, the files scanned and unread, how many files
@@ -29,6 +31,7 @@ import re
 from collections import Counter, defaultdict
 from typing import TYPE_CHECKING, Any, Final
 
+from cordon_scanner.decide.reach import MAX_DEPTH, FileReach
 from cordon_scanner.foundation.results import INTERNAL_PREFIX
 from cordon_scanner.report.base import BaseReporter, ReportOptions
 
@@ -37,7 +40,7 @@ if TYPE_CHECKING:
 
     from cordon_scanner.foundation.results import ScanResult
 
-FACTS_VERSION: Final = "1"
+FACTS_VERSION: Final = "2"
 PACKAGE_SCOPE: Final = "."
 """The path a finding about the whole package carries (`engine.pipeline.constants.REPOSITORY_SCOPE`)."""
 
@@ -49,6 +52,8 @@ OTHER: Final = "OTHER"
 MAX_FILES: Final = 5_000
 """File entries in one record at most: files with a capability, a finding or an unread state first; the rest are
 counted (`files_omitted`), so a package of a hundred thousand files cannot make a record of megabytes."""
+REACH_KINDS: Final = frozenset(FileReach.KINDS)
+"""How a file is reached, from `FileReach` (a closed list): a file that is not code is `not_code`; anything else is OTHER."""
 MAX_COUNT: Final = 1_000
 """A count above this is recorded as this: a package that emits a million hits is not a distinguishing number."""
 
@@ -157,6 +162,9 @@ class ScanFacts:
         files, unreached_capability_files, omitted, files_unread = ScanFacts.files(
             result, located, rules, suppressed, capabilities
         )
+        reached_by = Counter(
+            ScanFacts.reach_kind(kind) for kind, _depth in (result.reach or {}).values()
+        )
 
         repository = result.repository
         hooks = []
@@ -187,6 +195,7 @@ class ScanFacts:
                     "direct": sum(1 for d in dependencies if d.direct),
                     "local": sum(1 for d in dependencies if d.local),
                 },
+                "reach": dict(sorted(reached_by.items())),
                 "rules": ScanFacts.capped(package_rules),
                 "suppressed": ScanFacts.capped(package_suppressed),
                 "unreached_capability_files": unreached_capability_files,
@@ -208,6 +217,7 @@ class ScanFacts:
     ) -> tuple[list[dict[str, Any]], int, int, int]:
         """The file entries (bounded, files with a capability or an unread state first), the count of files with a
         capability nothing reaches, the count left out, and the count unread."""
+        reach = result.reach or {}
         unread: dict[str, set[str]] = defaultdict(set)
         for rule, path in result.content_gaps:
             if path and path != PACKAGE_SCOPE:
@@ -220,6 +230,8 @@ class ScanFacts:
                     "ext": ScanFacts.extension(path),
                     "places": sorted(located.get(path, ())),
                     "reached": bool(located.get(path)),
+                    "reach": ScanFacts.reach_kind(reach.get(path, ("not_code", 0))[0]),
+                    "reach_depth": min(reach.get(path, ("not_code", 0))[1], MAX_DEPTH),
                     "rules": ScanFacts.capped(rules.get(path, {})),
                     "suppressed": ScanFacts.capped(suppressed.get(path, {})),
                     "capabilities": sorted(capabilities.get(path, ())),
@@ -234,6 +246,11 @@ class ScanFacts:
         entries = sorted(entries[:MAX_FILES], key=lambda f: (f["key"], f["ext"]))
 
         return entries, unreached_capability_files, omitted, len(unread)
+
+    @staticmethod
+    def reach_kind(kind: str) -> str:
+        """A reach kind as it may appear in the record: one of `FileReach.KINDS`, `not_code`, else OTHER."""
+        return kind if kind in REACH_KINDS or kind == "not_code" else OTHER
 
     @staticmethod
     def capped(counts: Mapping[str, int]) -> dict[str, int]:

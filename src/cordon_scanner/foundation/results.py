@@ -521,6 +521,9 @@ class ScanResult:
     capabilities: dict[str, tuple[str, ...]] | None = None
     """Each file's capability names, as the capability detector's own pass found them (worker fact `cap.all`):
     for every file a worker inspected, reached or not. Read by the facts export; not in `to_dict`."""
+    reach: dict[str, tuple[str, int]] | None = None
+    """How each code file is reached from a place that runs (`decide.reach.FileReach`): `path -> (kind, depth)`. Read by the facts export
+    at scan time; not in `to_dict`, like `places`. None for a result built outside a package scan."""
     unfiltered: tuple[Finding, ...] | None = None
     """Every finding the scan made, before the reporting thresholds (`PolicyGate.filter_for_reporting`)
     removed the ones under them: the same tuple, not a copy. The facts export reads it, so the facts do not

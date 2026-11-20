@@ -18,6 +18,7 @@ from cordon_scanner.analysis.shared.languages import LanguageRegistry
 from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.decide.code_model import CodeModelPass
 from cordon_scanner.decide.package_rules import PackageRules
+from cordon_scanner.decide.reach import FileReach
 from cordon_scanner.decide.remote_control import RemoteControl
 from cordon_scanner.detect.base import (
     FileUnit,
@@ -682,7 +683,10 @@ class ArchiveStages:
         acc.findings.extend(code_model)
         acc.findings.extend(remote_control)
         # Package-scope composites, over everything the rules and the verdict left (`package_rules.py`).
-        acc.findings.extend(PackageRules.decide(self.engine.rules, acc.findings, ctx, acc.facts))
+        acc.reach = FileReach.of(units, ctx)
+        acc.findings.extend(
+            PackageRules.decide(self.engine.rules, acc.findings, ctx, acc.facts, acc.reach)
+        )
         dependencies = self.engine.detection.annotated(dependencies, acc.findings, ctx, units)
         return dependencies, verdict
 

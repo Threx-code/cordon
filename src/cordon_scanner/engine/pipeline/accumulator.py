@@ -50,6 +50,9 @@ class Accumulator:
     facts: dict[str, dict[str, list[Any]]] = field(default_factory=dict)
     """Per-file facts the workers sent back (item 56, `engine/isolation/facts.py`), by path: plain data
     the parent joins across files without parsing any of them."""
+    reach: dict[str, tuple[str, int]] | None = None
+    """How each code file is reached from a place that runs (`decide/reach.py`), worked out once, before the package-scope rules read it and
+    the result carries it."""
     facts_bytes: int = 0
     """The bytes those facts took, against the scan's bound."""
     facts_content: int = 0

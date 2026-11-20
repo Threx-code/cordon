@@ -11,7 +11,9 @@ A term is a tuple:
 
     ("file", where, capability[, capability])   a file in WHERE has the capability (or both): where is `any`,
                                                 `unreached` (in no place the package runs from) or one place
-                                                (`ScanContext.PLACES`)
+                                                (`ScanContext.PLACES`), or the way a file is reached (`reach:KIND`, `FileReach.KINDS`:
+                                                placed, declared_entry, hook_command, require_chain, path_string,
+                                                stem_only, unreached: nothing reaches it at all)
     ("package_rule", rule_id)                   a finding about the whole package with that rule id
     ("hook", kind)                              a lifecycle hook of that kind (preinstall, postinstall, ...)
 
@@ -31,6 +33,18 @@ Term = tuple[str, ...]
 
 ANY: Final = "any"
 UNREACHED: Final = "unreached"
+REACH_PREFIX: Final = "reach:"
+_REACH: Final = frozenset(
+    {
+        "placed",
+        "declared_entry",
+        "hook_command",
+        "require_chain",
+        "path_string",
+        "stem_only",
+        "unreached",
+    }
+)
 _RULE_ID: Final = re.compile(r"[A-Z0-9_.\-]{1,96}")
 LEARNED_PREFIX: Final = "LEARNED."
 _HOOK_KIND: Final = re.compile(r"[a-z][a-z0-9_\-]{0,31}")
@@ -54,16 +68,28 @@ class FactTerms:
     )
     """The places of `ScanContext.PLACES`, by the names the facts export uses."""
 
-    WHERE: ClassVar[frozenset[str]] = PLACES | {ANY, UNREACHED}
+    REACH: ClassVar[frozenset[str]] = _REACH
+    """How a code file is reached, by the names `decide/reach.py` gives (a closed list; `facts_version` 2 carries it per file)."""
+
+    WHERE: ClassVar[frozenset[str]] = (
+        PLACES | {ANY, UNREACHED} | frozenset(REACH_PREFIX + kind for kind in _REACH)
+    )
     KINDS: ClassVar[frozenset[str]] = frozenset({"file", "package_rule", "hook"})
     REFUSED: ClassVar[frozenset[str]] = frozenset({"name", "host", "age", "publisher", "program"})
     CAPABILITIES: ClassVar[frozenset[str]] = frozenset(str(c) for c in Capability)
 
     @staticmethod
-    def of_file(reached: bool, places: Iterable[str], capabilities: Iterable[str]) -> set[Term]:
+    def of_file(
+        reached: bool,
+        places: Iterable[str],
+        capabilities: Iterable[str],
+        reach: str | None = None,
+    ) -> set[Term]:
         """Every term one file satisfies: each of its capabilities and each pair, anywhere, in each of its
-        places, and as unreached when no place reaches it."""
+        places, as unreached when no place reaches it, and under the way it is reached (`reach:KIND`)."""
         wheres = [ANY, *([] if reached else [UNREACHED]), *sorted(set(places))]
+        if reach in _REACH:
+            wheres.append(REACH_PREFIX + str(reach))
         caps = sorted(set(capabilities))
         sets: list[tuple[str, ...]] = [(c,) for c in caps]
         sets += list(itertools.combinations(caps, 2))
@@ -71,7 +97,11 @@ class FactTerms:
 
     @staticmethod
     def file_satisfies(
-        reached: bool, places: Iterable[str], capabilities: Iterable[str], term: Term
+        reached: bool,
+        places: Iterable[str],
+        capabilities: Iterable[str],
+        term: Term,
+        reach: str | None = None,
     ) -> bool:
         """Whether one file satisfies one file term: `term in of_file(...)`, without building every term of the
         file (a package-scope rule asks a few terms of every file; a file can hold dozens of capability pairs)."""
@@ -84,6 +114,8 @@ class FactTerms:
             return True
         if where == UNREACHED:
             return not reached
+        if where.startswith(REACH_PREFIX):
+            return reach in _REACH and where == REACH_PREFIX + str(reach)
         return where in set(places)
 
     @staticmethod
@@ -98,7 +130,10 @@ class FactTerms:
         terms: set[Term] = set()
         for f in record.get("files", ()):
             terms |= FactTerms.of_file(
-                bool(f.get("reached")), f.get("places", ()), f.get("capabilities", ())
+                bool(f.get("reached")),
+                f.get("places", ()),
+                f.get("capabilities", ()),
+                f.get("reach"),
             )
         package = record.get("package", {})
         terms |= FactTerms.of_package(
@@ -150,4 +185,4 @@ class FactTerms:
         )
 
 
-__all__ = ["ANY", "LEARNED_PREFIX", "UNREACHED", "FactTerms", "Term"]
+__all__ = ["ANY", "LEARNED_PREFIX", "REACH_PREFIX", "UNREACHED", "FactTerms", "Term"]

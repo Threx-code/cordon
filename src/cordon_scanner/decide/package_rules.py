@@ -50,7 +50,11 @@ class PackageFacts:
     """The terms one scan's package satisfies, each with the files that satisfy it."""
 
     def __init__(
-        self, findings: Sequence[Finding], ctx: ScanContext, names: Mapping[str, Iterable[str]]
+        self,
+        findings: Sequence[Finding],
+        ctx: ScanContext,
+        names: Mapping[str, Iterable[str]],
+        reach: Mapping[str, tuple[str, int]] | None = None,
     ) -> None:
         places: dict[str, set[str]] = defaultdict(set)
         for place, paths in ctx.places().items():
@@ -69,6 +73,7 @@ class PackageFacts:
             elif f.capabilities:
                 capabilities[path].update(str(c) for c in f.capabilities)
         self._places = places
+        self._reach = reach or {}
         self._capabilities = capabilities
         self._paths = sorted(set(capabilities) | set(places))
         self._matched: dict[Term, list[str]] = {}
@@ -86,6 +91,7 @@ class PackageFacts:
                     self._places.get(p, ()),
                     self._capabilities.get(p, ()),
                     term,
+                    self._reach.get(p, ("", 0))[0],
                 )
             ]
         return self._matched[term]
@@ -114,12 +120,13 @@ class PackageRules:
         findings: Sequence[Finding],
         ctx: ScanContext,
         facts: Mapping[str, Mapping[str, Sequence[object]]],
+        reach: Mapping[str, tuple[str, int]] | None = None,
     ) -> list[Finding]:
         selected = PackageRules.selected(rules)
         if not selected:
             return []
         names = {path: [str(n) for n in held.get("cap.all", ())] for path, held in facts.items()}
-        known = PackageFacts(findings, ctx, names)
+        known = PackageFacts(findings, ctx, names, reach)
         out = []
         for compiled in selected:
             all_of = [FactTerms.of_spec(t) for t in compiled.match.all_of]

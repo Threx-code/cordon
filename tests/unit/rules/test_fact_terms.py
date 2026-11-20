@@ -102,3 +102,70 @@ class TestALearnedRuleIsNeverBuiltOnAnother:
         assert FactTerms.of_package(["LEARNED.MCP.001", "SUSPECT.X.001"], []) == {
             ("package_rule", "SUSPECT.X.001")
         }
+
+
+class TestTermsByHowAFileIsReached:
+    """`facts_version` 2 carries `reach` per file; a term can say `reach:KIND` (a closed list, `decide/reach.py`)."""
+
+    def test_a_file_gives_its_terms_under_the_way_it_is_reached(self) -> None:
+        terms = FactTerms.of_file(False, [], ["spawn", "egress"], "path_string")
+        assert ("file", "reach:path_string", "egress", "spawn") in terms
+        assert ("file", UNREACHED, "egress", "spawn") in terms
+        assert not any(t[1] == "reach:unreached" for t in terms)
+
+    def test_nothing_reaches_it_is_its_own_reach(self) -> None:
+        assert ("file", "reach:unreached", "spawn") in FactTerms.of_file(
+            False, [], ["spawn"], "unreached"
+        )
+
+    def test_a_reach_outside_the_closed_list_gives_no_term(self) -> None:
+        terms = FactTerms.of_file(True, ["import_entry"], ["spawn"], "not_code")
+        assert not any(str(t[1]).startswith("reach:") for t in terms)
+        assert not any(
+            str(t[1]).startswith("reach:") for t in FactTerms.of_file(True, [], ["spawn"], "OTHER")
+        )
+
+    def test_a_facts_record_gives_the_reach_of_each_file(self) -> None:
+        record = {
+            "files": [
+                {
+                    "reached": False,
+                    "places": [],
+                    "capabilities": ["spawn"],
+                    "reach": "require_chain",
+                }
+            ],
+            "package": {},
+        }
+        assert ("file", "reach:require_chain", "spawn") in FactTerms.of_facts(record)
+
+    def test_a_rule_may_write_a_reach_and_an_unknown_one_is_an_error(self) -> None:
+        assert FactTerms.of_spec(
+            {"file": {"where": "reach:unreached", "capabilities": ["spawn", "egress"]}}
+        ) == ("file", "reach:unreached", "egress", "spawn")
+        with pytest.raises(ValueError, match="unknown where"):
+            FactTerms.of_spec({"file": {"where": "reach:sideways", "capabilities": ["spawn"]}})
+
+    def test_the_reach_kinds_are_those_the_engine_names(self) -> None:
+        from cordon_scanner.decide.reach import FileReach
+
+        assert frozenset(FileReach.KINDS) == FactTerms.REACH
+
+    def test_the_direct_check_agrees_with_the_expansion_for_every_reach(self) -> None:
+        import itertools
+
+        caps = ("spawn", "egress")
+        wheres = (ANY, UNREACHED, "install_entry", *(f"reach:{k}" for k in sorted(FactTerms.REACH)))
+        for reached, places, held, reach in itertools.product(
+            (True, False),
+            ((), ("install_entry",)),
+            [c for n in range(3) for c in itertools.combinations(caps, n)],
+            (None, "not_code", *sorted(FactTerms.REACH)),
+        ):
+            expanded = FactTerms.of_file(reached, places, held, reach)
+            for where in wheres:
+                for wanted in [c for n in (1, 2) for c in itertools.combinations(sorted(caps), n)]:
+                    term = ("file", where, *wanted)
+                    assert FactTerms.file_satisfies(reached, places, held, term, reach) == (
+                        term in expanded
+                    ), (term, reach)

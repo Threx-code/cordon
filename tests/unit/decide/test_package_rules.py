@@ -97,6 +97,40 @@ class TestARuleOverTheWholePackage:
         assert record["package"]["unreached_capability_files"] >= 1
 
 
+RULE_BY_REACH = RULE.replace("LEARNED.TEST.001", "LEARNED.TEST.002").replace(
+    "where: unreached", "where: reach:unreached"
+)
+RULE_BY_STRING = RULE.replace("LEARNED.TEST.001", "LEARNED.TEST.003").replace(
+    "where: unreached", "where: reach:path_string"
+)
+
+
+class TestARuleByHowAFileIsReached:
+    """`reach:KIND` in a learned rule is read from the scanner's own reach (`decide/reach.py`)."""
+
+    def test_a_rule_on_the_orphan_fires(self, tmp_path) -> None:
+        result = PackageKit.scan(
+            tmp_path, index="module.exports = (a, b) => a + b;\n", rule=RULE_BY_REACH
+        )
+        assert [
+            f.location.path.endswith("lib/helper.js")
+            for f in result.findings
+            if f.rule_id == "LEARNED.TEST.002"
+        ] == [True]
+
+    def test_a_rule_on_a_path_string_fires_only_when_a_string_names_the_file(
+        self, tmp_path
+    ) -> None:
+        named = "module.exports = ['lib/helper.js'];\n"
+        fired = PackageKit.scan(tmp_path, index=named, rule=RULE_BY_STRING)
+        assert [f for f in fired.findings if f.rule_id == "LEARNED.TEST.003"]
+        (tmp_path / "again").mkdir()
+        orphan = PackageKit.scan(
+            tmp_path / "again", index="module.exports = 1;\n", rule=RULE_BY_STRING
+        )
+        assert not [f for f in orphan.findings if f.rule_id == "LEARNED.TEST.003"]
+
+
 class TestARuleThatCouldNeverFireIsRefusedAtLoad:
     def test_repository_scope_is_refused_with_its_reason(self, tmp_path) -> None:
         pack = tmp_path / "repo.yaml"
