@@ -14,7 +14,12 @@ outside what the content detectors read, and each is a finding on its own:
 
 Not these shapes: a one-liner that only loads a file of the package (graded as that file), a
 package-manager guard (a program that checks `npm_execpath` or the user agent and labels nothing),
-an author-time hook, and the scanned project's own manifest.
+one of four closed programs that do nothing else (`inline_shapes.py`: a no-op exit, a Node version
+check, a chmod of the package's own file, a guarded import of the package's own file; read by a
+closed token list, so a program that adds anything keeps the finding; none of the 99 malicious
+inline hook programs of the dev sets is one of them and 5 of the 12 legitimate ones are), an
+author-time hook, and the scanned project's own manifest. A banner that only prints is not one of
+the four shapes: it is the program a malicious package writes to say something.
 """
 
 from __future__ import annotations
@@ -24,6 +29,7 @@ import re
 from typing import TYPE_CHECKING, ClassVar, Final
 
 from cordon_scanner.detect.supply.manifests.findings import ManifestFinding
+from cordon_scanner.detect.supply.manifests.inline_shapes import InlineShapes
 from cordon_scanner.detect.supply.manifests.scripts import ManifestScripts
 from cordon_scanner.foundation.models import CONSUMER_TIME_HOOKS, Category, Confidence, Severity
 
@@ -94,7 +100,7 @@ class InstallHookShapes:
             or cls._first_party(manifest, unit, ctx)
         ):
             return
-        carried = [p for p in programs if not cls._guard(p, ctx)]
+        carried = [p for p in programs if not cls._guard(p, ctx) and not cls._closed_shape(p)]
         if carried:
             yield cls._inline_finding(hook, command, unit, ctx)
         missing = cls.unread_targets(command, unit.path, ctx.tree_paths)
@@ -115,6 +121,16 @@ class InstallHookShapes:
         """A package-manager guard: reads what the manager says about itself and does nothing the capability rules label."""
         return bool(_GUARD.search(program.source)) and not ManifestScripts._capable(
             program.path, program.source, ctx
+        )
+
+    @staticmethod
+    def _closed_shape(program: InlineProgram) -> bool:
+        """One of the few inline programs legitimate packages write and that do nothing else: a no-op exit, a Node version
+        check, a chmod of the package's own file, a guarded import of the package's own file (`InlineShapes`). A banner
+        is not one."""
+        return (
+            program.interpreter in ("node", "nodejs")
+            and InlineShapes.kind(program.source) is not None
         )
 
     @classmethod

