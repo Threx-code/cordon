@@ -248,3 +248,28 @@ class TestACandidateShipsAsAnOrdinaryRule:
         }
         with pytest.raises(ValueError, match="LEARNED"):
             PackRenderer.render(candidate, "SUSPECT.MCP.001")
+
+
+class TestOneDistillationReadsOneFactsVersion:
+    def test_facts_of_two_versions_are_refused(self) -> None:
+        units = FactsKit.planted(3, 2) + FactsKit.legit(50)
+        old = Unit(
+            "old",
+            "legit",
+            "",
+            "npm",
+            "s0",
+            "train",
+            {**FactsKit.facts([(True, [], ["spawn"])]), "facts_version": "1"},
+        )
+        new = Unit(
+            "new",
+            "legit",
+            "",
+            "npm",
+            "s0",
+            "train",
+            {**FactsKit.facts([(True, [], ["spawn"])]), "facts_version": "2"},
+        )
+        with pytest.raises(ValueError, match="versions"):
+            Distiller().distill([*units, old, new])

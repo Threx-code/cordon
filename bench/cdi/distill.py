@@ -131,6 +131,12 @@ class Distiller:
                 refused["unit_in_refused_family"] = refused.get("unit_in_refused_family", 0) + 1
                 continue
             kept_units.append(u)
+        versions = {str(u.facts.get("facts_version", "")) for u in kept_units}
+        if len(versions) > 1:
+            # A fact's meaning can change between versions (LL-104): one distillation reads one version.
+            raise ValueError(
+                f"facts of {len(versions)} versions in one distillation; rebuild the store at one head"
+            )
         train = [u for u in kept_units if u.split == "train"]
         confirm = [u for u in kept_units if u.split == "confirm"]
         space = _Space(train)
@@ -159,6 +165,7 @@ class Distiller:
             "z": round(z, 4),
             "train_units": len(train),
             "confirm_units": len(confirm),
+            "facts_version": next(iter(versions), ""),
         }
         confirm_space = _Space(confirm)
         z_confirm = NormalDist().inv_cdf(1 - self.alpha)

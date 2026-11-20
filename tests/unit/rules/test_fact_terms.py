@@ -93,3 +93,12 @@ class TestTheDirectCheckAgreesWithTheExpansion:
                     assert FactTerms.file_satisfies(reached, places, held, term) == (
                         term in expanded
                     ), term
+
+
+class TestALearnedRuleIsNeverBuiltOnAnother:
+    def test_a_learned_rule_id_is_refused_as_a_term_and_never_read_as_one(self) -> None:
+        with pytest.raises(ValueError, match="another learned rule"):
+            FactTerms.of_spec({"package_rule": "LEARNED.MCP.001"})
+        assert FactTerms.of_package(["LEARNED.MCP.001", "SUSPECT.X.001"], []) == {
+            ("package_rule", "SUSPECT.X.001")
+        }

@@ -32,6 +32,7 @@ Term = tuple[str, ...]
 ANY: Final = "any"
 UNREACHED: Final = "unreached"
 _RULE_ID: Final = re.compile(r"[A-Z0-9_.\-]{1,96}")
+LEARNED_PREFIX: Final = "LEARNED."
 _HOOK_KIND: Final = re.compile(r"[a-z][a-z0-9_\-]{0,31}")
 
 
@@ -87,7 +88,7 @@ class FactTerms:
 
     @staticmethod
     def of_package(rules: Iterable[str], hooks: Iterable[str]) -> set[Term]:
-        terms: set[Term] = {("package_rule", r) for r in rules}
+        terms: set[Term] = {("package_rule", r) for r in rules if not r.startswith(LEARNED_PREFIX)}
         terms |= {("hook", h) for h in hooks}
         return terms
 
@@ -137,6 +138,8 @@ class FactTerms:
         if kind == "package_rule":
             if not _RULE_ID.fullmatch(str(value)):
                 raise ValueError(f"not a rule id: {value!r}")
+            if str(value).startswith(LEARNED_PREFIX):
+                raise ValueError("a learned rule is never built on another learned rule's findings")
             return ("package_rule", str(value))
         if kind == "hook":
             if not _HOOK_KIND.fullmatch(str(value)):
@@ -147,4 +150,4 @@ class FactTerms:
         )
 
 
-__all__ = ["ANY", "UNREACHED", "FactTerms", "Term"]
+__all__ = ["ANY", "LEARNED_PREFIX", "UNREACHED", "FactTerms", "Term"]
