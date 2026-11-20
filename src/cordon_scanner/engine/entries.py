@@ -1,19 +1,28 @@
-"""Which files of a published package run when it is used rather than installed.
+"""Which files run when a package is used rather than installed, and which files a tree itself names as the code that runs.
 
 Moved out of `engine/engine.py` (0.7.0 layout: a long module only shrinks). The engine records
 them as `import_entry_paths`, and, without the command targets, as `library_entry_paths`.
+`DeclaredEntries` is the other reading: the files a manifest of a cloned repository names (package.json, pyproject, an MCP
+configuration, a Dockerfile), where a repository has for its places every file that could be an entry.
 """
 
 from __future__ import annotations
 
+import json
+import posixpath
 import re
-from typing import TYPE_CHECKING, Any, ClassVar
+import tomllib
+from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from cordon_scanner.ecosystems.registry import RegistryFacts
 from cordon_scanner.foundation.formats.served_json import ServedJson
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
+
     from cordon_scanner.detect.base import FileUnit
+
+MAX_MANIFEST: Final = 1_000_000
 
 
 class PackageEntries:
@@ -258,4 +267,190 @@ class PythonScripts:
         return out
 
 
-__all__ = ["PackageEntries", "PythonScripts"]
+class DeclaredEntries:
+    """`of(units)`: the paths of the units a manifest of the tree names as an entry."""
+
+    #: A file name a command or an argument runs.
+    SOURCE: ClassVar[re.Pattern[str]] = re.compile(
+        r"[\w@.+/\\-]{1,200}\.(?:c?js|mjs|jsx|tsx?|py|sh|bash)\b"
+    )
+    CONFIGS: ClassVar[tuple[str, ...]] = (
+        "mcp.json",
+        ".mcp.json",
+        "claude_desktop_config.json",
+        "mcp_config.json",
+        "cline_mcp_settings.json",
+        "settings.json",
+        "settings.local.json",
+    )
+    _ENTRY_LINE: ClassVar[re.Pattern[str]] = re.compile(r"(?im)^\s*(?:ENTRYPOINT|CMD)\b(.*)$")
+    _SETUP_ENTRY: ClassVar[re.Pattern[str]] = re.compile(
+        r"""['"][\w.-]{1,80}\s*=\s*([\w.]{1,200}):[\w.]{1,100}['"]"""
+    )
+
+    @classmethod
+    def of(cls, units: Sequence[FileUnit]) -> frozenset[str]:
+        paths = {unit.path for unit in units}
+        named: set[str] = set()
+        for unit in units:
+            if "node_modules/" in unit.path or "!" in unit.path:
+                continue
+            name = unit.path.rpartition("/")[2]
+            base = unit.path.rpartition("/")[0]
+            try:
+                text = unit.content.raw[:MAX_MANIFEST].decode("utf-8", "replace")
+            except AttributeError:
+                continue
+            found = cls._named_by(name, text)
+            if found is None:
+                continue
+            files, modules = found
+            roots = (
+                ("", base)
+                if name in cls.CONFIGS or name.lower().startswith("dockerfile")
+                else (base,)
+            )
+            for token in files:
+                named.update(
+                    candidate for root in roots if (candidate := cls._join(root, token)) in paths
+                )
+            for module in modules:
+                named.update(
+                    candidate for candidate in cls._module_files(base, module) if candidate in paths
+                )
+        return frozenset(named)
+
+    @classmethod
+    def _named_by(cls, name: str, text: str) -> tuple[list[str], list[str]] | None:
+        """(file names, module names) a manifest, a configuration or a Dockerfile names, or None for any other file."""
+        lowered = name.lower()
+        if name == "package.json":
+            return cls._package_json(text), []
+        if name == "pyproject.toml":
+            return [], cls._pyproject(text)
+        if name == "setup.py":
+            return [], cls._SETUP_ENTRY.findall(text)
+        if name in cls.CONFIGS:
+            return cls._configuration(text), []
+        if (
+            lowered == "dockerfile"
+            or lowered.startswith("dockerfile.")
+            or lowered.endswith(".dockerfile")
+        ):
+            return [
+                token
+                for line in cls._ENTRY_LINE.findall(text)
+                for token in cls.SOURCE.findall(line)
+            ], []
+        return None
+
+    @classmethod
+    def _package_json(cls, text: str) -> list[str]:
+        try:
+            data = json.loads(text)
+        except ValueError:
+            return []
+        if not isinstance(data, dict):
+            return []
+        names: list[str] = []
+        for key in ("main", "module", "browser"):
+            if isinstance(data.get(key), str):
+                names.append(data[key])
+        bin_ = data.get("bin")
+        names += (
+            [bin_]
+            if isinstance(bin_, str)
+            else list(bin_.values())
+            if isinstance(bin_, dict)
+            else []
+        )
+        names += cls._strings(data.get("exports"))
+        scripts = data.get("scripts")
+        if isinstance(scripts, dict):
+            for command in scripts.values():
+                if isinstance(command, str):
+                    names += cls.SOURCE.findall(command)
+        return [name for name in names if isinstance(name, str)]
+
+    @classmethod
+    def _strings(cls, value: Any) -> list[str]:
+        if isinstance(value, str):
+            return [value]
+        if isinstance(value, dict):
+            return [s for item in value.values() for s in cls._strings(item)]
+        if isinstance(value, list):
+            return [s for item in value for s in cls._strings(item)]
+        return []
+
+    @classmethod
+    def _pyproject(cls, text: str) -> list[str]:
+        try:
+            data = tomllib.loads(text)
+        except (tomllib.TOMLDecodeError, ValueError):
+            return []
+        tables: list[Any] = [
+            data.get("project", {}).get("scripts"),
+            data.get("project", {}).get("gui-scripts"),
+            data.get("tool", {}).get("poetry", {}).get("scripts"),
+            *(data.get("project", {}).get("entry-points", {}) or {}).values(),
+        ]
+        targets = [
+            t
+            for table in tables
+            if isinstance(table, dict)
+            for t in table.values()
+            if isinstance(t, str)
+        ]
+        return [target.split(":", 1)[0].split("[", 1)[0].strip() for target in targets]
+
+    @classmethod
+    def _configuration(cls, text: str) -> list[str]:
+        try:
+            data = json.loads(text)
+        except ValueError:
+            return []
+        found: list[str] = []
+
+        cls._walk(data, found)
+        return found
+
+    @classmethod
+    def _walk(cls, node: Any, found: list[str]) -> None:
+        """Every server entry of a configuration (a dict with a `command`): the files its command and arguments run."""
+        if isinstance(node, dict):
+            if isinstance(node.get("command"), str):
+                found.extend(cls.SOURCE.findall(node["command"]))
+                for argument in node.get("args") or []:
+                    if isinstance(argument, str):
+                        found.extend(cls.SOURCE.findall(argument))
+            for value in node.values():
+                cls._walk(value, found)
+        elif isinstance(node, list):
+            for value in node:
+                cls._walk(value, found)
+
+    @staticmethod
+    def _join(root: str, token: str) -> str:
+        token = token.replace("\\", "/").strip().strip("'\"")
+        while token.startswith("./"):
+            token = token[2:]
+        return (
+            posixpath.normpath(posixpath.join(root, token))
+            if token and not token.startswith("/")
+            else ""
+        )
+
+    @staticmethod
+    def _module_files(base: str, module: str) -> Iterable[str]:
+        """The files a dotted module name can be: its file or its package, in the manifest's folder or under `src`."""
+        relative = module.strip().replace(".", "/")
+        if not relative or not re.fullmatch(r"[\w/]{1,200}", relative):
+            return []
+        return [
+            posixpath.normpath(posixpath.join(base, prefix, relative + suffix))
+            for prefix in ("", "src")
+            for suffix in (".py", "/__init__.py")
+        ]
+
+
+__all__ = ["DeclaredEntries", "PackageEntries", "PythonScripts"]

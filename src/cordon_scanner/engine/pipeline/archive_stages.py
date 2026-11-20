@@ -668,7 +668,7 @@ class ArchiveStages:
                 blind=len(blind),
             )
         acc.findings.extend(
-            Ceilings.unread_notes(acc, blind, observation, package=ctx.package_distribution)
+            Ceilings.unread_notes(acc, Ceilings.gap_files(units, ctx, blind), observation)
         )
         acc.findings.extend(code_model)
         acc.findings.extend(remote_control)

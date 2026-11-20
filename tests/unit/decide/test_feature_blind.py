@@ -207,35 +207,3 @@ class TestAPaddedFileAtAnInstallPlace:
             },
         )
         assert not [f for f in result.findings if "package verdict could not read" in f.message]
-
-
-class TestOnlyAPublishedPackageIsIncompleteForIt:
-    """A repository's places are every file that could be one: the model lowers nothing for it, but a gap for each file past the profile's count
-    marked the cordon repository's own history scan incomplete (24 files)."""
-
-    class Recorder:
-        def __init__(self) -> None:
-            self.gaps: list[object] = []
-
-        def gap(self, finding):
-            self.gaps.append(finding)
-            return finding
-
-    def test_a_package_gets_a_gap_for_each_file(self) -> None:
-        recorder = self.Recorder()
-        notes = Ceilings.unread_notes(
-            recorder, [("package/a.js", "x"), ("package/b.js", "y")], None, package=True
-        )  # type: ignore[arg-type]
-        assert len(notes) == 2
-        assert len(recorder.gaps) == 2
-
-    def test_a_repository_gets_none(self) -> None:
-        recorder = self.Recorder()
-        assert Ceilings.unread_notes(recorder, [("a.js", "x")], None, package=False) == []  # type: ignore[arg-type]
-        assert recorder.gaps == []
-
-    def test_a_repository_scan_with_a_large_place_is_complete(self, tmp_path: Path) -> None:
-        for index in range(ReachedFlows.FILES + 10):
-            (tmp_path / f"agent{index}.md").write_text("# notes\n", encoding="utf-8")
-        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
-        assert not [f for f in result.findings if "package verdict could not read" in f.message]

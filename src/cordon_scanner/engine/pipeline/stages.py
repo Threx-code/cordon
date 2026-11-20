@@ -356,7 +356,7 @@ class ScanStages:
                 facts=acc.facts,
                 blind=len(blind),
             )
-        notes = Ceilings.unread_notes(acc, blind, observation, package=ctx.package_distribution)
+        notes = Ceilings.unread_notes(acc, Ceilings.gap_files(units, ctx, blind), observation)
         findings = (*graded, *code_model, *remote_control, *notes)
         dependencies = self.engine.detection.annotated(dependencies, findings, ctx, units)
         return findings, verdict, dependencies

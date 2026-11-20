@@ -122,20 +122,26 @@ class Ceilings:
         return blind
 
     @staticmethod
+    def gap_files(
+        units: Sequence[FileUnit], ctx: ScanContext, blind: Sequence[tuple[str, str]]
+    ) -> list[tuple[str, str]]:
+        """The blind files that make the scan incomplete. A published package: every one. A repository (a cloned MCP server, say) has
+        for its places every file that could be an entry, so the gap is for the files a manifest of the tree names as one (`DeclaredEntries`):
+        a padded entry file is not a pass, and a large tree is not incomplete for files nothing runs."""
+        if ctx.package_distribution or not blind:
+            return list(blind)
+        from cordon_scanner.engine.entries import DeclaredEntries
+
+        named = DeclaredEntries.of(units)
+        return [item for item in blind if item[0] in named]
+
+    @staticmethod
     def unread_notes(
-        acc: Accumulator,
-        blind: Sequence[tuple[str, str]],
-        observation: Any,
-        *,
-        package: bool,
+        acc: Accumulator, blind: Sequence[tuple[str, str]], observation: Any
     ) -> list[Finding]:
         """A gap for each file where code runs on its own that the package verdict's model (`feature_blind`) or the
         intent observer (its file count and its size) could not read: the scan is incomplete, and a file named once is
         named once. A model's or an observer's silence about a file it never saw is never a pass."""
-        if not package:
-            # A repository is no published package: its install, import and agent places are every file that could be one, and the
-            # model lowers nothing for it (`feature_blind`), but a gap for each file past the profile's count would mark every large tree incomplete.
-            return []
         seen: set[tuple[str, str]] = set()
         notes: list[Finding] = []
         for reader, files in (
