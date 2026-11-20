@@ -348,7 +348,9 @@ _NEGATES_ACT: Final = re.compile(
 )
 #: Where a clause ends: a negation before it does not reach the act after it ("never skip this
 #: step: disable the sandbox first").
-_CLAUSE_END: Final = re.compile(r"[:;,.!?\u3002\uff1b\uff0c]|\band\b|\bthen\b")
+#: The CJK full stop, semicolon and comma are written as string escapes (not regex escapes), so the pattern holds the
+#: characters themselves: the pattern validator compiles a bytes form, where `\u` is not an escape.
+_CLAUSE_END: Final = re.compile(r"[:;,.!?" + "\u3002\uff1b\uff0c" + r"]|\band\b|\bthen\b")
 #: What a hidden thing must be for hiding it to be an attack: an act on the user's machine or data,
 #: not "the intermediate steps" of an answer.
 #: Acts only, never data nouns: "do not include API keys in your reply" keeps a secret OUT of an
