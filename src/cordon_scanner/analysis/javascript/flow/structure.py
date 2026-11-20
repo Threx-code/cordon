@@ -64,6 +64,10 @@ class Structure:
         #: Work done (label growth and range evaluations), bounded so no file can run long.
         self.work = 0
         self.budget = 8 * self.n + 100_000
+        #: The name tokens of the calls the call pass classed as a request, a raw connection or a DNS lookup, with
+        #: the kind (`_apply_sink`); whole once `sites_complete` (the call pass has reached every call).
+        self.sink_sites: dict[int, str] = {}
+        self.sites_complete = False
         self._args_cache: dict[int, list[tuple[int, int]]] = {}
         self._file_destination: tuple[str | None, str] | None = None
         self._cache: dict[tuple[int, int, int], tuple[int, set[Label]]] = {}

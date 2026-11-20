@@ -325,13 +325,30 @@ class TestTheLinearityCheckConfirmsBeforeItFails:
         assert ratio < HostileKit.RATIO or _large < HostileKit.noise()
 
     @staticmethod
+    def clock_name() -> str:
+        """The finest clock that counts only the time this thread ran: its CPU time where that ticks
+        finely (Linux, macOS: a busy machine takes the thread off the core and the clock stops with
+        it, so load cannot stretch a measurement, which is what made a real quadratic pattern read 8.8x
+        against 9.0 on a loaded runner), the wall clock only where it does not (Windows' thread clock
+        ticks every 15 ms, so a small input would read as zero)."""
+        return (
+            "thread_time"
+            if time.get_clock_info("thread_time").resolution <= 0.0001
+            else "perf_counter"
+        )
+
+    @staticmethod
     def readable(monkeypatch: pytest.MonkeyPatch, regex: re.Pattern[bytes], run: bytes) -> int:
         """The smallest input size, doubling from 512 bytes, whose time reads at least twenty ticks
         of the clock the real-pattern checks use (and 4 ms): a time of zero has no ratio, and a few
-        ticks is mostly the clock. The clock is the finest the platform has."""
-        monkeypatch.setattr(HostileKit, "clock", staticmethod(time.perf_counter))
-        monkeypatch.setattr(HostileKit, "REPEATS", 2)  # a real quadratic run is seconds long
-        wanted = max(20 * time.get_clock_info("perf_counter").resolution, 0.004)
+        ticks is mostly the clock. The clock is `clock_name`'s. Every repeat is run and the least
+        kept (the early stop under half the ceiling is off): the least of several runs is the work,
+        whatever else the machine was doing."""
+        name = TestTheLinearityCheckConfirmsBeforeItFails.clock_name()
+        monkeypatch.setattr(HostileKit, "clock", staticmethod(getattr(time, name)))
+        monkeypatch.setattr(HostileKit, "REPEATS", 5)
+        monkeypatch.setattr(HostileKit, "ceiling", staticmethod(lambda: 0.0))
+        wanted = max(20 * time.get_clock_info(name).resolution, 0.004)
         size = 512
         while size < 16384:
             data = (run * (size // len(run) + 1))[:size] + b"\x01"

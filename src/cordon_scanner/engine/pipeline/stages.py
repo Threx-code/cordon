@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.analysis.python.flows.cross_file import CrossFileMaps
 from cordon_scanner.decide.code_model import CodeModelPass
+from cordon_scanner.decide.remote_control import RemoteControl
 from cordon_scanner.detect.base import (
     FileUnit,
     GraphUnit,
@@ -336,6 +337,7 @@ class ScanStages:
         # finding it was hiding reappears at the same moment somebody is told
         # why, rather than as an unexplained new failure weeks later.
         acc.findings[:], code_model = CodeModelPass.decide(self.engine, acc.findings, ctx)
+        acc.findings[:], remote_control = RemoteControl.decide(acc.findings)
         findings = ResultFolding.settled(self.config, acc)
 
         # The package's JSON these read is the context worker's (item 56 (b)), never decoded here.
@@ -351,7 +353,7 @@ class ScanStages:
                 repository=not ctx.package_distribution,
                 facts=acc.facts,
             )
-        findings = (*graded, *code_model)
+        findings = (*graded, *code_model, *remote_control)
         dependencies = self.engine.detection.annotated(dependencies, findings, ctx, units)
         return findings, verdict, dependencies
 

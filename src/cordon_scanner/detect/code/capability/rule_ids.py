@@ -85,6 +85,20 @@ class CompositeRuleIds:
         "MALWARE.INSTALL.REMOTE_CODE.001": REMOTE_CODE_RULE,
     }
 
+    #: The two composites that read a response run (`CAP.JS.FLOW.REMOTE_CODE`): the runtime one and the
+    #: install-time one. Held at MEDIUM, the install-time one withdrawn for the runtime one, when the
+    #: package's requests name no external literal host and nothing decoded is run.
+    REMOTE_CODE_RULES: ClassVar[frozenset[str]] = frozenset(
+        {REMOTE_CODE_RULE, "MALWARE.INSTALL.REMOTE_CODE.001"}
+    )
+
+    #: Why the REMOTE_CODE composites are lowered, said in the finding.
+    UNEXTERNAL_REQUEST_REASON: ClassVar[str] = (
+        "a package whose requests name no external address and which runs nothing decoded: no request "
+        "goes to a host the code spells out, so what is run is the operator's to configure, not a "
+        "server's choice"
+    )
+
     #: Rules whose act is destroying data. They keep their severity in build tooling: a recipe
     #: runs unattended on every machine that builds, so "written to be read" does not hold.
     DESTRUCTION_RULES: ClassVar[frozenset[str]] = frozenset(

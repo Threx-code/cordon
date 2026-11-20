@@ -97,6 +97,7 @@ class Ceilings:
         """The package verdict over everything this scan found (`core/verdict.py`), then the
         intent layer over what the package's code does (`core/intent.py`). `repository`: the
         target is no published package, so a MALICIOUS finding keeps its grade."""
+        from cordon_scanner.decide.code_and_instructions import CodeAndInstructions
         from cordon_scanner.decide.composites import PackageComposites
         from cordon_scanner.decide.intent import Intent
         from cordon_scanner.decide.verdict import Verdict
@@ -139,6 +140,11 @@ class Ceilings:
         worm = PackageComposites.worm(graded)
         if worm is not None:
             graded.append(worm)
+        # An agent-family finding in code and an order in an instruction file of the same package: two
+        # readings of different files agreeing (`decide/code_and_instructions.py`).
+        agreeing = CodeAndInstructions.of(graded)
+        if agreeing is not None:
+            graded.append(agreeing)
         return graded, verdict
 
     @staticmethod

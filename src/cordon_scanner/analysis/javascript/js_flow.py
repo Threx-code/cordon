@@ -181,7 +181,7 @@ class JsFlow:
         failing -- says so (`JsSummaries.UNRESOLVED`): its calls into the package are not known."""
         if len(text) > MAX_BYTES:
             marker = JsSummaries.UNRESOLVED if JsSummaries.reaches_out(text) else JsSummaries.UNREAD
-            return {"js.require": [marker]}
+            return {"js.require": [marker], "js.request": [[JsSummaries.UNREAD_REQUEST, 1]]}
         return JsFlow.MEMO.get("summaries", text, lambda: [JsFlow._summaries(text)])[0]
 
     @staticmethod
@@ -197,8 +197,12 @@ class JsFlow:
             analysis = _Analysis(text)
             analysis.run()
         except (RecursionError, _OverBudget):
-            # S2: unresolved, not empty; an unresolved require keeps the join incomplete
-            return {"js.require": [JsSummaries.UNRESOLVED]}
+            # S2: unresolved, not empty; an unresolved require keeps the join incomplete, and a file
+            # not read may name any host
+            return {
+                "js.require": [JsSummaries.UNRESOLVED],
+                "js.request": [[JsSummaries.UNREAD_REQUEST, 1]],
+            }
         return JsSummaries.shared(analysis)
 
     @classmethod
@@ -450,6 +454,7 @@ class _Analysis(Calls):
                 changed |= self._grow(fn.ret, value)
             for k in calls:
                 changed |= self._call(k)
+            self.sites_complete = True  # every call has been classed once: `sink_sites` is whole
             if not changed:
                 break
 

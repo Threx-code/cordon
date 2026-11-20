@@ -229,6 +229,27 @@ class JsShapes:
         """[module]: a local path the file hands on whole."""
         return isinstance(value, list) and len(value) == 1 and JsShapes._name(value[0], 4096)
 
+    REQUEST_CLASSES: ClassVar[frozenset[str]] = frozenset(
+        {"external", "local", "unresolved", "unread", "over_budget"}
+    )
+
+    @staticmethod
+    def request(value: Any) -> bool:
+        """[class, count]: how many of a file's request sites are of a class (never a host)."""
+        return (
+            isinstance(value, list)
+            and len(value) == 2
+            and value[0] in JsShapes.REQUEST_CLASSES
+            and JsShapes._int(value[1], 1)
+        )
+
+    @staticmethod
+    def decoded(value: Any) -> bool:
+        """[1]: a decoded value reaches a process or an evaluator in the file."""
+        return (
+            isinstance(value, list) and len(value) == 1 and value[0] == 1 and type(value[0]) is int
+        )
+
 
 class Facts:
     """The parent's side of the channel: what it accepts from a worker, and nothing else."""
@@ -250,6 +271,8 @@ class Facts:
         "js.callout": JsShapes.callout,
         "js.callsink": JsShapes.callsink,
         "js.reexport": JsShapes.reexport,
+        "js.request": JsShapes.request,
+        "js.decoded": JsShapes.decoded,
     }
 
     @staticmethod
