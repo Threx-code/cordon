@@ -130,7 +130,7 @@ class TestAScan:
     def scan(tmp_path, ceiling: int, monkeypatch: pytest.MonkeyPatch):
         line = "// " + "x" * 77 + "\n"
         (tmp_path / "package.json").write_text(
-            '{"name": "padded", "version": "1.0.0", "main": "index.js"}\n'
+            '{"name": "padded", "version": "1.0.0", "main": "index.js"}\n', encoding="utf-8"
         )
         (tmp_path / "index.js").write_text(line * (12 * MIB // len(line)), encoding="utf-8")
         monkeypatch.setattr(SizeCeilings, "TEXT", ceiling)

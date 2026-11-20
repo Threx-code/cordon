@@ -92,7 +92,7 @@ class Ceilings:
         profile reads them. The model is fitted to features that leave them out (`decide/feature_schema.py` hashes the
         extractor, so the caps cannot move without a refit), so a payload padded past the size is invisible to it. With
         any, the verdict lowers nothing and the scan is incomplete (`blind_note`): its silence is never a pass."""
-        from cordon_scanner.detect.code.reached_flows import ReachedFlows
+        from cordon_scanner.detect.registry import ReachedFlows
         from cordon_scanner.engine.isolation.analysis_facts import PROFILE_BYTES
 
         places = (

@@ -31,12 +31,26 @@ class Twice:
         real = Ceilings.verdict
         Twice.compared = []
 
-        def both(findings, units, profile=None, intent=None, *, repository=False, facts=None):
+        def both(
+            findings, units, profile=None, intent=None, *, repository=False, facts=None, blind=0
+        ):
             from_facts = real(
-                list(findings), units, profile, intent, repository=repository, facts=facts
+                list(findings),
+                units,
+                profile,
+                intent,
+                repository=repository,
+                facts=facts,
+                blind=blind,
             )
             from_bytes = real(
-                list(findings), units, profile, intent, repository=repository, facts=None
+                list(findings),
+                units,
+                profile,
+                intent,
+                repository=repository,
+                facts=None,
+                blind=blind,
             )
             assert facts is not None, "the pipeline gave the verdict no facts"
             assert from_facts[1] == from_bytes[1], (

