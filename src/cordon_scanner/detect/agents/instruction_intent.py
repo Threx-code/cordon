@@ -348,7 +348,7 @@ _NEGATES_ACT: Final = re.compile(
 )
 #: Where a clause ends: a negation before it does not reach the act after it ("never skip this
 #: step: disable the sandbox first").
-_CLAUSE_END: Final = re.compile(r"[:;,.!?。；，]|\band\b|\bthen\b")
+_CLAUSE_END: Final = re.compile(r"[:;,.!?\u3002\uff1b\uff0c]|\band\b|\bthen\b")
 #: What a hidden thing must be for hiding it to be an attack: an act on the user's machine or data,
 #: not "the intermediate steps" of an answer.
 #: Acts only, never data nouns: "do not include API keys in your reply" keeps a secret OUT of an
@@ -366,7 +366,7 @@ _HIDE_IN_REPLY: Final = re.compile(
     r"|\bkeep\b[^.\n]{0,60}\bout\s+of\s+(?:your\s+)?(?:reply|response|summary|answer|output|report)\b",
     re.IGNORECASE,
 )
-_QUOTES: Final = "\"'`“”‘’«»「」"
+_QUOTES: Final = "\"'`“”\u2018\u2019«»「」"
 #: A sentence about the act rather than an instruction to do it. Unlike `_NEGATED`, "block" is
 #: left out: "append this block" is a noun.
 _ABOUT_IT: Final = re.compile(
@@ -390,7 +390,9 @@ _ALWAYS_SEND: Final = re.compile(
     r"\b(?:always|must|automatically) {1,3}(?:[a-z]{1,20} {1,3}){0,2}(?:send|forward|post|upload|report|share|deliver)[a-z]{0,2}\b",
     re.IGNORECASE,
 )
-_FIXED_RECIPIENT: Final = re.compile(r"\bid\b\W{0,4}\d{6,}|\b(?:chat_id|user_id)\W{0,4}-?\d{6,}", re.IGNORECASE)
+_FIXED_RECIPIENT: Final = re.compile(
+    r"\bid\b\W{0,4}\d{6,}|\b(?:chat_id|user_id)\W{0,4}-?\d{6,}", re.IGNORECASE
+)
 _POST_FILE: Final = re.compile(
     r"\b(?:curl|wget)\b[^\n]{0,120}(?:-X\s*POST|--post-file)[^\n]{0,200}(?:--data(?:-binary)?\s*@|-d\s*@|-F\s*\S+=@|--post-file)",
     re.IGNORECASE,
@@ -643,7 +645,10 @@ class InstructionIntent:
                 continue
             # A hidden act may sit in the phrase itself ("silently delete"); the consequence of a
             # suppressed consent must sit outside it.
-            if needs is not None and needs.search(normal if kind == "hide-action" else rest) is None:
+            if (
+                needs is not None
+                and needs.search(normal if kind == "hide-action" else rest) is None
+            ):
                 continue
             return kind
         return None
@@ -772,7 +777,9 @@ class InstructionIntent:
             clone = _CLONE.search(body)
             if clone is None or _RUN_PREP.search(body) is None:
                 continue
-            if _AUTO_CONDITION.search(before) and not _ASKED.search(InstructionIntent._lead(before)):
+            if _AUTO_CONDITION.search(before) and not _ASKED.search(
+                InstructionIntent._lead(before)
+            ):
                 found.append(
                     Intent(
                         "bootstrap-run",
@@ -790,7 +797,9 @@ class InstructionIntent:
                 before = normal[max(0, body_start - 400) : body_start]
                 if not _ASKED.search(InstructionIntent._lead(before)):
                     # Below the gate: any upload of a file to an outside service has this shape.
-                    found.append(Intent("file-post", post.group(0)[:240], body_start + post.start()))
+                    found.append(
+                        Intent("file-post", post.group(0)[:240], body_start + post.start())
+                    )
                     break
         return found
 
@@ -799,7 +808,11 @@ class InstructionIntent:
         """The sentence that introduces a code block: the last one before it. A plain search for the
         last sentence end, not a regex split, so it is linear in the text (regex-scaling rule 2)."""
         text = before.strip()
-        cuts = [text.rfind(end) + len(end) for end in (". ", "! ", "? ", ".\n", "。", "\n\n") if text.rfind(end) >= 0]
+        cuts = [
+            text.rfind(end) + len(end)
+            for end in (". ", "! ", "? ", ".\n", "。", "\n\n")
+            if text.rfind(end) >= 0
+        ]
         return text[max(cuts, default=0) :]
 
     @staticmethod
