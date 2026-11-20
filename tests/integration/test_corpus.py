@@ -416,6 +416,9 @@ class TestSelfScan(CorpusFixtures):
             # for. Rule material by construction: the table the detector matches, held to
             # `CAP.AGENT.UNATTENDED.001`'s own patterns by a test; data, never run.
             and f.location.path != "src/cordon_scanner/detect/data/agent-switch-flags.json"
+            # The agent programs, flags and history folders a package that bridges a coding agent to a remote service
+            # is read for: the table `SUSPECT.AGENT.REMOTE_CONTROL.001` matches, as the switches above are; data, never run.
+            and f.location.path != "src/cordon_scanner/detect/data/remote-bridge-patterns.json"
             # The tables of credential stores and drop-point hosts a module only matches text
             # against, and the reads, copies and posts that do or do not make them data: each the
             # positive or negative a data-literal rule is tested on.

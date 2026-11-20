@@ -29,6 +29,7 @@ import re
 from typing import TYPE_CHECKING, Final
 
 from cordon_scanner.detect.agents.autorun import AUTORUN_PATHS
+from cordon_scanner.detect.agents.bridges.records import BridgeRecords
 from cordon_scanner.detect.agents.ci_workflows import WorkflowFindings
 from cordon_scanner.detect.agents.extension_files import ExtensionFileFindings
 from cordon_scanner.detect.agents.findings import AgentFinding
@@ -122,7 +123,7 @@ class AgentChainDetector(BaseDetector):
     """Agent instruction files, agent settings, MCP configurations and AI agents in CI."""
 
     id = AgentFinding.DETECTOR
-    version = "0.1.0"
+    version = "0.2.0"
     categories = frozenset(
         {Category.MALICIOUS, Category.SUSPICIOUS, Category.POLICY, Category.VULNERABLE}
     )
@@ -156,7 +157,7 @@ class AgentChainDetector(BaseDetector):
         path = (
             unit.content.path.rpartition("!")[2] if "!" in unit.content.path else unit.content.path
         )
-        findings: list[Finding] = list(AgentPlanting.scan(unit, ctx))
+        findings: list[Finding] = [*AgentPlanting.scan(unit, ctx), *BridgeRecords.of(unit, ctx)]
         if AgentPaths._paths_match(path, _AGENT_TEXT_PATHS):
             unit, gap = AgentTextFindings.capped(unit)
             findings.extend(gap)

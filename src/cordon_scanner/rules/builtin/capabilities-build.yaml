@@ -489,6 +489,9 @@ rules:
         # is a closed list of names the build tool itself defines.
         - '\bstd\s*::\s*env\s*::\s*var(?:_os)?\s*\(\s*"(?!(?:OUT_DIR|TARGET|HOST|PROFILE|OPT_LEVEL|DEBUG|NUM_JOBS|RUSTC|RUSTDOC|CARGO[A-Z_]{0,40}|DEP_[A-Z_]{0,40})")'
         - '\bstd\s*::\s*env\s*::\s*var(?:_os)?\s*\(\s*(?!")'
+        # The whole environment, which a read by name is not: the one thing a file that sends
+        # `std::env::var("BOT_TOKEN")` to its own service must still be told apart from.
+        - '\bstd\s*::\s*env\s*::\s*vars(?:_os)?\s*\('
         - '\benv\s*!\s*\('
         - '\$ENV\{[A-Z_]{0,40}(?:TOKEN|SECRET|PASSWORD|KEY|CREDENTIAL)'
         - '~/\.(?:aws|ssh|docker|npmrc|kube|cargo)\b'
@@ -500,6 +503,7 @@ rules:
         # Python pack. Narrowing to credential-shaped names would be evaded by
         # reading the environment into a map and indexing it afterwards.
         - "let path = std::env::var(\"PATH\").unwrap();"
+        - "let all: Vec<(String, String)> = std::env::vars().collect();"
       negative:
         - "let path = config.path.clone();"
         - "message(\"building ${PROJECT_NAME}\")"

@@ -220,7 +220,7 @@ class JavaScriptCapabilities:
         if found is None:
             return []
         text, (begin, finish) = content.text, found
-        start = len(text[:begin].encode("utf-8"))
+        start = content.byte_offset(begin)
         hit = CapabilityHit(
             capability=Capability.FLOW,
             rule_id="CAP.JS.STRING_CODE_RUN",
@@ -288,7 +288,7 @@ class JavaScriptCapabilities:
                     and WasmBindgenGlue.shim_at(text, offset)
                 ):
                     continue  # the crate's own code, by its own module (`wasm_glue`)
-                start = len(text[:offset].encode("utf-8"))
+                start = content.byte_offset(offset)
                 hits.append(
                     CapabilityHit(
                         capability=Capability.FLOW,
@@ -319,7 +319,7 @@ class JavaScriptCapabilities:
                 if kind not in sources or sink not in sinks:
                     continue
                 offset = starts[min(max(line, 1), len(starts)) - 1]
-                start = len(text[:offset].encode("utf-8"))
+                start = content.byte_offset(offset)
                 hits.append(
                     CapabilityHit(
                         capability=Capability.FLOW,

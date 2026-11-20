@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import ast
 import re
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.analysis.python.pyast import CREDENTIAL_VARIABLE
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
@@ -446,7 +446,21 @@ class LegitimateUse:
         if hit.rule_id.endswith("_SENT") or "PUBLIC_IP" in hit.rule_id:
             return False
         end = min(hit.byte_end, hit.byte_start + 240)
-        text = content.raw[hit.byte_start : max(end, hit.byte_start + 1)].decode("utf-8", "replace")
+        own = content.raw[hit.byte_start : max(end, hit.byte_start + 1)].decode("utf-8", "replace")
+        if cls._names_a_setting(own):
+            return True
+        # The read's name is the literal after the call's opening quote, and a pattern may stop before it
+        # (`std::env::var("`, `GetEnvironmentVariable("`): it is read from the rest of the hit's line.
+        # A rule reports the FIRST match of a file as its hit and the file's other matches are not hits,
+        # so the first read being a setting says nothing of the second: every match of the rule must be one.
+        if not cls._names_a_setting(cls._line_from(content.raw, hit.byte_start)):
+            return False
+        return cls._every_match_names_a_setting(content, hit)
+
+    @classmethod
+    def _names_a_setting(cls, text: str) -> bool:
+        """The text begins with a read of one environment variable by its literal name that is not another
+        service's credential, or with a lookup of what the machine is (`_PLATFORM_LOOKUP`)."""
         if cls._PLATFORM_LOOKUP.match(text):
             return True
         read = cls._SETTING_READ.match(text)
@@ -456,6 +470,36 @@ class LegitimateUse:
 
         name = read.group("dotted") or read.group("quoted") or ""
         return not any(pattern.match(name) for pattern, _ in CREDENTIAL_HOMES)
+
+    @staticmethod
+    def _line_from(raw: bytes, start: int) -> str:
+        """The rest of the line from `start`, at most 240 bytes."""
+        return raw[start : start + 240].split(b"\n", 1)[0].decode("utf-8", "replace")
+
+    #: How many matches of a rule are read for `_every_match_names_a_setting`; more is not a notifier.
+    MATCH_LIMIT: ClassVar[int] = 400
+
+    @staticmethod
+    @OneOff.cache
+    def _builtin_rules() -> dict[str, Any]:
+        from cordon_scanner.rules.loader import RuleLoader, RuleSet
+
+        return {rule.id: rule for rule in RuleSet(RuleLoader.load_builtin()).rules}
+
+    @classmethod
+    def _every_match_names_a_setting(cls, content: FileContent, hit: CapabilityHit) -> bool:
+        """Whether every match of the hit's rule in the file begins a read of a named setting. A rule
+        that is not a bundled one, or has no pattern, or matches too often, is not read: loot."""
+        rule = cls._builtin_rules().get(hit.rule_id)
+        regex = rule.match.regex if rule is not None else None
+        if regex is None:
+            return False
+        for number, found in enumerate(regex.finditer(content.raw)):
+            if number >= cls.MATCH_LIMIT or not cls._names_a_setting(
+                cls._line_from(content.raw, found.start())
+            ):
+                return False
+        return True
 
     #: Credentials whose issuer is known, and the hosts that issue them.
     #:

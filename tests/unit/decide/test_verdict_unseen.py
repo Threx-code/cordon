@@ -199,6 +199,9 @@ class TestNoRuleIsLoweredUnseenByAccident:
             # because the model has not seen it.
             "SUSPECT.AGENT.CODE_AND_INSTRUCTIONS.001",
             "SUSPECT.AGENT.PLANTS_INSTRUCTIONS.001",
+            # Added after the verdict is decided (`decide/remote_control.py`), so no verdict lowers it; listed
+            # because the model has not seen it.
+            "SUSPECT.AGENT.REMOTE_CONTROL.001",
             "SUSPECT.AGENT.ATR.MODEL_SECURITY.001",
             "SUSPECT.AGENT.AUTH_BYPASS_EDIT.001",
             "SUSPECT.AGENT.CREDENTIAL_EXFIL.001",  # measured 2 Nov: 0 malware, 1 benign newly blocked if kept: stays

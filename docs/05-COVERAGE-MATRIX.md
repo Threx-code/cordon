@@ -843,6 +843,7 @@ rather than a document.
 | `SUSPECT.AGENT.PHANTOM_PREREQUISITE.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.PLANTS_INSTRUCTIONS.001` | medium | `agents` | prompt_injection |
 | `SUSPECT.AGENT.PLUGIN_SOURCE.001` | high | `agents` | integrity |
+| `SUSPECT.AGENT.REMOTE_CONTROL.001` | high | `agents` | malicious_code |
 | `SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001` | medium | `agents` | prompt_injection |
 | `SUSPECT.AGENT.SENSITIVE_IMPORT.001` | high | `agents` | exfiltration |
 | `SUSPECT.AGENT.SKILL_CLAIM_MISMATCH.001` | high | `agents` | prompt_injection |
