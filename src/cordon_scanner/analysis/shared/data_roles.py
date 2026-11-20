@@ -34,7 +34,6 @@ from typing import TYPE_CHECKING, ClassVar, Final, Protocol
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-MAX_CODE_BYTES: Final = 2_000_000
 #: Lines either side of a naming that count as beside it.
 BESIDE: Final = 3
 
@@ -180,7 +179,9 @@ class DataRoles:
             if not unit.path.lower().endswith(cls.CODE) or unit.content.is_binary:
                 continue
             text = unit.content.text
-            if len(text) > MAX_CODE_BYTES or cls._SUFFIX_NAMED.search(text) is None:
+            # Every code file counts, whatever its size: a file left out for being large could run the data
+            # the small ones only parse, and the data was then read as data.
+            if cls._SUFFIX_NAMED.search(text) is None:
                 continue
             lines = text.split("\n")
             for number, line in enumerate(lines):
