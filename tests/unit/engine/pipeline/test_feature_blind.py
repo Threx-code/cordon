@@ -1,9 +1,11 @@
-"""The package verdict lowers nothing for a package whose code that runs on its own it could not read (`Ceilings.feature_blind`, note 52).
+"""A package whose code that runs on its own the verdict model could not read is incomplete, and the model lowers nothing for it
+(`Ceilings.feature_blind`, note 52).
 
 The verdict model is fitted to features that leave out a file over the profile's size at an install, import or agent place, and over the
 per-place file count (`decide/feature_schema.py` hashes the extractor, so the caps cannot move without a refit). A payload padded past
-the size hides from the features; the model must not then hold the package's findings as a warning. Inert text: a few lines of JavaScript
-and comment padding, never run.
+the size is invisible to the features: the model neither adds the block it would add nor may it hold the findings as a warning, and its
+silence is never a pass: the scan is incomplete, an operational gap that blocks by default. Inert text: a few lines of JavaScript and
+comment padding, never run.
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ from cordon_scanner.foundation.models import Severity
 from kits.padding import Padding
 
 RULE = "SUSPECT.INSTALL.SCRIPT.001"
+NOTE = "OPERATIONAL.FILE.TRUNCATED"
 
 
 class Kit:
@@ -49,14 +52,15 @@ class Kit:
         )
 
     @staticmethod
-    def severity(tmp_path: Path, files: dict[str, str]) -> Severity:
-        """The grade of the hook finding for a package whose hook is a dependency's program (held as a warning when small)."""
-        manifest = {
-            "name": "p",
-            "version": "1.0.0",
-            "scripts": {"postinstall": "bip40"},
-            "dependencies": {"bip40": "^1.0.0"},
-        }
+    def scan(
+        tmp_path: Path,
+        scripts: dict[str, str],
+        files: dict[str, str],
+        deps: dict[str, str] | None = None,
+    ):
+        manifest = {"name": "p", "version": "1.0.0", "scripts": scripts}
+        if deps:
+            manifest["dependencies"] = deps
         buffer = io.BytesIO()
         with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
             for name, text in (
@@ -69,105 +73,137 @@ class Kit:
                 archive.addfile(info, io.BytesIO(data))
         target = tmp_path / "p-1.0.0.tgz"
         target.write_bytes(buffer.getvalue())
-        found = Scanner(Config.default().with_overrides(use_cache=False)).scan(target).findings
-        return max(f.severity for f in found if f.rule_id == RULE)
+        return Scanner(Config.default().with_overrides(use_cache=False)).scan(target)
+
+    @staticmethod
+    def hook_grade(tmp_path: Path) -> Severity:
+        """The grade of the hook finding for a package whose hook is a dependency's program (held as a warning when small)."""
+        result = Kit.scan(
+            tmp_path,
+            {"postinstall": "bip40"},
+            {"index.js": "module.exports = 1;\n"},
+            {"bip40": "^1.0.0"},
+        )
+        return max(f.severity for f in result.findings if f.rule_id == RULE)
 
 
 class TestWhatTheModelCouldNotRead:
     def test_a_place_file_over_the_profile_size_is_blind(self) -> None:
         units = [Kit.unit("package/install.js", PROFILE_BYTES + 1)]
-        assert Ceilings.feature_blind(units, Kit.ctx(entry=("package/install.js",))) == 1
+        blind = Ceilings.feature_blind(units, Kit.ctx(entry=("package/install.js",)))
+        assert [path for path, _why in blind] == ["package/install.js"]
 
     @pytest.mark.parametrize("place", ["hook", "entry", "imported", "agent"])
     def test_each_place_counts(self, place: str) -> None:
         units = [Kit.unit("package/a.js", PROFILE_BYTES + 1)]
-        assert Ceilings.feature_blind(units, Kit.ctx(**{place: ("package/a.js",)})) == 1
+        assert len(Ceilings.feature_blind(units, Kit.ctx(**{place: ("package/a.js",)}))) == 1
 
     def test_a_file_at_the_size_is_read(self) -> None:
         units = [Kit.unit("package/install.js", PROFILE_BYTES)]
-        assert Ceilings.feature_blind(units, Kit.ctx(entry=("package/install.js",))) == 0
+        assert Ceilings.feature_blind(units, Kit.ctx(entry=("package/install.js",))) == []
 
     def test_a_large_file_no_place_names_is_not(self) -> None:
         units = [Kit.unit("package/dist/bundle.js", 5_000_000)]
-        assert Ceilings.feature_blind(units, Kit.ctx(entry=("package/install.js",))) == 0
+        assert Ceilings.feature_blind(units, Kit.ctx(entry=("package/install.js",))) == []
 
-    def test_files_past_the_per_place_count_are_blind(self) -> None:
+    def test_the_file_past_the_per_place_count_is_blind(self) -> None:
+        names = tuple(f"package/f{i}.js" for i in range(ReachedFlows.FILES + 1))
+        units = [Kit.unit(n, 100) for n in names]
+        blind = Ceilings.feature_blind(units, Kit.ctx(imported=names))
+        assert [path for path, _why in blind] == [names[-1]]
+        assert "first" in blind[0][1]
+
+    def test_files_past_the_per_place_count_are_all_blind(self) -> None:
         names = tuple(f"package/f{i}.js" for i in range(ReachedFlows.FILES + 3))
         units = [Kit.unit(n, 100) for n in names]
-        assert Ceilings.feature_blind(units, Kit.ctx(imported=names)) == 3
+        assert len(Ceilings.feature_blind(units, Kit.ctx(imported=names))) == 3
+
+    def test_an_oversize_file_does_not_use_up_the_count(self) -> None:
+        # The profile skips an oversize file without counting it: fifty small ones are still all read.
+        names = tuple(f"package/f{i}.js" for i in range(ReachedFlows.FILES + 1))
+        units = [
+            Kit.unit("package/big.js", PROFILE_BYTES + 1),
+            *(Kit.unit(n, 100) for n in names[:-1]),
+        ]
+        blind = Ceilings.feature_blind(units, Kit.ctx(imported=("package/big.js", *names)))
+        assert [path for path, _why in blind] == ["package/big.js"]
 
     def test_a_small_package_is_not(self) -> None:
         units = [Kit.unit("package/index.js", 20)]
-        assert Ceilings.feature_blind(units, Kit.ctx(imported=("package/index.js",))) == 0
+        assert Ceilings.feature_blind(units, Kit.ctx(imported=("package/index.js",))) == []
+
+    def test_the_note_is_a_gap_that_names_the_file(self) -> None:
+        note = Ceilings.blind_note("package/install.js", "it is over the size")
+        assert note.rule_id == NOTE
+        assert note.location.path == "package/install.js"
+        assert "incomplete" in note.message
 
 
 class TestTheVerdictLowersNothingForIt:
     def test_a_small_package_is_held_as_a_warning(self, tmp_path: Path) -> None:
         # The control: the verdict does lower this hook's grade when it could read everything.
-        assert Kit.severity(tmp_path, {"index.js": "module.exports = 1;\n"}) < Severity.HIGH
+        assert Kit.hook_grade(tmp_path) < Severity.HIGH
 
     def test_a_blind_package_keeps_the_rules_grade(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(Ceilings, "feature_blind", staticmethod(lambda units, ctx: 1))
-        assert Kit.severity(tmp_path, {"index.js": "module.exports = 1;\n"}) >= Severity.HIGH
+        monkeypatch.setattr(
+            Ceilings, "feature_blind", staticmethod(lambda units, ctx: [("package/index.js", "x")])
+        )
+        assert Kit.hook_grade(tmp_path) >= Severity.HIGH
 
-    def test_the_verdict_says_why(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(Ceilings, "feature_blind", staticmethod(lambda units, ctx: 2))
-        manifest = {
-            "name": "p",
-            "version": "1.0.0",
-            "scripts": {"postinstall": "bip40"},
-            "dependencies": {"bip40": "^1.0.0"},
-        }
-        buffer = io.BytesIO()
-        with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
-            for name, text in (
-                ("package/package.json", json.dumps(manifest)),
-                ("package/index.js", "module.exports = 1;\n"),
-            ):
-                data = text.encode()
-                info = tarfile.TarInfo(name)
-                info.size = len(data)
-                archive.addfile(info, io.BytesIO(data))
-        target = tmp_path / "p-1.0.0.tgz"
-        target.write_bytes(buffer.getvalue())
-        verdict = Scanner(Config.default().with_overrides(use_cache=False)).scan(target).verdict
-        assert verdict["lift_withheld"] == 2
+    def test_the_verdict_says_how_many(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        both = [("package/index.js", "x"), ("package/b.js", "y")]
+        monkeypatch.setattr(Ceilings, "feature_blind", staticmethod(lambda units, ctx: both))
+        result = Kit.scan(
+            tmp_path,
+            {"postinstall": "bip40"},
+            {"index.js": "module.exports = 1;\n"},
+            {"bip40": "^1.0.0"},
+        )
+        assert result.verdict["lift_withheld"] == 2
 
 
 class TestAPaddedFileAtAnInstallPlace:
-    """The shape of the evasion, end to end: the model adds a block for a package that spawns a program and reaches the network, and padding
-    the file past the profile's size takes the block away, because its capabilities are no longer features. Fixed by a refit at the new
-    schema, or by a block for the unread file (the lead's decision, note 52 section 7): until then the case is pinned as a known gap."""
+    """The evasion, end to end: the model adds a block for a package that spawns a program and reaches the network at an install place
+    (0.67, `SUSPECT.VERDICT.MODEL.001`); behind 1.3 MB of comments the same code scored 0.16 and nothing was reported, because the file's
+    capabilities were not features. Now the unread file is a gap: the scan is incomplete and says which file."""
 
     CODE = "const cp = require('child_process');\ncp.spawnSync('make', ['build']);\nfetch('https://t.example.invalid/ping');\n"
 
     @staticmethod
-    def blocked(tmp_path: Path, text: str) -> bool:
-        manifest = {"name": "p", "version": "1.0.0", "scripts": {"postinstall": "node install.js"}}
-        buffer = io.BytesIO()
-        with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
-            for name, body in (
-                ("package/package.json", json.dumps(manifest)),
-                ("package/index.js", "module.exports = 1;\n"),
-                ("package/install.js", text),
-            ):
-                data = body.encode()
-                info = tarfile.TarInfo(name)
-                info.size = len(data)
-                archive.addfile(info, io.BytesIO(data))
-        target = tmp_path / "p-1.0.0.tgz"
-        target.write_bytes(buffer.getvalue())
-        found = Scanner(Config.default().with_overrides(use_cache=False)).scan(target).findings
-        return any(f.severity >= Severity.HIGH for f in found)
+    def scan(tmp_path: Path, text: str):
+        return Kit.scan(
+            tmp_path,
+            {"postinstall": "node install.js"},
+            {"index.js": "module.exports = 1;\n", "install.js": text},
+        )
 
-    def test_the_small_file_is_blocked(self, tmp_path: Path) -> None:
-        assert self.blocked(tmp_path, self.CODE)
+    def test_the_small_file_is_blocked_and_complete(self, tmp_path: Path) -> None:
+        result = self.scan(tmp_path, self.CODE)
+        assert any(f.severity >= Severity.HIGH for f in result.findings)
+        assert result.content_complete
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="the profile's size cap is fitted into the verdict model: refit at the new schema or block the unread file",
-    )
-    def test_the_padded_file_must_stay_blocked(self, tmp_path: Path) -> None:
-        assert self.blocked(tmp_path, Padding.lines(1_300_000) + self.CODE)
+    def test_the_padded_file_makes_the_scan_incomplete(self, tmp_path: Path) -> None:
+        result = self.scan(tmp_path, Padding.lines(1_300_000) + self.CODE)
+        assert not result.content_complete
+        notes = [
+            f
+            for f in result.findings
+            if f.rule_id == NOTE and "package verdict could not read" in f.message
+        ]
+        assert [f.location.path.rsplit("/", 1)[-1] for f in notes] == ["install.js"]
+
+    def test_a_large_file_the_hook_does_not_run_does_not(self, tmp_path: Path) -> None:
+        result = Kit.scan(
+            tmp_path,
+            {"postinstall": "node install.js"},
+            {
+                "index.js": "module.exports = 1;\n",
+                "install.js": self.CODE,
+                "docs/big.js": Padding.lines(1_300_000),
+            },
+        )
+        assert not [f for f in result.findings if "package verdict could not read" in f.message]

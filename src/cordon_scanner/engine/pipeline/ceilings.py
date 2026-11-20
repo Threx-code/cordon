@@ -45,6 +45,7 @@ from cordon_scanner.foundation.results import OperationalFinding
 if TYPE_CHECKING:
     from collections.abc import Collection, Mapping, Sequence
 
+    from cordon_scanner.engine.pipeline.accumulator import Accumulator
     from cordon_scanner.foundation.taxonomy import ThreatDomain
 
 
@@ -85,11 +86,12 @@ class Ceilings:
         return VerdictFeatures.wanted_dependencies(Ceilings.verdict_manifests(units))
 
     @staticmethod
-    def feature_blind(units: Sequence[FileUnit], ctx: ScanContext) -> int:
-        """How many files where code runs on its own the verdict model could not read: one in an install, import or
-        agent place over the profile's size, and every one past the per-place file count. The model is fitted to
-        features that leave them out (`decide/feature_schema.py` hashes the extractor, so the caps cannot move without
-        a refit), so a payload padded past the size is invisible to it: with any, the verdict lowers nothing."""
+    def feature_blind(units: Sequence[FileUnit], ctx: ScanContext) -> list[tuple[str, str]]:
+        """The files where code runs on its own that the verdict model could not read, as (path, why): one in an install,
+        import or agent place over the profile's size, and every one past the per-place file count, in the order the
+        profile reads them. The model is fitted to features that leave them out (`decide/feature_schema.py` hashes the
+        extractor, so the caps cannot move without a refit), so a payload padded past the size is invisible to it. With
+        any, the verdict lowers nothing and the scan is incomplete (`blind_note`): its silence is never a pass."""
         from cordon_scanner.detect.code.reached_flows import ReachedFlows
         from cordon_scanner.engine.isolation.analysis_facts import PROFILE_BYTES
 
@@ -98,12 +100,62 @@ class Ceilings:
             ctx.import_entry_paths,
             ctx.agent_run_paths,
         )
-        blind = 0
+        blind: list[tuple[str, str]] = []
         for paths in places:
-            in_place = [u for u in units if u.path in paths]
-            read = sum(1 for u in in_place if u.content.size <= PROFILE_BYTES)
-            blind += len(in_place) - read + max(0, read - ReachedFlows.FILES)
+            read = 0
+            for unit in units:
+                if unit.path not in paths:
+                    continue
+                if unit.content.size > PROFILE_BYTES:
+                    blind.append(
+                        (
+                            unit.path,
+                            f"it is over the {PROFILE_BYTES} bytes the model reads of a file",
+                        )
+                    )
+                elif read >= ReachedFlows.FILES:
+                    blind.append(
+                        (unit.path, f"it is past the first {ReachedFlows.FILES} files of its place")
+                    )
+                else:
+                    read += 1
         return blind
+
+    @staticmethod
+    def unread_notes(
+        acc: Accumulator, blind: Sequence[tuple[str, str]], observation: Any
+    ) -> list[Finding]:
+        """A gap for each file where code runs on its own that the package verdict's model (`feature_blind`) or the
+        intent observer (its file count and its size) could not read: the scan is incomplete, and a file named once is
+        named once. A model's or an observer's silence about a file it never saw is never a pass."""
+        seen: set[tuple[str, str]] = set()
+        notes: list[Finding] = []
+        for reader, files in (
+            ("package verdict", blind),
+            ("intent reading", getattr(observation, "unread", ())),
+        ):
+            for path, why in files:
+                if (reader, path) not in seen:
+                    seen.add((reader, path))
+                    notes.append(acc.gap(Ceilings.blind_note(path, why, reader)))
+        return notes
+
+    @staticmethod
+    def blind_note(path: str, why: str, reader: str = "package verdict") -> Finding:
+        """What a reader of the package did not read, said as a gap: a package whose model or observer could not see a
+        file where code runs on its own is not judged by it, and the scan is incomplete."""
+        return OperationalFinding.build(
+            path=path,
+            rule_id="OPERATIONAL.FILE.TRUNCATED",
+            message=(
+                f"The {reader} could not read this file, where code runs on its own: {why}. "
+                "What it can do was not weighed, so the scan is incomplete."
+            ),
+            remediation=(
+                "Inspect the file; a bundle or a padded script at an install, import or agent place is "
+                "what this note stops from passing unread. Split it, or exclude it deliberately."
+            ),
+        )
 
     @staticmethod
     def verdict(
