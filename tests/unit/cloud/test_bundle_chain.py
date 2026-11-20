@@ -15,9 +15,9 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
-from support import ROOT as REPO
 
 from cordon_scanner.cloud.bundle_chain import BundleChain, BundleError, BundleRefused, Dsse
+from support import ROOT as REPO
 
 FIXTURES = json.loads(
     (REPO / "tests" / "unit" / "cloud" / "bundle_chain_fixtures.json").read_text(encoding="utf-8")
