@@ -6,6 +6,8 @@ send nothing anywhere -- they are scanned, never run.
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
 
 from cordon_scanner import Scanner
@@ -96,7 +98,7 @@ class OtherLanguageKit:
     """A notifier in a language other than Python: one file, scanned and never run."""
 
     #: language: (file name, the file around `{read}`, the read of an environment variable `{name}` by its literal name).
-    NOTIFIERS = {
+    NOTIFIERS: ClassVar[dict[str, tuple[str, str, str]]] = {
         "rust": (
             "main.rs",
             'fn main() {{ let url = format!("https://api.telegram.org/bot{{}}/getUpdates", {read}); let _ = reqwest::blocking::get(url); }}',
