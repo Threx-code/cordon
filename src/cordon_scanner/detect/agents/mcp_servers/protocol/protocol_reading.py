@@ -14,8 +14,9 @@ from typing import Final
 from cordon_scanner.analysis.javascript.front.parser import Parser
 from cordon_scanner.analysis.javascript.front.syntax import Node, Syntax
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+from cordon_scanner.foundation.limits import WHOLE_FILE_BYTES
 
-MAX_CHARS: Final = 2_000_000
+MAX_CHARS: Final = WHOLE_FILE_BYTES
 
 
 class ProtocolReading:

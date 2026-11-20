@@ -197,7 +197,7 @@ def padding(chars: int) -> str:
     """Comment lines that say nothing, `chars` characters in all."""
     line = "// " + "x" * 77 + "\n"
     whole, rest = divmod(chars, len(line))
-    return line * whole + "/" * rest
+    return line * whole + ("/" * (rest - 1) + "\n" if rest else "")
 
 
 class TestAFileBeyondThreeMillionCharacters:

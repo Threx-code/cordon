@@ -24,8 +24,9 @@ from typing import Any, Final
 from cordon_scanner.analysis.javascript.front.parser import Parser
 from cordon_scanner.analysis.javascript.front.syntax import Node, Syntax
 from cordon_scanner.detect.agents.mcp_servers.handlers import _RUNS_COMMANDS
+from cordon_scanner.foundation.limits import WHOLE_FILE_BYTES
 
-MAX_CHARS: Final = 2_000_000
+MAX_CHARS: Final = WHOLE_FILE_BYTES
 _FUNCTIONS: Final = frozenset(
     {"FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"}
 )
