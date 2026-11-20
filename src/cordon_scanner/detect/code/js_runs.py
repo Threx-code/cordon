@@ -78,7 +78,7 @@ class JsRuns:
             if run is None:
                 continue
             offset = received.end() + run.start()
-            start = len(text[:offset].encode("utf-8"))
+            start = content.byte_offset(offset)
             egress = len(text[: connection.start()].encode("utf-8"))
             return [
                 CapabilityHit(
@@ -144,7 +144,7 @@ class JsRuns:
             if run is None:
                 continue
             offset = found.start() + run.start()
-            start = len(text[:offset].encode("utf-8"))
+            start = content.byte_offset(offset)
             return [
                 CapabilityHit(
                     capability=Capability.DECODE,
@@ -206,7 +206,7 @@ class JsRuns:
             if sink is None or request is None:
                 continue
             offset = started.end() + sink.start()
-            start = len(text[:offset].encode("utf-8"))
+            start = content.byte_offset(offset)
             return [
                 CapabilityHit(
                     capability=Capability.FLOW,
@@ -253,7 +253,7 @@ class JsRuns:
             return []
         text = content.text
         for offset in JavaScriptCommandFlow.findings(text):
-            start = len(text[:offset].encode("utf-8"))
+            start = content.byte_offset(offset)
             return [
                 CapabilityHit(
                     capability=Capability.FLOW,

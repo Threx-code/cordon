@@ -117,7 +117,7 @@ class ScriptFetchedThenEvaluated:
             if evaluated is None:
                 continue
             offset = bound.end() + evaluated.start()
-            start = len(text[:offset].encode("utf-8"))
+            start = content.byte_offset(offset)
             return [
                 CapabilityHit(
                     capability=Capability.FETCH_EXEC,
