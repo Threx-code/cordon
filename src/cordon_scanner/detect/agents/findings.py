@@ -57,7 +57,9 @@ class AgentFinding:
             index = 0
         content = unit.content
         start = (
-            content.byte_offset(index) if text is content.text else len(text[:index].encode("utf-8"))
+            content.byte_offset(index)
+            if text is content.text
+            else len(text[:index].encode("utf-8"))
         )
         end = start + len(needle.encode("utf-8"))
         return cls.finding(

@@ -495,7 +495,9 @@ class LegitimateUse:
         if regex is None:
             return False
         for number, found in enumerate(regex.finditer(content.raw)):
-            if number >= cls.MATCH_LIMIT or not cls._names_a_setting(cls._line_from(content.raw, found.start())):
+            if number >= cls.MATCH_LIMIT or not cls._names_a_setting(
+                cls._line_from(content.raw, found.start())
+            ):
                 return False
         return True
 

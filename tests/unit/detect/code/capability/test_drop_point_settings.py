@@ -153,7 +153,9 @@ class TestANamedSettingInAnyLanguage:
     is the literal after the call's opening quote, which the hit's own text may stop before (`std::env::var("`)."""
 
     @pytest.mark.parametrize("language", sorted(OtherLanguageKit.NOTIFIERS))
-    def test_a_notifier_reading_its_own_bot_token_by_name_is_quiet(self, tmp_path, language) -> None:
+    def test_a_notifier_reading_its_own_bot_token_by_name_is_quiet(
+        self, tmp_path, language
+    ) -> None:
         filename, source = OtherLanguageKit.source(language, "BOT_TOKEN")
         assert not OtherLanguageKit.fires(tmp_path, filename, source)
 
@@ -172,7 +174,9 @@ class TestANamedSettingInAnyLanguage:
         )
         assert OtherLanguageKit.fires(tmp_path, "main.rs", source)
 
-    def test_a_rust_notifier_that_also_reads_a_second_services_credential_fires(self, tmp_path) -> None:
+    def test_a_rust_notifier_that_also_reads_a_second_services_credential_fires(
+        self, tmp_path
+    ) -> None:
         """The bot URL takes its token from a variable, but the same statement carries another service's credential."""
         source = (
             'fn main() { let url = format!("https://api.telegram.org/bot{}/sendMessage?text={}", '
