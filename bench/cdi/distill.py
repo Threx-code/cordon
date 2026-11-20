@@ -32,11 +32,14 @@ import math
 import re
 from dataclasses import dataclass, field
 from statistics import NormalDist
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from bench.cdi.leakage import Leakage
 
 from cordon_scanner.rules.fact_terms import FactTerms
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 REFUSED_KINDS: Final = FactTerms.REFUSED
 """Term kinds the distiller never uses: identities belong to intel (G1), ages and publishers only stratify."""
@@ -117,6 +120,9 @@ class Distiller:
         max_candidates: int = 20_000,
         alpha: float = 0.05,
         refused_families: frozenset[str] = frozenset(),
+        terms_of: Callable[[dict[str, Any]], set[tuple[str, ...]]] | None = None,
+        generator: str = "G2",
+        metadata_kinds: frozenset[str] = METADATA_KINDS,
     ) -> None:
         self.min_families = min_families
         self.confirm_min_families = confirm_min_families
@@ -126,6 +132,10 @@ class Distiller:
         self.max_candidates = max_candidates
         self.alpha = alpha
         self.refused_families = refused_families
+        # What a unit's facts are read as: the scanner's own fact terms (G2), or the terms of a release pair (G6, `bench/cdi/pairs.py`).
+        self.terms_of = terms_of or Terms.of
+        self.generator = generator
+        self.metadata_kinds = metadata_kinds
 
     def distill(self, units: list[Unit]) -> Distillation:
         refused: dict[str, int] = {}
@@ -147,7 +157,7 @@ class Distiller:
             )
         train = [u for u in kept_units if u.split == "train"]
         confirm = [u for u in kept_units if u.split == "confirm"]
-        space = _Space(train)
+        space = _Space(train, self.terms_of)
         terms = self._kept_terms(space, refused)
         candidates, searched = self._search(space, terms)
         z = NormalDist().inv_cdf(1 - self.alpha / max(1, searched))
@@ -175,7 +185,7 @@ class Distiller:
             "confirm_units": len(confirm),
             "facts_version": next(iter(versions), ""),
         }
-        confirm_space = _Space(confirm)
+        confirm_space = _Space(confirm, self.terms_of)
         z_confirm = NormalDist().inv_cdf(1 - self.alpha)
         for size, neg_families, upper, _canon, predicate, worst in passing:
             mask = confirm_space.mask_of(predicate)
@@ -185,7 +195,7 @@ class Distiller:
                 refused["failed_confirm"] = refused.get("failed_confirm", 0) + 1
                 continue
             candidate = {
-                "generator": "G2",
+                "generator": self.generator,
                 "predicate": json.loads(Terms.canonical(predicate)),
                 "predicate_digest": Terms.digest(predicate),
                 "size": size,
@@ -208,7 +218,7 @@ class Distiller:
             if space.families(mask) < self.min_families:
                 refused["single_or_few_families"] = refused.get("single_or_few_families", 0) + 1
                 continue
-            if term[0] in METADATA_KINDS and space.ecosystems(mask) < 2:
+            if term[0] in self.metadata_kinds and space.ecosystems(mask) < 2:
                 refused["metadata_one_ecosystem"] = refused.get("metadata_one_ecosystem", 0) + 1
                 continue
             kept.append(term)
@@ -241,7 +251,9 @@ class Distiller:
 class _Space:
     """The units of one split as bit positions, and each term as the integer of the units that have it."""
 
-    def __init__(self, units: list[Unit]) -> None:
+    def __init__(
+        self, units: list[Unit], terms_of: Callable[[dict[str, Any]], set[tuple[str, ...]]]
+    ) -> None:
         self.term_masks: dict[tuple[str, ...], int] = {}
         self.family_masks: dict[str, int] = {}
         self.ecosystem_masks: dict[str, int] = {}
@@ -250,7 +262,7 @@ class _Space:
         self.legit_mask = 0
         for i, u in enumerate(sorted(units, key=lambda u: u.key)):
             bit = 1 << i
-            for term in Terms.of(u.facts):
+            for term in terms_of(u.facts):
                 self.term_masks[term] = self.term_masks.get(term, 0) | bit
             if u.label == "mal" and u.missed:
                 self.missed_mask |= bit
