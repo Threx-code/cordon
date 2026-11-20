@@ -330,6 +330,9 @@ class Observation:
     facts: set[str] = field(default_factory=set)
     unexamined: list[str] = field(default_factory=list)
     files: int = 0
+    unread: list[tuple[str, str]] = field(default_factory=list)
+    """(path, why) of each running file the observer's own limits left unread -- past its file count, or too
+    large to read whole -- as opposed to one it cannot read at all (binary): those are gaps, not silence."""
 
 
 class IntentObserver:
@@ -453,6 +456,9 @@ class IntentObserver:
             if index >= IntentObserver.MAX_FILES:
                 if running:
                     out.unexamined.append(f"{name}: past the {IntentObserver.MAX_FILES}-file limit")
+                    out.unread.append(
+                        (unit.path, f"it is past the first {IntentObserver.MAX_FILES} files")
+                    )
                 continue
             content = unit.content
             if content.size > IntentObserver.MAX_BYTES or content.truncated or content.is_binary:
@@ -461,6 +467,10 @@ class IntentObserver:
                         "binary" if content.is_binary else f"{content.size:,} bytes, past the limit"
                     )
                     out.unexamined.append(f"{name}: {why}")
+                    if not content.is_binary:
+                        out.unread.append(
+                            (unit.path, f"it is {content.size:,} bytes, too large to read whole")
+                        )
                 continue
             try:
                 effects, extra = file_facts(unit)

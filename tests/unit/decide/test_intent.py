@@ -656,3 +656,38 @@ class TestAFileBeyondOnePointFiveMegabytes:
 
     def test_a_file_over_what_the_scanner_reads_whole_is_not(self) -> None:
         assert not IntentObserver.reads(self.unit(IntentObserver.MAX_BYTES + 1_000))
+
+
+class TestARunningFileTheObserverLeftUnread:
+    """A running file past the observer's file count, or too large for it, is a gap: its silence is never a pass."""
+
+    @staticmethod
+    def observe(count: int, size: int = 100) -> Observation:
+        from types import SimpleNamespace
+
+        from cordon_scanner.detect.base import FileUnit
+        from cordon_scanner.foundation.content import FileContent
+
+        names = [f"package/lib/f{index:04d}.js" for index in range(count)]
+        units = [FileUnit(content=FileContent(path=n, raw=b"x", size=size)) for n in names]
+        ctx = SimpleNamespace(
+            install_hook_paths=frozenset(names),
+            install_entry_paths=frozenset(),
+            import_entry_paths=frozenset(),
+            library_closure_paths=frozenset(),
+            bin_paths=frozenset(),
+        )
+        return IntentObserver.observe(units, ctx, lambda unit: ([], set()), lambda seeds: set())  # type: ignore[arg-type]
+
+    def test_the_file_past_the_count_is_unread(self) -> None:
+        observation = self.observe(IntentObserver.MAX_FILES + 1)
+        assert [path for path, _why in observation.unread] == [
+            f"package/lib/f{IntentObserver.MAX_FILES:04d}.js"
+        ]
+
+    def test_the_files_within_the_count_are_read(self) -> None:
+        assert self.observe(IntentObserver.MAX_FILES).unread == []
+
+    def test_a_file_too_large_to_read_whole_is_unread(self) -> None:
+        observation = self.observe(1, size=IntentObserver.MAX_BYTES + 1)
+        assert len(observation.unread) == 1
