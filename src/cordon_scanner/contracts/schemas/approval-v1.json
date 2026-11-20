@@ -73,6 +73,38 @@
     },
     "reason": {
       "type": "string"
+    },
+    "outcome": {
+      "description": "An exception's meaning, carried so the signature covers it: what the exception turns a finding into. Present for an exception, with rule_ids and reason_codes; absent for a plain approval.",
+      "enum": [
+        "REVIEW",
+        "ALLOW"
+      ]
+    },
+    "rule_ids": {
+      "description": "The rules an exception speaks for; null is every rule. A list is never empty: an empty list would read as none and as all.",
+      "type": [
+        "array",
+        "null"
+      ],
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[^\\s]+$"
+      }
+    },
+    "reason_codes": {
+      "description": "The reason codes an exception speaks for; null is every reason code. A list is never empty.",
+      "type": [
+        "array",
+        "null"
+      ],
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/reason_code"
+      }
     }
   }
 }

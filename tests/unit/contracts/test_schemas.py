@@ -122,6 +122,60 @@ class TestStatements:
         bad["predicate"]["digests"] = []
         assert Statements.validate(bad)
 
+    def test_a_plain_approval_signed_before_the_exception_fields_still_validates(self) -> None:
+        old = statement("approval/v1")
+        assert set(old["predicate"]) == {"approver", "scope", "digests", "expires_at"}
+        assert Statements.validate(old) == []
+
+    @pytest.mark.parametrize(
+        ("outcome", "rule_ids", "reason_codes"),
+        [
+            ("REVIEW", ["SUSPECT.AGENT.SKILL_INSTRUCTIONS.001"], ["R204"]),
+            ("ALLOW", None, None),
+            ("REVIEW", ["MALWARE.INSTALL.FETCH_EXEC.001", "POLICY.CI.WILDCARD.001"], None),
+            ("ALLOW", None, ["R204", "R301"]),
+        ],
+    )
+    def test_an_exception_carries_what_it_speaks_for(
+        self, outcome: str, rule_ids: list[str] | None, reason_codes: list[str] | None
+    ) -> None:
+        exception = statement("approval/v1")
+        exception["predicate"].update(
+            {"outcome": outcome, "rule_ids": rule_ids, "reason_codes": reason_codes}
+        )
+        assert Statements.validate(exception) == []
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("outcome", "BLOCK"),
+            ("outcome", "allow"),
+            ("outcome", None),
+            ("rule_ids", []),
+            ("rule_ids", "SUSPECT.AGENT.SKILL_INSTRUCTIONS.001"),
+            ("rule_ids", ["A.B.001", "A.B.001"]),
+            ("rule_ids", ["has space"]),
+            ("rule_ids", [""]),
+            ("reason_codes", []),
+            ("reason_codes", ["X400"]),
+            ("reason_codes", ["R204", "R204"]),
+            ("reason_codes", "R204"),
+        ],
+    )
+    def test_an_exception_field_that_does_not_say_one_thing_fails(
+        self, field: str, value: object
+    ) -> None:
+        bad = statement("approval/v1")
+        bad["predicate"].update({"outcome": "REVIEW", "rule_ids": None, "reason_codes": None})
+        bad["predicate"][field] = value
+        errors = Statements.validate(bad)
+        assert errors and any(field in e for e in errors)
+
+    def test_an_approval_still_refuses_a_key_it_does_not_name(self) -> None:
+        bad = statement("approval/v1")
+        bad["predicate"]["outcomes"] = "ALLOW"
+        assert Statements.validate(bad)
+
     def test_a_review_needs_two_readers(self) -> None:
         bad = statement("review/v1")
         bad["predicate"]["readers"] = bad["predicate"]["readers"][:1]
