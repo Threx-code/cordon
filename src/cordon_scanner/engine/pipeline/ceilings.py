@@ -147,9 +147,7 @@ class Ceilings:
             graded.append(injection)
         # An agent-family finding in code and an order in an instruction file of the same package: two
         # readings of different files agreeing (`decide/code_and_instructions.py`).
-        agreeing = CodeAndInstructions.of(graded)
-        if agreeing is not None:
-            graded.append(agreeing)
+        graded.extend(CodeAndInstructions.places(graded))
         return graded, verdict
 
     @staticmethod

@@ -22,7 +22,14 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING, ClassVar
 
-from cordon_scanner.foundation.models import Category, Confidence, Finding, Severity
+from cordon_scanner.foundation.models import (
+    Category,
+    Confidence,
+    Evidence,
+    Finding,
+    Location,
+    Severity,
+)
 from cordon_scanner.foundation.results import OperationalFinding
 
 if TYPE_CHECKING:
@@ -72,14 +79,60 @@ class CodeAndInstructions:
 
     @staticmethod
     def of(findings: Sequence[Finding]) -> Finding | None:
-        """The finding when `findings` hold an agent-family finding in code and an instruction-file order, else None."""
+        """The finding of the instruction file's place when `findings` hold an agent-family finding in code and an
+        instruction-file order, else None."""
+        found = CodeAndInstructions.places(findings)
+        return found[0] if found else None
+
+    @staticmethod
+    def places(findings: Sequence[Finding]) -> list[Finding]:
+        """One finding for each place that took part, each with the line of the part it names: the instruction file's
+        order first, then the code file's finding (nothing when either half is missing). A block that names no line
+        cannot be read by the person whose package it stops, so each half names its own."""
         code = [f for f in findings if CodeAndInstructions._code(f)]
         orders = [f for f in findings if CodeAndInstructions._order(f)]
         if not code or not orders:
-            return None
+            return []
         related = tuple(dict.fromkeys([*(f.rule_id for f in orders), *(f.rule_id for f in code)]))[
             :12
         ]
+        return [
+            CodeAndInstructions._at(part, kind, other, orders, code, related)
+            for part, kind, other in (
+                (orders[0], "instruction", code[0]),
+                (code[0], "code", orders[0]),
+            )
+        ]
+
+    @staticmethod
+    def _at(
+        part: Finding,
+        kind: str,
+        other: Finding,
+        orders: list[Finding],
+        code: list[Finding],
+        related: tuple[str, ...],
+    ) -> Finding:
+        built = CodeAndInstructions._build(orders, code, related)
+        place = part.location
+        return replace(
+            built,
+            location=Location(path=place.path, line=place.line, column=place.column),
+            evidence=replace(
+                built.evidence,
+                match_hash=Evidence.hash_bytes(
+                    f"{CodeAndInstructions.RULE}:{place.path}:{place.line}:{kind}".encode()
+                ),
+                metadata=(
+                    *built.evidence.metadata,
+                    ("part", kind),
+                    ("other_part", other.location.path),
+                ),
+            ),
+        )
+
+    @staticmethod
+    def _build(orders: list[Finding], code: list[Finding], related: tuple[str, ...]) -> Finding:
         return replace(
             OperationalFinding.build(
                 path=orders[0].location.path,
