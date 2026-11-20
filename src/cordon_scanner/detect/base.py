@@ -889,6 +889,13 @@ class CapabilityNameMemo(Protocol):
     def take(self, path: str) -> frozenset[str]: ...
 
 
+class DestinationMemo(Protocol):
+    """What the engine uses of the class `LabelledHosts`: the destination digests the detector's own pass found in the
+    file a worker is inspecting."""
+
+    def take(self, path: str) -> tuple[frozenset[str], frozenset[str]]: ...
+
+
 class SubmoduleDependencies(Protocol):
     """What the engine uses of the class `Submodules`."""
 

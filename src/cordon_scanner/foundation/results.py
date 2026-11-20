@@ -524,6 +524,9 @@ class ScanResult:
     reach: dict[str, tuple[str, int]] | None = None
     """How each code file is reached from a place that runs (`decide.reach.FileReach`): `path -> (kind, depth)`. Read by the facts export
     at scan time; not in `to_dict`, like `places`. None for a result built outside a package scan."""
+    destinations: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] | None = None
+    """Each file's URL destinations as salted digests, never names: `path -> (host digests, domain digests)`, for files the
+    capability detector found reaching the network. Read by the facts export; not in `to_dict`."""
     unfiltered: tuple[Finding, ...] | None = None
     """Every finding the scan made, before the reporting thresholds (`PolicyGate.filter_for_reporting`)
     removed the ones under them: the same tuple, not a copy. The facts export reads it, so the facts do not

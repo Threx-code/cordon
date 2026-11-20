@@ -9,7 +9,9 @@ larger file, or a file cut short, is matched every time: its line numbers are it
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar
+import hashlib
+import re
+from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from cordon_scanner.analysis.shared.content_memo import ContentMemo, Same
 
@@ -61,3 +63,63 @@ class LabelledNames:
     def take(path: str) -> frozenset[str]:
         last, LabelledNames._last = LabelledNames._last, None
         return last[1] if last is not None and last[0] == path else frozenset()
+
+
+class DestinationHosts:
+    """The URL hosts a file names, as salted digests (never the name): what the learning loop's shared-infrastructure
+    correlation reads. A host is the authority of an http(s), ws(s) or ftp URL written in the
+    file; its domain is its last two labels (an address is its own domain). At most `MAX` of each per file."""
+
+    _URL: ClassVar[re.Pattern[str]] = re.compile(r"(?i)\b(?:https?|wss?|ftp)://([a-z0-9.-]{1,253})")
+    _LABEL: ClassVar[re.Pattern[str]] = re.compile(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?")
+    SALT: Final = "cordon-host:"
+    MAX: Final = 32
+
+    @staticmethod
+    def digest(name: str) -> str:
+        return hashlib.sha256((DestinationHosts.SALT + name).encode("utf-8")).hexdigest()[:16]
+
+    @staticmethod
+    def of(text: str) -> tuple[frozenset[str], frozenset[str]]:
+        """(host digests, domain digests) of the URLs the text names."""
+        hosts: set[str] = set()
+        for match in DestinationHosts._URL.finditer(text):
+            host = match.group(1).lower().strip(".")
+            labels = host.split(".")
+            if len(labels) < 2 or not all(
+                DestinationHosts._LABEL.fullmatch(label) for label in labels
+            ):
+                continue
+            hosts.add(host)
+            if len(hosts) >= DestinationHosts.MAX:
+                break
+        domains = {
+            h if all(label.isdigit() for label in h.split(".")) else ".".join(h.split(".")[-2:])
+            for h in hosts
+        }
+        return frozenset(map(DestinationHosts.digest, hosts)), frozenset(
+            map(DestinationHosts.digest, domains)
+        )
+
+
+class LabelledHosts:
+    """The destination digests of the file a worker is inspecting, kept for its facts (`net.host`, `net.domain`) the
+    way `LabelledNames` keeps capability names: one entry, windows joined, emptied by `take`."""
+
+    _last: ClassVar[tuple[str, frozenset[str], frozenset[str]] | None] = None
+
+    @staticmethod
+    def remember(path: str, hosts: frozenset[str], domains: frozenset[str]) -> None:
+        last = LabelledHosts._last
+        if last is not None and last[0] == path:
+            hosts, domains = last[1] | hosts, last[2] | domains
+        LabelledHosts._last = (path, hosts, domains)
+
+    @staticmethod
+    def take(path: str) -> tuple[frozenset[str], frozenset[str]]:
+        last, LabelledHosts._last = LabelledHosts._last, None
+        return (
+            (last[1], last[2])
+            if last is not None and last[0] == path
+            else (frozenset(), frozenset())
+        )

@@ -200,6 +200,17 @@ class Accumulator:
             if held.get("cap.all")
         }
 
+    def destinations(self) -> dict[str, tuple[tuple[str, ...], tuple[str, ...]]]:
+        """Each file's destination digests from its worker's facts (`net.host`, `net.domain`), sorted."""
+        return {
+            path: (
+                tuple(sorted(set(held.get("net.host", ())))),
+                tuple(sorted(set(held.get("net.domain", ())))),
+            )
+            for path, held in sorted(self.facts.items())
+            if held.get("net.host")
+        }
+
     def explain_incomplete(self) -> None:
         """An incomplete scan says why: when no coverage finding names what went unexamined, a
         backstop does (`OPERATIONAL.SCAN.INCOMPLETE`). Every path that leaves a scan incomplete

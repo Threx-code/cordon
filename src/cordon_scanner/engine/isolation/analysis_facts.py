@@ -123,11 +123,16 @@ class CapabilityNames:
 
     @staticmethod
     def produce(unit: Any) -> None:
-        from cordon_scanner.detect.registry import LabelledNames
+        from cordon_scanner.detect.registry import LabelledHosts, LabelledNames
         from cordon_scanner.engine.isolation.facts import WorkerFacts
 
         for name in sorted(LabelledNames.take(unit.path)):
             WorkerFacts.add("cap.all", name)
+        hosts, domains = LabelledHosts.take(unit.path)
+        for digest in sorted(hosts):
+            WorkerFacts.add("net.host", digest)
+        for digest in sorted(domains):
+            WorkerFacts.add("net.domain", digest)
 
 
 class ParentAnalysis:

@@ -143,3 +143,24 @@ class TestARuleThatCouldNeverFireIsRefusedAtLoad:
         pack.write_text(RULE.replace("where: unreached", "where: somewhere"), encoding="utf-8")
         with pytest.raises(RulePackError, match="unknown where"):
             RuleLoader().load_file(pack)
+
+
+class TestTheFactsCarryDestinationsAsDigests:
+    def test_the_file_that_reaches_the_network_names_its_host_as_a_digest_only(
+        self, tmp_path
+    ) -> None:
+        import json as _json
+
+        from cordon_scanner.detect.code.capability.memo import DestinationHosts
+
+        result = PackageKit.scan(tmp_path, index="module.exports = (a, b) => a + b;\n")
+        record = ScanFacts.of(result)
+        helper = next(
+            f
+            for f in record["files"]
+            if f["key"] == ScanFacts.file_key(next(p for p in (result.destinations or {})))
+        )
+        assert helper["hosts"] == [DestinationHosts.digest("example.com")]
+        assert helper["domains"] == [DestinationHosts.digest("example.com")]
+        assert record["package"]["hosts_distinct"] == 1
+        assert "example.com" not in _json.dumps(record)

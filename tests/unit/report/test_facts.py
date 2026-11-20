@@ -342,7 +342,7 @@ class TestEachFileCarriesHowItIsReached:
         assert "a-name-the-package-chose" not in json.dumps(record)
 
     def test_the_version_is_two(self) -> None:
-        assert FACTS_VERSION == "2"
+        assert FACTS_VERSION == "3"
 
     def test_a_real_scan_classes_a_chain_and_an_orphan(self, tmp_path: Path) -> None:
         (tmp_path / "package.json").write_text(

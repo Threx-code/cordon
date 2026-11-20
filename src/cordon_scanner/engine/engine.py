@@ -345,6 +345,7 @@ class Engine:
             verdict=verdict,
             places=ctx.places(),
             reach=acc.reach,
+            destinations=acc.destinations(),
             repository=inventory,
             dependencies=dependencies,
             sources=Graph.configured_sources(units),
@@ -559,6 +560,7 @@ class Engine:
             verdict=verdict,
             places=ctx.places(),
             reach=acc.reach,
+            destinations=acc.destinations(),
             # What installing it installs, then what only files outside that set record.
             dependencies=(*dependencies, *acc.not_installed),
             repository=Repository(root=str(path), file_count=acc.files_scanned),

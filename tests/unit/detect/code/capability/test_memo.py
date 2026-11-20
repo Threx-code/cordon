@@ -49,3 +49,35 @@ class TestCapabilityMemo:
         CapabilityMemo.hits(matcher, content, self.RULES, "python")
         CapabilityMemo.hits(matcher, content, self.RULES, "python")
         assert matcher.runs == 2
+
+
+class TestDestinationHosts:
+    """URL hosts a file names, kept as salted digests: never the name, only well-formed hosts, at most 32."""
+
+    def test_hosts_and_domains_are_digests_never_names(self) -> None:
+        from cordon_scanner.detect.code.capability.memo import DestinationHosts
+
+        hosts, domains = DestinationHosts.of(
+            "fetch('https://api.example.com/v1'); ws = 'wss://Push.Example.com:443/x'"
+        )
+        assert hosts == {
+            DestinationHosts.digest("api.example.com"),
+            DestinationHosts.digest("push.example.com"),
+        }
+        assert domains == {DestinationHosts.digest("example.com")}
+        assert all(len(d) == 16 and "example" not in d for d in hosts | domains)
+
+    def test_an_address_is_its_own_domain_and_junk_is_not_a_host(self) -> None:
+        from cordon_scanner.detect.code.capability.memo import DestinationHosts
+
+        hosts, domains = DestinationHosts.of(
+            "http://10.0.0.5/a http://localhost/b https://-bad-.example/c https://a..b/d"
+        )
+        assert hosts == {DestinationHosts.digest("10.0.0.5")}
+        assert domains == {DestinationHosts.digest("10.0.0.5")}
+
+    def test_at_most_thirty_two_hosts_a_file(self) -> None:
+        from cordon_scanner.detect.code.capability.memo import DestinationHosts
+
+        text = " ".join(f"https://h{i}.example.org/" for i in range(100))
+        assert len(DestinationHosts.of(text)[0]) == DestinationHosts.MAX

@@ -10,7 +10,8 @@ host. What it does carry is the scanner's own vocabulary about the package:
   declared_entry, hook_command, require_chain, path_string, stem_only or unreached, or not_code, with its `reach_depth`;
   `decide/reach.py`), the rule ids that
   fired on it with their counts (suppressed ones counted again apart), its capabilities (every file the capability
-  detector read, reached or not), and, for a file left unread, the rule of its gap;
+  detector read, reached or not), the salted digests of the URL hosts and domains a file that reaches the network names
+  (never the names), and, for a file left unread, the rule of its gap;
 * per package: the scan's completeness and the rules of its gaps, the files scanned and unread, how many files
   each place holds, each lifecycle hook's kind and the programs it runs (from a closed list of tools), dependency
   counts, and the package-level rule ids.
@@ -40,7 +41,7 @@ if TYPE_CHECKING:
 
     from cordon_scanner.foundation.results import ScanResult
 
-FACTS_VERSION: Final = "2"
+FACTS_VERSION: Final = "3"
 PACKAGE_SCOPE: Final = "."
 """The path a finding about the whole package carries (`engine.pipeline.constants.REPOSITORY_SCOPE`)."""
 
@@ -199,6 +200,12 @@ class ScanFacts:
                 "rules": ScanFacts.capped(package_rules),
                 "suppressed": ScanFacts.capped(package_suppressed),
                 "unreached_capability_files": unreached_capability_files,
+                "hosts_distinct": len(
+                    {h for hosts, _domains in (result.destinations or {}).values() for h in hosts}
+                ),
+                "domains_distinct": len(
+                    {d for _hosts, domains in (result.destinations or {}).values() for d in domains}
+                ),
                 "files_unread": files_unread,
                 "files_omitted": omitted,
             },
@@ -218,12 +225,13 @@ class ScanFacts:
         """The file entries (bounded, files with a capability or an unread state first), the count of files with a
         capability nothing reaches, the count left out, and the count unread."""
         reach = result.reach or {}
+        destinations = result.destinations or {}
         unread: dict[str, set[str]] = defaultdict(set)
         for rule, path in result.content_gaps:
             if path and path != PACKAGE_SCOPE:
                 unread[path].add(ScanFacts.rule_id(rule))
         entries = []
-        for path in set(rules) | set(capabilities) | set(unread):
+        for path in set(rules) | set(capabilities) | set(unread) | set(destinations):
             entries.append(
                 {
                     "key": ScanFacts.file_key(path),
@@ -235,6 +243,8 @@ class ScanFacts:
                     "rules": ScanFacts.capped(rules.get(path, {})),
                     "suppressed": ScanFacts.capped(suppressed.get(path, {})),
                     "capabilities": sorted(capabilities.get(path, ())),
+                    "hosts": list(destinations.get(path, ((), ()))[0]),
+                    "domains": list(destinations.get(path, ((), ()))[1]),
                     "unread": sorted(unread.get(path, ())),
                 }
             )
