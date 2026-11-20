@@ -17,6 +17,7 @@ from cordon_scanner.detect.code.capability.hits import CapabilityHit
 from cordon_scanner.detect.code.capability.load_path import LoadPath
 from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
+from cordon_scanner.foundation.limits import WHOLE_FILE_BYTES
 
 if TYPE_CHECKING:
     from cordon_scanner.detect.base import ScanContext
@@ -49,7 +50,7 @@ class JsRuns:
         built from the received value, within the handler, and nothing else. Recorded at the
         process start as `fetch_exec`, and the connection as the egress."""
         text = content.text
-        connection = cls._JS_CONNECTION.search(text) if len(text) <= 4_000_000 else None
+        connection = cls._JS_CONNECTION.search(text) if len(text) <= WHOLE_FILE_BYTES else None
         if connection is None:
             return []
         for received in cls._JS_RECEIVED.finditer(text):
@@ -132,7 +133,7 @@ class JsRuns:
         as a program, started -- within 3,000 characters. Base64 and decompression are not the
         transform: across 98,499 benign units they were bundles and installers doing their job."""
         text = content.text
-        if len(text) > 4_000_000 or not cls._JS_READS_FILE.search(text):
+        if len(text) > WHOLE_FILE_BYTES or not cls._JS_READS_FILE.search(text):
             return []
         for found in cls._JS_BYTES_TRANSFORMED.finditer(text):
             read = cls._JS_READS_FILE.search(text, max(0, found.start() - 1500), found.start())
@@ -179,7 +180,7 @@ class JsRuns:
         # A bundle runs its tools' commands and calls its own APIs a line apart (a minified editor
         # extension calling `gh` and GitHub's API matched); the payloads were written by hand.
 
-        if len(text) > 4_000_000 or "exec" not in text or BuildOutput.is_minified(content):
+        if len(text) > WHOLE_FILE_BYTES or "exec" not in text or BuildOutput.is_minified(content):
             return []
         for started in cls._JS_COMMAND_OUTPUT.finditer(text):
             output = started["cb"] or started["sync"]

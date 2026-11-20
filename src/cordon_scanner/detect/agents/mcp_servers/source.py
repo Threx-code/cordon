@@ -24,6 +24,7 @@ from cordon_scanner.detect.agents.text_patterns import (
     SEND,
     ZERO_WIDTH_ONLY,
 )
+from cordon_scanner.foundation.limits import WHOLE_FILE_BYTES
 from cordon_scanner.foundation.models import (
     Finding,
 )
@@ -644,7 +645,7 @@ class McpServerSource:
     def _all_literals(text: str) -> Iterator[str]:
         """Every string literal of a source file, escapes decoded: `'`, `"` and backtick
         strings, a triple-quoted one read as one. Bounded: at most 20,000 literals."""
-        index, count, end = 0, 0, min(len(text), 4_000_000)
+        index, count, end = 0, 0, min(len(text), WHOLE_FILE_BYTES)
         pending: list[str] = []
         while index < end and count < 20_000:
             char = text[index]

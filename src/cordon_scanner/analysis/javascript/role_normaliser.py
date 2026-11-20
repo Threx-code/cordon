@@ -24,6 +24,7 @@ import json
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.analysis.javascript.code_model import CodeFeatures
+from cordon_scanner.foundation.limits import WHOLE_FILE_BYTES
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -33,7 +34,7 @@ class RoleNormaliser:
     """Bytes to normalised token strings and their 32-bit ids."""
 
     VERSION: ClassVar[str] = "rn1"
-    MAX_BYTES: ClassVar[int] = 2_000_000
+    MAX_BYTES: ClassVar[int] = WHOLE_FILE_BYTES
     MAX_TOKENS: ClassVar[int] = CodeFeatures.MAX_TOKENS
 
     ROLES: ClassVar[tuple[str, ...]] = ("LOCAL", "PARAM", "IMPORT", "PROP", "FREE")

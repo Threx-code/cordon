@@ -13,6 +13,7 @@ import re
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.foundation.capabilities import Capability
+from cordon_scanner.foundation.limits import WHOLE_FILE_BYTES
 
 if TYPE_CHECKING:
     from cordon_scanner.detect.code.capability.hits import CapabilityHit
@@ -95,7 +96,7 @@ class CredentialSweep:
         from cordon_scanner.detect.code.capability.hits import CapabilityHit
 
         text = content.text
-        if len(text) > 4_000_000:
+        if len(text) > WHOLE_FILE_BYTES:
             return []
         present = [name for name, literal in cls.LITERALS.items() if literal in text]
         if len(present) < cls.SWEEP_MIN:
