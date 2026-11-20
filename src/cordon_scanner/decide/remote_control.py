@@ -12,6 +12,9 @@ other rules read is touched.
   two of the three, or any of them only in tests or dependencies                                ──► nothing
 ```
 The finding says which agent or terminal, which kind of channel and which history store, and nothing the package handles.
+It is one finding for each place a part fired, at the line of that part's first match, so the person whose package is stopped can see why:
+the file and line that drive the agent, the one that opens the channel, the one that names the store (a place two parts share is one
+finding).
 """
 
 from __future__ import annotations
@@ -64,8 +67,25 @@ class RemoteControl:
         signals = [s for _f, s in records if s is not None]
         if not cls.fires(signals):
             return kept, []
-        driving = sorted(f.location.path for f, s in records if s is not None and s.execs)
-        return kept, [cls.finding(driving[0], cls.joined(signals))]
+        package = cls.joined(signals)
+        return kept, [cls.finding(path, package, line) for path, line in cls.places(records)]
+
+    @staticmethod
+    def places(records: Sequence[tuple[Finding, Signals | None]]) -> list[tuple[str, int | None]]:
+        """The place each part fired on: the first file (by path) that has it, preferring for the channel a file that names a
+        remote address, and the first line a kind of that part matched there; a place two parts share is listed once."""
+        read = [(f, s) for f, s in records if s is not None]
+        chosen: list[tuple[str, int | None]] = []
+        for group, attribute in (("e", "execs"), ("c", "chans"), ("h", "hists")):
+            candidates = sorted(
+                ((f, s) for f, s in read if getattr(s, attribute)),
+                key=lambda pair: (group == "c" and not pair[1].remote, pair[0].location.path),
+            )
+            finding, _signals = candidates[0]
+            at = BridgeShape.decode_lines(dict(finding.evidence.metadata).get("lines", ""))
+            wanted = [line for key, line in at.items() if key.startswith(group + ":")]
+            chosen.append((finding.location.path, min(wanted) if wanted else None))
+        return list(dict.fromkeys(chosen))
 
     @staticmethod
     def _said(kinds: frozenset[str], order: tuple[str, ...]) -> str:
@@ -75,7 +95,7 @@ class RemoteControl:
         )
 
     @classmethod
-    def finding(cls, path: str, package: Signals) -> Finding:
+    def finding(cls, path: str, package: Signals, line: int | None = None) -> Finding:
         from cordon_scanner.detect.agents.rule_catalogue import RULES
 
         rule = RULES[cls.RULE]
@@ -91,11 +111,11 @@ class RemoteControl:
             severity=Severity.HIGH,
             confidence=Confidence.MEDIUM,
             message=message,
-            location=Location(path=path),
+            location=Location(path=path, line=line),
             evidence=Evidence(
                 kind=EvidenceKind.METADATA,
                 match_hash=Evidence.hash_bytes(
-                    f"{cls.RULE}:{path}:{BridgeShape.encode(package)}".encode()
+                    f"{cls.RULE}:{path}:{line}:{BridgeShape.encode(package)}".encode()
                 ),
                 redaction=RedactionMode.NONE,
                 metadata=(("drives", execs), ("channel", chans), ("history", hists)),

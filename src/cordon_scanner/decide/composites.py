@@ -118,7 +118,7 @@ class PackageComposites:
         if not phrases or not readings:
             return None
         parts = (PackageComposites.INJECTION_PHRASE, PackageComposites.SKILL_READING)
-        return replace(
+        built = replace(
             OperationalFinding.build(
                 path=phrases[0].location.path,
                 rule_id=PackageComposites.INJECTION_RULE,
@@ -139,6 +139,15 @@ class PackageComposites:
             always_report=False,
             detector="verdict",
             related=parts,
+        )
+        # Where it fired: the phrase's own place (path, line, column), and the file the learned reading scored, which has no line of its own.
+        return replace(
+            built,
+            location=phrases[0].location,
+            evidence=replace(
+                built.evidence,
+                metadata=(*built.evidence.metadata, ("reading_at", readings[0].location.path)),
+            ),
         )
 
 

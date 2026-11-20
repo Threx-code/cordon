@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -90,9 +91,9 @@ class TestTheThreeTogether:
     )
     def test_it_blocks(self, tmp_path: Path, files: dict[str, str]) -> None:
         found = Package.found(Package.scan(tmp_path, files))
-        assert len(found) == 1
-        assert found[0].severity is Severity.HIGH
-        assert found[0].category is Category.SUSPICIOUS
+        assert 1 <= len(found) <= 3, "one finding for each place a part fired, at most three"
+        assert all(f.severity is Severity.HIGH and f.category is Category.SUSPICIOUS for f in found)
+        assert all(f.location.line for f in found), "every finding names the line that made it fire"
 
     def test_a_loopback_channel_beside_a_remote_one_still_counts(self, tmp_path: Path) -> None:
         files = {"a.js": Js.SDK, "b.js": Js.LOOPBACK + Js.CLIENT, "c.js": Js.HISTORY}
@@ -108,6 +109,53 @@ class TestTheThreeTogether:
         assert "through its sdk" in text and "websocket" in text and "claude" in text
         assert "relay.example" not in text and "wss://" not in text and "/projects" not in text
         assert not re.search(r"internal\.", text)
+
+
+class TestTheLinesThePartsFiredOn:
+    """A block that names no line cannot be read: the person whose package was stopped cannot see why. Each part of
+    the shape (the agent or terminal driven, the client channel, the history store) is a finding at the line it fired on."""
+
+    FILES: ClassVar[dict[str, str]] = {
+        "agent.js": Js.SDK,
+        "link.js": Js.CLIENT,
+        "store.js": Js.HISTORY,
+    }
+
+    def test_each_part_is_a_finding_at_the_line_it_fired_on(self, tmp_path: Path) -> None:
+        found = Package.found(Package.scan(tmp_path, self.FILES))
+        assert len(found) == 3
+        by_file = {f.location.path.rpartition("/")[2]: f for f in found}
+        assert set(by_file) == {"agent.js", "link.js", "store.js"}
+        for name, needle in (("agent.js", SDK), ("link.js", "WebSocket"), ("store.js", ".claude")):
+            line = by_file[name].location.line
+            assert line is not None, f"{name} has no line"
+            assert needle in self.FILES[name].splitlines()[line - 1], name
+
+    def test_a_file_that_holds_two_parts_names_both_lines(self, tmp_path: Path) -> None:
+        files = {"bridge.js": Js.SDK + Js.STREAM + Js.HISTORY}
+        found = Package.found(Package.scan(tmp_path, files))
+        lines = sorted(f.location.line for f in found)
+        assert len(found) == 3 and len(set(lines)) == 3
+        text = files["bridge.js"].splitlines()
+        assert any(SDK in text[n - 1] for n in lines)
+        assert any("EventSource" in text[n - 1] for n in lines)
+        assert any(".claude" in text[n - 1] for n in lines)
+
+    def test_the_line_of_a_kind_is_the_first_line_it_appears_on(self) -> None:
+        text = "// nothing\n" + Js.HISTORY + "\n" + Js.HISTORY
+        assert BridgeShape.lines(text) == {"h:claude": 2}
+
+    def test_the_lines_survive_the_trip_and_a_bad_one_is_refused(self) -> None:
+        lines = BridgeShape.lines(Js.SDK + Js.CLIENT + Js.HISTORY)
+        assert lines and all(isinstance(v, int) and v >= 1 for v in lines.values())
+        assert BridgeShape.decode_lines(BridgeShape.encode_lines(lines)) == lines
+        assert BridgeShape.decode_lines("e:sdk=0,c:websocket=x") == {}
+        assert BridgeShape.decode_lines("z" * 900) == {}
+
+    def test_the_findings_still_say_nothing_the_package_handles(self, tmp_path: Path) -> None:
+        for f in Package.found(Package.scan(tmp_path, self.FILES)):
+            text = f.message.lower()
+            assert "relay.example" not in text and "wss://" not in text and "/projects" not in text
 
 
 class TestWhatIsNot:

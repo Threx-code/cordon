@@ -14,7 +14,7 @@ from dataclasses import replace
 import pytest
 
 from cordon_scanner.decide.composites import PackageComposites
-from cordon_scanner.foundation.models import Category, Confidence, Finding, Severity
+from cordon_scanner.foundation.models import Category, Confidence, Finding, Location, Severity
 from cordon_scanner.foundation.results import OperationalFinding
 
 PARTS = PackageComposites.WORM_PARTS
@@ -151,6 +151,26 @@ class TestTheCorroboratedInjectionComposite:
         assert (found.severity, found.confidence) == (Severity.HIGH, Confidence.MEDIUM)
         assert found.related == (self.PHRASE, self.READING)
         assert found.location.path == "skill/SKILL.md"
+
+    def test_it_records_the_line_of_the_phrase_and_where_the_reading_was(self) -> None:
+        phrase = replace(
+            self.of(self.PHRASE), location=Location(path="skill/SKILL.md", line=42, column=3)
+        )
+        reading = self.of(self.READING, Severity.MEDIUM, Confidence.MEDIUM, path="skill/other.md")
+        found = PackageComposites.corroborated_injection([phrase, reading])
+        assert found is not None
+        assert (found.location.path, found.location.line, found.location.column) == (
+            "skill/SKILL.md",
+            42,
+            3,
+        )
+        assert dict(found.evidence.metadata)["reading_at"] == "skill/other.md"
+
+    def test_a_phrase_with_no_line_leaves_the_finding_without_one(self) -> None:
+        found = PackageComposites.corroborated_injection(self.both())
+        assert found is not None
+        assert found.location.line is None
+        assert dict(found.evidence.metadata)["reading_at"] == "skill/SKILL.md"
 
     def test_it_trips_the_default_gate_where_its_parts_do_not(self) -> None:
         from cordon_scanner.decide.policy import PolicyGate
