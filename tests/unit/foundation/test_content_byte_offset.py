@@ -71,7 +71,9 @@ class TestAFindingOfAFileWithAMark:
         ],
         ids=["plain", "mark", "mark_and_crlf"],
     )
-    def test_the_evidence_is_the_description_however_the_file_was_written(self, tmp_path, write) -> None:
+    def test_the_evidence_is_the_description_however_the_file_was_written(
+        self, tmp_path, write
+    ) -> None:
         raw = write(SERVER)
         findings = self.scanned(tmp_path, raw)
         assert findings, "the poisoned description is reported"
