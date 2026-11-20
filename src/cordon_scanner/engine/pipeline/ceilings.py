@@ -733,8 +733,13 @@ class Ceilings:
             found: set[str] = set()
             for path in frontier:
                 unit = members.get(path)
-                if unit is None or unit.content.is_binary or unit.content.size > 2_000_000:
+                if unit is None or unit.content.is_binary:
                     continue
+                if unit.content.truncated:
+                    # A started file read only in part could name, past what was read, the file a finding is
+                    # in. What it started is not known, so no grade is lowered for being unstarted: a file's
+                    # size must not be a way to lower a grade.
+                    return findings
                 text = unit.content.text
                 base = path.rpartition("/")[0]
                 for token in set(re.findall(r"[\w./${}-]{2,200}", text)):
