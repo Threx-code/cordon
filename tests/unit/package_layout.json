@@ -901,6 +901,7 @@
   "test_remote_control.py": "detect/agents",
   "test_aibom.py": "report",
   "test_ansible_signatures.py": "intel/provenance",
+  "test_analysis_verdict_vectors.py": "intel/provenance",
   "test_archive_bombs_are_refused_while_streaming.py": "sources",
   "test_identical_block_runs.py": "sources",
   "test_archive_damaged_member.py": "sources",
