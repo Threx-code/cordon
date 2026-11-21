@@ -184,6 +184,7 @@ class Distiller:
             "train_units": len(train),
             "confirm_units": len(confirm),
             "facts_version": next(iter(versions), ""),
+            "params": self.params(),
         }
         confirm_space = _Space(confirm, self.terms_of)
         z_confirm = NormalDist().inv_cdf(1 - self.alpha)
@@ -208,6 +209,23 @@ class Distiller:
             }
             return Distillation(candidate=candidate, refused=refused, search=search)
         return Distillation(candidate=None, refused=refused, search=search)
+
+    def params(self) -> dict[str, Any]:
+        """Every threshold of this run, recorded with the candidate so the gate can replay it (LL-52). The refused families are
+        counted and digested, never listed."""
+        names = "\n".join(sorted(self.refused_families)).encode("utf-8")
+        return {
+            "generator": self.generator,
+            "min_families": self.min_families,
+            "confirm_min_families": self.confirm_min_families,
+            "budget": self.budget,
+            "alpha": self.alpha,
+            "max_size": self.max_size,
+            "max_terms": self.max_terms,
+            "max_candidates": self.max_candidates,
+            "refused_families": len(self.refused_families),
+            "refused_families_digest": hashlib.sha256(names).hexdigest(),
+        }
 
     def _kept_terms(self, space: _Space, refused: dict[str, int]) -> list[tuple[str, ...]]:
         kept = []
