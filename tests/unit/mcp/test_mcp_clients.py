@@ -9,8 +9,8 @@ import argparse
 import json
 
 import pytest
-import yaml
 
+from cordon_scanner.foundation.formats.datayaml import DataYaml
 from cordon_scanner.mcp.clients import CLIENTS, Clients
 from cordon_scanner.mcp.options import McpOptions
 
@@ -70,13 +70,13 @@ class TestOpencode:
 
 class TestGoose:
     def test_the_body_is_the_extension_entry(self) -> None:
-        entry = yaml.safe_load(Reader.body("goose"))["extensions"]["cordon"]
+        entry = DataYaml.load(Reader.body("goose"))["extensions"]["cordon"]
         assert entry["name"] == "cordon" and entry["type"] == "stdio"
         assert entry["cmd"].endswith("cordon-scanner") and entry["args"] == ["mcp"]
-        assert entry["enabled"] is True and entry["timeout"] == 300
+        assert entry["enabled"] is True and entry["timeout"] == "300"
 
     def test_the_online_option_is_an_argument(self) -> None:
-        entry = yaml.safe_load(Reader.body("goose", allow_online=True))["extensions"]["cordon"]
+        entry = DataYaml.load(Reader.body("goose", allow_online=True))["extensions"]["cordon"]
         assert entry["args"] == ["mcp", "--allow-online"]
 
 
@@ -86,3 +86,11 @@ class TestTheOnesThatWereThere:
     )
     def test_the_json_ones_still_parse(self, client: str) -> None:
         assert "cordon" in json.dumps(json.loads(Reader.body(client)))
+
+
+class TestContinue:
+    def test_the_body_is_the_server_entry(self) -> None:
+        document = DataYaml.load(Reader.body("continue"))
+        entry = document["mcpServers"][0]
+        assert entry["name"] == "cordon" and entry["type"] == "stdio"
+        assert entry["command"].endswith("cordon-scanner") and entry["args"][0] == "mcp"
