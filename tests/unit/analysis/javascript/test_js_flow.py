@@ -149,8 +149,32 @@ class TestAFixedProgramsArguments:
         "cmd parses what start is given": 'cp.exec(`cmd /c start "" https://h.invalid/${v}`);',
         "a shell string with the reply": "cp.exec(`tar xf ${v}`);",
         "a program from a property": 'const cfg = { prog: "taskkill" };\ncp.spawn(cfg.prog, [v]);',
+        "the reply as the inline script": 'cp.execFile(process.execPath, ["-e", v]);',
+        "the reply beside a literal script": 'cp.execFile(process.execPath, ["-e", "x", v]);',
+        "a script held in a name": 'const s = "x";\ncp.execFile(process.execPath, ["-e", s], { env: { A: v } });',
+        "a loader variable": 'cp.execFile(process.execPath, ["-e", "x"], { env: { NODE_OPTIONS: v } });',
+        "a loader variable in lower case": 'cp.execFile("node", ["-e", "x"], { env: { path: v } });',
+        "an environment key the reply names": 'cp.execFile("node", ["-e", "x"], { env: { [v]: "1" } });',
+        "an inline script with the reply as its directory": (
+            'cp.execFile(process.execPath, ["-e", "x"], { cwd: v, env: { A: "1" } });'
+        ),
+        "an inline script with a shell": (
+            'cp.execFile(process.execPath, ["-e", "x"], { shell: true, env: { A: v } });'
+        ),
+        "a program that is not node": 'cp.execFile("python3", ["-e", "x"], { env: { A: v } });',
+        "a flag that is not a script": 'cp.execFile("node", ["--require", "x"], { env: { A: v } });',
+        "the environment taken whole from the reply": (
+            'cp.execFile("node", ["-e", "x"], { env: v });'
+        ),
     }
     DATA: ClassVar[dict[str, str]] = {
+        "an inline script, the reply in an environment value": (
+            'cp.execFile(process.execPath, ["-e", "x"], { env: { ...process.env, A_SUBJ: v } });'
+        ),
+        "node by name": 'cp.spawn("node", ["-e", "x"], { env: { A: v }, stdio: "ignore" });',
+        "a print flag, a timeout and a directory": (
+            'cp.execFileSync("node", ["-p", "x"], { cwd: "/tmp", timeout: 9, env: { A: v } });'
+        ),
         "taskkill and a pid": 'cp.spawn("taskkill", ["/PID", v, "/F"]);',
         "tar after --": 'cp.spawn("tar", ["xf", "--", v]);',
         "curl writes what it fetches": 'cp.spawn("curl", ["-fsSL", "-o", "out.bin", v]);',

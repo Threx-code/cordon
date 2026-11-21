@@ -183,6 +183,31 @@ _PROCESS_CALL: Final = frozenset(
 )
 #: The calls that take a program and an argument list rather than a shell command line.
 _ARGV_CALLS: Final = frozenset({"spawn", "spawnSync", "execFile", "execFileSync"})
+#: The flags with which `node` takes a script as the next argument, written out.
+_EVAL_FLAGS: Final = frozenset({"-e", "-p", "--eval", "--print"})
+#: Environment variables a spawned program loads code from, or finds programs by: a value a reply sets
+#: there is code run, so an inline script's environment with one of these is not data.
+_LOADER_ENV: Final = frozenset(
+    {
+        "NODE_OPTIONS",
+        "NODE_PATH",
+        "NODE_REPL_EXTERNAL_MODULE",
+        "NODE_EXTRA_CA_CERTS",
+        "LD_PRELOAD",
+        "LD_LIBRARY_PATH",
+        "DYLD_INSERT_LIBRARIES",
+        "DYLD_LIBRARY_PATH",
+        "DYLD_FRAMEWORK_PATH",
+        "PATH",
+        "PATHEXT",
+        "BASH_ENV",
+        "ENV",
+        "COMSPEC",
+        "SHELL",
+        "HOME",
+        "USERPROFILE",
+    }
+)
 #: Programs whose arguments are data, each with the rule a tainted argument must meet (note 44):
 #: `any` (a pid, a name to look up, an archive or URL to fetch or unpack), `after --` (a program
 #: with options that take a command: only an argument after a literal `--` is data, since GNU
