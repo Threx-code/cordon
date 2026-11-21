@@ -1,0 +1,31 @@
+{
+  "about": "A runtime-inventory envelope made by cordon_scanner.cloud.device_attestation with the test seed bytes(range(32)). The platform's tests enrol `public_key` for a window around `signed_at` and must accept `envelope`. `statement` is what it says.",
+  "envelope": {
+    "payload": "eyJsb2FkZWQiOlt7ImtpbmQiOiJtY3AiLCJwdXJsIjoicGtnOm5wbS8lNDBtb2RlbGNvbnRleHRwcm90b2NvbC9zZXJ2ZXItZ2l0aHViQDEuMi4zIn0seyJraW5kIjoibWNwIiwicHVybCI6InBrZzpweXBpL21jcC1zZXJ2ZXItZ2l0QDAuNi4yIn1dLCJzY2hlbWEiOiJjb3Jkb24ucnVudGltZS1pbnZlbnRvcnkvdjEiLCJzZXNzaW9uIjoiMDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWYiLCJzaWduZWRfYXQiOiIyMDI2LTExLTIxVDA5OjAwOjA1WiIsInVubmFtZWQiOjN9",
+    "payloadType": "application/vnd.cordon.runtime-inventory.v1+json",
+    "signatures": [
+      {
+        "keyid": "56475aa75463474c0285df5dbf2bcab73da651358839e9b77481b2eab107708c",
+        "sig": "WBiA9f5NTDVC0NTQm7cRXtRXmobuTh/eMyzsVWDLK2cHxBcxO+6MDAyv7TZErr9YuYI4U379+6S3GimDtRKlAw=="
+      }
+    ]
+  },
+  "keyid": "56475aa75463474c0285df5dbf2bcab73da651358839e9b77481b2eab107708c",
+  "public_key": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+  "statement": {
+    "loaded": [
+      {
+        "kind": "mcp",
+        "purl": "pkg:npm/%40modelcontextprotocol/server-github@1.2.3"
+      },
+      {
+        "kind": "mcp",
+        "purl": "pkg:pypi/mcp-server-git@0.6.2"
+      }
+    ],
+    "schema": "cordon.runtime-inventory/v1",
+    "session": "0123456789abcdef0123456789abcdef",
+    "signed_at": "2026-11-21T09:00:05Z",
+    "unnamed": 3
+  }
+}
