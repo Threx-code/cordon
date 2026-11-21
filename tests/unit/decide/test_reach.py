@@ -278,11 +278,22 @@ class TestAHostilePackageEndsTheReachNotTheScan:
     """A package chooses the bytes the reach reads: a structure nested past the parser's depth or a chain of thousands of
     terms is a recorded gap (`FileReach.guarded`, `FileReach.gap`), never an exception out of the scan."""
 
-    def test_a_package_json_nested_past_the_parser_depth(self) -> None:
+    def test_a_package_json_nested_past_the_parser_depth_never_raises(self) -> None:
+        # Whether a parser reaches its depth depends on the platform: Python 3.14 measures the C stack, so a machine with
+        # a larger stack parses what another refuses. Either outcome is right; an exception out of the reach never is.
         deep = '{"main": "index.js", "x": ' + "[" * 100_000 + "]" * 100_000 + "}"
         files = {"package/package.json": deep, "package/index.js": "module.exports = 1;\n"}
         reach, read = FileReach.guarded(Package.units(files), Package.context())
-        assert (reach, read) == ({}, False)
+        assert isinstance(reach, dict) and (read or reach == {})
+
+    @pytest.mark.parametrize("error", [RecursionError, MemoryError])
+    def test_a_structure_the_parser_cannot_follow_ends_the_reach_as_a_gap(self, monkeypatch, error) -> None:
+        def refuse(cls, units, ctx):
+            raise error()
+
+        monkeypatch.setattr(FileReach, "of", classmethod(refuse))
+        files = {"package/package.json": '{"main": "index.js"}', "package/index.js": "module.exports = 1;\n"}
+        assert FileReach.guarded(Package.units(files), Package.context()) == ({}, False)
 
     def test_the_gap_is_a_blocking_content_gap(self) -> None:
         finding = FileReach.gap()
@@ -304,7 +315,21 @@ class TestAHostilePackageEndsTheReachNotTheScan:
         reach = Package.reach(files, import_entry_paths=("package/index.js",))
         assert reach["package/lib/helper.js"] == ("require_chain", 1)
 
-    def test_a_whole_scan_of_a_nested_package_finishes_incomplete(self, tmp_path) -> None:
+    def test_a_whole_scan_whose_reach_cannot_be_followed_finishes_incomplete(self, tmp_path, monkeypatch) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.foundation.config.settings import Config
+
+        def refuse(cls, units, ctx):
+            raise RecursionError()
+
+        monkeypatch.setattr(FileReach, "of", classmethod(refuse))
+        (tmp_path / "package.json").write_text('{"name": "deep", "version": "1.0.0", "main": "index.js"}', "utf-8")
+        (tmp_path / "index.js").write_text("module.exports = 1;\n", encoding="utf-8")
+        result = Scanner(Config.default()).scan(tmp_path)
+        assert "OPERATIONAL.REACH.UNREAD" in {f.rule_id for f in (result.unfiltered or result.findings)}
+        assert not result.complete and not result.content_complete
+
+    def test_a_whole_scan_of_a_nested_package_finishes(self, tmp_path) -> None:
         from cordon_scanner import Scanner
         from cordon_scanner.foundation.config.settings import Config
 
@@ -317,7 +342,7 @@ class TestAHostilePackageEndsTheReachNotTheScan:
         )
         (tmp_path / "index.js").write_text("module.exports = 1;\n", encoding="utf-8")
         result = Scanner(Config.default()).scan(tmp_path)
-        assert "OPERATIONAL.REACH.UNREAD" in {
-            f.rule_id for f in (result.unfiltered or result.findings)
-        }
-        assert not result.complete and not result.content_complete
+        # The real thing, whatever the platform's parser depth: the scan finishes, and if the reach could not be
+        # followed the scan says so and is incomplete.
+        gapped = "OPERATIONAL.REACH.UNREAD" in {f.rule_id for f in (result.unfiltered or result.findings)}
+        assert not gapped or (not result.complete and not result.content_complete)
