@@ -227,6 +227,8 @@ class Structure:
         {
             # What GitHub, PyPI and the citation tools read at the root.
             ".github",
+            # The funding manifest's proof that this repository belongs to it (fundingjson.org's `wellKnown`).
+            ".well-known",
             "CITATION.cff",
             "CODE_OF_CONDUCT.md",
             "CONTRIBUTING.md",
