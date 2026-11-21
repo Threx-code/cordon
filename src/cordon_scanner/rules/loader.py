@@ -36,6 +36,7 @@ from cordon_scanner.foundation.paths import PackagePaths
 from cordon_scanner.foundation.rule_model import Rule, RuleProvenance, RuleTests
 from cordon_scanner.foundation.text.literals import LiteralGate
 from cordon_scanner.rules.derivations import PatternDerivations
+from cordon_scanner.rules.fact_terms import FactTerms
 from cordon_scanner.rules.pack import CompiledMatch, CompiledRule, RulePack
 from cordon_scanner.rules.patterns import PatternCompiler
 from cordon_scanner.version import ENGINE_API_VERSION
@@ -485,23 +486,7 @@ class RuleLoader:
             )
 
         if kind is MatchKind.COMPOSITE:
-            scope = str(raw.get("scope", "file"))
-            if scope not in {"file", "package", "repository", "function"}:
-                raise RulePackError(f"{where}: unknown composite scope {scope!r}")
-            if not raw.get("all") and not raw.get("any"):
-                raise RulePackError(f"{where}: composite match requires `all` or `any`")
-            proximity = int(raw.get("proximity", 0))
-            if proximity < 0:
-                raise RulePackError(f"{where}: proximity must not be negative")
-            return CompiledMatch(
-                kind=kind,
-                scope=scope,
-                proximity=proximity,
-                all_of=tuple(raw.get("all") or ()),
-                any_of=tuple(raw.get("any") or ()),
-                unless=tuple(raw.get("unless") or ()),
-                raw=dict(raw),
-            )
+            return RuleLoader._compile_composite(raw, kind, where)
 
         if kind is MatchKind.AST:
             return RuleLoader._compile_ast(raw, where=where)
@@ -526,6 +511,47 @@ class RuleLoader:
             )
 
         return CompiledMatch(kind=kind, raw=dict(raw))
+
+    @staticmethod
+    def _compile_composite(raw: dict[str, Any], kind: MatchKind, where: str) -> CompiledMatch:
+        """A composite match: its scope, terms and proximity, each checked here (a package-scope term must be one
+        the evaluator reads, `rules/fact_terms.py`)."""
+        scope = str(raw.get("scope", "file"))
+        if scope == "repository":
+            # Accepted here and evaluated by nothing until now: a rule written for it loaded without a
+            # word and never fired, the silent no-op `UNIMPLEMENTED_KINDS` exists to refuse.
+            raise RulePackError(
+                f"{where}: composite scope 'repository' is declared but not implemented, so a rule "
+                "using it could never match; use 'package' (the whole scanned target) or 'file'"
+            )
+        if scope not in {"file", "package", "function"}:
+            raise RulePackError(f"{where}: unknown composite scope {scope!r}")
+        if not raw.get("all") and not raw.get("any"):
+            raise RulePackError(f"{where}: composite match requires `all` or `any`")
+        if scope == "package":
+            # Package-scope terms are facts, not capabilities in a window: each must be one the
+            # evaluator reads (`rules/fact_terms.py`), or the rule is refused at load.
+            for term in (
+                *(raw.get("all") or ()),
+                *(raw.get("any") or ()),
+                *(raw.get("unless") or ()),
+            ):
+                try:
+                    FactTerms.of_spec(term)
+                except ValueError as problem:
+                    raise RulePackError(f"{where}: package term {term!r}: {problem}") from None
+        proximity = int(raw.get("proximity", 0))
+        if proximity < 0:
+            raise RulePackError(f"{where}: proximity must not be negative")
+        return CompiledMatch(
+            kind=kind,
+            scope=scope,
+            proximity=proximity,
+            all_of=tuple(raw.get("all") or ()),
+            any_of=tuple(raw.get("any") or ()),
+            unless=tuple(raw.get("unless") or ()),
+            raw=dict(raw),
+        )
 
     @staticmethod
     def _compile_regex(

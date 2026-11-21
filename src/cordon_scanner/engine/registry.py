@@ -155,6 +155,7 @@ BUILTIN_REPORTERS = (
     "github",
     "codeclimate",
     "vex",
+    "facts",
 )
 
 BUILTIN_NOTIFIERS = (
