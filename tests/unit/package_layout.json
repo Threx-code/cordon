@@ -970,6 +970,7 @@
   "test_distill.py": "bench",
   "test_census.py": "bench",
   "test_pairs.py": "bench",
+  "test_siblings.py": "bench",
   "test_verdict_train_fold.py": "bench",
   "test_mcp_recalibrate.py": "bench",
   "test_mcp_channel_model.py": "bench",
