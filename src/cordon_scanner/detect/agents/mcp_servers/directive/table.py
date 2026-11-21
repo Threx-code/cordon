@@ -51,6 +51,9 @@ class DirectiveClass:
     patterns: tuple[re.Pattern[str], ...]
     example: str
     control: str
+    unless_negated: bool = False
+    """A phrase said in the negative ("never bypass the safety checks") is the opposite of the class's
+    order and is not read (`negation.py`). Set for a class that names a verb to avoid."""
 
 
 class DirectiveTable:
@@ -75,6 +78,7 @@ class DirectiveTable:
                     patterns=tuple(re.compile(str(p), re.IGNORECASE) for p in row["patterns"]),
                     example=str(row["example"]),
                     control=str(row["control"]),
+                    unless_negated=bool(row.get("unless_negated", False)),
                 )
             )
         return names, tuple(classes)

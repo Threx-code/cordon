@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
 from cordon_scanner.detect.agents.findings import AgentFinding
+from cordon_scanner.detect.agents.mcp_servers.directive.negation import Negation
 from cordon_scanner.detect.agents.mcp_servers.directive.surfaces import McpSurfaces, SurfaceText
 from cordon_scanner.detect.agents.mcp_servers.directive.table import DirectiveClass, DirectiveTable
 from cordon_scanner.detect.agents.rule_catalogue import RULES
@@ -68,11 +69,15 @@ class McpDirectives:
     def matched(
         directive: DirectiveClass, text: str, limit: int = _MAX_READ
     ) -> re.Match[str] | None:
-        """The first phrase of the class in the text (in its first `limit` characters), or None."""
+        """The first phrase of the class in the text (in its first `limit` characters), or None.
+
+        A class that is `unless_negated` does not read a phrase said in the negative ("never bypass the safety
+        checks"): it passes over it to the next phrase of the class, which may be a plain order later in the text."""
         shown = text if len(text) <= limit else text[:limit]
         for pattern in directive.patterns:
-            found = pattern.search(shown)
-            if found:
+            for found in pattern.finditer(shown):
+                if directive.unless_negated and Negation.before(shown, found.start()):
+                    continue
                 return found
         return None
 

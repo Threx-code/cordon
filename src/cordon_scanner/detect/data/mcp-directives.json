@@ -408,6 +408,7 @@
       "role": "cover",
       "surfaces": ["instruction"],
       "does": "tells the agent to turn off permission or safety prompts",
+      "unless_negated": true,
       "why": "Those prompts are the user's control over what the agent does; a file that tells the agent to skip them takes that control. Honest notes for a build agent say it too, so it blocks only beside an act.",
       "patterns": [
         "\\b(?:disable|turn off|bypass|skip|ignore|suppress)\\b[^\\n]{0,20}\\b(?:permission|approval|confirmation|safety|sandbox|security)\\b[^\\n]{0,15}\\b(?:prompts?|checks?|dialogs?|warnings?|restrictions?)\\b"

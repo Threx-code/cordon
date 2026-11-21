@@ -55,6 +55,9 @@ class PackageComposites:
     PHRASE_GRADE: ClassVar[tuple[Severity, Confidence]] = (Severity.MEDIUM, Confidence.LOW)
     """The grade of the injection phrase that counts: the one the composite was measured at (reviews/mcp-98/21,
     lever A(1)). The same rule at another grade is another reading and stays graded as it is."""
+    FRAGMENT_CODE: ClassVar[str] = "fragment_only"
+    """The `Explanation.basis` code of a phrase finding whose every match is a fragment -- a label, a list bullet, part of a
+    word, no word at all, or two sentences bridged (`detect/agents/match_shape.py`). It is not a phrase and does not count."""
 
     @staticmethod
     def worm(findings: Sequence[Finding]) -> Finding | None:
@@ -109,6 +112,7 @@ class PackageComposites:
             and f.suppressed is None
             and f.severity is phrase_severity
             and f.confidence is phrase_confidence
+            and PackageComposites.FRAGMENT_CODE not in f.explanation.basis
         ]
         readings = [
             f
@@ -140,14 +144,18 @@ class PackageComposites:
             detector="verdict",
             related=parts,
         )
-        # Where it fired: the phrase's own place (path, line, column), and the file the learned reading scored, which has no line of its own.
+        # Where it fired: the phrase's own place (path, line, column), the rules the phrase matched, and the file the learned
+        # reading scored, which has no line of its own.
+        named = sorted(
+            {code[4:] for code in phrases[0].explanation.basis if code.startswith("atr:")}
+        )
+        metadata = (*built.evidence.metadata, ("reading_at", readings[0].location.path))
+        if named:
+            metadata = (*metadata, ("phrase_rules", ",".join(named)))
         return replace(
             built,
             location=phrases[0].location,
-            evidence=replace(
-                built.evidence,
-                metadata=(*built.evidence.metadata, ("reading_at", readings[0].location.path)),
-            ),
+            evidence=replace(built.evidence, metadata=metadata),
         )
 
 
