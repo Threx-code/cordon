@@ -239,3 +239,20 @@ class TestWhatMutationLeftLooseInTheRescore:
         }
         with pytest.raises(ClaimMismatch, match=r"confirm\.legit_upper"):
             Rescore.check(close, run.search, rows)
+
+
+class TestTheBoundsAreRoundedToSixDecimals:
+    def test_a_long_bound_is_given_to_six_decimals_for_both_halves(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from bench.cdi.rescore import _Space
+
+        rows = RowsKit.rows()
+        run = Distiller().distill(rows)
+        assert run.candidate is not None
+        monkeypatch.setattr(
+            _Space, "legit_upper", lambda self, predicate, z: (0.123456789, 0.987654321)
+        )
+        claims = Rescore.claims(run.candidate, run.search, rows)
+        assert claims["train"]["legit_upper"] == 0.123457
+        assert claims["confirm"]["legit_upper"] == 0.123457

@@ -512,3 +512,19 @@ class TestATrackerIgnoresAVerdictThatDisagreesWithItself:
         tracker = ReaderTracker()
         tracker.apply("w1", [odd])
         assert tracker.items == {}
+
+
+class TestTheSignatureRefusesTheKindsARuleMayNeverUse:
+    def test_a_term_of_a_refused_kind_is_left_out_whatever_follows_it(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from bench.cdi.census import Signature
+
+        from cordon_scanner.rules.fact_terms import FactTerms
+
+        monkeypatch.setattr(
+            FactTerms,
+            "of_facts",
+            staticmethod(lambda facts: {("host", "example", "x"), ("file", "any", "egress")}),
+        )
+        assert Signature.of({}) == frozenset({("file", "any", "egress")})
