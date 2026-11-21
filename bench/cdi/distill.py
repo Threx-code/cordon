@@ -123,6 +123,7 @@ class Distiller:
         terms_of: Callable[[dict[str, Any]], set[tuple[str, ...]]] | None = None,
         generator: str = "G2",
         metadata_kinds: frozenset[str] = METADATA_KINDS,
+        lofo: bool = True,
     ) -> None:
         self.min_families = min_families
         self.confirm_min_families = confirm_min_families
@@ -136,6 +137,8 @@ class Distiller:
         self.terms_of = terms_of or Terms.of
         self.generator = generator
         self.metadata_kinds = metadata_kinds
+        # LL-51: leave each family out and see whether a predicate chosen without it still covers it. Off inside its own re-runs.
+        self.lofo = lofo
 
     def distill(self, units: list[Unit]) -> Distillation:
         refused: dict[str, int] = {}
@@ -207,8 +210,48 @@ class Distiller:
                 },
                 "confirm": {"families": confirm_families, "legit_upper": round(confirm_upper, 6)},
             }
+            if self.lofo:
+                candidate["out_of_family"] = self._out_of_family(kept_units, space)
             return Distillation(candidate=candidate, refused=refused, search=search)
         return Distillation(candidate=None, refused=refused, search=search)
+
+    def _out_of_family(self, units: list[Unit], space: _Space) -> dict[str, Any]:
+        """Leave-one-family-out (LL-51, the dev-overfit loophole): for each family the predicate was chosen from, choose again
+        WITHOUT it, under the same thresholds, and ask whether that predicate fires on at least half of the family's own units. The
+        share of families it covers is the number a rule chosen on dev has to show before it is believed on a family it has not
+        seen. With too few families to leave one out and still meet `min_families`, nothing is claimed (recall none)."""
+        families = sorted(space.family_masks)
+        if len(families) - 1 < self.min_families:
+            return {"families": len(families), "covered": 0, "recall": None}
+        inner = Distiller(
+            min_families=self.min_families,
+            confirm_min_families=self.confirm_min_families,
+            budget=self.budget,
+            max_size=self.max_size,
+            max_terms=self.max_terms,
+            max_candidates=self.max_candidates,
+            alpha=self.alpha,
+            refused_families=self.refused_families,
+            terms_of=self.terms_of,
+            generator=self.generator,
+            metadata_kinds=self.metadata_kinds,
+            lofo=False,
+        )
+        covered = 0
+        for family in families:
+            own = [u for u in units if u.label == "mal" and u.family == family]
+            rest = [u for u in units if not (u.label == "mal" and u.family == family)]
+            chosen = inner.distill(rest).candidate
+            if chosen is None:
+                continue
+            predicate = {tuple(term) for term in chosen["predicate"]}
+            fires = sum(1 for u in own if predicate <= self.terms_of(u.facts))
+            covered += 2 * fires >= len(own)
+        return {
+            "families": len(families),
+            "covered": covered,
+            "recall": round(covered / len(families), 6),
+        }
 
     def params(self) -> dict[str, Any]:
         """Every threshold of this run, recorded with the candidate so the gate can replay it (LL-52). The refused families are
@@ -223,6 +266,7 @@ class Distiller:
             "max_size": self.max_size,
             "max_terms": self.max_terms,
             "max_candidates": self.max_candidates,
+            "lofo": self.lofo,
             "refused_families": len(self.refused_families),
             "refused_families_digest": hashlib.sha256(names).hexdigest(),
         }

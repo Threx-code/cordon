@@ -324,3 +324,47 @@ class TestAReleaseThatMayNotInformAGeneratorIsRefusedWithItsReason:
         with pytest.raises(LeakageRefused) as refusal:
             Leakage.require("held", "silver")
         assert refusal.value.reasons == ("label_tier_silver", "split_held")
+
+
+class TestACandidateCarriesOutOfFamilyNumbers:
+    """LL-51 (the dev-overfit loophole): a predicate chosen on dev families shows how it does on a family it was chosen without."""
+
+    @staticmethod
+    def rows(planted_families: int, *, odd_family: bool = False) -> list[Unit]:
+        units = (
+            FactsKit.planted(planted_families, 5)
+            + FactsKit.legit(12_000)
+            + FactsKit.planted(2, 3, split="confirm")
+            + FactsKit.legit(9_000, split="confirm", seed=11)
+        )
+        if odd_family:
+            units += FactsKit.decoy(5)
+        return units
+
+    def test_every_candidate_carries_the_numbers(self) -> None:
+        run = Distiller().distill(self.rows(4))
+        assert run.candidate is not None
+        assert run.candidate["out_of_family"] == {"families": 4, "covered": 4, "recall": 1.0}
+
+    def test_a_shape_that_only_held_because_of_the_families_chosen_from_shows_zero(self) -> None:
+        # Three families share the planted shape, a fourth has another: the shape needs all three of its families to be chosen at all,
+        # so leaving any one out finds nothing, and leaving the odd one out finds a shape that does not fire on it.
+        run = Distiller().distill(self.rows(3, odd_family=True))
+        assert run.candidate is not None
+        assert run.candidate["out_of_family"] == {"families": 4, "covered": 0, "recall": 0.0}
+
+    def test_with_too_few_families_to_leave_one_out_nothing_is_claimed(self) -> None:
+        run = Distiller().distill(self.rows(3))
+        assert run.candidate is not None
+        assert run.candidate["out_of_family"] == {"families": 3, "covered": 0, "recall": None}
+
+    def test_the_inner_runs_do_not_leave_families_out_again(self) -> None:
+        run = Distiller(lofo=False).distill(self.rows(4))
+        assert run.candidate is not None
+        assert "out_of_family" not in run.candidate
+        assert run.search["params"]["lofo"] is False
+
+    def test_the_numbers_are_part_of_the_replayable_record(self) -> None:
+        first = Distiller().distill(self.rows(4))
+        again = Distiller().distill(self.rows(4))
+        assert first.candidate == again.candidate

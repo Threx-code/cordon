@@ -161,6 +161,7 @@ class TestTheRunCanBeReplayed:
             "max_size": 3,
             "max_terms": 40,
             "max_candidates": 20_000,
+            "lofo": True,
             "refused_families": 0,
             "refused_families_digest": run.search["params"]["refused_families_digest"],
         }

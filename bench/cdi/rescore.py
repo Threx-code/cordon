@@ -112,6 +112,7 @@ class Rescore:
             refused_families=refused_families,
             terms_of=terms_of,
             generator=params["generator"],
+            lofo=params["lofo"],
         ).distill(list(units))
 
     @staticmethod
