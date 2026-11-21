@@ -1188,6 +1188,20 @@ This machine's AI agents and MCP servers, for an organisation's MDM (read-only, 
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### agent inventory
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ --signed                  instead print a statement THIS device signs of   │
+│                           the packages it found (the rest counted, not     │
+│                           listed), with a key made now and enrolled for    │
+│                           minutes; needs the device's own                  │
+│                           CORDON_DEVICE_TOKEN (one per laptop; a token     │
+│                           shared by a fleet is not supported)              │
+│ --url URL                 Cordon Cloud API base (with --signed)            │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
 ### agent report
 
 ```

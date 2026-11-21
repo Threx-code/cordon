@@ -57,6 +57,10 @@ class DeviceAttestation:
         r"([\w.\-]+)(?:\[[\w,.\-]*\])?(?:==|@)(\d[\w.\-+]*)"
     )
 
+    #: How a pinned package is read, by ecosystem: a table keyed by it, so a third ecosystem is one more entry.
+    SPLITTERS: ClassVar[dict[str, str]] = {"npm": "_split_npm", "pypi": "_split_pypi"}
+    SEPARATORS: ClassVar[str] = "-_."
+
     # -- the statement -------------------------------------------------------------------------------------------
 
     @classmethod
@@ -90,25 +94,43 @@ class DeviceAttestation:
         """The package URL of a server launched from a PINNED npm or PyPI package, else None (it is then counted)."""
         ecosystem, spec = server.get("ecosystem"), server.get("package")
         if (
-            ecosystem not in ("npm", "pypi")
+            not isinstance(ecosystem, str)
+            or ecosystem not in cls.SPLITTERS
             or server.get("pinned") is not True
             or not isinstance(spec, str)
         ):
             return None
-        if ecosystem == "npm":
-            scoped = spec.startswith("@")
-            name, _, version = (spec[1:] if scoped else spec).partition("@")
-            name = f"%40{name}" if scoped else name
-        else:
-            match = cls.PYPI_SPEC.fullmatch(spec)
-            if match is None:
-                return None
-            name, version = re.sub(r"[-_.]+", "-", match[1].lower()), match[2]
+        split = getattr(cls, cls.SPLITTERS[ecosystem])(spec)
+        if split is None:
+            return None
+        name, version = split
         if not cls.NAME.fullmatch(name) or len(name) > cls.MAX_NAME:
             return None
         if not cls.VERSION.fullmatch(version) or len(version) > cls.MAX_VERSION:
             return None
         return f"pkg:{ecosystem}/{name}@{version}"
+
+    @classmethod
+    def _split_npm(cls, spec: str) -> tuple[str, str]:
+        """`name@1.2.3` or `@scope/name@1.2.3`: the scope's `@` is written `%40` in a package URL."""
+        scoped = spec.startswith("@")
+        name, _, version = (spec[1:] if scoped else spec).partition("@")
+        return (f"%40{name}" if scoped else name), version
+
+    @classmethod
+    def _split_pypi(cls, spec: str) -> tuple[str, str] | None:
+        """`name==1.2.3` (extras allowed): the name in PEP 503 form, a run of `-`, `_` and `.` made one `-`."""
+        match = cls.PYPI_SPEC.fullmatch(spec)
+        if match is None:
+            return None
+        out: list[str] = []
+        for char in match[1].lower():
+            if char in cls.SEPARATORS:
+                if not out or out[-1] != "-":
+                    out.append("-")
+            else:
+                out.append(char)
+        return "".join(out), match[2]
 
     # -- the envelope and the key --------------------------------------------------------------------------------
 
