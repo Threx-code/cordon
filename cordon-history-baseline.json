@@ -44,7 +44,11 @@
     "97ea45f3009cf60b",
     "c030b3f57be1d9ad",
     "f86006ae0d931195",
-    "bf907e29591fab93"
+    "bf907e29591fab93",
+    "a04d2a36b65e55ef",
+    "d0baff70d4fea9d8",
+    "2213257b1f26b022",
+    "63d40e9ce462a8c9"
   ],
   "entries": [
     {
@@ -370,6 +374,30 @@
       "rule": "SECRET.GITHUB.TOKEN.001",
       "path": "tests/unit/foundation/files/test_windows.py",
       "note": "git history only (e6533806): a detector test fixture assembled at run time, its token reversed with a literal [::-1] that the scanner folds back; the working tree reverses it through a name the scanner does not fold. Reviewed 2026-11-12 (PR #71 CI): fabricated and inert; nothing to rotate."
+    },
+    {
+      "fingerprint": "a04d2a36b65e55ef",
+      "rule": "SECRET.STRIPE.WEBHOOK_SECRET.001",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
+      "note": "git history only (bb4ca5ee..90f343bb): a fabricated fixture in the secrets detector's own review-defect tests, in an earlier version of the file; the working tree no longer holds it. Reviewed 2026-11-21 (PR #96 CI): fabricated and inert; nothing to rotate."
+    },
+    {
+      "fingerprint": "d0baff70d4fea9d8",
+      "rule": "SECRET.GENERIC.ASSIGNMENT.001",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
+      "note": "git history only (bb4ca5ee..90f343bb): a fabricated fixture in the secrets detector's own review-defect tests, in an earlier version of the file; the working tree no longer holds it. Reviewed 2026-11-21 (PR #96 CI): fabricated and inert; nothing to rotate."
+    },
+    {
+      "fingerprint": "2213257b1f26b022",
+      "rule": "SECRET.GOOGLE.API_KEY.001",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
+      "note": "git history only (bb4ca5ee..90f343bb): a fabricated fixture in the secrets detector's own review-defect tests, in an earlier version of the file; the working tree no longer holds it. Reviewed 2026-11-21 (PR #96 CI): fabricated and inert; nothing to rotate."
+    },
+    {
+      "fingerprint": "63d40e9ce462a8c9",
+      "rule": "SECRET.URL.CREDENTIAL.001",
+      "path": "tests/unit/detect/secrets/test_review_defects.py",
+      "note": "git history only (bb4ca5ee..90f343bb): a fabricated fixture in the secrets detector's own review-defect tests, in an earlier version of the file; the working tree no longer holds it. Reviewed 2026-11-21 (PR #96 CI): fabricated and inert; nothing to rotate."
     }
   ]
 }
