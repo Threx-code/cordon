@@ -357,9 +357,12 @@ class ScanStages:
             )
         findings = (*graded, *code_model, *remote_control)
         # Package-scope composites, over everything the rules and the verdict left (`package_rules.py`).
-        acc.reach = FileReach.of(units, ctx)
+        acc.reach, read = FileReach.guarded(units, ctx)
+        # the gap is kept in this list, as every finding of this stage is; `acc.gap` marks the scan incomplete
+        gaps = () if read else (acc.gap(FileReach.gap()),)
         findings = (
             *findings,
+            *gaps,
             *PackageRules.decide(self.engine.rules, findings, ctx, acc.facts, acc.reach),
         )
         dependencies = self.engine.detection.annotated(dependencies, findings, ctx, units)

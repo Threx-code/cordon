@@ -37,11 +37,15 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from cordon_scanner.detect.base import FileUnit, ScanContext
+    from cordon_scanner.foundation.models import Finding
 
 MAX_DEPTH: Final = 4
 #: A file longer than this is not parsed for edges or strings: parsing is the cost, and a bundle's own requires are not the package's.
 MAX_PARSE: Final = 2 << 20
 _STRING_LIMIT: Final = 300
+_FOLD_LIMIT: Final = 10_000
+"""The most nodes of a `"a" + "b" + ...` chain folded into one string; a longer chain is not a module name."""
+REACH_GAP: Final = "OPERATIONAL.REACH.UNREAD"
 _HOOKS: Final = ("preinstall", "install", "postinstall", "prepare")
 _SEPARATORS: Final = str.maketrans(dict.fromkeys(";&|<>()'\"`=", " "))
 _SCRIPT_SUFFIXES: Final = (".js", ".cjs", ".mjs", ".ts", ".py", ".sh")
@@ -98,6 +102,35 @@ class FileReach:
     @staticmethod
     def member(path: str) -> str:
         return path.rpartition("!")[2]
+
+    @classmethod
+    def guarded(
+        cls, units: Sequence[FileUnit], ctx: ScanContext
+    ) -> tuple[dict[str, tuple[str, int]], bool]:
+        """`of`, and whether it finished. A structure too deep or too large to follow (a package.json nested past the
+        parser's depth, a chain of thousands of terms) ends the reach as a gap the caller records (`gap`), never the scan:
+        fail closed, with every other finding kept. The reach reads the scanned bytes, so a hostile package chooses them."""
+        try:
+            return cls.of(units, ctx), True
+        except (RecursionError, MemoryError):
+            return {}, False
+
+    @staticmethod
+    def gap() -> Finding:
+        """The content gap of a reach that could not be worked out: the scan is incomplete, and blocks by default."""
+        from cordon_scanner.foundation.models import Severity
+        from cordon_scanner.foundation.results import OperationalFinding
+
+        return OperationalFinding.build(
+            path=".",
+            rule_id=REACH_GAP,
+            message=(
+                "Which files of this package run could not be worked out: a structure in it is nested deeper, or a "
+                "chain is longer, than the scanner follows."
+            ),
+            remediation="Treat the package as unread until it is examined by other means.",
+            severity=Severity.MEDIUM,
+        )
 
     @classmethod
     def of(cls, units: Sequence[FileUnit], ctx: ScanContext) -> dict[str, tuple[str, int]]:
@@ -179,7 +212,7 @@ class FileReach:
             try:
                 data = json.loads(unit.content.raw[:1_000_000].decode("utf-8", "replace"))
             except ValueError:
-                continue
+                continue  # not JSON: npm would not read it either
             if not isinstance(data, dict):
                 continue
             names = [
@@ -320,16 +353,29 @@ class _Read:
 
     @classmethod
     def _fold(cls, node: Node) -> str | None:
-        """A string literal's value, or the value of `"a" + "b"` folded; None for anything else."""
-        if node.type == "Literal":
-            return cls._string(node)
-        if node.type == "BinaryExpression" and node["operator"] == "+":
-            left, right = node["left"], node["right"]
-            if isinstance(left, Node) and isinstance(right, Node):
-                a, b = cls._fold(left), cls._fold(right)
-                if a is not None and b is not None:
-                    return a + b
-        return None
+        """A string literal's value, or the value of `"a" + "b" + ...` folded left to right; None for anything else, for
+        a chain of more than `_FOLD_LIMIT` nodes, or for a result longer than a module name can be. Iterative, so the
+        length of a chain a package writes never reaches the interpreter's recursion limit."""
+        parts: list[str] = []
+        stack, size, seen = [node], 0, 0
+        while stack:
+            seen += 1
+            current = stack.pop()
+            if seen > _FOLD_LIMIT or not isinstance(current, Node):
+                return None
+            if current.type == "Literal":
+                value = cls._string(current)
+                if value is None:
+                    return None
+                parts.append(value)
+                size += len(value)
+                if size > _STRING_LIMIT:
+                    return None
+            elif current.type == "BinaryExpression" and current["operator"] == "+":
+                stack.extend((current["right"], current["left"]))
+            else:
+                return None
+        return "".join(parts)
 
     # -- Python: ast ----------------------------------------------------------------------------------------
 

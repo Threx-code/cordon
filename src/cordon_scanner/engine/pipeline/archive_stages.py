@@ -683,7 +683,9 @@ class ArchiveStages:
         acc.findings.extend(code_model)
         acc.findings.extend(remote_control)
         # Package-scope composites, over everything the rules and the verdict left (`package_rules.py`).
-        acc.reach = FileReach.of(units, ctx)
+        acc.reach, read = FileReach.guarded(units, ctx)
+        if not read:
+            acc.incomplete(FileReach.gap())
         acc.findings.extend(
             PackageRules.decide(self.engine.rules, acc.findings, ctx, acc.facts, acc.reach)
         )

@@ -272,3 +272,52 @@ class TestWhatIsClassed:
             "stem_only",
             "unreached",
         )
+
+
+class TestAHostilePackageEndsTheReachNotTheScan:
+    """A package chooses the bytes the reach reads: a structure nested past the parser's depth or a chain of thousands of
+    terms is a recorded gap (`FileReach.guarded`, `FileReach.gap`), never an exception out of the scan."""
+
+    def test_a_package_json_nested_past_the_parser_depth(self) -> None:
+        deep = '{"main": "index.js", "x": ' + "[" * 100_000 + "]" * 100_000 + "}"
+        files = {"package/package.json": deep, "package/index.js": "module.exports = 1;\n"}
+        reach, read = FileReach.guarded(Package.units(files), Package.context())
+        assert (reach, read) == ({}, False)
+
+    def test_the_gap_is_a_blocking_content_gap(self) -> None:
+        finding = FileReach.gap()
+        assert finding.rule_id == "OPERATIONAL.REACH.UNREAD" and finding.location.path == "."
+
+    def test_a_require_chain_of_many_terms_is_folded_without_recursion(self) -> None:
+        chain = " + ".join(['"a"'] * 50_000)
+        files = {"package/index.js": f"require({chain});\n"}
+        reach, read = FileReach.guarded(
+            Package.units(files), Package.context(import_entry_paths=("package/index.js",))
+        )
+        assert read and reach["package/index.js"] == ("placed", 0)
+
+    def test_a_short_chain_still_folds(self) -> None:
+        files = {
+            "package/index.js": "require('./li' + 'b/' + 'helper');\n",
+            "package/lib/helper.js": "module.exports = 1;\n",
+        }
+        reach = Package.reach(files, import_entry_paths=("package/index.js",))
+        assert reach["package/lib/helper.js"] == ("require_chain", 1)
+
+    def test_a_whole_scan_of_a_nested_package_finishes_incomplete(self, tmp_path) -> None:
+        from cordon_scanner import Scanner
+        from cordon_scanner.foundation.config.settings import Config
+
+        (tmp_path / "package.json").write_text(
+            '{"name": "deep", "version": "1.0.0", "main": "index.js", "x": '
+            + "[" * 100_000
+            + "]" * 100_000
+            + "}",
+            encoding="utf-8",
+        )
+        (tmp_path / "index.js").write_text("module.exports = 1;\n", encoding="utf-8")
+        result = Scanner(Config.default()).scan(tmp_path)
+        assert "OPERATIONAL.REACH.UNREAD" in {
+            f.rule_id for f in (result.unfiltered or result.findings)
+        }
+        assert not result.complete and not result.content_complete
