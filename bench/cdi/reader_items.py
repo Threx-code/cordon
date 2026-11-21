@@ -39,9 +39,9 @@ class ReaderItem:
     status: str
     opened_window: str
     last_seen_window: str
+    units: int
+    held_units: int
     closed_window: str | None = None
-    units: int = 0
-    held_units: int = 0
     families: list[str] = field(default_factory=list)
     windows_seen: int = 1
     reopened: int = 0

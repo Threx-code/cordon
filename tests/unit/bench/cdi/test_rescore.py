@@ -192,3 +192,50 @@ class TestTheRunCanBeReplayed:
             Rescore.replay(old, rows)
         with pytest.raises(ValueError, match="cannot be replayed"):
             Rescore.check(run.candidate, old, rows)
+
+
+class TestRefusedFamiliesAreLeftOutOfTheRescoreToo:
+    """A candidate made with refused families (a family with a member in a sealed or held set) is re-scored without them: the same rows the
+    generator counted, never the ones it was told to leave out."""
+
+    def test_a_candidate_made_without_a_family_is_rescored_without_it(self) -> None:
+        refused = frozenset({"fam0"})
+        rows = RowsKit.rows()
+        run = Distiller(refused_families=refused).distill(rows)
+        assert run.candidate is not None
+        Rescore.check(run.candidate, run.search, rows, refused)
+
+    def test_the_claims_count_the_families_that_remain(self) -> None:
+        refused = frozenset({"fam0"})
+        rows = RowsKit.rows()
+        run = Distiller(refused_families=refused).distill(rows)
+        assert run.candidate is not None
+        claims = Rescore.claims(run.candidate, run.search, rows, refused)
+        assert claims["train"]["families"] == 3
+
+
+class TestWhatMutationLeftLooseInTheRescore:
+    def test_the_bound_depends_on_how_many_candidates_were_searched(self) -> None:
+        rows = RowsKit.rows()
+        run = Distiller().distill(rows)
+        assert run.candidate is not None
+        one = Rescore.claims(run.candidate, {**run.search, "candidates": 1}, rows)
+        two = Rescore.claims(run.candidate, {**run.search, "candidates": 2}, rows)
+        assert one["train"]["legit_upper"] != two["train"]["legit_upper"]
+
+    def test_a_stated_bound_is_compared_to_six_decimals_exactly(self) -> None:
+        rows = RowsKit.rows()
+        run = Distiller().distill(rows)
+        assert run.candidate is not None
+        for part in ("train", "confirm"):
+            digits = str(run.candidate[part]["legit_upper"]).partition(".")[2]
+            assert len(digits) <= 6
+        close = {
+            **run.candidate,
+            "confirm": {
+                **run.candidate["confirm"],
+                "legit_upper": run.candidate["confirm"]["legit_upper"] + 1e-6,
+            },
+        }
+        with pytest.raises(ClaimMismatch, match=r"confirm\.legit_upper"):
+            Rescore.check(close, run.search, rows)

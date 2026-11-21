@@ -324,6 +324,7 @@ class TestAReleaseThatMayNotInformAGeneratorIsRefusedWithItsReason:
         with pytest.raises(LeakageRefused) as refusal:
             Leakage.require("held", "silver")
         assert refusal.value.reasons == ("label_tier_silver", "split_held")
+        assert str(refusal.value) == "refused: label_tier_silver, split_held"
 
 
 class TestACandidateCarriesOutOfFamilyNumbers:

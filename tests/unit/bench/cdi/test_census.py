@@ -416,3 +416,99 @@ class TestTheReaderTracker:
             self.window(tracker, "w2", [])
         assert first.state() == second.state()
         assert ReaderTracker.of_state(first.state()).state() == first.state()
+
+
+class TestWhatMutationFoundLoose:
+    """The survivors of the first mutation run of `census.py` and `reader_items.py`, each pinned: the order of a report, that a record is
+    immutable, either flag of an incomplete scan, a class with no miss counted as zero, a file with no extension class, and the tracker's
+    own bookkeeping."""
+
+    def test_the_verdicts_come_in_the_order_of_their_keys(self) -> None:
+        rows = [Kit.row(key, Kit.separable()) for key in ("z-last", "a-first", "m-middle")]
+        report = Census.run("w", rows, Kit.legit())
+        assert [v.key for v in report.verdicts] == ["a-first", "m-middle", "z-last"]
+
+    def test_a_miss_row_and_a_verdict_cannot_be_changed(self) -> None:
+        import dataclasses
+
+        row = Kit.row("m", Kit.separable())
+        (verdict,) = Census.run("w", [row], Kit.legit()).verdicts
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            row.key = "other"  # type: ignore[misc]
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            verdict.klass = "x"  # type: ignore[misc]
+
+    @pytest.mark.parametrize("flag", ["complete", "content_complete"])
+    def test_either_flag_alone_makes_an_incomplete_scan_a_gap(self, flag: str) -> None:
+        facts = Kit.facts([Kit.file(True, ["import_entry"], ["egress"])])
+        facts[flag] = False
+        assert ReadingGaps.of(facts) == ((UNRECORDED, PACKAGE_FORM),)
+
+    def test_a_class_with_no_miss_is_counted_as_zero(self) -> None:
+        counts = Census.run("w", [Kit.row("a", Kit.unread())], Kit.legit()).counts()
+        assert (counts["reading_gap"], counts["no_separating_fact"], counts["facts_exist"]) == (
+            1,
+            0,
+            0,
+        )
+
+    def test_an_unread_file_with_no_extension_class_is_the_other_form(self) -> None:
+        facts = Kit.unread()
+        del facts["files"][0]["ext"]
+        assert ReadingGaps.of(facts) == ((TRUNCATED, "OTHER"),)
+
+
+class TestWhatMutationFoundLooseInTheTracker:
+    @staticmethod
+    def window(tracker: ReaderTracker, name: str, rows: list[MissRow]) -> None:
+        tracker.apply(name, Census.run(name, rows, Kit.legit()).verdicts)
+
+    def test_an_item_is_made_with_its_kind_its_form_and_no_held_unit(self) -> None:
+        tracker = ReaderTracker()
+        self.window(tracker, "w1", [Kit.row("a", Kit.unread())])
+        item = tracker.items[(TRUNCATED, "JS")]
+        assert (item.kind, item.form, item.held_units) == (TRUNCATED, "JS", 0)
+
+    def test_a_freshly_opened_item_is_not_waiting_for_an_acceptance_test(self) -> None:
+        tracker = ReaderTracker()
+        self.window(tracker, "w1", [Kit.row("a", Kit.unread())])
+        assert tracker.counts() == {"open": 1, "closed": 0, "waiting_for_acceptance": 0}
+
+    def test_an_acceptance_test_for_no_such_item_is_refused(self) -> None:
+        with pytest.raises(KeyError, match="no such reader item"):
+            ReaderTracker().attach_acceptance(TRUNCATED, "JS", "t1")
+
+    def test_a_closed_item_is_counted_as_closed(self) -> None:
+        tracker = ReaderTracker()
+        self.window(tracker, "w1", [Kit.row("a", Kit.unread())])
+        tracker.attach_acceptance(TRUNCATED, "JS", "t1")
+        self.window(tracker, "w2", [])
+        assert tracker.counts() == {"open": 0, "closed": 1, "waiting_for_acceptance": 0}
+
+    def test_a_verdict_of_another_class_never_touches_an_item_even_with_gaps(self) -> None:
+        from bench.cdi.census import Verdict
+
+        odd = Verdict("m", "fam", FACTS_EXIST, ((TRUNCATED, "JS"),), 3, True, (), "generators")
+        tracker = ReaderTracker()
+        tracker.apply("w1", [odd])
+        assert tracker.items == {}
+
+    def test_the_state_is_written_with_sorted_keys(self) -> None:
+        import json
+
+        tracker = ReaderTracker()
+        self.window(tracker, "w1", [Kit.row("a", Kit.unread())])
+        tracker.attach_acceptance(TRUNCATED, "JS", "t1")
+        record = json.loads(tracker.state())
+        assert list(record) == sorted(record)
+        assert list(record["items"][0]) == sorted(record["items"][0])
+
+
+class TestATrackerIgnoresAVerdictThatDisagreesWithItself:
+    def test_a_verdict_of_another_class_routed_to_the_reader_still_opens_nothing(self) -> None:
+        from bench.cdi.census import Verdict
+
+        odd = Verdict("m", "fam", FACTS_EXIST, ((TRUNCATED, "JS"),), 3, True, (), "reader")
+        tracker = ReaderTracker()
+        tracker.apply("w1", [odd])
+        assert tracker.items == {}
