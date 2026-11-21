@@ -57,7 +57,7 @@ class PackageComposites:
     lever A(1)). The same rule at another grade is another reading and stays graded as it is."""
     FRAGMENT_CODE: ClassVar[str] = "fragment_only"
     """The `Explanation.basis` code of a phrase finding whose every match is a fragment -- a label, a list bullet, part of a
-    word, no word at all, or two sentences bridged (`detect/agents/match_shape.py`). It is not a phrase and does not count."""
+    word, no word at all, or two sentences bridged (`foundation/text/match_shape.py`). It is not a phrase and does not count."""
 
     @staticmethod
     def worm(findings: Sequence[Finding]) -> Finding | None:

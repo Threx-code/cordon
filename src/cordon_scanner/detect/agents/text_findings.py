@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING, Final
 from cordon_scanner.detect.agents.claim_guards import ClaimGuards
 from cordon_scanner.detect.agents.defensive_doc import DefensiveDoc
 from cordon_scanner.detect.agents.findings import AgentFinding
-from cordon_scanner.detect.agents.match_shape import MatchShape
 from cordon_scanner.detect.agents.rule_catalogue import RULES, AgentRules
 from cordon_scanner.detect.base import FileUnit
 from cordon_scanner.foundation.models import (
@@ -24,6 +23,7 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 from cordon_scanner.foundation.results import OperationalFinding
+from cordon_scanner.foundation.text.match_shape import MatchShape
 from cordon_scanner.intel.registry import ATR_INSTRUCTION_TOLERANCE, AtrEngine, RuleLinks
 
 if TYPE_CHECKING:
