@@ -27,6 +27,11 @@ corpus -- which is the right trade for input shapes nobody enumerated.
 from __future__ import annotations
 
 import contextlib
+import io
+import os
+import tarfile
+import time
+import zipfile
 from typing import ClassVar
 
 import pytest
@@ -39,11 +44,15 @@ from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.errors import CordonError, RulePackError
 from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
 from cordon_scanner.rules.loader import RuleLoader
+from cordon_scanner.sources.archive import ArchiveReader
 
 pytestmark = pytest.mark.fuzz
 
+#: CI runs 300 examples a test; a hardening campaign raises it (S1, reviews/release-080).
+EXAMPLES = int(os.environ.get("CORDON_FUZZ_EXAMPLES", "300"))
+
 SETTINGS = settings(
-    max_examples=300,
+    max_examples=EXAMPLES,
     deadline=None,
     suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large],
 )
@@ -272,3 +281,80 @@ class TestFormatReaders:
                 media.ImageTrailers.trailer(data)
             elif documents.DocumentReader.kind_of(data, name) is not None:
                 documents.DocumentReader.read(data, name)
+
+
+class TestArchives:
+    """Every downloaded package meets the archive readers first, and none were fuzzed (S1). The
+    seeds are small valid archives of each format the reader opens (and 7z and rar headers), and
+    each example damages one: flipped bytes, a cut, an insertion. The walk must end, within its
+    deadline and well after it, and raise nothing outside what its callers handle."""
+
+    SUFFIXES: ClassVar[tuple[str, ...]] = (".zip", ".tar", ".tar.gz", ".gz", ".a", ".7z", ".rar")
+    #: Built once, with fixed timestamps: a seed whose bytes changed between examples (a zip's or a
+    #: gzip header's clock) made Hypothesis's draws inconsistent.
+    _SEEDS: ClassVar[dict[str, bytes]] = {}
+
+    @staticmethod
+    def seeds() -> dict[str, bytes]:
+        if not TestArchives._SEEDS:
+            TestArchives._SEEDS.update(TestArchives._built())
+        return TestArchives._SEEDS
+
+    @staticmethod
+    def _built() -> dict[str, bytes]:
+        member = b"import os\nprint(os.getcwd())\n" * 4
+        zipped = io.BytesIO()
+        with zipfile.ZipFile(zipped, "w", zipfile.ZIP_DEFLATED) as archive:
+            for name, data in (("pkg/a.py", member), ("pkg/inner.zip", b"PK\x03\x04")):
+                archive.writestr(zipfile.ZipInfo(name, (2020, 1, 1, 0, 0, 0)), data)
+        tarred: dict[str, bytes] = {}
+        for mode, suffix in (("w", ".tar"), ("w:gz", ".tar.gz")):
+            buffer = io.BytesIO()
+            with (
+                tarfile.open(fileobj=buffer, mode=mode, compresslevel=9)
+                if mode != "w"
+                else tarfile.open(fileobj=buffer, mode=mode) as archive
+            ):
+                info = tarfile.TarInfo("pkg/a.py")
+                info.mtime = 0
+                info.size = len(member)
+                archive.addfile(info, io.BytesIO(member))
+            tarred[suffix] = buffer.getvalue()
+        import gzip
+
+        header = b"!<arch>\n" + b"a.o/".ljust(16) + b"0".ljust(12) + b"0".ljust(6) * 2
+        ar = header + b"644".ljust(8) + str(len(member)).encode().ljust(10) + b"`\n" + member
+        return {
+            ".zip": zipped.getvalue(),
+            **tarred,
+            ".gz": gzip.compress(member, mtime=0),
+            ".a": ar,
+            ".7z": b"7z\xbc\xaf\x27\x1c\x00\x04" + member,
+            ".rar": b"Rar!\x1a\x07\x01\x00" + member,
+        }
+
+    @staticmethod
+    def damaged(data: bytes, draw) -> bytes:
+        body = bytearray(data)
+        for _ in range(draw(st.integers(0, 6))):
+            if body:
+                body[draw(st.integers(0, len(body) - 1))] = draw(st.integers(0, 255))
+        if body and draw(st.booleans()):
+            del body[draw(st.integers(0, len(body))) :]
+        if draw(st.booleans()):
+            at = draw(st.integers(0, len(body)))
+            body[at:at] = draw(st.binary(max_size=64))
+        return bytes(body)
+
+    @SETTINGS
+    @given(data=st.data())
+    def test_a_damaged_archive_ends_and_raises_only_what_callers_handle(self, data) -> None:
+        suffix = data.draw(st.sampled_from(TestArchives.SUFFIXES))
+        raw = TestArchives.damaged(TestArchives.seeds()[suffix], data.draw)
+        started = time.monotonic()
+        with contextlib.suppress(TOLERATED):
+            for _name, _member in ArchiveReader.walk_archive(
+                raw, path=f"pkg{suffix}", deadline=started + 10
+            ):
+                pass
+        assert time.monotonic() - started < 30, f"{suffix}: the walk ran past its deadline"

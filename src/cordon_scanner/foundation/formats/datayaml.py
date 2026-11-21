@@ -10,7 +10,9 @@ edges, the scopes and the platform fields; this reads them as the documents they
 Still hostile-input YAML, so the same hazards stay unreachable:
 
 * no anchors, aliases, tags or merge keys -- the billion-laughs shape and the deserialisation
-  gadgets have nothing to hook into, and meeting one is a parse error, not a silent misread;
+  gadgets have nothing to hook into, and meeting one is a parse error, not a silent misread. The
+  one exception is `key: !!python/tuple` over a block sequence (PyYAML's dump of a tuple), read as
+  the plain list it holds; nothing is ever constructed;
 * depth is bounded (`MAX_DEPTH`), so nesting is a parse error rather than a stack overflow;
 * scalars stay strings. `1.10` is a version, never the float `1.1`; only `true`, `false`, `null`
   and `~` are interpreted, because lockfiles use them as flags.
@@ -26,6 +28,8 @@ import re
 from typing import Any, Final
 
 MAX_DEPTH: Final = 64
+#: The one tag read, and only as a block-mapping value over a block sequence (`tagged_sequence`).
+_TUPLE_TAG: Final = "!!python/tuple"
 MAX_FLOW_CONTINUATION: Final = 200
 #: A plain key ends at the first colon followed by a space or the end of the line; a colon inside
 #: a word (`lodash@npm:4.17.21`, `https://...`) is part of it.
@@ -321,7 +325,9 @@ class _Reader:
                 break
             key, rest = self.key(content, number)
             value: Any
-            if _BLOCK_SCALAR.fullmatch(rest):
+            if rest == _TUPLE_TAG:
+                value, index = self.tagged_sequence(index, indent, depth, number)
+            elif _BLOCK_SCALAR.fullmatch(rest):
                 value, index = self.block_scalar(index)
             elif rest:
                 rest, index = self.continued(rest, index, indent)
@@ -351,6 +357,27 @@ class _Reader:
                 continue
             result[key] = value
         return result, index
+
+    def tagged_sequence(
+        self, index: int, indent: int, depth: int, number: int
+    ) -> tuple[list[Any], int]:
+        """`key: !!python/tuple` and a block sequence below it -- what PyYAML's default dumper writes
+        for a tuple -- read as the plain list it holds. Nothing is constructed: the tag is the only
+        one read, only here, only on a block sequence; its items are read as any others (a tag
+        among them is still refused)."""
+        index += 1
+        if index < len(self.lines):
+            below, content, _ = self.lines[index]
+            if below >= indent and (content == "-" or content.startswith("- ")):
+                if below > indent:
+                    value, index = self.block(index, below, depth + 1)
+                else:
+                    value, index = self.sequence(index, indent, depth + 1)
+                if isinstance(value, list):
+                    return value, index
+        raise DataYamlError(
+            f"{self.source}:{number}: `{_TUPLE_TAG}` is read only on a block sequence"
+        )
 
     def sequence(self, start: int, indent: int, depth: int) -> tuple[list[Any], int]:
         result: list[Any] = []

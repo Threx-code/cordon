@@ -78,11 +78,39 @@ class HttpTransport:
     def post(
         url: str, body: dict[str, Any], headers: dict[str, str], timeout: float = TIMEOUT_SECONDS
     ) -> dict[str, Any]:
+        return HttpTransport.send(url, body, headers, timeout)
+
+    @staticmethod
+    def allowing(plain_hosts: frozenset[str]) -> Transport:
+        """The same transport, also allowing plain HTTP to `plain_hosts`: model servers on a network
+        nothing else can reach (the backend's `judge` network). Everything else still needs https."""
+        hosts = frozenset(h.lower() for h in plain_hosts)
+
+        def post(
+            url: str,
+            body: dict[str, Any],
+            headers: dict[str, str],
+            timeout: float = TIMEOUT_SECONDS,
+        ) -> dict[str, Any]:
+            return HttpTransport.send(url, body, headers, timeout, plain_hosts=hosts)
+
+        return post
+
+    @staticmethod
+    def send(
+        url: str,
+        body: dict[str, Any],
+        headers: dict[str, str],
+        timeout: float = TIMEOUT_SECONDS,
+        *,
+        plain_hosts: frozenset[str] = frozenset(),
+    ) -> dict[str, Any]:
         from cordon_scanner.version import __version__
 
         parsed_url = urllib.parse.urlsplit(url)
+        plain_ok = (parsed_url.hostname or "").lower() in LOCAL_HOSTS | plain_hosts
         if parsed_url.scheme not in ("https", "http") or (
-            parsed_url.scheme == "http" and parsed_url.hostname not in LOCAL_HOSTS
+            parsed_url.scheme == "http" and not plain_ok
         ):
             raise ProviderUnavailable("a remote judge must be reached over https")
         request = urllib.request.Request(  # noqa: S310  (scheme checked above)
@@ -196,6 +224,10 @@ class BaseProvider:
         self.url = url.rstrip("/")
         self.environ = dict(os.environ if environ is None else environ)
         self._transport = transport or HttpTransport.post
+        #: The completion's budget, raised for a model that reasons before it answers (the package
+        #: judge's confirming stage); `think` turns that reasoning on or off where the server can.
+        self.max_tokens = self.MAX_TOKENS
+        self.think: bool | None = None
 
     @property
     def timeout(self) -> float:
@@ -266,8 +298,11 @@ class ChatCompletionsProvider(BaseProvider):
                 {"role": "user", "content": user},
             ],
             "response_format": {"type": "json_object"},
-            "max_completion_tokens": self.MAX_TOKENS,
+            "max_completion_tokens": self.max_tokens,
         }
+        if self.think is not None:
+            # vLLM and SGLang pass this to the chat template: Qwen3's reasoning on or off.
+            payload["chat_template_kwargs"] = {"enable_thinking": self.think}
         if not self._model_controls_sampling():
             payload["temperature"] = 0
             payload["seed"] = 0
@@ -312,7 +347,8 @@ class OllamaProvider(BaseProvider):
                 "model": self.model,
                 "stream": False,
                 "format": "json",
-                "options": {"temperature": 0, "seed": 0, "num_predict": self.MAX_TOKENS},
+                **({"think": self.think} if self.think is not None else {}),
+                "options": {"temperature": 0, "seed": 0, "num_predict": self.max_tokens},
                 "messages": [
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},

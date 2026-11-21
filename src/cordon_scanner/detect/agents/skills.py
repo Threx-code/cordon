@@ -7,10 +7,18 @@ from __future__ import annotations
 import bisect
 import re
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, ClassVar, Final
+from typing import TYPE_CHECKING, Any, ClassVar, Final
+
+from cordon_scanner.detect.agents.configuration import AgentSafeguards
+from cordon_scanner.detect.agents.instructions import InstructionText
+from cordon_scanner.foundation.formats.datayaml import DataYaml, DataYamlError
+from cordon_scanner.foundation.models import Severity
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from cordon_scanner.detect.base import ScanContext
+    from cordon_scanner.foundation.models import Finding
 
 
 #: Scripts that ship with a skill, which the agent runs when the skill is used.
@@ -90,8 +98,13 @@ class SkillOrigin:
 
     @staticmethod
     def third_party(path: str, ctx: ScanContext) -> bool:
-        if not path.lower().endswith("skill.md"):
-            return False
+        return path.lower().endswith("skill.md") and SkillOrigin.installed(path, ctx)
+
+    @staticmethod
+    def installed(path: str, ctx: ScanContext) -> bool:
+        """Whether a file is not the scanned repository's own: an archive member, in an installed
+        or vendored folder, or in a scan that is not of a repository root. Any instruction file's
+        place, where `third_party` answers for `SKILL.md` alone."""
         if "!" in path or any(part in path.lower() for part in SkillOrigin._INSTALLED):
             return True
         repository = ctx.repository
@@ -279,4 +292,155 @@ class SkillScripts:
         return starts[index] if index < len(starts) else None
 
 
-__all__ = ["SkillOrigin", "SkillScripts"]
+class SkillClaims:
+    """What a third-party skill's front matter claims, and the acts its instructions carry that it
+    does not (`SUSPECT.AGENT.SKILL_CLAIM_MISMATCH.001`, reviews/mcp-98/31).
+
+    A skill's front matter is the claim its user approves; its instructions are what the agent then
+    does. The acts are facts the file's own readers already report on their own, below the gate; the
+    claim is read only to see whether the description announces them. It only ever adds: an act the
+    description claims is graded exactly as before, and a claim cannot excuse an act that is hidden
+    from the user.
+    """
+
+    #: The capability classes a description can claim. The vocabulary of the learned verdict's
+    #: `skill_claims_*` facts (`VerdictFeatures.SKILL_CLAIM`, which `decide` may not be imported
+    #: from here: a test holds the two equal).
+    CLAIM: ClassVar[dict[str, re.Pattern[str]]] = {
+        name: re.compile(pattern, re.IGNORECASE)
+        for name, pattern in {
+            "network": r"\b(?:api|http|web|url|download|upload|fetch|online|search|browse|"
+            r"webhook|slack|github|notion|google|cloud|server|service|remote|sync)\b",
+            "credentials": r"\b(?:token|key|secret|credential|password|auth|oauth|login|"
+            r"wallet|keychain|ssh|vault)\b",
+            "shell": r"\b(?:shell|terminal|command|install|deploy|docker|kubectl|git|run|"
+            r"execute|script|process|system|automation)\b",
+            "files": r"\b(?:file|folder|directory|document|pdf|csv|excel|image|disk|backup)\b",
+        }.items()
+    }
+    #: What a tool named in `allowed-tools` declares, beside the prose: a structural claim.
+    TOOL_CLAIM: ClassVar[dict[str, str]] = {
+        "bash": "shell",
+        "shell": "shell",
+        "powershell": "shell",
+        "webfetch": "network",
+        "websearch": "network",
+        "read": "files",
+        "write": "files",
+        "edit": "files",
+        "multiedit": "files",
+        "glob": "files",
+        "grep": "files",
+        "notebookedit": "files",
+    }
+    #: The finding of a reader that is an act, and the act it is.
+    ACT_RULE: ClassVar[dict[str, str]] = {
+        "SUSPECT.AGENT.FETCH_EXEC.001": "fetch_run",
+        "SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001": "remote_instructions",
+        # Sets the agent's instructions aside, acts without asking the user or hides from the
+        # user: no description claims it (`REQUIRES` has no entry), in a skill or in any other
+        # instruction file that is not the project's own.
+        "SUSPECT.AGENT.INJECTION_TEXT.001": "overrides_agent",
+    }
+    #: The claim an act needs. An act that is concealed needs one nobody can make.
+    REQUIRES: ClassVar[dict[str, str]] = {
+        "fetch_run": "shell",
+        "remote_instructions": "network",
+    }
+    #: What a skill with no declared description is read as: `unknown` (no check, except an act that
+    #: is concealed, which no claim could excuse) or `nothing` (it claims no class at all).
+    NO_DESCRIPTION: ClassVar[str] = "unknown"
+    #: The finding the learned skill reading makes at or above its warn line. An act counts only in
+    #: a skill that carries it (`unclaimed`).
+    SKILL_MODEL_RULE: Final = "SUSPECT.AGENT.SKILL_INSTRUCTIONS.001"
+    MAX_FRONT_MATTER: ClassVar[int] = 20_000
+    _CLOSE: ClassVar[re.Pattern[str]] = re.compile(r"(?m)^---[ \t]*\r?$")
+    _TOOL_NAME: ClassVar[re.Pattern[str]] = re.compile(r"[\w-]{1,60}")
+
+    @staticmethod
+    def front_matter(text: str) -> dict[str, Any] | None:
+        """The leading `---` block read as YAML (hostile-input reader: no anchors, bounded depth),
+        or None when there is none or it is not a mapping."""
+        if not text.startswith(("---\n", "---\r\n")):
+            return None
+        close = SkillClaims._CLOSE.search(text, 3)
+        if close is None or close.start() > SkillClaims.MAX_FRONT_MATTER:
+            return None
+        try:
+            loaded = DataYaml.load(text[3 : close.start()], source="SKILL.md")
+        except DataYamlError:
+            return None
+        return loaded if isinstance(loaded, dict) else None
+
+    @staticmethod
+    def claimed(front: dict[str, Any]) -> frozenset[str] | None:
+        """The classes the front matter claims, or None when it declares no description."""
+        description = front.get("description")
+        if not isinstance(description, str) or not description.strip():
+            return None
+        name = front.get("name")
+        said = f"{name if isinstance(name, str) else ''} {description[:4_000]}"
+        said = said.replace("-", " ").replace("_", " ")
+        classes = {kind for kind, pattern in SkillClaims.CLAIM.items() if pattern.search(said)}
+        tools = front.get("allowed-tools", front.get("allowed_tools"))
+        listed = tools if isinstance(tools, list) else [tools] if isinstance(tools, str) else []
+        for entry in listed[:100]:
+            for found in SkillClaims._TOOL_NAME.finditer(str(entry)[:400]):
+                word = found.group(0).lower()
+                if word.startswith("mcp__"):
+                    classes.add("network")
+                elif word in SkillClaims.TOOL_CLAIM:
+                    classes.add(SkillClaims.TOOL_CLAIM[word])
+        return frozenset(classes)
+
+    @staticmethod
+    def unclaimed(
+        text: str, findings: Iterable[Finding], *, concealed: bool
+    ) -> tuple[frozenset[str] | None, list[tuple[str, int, int]]]:
+        """The classes the description claims (None: none declared) and the acts it does not, each
+        as (act, first byte, last byte).
+
+        An act is a reader's finding at MEDIUM: one already at the gate needs no help, and the
+        official installer's LOW finding is recorded as an installer. Naming a switch that turns
+        the agent's own checks off (`AgentSafeguards`) is an act too, unless a prohibition comes
+        before it in its sentence ("never run with ..."). An
+        act no description can claim (`REQUIRES` names none) and an act that is concealed are
+        unclaimed whatever the description says; any other is unclaimed when the description does
+        not claim what it needs. None of this counts unless the learned reading of the skill scores
+        it at or above its warn line (`SKILL_MODEL_RULE` among the findings): the act is one weak
+        reading and the model is another, and the pair is what the benign skills do not give."""
+        front = SkillClaims.front_matter(text)
+        claimed = SkillClaims.claimed(front) if front is not None else None
+        reading = claimed
+        if reading is None and SkillClaims.NO_DESCRIPTION == "nothing":
+            reading = frozenset()
+        held = list(findings)
+        model_agrees = any(f.rule_id == SkillClaims.SKILL_MODEL_RULE for f in held)
+        if not model_agrees:
+            # Two independent weak readings, not one: the act, and the learned reading of the skill
+            # at or above its warn line. Alone the act cost 30 benign wild skills for 29 malicious
+            # (skills dev half, 2.12% to 2.96%); with the model beside it, 1 for 19 (the plain
+            # form is kept in the history, reviews/mcp-98/31).
+            return claimed, []
+        acts: list[tuple[str, int, int]] = []
+        for finding in held:
+            act = SkillClaims.ACT_RULE.get(finding.rule_id)
+            if act is None or finding.severity != Severity.MEDIUM:
+                continue
+            first, last = finding.location.byte_start or 0, finding.location.byte_end or 0
+            needs = SkillClaims.REQUIRES.get(act)
+            if concealed or needs is None or (reading is not None and needs not in reading):
+                acts.append((act, first, last))
+        switch = AgentSafeguards.in_text(text)
+        if switch is not None and not InstructionText.prohibited(text, switch[0]):
+            acts.append(
+                (
+                    "switches_off_checks",
+                    len(text[: switch[0]].encode("utf-8")),
+                    len(text[: switch[1]].encode("utf-8")),
+                )
+            )
+        return claimed, sorted(acts, key=lambda act: act[1])
+
+
+__all__ = ["SkillClaims", "SkillOrigin", "SkillScripts"]

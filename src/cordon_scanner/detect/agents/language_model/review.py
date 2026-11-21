@@ -141,29 +141,41 @@ class VerdictParser:
     def squash(text: str) -> str:
         return re.sub(r"\s+", " ", text).strip().lower()
 
+    #: The answer's exact shape (`schemas/cordon-judge-v1.schema.json`, response.verdict).
+    KEYS: ClassVar[frozenset[str]] = frozenset({"verdict", "category", "evidence", "reason"})
+    _FENCE: ClassVar[re.Pattern[str]] = re.compile(r"\A```(?:json)?[ \t]*\n(.*)\n```\Z", re.S)
+
     @classmethod
     def parse(cls, answer: str, judged: str) -> Verdict | None:
-        """None when the answer is not the JSON asked for."""
-        found = cls.json_object(answer or "")
-        if found is None:
+        """None when the answer is not exactly the JSON asked for (S6): one object, alone or in
+        one ```json fence, with exactly `KEYS`, each a string, the verdict and category from their
+        lists. Prose around it, a second object, an extra or missing key, or a value of another
+        type is ignored, never read as any verdict: the answer is shaped by text the party being
+        judged wrote."""
+        text = (answer or "").strip()
+        fenced = cls._FENCE.match(text)
+        if fenced is not None:
+            text = fenced.group(1).strip()
+        if not (text.startswith("{") and text.endswith("}")):
             return None
         try:
-            data = ScannedJson.loads(found)
+            data = ScannedJson.loads(text)
         except ValueError:
             return None
-        if not isinstance(data, dict):
+        if not isinstance(data, dict) or set(data) != cls.KEYS:
             return None
-        verdict = str(data.get("verdict", "")).lower()
-        if verdict not in Prompt.VERDICTS:
+        if not all(isinstance(value, str) for value in data.values()):
             return None
-        category = str(data.get("category", "other")).lower()
-        evidence = str(data.get("evidence", ""))[:300]
+        verdict, category = data["verdict"].lower(), data["category"].lower()
+        if verdict not in Prompt.VERDICTS or category not in Prompt.CATEGORIES:
+            return None
+        evidence = data["evidence"][:300]
         quote = cls.squash(evidence)
         return Verdict(
             verdict=verdict,
-            category=category if category in Prompt.CATEGORIES else "other",
+            category=category,
             evidence=evidence,
-            reason=str(data.get("reason", ""))[:400],
+            reason=data["reason"][:400],
             verified=bool(quote) and quote in cls.squash(judged),
         )
 
@@ -172,6 +184,11 @@ class Chunker:
     """Text in pieces a model is asked about one at a time, cut at paragraph breaks."""
 
     MAX_CHUNK: ClassVar[int] = 6000
+    MAX_CHUNKS: ClassVar[int] = 8
+    """Pieces of one text the judge is asked about (S6): the first eight, in order, the same on
+    every run and machine. The rest is a named gap (OPERATIONAL.JUDGE.TRUNCATED), never judged
+    benign. A per-text cap, unlike the per-scan call budget, does not depend on which worker
+    reached which file first."""
 
     @classmethod
     def split(cls, text: str) -> list[str]:

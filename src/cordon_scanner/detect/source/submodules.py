@@ -114,17 +114,18 @@ class Submodules:
     the checkout's index to read it from."""
 
     @staticmethod
-    def gitlinks(directory: Path) -> dict[str, str]:
+    def gitlinks(directory: Path) -> dict[str, str] | None:
         """`path -> commit` for every gitlink in the index of the checkout at `directory`, through
-        the hardened git wrapper. Empty when there is no checkout to ask (an archive, a copy)."""
+        the hardened git wrapper. Empty when there is no checkout to ask (an archive, a copy); None
+        when there is one and git could not read its index."""
         if not (directory / ".git").exists():
             return {}
         from cordon_scanner.sources.git import GitRepository
 
         try:
             output = GitRepository(directory).run(["ls-files", "--stage"], check=False)
-        except Exception:  # noqa: BLE001
-            return {}
+        except Exception:  # noqa: BLE001  # S2: said by the caller as a problem, never an empty index
+            return None
         links: dict[str, str] = {}
         for line in output.splitlines():
             meta, _, path = line.partition("\t")
@@ -153,6 +154,11 @@ class Submodules:
                 continue
             directory = unit.path.rpartition("/")[0]
             links = Submodules.gitlinks(root / directory if directory else root)
+            if links is None:
+                problems.append(
+                    (unit.path, "git could not read the checkout's index (git ls-files)")
+                )
+                links = {}
             for declared in manifest.dependencies:
                 path = declared.field_name.removeprefix("submodule ")
                 commit = links.get(path)

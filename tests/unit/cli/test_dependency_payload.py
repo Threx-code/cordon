@@ -175,3 +175,35 @@ class TestTheVerdict:
             DependencyPayload.applied(args, target, ScanResult(), Config.default(), None).findings
             == ()
         )
+
+
+class TestAnUnreadDependency:
+    """A dependency whose own content left part of it unread makes the package that declares it
+    incomplete by that content, so the gate blocks it as it would the package's own unread file."""
+
+    GAP = ("OPERATIONAL.ARCHIVE.MEMBER_REJECTED", "payload@1.0.0.tgz!package/inner.tgz")
+
+    def test_its_gap_is_the_vehicle_s_and_blocks(self, monkeypatch, tmp_path):
+        from cordon_scanner.decide.policy import PolicyGate
+        from cordon_scanner.foundation.errors import ExitCode
+
+        (tmp_path / "store" / "npm").mkdir(parents=True)
+        DependencyKit.archive(
+            tmp_path / "store" / "npm" / "payload@1.0.0.tgz",
+            {"name": "payload", "version": "1.0.0"},
+        )
+
+        def scan(self, target):
+            return ScanResult(complete=False, content_complete=False, content_gaps=(self_gap,))
+
+        self_gap = self.GAP
+        monkeypatch.setattr(cordon_scanner.Scanner, "scan", scan)
+        target = DependencyKit.archive(
+            tmp_path / "vehicle.tgz", {"name": "vehicle", "dependencies": {"payload": "^1.0.0"}}
+        )
+        result = DependencyPayload.applied(
+            DependencyKit.args(tmp_path / "store"), target, ScanResult(), Config.default(), None
+        )
+        assert result.content_gaps == (self.GAP,) and not result.complete
+        assert PolicyGate.evaluate(result, Config.default().policy).exit_code is ExitCode.INCOMPLETE
+        assert [(f.rule_id, f.location.path) for f in result.findings] == [self.GAP]

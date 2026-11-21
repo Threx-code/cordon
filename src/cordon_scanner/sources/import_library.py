@@ -46,9 +46,17 @@ class ImportLibrary:
     }
     """Known machines and their word size (.idata$4 / $5)."""
     DEBUG_MAX: ClassVar[int] = 64
-    """The largest `.debug$S` the three measured libraries carry (60, 63 and 64 bytes)."""
-    CODEVIEW: ClassVar[frozenset[int]] = frozenset({2, 4})
-    """CodeView signatures: 2 in all 15 measured `.debug$S`, and 4 (C13)."""
+    """The largest C13 (signature 4) `.debug$S` let through: no C13 import library has been measured,
+    so it keeps the bound the first three libraries set (60, 63 and 64 bytes)."""
+    CV_MACHINE: ClassVar[dict[int, int]] = {0x14C: 0x03, 0x8664: 0xD0, 0xAA64: 0xF6}
+    """The CodeView machine lib.exe writes in a C11 compiler record, by COFF machine (measured, 141
+    sections in 9 benign PyPI units). A machine not here is refused until it is measured."""
+    _OBJNAME: ClassVar[int] = 0x0009
+    """S_OBJNAME_ST: signature 0, then the object's name, length-prefixed: in an import library the DLL's."""
+    _COMPILE2: ClassVar[int] = 0x1013
+    """S_COMPILE2_ST: flags, machine, six version shorts, then the linker's banner, length-prefixed."""
+    _COMPILE_FLAGS: ClassVar[int] = 7
+    """The compiler record's flags in all 141 measured sections."""
     NAME_MAX: ClassVar[int] = 260
     #: Section flags that mark code or execution: no descriptor object has either.
     _CODE: ClassVar[int] = 0x00000020 | 0x20000000
@@ -108,7 +116,14 @@ class ImportLibrary:
             offset = int(name[1:])
             if long_names is None or offset >= len(long_names):
                 return None
-            stop = long_names.find(b"/\n", offset)
+            # GNU ends a long name with "/\n", Microsoft's lib.exe with a NUL: the first of the two
+            # (as ArReader reads the table, 33d5d5dd).
+            ends = [
+                e
+                for e in (long_names.find(b"/\n", offset), long_names.find(b"\x00", offset))
+                if e >= 0
+            ]
+            stop = min(ends) if ends else -1
             return long_names[offset:stop] if stop > offset else None
         if name.startswith((b"/", b"#1/", b"__.SYMDEF")) or not name.endswith(b"/"):
             return None
@@ -191,7 +206,7 @@ class ImportLibrary:
             data = body[ptr : ptr + raw]
             if len(data) != raw:
                 return False
-            if not ImportLibrary._section(name, data, nrel, word, dll):
+            if not ImportLibrary._section(name, data, nrel, word, dll, machine):
                 return False
             names.append(name)
             if raw:
@@ -212,13 +227,14 @@ class ImportLibrary:
         return ImportLibrary._covered(spans, len(body))
 
     @staticmethod
-    def _section(name: str, data: bytes, nrel: int, word: int, dll: bytes) -> bool:
+    def _section(name: str, data: bytes, nrel: int, word: int, dll: bytes, machine: int) -> bool:
         if name == ".debug$S":
-            return (
-                nrel == 0
-                and 4 <= len(data) <= ImportLibrary.DEBUG_MAX
-                and struct.unpack_from("<I", data)[0] in ImportLibrary.CODEVIEW
-            )
+            if nrel != 0 or len(data) < 4:
+                return False
+            signature = struct.unpack_from("<I", data)[0]
+            if signature == 2:
+                return ImportLibrary._codeview(data, dll, machine)
+            return signature == 4 and len(data) <= ImportLibrary.DEBUG_MAX
         limit = next((s[name] for s in ImportLibrary._SHAPES if name in s), None)
         if limit is None or nrel > limit:
             return False
@@ -233,6 +249,52 @@ class ImportLibrary:
             and len(data) - len(named) in (1, 2)
             and named.lower() == dll.lower()
         )
+
+    @staticmethod
+    def _codeview(data: bytes, dll: bytes, machine: int) -> bool:
+        """A C11 `.debug$S` (signature 2) as lib.exe writes it into a descriptor object: exactly one
+        object-name record and one compiler record, in either order, covering the section to its last
+        byte. The object name is the DLL's own name and the banner is printable, so the section holds
+        nothing a reader could not name (08-BENIGN-F-SHAPES §1)."""
+        records: dict[int, bytes] = {}
+        at = 4
+        while at < len(data):
+            if at + 4 > len(data):
+                return False
+            length, kind = struct.unpack_from("<HH", data, at)
+            end = at + 2 + length
+            if length < 2 or end > len(data) or kind in records:
+                return False
+            records[kind] = data[at + 4 : end]
+            at = end
+        if set(records) != {ImportLibrary._OBJNAME, ImportLibrary._COMPILE2}:
+            return False
+        return ImportLibrary._object_name(records[ImportLibrary._OBJNAME], dll) and (
+            ImportLibrary._compiler(records[ImportLibrary._COMPILE2], machine)
+        )
+
+    @staticmethod
+    def _object_name(body: bytes, dll: bytes) -> bool:
+        """Signature 0, then the DLL's own name, length-prefixed, filling the record exactly."""
+        if len(body) < 5 or struct.unpack_from("<I", body)[0] != 0:
+            return False
+        size = body[4]
+        name = body[5:]
+        return size > 0 and len(name) == size and name.lower() == dll.lower()
+
+    @staticmethod
+    def _compiler(body: bytes, machine: int) -> bool:
+        """The measured flags, the CodeView machine of the object's COFF machine, six version
+        shorts, then a printable banner, length-prefixed, filling the record exactly."""
+        if len(body) < 19:
+            return False
+        flags, cv_machine = struct.unpack_from("<IH", body)
+        expected = ImportLibrary.CV_MACHINE.get(machine)
+        if flags != ImportLibrary._COMPILE_FLAGS or expected is None or cv_machine != expected:
+            return False
+        size = body[18]
+        banner = body[19:]
+        return size > 0 and len(banner) == size and all(0x20 <= b < 0x7F for b in banner)
 
     @staticmethod
     def _symbols(

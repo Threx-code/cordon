@@ -26,12 +26,16 @@ from collections.abc import Callable
 from typing import Any, ClassVar, Final
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+from cordon_scanner.detect.agents.mcp_servers.environment_subsets import EnvironmentSubsets
+from cordon_scanner.detect.agents.mcp_servers.tool_handlers import ToolHandlers
 
-_TOOL_DECORATOR: Final = re.compile(r"\btool\b|\.tool\(|tool\s*$")
 _RUNS_COMMANDS: Final = re.compile(
     r"(?i)exec|run|shell|command|terminal|bash|\bcmd\b|script|process|subprocess|kubectl|"
     r"powershell|eval|console|ssh"
 )
+#: The process environment as a name, not as a piece of a longer one (`list_environments`,
+#: `current_environment` are a deployment's records, not `os.environ`).
+_ENVIRONMENT_NAME: Final = re.compile(r"\benviron[b]?\b")
 _SECRET_WORDS: Final = re.compile(r"(?i)secret|token|passw|credential|api_?key|\bkey\b|auth")
 _IGNORED_PARAMS: Final = frozenset({"self", "cls", "ctx", "context"})
 
@@ -60,12 +64,14 @@ class McpCode:
         {"system", "popen", "getoutput", "getstatusoutput"}
     )
 
-    @staticmethod
-    def _parse(text: str) -> ast.Module | None:
+    @classmethod
+    def _parse(cls, text: str) -> ast.Module | None:
         try:
             tree: ast.Module = PythonSyntax.parse(text)
+            ToolHandlers.mark_registered(tree)
             return tree
-        except (SyntaxError, ValueError, RecursionError):
+        except (SyntaxError, ValueError):
+            # S2: covered by SOURCE.UNPARSED at every running file (install closure, import entries, command modules); proven by test_not_python3.py TestPackageSourceThatDoesNotParse
             return None
 
     @staticmethod
@@ -144,10 +150,6 @@ class McpCode:
                 out.append(node)
         return out
 
-    @staticmethod
-    def _is_tool(function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-        return any(_TOOL_DECORATOR.search(ast.unparse(d)) for d in function.decorator_list)
-
     @classmethod
     def triggered(
         cls,
@@ -159,6 +161,10 @@ class McpCode:
         a literal -- `x.startswith("EXEC://")`, `x == "admin_2026"`, `"://" in x`. A bug runs the
         input whatever it is; a backdoor waits for the word only its author knows."""
         tainted = cls._tainted(function)
+        if ToolHandlers.is_dispatcher(function) and function.args.args:
+            # The first argument of a low-level handler is the tool's name: comparing it with a
+            # literal is how the one handler chooses a tool, not a word only its author knows.
+            tainted = tainted - {function.args.args[0].arg}
         for node in ast.walk(function):
             if not isinstance(node, ast.If):
                 continue
@@ -212,7 +218,8 @@ class McpCode:
                 if function.name not in wrappers and cls._runs_input(function, wrappers):
                     wrappers.add(function.name)
         out: list[tuple[int, str, bool]] = []
-        for function in (f for f in functions if cls._is_tool(f)):
+        listed = ToolHandlers.listed_text(tree)
+        for function in (f for f in functions if ToolHandlers.is_tool(f)):
             calls = cls._run_calls(function, wrappers)
             if not calls:
                 continue
@@ -223,8 +230,7 @@ class McpCode:
             if gated is not None:
                 out.append((getattr(gated, "lineno", function.lineno), function.name, True))
                 continue
-            said = function.name + " " + (ast.get_docstring(function) or "")[:600]
-            if _RUNS_COMMANDS.search(said):
+            if _RUNS_COMMANDS.search(ToolHandlers.said(function, listed)):
                 continue
             out.append((getattr(calls[0], "lineno", function.lineno), function.name, False))
         return out
@@ -243,16 +249,96 @@ class McpCode:
             for function in functions:
                 if function.name not in wrappers and cls._runs_input(function, wrappers):
                     wrappers.add(function.name)
-        tools = [f for f in functions if cls._is_tool(f)]
+        tools = [f for f in functions if ToolHandlers.is_tool(f)]
+        listed = ToolHandlers.listed_text(tree)
         hits: list[tuple[int, str]] = []
         for function in tools:
-            said = function.name + " " + (ast.get_docstring(function) or "")[:600]
-            if _RUNS_COMMANDS.search(said):
+            if _RUNS_COMMANDS.search(ToolHandlers.said(function, listed)):
                 continue
             call = cls._runs_input(function, wrappers)
             if call is not None:
                 hits.append((getattr(call, "lineno", function.lineno), function.name))
         return hits
+
+    #: What takes a prefix off a string: `raw.split("://", 1)[1]`, `raw.replace(...)`, `raw.removeprefix(...)`.
+    _STRIPS: ClassVar[frozenset[str]] = frozenset(
+        {"split", "rsplit", "partition", "replace", "removeprefix", "lstrip"}
+    )
+
+    @classmethod
+    def _stripped(cls, node: ast.AST, names: set[str]) -> bool:
+        """Whether `node` is one of `names` with its start taken off: sliced, split, replaced."""
+        for n in ast.walk(node):
+            if (
+                isinstance(n, ast.Subscript)
+                and isinstance(n.slice, ast.Slice)
+                and isinstance(n.value, ast.Name)
+                and n.value.id in names
+            ):
+                return True
+            if (
+                isinstance(n, ast.Call)
+                and isinstance(n.func, ast.Attribute)
+                and n.func.attr in cls._STRIPS
+                and isinstance(n.func.value, ast.Name)
+                and n.func.value.id in names
+            ):
+                return True
+        return False
+
+    @staticmethod
+    def _prefixed(function: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
+        """The names a function tests for a marker: `x.startswith(...)`, `"://" in x`."""
+        out: set[str] = set()
+        for n in ast.walk(function):
+            if (
+                isinstance(n, ast.Call)
+                and isinstance(n.func, ast.Attribute)
+                and n.func.attr in ("startswith", "find", "index")
+                and isinstance(n.func.value, ast.Name)
+            ):
+                out.add(n.func.value.id)
+            elif (
+                isinstance(n, ast.Compare)
+                and len(n.ops) == 1
+                and isinstance(n.ops[0], ast.In)
+                and isinstance(n.left, ast.Constant)
+                and isinstance(n.left.value, str)
+                and len(n.left.value) >= 2
+                and isinstance(n.comparators[0], ast.Name)
+            ):
+                out.add(n.comparators[0].id)
+        return out
+
+    @classmethod
+    def prefix_runs(cls, text: str) -> list[tuple[int, str]]:
+        """(line, function) where a function tests a string for a marker and runs what follows the
+        marker -- `if raw.startswith("SYSTEM/"): run(raw.split("/", 1)[1], shell=True)`. The gate and
+        the command are one string: a word only its author sends, then the command. Choosing a
+        subcommand compares the whole value and runs something else, so it is not this."""
+        tree = cls._parse(text)
+        if tree is None:
+            return []
+        out: list[tuple[int, str]] = []
+        for function in (
+            n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
+        ):
+            prefixed = cls._prefixed(function)
+            if not prefixed:
+                continue
+            derived: set[str] = set()
+            for n in ast.walk(function):
+                if isinstance(n, ast.Assign) and cls._stripped(n.value, prefixed):
+                    for target in n.targets:
+                        derived |= cls._names(target)
+            for call in (n for n in ast.walk(function) if isinstance(n, ast.Call)):
+                args = cls._sink_args(call)
+                if args and any(
+                    cls._stripped(a, prefixed) or cls._names(a) & derived for a in args
+                ):
+                    out.append((call.lineno, function.name))
+                    break
+        return out
 
     @staticmethod
     def _hidden_path(node: ast.AST) -> bool:
@@ -332,7 +418,7 @@ class McpCode:
         if not writers:
             return []
         hits: list[tuple[int, str]] = []
-        for function in (f for f in functions if cls._is_tool(f)):
+        for function in (f for f in functions if ToolHandlers.is_tool(f)):
             tainted = cls._tainted(function)
             for node in ast.walk(function):
                 if not isinstance(node, ast.Call):
@@ -468,7 +554,7 @@ class McpCode:
             return hosts
 
         hits: list[tuple[int, str, str]] = []
-        for function in (f for f in functions.values() if cls._is_tool(f)):
+        for function in (f for f in functions.values() if ToolHandlers.is_tool(f)):
             hosts = tainted_hosts(function)
             named = sorted(h for h in hosts if h)
             untrusted = [
@@ -485,7 +571,9 @@ class McpCode:
             ]
             if untrusted:
                 hits.append((function.lineno, function.name, untrusted[0]))
-            elif len(named) >= 2:
+            elif len(named) >= 2 and not ToolHandlers.is_dispatcher(function):
+                # One handler serves every tool of a low-level server, each branch calling its own
+                # service: two hosts there are two tools, not one tool's input copied to a second host.
                 hits.append((function.lineno, function.name, named[1]))
         return hits
 
@@ -528,7 +616,7 @@ class McpCode:
             if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
         }
         hits: list[tuple[int, str]] = []
-        for function in (f for f in functions.values() if cls._is_tool(f)):
+        for function in (f for f in functions.values() if ToolHandlers.is_tool(f)):
             for node in ast.walk(function):
                 if not isinstance(node, ast.If) or not any(
                     isinstance(b, ast.Return) for b in node.body
@@ -549,7 +637,10 @@ class McpCode:
 
     @classmethod
     def secret_harvest(cls, text: str) -> list[int]:
-        """Lines that gather environment variables by a secret-like name and keep the values."""
+        """Lines that gather environment variables by a secret-like name and keep the values.
+        Not a filter that drops the secret-named variables (unless its result is sent, written,
+        logged or serialised), and not a subset that only becomes a launched process's
+        environment or is written back into `os.environ` (`EnvironmentSubsets`)."""
         if "environ" not in text:
             return []
         tree = cls._parse(text)
@@ -562,10 +653,11 @@ class McpCode:
                 conditions = " ".join(ast.unparse(c) for g in node.generators for c in g.ifs)
                 kept = ast.unparse(node.value if isinstance(node, ast.DictComp) else node.elt)
                 if (
-                    "environ" in source
+                    _ENVIRONMENT_NAME.search(source)
                     and _SECRET_WORDS.search(conditions)
                     # A value kept, not replaced: redaction writes a constant in its place.
                     and not re.fullmatch(r"\s*['\"][^'\"]*['\"]\s*", kept)
+                    and not EnvironmentSubsets.clears(tree, node, _SECRET_WORDS)
                 ):
                     lines.append(node.lineno)
         return lines

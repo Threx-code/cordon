@@ -1,0 +1,374 @@
+"""S7's pathological-input suite: every bundled rule's regex, on hostile input built from its own
+pattern, runs in time linear in the input and far under its CPU budget
+(reviews/release-080/S7-RULE-BUDGET.md).
+
+The static validator (test_pattern_safety.py) refuses nested unbounded quantifiers and
+backreferences. It accepts `a[a-z]*b`, which is quadratic on a run of `a`, so this suite times what
+the validator cannot see. A rule found here is fixed by rewriting its pattern, never by raising the
+budget.
+"""
+
+from __future__ import annotations
+
+import re
+import time
+from typing import Any, ClassVar
+
+import pytest
+
+from cordon_scanner.rules.loader import RuleLoader
+from cordon_scanner.rules.pack import CompiledMatch
+
+try:  # Python 3.11+: the parser moved under `re`
+    from re import _parser as sre_parse  # type: ignore[attr-defined]
+except ImportError:  # pragma: no cover
+    import sre_parse  # type: ignore[no-redef]
+
+
+class HostileKit:
+    #: Bytes every rule gets a run of, whatever its pattern: the shapes text formats repeat.
+    GENERIC: tuple[bytes, ...] = (
+        b"a",
+        b"0",
+        b" ",
+        b"\t",
+        b"\n",
+        b"\\",
+        b'"',
+        b"'",
+        b"<",
+        b"{",
+        b"/",
+        b"=",
+        b"%",
+        b".",
+    )
+    SMALL, LARGE = 16 << 10, 64 << 10
+    #: A linear search grows 4x from SMALL to LARGE, a quadratic one 16x. Above this ratio, and
+    #: above the noise floor (each time the best of two runs), the rule is super-linear on that
+    #: input.
+    #: The floor is 5% of the smallest budget: under parallel test load, linear rules at 30-50 ms
+    #: showed 10-26x ratios; every quadratic rule found took 0.5-2 s here.
+    RATIO, NOISE = 9.0, 0.1
+    #: The most CPU any rule may spend on LARGE: a quarter of the smallest budget.
+    CEILING = CompiledMatch.BUDGET_FLOOR / 4
+
+    #: The machine's speed, from a fixed linear workload timed in the same run: what `REFERENCE`
+    #: takes here against what it took where CEILING and NOISE were set (a 2026-11-12 container,
+    #: Python 3.11-3.13: 0.17-0.19 s, every bundled rule under CEILING). On PR #71's Windows
+    #: runners linear rules measured 0.547-0.578 s, three times this machine's 0.15-0.20 s: the
+    #: runner was slower, not the rule. Both are scaled by it, never below 1 -- the budget, the
+    #: inputs and the ratio a super-linear rule fails on are unchanged.
+    REFERENCE_SECONDS = 0.18
+    _speed: ClassVar[float | None] = None
+
+    @staticmethod
+    def reference() -> float:
+        """The least CPU time of five runs of the reference workload: a 48-word alternation behind
+        a lookbehind, the shape of the bundled rules, over 8 MB of calls."""
+        words = b"|".join(f"name{i:02d}x".encode() for i in range(48))
+        regex = re.compile(rb"(?<![\w$.])(?:" + words + rb")\s{0,4}\(\s{0,4}[\w$]{1,40}")
+        data = (b"call(name07, value) { x = name1(y); } " * 220000)[: 8 << 20]
+        best = float("inf")
+        for _ in range(5):
+            started = time.thread_time()
+            for _ in regex.finditer(data):
+                pass
+            best = min(best, time.thread_time() - started)
+        return best
+
+    @classmethod
+    def speed(cls) -> float:
+        """How much slower than the reference machine this one is, at least 1; measured once."""
+        if cls._speed is None:
+            cls._speed = max(1.0, cls.reference() / cls.REFERENCE_SECONDS)
+        return cls._speed
+
+    @classmethod
+    def ceiling(cls) -> float:
+        return cls.CEILING * cls.speed()
+
+    @classmethod
+    def noise(cls) -> float:
+        return cls.NOISE * cls.speed()
+
+    @staticmethod
+    def rules() -> list[tuple[str, re.Pattern[bytes]]]:
+        out: list[tuple[str, re.Pattern[bytes]]] = []
+        seen: set[bytes] = set()
+        for pack in RuleLoader.load_builtin():
+            for compiled in pack.rules:
+                regex = compiled.match.regex
+                if regex is None or regex.pattern in seen:
+                    continue
+                seen.add(regex.pattern)
+                out.append((compiled.rule.id, regex))
+        return out
+
+    @staticmethod
+    def pieces(regex: re.Pattern[bytes]) -> list[bytes]:
+        """The bytes and literal runs the pattern itself names: what it repeats is what to repeat."""
+        found: list[bytes] = []
+        run: list[int] = []
+
+        def close() -> None:
+            if len(run) > 1:
+                found.append(bytes(run))
+            run.clear()
+
+        def walk(items: Any) -> None:
+            for op, av in items:
+                name = str(op)
+                if name == "LITERAL":
+                    if av < 256:
+                        found.append(bytes([av]))
+                        run.append(av)
+                    continue
+                close()
+                if name == "IN":
+                    for kind, value in av:
+                        if str(kind) == "LITERAL" and value < 256:
+                            found.append(bytes([value]))
+                        elif str(kind) == "RANGE" and value[0] < 256:
+                            found.append(bytes([value[0]]))
+                elif name in ("MAX_REPEAT", "MIN_REPEAT", "POSSESSIVE_REPEAT"):
+                    walk(av[2])
+                elif name == "SUBPATTERN":
+                    walk(av[-1])
+                elif name == "BRANCH":
+                    for branch in av[1]:
+                        walk(branch)
+                elif name in ("ASSERT", "ASSERT_NOT"):
+                    walk(av[1])
+                elif name == "ATOMIC_GROUP":
+                    walk(av)
+            close()
+
+        # Not guarded: the pattern compiled, so it parses; a failure here is a defect to see.
+        walk(sre_parse.parse(regex.pattern.decode("latin-1"), regex.flags & ~re.DEBUG))
+        unique = list(dict.fromkeys(found))
+        return unique[:40]
+
+    #: Runs of one input, the best kept: CPU time on a shared runner (CI, a loaded machine) is the
+    #: work plus whatever else stole the core, so the least of several runs is the work. Measured
+    #: against the same CEILING; a pattern that is slow, or super-linear, is slow on every run.
+    REPEATS = 5
+
+    @staticmethod
+    def clock() -> float:
+        """The clock the timings read: this thread's CPU time. A check that measures a real pattern
+        at test sizes reads a finer one instead (a Windows runner's thread clock ticks every
+        15 ms, so a small input reads as zero)."""
+        return time.thread_time()
+
+    @staticmethod
+    def cpu(regex: re.Pattern[bytes], data: bytes) -> float:
+        """The least CPU time of up to `REPEATS` runs of `regex` over `data`: at least two, so the
+        small input of a ratio is as well measured as the large, and no more once one is
+        comfortably under the ceiling. A single run over it is not taken as the answer: on PR #71's
+        runners two linear rules measured 0.502-0.512 s once against 0.5 s."""
+        best = float("inf")
+        for run in range(HostileKit.REPEATS):
+            started = HostileKit.clock()
+            for _ in regex.finditer(data):
+                pass
+            best = min(best, HostileKit.clock() - started)
+            if run >= 1 and best < HostileKit.ceiling() / 2:
+                break
+        return best
+
+    @staticmethod
+    def worst(
+        regex: re.Pattern[bytes],
+        *,
+        small: int | None = None,
+        large: int | None = None,
+        floor: float | None = None,
+    ) -> tuple[float, float, bytes]:
+        """The worst LARGE time and growth ratio over every hostile input, and its piece.
+
+        A ratio above `RATIO` is confirmed before it counts: a quadratic search grows 16x at every
+        4x step, so it grows again from LARGE to four times LARGE, and a rule that sits on the noise
+        floor (a jittery runner's SMALL time sets the ratio) does not. The ratio kept for a confirmed
+        input is that second step's, so a rule is reported only when the growth repeats."""
+        small = HostileKit.SMALL if small is None else small
+        large = HostileKit.LARGE if large is None else large
+        floor = HostileKit.noise() if floor is None else floor
+        worst = (0.0, 0.0, b"")
+        for piece in dict.fromkeys(HostileKit.pieces(regex) + list(HostileKit.GENERIC)):
+
+            def built(size: int, piece: bytes = piece) -> bytes:
+                return (piece * (size // len(piece) + 1))[:size] + b"\x01"
+
+            t_small = HostileKit.cpu(regex, built(small))
+            t_large = HostileKit.cpu(regex, built(large))
+            # A small time the clock read as zero is no ratio at all, not a ratio of zero: when the large time is
+            # readable, the step below decides it (large against four times large), as it does any high ratio.
+            ratio = t_large / t_small if t_small > 0 else (float("inf") if t_large > 0 else 0.0)
+            # `>=`, the same boundary the test fails on: Windows' thread clock ticks every 15.6 ms, so one tick against
+            # nine is a ratio of exactly RATIO, and that must be confirmed like any other ratio, not failed unconfirmed.
+            if ratio >= HostileKit.RATIO and t_large > floor:
+                t_larger = HostileKit.cpu(regex, built(4 * large))
+                ratio = t_larger / t_large
+            if t_large > worst[0] or (t_large > floor and ratio > worst[1]):
+                worst = (t_large, ratio, piece)
+        return worst
+
+
+RULES = HostileKit.rules()
+
+
+class TestEveryRuleOnHostileInput:
+    def test_the_suite_reaches_the_bundled_rules(self) -> None:
+        assert len(RULES) >= 200, len(RULES)
+
+    @pytest.mark.parametrize(("rule_id", "regex"), RULES, ids=[r for r, _ in RULES])
+    def test_linear_and_under_budget(self, rule_id: str, regex: re.Pattern[bytes]) -> None:
+        large, ratio, piece = HostileKit.worst(regex)
+        ceiling = HostileKit.ceiling()
+        assert large < ceiling, (
+            f"{rule_id}: {large:.3f}s on {piece[:12]!r} runs (ceiling {ceiling:.3f}s: "
+            f"{HostileKit.CEILING}s at {HostileKit.speed():.2f}x the reference machine)"
+        )
+        assert large < HostileKit.noise() or ratio < HostileKit.RATIO, (
+            f"{rule_id}: super-linear on {piece[:12]!r} runs ({ratio:.1f}x for 4x the input)"
+        )
+
+
+class TestTheDecodedViewOnHostileInput:
+    """The decoded view (note 18 §2, Budget) is a reader like the rules: on input built to exhaust
+    it, at the scanner's 10 MB file limit, it is refused or built inside its budget, in bounded
+    memory -- never left to grow with the file."""
+
+    MB = 10 * 1024 * 1024
+
+    @staticmethod
+    def timed(text: str, language: str) -> tuple[str, float]:
+        from cordon_scanner.analysis.shared.decoded_view import DecodedView, ViewOverBudget
+
+        started = time.process_time()
+        try:
+            DecodedView.of(text, language)
+            outcome = "built"
+        except ViewOverBudget:
+            outcome = "refused"
+        return outcome, time.process_time() - started
+
+    def test_millions_of_tokens_are_refused_in_bounded_memory(self) -> None:
+        import tracemalloc
+
+        text = "a,\n" * 700_000  # 2.1 million tokens: past the view's token budget
+        tracemalloc.start()
+        try:
+            outcome, _ = self.timed(text, "python")
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        assert outcome == "refused"
+        assert peak < 48 * 1024 * 1024, f"{peak / 1e6:.0f} MB held"  # the tokens are not
+
+    def test_one_run_of_adjacent_literals_past_its_cap_is_refused(self) -> None:
+        outcome, cpu = self.timed("x = (" + "'\\x41'" * (self.MB // 6) + ")\n", "python")
+        assert outcome == "refused" and cpu < 10
+
+    def test_an_escaped_string_at_the_file_limit_is_built_under_budget(self) -> None:
+        for language, text in (
+            ("javascript", "s = '" + "\\x41" * (self.MB // 4) + "';\n"),
+            ("go", 's := "' + "\\x41" * (self.MB // 4) + '"\n'),
+        ):
+            outcome, cpu = self.timed(text, language)
+            assert outcome == "built" and cpu < 30, language
+
+    def test_a_go_run_of_escapes_is_read_in_place(self) -> None:
+        import tracemalloc
+
+        text = 's := "' + "\\x41" * 500_000 + '"\n'
+        tracemalloc.start()
+        try:
+            outcome, _ = self.timed(text, "go")
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        assert outcome == "built"
+        assert peak < 32 * 1024 * 1024, f"{peak / 1e6:.0f} MB held"
+
+
+class TestTheLinearityCheckConfirmsBeforeItFails:
+    """A rule on the noise floor can show a large ratio once, from a jittery SMALL time; a super-linear
+    rule shows it again at every step. The check fails only on the second."""
+
+    @staticmethod
+    def timed(monkeypatch: pytest.MonkeyPatch, seconds: dict[int, float]) -> None:
+        """Make `HostileKit.cpu` answer by input length, as a runner would: the same time for the
+        same size, whatever the pattern."""
+        monkeypatch.setattr(
+            HostileKit, "cpu", staticmethod(lambda _regex, data: seconds[len(data)])
+        )
+        monkeypatch.setattr(HostileKit, "noise", staticmethod(lambda: 0.1))
+        monkeypatch.setattr(HostileKit, "ceiling", staticmethod(lambda: 5.0))
+
+    def test_a_jittery_small_time_alone_is_not_super_linear(self, monkeypatch) -> None:
+        small, large = HostileKit.SMALL + 1, HostileKit.LARGE + 1
+        self.timed(monkeypatch, {small: 0.010, large: 0.120, 4 * HostileKit.LARGE + 1: 0.480})
+        _large, ratio, _piece = HostileKit.worst(re.compile(rb"name\d+x"))
+        assert ratio == pytest.approx(4.0)  # 12x the first time, 4x the second: linear
+
+    def test_growth_that_repeats_is_super_linear(self, monkeypatch) -> None:
+        small, large = HostileKit.SMALL + 1, HostileKit.LARGE + 1
+        self.timed(monkeypatch, {small: 0.010, large: 0.160, 4 * HostileKit.LARGE + 1: 2.560})
+        _large, ratio, _piece = HostileKit.worst(re.compile(rb"name\d+x"))
+        assert ratio > HostileKit.RATIO
+
+    def test_a_rule_on_the_floor_is_never_asked_to_confirm(self, monkeypatch) -> None:
+        small, large = HostileKit.SMALL + 1, HostileKit.LARGE + 1
+        # No time for 4 x LARGE: asking for it would raise. Under the floor, the ratio is not read.
+        self.timed(monkeypatch, {small: 0.001, large: 0.050})
+        _large, ratio, _piece = HostileKit.worst(re.compile(rb"name\d+x"))
+        assert ratio < HostileKit.RATIO or _large < HostileKit.noise()
+
+    @staticmethod
+    def clock_name() -> str:
+        """The finest clock that counts only the time this thread ran: its CPU time where that ticks
+        finely (Linux, macOS: a busy machine takes the thread off the core and the clock stops with
+        it, so load cannot stretch a measurement, which is what made a real quadratic pattern read 8.8x
+        against 9.0 on a loaded runner), the wall clock only where it does not (Windows' thread clock
+        ticks every 15 ms, so a small input would read as zero)."""
+        return (
+            "thread_time"
+            if time.get_clock_info("thread_time").resolution <= 0.0001
+            else "perf_counter"
+        )
+
+    @staticmethod
+    def readable(monkeypatch: pytest.MonkeyPatch, regex: re.Pattern[bytes], run: bytes) -> int:
+        """The smallest input size, doubling from 512 bytes, whose time reads at least twenty ticks
+        of the clock the real-pattern checks use (and 4 ms): a time of zero has no ratio, and a few
+        ticks is mostly the clock. The clock is `clock_name`'s. Every repeat is run and the least
+        kept (the early stop under half the ceiling is off): the least of several runs is the work,
+        whatever else the machine was doing."""
+        name = TestTheLinearityCheckConfirmsBeforeItFails.clock_name()
+        monkeypatch.setattr(HostileKit, "clock", staticmethod(getattr(time, name)))
+        monkeypatch.setattr(HostileKit, "REPEATS", 5)
+        monkeypatch.setattr(HostileKit, "ceiling", staticmethod(lambda: 0.0))
+        wanted = max(20 * time.get_clock_info(name).resolution, 0.004)
+        size = 512
+        while size < 16384:
+            data = (run * (size // len(run) + 1))[:size] + b"\x01"
+            if HostileKit.cpu(regex, data) >= wanted:
+                break
+            size *= 2
+        return size
+
+    def test_a_real_quadratic_pattern_is_still_found(self, monkeypatch) -> None:
+        # `a[a-z]*b` is quadratic on a run of `a` (it passes the static validator): measured for real, at
+        # a size whose time the clock can read, with no noise floor.
+        regex = re.compile(rb"a[a-z]*b")
+        small = self.readable(monkeypatch, regex, b"a")
+        _large, ratio, piece = HostileKit.worst(regex, small=small, large=4 * small, floor=0.0)
+        assert ratio > HostileKit.RATIO, (ratio, piece, small)
+
+    def test_a_real_linear_pattern_is_not_flagged(self, monkeypatch) -> None:
+        regex = re.compile(rb"name\d{1,3}x")
+        small = self.readable(monkeypatch, regex, b"name1x")
+        _large, ratio, _piece = HostileKit.worst(regex, small=small, large=4 * small, floor=0.0)
+        assert ratio < HostileKit.RATIO, (ratio, small)

@@ -125,7 +125,7 @@ class Incoming:
         from cordon_scanner.decide.policy import PolicyGate
 
         result = cls._scan(repository, rev, config)
-        tripping = [f for f in result.active if PolicyGate._fails(f, config.policy)]
+        tripping = list(PolicyGate.blocking(result, config.policy))
         if not tripping or not base_rev:
             return IncomingCheck(rev=rev, result=result, blocking=tuple(tripping))
         before = cls._scan(repository, base_rev, config)

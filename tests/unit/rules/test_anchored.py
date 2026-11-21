@@ -143,19 +143,27 @@ class TestLineMonotone:
             AnchorKit.both(rb">>[^\n]*\.profile\b", data)
 
     def test_its_time_grows_with_the_line_not_faster(self) -> None:
-
         compiled = re.compile(PERSIST)
         plan = AnchoredSearch.plan(compiled)
-
-        def cpu(data: bytes) -> float:
+        small, large = b"x >> " * 2_000, b"x >> " * 8_000
+        for data in (small, large):
             assert list(AnchoredSearch.matches(compiled, plan, data, None)) == []
+
+        def once(data: bytes) -> float:
             return CpuTime.per_call(
-                lambda: list(AnchoredSearch.matches(compiled, plan, data, None))
+                lambda: list(AnchoredSearch.matches(compiled, plan, data, None)), times=1
             )
 
-        small, large = b"x >> " * 2_000, b"x >> " * 8_000
-        # Four times the line: about four times the time. finditer takes sixteen (quadratic).
-        assert cpu(large) < 7 * cpu(small)
+        # The two sizes are measured alternately, back to back in this process, and the best of each
+        # is kept: a busy machine slows both in the same rounds, so the ratio is not a reading of
+        # the load (a single pair of readings failed at a load of 70 to 300 on 3.13).
+        best_small = best_large = float("inf")
+        for _ in range(7):
+            best_small = min(best_small, once(small))
+            best_large = min(best_large, once(large))
+        # Four times the line: about four times the time. finditer takes sixteen (quadratic), so a
+        # ratio under ten still tells the two apart.
+        assert best_large < 10 * best_small
 
     def test_too_many_anchored_candidates_keeps_the_line_wise_search(self) -> None:
         # A file full of the anchored alternative's literal: trying each candidate would cost more

@@ -110,6 +110,17 @@ class FeatureSchema:
             "fs1-ea0fb02ccf3bb099",
             "tests/unit/engine/isolation/test_analysis_facts.py::TestTheParentReadsTheWorkersFacts",
         ),
+        # S2 (c4dc1480): `ReachedFlows.facts` no longer turns a raising `JsFlow.flows` into no
+        # flows; the raise escapes to a recorder that blocks. A value changes only where the reader
+        # raised. Identity: test_silent_drops.py::TestTheFlowFactsAreUnchanged (every corpus
+        # JavaScript file reads without a raise). Rows A/B, 10 Nov: 1,055 PyPI units (ben600 + F472)
+        # on d1b75222 and 739d751b; 0 differences in any `*_flow_*` feature. The 22 units that differ
+        # do so in rule and unit counts only: C1's cleared findings, and Python 2 readings now on
+        # the running set (cordon-ef scratchpad, rows /out/security/s2-probe/).
+        "fs1-3ab72dccd73cae64": (
+            "fs1-ea0fb02ccf3bb099",
+            "tests/unit/detect/test_silent_drops.py::TestTheFlowFactsAreUnchanged",
+        ),
     }
 
     @staticmethod
@@ -266,10 +277,12 @@ class FeatureSchema:
 
 
 class FeatureScope:
-    """Which features a user's scan computes. The code and binary features (`CodeFeatures`,
-    `BinaryFeatures`: `pkg:code_<place>_(api|apih|tok)_*`, `pkg:exe_*`) are computed only under
-    `CORDON_MEASURE_FEATURES=1` (`ReachedFlows.of`), which a user's scan never sets, so a model fitted
-    on them would read zeros on every scan. A fit reads only what `computed` allows."""
+    """Which features a user's scan computes. The code features of the reached places
+    (`pkg:code_<install|import|closure>_(api|apih|tok)_*`) and the binary features (`pkg:exe_*`) are
+    computed only under `CORDON_MEASURE_FEATURES=1` (`ReachedFlows.of`), which a user's scan never
+    sets, so a model fitted on them would read zeros on every scan. The package place
+    (`pkg:code_package_(api|apih|tok)_*`, every Python file of the unit) is every scan's, and a fit
+    may read it. A fit reads only what `computed` allows."""
 
     #: Folded names keep these prefixes, so a folded measure-only feature is caught too.
     MEASURE_ONLY: ClassVar[re.Pattern[str]] = re.compile(
@@ -289,11 +302,14 @@ class FeatureFold:
 
     Applied only where features reach a model: the fit's reader (`FeatureRecord.read`) and the
     scanner's scoring (`Verdict.decide`, before `VerdictModel.score`), so a model is scored on the
-    features it was fitted on. WIDTH was measured (2026-10-30, out-of-fold, line at 2% benign,
-    the fit's gradient boosting): skills recall 71.72% at 512 against 71.91% [70.89, 72.90] unfolded,
-    npm 83.98% against 84.18% [83.14, 85.17]; the smallest width inside both intervals."""
+    features it was fitted on. WIDTH was measured on the package place (2026-11-13, the PyPI work
+    half of 11,011 units, out-of-fold, folds by malware family, sparse gradient boosting): benign
+    blocked at 98% malware 4.94% with no code features, 2.30% at 512 (1.5k features), 1.74% at 8192,
+    1.48% at 65536 (132k features kept), 1.66% unfolded (498k): the best width, and unfolding was no
+    better. (Before it, 512 was the smallest width inside the unfolded interval on the skills and npm
+    work halves, 2026-10-30, for the reached places alone.) It divides `CodeFeatures.HASH_MOD`."""
 
-    WIDTH: ClassVar[int] = 512
+    WIDTH: ClassVar[int] = 65536
     HASHED: ClassVar[re.Pattern[str]] = re.compile(r"^(pkg:code_[a-z]+_(?:tok|apih))_(\d+)$")
     PREFIX: ClassVar[str] = "ff1-"
 

@@ -11,6 +11,7 @@ import re
 from dataclasses import replace
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.detect.base import (
     FileUnit,
     ScanContext,
@@ -23,6 +24,7 @@ from cordon_scanner.engine.pipeline.constants import (
     NATIVE_IN_PURE_WHEEL_RULE,
     NATIVE_LOAD,
     NATIVE_MAGIC,
+    NATIVE_PROGRAM_IN_PURE_WHEEL_RULE,
     NPM_PLACEHOLDER_VERSION,
     PURE_WHEEL,
     SWEPT_NOTE,
@@ -643,6 +645,158 @@ class ReleaseChecks:
                     )
                     break
         return out
+
+    #: Sources of compiled code: a package that has them may ship what it built.
+    _COMPILED_SOURCES: ClassVar[tuple[str, ...]] = (
+        ".c", ".cc", ".cpp", ".cxx", ".h", ".hpp", ".rs", ".pyx", ".go", ".f90", ".java", ".cu",
+    )  # fmt: skip
+    _CAPTURE: ClassVar[re.Pattern[str]] = re.compile(
+        r"capture_output|stdout\s*=|stderr\s*=|\bPIPE\b"
+    )
+
+    @staticmethod
+    def _wraps_its_one_program(
+        units: Sequence[FileUnit], programs: Sequence[FileUnit], text: str
+    ) -> bool:
+        """A pure-Python source distribution whose whole use is to launch one opaque program: no
+        compiled-code sources beside it, exactly one prebuilt executable, started with the user's
+        environment and its output left to the terminal (an interactive wrapper). Of the 61 benign
+        sources that carry a native program and run it, none has all of these; the kimichat family
+        (kimitalk, vantrala) has them all."""
+        if len(programs) != 1 or any(
+            u.path.endswith(ReleaseChecks._COMPILED_SOURCES) for u in units
+        ):
+            return False
+        passes_environment = "environ.copy" in text or "env=" in text
+        return passes_environment and ReleaseChecks._CAPTURE.search(text) is None
+
+    @staticmethod
+    def _run_by_installing(path: str, units: Sequence[FileUnit], ctx: ScanContext) -> bool:
+        """Whether installing a source distribution can run this file.
+
+        What the install runs is a build file or a module of the package. A test, the project's own
+        build and release tooling, a vendored environment and a script in a directory that is not
+        a package are run by the people who work on the project, not by whoever installs it; a file
+        something does run (an install hook, an import entry) is the exception to all of them.
+        """
+        if SourcePaths.runs_here(path, ctx):
+            return True
+        if (
+            SourcePaths.is_test_material(path)
+            or SourcePaths.is_build_tooling(path)
+            or SourcePaths.is_vendored(path)
+        ):
+            return False
+        directory = path.rpartition("/")[0]
+        # The sdist's own root folder holds its build files; deeper, a package has an __init__.py.
+        return directory.count("/") < 1 or any(u.path == f"{directory}/__init__.py" for u in units)
+
+    @staticmethod
+    def native_program_in_a_pure_wheel(
+        units: Sequence[FileUnit], ctx: ScanContext
+    ) -> list[Finding]:
+        """A pure-Python wheel or a source distribution that carries a native program and starts it.
+
+        A wheel tagged `py3-none-any` declares that it holds no compiled code, which is what lets one
+        file serve every platform. A package that wraps a program it needs (ruff, uv, a driver) ships
+        a platform wheel with the binary for that platform. A pure wheel that carries an executable
+        and runs it, one made from `__file__` or the package's resources, has hidden a program in a
+        package that said it had none: the executable member is not a Python extension (no `PyInit_`
+        symbol, not `.so` / `.pyd`), and a `.py` file starts a path built from where it lives. A source
+        distribution is held to the same: what it ships is sources a reviewer can read, and a prebuilt
+        program run from one is code nothing in the archive explains.
+        """
+        wheel = next(
+            (
+                u
+                for u in units
+                # A wheel's own metadata sits at the top of the archive; a `.dist-info/WHEEL` deeper
+                # in is a fixture a project's tests carry.
+                if u.path.count("/") == 1
+                and u.path.rsplit("/", 1)[-1] == "WHEEL"
+                and ".dist-info/" in u.path
+            ),
+            None,
+        )
+        # A pure wheel, or a source distribution (PKG-INFO beside the sources, no WHEEL): neither is
+        # a place for a prebuilt program, and a platform wheel is the one that is.
+        source_distribution = wheel is None and any(
+            u.path.count("/") <= 1 and u.path.rsplit("/", 1)[-1] == "PKG-INFO" for u in units
+        )
+        if not source_distribution and (wheel is None or not PURE_WHEEL.search(wheel.content.text)):
+            return []
+        programs = [
+            u
+            for u in units
+            if (u.content.raw[:4] in NATIVE_MAGIC or u.content.raw[:4] in MACHO_MAGIC)
+            and not u.path.endswith((".so", ".pyd", ".dylib"))
+            and b"PyInit_" not in u.content.raw
+        ]
+        if not programs:
+            return []
+        from cordon_scanner.analysis.python.flows.implants.shipped_programs import ShippedPrograms
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
+        for unit in units:
+            if not unit.path.endswith(".py") or (
+                source_distribution and not ReleaseChecks._run_by_installing(unit.path, units, ctx)
+            ):
+                continue
+            try:
+                tree = PythonSyntax.shared(unit.content.text)
+            except (SyntaxError, ValueError):
+                # S2: covered by SOURCE.UNPARSED at every running file; a file that does not parse starts nothing here
+                continue
+            runs = ShippedPrograms.lines(tree)
+            if not runs:
+                continue
+            # From sources the run alone is common (61 of 16,274 benign sources run a program they
+            # ship, mostly test fixtures and tools): making it executable first, as a prebuilt
+            # program must be, is the part a source distribution has no use for; so is the wrapper
+            # shape, below.
+            if (
+                source_distribution
+                and not ShippedPrograms.made_executable(tree)
+                and not ReleaseChecks._wraps_its_one_program(units, programs, unit.content.text)
+            ):
+                continue
+            return [ReleaseChecks._native_program_finding(unit, runs[0], ctx)]
+        return []
+
+    @staticmethod
+    def _native_program_finding(unit: FileUnit, line: int, ctx: ScanContext) -> Finding:
+        """The finding for a package that carries a native program and starts it."""
+        return replace(
+            OperationalFinding.build(
+                path=unit.path,
+                rule_id=NATIVE_PROGRAM_IN_PURE_WHEEL_RULE,
+                message=(
+                    "This package carries a native program (and says it holds no compiled "
+                    "code: a pure wheel, or sources) and this file starts a path built from "
+                    "where it lives. Compiled code no reviewer can read runs as a program."
+                ),
+                remediation=(
+                    "Do not install it. A package that needs a native program ships a "
+                    "platform wheel built from published source."
+                ),
+                category=Category.SUSPICIOUS,
+                severity=Severity.HIGH,
+            ),
+            location=replace(
+                OperationalFinding.build(
+                    path=unit.path,
+                    rule_id=NATIVE_PROGRAM_IN_PURE_WHEEL_RULE,
+                    message="",
+                    remediation="",
+                    category=Category.SUSPICIOUS,
+                    severity=Severity.HIGH,
+                ).location,
+                line=line,
+            ),
+            confidence=Confidence.HIGH,
+            risk=ctx.scorer.score(Severity.HIGH, Confidence.HIGH),
+            detector="binary",
+        )
 
 
 __all__ = ["ReleaseChecks"]

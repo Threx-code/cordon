@@ -41,6 +41,43 @@ class TestShellFromInput:
         assert McpCode.shell_from_input(text) == []
 
 
+class TestPrefixRuns:
+    """A function that checks its input for a prefix and runs what follows it: the gate and the
+    command are one string, whether or not a tool calls the function yet."""
+
+    def test_the_rest_after_a_prefix_is_run(self) -> None:
+        text = HEADER + (
+            "def _relay(raw: str):\n"
+            "    if raw.startswith('HOOK/'):\n"
+            "        command = raw.split('/', 1)[1]\n"
+            "        return subprocess.run(command, shell=True, capture_output=True)\n"
+            "    return None\n"
+        )
+        assert [name for _, name in McpCode.prefix_runs(text)] == ["_relay"]
+
+    def test_a_slice_after_a_marker_is_run(self) -> None:
+        text = HEADER + (
+            "def handle(value):\n    if '://' in value:\n        os.system(value[7:])\n"
+        )
+        assert [name for _, name in McpCode.prefix_runs(text)] == ["handle"]
+
+    def test_choosing_a_subcommand_is_not_a_prefix(self) -> None:
+        text = HEADER + (
+            "def main(cmd: str):\n"
+            "    if cmd == 'status':\n"
+            "        return subprocess.run('git status', shell=True)\n"
+        )
+        assert McpCode.prefix_runs(text) == []
+
+    def test_a_prefix_checked_but_something_else_run(self) -> None:
+        text = HEADER + (
+            "def fetch(url: str, target: str):\n"
+            "    if url.startswith('https://'):\n"
+            "        os.system(target)\n"
+        )
+        assert McpCode.prefix_runs(text) == []
+
+
 class TestSecretHarvest:
     def test_secrets_gathered_by_name(self) -> None:
         text = (
@@ -55,6 +92,22 @@ class TestSecretHarvest:
             "import os\nsafe = {k: '***' for k, v in os.environ.items() if 'secret' in k.lower()}\n"
         )
         assert McpCode.secret_harvest(text) == []
+
+    def test_a_longer_name_that_contains_the_word_is_not_the_environment(self) -> None:
+        text = (
+            "import os\n"
+            "rows = [e for e in store.list_environments() if e.auth_mode == 'token']\n"
+            "current = next(e for e in registry.current_environment() if e.api_key)\n"
+        )
+        assert McpCode.secret_harvest(text) == []
+
+    def test_the_environment_read_through_an_import_of_the_name_is_still_one(self) -> None:
+        text = (
+            "from os import environ\n"
+            "found = {k: v for k, v in environ.items() if 'token' in k.lower()}\n"
+            "raw = [v for v in os.environb.values() if b'secret' in v]\n"
+        )
+        assert McpCode.secret_harvest(text) == [2, 3]
 
 
 class TestListener:

@@ -385,15 +385,55 @@ class TestTheDocumentIsChecked:
         assert accepted is not None, why
         assert accepted.context["install_hook_paths"] == frozenset({"a.js"})
 
+    def test_imported_clients_cross_as_triples(self) -> None:
+        accepted, why = ContextFacts.accept(
+            self.document(
+                context={"python_imported_clients": [["a.js", "session", "httpx.Client"]]}
+            ),
+            self.units(),
+            self.ctx(),
+        )
+        assert accepted is not None, why
+        assert accepted.context["python_imported_clients"] == {"a.js": {"session": "httpx.Client"}}
+
+    def test_imported_runners_cross_as_triples(self) -> None:
+        accepted, why = ContextFacts.accept(
+            self.document(context={"python_imported_runners": [["a.js", "run_cmd", "0,2"]]}),
+            self.units(),
+            self.ctx(),
+        )
+        assert accepted is not None, why
+        assert accepted.context["python_imported_runners"] == {"a.js": {"run_cmd": "0,2"}}
+
+    def test_a_function_that_runs_more_than_sixteen_parameters_crosses(self) -> None:
+        """A function with 17 parameters, all of which it runs, is a real package's shape (a
+        generated client): refusing it fails the whole context worker for the scan."""
+        positions = ",".join(str(i) for i in range(20))
+        accepted, why = ContextFacts.accept(
+            self.document(context={"python_imported_runners": [["a.js", "run_cmd", positions]]}),
+            self.units(),
+            self.ctx(),
+        )
+        assert accepted is not None, why
+        assert accepted.context["python_imported_runners"] == {"a.js": {"run_cmd": positions}}
+
     @pytest.mark.parametrize(
         "over",
         [
             {"extra": []},
+            {"context": {"python_imported_runners": [["a.js", "run_cmd", ",".join(["0"] * 300)]]}},
+            {"context": {"python_imported_runners": [["a.js", "run cmd", "0"]]}},
+            {"context": {"python_imported_runners": [["a.js", "run_cmd", "0;1"]]}},
+            {"context": {"python_imported_runners": [["b.js", "run_cmd", "0"]]}},
             {"context": {"install_hook_paths": ["/etc/passwd"]}},
             {"context": {"config": {}}},
             {"context": {"tree_paths": ["a.js", "b.js"]}},
             {"context": {"install_deferred_lines": [["a.js", 5, 1]]}},
             {"context": {"package_distribution": "yes"}},
+            {"context": {"python_imported_clients": [["b.js", "session", "httpx.Client"]]}},
+            {"context": {"python_imported_clients": [["a.js", "a b", "httpx.Client"]]}},
+            {"context": {"python_imported_clients": [["a.js", "session", "os.system"]]}},
+            {"context": {"python_imported_clients": {"a.js": {"s": "httpx.Client"}}}},
             {"languages": [[7, "javascript"]]},
             {"languages": [[0, "Java Script; rm"]]},
             {"added": [["a.js", "x", None, None]]},
@@ -842,6 +882,57 @@ class TestTheParentOpensNoArchive:
             Fixture.tarball(tmp_path, {"package.json": MANIFESTS["npm/package.json"]})
         )
         assert any(f.rule_id == "OPERATIONAL.ARCHIVE.REJECTED" for f in result.findings)
+        assert not result.content_complete
+
+    @requires_forked_workers
+    def test_an_expander_out_of_temp_space_has_its_own_reason_and_still_blocks(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Errno 28 in the expander is the scan's temp area filling, not a refusal the package earns: its own
+        rule and reason code (`temp_space`), and still an incomplete scan that blocks without any flag."""
+        import errno
+
+        from cordon_scanner.engine.isolation.expander import ExpandWork
+
+        def full(item: Any) -> str:
+            raise OSError(errno.ENOSPC, "No space left on device")
+
+        monkeypatch.setattr(ExpandWork, "run", staticmethod(full))
+        result = Fixture.scan(
+            Fixture.tarball(tmp_path, {"package.json": MANIFESTS["npm/package.json"]})
+        )
+        found = [f for f in result.findings if f.rule_id == "OPERATIONAL.ARCHIVE.TEMP_SPACE"]
+        assert len(found) == 1 and "temp_space" in found[0].message
+        assert "TMPDIR" in found[0].remediation
+        assert not any(f.rule_id == "OPERATIONAL.ARCHIVE.REJECTED" for f in result.findings)
+        assert not result.content_complete
+        assert ("OPERATIONAL.ARCHIVE.TEMP_SPACE", found[0].location.path) in result.content_gaps
+
+    @requires_forked_workers
+    def test_less_free_space_than_the_archive_itself_refuses_before_any_work(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """An expansion is never smaller than the compressed archive: with less free than that, the scan says so
+        at once, and the expander is not started."""
+        import collections
+
+        from cordon_scanner.engine.isolation import expander as expander_module
+
+        usage = collections.namedtuple("usage", "total used free")
+
+        def tiny(path: Any) -> Any:
+            return usage(total=1 << 20, used=(1 << 20) - 16, free=16)
+
+        def never(item: Any) -> str:
+            raise AssertionError("the expander ran with no room to write")
+
+        monkeypatch.setattr(expander_module.shutil, "disk_usage", tiny)
+        monkeypatch.setattr(expander_module.ExpandWork, "run", staticmethod(never))
+        result = Fixture.scan(
+            Fixture.tarball(tmp_path, {"package.json": MANIFESTS["npm/package.json"]})
+        )
+        found = [f for f in result.findings if f.rule_id == "OPERATIONAL.ARCHIVE.TEMP_SPACE"]
+        assert len(found) == 1 and "16 bytes free" in found[0].message
         assert not result.content_complete
 
     def test_member_names_never_name_a_spill_file(self, tmp_path: Path, monkeypatch) -> None:

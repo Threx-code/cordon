@@ -298,7 +298,10 @@ jobs:
       - run: pip install -e .
       # `cryptography` is a RELEASE-only dependency: it signs the bundle here and
       # never ships. The scanner verifies with the vendored `intel/_ed25519`.
-      - run: pip install "cryptography>=42"
+      # Pinned by version and hash, wheels only: the next step holds the signing key, and
+      # anything installed here would run beside it.
+      - run: |
+          pip install --require-hashes --only-binary :all: -r ci/release-signing-requirements.txt
       - name: Build and sign the bundle
         # Skips cleanly when the signing key is not yet configured, so the
         # release itself is never blocked on this opt-in feature being set up.
@@ -677,3 +680,191 @@ jobs:
           else
             echo "::notice::OVSX_PAT is not set; Open VSX was not published to"
           fi
+
+  jetbrains-marketplace:
+    name: build the JetBrains plugin, attach it to the release, publish it to the JetBrains Marketplace
+    # Built by the plugin's own Dockerfile (pinned Gradle image, tests and the Plugin Verifier run in
+    # the build), from the tagged commit, after the GitHub release exists. The zip is attested and
+    # attached to the release. The Marketplace token is not in this job: the build runs Gradle and
+    # its plugins, third-party code, so the publish is its own job (jetbrains-publish) that runs no
+    # build at all. JetBrains takes a plugin's FIRST upload through its website (the
+    # `dev.cordon.jetbrains` id is claimed then); every release after that goes through here.
+    needs: github-release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: The plugin's version is the tag's
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          plugin="$(sed -n 's/^version = "\(.*\)"$/\1/p' editors/jetbrains/build.gradle.kts)"
+          if [ "$plugin" != "$version" ]; then
+            echo "::error::editors/jetbrains/build.gradle.kts says ${plugin}, the tag says ${version}"
+            exit 1
+          fi
+
+      - name: Build, test and verify
+        run: |
+          set -euo pipefail
+          docker build -f editors/jetbrains/Dockerfile -o out editors/jetbrains
+          ls -l out
+
+      - uses: actions/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018 # v1.4.4
+        with:
+          subject-path: out/*.zip
+
+      - name: Attach it to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" out/*.zip --repo "$GITHUB_REPOSITORY" --clobber
+
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: jetbrains-plugin
+          path: out/*.zip
+          if-no-files-found: error
+
+  jetbrains-publish:
+    name: publish the JetBrains plugin to the JetBrains Marketplace
+    # The one job that holds the Marketplace token, from a protected environment that needs a
+    # reviewer. It checks nothing out and builds nothing: it takes the zip the build job attested,
+    # checks that attestation, and sends the zip to JetBrains' upload endpoint, the token's only
+    # destination. Skipped, with a notice, until the token is configured: a release must not fail
+    # because the Marketplace listing has not been claimed yet, and the notice says it has not.
+    needs: jetbrains-marketplace
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: marketplace
+    permissions:
+      contents: read
+      attestations: read
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: jetbrains-plugin
+          path: out
+
+      - name: The zip is the one this release's build attested
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for plugin in out/*.zip; do
+            gh attestation verify "$plugin" --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
+          done
+
+      - name: Publish
+        env:
+          JETBRAINS_MARKETPLACE_TOKEN: ${{ secrets.JETBRAINS_MARKETPLACE_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${JETBRAINS_MARKETPLACE_TOKEN}" ]; then
+            echo "::notice::JETBRAINS_MARKETPLACE_TOKEN is not set; the JetBrains Marketplace was not published to"
+            exit 0
+          fi
+          plugins=(out/*.zip)
+          if [ "${#plugins[@]}" -ne 1 ]; then
+            echo "::error::expected one plugin zip, found ${#plugins[@]}"
+            exit 1
+          fi
+          curl --fail-with-body --silent --show-error --proto '=https' \
+            -H "Authorization: Bearer ${JETBRAINS_MARKETPLACE_TOKEN}" \
+            -F xmlId=dev.cordon.jetbrains \
+            -F channel=stable \
+            -F "file=@${plugins[0]}" \
+            https://plugins.jetbrains.com/plugin/uploadPlugin
+
+  github-action-mirror:
+    name: copy the GitHub Action to its own repository, for the GitHub Marketplace
+    # The Marketplace lists an action whose `action.yml` is at the ROOT of a public repository, so
+    # `action/` is mirrored to `Threx-code/cordon-action` at each release and tagged with the same
+    # version; the listing itself is a click on that repository's release page. Skipped, with a
+    # notice, until the mirror's token (contents: write on that one repository) is configured.
+    needs: github-release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: marketplace
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Mirror and tag
+        env:
+          ACTION_MIRROR_TOKEN: ${{ secrets.ACTION_MIRROR_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ACTION_MIRROR_TOKEN}" ]; then
+            echo "::notice::ACTION_MIRROR_TOKEN is not set; the GitHub Action mirror was not updated"
+            exit 0
+          fi
+          mirror="$(mktemp -d)"
+          git clone --quiet "https://x-access-token:${ACTION_MIRROR_TOKEN}@github.com/Threx-code/cordon-action.git" "$mirror"
+          find "$mirror" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -R action/. "$mirror/"
+          cp LICENSE "$mirror/" 2>/dev/null || true
+          cd "$mirror"
+          git config user.name "cordon-release"
+          git config user.email "release@cordonscan.com"
+          git add -A
+          git commit --quiet -m "Cordon ${GITHUB_REF_NAME}" || echo "no change in action/"
+          git tag -f "${GITHUB_REF_NAME}"
+          git push --quiet origin HEAD:main
+          git push --quiet origin "refs/tags/${GITHUB_REF_NAME}"
+
+  mcp-registry:
+    name: publish server.json to the MCP Registry
+    # The server is `io.github.threx-code/cordon`, so GitHub's own OIDC token for this repository is
+    # the login: no personal token is stored. The registry checks the PyPI package names the server
+    # (the README's `mcp-name` line), so this runs after PyPI has the release. The publisher is built
+    # from source at an exact version (Go verifies every module against its checksum database).
+    needs: [publish, github-release]
+    # `publish` is skipped when PyPI already has the version; the server can still be listed then.
+    if: >-
+      always() && startsWith(github.ref, 'refs/tags/v')
+      && needs.github-release.result == 'success'
+      && (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment: marketplace
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: "1.26"
+          cache: false
+
+      - name: The server's version is the tag's
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          python3 - "$version" <<'PY'
+          import json, sys
+          doc = json.load(open("server.json"))
+          versions = {doc["version"], *(p["version"] for p in doc.get("packages", []))}
+          if versions != {sys.argv[1]}:
+              sys.exit(f"server.json says {sorted(versions)}, the tag says {sys.argv[1]}")
+          PY
+
+      - name: Publish
+        run: |
+          set -euo pipefail
+          go install github.com/modelcontextprotocol/registry/cmd/publisher@v1.8.4
+          "$(go env GOPATH)/bin/publisher" login github-oidc
+          "$(go env GOPATH)/bin/publisher" publish

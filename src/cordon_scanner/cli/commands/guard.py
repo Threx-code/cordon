@@ -52,6 +52,17 @@ class GuardCommand:
                 )
 
         # The incoming shims' entry point: hidden, because nobody types it.
+        shims = guard_sub.add_parser(
+            "shims",
+            help="route npm, pip, cargo, go, ... through Cordon from any shell",
+            description=(
+                "Write small scripts named after each package manager into a directory; put it first "
+                "on PATH and a plain `npm install` is checked as `"
+                f"{PROGRAM} npm install` is. Other subcommands pass straight through."
+            ),
+        )
+        shims.add_argument("--dir", dest="shim_dir", default=None, help="where to write them")
+        shims.add_argument("--remove", action="store_true", help="delete the shims Cordon wrote")
         incoming_hook = guard_sub.add_parser("incoming")
         incoming_hook.add_argument("hook", choices=("post-checkout", "post-merge"))
         incoming_hook.add_argument("git_args", nargs="*")
@@ -67,6 +78,9 @@ class GuardCommand:
             from cordon_scanner.cli.commands.incoming import IncomingCommand
 
             return IncomingCommand.run_hook(args)
+
+        if action == "shims":
+            return GuardCommand._shims(args)
 
         if action == "install" and getattr(args, "global_", False):
             template, installed = Guard.install_global(force=getattr(args, "force", False))
@@ -113,6 +127,27 @@ class GuardCommand:
             return int(ExitCode.FINDINGS)
 
         raise ConfigError(f"unknown guard action: {action}")
+
+    @staticmethod
+    def _shims(args: argparse.Namespace) -> int:
+        from cordon_scanner.sources.install.shims import Shims
+
+        directory = Path(args.shim_dir).expanduser() if args.shim_dir else Shims.default_directory()
+        if args.remove:
+            report = Shims.remove(directory)
+            print(f"removed {len(report.removed)} shims from {directory}")
+            return int(ExitCode.CLEAN)
+        report = Shims.install(directory)
+        print(f"wrote {', '.join(report.written)} into {directory}")
+        for tool in report.kept:
+            print(f"left {directory / tool} alone: it is not a Cordon shim", file=sys.stderr)
+        if not Shims.on_path(directory):
+            print(
+                f"\nPut the directory first on PATH, in your shell profile:\n"
+                f'  export PATH="{directory}:$PATH"\n'
+                f"Then `npm install`, `pip install`, `cargo build`, ... are checked before anything runs."
+            )
+        return int(ExitCode.CLEAN)
 
 
 __all__ = ["GuardCommand"]

@@ -58,6 +58,7 @@ class PythonStatements:
                     decorated = token.string == "@"
                 at_start = False
         except (tokenize.TokenError, IndentationError, SyntaxError):
+            # S2: a fallback; the next reader (or SOURCE.UNPARSED for running files) reads it
             pass  # the text stops inside a statement: the starts before it stand
         return sorted(set(out))
 
@@ -89,6 +90,7 @@ class PythonStatements:
             for _ in tokenize.generate_tokens(io.StringIO(text).readline):
                 pass
         except (tokenize.TokenError, IndentationError, SyntaxError):
+            # S2: a fallback; the next reader (or SOURCE.UNPARSED for running files) reads it
             return False
         return True
 
@@ -295,6 +297,7 @@ class PythonTwo:
                 at_start = False
                 previous = token
         except (tokenize.TokenError, IndentationError, SyntaxError) as exc:
+            # S2: a fallback; the next reader (or SOURCE.UNPARSED for running files) reads it
             where = getattr(exc, "lineno", None)
             if where is None and len(exc.args) > 1 and isinstance(exc.args[1], tuple):
                 where = exc.args[1][0]  # a TokenError carries its (line, column) as an argument

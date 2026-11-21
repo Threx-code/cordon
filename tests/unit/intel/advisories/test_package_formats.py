@@ -470,3 +470,53 @@ class TestAGoModulesMinimumVersion:
         result = PackageFormatHelpers.scan(tmp_path, self.advisory(severity="critical"))
         [finding] = [f for f in result.findings if f.rule_id == VULNERABLE_RULE]
         assert finding.severity is Severity.CRITICAL
+
+
+class TestADependencyOnlyItsMaintainersReceive:
+    """A published artifact's optional, test and provided dependencies are never installed with it,
+    wherever the artifact sits: alone, among the files an install guard fetched, or vendored in a
+    repository. Maven passes none of them on. Before, a jar among the guard's fetched files had its
+    embedded POM read as the project's own, and commons-logging's optional log4j 1.2 blocked every
+    Maven build (10 Nov)."""
+
+    POM = (
+        '<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion>'
+        "<groupId>commons-logging</groupId><artifactId>commons-logging</artifactId>"
+        "<version>1.2</version><dependencies>"
+        "<dependency><groupId>log4j</groupId><artifactId>log4j</artifactId>"
+        "<version>1.2.17</version>{flags}</dependency></dependencies></project>"
+    )
+
+    @classmethod
+    def jar_in_a_folder(cls, tmp_path: Path, flags: str) -> Path:
+        import zipfile
+
+        folder = tmp_path / "fetched"
+        folder.mkdir()
+        with zipfile.ZipFile(folder / "commons-logging-1.2.jar", "w") as jar:
+            jar.writestr("META-INF/MANIFEST.MF", "Manifest-Version: 1.0\n")
+            jar.writestr(
+                "META-INF/maven/commons-logging/commons-logging/pom.xml",
+                cls.POM.format(flags=flags),
+            )
+            jar.writestr("org/apache/commons/logging/Log.class", b"\xca\xfe\xba\xbe")
+        return folder
+
+    @staticmethod
+    def log4j() -> Advisory:
+        return ExploitedHelpers._advisory(
+            ecosystem="maven", name="log4j:log4j", versions=("1.2.17",), severity="critical"
+        )
+
+    @pytest.mark.parametrize(
+        "flags", ["<optional>true</optional>", "<scope>test</scope>", "<scope>provided</scope>"]
+    )
+    def test_is_reported_below_the_gate_in_a_folder_of_artifacts(self, tmp_path, flags) -> None:
+        result = PackageFormatHelpers.scan(self.jar_in_a_folder(tmp_path, flags), self.log4j())
+        findings = [f for f in result.findings if f.rule_id == VULNERABLE_RULE]
+        assert findings and all(f.severity is Severity.LOW for f in findings)
+
+    def test_a_dependency_every_consumer_receives_keeps_its_rating(self, tmp_path) -> None:
+        result = PackageFormatHelpers.scan(self.jar_in_a_folder(tmp_path, ""), self.log4j())
+        findings = [f for f in result.findings if f.rule_id == VULNERABLE_RULE]
+        assert findings and all(f.severity is Severity.CRITICAL for f in findings)

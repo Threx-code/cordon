@@ -141,7 +141,7 @@ class TextPosition:
 
     @classmethod
     def off_this_machine(
-        cls, content: FileContent, hits: list[CapabilityHit]
+        cls, content: FileContent, hits: list[CapabilityHit], language: str | None = None
     ) -> list[CapabilityHit]:
         """Drop hits inside the arguments of a command sent to an SSH session.
 
@@ -150,6 +150,10 @@ class TextPosition:
         the other machine. Read as this file's own behaviour it is a dropper with persistence
         (review 98: a deployment library's server bootstrap). Not when the file binds the session's
         name to `child_process`: see `EmbeddedCommands.remote_session`.
+
+        Granted on a match and an absence (note 18 §6): the SSH call and the SSH library are read
+        in the raw text only, so a decoded spelling never earns the excuse; the session's name bound
+        to `child_process` withholds it in any reading, so `require('\\x63hild_process')` does.
         """
         raw = content.raw
         if not hits or not cls._REMOTE_CALL.search(raw):
@@ -157,8 +161,9 @@ class TextPosition:
         spans: list[tuple[int, int]] = []
         for call in cls._REMOTE_CALL.finditer(raw):
             name = re.match(rb"[\w$]+", raw[call.start() : call.end()])
+            session = name.group(0).decode("ascii", "replace") if name else ""
             if not name or not embedded.EmbeddedCommands.remote_session(
-                content.text, name.group(0).decode("ascii", "replace")
+                content.text, session, language
             ):
                 continue
             depth, j, end = 1, call.end(), min(len(raw), call.end() + cls._REMOTE_SPAN_MAX)

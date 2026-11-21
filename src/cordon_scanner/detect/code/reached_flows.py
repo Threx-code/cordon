@@ -35,6 +35,7 @@ from cordon_scanner.detect.binary.features import BinaryFeatures
 from cordon_scanner.detect.code.features import CodeFeatures
 from cordon_scanner.foundation.dependencies import HookKinds
 from cordon_scanner.foundation.files.windows import BytesWindows, WindowSourceChanged
+from cordon_scanner.foundation.formats.served_json import DocumentUnavailable
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -100,9 +101,17 @@ class ReachedFlows:
                 read += 1
                 for suffix in facts.get(unit.path, {}).get("reached.flow", ()):
                     out[f"{place}_{suffix}"] = 1.0
+        # Every scan: the unit's own Python code, which the verdict model reads (`FeatureScope`).
+        out.update(CodeFeatures.of({"package": ReachedFlows.package_sources(units)}))
         if os.environ.get(ReachedFlows.MEASURE) == "1":
-            out.update(CodeFeatures.of(ReachedFlows.sources(units, ctx)))
-            out.update(BinaryFeatures.of(ReachedFlows.executables(units)))
+            try:
+                out.update(CodeFeatures.of(ReachedFlows.reached_sources(units, ctx)))
+                out.update(BinaryFeatures.of(ReachedFlows.executables(units)))
+            except DocumentUnavailable:
+                # S2: covered. The miss is recorded by the store the step asked (`ServedJson.miss`)
+                # and ends the scan as a blocking gap in `Documents.report_missing`; the features
+                # it would have added are absent, as the gap says, not an exit 2.
+                return out
         return out
 
     @staticmethod
@@ -125,8 +134,9 @@ class ReachedFlows:
                 continue
 
     #: Set only by measurement runs (`reviews/review-98/tools/rescan_sample.py`'s containers): the
-    #: code features (`CodeFeatures`) are computed for the scan records a model is trained on, and a
-    #: user's scan neither computes nor reports them until a shipped model reads them.
+    #: code features of the reached places (`CodeFeatures`) and the binary features are computed for
+    #: the scan records a model is trained on, and a user's scan neither computes nor reports them
+    #: until a shipped model reads them. The package place (`code_package_*`) is every scan's.
     MEASURE: ClassVar[str] = "CORDON_MEASURE_FEATURES"
     CODE: ClassVar[tuple[str, ...]] = (".js", ".mjs", ".cjs", ".py")
     #: What the code features read besides: TypeScript a loader runs, and shell scripts.
@@ -134,8 +144,30 @@ class ReachedFlows:
 
     @staticmethod
     def sources(units: Sequence[FileUnit], ctx: ScanContext) -> dict[str, list[tuple[str, Source]]]:
-        """Each place's code, as the code features read it: the install hooks' own command lines
-        first (a `postinstall` is often the whole payload, and no file holds it), then every
+        """Every place's code as the code features read it: the reached places
+        (`reached_sources`) and the package's own Python (`package_sources`)."""
+        return {
+            **ReachedFlows.reached_sources(units, ctx),
+            "package": ReachedFlows.package_sources(units),
+        }
+
+    @staticmethod
+    def package_sources(units: Sequence[FileUnit]) -> list[tuple[str, Source]]:
+        """The unit's every Python file, reached or not, whole (`CodeFeatures.PLACES`): a source
+        distribution's import entry and closure are often one file or none, so the reached places
+        read almost none of its code."""
+        return [
+            (unit.path, ReachedFlows._whole(unit))
+            for unit in units
+            if unit.path.rsplit("!", 1)[-1].lower().endswith(".py")
+        ]
+
+    @staticmethod
+    def reached_sources(
+        units: Sequence[FileUnit], ctx: ScanContext
+    ) -> dict[str, list[tuple[str, Source]]]:
+        """Each reached place's code, as the code features read it: the install hooks' own command
+        lines first (a `postinstall` is often the whole payload, and no file holds it), then every
         reached JavaScript, TypeScript, Python and shell file, whole. No count or size limit: a file
         past them -- one 27 MB bundle as a package's `main` -- is given as its windows, all of them,
         so nothing padded past a limit goes unread."""
@@ -153,6 +185,8 @@ class ReachedFlows:
                 try:
                     hooks = ecosystem.parse_manifest(unit.content).hooks if ecosystem else ()
                 except Exception:  # noqa: BLE001, S112
+                    # S2: covered. The same manifest's parse raising is recorded once in this scan
+                    # as OPERATIONAL.PARSER.FAILED by engine/pipeline/graph.py, a blocking gap.
                     continue
                 files += [
                     (f"{unit.path}#{hook.name}.sh", hook.command.encode())
@@ -231,10 +265,9 @@ class ReachedFlows:
             for source, sink, destination in PythonFlowFacts.of(text):
                 out[f"{place}_flow_{source}_{sink}_{destination}"] = 1.0
             return out
-        try:
-            flows = JsFlow.flows(text)
-        except Exception:  # a fact is evidence, never a scan failure  # noqa: BLE001
-            flows = []
+        # A reader that raises escapes to its caller's recorder (a worker's OPERATIONAL.FILE.WORKER_*,
+        # the rule-file pass's RULEFILE.UNAVAILABLE): these facts feed rules that block (S2).
+        flows = JsFlow.flows(text)
         for flow in flows:
             for source in sorted(flow.sources):
                 out[f"{place}_flow_{source}_{flow.sink}_{flow.destination}"] = 1.0
@@ -337,6 +370,58 @@ class CrossFileJoin:
 
     #: How deep a re-export chain is followed before it counts as not known (`CrossFile` follows 4).
     MAX_REEXPORT_DEPTH: ClassVar[int] = 4
+
+    #: Operational findings that say some file was not read whole (or a scan stopped early): the package's
+    #: requests are then not all known.
+    GAPS: ClassVar[tuple[str, ...]] = (
+        "OPERATIONAL.DETECTOR.",
+        "OPERATIONAL.PARSER.",
+        "OPERATIONAL.FILE.",
+        "OPERATIONAL.SCAN.",
+        "OPERATIONAL.WORKER.",
+        "OPERATIONAL.ARCHIVE.",
+    )
+
+    @staticmethod
+    def carriers(findings: Sequence[Finding]) -> set[str]:
+        """The files with a REMOTE_CODE composite finding from the capability detector: the ones graded
+        again with what the whole package says of where its requests go (`unexternal`)."""
+        from cordon_scanner.detect.code.capability.rule_ids import CompositeRuleIds
+
+        return {
+            f.location.path
+            for f in findings
+            if f.detector == "capability" and f.rule_id in CompositeRuleIds.REMOTE_CODE_RULES
+        }
+
+    @staticmethod
+    def unexternal(
+        facts: Mapping[str, Mapping[str, list[Any]]],
+        findings: Sequence[Finding],
+        flows: Mapping[str, Sequence[tuple[int, tuple[str, ...], str, str]]] | None = None,
+    ) -> bool:
+        """Whether every request of the package is known and none of them goes to an external literal host,
+        and no decoded value is run anywhere in it : the workers' `js.request` and `js.decoded`
+        facts across the package, never a file read here. The block of `SUSPECT.DROPPER.REMOTE_CODE.001` and
+        `MALWARE.INSTALL.REMOTE_CODE.001` is kept for an external literal host or decoded content in the
+        package, and wherever something was not read (an unknown is never read as "no external host")."""
+        from cordon_scanner.analysis.javascript.flow.origins import LOCAL, UNRESOLVED
+
+        if any(f.rule_id.startswith(CrossFileJoin.GAPS) for f in findings):
+            return False
+        for held in facts.values():
+            if held.get("js.decoded"):
+                return False
+            # Only a request known to go nowhere external lowers: external, unread and over_budget (and any class
+            # not named here) keep the block.
+            if any(kind not in (LOCAL, UNRESOLVED) for kind, _count in held.get("js.request", ())):
+                return False
+        # A decoded value that crosses files (a helper another file exports runs it) is run in the package too.
+        return not any(
+            "decoded" in sources and sink in ("execute", "process")
+            for held in (flows or {}).values()
+            for _line, sources, sink, _destination in held
+        )
 
     @staticmethod
     def lowered(findings: Sequence[Finding]) -> set[str]:

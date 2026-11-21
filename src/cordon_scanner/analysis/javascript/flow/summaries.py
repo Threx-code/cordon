@@ -27,7 +27,10 @@ import posixpath
 import re
 from typing import Any, ClassVar
 
+from cordon_scanner.analysis.javascript.flow.origins import UNREAD as UNREAD_REQUESTS
+from cordon_scanner.analysis.javascript.flow.origins import RequestOrigins
 from cordon_scanner.analysis.javascript.flow.vocabulary import SOURCES
+from cordon_scanner.analysis.shared.text_gate import TextGate
 
 
 class JsSummaries:
@@ -50,7 +53,12 @@ class JsSummaries:
         "js.callsink",
         "js.reexport",
         "js.require",
+        "js.request",
+        "js.decoded",
     )
+    #: The `js.request` fact of a file the analysis did not read is `[UNREAD_REQUESTS, 1]`: it may name any
+    #: host, so the package's requests are not all known (`CrossFileJoin.unexternal`).
+    UNREAD_REQUEST: ClassVar[str] = UNREAD_REQUESTS
     #: The `js.require` fact of a file whose calls into the package are not all known: a module
     #: named by a computed value (`require("./" + name)`, `import(x)`), or a file the analysis could
     #: not read whole. Composition is incomplete wherever one is (rule 3), and what needs it to be
@@ -71,7 +79,7 @@ class JsSummaries:
     @classmethod
     def reaches_out(cls, text: str) -> bool:
         """Whether a file calls into, or loads, any other file by a local or a computed name."""
-        return cls._REACHES_OUT.search(text) is not None
+        return TextGate.may_hold(cls._REACHES_OUT, text, "javascript")
 
     @classmethod
     def shared(cls, a: Any) -> dict[str, list[Any]]:
@@ -81,12 +89,24 @@ class JsSummaries:
         try:
             return cls.joined(cls.of_analysis(a))
         except (RecursionError, _OverBudget, IndexError, KeyError, ValueError, TypeError):
-            return {"js.require": [cls.UNRESOLVED]}
+            # S2: unresolved, not empty; an unresolved require keeps the join incomplete, and the
+            # requests of a file not read are not known either
+            return {"js.require": [cls.UNRESOLVED], "js.request": [[cls.UNREAD_REQUEST, 1]]}
 
     @classmethod
     def joined(cls, facts: dict[str, list[Any]]) -> dict[str, list[Any]]:
-        """`facts`, or nothing when they join no file to another."""
-        if not any(facts.get(k) for k in ("js.summary", "js.callout", "js.reexport", "js.require")):
+        """`facts`, or nothing when they join no file to another and say nothing of its requests."""
+        if not any(
+            facts.get(k)
+            for k in (
+                "js.summary",
+                "js.callout",
+                "js.reexport",
+                "js.require",
+                "js.request",
+                "js.decoded",
+            )
+        ):
             return {}
         return {k: v for k, v in facts.items() if v}
 
@@ -102,6 +122,10 @@ class JsSummaries:
             "js.callsink": [],
             "js.reexport": [[m] for m in cls._reexports(a)][: cls.MAX_REEXPORTS],
             "js.require": [cls.UNRESOLVED] if cls._computed_require(a) else [],
+            # Where the file's requests go, by class (never a host), and whether a decoded value is run:
+            # read by the parent across the package (`CrossFileJoin.unexternal`).
+            "js.request": [[kind, n] for kind, n in sorted(RequestOrigins.classes(a).items())],
+            "js.decoded": [[1]] if RequestOrigins.decoded(a) else [],
         }
         for name, fid in list(exports.items())[: cls.MAX_EXPORTS]:
             fn = a.fns[fid - 1] if fid else None

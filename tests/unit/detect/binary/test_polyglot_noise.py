@@ -15,6 +15,7 @@ import pytest
 from cordon_scanner import Scanner
 from cordon_scanner.detect.base import FileUnit, ScanContext
 from cordon_scanner.detect.binary.detector import BinaryDetector
+from cordon_scanner.detect.binary.magic import Contents
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
@@ -127,3 +128,83 @@ class TestWhatTheScanWroteAndWhatHoldsAPlace:
     def test_code_named_exe_keeps_its_grade(self, tmp_path) -> None:
         script = b"const { exec } = require('child_process');\nexec('echo installed');\n"
         assert self.graded(tmp_path, {"bin/tool.exe": script}).get("tool.exe") not in (None, "LOW")
+
+
+class TestPageGzipAndZosNarrowings:
+    """08-BENIGN-F-SHAPES §8: a web page under a library's name (8a), a gzip under an image's name
+    judged by what it holds (8b), and a z/OS program object recognised as an executable (8c).
+    Synthetic bytes only."""
+
+    PAGE = (
+        b"<!DOCTYPE html>\n<html><head><script>var a = 1;</script></head><body>404</body></html>\n"
+    )
+    ICO = b"\x00\x00\x01\x00\x01\x00\x10\x10" + b"\x00" * 64
+    ELF = b"\x7fELF\x02\x01\x01\x00" + b"\x00" * 120
+    ZOS = b"\xc9\xc5\xe6\xd7\xd3\xd4\xc8" + b"\x00" * 120
+
+    @staticmethod
+    def grades(path: str, raw: bytes) -> list[str]:
+        """The severity of every format-mismatch finding on one file, inspected alone."""
+        found = TestWhatTheScanWroteAndWhatHoldsAPlace.inspected(path, raw)
+        return [f.severity.name for f in found if f.rule_id == RULE]
+
+    @staticmethod
+    def messages(path: str, raw: bytes) -> list[str]:
+        found = TestWhatTheScanWroteAndWhatHoldsAPlace.inspected(path, raw)
+        return [f.message for f in found if f.rule_id == RULE]
+
+    @staticmethod
+    def gzipped(*parts: bytes) -> bytes:
+        import gzip
+
+        return b"".join(gzip.compress(p) for p in parts)
+
+    @pytest.mark.parametrize("path", ["pkg/libffmpeg.so", "pkg/native/x.dll", "pkg/libx.dylib"])
+    def test_a_web_page_under_a_library_name_is_recorded(self, path: str) -> None:
+        assert self.grades(path, self.PAGE) == ["LOW"]
+
+    @pytest.mark.parametrize("path", ["pkg/static/img/flag.png", "pkg/static/img/loader.gif"])
+    def test_a_scripted_page_under_an_image_name_keeps_its_grade(self, path: str) -> None:
+        grades = self.grades(path, self.PAGE)
+        assert grades and "LOW" not in grades
+
+    def test_script_before_any_document_under_a_library_name_keeps_its_grade(self) -> None:
+        grades = self.grades("pkg/libx.so", b"<script>fetch('/x')</script>\n<html></html>\n")
+        assert grades and "LOW" not in grades
+
+    def test_an_executable_under_an_image_name_keeps_its_grade(self) -> None:
+        grades = self.grades("pkg/static/logo.png", self.ELF)
+        assert grades and "LOW" not in grades
+
+    def test_a_gzipped_icon_named_ico_is_no_mismatch(self) -> None:
+        assert self.grades("pkg/public/favicon.ico", self.gzipped(self.ICO)) == []
+
+    def test_a_gzipped_executable_named_ico_is_reported_as_the_executable(self) -> None:
+        messages = self.messages("pkg/public/favicon.ico", self.gzipped(self.ELF))
+        assert len(messages) == 1
+        assert "elf" in messages[0].lower()
+        assert "gzip" in messages[0].lower()
+
+    def test_a_truncated_gzip_named_ico_keeps_its_finding(self) -> None:
+        whole = self.gzipped(self.ICO)
+        assert self.grades("pkg/public/favicon.ico", whole[: len(whole) - 6]) != []
+
+    def test_a_gzip_past_the_bound_fails_closed(self) -> None:
+        # A valid icon inside, but more than the bound decompressed: not cleared.
+        big = self.ICO + b"\x00" * (Contents.GZIP_INNER_MAX + 1)
+        assert self.grades("pkg/public/favicon.ico", self.gzipped(big)) != []
+
+    def test_a_second_gzip_member_keeps_its_finding(self) -> None:
+        assert self.grades("pkg/public/favicon.ico", self.gzipped(self.ICO, self.ELF)) != []
+
+    def test_a_zos_program_object_named_so_is_no_mismatch(self) -> None:
+        assert self.grades("pyzfile/libzfile.so", self.ZOS) == []
+
+    @pytest.mark.parametrize("path", ["pkg/static/logo.png", "pkg/helper.py"])
+    def test_a_zos_program_object_under_another_name_is_reported(self, path: str) -> None:
+        assert self.grades(path, self.ZOS) != []
+
+    def test_a_zos_program_object_is_identified(self) -> None:
+        found = BinaryDetector.identify(self.ZOS)
+        assert found is not None
+        assert found.executable

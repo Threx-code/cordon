@@ -231,6 +231,51 @@ class SpilledMember:
         return h.hexdigest()
 
 
+class RefusalReasons:
+    """The scan's reason codes for an archive its expander could not open.
+
+    A reader's own refusal (a bomb, a nesting, a stream that does not decode) is the archive's bytes and is
+    `OPERATIONAL.ARCHIVE.REJECTED`, the package's doing. The scan's temp area filling is the machine's, and has its
+    own rule and code (`temp_space`), so a result, and a measurement row, says which it was: a refusal that depends
+    on how busy the machine is must never read as a property of the package. Both are incomplete scans that block:
+    an archive nothing read is never reported clean."""
+
+    TEMP_SPACE_RULE: ClassVar[str] = "OPERATIONAL.ARCHIVE.TEMP_SPACE"
+    TEMP_SPACE: ClassVar[str] = "temp_space"
+    REFUSED: ClassVar[str] = "refused"
+    NO_SPACE: ClassVar[re.Pattern[str]] = re.compile(
+        r"\[Errno 28\]|No space left on device|bytes free, less than"
+    )
+
+    @classmethod
+    def of(cls, why: str) -> tuple[str, str]:
+        """(rule id, reason code) for the words the expander's end was reported in."""
+        if cls.NO_SPACE.search(why):
+            return cls.TEMP_SPACE_RULE, cls.TEMP_SPACE
+        return ArchiveExpander.RULE, cls.REFUSED
+
+    @classmethod
+    def message(cls, code: str, why: str) -> str:
+        if code == cls.TEMP_SPACE:
+            return (
+                "The archive was not scanned: the scan's temp space ran out while it was being expanded "
+                f"(reason: {code}; {why}). None of it was read."
+            )
+        return f"The archive was refused and not scanned: {why}."
+
+    @classmethod
+    def remediation(cls, code: str) -> str:
+        if code == cls.TEMP_SPACE:
+            return (
+                "Treat the archive as unexamined, nothing about it is known to be wrong. Give the scan more room: "
+                "free space under the temp directory, or point TMPDIR at a larger volume, and scan again."
+            )
+        return (
+            "Treat a refused archive as unexamined. If it recurs on an archive you "
+            "trust, report it with the archive."
+        )
+
+
 class ArchiveExpander:
     """The parent's side: the expander run, its answer checked, the members replayed."""
 
@@ -265,6 +310,11 @@ class ArchiveExpander:
 
         if self.spill is None:
             self.spill = SpillDirectory()
+        size = path.stat().st_size
+        short = self._short_of_space(size)
+        if short is not None:
+            self._refuse(acc, path, short)
+            return None, iter(())
         engine, config = self.engine, self.engine.config
         template = getattr(engine, "_template", None)
         module = f"{ParallelScanner.__module__}:ParallelScanner"
@@ -284,7 +334,6 @@ class ArchiveExpander:
             ParallelScanner.BOUNDS, 1, deadline=scan_deadline,
         )  # fmt: skip
         supervisor.template = template
-        size = path.stat().st_size
         item = (str(path), path.name, scan_deadline, str(self.spill.path))
         outcome = supervisor.run([Unit(0, item, size)])
         why = ""
@@ -298,27 +347,41 @@ class ArchiveExpander:
         else:
             why = "its expander gave no answer"
         if accepted is None:
-            from cordon_scanner.foundation.models import Severity
-            from cordon_scanner.foundation.results import OperationalFinding
-
-            acc.incomplete(
-                OperationalFinding.build(
-                    path=path.name,
-                    rule_id=self.RULE,
-                    message=f"The archive was refused and not scanned: {why}.",
-                    remediation=(
-                        "Treat a refused archive as unexamined. If it recurs on an archive you "
-                        "trust, report it with the archive."
-                    ),
-                    severity=Severity.MEDIUM,
-                )
-            )
+            self._refuse(acc, path, why)
             return None, iter(())
         image, members, reader_rejected, error, findings, complete, gaps = accepted
         for finding in findings:
             acc.append(finding)
         acc.absorb(complete, tuple(gaps))
         return image, self._replay(members, reader_rejected, error, rejected, import_library)
+
+    def _short_of_space(self, size: int) -> str | None:
+        """Why the expansion cannot be started, when the spill directory has less free space than the archive's own
+        bytes (an expansion is never smaller than what it expands): the words for the refusal, or None."""
+        assert self.spill is not None  # noqa: S101 - set in `source`
+        try:
+            free = shutil.disk_usage(self.spill.path).free
+        except OSError:
+            return None
+        if free >= size:
+            return None
+        return f"the temp space has {free} bytes free, less than the archive's own {size} bytes"
+
+    def _refuse(self, acc: Accumulator, path: Path, why: str) -> None:
+        """An archive the expander gave no members for: an incomplete scan that blocks, with its reason."""
+        from cordon_scanner.foundation.models import Severity
+        from cordon_scanner.foundation.results import OperationalFinding
+
+        rule, code = RefusalReasons.of(why)
+        acc.incomplete(
+            OperationalFinding.build(
+                path=path.name,
+                rule_id=rule,
+                message=RefusalReasons.message(code, why),
+                remediation=RefusalReasons.remediation(code),
+                severity=Severity.MEDIUM,
+            )
+        )
 
     def accept(self, text: str, name: str) -> tuple[Any, str]:
         from cordon_scanner.engine.cache import ScanCache
@@ -465,4 +528,4 @@ class ArchiveExpander:
             raise ArchiveError(error)
 
 
-__all__ = ["ArchiveExpander", "ExpandWork", "SpillDirectory"]
+__all__ = ["ArchiveExpander", "ExpandWork", "RefusalReasons", "SpillDirectory"]

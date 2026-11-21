@@ -128,6 +128,16 @@ class TestTheSeal:
             "after": "allowed",
         }
 
+    def test_the_seal_lifts_without_leaving_public_only_on(self) -> None:
+        # An offline scan seals and unseals; a process that never asked for public-only (the
+        # variable unset) must resolve loopback again after it. The seal used to install the
+        # public-only filter for good, so the next local connection in that process was refused.
+        assert self.run("127.0.0.1", {ENABLE: ""}) == {
+            "before": "allowed",
+            "during": "sealed",
+            "after": "allowed",
+        }
+
     def test_the_seal_overrides_the_operator_private_allowlist(self) -> None:
         # A host the operator allowed for online scans is still refused while the scan is sealed.
         found = self.run("10.1.2.3", {ENABLE: "1", ALLOWED: "10.1.2.3"})

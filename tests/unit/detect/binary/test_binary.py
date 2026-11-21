@@ -11,6 +11,9 @@ rather than format.
 
 from __future__ import annotations
 
+import struct
+from typing import ClassVar
+
 import pytest
 
 from cordon_scanner.detect.base import FileUnit, ScanContext
@@ -43,6 +46,181 @@ class BinaryHelpers:
     @staticmethod
     def ids_for(path: str, raw: bytes, **kwargs) -> list[str]:
         return [f.rule_id for f in BinaryHelpers.findings_for(path, raw, **kwargs)]
+
+
+class Native:
+    """Headers of native files, built byte by byte: just what the file kind is read from."""
+
+    @staticmethod
+    def elf(
+        kind: int,
+        *,
+        interpreter: bool = False,
+        flags_1: int | None = None,
+        soname: bool = False,
+        exports: int = 0,
+    ) -> bytes:
+        """An ELF64 with the parts a library is read from: `kind` is e_type (2 executable, 3 shared-object type);
+        `interpreter` adds PT_INTERP; `flags_1` a DT_FLAGS_1 entry (0x08000000 is DF_1_PIE, a program's mark);
+        `soname` a DT_SONAME entry; `exports` that many defined dynamic symbols (a library's own)."""
+
+        def phdr(kind_: int, at: int = 0, size: int = 0) -> bytes:
+            return struct.pack("<IIQQQQQQ", kind_, 4, at, 0, 0, size, size, 8)
+
+        count = 2 + (1 if interpreter else 0)
+        dynamic_at = 64 + 56 * count
+        dynamic = b""
+        if flags_1 is not None:
+            dynamic += struct.pack("<qQ", 0x6FFFFFFB, flags_1)
+        if soname:
+            dynamic += struct.pack("<qQ", 14, 1)
+        dynamic += struct.pack("<qQ", 0, 0)
+        symbols_at = dynamic_at + len(dynamic)
+        symbols = b"\x00" * 24 + b"".join(
+            struct.pack("<IBBHQQ", 1, 0x12, 0, 1, 0, 0) for _ in range(exports)
+        )
+        sections_at = symbols_at + len(symbols)
+        sections = struct.pack("<IIQQQQIIQQ", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0) + struct.pack(
+            "<IIQQQQIIQQ", 0, 11, 0, 0, symbols_at, len(symbols), 0, 1, 8, 24
+        )
+        headers = (phdr(3) if interpreter else b"") + phdr(1) + phdr(2, dynamic_at, len(dynamic))
+        ident = b"\x7fELF\x02\x01\x01" + b"\x00" * 9
+        header = ident + struct.pack(
+            "<HHIQQQIHHHHHH", kind, 62, 1, 0, 64, sections_at, 0, 64, 56, count, 64, 2, 0
+        )
+        return header + headers + dynamic + symbols + sections
+
+    @staticmethod
+    def pe(dll: bool) -> bytes:
+        flags = 0x0022 | (0x2000 if dll else 0)
+        return (
+            b"MZ" + b"\x00" * 0x3A + struct.pack("<I", 0x80) + b"\x00" * 0x40 + b"PE\x00\x00"
+            + struct.pack("<HHIIIHH", 0x8664, 0, 0, 0, 0, 0, flags) + b"\x00" * 64
+        )  # fmt: skip
+
+    @staticmethod
+    def macho(filetype: int) -> bytes:
+        return (
+            b"\xcf\xfa\xed\xfe"
+            + struct.pack("<IIIIII", 0x0100000C, 0, filetype, 0, 0, 0)
+            + b"\x00" * 36
+        )
+
+    @staticmethod
+    def fat(*slices: bytes) -> bytes:
+        header = b"\xca\xfe\xba\xbe" + struct.pack(">I", len(slices))
+        offset = 8 + 20 * len(slices)
+        table, body = b"", b""
+        for part in slices:
+            table += struct.pack(">IIIII", 0x0100000C, 0, offset + len(body), len(part), 14)
+            body += part
+        return header + table + body
+
+
+class TestAFileNoLifecycleStepCanStart:
+    """`SUSPECT.BINARY.EXECUTABLE_PATH.001` says an executable "sits where a lifecycle step will run
+    it". A shared library or a Python extension module has no entry a shell starts: a program loads it.
+    gjalla ships Cython modules under `hooks/` and quantrabyte under `scripts/run_parser/`: importable
+    modules of a package that happens to hold a directory of that name. A real program there still
+    reports, and so does one a position-independent build makes (a shared-object type with an
+    interpreter)."""
+
+    def ids(self, path: str, raw: bytes) -> list[str]:
+        return BinaryHelpers.ids_for(path, raw)
+
+    def test_a_shared_object_under_hooks_is_loaded_not_run(self) -> None:
+        ids = self.ids("proj/hooks/mod.cpython-311-x86_64-linux-gnu.so", Native.elf(3, exports=1))
+        assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" not in ids
+        assert "POLICY.BINARY.COMMITTED.001" in ids
+
+    def test_a_position_independent_program_under_scripts_is_run(self) -> None:
+        assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" in self.ids(
+            "proj/scripts/tool", Native.elf(3, interpreter=True)
+        )
+
+    PIE: ClassVar[int] = 0x08000000
+
+    def test_a_shared_object_that_names_itself_or_defines_symbols_is_a_library(self) -> None:
+        assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" not in self.ids(
+            "proj/hooks/lib.so", Native.elf(3, soname=True)
+        )
+        assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" not in self.ids(
+            "proj/hooks/lib.so", Native.elf(3, exports=3)
+        )
+
+    def test_a_static_pie_program_is_not_a_library(self) -> None:
+        """The twin: a static position-independent executable (musl, Rust or Go `-static-pie`) is an ELF
+        shared-object type with no interpreter, built to run directly. It carries DF_1_PIE and defines
+        nothing: it keeps the finding."""
+        static_pie = Native.elf(3, flags_1=self.PIE)
+        assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" in self.ids("proj/scripts/tool", static_pie)
+        assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" in self.ids("proj/hooks/tool", static_pie)
+
+    def test_a_pie_mark_outranks_what_the_file_defines_or_names(self) -> None:
+        """Adding a symbol or a name to a program does not make it a library."""
+        for raw in (
+            Native.elf(3, flags_1=self.PIE, exports=2),
+            Native.elf(3, flags_1=self.PIE, soname=True),
+        ):
+            assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" in self.ids("proj/scripts/tool", raw)
+
+    def test_a_shared_object_type_that_defines_nothing_and_names_nothing_is_not_shown_to_be_a_library(
+        self,
+    ) -> None:
+        assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" in self.ids("proj/scripts/tool", Native.elf(3))
+
+    def test_a_static_executable_under_scripts_is_run(self) -> None:
+        assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" in self.ids("proj/scripts/tool", Native.elf(2))
+
+    def test_a_dll_is_loaded_and_an_exe_is_run(self) -> None:
+        assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" not in self.ids(
+            "proj/scripts/plugin.dll", Native.pe(dll=True)
+        )
+        assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" in self.ids(
+            "proj/scripts/tool.exe", Native.pe(dll=False)
+        )
+
+    def test_a_mach_o_bundle_or_dylib_is_loaded_and_an_executable_is_run(self) -> None:
+        for filetype in (6, 8):
+            assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" not in self.ids(
+                "proj/hooks/mod.so", Native.macho(filetype)
+            )
+        assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" in self.ids("proj/hooks/tool", Native.macho(2))
+
+    def test_a_universal_binary_is_a_library_only_when_every_slice_is(self) -> None:
+        libraries = Native.fat(Native.macho(8), Native.macho(8))
+        mixed = Native.fat(Native.macho(8), Native.macho(2))
+        assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" not in self.ids("proj/hooks/mod.so", libraries)
+        assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" in self.ids("proj/hooks/mod.so", mixed)
+
+    def test_a_header_cut_short_is_not_read_as_a_library(self) -> None:
+        """What cannot be read is not excused: the file stays where the rule puts it."""
+        for raw in (
+            Native.elf(3, exports=1)[:20],
+            Native.pe(dll=True)[:0x90],
+            Native.macho(8)[:10],
+        ):
+            assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" in self.ids("proj/scripts/x", raw)
+
+
+class TestTheDirectoryIsAComponentOfThePath:
+    """The lifecycle directories name a directory, not the end of one: `megacrazyscripts/` holds a VST3 plugin,
+    and is not `scripts/`."""
+
+    def test_a_directory_that_only_ends_in_the_name_is_not_it(self) -> None:
+        for path in ("proj/megacrazyscripts/tool", "proj/mygithooks/tool", "proj/prehooks/tool"):
+            assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" not in BinaryHelpers.ids_for(path, ELF), (
+                path
+            )
+
+    def test_a_scripts_directory_at_the_root_of_the_path_still_is(self) -> None:
+        """The twin: a member `scripts/tool` of a wheel or an archive has no folder above it."""
+        for path in ("scripts/tool", "hooks/tool", ".githooks/tool", "postinstall/tool"):
+            assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" in BinaryHelpers.ids_for(path, ELF), path
+
+    def test_the_directory_itself_still_is(self) -> None:
+        for path in ("proj/scripts/tool", "scripts/tool", "proj/hooks/tool", "proj/.githooks/tool"):
+            assert "SUSPECT.BINARY.EXECUTABLE_PATH.001" in BinaryHelpers.ids_for(path, ELF), path
 
 
 class TestIdentification:

@@ -16,13 +16,13 @@ one command at a terminal.
 
 ## Scan and inspect
 
-- `scan`: scan a directory, file or archive
+- `scan`: scan a folder, file or archive
 - `clone`: clone, scanned before checkout
 - `pull`: pull, scanned before the merge
 - `inventory`: what the repository is, and why
 - `deps`: dependency graph and findings
 - `review`: what a dependency update adds
-- `sbom`: CycloneDX or SPDX bill of materials
+- `sbom`: CycloneDX or SPDX SBOM
 - `report`: re-render a saved JSON result
 
 ## scan
@@ -361,10 +361,10 @@ Re-render a saved JSON result in another format.
 ## Policy
 
 - `rules`: list, test and show the rules
-- `config`: check the repository configuration
-- `baseline`: record findings, adopt gradually
+- `config`: check the repo configuration
+- `baseline`: record findings, adopt slowly
 - `suppress`: reviewed, expiring exceptions
-- `guard`: git hooks and self-integrity
+- `guard`: git hooks, shims, integrity
 - `verify`: check this install is genuine
 - `notify`: test the notification channels
 
@@ -557,6 +557,8 @@ Scanner self-integrity and git hook installation.
 │ guard verify                  check that the guard is intact               │
 │ guard install                 install fail-closed git hooks                │
 │ guard update                  regenerate the guard hash manifest           │
+│ guard shims                   route npm, pip, cargo, go, ... through       │
+│                               Cordon from any shell                        │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -590,6 +592,15 @@ Scanner self-integrity and git hook installation.
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ path                                                                       │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+### guard shims
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ --dir SHIM_DIR            where to write them                              │
+│ --remove                  delete the shims Cordon wrote                    │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -636,11 +647,313 @@ Notification channels: send a test message to each.
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## Install, checked first
+
+- `npm`: npm install, scanned first
+- `pnpm`: pnpm install, scanned first
+- `yarn`: yarn install, scanned first
+- `pip`: pip install, scanned first
+- `pip3`: pip3 install, scanned first
+- `uv`: uv add/sync/pip, scanned first
+- `poetry`: poetry add/install, scanned
+- `cargo`: cargo build/install, scanned
+- `go`: go get/build/install, scanned
+- `gem`: gem install, scanned first
+- `bundler`: bundle install, scanned first
+- `dotnet`: restore/build/tool, scanned
+- `dart`: dart pub get/add, scanned first
+- `flutter`: flutter pub get/add, scanned
+- `conda`: conda install/create, scanned
+- `mamba`: mamba install/create, scanned
+- `composer`: composer install, scanned
+- `mvn`: mvn builds, every jar scanned
+- `terraform`: terraform init, then scanned
+- `tofu`: tofu init, then scanned
+- `helm`: helm dependency build, scanned
+- `ansible-galaxy`: galaxy install, scanned
+- `mix`: mix deps.get from the lock
+
+## npm
+
+Run npm, scanning every package before anything is installed.
+
+`cordon-scanner npm ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 npm's own arguments                              │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## pnpm
+
+Run pnpm, scanning every package before anything is installed.
+
+`cordon-scanner pnpm ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 pnpm's own arguments                             │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## yarn
+
+Run yarn, scanning every package before anything is installed.
+
+`cordon-scanner yarn ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 yarn's own arguments                             │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## pip
+
+Run pip, scanning every package before anything is installed.
+
+`cordon-scanner pip ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 pip's own arguments                              │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## pip3
+
+Run pip3, scanning every package before anything is installed.
+
+`cordon-scanner pip3 ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 pip3's own arguments                             │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## uv
+
+Run uv, scanning every package before anything is installed.
+
+`cordon-scanner uv ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 uv's own arguments                               │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## poetry
+
+Run poetry, scanning every package before anything is installed.
+
+`cordon-scanner poetry ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 poetry's own arguments                           │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## cargo
+
+Run cargo, scanning every package before anything is installed.
+
+`cordon-scanner cargo ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 cargo's own arguments                            │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## go
+
+Run go, scanning every package before anything is installed.
+
+`cordon-scanner go ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 go's own arguments                               │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## gem
+
+Run gem, scanning every package before anything is installed.
+
+`cordon-scanner gem ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 gem's own arguments                              │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## bundler
+
+Run bundler, scanning every package before anything is installed.
+
+`cordon-scanner bundler ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 bundler's own arguments                          │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## dotnet
+
+Run dotnet, scanning every package before anything is installed.
+
+`cordon-scanner dotnet ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 dotnet's own arguments                           │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## dart
+
+Run dart, scanning every package before anything is installed.
+
+`cordon-scanner dart ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 dart's own arguments                             │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## flutter
+
+Run flutter, scanning every package before anything is installed.
+
+`cordon-scanner flutter ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 flutter's own arguments                          │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## conda
+
+Run conda, scanning every package before anything is installed.
+
+`cordon-scanner conda ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 conda's own arguments                            │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## mamba
+
+Run mamba, scanning every package before anything is installed.
+
+`cordon-scanner mamba ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 mamba's own arguments                            │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## composer
+
+Run composer, scanning every package before anything is installed.
+
+`cordon-scanner composer ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 composer's own arguments                         │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## mvn
+
+Run mvn, scanning every package before anything is installed.
+
+`cordon-scanner mvn ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 mvn's own arguments                              │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## terraform
+
+Run terraform, scanning every package before anything is installed.
+
+`cordon-scanner terraform ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 terraform's own arguments                        │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## tofu
+
+Run tofu, scanning every package before anything is installed.
+
+`cordon-scanner tofu ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 tofu's own arguments                             │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## helm
+
+Run helm, scanning every package before anything is installed.
+
+`cordon-scanner helm ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 helm's own arguments                             │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## ansible-galaxy
+
+Run ansible-galaxy, scanning every package before anything is installed.
+
+`cordon-scanner ansible-galaxy ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 ansible-galaxy's own arguments                   │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## mix
+
+Run mix, scanning every package before anything is installed.
+
+`cordon-scanner mix ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 mix's own arguments                              │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
 ## Threat intel
 
 - `advisories`: the advisory database
 - `intel`: the signed threat-intel feed
-- `bundle`: offline bundle for air-gapped use
+- `bundle`: offline bundle, air-gapped use
 
 ## advisories
 
@@ -813,7 +1126,7 @@ Serve Cordon to AI agents over the Model Context Protocol (stdio).
 - `logout`: end the Cordon Cloud sign-in
 - `whoami`: the Cordon Cloud sign-in in use
 - `runner`: run Cloud jobs in your network
-- `agent`: AI agents and MCP servers, for MDM
+- `agent`: AI agents and MCP servers (MDM)
 
 ## login
 
@@ -893,7 +1206,7 @@ This machine's AI agents and MCP servers, for an organisation's MDM (read-only, 
 
 ## General
 
-- `help`: this screen, or one command's help
+- `help`: this screen or a command's help
 - `completion`: shell completion script
 
 ## help

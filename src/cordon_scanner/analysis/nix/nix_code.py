@@ -1,6 +1,6 @@
 """What in a Nix file runs, as against what it declares (review 98, FP-15).
 
-A NixOS or home-manager configuration names where keys live -- `IdentityFile ~/.ssh/id_ed25519`,
+A NixOS or home-manager configuration names where keys live -- an `IdentityFile` line,
 `age.identityPaths = [ ... ]`, `controlPath = "~/.ssh/master-%r@%n:%p"` -- lists `libsecret` as a
 package input and gives hosts by address. Read as code, each is a credential store opened or a
 drop point named: 100 of 3,000 real Nix repositories were blocked for it, and none of those lines

@@ -387,13 +387,18 @@ class TestSelfScan(CorpusFixtures):
             # decided cost of that fix, as on other rule corpora; listed here, file by file.
             and f.location.path != "tests/unit/detect/secrets/test_review_defects.py"
             and f.location.path != "src/cordon_scanner/rules/builtin/capabilities-javascript.yaml"
+            # The MCP technique tables hold the patterns the reader uses, as the rule packs beside them do (the CI
+            # self-scan excludes that folder); their attack-shaped fixtures are test data, as other tests' are.
+            and not f.location.path.startswith("src/cordon_scanner/rules/builtin/mcp-techniques-")
+            and f.location.path != "tests/unit/detect/agents/mcp_servers/technique_fixtures.json"
             and f.location.path != "src/cordon_scanner/foundation/samples.py"
             # Recovered malware shapes, rebuilt as minimal fixtures to keep them caught.
             and f.location.path
             != "tests/unit/detect/code/capability/test_recovered_malware_shapes.py"
             # The spelling matrix lists every way JavaScript writes a capability primitive -- a
             # spawn, a beacon, a persistence write -- each a rule's test positive, by construction.
-            and f.location.path != "tests/unit/detect/code/capability/test_js_spelling_matrix.py"
+            and f.location.path
+            != "tests/unit/detect/code/capability/javascript/test_js_spelling_matrix.py"
             # Campaign behaviours rebuilt as inert fixtures, each a rule's test positive.
             and f.location.path != "tests/unit/detect/code/test_npm_campaign_behaviours.py"
             and f.location.path != "tests/unit/detect/agents/test_agents.py"
@@ -401,9 +406,45 @@ class TestSelfScan(CorpusFixtures):
             # credential read reaching a request, a decoded blob reaching a spawn -- each the
             # positive a flow rule is tested on.
             and f.location.path != "tests/unit/analysis/javascript/test_js_flow.py"
+            # The same shape in Python and shell: a credential store read that reaches a request
+            # or a drop point, and the tables, loops and joins that do or do not carry it, each the
+            # positive or negative a flow or drop-point rule is tested on.
+            and f.location.path != "tests/unit/detect/code/test_store_flow.py"
+            and f.location.path != "tests/unit/detect/code/drop_point/test_drop_point_loot.py"
+            # The agents' own safeguard switches -- the command-line flags that turn an agent's
+            # checks off -- named as the vocabulary a skill's or a settings file's text is read
+            # for. Rule material by construction: the table the detector matches, held to
+            # `CAP.AGENT.UNATTENDED.001`'s own patterns by a test; data, never run.
+            and f.location.path != "src/cordon_scanner/detect/data/agent-switch-flags.json"
+            # The agent programs, flags and history folders a package that bridges a coding agent to a remote service
+            # is read for: the table `SUSPECT.AGENT.REMOTE_CONTROL.001` matches, as the switches above are; data, never run.
+            and f.location.path != "src/cordon_scanner/detect/data/remote-bridge-patterns.json"
+            # The tables of credential stores and drop-point hosts a module only matches text
+            # against, and the reads, copies and posts that do or do not make them data: each the
+            # positive or negative a data-literal rule is tested on.
+            and f.location.path != "tests/unit/analysis/python/test_quoted_python_calls.py"
+            # The data-role fixtures: a denylist of credential-store paths and paste hosts that only a parser
+            # reads, and the loader shapes (an exec of a loaded field among them) that do or do not make it data.
+            and f.location.path != "tests/unit/analysis/shared/test_data_roles.py"
             # The skills measurement classifies samples by what their payloads do, with the
             # indicators it counts and annotations naming the hosts they fetch from.
             and f.location.path != "bench/suites/skills_measure.py"
+            # The agent-config fetcher names the configuration files it downloads from public
+            # repositories (`.gemini/settings.json`, `.mcp.json`): paths it asks GitHub for, never a
+            # read of this machine's own store.
+            and f.location.path != "bench/tools/fetch_agent_configs.py"
+            # The MCP coverage kit writes `corpus/coverage/mcp`: each family's server bodies are the
+            # positives and negatives it writes, attack-shaped by construction like the agent benchmark.
+            and not f.location.path.startswith("bench/mcp_coverage/")
+            # A package that publishes itself, built as text for the self-publish rule to read: the
+            # rule's own positives and negatives.
+            and f.location.path != "tests/unit/detect/code/test_self_publish_reach.py"
+            # The same MCP server source written plain, with CRLF and with a UTF-8 mark: a tool that sends a command's
+            # output to a `.invalid` host, built as text so the three spellings can be compared finding for finding.
+            and f.location.path
+            != "tests/unit/detect/agents/mcp_servers/test_mcp_server_written_differently.py"
+            # The model server's tests send it an injection naming a key file, the text it must refuse.
+            and f.location.path != "model-server/tests/test_server.py"
             # The detection model's feature patterns name what they count -- a miner's binary and
             # pool protocol among them -- as the rule packs do; data, never run.
             and f.location.path != "src/cordon_scanner/model/data/patterns.json"
@@ -457,7 +498,16 @@ class TestSelfScan(CorpusFixtures):
         from cordon_scanner.sources.git import GitPathSource
 
         git = GitRepository(repository)
-        subject = sorted(set(git.tracked_files()) | set(git.untracked_files()))
+        # Not `corpus/`: excluding its findings afterwards was not enough once a package-level composite could be
+        # made of them. `MALWARE.WORM.SELF_PROPAGATION.001` is reported at the scan's root when its three parts are
+        # anywhere in the scan, and the corpus holds each part in a different sample -- a worm no package has.
+        # `bench/mcp_coverage/` for the same reason: the MCP coverage kit and its fixture archive hold every technique
+        # family's positives, the self-propagation ones among them.
+        subject = sorted(
+            path
+            for path in set(git.tracked_files()) | set(git.untracked_files())
+            if not path.startswith(("corpus/", "bench/mcp_coverage/"))
+        )
         return _Scanner(scanner.config, source=GitPathSource(subject, mode="tracked")).scan(
             repository
         )

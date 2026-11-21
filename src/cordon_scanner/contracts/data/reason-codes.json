@@ -1,0 +1,376 @@
+{
+  "contracts_version": "1.3.0",
+  "groups": {
+    "R1": "hard stop",
+    "R2": "incompleteness",
+    "R3": "quality guard",
+    "R4": "content finding",
+    "R5": "provenance and source",
+    "R6": "AI component",
+    "R7": "workflow",
+    "R9": "allow reason"
+  },
+  "codes": [
+    {
+      "code": "R100",
+      "name": "known_malware",
+      "group": "R1",
+      "title": "Known malware",
+      "severity": "critical",
+      "explanation": "known malware for this digest (intelligence)",
+      "overridable": false,
+      "state": "active"
+    },
+    {
+      "code": "R101",
+      "name": "revoked",
+      "group": "R1",
+      "title": "Revoked",
+      "severity": "critical",
+      "explanation": "the artifact was revoked by Cordon or by the tenant",
+      "overridable": false,
+      "state": "active"
+    },
+    {
+      "code": "R102",
+      "name": "integrity_mismatch",
+      "group": "R1",
+      "title": "Integrity mismatch",
+      "severity": "critical",
+      "explanation": "the digest is not what the registry or the lock claims",
+      "overridable": false,
+      "state": "active"
+    },
+    {
+      "code": "R103",
+      "name": "tenant_kill_list",
+      "group": "R1",
+      "title": "On the kill list",
+      "severity": "critical",
+      "explanation": "the subject is on the tenant's kill list",
+      "overridable": false,
+      "state": "active"
+    },
+    {
+      "code": "R200",
+      "name": "evidence_missing",
+      "group": "R2",
+      "title": "Evidence missing",
+      "severity": "high",
+      "explanation": "required evidence is missing",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R201",
+      "name": "intelligence_stale",
+      "group": "R2",
+      "title": "Intelligence stale",
+      "severity": "high",
+      "explanation": "the intelligence is older than the policy allows",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R202",
+      "name": "policy_bundle_expired",
+      "group": "R2",
+      "title": "Policy bundle expired",
+      "severity": "high",
+      "explanation": "the policy bundle has expired",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R203",
+      "name": "subject_unresolved",
+      "group": "R2",
+      "title": "Subject unresolved",
+      "severity": "high",
+      "explanation": "the subject or its version could not be resolved",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R204",
+      "name": "scan_incomplete",
+      "group": "R2",
+      "title": "Scan incomplete",
+      "severity": "high",
+      "explanation": "the scan did not complete (fail closed)",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R205",
+      "name": "provenance_unverifiable",
+      "group": "R2",
+      "title": "Provenance unverifiable",
+      "severity": "high",
+      "explanation": "provenance is present but cannot be verified",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R300",
+      "name": "unmeasured_content_rule",
+      "group": "R3",
+      "title": "Rule not yet measured",
+      "severity": "low",
+      "explanation": "a content rule in an ecosystem the policy marks warn until measured",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R400",
+      "name": "malicious_behaviour",
+      "group": "R4",
+      "title": "Malicious behaviour",
+      "severity": "critical",
+      "explanation": "malicious behaviour found in the content",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R401",
+      "name": "suspicious_behaviour",
+      "group": "R4",
+      "title": "Suspicious behaviour",
+      "severity": "high",
+      "explanation": "suspicious behaviour found in the content",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R402",
+      "name": "secret_exposure",
+      "group": "R4",
+      "title": "Secret exposed",
+      "severity": "high",
+      "explanation": "a secret is exposed in the content",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R403",
+      "name": "vulnerable_exploited",
+      "group": "R4",
+      "title": "Exploited vulnerability",
+      "severity": "critical",
+      "explanation": "a vulnerability known to be exploited",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R404",
+      "name": "vulnerable_known",
+      "group": "R4",
+      "title": "Known vulnerability",
+      "severity": "medium",
+      "explanation": "a known vulnerability",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R405",
+      "name": "licence_policy",
+      "group": "R4",
+      "title": "Licence not allowed",
+      "severity": "medium",
+      "explanation": "a licence the policy does not allow",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R500",
+      "name": "provenance_level_low",
+      "group": "R5",
+      "title": "Provenance too low",
+      "severity": "medium",
+      "explanation": "below the provenance level the policy requires",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R501",
+      "name": "unsigned_or_signer_not_allowed",
+      "group": "R5",
+      "title": "Unsigned or signer not allowed",
+      "severity": "medium",
+      "explanation": "unsigned, or the signer is not allowed",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R502",
+      "name": "new_publisher",
+      "group": "R5",
+      "title": "New publisher",
+      "severity": "low",
+      "explanation": "a publisher new to the registry",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R503",
+      "name": "release_too_young",
+      "group": "R5",
+      "title": "Release too young",
+      "severity": "low",
+      "explanation": "released more recently than the policy allows",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R504",
+      "name": "lookalike_name",
+      "group": "R5",
+      "title": "Lookalike name",
+      "severity": "high",
+      "explanation": "a name that looks like a popular one",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R505",
+      "name": "registry_not_allowed",
+      "group": "R5",
+      "title": "Registry not allowed",
+      "severity": "medium",
+      "explanation": "a registry the policy does not allow",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R600",
+      "name": "mcp_tool_poisoning",
+      "group": "R6",
+      "title": "MCP tool poisoning",
+      "severity": "critical",
+      "explanation": "an MCP tool description that steers the agent",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R601",
+      "name": "skill_instruction_attack",
+      "group": "R6",
+      "title": "Skill instruction attack",
+      "severity": "critical",
+      "explanation": "a skill whose instructions attack the agent or the user",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R602",
+      "name": "excessive_capability",
+      "group": "R6",
+      "title": "Excessive capability",
+      "severity": "high",
+      "explanation": "a capability beyond what the component declares",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R603",
+      "name": "model_or_provider_not_approved",
+      "group": "R6",
+      "title": "Model or provider not approved",
+      "severity": "medium",
+      "explanation": "a model or provider that is not approved",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R604",
+      "name": "tool_list_changed",
+      "group": "R6",
+      "title": "Tool list changed",
+      "severity": "high",
+      "explanation": "the remote MCP server's tool list changed since approval",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R700",
+      "name": "approval_required",
+      "group": "R7",
+      "title": "Approval required",
+      "severity": "info",
+      "explanation": "policy requires an approval",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R701",
+      "name": "approval_expired",
+      "group": "R7",
+      "title": "Approval expired",
+      "severity": "info",
+      "explanation": "the approval has expired",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R702",
+      "name": "exception_active",
+      "group": "R7",
+      "title": "Exception active",
+      "severity": "info",
+      "explanation": "an exception is active",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R703",
+      "name": "conditions_apply",
+      "group": "R7",
+      "title": "Conditions apply",
+      "severity": "info",
+      "explanation": "allowed with conditions",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R900",
+      "name": "allowed_by_policy",
+      "group": "R9",
+      "title": "Allowed by policy",
+      "severity": "info",
+      "explanation": "allowed by policy",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R901",
+      "name": "approved_digest",
+      "group": "R9",
+      "title": "Approved",
+      "severity": "info",
+      "explanation": "approved for this digest",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R902",
+      "name": "tenant_allow_list",
+      "group": "R9",
+      "title": "On the allow list",
+      "severity": "info",
+      "explanation": "on the tenant's allow list",
+      "overridable": true,
+      "state": "active"
+    },
+    {
+      "code": "R903",
+      "name": "no_findings_above_threshold",
+      "group": "R9",
+      "title": "Nothing above the threshold",
+      "severity": "info",
+      "explanation": "no finding above the policy's threshold",
+      "overridable": true,
+      "state": "active"
+    }
+  ],
+  "retired": []
+}

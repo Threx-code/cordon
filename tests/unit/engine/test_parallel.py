@@ -140,6 +140,25 @@ class ParallelHelpers:
         )
         return Scanner(cfg).scan(repository)
 
+    @staticmethod
+    def complete_scan(repository, workers: int, attempts: int = 3):
+        """A scan whose content was all read, asked for again (up to `attempts` times) while it is not.
+
+        A scan that lost a worker, or ran out of its budget on an overloaded machine, says so (`content_complete` is false and a
+        gap or an OPERATIONAL finding names why): it has said nothing about whether a finding exists, so it is not what a test
+        about a finding asserts on. One that stays incomplete fails with what it reported, never with a missing finding."""
+        result = ParallelHelpers.scan_with(repository, workers)
+        for _ in range(attempts - 1):
+            if result.content_complete:
+                break
+            result = ParallelHelpers.scan_with(repository, workers)
+        assert result.content_complete, (
+            f"the scan with {workers} workers stayed incomplete in {attempts} tries: "
+            f"{sorted({f.rule_id for f in result.findings if f.rule_id.startswith('OPERATIONAL.')})}, "
+            f"gaps {list(result.content_gaps)[:5]}"
+        )
+        return result
+
 
 @pytest.mark.slow
 class TestParallelEquivalence(ParallelFixtures):
@@ -220,7 +239,7 @@ class TestTheContextReachesTheWorkers(ParallelFixtures):
     RULE = "MALWARE.EXFIL.001"
 
     def test_the_install_time_finding_survives_the_pool(self, repository) -> None:
-        parallel = ParallelHelpers.scan_with(repository, 8)
+        parallel = ParallelHelpers.complete_scan(repository, 8)
         hit = [
             f
             for f in parallel.findings
@@ -234,10 +253,10 @@ class TestTheContextReachesTheWorkers(ParallelFixtures):
     def test_and_is_reported_identically_serially(self, repository) -> None:
         """The assertion that makes the one above mean something: if the fixture
         stopped producing this finding at all, that test would pass by vacuum."""
-        serial = ParallelHelpers.scan_with(repository, 1)
+        serial = ParallelHelpers.complete_scan(repository, 1)
         assert [f.fingerprint for f in serial.findings if f.rule_id == self.RULE] == [
             f.fingerprint
-            for f in ParallelHelpers.scan_with(repository, 8).findings
+            for f in ParallelHelpers.complete_scan(repository, 8).findings
             if f.rule_id == self.RULE
         ]
 
@@ -248,7 +267,7 @@ class TestTheContextReachesTheWorkers(ParallelFixtures):
         for workers in (1, 8):
             hit = next(
                 f
-                for f in ParallelHelpers.scan_with(repository, workers).findings
+                for f in ParallelHelpers.complete_scan(repository, workers).findings
                 if f.rule_id == self.RULE and f.location.path.endswith("scripts/setup.js")
             )
             factors[workers] = {factor.name for factor in hit.risk.factors}

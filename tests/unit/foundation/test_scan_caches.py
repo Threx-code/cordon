@@ -246,6 +246,8 @@ class TestNoAnalysisOutlivesItsFile:
         PythonSyntax.of(tree, ast.Module, ast.FunctionDef)
         PythonSyntax.of(function, ast.FunctionDef)
         PythonSyntax.nodes(function)
+        PythonSyntax.walked(tree)
+        PythonSyntax.walked(function)
         ExecutionFlows._scope_walk(function)
         ExecutionFlows._scope_walk(tree)
         PythonSyntax.parents(function)

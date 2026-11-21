@@ -31,9 +31,9 @@ from __future__ import annotations
 
 import bisect
 import re
-import time
 from typing import ClassVar
 
+from cordon_scanner.detect.binary.rule_engine.deadline import MatchDeadline, Until
 from cordon_scanner.detect.binary.rule_engine.pattern import (
     ANY,
     CLASS,
@@ -159,7 +159,7 @@ class Chain:
         backward: bool,
         nocase: bool,
         dotall: bool,
-        deadline: float | None = None,
+        deadline: Until = None,
     ) -> list[tuple[int, int]] | None:
         """(start, length) of every match the anchor occurrences at `anchors` (offsets where the
         first term would start; sorted) give, by start. With `backward`, a match may also start
@@ -237,9 +237,9 @@ class Chain:
         return self._greedy(clipped, feasible, q)
 
     @staticmethod
-    def _in_time(deadline: float | None) -> None:
-        if deadline is not None and time.monotonic() > deadline:
-            raise TimeoutError("matching took longer than the time allowed")
+    def _in_time(deadline: Until) -> None:
+        if MatchDeadline.passed(deadline):
+            raise MatchDeadline.timeout(deadline)
 
     @staticmethod
     def _run_start(runs: list[tuple[int, int]], p: int) -> int:

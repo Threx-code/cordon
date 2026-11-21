@@ -98,7 +98,7 @@ class JsFlow:
             analysis = _Analysis(text)
             flows = analysis.run()
         except RecursionError:
-            return []
+            raise  # S2: too deep to read is not empty: escapes to OPERATIONAL.DETECTOR.FAILED, a gap
         # The cross-file summaries (item 60) come from this same analysis: kept beside the flows so
         # the worker's facts never run it a second time for a file the flow rules read.
         JsFlow.MEMO.get("summaries", text, lambda: [JsSummaries.shared(analysis)])
@@ -116,7 +116,8 @@ class JsFlow:
             analysis = _Analysis(text)
             analysis.run()
             return analysis.requests()
-        except (RecursionError, _OverBudget):
+        except _OverBudget:
+            # S2: too deep to read is not empty: escapes to OPERATIONAL.DETECTOR.FAILED, a gap
             return []
 
     @classmethod
@@ -139,6 +140,7 @@ class JsFlow:
         try:
             return _Analysis(text).deferred()
         except RecursionError:
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
             return None
 
     @classmethod
@@ -156,6 +158,7 @@ class JsFlow:
             analysis.run()
             return analysis.clean_spawns()
         except (RecursionError, _OverBudget):
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
             return frozenset()
 
     @classmethod
@@ -178,7 +181,7 @@ class JsFlow:
         failing -- says so (`JsSummaries.UNRESOLVED`): its calls into the package are not known."""
         if len(text) > MAX_BYTES:
             marker = JsSummaries.UNRESOLVED if JsSummaries.reaches_out(text) else JsSummaries.UNREAD
-            return {"js.require": [marker]}
+            return {"js.require": [marker], "js.request": [[JsSummaries.UNREAD_REQUEST, 1]]}
         return JsFlow.MEMO.get("summaries", text, lambda: [JsFlow._summaries(text)])[0]
 
     @staticmethod
@@ -194,7 +197,12 @@ class JsFlow:
             analysis = _Analysis(text)
             analysis.run()
         except (RecursionError, _OverBudget):
-            return {"js.require": [JsSummaries.UNRESOLVED]}
+            # S2: unresolved, not empty; an unresolved require keeps the join incomplete, and a file
+            # not read may name any host
+            return {
+                "js.require": [JsSummaries.UNRESOLVED],
+                "js.request": [[JsSummaries.UNREAD_REQUEST, 1]],
+            }
         return JsSummaries.shared(analysis)
 
     @classmethod
@@ -217,7 +225,8 @@ class JsFlow:
             analysis = _Analysis(text)
             flows = analysis.run()
             return sorted(analysis.parameter_commands(flows))
-        except (RecursionError, _OverBudget):
+        except _OverBudget:
+            # S2: too deep to read is not empty: escapes to OPERATIONAL.DETECTOR.FAILED, a gap
             return []
 
     @staticmethod
@@ -227,6 +236,7 @@ class JsFlow:
             analysis.run()
             return sorted(analysis.fixed_spawns())
         except (RecursionError, _OverBudget):
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
             return []
 
 
@@ -444,6 +454,7 @@ class _Analysis(Calls):
                 changed |= self._grow(fn.ret, value)
             for k in calls:
                 changed |= self._call(k)
+            self.sites_complete = True  # every call has been classed once: `sink_sites` is whole
             if not changed:
                 break
 

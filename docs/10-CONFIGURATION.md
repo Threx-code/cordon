@@ -112,6 +112,8 @@ environment:
 | Limit | Default | Bounds |
 |---|---|---|
 | `max_file_bytes` | 10 MiB | Largest file read in full; beyond it a prefix is scanned and the scan is marked incomplete. |
+| `max_stream_bytes` | 4 GiB | How much of a file past `max_file_bytes` is read, in windows, by every rule that judges text: the whole of it up to this. A larger file is read to this point and the scan is incomplete. `0` turns the windows off. At most 16 GiB, in code. |
+| `max_stream_total_bytes` | 16 GiB | The most one scan reads in windows, over all its files and workers. A file the total cannot cover is not read in windows and is reported (`OPERATIONAL.FILE.TRUNCATED`), so the scan is incomplete. At most 64 GiB, in code. |
 | `max_line_bytes` | 1 MiB | Longest line considered. |
 | `max_total_bytes` | 5 GiB | Total bytes traversed. |
 | `max_files` | 200,000 | Files walked. |

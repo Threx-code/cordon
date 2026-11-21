@@ -86,6 +86,9 @@ class Detection:
                 [d for d in detectors if not (d.id == JudgeGate.ID and skipped_judge)],
                 lambda detector, part: self.run(detector, part, ctx, acc),
                 produced,
+                budget=ctx.copy_budget,
+                gap=acc.gap,
+                deadline=ctx.deadline,
             )
         produced.extend(windowed)
         if not intact:

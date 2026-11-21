@@ -78,6 +78,20 @@ class CommandLine:
     name, which was already `cordon-scanner` and was already free.
     """
 
+    @staticmethod
+    def _front_end(arguments: list[str]) -> int | None:
+        """A command that takes the rest of the command line whole, before argparse sees it: `npm`
+        and `pip` (the tool's own flags), and any front end a plugin registers (`mcp`)."""
+        from cordon_scanner.cli.commands.install.command import InstallGuardCommand
+
+        if arguments[:1] and arguments[0] in InstallGuardCommand.TOOLS:
+            return InstallGuardCommand.main(arguments[0], arguments[1:])
+        for front in CommandParser.front_ends():
+            if arguments[:1] == [front.NAME]:
+                code: int = front.main(arguments[1:])
+                return code
+        return None
+
     @classmethod
     def run(cls, argv: Sequence[str] | None = None) -> int:
         from cordon_scanner.cli.commands.completion import CompletionCommand
@@ -91,10 +105,9 @@ class CommandLine:
         # resolves may lead inside the network (`core.netguard`).
         NetworkGuard.install_if_enabled()
         arguments = list(sys.argv[1:] if argv is None else argv)
-        for front in CommandParser.front_ends():
-            if arguments[:1] == [front.NAME]:
-                code: int = front.main(arguments[1:])
-                return code
+        handed = cls._front_end(arguments)
+        if handed is not None:
+            return handed
 
         parser = CommandParser.build()
         args = parser.parse_args(argv)

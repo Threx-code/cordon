@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.analysis.shared.text_gate import TextGate
 from cordon_scanner.detect.code.capability.build_output import BuildOutput
 from cordon_scanner.detect.code.capability.hits import CapabilityHit
 from cordon_scanner.detect.code.wasm_glue import WasmBindgenGlue
@@ -80,7 +81,7 @@ class JavaScriptCapabilities:
             arguments = window.split(";", 1)[0]
             if cls.RUNS_A_FILE.search(arguments) is None:
                 continue
-            start = len(text[: launch.start()].encode("utf-8"))
+            start = content.byte_offset(launch.start(), text)
             line = text.count("\n", 0, launch.start()) + 1
             return [
                 CapabilityHit(
@@ -142,7 +143,7 @@ class JavaScriptCapabilities:
             for secret in cls._JS_WALLET_SECRET.finditer(call):
                 if secret.group("name") == "seed" and not wallet_file:
                     continue
-                start = len(text[: request.start()].encode("utf-8"))
+                start = content.byte_offset(request.start(), text)
                 return [
                     CapabilityHit(
                         capability=Capability.CREDENTIAL,
@@ -153,7 +154,7 @@ class JavaScriptCapabilities:
                     )
                 ]
         if wallet_file:
-            return cls.js_wallet_secret_through_helper(text)
+            return cls.js_wallet_secret_through_helper(content, text)
         return []
 
     #: Both ends of a flow must be possible before the dataflow analysis is worth running.
@@ -219,7 +220,7 @@ class JavaScriptCapabilities:
         if found is None:
             return []
         text, (begin, finish) = content.text, found
-        start = len(text[:begin].encode("utf-8"))
+        start = content.byte_offset(begin, text)
         hit = CapabilityHit(
             capability=Capability.FLOW,
             rule_id="CAP.JS.STRING_CODE_RUN",
@@ -239,8 +240,10 @@ class JavaScriptCapabilities:
         if language not in ("javascript", "typescript"):
             return []
         text = content.text
-        if cls._JS_FLOW_SINK.search(text) is None or (
-            cls._JS_FLOW_SOURCE.search(text) is None and cls._JS_FLOW_EXECUTES.search(text) is None
+        # Searched as the parser reads the file (`TextGate`: `\u` and `\x` escapes decoded).
+        if not TextGate.may_hold(cls._JS_FLOW_SINK, text, language) or not (
+            TextGate.may_hold(cls._JS_FLOW_SOURCE, text, language)
+            or TextGate.may_hold(cls._JS_FLOW_EXECUTES, text, language)
         ):
             # A request is a source too (`network_response`), judged where it is executed.
             return []
@@ -253,7 +256,7 @@ class JavaScriptCapabilities:
             view = (
                 JsEval.resolve(JsFold.fold(text))
                 if len(text) <= cls.JS_EVAL_MAX_BYTES
-                and cls.JS_EVAL_MARKERS.search(text)
+                and TextGate.may_hold(cls.JS_EVAL_MARKERS, text, language)
                 and not BuildOutput.bundled(content)
                 else text
             )
@@ -265,7 +268,8 @@ class JavaScriptCapabilities:
                 # binding. Both are read (review 98, 17-PROOF-REVIEW).
                 seen = {(f.line, f.sink, f.sources) for f in flows}
                 flows += [f for f in JsFlow.flows(text) if (f.line, f.sink, f.sources) not in seen]
-        except (IndexError, KeyError, ValueError, TypeError, RecursionError):
+        except (IndexError, KeyError, ValueError, TypeError):
+            # S2: too deep to read is not empty: escapes to OPERATIONAL.DETECTOR.FAILED, a gap
             return []  # read as written: every other rule still applies
         starts = [0]
         for index, char in enumerate(text):
@@ -284,7 +288,7 @@ class JavaScriptCapabilities:
                     and WasmBindgenGlue.shim_at(text, offset)
                 ):
                     continue  # the crate's own code, by its own module (`wasm_glue`)
-                start = len(text[:offset].encode("utf-8"))
+                start = content.byte_offset(offset, text)
                 hits.append(
                     CapabilityHit(
                         capability=Capability.FLOW,
@@ -315,7 +319,7 @@ class JavaScriptCapabilities:
                 if kind not in sources or sink not in sinks:
                     continue
                 offset = starts[min(max(line, 1), len(starts)) - 1]
-                start = len(text[:offset].encode("utf-8"))
+                start = content.byte_offset(offset, text)
                 hits.append(
                     CapabilityHit(
                         capability=Capability.FLOW,
@@ -339,7 +343,9 @@ class JavaScriptCapabilities:
     # other split one stretch of blanks every way (review 98, 27-PERFORMANCE).
 
     @classmethod
-    def js_wallet_secret_through_helper(cls, text: str) -> list[CapabilityHit]:
+    def js_wallet_secret_through_helper(
+        cls, content: FileContent, text: str
+    ) -> list[CapabilityHit]:
         """The same, one call away: the wallet hands its key to a helper, and the helper puts
         what it was given -- or a value made from it -- into a request to a fixed outside address.
 
@@ -389,7 +395,7 @@ class JavaScriptCapabilities:
             )
             if caller is None:
                 continue
-            start = len(text[: caller.start()].encode("utf-8"))
+            start = content.byte_offset(caller.start(), text)
             return [
                 CapabilityHit(
                     capability=Capability.CREDENTIAL,
@@ -448,7 +454,7 @@ class JavaScriptCapabilities:
             if decoder in ("fromCharCode", "Array", "Uint8Array", "Buffer") or len(calls) < 4:
                 continue
             first = calls[0]
-            start = len(content.text[: first.start()].encode("utf-8"))
+            start = content.byte_offset(first.start(), content.text)
             return [
                 CapabilityHit(
                     capability=Capability.DYNAMIC_DISPATCH,
@@ -483,7 +489,7 @@ class JavaScriptCapabilities:
         # module name in hex (review 98). One is enough: there is no benign reading of it.
         decoded = cls._JS_DECODED_REQUIRE.search(text)
         if decoded is not None:
-            start = len(text[: decoded.start()].encode("utf-8"))
+            start = content.byte_offset(decoded.start(), text)
             return [
                 CapabilityHit(
                     capability=Capability.DYNAMIC_DISPATCH,
@@ -528,7 +534,7 @@ class JavaScriptCapabilities:
             uses = len(re.findall(rf"(?<![\w$.]){re.escape(decoder)}\s{{0,4}}\(", text))
             if uses < cls._JS_DECODER_CALLS:
                 continue
-            start = len(text[: match.start()].encode("utf-8"))
+            start = content.byte_offset(match.start(), text)
             return [
                 CapabilityHit(
                     capability=Capability.DYNAMIC_DISPATCH,

@@ -156,6 +156,117 @@ class TestAnythingElseMakesItOrdinary:
         assert not ImportLibrary.verify(lib, Limits(max_archive_entries=4))
 
 
+class DebugKit:
+    @staticmethod
+    def null_descriptor(debug: bytes, machine: int = 0x14C) -> bytes:
+        """The null import descriptor with `debug` as its `.debug$S`."""
+        return ImportLibKit.coff(
+            machine,
+            [(".debug$S", debug, 0, DEBUG), (".idata$3", b"\x00" * 20, 0, IDATA)],
+            [("@comp.id", -1, 3), ("__NULL_IMPORT_DESCRIPTOR", 2, 2)],
+        )
+
+    @staticmethod
+    def library_with(records: bytes) -> bytes:
+        """The library, its null descriptor's `.debug$S` holding `records` after signature 2."""
+        return LibKit.with_member(DebugKit.null_descriptor(ImportLibKit.debug(records=records)))
+
+
+class TestWhatMicrosoftsLinkerWrites:
+    """lib.exe as measured on 50 import libraries in 9 benign PyPI units (05-CENSUS §C, 08 §1): a
+    long-name table that ends each name with a NUL, and `.debug$S` sections of 48 to 95 bytes that
+    hold exactly an object-name record (the DLL's own name) and a compiler record."""
+
+    def test_a_long_name_table_that_ends_names_with_a_nul_is_read(self) -> None:
+        lib = ImportLibKit.library("a-very-long-library-name.dll", microsoft_names=True)
+        assert ImportLibrary.verify(lib, Limits())
+
+    def test_a_debug_section_longer_than_the_three_first_libraries_is_still_one(self) -> None:
+        dll = "thostmduserapi_se.dll"
+        lib = ImportLibKit.library(dll, machine=AMD64)
+        assert len(ImportLibKit.debug(dll, AMD64)) > 64
+        assert ImportLibrary.verify(lib, Limits())
+
+    def test_the_records_in_either_order(self) -> None:
+        records = ImportLibKit.compiler() + ImportLibKit.objname("jc.dll")
+        assert ImportLibrary.verify(DebugKit.library_with(records), Limits())
+
+
+class TestADebugSectionHoldsANameAndABannerOnly:
+    """Nothing but the DLL's own name and a printable banner fits in the section (cordon-47)."""
+
+    @pytest.mark.parametrize(
+        "records",
+        [
+            pytest.param(ImportLibKit.objname("jc.dll"), id="no compiler record"),
+            pytest.param(ImportLibKit.compiler(), id="no object-name record"),
+            pytest.param(
+                ImportLibKit.objname("jc.dll") + ImportLibKit.compiler() + ImportLibKit.compiler(),
+                id="a record twice",
+            ),
+            pytest.param(
+                ImportLibKit.objname("jc.dll")
+                + ImportLibKit.compiler()
+                + ImportLibKit.record(0x1101, b"\x00" * 8),
+                id="a third record",
+            ),
+            pytest.param(
+                ImportLibKit.objname("jc.dll") + ImportLibKit.compiler() + b"\x00" * 4,
+                id="slack after the records",
+            ),
+            pytest.param(
+                ImportLibKit.objname("jc.dll") + ImportLibKit.compiler()[:-3],
+                id="a record past the section's end",
+            ),
+        ],
+    )
+    def test_the_records_must_be_exactly_the_two(self, records: bytes) -> None:
+        assert not ImportLibrary.verify(DebugKit.library_with(records), Limits())
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            pytest.param(b"\x8b\x45\xfc\x50\xff\xd0\xc3\x90", id="a binary blob"),
+            pytest.param(b"other.dll", id="another DLL's name"),
+            pytest.param(b"jc.dll\x00\x90\x90\x90", id="an embedded NUL and bytes after it"),
+        ],
+    )
+    def test_the_object_name_is_the_dlls_own(self, name: bytes) -> None:
+        records = ImportLibKit.objname(name) + ImportLibKit.compiler()
+        assert not ImportLibrary.verify(DebugKit.library_with(records), Limits())
+
+    def test_the_object_name_fills_its_record_exactly(self) -> None:
+        name = ImportLibKit.record(0x0009, struct.pack("<IB", 0, 6) + b"jc.dll" + b"\x90\x90")
+        assert not ImportLibrary.verify(
+            DebugKit.library_with(name + ImportLibKit.compiler()), Limits()
+        )
+
+    @pytest.mark.parametrize(
+        "compiler",
+        [
+            pytest.param(
+                ImportLibKit.compiler(banner=b"Microsoft\x00(R)\x90"), id="a non-printable banner"
+            ),
+            pytest.param(ImportLibKit.compiler(flags=0), id="other flags"),
+            pytest.param(ImportLibKit.compiler(cv=0xD0), id="a machine that is not the object's"),
+            pytest.param(
+                ImportLibKit.record(
+                    0x1013,
+                    struct.pack("<IH", 7, 0x03) + b"\x00" * 12 + bytes([4]) + b"LINK" + b"\x00\x90",
+                ),
+                id="bytes after the banner",
+            ),
+        ],
+    )
+    def test_the_compiler_record_is_fixed_fields_and_a_banner(self, compiler: bytes) -> None:
+        records = ImportLibKit.objname("jc.dll") + compiler
+        assert not ImportLibrary.verify(DebugKit.library_with(records), Limits())
+
+    def test_a_real_pe_member_named_for_the_dll(self) -> None:
+        pe = b"MZ" + b"\x00" * 58 + struct.pack("<I", 64) + b"PE\x00\x00" + b"\x00" * 64
+        assert not ImportLibrary.verify(LibKit.with_member(pe), Limits())
+
+
 class TestInAScan:
     def test_a_real_shaped_import_library_raises_no_mismatch(self, tmp_path) -> None:
         assert LibKit.polyglot(tmp_path, "parser.lib", ImportLibKit.library()) == 0

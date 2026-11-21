@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from typing import Final
 
+from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.foundation.models import (
     Confidence,
     Severity,
@@ -200,6 +201,7 @@ SWEPT_NOTE = "Read to its end in windows."
 """How the note for an oversized file whose windows reached its end begins (`ArchiveMembers.truncated_note`)."""
 
 NATIVE_IN_PURE_WHEEL_RULE = "SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001"
+NATIVE_PROGRAM_IN_PURE_WHEEL_RULE = "SUSPECT.BINARY.NATIVE_PROGRAM_IN_PURE_WHEEL.001"
 KNOWN_MALICIOUS_RELEASE_RULE = "MALWARE.PACKAGE.KNOWN.001"
 KNOWN_VULNERABLE_RELEASE_RULE = "VULNERABLE.PACKAGE.KNOWN.001"
 YOUNG_DEPENDENCY_RULE = "SUSPECT.RELEASE.NEW_YOUNG_DEPENDENCY.001"
@@ -268,16 +270,7 @@ MAKE_AT_INSTALL = frozenset({"cran", "hex", "rubygems", "hackage"})
 package may declare `build-type: Make`. A Makefile there is install-time code, not the
 maintainers'."""
 
-HONOURED_PINS: dict[str, re.Pattern[str]] = {
-    # npm installs a published package's own `npm-shrinkwrap.json` exactly as written.
-    "npm": re.compile(r"(?:^|!)package/npm-shrinkwrap\.json$"),
-    # Maven resolves the jar's pom, and its `<version>` is the version it fetches.
-    "maven": re.compile(r"(?:^|!)META-INF/maven/[^!]+/pom\.xml$"),
-    # NuGet picks the LOWEST version a dependency range allows: the `.nuspec` pin is the install.
-    "nuget": re.compile(r"(?:^|!)[^/!]+\.nuspec$"),
-    # Go's minimal version selection starts from the module's own `go.mod` requirements.
-    "gomod": re.compile(r"(?:^|!)[^!]*@v[^/!]+/go\.mod$"),
-}
+HONOURED_PINS: dict[str, re.Pattern[str]] = SourcePaths.PUBLISHED_PINS
 """Files inside a published package that its consumer's installer reads and obeys: what they pin
 is what installing the package brings in, so they keep their rating."""
 
@@ -445,6 +438,7 @@ __all__ = [
     "NATIVE_IN_PURE_WHEEL_RULE",
     "NATIVE_LOAD",
     "NATIVE_MAGIC",
+    "NATIVE_PROGRAM_IN_PURE_WHEEL_RULE",
     "NPM_PLACEHOLDER_VERSION",
     "PACKAGED_BUILD_FILENAMES",
     "POLYGLOT_CORPUS",

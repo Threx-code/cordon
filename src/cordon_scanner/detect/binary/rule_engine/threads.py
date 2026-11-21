@@ -5,10 +5,10 @@ found in one pass without backtracking, and the lanes that run several at once.
 from __future__ import annotations
 
 import re
-import time
 from collections.abc import Callable
 from typing import Any, ClassVar
 
+from cordon_scanner.detect.binary.rule_engine.deadline import MatchDeadline, Until
 from cordon_scanner.detect.binary.rule_engine.pattern import Bytes, Memo, Op, RunError
 
 #: How far a single run may read from where it starts, in either direction.
@@ -524,7 +524,7 @@ class Lanes:
 
     def run(self, entry: int, data: bytes, at: int, *, backwards: bool = False,
             every: Callable[[int, int], None] | None = None,
-            deadline: float | None = None) -> int:  # fmt: skip
+            deadline: Until = None) -> int:  # fmt: skip
         ops = self.ops
         steps = 0
         step = -1 if backwards else 1
@@ -538,12 +538,8 @@ class Lanes:
             k = 0
             while k < len(lanes):
                 steps += 1
-                if (
-                    steps % Lanes.STEPS == 0
-                    and deadline is not None
-                    and time.monotonic() > deadline
-                ):
-                    raise TimeoutError("matching took longer than the time allowed")
+                if steps % Lanes.STEPS == 0 and MatchDeadline.passed(deadline):
+                    raise MatchDeadline.timeout(deadline)
                 lane = lanes[k]
                 if lane[1] != rnd:
                     k += 1
@@ -565,10 +561,9 @@ class Lanes:
                                 break
                             steps += 1  # each insert moves the lanes after it: read here too
                             if (
-                                steps % Lanes.STEPS == 0 and deadline is not None
-                                and time.monotonic() > deadline
+                                steps % Lanes.STEPS == 0 and MatchDeadline.passed(deadline)
                             ):  # fmt: skip
-                                raise TimeoutError("matching took longer than the time allowed")
+                                raise MatchDeadline.timeout(deadline)
                             spot = lane[0] + j * step
                             while place + 1 < len(lanes) and lanes[place + 1][0] <= spot:
                                 place += 1

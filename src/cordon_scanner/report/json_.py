@@ -18,6 +18,7 @@ import json
 from typing import TYPE_CHECKING
 
 from cordon_scanner.report.base import BaseReporter, Escape, ReportOptions
+from cordon_scanner.report.claims import Claims
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -32,6 +33,17 @@ class JsonReporter(BaseReporter):
 
     def render(self, result: ScanResult, opts: ReportOptions) -> Iterator[bytes]:
         payload = result.to_dict()
+        # What each finding claims (malware, risky behaviour, policy), and what the blocked unit
+        # claims from the findings that block it. Report-only: the gate decided before this ran
+        # (`report/claims.py`).
+        for finding, row in zip(result.findings, payload["findings"], strict=True):
+            claim = Claims.of_finding(finding)
+            if claim is not None:
+                row["claim"] = str(claim)
+        if opts.blocking:
+            unit = Claims.of_unit(f for f in result.findings if f.fingerprint in opts.blocking)
+            if unit is not None:
+                payload["claim"] = str(unit)
 
         if not opts.show_suppressed:
             payload["findings"] = [f for f in payload["findings"] if "suppressed" not in f]

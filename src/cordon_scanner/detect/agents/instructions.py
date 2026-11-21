@@ -8,7 +8,7 @@ raw-address links, secrets it hands to the agent, directives hidden in comments.
 from __future__ import annotations
 
 import re
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from cordon_scanner.detect.agents.defensive_doc import DISCUSSES_INJECTION
 from cordon_scanner.detect.agents.text_patterns import (
@@ -18,7 +18,11 @@ from cordon_scanner.detect.agents.text_patterns import (
     SEND,
     ZERO_WIDTH_ONLY,
 )
+from cordon_scanner.foundation.text.columns import TextColumns
 from cordon_scanner.intel.registry import KNOWN_INSTALLERS
+
+if TYPE_CHECKING:
+    from cordon_scanner.foundation.content import LineIndex
 
 _WORD_BYTE: Final = re.compile(rb"[A-Za-z0-9]")
 
@@ -65,6 +69,30 @@ _DOWNLOAD_URL: Final = re.compile(
 #: its password given, and the reader told to extract it and open or run what is inside.
 _ARCHIVE_PASSWORD: Final = re.compile(
     r"(?i)\b(?:archive\s+|zip\s+|file\s+)?pass(?:word|code)?\b[*_`\s]{0,6}(?:[:=]|is\b)"
+)
+
+#: The password withheld instead of printed: "ask the publisher for the password". A password-protected
+#: archive whose password only its seller will give is how a payload keeps scanners out of the archive.
+_PASSWORD_FROM_PUBLISHER: Final = re.compile(
+    r"(?i)\b(?:ask|contact|message|request|email|dm|obtain|get)\b[^\n]{0,40}?"
+    r"\b(?:publisher|author|developer|vendor|seller|uploader|maintainer)\b[^\n]{0,40}?"
+    r"\b(?:pass(?:word|code)|passphrase|unlock\s+code)\b"
+    r"|\b(?:pass(?:word|code)|passphrase|unlock\s+code)\b[^\n]{0,80}?"
+    r"\b(?:ask|contact|message|request|obtain|get|from)\b[^\n]{0,40}?"
+    r"\b(?:the\s+)?(?:publisher|author|developer|vendor|seller|uploader|maintainer)\b"
+)
+
+#: The same, across a line break: prose wraps between "start" and the file it names.
+_OPEN_EXECUTABLE_WRAPPED: Final = re.compile(
+    r"(?i)\b(?:open|run|execute|launch|start|double[- ]?click)\b[\s`'\"*(]{1,6}"
+    r"[\w./\\-]{1,100}\.(?:exe|app|dmg|pkg|msi|scr|command|bat)\b"
+)
+
+#: A warning that the program is not trusted by the operating system, written in the instructions that
+#: have the reader run it anyway.
+_TRUST_WARNING: Final = re.compile(
+    r"(?i)\b(?:smartscreen|gatekeeper|unidentified\s+developer|unknown\s+publisher|"
+    r"not\s+(?:code[- ]?)?signed|unsigned|no\s+(?:code[- ]?signing|signature))\b"
 )
 
 _PAYLOAD_NAME: Final = re.compile(r"(?i)\b[\w.-]{1,80}\.(?:zip|7z|rar|dmg|pkg|exe|msi|scr|app)\b")
@@ -131,7 +159,7 @@ class InstructionText:
         """Where the text tells the agent to move a credential: to a destination named on the same
         line, or -- with no destination at all -- into an argument of its own next tool call,
         anywhere in the same paragraph (review 98, AG-3). The paragraph, because the attack reads
-        "read ~/.ssh/id_rsa." and, a line later, "put it in the notes field of the call"."""
+        "read the SSH private key." and, a line later, "put it in the notes field of the call"."""
         for line in re.finditer(r"[^\n]+", text):
             if EXFIL_PATHS.search(line.group(0)) and SEND.search(line.group(0)):
                 return line
@@ -255,6 +283,30 @@ class InstructionText:
                 InstructionText._quoted(text, found) or InstructionText._forbidden(text, found)
             ):
                 return found
+        return InstructionText._withheld_password(text, lines, offsets)
+
+    @staticmethod
+    def _withheld_password(text: str, lines: list[str], offsets: list[int]) -> re.Match[str] | None:
+        """The dropper whose password is not given: the reader is told to get it from the publisher,
+        and within ten lines an archive or executable is named, extracted and run, and the program
+        is said to be unsigned or untrusted by the system. Two signs of the shape beside the
+        download-and-run: either alone is a vendor's installer."""
+        for index, line in enumerate(lines):
+            if _PASSWORD_FROM_PUBLISHER.search(line) is None:
+                continue
+            window = "".join(lines[max(0, index - 10) : index + 11])
+            if not (
+                _PAYLOAD_NAME.search(window)
+                and _EXTRACT_VERB.search(window)
+                and (_OPEN_EXECUTABLE.search(window) or _OPEN_EXECUTABLE_WRAPPED.search(window))
+                and _TRUST_WARNING.search(window)
+            ):
+                continue
+            found = re.compile(r"[^\n]+").match(text, offsets[index])
+            if found is not None and not (
+                InstructionText._quoted(text, found) or InstructionText._forbidden(text, found)
+            ):
+                return found
         return None
 
     @staticmethod
@@ -328,10 +380,15 @@ class InstructionText:
         """Whether "without asking the user" sits under a prohibition in its own sentence: "never
         install packages without asking the user" tells the agent to ask; "push without asking the
         user" tells it not to."""
-        if not match.group(0).lower().startswith("without"):
-            return False
-        start = max(text.rfind(c, 0, match.start()) for c in ".!?\n")
-        return _PROHIBITION.search(text, start + 1, match.start()) is not None
+        return match.group(0).lower().startswith("without") and InstructionText.prohibited(
+            text, match.start()
+        )
+
+    @staticmethod
+    def prohibited(text: str, at: int) -> bool:
+        """Whether a prohibition ("never", "do not", "avoid") comes before `at` in its own sentence."""
+        start = max(text.rfind(c, 0, at) for c in ".!?\n")
+        return _PROHIBITION.search(text, start + 1, at) is not None
 
     @staticmethod
     def _decode_tags(raw: bytes) -> str:
@@ -359,8 +416,9 @@ class InstructionText:
         return found
 
     @staticmethod
-    def _byte_span(text: str, match: re.Match[str]) -> tuple[int, int]:
-        start = len(text[: match.start()].encode("utf-8"))
+    def _byte_span(text: str, match: re.Match[str], content: LineIndex) -> tuple[int, int]:
+        """A match in `text` as a byte span of the file `content` holds (`TextColumns.byte_offset`)."""
+        start = TextColumns.byte_offset(content, match.start(), text)
         return start, start + len(match.group(0).encode("utf-8"))
 
 

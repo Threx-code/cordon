@@ -49,7 +49,7 @@ from cordon_scanner.engine.pipeline.dependencies import Dependencies
 from cordon_scanner.engine.pipeline.detection import Detection
 from cordon_scanner.engine.pipeline.facts import TreeFacts
 from cordon_scanner.engine.pipeline.graph import Graph, ParsedManifests
-from cordon_scanner.engine.pipeline.hooks import Hooks
+from cordon_scanner.engine.pipeline.hooks import BuildRoots, Hooks
 from cordon_scanner.engine.pipeline.images import Images
 from cordon_scanner.engine.pipeline.stages import ScanStages
 from cordon_scanner.engine.pipeline.units import Units
@@ -63,7 +63,6 @@ from cordon_scanner.foundation.files.walk import (
     Walker,
 )
 from cordon_scanner.foundation.models import Hook, Severity
-from cordon_scanner.foundation.paths import ContainerPaths
 from cordon_scanner.foundation.results import (
     LanguageStat,
     OperationalFinding,
@@ -277,6 +276,7 @@ class Engine:
                 rules_evaluated=len(self.rules),
                 duration_ms=int((time.monotonic() - started) * 1000),
                 detector_cpu_ms=DetectorClock.milliseconds(),
+                view_files=DetectorClock.counts(),
             ),
             **acc.coverage(),
             schema_version=SCHEMA_VERSION,
@@ -358,6 +358,7 @@ class Engine:
                 rules_evaluated=len(self.rules),
                 duration_ms=int((time.monotonic() - started) * 1000),
                 detector_cpu_ms=DetectorClock.milliseconds(),
+                view_files=DetectorClock.counts(),
             ),
             **acc.coverage(),
             schema_version=SCHEMA_VERSION,
@@ -435,13 +436,29 @@ class Engine:
     def _reuse_status(self, acc: Accumulator) -> None:
         """The code-reuse index (item 54), when this build ships one: an index that is malformed,
         unsorted or past its age is not used, and that is an advisory gap, as stale intel is. A build
-        with none has no reuse check and nothing to say, as a build with no feed has no age check."""
+        with none has no reuse check and nothing to say, as a build with no feed has no age check.
+        Past its age in a build with no feed it is used, and its age is a low note, not a gap: there
+        is nothing newer to fetch (`ReuseIndex._load`, owner 2026-11-14)."""
         from cordon_scanner.intel.registry import ReuseIndex
 
         if self.config.max_intel_age == 0:
             return
         _, problem = ReuseIndex.shipped()
         if not problem:
+            return
+        if problem.startswith("aged"):
+            acc.append(
+                OperationalFinding.build(
+                    path=REPOSITORY_SCOPE,
+                    rule_id="OPERATIONAL.INTEL.REUSE_AGED",
+                    message=(
+                        f"The index of known malware code files was used, but {problem.split(': ', 1)[-1]}"
+                        ": a file copied from a campaign seen since it was built would not be matched."
+                    ),
+                    remediation="Upgrade Cordon: each release ships a current index.",
+                    severity=Severity.LOW,
+                )
+            )
             return
         acc.advisory_complete = False
         stale = problem.startswith("stale")
@@ -545,6 +562,7 @@ class Engine:
                 rules_evaluated=len(self.rules),
                 duration_ms=int((time.monotonic() - started) * 1000),
                 detector_cpu_ms=DetectorClock.milliseconds(),
+                view_files=DetectorClock.counts(),
             ),
             **acc.coverage(),
             schema_version=SCHEMA_VERSION,
@@ -722,8 +740,7 @@ class Engine:
                     else entry.rel_path
                 )
 
-            if ContainerPaths.basename(entry.rel_path) == "__init__.py":
-                package_directories.add(entry.rel_path.rpartition("/")[0])
+            BuildRoots.note(entry.rel_path, package_directories)
 
             hooks.extend(Hooks.hooks_for(entry.rel_path))
 

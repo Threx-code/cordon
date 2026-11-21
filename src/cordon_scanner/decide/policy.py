@@ -116,6 +116,40 @@ class PolicyGate:
 
         return Verdict(ExitCode.CLEAN, "no findings met the failure policy")
 
+    @classmethod
+    def blocking(cls, result: ScanResult, policy: Policy) -> tuple[Finding, ...]:
+        """What stops an install, a clone or a pull: every finding that trips the gate and, when
+        `evaluate` fails the scan as incomplete, the records of what was left unread.
+
+        A gate that judges findings one at a time asks this, never `_fails` alone. A scan that read
+        less than it was given has no finding for the part it did not read, so a per-finding gate
+        passes exactly the package whose payload hid behind an archive that would not open: the
+        fail-open `evaluate` exists to stop. Each unread part is attributed to its own file."""
+        tripping = [f for f in result.active if cls._fails(f, policy)]
+        if cls.evaluate(result, policy).exit_code is not ExitCode.INCOMPLETE:
+            return tuple(tripping)
+        gaps = cls._unaccepted_gaps(result, policy)
+        if not gaps:
+            # Incomplete with `fail_on_incomplete`: the scan's own notes say what it could not do.
+            notes = [f for f in result.active if f.category is Category.OPERATIONAL]
+            return tuple(tripping + notes) or (cls._unread(".", "OPERATIONAL.SCAN.INCOMPLETE"),)
+        recorded = {(f.rule_id, f.location.path): f for f in result.findings}
+        unread = [recorded.get((rule, path)) or cls._unread(path, rule) for rule, path in gaps]
+        return tuple(tripping + [f for f in unread if f not in tripping])
+
+    @staticmethod
+    def _unread(path: str, rule: str) -> Finding:
+        """A gap's record when the scan's findings carry none for it: the gap still blocks."""
+        from cordon_scanner.foundation.results import OperationalFinding
+
+        return OperationalFinding.build(
+            path=path,
+            rule_id=rule,
+            message="Part of this content was not examined, so it cannot be called clean.",
+            remediation="Find out why it could not be read; accept the gap only in policy.accepted_gaps.",
+            severity=Severity.MEDIUM,
+        )
+
     @staticmethod
     def _unaccepted_gaps(result: ScanResult, policy: Policy) -> list[tuple[str, str]]:
         """The content gaps no unexpired acceptance covers, by the suppression's own matching of a
