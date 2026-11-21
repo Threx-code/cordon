@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 
 import pytest
 
@@ -15,6 +16,15 @@ from cordon_scanner.mcp.clients import CLIENTS, Clients
 from cordon_scanner.mcp.options import McpOptions
 
 NEW = ("roo", "kiro", "amazonq", "augment", "junie", "trae", "opencode", "goose")
+
+
+class Command:
+    """The executable a body names: a path from either platform, with or without `.exe`."""
+
+    @staticmethod
+    def is_scanner(command: str) -> bool:
+        name = re.split(r"[/\\]", command)[-1].lower()
+        return name.removesuffix(".exe") == "cordon-scanner"
 
 
 class Reader:
@@ -48,7 +58,7 @@ class TestEveryClientHasOne:
     @pytest.mark.parametrize("client", ["roo", "kiro", "amazonq", "augment", "junie", "trae"])
     def test_the_common_body_names_the_command_and_its_arguments(self, client: str) -> None:
         entry = json.loads(Reader.body(client))["mcpServers"]["cordon"]
-        assert entry["command"].endswith("cordon-scanner")
+        assert Command.is_scanner(entry["command"])
         assert entry["args"] == ["mcp"]
 
     def test_the_online_option_reaches_every_body(self) -> None:
@@ -61,7 +71,7 @@ class TestOpencode:
         body = json.loads(Reader.body("opencode"))
         entry = body["mcp"]["servers"]["cordon"]
         assert body["$schema"] == "https://opencode.ai/config.json"
-        assert entry["type"] == "local" and entry["command"][0].endswith("cordon-scanner")
+        assert entry["type"] == "local" and Command.is_scanner(entry["command"][0])
         assert entry["command"][1:] == ["mcp"]
 
     def test_the_comment_says_where_the_entry_goes_on_one_point_x(self) -> None:
@@ -72,7 +82,7 @@ class TestGoose:
     def test_the_body_is_the_extension_entry(self) -> None:
         entry = DataYaml.load(Reader.body("goose"))["extensions"]["cordon"]
         assert entry["name"] == "cordon" and entry["type"] == "stdio"
-        assert entry["cmd"].endswith("cordon-scanner") and entry["args"] == ["mcp"]
+        assert Command.is_scanner(entry["cmd"]) and entry["args"] == ["mcp"]
         assert entry["enabled"] is True and entry["timeout"] == "300"
 
     def test_the_online_option_is_an_argument(self) -> None:
@@ -93,4 +103,24 @@ class TestContinue:
         document = DataYaml.load(Reader.body("continue"))
         entry = document["mcpServers"][0]
         assert entry["name"] == "cordon" and entry["type"] == "stdio"
-        assert entry["command"].endswith("cordon-scanner") and entry["args"][0] == "mcp"
+        assert Command.is_scanner(entry["command"]) and entry["args"][0] == "mcp"
+
+
+class TestTheCommandCheck:
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "cordon-scanner",
+            "/usr/local/bin/cordon-scanner",
+            r"C:\Python\Scripts\cordon-scanner.EXE",
+            "C:/x/Cordon-Scanner.exe",
+        ],
+    )
+    def test_the_scanner_on_any_platform(self, command: str) -> None:
+        assert Command.is_scanner(command)
+
+    @pytest.mark.parametrize(
+        "command", ["scanner", "/bin/cordon-scanner-old", r"C:\x\other.exe", ""]
+    )
+    def test_anything_else_is_not(self, command: str) -> None:
+        assert not Command.is_scanner(command)
