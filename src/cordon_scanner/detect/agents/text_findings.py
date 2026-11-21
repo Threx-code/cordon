@@ -23,6 +23,7 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 from cordon_scanner.foundation.results import OperationalFinding
+from cordon_scanner.foundation.text.match_shape import MatchShape
 from cordon_scanner.intel.registry import ATR_INSTRUCTION_TOLERANCE, AtrEngine, RuleLinks
 
 if TYPE_CHECKING:
@@ -314,6 +315,12 @@ class AgentTextFindings:
     ) -> Iterator[Finding]:
         """The category's finding, named for its matches and placed: at the first match's line in the file, or in the text it was found within."""
         found = stable or counted or found
+        # Which rules matched, and whether every match is only markup (a label, a bullet, the middle of a word): the codes
+        # `SUSPECT.AGENT.INJECTION_CORROBORATED.001` reads, so a match on structure is not counted as a phrase.
+        basis = (
+            *(f"atr:{rule}" for rule in dict.fromkeys(m.rule.rule_id for m in found[:4])),
+            *MatchShape.codes(text, [(m.start, m.end) for m in found]),
+        )
         named = "; ".join(f"{m.rule.rule_id} ({m.rule.title.rstrip('.')})" for m in found[:4])
         more = len(found) - min(len(found), 4)
         message = (
@@ -335,6 +342,7 @@ class AgentTextFindings:
                 message=message,
                 severity=severity,
                 confidence=confidence,
+                basis=basis,
             )
         else:
             # The matched words are found inside the file's text; the whole piece is the
@@ -351,6 +359,7 @@ class AgentTextFindings:
                 message=message,
                 severity=severity,
                 confidence=confidence,
+                basis=basis,
             )
 
 

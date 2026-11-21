@@ -244,6 +244,26 @@ _DECLARED: tuple[DeclaredRule, ...] = (
         ),
     ),
     DeclaredRule(
+        id="SUSPECT.AGENT.INJECTION_CORROBORATED.001",
+        title="An injection phrase and the learned reading of the skill's instructions agree",
+        severity=Severity.HIGH,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        detector="verdict",
+        message=(
+            "An instruction in this package reads as a prompt injection to the agent-threat rules "
+            "(`SUSPECT.AGENT.ATR.PROMPT_INJECTION.001`, at medium severity and low confidence) and "
+            "the learned reading of its skill instructions scores them as written to steer the agent "
+            "(`SUSPECT.AGENT.SKILL_INSTRUCTIONS.001`). Neither blocks alone, as each is common on "
+            "benign skills; the two agreeing is not."
+        ),
+        references=(references.OBSCURED_SECURITY_DATA,),
+        remediation=(
+            "Read the skill's instructions in full, and the files they tell the agent to run, before "
+            "installing it. Install it only from an author you trust."
+        ),
+    ),
+    DeclaredRule(
         id="SUSPECT.AGENT.CODE_AND_INSTRUCTIONS.001",
         title="An instruction file and the code of the same package agree on an attack on the agent",
         severity=Severity.HIGH,
@@ -671,6 +691,44 @@ _DECLARED: tuple[DeclaredRule, ...] = (
         ),
         references=(references.NPM_LIFECYCLE,),
         remediation="Read the script. Install hooks run before any review or test.",
+    ),
+    DeclaredRule(
+        id="SUSPECT.INSTALL.INLINE_PROGRAM.001",
+        title="Install hook carries its program inline",
+        severity=Severity.HIGH,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        detector=ManifestFinding.DETECTOR,
+        message=(
+            "A `preinstall`, `install` or `postinstall` script of a published package carries a "
+            "program in the command itself (`node -e '...'`), outside any file a reviewer opens. "
+            "The program the capability rules find nothing in is the one an install hook uses to "
+            "say something or to wait; on the measured sets, packages that carry one are almost "
+            "all malicious."
+        ),
+        references=(references.NPM_LIFECYCLE,),
+        remediation=(
+            "Move the program into a file of the package so it is read like any other install-time "
+            "code, or drop the hook."
+        ),
+    ),
+    DeclaredRule(
+        id="SUSPECT.INSTALL.UNREAD.001",
+        title="Install hook runs a script this scan does not hold",
+        severity=Severity.HIGH,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        detector=ManifestFinding.DETECTOR,
+        message=(
+            "A `preinstall`, `install` or `postinstall` script hands an interpreter a script that "
+            "is not a file of the scan (`install_reach_incomplete`). The code that runs at install "
+            "was not read, and install-time code that cannot be read fails closed."
+        ),
+        references=(references.NPM_LIFECYCLE,),
+        remediation=(
+            "Ship the script in the package so it is read, or drop the hook; if it must run from "
+            "elsewhere, suppress this finding with a justification."
+        ),
     ),
     DeclaredRule(
         id=CONFUSION_RULE,

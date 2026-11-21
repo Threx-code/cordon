@@ -140,11 +140,14 @@ class Ceilings:
         worm = PackageComposites.worm(graded)
         if worm is not None:
             graded.append(worm)
+        # An injection phrase and the learned reading of the skill's instructions agreeing: two weak
+        # readers, neither blocking alone (`decide/composites.py`, reviews/mcp-98/21 lever A(1)).
+        injection = PackageComposites.corroborated_injection(graded)
+        if injection is not None:
+            graded.append(injection)
         # An agent-family finding in code and an order in an instruction file of the same package: two
         # readings of different files agreeing (`decide/code_and_instructions.py`).
-        agreeing = CodeAndInstructions.of(graded)
-        if agreeing is not None:
-            graded.append(agreeing)
+        graded.extend(CodeAndInstructions.places(graded))
         return graded, verdict
 
     @staticmethod

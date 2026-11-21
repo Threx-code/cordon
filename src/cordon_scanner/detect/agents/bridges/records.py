@@ -55,6 +55,7 @@ class BridgeRecords:
         if signals is None:
             return
         message = BridgeShape.encode(signals)
+        lines = BridgeShape.encode_lines(BridgeShape.lines(unit.content.text))
         path = unit.content.path
         yield Finding(
             rule_id=cls.RULE,
@@ -67,7 +68,7 @@ class BridgeRecords:
                 kind=EvidenceKind.METADATA,
                 match_hash=Evidence.hash_bytes(f"{cls.RULE}:{path}:{message}".encode()),
                 redaction=RedactionMode.NONE,
-                metadata=(("record", message),),
+                metadata=(("record", message), ("lines", lines)),
             ),
             remediation="",
             explanation=Explanation(

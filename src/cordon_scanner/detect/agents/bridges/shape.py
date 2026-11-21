@@ -135,6 +135,45 @@ class BridgeShape:
             else None
         )
 
+    #: The group letters of a line record, and the table section each reads.
+    GROUPS: ClassVar[dict[str, str]] = {"e": "exec", "c": "chan", "h": "hist"}
+    MAX_LINES: ClassVar[int] = 400
+
+    @classmethod
+    def lines(cls, text: str) -> dict[str, int]:
+        """The 1-based line of the first match of each kind the file does, keyed `e:<kind>`, `c:<kind>`, `h:<kind>`.
+
+        The record says WHAT a file does; this says WHERE, so the block can name the line of each part (a block that
+        names no line cannot be read by the person whose package it stops). Read only for a file that has a signal."""
+        if len(text) > _MAX_CHARS:
+            return {}
+        compiled = cls._compiled()
+        found: dict[str, int] = {}
+        for group, kinds in (("e", compiled.execs), ("c", compiled.chans), ("h", compiled.hists)):
+            for kind, pattern in kinds:
+                match = pattern.search(text)
+                if match is not None:
+                    found[f"{group}:{kind}"] = text.count("\n", 0, match.start()) + 1
+        return found
+
+    @classmethod
+    def encode_lines(cls, lines: dict[str, int]) -> str:
+        return ",".join(f"{key}={lines[key]}" for key in sorted(lines))
+
+    @classmethod
+    def decode_lines(cls, text: str) -> dict[str, int]:
+        """The lines a record says, or {} for anything that is not exactly that form: never misparsed."""
+        if not isinstance(text, str) or not text or len(text) > cls.MAX_LINES:
+            return {}
+        table = cls.table()
+        found: dict[str, int] = {}
+        for item in text.split(","):
+            match = re.fullmatch(r"([ech]):([a-z]{1,20})=([1-9][0-9]{0,6})", item)
+            if match is None or match.group(2) not in table[cls.GROUPS[match.group(1)]]:
+                return {}
+            found[f"{match.group(1)}:{match.group(2)}"] = int(match.group(3))
+        return found
+
     # -- the record: one line a worker hands to the parent ---------------------------------------
 
     VERSION: ClassVar[str] = "v1"

@@ -2,7 +2,7 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,635 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,824 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -35,7 +35,7 @@ rule's own samples.
 
 ## AI agents
 
-58 rules.
+67 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -74,8 +74,17 @@ rule's own samples.
 | `SUSPECT.AGENT.HIDDEN_INSTRUCTION.001` | high | An instruction to the agent that the rendered page does not show |
 | `SUSPECT.AGENT.HIDDEN_TEXT.001` | high | Hidden characters in an agent instruction file |
 | `SUSPECT.AGENT.HOOK.001` | medium | An agent hook committed to the repository |
+| `SUSPECT.AGENT.INJECTION_CORROBORATED.001` | high | An injection phrase and the learned reading of the skill's instructions agree |
 | `SUSPECT.AGENT.INJECTION_TEXT.001` | medium | Instruction-like text aimed at a coding agent |
 | `SUSPECT.AGENT.INSTALL_REDIRECT.001` | high | Code an agent runs points package installs somewhere else |
+| `SUSPECT.AGENT.INSTRUCTION_ADD_REMOTE.001` | high | An agent instruction file tells the agent to add a git remote and push to it |
+| `SUSPECT.AGENT.INSTRUCTION_CONCEAL_ACTIONS.001` | high | An agent instruction file tells the agent to hide what it did from the user |
+| `SUSPECT.AGENT.INSTRUCTION_DISABLE_SAFETY.001` | high | An agent instruction file tells the agent to turn off permission or safety prompts |
+| `SUSPECT.AGENT.INSTRUCTION_EDIT_AGENT_SETTINGS.001` | high | An agent instruction file tells the agent to change its own permissions or hooks |
+| `SUSPECT.AGENT.INSTRUCTION_FETCH_AND_OBEY.001` | high | An agent instruction file tells the agent to fetch a page and follow what it says |
+| `SUSPECT.AGENT.INSTRUCTION_PIPE_TO_SHELL.001` | high | An agent instruction file tells the agent to pipe a download into a shell |
+| `SUSPECT.AGENT.INSTRUCTION_SEND_SECRETS.001` | high | An agent instruction file tells the agent to send secrets to an address |
+| `SUSPECT.AGENT.INSTRUCTION_TRIGGER_PHRASE.001` | high | An agent instruction file arms a quiet action on a trigger phrase |
 | `SUSPECT.AGENT.INTENT.001` | high | Text that tells the agent to act against its user |
 | `SUSPECT.AGENT.INTENT_CHAINED.001` | high | Agent instructions that send the agent to a file that acts against its user |
 | `SUSPECT.AGENT.JUDGED.001` | medium | A language model judges agent-facing text to be subverting the agent |
@@ -1630,7 +1639,7 @@ rule's own samples.
 
 ## Install-time code
 
-27 rules.
+29 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -1656,11 +1665,13 @@ rule's own samples.
 | `SUSPECT.INSTALL.AUTOSTART.001` | high | Install-time code makes something start at every login |
 | `SUSPECT.INSTALL.COMPUTED_CODE.001` | high | Code that runs at install executes or starts a program it assembles so that no literal is it |
 | `SUSPECT.INSTALL.DEPENDENCY_CONFUSION.001` | high | A version made to win resolution runs code on install |
+| `SUSPECT.INSTALL.INLINE_PROGRAM.001` | high | Install hook carries its program inline |
 | `SUSPECT.INSTALL.OBFUSCATED_HOOK.001` | high | An install hook runs a file too obfuscated to read |
 | `SUSPECT.INSTALL.SCRIPT.001` | high | Package declares an install-time lifecycle script |
 | `SUSPECT.INSTALL.STRING_CODE.001` | high | An install script runs a program it carries as a string |
 | `SUSPECT.INSTALL.TEMP_COMMAND.001` | high | The install runs a command on a system temp path |
 | `SUSPECT.INSTALL.UNEXAMINED.001` | high | Install-time code too large or slow to examine |
+| `SUSPECT.INSTALL.UNREAD.001` | high | Install hook runs a script this scan does not hold |
 
 ## Intent
 
@@ -1754,7 +1765,7 @@ rule's own samples.
 
 ## MCP servers
 
-81 rules.
+259 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -1774,12 +1785,63 @@ rule's own samples.
 | `SUSPECT.MCP.CONTAINER_HOST_ACCESS.001` | high | An MCP server's container is given the host |
 | `SUSPECT.MCP.DECODE_RUN.001` | medium | An MCP server's source decodes or decompresses a value and runs the result as a command or as code |
 | `SUSPECT.MCP.DENIAL_OF_WALLET.001` | medium | An MCP tool's result tells the agent to call it again, deeper or for every item |
+| `SUSPECT.MCP.DESCRIPTION_CONCEALMENT.001` | high | A tool description of an MCP server tells the model to hide what it does from the user |
+| `SUSPECT.MCP.DESCRIPTION_CONSENT_CLAIM.001` | high | A tool description of an MCP server claims that the user already approved, or that no approval is needed |
+| `SUSPECT.MCP.DESCRIPTION_CROSS_TOOL.001` | high | A tool description of an MCP server tells the model how to use other tools or servers |
+| `SUSPECT.MCP.DESCRIPTION_EXFIL_ORDER.001` | high | A tool description of an MCP server tells the model to send what it handles to a web address |
+| `SUSPECT.MCP.DESCRIPTION_FAKE_APPROVAL.001` | high | A tool description of an MCP server poses as an approval prompt and asks the person for a reply |
+| `SUSPECT.MCP.DESCRIPTION_FAKE_BOUNDARY.001` | high | A tool description of an MCP server closes the client's framing of tool text or opens a system block of its own |
+| `SUSPECT.MCP.DESCRIPTION_FAKE_WARNING.001` | high | A tool description of an MCP server poses as a security warning and tells the person to run a command |
 | `SUSPECT.MCP.DESCRIPTION_FETCHED.001` | medium | An MCP server's source takes the description of its own tool from a network answer |
+| `SUSPECT.MCP.DESCRIPTION_HARVEST.001` | high | A tool description of an MCP server asks the model to hand over the conversation or its system prompt |
+| `SUSPECT.MCP.DESCRIPTION_HIDDEN_HTML.001` | high | A tool description of an MCP server hides an order in an HTML comment |
+| `SUSPECT.MCP.DESCRIPTION_LINK_EXFIL.001` | high | A tool description of an MCP server has the model render an image or link with its data in the address |
+| `SUSPECT.MCP.DESCRIPTION_MEMORY_WRITE.001` | high | A tool description of an MCP server tells the model to store an instruction in its memory or settings |
+| `SUSPECT.MCP.DESCRIPTION_MODE_CLAIM.001` | high | A tool description of an MCP server announces a developer, debug or admin mode in which the model's restrictions are off |
+| `SUSPECT.MCP.DESCRIPTION_OTHER_AGENT_ORDER.001` | high | A tool description of an MCP server gives orders to other agents, tells them to skip checks or demands their context |
+| `SUSPECT.MCP.DESCRIPTION_OUTPUT_HIDDEN.001` | high | A tool description of an MCP server tells the model not to show the user this output, note or instruction |
+| `SUSPECT.MCP.DESCRIPTION_OVERRIDE.001` | high | A tool description of an MCP server tells the model to drop its earlier instructions or to follow new ones |
+| `SUSPECT.MCP.DESCRIPTION_RECIPIENT_INJECTION.001` | high | A tool description of an MCP server tells the model to add a fixed address to what it sends |
+| `SUSPECT.MCP.DESCRIPTION_RETRIEVAL_DIRECTIVE.001` | high | A tool description of an MCP server addresses the model that will retrieve it and orders it |
+| `SUSPECT.MCP.DESCRIPTION_ROLE_MARKER.001` | high | A tool description of an MCP server carries a chat-template role marker |
+| `SUSPECT.MCP.DESCRIPTION_SECRET_CALL.001` | high | A tool description of an MCP server sends the model to a tool call on a credential or key file |
+| `SUSPECT.MCP.DESCRIPTION_SECRET_REQUEST.001` | high | A tool description of an MCP server asks for the contents of a credential file or for the user's seed phrase, private key or master password |
+| `SUSPECT.MCP.DESCRIPTION_SETTINGS_EDIT.001` | high | A tool description of an MCP server tells the model to change its own settings, permissions or hooks |
+| `SUSPECT.MCP.DESCRIPTION_TERMINAL_ESCAPE.001` | high | A tool description of an MCP server carries a terminal escape that hides text, sets the clipboard or disguises a link |
+| `SUSPECT.MCP.DESCRIPTION_TOOL_PRIORITY.001` | high | A tool description of an MCP server says this tool must be called first, replaces other tools or is the same as an official one |
+| `SUSPECT.MCP.DESCRIPTION_URGENCY_AUTHORITY.001` | high | A tool description of an MCP server claims authority and threatens a deadline |
+| `SUSPECT.MCP.DESCRIPTION_URL_APPEND.001` | high | A tool description of an MCP server tells the model to add the conversation or a secret to a web address |
+| `SUSPECT.MCP.DESCRIPTION_ZERO_WIDTH.001` | high | A tool description of an MCP server carries a run of zero-width characters |
 | `SUSPECT.MCP.DETACHED_CHILD.001` | medium | An MCP server's source starts a detached process from a temporary location |
 | `SUSPECT.MCP.DOWNLOAD_RUN_TEMP.001` | high | An MCP server's source downloads a program and starts it from a temporary directory |
 | `SUSPECT.MCP.ELICIT_CREDENTIAL.001` | medium | An MCP server asks the user for a credential through the protocol's own prompt |
 | `SUSPECT.MCP.EMBEDDED_WASM.001` | medium | An MCP server's source carries a WebAssembly module inside a string |
 | `SUSPECT.MCP.ENV_INJECTION.001` | high | An MCP server's environment loads code into it before it starts |
+| `SUSPECT.MCP.ERROR_CONCEALMENT.001` | high | An error message of an MCP server tells the model to hide what it does from the user |
+| `SUSPECT.MCP.ERROR_CONSENT_CLAIM.001` | high | An error message of an MCP server claims that the user already approved, or that no approval is needed |
+| `SUSPECT.MCP.ERROR_CROSS_TOOL.001` | high | An error message of an MCP server tells the model how to use other tools or servers |
+| `SUSPECT.MCP.ERROR_EXFIL_ORDER.001` | high | An error message of an MCP server tells the model to send what it handles to a web address |
+| `SUSPECT.MCP.ERROR_FAKE_APPROVAL.001` | high | An error message of an MCP server poses as an approval prompt and asks the person for a reply |
+| `SUSPECT.MCP.ERROR_FAKE_BOUNDARY.001` | high | An error message of an MCP server closes the client's framing of tool text or opens a system block of its own |
+| `SUSPECT.MCP.ERROR_FAKE_WARNING.001` | high | An error message of an MCP server poses as a security warning and tells the person to run a command |
+| `SUSPECT.MCP.ERROR_HARVEST.001` | high | An error message of an MCP server asks the model to hand over the conversation or its system prompt |
+| `SUSPECT.MCP.ERROR_HIDDEN_HTML.001` | high | An error message of an MCP server hides an order in an HTML comment |
+| `SUSPECT.MCP.ERROR_LINK_EXFIL.001` | high | An error message of an MCP server has the model render an image or link with its data in the address |
+| `SUSPECT.MCP.ERROR_MEMORY_WRITE.001` | high | An error message of an MCP server tells the model to store an instruction in its memory or settings |
+| `SUSPECT.MCP.ERROR_MODE_CLAIM.001` | high | An error message of an MCP server announces a developer, debug or admin mode in which the model's restrictions are off |
+| `SUSPECT.MCP.ERROR_OTHER_AGENT_ORDER.001` | high | An error message of an MCP server gives orders to other agents, tells them to skip checks or demands their context |
+| `SUSPECT.MCP.ERROR_OUTPUT_HIDDEN.001` | high | An error message of an MCP server tells the model not to show the user this output, note or instruction |
+| `SUSPECT.MCP.ERROR_OVERRIDE.001` | high | An error message of an MCP server tells the model to drop its earlier instructions or to follow new ones |
+| `SUSPECT.MCP.ERROR_RETRIEVAL_DIRECTIVE.001` | high | An error message of an MCP server addresses the model that will retrieve it and orders it |
+| `SUSPECT.MCP.ERROR_ROLE_MARKER.001` | high | An error message of an MCP server carries a chat-template role marker |
+| `SUSPECT.MCP.ERROR_SECRET_CALL.001` | high | An error message of an MCP server sends the model to a tool call on a credential or key file |
+| `SUSPECT.MCP.ERROR_SECRET_REQUEST.001` | high | An error message of an MCP server asks for the contents of a credential file or for the user's seed phrase, private key or master password |
+| `SUSPECT.MCP.ERROR_SETTINGS_EDIT.001` | high | An error message of an MCP server tells the model to change its own settings, permissions or hooks |
+| `SUSPECT.MCP.ERROR_TERMINAL_ESCAPE.001` | high | An error message of an MCP server carries a terminal escape that hides text, sets the clipboard or disguises a link |
+| `SUSPECT.MCP.ERROR_TOOL_PRIORITY.001` | high | An error message of an MCP server says this tool must be called first, replaces other tools or is the same as an official one |
+| `SUSPECT.MCP.ERROR_URGENCY_AUTHORITY.001` | high | An error message of an MCP server claims authority and threatens a deadline |
+| `SUSPECT.MCP.ERROR_URL_APPEND.001` | high | An error message of an MCP server tells the model to add the conversation or a secret to a web address |
+| `SUSPECT.MCP.ERROR_ZERO_WIDTH.001` | high | An error message of an MCP server carries a run of zero-width characters |
 | `SUSPECT.MCP.EXFIL_DNS.001` | high | An MCP server's source builds a DNS name out of data |
 | `SUSPECT.MCP.EXFIL_DROP.001` | medium | An MCP server's source names an anonymous paste or file-drop service |
 | `SUSPECT.MCP.EXFIL_EMAIL.001` | medium | An MCP server's source sends mail to an address written in the code |
@@ -1804,6 +1866,31 @@ rule's own samples.
 | `SUSPECT.MCP.LIBRARY_HIJACK.001` | medium | An MCP server's source plants a library or a search path for other programs |
 | `SUSPECT.MCP.LISTENER.001` | high | An MCP server opens its own listening socket and runs commands |
 | `SUSPECT.MCP.LIVE_TOOL_DESCRIPTION.001` | high | A remote MCP server serves a tool description that steers the agent |
+| `SUSPECT.MCP.LOG_CONCEALMENT.001` | high | A progress or log notification of an MCP server tells the model to hide what it does from the user |
+| `SUSPECT.MCP.LOG_CONSENT_CLAIM.001` | high | A progress or log notification of an MCP server claims that the user already approved, or that no approval is needed |
+| `SUSPECT.MCP.LOG_CROSS_TOOL.001` | high | A progress or log notification of an MCP server tells the model how to use other tools or servers |
+| `SUSPECT.MCP.LOG_EXFIL_ORDER.001` | high | A progress or log notification of an MCP server tells the model to send what it handles to a web address |
+| `SUSPECT.MCP.LOG_FAKE_APPROVAL.001` | high | A progress or log notification of an MCP server poses as an approval prompt and asks the person for a reply |
+| `SUSPECT.MCP.LOG_FAKE_BOUNDARY.001` | high | A progress or log notification of an MCP server closes the client's framing of tool text or opens a system block of its own |
+| `SUSPECT.MCP.LOG_FAKE_WARNING.001` | high | A progress or log notification of an MCP server poses as a security warning and tells the person to run a command |
+| `SUSPECT.MCP.LOG_HARVEST.001` | high | A progress or log notification of an MCP server asks the model to hand over the conversation or its system prompt |
+| `SUSPECT.MCP.LOG_HIDDEN_HTML.001` | high | A progress or log notification of an MCP server hides an order in an HTML comment |
+| `SUSPECT.MCP.LOG_LINK_EXFIL.001` | high | A progress or log notification of an MCP server has the model render an image or link with its data in the address |
+| `SUSPECT.MCP.LOG_MEMORY_WRITE.001` | high | A progress or log notification of an MCP server tells the model to store an instruction in its memory or settings |
+| `SUSPECT.MCP.LOG_MODE_CLAIM.001` | high | A progress or log notification of an MCP server announces a developer, debug or admin mode in which the model's restrictions are off |
+| `SUSPECT.MCP.LOG_OTHER_AGENT_ORDER.001` | high | A progress or log notification of an MCP server gives orders to other agents, tells them to skip checks or demands their context |
+| `SUSPECT.MCP.LOG_OUTPUT_HIDDEN.001` | high | A progress or log notification of an MCP server tells the model not to show the user this output, note or instruction |
+| `SUSPECT.MCP.LOG_OVERRIDE.001` | high | A progress or log notification of an MCP server tells the model to drop its earlier instructions or to follow new ones |
+| `SUSPECT.MCP.LOG_RETRIEVAL_DIRECTIVE.001` | high | A progress or log notification of an MCP server addresses the model that will retrieve it and orders it |
+| `SUSPECT.MCP.LOG_ROLE_MARKER.001` | high | A progress or log notification of an MCP server carries a chat-template role marker |
+| `SUSPECT.MCP.LOG_SECRET_CALL.001` | high | A progress or log notification of an MCP server sends the model to a tool call on a credential or key file |
+| `SUSPECT.MCP.LOG_SECRET_REQUEST.001` | high | A progress or log notification of an MCP server asks for the contents of a credential file or for the user's seed phrase, private key or master password |
+| `SUSPECT.MCP.LOG_SETTINGS_EDIT.001` | high | A progress or log notification of an MCP server tells the model to change its own settings, permissions or hooks |
+| `SUSPECT.MCP.LOG_TERMINAL_ESCAPE.001` | high | A progress or log notification of an MCP server carries a terminal escape that hides text, sets the clipboard or disguises a link |
+| `SUSPECT.MCP.LOG_TOOL_PRIORITY.001` | high | A progress or log notification of an MCP server says this tool must be called first, replaces other tools or is the same as an official one |
+| `SUSPECT.MCP.LOG_URGENCY_AUTHORITY.001` | high | A progress or log notification of an MCP server claims authority and threatens a deadline |
+| `SUSPECT.MCP.LOG_URL_APPEND.001` | high | A progress or log notification of an MCP server tells the model to add the conversation or a secret to a web address |
+| `SUSPECT.MCP.LOG_ZERO_WIDTH.001` | high | A progress or log notification of an MCP server carries a run of zero-width characters |
 | `SUSPECT.MCP.LOOKALIKE.001` | high | An MCP server package named like a popular one |
 | `SUSPECT.MCP.LOOKALIKE.002` | high | This MCP server's own package is named like a popular one |
 | `SUSPECT.MCP.NATIVE_FROM_TEMP.001` | high | An MCP server's source loads a module or a shared library from a temporary place or straight from the network |
@@ -1812,16 +1899,118 @@ rule's own samples.
 | `SUSPECT.MCP.PASTE_TASKING.001` | high | An MCP server's source fetches a paste from a paste site and runs it |
 | `SUSPECT.MCP.PRIVILEGE_GRANT.001` | medium | An MCP server's source grants itself administrator rights |
 | `SUSPECT.MCP.PROCESS_MASQUERADE.001` | medium | An MCP server's source gives its process the name of a system service |
+| `SUSPECT.MCP.PROMPT_CONCEALMENT.001` | high | A prompt template of an MCP server tells the model to hide what it does from the user |
+| `SUSPECT.MCP.PROMPT_CONSENT_CLAIM.001` | high | A prompt template of an MCP server claims that the user already approved, or that no approval is needed |
+| `SUSPECT.MCP.PROMPT_CROSS_TOOL.001` | high | A prompt template of an MCP server tells the model how to use other tools or servers |
+| `SUSPECT.MCP.PROMPT_EXFIL_ORDER.001` | high | A prompt template of an MCP server tells the model to send what it handles to a web address |
+| `SUSPECT.MCP.PROMPT_FAKE_APPROVAL.001` | high | A prompt template of an MCP server poses as an approval prompt and asks the person for a reply |
+| `SUSPECT.MCP.PROMPT_FAKE_BOUNDARY.001` | high | A prompt template of an MCP server closes the client's framing of tool text or opens a system block of its own |
+| `SUSPECT.MCP.PROMPT_FAKE_WARNING.001` | high | A prompt template of an MCP server poses as a security warning and tells the person to run a command |
+| `SUSPECT.MCP.PROMPT_HARVEST.001` | high | A prompt template of an MCP server asks the model to hand over the conversation or its system prompt |
+| `SUSPECT.MCP.PROMPT_HIDDEN_HTML.001` | high | A prompt template of an MCP server hides an order in an HTML comment |
 | `SUSPECT.MCP.PROMPT_INJECTION.001` | high | An MCP prompt template carries a hidden or hostile order |
+| `SUSPECT.MCP.PROMPT_LINK_EXFIL.001` | high | A prompt template of an MCP server has the model render an image or link with its data in the address |
+| `SUSPECT.MCP.PROMPT_MEMORY_WRITE.001` | high | A prompt template of an MCP server tells the model to store an instruction in its memory or settings |
+| `SUSPECT.MCP.PROMPT_MODE_CLAIM.001` | high | A prompt template of an MCP server announces a developer, debug or admin mode in which the model's restrictions are off |
+| `SUSPECT.MCP.PROMPT_OTHER_AGENT_ORDER.001` | high | A prompt template of an MCP server gives orders to other agents, tells them to skip checks or demands their context |
+| `SUSPECT.MCP.PROMPT_OUTPUT_HIDDEN.001` | high | A prompt template of an MCP server tells the model not to show the user this output, note or instruction |
+| `SUSPECT.MCP.PROMPT_OVERRIDE.001` | high | A prompt template of an MCP server tells the model to drop its earlier instructions or to follow new ones |
+| `SUSPECT.MCP.PROMPT_RECIPIENT_INJECTION.001` | high | A prompt template of an MCP server tells the model to add a fixed address to what it sends |
+| `SUSPECT.MCP.PROMPT_RETRIEVAL_DIRECTIVE.001` | high | A prompt template of an MCP server addresses the model that will retrieve it and orders it |
+| `SUSPECT.MCP.PROMPT_ROLE_MARKER.001` | high | A prompt template of an MCP server carries a chat-template role marker |
+| `SUSPECT.MCP.PROMPT_SECRET_CALL.001` | high | A prompt template of an MCP server sends the model to a tool call on a credential or key file |
+| `SUSPECT.MCP.PROMPT_SECRET_REQUEST.001` | high | A prompt template of an MCP server asks for the contents of a credential file or for the user's seed phrase, private key or master password |
+| `SUSPECT.MCP.PROMPT_SETTINGS_EDIT.001` | high | A prompt template of an MCP server tells the model to change its own settings, permissions or hooks |
+| `SUSPECT.MCP.PROMPT_TERMINAL_ESCAPE.001` | high | A prompt template of an MCP server carries a terminal escape that hides text, sets the clipboard or disguises a link |
+| `SUSPECT.MCP.PROMPT_TOOL_PRIORITY.001` | high | A prompt template of an MCP server says this tool must be called first, replaces other tools or is the same as an official one |
+| `SUSPECT.MCP.PROMPT_URGENCY_AUTHORITY.001` | high | A prompt template of an MCP server claims authority and threatens a deadline |
+| `SUSPECT.MCP.PROMPT_URL_APPEND.001` | high | A prompt template of an MCP server tells the model to add the conversation or a secret to a web address |
+| `SUSPECT.MCP.PROMPT_ZERO_WIDTH.001` | high | A prompt template of an MCP server carries a run of zero-width characters |
 | `SUSPECT.MCP.RANSOM_NOTE.001` | medium | An MCP server's source carries a ransom note |
 | `SUSPECT.MCP.RECON_BATTERY.001` | medium | An MCP server's source runs several commands that survey the machine |
+| `SUSPECT.MCP.RESOURCE_CONCEALMENT.001` | high | A resource of an MCP server tells the model to hide what it does from the user |
+| `SUSPECT.MCP.RESOURCE_CONSENT_CLAIM.001` | high | A resource of an MCP server claims that the user already approved, or that no approval is needed |
+| `SUSPECT.MCP.RESOURCE_CROSS_TOOL.001` | high | A resource of an MCP server tells the model how to use other tools or servers |
+| `SUSPECT.MCP.RESOURCE_EXFIL_ORDER.001` | high | A resource of an MCP server tells the model to send what it handles to a web address |
+| `SUSPECT.MCP.RESOURCE_FAKE_APPROVAL.001` | high | A resource of an MCP server poses as an approval prompt and asks the person for a reply |
+| `SUSPECT.MCP.RESOURCE_FAKE_BOUNDARY.001` | high | A resource of an MCP server closes the client's framing of tool text or opens a system block of its own |
+| `SUSPECT.MCP.RESOURCE_FAKE_WARNING.001` | high | A resource of an MCP server poses as a security warning and tells the person to run a command |
+| `SUSPECT.MCP.RESOURCE_HARVEST.001` | high | A resource of an MCP server asks the model to hand over the conversation or its system prompt |
+| `SUSPECT.MCP.RESOURCE_HIDDEN_HTML.001` | high | A resource of an MCP server hides an order in an HTML comment |
 | `SUSPECT.MCP.RESOURCE_INJECTION.001` | high | An MCP resource serves text that gives the agent orders |
+| `SUSPECT.MCP.RESOURCE_LINK_EXFIL.001` | high | A resource of an MCP server has the model render an image or link with its data in the address |
+| `SUSPECT.MCP.RESOURCE_MEMORY_WRITE.001` | high | A resource of an MCP server tells the model to store an instruction in its memory or settings |
+| `SUSPECT.MCP.RESOURCE_MODE_CLAIM.001` | high | A resource of an MCP server announces a developer, debug or admin mode in which the model's restrictions are off |
+| `SUSPECT.MCP.RESOURCE_OTHER_AGENT_ORDER.001` | high | A resource of an MCP server gives orders to other agents, tells them to skip checks or demands their context |
+| `SUSPECT.MCP.RESOURCE_OUTPUT_HIDDEN.001` | high | A resource of an MCP server tells the model not to show the user this output, note or instruction |
+| `SUSPECT.MCP.RESOURCE_OVERRIDE.001` | high | A resource of an MCP server tells the model to drop its earlier instructions or to follow new ones |
+| `SUSPECT.MCP.RESOURCE_RETRIEVAL_DIRECTIVE.001` | high | A resource of an MCP server addresses the model that will retrieve it and orders it |
+| `SUSPECT.MCP.RESOURCE_ROLE_MARKER.001` | high | A resource of an MCP server carries a chat-template role marker |
+| `SUSPECT.MCP.RESOURCE_SECRET_CALL.001` | high | A resource of an MCP server sends the model to a tool call on a credential or key file |
+| `SUSPECT.MCP.RESOURCE_SETTINGS_EDIT.001` | high | A resource of an MCP server tells the model to change its own settings, permissions or hooks |
+| `SUSPECT.MCP.RESOURCE_TERMINAL_ESCAPE.001` | high | A resource of an MCP server carries a terminal escape that hides text, sets the clipboard or disguises a link |
+| `SUSPECT.MCP.RESOURCE_TOOL_PRIORITY.001` | high | A resource of an MCP server says this tool must be called first, replaces other tools or is the same as an official one |
+| `SUSPECT.MCP.RESOURCE_URGENCY_AUTHORITY.001` | high | A resource of an MCP server claims authority and threatens a deadline |
+| `SUSPECT.MCP.RESOURCE_URL_APPEND.001` | high | A resource of an MCP server tells the model to add the conversation or a secret to a web address |
+| `SUSPECT.MCP.RESOURCE_ZERO_WIDTH.001` | high | A resource of an MCP server carries a run of zero-width characters |
 | `SUSPECT.MCP.RESPONSE_RUN.001` | medium | An MCP server's source reads an answer from a host and runs it as a command |
+| `SUSPECT.MCP.RESULT_CONCEALMENT.001` | high | A tool result of an MCP server tells the model to hide what it does from the user |
+| `SUSPECT.MCP.RESULT_CONSENT_CLAIM.001` | high | A tool result of an MCP server claims that the user already approved, or that no approval is needed |
+| `SUSPECT.MCP.RESULT_CROSS_TOOL.001` | high | A tool result of an MCP server tells the model how to use other tools or servers |
+| `SUSPECT.MCP.RESULT_EXFIL_ORDER.001` | high | A tool result of an MCP server tells the model to send what it handles to a web address |
+| `SUSPECT.MCP.RESULT_FAKE_APPROVAL.001` | high | A tool result of an MCP server poses as an approval prompt and asks the person for a reply |
+| `SUSPECT.MCP.RESULT_FAKE_BOUNDARY.001` | high | A tool result of an MCP server closes the client's framing of tool text or opens a system block of its own |
+| `SUSPECT.MCP.RESULT_FAKE_WARNING.001` | high | A tool result of an MCP server poses as a security warning and tells the person to run a command |
+| `SUSPECT.MCP.RESULT_HARVEST.001` | high | A tool result of an MCP server asks the model to hand over the conversation or its system prompt |
+| `SUSPECT.MCP.RESULT_HIDDEN_HTML.001` | high | A tool result of an MCP server hides an order in an HTML comment |
 | `SUSPECT.MCP.RESULT_INJECTION.001` | high | An MCP tool returns text that gives the agent orders |
+| `SUSPECT.MCP.RESULT_LINK_EXFIL.001` | high | A tool result of an MCP server has the model render an image or link with its data in the address |
+| `SUSPECT.MCP.RESULT_MEMORY_WRITE.001` | high | A tool result of an MCP server tells the model to store an instruction in its memory or settings |
+| `SUSPECT.MCP.RESULT_MODE_CLAIM.001` | high | A tool result of an MCP server announces a developer, debug or admin mode in which the model's restrictions are off |
+| `SUSPECT.MCP.RESULT_OTHER_AGENT_ORDER.001` | high | A tool result of an MCP server gives orders to other agents, tells them to skip checks or demands their context |
+| `SUSPECT.MCP.RESULT_OUTPUT_HIDDEN.001` | high | A tool result of an MCP server tells the model not to show the user this output, note or instruction |
+| `SUSPECT.MCP.RESULT_OVERRIDE.001` | high | A tool result of an MCP server tells the model to drop its earlier instructions or to follow new ones |
+| `SUSPECT.MCP.RESULT_RECIPIENT_INJECTION.001` | high | A tool result of an MCP server tells the model to add a fixed address to what it sends |
+| `SUSPECT.MCP.RESULT_RETRIEVAL_DIRECTIVE.001` | high | A tool result of an MCP server addresses the model that will retrieve it and orders it |
+| `SUSPECT.MCP.RESULT_ROLE_MARKER.001` | high | A tool result of an MCP server carries a chat-template role marker |
+| `SUSPECT.MCP.RESULT_SECRET_CALL.001` | high | A tool result of an MCP server sends the model to a tool call on a credential or key file |
+| `SUSPECT.MCP.RESULT_SECRET_REQUEST.001` | high | A tool result of an MCP server asks for the contents of a credential file or for the user's seed phrase, private key or master password |
+| `SUSPECT.MCP.RESULT_SETTINGS_EDIT.001` | high | A tool result of an MCP server tells the model to change its own settings, permissions or hooks |
+| `SUSPECT.MCP.RESULT_TERMINAL_ESCAPE.001` | high | A tool result of an MCP server carries a terminal escape that hides text, sets the clipboard or disguises a link |
+| `SUSPECT.MCP.RESULT_TOOL_PRIORITY.001` | high | A tool result of an MCP server says this tool must be called first, replaces other tools or is the same as an official one |
+| `SUSPECT.MCP.RESULT_URGENCY_AUTHORITY.001` | high | A tool result of an MCP server claims authority and threatens a deadline |
+| `SUSPECT.MCP.RESULT_URL_APPEND.001` | high | A tool result of an MCP server tells the model to add the conversation or a secret to a web address |
+| `SUSPECT.MCP.RESULT_ZERO_WIDTH.001` | high | A tool result of an MCP server carries a run of zero-width characters |
 | `SUSPECT.MCP.REVERSE_SHELL.001` | medium | An MCP server's source opens a reverse shell |
 | `SUSPECT.MCP.ROOTS_ESCAPE.001` | medium | An MCP server's source asks for the user's roots and then reads a credential file outside them |
 | `SUSPECT.MCP.SAMPLING_ABUSE.001` | high | An MCP server uses the client's model as its own tool through sampling |
+| `SUSPECT.MCP.SCHEMA_CONCEALMENT.001` | high | A tool parameter description of an MCP server tells the model to hide what it does from the user |
+| `SUSPECT.MCP.SCHEMA_CONSENT_CLAIM.001` | high | A tool parameter description of an MCP server claims that the user already approved, or that no approval is needed |
+| `SUSPECT.MCP.SCHEMA_CROSS_TOOL.001` | high | A tool parameter description of an MCP server tells the model how to use other tools or servers |
+| `SUSPECT.MCP.SCHEMA_EXFIL_ORDER.001` | high | A tool parameter description of an MCP server tells the model to send what it handles to a web address |
+| `SUSPECT.MCP.SCHEMA_FAKE_APPROVAL.001` | high | A tool parameter description of an MCP server poses as an approval prompt and asks the person for a reply |
+| `SUSPECT.MCP.SCHEMA_FAKE_BOUNDARY.001` | high | A tool parameter description of an MCP server closes the client's framing of tool text or opens a system block of its own |
+| `SUSPECT.MCP.SCHEMA_FAKE_WARNING.001` | high | A tool parameter description of an MCP server poses as a security warning and tells the person to run a command |
+| `SUSPECT.MCP.SCHEMA_HARVEST.001` | high | A tool parameter description of an MCP server asks the model to hand over the conversation or its system prompt |
+| `SUSPECT.MCP.SCHEMA_HIDDEN_HTML.001` | high | A tool parameter description of an MCP server hides an order in an HTML comment |
+| `SUSPECT.MCP.SCHEMA_LINK_EXFIL.001` | high | A tool parameter description of an MCP server has the model render an image or link with its data in the address |
+| `SUSPECT.MCP.SCHEMA_MEMORY_WRITE.001` | high | A tool parameter description of an MCP server tells the model to store an instruction in its memory or settings |
+| `SUSPECT.MCP.SCHEMA_MODE_CLAIM.001` | high | A tool parameter description of an MCP server announces a developer, debug or admin mode in which the model's restrictions are off |
+| `SUSPECT.MCP.SCHEMA_OTHER_AGENT_ORDER.001` | high | A tool parameter description of an MCP server gives orders to other agents, tells them to skip checks or demands their context |
+| `SUSPECT.MCP.SCHEMA_OUTPUT_HIDDEN.001` | high | A tool parameter description of an MCP server tells the model not to show the user this output, note or instruction |
+| `SUSPECT.MCP.SCHEMA_OVERRIDE.001` | high | A tool parameter description of an MCP server tells the model to drop its earlier instructions or to follow new ones |
 | `SUSPECT.MCP.SCHEMA_POISONING.001` | high | An MCP tool's parameter names an order to the agent |
+| `SUSPECT.MCP.SCHEMA_RECIPIENT_INJECTION.001` | high | A tool parameter description of an MCP server tells the model to add a fixed address to what it sends |
+| `SUSPECT.MCP.SCHEMA_RETRIEVAL_DIRECTIVE.001` | high | A tool parameter description of an MCP server addresses the model that will retrieve it and orders it |
+| `SUSPECT.MCP.SCHEMA_ROLE_MARKER.001` | high | A tool parameter description of an MCP server carries a chat-template role marker |
+| `SUSPECT.MCP.SCHEMA_SECRET_CALL.001` | high | A tool parameter description of an MCP server sends the model to a tool call on a credential or key file |
+| `SUSPECT.MCP.SCHEMA_SECRET_REQUEST.001` | high | A tool parameter description of an MCP server asks for the contents of a credential file or for the user's seed phrase, private key or master password |
+| `SUSPECT.MCP.SCHEMA_SETTINGS_EDIT.001` | high | A tool parameter description of an MCP server tells the model to change its own settings, permissions or hooks |
+| `SUSPECT.MCP.SCHEMA_TERMINAL_ESCAPE.001` | high | A tool parameter description of an MCP server carries a terminal escape that hides text, sets the clipboard or disguises a link |
+| `SUSPECT.MCP.SCHEMA_TOOL_PRIORITY.001` | high | A tool parameter description of an MCP server says this tool must be called first, replaces other tools or is the same as an official one |
+| `SUSPECT.MCP.SCHEMA_URGENCY_AUTHORITY.001` | high | A tool parameter description of an MCP server claims authority and threatens a deadline |
+| `SUSPECT.MCP.SCHEMA_URL_APPEND.001` | high | A tool parameter description of an MCP server tells the model to add the conversation or a secret to a web address |
+| `SUSPECT.MCP.SCHEMA_ZERO_WIDTH.001` | high | A tool parameter description of an MCP server carries a run of zero-width characters |
 | `SUSPECT.MCP.SECRET_HARVEST.001` | high | An MCP server gathers the environment's secrets by name |
 | `SUSPECT.MCP.SECURITY_TOOL_KILL.001` | high | An MCP server's source stops or blinds security software |
 | `SUSPECT.MCP.SHELL_LAUNCH.001` | high | An MCP server launched through a shell that fetches code |

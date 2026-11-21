@@ -18,6 +18,7 @@ from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
 from cordon_scanner.detect.agents.mcp_servers.description_model import (
     McpDescriptionModel,
 )
+from cordon_scanner.detect.agents.mcp_servers.directive.reader import McpDirectives
 from cordon_scanner.detect.agents.mcp_servers.endpoints import (
     LOCAL_HOSTS,
     PLACEHOLDER,
@@ -253,7 +254,9 @@ class McpServerFindings:
                 )
         yield from McpServerFindings._handler_findings(ctx, text, unit)
         yield from McpServerFindings._return_findings(ctx, text, unit)
-        yield from ServedText.findings(unit, ctx, text)
+        served = ServedText.served(text, unit.content.path)
+        yield from ServedText.findings(unit, ctx, text, served)
+        yield from McpDirectives.findings(unit, ctx, text, served)
         yield from cls._server_content(unit, ctx, text)
 
     @staticmethod

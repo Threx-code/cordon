@@ -195,6 +195,8 @@ class TestNoRuleIsLoweredUnseenByAccident:
             # it; listed, as SUSPECT.REGISTRY.REVIEW.001 is, because the model has not seen it and it
             # is not in `LATER_RULES` (that list is part of the feature version).
             "MALWARE.WORM.SELF_PROPAGATION.001",
+            # The corroborated-injection composite, added in the same place for the same reason.
+            "SUSPECT.AGENT.INJECTION_CORROBORATED.001",
             # Added after the verdict is decided (`decide/code_and_instructions.py`), so no verdict lowers it; listed
             # because the model has not seen it.
             "SUSPECT.AGENT.CODE_AND_INSTRUCTIONS.001",

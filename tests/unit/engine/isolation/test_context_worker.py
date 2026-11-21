@@ -884,6 +884,57 @@ class TestTheParentOpensNoArchive:
         assert any(f.rule_id == "OPERATIONAL.ARCHIVE.REJECTED" for f in result.findings)
         assert not result.content_complete
 
+    @requires_forked_workers
+    def test_an_expander_out_of_temp_space_has_its_own_reason_and_still_blocks(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Errno 28 in the expander is the scan's temp area filling, not a refusal the package earns: its own
+        rule and reason code (`temp_space`), and still an incomplete scan that blocks without any flag."""
+        import errno
+
+        from cordon_scanner.engine.isolation.expander import ExpandWork
+
+        def full(item: Any) -> str:
+            raise OSError(errno.ENOSPC, "No space left on device")
+
+        monkeypatch.setattr(ExpandWork, "run", staticmethod(full))
+        result = Fixture.scan(
+            Fixture.tarball(tmp_path, {"package.json": MANIFESTS["npm/package.json"]})
+        )
+        found = [f for f in result.findings if f.rule_id == "OPERATIONAL.ARCHIVE.TEMP_SPACE"]
+        assert len(found) == 1 and "temp_space" in found[0].message
+        assert "TMPDIR" in found[0].remediation
+        assert not any(f.rule_id == "OPERATIONAL.ARCHIVE.REJECTED" for f in result.findings)
+        assert not result.content_complete
+        assert ("OPERATIONAL.ARCHIVE.TEMP_SPACE", found[0].location.path) in result.content_gaps
+
+    @requires_forked_workers
+    def test_less_free_space_than_the_archive_itself_refuses_before_any_work(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """An expansion is never smaller than the compressed archive: with less free than that, the scan says so
+        at once, and the expander is not started."""
+        import collections
+
+        from cordon_scanner.engine.isolation import expander as expander_module
+
+        usage = collections.namedtuple("usage", "total used free")
+
+        def tiny(path: Any) -> Any:
+            return usage(total=1 << 20, used=(1 << 20) - 16, free=16)
+
+        def never(item: Any) -> str:
+            raise AssertionError("the expander ran with no room to write")
+
+        monkeypatch.setattr(expander_module.shutil, "disk_usage", tiny)
+        monkeypatch.setattr(expander_module.ExpandWork, "run", staticmethod(never))
+        result = Fixture.scan(
+            Fixture.tarball(tmp_path, {"package.json": MANIFESTS["npm/package.json"]})
+        )
+        found = [f for f in result.findings if f.rule_id == "OPERATIONAL.ARCHIVE.TEMP_SPACE"]
+        assert len(found) == 1 and "16 bytes free" in found[0].message
+        assert not result.content_complete
+
     def test_member_names_never_name_a_spill_file(self, tmp_path: Path, monkeypatch) -> None:
         """Traversal and absolute member names: each gets a generated spill name, and nothing is
         written outside the scan's spill directory."""

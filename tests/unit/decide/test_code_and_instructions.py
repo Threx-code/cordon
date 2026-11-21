@@ -10,10 +10,12 @@ Inert fixtures: findings built by the engine's own builder, with made-up paths; 
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from cordon_scanner.decide.code_and_instructions import CodeAndInstructions
-from cordon_scanner.foundation.models import Category, Finding, Severity, Suppression
+from cordon_scanner.foundation.models import Category, Finding, Location, Severity, Suppression
 from cordon_scanner.foundation.results import OperationalFinding
 
 ORDER = "SUSPECT.AGENT.INSTRUCTION_PIPE_TO_SHELL.001"
@@ -41,6 +43,74 @@ class Findings:
         severity: Severity = Severity.MEDIUM, path: str = "pkg/server.js", rule: str = CODE
     ) -> Finding:
         return Findings.of(rule, severity, path)
+
+
+class TestTheLinesOfTheTwoHalves:
+    """A block that names no line cannot be read by the person whose package it stops: each half names its own."""
+
+    @staticmethod
+    def at(rule: str, path: str, line: int | None) -> Finding:
+        return replace(
+            Findings.of(rule, Severity.MEDIUM, path),
+            location=Location(path=path, line=line, column=3),
+        )
+
+    def test_one_finding_names_the_instruction_line_and_one_the_code_line(self) -> None:
+        order = self.at(ORDER, "pkg/SKILL.md", 31)
+        code = self.at(CODE, "pkg/src/server.js", 118)
+        made = CodeAndInstructions.places([order, code])
+        assert [(f.location.path, f.location.line, f.location.column) for f in made] == [
+            ("pkg/SKILL.md", 31, 3),
+            ("pkg/src/server.js", 118, 3),
+        ]
+        assert {f.rule_id for f in made} == {CodeAndInstructions.RULE}
+        assert {dict(f.evidence.metadata)["part"] for f in made} == {"instruction", "code"}
+
+    def test_the_two_findings_are_different_findings_for_a_suppression_or_a_baseline(self) -> None:
+        made = CodeAndInstructions.places(
+            [self.at(ORDER, "pkg/SKILL.md", 31), self.at(CODE, "pkg/server.js", 118)]
+        )
+        assert len({f.evidence.match_hash for f in made}) == 2
+
+    def test_a_line_that_moves_changes_the_hash_of_that_half_only(self) -> None:
+        before = CodeAndInstructions.places(
+            [self.at(ORDER, "pkg/SKILL.md", 31), self.at(CODE, "pkg/server.js", 118)]
+        )
+        after = CodeAndInstructions.places(
+            [self.at(ORDER, "pkg/SKILL.md", 32), self.at(CODE, "pkg/server.js", 118)]
+        )
+        assert before[0].evidence.match_hash != after[0].evidence.match_hash
+        assert before[1].evidence.match_hash == after[1].evidence.match_hash
+
+    def test_it_is_the_first_order_and_the_first_code_finding_that_are_named(self) -> None:
+        made = CodeAndInstructions.places(
+            [
+                self.at(ORDER, "pkg/SKILL.md", 31),
+                self.at(ORDER, "pkg/AGENTS.md", 5),
+                self.at(CODE, "pkg/server.js", 118),
+                self.at(CODE, "pkg/other.js", 7),
+            ]
+        )
+        assert [f.location.line for f in made] == [31, 118]
+
+    def test_a_half_with_no_line_still_names_its_file(self) -> None:
+        made = CodeAndInstructions.places(
+            [self.at(ORDER, "pkg/SKILL.md", None), self.at(CODE, "pkg/server.js", 9)]
+        )
+        assert [(f.location.path, f.location.line) for f in made] == [
+            ("pkg/SKILL.md", None),
+            ("pkg/server.js", 9),
+        ]
+
+    def test_nothing_is_made_when_a_half_is_missing(self) -> None:
+        assert CodeAndInstructions.places([self.at(ORDER, "pkg/SKILL.md", 31)]) == []
+        assert CodeAndInstructions.places([self.at(CODE, "pkg/server.js", 118)]) == []
+
+    def test_of_is_the_instruction_half(self) -> None:
+        made = CodeAndInstructions.of(
+            [self.at(ORDER, "pkg/SKILL.md", 31), self.at(CODE, "pkg/server.js", 118)]
+        )
+        assert made is not None and (made.location.path, made.location.line) == ("pkg/SKILL.md", 31)
 
 
 class TestTheComposite:

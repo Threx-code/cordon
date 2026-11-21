@@ -49,6 +49,16 @@ class PackageComposites:
     PART_FLOOR: ClassVar[Severity] = Severity.MEDIUM
     """A part counts at this severity or stronger: the grade the rules and ceilings left it."""
 
+    INJECTION_RULE: ClassVar[str] = "SUSPECT.AGENT.INJECTION_CORROBORATED.001"
+    INJECTION_PHRASE: ClassVar[str] = "SUSPECT.AGENT.ATR.PROMPT_INJECTION.001"
+    SKILL_READING: ClassVar[str] = "SUSPECT.AGENT.SKILL_INSTRUCTIONS.001"
+    PHRASE_GRADE: ClassVar[tuple[Severity, Confidence]] = (Severity.MEDIUM, Confidence.LOW)
+    """The grade of the injection phrase that counts: the one the composite was measured at (reviews/mcp-98/21,
+    lever A(1)). The same rule at another grade is another reading and stays graded as it is."""
+    FRAGMENT_CODE: ClassVar[str] = "fragment_only"
+    """The `Explanation.basis` code of a phrase finding whose every match is a fragment -- a label, a list bullet, part of a
+    word, no word at all, or two sentences bridged (`foundation/text/match_shape.py`). It is not a phrase and does not count."""
+
     @staticmethod
     def worm(findings: Sequence[Finding]) -> Finding | None:
         """The self-propagation finding when every part of the worm is among `findings`, else None."""
@@ -83,6 +93,69 @@ class PackageComposites:
             always_report=False,
             detector="verdict",
             related=PackageComposites.WORM_PARTS,
+        )
+
+    @staticmethod
+    def corroborated_injection(findings: Sequence[Finding]) -> Finding | None:
+        """The finding for an injection phrase and the learned reading of the skill's instructions agreeing, else None.
+
+        Two independent weak readers, neither blocking alone: the agent-threat rules' injection phrase at MEDIUM
+        and LOW confidence, and the learned reading of the instructions (`SKILL_INSTRUCTIONS`, at any grade).
+        Out of fold by family on the skills dev half (3,475 malicious, 3,745 benign) the pair caught 49 of the
+        misses of the constructed and wild sets together and newly blocked 11 legitimate units of 14,000
+        (skills benign 10, MCP L1/L2 0, harvest 1). It adds a finding and never lowers, holds or removes one."""
+        phrase_severity, phrase_confidence = PackageComposites.PHRASE_GRADE
+        phrases = [
+            f
+            for f in findings
+            if f.rule_id == PackageComposites.INJECTION_PHRASE
+            and f.suppressed is None
+            and f.severity is phrase_severity
+            and f.confidence is phrase_confidence
+            and PackageComposites.FRAGMENT_CODE not in f.explanation.basis
+        ]
+        readings = [
+            f
+            for f in findings
+            if f.rule_id == PackageComposites.SKILL_READING and f.suppressed is None
+        ]
+        if not phrases or not readings:
+            return None
+        parts = (PackageComposites.INJECTION_PHRASE, PackageComposites.SKILL_READING)
+        built = replace(
+            OperationalFinding.build(
+                path=phrases[0].location.path,
+                rule_id=PackageComposites.INJECTION_RULE,
+                message=(
+                    "An instruction in this package reads as a prompt injection to the agent-threat rules "
+                    "(`SUSPECT.AGENT.ATR.PROMPT_INJECTION.001`), and the learned reading of its skill "
+                    "instructions scores them as written to steer the agent (`SUSPECT.AGENT.SKILL_INSTRUCTIONS.001`). "
+                    "Neither blocks alone, as each is common on benign skills; the two agreeing is not."
+                ),
+                remediation=(
+                    "Read the skill's instructions in full, and the files they tell the agent to run, before "
+                    "installing it. Install it only from an author you trust."
+                ),
+                category=Category.SUSPICIOUS,
+                severity=Severity.HIGH,
+            ),
+            confidence=Confidence.MEDIUM,
+            always_report=False,
+            detector="verdict",
+            related=parts,
+        )
+        # Where it fired: the phrase's own place (path, line, column), the rules the phrase matched, and the file the learned
+        # reading scored, which has no line of its own.
+        named = sorted(
+            {code[4:] for code in phrases[0].explanation.basis if code.startswith("atr:")}
+        )
+        metadata = (*built.evidence.metadata, ("reading_at", readings[0].location.path))
+        if named:
+            metadata = (*metadata, ("phrase_rules", ",".join(named)))
+        return replace(
+            built,
+            location=phrases[0].location,
+            evidence=replace(built.evidence, metadata=metadata),
         )
 
 

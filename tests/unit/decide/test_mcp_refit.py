@@ -27,8 +27,8 @@ SHARED_TREES = "f0b06e434b3dee7e1442d19bef62ae332fbc659ac3f48526386d769df3cd1eaf
 OTHER_AREA_LINES = "24a0837f36d51cb80f7201635a16d47a75a89651a2a8ece34cfee1b417a0a69f"
 #: The last two follow the policy lists: a rule admitted to `keep` (with its measured pair) changes the
 #: lists of both models, so it changes both digests here.
-POLICY_LISTS = "de63a3d4ed648a6a8f268f598841cf8f4507c076ceaf01deb275c033df6b1af2"
-PYPI_FILE = "4d4da6f2c488db813f38f83019e3dae4bcd1366eca52ac961b435a163968dd3e"
+POLICY_LISTS = "22fdb400e6f621e31a9185fa30f007b99bde2b827b86bca790d41975a8709ab5"
+PYPI_FILE = "7b6b0d92ff0b6c3065661b724987082c3d77c5b84b2be579752d9eb2b180522b"
 #: The pre-registered operating point (doc 20, written before any sealed number): the line the
 #: legitimate MCP rows exceed at 0.05% out of fold.
 BAR = 0.0005
