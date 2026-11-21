@@ -8,9 +8,10 @@ instance reusable and safe to share; each phase that adds to a scan is handed th
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.engine.pipeline.constants import INCOMPLETE_WHEN_REPORTED
+from cordon_scanner.foundation.files.extension import FileExtension
 from cordon_scanner.foundation.models import Finding, Severity
 from cordon_scanner.foundation.results import NOT_CONTENT_GAPS, Dependency, OperationalFinding
 from cordon_scanner.foundation.taxonomy import AttackCategory
@@ -43,6 +44,9 @@ class Accumulator:
     """Archives already reported as read in part (`OPERATIONAL.ARCHIVE.REJECTED`), which the
     truncation notice would only repeat."""
     files_scanned: int = 0
+    extensions: dict[str, int] = field(default_factory=dict)
+    """Every scanned file counted under its extension (`FileExtension.of`: empty for none, `other` for an odd one). Read by the facts
+    export (`package.extensions`), which classes it against its closed list; the keys are bounded by `MAX_EXTENSIONS`."""
     files_skipped: int = 0
     bytes_scanned: int = 0
     rules_evaluated: int = 0
@@ -199,6 +203,16 @@ class Accumulator:
             for path, held in sorted(self.facts.items())
             if held.get("cap.all")
         }
+
+    MAX_EXTENSIONS: ClassVar[int] = 256
+
+    def scanned(self, path: str) -> None:
+        """One more file scanned, counted under its extension; past `MAX_EXTENSIONS` distinct ones, the rest count as `other`."""
+        self.files_scanned += 1
+        ext = FileExtension.of(path)
+        if ext not in self.extensions and len(self.extensions) >= self.MAX_EXTENSIONS:
+            ext = "other"
+        self.extensions[ext] = self.extensions.get(ext, 0) + 1
 
     def destinations(self) -> dict[str, tuple[tuple[str, ...], tuple[str, ...]]]:
         """Each file's destination digests from its worker's facts (`net.host`, `net.domain`), sorted."""

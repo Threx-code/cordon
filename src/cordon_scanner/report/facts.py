@@ -14,7 +14,8 @@ host. What it does carry is the scanner's own vocabulary about the package:
   (never the names), and, for a file left unread, the rule of its gap;
 * per package: the scan's completeness and the rules of its gaps, the files scanned and unread, how many files
   each place holds, each lifecycle hook's kind and the programs it runs (from a closed list of tools), dependency
-  counts, and the package-level rule ids.
+  counts, the number of files scanned under each extension class (a quiet native file no finding lists is still counted) and
+  the package-level rule ids.
 
 Every name in the record comes from a closed vocabulary: a rule id only from a Cordon pack, a program or an
 extension only from its list; anything else is OTHER. Counts and the file list are bounded.
@@ -33,6 +34,7 @@ from collections import Counter, defaultdict
 from typing import TYPE_CHECKING, Any, Final
 
 from cordon_scanner.decide.reach import MAX_DEPTH, FileReach
+from cordon_scanner.foundation.files.extension import FileExtension
 from cordon_scanner.foundation.results import INTERNAL_PREFIX
 from cordon_scanner.report.base import BaseReporter, ReportOptions
 
@@ -41,11 +43,10 @@ if TYPE_CHECKING:
 
     from cordon_scanner.foundation.results import ScanResult
 
-FACTS_VERSION: Final = "3"
+FACTS_VERSION: Final = "4"
 PACKAGE_SCOPE: Final = "."
 """The path a finding about the whole package carries (`engine.pipeline.constants.REPOSITORY_SCOPE`)."""
 
-_EXTENSION: Final = re.compile(r"\.([a-z0-9]{1,8})$")
 _SEGMENT: Final = re.compile(r"&&|\|\||[;|&\n]")
 _ASSIGNMENT: Final = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 _RULE_ID: Final = re.compile(r"[A-Z0-9_.\-]{1,96}")
@@ -100,14 +101,20 @@ class ScanFacts:
 
     @staticmethod
     def extension(path: str) -> str:
-        """The lower-cased extension of the path's last part when it is short and plain, else empty."""
-        base = path.rsplit("!", 1)[-1].rsplit("/", 1)[-1].lower()
-        dot = base.rfind(".")
-        if dot <= 0:
-            return ""
-        match = _EXTENSION.search(base)
-        extension = match.group(1) if match else ""
-        return extension if extension in EXTENSIONS else "other"
+        """The extension class of a path: empty for none, its extension when it is on the closed list, else `other`."""
+        extension = FileExtension.of(path)
+        return extension if not extension or extension in EXTENSIONS else "other"
+
+    @staticmethod
+    def extension_counts(counts: Mapping[str, int]) -> dict[str, int]:
+        """The scan's per-extension file counts (`ScanResult.extensions`) as the record holds them: every scanned file under a class of the
+        closed list, `none` for a name with no extension and `other` for the rest, so a native file no finding or capability lists is
+        still counted."""
+        classed: dict[str, int] = {}
+        for raw, count in counts.items():
+            name = "none" if not raw else (raw if raw in EXTENSIONS else "other")
+            classed[name] = classed.get(name, 0) + int(count)
+        return dict(sorted(classed.items()))
 
     @staticmethod
     def programs(command: str) -> list[str]:
@@ -189,6 +196,7 @@ class ScanFacts:
             ),
             "package": {
                 "files_scanned": result.stats.files_scanned,
+                "extensions": ScanFacts.extension_counts(result.extensions or {}),
                 "places": {place: len(paths) for place, paths in sorted(places.items())},
                 "hooks": hooks,
                 "dependencies": {

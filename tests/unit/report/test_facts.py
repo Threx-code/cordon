@@ -341,8 +341,8 @@ class TestEachFileCarriesHowItIsReached:
         assert entry["reach_depth"] <= 4
         assert "a-name-the-package-chose" not in json.dumps(record)
 
-    def test_the_version_is_two(self) -> None:
-        assert FACTS_VERSION == "3"
+    def test_the_version_is_four(self) -> None:
+        assert FACTS_VERSION == "4"
 
     def test_a_real_scan_classes_a_chain_and_an_orphan(self, tmp_path: Path) -> None:
         (tmp_path / "package.json").write_text(
@@ -374,3 +374,90 @@ class TestEachFileCarriesHowItIsReached:
         record = ScanFacts.of(result)
         orphan = next(f for f in record["files"] if f["key"] == ScanFacts.file_key("lib/orphan.js"))
         assert orphan["reach"] == "unreached" and orphan["reach_depth"] == 0
+
+
+class TestPerExtensionCounts:
+    """Facts version 4: every scanned file is counted under its extension class. A native file no finding or capability lists has no file
+    entry in the record, so without the counts it would be invisible to the release-pair facts (`bench/cdi/pairs.py`) and the binary row."""
+
+    @staticmethod
+    def scan(path: Path) -> dict[str, int]:
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(path)
+        return ScanFacts.of(result)["package"]["extensions"]
+
+    def test_a_quiet_native_file_is_counted(self, tmp_path: Path) -> None:
+        (tmp_path / "package.json").write_text(
+            json.dumps({"name": "p", "version": "1.0.0", "main": "index.js"}), encoding="utf-8"
+        )
+        (tmp_path / "index.js").write_text("module.exports = 1;\n", encoding="utf-8")
+        (tmp_path / "prebuilt.node").write_bytes(b"\x7fELF" + bytes(64))
+        (tmp_path / "libquiet.so").write_bytes(b"\x7fELF" + bytes(64))
+        extensions = self.scan(tmp_path)
+        assert extensions["node"] == 1
+        assert extensions["so"] == 1
+        assert extensions["js"] == 1
+        assert extensions["json"] == 1
+
+    def test_a_name_with_no_extension_is_none_and_an_odd_one_is_other(self, tmp_path: Path) -> None:
+        (tmp_path / "README").write_text("hello\n", encoding="utf-8")
+        (tmp_path / "data.thisisalongextension").write_text("x\n", encoding="utf-8")
+        (tmp_path / "weird.zzz").write_text("x\n", encoding="utf-8")
+        extensions = self.scan(tmp_path)
+        assert extensions["none"] == 1
+        assert extensions["other"] == 2
+
+    def test_the_counts_are_of_the_closed_list_only(self, tmp_path: Path) -> None:
+        (tmp_path / "private.customext").write_text("x\n", encoding="utf-8")
+        assert "customext" not in self.scan(tmp_path)
+
+    def test_a_package_archive_counts_its_members(self, tmp_path: Path) -> None:
+        import io
+        import tarfile
+
+        archive = tmp_path / "p-1.0.0.tgz"
+        with tarfile.open(archive, "w:gz") as tar:
+            for name, data in (
+                ("package/package.json", b'{"name":"p","version":"1.0.0"}'),
+                ("package/index.js", b"module.exports = 1;\n"),
+                ("package/build/addon.node", b"\x7fELF" + bytes(64)),
+            ):
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+        extensions = self.scan(archive)
+        assert extensions["node"] == 1
+        assert extensions["js"] == 1
+
+    def test_the_record_class_of_a_raw_count(self) -> None:
+        assert ScanFacts.extension_counts({"": 2, "js": 3, "zzz": 1, "other": 2, "node": 1}) == {
+            "js": 3,
+            "node": 1,
+            "none": 2,
+            "other": 3,
+        }
+
+    def test_a_hostile_package_cannot_make_the_counts_unbounded(self) -> None:
+        from cordon_scanner.engine.pipeline.accumulator import Accumulator
+
+        acc = Accumulator()
+        for i in range(2_000):
+            acc.scanned(f"pkg/f.e{i}")
+        assert len(acc.extensions) <= Accumulator.MAX_EXTENSIONS + 1
+        assert acc.files_scanned == 2_000
+        assert sum(acc.extensions.values()) == 2_000
+
+    def test_the_extension_of_a_path_is_read_one_way_by_the_scan_and_the_record(self) -> None:
+        from cordon_scanner.foundation.files.extension import FileExtension
+
+        for path in (
+            "a/b.JS",
+            "x.tar.gz",
+            ".env",
+            "Makefile",
+            "p.tgz!package/z.node",
+            "a/b.verylongext",
+        ):
+            raw = FileExtension.of(path)
+            assert ScanFacts.extension(path) == (
+                raw if not raw or raw in {"js", "gz", "node"} else "other"
+            )

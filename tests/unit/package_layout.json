@@ -591,6 +591,7 @@
   "rules/fact_terms": "rules/fact_terms",
   "foundation/evidence_key": "foundation/evidence_key",
   "foundation/files/atomic": "foundation/files/atomic",
+  "foundation/files/extension": "foundation/files/extension",
   "foundation/files/globs": "foundation/files/globs",
   "foundation/files/locks": "foundation/files/locks",
   "foundation/files/names": "foundation/files/names",

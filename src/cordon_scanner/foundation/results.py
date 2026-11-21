@@ -527,6 +527,9 @@ class ScanResult:
     destinations: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] | None = None
     """Each file's URL destinations as salted digests, never names: `path -> (host digests, domain digests)`, for files the
     capability detector found reaching the network. Read by the facts export; not in `to_dict`."""
+    extensions: dict[str, int] | None = None
+    """Every scanned file counted under its extension (`FileExtension.of`: empty for none, `other` for an odd one): a quiet native file, which
+    no finding or capability puts in a facts record, is counted here. Read by the facts export; not in `to_dict`."""
     unfiltered: tuple[Finding, ...] | None = None
     """Every finding the scan made, before the reporting thresholds (`PolicyGate.filter_for_reporting`)
     removed the ones under them: the same tuple, not a copy. The facts export reads it, so the facts do not

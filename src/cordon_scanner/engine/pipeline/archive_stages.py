@@ -182,7 +182,7 @@ class ArchiveStages:
                         import_library=member_path in (import_library or ()),
                     )
                 )
-                acc.files_scanned += 1
+                acc.scanned(member_path)
                 acc.bytes_scanned += len(member_data)
                 acc.ledger_tree.append(member_path)
         except ArchiveError as exc:
