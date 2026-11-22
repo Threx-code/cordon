@@ -347,3 +347,93 @@ class TestThroughTheScanner:
         assert found
         assert all(MatchShape.CODE in f.explanation.basis for f in found)
         assert all((f.severity, f.confidence) == (Severity.MEDIUM, Confidence.LOW) for f in found)
+
+
+class TestTheEdgesOfEachRule:
+    """Each threshold at the value on either side, so a change of one is seen; answers are the booleans, not merely truthy."""
+
+    def test_a_line_is_a_sentence_from_four_words(self) -> None:
+        assert MatchShape.sentence("a b c d") is True
+        assert MatchShape.sentence("a b c") is False
+
+    def test_a_line_is_a_sentence_from_twelve_letters(self) -> None:
+        assert MatchShape.sentence("abcdefghijkl") is True
+        assert MatchShape.sentence("abcdefghijk") is False
+        assert MatchShape.sentence("abcdef") is False  # the letters are counted one by one
+
+    def test_a_key_is_at_most_forty_characters(self) -> None:
+        assert MatchShape.key_value("k" * 40 + ": a b") is True
+        assert MatchShape.key_value("k" * 41 + ": a b") is False
+
+    def test_a_value_is_one_to_three_words(self) -> None:
+        assert MatchShape.key_value("key: a b c") is True
+        assert MatchShape.key_value("key: a b c d") is False
+        assert MatchShape.key_value("key:") is False
+
+    @pytest.mark.parametrize(
+        "line", ["no colon in this line", ": a b", "two words: a b", "bad char!: a b"]
+    )
+    def test_what_is_not_a_key_and_a_value(self, line: str) -> None:
+        assert MatchShape.key_value(line) is False
+
+    def test_a_line_is_code_above_three_in_a_hundred_marks_and_not_at_three(self) -> None:
+        def with_marks(count: int) -> str:
+            line = "a" * 100
+            for place in (10, 30, 50, 70)[:count]:
+                line = line[:place] + "=" + line[place + 1 :]
+            return line
+
+        assert MatchShape.code(with_marks(3)) is False
+        assert MatchShape.code(with_marks(4)) is True
+
+    def test_a_single_mark_alone_is_code(self) -> None:
+        assert MatchShape.code("=") is True
+        assert MatchShape.code("") is False
+
+    def test_an_opening_brace_or_a_semicolon_at_an_end_makes_code_however_few_the_marks(
+        self,
+    ) -> None:
+        words = "word " * 30
+        assert MatchShape.code("} " + words) is True
+        assert MatchShape.code("{ " + words) is True
+        assert MatchShape.code(words + "{") is True
+        assert MatchShape.code(words + ";") is True
+        assert MatchShape.code(words) is False
+
+    def test_a_quote_mark_is_read_through_to_the_line_it_quotes(self) -> None:
+        assert MatchShape.sentence("> a plain sentence of five words") is True
+        assert MatchShape.sentence(">> a nested quote of several plain words") is True
+        assert MatchShape.sentence("># a heading of several plain words") is False
+        assert MatchShape.sentence("> - a quoted bullet of several plain words") is False
+        assert MatchShape.sentence(">") is False
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "# a heading of several plain words",
+            "1. a numbered step of several words",
+            "x = 1; y = 2;",
+            "name: one two",
+        ],
+    )
+    def test_a_line_that_is_not_a_sentence_says_false(self, line: str) -> None:
+        assert MatchShape.sentence(line) is False
+
+    def test_the_look_ahead_ends_at_two_thousand_characters(self) -> None:
+        word = "abcdefghijkl"
+        assert (
+            MatchShape.prose_follows("\n" * 1988 + word, 0) is True
+        )  # the twelfth letter is the 2,000th character
+        assert MatchShape.prose_follows("\n" * 1989 + word, 0) is False  # it is the 2,001st
+        assert MatchShape.prose_follows("  \n  ", 0) is False
+
+    def test_a_mark_after_text_on_its_line_is_not_a_bullet(self) -> None:
+        below = "x-\nA sentence of many plain words follows here."
+        assert MatchShape.ends_as_markup(below, 0, 2) is False
+
+    def test_a_mark_with_one_character_after_it_on_its_line_is_not_a_label(self) -> None:
+        text = "x:y\nnothing"
+        assert MatchShape.ends_as_markup(text, 0, 2) is False
+
+    def test_a_match_that_does_not_end_in_a_mark_says_false(self) -> None:
+        assert MatchShape.ends_as_markup("ignore the rules", 0, 6) is False
