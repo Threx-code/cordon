@@ -115,6 +115,26 @@ class WorkerSummaries:
                 WorkerFacts.add(kind, value)
 
 
+class CapabilityNames:
+    """Every file's capability names for the parent (worker fact `cap.all`), as the capability detector's own pass
+    found them (`LabelledNames`): no second labelling. Read by package-scope rules and the facts export, never by
+    the verdict profile, which keeps reading `cap.label`; kept apart from `WorkerAnalysis` so the model's feature
+    schema, which covers that class, does not move."""
+
+    @staticmethod
+    def produce(unit: Any) -> None:
+        from cordon_scanner.detect.registry import LabelledHosts, LabelledNames
+        from cordon_scanner.engine.isolation.facts import WorkerFacts
+
+        for name in sorted(LabelledNames.take(unit.path)):
+            WorkerFacts.add("cap.all", name)
+        hosts, domains = LabelledHosts.take(unit.path)
+        for digest in sorted(hosts):
+            WorkerFacts.add("net.host", digest)
+        for digest in sorted(domains):
+            WorkerFacts.add("net.domain", digest)
+
+
 class ParentAnalysis:
     """The parent's side: a file's facts as the steps read them."""
 
@@ -140,4 +160,10 @@ class ParentAnalysis:
         return bool(ParentAnalysis.of(facts, path).get("cap.error"))
 
 
-__all__ = ["PROFILE_BYTES", "ParentAnalysis", "WorkerAnalysis", "WorkerSummaries"]
+__all__ = [
+    "PROFILE_BYTES",
+    "CapabilityNames",
+    "ParentAnalysis",
+    "WorkerAnalysis",
+    "WorkerSummaries",
+]

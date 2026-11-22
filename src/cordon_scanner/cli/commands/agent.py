@@ -20,9 +20,19 @@ class AgentCommand:
             "agent",
             help="this machine's AI agents and MCP servers, for an organisation's MDM (read-only, disclosed)",
         ).add_subparsers(dest="agent_command")
-        agent.add_parser(
+        inventory = agent.add_parser(
             "inventory", help="print exactly what `agent report` would send; sends nothing"
         )
+        inventory.add_argument(
+            "--signed",
+            action="store_true",
+            help=(
+                "instead print a statement THIS device signs of the packages it found (the rest counted, not "
+                "listed), with a key made now and enrolled for minutes; needs the device's own CORDON_DEVICE_TOKEN "
+                "(one per laptop; a token shared by a fleet is not supported)"
+            ),
+        )
+        inventory.add_argument("--url", default=None, help="Cordon Cloud API base (with --signed)")
         agent_report = agent.add_parser(
             "report", help="send the inventory with the MDM's device token"
         )
@@ -48,6 +58,8 @@ class AgentCommand:
             print(f"{PROGRAM}: agent needs inventory, report or mcp-approve", file=sys.stderr)
             return int(ExitCode.CONFIG_ERROR)
         payload = device.DeviceInventory.collect()
+        if action == "inventory" and getattr(args, "signed", False):
+            return cls._signed(payload, getattr(args, "url", None))
         if action == "inventory":
             print(json.dumps(payload, indent=2, sort_keys=True))
             return int(ExitCode.CLEAN)
@@ -61,6 +73,22 @@ class AgentCommand:
             f"sent: {len(inventory['tools'])} tool(s), {len(inventory['mcp_servers'])} MCP server(s), "
             f"{len(payload['findings'])} finding(s){f' (receipt {receipt})' if receipt else ''}"
         )
+        return int(ExitCode.CLEAN)
+
+    @staticmethod
+    def _signed(payload: dict[str, Any], url: str | None) -> int:
+        """Print the signed statement, or say why there is none and print nothing."""
+        import json
+
+        from cordon_scanner.cloud import CloudError
+        from cordon_scanner.cloud.device_attestation import DeviceAttestation
+
+        try:
+            envelope = DeviceAttestation.signed(payload, url=url)
+        except CloudError as exc:
+            print(f"{PROGRAM}: {exc}", file=sys.stderr)
+            return int(ExitCode.CONFIG_ERROR)
+        print(json.dumps(envelope, indent=2, sort_keys=True))
         return int(ExitCode.CLEAN)
 
     @staticmethod
