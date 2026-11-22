@@ -14,9 +14,12 @@ Rules sit above intel, so the loading lives here and intel never imports the rul
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
+import re
 from dataclasses import replace
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from cordon_scanner.foundation.errors import RulePackError
 from cordon_scanner.intel.malware.feed_rules import PACK_FILE, FeedRules
@@ -53,6 +56,27 @@ class PackLimits:
 
     MAX_PATTERN_CHARS = 2_000
     """One pattern's source."""
+
+    ID_FORM = re.compile(r"^LEARNED\.[A-Za-z0-9_-]+\.[0-9]+$")
+    """The only form a delivered rule's id may take: `LEARNED.<area>.<n>`. Anything else could stand for a bundled or an organisation's rule."""
+
+    @classmethod
+    def id_problem(cls, pack: RulePack, retired: frozenset[str]) -> str | None:
+        """Why a rule id of the pack may not be delivered (outside the learned form, or retired), or `None`."""
+        for compiled in pack.rules:
+            rule_id = compiled.rule.id
+            if cls.ID_FORM.fullmatch(rule_id) is None:
+                return f"rule id {rule_id} is outside LEARNED.<area>.<n>"
+            if rule_id in retired:
+                return f"rule id {rule_id} is retired"
+        return None
+
+    @staticmethod
+    def predicate_digest(compiled: Any) -> str:
+        """The digest of what a rule matches on, apart from its name and its grading: two rules that match the same way have the same digest."""
+        match = compiled.rule.raw.get("match") or {}
+        body = json.dumps(match, sort_keys=True, separators=(",", ":"), default=str)
+        return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
     @classmethod
     def file_problem(cls, path: Path) -> str | None:
@@ -118,6 +142,7 @@ class FeedPacks:
         shadow = FeedRules.shadow_enabled() if shadow is None else shadow
         taken = set(bundled_ids)
         index = FeedRules.index()
+        retired = frozenset(str(item) for item in index.get("tombstones") or ())
         out: list[tuple[str, RulePack]] = []
         for entry in index.get("packs") or ():
             if not isinstance(entry, dict):
@@ -141,6 +166,10 @@ class FeedPacks:
                 logger.warning("feed rule pack %s not loaded: %s", name, exc)
                 continue
             problem = PackLimits.pack_problem(pack)
+            if problem is not None:
+                logger.warning("feed rule pack %s not loaded: %s", name, problem)
+                continue
+            problem = PackLimits.id_problem(pack, retired)
             if problem is not None:
                 logger.warning("feed rule pack %s not loaded: %s", name, problem)
                 continue
@@ -180,6 +209,7 @@ class FeedPacks:
                     ),
                 )
             out.append((str(entry.get("candidate_id", ""))[:128], pack))
+        out = cls._without_repeats(sorted(out, key=lambda entry: (entry[1].id, entry[1].version)))
         disabled = cls.disabled(index, delivered={r.id for _, p in out for r in p.rules})
         if disabled:
             out = [
@@ -198,6 +228,22 @@ class FeedPacks:
                 for candidate, pack in out
             ]
         return out
+
+    @staticmethod
+    def _without_repeats(out: list[tuple[str, RulePack]]) -> list[tuple[str, RulePack]]:
+        """Packs in (id, version) order, each predicate once: a rule whose predicate an earlier rule already has is left out, and a pack left with no rule is left out."""
+        seen: set[str] = set()
+        kept: list[tuple[str, RulePack]] = []
+        for candidate, pack in out:
+            rules = []
+            for compiled in pack.rules:
+                digest = PackLimits.predicate_digest(compiled)
+                if digest not in seen:
+                    seen.add(digest)
+                    rules.append(compiled)
+            if rules:
+                kept.append((candidate, replace(pack, rules=tuple(rules))))
+        return kept
 
     @staticmethod
     def disabled(index: dict[str, Any], *, delivered: set[str]) -> frozenset[str]:
