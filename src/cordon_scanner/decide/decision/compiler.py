@@ -26,6 +26,9 @@ class PolicyCompiler:
         "provenance.slsa_level": "R500",
         "signature.signer": "R501",
         "version.age_days": "R503",
+        "publisher.age_days": "R502",
+        "name.lookalike": "R504",
+        "registry.host": "R505",
         "approval": "R700",
     }
 
@@ -124,7 +127,7 @@ class PolicyCompiler:
         when = PredicateCompiler.compile(rule.when, lists, f"{where}.when")
         require = PredicateCompiler.compile(rule.require, lists, f"{where}.require")
         cls._shape(rule, when, require, where)
-        reason = cls._reason(rule, when, require, where)
+        reason = cls._reason(rule, when, require, where, lists)
         for code in rule.obligations:
             if not Obligations.is_registered(code):
                 raise PolicyError(f"{where}.obligations: {code!r} is not a registered obligation")
@@ -165,7 +168,12 @@ class PolicyCompiler:
 
     @classmethod
     def _reason(
-        cls, rule: RuleSource, when: tuple[Any, ...], require: tuple[Any, ...], where: str
+        cls,
+        rule: RuleSource,
+        when: tuple[Any, ...],
+        require: tuple[Any, ...],
+        where: str,
+        lists: Mapping[str, tuple[str, ...]],
     ) -> str | None:
         if rule.reason is not None:
             if not ReasonCodes.is_registered(rule.reason):
@@ -174,7 +182,7 @@ class PolicyCompiler:
                 )
             return rule.reason
         if rule.tier == "allow":
-            return None
+            return "R902" if cls._allowed_by_list(rule.when, lists) else None
         fields = [item.field for item in (*require, *when)]
         for field in fields:
             if field in cls.REASONS:
@@ -184,6 +192,25 @@ class PolicyCompiler:
         raise PolicyError(
             f"{where}.reason: a reason code is needed (it cannot be inferred from the fields)"
         )
+
+    #: The fields an allow list names subjects or digests by.
+    ALLOW_LIST_FIELDS: ClassVar[tuple[str, ...]] = ("subject.id", "artifact.digest")
+
+    @classmethod
+    def _allowed_by_list(
+        cls, when: dict[str, Any] | None, lists: Mapping[str, tuple[str, ...]]
+    ) -> bool:
+        """Whether an allow rule is the tenant's allow list: it matches the subject or the digest against one of the policy's named
+        lists, written `{"in": <name>}` (R902). A bare string is a value to equal, never a list."""
+        for field in cls.ALLOW_LIST_FIELDS:
+            operand = (when or {}).get(field)
+            if (
+                isinstance(operand, Mapping)
+                and isinstance(operand.get("in"), str)
+                and operand["in"] in lists
+            ):
+                return True
+        return False
 
     @staticmethod
     def states_of(then: str) -> str:

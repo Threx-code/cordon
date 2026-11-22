@@ -20,6 +20,7 @@ from cordon_scanner.decide.decision.compiler import PolicyCompiler
 from cordon_scanner.decide.decision.evidence import Approval, FindingFact
 from cordon_scanner.decide.decision.facts import Facts, Matcher
 from cordon_scanner.decide.decision.outcome import Reason, Relaxation, States
+from cordon_scanner.decide.decision.reason_map import ReasonMap
 from cordon_scanner.decide.decision.records import Instants
 from cordon_scanner.decide.decision.table import CompiledPolicy, CompiledRule
 
@@ -178,10 +179,10 @@ class RuleStage:
     @classmethod
     def _reasons(cls, rule: CompiledRule, findings: tuple[FindingFact, ...]) -> list[Reason]:
         if findings:
-            code = rule.reason or cls._code_of(findings)
+            fallback = cls._code_of(findings)
             return [
                 Reason(
-                    code,
+                    rule.reason or ReasonMap.of(item.rule_id) or fallback,
                     f"policy rule {rule.id}: {item.rule_id} ({item.severity}, {item.confidence})",
                     rule_id=item.rule_id,
                     path=item.path or None,
@@ -225,7 +226,7 @@ class Overrides:
             kept = [item for item in fired if item not in blocking]
             return kept, added, States.ALLOW_WITH_CONDITIONS if conditions else States.ALLOW
         standing: list[Fired] = []
-        added = []
+        added = cls._expired(facts)
         lifted: list[str] = []
         for item in fired:
             lowered = cls._exception(facts, item, permitted) if item in blocking else None
@@ -261,6 +262,19 @@ class Overrides:
             ):
                 return item
         return None
+
+    @staticmethod
+    def _expired(facts: Facts) -> list[Reason]:
+        """R701: an approval that speaks for this digest in this scope ran out (it was not revoked), and a rule still asks for more.
+        It changes nothing in the outcome: it says why the approval that would have lifted it does not."""
+        return [
+            Reason("R701", f"approval {item.id} expired at {item.expires_at}")
+            for item in sorted(facts.evidence.approvals, key=lambda entry: entry.id)
+            if item.kind != "exception"
+            and not item.revoked
+            and not item.active(facts.clock)
+            and item.covers(facts.artifact.digest, facts.context.scope_path)
+        ]
 
     @staticmethod
     def _exception(facts: Facts, item: Fired, permitted: str) -> tuple[Approval, str] | None:

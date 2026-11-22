@@ -60,6 +60,7 @@ class Make:
         rules: list[dict[str, Any]] | None = None,
         defaults: dict[str, Any] | None = None,
         expires_at: str | None = None,
+        lists: dict[str, Any] | None = None,
     ):
         source: dict[str, Any] = {
             "policy_schema": 2,
@@ -71,6 +72,8 @@ class Make:
         }
         if expires_at is not None:
             source["expires_at"] = expires_at
+        if lists is not None:
+            source["lists"] = lists
         return PolicyCompiler.compile(PolicySource.from_json(source))
 
     @staticmethod
@@ -92,9 +95,9 @@ class Make:
         )
 
     @staticmethod
-    def finding(category: str, severity: str = "high") -> FindingFact:
+    def finding(category: str, severity: str = "high", rule_id: str | None = None) -> FindingFact:
         return FindingFact(
-            rule_id=f"TEST.{category.upper()}.001",
+            rule_id=rule_id or f"TEST.{category.upper()}.001",
             severity=severity,
             confidence="high",
             category=category,
@@ -283,6 +286,101 @@ class Stage:
         return Make.ask(policy, evidence)
 
     @staticmethod
+    def R502() -> Decision:
+        policy = Make.policy(
+            [
+                {
+                    "id": "new-publisher",
+                    "tier": "require",
+                    "then": "review",
+                    "when": {"publisher.age_days": "<30d"},
+                }
+            ]
+        )
+        provenance = Provenance(slsa_level=2, publisher_first_seen="2026-11-14T00:00:00Z")
+        return Make.ask(policy, EvidenceSet(provenance=provenance))
+
+    @staticmethod
+    def R504() -> Decision:
+        policy = Make.policy(
+            [
+                {
+                    "id": "lookalike",
+                    "tier": "require",
+                    "then": "block",
+                    "when": {"name.lookalike": "present"},
+                }
+            ]
+        )
+        return Make.ask(policy, EvidenceSet(lookalike_of="left-pad"))
+
+    @staticmethod
+    def R505() -> Decision:
+        policy = Make.policy(
+            [
+                {
+                    "id": "registries",
+                    "tier": "require",
+                    "then": "block",
+                    "require": {"registry.host": {"in": ["registry.npmjs.org"]}},
+                }
+            ]
+        )
+        served = ArtifactRef.from_json({**ARTIFACT.to_json(), "registry": "npm.mirror.example"})
+        return Make.ask(policy, artifact=served)
+
+    @staticmethod
+    def _by_rule(rule_id: str) -> Decision:
+        policy = Make.policy([Make.deny_on("suspicious")])
+        return Make.ask(
+            policy, EvidenceSet(findings=(Make.finding("suspicious", rule_id=rule_id),))
+        )
+
+    @staticmethod
+    def R600() -> Decision:
+        return Stage._by_rule("SUSPECT.MCP.TOOL_DESCRIPTION.001")
+
+    @staticmethod
+    def R601() -> Decision:
+        return Stage._by_rule("SUSPECT.AGENT.SKILL_INSTRUCTIONS.001")
+
+    @staticmethod
+    def R602() -> Decision:
+        return Stage._by_rule("SUSPECT.MCP.HANDLER_SHELL.001")
+
+    @staticmethod
+    def R604() -> Decision:
+        return Stage._by_rule("SUSPECT.MCP.TOOLS_CHANGED.001")
+
+    @staticmethod
+    def R701() -> Decision:
+        policy = Make.policy([Make.deny_on("suspicious")])
+        lapsed = Approval(
+            id="APR-OLD",
+            kind="approve",
+            expires_at="2026-11-01T00:00:00Z",
+            digests=(DIGEST,),
+            scope_path=("acme",),
+        )
+        evidence = EvidenceSet(findings=(Make.finding("suspicious"),), approvals=(lapsed,))
+        return Make.ask(policy, evidence)
+
+    @staticmethod
+    def R902() -> Decision:
+        policy = Make.policy(
+            [
+                {
+                    "id": "allow-list",
+                    "tier": "allow",
+                    "then": "allow",
+                    "when": {"subject.id": {"in": "allowed"}},
+                }
+            ],
+            lists={"allowed": ["pkg:npm/left-pad"]},
+        )
+        return Make.ask(policy)
+
+    @staticmethod
     def R900() -> Decision:
         policy = Make.policy(
             [
@@ -317,25 +415,17 @@ class Codes:
         "R200", "R201", "R202", "R203", "R204", "R205",
         "R300",
         "R400", "R401", "R404",
-        "R500", "R501", "R503",
-        "R700", "R702", "R703",
-        "R900", "R901", "R903",
+        "R500", "R501", "R502", "R503", "R504", "R505",
+        "R600", "R601", "R602", "R604",
+        "R700", "R701", "R702", "R703",
+        "R900", "R901", "R902", "R903",
     )  # fmt: skip
     #: code -> what is missing for a stage to emit it without a rule naming it, and the row that supplies it.
     RULE_ONLY: ClassVar[dict[str, str]] = {
         "R402": "BP-5-18: the scanner's secret findings arrive as category `policy` or `suspicious`; no category says `secret`, so a rule names R402.",
         "R403": "BP-5-18: intelligence carries `known_malware` and `advisory` only; `exploited` is not a kind yet, so a rule names R403.",
         "R405": "BP-5-18: no licence fact is in the evidence; a rule on a licence finding names R405.",
-        "R502": "BP-5-19: no publisher-age fact is in the evidence (no producer of it in the control plane).",
-        "R504": "BP-5-19: the name-risk finding arrives as a suspicious finding; no lookalike fact is in the evidence.",
-        "R505": "BP-5-19: no registry host is in the artifact reference, so no predicate can compare it with an allow list.",
-        "R600": "BP-5-20: MCP tool-description findings arrive as category `suspicious` (R401); no domain-to-code mapping yet.",
-        "R601": "BP-5-20: skill instruction findings arrive as category `suspicious` (R401); no domain-to-code mapping yet.",
-        "R602": "BP-5-20: excessive capability is a finding of category `policy`; no domain-to-code mapping yet.",
-        "R603": "BP-5-20: model and provider approval is a policy list on `subject.id`; the rule names R603.",
-        "R604": "BP-5-20: the tool-list digest of a session start (T0) against the one before (T1) is not in the evidence yet.",
-        "R701": "BP-5-21: an expired approval is dropped from the call (`Approval.active`) and nothing records that it was; M9 filters before the call.",
-        "R902": "BP-5-21: a tenant allow list is a policy list; the allow rule over it names R902.",
+        "R603": "BP-5-20: approving a model or a provider is a policy list over `subject.id`; the rule that applies the list names R603.",
     }  # fmt: skip
 
     @classmethod

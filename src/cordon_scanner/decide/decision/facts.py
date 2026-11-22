@@ -13,6 +13,7 @@ from typing import Any
 
 from cordon_scanner.decide.decision.evidence import ArtifactRef, Context, EvidenceSet, FindingFact
 from cordon_scanner.decide.decision.predicates import Condition, Fields, Match, PredicateEvaluator
+from cordon_scanner.decide.decision.records import Instants
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +61,9 @@ class Facts:
             else None,
             "signature.signer": provenance.signer if provenance and provenance.verified else None,
             "approval": "present" if self.approved else None,
+            "publisher.age_days": self._publisher_age_days(),
+            "name.lookalike": "present" if evidence.lookalike_of else None,
+            "registry.host": artifact.registry,
             "context.point": context.point,
             "context.environment": context.environment,
             "context.relation": context.relation,
@@ -70,6 +74,13 @@ class Facts:
             ),
         }
         return table.get(field)
+
+    def _publisher_age_days(self) -> int | None:
+        """Whole days since the publisher first published here, from verified provenance; None when it is not known."""
+        provenance = self.evidence.provenance
+        if provenance is None or not provenance.verified or provenance.publisher_first_seen is None:
+            return None
+        return max(0, (self.clock - Instants.parse(provenance.publisher_first_seen)).days)
 
     @staticmethod
     def finding_value(finding: FindingFact, field: str) -> Any:
