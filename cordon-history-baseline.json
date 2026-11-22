@@ -49,7 +49,7 @@
     "d0baff70d4fea9d8",
     "2213257b1f26b022",
     "63d40e9ce462a8c9",
-    "812a51f502c68c6a"
+    "35c4e25d8a9adfa2"
   ],
   "entries": [
     {
@@ -401,10 +401,10 @@
       "note": "git history only (bb4ca5ee..90f343bb): a fabricated fixture in the secrets detector's own review-defect tests, in an earlier version of the file; the working tree no longer holds it. Reviewed 2026-11-21 (PR #96 CI): fabricated and inert; nothing to rotate."
     },
     {
-      "fingerprint": "812a51f502c68c6a",
+      "fingerprint": "35c4e25d8a9adfa2",
       "rule": "SECRET.GITHUB.TOKEN.001",
       "path": "tests/unit/cloud/test_secret_never_leaves.py",
-      "note": "git history only (added in 0c5f3ee9, replaced by a derived value in 0b549a03, both in PR #98): a fabricated token written as two joined string halves in a test that proves a secret never leaves in a report, upload or log; not a credential. Reviewed 2026-11-22 (PR #98 CI, owner sign-off on PR #96): fabricated and inert; nothing to rotate."
+      "note": "git history only (added in 0c5f3ee9, replaced by a derived value in 0b549a03, both in PR #98): a fabricated token (fingerprint as computed over the live branches) written as two joined string halves in a test that proves a secret never leaves in a report, upload or log; not a credential. Reviewed 2026-11-22 (PR #98 CI, owner sign-off on PR #96): fabricated and inert; nothing to rotate."
     }
   ]
 }
