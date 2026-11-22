@@ -11,13 +11,17 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.engine.pipeline.constants import INCOMPLETE_WHEN_REPORTED
+from cordon_scanner.foundation.files.declared_tools import DeclaredTools
 from cordon_scanner.foundation.files.extension import FileExtension
+from cordon_scanner.foundation.files.native import NativeFile
 from cordon_scanner.foundation.models import Finding, Severity
 from cordon_scanner.foundation.results import NOT_CONTENT_GAPS, Dependency, OperationalFinding
 from cordon_scanner.foundation.taxonomy import AttackCategory
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+
+    from cordon_scanner.foundation.content import FileContent
 
 
 NOTICES = ("OPERATIONAL.INTEL.", "OPERATIONAL.ADVISORY.")
@@ -47,6 +51,14 @@ class Accumulator:
     extensions: dict[str, int] = field(default_factory=dict)
     """Every scanned file counted under its extension (`FileExtension.of`: empty for none, `other` for an odd one). Read by the facts
     export (`package.extensions`), which classes it against its closed list; the keys are bounded by `MAX_EXTENSIONS`."""
+    binaries: set[str] = field(default_factory=set)
+    """The SHA-256 of every native executable or library scanned (`NativeFile`), by the whole file's digest. Read by
+    the facts export (`package.binaries`); bounded by `MAX_BINARIES`."""
+    binaries_complete: bool = True
+    """False when a native file could not be hashed whole (a truncated one with no digest of its whole) or there were
+    more than `MAX_BINARIES`: the list is then a part, and says so."""
+    tool_lists: list[list[dict[str, Any]]] = field(default_factory=list)
+    """Each JSON file that declares a whole MCP tool list (`DeclaredTools`), for the facts export (`package.tool_list`)."""
     files_skipped: int = 0
     bytes_scanned: int = 0
     rules_evaluated: int = 0
@@ -205,14 +217,43 @@ class Accumulator:
         }
 
     MAX_EXTENSIONS: ClassVar[int] = 256
+    MAX_BINARIES: ClassVar[int] = 4096
 
-    def scanned(self, path: str) -> None:
-        """One more file scanned, counted under its extension; past `MAX_EXTENSIONS` distinct ones, the rest count as `other`."""
+    def scanned(self, path: str, content: FileContent | None = None) -> None:
+        """One more file scanned, counted under its extension; past `MAX_EXTENSIONS` distinct ones, the rest count as `other`.
+        With its content, a native file is also recorded by the digest of the whole file (`binaries`), and a JSON file
+        that declares a whole tool list is kept (`tool_lists`)."""
         self.files_scanned += 1
         ext = FileExtension.of(path)
         if ext not in self.extensions and len(self.extensions) >= self.MAX_EXTENSIONS:
             ext = "other"
         self.extensions[ext] = self.extensions.get(ext, 0) + 1
+        if content is None:
+            return
+        if NativeFile.is_native(path, content.raw[:8]):
+            if content.truncated and content.whole_sha256 is None and content.streamed is None:
+                self.binaries_complete = False
+            elif len(self.binaries) < self.MAX_BINARIES:
+                self.binaries.add(content.sha256)
+            elif content.sha256 not in self.binaries:
+                self.binaries_complete = False
+        declared = DeclaredTools.of(path, content.raw) if not content.truncated else None
+        if declared is not None:
+            self.tool_lists.append(declared)
+
+    def tool_list(self) -> tuple[dict[str, Any], ...] | None:
+        """The one tool list the package declares as data, or None when there is none or more than one."""
+        return tuple(self.tool_lists[0]) if len(self.tool_lists) == 1 else None
+
+    def collected(self) -> dict[str, Any]:
+        """The per-package collections a scan result carries: the extension counts, the native file digests and whether
+        that list is whole, and the one declared tool list."""
+        return {
+            "extensions": dict(self.extensions),
+            "binaries": tuple(sorted(self.binaries)),
+            "binaries_complete": self.binaries_complete,
+            "tool_list": self.tool_list(),
+        }
 
     def destinations(self) -> dict[str, tuple[tuple[str, ...], tuple[str, ...]]]:
         """Each file's destination digests from its worker's facts (`net.host`, `net.domain`), sorted."""

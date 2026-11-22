@@ -33,6 +33,7 @@ import re
 from collections import Counter, defaultdict
 from typing import TYPE_CHECKING, Any, Final
 
+from cordon_scanner.contracts.digests import ArtifactDigests
 from cordon_scanner.decide.reach import MAX_DEPTH, FileReach
 from cordon_scanner.foundation.files.extension import FileExtension
 from cordon_scanner.foundation.results import INTERNAL_PREFIX
@@ -43,7 +44,7 @@ if TYPE_CHECKING:
 
     from cordon_scanner.foundation.results import ScanResult
 
-FACTS_VERSION: Final = "4"
+FACTS_VERSION: Final = "5"
 PACKAGE_SCOPE: Final = "."
 """The path a finding about the whole package carries (`engine.pipeline.constants.REPOSITORY_SCOPE`)."""
 
@@ -56,6 +57,8 @@ MAX_FILES: Final = 5_000
 counted (`files_omitted`), so a package of a hundred thousand files cannot make a record of megabytes."""
 REACH_KINDS: Final = frozenset(FileReach.KINDS)
 """How a file is reached, from `FileReach` (a closed list): a file that is not code is `not_code`; anything else is OTHER."""
+MAX_BINARIES: Final = 256
+"""Native file digests in one record at most; `package.binaries_truncated` says when there were more or one could not be hashed."""
 MAX_COUNT: Final = 1_000
 """A count above this is recorded as this: a package that emits a million hits is not a distinguishing number."""
 
@@ -216,6 +219,9 @@ class ScanFacts:
                 ),
                 "files_unread": files_unread,
                 "files_omitted": omitted,
+                "binaries": ScanFacts.binaries(result),
+                "binaries_truncated": ScanFacts.binaries_truncated(result),
+                "tool_list": ScanFacts.tool_list(result),
             },
             "files": files,
         }
@@ -264,6 +270,31 @@ class ScanFacts:
         entries = sorted(entries[:MAX_FILES], key=lambda f: (f["key"], f["ext"]))
 
         return entries, unreached_capability_files, omitted, len(unread)
+
+    @staticmethod
+    def binaries(result: ScanResult) -> list[str] | None:
+        """The SHA-256 of each native executable or library the scan read, sorted and at most `MAX_BINARIES`; None when the
+        scan did not collect them."""
+        return None if result.binaries is None else sorted(result.binaries)[:MAX_BINARIES]
+
+    @staticmethod
+    def binaries_truncated(result: ScanResult) -> bool:
+        """Whether `binaries` is a part of the native files read: more than the cap, or one that could not be hashed whole."""
+        return result.binaries is not None and (
+            not result.binaries_complete or len(result.binaries) > MAX_BINARIES
+        )
+
+    @staticmethod
+    def tool_list(result: ScanResult) -> dict[str, Any] | None:
+        """How many tools the package declares as data and the digest of that list (`ArtifactDigests.of_tool_list`, the
+        function the platform uses), or None when it declares no whole list. Never the tools' names or descriptions: the
+        record carries no text a package wrote."""
+        if not result.tool_list:
+            return None
+        return {
+            "count": len(result.tool_list),
+            "digest": ArtifactDigests.of_tool_list(result.tool_list),
+        }
 
     @staticmethod
     def reach_kind(kind: str) -> str:

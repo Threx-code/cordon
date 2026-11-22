@@ -530,6 +530,13 @@ class ScanResult:
     extensions: dict[str, int] | None = None
     """Every scanned file counted under its extension (`FileExtension.of`: empty for none, `other` for an odd one): a quiet native file, which
     no finding or capability puts in a facts record, is counted here. Read by the facts export; not in `to_dict`."""
+    binaries: tuple[str, ...] | None = None
+    """The SHA-256 of every native executable or library scanned, sorted (`NativeFile`). `binaries_complete` is False when
+    it is a part: a file that could not be hashed whole, or more than the bound. Read by the facts export; not in `to_dict`."""
+    binaries_complete: bool = True
+    tool_list: tuple[dict[str, Any], ...] | None = None
+    """The MCP tools one JSON file declares whole (`DeclaredTools`), when exactly one file does; None when none does or when
+    more than one does (which of them the server serves is not known). Read by the facts export; not in `to_dict`."""
     unfiltered: tuple[Finding, ...] | None = None
     """Every finding the scan made, before the reporting thresholds (`PolicyGate.filter_for_reporting`)
     removed the ones under them: the same tuple, not a copy. The facts export reads it, so the facts do not
