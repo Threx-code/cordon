@@ -98,10 +98,16 @@ class DecisionContext(JsonRecord):
 class Relaxation(JsonRecord):
     """A fail-closed default the policy relaxed for this call's environment (invariant I4): the shortfall that was
     found (`code`), the policy setting that decided it (`setting`), the level it was let through at (`level`: a warning
-    or a review, never a block) and the environment the policy relaxes it for."""
+    or a review, never a block) and the environment the policy relaxes it for. `serve_last_allow` at level `allow` says an earlier
+    ALLOW stood in for the decision (`defaults.degrade.serve_last_allow_hours`)."""
 
-    SETTINGS: ClassVar[tuple[str, ...]] = ("on_incomplete", "unresolved", "on_gaps")
-    LEVELS: ClassVar[tuple[str, ...]] = ("warn", "review")
+    SETTINGS: ClassVar[tuple[str, ...]] = (
+        "on_incomplete",
+        "unresolved",
+        "on_gaps",
+        "serve_last_allow",
+    )
+    LEVELS: ClassVar[tuple[str, ...]] = ("warn", "review", "allow")
 
     code: str
     setting: str
@@ -113,6 +119,10 @@ class Relaxation(JsonRecord):
             raise DecisionError(f"Relaxation.code: {self.code!r} is not a registered reason code")
         Checks.one_of("Relaxation", "setting", self.setting, self.SETTINGS)
         Checks.one_of("Relaxation", "level", self.level, self.LEVELS)
+        if (self.setting == "serve_last_allow") != (self.level == "allow"):
+            raise DecisionError(
+                "Relaxation: level `allow` is for the setting serve_last_allow, and that setting has no other level"
+            )
         Checks.text("Relaxation", "environment", self.environment)
 
     def sort_key(self) -> tuple[str, str, str, str]:

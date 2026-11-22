@@ -34,6 +34,8 @@ class Defaults(JsonRecord):
     bundle_max_age_s: int | None = None
     warn_until_measured: tuple[str, ...] = ()
     clock_bucket_s: int = 60
+    serve_last_allow_s: int | None = None
+    """How long an earlier ALLOW may stand in for a decision held back by facts that cannot be had; None is the library's 24 hours."""
 
     def __post_init__(self) -> None:
         if "*" not in self.on_incomplete:
@@ -45,6 +47,23 @@ class Defaults(JsonRecord):
         Checks.one_of("Defaults", "exceptions", self.exceptions, self.EXCEPTIONS)
         Checks.one_of("Defaults", "default", self.default, self.OUTCOMES)
         Checks.whole("Defaults", "clock_bucket_s", self.clock_bucket_s, low=1)
+        if self.serve_last_allow_s is not None:
+            Checks.whole(
+                "Defaults",
+                "serve_last_allow_s",
+                self.serve_last_allow_s,
+                high=self.SERVE_LAST_ALLOW_MAX_S,
+            )
+
+    SERVE_LAST_ALLOW_DEFAULT_S: ClassVar[int] = 86_400
+    SERVE_LAST_ALLOW_MAX_S: ClassVar[int] = 604_800
+
+    def serve_last_allow_seconds(self) -> int:
+        return (
+            self.SERVE_LAST_ALLOW_DEFAULT_S
+            if self.serve_last_allow_s is None
+            else self.serve_last_allow_s
+        )
 
     def incomplete_for(self, environment: str) -> str:
         """What an incomplete scan does in this environment."""

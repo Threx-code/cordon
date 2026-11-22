@@ -1,11 +1,11 @@
 {
-  "contracts_version": "1.5.0",
+  "contracts_version": "1.6.0",
   "files": {
-    "data/obligations.json": "sha256:0cb344f9ba53db9750013b138b0a95f7ca408da931836bb2273f1500e27c0c03",
-    "data/reason-codes.json": "sha256:5d06f93795d9d4ada155ae462fb0193e840550bda68d5baa9ae047544d8aa387",
-    "data/subject-kinds.json": "sha256:485ae5b5643f9a984925d1f31f75f41e696d0edfa89e655e2919acc84c3f1809",
+    "data/obligations.json": "sha256:857cc7058ed8228cea86099a7b2acacd0e6089d7fc3735866b60cceadeed1984",
+    "data/reason-codes.json": "sha256:9f2e806f299411ece472d11006cb8a429e2224cb4b7bf5ea8a99cefca6cf0436",
+    "data/subject-kinds.json": "sha256:d4ba0ec3ce13b25e14f981bd4ec500166c3baf62d309db013737ef0bfb61bc4c",
     "schemas/approval-v1.json": "sha256:b2dd95af4a478aa4abfc4f86d0ac3236fcb236fbe1de7f8734491113ca3d5dea",
-    "schemas/decision-v1.json": "sha256:e8a8befff8c7316061191cf0a49b58f4f1cdaf9ed9b818e35c40011c9accdb98",
+    "schemas/decision-v1.json": "sha256:ba6d2040da876fa058d0b1fae2a3a1858f8f45b0f57c11b4ff4d8ddb0bf8edc8",
     "schemas/intel-match-v1.json": "sha256:3157a1381ca5537225e2f37aeff98214d6af3e70dd0a3828bfde1316a9862784",
     "schemas/inventory-v1.json": "sha256:e39d040c869c98700172bb807edb1ffcbac596c06a2efb01feca02f285132063",
     "schemas/review-v1.json": "sha256:7fef1e9f23421cdeb0f37f4cb790c991e7a689aece8e05d9a3db833a5ee2db6f",

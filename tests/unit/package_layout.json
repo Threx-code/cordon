@@ -906,6 +906,7 @@
   "test_schema_check.py": "contracts",
   "test_schemas.py": "contracts",
   "test_secret_never_leaves.py": "cloud",
+  "test_serve_last_allow.py": "decide/decision",
   "test_skill_resolver.py": "decide/resolve",
   "test_subjects.py": "contracts",
   "test_unresolved_decisions.py": "decide/resolve",

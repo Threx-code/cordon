@@ -103,6 +103,12 @@ class DefaultsMerge:
             clock_bucket_s=base.clock_bucket_s
             if child.clock_bucket_s is None
             else child.clock_bucket_s,
+            serve_last_allow_s=cls._window(
+                base.serve_last_allow_s,
+                child.degrade.serve_last_allow_hours if child.degrade else None,
+                strict,
+                who,
+            ),
         )
 
     @staticmethod
@@ -131,8 +137,33 @@ class DefaultsMerge:
                     sorted(set(merged.warn_until_measured) & set(other.warn_until_measured))
                 ),
                 clock_bucket_s=merged.clock_bucket_s,
+                serve_last_allow_s=DefaultsMerge._shorter_window(
+                    merged.serve_last_allow_s, other.serve_last_allow_s
+                ),
             )
         return merged
+
+    @staticmethod
+    def _shorter_window(left: int | None, right: int | None) -> int | None:
+        """The shorter of two serve windows, an unstated one being the library's 24 hours."""
+        if left is None and right is None:
+            return None
+        default = Defaults.SERVE_LAST_ALLOW_DEFAULT_S
+        return min(default if left is None else left, default if right is None else right)
+
+    @staticmethod
+    def _window(base: int | None, hours: int | None, strict: bool, who: str) -> int | None:
+        """A child's serve window over its parents': under a mandatory parent it may shorten the window, never lengthen it."""
+        if hours is None:
+            return base
+        seconds = hours * 3600
+        inherited = Defaults.SERVE_LAST_ALLOW_DEFAULT_S if base is None else base
+        if strict and seconds > inherited:
+            raise PolicyError(
+                f"defaults.degrade.serve_last_allow_hours: {hours} is longer than the {inherited // 3600} "
+                f"which mandatory {who} allows"
+            )
+        return seconds
 
     @staticmethod
     def _smaller(left: int | None, right: int | None) -> int | None:

@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final, NamedTuple
 from cordon_scanner.cloud.bundle_chain import BundleChain, BundleError
 from cordon_scanner.contracts.digests import ArtifactDigests
 from cordon_scanner.contracts.private_names import PrivateNames
-from cordon_scanner.decide.decision.outcome import Decision
+from cordon_scanner.decide.decision.outcome import Decision, Relaxation
 from cordon_scanner.decide.decision.records import DecisionError, Instants
 from cordon_scanner.decide.decision.table import CompiledPolicy
 from cordon_scanner.decide.points import PointRuntime
@@ -85,11 +85,10 @@ class LocalRuntime:
         baseline: CompiledPolicy,
         store: LocalStore | None = None,
         names: NamePolicy | None = None,
-        remembered_for_s: int = 86400,
     ) -> None:
         baseline.verify()
         self._store = store
-        self._names, self._remembered_for_s = names, remembered_for_s
+        self._names = names
         self._root, self._delegation, self._tenant = root_public, delegation, tenant
         self._baseline = baseline
         self._held: dict[str, Any] | None = None
@@ -298,7 +297,8 @@ class LocalRuntime:
         clock: datetime,
     ) -> Decision | None:
         """The earlier ALLOW for this digest, when this decision is a block or review only for want of facts that could not be
-        had (`REMEMBERED_FOR`, and nothing else), the policy is the same one, and the ALLOW is no older than `remembered_for_s`."""
+        had (`REMEMBERED_FOR`, and nothing else), the policy is the same one, and the ALLOW is no older than the policy's `defaults.degrade.serve_last_allow_hours` (24 unless it says otherwise; 0 turns it off). The decision
+        served carries a `serve_last_allow` relaxation for each shortfall it stood in for."""
         codes = {
             code for code in decision.reason_codes if not code.startswith("R9")
         }  # R9xx say why something allows
@@ -311,14 +311,24 @@ class LocalRuntime:
             or not codes <= self.REMEMBERED_FOR
         ):
             return None
-        recalled = self._store.recall_allow(about)
+        window = policy.defaults.serve_last_allow_seconds()
+        recalled = self._store.recall_allow(about) if window > 0 else None
         if recalled is None:
             return None
         earlier, made_at = recalled
-        age = (clock - Instants.parse(made_at)).total_seconds()
-        if not 0 <= age <= self._remembered_for_s:
+        if not 0 <= (clock - Instants.parse(made_at)).total_seconds() <= window:
             return None
-        return Decision.from_json(earlier)
+        served = Decision.from_json(earlier)
+        relaxed = {
+            Relaxation(code, "serve_last_allow", "allow", str(arguments["environment"]))
+            for code in codes
+        }
+        return replace(
+            served,
+            relaxations=tuple(
+                sorted({*(served.relaxations or ()), *relaxed}, key=Relaxation.sort_key)
+            ),
+        )
 
     def _upload(self, decision: Decision, artifact: ArtifactRef) -> bytes:
         """What a decision made here sends the control plane: the decision, the digest and version, and the subject in the form

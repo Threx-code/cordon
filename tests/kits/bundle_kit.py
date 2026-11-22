@@ -120,6 +120,7 @@ class Kit:
         max_intel_age: int | None = None,
         on_incomplete: dict[str, str] | None = None,
         rules: list[dict[str, Any]] | None = None,
+        serve_last_allow_hours: int | None = None,
     ) -> CompiledPolicy:
         return PolicyCompiler.compile(
             PolicySource.from_json(
@@ -133,6 +134,11 @@ class Kit:
                         "default": default,
                         "on_incomplete": on_incomplete or {"*": "block", "ci": "warn"},
                         **({} if max_intel_age is None else {"max_intel_age": max_intel_age}),
+                        **(
+                            {}
+                            if serve_last_allow_hours is None
+                            else {"degrade": {"serve_last_allow_hours": serve_last_allow_hours}}
+                        ),
                     },
                     "expires_at": expires.isoformat(),
                 }
@@ -144,7 +150,6 @@ class Kit:
         platform: Platform,
         store: LocalStore | None = None,
         names: NamePolicy | None = None,
-        remembered_for_s: int = 86400,
         delegation: object | None = None,
     ) -> LocalRuntime:
         return LocalRuntime(
@@ -154,7 +159,6 @@ class Kit:
             baseline=Kit.compiled(1, T0 + timedelta(days=3650), default="allow"),
             store=store,
             names=names,
-            remembered_for_s=remembered_for_s,
         )
 
     @staticmethod

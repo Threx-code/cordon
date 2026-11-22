@@ -195,13 +195,15 @@
             "enum": [
               "on_incomplete",
               "unresolved",
-              "on_gaps"
+              "on_gaps",
+              "serve_last_allow"
             ]
           },
           "level": {
             "enum": [
               "warn",
-              "review"
+              "review",
+              "allow"
             ]
           },
           "environment": {

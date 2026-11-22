@@ -41,12 +41,18 @@ class World:
         *,
         max_intel_age: int | None = None,
         lifetime: timedelta = timedelta(days=2),
-        remembered_for_s: int = 86400,
+        serve_last_allow_hours: int | None = None,
     ) -> LocalRuntime:
         platform = Platform()
-        runtime = Kit.runtime(platform, LocalStore(tmp_path), remembered_for_s=remembered_for_s)
+        runtime = Kit.runtime(platform, LocalStore(tmp_path))
         expires = T0 + lifetime
-        policy = Kit.compiled(1, expires, max_intel_age=max_intel_age, on_incomplete=LEVELS)
+        policy = Kit.compiled(
+            1,
+            expires,
+            max_intel_age=max_intel_age,
+            on_incomplete=LEVELS,
+            serve_last_allow_hours=serve_last_allow_hours,
+        )
         runtime.accept([platform.publish(policy, issued=T0, expires=expires)], T0)
         return runtime
 
@@ -143,9 +149,11 @@ class TestDegradeThreeTheIntelligenceIsStale:
     def test_an_allow_older_than_the_window_is_not_served(self, tmp_path: Path) -> None:
         platform = Platform()
         store = LocalStore(tmp_path)
-        runtime = Kit.runtime(platform, store, remembered_for_s=3600)
+        runtime = Kit.runtime(platform, store)
         expires = T0 + timedelta(days=2)
-        policy = Kit.compiled(1, expires, max_intel_age=3600, on_incomplete=LEVELS)
+        policy = Kit.compiled(
+            1, expires, max_intel_age=3600, on_incomplete=LEVELS, serve_last_allow_hours=1
+        )
         runtime.accept([platform.publish(policy, issued=T0, expires=expires)], T0)
         store.put_blob("intel", "snapshot", b"snapshot", T0.isoformat())
         artifact = Things.artifacts(1)[0]
@@ -349,3 +357,50 @@ class TestThePinnedRootsAreTheOnlyOnesTrusted:
             )
         assert runtime.accept([Kit.first(platform)], T0) == "new"
         assert Kit.ask(runtime, T0 + timedelta(minutes=1), point).state == "ALLOW"
+
+
+class TestTheWindowIsThePolicys:
+    """`defaults.degrade.serve_last_allow_hours` (default 24, at most 168, 0 off) and the relaxation a served ALLOW records."""
+
+    @staticmethod
+    def served(tmp_path: Path, hours: int | None, later: timedelta):
+        runtime = World.runtime(
+            tmp_path, max_intel_age=3600, serve_last_allow_hours=hours, lifetime=timedelta(days=10)
+        )
+        LocalStore(tmp_path).put_blob("intel", "snapshot", b"s", T0.isoformat())
+        artifact = Things.artifacts(1)[0]
+        World.ask(runtime, PRODUCTION, artifact, T0 + timedelta(minutes=10))
+        return World.ask(runtime, PRODUCTION, artifact, T0 + later)
+
+    def test_with_nothing_stated_it_is_24_hours(self, tmp_path: Path) -> None:
+        assert self.served(tmp_path / "a", None, timedelta(hours=23)).source == "remembered"
+        assert self.served(tmp_path / "b", None, timedelta(hours=25)).source == "decided"
+
+    def test_a_longer_window_serves_longer_and_168_hours_is_the_most(self, tmp_path: Path) -> None:
+        assert self.served(tmp_path / "a", 168, timedelta(hours=100)).source == "remembered"
+        assert self.served(tmp_path / "b", 48, timedelta(hours=30)).source == "remembered"
+        assert self.served(tmp_path / "c", 48, timedelta(hours=60)).source == "decided"
+
+    def test_zero_turns_it_off(self, tmp_path: Path) -> None:
+        assert self.served(tmp_path, 0, timedelta(hours=3)).decision.state == "BLOCK"
+
+    def test_a_served_allow_records_each_shortfall_it_stood_in_for(self, tmp_path: Path) -> None:
+        answer = self.served(tmp_path, None, timedelta(hours=3))
+        assert answer.source == "remembered" and answer.decision.state == "ALLOW"
+        recorded = [
+            (item.code, item.setting, item.level, item.environment)
+            for item in answer.decision.relaxations or ()
+        ]
+        assert recorded == [("R201", "serve_last_allow", "allow", "production")]
+
+    def test_the_decision_served_is_valid_against_the_decision_contract(
+        self, tmp_path: Path
+    ) -> None:
+        from cordon_scanner.contracts.schema_check import SchemaChecker
+        from cordon_scanner.contracts.schemas import ContractSchemas
+
+        answer = self.served(tmp_path, None, timedelta(hours=3))
+        assert (
+            SchemaChecker.errors(ContractSchemas.load("decision-v1"), answer.decision.to_json())
+            == []
+        )
