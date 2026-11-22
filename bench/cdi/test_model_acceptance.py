@@ -20,13 +20,17 @@ GOOD = {
 }
 
 
-def changed(path: list[str], value):
-    evidence = copy.deepcopy(GOOD)
-    node = evidence
-    for key in path[:-1]:
-        node = node[key]
-    node[path[-1]] = value
-    return evidence
+class Helpers:
+    @staticmethod
+    def changed(path: list[str], value):
+        evidence = copy.deepcopy(GOOD)
+        node = evidence
+        for key in path[:-1]:
+            node = node[key]
+        node[path[-1]] = value
+        return evidence
+
+
 
 
 class TestTheReport:
@@ -48,7 +52,7 @@ class TestTheReport:
         ],
     )
     def test_each_check_fails_alone_and_says_why(self, path, value, check, reason) -> None:
-        report = ModelAcceptance.report(changed(path, value))
+        report = ModelAcceptance.report(Helpers.changed(path, value))
         assert report["accepted"] is False and report["failed"] == [check]
         assert reason in next(c for c in report["checks"] if c["check"] == check)["reason"]
 
@@ -57,7 +61,7 @@ class TestTheReport:
         assert report["accepted"] is False and report["failed"] == list(CHECKS)
 
     def test_the_ceiling_is_on_the_upper_bound_not_the_rate(self) -> None:
-        few = changed(["areas"], {"npm": {"legit_blocked": 0, "legit_n": 300}})
+        few = Helpers.changed(["areas"], {"npm": {"legit_blocked": 0, "legit_n": 300}})
         assert ModelAcceptance.report(few)["failed"] == ["legit_ceiling"]
 
     def test_a_family_with_false_blocks_that_also_catches_malware_stays(self) -> None:

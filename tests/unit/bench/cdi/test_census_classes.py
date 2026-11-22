@@ -27,17 +27,21 @@ PLAIN_TERMS = Signature.of(Kit.contained())
 DISTINGUISHING = Signature.of(Kit.separable()) - PLAIN_TERMS
 
 
-def row(key: str, facts, attack_class: str = "dropper", split: str = "train", tier: str = "confirmed") -> MissRow:
-    return MissRow(key, "fam", "npm", split, tier, facts, attack_class)
+class Helpers:
+    @staticmethod
+    def row(key: str, facts, attack_class: str = "dropper", split: str = "train", tier: str = "confirmed") -> MissRow:
+        return MissRow(key, "fam", "npm", split, tier, facts, attack_class)
+
+
 
 
 class TestEachClassRoutesAsSpecifiedOnAFixtureWindow:
     def window(self, **kw):
         misses = [
-            row("a-gap", Kit.unread()),
-            row("b-contained", Kit.contained()),
-            row("c-separable", Kit.separable()),
-            row("d-new-class", Kit.separable(), attack_class="clipboard-hijack"),
+            Helpers.row("a-gap", Kit.unread()),
+            Helpers.row("b-contained", Kit.contained()),
+            Helpers.row("c-separable", Kit.separable()),
+            Helpers.row("d-new-class", Kit.separable(), attack_class="clipboard-hijack"),
         ]
         return Census.run("w", misses, Kit.legit(), train_classes=TRAIN_CLASSES, **kw)
 
@@ -66,22 +70,22 @@ class TestEachClassRoutesAsSpecifiedOnAFixtureWindow:
 
     def test_a_reading_gap_still_comes_before_a_new_class(self) -> None:
         report = Census.run(
-            "w", [row("g", Kit.unread(), attack_class="clipboard-hijack")], Kit.legit(), train_classes=TRAIN_CLASSES
+            "w", [Helpers.row("g", Kit.unread(), attack_class="clipboard-hijack")], Kit.legit(), train_classes=TRAIN_CLASSES
         )
         assert report.verdicts[0].klass == READING_GAP
 
     def test_a_miss_with_no_class_named_is_never_a_new_class(self) -> None:
-        report = Census.run("w", [row("x", Kit.separable(), attack_class="")], Kit.legit(), train_classes=TRAIN_CLASSES)
+        report = Census.run("w", [Helpers.row("x", Kit.separable(), attack_class="")], Kit.legit(), train_classes=TRAIN_CLASSES)
         assert report.verdicts[0].klass == FACTS_EXIST
 
     def test_without_train_classes_nothing_is_a_new_class(self) -> None:
-        report = Census.run("w", [row("x", Kit.separable(), attack_class="anything")], Kit.legit())
+        report = Census.run("w", [Helpers.row("x", Kit.separable(), attack_class="anything")], Kit.legit())
         assert report.verdicts[0].klass == FACTS_EXIST
 
     def test_a_held_miss_of_a_new_class_is_counted_in_its_class_and_goes_nowhere(self) -> None:
         report = Census.run(
             "w",
-            [row("h", Kit.separable(), attack_class="clipboard-hijack", split="held")],
+            [Helpers.row("h", Kit.separable(), attack_class="clipboard-hijack", split="held")],
             Kit.legit(),
             train_classes=TRAIN_CLASSES,
         )

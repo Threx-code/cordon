@@ -6,22 +6,26 @@ import pytest
 from bench.cdi.baselines import CLEAN, MALICIOUS, UNLABELLED, PairBaseline, Release
 
 
-def release(
-    version: int, label: str, *, established: bool = False, caught: bool = False, package: str = "p"
-) -> Release:
-    return Release(package, f"1.{version}", version, label, established, caught)
+class Helpers:
+    @staticmethod
+    def release(
+        version: int, label: str, *, established: bool = False, caught: bool = False, package: str = "p"
+    ) -> Release:
+        return Release(package, f"1.{version}", version, label, established, caught)
+
+
 
 
 class TestTheBaseline:
     def history(self) -> list[Release]:
         return [
-            release(1, CLEAN, established=True),
-            release(2, CLEAN),  # clean, but the publisher's history is too short to trust it
-            release(3, UNLABELLED),
-            release(4, MALICIOUS),
-            release(5, MALICIOUS),
-            release(6, CLEAN, established=True),
-            release(7, MALICIOUS),
+            Helpers.release(1, CLEAN, established=True),
+            Helpers.release(2, CLEAN),  # clean, but the publisher's history is too short to trust it
+            Helpers.release(3, UNLABELLED),
+            Helpers.release(4, MALICIOUS),
+            Helpers.release(5, MALICIOUS),
+            Helpers.release(6, CLEAN, established=True),
+            Helpers.release(7, MALICIOUS),
         ]
 
     def test_a_second_malicious_version_is_compared_with_the_last_clean_one_not_the_first_malicious(
@@ -50,27 +54,27 @@ class TestTheBaseline:
     def test_a_version_with_nothing_clean_before_it_has_no_baseline(self) -> None:
         assert (
             PairBaseline.baseline(
-                [release(1, MALICIOUS), release(2, MALICIOUS)], release(2, MALICIOUS)
+                [Helpers.release(1, MALICIOUS), Helpers.release(2, MALICIOUS)], Helpers.release(2, MALICIOUS)
             )
             is None
         )
 
     def test_another_packages_clean_version_is_never_a_baseline(self) -> None:
-        other = release(1, CLEAN, established=True, package="other")
-        assert PairBaseline.baseline([other, release(2, MALICIOUS)], release(2, MALICIOUS)) is None
+        other = Helpers.release(1, CLEAN, established=True, package="other")
+        assert PairBaseline.baseline([other, Helpers.release(2, MALICIOUS)], Helpers.release(2, MALICIOUS)) is None
 
     def test_a_label_that_is_not_one_of_the_three_is_refused(self) -> None:
         with pytest.raises(ValueError):
-            release(1, "probably")
+            Helpers.release(1, "probably")
 
 
 class TestRecallToldApart:
     def test_the_first_malicious_version_and_the_later_ones_are_separate_figures(self) -> None:
         history = [
-            release(1, CLEAN, established=True),
-            release(2, MALICIOUS, caught=False),
-            release(3, MALICIOUS, caught=True),
-            release(4, MALICIOUS, caught=True),
+            Helpers.release(1, CLEAN, established=True),
+            Helpers.release(2, MALICIOUS, caught=False),
+            Helpers.release(3, MALICIOUS, caught=True),
+            Helpers.release(4, MALICIOUS, caught=True),
         ]
         report = PairBaseline.recall(history)
         assert (report["first_malicious"]["k"], report["first_malicious"]["n"]) == (0, 1)
@@ -80,16 +84,16 @@ class TestRecallToldApart:
         self,
     ) -> None:
         report = PairBaseline.recall(
-            [release(1, MALICIOUS, caught=True), release(2, MALICIOUS, caught=True)]
+            [Helpers.release(1, MALICIOUS, caught=True), Helpers.release(2, MALICIOUS, caught=True)]
         )
         assert report == {"first_malicious": None, "later_malicious": None, "without_baseline": 2}
 
     def test_each_package_has_its_own_first_malicious_version(self) -> None:
         history = [
-            release(1, CLEAN, established=True, package="a"),
-            release(2, MALICIOUS, caught=True, package="a"),
-            release(1, CLEAN, established=True, package="b"),
-            release(2, MALICIOUS, caught=False, package="b"),
+            Helpers.release(1, CLEAN, established=True, package="a"),
+            Helpers.release(2, MALICIOUS, caught=True, package="a"),
+            Helpers.release(1, CLEAN, established=True, package="b"),
+            Helpers.release(2, MALICIOUS, caught=False, package="b"),
         ]
         report = PairBaseline.recall(history)
         assert (report["first_malicious"]["k"], report["first_malicious"]["n"]) == (1, 2)

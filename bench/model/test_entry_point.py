@@ -26,8 +26,12 @@ WRITES = re.compile(
 )
 
 
-def scripts() -> list[Path]:
-    return sorted(p for p in HERE.glob("*.py") if not p.name.startswith("test_"))
+class Helpers:
+    @staticmethod
+    def scripts() -> list[Path]:
+        return sorted(p for p in HERE.glob("*.py") if not p.name.startswith("test_"))
+
+
 
 
 class TestEveryScriptThatFitsAModelIsRegistered:
@@ -41,7 +45,7 @@ class TestEveryScriptThatFitsAModelIsRegistered:
         }
         unregistered = [
             p.name
-            for p in scripts()
+            for p in Helpers.scripts()
             if (FITS.search(p.read_text(encoding="utf-8")) or WRITES.search(p.read_text(encoding="utf-8")))
             and p.name not in allowed
         ]

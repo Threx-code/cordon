@@ -46,44 +46,49 @@ class TestMachineShareByRemoval:
         assert report["machine_share"]["n"] == 1
 
 
-def timed(hours: float | None, watched: float | None = None) -> WindowUnit:
-    return Kit.unit(CONTENT_HUMAN if hours is not None else NONE, hours_to_catch=hours, watched_hours=watched)
+class TestTheLimit:
+    @staticmethod
+    def timed(hours: float | None, watched: float | None = None) -> WindowUnit:
+        return Kit.unit(CONTENT_HUMAN if hours is not None else NONE, hours_to_catch=hours, watched_hours=watched)
+
+    @pytest.mark.parametrize("hours", [24.0, 168.0])
+    def test_a_catch_exactly_at_the_limit_counts_within_it(self, hours: float) -> None:
+        assert TimeToCatch.within([TestTheLimit.timed(hours)], hours)["k"] == 1
+
+
 
 
 class TestTimeToCatchIsCensored:
     def test_the_shares_within_a_day_and_a_week_and_the_uncaught_fraction(self) -> None:
-        units = [timed(2.0), timed(10.0), timed(30.0), timed(100.0), timed(None, 200.0)]
+        units = [TestTheLimit.timed(2.0), TestTheLimit.timed(10.0), TestTheLimit.timed(30.0), TestTheLimit.timed(100.0), TestTheLimit.timed(None, 200.0)]
         out = TimeToCatch.of(units)
         assert (out["within_24h"]["k"], out["within_24h"]["n"]) == (2, 5)
         assert (out["within_7d"]["k"], out["within_7d"]["n"]) == (4, 5)
         assert (out["uncaught"]["k"], out["uncaught"]["n"]) == (1, 5)
 
     def test_a_unit_watched_for_less_than_a_week_and_uncaught_is_not_a_miss_within_the_week(self) -> None:
-        units = [timed(2.0), timed(None, 48.0)]
+        units = [TestTheLimit.timed(2.0), TestTheLimit.timed(None, 48.0)]
         out = TimeToCatch.of(units)
         assert (out["within_7d"]["k"], out["within_7d"]["n"]) == (1, 1)
         assert (out["within_24h"]["k"], out["within_24h"]["n"]) == (1, 2)
 
     def test_the_median_is_a_kaplan_meier_median_over_the_scanners(self) -> None:
-        units = [timed(1.0), timed(2.0), timed(3.0), timed(4.0)]
+        units = [TestTheLimit.timed(1.0), TestTheLimit.timed(2.0), TestTheLimit.timed(3.0), TestTheLimit.timed(4.0)]
         assert TimeToCatch.median(units) == 2.0
 
     def test_a_censored_unit_leaves_the_risk_set_and_moves_the_median_later(self) -> None:
-        plain = [timed(1.0), timed(2.0), timed(3.0), timed(4.0)]
-        censored = [timed(1.0), timed(None, 1.5), timed(3.0), timed(4.0)]
+        plain = [TestTheLimit.timed(1.0), TestTheLimit.timed(2.0), TestTheLimit.timed(3.0), TestTheLimit.timed(4.0)]
+        censored = [TestTheLimit.timed(1.0), TestTheLimit.timed(None, 1.5), TestTheLimit.timed(3.0), TestTheLimit.timed(4.0)]
         assert TimeToCatch.median(censored) == 3.0 and TimeToCatch.median(plain) == 2.0
 
     def test_when_fewer_than_half_were_caught_there_is_no_median(self) -> None:
-        assert TimeToCatch.median([timed(5.0), timed(None, 100.0), timed(None, 100.0)]) is None
+        assert TimeToCatch.median([TestTheLimit.timed(5.0), TestTheLimit.timed(None, 100.0), TestTheLimit.timed(None, 100.0)]) is None
 
     def test_units_with_no_watch_time_are_not_in_it(self) -> None:
         assert TimeToCatch.of([Kit.unit(NONE)])["watched"] == 0
 
     def test_it_is_in_the_window_report(self) -> None:
-        report = Kit.report([timed(2.0), timed(None, 200.0)])
+        report = Kit.report([TestTheLimit.timed(2.0), TestTheLimit.timed(None, 200.0)])
         assert report["time_to_catch"]["uncaught"]["k"] == 1
 
 
-@pytest.mark.parametrize("hours", [24.0, 168.0])
-def test_a_catch_exactly_at_the_limit_counts_within_it(hours: float) -> None:
-    assert TimeToCatch.within([timed(hours)], hours)["k"] == 1

@@ -27,8 +27,31 @@ GOOD = {
 }
 
 
-def scores(near: int, far: int) -> list[float]:
-    return [0.91] * near + [0.1] * far
+class Helpers:
+    @staticmethod
+    def scores(near: int, far: int) -> list[float]:
+        return [0.91] * near + [0.1] * far
+
+    @staticmethod
+    def drift() -> DriftSeries:
+        s = DriftSeries(0.9)
+        s.accept("npm", Helpers.scores(20, 980))
+        return s
+
+    @staticmethod
+    def run(fakes: Fakes, evidence, ids=("a", "b", "c"), shadow=None, series=None, window="w1"):
+        return Retrain.run(
+            reason="cadence",
+            training=TrainingList.build(ids, []),
+            train=fakes.train,
+            evidence=evidence,
+            shadow=shadow or Fakes.shadow,
+            drift=series or Helpers.drift(),
+            window=window,
+            scores_by_area={"npm": Helpers.scores(20, 980)},
+        )
+
+
 
 
 class Fakes:
@@ -55,46 +78,31 @@ class Fakes:
         return {"model": model["model"], "enforcement": "shadow"}
 
 
-def drift() -> DriftSeries:
-    s = DriftSeries(0.9)
-    s.accept("npm", scores(20, 980))
-    return s
 
 
-def run(fakes: Fakes, evidence, ids=("a", "b", "c"), shadow=Fakes.shadow, series=None, window="w1"):
-    return Retrain.run(
-        reason="cadence",
-        training=TrainingList.build(ids, []),
-        train=fakes.train,
-        evidence=evidence,
-        shadow=shadow,
-        drift=series or drift(),
-        window=window,
-        scores_by_area={"npm": scores(20, 980)},
-    )
 
 
 class TestAScheduledRetrainLeavesAModelItsReportAndAShadowRun:
     def test_a_passing_retrain_gives_the_model_the_report_the_shadow_run_and_a_drift_point(self) -> None:
         fakes = Fakes()
-        out = run(fakes, Fakes.passing)
+        out = Helpers.run(fakes, Fakes.passing)
         assert out["model"]["model"] == "model-2026-w47" and out["model"]["training_list_sha"].startswith("sha256:")
         assert out["report"]["accepted"] is True and out["shadow"] == {"model": "model-2026-w47", "enforcement": "shadow"}
         assert out["outcome"] == "shadow" and out["drift"][0]["area"] == "npm" and out["drift"][0]["state"] == "ok"
 
     def test_a_retrain_that_fails_the_acceptance_is_not_put_into_shadow(self) -> None:
-        out = run(Fakes(), Fakes.failing)
+        out = Helpers.run(Fakes(), Fakes.failing)
         assert out["report"]["failed"] == ["lose_zero"] and out["shadow"] is None and out["outcome"] == "research"
 
     def test_the_drift_series_gains_a_point_each_run_even_when_the_model_is_refused(self) -> None:
-        series = drift()
-        run(Fakes(), Fakes.failing, series=series, window="w1")
-        run(Fakes(), Fakes.passing, series=series, window="w2")
+        series = Helpers.drift()
+        Helpers.run(Fakes(), Fakes.failing, series=series, window="w1")
+        Helpers.run(Fakes(), Fakes.passing, series=series, window="w2")
         assert [p["window"] for p in series.points["npm"]] == ["w1", "w2"]
 
     def test_a_model_that_starts_by_blocking_is_refused(self) -> None:
         with pytest.raises(RetrainRefused, match="starts in shadow"):
-            run(Fakes(), Fakes.passing, shadow=lambda m: {"enforcement": "block"})
+            Helpers.run(Fakes(), Fakes.passing, shadow=lambda m: {"enforcement": "block"})
 
     def test_a_trainer_that_gave_no_list_hash_did_not_run_through_the_entry_point(self) -> None:
         with pytest.raises(RetrainRefused, match="entry point"):
@@ -104,9 +112,9 @@ class TestAScheduledRetrainLeavesAModelItsReportAndAShadowRun:
                 train=lambda ids: {"model": "m"},
                 evidence=Fakes.passing,
                 shadow=Fakes.shadow,
-                drift=drift(),
+                drift=Helpers.drift(),
                 window="w1",
-                scores_by_area={"npm": scores(20, 980)},
+                scores_by_area={"npm": Helpers.scores(20, 980)},
             )
 
 
@@ -142,8 +150,8 @@ class TestWhenAndWhatItTrainsOn:
             train=fakes.train,
             evidence=Fakes.passing,
             shadow=Fakes.shadow,
-            drift=drift(),
+            drift=Helpers.drift(),
             window="w1",
-            scores_by_area={"npm": scores(20, 980)},
+            scores_by_area={"npm": Helpers.scores(20, 980)},
         )
         assert fakes.ran == [["a", "b", "c"]]

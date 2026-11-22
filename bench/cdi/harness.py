@@ -47,7 +47,7 @@ class TreeDigest:
         """The digest of the files under `root` with one of the suffixes, by their path relative to it."""
         base = Path(root)
         files = {
-            str(p.relative_to(base)): p.read_bytes()
+            p.relative_to(base).as_posix(): p.read_bytes()
             for p in base.rglob("*")
             if p.is_file() and p.suffix in suffixes and "__pycache__" not in p.parts
         }

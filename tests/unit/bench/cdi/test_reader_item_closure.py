@@ -33,20 +33,26 @@ GOOD = {
 }
 
 
-def tracker_with_open_item() -> ReaderTracker:
-    tracker = ReaderTracker()
-    miss = MissRow("m", "fam", "npm", "train", "confirmed", Kit.unread())
-    tracker.apply("w1", Census.run("w1", [miss], Kit.legit()).verdicts)
-    return tracker
+class Helpers:
+    @staticmethod
+    def tracker_with_open_item() -> ReaderTracker:
+        tracker = ReaderTracker()
+        miss = MissRow("m", "fam", "npm", "train", "confirmed", Kit.unread())
+        tracker.apply("w1", Census.run("w1", [miss], Kit.legit()).verdicts)
+        return tracker
+
+    @staticmethod
+    def changed(path: list[str], value):
+        evidence = copy.deepcopy(GOOD)
+        node = evidence
+        for key in path[:-1]:
+            node = node[key]
+        node[path[-1]] = value
+        return evidence
 
 
-def changed(path: list[str], value):
-    evidence = copy.deepcopy(GOOD)
-    node = evidence
-    for key in path[:-1]:
-        node = node[key]
-    node[path[-1]] = value
-    return evidence
+
+
 
 
 class TestTheClosureRule:
@@ -65,11 +71,11 @@ class TestTheClosureRule:
         ],
     )
     def test_each_part_that_fails_is_named(self, path, value, part) -> None:
-        problems = ClosureEvidence.problems(changed(path, value))
+        problems = ClosureEvidence.problems(Helpers.changed(path, value))
         assert len(problems) == 1 and problems[0].startswith(part)
 
     def test_a_ratio_of_exactly_one_point_one_passes(self) -> None:
-        assert ClosureEvidence.problems(changed(["heavy_tail", "sum_candidate"], 1100.0)) == []
+        assert ClosureEvidence.problems(Helpers.changed(["heavy_tail", "sum_candidate"], 1100.0)) == []
 
     def test_a_missing_part_is_a_problem_not_a_pass(self) -> None:
         for part in ("scale", "linearity", "heavy_tail", "legit_incomplete", "units_seen"):
@@ -83,23 +89,23 @@ class TestTheClosureRule:
 
 class TestAnItemWithTooFewUnitsSeenStaysOpen:
     def test_evidence_with_too_few_units_is_refused_and_the_item_stays_open_after_a_clean_window(self) -> None:
-        tracker = tracker_with_open_item()
+        tracker = Helpers.tracker_with_open_item()
         with pytest.raises(EvidenceRefused, match="fewer than 20 units"):
-            tracker.attach_evidence(TRUNCATED, "JS", changed(["units_seen"], 12))
+            tracker.attach_evidence(TRUNCATED, "JS", Helpers.changed(["units_seen"], 12))
         tracker.apply("w2", [])
         item = tracker.items[(TRUNCATED, "JS")]
         assert item.status == OPEN and item.acceptance is None and item.waiting_for_acceptance
 
     def test_every_part_that_failed_is_in_the_refusal(self) -> None:
-        tracker = tracker_with_open_item()
-        evidence = changed(["units_seen"], 3)
+        tracker = Helpers.tracker_with_open_item()
+        evidence = Helpers.changed(["units_seen"], 3)
         evidence["legit_incomplete"]["after"] = 0.5
         with pytest.raises(EvidenceRefused) as refused:
             tracker.attach_evidence(TRUNCATED, "JS", evidence)
         assert len(refused.value.problems) == 2
 
     def test_complete_evidence_lets_the_item_close_in_a_later_window_that_no_longer_shows_it(self) -> None:
-        tracker = tracker_with_open_item()
+        tracker = Helpers.tracker_with_open_item()
         reference = tracker.attach_evidence(TRUNCATED, "JS", GOOD)
         tracker.apply("w2", [])
         item = tracker.items[(TRUNCATED, "JS")]

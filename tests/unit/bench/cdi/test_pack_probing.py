@@ -14,10 +14,14 @@ from bench.cdi.distill import Distiller, Terms, Unit
 from test_distill import FactsKit
 
 
-def fires(candidate: dict[str, Any], facts: dict[str, Any]) -> bool:
-    """Whether a candidate's predicate (every term of it) holds for a facts record."""
-    held = Terms.of(facts)
-    return all(tuple(term) in held for term in candidate["predicate"])
+class Helpers:
+    @staticmethod
+    def fires(candidate: dict[str, Any], facts: dict[str, Any]) -> bool:
+        """Whether a candidate's predicate (every term of it) holds for a facts record."""
+        held = Terms.of(facts)
+        return all(tuple(term) in held for term in candidate["predicate"])
+
+
 
 
 class Evasion:
@@ -67,19 +71,19 @@ class Evasion:
 class TestAnEvasionOfALearnedRuleIsCaughtByTheNextWindowsCandidate:
     def test_the_learned_rule_misses_the_rewrite_and_the_next_candidate_catches_it(self) -> None:
         learned = Distiller().distill(Evasion.first_window()).candidate
-        assert learned is not None and fires(learned, FactsKit.planted(1, 1)[0].facts)
+        assert learned is not None and Helpers.fires(learned, FactsKit.planted(1, 1)[0].facts)
         evader = Evasion.evaders(1, 1)[0].facts
-        assert not fires(learned, evader)  # the evasion works against the public rule
+        assert not Helpers.fires(learned, evader)  # the evasion works against the public rule
 
         next_candidate = Distiller().distill(Evasion.next_window()).candidate
         assert next_candidate is not None
-        assert fires(next_candidate, evader)  # the next window's candidate catches it
+        assert Helpers.fires(next_candidate, evader)  # the next window's candidate catches it
         assert next_candidate["predicate_digest"] != learned["predicate_digest"]
 
     def test_the_new_candidate_is_not_the_old_rule_loosened_onto_legit_releases(self) -> None:
         candidate = Distiller().distill(Evasion.next_window()).candidate
         assert candidate is not None
-        legit_fires = sum(1 for u in FactsKit.legit(2_000, seed=31) if fires(candidate, u.facts))
+        legit_fires = sum(1 for u in FactsKit.legit(2_000, seed=31) if Helpers.fires(candidate, u.facts))
         assert legit_fires == 0
 
     def test_it_is_learned_from_several_families_so_one_probing_family_alone_teaches_nothing(self) -> None:
@@ -93,7 +97,7 @@ class TestAnEvasionOfALearnedRuleIsCaughtByTheNextWindowsCandidate:
         evader = Evasion.evaders(1, 1)[0].facts
         for window in (Evasion.first_window, Evasion.next_window):
             candidate = Distiller().distill(window()).candidate
-            windows_with_a_rule_that_catches_it.append(candidate is not None and fires(candidate, evader))
+            windows_with_a_rule_that_catches_it.append(candidate is not None and Helpers.fires(candidate, evader))
         assert learned is not None
         assert windows_with_a_rule_that_catches_it == [False, True]
         assert windows_with_a_rule_that_catches_it.index(True) == 1

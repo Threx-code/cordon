@@ -23,14 +23,18 @@ CDI = REPO / "bench" / "cdi"
 TRAINING_LIBRARIES = {"lightgbm", "sklearn", "joblib", "xgboost", "torch", "scipy"}
 
 
-def imported(path: Path) -> set[str]:
-    names: set[str] = set()
-    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-        if isinstance(node, ast.Import):
-            names |= {a.name for a in node.names}
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            names.add(node.module)
-    return names
+class Helpers:
+    @staticmethod
+    def imported(path: Path) -> set[str]:
+        names: set[str] = set()
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Import):
+                names |= {a.name for a in node.names}
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                names.add(node.module)
+        return names
+
+
 
 
 class TestTheRulePackLaneNeverRetrains:
@@ -43,7 +47,7 @@ class TestTheRulePackLaneNeverRetrains:
         offenders = {
             p.name: sorted(
                 n
-                for n in imported(p)
+                for n in Helpers.imported(p)
                 if n.split(".")[0] in TRAINING_LIBRARIES or n.startswith("bench.model.train") or "verdict_train" in n
             )
             for p in self.modules()
