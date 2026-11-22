@@ -104,6 +104,8 @@ class VerdictModel:
         model = VerdictModel._read(delivered)
         if model is None:
             FeedModels.refuse(path.name, VerdictModel._why_unusable(delivered))
+        elif not VerdictModel._complete(model):
+            FeedModels.refuse(path.name, "incomplete")
         elif FeedModels.newer(model.get("version"), bundled.get("version")):
             FeedModels.accepted(path.name)
             return model
@@ -140,6 +142,20 @@ class VerdictModel:
         ):
             return model
         return None
+
+    @staticmethod
+    def _complete(model: dict[str, Any]) -> bool:
+        """Whether the model holds every section a scan reads when it applies it: the features, the baseline, the trees, a block line for the fallback area and the floor.
+        A model without them would end a scan that has findings in an error, so it is not used."""
+        areas = model.get("areas")
+        return (
+            isinstance(model.get("features"), list)
+            and isinstance(model.get("trees"), list)
+            and isinstance(model.get("baseline"), (int, float))
+            and isinstance(areas, dict)
+            and Verdict.FALLBACK in areas
+            and isinstance(model.get("floor"), list)
+        )
 
     @staticmethod
     def inputs(model: dict[str, Any], features: dict[str, float]) -> dict[str, float]:

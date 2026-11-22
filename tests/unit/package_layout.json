@@ -1184,6 +1184,7 @@
   "test_feed_default_address.py": "intel/malware",
   "test_feed_rules.py": "intel/malware",
   "test_feed_models.py": "intel/malware",
+  "test_model_lane.py": "intel/malware",
   "test_feed_delta_is_bounded.py": "intel/malware",
   "test_feed_provisional.py": "intel/malware",
   "test_finding_locations.py": "engine/pipeline",

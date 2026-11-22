@@ -530,7 +530,7 @@ class Rules:
     #: must outlive a scan.
     PROCESS_STATE: ClassVar[dict[str, str]] = {
         "cordon_scanner.intel.malware.feed_models:FeedModels.REFUSALS": (
-            "one reason per delivered model file, from five fixed words; it describes the model the process loaded and cached, so it lives as long as that load, and an install clears it"
+            "one reason per delivered model file, from a short fixed list of words; it describes the model the process loaded and cached, so it lives as long as that load, and an install clears it"
         ),
         "cordon_scanner.analysis.javascript.front.syntax:Node.SHAPES": (
             "one interned tuple of field names per node shape, a fixed set the grammar decides"
