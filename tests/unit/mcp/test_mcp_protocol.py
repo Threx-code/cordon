@@ -59,7 +59,9 @@ class Wire:
     def ask(self, message: dict[str, Any]) -> dict[str, Any]:
         before = len(self.out.getvalue().splitlines())
         self.send(message)
-        deadline = time.monotonic() + 60
+        # A hung server still fails here; 60 s was too short for a tool call's first scan on a loaded
+        # macOS runner, which answered after it (22 Nov).
+        deadline = time.monotonic() + 300
         while time.monotonic() < deadline:
             lines = self.out.getvalue().splitlines()
             if len(lines) > before:

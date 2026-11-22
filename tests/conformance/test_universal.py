@@ -324,6 +324,13 @@ class TestScale:
         report, large = TestScale.timed(profile, pkgs, tmp_path / f"b{4 * count}")
         _, after = TestScale.timed(profile, TestScale.packages(profile, count), tmp_path / "c")
         small = (before + after) / 2
+        first = large
+        if large >= small * 8:
+            # Once more before failing: real growth repeats, a one-off charge to the thread does not
+            # (macOS CI, 22 Nov: 62 s of thread CPU for 4,000 Ansible packages that take under 3 s,
+            # not reproduced on Linux under Python 3.13 or 3.15 with ten hash seeds).
+            _, again = TestScale.timed(profile, pkgs, tmp_path / f"d{4 * count}")
+            large = min(large, again)
         # The packages written; not what the format records about its own tooling (Bundler's
         # `BUNDLED WITH`), the runtime, or Go's standard library.
         written = {p.name.lower() for p in pkgs}
@@ -331,7 +338,7 @@ class TestScale:
         assert len(packages) == len(pkgs), len(packages)
         assert len({d["purl"] for d in packages}) == len(pkgs), "duplicated"
         assert large < small * 8, (
-            f"{len(pkgs):,} packages {large:.2f}s against {count:,} in {before:.2f}s and"
+            f"{len(pkgs):,} packages {large:.2f}s (first {first:.2f}s) against {count:,} in {before:.2f}s and"
             f" {after:.2f}s: {large / small:.1f} times; threads alive:"
             f" {sorted(thread.name for thread in threading.enumerate())}"
         )
