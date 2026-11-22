@@ -37,13 +37,20 @@ if TYPE_CHECKING:
 READING_GAP: Final = "READING_GAP"
 NO_SEPARATING_FACT: Final = "NO_SEPARATING_FACT"
 FACTS_EXIST: Final = "FACTS_EXIST"
-CLASSES: Final = (READING_GAP, NO_SEPARATING_FACT, FACTS_EXIST)
+#: Facts exist, but the terms a candidate would use are all held by one established legit release: at package scope they do not
+#: separate this release from legit ones.
+DO_NOT_SEPARATE: Final = "FACTS_EXIST_BUT_DO_NOT_SEPARATE"
+#: An attack class that no train unit shows: nothing a generator could learn from, so a reader or a teacher looks at it.
+NEW_CLASS: Final = "NEW_CLASS"
+CLASSES: Final = (READING_GAP, NO_SEPARATING_FACT, FACTS_EXIST, DO_NOT_SEPARATE, NEW_CLASS)
 
 #: Where a classified miss goes. `counted_only` is every miss the leakage gates keep from learning.
 ROUTES: Final = {
     READING_GAP: "reader",
     NO_SEPARATING_FACT: "teacher",
     FACTS_EXIST: "generators",
+    DO_NOT_SEPARATE: "teacher",
+    NEW_CLASS: "reader_or_teacher",
 }
 COUNTED_ONLY: Final = "counted_only"
 #: The form of a gap no file carries (a timeout, a package-wide limit).
@@ -66,6 +73,7 @@ class MissRow:
     split: str
     label_tier: str
     facts: Mapping[str, Any]
+    attack_class: str = ""
 
 
 @dataclass(frozen=True)
@@ -138,6 +146,19 @@ class Signature:
         return min((len(signature - other) for other in legit), default=len(signature))
 
 
+class TermSets:
+    @staticmethod
+    def legit_rates(term_sets: Mapping[str, Iterable[Term]], legit: Iterable[Mapping[str, Any]]) -> dict[str, float]:
+        """For each named term set, the share of the established legit releases that hold every term of it. A generator is given
+        these before it searches: a set most legit releases hold cannot be a rule."""
+        signatures = [Signature.of(f) for f in legit]
+        rates: dict[str, float] = {}
+        for name, terms in term_sets.items():
+            wanted = frozenset(terms)
+            rates[name] = sum(1 for sig in signatures if wanted <= sig) / len(signatures) if signatures else 0.0
+        return rates
+
+
 class Census:
     @staticmethod
     def eligibility(row: MissRow) -> tuple[bool, tuple[str, ...]]:
@@ -152,30 +173,52 @@ class Census:
         misses: Iterable[MissRow],
         legit: Iterable[Mapping[str, Any]],
         facts_version: str = FACTS_VERSION,
+        *,
+        train_classes: Iterable[str] | None = None,
+        candidate_terms: Iterable[Term] | None = None,
     ) -> Report:
-        """Classify and route every miss of a window against the established legit releases' facts (same version)."""
+        """Classify and route every miss of a window against the established legit releases' facts (same version).
+
+        `train_classes` are the attack classes the train units show: a miss of another class (one with a class named) is a
+        NEW CLASS. `candidate_terms` are the terms a candidate would use: with them, a miss whose terms of that set are all held
+        by one legit release is a FACTS EXIST BUT DO NOT SEPARATE miss, not one for the generators."""
         legit_signatures = [
             Signature.of(f) for f in legit if f.get("facts_version") == facts_version
         ]
         report = Report(window)
+        known = None if train_classes is None else frozenset(train_classes)
+        candidate = None if candidate_terms is None else frozenset(candidate_terms)
         for row in misses:
             if row.facts.get("facts_version") != facts_version:
                 report.stale += 1
                 continue
-            report.verdicts.append(Census.one(row, legit_signatures))
+            report.verdicts.append(Census.one(row, legit_signatures, known, candidate))
         report.verdicts.sort(key=lambda v: v.key)
         return report
 
     @staticmethod
-    def one(row: MissRow, legit: list[frozenset[Term]]) -> Verdict:
+    def one(
+        row: MissRow,
+        legit: list[frozenset[Term]],
+        known_classes: frozenset[str] | None = None,
+        candidate_terms: frozenset[Term] | None = None,
+    ) -> Verdict:
         eligible, held = Census.eligibility(row)
         gaps = ReadingGaps.of(row.facts)
         distance: int | None = None
         if gaps:
             klass = READING_GAP
+        elif known_classes is not None and row.attack_class and row.attack_class not in known_classes:
+            klass = NEW_CLASS
         else:
-            distance = Signature.distance(Signature.of(row.facts), legit)
-            klass = NO_SEPARATING_FACT if distance == 0 else FACTS_EXIST
+            signature = Signature.of(row.facts)
+            distance = Signature.distance(signature, legit)
+            if distance == 0:
+                klass = NO_SEPARATING_FACT
+            elif candidate_terms is not None and Signature.distance(signature & candidate_terms, legit) == 0:
+                klass = DO_NOT_SEPARATE
+            else:
+                klass = FACTS_EXIST
         # Held, fresh, sealed, excluded and silver-labelled misses are counted in their class, with the reason, and go nowhere
         # (a reader built from a held unit's shape is as much a leak as a rule built from it).
         route = ROUTES[klass] if eligible else COUNTED_ONLY

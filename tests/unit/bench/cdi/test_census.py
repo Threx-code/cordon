@@ -174,6 +174,8 @@ class TestEveryMissGetsOneClassAndRoute:
             "reading_gap": 1,
             "no_separating_fact": 1,
             "facts_exist": 1,
+            "facts_exist_but_do_not_separate": 0,
+            "new_class": 0,
             "fed_to_generators": 1,
             "held": 0,
         }
