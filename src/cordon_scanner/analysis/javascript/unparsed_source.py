@@ -33,6 +33,8 @@ from cordon_scanner.analysis.javascript.js_eval import JsEval
 from cordon_scanner.analysis.python.unparsed_source import Decision, UnparsedSource
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from cordon_scanner.foundation.models import Finding
 
 #: The files whose brackets are read here.
@@ -88,6 +90,7 @@ class JsUnparsed:
         try:
             tokens = JsEval.tokens(text, templates=True)
         except (RecursionError, MemoryError, ValueError):
+            # S2: no verdict is a gap the caller reports, never a pass
             return None
         return JsUnparsed.errors(tokens) < JsUnparsed.allowed(len(text))
 
@@ -136,11 +139,13 @@ class JsRunning:
         "preprepare",
         "postprepare",
     )
-    SCRIPT_FILE: ClassVar[re.Pattern[str]] = re.compile(
-        r"""\bnode(?:js)?\s+(?:--?[\w=.-]+\s+)*['"]?([^\s'"&|;<>]+\.(?:c|m)?js)\b"""
-    )
+    NODE_COMMAND: ClassVar[re.Pattern[str]] = re.compile(r"\bnode(?:js)?\b([^|&;<>\n]{0,300})")
+    CHILDREN: ClassVar[dict[type, Callable[[Any], list[object]]]] = {
+        dict: lambda part: list(part.values()),
+        list: lambda part: list(part),
+    }
     RELATIVE: ClassVar[re.Pattern[str]] = re.compile(
-        r"""(?:\brequire\s*\(|\bimport\s*\(|\bfrom\s+|\bimport\s+)\s*['"](\.{1,2}/[^'"\n]{1,200})['"]"""
+        r"""(?:\b(?:require|import)\s*\(|\b(?:from|import))\s*['"](\.{1,2}/[^'"\n]{1,200})['"]"""
     )
     MAX_FILES: ClassVar[int] = 200
 
@@ -160,18 +165,31 @@ class JsRunning:
         stack: list[object] = [document.get("exports")]
         while stack:
             part = stack.pop()
-            if isinstance(part, str):
+            children = JsRunning.CHILDREN.get(type(part))
+            if children is not None:
+                stack += children(part)
+            elif isinstance(part, str):
                 found.append(part)
-            elif isinstance(part, dict):
-                stack += list(part.values())
-            elif isinstance(part, list):
-                stack += part
         scripts = document.get("scripts")
         if isinstance(scripts, dict):
             for name in JsRunning.LIFECYCLE:
                 command = scripts.get(name)
                 if isinstance(command, str):
-                    found += JsRunning.SCRIPT_FILE.findall(command)
+                    found += JsRunning.script_files(command)
+        return found
+
+    @staticmethod
+    def script_files(command: str) -> list[str]:
+        """The script each `node` in a command line runs: its first argument that is not an option, when it names a JavaScript file."""
+        found: list[str] = []
+        for rest in JsRunning.NODE_COMMAND.findall(command):
+            for token in rest.split():
+                name = token.strip("'\"")
+                if name.startswith("-"):
+                    continue
+                if name.endswith((".js", ".cjs", ".mjs")):
+                    found.append(name)
+                break
         return found
 
     @staticmethod
@@ -201,7 +219,7 @@ class JsRunning:
             try:
                 document = json.loads(unit.content.text)
             except (ValueError, RecursionError, MemoryError):
-                continue  # a manifest no reader takes to its end names nothing here (the manifest reader reports it)
+                continue  # S2: a manifest no reader takes to its end names nothing here; the manifest reader reports it
             base = posixpath.dirname(path)
             for name in JsRunning.named(document):
                 hit = JsRunning.resolve(base, name.removeprefix("./"), known)
