@@ -51,7 +51,46 @@ class PointRuntime:
         intel_age_s: int | None = None,
     ) -> Decision:
         """The decision for `artifact` as asked by `point` (one of `POINTS`; any other is a `DecisionError`)."""
-        context = Context(
+        context = cls._context(
+            point, environment, scope_path, actor, relation, online, bundle_age_s, intel_age_s
+        )
+        return Decider.decide(artifact, context, policy, evidence, clock)
+
+    @classmethod
+    def key(
+        cls,
+        point: str,
+        artifact: ArtifactRef,
+        evidence: EvidenceSet,
+        policy: CompiledPolicy,
+        clock: datetime,
+        *,
+        environment: str,
+        scope_path: tuple[str, ...] = (),
+        actor: str = "human",
+        relation: str = "direct",
+        online: bool = True,
+        bundle_age_s: int | None = None,
+        intel_age_s: int | None = None,
+    ) -> str:
+        """The `inputs_digest` the decision `ask` gives for the same arguments carries, without deciding."""
+        context = cls._context(
+            point, environment, scope_path, actor, relation, online, bundle_age_s, intel_age_s
+        )
+        return Decider.key(artifact, context, policy, evidence, clock)
+
+    @staticmethod
+    def _context(
+        point: str,
+        environment: str,
+        scope_path: tuple[str, ...],
+        actor: str,
+        relation: str,
+        online: bool,
+        bundle_age_s: int | None,
+        intel_age_s: int | None,
+    ) -> Context:
+        return Context(
             point=point,
             environment=environment,
             scope_path=scope_path,
@@ -61,7 +100,6 @@ class PointRuntime:
             bundle_age_s=bundle_age_s,
             intel_age_s=intel_age_s,
         )
-        return Decider.decide(artifact, context, policy, evidence, clock)
 
     @staticmethod
     def content(decision: Decision) -> dict[str, Any]:

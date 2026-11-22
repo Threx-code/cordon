@@ -165,9 +165,27 @@ class Decider:
     # -- step 7 ----------------------------------------------------------------------------------
 
     @classmethod
-    def _emit(cls, facts: Facts, policy: CompiledPolicy, draft: Draft) -> Decision:
-        bucket = Instants.bucket(facts.clock, policy.defaults.clock_bucket_s)
-        bucket_text = Instants.text(bucket)
+    def key(
+        cls,
+        artifact: ArtifactRef,
+        context: Context,
+        policy: CompiledPolicy,
+        evidence: EvidenceSet,
+        clock: datetime,
+    ) -> str:
+        """The `inputs_digest` the decision for these inputs will carry, without deciding: a cache's key.
+
+        Equal keys mean equal decisions (the function is pure), so a decision kept under its key is never stale."""
+        if clock.tzinfo is None:
+            raise DecisionError("clock: a time with a zone is required")
+        evidence = replace(
+            evidence, findings=tuple(sorted(evidence.findings, key=lambda item: item.sort_key()))
+        )
+        return cls._inputs_digest(Facts.of(artifact, context, evidence, clock), policy)
+
+    @staticmethod
+    def _inputs_digest(facts: Facts, policy: CompiledPolicy) -> str:
+        bucket_text = Instants.text(Instants.bucket(facts.clock, policy.defaults.clock_bucket_s))
         inputs = ArtifactDigests.canonical_json(
             {
                 "artifact": facts.artifact.to_json(),
@@ -177,6 +195,12 @@ class Decider:
                 "clock_bucket": bucket_text,
             }
         )
+        return ArtifactDigests.of_bytes(inputs)
+
+    @classmethod
+    def _emit(cls, facts: Facts, policy: CompiledPolicy, draft: Draft) -> Decision:
+        bucket = Instants.bucket(facts.clock, policy.defaults.clock_bucket_s)
+        bucket_text = Instants.text(bucket)
         reasons = tuple(draft.reasons)
         first = reasons[0]
         return Decision(
@@ -184,7 +208,7 @@ class Decider:
             reason_codes=tuple(sorted({item.code for item in reasons})),
             explanation=Explanation(f"{draft.state}: {first.code} {first.text}", reasons),
             obligations=tuple(sorted(draft.obligations)),
-            inputs_digest=ArtifactDigests.of_bytes(inputs),
+            inputs_digest=cls._inputs_digest(facts, policy),
             policy=policy.ref(),
             context=DecisionContext(
                 facts.context.point, facts.context.environment, facts.context.relation

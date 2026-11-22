@@ -17,6 +17,12 @@ Three things the runtime does itself, each failing closed:
   is missing (`R200`), at the baseline's own level for incomplete evidence.
 
 The runtime holds no clock and no network: the caller gives the time of the question, and refreshing is the caller's loop.
+
+With a `LocalStore` (row BP-2-6) the runtime also keeps what it needs to start offline: `accept` keeps the bundle taken and `resume` takes
+it again after a restart (verified again, expired or not: an expired bundle still decides, as `R202`); a decision is looked up by its
+`inputs_digest` before it is made and kept after (equal inputs are equal decisions, so nothing kept is stale); each decision made
+is queued for upload and `drain` sends the queue oldest first when the control plane is back; the age of the stored intel
+snapshot is the `intel_age_s` of the question unless the caller gives one.
 """
 
 from __future__ import annotations
@@ -26,15 +32,16 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Final
 
 from cordon_scanner.cloud.bundle_chain import BundleChain, BundleError
+from cordon_scanner.decide.decision.outcome import Decision
 from cordon_scanner.decide.decision.records import DecisionError, Instants
 from cordon_scanner.decide.decision.table import CompiledPolicy
 from cordon_scanner.decide.points import PointRuntime
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
+    from cordon_scanner.cloud.local_store import Drained, LocalStore, Pending
     from cordon_scanner.decide.decision.evidence import ArtifactRef, EvidenceSet
-    from cordon_scanner.decide.decision.outcome import Decision
 
 REQUIRED_BUNDLE: Final = "policy_bundle"
 """What `decide()` is told is missing while no bundle is held."""
@@ -44,9 +51,16 @@ class LocalRuntime:
     """Decides at one execution point from the policy bundle it holds."""
 
     def __init__(
-        self, *, root_public: bytes, delegation: object, tenant: str, baseline: CompiledPolicy
+        self,
+        *,
+        root_public: bytes,
+        delegation: object,
+        tenant: str,
+        baseline: CompiledPolicy,
+        store: LocalStore | None = None,
     ) -> None:
         baseline.verify()
+        self._store = store
         self._root, self._delegation, self._tenant = root_public, delegation, tenant
         self._baseline = baseline
         self._held: dict[str, Any] | None = None
@@ -78,7 +92,32 @@ class LocalRuntime:
         if state == "new":
             self._policy = self._policy_of(bundle)
             self._held = bundle
+            if self._store is not None:
+                self._store.save_bundle([list(envelopes)[-1]])
         return state
+
+    def resume(self, now: datetime) -> bool:
+        """Take the bundle kept in the store, verified again (signature, key, tenant; its expiry is the policy's business, `R202`).
+
+        False, holding nothing, when there is no store, nothing kept, a bundle already held, or a bundle that does not verify."""
+        stored = self._store.load_bundle() if self._store is not None else None
+        if not stored or self._held is not None:
+            return False
+        try:
+            bundle = BundleChain.reverify(
+                self._root, self._delegation, stored[-1], self._tenant, now
+            )
+            policy = self._policy_of(bundle)
+        except BundleError:
+            return False
+        self._held, self._policy = bundle, policy
+        return True
+
+    def drain(self, send: Callable[[Pending], None]) -> Drained:
+        """Send the uploads queued while offline, oldest first, stopping at the first that fails (see `LocalStore.drain`)."""
+        if self._store is None:
+            raise BundleError("no local store: nothing is queued")
+        return self._store.drain(send)
 
     def ask(
         self,
@@ -107,7 +146,32 @@ class LocalRuntime:
             bundle_age = max(
                 0, int((clock - Instants.parse(self._held["issued_at"])).total_seconds())
             )
-        return PointRuntime.ask(
+        if intel_age_s is None and self._store is not None:
+            intel_age_s = self._intel_age(clock)
+        store = self._store
+        key = (
+            None
+            if store is None
+            else PointRuntime.key(
+                point,
+                artifact,
+                asked,
+                policy,
+                clock,
+                environment=environment,
+                scope_path=scope_path,
+                actor=actor,
+                relation=relation,
+                online=online,
+                bundle_age_s=bundle_age,
+                intel_age_s=intel_age_s,
+            )
+        )
+        if store is not None and key is not None:
+            kept = store.cache_get(key)
+            if kept is not None:
+                return Decision.from_json(kept)
+        decision = PointRuntime.ask(
             point,
             artifact,
             asked,
@@ -121,6 +185,17 @@ class LocalRuntime:
             bundle_age_s=bundle_age,
             intel_age_s=intel_age_s,
         )
+        if store is not None and key is not None:
+            store.cache_put(key, decision.to_json())
+            store.enqueue("decision", decision.canonical_bytes())
+        return decision
+
+    def _intel_age(self, clock: datetime) -> int | None:
+        """Seconds since the stored intel snapshot was issued, or None when the store has none (or a damaged one)."""
+        snapshot = self._store.blob("intel", "snapshot") if self._store is not None else None
+        if snapshot is None:
+            return None
+        return max(0, int((clock - Instants.parse(snapshot.issued_at)).total_seconds()))
 
     @staticmethod
     def _policy_of(bundle: dict[str, Any]) -> CompiledPolicy:

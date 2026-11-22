@@ -11,14 +11,17 @@ from __future__ import annotations
 import base64
 import copy
 import hashlib
+import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 from cordon_scanner.cloud.bundle_chain import BundleChain, BundleError, BundleRefused, Dsse
 from cordon_scanner.cloud.local_runtime import REQUIRED_BUNDLE, LocalRuntime
+from cordon_scanner.cloud.local_store import LocalStore, Pending
 from cordon_scanner.contracts.digests import ArtifactDigests
 from cordon_scanner.decide.decision.compiler import PolicyCompiler
 from cordon_scanner.decide.decision.evidence import ArtifactRef, EvidenceSet
@@ -118,7 +121,12 @@ class Kit:
         return hashlib.sha256(label.encode()).digest()
 
     @staticmethod
-    def compiled(version: int, expires: datetime, default: str = "allow") -> CompiledPolicy:
+    def compiled(
+        version: int,
+        expires: datetime,
+        default: str = "allow",
+        max_intel_age: int | None = None,
+    ) -> CompiledPolicy:
         return PolicyCompiler.compile(
             PolicySource.from_json(
                 {
@@ -127,19 +135,24 @@ class Kit:
                     "version": version,
                     "scope": ["acme"],
                     "rules": [],
-                    "defaults": {"default": default, "on_incomplete": {"*": "block", "ci": "warn"}},
+                    "defaults": {
+                        "default": default,
+                        "on_incomplete": {"*": "block", "ci": "warn"},
+                        **({} if max_intel_age is None else {"max_intel_age": max_intel_age}),
+                    },
                     "expires_at": expires.isoformat(),
                 }
             )
         )
 
     @staticmethod
-    def runtime(platform: Platform) -> LocalRuntime:
+    def runtime(platform: Platform, store: LocalStore | None = None) -> LocalRuntime:
         return LocalRuntime(
             root_public=platform.root.public,
             delegation=platform.delegation(),
             tenant=TENANT,
             baseline=Kit.compiled(1, T0 + timedelta(days=3650), default="allow"),
+            store=store,
         )
 
     @staticmethod
@@ -350,3 +363,190 @@ class TestTheControlPlaneDiesUnderLoad:
         assert calls == self.QUESTIONS
         assert len(degraded) == self.QUESTIONS == len(steady)
         assert degraded == steady
+
+
+class Upstream:
+    """The control plane as the outbox sees it: keeps what it is sent once, by id, and can be made to fail on the nth call."""
+
+    def __init__(self, fail_on: int | None = None) -> None:
+        self.received: dict[str, bytes] = {}
+        self.order: list[str] = []
+        self.calls, self.fail_on = 0, fail_on
+
+    def __call__(self, item: Pending) -> None:
+        self.calls += 1
+        if self.fail_on == self.calls:
+            raise ConnectionError("the control plane is down")
+        if item.id not in self.received:
+            self.received[item.id] = item.body
+            self.order.append(item.id)
+
+
+class Things:
+    @staticmethod
+    def artifacts(count: int) -> list[ArtifactRef]:
+        return [
+            ArtifactRef(
+                kind="package",
+                subject_id=f"pkg:npm/package-{number}",
+                digest=ArtifactDigests.of_bytes(f"package {number}".encode()),
+                ecosystem="npm",
+                released_at="2026-06-01T00:00:00Z",
+            )
+            for number in range(count)
+        ]
+
+
+class TestAnOfflineRunWithTheStore:
+    """BP-2-6: with no network the runtime decides from the store and queues its uploads, then drains them on reconnect."""
+
+    def test_decisions_made_offline_are_queued_and_sent_oldest_first_on_reconnect(
+        self, tmp_path: Path
+    ) -> None:
+        platform = Platform()
+        store = LocalStore(tmp_path)
+        runtime = Kit.runtime(platform, store)
+        runtime.accept([Kit.first(platform, default="review")], T0)
+        decisions = [
+            runtime.ask(
+                "firewall",
+                artifact,
+                EvidenceSet(),
+                T0 + timedelta(seconds=n),
+                environment="production",
+                scope_path=("acme",),
+            )
+            for n, artifact in enumerate(Things.artifacts(6))
+        ]
+        assert [item.body for item in store.pending()] == [d.canonical_bytes() for d in decisions]
+        upstream = Upstream()
+        drained = runtime.drain(upstream)
+        assert (drained.sent, drained.left) == (6, 0)
+        assert [upstream.received[i] for i in upstream.order] == [
+            d.canonical_bytes() for d in decisions
+        ]
+
+    def test_a_connection_that_drops_mid_drain_loses_nothing_and_sends_nothing_twice(
+        self, tmp_path: Path
+    ) -> None:
+        platform = Platform()
+        runtime = Kit.runtime(platform, LocalStore(tmp_path))
+        runtime.accept([Kit.first(platform)], T0)
+        for number, artifact in enumerate(Things.artifacts(5)):
+            runtime.ask(
+                "cli",
+                artifact,
+                EvidenceSet(),
+                T0 + timedelta(seconds=number),
+                environment="production",
+            )
+        upstream = Upstream(fail_on=3)
+        assert runtime.drain(upstream).left == 3
+        assert runtime.drain(upstream).left == 0
+        assert len(upstream.received) == 5 and len(upstream.order) == 5
+
+    def test_the_same_question_in_the_same_moment_is_answered_from_the_store_and_queued_once(
+        self, tmp_path: Path
+    ) -> None:
+        platform = Platform()
+        store = LocalStore(tmp_path)
+        runtime = Kit.runtime(platform, store)
+        runtime.accept([Kit.first(platform)], T0)
+        asked = [
+            runtime.ask(
+                "cli",
+                Things.artifacts(1)[0],
+                EvidenceSet(),
+                T0 + timedelta(seconds=5),
+                environment="production",
+            )
+            for _ in range(3)
+        ]
+        assert (
+            asked[0].canonical_bytes() == asked[1].canonical_bytes() == asked[2].canonical_bytes()
+        )
+        assert len(store.pending()) == 1 and store.cache_size() == 1
+
+    def test_a_kept_decision_is_the_decision_that_would_be_made(self, tmp_path: Path) -> None:
+        platform = Platform()
+        kept = Kit.runtime(platform, LocalStore(tmp_path))
+        plain = Kit.runtime(platform)
+        for runtime in (kept, plain):
+            runtime.accept([Kit.first(platform, default="review")], T0)
+        for number, artifact in enumerate(Things.artifacts(20)):
+            clock = T0 + timedelta(seconds=number)
+            first = kept.ask("cli", artifact, EvidenceSet(), clock, environment="production")
+            again = kept.ask("cli", artifact, EvidenceSet(), clock, environment="production")
+            assert (
+                first.canonical_bytes()
+                == again.canonical_bytes()
+                == plain.ask(
+                    "cli", artifact, EvidenceSet(), clock, environment="production"
+                ).canonical_bytes()
+            )
+
+    def test_after_a_restart_the_bundle_kept_decides_and_an_expired_one_is_the_policys_r202(
+        self, tmp_path: Path
+    ) -> None:
+        platform = Platform()
+        Kit.runtime(platform, LocalStore(tmp_path)).accept(
+            [Kit.first(platform, lifetime=timedelta(hours=2))], T0
+        )
+        restarted = Kit.runtime(platform, LocalStore(tmp_path))
+        assert restarted.held is None
+        assert restarted.resume(T0 + timedelta(days=2)) is True
+        late = T0 + timedelta(days=2)
+        production = Kit.ask(restarted, late, "ci_gate", "production")
+        ci = Kit.ask(restarted, late, "ci_gate", "ci")
+        assert production.state == "BLOCK" and "R202" in production.reason_codes
+        assert ci.state == "ALLOW" and "R202" in ci.reason_codes
+
+    def test_a_bundle_kept_on_disk_that_was_changed_is_not_taken(self, tmp_path: Path) -> None:
+        platform = Platform()
+        store = LocalStore(tmp_path)
+        Kit.runtime(platform, store).accept([Kit.first(platform, default="review")], T0)
+        envelope = store.load_bundle()[0]  # type: ignore[index]
+        body = json.loads(base64.b64decode(envelope["payload"]))
+        body["expires_at"] = (T0 + timedelta(days=3650)).isoformat()
+        envelope["payload"] = base64.b64encode(json.dumps(body).encode()).decode("ascii")
+        store.save_bundle([envelope])
+        restarted = Kit.runtime(platform, LocalStore(tmp_path))
+        assert restarted.resume(T0 + timedelta(minutes=1)) is False and restarted.held is None
+        assert "R200" in Kit.ask(restarted, T0 + timedelta(minutes=1)).reason_codes
+
+    def test_a_restart_with_nothing_kept_or_no_store_holds_nothing(self, tmp_path: Path) -> None:
+        platform = Platform()
+        assert Kit.runtime(platform, LocalStore(tmp_path)).resume(T0) is False
+        assert Kit.runtime(platform).resume(T0) is False
+
+    def test_the_age_of_the_stored_intel_snapshot_is_the_age_the_policy_checks(
+        self, tmp_path: Path
+    ) -> None:
+        platform = Platform()
+        store = LocalStore(tmp_path)
+        runtime = Kit.runtime(platform, store)
+        policy = Kit.compiled(1, T0 + timedelta(days=1), max_intel_age=3600)
+        runtime.accept([platform.publish(policy, issued=T0, expires=T0 + timedelta(days=1))], T0)
+        store.put_blob("intel", "snapshot", b"snapshot", T0.isoformat())
+        fresh = Kit.ask(runtime, T0 + timedelta(minutes=30), "ci_gate", "production")
+        stale = Kit.ask(runtime, T0 + timedelta(hours=3), "ci_gate", "production")
+        assert "R201" not in fresh.reason_codes
+        assert "R201" in stale.reason_codes and stale.state == "BLOCK"
+
+    def test_a_full_outbox_does_not_change_a_decision(self, tmp_path: Path) -> None:
+        platform = Platform()
+        small = Kit.runtime(platform, LocalStore(tmp_path / "small", max_pending=2))
+        roomy = Kit.runtime(platform, LocalStore(tmp_path / "roomy"))
+        for runtime in (small, roomy):
+            runtime.accept([Kit.first(platform, default="review")], T0)
+        for number, artifact in enumerate(Things.artifacts(5)):
+            clock = T0 + timedelta(seconds=number)
+            assert (
+                small.ask(
+                    "cli", artifact, EvidenceSet(), clock, environment="production"
+                ).canonical_bytes()
+                == roomy.ask(
+                    "cli", artifact, EvidenceSet(), clock, environment="production"
+                ).canonical_bytes()
+            )
+        assert small.drain(Upstream()).left == 0

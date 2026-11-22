@@ -227,6 +227,15 @@ class BundleChain:
         return state, current
 
     @classmethod
+    def reverify(
+        cls, root_public: bytes, delegation: object, envelope: object, tenant: str, now: datetime
+    ) -> dict[str, Any]:
+        """A bundle kept on disk, checked again when it is loaded: signature, key, tenant, version and scope; its expiry is not
+        checked, because an expired bundle is still the last policy the tenant published and the policy's own expiry decides
+        what a point does with it (`R202`)."""
+        return cls._verified(root_public, delegation, envelope, tenant, now, check_expiry=False)
+
+    @classmethod
     def _verified(
         cls,
         root_public: bytes,

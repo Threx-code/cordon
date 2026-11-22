@@ -77,6 +77,26 @@ class Matrix:
             intel_age_s=context.intel_age_s,
         )
 
+    @classmethod
+    def key(cls, index: int) -> str:
+        policy_i, evidence_i, artifact_i, context_i, clock_i = cls.inputs()["cases"][index]
+        inputs = cls.inputs()
+        context = Context.from_json(inputs["contexts"][context_i])
+        return PointRuntime.key(
+            context.point,
+            ArtifactRef.from_json(inputs["artifacts"][artifact_i]),
+            EvidenceSet.from_json(inputs["evidence"][evidence_i]),
+            cls.policies()[policy_i],
+            Instants.parse(inputs["clocks"][clock_i]),
+            environment=context.environment,
+            scope_path=context.scope_path,
+            actor=context.actor,
+            relation=context.relation,
+            online=context.online,
+            bundle_age_s=context.bundle_age_s,
+            intel_age_s=context.intel_age_s,
+        )
+
 
 class TestTheMatrix:
     def test_it_is_a_thousand_cases_over_seven_points(self) -> None:
@@ -111,6 +131,14 @@ class TestTheMatrix:
             assert {point: d.context.point for point, d in seen.items()} == {
                 p: p for p in PointRuntime.POINTS
             }  # type: ignore[union-attr]
+
+    def test_the_key_given_before_deciding_is_the_inputs_digest_the_decision_carries(self) -> None:
+        wrong = []
+        for index in Matrix.indexes():
+            decision = Matrix.ask(index)
+            if Matrix.key(index) != decision.inputs_digest:
+                wrong.append(index)
+        assert wrong == []
 
     def test_asking_twice_gives_the_same_bytes(self) -> None:
         for index in Matrix.indexes()[::100]:
