@@ -123,7 +123,11 @@ class FindingLocationsFixtures:
             path = root / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(body, encoding="utf-8")
-        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(root)
+        # No wall-clock budget: these tests judge where findings point, and a loaded runner had
+        # spent the default budget before the scan finished, leaving nothing to judge.
+        config = Config.default().with_overrides(use_cache=False)
+        config = config.with_overrides(limits=config.limits.merged(total_timeout=0))
+        result = Scanner(config).scan(root)
         return root, [f for f in result.findings if f.evidence.span is not None]
 
 
