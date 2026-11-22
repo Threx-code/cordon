@@ -20,6 +20,7 @@ from cordon_scanner.decide.decision.outcome import (
     DecisionContext,
     Explanation,
     Reason,
+    Relaxation,
     States,
 )
 from cordon_scanner.decide.decision.pipeline import (
@@ -91,6 +92,15 @@ class Decider:
             draft.reasons.append(reason)
             draft.raise_to(Completeness.LEVEL_STATE[level])
             other_block = other_block or level == "block"
+            if level != "block":
+                draft.relaxations.add(
+                    Relaxation(
+                        reason.code,
+                        Completeness.setting_of(reason),
+                        level,
+                        facts.context.environment,
+                    )
+                )
         fired = RuleStage.run(facts, policy)
         standing, added, lifted = Overrides.apply(facts, fired, policy.defaults.exceptions)
         asking = [item for item in standing if Overrides.asks_for_more(item)]
@@ -180,6 +190,7 @@ class Decider:
                 facts.context.point, facts.context.environment, facts.context.relation
             ),
             clock_bucket=bucket_text,
+            relaxations=tuple(sorted(draft.relaxations, key=Relaxation.sort_key)) or None,
         )
 
 

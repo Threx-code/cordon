@@ -95,6 +95,31 @@ class DecisionContext(JsonRecord):
 
 
 @dataclass(frozen=True, slots=True)
+class Relaxation(JsonRecord):
+    """A fail-closed default the policy relaxed for this call's environment (invariant I4): the shortfall that was
+    found (`code`), the policy setting that decided it (`setting`), the level it was let through at (`level`: a warning
+    or a review, never a block) and the environment the policy relaxes it for."""
+
+    SETTINGS: ClassVar[tuple[str, ...]] = ("on_incomplete", "unresolved", "on_gaps")
+    LEVELS: ClassVar[tuple[str, ...]] = ("warn", "review")
+
+    code: str
+    setting: str
+    level: str
+    environment: str
+
+    def __post_init__(self) -> None:
+        if not ReasonCodes.is_registered(self.code):
+            raise DecisionError(f"Relaxation.code: {self.code!r} is not a registered reason code")
+        Checks.one_of("Relaxation", "setting", self.setting, self.SETTINGS)
+        Checks.one_of("Relaxation", "level", self.level, self.LEVELS)
+        Checks.text("Relaxation", "environment", self.environment)
+
+    def sort_key(self) -> tuple[str, str, str, str]:
+        return (self.code, self.setting, self.level, self.environment)
+
+
+@dataclass(frozen=True, slots=True)
 class Decision(JsonRecord):
     """The outcome for one artifact in one context under one policy."""
 
@@ -102,6 +127,7 @@ class Decision(JsonRecord):
         "explanation": Explanation,
         "policy": PolicyRef,
         "context": DecisionContext,
+        "relaxations": Relaxation,
     }
 
     state: str
@@ -112,6 +138,8 @@ class Decision(JsonRecord):
     policy: PolicyRef
     context: DecisionContext | None = None
     clock_bucket: str | None = None
+    relaxations: tuple[Relaxation, ...] | None = None
+    """The fail-closed defaults the policy relaxed for this environment that this call used; absent when none was."""
 
     def __post_init__(self) -> None:
         Checks.one_of("Decision", "state", self.state, States.ORDER)
@@ -123,6 +151,8 @@ class Decision(JsonRecord):
             raise DecisionError("Decision.reason_codes: a code is listed once")
         if self.clock_bucket is not None:
             Instants.parse(self.clock_bucket)
+        if self.relaxations is not None and not self.relaxations:
+            raise DecisionError("Decision.relaxations: absent when there is none, never empty")
 
     @property
     def blocked(self) -> bool:
@@ -133,4 +163,12 @@ class Decision(JsonRecord):
         return ArtifactDigests.canonical_json(self.to_json())
 
 
-__all__ = ["Decision", "DecisionContext", "Explanation", "PolicyRef", "Reason", "States"]
+__all__ = [
+    "Decision",
+    "DecisionContext",
+    "Explanation",
+    "PolicyRef",
+    "Reason",
+    "Relaxation",
+    "States",
+]

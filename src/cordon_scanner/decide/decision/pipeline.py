@@ -19,7 +19,7 @@ from typing import ClassVar
 from cordon_scanner.decide.decision.compiler import PolicyCompiler
 from cordon_scanner.decide.decision.evidence import Approval, FindingFact
 from cordon_scanner.decide.decision.facts import Facts, Matcher
-from cordon_scanner.decide.decision.outcome import Reason, States
+from cordon_scanner.decide.decision.outcome import Reason, Relaxation, States
 from cordon_scanner.decide.decision.records import Instants
 from cordon_scanner.decide.decision.table import CompiledPolicy, CompiledRule
 
@@ -48,6 +48,9 @@ class Draft:
     obligations: set[str] = field(default_factory=set)
     fired: list[Fired] = field(default_factory=list)
     stopped: bool = False  # a hard stop: nothing after it runs
+    relaxations: set[Relaxation] = field(
+        default_factory=set
+    )  # fail-closed defaults the policy relaxed and the call used
 
     def raise_to(self, state: str) -> None:
         self.state = States.stricter(self.state, state)
@@ -123,6 +126,16 @@ class Completeness:
                 (incomplete, Reason("R205", "provenance is present but cannot be verified"))
             )
         return found
+
+    @staticmethod
+    def setting_of(reason: Reason) -> str:
+        """The policy default that gave a shortfall its level: `unresolved` for R203, `on_gaps` for an unexamined
+        part of the content, `on_incomplete` for everything else."""
+        if reason.code == "R203":
+            return "unresolved"
+        if reason.code == "R204" and reason.rule_id is not None:
+            return "on_gaps"
+        return "on_incomplete"
 
     @staticmethod
     def _over(age: int | None, limit: int | None) -> bool:

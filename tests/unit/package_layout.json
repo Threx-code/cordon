@@ -874,6 +874,7 @@
   "test_reason_codes.py": "contracts",
   "test_records.py": "decide/decision",
   "test_install_hook_shapes.py": "detect/supply/manifests",
+  "test_relaxation.py": "decide/decision",
   "test_rule_material_here.py": "analysis/shared",
   "test_destination_candidates.py": "analysis/shared",
   "test_ip_logger_hosts.py": "analysis/shared",
