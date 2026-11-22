@@ -1,4 +1,4 @@
-"""A window's report: the confirmed set is the denominator, content recall is the headline, machine share leaves out G1."""
+"""A window report: the confirmed set is the denominator, content recall the headline, advisory matches apart."""
 
 from __future__ import annotations
 

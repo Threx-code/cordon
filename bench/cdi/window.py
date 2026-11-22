@@ -12,7 +12,7 @@ Three rules shape the numbers, and none of them is optional:
   caught only because an advisory already named them are reported on their own line and never count toward it, nor as
   learning.
 * The machine share is the share of content catches made by machine-learned detectors. Advisory matches (the intel
-  identities, G1) are not content catches, so they are in neither side of it.
+  identities) are not content catches, so they are in neither side of it.
 """
 
 from __future__ import annotations
