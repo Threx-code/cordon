@@ -164,6 +164,44 @@ class TestLeakageAndRefusedTerms:
             with pytest.raises(ValueError, match="refused term kind"):
                 Terms.check((kind, "younger-than-30-days"))
 
+    @pytest.mark.parametrize(
+        "term",
+        [
+            ("absent", "tests"),
+            ("absent", "repository_link"),
+            ("absent", "readme"),
+            ("absence", "readme"),
+            ("missing", "readme"),
+            ("no", "tests"),
+        ],
+    )
+    def test_an_absence_term_is_refused(self, term: tuple[str, ...]) -> None:
+        with pytest.raises(ValueError, match="refused term kind"):
+            Terms.check(term)
+
+    def test_an_absence_term_in_a_units_terms_is_never_part_of_a_candidate(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        real = Terms.of
+        monkeypatch.setattr(
+            Terms, "of", staticmethod(lambda facts: real(facts) | {("absent", "readme")})
+        )
+        units = (
+            FactsKit.planted(4, 5)
+            + FactsKit.legit(12_000)
+            + FactsKit.planted(2, 3, split="confirm")
+            + FactsKit.legit(9_000, split="confirm", seed=11)
+        )
+        run = Distiller().distill(units)
+        assert run.refused.get("refused_kind", 0) >= 1
+        assert run.candidate is not None
+        assert all(term[0] != "absent" for term in run.candidate["predicate"])
+
+    def test_a_pack_rule_that_names_an_absence_is_refused_when_it_is_read(self) -> None:
+        from cordon_scanner.rules.fact_terms import FactTerms
+
+        assert {"absent", "absence", "missing", "no"} <= FactTerms.REFUSED
+
     def test_a_metadata_term_from_one_ecosystem_is_refused(self) -> None:
         units = [
             Unit(

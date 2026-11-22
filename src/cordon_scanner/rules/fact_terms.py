@@ -99,15 +99,18 @@ class FactTerms:
     )
     KINDS: ClassVar[frozenset[str]] = frozenset({"file", "package_rule", "hook", "target"})
     VERSIONS: ClassVar[dict[str, int]] = {"file": 1, "package_rule": 1, "hook": 1, "target": 1}
+    """The semantics version of each term kind this scanner reads. A term is written `kind` (version 1) or `kind@N`; a version above this one is a meaning the scanner does not know."""
     TARGETS: ClassVar[frozenset[str]] = frozenset(
         {"source", "package", "archive", "image", "host", "sbom"}
     )
     """What a scan can be of (`ScanResult.target_kind`): the same file is reached differently in a published package and in a source tree, so a rule may name the kind."""
-    """The semantics version of each term kind this scanner reads. A term is written `kind` (version 1) or `kind@N`; a version above this one is a meaning the scanner does not know."""
 
     NOT_COMPUTABLE: ClassVar[frozenset[str]] = frozenset({"change"})
     """Term kinds the scanner cannot compute from one release: a `change` term is over a release pair, and the scanner has no previous release. Every kind in `KINDS` is scanner-computable; a pack rule over one of these is refused, and such a detector ships feed-side or through `--previous-facts`."""
-    REFUSED: ClassVar[frozenset[str]] = frozenset({"name", "host", "age", "publisher", "program"})
+    REFUSED: ClassVar[frozenset[str]] = frozenset(
+        {"name", "host", "age", "publisher", "program", "absent", "absence", "missing", "no"}
+    )
+    """Kinds of term no rule and no distilled detector may use: identities belong to intel, age and publisher only stratify, and an absence (no tests, no repository link, no README) is metadata that stands in for age or publisher, not a behaviour."""
     CAPABILITIES: ClassVar[frozenset[str]] = frozenset(str(c) for c in Capability)
 
     @staticmethod
@@ -201,7 +204,7 @@ class FactTerms:
         FactTerms.check_version(kind, at, written)
         if kind in FactTerms.REFUSED:
             raise ValueError(
-                f"refused term kind: {kind} (identities belong to intel; age and publisher only stratify)"
+                f"refused term kind: {kind} (identities belong to intel; age and publisher only stratify; an absence is metadata, not behaviour)"
             )
         if kind in FactTerms.NOT_COMPUTABLE:
             raise ValueError(
