@@ -829,6 +829,7 @@
   "report/vex": "report/vex",
   "rules/feed_packs": "rules/feed_packs",
   "rules/derivations": "rules/derivations",
+  "rules/learned": "rules/learned",
   "rules/loader": "rules/loader",
   "rules/anchored": "rules/anchored",
   "rules/pack": "rules/pack",

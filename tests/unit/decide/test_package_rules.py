@@ -191,3 +191,60 @@ class TestARederivedRuleIsNotCoveredByTheOldSuppression:
         old = self.fingerprints(tmp_path / "a", RULE)
         new = self.fingerprints(tmp_path / "b", self.SAME_ID_NEW_PREDICATE)
         assert old and new and not old & new
+
+
+LEARNED_BLOCK = """    learned:
+      families: 4
+      legit_rate: 0.0004
+      interval: [0.0, 0.0009]
+      batch: batch-one
+"""
+
+
+class TestAFindingShowsWhereItsRuleCameFrom:
+    """A learned finding's explanation carries the four things the rule was learned from: how many families, how often legitimate packages fire it with the interval that rate lies in, the batch, and the facts
+    the package satisfied."""
+
+    @staticmethod
+    def rule_with(block: str) -> str:
+        return RULE.replace("    match:\n", f"{block}    match:\n")
+
+    def test_the_four_fields_are_in_the_explanation(self, tmp_path) -> None:
+        result = PackageKit.scan(
+            tmp_path,
+            index="module.exports = (a, b) => a + b;\n",
+            rule=self.rule_with(LEARNED_BLOCK),
+        )
+        (finding,) = [f for f in result.findings if f.rule_id == "LEARNED.TEST.001"]
+        basis = finding.explanation.basis
+        assert "families=4" in basis and "legit_rate=0.0004" in basis
+        assert "interval=0.0000-0.0009" in basis and "batch=batch-one" in basis
+        assert any(
+            code.startswith("facts=") and "egress" in code and "spawn" in code for code in basis
+        )
+
+    def test_a_rule_without_the_block_shows_none_of_them(self, tmp_path) -> None:
+        result = PackageKit.scan(tmp_path, index="module.exports = (a, b) => a + b;\n")
+        (finding,) = [f for f in result.findings if f.rule_id == "LEARNED.TEST.001"]
+        assert finding.explanation.basis == ()
+
+    @pytest.mark.parametrize(
+        "block",
+        [
+            "    learned: {families: 0, legit_rate: 0.1, interval: [0.0, 0.2], batch: b}\n",
+            "    learned: {families: 3, legit_rate: 1.5, interval: [0.0, 2.0], batch: b}\n",
+            "    learned: {families: 3, legit_rate: 0.1, interval: [0.2, 0.3], batch: b}\n",
+            "    learned: {families: 3, legit_rate: 0.1, interval: [0.0], batch: b}\n",
+            "    learned: {families: 3, legit_rate: 0.1, interval: [0.0, 0.2], batch: 'a b'}\n",
+            "    learned: {families: 3, legit_rate: 0.1, interval: [0.0, 0.2]}\n",
+            "    learned: {families: 3, legit_rate: 0.1, interval: [0.0, 0.2], batch: b, extra: 1}\n",
+            "    learned: yes\n",
+        ],
+    )
+    def test_a_block_that_is_not_of_that_form_is_refused_at_load(
+        self, tmp_path, block: str
+    ) -> None:
+        pack = tmp_path / "bad.yaml"
+        pack.write_text(self.rule_with(block), encoding="utf-8")
+        with pytest.raises(RulePackError, match="learned"):
+            RuleLoader().load_file(pack)

@@ -37,6 +37,7 @@ from cordon_scanner.foundation.rule_model import Rule, RuleProvenance, RuleTests
 from cordon_scanner.foundation.text.literals import LiteralGate
 from cordon_scanner.rules.derivations import PatternDerivations
 from cordon_scanner.rules.fact_terms import FactTerms
+from cordon_scanner.rules.learned import LearnedBlock
 from cordon_scanner.rules.pack import CompiledMatch, CompiledRule, RulePack
 from cordon_scanner.rules.patterns import PatternCompiler
 from cordon_scanner.version import ENGINE_API_VERSION
@@ -75,6 +76,7 @@ _RULE_KEYS = frozenset(
         "evidence_policy",
         "capability",
         "provenance",
+        "learned",
         "tests",
         "references",
         "enabled",
@@ -309,6 +311,7 @@ class RuleLoader:
             raise RulePackError(f"{where}: {exc}") from exc
 
         provenance = self._parse_provenance(raw.get("provenance"), where=where)
+        LearnedBlock.check(raw.get("learned"), where=where)
 
         # Provenance is mandatory for malicious rules. A rule asserting evidence
         # of intent to harm must record where that assertion came from, because

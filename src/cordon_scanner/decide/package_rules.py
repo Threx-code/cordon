@@ -21,7 +21,7 @@ hooks. It adds findings and never lowers, holds or removes one. A suppressed fin
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.foundation.capabilities import MatchKind
 from cordon_scanner.foundation.models import (
@@ -145,6 +145,22 @@ class PackageRules:
         return out
 
     @staticmethod
+    def learned_basis(raw: Mapping[str, Any], said: str) -> tuple[str, ...]:
+        """What a learned rule's finding shows of where the rule came from, as stable codes: the families it was learned from, how often legitimate packages fire it with the interval, the batch, and the
+        facts the package satisfied. Nothing for a rule that declares no `learned` block."""
+        learned = raw.get("learned")
+        if not isinstance(learned, dict):
+            return ()
+        low, high = learned["interval"]
+        return (
+            f"families={learned['families']}",
+            f"legit_rate={learned['legit_rate']:.4f}",
+            f"interval={low:.4f}-{high:.4f}",
+            f"batch={learned['batch']}",
+            f"facts={said}",
+        )
+
+    @staticmethod
     def finding(compiled: CompiledRule, path: str, satisfied: Sequence[Term]) -> Finding:
         rule = compiled.rule
         said = "; ".join(" ".join(t) for t in satisfied)
@@ -165,7 +181,11 @@ class PackageRules:
                 metadata=(("facts", said), ("unreached", "yes" if unreached else "no")),
             ),
             remediation=rule.remediation,
-            explanation=Explanation(summary=rule.title, matched_rule=rule.id),
+            explanation=Explanation(
+                summary=rule.title,
+                matched_rule=rule.id,
+                basis=PackageRules.learned_basis(rule.raw, said),
+            ),
             risk=NO_RISK,
             detector=DETECTOR,
             rule_version=rule.version,
