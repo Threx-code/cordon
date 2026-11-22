@@ -1,0 +1,1173 @@
+{
+ "approval-v1.json": {
+  "#defs/confidence": {
+   "const": null,
+   "enum": [
+    "\"confirmed\"",
+    "\"high\"",
+    "\"low\"",
+    "\"medium\""
+   ],
+   "ref": null,
+   "required": [],
+   "type": null
+  },
+  "#defs/digest": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  "#defs/reason_code": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  "#defs/severity": {
+   "const": null,
+   "enum": [
+    "\"critical\"",
+    "\"high\"",
+    "\"info\"",
+    "\"low\"",
+    "\"medium\""
+   ],
+   "ref": null,
+   "required": [],
+   "type": null
+  },
+  "#defs/subject_id": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  "#defs/timestamp": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [
+    "approver",
+    "digests",
+    "expires_at",
+    "scope"
+   ],
+   "type": "object"
+  },
+  ".approver": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".conditions": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "array"
+  },
+  ".conditions[]": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".digests": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "array"
+  },
+  ".digests[]": {
+   "const": null,
+   "enum": null,
+   "ref": "#/$defs/digest",
+   "required": [],
+   "type": null
+  },
+  ".expires_at": {
+   "const": null,
+   "enum": null,
+   "ref": "#/$defs/timestamp",
+   "required": [],
+   "type": null
+  },
+  ".outcome": {
+   "const": null,
+   "enum": [
+    "\"ALLOW\"",
+    "\"REVIEW\""
+   ],
+   "ref": null,
+   "required": [],
+   "type": null
+  },
+  ".reason": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".reason_codes": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": [
+    "array",
+    "null"
+   ]
+  },
+  ".reason_codes[]": {
+   "const": null,
+   "enum": null,
+   "ref": "#/$defs/reason_code",
+   "required": [],
+   "type": null
+  },
+  ".rule_ids": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": [
+    "array",
+    "null"
+   ]
+  },
+  ".rule_ids[]": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".scope": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  }
+ },
+ "decision-v1.json": {
+  "#defs/confidence": {
+   "const": null,
+   "enum": [
+    "\"confirmed\"",
+    "\"high\"",
+    "\"low\"",
+    "\"medium\""
+   ],
+   "ref": null,
+   "required": [],
+   "type": null
+  },
+  "#defs/digest": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  "#defs/reason_code": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  "#defs/severity": {
+   "const": null,
+   "enum": [
+    "\"critical\"",
+    "\"high\"",
+    "\"info\"",
+    "\"low\"",
+    "\"medium\""
+   ],
+   "ref": null,
+   "required": [],
+   "type": null
+  },
+  "#defs/subject_id": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  "#defs/timestamp": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [
+    "explanation",
+    "inputs_digest",
+    "obligations",
+    "policy",
+    "reason_codes",
+    "state"
+   ],
+   "type": "object"
+  },
+  ".clock_bucket": {
+   "const": null,
+   "enum": null,
+   "ref": "#/$defs/timestamp",
+   "required": [],
+   "type": null
+  },
+  ".context": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "object"
+  },
+  ".context.environment": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".context.point": {
+   "const": null,
+   "enum": [
+    "\"agent_hook\"",
+    "\"ci_gate\"",
+    "\"cli\"",
+    "\"deploy_admission\"",
+    "\"firewall\"",
+    "\"ide\"",
+    "\"inventory_sweep\""
+   ],
+   "ref": null,
+   "required": [],
+   "type": null
+  },
+  ".context.relation": {
+   "const": null,
+   "enum": [
+    "\"bundled\"",
+    "\"direct\"",
+    "\"runtime\"",
+    "\"tool\"",
+    "\"transitive\""
+   ],
+   "ref": null,
+   "required": [],
+   "type": null
+  },
+  ".explanation": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [
+    "reasons",
+    "summary"
+   ],
+   "type": "object"
+  },
+  ".explanation.reasons": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "array"
+  },
+  ".explanation.reasons[]": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [
+    "code",
+    "text"
+   ],
+   "type": "object"
+  },
+  ".explanation.reasons[].code": {
+   "const": null,
+   "enum": null,
+   "ref": "#/$defs/reason_code",
+   "required": [],
+   "type": null
+  },
+  ".explanation.reasons[].evidence_hash": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".explanation.reasons[].line": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "integer"
+  },
+  ".explanation.reasons[].path": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".explanation.reasons[].rule_id": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".explanation.reasons[].text": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".explanation.summary": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".inputs_digest": {
+   "const": null,
+   "enum": null,
+   "ref": "#/$defs/digest",
+   "required": [],
+   "type": null
+  },
+  ".obligations": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "array"
+  },
+  ".obligations[]": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".policy": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [
+    "id",
+    "sha256",
+    "version"
+   ],
+   "type": "object"
+  },
+  ".policy.id": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".policy.sha256": {
+   "const": null,
+   "enum": null,
+   "ref": "#/$defs/digest",
+   "required": [],
+   "type": null
+  },
+  ".policy.version": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "integer"
+  },
+  ".reason_codes": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "array"
+  },
+  ".reason_codes[]": {
+   "const": null,
+   "enum": null,
+   "ref": "#/$defs/reason_code",
+   "required": [],
+   "type": null
+  },
+  ".relaxations": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "array"
+  },
+  ".relaxations[]": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [
+    "code",
+    "environment",
+    "level",
+    "setting"
+   ],
+   "type": "object"
+  },
+  ".relaxations[].code": {
+   "const": null,
+   "enum": null,
+   "ref": "#/$defs/reason_code",
+   "required": [],
+   "type": null
+  },
+  ".relaxations[].environment": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".relaxations[].level": {
+   "const": null,
+   "enum": [
+    "\"allow\"",
+    "\"review\"",
+    "\"warn\""
+   ],
+   "ref": null,
+   "required": [],
+   "type": null
+  },
+  ".relaxations[].setting": {
+   "const": null,
+   "enum": [
+    "\"on_gaps\"",
+    "\"on_incomplete\"",
+    "\"serve_last_allow\"",
+    "\"unresolved\""
+   ],
+   "ref": null,
+   "required": [],
+   "type": null
+  },
+  ".state": {
+   "const": null,
+   "enum": [
+    "\"ALLOW\"",
+    "\"ALLOW_WITH_CONDITIONS\"",
+    "\"BLOCK\"",
+    "\"REVIEW\""
+   ],
+   "ref": null,
+   "required": [],
+   "type": null
+  }
+ },
+ "intel-match-v1.json": {
+  "#defs/confidence": {
+   "const": null,
+   "enum": [
+    "\"confirmed\"",
+    "\"high\"",
+    "\"low\"",
+    "\"medium\""
+   ],
+   "ref": null,
+   "required": [],
+   "type": null
+  },
+  "#defs/digest": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  "#defs/reason_code": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  "#defs/severity": {
+   "const": null,
+   "enum": [
+    "\"critical\"",
+    "\"high\"",
+    "\"info\"",
+    "\"low\"",
+    "\"medium\""
+   ],
+   "ref": null,
+   "required": [],
+   "type": null
+  },
+  "#defs/subject_id": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  "#defs/timestamp": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [
+    "first_seen",
+    "id",
+    "kind",
+    "source"
+   ],
+   "type": "object"
+  },
+  ".first_seen": {
+   "const": null,
+   "enum": null,
+   "ref": "#/$defs/timestamp",
+   "required": [],
+   "type": null
+  },
+  ".id": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".kind": {
+   "const": null,
+   "enum": [
+    "\"advisory\"",
+    "\"known_malware\""
+   ],
+   "ref": null,
+   "required": [],
+   "type": null
+  },
+  ".source": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".url": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".withdrawn": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "boolean"
+  }
+ },
+ "inventory-v1.json": {
+  "#defs/confidence": {
+   "const": null,
+   "enum": [
+    "\"confirmed\"",
+    "\"high\"",
+    "\"low\"",
+    "\"medium\""
+   ],
+   "ref": null,
+   "required": [],
+   "type": null
+  },
+  "#defs/digest": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  "#defs/reason_code": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  "#defs/severity": {
+   "const": null,
+   "enum": [
+    "\"critical\"",
+    "\"high\"",
+    "\"info\"",
+    "\"low\"",
+    "\"medium\""
+   ],
+   "ref": null,
+   "required": [],
+   "type": null
+  },
+  "#defs/subject_id": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  "#defs/timestamp": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [
+    "occurrences"
+   ],
+   "type": "object"
+  },
+  ".occurrences": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "array"
+  },
+  ".occurrences[]": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [
+    "digest",
+    "subject",
+    "where"
+   ],
+   "type": "object"
+  },
+  ".occurrences[].digest": {
+   "const": null,
+   "enum": null,
+   "ref": "#/$defs/digest",
+   "required": [],
+   "type": null
+  },
+  ".occurrences[].relation": {
+   "const": null,
+   "enum": [
+    "\"bundled\"",
+    "\"direct\"",
+    "\"runtime\"",
+    "\"tool\"",
+    "\"transitive\""
+   ],
+   "ref": null,
+   "required": [],
+   "type": null
+  },
+  ".occurrences[].subject": {
+   "const": null,
+   "enum": null,
+   "ref": "#/$defs/subject_id",
+   "required": [],
+   "type": null
+  },
+  ".occurrences[].version": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".occurrences[].where": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  }
+ },
+ "review-v1.json": {
+  "#defs/confidence": {
+   "const": null,
+   "enum": [
+    "\"confirmed\"",
+    "\"high\"",
+    "\"low\"",
+    "\"medium\""
+   ],
+   "ref": null,
+   "required": [],
+   "type": null
+  },
+  "#defs/digest": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  "#defs/reason_code": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  "#defs/severity": {
+   "const": null,
+   "enum": [
+    "\"critical\"",
+    "\"high\"",
+    "\"info\"",
+    "\"low\"",
+    "\"medium\""
+   ],
+   "ref": null,
+   "required": [],
+   "type": null
+  },
+  "#defs/subject_id": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  "#defs/timestamp": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [
+    "label",
+    "readers",
+    "reasoning"
+   ],
+   "type": "object"
+  },
+  ".label": {
+   "const": null,
+   "enum": [
+    "\"benign\"",
+    "\"error\"",
+    "\"hazard\"",
+    "\"malicious\"",
+    "\"unsure\""
+   ],
+   "ref": null,
+   "required": [],
+   "type": null
+  },
+  ".readers": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "array"
+  },
+  ".readers[]": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [
+    "label",
+    "reader"
+   ],
+   "type": "object"
+  },
+  ".readers[].at": {
+   "const": null,
+   "enum": null,
+   "ref": "#/$defs/timestamp",
+   "required": [],
+   "type": null
+  },
+  ".readers[].label": {
+   "const": null,
+   "enum": [
+    "\"benign\"",
+    "\"error\"",
+    "\"hazard\"",
+    "\"malicious\"",
+    "\"unsure\""
+   ],
+   "ref": null,
+   "required": [],
+   "type": null
+  },
+  ".readers[].reader": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".reasoning": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".rule_ids": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "array"
+  },
+  ".rule_ids[]": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  }
+ },
+ "scan-v1.json": {
+  "#defs/confidence": {
+   "const": null,
+   "enum": [
+    "\"confirmed\"",
+    "\"high\"",
+    "\"low\"",
+    "\"medium\""
+   ],
+   "ref": null,
+   "required": [],
+   "type": null
+  },
+  "#defs/digest": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  "#defs/reason_code": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  "#defs/severity": {
+   "const": null,
+   "enum": [
+    "\"critical\"",
+    "\"high\"",
+    "\"info\"",
+    "\"low\"",
+    "\"medium\""
+   ],
+   "ref": null,
+   "required": [],
+   "type": null
+  },
+  "#defs/subject_id": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  "#defs/timestamp": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [
+    "completeness",
+    "findings"
+   ],
+   "type": "object"
+  },
+  ".completeness": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [
+    "complete"
+   ],
+   "type": "object"
+  },
+  ".completeness.complete": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "boolean"
+  },
+  ".completeness.gaps": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "array"
+  },
+  ".completeness.gaps[]": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".findings": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "array"
+  },
+  ".findings[]": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [
+    "category",
+    "confidence",
+    "location",
+    "rule_id",
+    "severity"
+   ],
+   "type": "object"
+  },
+  ".findings[].category": {
+   "const": null,
+   "enum": [
+    "\"malicious\"",
+    "\"operational\"",
+    "\"policy\"",
+    "\"suspicious\"",
+    "\"vulnerable\""
+   ],
+   "ref": null,
+   "required": [],
+   "type": null
+  },
+  ".findings[].confidence": {
+   "const": null,
+   "enum": null,
+   "ref": "#/$defs/confidence",
+   "required": [],
+   "type": null
+  },
+  ".findings[].detector": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".findings[].evidence_hash": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".findings[].fingerprint": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".findings[].location": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [
+    "path"
+   ],
+   "type": "object"
+  },
+  ".findings[].location.line": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "integer"
+  },
+  ".findings[].location.path": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".findings[].rule_id": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".findings[].severity": {
+   "const": null,
+   "enum": null,
+   "ref": "#/$defs/severity",
+   "required": [],
+   "type": null
+  },
+  ".versions": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "object"
+  },
+  ".versions.rules": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".versions.scanner": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  }
+ },
+ "statement-v1.json": {
+  ".": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [
+    "_type",
+    "predicate",
+    "predicateType",
+    "subject"
+   ],
+   "type": "object"
+  },
+  "._type": {
+   "const": "\"https://in-toto.io/Statement/v1\"",
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": null
+  },
+  ".predicate": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "object"
+  },
+  ".predicateType": {
+   "const": null,
+   "enum": [
+    "\"https://cordonscan.com/approval/v1\"",
+    "\"https://cordonscan.com/decision/v1\"",
+    "\"https://cordonscan.com/intel-match/v1\"",
+    "\"https://cordonscan.com/inventory/v1\"",
+    "\"https://cordonscan.com/review/v1\"",
+    "\"https://cordonscan.com/scan/v1\""
+   ],
+   "ref": null,
+   "required": [],
+   "type": null
+  },
+  ".subject": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "array"
+  },
+  ".subject[]": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [
+    "digest",
+    "name"
+   ],
+   "type": "object"
+  },
+  ".subject[].digest": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [
+    "sha256"
+   ],
+   "type": "object"
+  },
+  ".subject[].digest.sha256": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  },
+  ".subject[].name": {
+   "const": null,
+   "enum": null,
+   "ref": null,
+   "required": [],
+   "type": "string"
+  }
+ }
+}
