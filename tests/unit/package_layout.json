@@ -875,6 +875,7 @@
   "test_adversarial_package.py": "cloud",
   "test_attribution.py": "repository/release",
   "test_bundle_chain.py": "cloud",
+  "test_bundle_loosening.py": "cloud",
   "test_additive_schemas.py": "contracts",
   "test_dsse_vectors.py": "cloud",
   "test_decision_path_stdlib_only.py": "decide",

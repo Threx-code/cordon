@@ -32,6 +32,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar, Final, NamedTuple
 
 from cordon_scanner.cloud.bundle_chain import BundleChain, BundleError, BundleRefused
+from cordon_scanner.cloud.bundle_loosening import Granted, Loosening
 from cordon_scanner.contracts.digests import ArtifactDigests
 from cordon_scanner.contracts.private_names import PrivateNames
 from cordon_scanner.decide.decision.outcome import Decision, Relaxation
@@ -93,6 +94,25 @@ class LocalRuntime:
         self._baseline = baseline
         self._held: dict[str, Any] | None = None
         self._policy: CompiledPolicy | None = None
+        self._loosenings: tuple[Granted, ...] = ()
+
+    @property
+    def loosening_log(self) -> tuple[str, ...]:
+        """The ids of the platform's decision-log entries of the loosenings that let the held policy through, for an auditor (not checked online)."""
+        return tuple(grant.log_id for grant in self._loosenings)
+
+    def _loosened(
+        self, held: dict[str, Any] | None, offered: list[dict[str, Any]], now: datetime
+    ) -> tuple[Granted, ...]:
+        """Each bundle compared with the one before it (the held one first): the loosenings that covered them, or `BundleRefused`."""
+        if held is None:
+            return ()
+        keys = BundleChain.policy_keys(self._root, self._delegation, self._tenant, now)
+        used: list[Granted] = []
+        for bundle in offered:
+            used += Loosening.check(held, bundle, policy_keys=keys, tenant=self._tenant, now=now)
+            held = bundle
+        return tuple(used)
 
     @property
     def held(self) -> dict[str, Any] | None:
@@ -131,6 +151,8 @@ class LocalRuntime:
             held=self._held,
         )
         if state == "new":
+            documents = [BundleChain.unverified_payload_document(e) for e in envelopes]
+            self._loosenings = self._loosened(self._held, documents, now) or self._loosenings
             self._policy = self._policy_of(bundle)
             self._held = bundle
             if self._store is not None:
@@ -169,6 +191,7 @@ class LocalRuntime:
                     BundleRefused.FORKED,
                     f"version {got} is not the version {have} held: another payload",
                 )
+        self._loosenings = self._loosened(held, [bundle], now) or self._loosenings
         self._policy = self._policy_of(bundle)
         self._held = bundle
         if self._store is not None:

@@ -59,6 +59,33 @@ class Platform:
             ],
         }
 
+    def loosening(
+        self,
+        *,
+        relaxes: list[str],
+        from_version: int,
+        issued: datetime,
+        expires: datetime,
+        log_id: str = "log:entry-1",
+        signer: Ed25519Signer | None = None,
+        tenant: str = TENANT,
+        scope: str = SCOPE,
+    ) -> dict[str, Any]:
+        """A signed loosening action: what a bundle that relaxes the policy carries, signed by the policy key unless told otherwise."""
+        document = {
+            "_type": "cordon.loosening/v1",
+            "tenant": tenant,
+            "scope": scope,
+            "from_version": from_version,
+            "relaxes": relaxes,
+            "issued_at": issued.isoformat(),
+            "expires_at": expires.isoformat(),
+            "log_id": log_id,
+        }
+        return self.sign(
+            "application/vnd.cordon.loosening+json", document, signer or self.policy_key
+        )
+
     def delegation(self) -> dict[str, Any]:
         document = {
             "_type": "cordon.delegation/v1",
@@ -84,6 +111,8 @@ class Platform:
         expires: datetime,
         carry_policy: bool = True,
         previous_sha: str | None = None,
+        loosenings: list[dict[str, Any]] | None = None,
+        lists: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         version = len(self.chain) + 1
         prev = previous_sha
@@ -97,8 +126,10 @@ class Platform:
             "issued_at": issued.isoformat(),
             "expires_at": expires.isoformat(),
             "signer_keyid": Dsse.keyid(self.policy_key.public),
-            "lists": {"deny": ["pkg:npm/evil"]},
+            "lists": {"deny": ["pkg:npm/evil"]} if lists is None else lists,
         }
+        if loosenings:
+            document["loosenings"] = loosenings
         if carry_policy:
             document["compiled_table"] = policy.to_json()
         envelope = self.sign("application/vnd.cordon.policy-bundle+json", document, self.policy_key)

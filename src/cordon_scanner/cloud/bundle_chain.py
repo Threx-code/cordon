@@ -62,6 +62,8 @@ class BundleRefused(BundleError):
     GAP: ClassVar[str] = "bundle_gap"
     EXPIRED: ClassVar[str] = "bundle_expired"
     NAMES: ClassVar[tuple[str, ...]] = (ROLLED_BACK, FORKED, CHAIN_BROKEN, GAP, EXPIRED)
+    #: Not one of the platform's five: a client-side refusal of a bundle that loosens the policy without a current signed loosening (`bundle_loosening.py`).
+    LOOSENED: ClassVar[str] = "bundle_loosened"
 
     def __init__(self, name: str, message: str) -> None:
         super().__init__(message)
@@ -236,6 +238,24 @@ class BundleChain:
         return cls._verified(root_public, delegation, envelope, tenant, now, check_expiry=False)
 
     @classmethod
+    def policy_keys(
+        cls, root_public: bytes, delegation: object, tenant: str, now: datetime
+    ) -> dict[str, bytes]:
+        """The policy role keys the pinned root delegated that are valid at `now`, by key id: what a bundle or a loosening may be signed with."""
+        usable: dict[str, bytes] = {}
+        for key in cls.delegation(root_public, delegation, tenant=tenant)["keys"]:
+            if (
+                isinstance(key, dict)
+                and key.get("role") in POLICY_ROLES
+                and cls._valid_at(key, now)
+            ):
+                try:
+                    usable[str(key["keyid"])] = bytes.fromhex(str(key["public"]))
+                except (KeyError, ValueError):
+                    continue
+        return usable
+
+    @classmethod
     def _verified(
         cls,
         root_public: bytes,
@@ -246,18 +266,7 @@ class BundleChain:
         *,
         check_expiry: bool,
     ) -> dict[str, Any]:
-        keys = cls.delegation(root_public, delegation, tenant=tenant)["keys"]
-        usable: dict[str, bytes] = {}
-        for key in keys:
-            if (
-                isinstance(key, dict)
-                and key.get("role") in POLICY_ROLES
-                and cls._valid_at(key, now)
-            ):
-                try:
-                    usable[str(key["keyid"])] = bytes.fromhex(str(key["public"]))
-                except (KeyError, ValueError):
-                    continue
+        usable = cls.policy_keys(root_public, delegation, tenant, now)
         bundle = cls._json(Dsse.verify(envelope, usable, payload_type=BUNDLE_TYPE), "the payload")
         if bundle.get("tenant") != tenant:
             raise BundleError("this bundle is for another tenant")
