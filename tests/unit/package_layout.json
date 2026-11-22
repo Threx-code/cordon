@@ -1522,6 +1522,7 @@
   "test_worker_facts.py": "engine/isolation",
   "test_template.py": "engine/isolation",
   "test_context_worker.py": "engine/isolation",
+  "test_expander_waits_for_space.py": "engine/isolation",
   "test_stream.py": "detect/binary/rule_engine",
   "test_kept_positions.py": "detect/binary/rule_engine",
   "test_rule_file_fail_closed.py": "detect/binary",
