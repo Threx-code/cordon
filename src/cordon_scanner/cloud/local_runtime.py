@@ -101,10 +101,23 @@ class LocalRuntime:
         return self._held
 
     @property
+    def policy(self) -> CompiledPolicy:
+        """The compiled policy decisions are made under now: the held bundle's, or the baseline while none is held."""
+        return self._policy if self._policy is not None else self._baseline
+
+    @property
     def lists(self) -> dict[str, Any]:
         """The lists the held bundle carries beside its compiled policy (`lists`), or none."""
         found = (self._held or {}).get("lists")
         return dict(found) if isinstance(found, dict) else {}
+
+    def kept_scan(self, key: str) -> dict[str, Any] | None:
+        """The evidence a scan produced earlier for `key` (a digest and a rules version), or None."""
+        return self._store.recall_scan(key) if self._store is not None else None
+
+    def keep_scan(self, key: str, evidence: dict[str, Any]) -> None:
+        if self._store is not None:
+            self._store.keep_scan(key, evidence)
 
     def accept(self, envelopes: Sequence[object], now: datetime) -> str:
         """Take the bundles the control plane sent since the one held, oldest first: `new` or `unchanged`.

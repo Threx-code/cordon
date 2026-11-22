@@ -122,7 +122,7 @@ class Completeness:
                 )
             )
         provenance = evidence.provenance
-        if provenance is not None and not provenance.verified and cls._reads_provenance(policy):
+        if provenance is not None and not provenance.verified and cls.reads_provenance(policy):
             found.append(
                 (incomplete, Reason("R205", "provenance is present but cannot be verified"))
             )
@@ -142,10 +142,17 @@ class Completeness:
     def _over(age: int | None, limit: int | None) -> bool:
         return age is not None and limit is not None and age > limit
 
-    @staticmethod
-    def _reads_provenance(policy: CompiledPolicy) -> bool:
+    PROVENANCE_FIELDS: ClassVar[tuple[str, ...]] = (
+        "provenance.slsa_level",
+        "signature.signer",
+        "publisher.age_days",
+    )
+
+    @classmethod
+    def reads_provenance(cls, policy: CompiledPolicy) -> bool:
+        """Whether any rule of the policy reads a fact that comes from verified provenance."""
         return any(
-            item.field in ("provenance.slsa_level", "signature.signer")
+            item.field in cls.PROVENANCE_FIELDS
             for rule in policy.rules
             for item in (*rule.applies_to, *rule.when, *rule.require)
         )

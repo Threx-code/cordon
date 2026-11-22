@@ -121,7 +121,7 @@ class LocalStore:
         self._max_cache, self._max_pending = max_cache, max_pending
         self._puts = 0
         self._recent: dict[str, dict[str, None]] = {"decisions": {}, "allowed": {}}
-        for folder in ("bundle", "blobs", "decisions", "allowed", "outbox"):
+        for folder in ("bundle", "blobs", "decisions", "allowed", "scans", "outbox"):
             (root / folder).mkdir(parents=True, exist_ok=True)
 
     # -- the policy bundles ----------------------------------------------------------------------
@@ -217,6 +217,25 @@ class LocalStore:
             return document["decision"], document["made_at"]
         return None
 
+    # -- what a scan found, kept by what was scanned ---------------------------------------------
+
+    def keep_scan(self, key: str, evidence: dict[str, Any]) -> None:
+        """Keep the evidence a scan produced under `key` (the digest scanned and the rules version, as a digest)."""
+        StoreFiles.write(
+            self._scan_path(key), StoreFiles.json_bytes({"key": key, "evidence": evidence})
+        )
+
+    def recall_scan(self, key: str) -> dict[str, Any] | None:
+        document = StoreFiles.read_json(self._scan_path(key))
+        if (
+            isinstance(document, dict)
+            and document.get("key") == key
+            and isinstance(document.get("evidence"), dict)
+        ):
+            evidence: dict[str, Any] = document["evidence"]
+            return evidence
+        return None
+
     # -- uploads waiting for the control plane ---------------------------------------------------
 
     def enqueue(self, kind: str, body: bytes) -> bool:
@@ -294,6 +313,11 @@ class LocalStore:
         if not ArtifactDigests.is_digest(key):
             raise ValueError(f"cache key {key!r} is not a digest")
         return self._root / "decisions" / f"{key.partition(':')[2]}.json"
+
+    def _scan_path(self, key: str) -> Path:
+        if not ArtifactDigests.is_digest(key):
+            raise ValueError(f"scan key {key!r} is not a digest")
+        return self._root / "scans" / f"{key.partition(':')[2]}.json"
 
     def _allow_path(self, key: str) -> Path:
         if not ArtifactDigests.is_digest(key):
