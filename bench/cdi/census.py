@@ -42,7 +42,21 @@ FACTS_EXIST: Final = "FACTS_EXIST"
 DO_NOT_SEPARATE: Final = "FACTS_EXIST_BUT_DO_NOT_SEPARATE"
 #: An attack class that no train unit shows: nothing a generator could learn from, so a reader or a teacher looks at it.
 NEW_CLASS: Final = "NEW_CLASS"
-CLASSES: Final = (READING_GAP, NO_SEPARATING_FACT, FACTS_EXIST, DO_NOT_SEPARATE, NEW_CLASS)
+#: A miss that is not a failure to detect: the scan or the harness stopped, or the release head did flag it and only the block was
+#: advisory. Nothing is learned from it by a reader, a teacher or a generator; it is counted by cause.
+NOT_DETECTION: Final = "NOT_DETECTION"
+CLASSES: Final = (READING_GAP, NO_SEPARATING_FACT, FACTS_EXIST, DO_NOT_SEPARATE, NEW_CLASS, NOT_DETECTION)
+#: The causes: a harness fault or an advisory-only block is stated on the row; the others are read from the scan's gap rules when
+#: every gap of the release is one of them (a gap in a file's own reading is a reading gap, never one of these).
+CAUSES: Final = ("harness_fault", "advisory_only", "timeout", "size_ceiling", "incomplete_scan")
+CAUSE_OF_RULE: Final = {
+    "OPERATIONAL.SCAN.TIMEOUT": "timeout",
+    "OPERATIONAL.SCAN.MEMORY_LIMIT": "size_ceiling",
+    "OPERATIONAL.ARCHIVE.REJECTED": "size_ceiling",
+    "OPERATIONAL.SCAN.INCOMPLETE": "incomplete_scan",
+}
+#: Cost classes of reading a form, in CPU seconds per MiB scanned.
+COST_CLASSES: Final = (("cheap", 1.0), ("moderate", 10.0), ("heavy", float("inf")))
 
 #: Where a classified miss goes. `counted_only` is every miss the leakage gates keep from learning.
 ROUTES: Final = {
@@ -51,6 +65,7 @@ ROUTES: Final = {
     FACTS_EXIST: "generators",
     DO_NOT_SEPARATE: "teacher",
     NEW_CLASS: "reader_or_teacher",
+    NOT_DETECTION: "none",
 }
 COUNTED_ONLY: Final = "counted_only"
 #: The form of a gap no file carries (a timeout, a package-wide limit).
@@ -74,6 +89,10 @@ class MissRow:
     label_tier: str
     facts: Mapping[str, Any]
     attack_class: str = ""
+    harness_fault: bool = False
+    advisory_only: bool = False
+    cpu_seconds: float | None = None
+    size_mib: float | None = None
 
 
 @dataclass(frozen=True)
@@ -88,6 +107,8 @@ class Verdict:
     eligible: bool
     held: tuple[str, ...]
     route: str
+    cause: str = ""
+    cost_class: str = ""
 
 
 @dataclass
@@ -108,6 +129,8 @@ class Report:
         out = {"misses": len(self.verdicts), "stale_facts_version": self.stale}
         out.update({klass.lower(): counted.get(klass, 0) for klass in CLASSES})
         out["fed_to_generators"] = len(self.for_generators())
+        causes = Counter(v.cause for v in self.verdicts if v.cause)
+        out.update({f"cause_{cause}": causes.get(cause, 0) for cause in CAUSES})
         out["held"] = sum(1 for v in self.verdicts if v.held)
         out.update({f"held_{reason}": n for reason, n in sorted(held.items())})
         return out
@@ -131,6 +154,57 @@ class ReadingGaps:
         if incomplete and not found:
             found.add((UNRECORDED, PACKAGE_FORM))
         return tuple(sorted(found))
+
+
+class Cause:
+    """Why a miss is not a failure to detect, when it is not."""
+
+    @staticmethod
+    def of(row: MissRow, gaps: tuple[Gap, ...]) -> str:
+        if row.harness_fault:
+            return "harness_fault"
+        if row.advisory_only:
+            return "advisory_only"
+        causes = {CAUSE_OF_RULE.get(rule) for rule, form in gaps if form == PACKAGE_FORM}
+        if gaps and len(causes) == 1 and None not in causes and all(form == PACKAGE_FORM for _, form in gaps):
+            return next(iter(causes))
+        return ""
+
+
+class Cost:
+    """What it costs to read a form: CPU seconds per MiB, in a class, and the value of reading it per CPU second."""
+
+    @staticmethod
+    def klass(row: MissRow) -> str:
+        if not row.cpu_seconds or not row.size_mib or row.size_mib <= 0:
+            return "unknown"
+        per_mib = row.cpu_seconds / row.size_mib
+        return next(name for name, bound in COST_CLASSES if per_mib < bound)
+
+    @staticmethod
+    def ranked(verdicts: Iterable[Verdict], rows: Mapping[str, MissRow]) -> list[dict[str, Any]]:
+        """The reading gaps that would be read, best first by detection value (the eligible misses it would catch) per CPU second
+        spent reading them. A gap with no cost measured is ranked after every gap that has one."""
+        value: Counter[Gap] = Counter()
+        cpu: Counter[Gap] = Counter()
+        for v in verdicts:
+            if v.klass != READING_GAP or v.route != ROUTES[READING_GAP]:
+                continue
+            seconds = rows[v.key].cpu_seconds if v.key in rows else None
+            for gap in v.gaps:
+                value[gap] += 1
+                cpu[gap] += seconds or 0.0
+        out = [
+            {
+                "gap": gap,
+                "misses": n,
+                "cpu_seconds": cpu[gap],
+                "value_per_cpu_second": (n / cpu[gap]) if cpu[gap] > 0 else None,
+            }
+            for gap, n in value.items()
+        ]
+        out.sort(key=lambda e: (e["value_per_cpu_second"] is None, -(e["value_per_cpu_second"] or 0.0), -e["misses"], e["gap"]))
+        return out
 
 
 class Signature:
@@ -206,7 +280,10 @@ class Census:
         eligible, held = Census.eligibility(row)
         gaps = ReadingGaps.of(row.facts)
         distance: int | None = None
-        if gaps:
+        cause = Cause.of(row, gaps)
+        if cause:
+            klass = NOT_DETECTION
+        elif gaps:
             klass = READING_GAP
         elif known_classes is not None and row.attack_class and row.attack_class not in known_classes:
             klass = NEW_CLASS
@@ -222,4 +299,5 @@ class Census:
         # Held, fresh, sealed, excluded and silver-labelled misses are counted in their class, with the reason, and go nowhere
         # (a reader built from a held unit's shape is as much a leak as a rule built from it).
         route = ROUTES[klass] if eligible else COUNTED_ONLY
-        return Verdict(row.key, row.family, klass, gaps, distance, eligible, held, route)
+        cost = Cost.klass(row) if klass == READING_GAP else ""
+        return Verdict(row.key, row.family, klass, gaps, distance, eligible, held, route, cause, cost)

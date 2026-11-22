@@ -176,6 +176,12 @@ class TestEveryMissGetsOneClassAndRoute:
             "facts_exist": 1,
             "facts_exist_but_do_not_separate": 0,
             "new_class": 0,
+            "not_detection": 0,
+            "cause_harness_fault": 0,
+            "cause_advisory_only": 0,
+            "cause_timeout": 0,
+            "cause_size_ceiling": 0,
+            "cause_incomplete_scan": 0,
             "fed_to_generators": 1,
             "held": 0,
         }
