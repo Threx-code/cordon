@@ -128,7 +128,9 @@ class ExportCases:
                     ),
                     "severity": rng.choice(FindingFact.SEVERITIES),
                     "confidence": rng.choice(FindingFact.CONFIDENCES),
-                    "category": rng.choices(["malicious", "suspicious", "vulnerable", "policy"], weights=[1, 4, 3, 4])[0],
+                    "category": rng.choices(
+                        ["malicious", "suspicious", "vulnerable", "policy"], weights=[1, 4, 3, 4]
+                    )[0],
                     "domain": rng.choice(["build", "cicd", "source", "dependency", "malware"]),
                     "path": f"src/f{rng.randrange(9)}.js",
                 }
@@ -138,7 +140,9 @@ class ExportCases:
                 ["2026-11-18T00:00:00Z", "2026-11-16T00:00:00Z", "2026-06-01T00:00:00Z", None]
             )
             artifact = {
-                "kind": rng.choice(["package", "package", "package", "package", "mcp_server", "agent_skill"]),
+                "kind": rng.choice(
+                    ["package", "package", "package", "package", "mcp_server", "agent_skill"]
+                ),
                 "subject_id": f"pkg:npm/case-{number}",
                 "digest": DIGEST,
                 "ecosystem": rng.choice(["npm", "pypi", "cargo", None]),
@@ -151,7 +155,9 @@ class ExportCases:
             if rng.random() < 0.45:
                 evidence["provenance"] = {
                     "slsa_level": rng.choice([1, 2, 2, 3, 3]),
-                    "signer": rng.choice(["release@acme.example", "release@acme.example", "someone@else.example"]),
+                    "signer": rng.choice(
+                        ["release@acme.example", "release@acme.example", "someone@else.example"]
+                    ),
                     "verified": rng.random() < 0.85,
                 }
             for name, chance in (
