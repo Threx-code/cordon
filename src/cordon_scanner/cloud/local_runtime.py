@@ -31,7 +31,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar, Final, NamedTuple
 
-from cordon_scanner.cloud.bundle_chain import BundleChain, BundleError
+from cordon_scanner.cloud.bundle_chain import BundleChain, BundleError, BundleRefused
 from cordon_scanner.contracts.digests import ArtifactDigests
 from cordon_scanner.contracts.private_names import PrivateNames
 from cordon_scanner.decide.decision.outcome import Decision, Relaxation
@@ -136,6 +136,44 @@ class LocalRuntime:
             if self._store is not None:
                 self._store.save_bundle([list(envelopes)[-1]])
         return state
+
+    def restart(self, envelope: object, now: datetime) -> str:
+        """A fresh start the bundle store asks for (its answer says `restart`: it no longer holds the bundles between): the
+        newest bundle alone, verified like any other and never older than the one held. The chain between is not checked, because
+        the store says it cannot offer it; everything else is: the signature, the tenant, the expiry, the policy, and that it is
+        the same scope and not a rollback or a fork."""
+        _, bundle = BundleChain.accept_bundle(
+            root_public=self._root,
+            delegation=self._delegation,
+            envelope=envelope,
+            tenant=self._tenant,
+            now=now,
+            held=None,
+        )
+        held = self._held
+        if held is not None:
+            if bundle["scope"] != held["scope"]:
+                raise BundleRefused(
+                    BundleRefused.CHAIN_BROKEN, "this bundle is for another scope than the one held"
+                )
+            have, got = int(held["version"]), int(bundle["version"])
+            if got < have:
+                raise BundleRefused(
+                    BundleRefused.ROLLED_BACK,
+                    f"version {got} is older than the version {have} held",
+                )
+            if got == have:
+                if BundleChain.payload_sha(bundle) == BundleChain.payload_sha(held):
+                    return "unchanged"
+                raise BundleRefused(
+                    BundleRefused.FORKED,
+                    f"version {got} is not the version {have} held: another payload",
+                )
+        self._policy = self._policy_of(bundle)
+        self._held = bundle
+        if self._store is not None:
+            self._store.save_bundle([envelope])
+        return "new"
 
     def resume(self, now: datetime) -> bool:
         """Take the bundle kept in the store, verified again (signature, key, tenant; its expiry is the policy's business, `R202`).
