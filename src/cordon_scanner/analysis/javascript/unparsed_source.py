@@ -23,6 +23,7 @@ fact of its own (`OPERATIONAL.FILE.TRUNCATED`). A file nothing runs -- a test, a
 from __future__ import annotations
 
 import json
+import math
 import posixpath
 import re
 from typing import TYPE_CHECKING, Any, ClassVar, Final
@@ -50,6 +51,10 @@ class JsUnparsed:
     #: each; then over every running JavaScript file of the legitimate lists (18,166 files, 435 units): 17,976 with none, 190 with 1 to 26 (1: 13, 2-3: 46,
     #: 4-7: 71, 8-15: 48, 16-31: 12), the largest 26. Twice the largest is 52. The hostile inputs written for the tests are off by thousands.
     TOLERATED: ClassVar[int] = 52
+    #: A large file is off by more brackets than a small one, because the tokenizer slips once per construct it cannot read. Measured over every JavaScript
+    #: file of the legitimate lists (47,547 files, 1,525 units, running or not): 3 files have more than 32 errors, 85 in 1,787 KB, 42 in 1,320 KB and 42 in
+    #: 1,073 KB; the worst is 0.048 errors per KB. The allowance is that density twice, rounded up: 0.1 per KB, never below `TOLERATED`.
+    PER_KB: ClassVar[float] = 0.1
 
     @staticmethod
     def runs_as_source(path: str, running: set[str]) -> bool:
@@ -84,7 +89,12 @@ class JsUnparsed:
             tokens = JsEval.tokens(text, templates=True)
         except (RecursionError, MemoryError, ValueError):
             return None
-        return JsUnparsed.errors(tokens) < JsUnparsed.TOLERATED
+        return JsUnparsed.errors(tokens) < JsUnparsed.allowed(len(text))
+
+    @classmethod
+    def allowed(cls, size: int) -> int:
+        """How many bracket errors a file of `size` characters may show (fewer than this is read as source): the floor, or the density times its size."""
+        return max(cls.TOLERATED, math.ceil(cls.PER_KB * size / 1024))
 
     @staticmethod
     def decide(text: str) -> Decision:

@@ -231,6 +231,49 @@ class TestWhatTheReaderGetsWrongItself:
         )
         assert (GAP in {rule for rule, _ in result.content_gaps}) is reported
 
+    @staticmethod
+    def file_of(errors: int, kilobytes: int) -> bytes:
+        """A file that acts and has `errors` wrong closes, padded with comment lines to exactly `kilobytes` KB."""
+        head = b"eval(atob('x'));\n" + b")\n" * errors
+        room = kilobytes * 1024 - len(head)
+        lines, rest = divmod(max(room, 0), 64)
+        return (
+            head
+            + (b"//" + b"x" * 61 + b"\n") * lines
+            + (b"//" + b"x" * (rest - 3) + b"\n" if rest >= 3 else b"")
+        )
+
+    @pytest.mark.parametrize(
+        ("errors", "kilobytes", "reported"),
+        [
+            (60, 0, True),  # small and broken: over the floor
+            (60, 300, True),  # 300 KB allows only the floor (52): density 0.1 would be 30
+            (
+                99,
+                1000,
+                False,
+            ),  # 1,000 KB allows 100: a big file the tokenizer slips on, as the legitimate ones do
+            (100, 1000, True),  # the allowance is fewer than 100
+            (85, 1787, False),  # the worst legitimate file measured
+            (5000, 1000, True),  # hostile: thousands of wrong closes in a big file
+            (5000, 3000, True),
+            (500, 100, True),
+        ],
+    )
+    def test_the_allowance_grows_with_the_size_at_a_tenth_of_an_error_per_kb(
+        self, tmp_path: Path, errors: int, kilobytes: int, reported: bool
+    ) -> None:
+        result = Package.scan_tarball(tmp_path, {"index.js": self.file_of(errors, kilobytes)})
+        assert (GAP in {rule for rule, _ in result.content_gaps}) is reported
+
+    def test_the_allowance_is_the_floor_for_a_small_file_and_a_tenth_per_kb_above(self) -> None:
+        from cordon_scanner.analysis.javascript.unparsed_source import JsUnparsed
+
+        assert [
+            JsUnparsed.allowed(size)
+            for size in (0, 1024, 100_000, 512 * 1024, 521_000, 1024 * 1024, 2 * 1024 * 1024)
+        ] == [52, 52, 52, 52, 52, 103, 205]
+
     def test_a_stray_close_in_a_file_that_acts_is_left_alone(self, tmp_path: Path) -> None:
         result = Package.scan_tarball(
             tmp_path, {"index.js": b"const cp = require('child_process');\ncp.exec('ls');\n)\n"}
