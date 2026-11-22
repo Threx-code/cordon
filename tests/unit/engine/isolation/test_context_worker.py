@@ -110,16 +110,7 @@ class InProcess:
                 units.extend(engine.units.deobfuscated(units))
                 dependencies, ingested = engine.stages.dependencies(units, acc, root)
                 ctx = engine.stages.install_context(units, acc, ctx, dependencies)
-                from cordon_scanner.engine.entries import PythonScripts
-
-                engine.archive_stages.unparsed_javascript(units, acc, ctx)
-                ctx = engine.archive_stages.unparsed(
-                    units,
-                    acc,
-                    ctx,
-                    {p for p in ctx.install_hook_paths if p.endswith(".py")},
-                    PythonScripts.directory(units),
-                )
+                ctx = engine.archive_stages.unparsed_directory(units, acc, ctx)
             else:
                 units = list(units)
                 dependencies, ingested = (), ()

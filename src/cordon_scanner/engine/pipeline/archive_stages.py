@@ -392,6 +392,22 @@ class ArchiveStages:
         units.extend(readings)
         return replace(ctx, tree_paths=ctx.tree_paths | {r.path for r in readings})
 
+    def unparsed_directory(
+        self, units: list[FileUnit], acc: Accumulator, ctx: ScanContext
+    ) -> ScanContext:
+        """What a plain directory scan (a cloned repository, an MCP server checked out from git) reads as running, for both languages: the JavaScript its
+        package.json names, and for Python the install closure, the top-level packages' `__init__` and the modules the manifests name (BP-15-19)."""
+        from cordon_scanner.engine.entries import PythonScripts
+
+        self.unparsed_javascript(units, acc, ctx)
+        return self.unparsed(
+            units,
+            acc,
+            ctx,
+            {p for p in ctx.install_hook_paths if p.endswith(".py")},
+            PythonScripts.directory(units),
+        )
+
     @staticmethod
     def unparsed_javascript(units: list[FileUnit], acc: Accumulator, ctx: ScanContext) -> None:
         """A JavaScript file that runs when the package is loaded and whose brackets do not close is a gap (it names something that could run

@@ -350,24 +350,10 @@ class ContextRun:
             lambda: engine.stages.install_context(units, acc, ctx, ()),
             replace(ctx, tree_paths=frozenset(u.path for u in units)),
         )
-        # A directory scan has no published package to say what runs: the files package.json names do, and for Python the install closure, the
-        # top-level packages' __init__ and the modules the manifests name for commands (BP-15-19).
-        from cordon_scanner.engine.entries import PythonScripts
-
-        self.guarded(
-            "unparsed javascript",
-            lambda: engine.archive_stages.unparsed_javascript(units, acc, self.ctx),
-            None,
-        )
+        # A directory scan has no published package to say what runs (BP-15-19).
         self.ctx = self.guarded(
-            "unparsed python",
-            lambda: engine.archive_stages.unparsed(
-                units,
-                acc,
-                self.ctx,
-                {p for p in self.ctx.install_hook_paths if p.endswith(".py")},
-                PythonScripts.directory(units),
-            ),
+            "unparsed running files",
+            lambda: engine.archive_stages.unparsed_directory(units, acc, self.ctx),
             self.ctx,
         )
         self.dependencies, self.ingested = self.guarded(
