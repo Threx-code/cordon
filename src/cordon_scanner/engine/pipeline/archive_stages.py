@@ -54,7 +54,7 @@ from cordon_scanner.foundation.errors import ArchiveError
 from cordon_scanner.foundation.formats.served_json import ServedJson
 from cordon_scanner.foundation.models import Confidence, Hook, Scope, Severity
 from cordon_scanner.foundation.paths import ContainerPaths
-from cordon_scanner.foundation.results import Dependency, OperationalFinding, ScanStats
+from cordon_scanner.foundation.results import Dependency, OperationalFinding, Repository, ScanStats
 from cordon_scanner.foundation.text.confusion_versions import ConfusionVersions
 from cordon_scanner.sources.registry import ArchiveReader
 
@@ -517,6 +517,12 @@ class ArchiveStages:
                 acc.ledger_unstarted.update(unit.path for unit in units[start + ARCHIVE_SLICE :])
                 break  # the pool stopped at the budget and said so; no slice after it
         return detectors
+
+    @staticmethod
+    def repository(path: Path, acc: Accumulator, ctx: ScanContext) -> Repository:
+        """What an archive scan reports of its target: where it is, how many files it held, and the lifecycle hooks the context worker read from its manifests."""
+        hooks = ctx.repository.hooks if ctx.repository is not None else ()
+        return Repository(root=str(path), file_count=acc.files_scanned, hooks=hooks)
 
     @staticmethod
     def manifest_hooks(units: list[FileUnit]) -> tuple[Hook, ...]:

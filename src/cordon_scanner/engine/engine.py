@@ -568,11 +568,7 @@ class Engine:
             **acc.collected(),
             # What installing it installs, then what only files outside that set record.
             dependencies=(*dependencies, *acc.not_installed),
-            repository=Repository(
-                root=str(path),
-                file_count=acc.files_scanned,
-                hooks=ctx.repository.hooks if ctx.repository is not None else (),
-            ),
+            repository=ArchiveStages.repository(path, acc, ctx),
             target_kind=target_kind,
             image=image.identity.to_dict() if image is not None else None,
             stats=ArchiveStages.stats(acc, started, len(self.rules), len(dependencies)),
