@@ -3,7 +3,9 @@
 A model that is published is data a scanner walks, never a program a scanner loads. So the only thing that leaves training for the
 feed is this: `features`, `baseline`, `trees` (a flat list of nodes for each tree: a leaf has its value, a split has its feature,
 threshold, children and which side a missing value takes), and the `schema` and `fold` of the features and a `version`
-(`YYYY-MM-DD-<12 hex>`) that names the training list. No pickle, no joblib file and no booster text file is ever published; the
+(`YYYY-MM-DD-<12 hex>`) that names the training list, and the two sections a scan reads when it applies the model: `areas` (the
+block line of each area, with a `package` entry that every area without a line of its own falls back to) and `floor` (the rule ids
+that are never re-graded). No pickle, no joblib file and no booster text file is ever published; the
 exporter checks that the exported trees score exactly as the fitted model does before it writes anything."""
 
 from __future__ import annotations
@@ -91,8 +93,13 @@ class ModelExport:
         version: str,
         rows: Sequence[Sequence[float]],
         predict: Callable[[Sequence[Sequence[float]]], Sequence[float]],
+        line: float | Callable[[dict[str, Any]], float],
+        floor: Sequence[str] = (),
     ) -> dict[str, Any]:
-        """The model as data. Refused when the exported trees do not score `rows` as `predict` (the fitted model) does."""
+        """The model as data. Refused when the exported trees do not score `rows` as `predict` (the fitted model) does.
+
+        `line` is the score above which the package area blocks (or a function of the exported trees that gives it, so a line
+        taken from the trees' own scores is the scanner's own); `floor` the rule ids a scan never re-grades."""
         if not VERSION.fullmatch(version):
             raise ExportRefused(f"{version!r} is not a model version")
         model = {
@@ -100,6 +107,8 @@ class ModelExport:
             "features": list(names),
             "baseline": 0.0,
             "trees": cls.lightgbm_trees(booster),
+            "areas": {},
+            "floor": [str(rule) for rule in floor],
             "schema": schema,
             "fold": fold,
             "version": version,
@@ -108,6 +117,10 @@ class ModelExport:
         worst = max((abs(cls.score(model, row) - float(want)) for row, want in zip(rows, fitted, strict=True)), default=0.0)
         if worst > TOLERANCE:
             raise ExportRefused(f"the exported trees differ from the fitted model by {worst:.2e}: not written")
+        package_line = float(line(model) if callable(line) else line)
+        if not 0.0 < package_line < 1.0:
+            raise ExportRefused("the package line is a probability between 0 and 1")
+        model["areas"] = {"package": package_line}
         return model
 
     @staticmethod

@@ -20,6 +20,7 @@ import json
 import subprocess
 import sys
 from collections import defaultdict
+from typing import Any
 from pathlib import Path
 
 try:  # the code and fixture areas fit here; dispatching to another area's trainer needs none of these
@@ -254,6 +255,14 @@ class Training:
         return np.array(matrix, dtype=np.float64), np.array(labels)
 
     @staticmethod
+    def fixture_line(trees: dict[str, Any], matrix: np.ndarray) -> float:
+        """The fixture area's block line: the midpoint of the two scores in the middle of the training rows, taken from the exported
+        trees' own scores, so the line is the scanner's. A fixture has no benign budget; this puts rows on both sides of the line."""
+        scores = sorted(export.ModelExport.score(trees, row.tolist()) for row in matrix)
+        middle = len(scores) // 2
+        return (scores[middle] + scores[middle + 1]) / 2
+
+    @staticmethod
     def fixture(args: argparse.Namespace) -> int:
         """`--area fixture`: the whole entry point on a fixture area. Same list and seed give a byte-identical model."""
         if args.train is None or not args.train.exists():
@@ -276,6 +285,7 @@ class Training:
             version=export.ModelExport.version(getattr(args, "day", "1970-01-01"), sha),
             rows=matrix.tolist(),
             predict=lambda rows: model.predict(np.array(rows)),
+            line=lambda trees: Training.fixture_line(trees, matrix),
         )
         file_sha = export.ModelExport.write(exported, out / "model.json.gz")
         area.Contract.write_contract(

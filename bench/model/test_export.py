@@ -50,7 +50,8 @@ class TestTheExportedTreesScoreAsTheFittedModelDoes:
 
     def test_the_file_is_gzip_json_with_the_fields_the_feed_reads_and_nothing_else_is_written_to_publish(self, trained: Path) -> None:
         model = json.loads(gzip.decompress((trained / "model.json.gz").read_bytes()))
-        assert set(model) == {"format", "features", "baseline", "trees", "schema", "fold", "version"}
+        assert set(model) == {"format", "features", "baseline", "trees", "areas", "floor", "schema", "fold", "version"}
+        assert list(model["areas"]) == ["package"] and 0.0 < model["areas"]["package"] < 1.0 and model["floor"] == []
         assert model["format"] == 3 and model["schema"] == "fs1-7e81bff59a9cc09a" and model["fold"] == "ff1-00f3139150f90490"
         assert sorted(p.name for p in trained.iterdir()) == ["metrics.json", "model.json.gz", "training_list.sha256"]
 
@@ -87,4 +88,5 @@ class TestTheExportedTreesScoreAsTheFittedModelDoes:
                 version="2026-11-22-0123456789ab",
                 rows=matrix.tolist(),
                 predict=lambda rows: np.full(len(rows), 0.5),
+                line=0.5,
             )
