@@ -31,7 +31,7 @@ from cordon_scanner.contracts.reason_codes import ReasonCodes
 from cordon_scanner.contracts.schemas import ContractSchemas
 
 #: Bump on any change to any contract file: a new schema, a new reason code, a changed part list.
-CONTRACTS_VERSION: Final = "1.4.0"
+CONTRACTS_VERSION: Final = "1.5.0"
 
 
 class ContractData:

@@ -146,6 +146,16 @@ class TestTheOtherKinds:
                 {"scope": "Acme-Prod", "name": "app/Image"},
                 "art:acme-prod/app/Image",
             ),
+            (
+                SubjectKind.INTEGRATION,
+                {"vendor": "Slack", "integration": "Incoming   Webhooks"},
+                "int:slack/incoming-webhooks",
+            ),
+            (
+                SubjectKind.INTEGRATION,
+                {"vendor": " GitHub ", "integration": "Copilot Chat"},
+                "int:github/copilot-chat",
+            ),
         ],
     )
     def test_each_kind_has_its_canonical_form(self, kind, parts, expected) -> None:
@@ -165,6 +175,10 @@ class TestTheOtherKinds:
             (SubjectKind.MCP_SERVER, {"transport": "carrier-pigeon", "locator": "x"}),
             (SubjectKind.SOURCE_REPOSITORY, {"scm": "svn", "owner": "a", "name": "b"}),
             (SubjectKind.AGENT, {"product": "  "}),
+            (SubjectKind.INTEGRATION, {"vendor": "slack"}),
+            (SubjectKind.INTEGRATION, {"vendor": "a/b", "integration": "c"}),
+            (SubjectKind.INTEGRATION, {"vendor": "a", "integration": "c?d"}),
+            (SubjectKind.INTEGRATION, {"vendor": " ", "integration": "c"}),
         ],
     )
     def test_what_cannot_be_made_canonical_is_refused_and_names_the_part(self, kind, parts) -> None:
@@ -184,6 +198,7 @@ class TestTheOtherKinds:
             SubjectKind.AGENT,
             SubjectKind.SOURCE_REPOSITORY,
             SubjectKind.BUILD_ARTIFACT,
+            SubjectKind.INTEGRATION,
         }
         assert handled == set(SubjectKind)
 

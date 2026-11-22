@@ -1,5 +1,5 @@
 {
-  "contracts_version": "1.4.0",
+  "contracts_version": "1.5.0",
   "kinds": [
     {
       "kind": "package",
@@ -154,6 +154,17 @@
       "optional": [],
       "choices": {},
       "description": "a build artifact of one tenant, by scope and name"
+    },
+    {
+      "kind": "integration",
+      "id_prefix": "int:",
+      "required": [
+        "vendor",
+        "integration"
+      ],
+      "optional": [],
+      "choices": {},
+      "description": "a third-party integration: an external API, SaaS app or connector a tenant allows software or an agent to call"
     }
   ]
 }

@@ -49,6 +49,7 @@ class Resolution:
         "too_large",  # a skill folder past the size or file count the resolver reads
         "unsupported_path",  # a file name the tree digest rule does not take
         "not_a_folder",  # the skill path is not a folder
+        "no_contract",  # a third-party integration that declares no contract to bind to
     )
 
     kind: str
