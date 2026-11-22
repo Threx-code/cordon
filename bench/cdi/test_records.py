@@ -14,15 +14,17 @@ COUNTS = {"scans_seen": 1000, "would_change": 12, "fires": 5, "confirmed_fires":
 ARTEFACTS = [{"path": "rulepack.yaml", "sha256": "aa"}, {"path": "decision.json", "sha256": "bb"}]
 
 
-def bundle(**over: Any) -> dict[str, Any]:
-    parts: dict[str, Any] = {
-        "candidate_id": "rulepack:cdi.t@1.0.0",
-        "artefacts": ARTEFACTS,
-        "decision_digest": "sha256:dd",
-        "compatibility": {"min_scanner_version": "0.8.0"},
-        "channel": "shadow",
-    }
-    return Records.detection_bundle(**{**parts, **over})
+class Kit:
+    @staticmethod
+    def bundle(**over: Any) -> dict[str, Any]:
+        parts: dict[str, Any] = {
+            "candidate_id": "rulepack:cdi.t@1.0.0",
+            "artefacts": ARTEFACTS,
+            "decision_digest": "sha256:dd",
+            "compatibility": {"min_scanner_version": "0.8.0"},
+            "channel": "shadow",
+        }
+        return Records.detection_bundle(**{**parts, **over})
 
 
 class TestTheSchemas:
@@ -32,7 +34,7 @@ class TestTheSchemas:
 
     @pytest.mark.parametrize("kind", ["DetectionBundle", "DeploymentObservation"])
     def test_a_record_missing_a_key_is_refused(self, kind: str) -> None:
-        record = bundle() if kind == "DetectionBundle" else Records.deployment_observation(bundle_id="b", channel="stable", window="w", counts=COUNTS)
+        record = Kit.bundle() if kind == "DetectionBundle" else Records.deployment_observation(bundle_id="b", channel="stable", window="w", counts=COUNTS)
         del record["channel"]
         with pytest.raises(ValueError, match="missing keys"):
             Schemas.validate(kind, record)
@@ -74,25 +76,25 @@ class TestThreatCluster:
 
 class TestDetectionBundle:
     def test_a_bundle_is_addressed_by_what_it_holds(self) -> None:
-        assert bundle()["bundle_id"] == bundle(artefacts=list(reversed(ARTEFACTS)))["bundle_id"]
-        assert bundle()["bundle_id"] != bundle(artefacts=[{"path": "rulepack.yaml", "sha256": "ff"}, ARTEFACTS[1]])["bundle_id"]
-        assert bundle()["bundle_id"] != bundle(decision_digest="sha256:ee")["bundle_id"]
+        assert Kit.bundle()["bundle_id"] == Kit.bundle(artefacts=list(reversed(ARTEFACTS)))["bundle_id"]
+        assert Kit.bundle()["bundle_id"] != Kit.bundle(artefacts=[{"path": "rulepack.yaml", "sha256": "ff"}, ARTEFACTS[1]])["bundle_id"]
+        assert Kit.bundle()["bundle_id"] != Kit.bundle(decision_digest="sha256:ee")["bundle_id"]
 
     def test_the_artefacts_are_sorted_by_path(self) -> None:
-        assert [a["path"] for a in bundle()["artefacts"]] == ["decision.json", "rulepack.yaml"]
+        assert [a["path"] for a in Kit.bundle()["artefacts"]] == ["decision.json", "rulepack.yaml"]
 
     @pytest.mark.parametrize("channel", ["shadow", "canary", "stable"])
     def test_every_channel_is_accepted(self, channel: str) -> None:
-        assert bundle(channel=channel)["channel"] == channel
+        assert Kit.bundle(channel=channel)["channel"] == channel
 
     def test_an_unknown_channel_is_refused(self) -> None:
         with pytest.raises(ValueError, match="channel"):
-            bundle(channel="beta")
+            Kit.bundle(channel="beta")
 
     @pytest.mark.parametrize("artefacts", [[], [{"path": "p", "sha256": ""}], [{"path": "", "sha256": "x"}]])
     def test_a_bundle_without_a_complete_artefact_is_refused(self, artefacts: list[dict[str, str]]) -> None:
         with pytest.raises(ValueError, match="at least one artefact"):
-            bundle(artefacts=artefacts)
+            Kit.bundle(artefacts=artefacts)
 
 
 class TestDeploymentObservation:
@@ -120,5 +122,5 @@ class TestDeploymentObservation:
             Records.deployment_observation(bundle_id="b", channel="beta", window="w", counts=COUNTS)
 
     def test_the_bundle_id_it_names_can_be_a_real_bundle(self) -> None:
-        o = Records.deployment_observation(bundle_id=bundle()["bundle_id"], channel="shadow", window="w", counts=COUNTS)
+        o = Records.deployment_observation(bundle_id=Kit.bundle()["bundle_id"], channel="shadow", window="w", counts=COUNTS)
         assert o["bundle_id"].startswith("sha256:")

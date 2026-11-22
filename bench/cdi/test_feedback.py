@@ -45,9 +45,9 @@ class TestTheRecords:
 
     def test_an_existing_record_is_never_changed_by_a_later_add(self, tmp_path: Path) -> None:
         Feedback.add(tmp_path, "miss", "m1")
-        first = Feedback.path(tmp_path).read_text().splitlines()[0]
+        first = Feedback.path(tmp_path).read_text(encoding="utf-8").splitlines()[0]
         Feedback.add(tmp_path, "rollback", "c")
-        assert Feedback.path(tmp_path).read_text().splitlines()[0] == first
+        assert Feedback.path(tmp_path).read_text(encoding="utf-8").splitlines()[0] == first
 
     def test_a_correction_names_the_record_and_one_that_does_not_exist_is_refused(self, tmp_path: Path) -> None:
         Feedback.add(tmp_path, "false_positive", "d")

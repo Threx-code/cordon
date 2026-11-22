@@ -90,7 +90,7 @@ class TestRequire:
 class TestTheGate:
     def spec(self, tmp_path: Path, claim: dict[str, Any]) -> dict[str, Any]:
         rows = tmp_path / "scans"
-        rows.write_text('{"file": "m1", "exit": 1, "findings": [], "seconds": 1}\n')
+        rows.write_text('{"file": "m1", "exit": 1, "findings": [], "seconds": 1}\n', encoding="utf-8")
         return {
             "candidate_id": "c",
             "sets": [{"name": "m", "kind": "malware", "area": "x", "off": str(rows), "on": str(rows)}],

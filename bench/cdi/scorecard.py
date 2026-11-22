@@ -31,26 +31,28 @@ class BaselineEdited(ValueError):
     """A baseline's counts do not match the digest it was frozen with."""
 
 
-def wilson(k: int, n: int) -> tuple[float, float]:
-    if n == 0:
-        return (0.0, 1.0)
-    p = k / n
-    d = 1 + Z * Z / n
-    m = Z * math.sqrt(p * (1 - p) / n + Z * Z / (4 * n * n))
-    return ((p + Z * Z / (2 * n) - m) / d, (p + Z * Z / (2 * n) + m) / d)
+class Proportions:
+    @staticmethod
+    def wilson(k: int, n: int) -> tuple[float, float]:
+        if n == 0:
+            return (0.0, 1.0)
+        p = k / n
+        d = 1 + Z * Z / n
+        m = Z * math.sqrt(p * (1 - p) / n + Z * Z / (4 * n * n))
+        return ((p + Z * Z / (2 * n) - m) / d, (p + Z * Z / (2 * n) + m) / d)
 
-
-def difference(k_new: int, n_new: int, k_old: int, n_old: int) -> tuple[float, float, float]:
-    """The difference of two proportions (new - old) and its 95% interval (Newcombe's method 10, from the Wilson bounds)."""
-    if n_new == 0 or n_old == 0:
-        return (0.0, -1.0, 1.0)
-    p_new, p_old = k_new / n_new, k_old / n_old
-    l_new, u_new = wilson(k_new, n_new)
-    l_old, u_old = wilson(k_old, n_old)
-    delta = p_new - p_old
-    low = delta - math.sqrt((p_new - l_new) ** 2 + (u_old - p_old) ** 2)
-    high = delta + math.sqrt((u_new - p_new) ** 2 + (p_old - l_old) ** 2)
-    return (delta, low, high)
+    @staticmethod
+    def difference(k_new: int, n_new: int, k_old: int, n_old: int) -> tuple[float, float, float]:
+        """The difference of two proportions (new - old) and its 95% interval (Newcombe's method 10, from the Wilson bounds)."""
+        if n_new == 0 or n_old == 0:
+            return (0.0, -1.0, 1.0)
+        p_new, p_old = k_new / n_new, k_old / n_old
+        l_new, u_new = Proportions.wilson(k_new, n_new)
+        l_old, u_old = Proportions.wilson(k_old, n_old)
+        delta = p_new - p_old
+        low = delta - math.sqrt((p_new - l_new) ** 2 + (u_old - p_old) ** 2)
+        high = delta + math.sqrt((u_new - p_new) ** 2 + (p_old - l_old) ** 2)
+        return (delta, low, high)
 
 
 class Baseline:
@@ -78,10 +80,10 @@ class Scorecard:
             if not 0 <= candidate[blocked] <= candidate[total]:
                 raise ValueError(f"{blocked} {candidate[blocked]} is not within {total} {candidate[total]}")
         old = baseline["counts"]
-        gain, low, high = difference(
+        gain, low, high = Proportions.difference(
             candidate["mal_blocked"], candidate["mal_n"], old["mal_blocked"], old["mal_n"]
         )
-        _, benign_upper = wilson(candidate["benign_blocked"], candidate["benign_n"])
+        _, benign_upper = Proportions.wilson(candidate["benign_blocked"], candidate["benign_n"])
         return {
             "baseline_digest": baseline["digest"],
             "recall_baseline": old["mal_blocked"] / old["mal_n"] if old["mal_n"] else 0.0,
