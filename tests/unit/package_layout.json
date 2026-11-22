@@ -1441,6 +1441,7 @@
   "test_reporters.py": "report",
   "test_facts.py": "report",
   "test_facts_file_counts.py": "report",
+  "test_facts_kind.py": "report",
   "test_unreadable_names.py": "report",
   "test_attacker_steps.py": "detect/code/capability",
   "test_review_defects.py": "detect/secrets",
