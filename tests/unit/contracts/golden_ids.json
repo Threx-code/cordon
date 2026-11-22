@@ -413,7 +413,7 @@
 },
 {
 "id": "int:slack/incoming-webhooks",
-"kind": "integration",
+"kind": "third_party_integration",
 "parts": {
 "integration": "incoming-webhooks",
 "vendor": "slack"
@@ -421,7 +421,7 @@
 },
 {
 "id": "int:slack/incoming-webhooks",
-"kind": "integration",
+"kind": "third_party_integration",
 "parts": {
 "integration": "Incoming Webhooks",
 "vendor": "Slack"
@@ -429,7 +429,7 @@
 },
 {
 "id": "int:stripe/payments-api",
-"kind": "integration",
+"kind": "third_party_integration",
 "parts": {
 "integration": "payments-api",
 "vendor": "stripe"
@@ -437,7 +437,7 @@
 },
 {
 "id": "int:github/copilot-chat",
-"kind": "integration",
+"kind": "third_party_integration",
 "parts": {
 "integration": "Copilot Chat",
 "vendor": "GitHub"
@@ -445,7 +445,7 @@
 },
 {
 "id": "int:zapier/zaps",
-"kind": "integration",
+"kind": "third_party_integration",
 "parts": {
 "integration": "zaps",
 "vendor": "zapier"
@@ -453,7 +453,7 @@
 },
 {
 "id": "int:salesforce/rest-api",
-"kind": "integration",
+"kind": "third_party_integration",
 "parts": {
 "integration": "REST API",
 "vendor": "Salesforce"
@@ -461,7 +461,7 @@
 },
 {
 "id": "int:atlassian/jira-cloud",
-"kind": "integration",
+"kind": "third_party_integration",
 "parts": {
 "integration": "jira-cloud",
 "vendor": "atlassian"
@@ -469,7 +469,7 @@
 },
 {
 "id": "int:openai/responses-api",
-"kind": "integration",
+"kind": "third_party_integration",
 "parts": {
 "integration": "responses-api",
 "vendor": "openai"
@@ -477,7 +477,7 @@
 },
 {
 "id": "int:google/drive",
-"kind": "integration",
+"kind": "third_party_integration",
 "parts": {
 "integration": "drive",
 "vendor": "google"
@@ -485,7 +485,7 @@
 },
 {
 "id": "int:microsoft/graph",
-"kind": "integration",
+"kind": "third_party_integration",
 "parts": {
 "integration": "Graph",
 "vendor": "Microsoft"

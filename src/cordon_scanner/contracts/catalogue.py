@@ -72,7 +72,7 @@ class SubjectCatalogue:
             (),
             "a build artifact of one tenant, by scope and name",
         ),
-        SubjectKind.INTEGRATION: (
+        SubjectKind.THIRD_PARTY_INTEGRATION: (
             "int:",
             ("vendor", "integration"),
             (),

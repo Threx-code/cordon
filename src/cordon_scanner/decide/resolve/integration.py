@@ -26,10 +26,10 @@ class IntegrationResolver:
         *,
         version: str | None = None,
     ) -> Resolution:
-        kind = SubjectKind.INTEGRATION.value
+        kind = SubjectKind.THIRD_PARTY_INTEGRATION.value
         try:
             subject = CanonicalIds.canonical_id(
-                SubjectKind.INTEGRATION, {"vendor": vendor, "integration": integration}
+                SubjectKind.THIRD_PARTY_INTEGRATION, {"vendor": vendor, "integration": integration}
             )
         except InvalidSubject:
             return Resolution.failed(

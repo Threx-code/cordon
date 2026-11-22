@@ -139,7 +139,7 @@ class ContractGoldens:
             )
         ),
         *(
-            (SubjectKind.INTEGRATION, {"vendor": v, "integration": i})
+            (SubjectKind.THIRD_PARTY_INTEGRATION, {"vendor": v, "integration": i})
             for v, i in (
                 ("slack", "incoming-webhooks"),
                 ("Slack", "Incoming Webhooks"),

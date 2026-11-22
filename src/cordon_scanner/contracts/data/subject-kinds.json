@@ -156,7 +156,7 @@
       "description": "a build artifact of one tenant, by scope and name"
     },
     {
-      "kind": "integration",
+      "kind": "third_party_integration",
       "id_prefix": "int:",
       "required": [
         "vendor",

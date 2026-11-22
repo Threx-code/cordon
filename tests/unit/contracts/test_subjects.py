@@ -147,12 +147,12 @@ class TestTheOtherKinds:
                 "art:acme-prod/app/Image",
             ),
             (
-                SubjectKind.INTEGRATION,
+                SubjectKind.THIRD_PARTY_INTEGRATION,
                 {"vendor": "Slack", "integration": "Incoming   Webhooks"},
                 "int:slack/incoming-webhooks",
             ),
             (
-                SubjectKind.INTEGRATION,
+                SubjectKind.THIRD_PARTY_INTEGRATION,
                 {"vendor": " GitHub ", "integration": "Copilot Chat"},
                 "int:github/copilot-chat",
             ),
@@ -175,10 +175,10 @@ class TestTheOtherKinds:
             (SubjectKind.MCP_SERVER, {"transport": "carrier-pigeon", "locator": "x"}),
             (SubjectKind.SOURCE_REPOSITORY, {"scm": "svn", "owner": "a", "name": "b"}),
             (SubjectKind.AGENT, {"product": "  "}),
-            (SubjectKind.INTEGRATION, {"vendor": "slack"}),
-            (SubjectKind.INTEGRATION, {"vendor": "a/b", "integration": "c"}),
-            (SubjectKind.INTEGRATION, {"vendor": "a", "integration": "c?d"}),
-            (SubjectKind.INTEGRATION, {"vendor": " ", "integration": "c"}),
+            (SubjectKind.THIRD_PARTY_INTEGRATION, {"vendor": "slack"}),
+            (SubjectKind.THIRD_PARTY_INTEGRATION, {"vendor": "a/b", "integration": "c"}),
+            (SubjectKind.THIRD_PARTY_INTEGRATION, {"vendor": "a", "integration": "c?d"}),
+            (SubjectKind.THIRD_PARTY_INTEGRATION, {"vendor": " ", "integration": "c"}),
         ],
     )
     def test_what_cannot_be_made_canonical_is_refused_and_names_the_part(self, kind, parts) -> None:
@@ -198,7 +198,7 @@ class TestTheOtherKinds:
             SubjectKind.AGENT,
             SubjectKind.SOURCE_REPOSITORY,
             SubjectKind.BUILD_ARTIFACT,
-            SubjectKind.INTEGRATION,
+            SubjectKind.THIRD_PARTY_INTEGRATION,
         }
         assert handled == set(SubjectKind)
 

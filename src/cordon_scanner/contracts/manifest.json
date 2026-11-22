@@ -3,7 +3,7 @@
   "files": {
     "data/obligations.json": "sha256:0cb344f9ba53db9750013b138b0a95f7ca408da931836bb2273f1500e27c0c03",
     "data/reason-codes.json": "sha256:5d06f93795d9d4ada155ae462fb0193e840550bda68d5baa9ae047544d8aa387",
-    "data/subject-kinds.json": "sha256:e011c8b8175ab88553803929e846a02527e7d65711f23ff6625c6e2cb4c2da88",
+    "data/subject-kinds.json": "sha256:485ae5b5643f9a984925d1f31f75f41e696d0edfa89e655e2919acc84c3f1809",
     "schemas/approval-v1.json": "sha256:b2dd95af4a478aa4abfc4f86d0ac3236fcb236fbe1de7f8734491113ca3d5dea",
     "schemas/decision-v1.json": "sha256:e8a8befff8c7316061191cf0a49b58f4f1cdaf9ed9b818e35c40011c9accdb98",
     "schemas/intel-match-v1.json": "sha256:3157a1381ca5537225e2f37aeff98214d6af3e70dd0a3828bfde1316a9862784",

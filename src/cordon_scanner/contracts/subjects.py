@@ -45,7 +45,7 @@ class SubjectKind(StrEnum):
     AGENT = "agent"
     SOURCE_REPOSITORY = "source_repository"
     BUILD_ARTIFACT = "build_artifact"
-    INTEGRATION = "integration"
+    THIRD_PARTY_INTEGRATION = "third_party_integration"
 
 
 class InvalidSubject(ValueError):
@@ -197,7 +197,7 @@ class CanonicalIds:
         (github | gitlab), owner, repo, [path]; ide_extension: marketplace, publisher, name;
         agent_skill: source, locator; mcp_server: transport, locator; ai_model: provider, name;
         agent: product; source_repository: scm, owner, name; build_artifact: scope, name;
-        integration: vendor, integration."""
+        third_party_integration: vendor, integration."""
         kind = SubjectKind(kind)
         build = {
             SubjectKind.PACKAGE: cls._package,
@@ -210,7 +210,7 @@ class CanonicalIds:
             SubjectKind.AGENT: cls._agent,
             SubjectKind.SOURCE_REPOSITORY: cls._repository,
             SubjectKind.BUILD_ARTIFACT: cls._artifact,
-            SubjectKind.INTEGRATION: cls._integration,
+            SubjectKind.THIRD_PARTY_INTEGRATION: cls._integration,
         }[kind]
         return build(parts)
 

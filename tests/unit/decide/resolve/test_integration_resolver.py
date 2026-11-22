@@ -46,12 +46,13 @@ class TestTheContractDigest:
 class TestTheResolver:
     def test_a_declared_contract_resolves_to_its_digest(self) -> None:
         found = IntegrationResolver.resolve("Stripe", "Payments API", OPENAPI, version="2.1.0")
-        assert found.resolved and found.kind == "integration"
+        assert found.resolved and found.kind == "third_party_integration"
         assert (
             found.subject_id
             == "int:stripe/payments-api"
             == CanonicalIds.canonical_id(
-                SubjectKind.INTEGRATION, {"vendor": "stripe", "integration": "payments-api"}
+                SubjectKind.THIRD_PARTY_INTEGRATION,
+                {"vendor": "stripe", "integration": "payments-api"},
             )
         )
         assert found.digest == ArtifactDigests.of_contract(OPENAPI) and found.version == "2.1.0"
