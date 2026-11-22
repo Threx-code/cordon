@@ -166,12 +166,28 @@ class TestAFixedProgramsArguments:
         "the environment taken whole from the reply": (
             'cp.execFile("node", ["-e", "x"], { env: v });'
         ),
+        "a program held in a name": 'const prog = "x";\ncp.execFile(prog, ["-e", "x"], { env: { A: v } });',
+        "a property of process that is not the executable": (
+            'cp.execFile(process.title, ["-e", "x"], { env: { A: v } });'
+        ),
+        "arguments held in a name": 'const argv = ["-e", "x"];\ncp.execFile(process.execPath, argv, { env: { A: v } });',
+        "options held in a name": 'const opts = { env: { A: v } };\ncp.execFile(process.execPath, ["-e", "x"], opts);',
+        "a loader variable after a spread": (
+            'cp.execFile(process.execPath, ["-e", "x"], { env: { ...process.env, NODE_OPTIONS: v } });'
+        ),
+        "a number as an environment key": 'cp.execFile("node", ["-e", "x"], { env: { 1: v } });',
     }
     DATA: ClassVar[dict[str, str]] = {
         "an inline script, the reply in an environment value": (
             'cp.execFile(process.execPath, ["-e", "x"], { env: { ...process.env, A_SUBJ: v } });'
         ),
         "node by name": 'cp.spawn("node", ["-e", "x"], { env: { A: v }, stdio: "ignore" });',
+        "an environment variable named by a shorthand": (
+            'const A = v;\ncp.execFile(process.execPath, ["-e", "x"], { env: { A } });'
+        ),
+        "several variables, one after a spread": (
+            'cp.execFile(process.execPath, ["-e", "x"], { env: { ...process.env, A: v, B: "1" } });'
+        ),
         "a print flag, a timeout and a directory": (
             'cp.execFileSync("node", ["-p", "x"], { cwd: "/tmp", timeout: 9, env: { A: v } });'
         ),
