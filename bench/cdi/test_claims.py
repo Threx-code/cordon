@@ -1,4 +1,4 @@
-"""SI-R2 and SI-R3: an ecosystem is claimed only on a held-out split that is large and diverse enough, and a refusal names the minimum."""
+"""An ecosystem is claimed only on a held-out split that is large and diverse enough, and a refusal names the minimum."""
 
 from __future__ import annotations
 

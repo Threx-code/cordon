@@ -73,7 +73,7 @@ class CandidateFactory:
             raise FactoryRejection("a rule_pack candidate must carry a declarative rule_pack")
         if not source_misses:
             raise FactoryRejection("a candidate must derive from at least one miss")
-        # The two-gate rule: every source miss must be train/dev. The split is read from the dataset manifests by the miss's artifact digest (SI-Q10), never from the miss.
+        # The two-gate rule: every source miss must be train/dev. The split is read from the dataset manifests by the miss's artifact digest, never from the miss.
         # A val/held/fresh miss reaching the factory is leakage; refuse it. An artifact the manifests do not list, or list in two splits, is refused too.
         for m in source_misses:
             try:

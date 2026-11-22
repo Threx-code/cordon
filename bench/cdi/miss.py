@@ -4,7 +4,7 @@ Promotes the census tools (reviews/*/tools/census.py, skills_census.py) to a str
 confirmed FN, what ran, what was absent, the failure mechanism, the nearest benign lookalike, and
 what is needed. A miss carries no split: its membership is read from the dataset manifests (`manifests.py`, the
 single source of truth) by the artifact digest, so changing a manifest changes the membership with no edit to the
-miss (SI-Q10). A miss informs the factory only when ``schemas.Schemas.eligible_for_factory`` is
+miss. A miss informs the factory only when ``schemas.Schemas.eligible_for_factory`` is
 true (confirmed/corroborated label AND train/dev split) -- val/held/fresh misses are reported, never
 learned from.
 """

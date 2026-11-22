@@ -1,4 +1,4 @@
-"""SI-G2: the export writes the three lists, split by family and time, and a second run never changes `eval`."""
+"""The export writes the three lists, split by family and time, and a second run never changes `eval`."""
 
 from __future__ import annotations
 

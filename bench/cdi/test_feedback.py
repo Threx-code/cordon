@@ -1,4 +1,4 @@
-"""SI-I1: a rollback and a false positive each create a record the next loop run reads."""
+"""A rollback and a false positive each create a record the next loop run reads."""
 
 from __future__ import annotations
 

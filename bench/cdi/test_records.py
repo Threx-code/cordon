@@ -1,4 +1,4 @@
-"""SI-K3: schema tests, and one record of each of ThreatCluster, DetectionBundle and DeploymentObservation built from a threat graph and a promotion."""
+"""Schema tests, and one record of each of ThreatCluster, DetectionBundle and DeploymentObservation built from a threat graph and a promotion."""
 
 from __future__ import annotations
 

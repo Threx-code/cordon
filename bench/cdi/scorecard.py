@@ -1,10 +1,10 @@
-"""The scorecard against a frozen baseline (SI-L10) and what the loop does when the evidence does not settle it (SI-L11).
+"""The scorecard against a frozen baseline and what the loop does when the evidence does not settle it.
 
-SI-L10. A candidate's metrics are shown as the INCREMENTAL value over the baseline the candidate was built against: the recall gain on malware with its 95% bounds (Newcombe's interval for a difference
+Incremental value. A candidate's metrics are shown as the INCREMENTAL value over the baseline the candidate was built against: the recall gain on malware with its 95% bounds (Newcombe's interval for a difference
 of two proportions, from the Wilson bounds of each), and the false-block rate on benign units with its upper bound. The baseline is frozen: `Baseline.freeze` stamps its counts with a digest, and a scorecard
 against a baseline whose counts no longer match its digest is refused, so a baseline cannot be edited to flatter a candidate.
 
-SI-L11. The loop never ends in success on thin evidence; every case below ends in `research` or `shadow`, each with its reason:
+Thin evidence. The loop never ends in success on thin evidence; every case below ends in `research` or `shadow`, each with its reason:
   unavailable data      a set the decision needs is missing                          -> research
   small n               a set is below the minimum sizes of `claims.py`              -> research
   inconclusive          the gain's interval spans zero                               -> research
@@ -74,7 +74,7 @@ class Baseline:
 class Scorecard:
     @staticmethod
     def of(baseline: dict[str, Any], candidate: dict[str, int]) -> dict[str, Any]:
-        """The incremental value of a candidate over the frozen baseline (SI-L10)."""
+        """The incremental value of a candidate over the frozen baseline."""
         Baseline.check(baseline)
         for blocked, total in (("mal_blocked", "mal_n"), ("benign_blocked", "benign_n")):
             if not 0 <= candidate[blocked] <= candidate[total]:
@@ -108,7 +108,7 @@ class Scorecard:
 class Conclusion:
     @staticmethod
     def of(areas: dict[str, dict[str, Any] | None]) -> dict[str, Any]:
-        """Where a candidate ends (SI-L11), from each area's scorecard (`Scorecard.of`), with `None` for an area whose data is unavailable. Never success."""
+        """Where a candidate ends, from each area's scorecard (`Scorecard.of`), with `None` for an area whose data is unavailable. Never success."""
         reasons: list[str] = []
         missing = sorted(a for a, card in areas.items() if card is None)
         if missing or not areas:

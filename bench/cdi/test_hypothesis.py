@@ -1,4 +1,4 @@
-"""SI-Q5 and SI-Q6: discovery yields a hypothesis, and compares a cluster with its nearest benign by FeatureSet distance."""
+"""Discovery yields a hypothesis, and compares a cluster with its nearest benign by FeatureSet distance."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""The feedback loop's records (SI-I1): a miss, a false positive, a new detection and a rollback each become an append-only record the next loop run reads.
+"""The feedback loop's records: a miss, a false positive, a new detection and a rollback each become an append-only record the next loop run reads.
 
     Feedback.add(log_dir, kind, artifact_digest, detail)   appends one record (id = its position) to `<log_dir>/feedback.jsonl`
     Feedback.read(log_dir, after)                          -> (records after the watermark, the new watermark)

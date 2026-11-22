@@ -1,4 +1,4 @@
-"""The per-area dataset export (SI-G2): one run writes the train, eval and fresh manifests of an area, split by family and by time, and never changes an eval list once it is written.
+"""The per-area dataset export: one run writes the train, eval and fresh manifests of an area, split by family and by time, and never changes an eval list once it is written.
 
     export(units, out_dir, area, fresh_after) -> {"train": n, "eval": n, "fresh": n, "excluded": n}
 

@@ -1,4 +1,4 @@
-"""Which split an artifact is in, read from the dataset manifests (SI-Q10): the single source of truth, never copied onto a miss.
+"""Which split an artifact is in, read from the dataset manifests: the single source of truth, never copied onto a miss.
 
 A manifest is `{"dataset": name, "split": "train" | "dev" | "held" | ..., "artifacts": [artifact digest, ...]}`. A miss records the artifact's digest and nothing about its split, so
 moving an artifact between manifests moves its membership with no edit to the miss. An artifact in two splits is a leak, and asking for its membership says so instead of picking one.

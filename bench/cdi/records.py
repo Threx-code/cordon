@@ -1,4 +1,4 @@
-"""The three records the platform side of the loop needs beside the learning side's (SI-K3): ThreatCluster, DetectionBundle and DeploymentObservation.
+"""The three records the platform side of the loop needs beside the learning side's: ThreatCluster, DetectionBundle and DeploymentObservation.
 
     ThreatCluster          a group of artefacts that belong together, how it was grouped (method, version), the edges that joined it and its label. Built from a `ThreatGraph` (`graph.py`).
     DetectionBundle        what a promotion publishes: the artefacts of a candidate (path and sha256 each), the decision that allowed it, the scanner versions it is compatible with, its channel.

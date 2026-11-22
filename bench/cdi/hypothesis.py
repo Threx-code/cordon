@@ -1,9 +1,9 @@
-"""What discovery produces (SI-Q5) and how it compares a cluster with its neighbours (SI-Q6).
+"""What discovery produces and how it compares a cluster with its neighbours.
 
-SI-Q5. Discovery output is a HYPOTHESIS, not a label: supporting samples, counterexamples, expected coverage, limits and a validation plan. "Novelty is not maliciousness": a hypothesis becomes a
+Discovery output is a HYPOTHESIS, not a label: supporting samples, counterexamples, expected coverage, limits and a validation plan. "Novelty is not maliciousness": a hypothesis becomes a
 candidate only with a confirmed (or corroborated) label AND independent evidence, so a novel cluster nobody has labelled produces a hypothesis and no candidate.
 
-SI-Q6. A confirmed-malicious cluster is compared with its nearest benign FeatureSet, by the distance between their content features (the Jaccard distance of the `(name, value, slot)` sets: the same content
+A confirmed-malicious cluster is compared with its nearest benign FeatureSet, by the distance between their content features (the Jaccard distance of the `(name, value, slot)` sets: the same content
 features the `featureset_digest` is built from), and the differing features are returned: the ones only the malicious side has are what a rule may key on, and the ones only the benign side has are what a
 rule must not trip. Clusters within a confirmed-malicious category are grouped by the same distance (single linkage under a maximum distance).
 """

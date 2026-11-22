@@ -1,10 +1,10 @@
-"""When an ecosystem may be claimed at all (SI-R2 sizes, SI-R3 diversity): a held-out split that is too small or too narrow is refused, with the minimum named.
+"""When an ecosystem may be claimed at all (sizes and diversity): a held-out split that is too small or too narrow is refused, with the minimum named.
 
-SI-R2. Zero misses on n malware units bounds the miss rate (95%, rule of three) at 3/n, so 185 units is the least that supports a claim, and a legitimate block rate of 0.3% needs about 3,000
+Sizes. Zero misses on n malware units bounds the miss rate (95%, rule of three) at 3/n, so 185 units is the least that supports a claim, and a legitimate block rate of 0.3% needs about 3,000
 units to be told from 0.4%. The plan's own sizes are larger: 500 to 1,000 malware, and at least 15,000 legitimate (the whole catalogue when it holds fewer than 100,000). The statistical floors REFUSE;
 the plan sizes are reported as `short_of_plan` and never as a pass.
 
-SI-R3. A claim rests on many campaigns, not one: no campaign or family above 20% of the held-out malware split, at least 10 distinct campaigns or families, and a development split at least as
+Diversity. A claim rests on many campaigns, not one: no campaign or family above 20% of the held-out malware split, at least 10 distinct campaigns or families, and a development split at least as
 large as the held-out one (a model graded on a split larger than the one it was developed on has seen less than it is graded on).
 """
 
@@ -33,7 +33,7 @@ class ClaimRefused(ValueError):
 class Claims:
     @staticmethod
     def sizes(malware_n: int, legit_n: int) -> tuple[str, ...]:
-        """SI-R2: the statistical floors a split is refused below."""
+        """The statistical floors a split is refused below."""
         out = []
         if malware_n < MALWARE_FLOOR:
             out.append(f"malware held-out {malware_n} is below the minimum {MALWARE_FLOOR}")
@@ -45,7 +45,7 @@ class Claims:
     def short_of_plan(
         malware_n: int, legit_n: int, catalogue: int | None = None
     ) -> tuple[str, ...]:
-        """SI-R2: where a split passes the floors and is still under the plan's size. The legitimate plan is the whole catalogue when it holds fewer than 100,000 units."""
+        """Where a split passes the floors and is still under the plan's size. The legitimate plan is the whole catalogue when it holds fewer than 100,000 units."""
         out = []
         if malware_n < MALWARE_PLAN:
             out.append(f"malware held-out {malware_n} is short of the plan {MALWARE_PLAN}")
@@ -58,7 +58,7 @@ class Claims:
 
     @staticmethod
     def diversity(held_families: list[str], dev_malware_n: int) -> tuple[str, ...]:
-        """SI-R3: one family per held-out malware unit, and the size of the development split. Empty when the split is diverse enough."""
+        """One family per held-out malware unit, and the size of the development split. Empty when the split is diverse enough."""
         out = []
         counts = Counter(held_families)
         total = len(held_families)

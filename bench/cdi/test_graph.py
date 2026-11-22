@@ -1,4 +1,4 @@
-"""SI-C1: the threat graph is built from the label store's facts, and shared common code adds no implication."""
+"""The threat graph is built from the label store's facts, and shared common code adds no implication."""
 
 from __future__ import annotations
 

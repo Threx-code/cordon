@@ -1,4 +1,4 @@
-"""SI-Q11: the lineage check groups by the normalised-content key, never by sha256 alone, and it blocks."""
+"""The lineage check groups by the normalised-content key, never by sha256 alone, and it blocks."""
 
 from __future__ import annotations
 

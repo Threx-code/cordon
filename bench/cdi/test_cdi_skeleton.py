@@ -167,7 +167,7 @@ class TestCandidateFactory:
             )
 
     def test_moving_the_artifact_to_held_in_the_manifest_refuses_the_same_miss(self):
-        """SI-Q10: the miss is not edited; only the manifest changes, and the factory's answer changes with it."""
+        """The miss is not edited; only the manifest changes, and the factory's answer changes with it."""
         miss = Build.miss()
         before = dict(miss)
         assert CandidateFactory.file_exfil_candidate(
@@ -213,7 +213,7 @@ class TestCandidateFactory:
 
 
 class TestManifests:
-    """SI-Q10: membership is read from the manifests."""
+    """Membership is read from the manifests."""
 
     def test_an_artifact_in_one_manifest_has_that_split(self):
         assert Build.manifests("train").membership("abc123") == "train"

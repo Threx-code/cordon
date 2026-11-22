@@ -1,4 +1,4 @@
-"""The lineage check by content (SI-Q11): a model's training units against every eval unit, grouped by the normalised-content key and never by sha256 alone.
+"""The lineage check by content: a model's training units against every eval unit, grouped by the normalised-content key and never by sha256 alone.
 
 A reworded skill, a re-released package or a repacked archive has a new sha256 and the same content, so a check on sha256 reports no overlap for exactly the copies that
 let a model grade its own homework. The key is the FeatureSet's `featureset_digest` (`featureset.py`): content features only, no location, no confidence, no scanner or intel

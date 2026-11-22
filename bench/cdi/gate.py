@@ -240,12 +240,10 @@ class Gate:
                 )
         lineage = spec.get("lineage")
         if lineage and "train_scans" in lineage:
-            # By content (SI-Q11): the training and eval scans are compared by the normalised-content key, so a reworded or re-released copy is found
+            # By content: the training and eval scans are compared by the normalised-content key, so a reworded or re-released copy is found
             # where a sha256 check finds none. Every eval unit counts once, whichever eval list it is in.
             train_rows = Gate.read_scans(lineage["train_scans"])
-            found = [
-                Lineage.overlap(train_rows, Gate.read_scans(p)) for p in lineage["eval_scans"]
-            ]
+            found = [Lineage.overlap(train_rows, Gate.read_scans(p)) for p in lineage["eval_scans"]]
             overlap = sum(f["units"] for f in found)
             missed = sum(f["missed_by_sha256"] for f in found)
             gates["lineage"] = (
@@ -266,7 +264,7 @@ class Gate:
             gates["lineage"] = ("not_applicable", "no trained component")
         claim = spec.get("claim")
         if claim:
-            # SI-R2 and SI-R3: an ecosystem is claimed only on a held-out split that is large and diverse enough; each refusal names its minimum.
+            # An ecosystem is claimed only on a held-out split that is large and diverse enough; each refusal names its minimum.
             try:
                 plan = Claims.require(
                     claim["held_families"],

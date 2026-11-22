@@ -17,7 +17,7 @@ from typing import Any
 SCHEMA_VERSIONS: dict[str, str] = {
     "FeatureSet": "1.0.0",
     "ThreatCluster": "1.0.0",
-    "DetectionMiss": "1.1.0",  # 1.1.0: no stored dataset_membership (SI-Q10), read from the manifests
+    "DetectionMiss": "1.1.0",  # 1.1.0: no stored dataset_membership, read from the manifests
     "CandidateDetector": "1.0.0",
     "DetectionBundle": "1.0.0",
     "DeploymentObservation": "1.0.0",

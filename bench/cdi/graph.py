@@ -1,4 +1,4 @@
-"""The threat relationship graph (SI-C1): artefacts, releases, files, fragments, campaign and infrastructure indicators, weighted by evidence. Common code never implicates alone.
+"""The threat relationship graph: artefacts, releases, files, fragments, campaign and infrastructure indicators, weighted by evidence. Common code never implicates alone.
 
 Nodes are `kind:id` strings (`artifact:`, `release:`, `file:`, `fragment:`, `campaign:`, `infra:`). An edge joins an artefact to a thing it has: a release, a file, a code fragment, a campaign label, an
 infrastructure indicator (a host, a wallet, a key). Each edge carries a weight by what it is evidence of:

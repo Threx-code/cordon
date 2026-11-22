@@ -1,4 +1,4 @@
-"""SI-L10, SI-L11: the scorecard against a frozen baseline, and the drill for each case that does not settle a candidate."""
+"""The scorecard against a frozen baseline, and the drill for each case that does not settle a candidate."""
 
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ class TestTheScorecard:
 
 
 class TestEveryCaseEndsInResearchOrShadow:
-    """SI-L11: one drill per case; none ends in success."""
+    """One drill per case; none ends in success."""
 
     def test_unavailable_data_ends_in_research(self) -> None:
         result = Conclusion.of({"pypi": Kit.card(), "npm": None})
