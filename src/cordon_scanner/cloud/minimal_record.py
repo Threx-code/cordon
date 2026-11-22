@@ -3,7 +3,7 @@
 
 `MinimalRecord.of` projects a scan result onto the `scan/v1` contract (`contracts/schemas/scan-v1.json`) by an allowlist: for each
 finding its rule id, severity, confidence, category, detector, fingerprint, the path and line it was found at and the hash of what
-matched; for the scan whether it completed, the rule ids of any part of the content it could not read, and the scanner and rule
+matched (for a secret the keyed hash `hmac-sha256:<hex>`, its hex); for the scan whether it completed, the rule ids of any part of the content it could not read, and the scanner and rule
 versions. Everything else a finding carries stays on the machine: its message and remediation (they quote what the rule matched,
 an install command or a path on disk), its evidence snippet and metadata, its explanation and risk factors, the dependency list,
 the repository's remote and branch. An allowlist, so a field added to the report later does not leave by default.
@@ -64,7 +64,11 @@ class MinimalRecord:
                 "detector": finding.detector,
                 "fingerprint": finding.fingerprint,
             }
-            matched = str(finding.evidence.match_hash).removeprefix("sha256:")
+            matched = (
+                str(finding.evidence.match_hash)
+                .removeprefix("hmac-sha256:")
+                .removeprefix("sha256:")
+            )
             if _HASH.fullmatch(matched):
                 item["evidence_hash"] = matched
             findings.append(item)

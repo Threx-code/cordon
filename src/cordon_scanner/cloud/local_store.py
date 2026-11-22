@@ -64,6 +64,53 @@ class Drained:
     left: int
 
 
+class StoreFiles:
+    """How the store reads and writes its files: whole or not at all, and the names of what it keeps."""
+
+    @staticmethod
+    def parse(name: str) -> tuple[int, str, str] | None:
+        """`<12 digits>-<kind>-<64 hex>.upload` as (sequence, kind, digest), or None for any other name (a name is cut at
+        fixed places, not matched by a pattern with a repeat next to the separator it may contain)."""
+        stem = name.removesuffix(".upload")
+        if stem == name or len(stem) < 12 + 1 + 1 + 1 + 64:
+            return None
+        sequence, kind, digest = stem[:12], stem[13:-65], stem[-64:]
+        if (
+            not (sequence.isascii() and sequence.isdigit())
+            or stem[12] != "-"
+            or stem[-65] != "-"
+            or not _NAME.fullmatch(kind)
+            or not set(digest) <= set("0123456789abcdef")
+        ):
+            return None
+        return int(sequence), kind, digest
+
+    @staticmethod
+    def part(path: Path, suffix: str) -> Path:
+        return path.with_name(path.name + suffix)
+
+    @staticmethod
+    def json_bytes(document: Any) -> bytes:
+        return json.dumps(document, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+    @staticmethod
+    def read_json(path: Path) -> Any:
+        try:
+            return json.loads(path.read_bytes())
+        except (OSError, ValueError):
+            return None
+
+    @staticmethod
+    def write(path: Path, data: bytes) -> None:
+        """Whole or not at all: write beside, flush to disk, rename over."""
+        temporary = path.with_name(path.name + _TEMPORARY)
+        with temporary.open("wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary.replace(path)
+
+
 class LocalStore:
     BLOB_KINDS: ClassVar[tuple[str, ...]] = ("rulepack", "intel")
 
@@ -73,19 +120,21 @@ class LocalStore:
         self._root = root
         self._max_cache, self._max_pending = max_cache, max_pending
         self._puts = 0
-        self._recent: dict[str, None] = {}
-        for folder in ("bundle", "blobs", "decisions", "outbox"):
+        self._recent: dict[str, dict[str, None]] = {"decisions": {}, "allowed": {}}
+        for folder in ("bundle", "blobs", "decisions", "allowed", "outbox"):
             (root / folder).mkdir(parents=True, exist_ok=True)
 
     # -- the policy bundles ----------------------------------------------------------------------
 
     def save_bundle(self, envelopes: Sequence[object]) -> None:
         """Keep the bundles last taken (oldest first), replacing what was kept."""
-        self._write(self._root / "bundle" / "chain.json", self._json(list(envelopes)))
+        StoreFiles.write(
+            self._root / "bundle" / "chain.json", StoreFiles.json_bytes(list(envelopes))
+        )
 
     def load_bundle(self) -> list[object] | None:
         """The envelopes kept, or None when there are none or the file is not what was written."""
-        document = self._read_json(self._root / "bundle" / "chain.json")
+        document = StoreFiles.read_json(self._root / "bundle" / "chain.json")
         return document if isinstance(document, list) and document else None
 
     # -- rule packs and the intel snapshot --------------------------------------------------------
@@ -94,18 +143,19 @@ class LocalStore:
         """Keep `data` as the rule pack or snapshot `name`; returns its digest."""
         path = self._blob_path(kind, name)
         digest = ArtifactDigests.of_bytes(data)
-        self._write(self._part(path, ".bin"), data)
-        self._write(
-            self._part(path, ".json"), self._json({"digest": digest, "issued_at": issued_at})
+        StoreFiles.write(StoreFiles.part(path, ".bin"), data)
+        StoreFiles.write(
+            StoreFiles.part(path, ".json"),
+            StoreFiles.json_bytes({"digest": digest, "issued_at": issued_at}),
         )
         return digest
 
     def blob(self, kind: str, name: str) -> Blob | None:
         """The blob, or None when it is absent or its bytes no longer match the digest kept with them."""
         path = self._blob_path(kind, name)
-        meta = self._read_json(self._part(path, ".json"))
+        meta = StoreFiles.read_json(StoreFiles.part(path, ".json"))
         try:
-            data = self._part(path, ".bin").read_bytes()
+            data = StoreFiles.part(path, ".bin").read_bytes()
         except OSError:
             return None
         if (
@@ -122,17 +172,13 @@ class LocalStore:
         if decision.get("inputs_digest") != key:
             raise ValueError("a decision is kept under its own inputs_digest")
         path = self._cache_path(key)
-        self._write(path, self._json({"key": key, "decision": decision}))
-        self._recent.pop(path.name, None)
-        self._recent[path.name] = None
-        self._puts += 1
-        if self._puts % 64 == 0:
-            self._trim()
+        StoreFiles.write(path, StoreFiles.json_bytes({"key": key, "decision": decision}))
+        self._note("decisions", path)
 
     def cache_get(self, key: str) -> dict[str, Any] | None:
         """The decision kept for `key`; an entry that is not exactly what `cache_put` wrote is a miss and is removed."""
         path = self._cache_path(key)
-        document = self._read_json(path)
+        document = StoreFiles.read_json(path)
         if document is None:
             return None
         decision = document.get("decision") if isinstance(document, dict) else None
@@ -149,6 +195,28 @@ class LocalStore:
     def cache_size(self) -> int:
         return sum(1 for _ in (self._root / "decisions").glob("*.json"))
 
+    # -- the decisions that allowed, kept by what they were about ----------------------------------
+
+    def remember_allow(self, key: str, decision: dict[str, Any], made_at: str) -> None:
+        """Keep a decision that allowed under `key` (what it was about, not the moment: see `LocalRuntime`), with when it was made."""
+        path = self._allow_path(key)
+        StoreFiles.write(
+            path, StoreFiles.json_bytes({"key": key, "made_at": made_at, "decision": decision})
+        )
+        self._note("allowed", path)
+
+    def recall_allow(self, key: str) -> tuple[dict[str, Any], str] | None:
+        """The decision kept under `key` and when it was made; an entry that is not exactly what was written is a miss."""
+        document = StoreFiles.read_json(self._allow_path(key))
+        if (
+            isinstance(document, dict)
+            and document.get("key") == key
+            and isinstance(document.get("decision"), dict)
+            and isinstance(document.get("made_at"), str)
+        ):
+            return document["decision"], document["made_at"]
+        return None
+
     # -- uploads waiting for the control plane ---------------------------------------------------
 
     def enqueue(self, kind: str, body: bytes) -> bool:
@@ -156,13 +224,17 @@ class LocalStore:
         if not _NAME.fullmatch(kind):
             raise ValueError(f"upload kind {kind!r}: lower case letters, digits, '.', '_' and '-'")
         waiting = self._outbox()
+        digest = hashlib.sha256(body).hexdigest()
+        if any(item[1] == kind and item[2] == digest for item in waiting):
+            return True  # the same upload is already queued: it is stored once
         if len(waiting) >= self._max_pending:
-            self._write(self._root / "outbox" / "refused", str(self.refused() + 1).encode("ascii"))
+            StoreFiles.write(
+                self._root / "outbox" / "refused", str(self.refused() + 1).encode("ascii")
+            )
             return False
         sequence = (waiting[-1][0] + 1) if waiting else 1
-        digest = hashlib.sha256(body).hexdigest()
         name = f"{sequence:012d}-{kind}-{digest}.upload"
-        self._write(self._root / "outbox" / name, body)
+        StoreFiles.write(self._root / "outbox" / name, body)
         return True
 
     def pending(self) -> list[Pending]:
@@ -203,28 +275,10 @@ class LocalStore:
     def _outbox(self) -> list[tuple[int, str, str, Path]]:
         found = []
         for path in (self._root / "outbox").glob("*.upload"):
-            parsed = self._parse(path.name)
+            parsed = StoreFiles.parse(path.name)
             if parsed is not None:
                 found.append((*parsed, path))
         return sorted(found, key=lambda item: item[0])
-
-    @staticmethod
-    def _parse(name: str) -> tuple[int, str, str] | None:
-        """`<12 digits>-<kind>-<64 hex>.upload` as (sequence, kind, digest), or None for any other name (a name is cut at
-        fixed places, not matched by a pattern with a repeat next to the separator it may contain)."""
-        stem = name.removesuffix(".upload")
-        if stem == name or len(stem) < 12 + 1 + 1 + 1 + 64:
-            return None
-        sequence, kind, digest = stem[:12], stem[13:-65], stem[-64:]
-        if (
-            not (sequence.isascii() and sequence.isdigit())
-            or stem[12] != "-"
-            or stem[-65] != "-"
-            or not _NAME.fullmatch(kind)
-            or not set(digest) <= set("0123456789abcdef")
-        ):
-            return None
-        return int(sequence), kind, digest
 
     def _path_of(self, item: Pending) -> Path:
         return self._root / "outbox" / f"{item.sequence:012d}-{item.kind}-{item.id}.upload"
@@ -236,49 +290,40 @@ class LocalStore:
             raise ValueError(f"blob name {name!r}: lower case letters, digits, '.', '_' and '-'")
         return self._root / "blobs" / f"{kind}-{name}"
 
-    @staticmethod
-    def _part(path: Path, suffix: str) -> Path:
-        return path.with_name(path.name + suffix)
-
     def _cache_path(self, key: str) -> Path:
         if not ArtifactDigests.is_digest(key):
             raise ValueError(f"cache key {key!r} is not a digest")
         return self._root / "decisions" / f"{key.partition(':')[2]}.json"
 
-    def _trim(self) -> None:
+    def _allow_path(self, key: str) -> Path:
+        if not ArtifactDigests.is_digest(key):
+            raise ValueError(f"allow key {key!r} is not a digest")
+        return self._root / "allowed" / f"{key.partition(':')[2]}.json"
+
+    def _note(self, folder: str, path: Path) -> None:
+        """Remember the order a file was put in, and every 64th put drop the oldest past `max_cache`."""
+        recent = self._recent[folder]
+        recent.pop(path.name, None)
+        recent[path.name] = None
+        self._puts += 1
+        if self._puts % 64 == 0:
+            self._trim("decisions")
+            self._trim("allowed")
+
+    def _trim(self, folder: str) -> None:
         """Drop the oldest entries past `max_cache`: those of an earlier run by their file time, then this run's in the order
         they were put (file times of entries written within one clock tick do not order them)."""
-        found = {path.name: path for path in (self._root / "decisions").glob("*.json")}
+        recent = self._recent[folder]
+        found = {path.name: path for path in (self._root / folder).glob("*.json")}
         earlier = sorted(
-            (name for name in found if name not in self._recent),
+            (name for name in found if name not in recent),
             key=lambda name: found[name].stat().st_mtime_ns,
         )
-        ordered = earlier + [name for name in self._recent if name in found]
+        ordered = earlier + [name for name in recent if name in found]
         excess = max(0, len(ordered) - self._max_cache)
         for name in ordered[:excess]:
             found[name].unlink(missing_ok=True)
-        self._recent = dict.fromkeys(ordered[excess:])
-
-    @staticmethod
-    def _json(document: Any) -> bytes:
-        return json.dumps(document, sort_keys=True, separators=(",", ":")).encode("utf-8")
-
-    @staticmethod
-    def _read_json(path: Path) -> Any:
-        try:
-            return json.loads(path.read_bytes())
-        except (OSError, ValueError):
-            return None
-
-    @staticmethod
-    def _write(path: Path, data: bytes) -> None:
-        """Whole or not at all: write beside, flush to disk, rename over."""
-        temporary = path.with_name(path.name + _TEMPORARY)
-        with temporary.open("wb") as handle:
-            handle.write(data)
-            handle.flush()
-            os.fsync(handle.fileno())
-        temporary.replace(path)
+        self._recent[folder] = dict.fromkeys(ordered[excess:])
 
 
 __all__ = ["Blob", "Drained", "LocalStore", "Pending"]

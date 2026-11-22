@@ -27,11 +27,13 @@ snapshot is the `intel_age_s` of the question unless the caller gives one.
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, ClassVar, Final, NamedTuple
 
 from cordon_scanner.cloud.bundle_chain import BundleChain, BundleError
+from cordon_scanner.contracts.digests import ArtifactDigests
+from cordon_scanner.contracts.private_names import PrivateNames
 from cordon_scanner.decide.decision.outcome import Decision
 from cordon_scanner.decide.decision.records import DecisionError, Instants
 from cordon_scanner.decide.decision.table import CompiledPolicy
@@ -41,14 +43,38 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
     from cordon_scanner.cloud.local_store import Drained, LocalStore, Pending
+    from cordon_scanner.contracts.private_names import TenantKeys
     from cordon_scanner.decide.decision.evidence import ArtifactRef, EvidenceSet
 
 REQUIRED_BUNDLE: Final = "policy_bundle"
 """What `decide()` is told is missing while no bundle is held."""
 
 
+class Answer(NamedTuple):
+    """A decision and where it came from: `decided` now, `kept` (the same inputs were decided before), or `remembered` (an earlier
+    ALLOW served because the facts that would refresh it could not be had: see `LocalRuntime.REMEMBERED_FOR`)."""
+
+    decision: Decision
+    source: str
+
+
+@dataclass(frozen=True, slots=True)
+class NamePolicy:
+    """How a name leaves the tenant (spec 22.2 Q1): private names as the keyed hash, public ones plain, unless the tenant opted in."""
+
+    tenant: str
+    keys: TenantKeys
+    plain_opt_in: bool = False
+    internal_namespaces: tuple[str, ...] = ()
+
+
 class LocalRuntime:
     """Decides at one execution point from the policy bundle it holds."""
+
+    #: The shortfalls an earlier ALLOW may stand in for: required evidence that could not be fetched (R200, a registry that is
+    #: down) and intelligence older than the policy allows (R201). Never an expired bundle (R202), an analysis that did not
+    #: finish (R204) or anything about the content or the digest.
+    REMEMBERED_FOR: ClassVar[frozenset[str]] = frozenset({"R200", "R201"})
 
     def __init__(
         self,
@@ -58,9 +84,12 @@ class LocalRuntime:
         tenant: str,
         baseline: CompiledPolicy,
         store: LocalStore | None = None,
+        names: NamePolicy | None = None,
+        remembered_for_s: int = 86400,
     ) -> None:
         baseline.verify()
         self._store = store
+        self._names, self._remembered_for_s = names, remembered_for_s
         self._root, self._delegation, self._tenant = root_public, delegation, tenant
         self._baseline = baseline
         self._held: dict[str, Any] | None = None
@@ -134,6 +163,34 @@ class LocalRuntime:
         intel_age_s: int | None = None,
     ) -> Decision:
         """The decision for `artifact` at `point`, from the bundle held at `clock`; never a network call."""
+        return self.answer(
+            point,
+            artifact,
+            evidence,
+            clock,
+            environment=environment,
+            scope_path=scope_path,
+            actor=actor,
+            relation=relation,
+            online=online,
+            intel_age_s=intel_age_s,
+        ).decision
+
+    def answer(
+        self,
+        point: str,
+        artifact: ArtifactRef,
+        evidence: EvidenceSet,
+        clock: datetime,
+        *,
+        environment: str,
+        scope_path: tuple[str, ...] = (),
+        actor: str = "human",
+        relation: str = "direct",
+        online: bool = False,
+        intel_age_s: int | None = None,
+    ) -> Answer:
+        """`ask`, with where the decision came from."""
         if self._policy is None or self._held is None:
             asked = replace(
                 evidence,
@@ -148,47 +205,136 @@ class LocalRuntime:
             )
         if intel_age_s is None and self._store is not None:
             intel_age_s = self._intel_age(clock)
+        arguments: dict[str, Any] = {
+            "environment": environment,
+            "scope_path": scope_path,
+            "actor": actor,
+            "relation": relation,
+            "online": online,
+            "bundle_age_s": bundle_age,
+            "intel_age_s": intel_age_s,
+        }
         store = self._store
         key = (
-            None
-            if store is None
-            else PointRuntime.key(
-                point,
-                artifact,
-                asked,
-                policy,
-                clock,
-                environment=environment,
-                scope_path=scope_path,
-                actor=actor,
-                relation=relation,
-                online=online,
-                bundle_age_s=bundle_age,
-                intel_age_s=intel_age_s,
-            )
+            PointRuntime.key(point, artifact, asked, policy, clock, **arguments)
+            if store is not None
+            else None
         )
         if store is not None and key is not None:
             kept = store.cache_get(key)
             if kept is not None:
-                return Decision.from_json(kept)
-        decision = PointRuntime.ask(
-            point,
-            artifact,
-            asked,
-            policy,
-            clock,
-            environment=environment,
-            scope_path=scope_path,
-            actor=actor,
-            relation=relation,
-            online=online,
-            bundle_age_s=bundle_age,
-            intel_age_s=intel_age_s,
+                return Answer(Decision.from_json(kept), "kept")
+        decision = PointRuntime.ask(point, artifact, asked, policy, clock, **arguments)
+        if store is None or key is None:
+            return Answer(decision, "decided")
+        stands_in = self._remembered(artifact, policy, arguments, decision, clock)
+        if stands_in is not None:
+            return Answer(stands_in, "remembered")
+        store.cache_put(key, decision.to_json())
+        store.enqueue("decision", self._upload(decision, artifact))
+        self._remember(artifact, policy, arguments, decision, clock)
+        return Answer(decision, "decided")
+
+    # -- what an earlier ALLOW may stand in for ---------------------------------------------------
+
+    @staticmethod
+    def _about(
+        artifact: ArtifactRef, policy: CompiledPolicy, arguments: dict[str, Any]
+    ) -> str | None:
+        """What an earlier ALLOW is kept under: this digest, under this policy, in this environment, scope and relation. Not the
+        moment, the point or the ages: those are what change while the facts cannot be refreshed."""
+        if artifact.digest is None:
+            return None
+        return ArtifactDigests.of_bytes(
+            ArtifactDigests.canonical_json(
+                {
+                    "digest": artifact.digest,
+                    "policy": policy.sha256,
+                    "environment": arguments["environment"],
+                    "scope": list(arguments["scope_path"]),
+                    "relation": arguments["relation"],
+                }
+            )
         )
-        if store is not None and key is not None:
-            store.cache_put(key, decision.to_json())
-            store.enqueue("decision", decision.canonical_bytes())
-        return decision
+
+    def _remember(
+        self,
+        artifact: ArtifactRef,
+        policy: CompiledPolicy,
+        arguments: dict[str, Any],
+        decision: Decision,
+        clock: datetime,
+    ) -> None:
+        """Keep a decision that allowed with every fact in hand (no R2xx shortfall, not even a warning)."""
+        about = self._about(artifact, policy, arguments)
+        if (
+            self._store is None
+            or about is None
+            or decision.state not in ("ALLOW", "ALLOW_WITH_CONDITIONS")
+            or any(code.startswith("R2") for code in decision.reason_codes)
+        ):
+            return
+        self._store.remember_allow(about, decision.to_json(), Instants.text(clock))
+
+    def _remembered(
+        self,
+        artifact: ArtifactRef,
+        policy: CompiledPolicy,
+        arguments: dict[str, Any],
+        decision: Decision,
+        clock: datetime,
+    ) -> Decision | None:
+        """The earlier ALLOW for this digest, when this decision is a block or review only for want of facts that could not be
+        had (`REMEMBERED_FOR`, and nothing else), the policy is the same one, and the ALLOW is no older than `remembered_for_s`."""
+        codes = {
+            code for code in decision.reason_codes if not code.startswith("R9")
+        }  # R9xx say why something allows
+        about = self._about(artifact, policy, arguments)
+        if (
+            self._store is None
+            or about is None
+            or decision.state in ("ALLOW", "ALLOW_WITH_CONDITIONS")
+            or not codes
+            or not codes <= self.REMEMBERED_FOR
+        ):
+            return None
+        recalled = self._store.recall_allow(about)
+        if recalled is None:
+            return None
+        earlier, made_at = recalled
+        age = (clock - Instants.parse(made_at)).total_seconds()
+        if not 0 <= age <= self._remembered_for_s:
+            return None
+        return Decision.from_json(earlier)
+
+    def _upload(self, decision: Decision, artifact: ArtifactRef) -> bytes:
+        """What a decision made here sends the control plane: the decision, the digest and version, and the subject in the form
+        that may leave (a private name only as its keyed hash; with no key to hash it by, the name is withheld)."""
+        names = self._names
+        private = PrivateNames.is_private(
+            registry=artifact.registry,
+            namespace=artifact.namespace,
+            internal_namespaces=names.internal_namespaces if names else (),
+        )
+        subject: str | None
+        if names is not None:
+            subject = PrivateNames.outbound(
+                artifact.subject_id,
+                names.tenant,
+                names.keys,
+                private=private,
+                plain_opt_in=names.plain_opt_in,
+            )
+        else:
+            subject = None if private else artifact.subject_id
+        document: dict[str, Any] = {
+            "schema": "cordon.upload.decision/v1",
+            "subject": subject,
+            "digest": artifact.digest,
+            "version": artifact.version,
+            "decision": decision.to_json(),
+        }
+        return ArtifactDigests.canonical_json(document)
 
     def _intel_age(self, clock: datetime) -> int | None:
         """Seconds since the stored intel snapshot was issued, or None when the store has none (or a damaged one)."""
@@ -215,4 +361,4 @@ class LocalRuntime:
         return policy
 
 
-__all__ = ["REQUIRED_BUNDLE", "LocalRuntime"]
+__all__ = ["REQUIRED_BUNDLE", "Answer", "LocalRuntime", "NamePolicy"]
