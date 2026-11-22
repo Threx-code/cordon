@@ -75,6 +75,8 @@ class Sources:
     cloud: Callable[[ArtifactRef], Decision | None] | None = None
     scan: Callable[[ArtifactRef], ScanEvidence] | None = None
     provenance: Callable[[ArtifactRef], Provenance | None] | None = None
+    #: Whether the signed revocation list names this artifact. Asked before anything else, so a kept or reused ALLOW never stands in for a revoked digest.
+    revoked: Callable[[ArtifactRef], bool] | None = None
     #: What identifies the rules a scan ran with, so evidence kept for a digest is not reused after the rules change.
     rules_version: str = "rules-unversioned"
 
@@ -105,6 +107,13 @@ class Gatherer:
     def gather(self, artifact: ArtifactRef, *, online: bool) -> Gathered:
         sources, ran = self._sources, []
         evidence = EvidenceSet()
+        if sources.revoked is not None:
+            ran.append("revoked")
+            answer = self._try(sources.revoked, artifact)
+            if answer:
+                return Gathered(replace(evidence, revoked=True), (*ran, "stopped:revoked"), None)
+            if answer is None:
+                evidence = self._missing(evidence, "revocation")
         if sources.intel is not None:
             ran.append("intel")
             evidence = replace(evidence, intel=self._try(sources.intel, artifact) or ())

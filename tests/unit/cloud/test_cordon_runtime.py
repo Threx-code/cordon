@@ -1,4 +1,4 @@
-"""Rows BP-8-10 and BP-8-12: the one stdlib runtime every point calls, and the order its evidence is gathered in (spec 8.3).
+"""The one stdlib runtime every point calls, and the order its evidence is gathered in (spec 8.3).
 
 `resolve -> evidence.gather -> decide -> act`, with `cache.store` and `outbox.append` in the local store. Each evidence source has a
 fixture; the order is intelligence, a cloud decision, a scan, provenance; a source that fails is a source that did not answer; and
@@ -307,3 +307,91 @@ print(outcome.decision.state, foreign)
         )
         assert done.returncode == 0, done.stderr[-800:]
         assert done.stdout.strip() == "ALLOW []"
+
+
+class TestARevokedDigestIsNeverServedFromACache:
+    """The revocation list is asked first, before intelligence, a reused cloud decision or a kept decision: an ALLOW remembered for a digest that is revoked afterwards is a BLOCK with R101, at the hook and at the gate."""
+
+    @staticmethod
+    def runtime(tmp_path: Path, calls: Calls, revoked: set[str]) -> CordonRuntime:
+        sources = replace(
+            calls.sources(),
+            revoked=lambda artifact: artifact.digest in revoked or calls._answer("revoked", False),
+        )
+        built = World.build(tmp_path, calls)
+        return CordonRuntime(
+            built._local, resolvers={"ci_action": Calls.resolver}, sources=sources, act=None
+        )
+
+    @staticmethod
+    def ask(runtime: CordonRuntime, point: str, *, online: bool = False) -> Any:
+        return runtime.run(
+            "ci_action",
+            "actions/checkout@v4",
+            point,
+            T0 + timedelta(minutes=5),
+            environment="production",
+            scope_path=("acme",),
+            online=online,
+        )
+
+    def test_an_allow_kept_at_the_gate_becomes_a_block_once_the_digest_is_revoked(
+        self, tmp_path: Path
+    ) -> None:
+        calls, revoked = Calls(), set()
+        runtime = self.runtime(tmp_path, calls, revoked)
+        first = self.ask(runtime, "ci_gate")
+        again = self.ask(runtime, "ci_gate")
+        assert first.decision.state == "ALLOW" and again.source == "kept"
+        revoked.add(first.resolution.artifact().digest)
+        after = self.ask(runtime, "ci_gate")
+        assert (
+            after.decision.state == "BLOCK"
+            and "R101" in after.decision.reason_codes
+            and after.source != "kept"
+        )
+
+    def test_the_same_at_the_agent_hook(self, tmp_path: Path) -> None:
+        calls, revoked = Calls(), set()
+        runtime = self.runtime(tmp_path, calls, revoked)
+        first = self.ask(runtime, "agent_hook")
+        assert first.decision.state == "ALLOW" and self.ask(runtime, "agent_hook").source == "kept"
+        revoked.add(first.resolution.artifact().digest)
+        after = self.ask(runtime, "agent_hook")
+        assert after.decision.state == "BLOCK" and "R101" in after.decision.reason_codes
+
+    def test_a_cloud_decision_on_offer_does_not_stand_in_for_a_revoked_digest(
+        self, tmp_path: Path
+    ) -> None:
+        calls, revoked = Calls(), set()
+        runtime = self.runtime(tmp_path, calls, revoked)
+        first = self.ask(runtime, "ci_gate")
+        calls.cloud_answer = first.decision  # the control plane would reuse this ALLOW
+        revoked.add(first.resolution.artifact().digest)
+        after = self.ask(runtime, "ci_gate", online=True)
+        assert (
+            after.decision.state == "BLOCK"
+            and "R101" in after.decision.reason_codes
+            and after.source != "cloud"
+        )
+        assert "cloud" not in calls.asked[-3:]
+
+    def test_the_revocation_list_is_asked_before_anything_else(self, tmp_path: Path) -> None:
+        calls = Calls()
+        outcome = self.ask(self.runtime(tmp_path, calls, set()), "ci_gate")
+        assert outcome.ran[0] == "revoked" and calls.asked[0] == "revoked"
+
+    def test_a_revoked_digest_stops_the_gathering_there(self, tmp_path: Path) -> None:
+        calls, revoked = Calls(), set()
+        runtime = self.runtime(tmp_path, calls, revoked)
+        revoked.add(self.ask(runtime, "ci_gate").resolution.artifact().digest)
+        calls.asked.clear()
+        outcome = self.ask(runtime, "ci_gate")
+        assert outcome.ran == ("revoked", "stopped:revoked") and calls.asked == []
+
+    def test_a_list_that_cannot_be_read_is_a_missing_fact_not_a_pass(self, tmp_path: Path) -> None:
+        calls = Calls()
+        calls.failing.add("revoked")
+        runtime = self.runtime(tmp_path, calls, set())
+        outcome = self.ask(runtime, "ci_gate")
+        assert outcome.decision.state != "ALLOW"
