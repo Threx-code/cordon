@@ -10,6 +10,7 @@ and expired failing) were the ones ansible-core 2.19 gave.
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import io
 import json
@@ -38,9 +39,14 @@ class Galaxy:
 
     @staticmethod
     def artifact(manifest: bytes = MANIFEST) -> bytes:
-        """A collection artifact holding only this MANIFEST.json."""
+        """A collection artifact holding only this MANIFEST.json: the same bytes on every call. A
+        gzip header carries the time it was written, so an artifact built a second later hashed
+        differently from the one Galaxy recorded, and a slow runner failed the verified case."""
         out = io.BytesIO()
-        with tarfile.open(fileobj=out, mode="w:gz") as archive:
+        with (
+            gzip.GzipFile(fileobj=out, mode="wb", mtime=0) as packed,
+            tarfile.open(fileobj=packed, mode="w") as archive,
+        ):
             member = tarfile.TarInfo("MANIFEST.json")
             member.size = len(manifest)
             archive.addfile(member, io.BytesIO(manifest))
@@ -67,6 +73,14 @@ class Galaxy:
             return self.files[url]
 
         monkeypatch.setattr(AnsibleSignatures, "_get", staticmethod(get))
+
+
+class TestTheStandIn:
+    def test_an_artifact_built_a_second_later_is_the_same_bytes(self, monkeypatch) -> None:
+        first = Galaxy.artifact()
+        later = __import__("time").time() + 1.0
+        monkeypatch.setattr(gzip.time, "time", lambda: later)
+        assert Galaxy.artifact() == first
 
 
 class TestInstalled:

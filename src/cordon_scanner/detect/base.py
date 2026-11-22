@@ -354,6 +354,25 @@ class ScanContext:
         does, and what a file's cached findings depend on besides its own bytes."""
         return {f.name: getattr(self, f.name) for f in fields(self) if f.name not in self.LOCAL}
 
+    #: Each place a file of the scanned package can run from, by the name the facts export uses.
+    PLACES: ClassVar[dict[str, str]] = {
+        "install_hook": "install_hook_paths",
+        "install_entry": "install_entry_paths",
+        "import_entry": "import_entry_paths",
+        "library_entry": "library_entry_paths",
+        "library_closure": "library_closure_paths",
+        "agent_tool": "agent_run_paths",
+        "skill_named": "skill_named_paths",
+        "startup_closure": "startup_closure_paths",
+        "ci_hook": "ci_hook_paths",
+    }
+
+    def places(self) -> dict[str, tuple[str, ...]]:
+        """Where the scanned package's files run from: each place's paths, sorted, empty places left out
+        (the learning loop's facts export reads it from the result, `report/facts.py`)."""
+        out = {name: tuple(sorted(getattr(self, attr))) for name, attr in self.PLACES.items()}
+        return {name: paths for name, paths in out.items() if paths}
+
     def out_of_time(self) -> bool:
         """Whether the scan's time budget has been spent."""
         if self.deadline is None:
@@ -861,6 +880,20 @@ class SkillScripts(Protocol):
     def skill_script(self, path: str, ctx: ScanContext | None) -> bool: ...
 
     def named_scripts(self, units: Sequence[FileUnit]) -> frozenset[str]: ...
+
+
+class CapabilityNameMemo(Protocol):
+    """What the engine uses of the class `LabelledNames`: the capability names the detector's own pass found in
+    the file a worker is inspecting."""
+
+    def take(self, path: str) -> frozenset[str]: ...
+
+
+class DestinationMemo(Protocol):
+    """What the engine uses of the class `LabelledHosts`: the destination digests the detector's own pass found in the
+    file a worker is inspecting."""
+
+    def take(self, path: str) -> tuple[frozenset[str], frozenset[str]]: ...
 
 
 class SubmoduleDependencies(Protocol):

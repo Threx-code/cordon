@@ -1,0 +1,310 @@
+{
+ "about": "Tool-list digest vectors: computed by cordon_scanner.contracts.digests.ArtifactDigests.of_tool_list (the reference). Each side must compute every vector and agree; an entry with `error` must be refused with that message.",
+ "vectors": [
+  {
+   "name": "an empty list",
+   "tools": [],
+   "digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  {
+   "name": "one tool",
+   "tools": [
+    {
+     "name": "search",
+     "description": "Search the index",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "q": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "q"
+      ]
+     }
+    }
+   ],
+   "digest": "sha256:8a263a37812e6924df32c266363f62d221e570c56446b692707370143347a901"
+  },
+  {
+   "name": "the same tool with its schema keys in another order",
+   "tools": [
+    {
+     "inputSchema": {
+      "required": [
+       "q"
+      ],
+      "properties": {
+       "q": {
+        "type": "string"
+       }
+      },
+      "type": "object"
+     },
+     "description": "Search the index",
+     "name": "search"
+    }
+   ],
+   "digest": "sha256:8a263a37812e6924df32c266363f62d221e570c56446b692707370143347a901"
+  },
+  {
+   "name": "two tools",
+   "tools": [
+    {
+     "name": "search",
+     "description": "Search the index",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "q": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "q"
+      ]
+     }
+    },
+    {
+     "name": "fetch",
+     "description": "Fetch one document",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "integer",
+        "minimum": 0
+       }
+      }
+     }
+    }
+   ],
+   "digest": "sha256:105fc12dcf79e1528e8cff8518fa80b0e9b52ba0467601625d967dc6efe345f9"
+  },
+  {
+   "name": "the same two tools in the other order",
+   "tools": [
+    {
+     "name": "fetch",
+     "description": "Fetch one document",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "integer",
+        "minimum": 0
+       }
+      }
+     }
+    },
+    {
+     "name": "search",
+     "description": "Search the index",
+     "inputSchema": {
+      "type": "object",
+      "properties": {
+       "q": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "q"
+      ]
+     }
+    }
+   ],
+   "digest": "sha256:105fc12dcf79e1528e8cff8518fa80b0e9b52ba0467601625d967dc6efe345f9"
+  },
+  {
+   "name": "a tool with no description and no schema",
+   "tools": [
+    {
+     "name": "ping"
+    }
+   ],
+   "digest": "sha256:b70c73c4e505f5c41b75cc526b3c8b265d566dd83d992c33ef676f3a69864997"
+  },
+  {
+   "name": "a tool with an empty description and an empty schema",
+   "tools": [
+    {
+     "name": "ping",
+     "description": "",
+     "inputSchema": {}
+    }
+   ],
+   "digest": "sha256:b70c73c4e505f5c41b75cc526b3c8b265d566dd83d992c33ef676f3a69864997"
+  },
+  {
+   "name": "fields that are not name, description or schema are not part of the digest",
+   "tools": [
+    {
+     "name": "ping",
+     "title": "Ping",
+     "annotations": {
+      "readOnlyHint": true
+     },
+     "outputSchema": {
+      "type": "string"
+     }
+    }
+   ],
+   "digest": "sha256:b70c73c4e505f5c41b75cc526b3c8b265d566dd83d992c33ef676f3a69864997"
+  },
+  {
+   "name": "composed text",
+   "tools": [
+    {
+     "name": "caf\u00e9",
+     "description": "caf\u00e9 \u2615 \u65e5\u672c\u8a9e \ud83d\ude00"
+    }
+   ],
+   "digest": "sha256:4298b939c0ed5ef4c4d4363c38a939cd3089ab95fe726217841dccb904c7c92a"
+  },
+  {
+   "name": "the same text decomposed is the same digest",
+   "tools": [
+    {
+     "name": "cafe\u0301",
+     "description": "cafe\u0301 \u2615 \u65e5\u672c\u8a9e \ud83d\ude00"
+    }
+   ],
+   "digest": "sha256:4298b939c0ed5ef4c4d4363c38a939cd3089ab95fe726217841dccb904c7c92a"
+  },
+  {
+   "name": "decomposed text inside the schema, in a key and in a value",
+   "tools": [
+    {
+     "name": "ping",
+     "inputSchema": {
+      "properties": {
+       "cafe\u0301": {
+        "description": "cafe\u0301"
+       }
+      }
+     }
+    }
+   ],
+   "digest": "sha256:a940d5b2a7dc691f82d070db0f5aad5ec0d85dbd5ca1edb110537c481e04e792"
+  },
+  {
+   "name": "composed text inside the schema",
+   "tools": [
+    {
+     "name": "ping",
+     "inputSchema": {
+      "properties": {
+       "caf\u00e9": {
+        "description": "caf\u00e9"
+       }
+      }
+     }
+    }
+   ],
+   "digest": "sha256:a940d5b2a7dc691f82d070db0f5aad5ec0d85dbd5ca1edb110537c481e04e792"
+  },
+  {
+   "name": "names sort by their UTF-8 bytes",
+   "tools": [
+    {
+     "name": "\u00e9clair"
+    },
+    {
+     "name": "alpha"
+    },
+    {
+     "name": "Zeta"
+    },
+    {
+     "name": "beta"
+    },
+    {
+     "name": "\u00c9clair"
+    }
+   ],
+   "digest": "sha256:40824484de3703f911b7a6dbbb234f8841007b45e3040fbf44090b3904534c41"
+  },
+  {
+   "name": "numbers, booleans and null in a schema",
+   "tools": [
+    {
+     "name": "ping",
+     "inputSchema": {
+      "minimum": 0,
+      "maximum": 1.5,
+      "exclusiveMinimum": -3,
+      "default": null,
+      "nullable": true,
+      "uniqueItems": false
+     }
+    }
+   ],
+   "digest": "sha256:db4c44e9434b3f479280b33c3f84286f5610541d300dc8f5459d29a7c8cc4d1a"
+  },
+  {
+   "name": "a list inside a schema keeps its order",
+   "tools": [
+    {
+     "name": "ping",
+     "inputSchema": {
+      "enum": [
+       "b",
+       "a",
+       "c"
+      ],
+      "required": [
+       "z",
+       "a"
+      ]
+     }
+    }
+   ],
+   "digest": "sha256:25de3802a2bbc95f03acfe346615fa293ffa6bf7a873e3e176307288fd38ff1c"
+  },
+  {
+   "name": "a quote, a backslash and a line break in a description",
+   "tools": [
+    {
+     "name": "ping",
+     "description": "say \"hi\" \\ then\nstop"
+    }
+   ],
+   "digest": "sha256:ea6bfbe855a5fc55aaaceee81ff01b42a5c0b07e2cd1132ca05e2be160e694ed"
+  },
+  {
+   "name": "two tools with one name",
+   "tools": [
+    {
+     "name": "ping"
+    },
+    {
+     "name": "ping",
+     "description": "other"
+    }
+   ],
+   "error": "two tools have one name"
+  },
+  {
+   "name": "two names that are one name once normalised",
+   "tools": [
+    {
+     "name": "caf\u00e9"
+    },
+    {
+     "name": "cafe\u0301"
+    }
+   ],
+   "error": "two tools have one name"
+  },
+  {
+   "name": "a tool with no name",
+   "tools": [
+    {
+     "description": "nameless"
+    }
+   ],
+   "error": "a tool without a name"
+  }
+ ]
+}

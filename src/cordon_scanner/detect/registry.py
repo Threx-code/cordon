@@ -25,6 +25,8 @@ ROLES: dict[str, tuple[str, str]] = {
     "ImportReachability": ("cordon_scanner.detect.supply.reachability", "ImportReachability"),
     "InstallFacts": ("cordon_scanner.detect.supply.name_risk", "InstallFacts"),
     "JudgeGate": ("cordon_scanner.detect.agents.language_model.detector", "JudgeGate"),
+    "LabelledHosts": ("cordon_scanner.detect.code.capability.memo", "LabelledHosts"),
+    "LabelledNames": ("cordon_scanner.detect.code.capability.memo", "LabelledNames"),
     "LoadPath": ("cordon_scanner.detect.code.capability.load_path", "LoadPath"),
     "NATIVE_FORMATS": ("cordon_scanner.detect.binary.detector", "NATIVE_FORMATS"),
     "PackingFindings": ("cordon_scanner.detect.code.obfuscation.packing", "PackingFindings"),
@@ -44,9 +46,11 @@ if TYPE_CHECKING:
     from cordon_scanner.detect.base import (
         BinaryIdentification,
         CampaignSiblingFacts,
+        CapabilityNameMemo,
         ComposerPluginPaths,
         CrossFileJoining,
         DeclaredSourceKinds,
+        DestinationMemo,
         DownloadRunning,
         ImportReachabilityNotes,
         JudgeScheduling,
@@ -63,6 +67,7 @@ if TYPE_CHECKING:
     from cordon_scanner.detect.code import download_flow as _detect_code_download_flow
     from cordon_scanner.detect.code import reached_flows as _detect_code_reached_flows
     from cordon_scanner.detect.code.capability import load_path as _detect_code_capability_load_path
+    from cordon_scanner.detect.code.capability import memo as _detect_code_capability_memo
     from cordon_scanner.detect.code.obfuscation import packing as _detect_code_obfuscation_packing
     from cordon_scanner.detect.source import submodules as _detect_source_submodules
     from cordon_scanner.detect.supply import campaign_sibling as _detect_supply_campaign_sibling
@@ -83,6 +88,8 @@ if TYPE_CHECKING:
     ImportReachability: ImportReachabilityNotes = _detect_supply_reachability.ImportReachability
     InstallFacts: PackageInstallFacts = _detect_supply_name_risk.InstallFacts
     JudgeGate: JudgeScheduling = _detect_agents_language_model_detector.JudgeGate
+    LabelledHosts: DestinationMemo = _detect_code_capability_memo.LabelledHosts
+    LabelledNames: CapabilityNameMemo = _detect_code_capability_memo.LabelledNames
     LoadPath: SkillScripts = _detect_code_capability_load_path.LoadPath
     NATIVE_FORMATS: frozenset[str] = _detect_binary_detector.NATIVE_FORMATS
     PackingFindings: PackerSignatures = _detect_code_obfuscation_packing.PackingFindings
@@ -120,6 +127,8 @@ __all__ = [
     "ImportReachability",
     "InstallFacts",
     "JudgeGate",
+    "LabelledHosts",
+    "LabelledNames",
     "LoadPath",
     "PackingFindings",
     "ReachedFlows",

@@ -514,6 +514,27 @@ class ScanResult:
     verdict: dict[str, Any] | None = None
     """The package verdict (`core/verdict.py`): the features it read and, with a model shipped, its
     score and thresholds."""
+    places: dict[str, tuple[str, ...]] | None = None
+    """Where the scanned package's files run from (`ScanContext.places`): each place's paths, sorted.
+    Read by the facts export (`report/facts.py`) at scan time; not in `to_dict`, so the JSON result and
+    every saved result keep their shape. None for a result built outside a package scan."""
+    capabilities: dict[str, tuple[str, ...]] | None = None
+    """Each file's capability names, as the capability detector's own pass found them (worker fact `cap.all`):
+    for every file a worker inspected, reached or not. Read by the facts export; not in `to_dict`."""
+    reach: dict[str, tuple[str, int]] | None = None
+    """How each code file is reached from a place that runs (`decide.reach.FileReach`): `path -> (kind, depth)`. Read by the facts export
+    at scan time; not in `to_dict`, like `places`. None for a result built outside a package scan."""
+    destinations: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] | None = None
+    """Each file's URL destinations as salted digests, never names: `path -> (host digests, domain digests)`, for files the
+    capability detector found reaching the network. Read by the facts export; not in `to_dict`."""
+    extensions: dict[str, int] | None = None
+    """Every scanned file counted under its extension (`FileExtension.of`: empty for none, `other` for an odd one): a quiet native file, which
+    no finding or capability puts in a facts record, is counted here. Read by the facts export; not in `to_dict`."""
+    unfiltered: tuple[Finding, ...] | None = None
+    """Every finding the scan made, before the reporting thresholds (`PolicyGate.filter_for_reporting`)
+    removed the ones under them: the same tuple, not a copy. The facts export reads it, so the facts do not
+    depend on a reporting setting, which a scanned repository's own configuration can change, and so they are
+    the facts package-scope rules are evaluated on (capability findings are informational). Not in `to_dict`."""
 
     def __post_init__(self) -> None:
         if any(f.rule_id.startswith(INTERNAL_PREFIX) for f in self.findings):
