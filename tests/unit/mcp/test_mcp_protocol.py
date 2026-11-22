@@ -60,7 +60,7 @@ class Wire:
         before = len(self.out.getvalue().splitlines())
         self.send(message)
         # A hung server still fails here; 60 s was too short for a tool call's first scan on a loaded
-        # macOS runner, which answered after it (22 Nov).
+        # macOS runner, which answered after it.
         deadline = time.monotonic() + 300
         while time.monotonic() < deadline:
             lines = self.out.getvalue().splitlines()
