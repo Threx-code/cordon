@@ -11,8 +11,13 @@ Three rules shape the numbers, and none of them is optional:
 * The headline recall is content only: what the scanner's own rules and learned detectors caught from the package. Units
   caught only because an advisory already named them are reported on their own line and never count toward it, nor as
   learning.
-* The machine share is the share of content catches made by machine-learned detectors. Advisory matches (the intel
-  identities) are not content catches, so they are in neither side of it.
+* The machine share is the share of content catches that only the machine-made rules made: a catch counts as machine-made
+  only when the same scan with the machine-made rules removed no longer catches the unit. A learned rule that fired beside a
+  human rule on the same unit did not make that catch, and a unit whose removal scan was not run is counted apart as unmeasured,
+  never as machine-made. Advisory matches (the intel identities) are not content catches, so they are in neither side of it.
+* Time to catch is censored: the share caught within 24 hours and within 7 days of capture, the share never caught while it was
+  watched, and the median over the connected scanner population (a Kaplan-Meier median, which a unit still uncaught at the end of
+  its watch only censors; None when fewer than half were caught).
 * A unit with no label is UNKNOWN: it is in no denominator and is never read as benign. The attack classes are reported
   one by one, and a class the training set lacks is flagged, since its recall is the recall on something never taught.
 * A window is frozen with the head and facts version that scored it, and scoring it again with another is refused.
@@ -53,6 +58,13 @@ class WindowUnit:
     known (None)."""
     label_delay_days: float | None = None
     """Days from capture to its label, when it has one."""
+    caught_without_machine: bool | None = None
+    """Whether the same scan with the machine-made rules removed still catches it (True: a human rule catches it too), or
+    None when that scan was not run."""
+    hours_to_catch: float | None = None
+    """Hours from capture until a connected scanner caught it, or None when none had by the end of its watch."""
+    watched_hours: float | None = None
+    """How long it was watched (the censoring time of an uncaught unit); None when not known."""
 
     def __post_init__(self) -> None:
         if self.caught_by not in CAUGHT_BY:
@@ -67,6 +79,11 @@ class WindowUnit:
     @property
     def content_caught(self) -> bool:
         return self.caught_by in (CONTENT_HUMAN, CONTENT_LEARNED)
+
+    @property
+    def machine_made(self) -> bool:
+        """A learned catch that vanishes when the machine-made rules are removed."""
+        return self.caught_by == CONTENT_LEARNED and self.caught_without_machine is False
 
 
 class RescoreRefused(ValueError):
@@ -100,6 +117,53 @@ class FrozenWindow:
             raise RescoreRefused(
                 f"the window was captured with facts version {frozen['facts_version']}, not {facts_version}"
             )
+
+
+class TimeToCatch:
+    DAY: ClassVar[float] = 24.0
+    WEEK: ClassVar[float] = 168.0
+
+    @staticmethod
+    def within(units: list[WindowUnit], hours: float) -> dict[str, Any] | None:
+        """The share caught within `hours`, among the units that were watched that long or caught sooner."""
+        eligible = [
+            u
+            for u in units
+            if (u.hours_to_catch is not None and u.hours_to_catch <= hours)
+            or (max(u.watched_hours or 0.0, u.hours_to_catch or 0.0) >= hours)
+        ]
+        caught = sum(1 for u in eligible if u.hours_to_catch is not None and u.hours_to_catch <= hours)
+        return WindowReport.figure(caught, len(eligible))
+
+    @staticmethod
+    def median(units: list[WindowUnit]) -> float | None:
+        """The Kaplan-Meier median hours to catch: the first time at which the share still uncaught is at or below a half,
+        a unit uncaught at the end of its watch leaving the risk set there. None when it never gets that low."""
+        events = sorted(
+            [(u.hours_to_catch, True) for u in units if u.hours_to_catch is not None]
+            + [(u.watched_hours, False) for u in units if u.hours_to_catch is None and u.watched_hours is not None],
+            key=lambda e: (e[0], not e[1]),
+        )
+        at_risk, survival = len(events), 1.0
+        for hours, caught in events:
+            if caught:
+                survival *= 1 - 1 / at_risk
+                if survival <= 0.5:
+                    return float(hours)
+            at_risk -= 1
+        return None
+
+    @classmethod
+    def of(cls, units: list[WindowUnit]) -> dict[str, Any]:
+        measured = [u for u in units if u.hours_to_catch is not None or u.watched_hours is not None]
+        uncaught = sum(1 for u in measured if u.hours_to_catch is None)
+        return {
+            "within_24h": cls.within(measured, cls.DAY),
+            "within_7d": cls.within(measured, cls.WEEK),
+            "uncaught": WindowReport.figure(uncaught, len(measured)),
+            "median_hours": cls.median(measured),
+            "watched": len(measured),
+        }
 
 
 class WindowReport:
@@ -143,7 +207,8 @@ class WindowReport:
         teacher_only = [u for u in units if not u.confirmed and TEACHER in u.labelled_by]
         content = [u for u in confirmed if u.content_caught]
         advisory = [u for u in confirmed if u.caught_by == ADVISORY]
-        learned = [u for u in content if u.caught_by == CONTENT_LEARNED]
+        machine = [u for u in content if u.machine_made]
+        unmeasured = [u for u in content if u.caught_by == CONTENT_LEARNED and u.caught_without_machine is None]
         firsts = [u for u in confirmed if u.first_of_family is True]
         siblings = [u for u in confirmed if u.first_of_family is False]
         delays = [u.label_delay_days for u in units if u.label_delay_days is not None]
@@ -155,7 +220,9 @@ class WindowReport:
             "content_recall": cls.figure(len(content), len(confirmed)),
             "advisory_catches": cls.figure(len(advisory), len(confirmed)),
             "advisory_counts_as_learning": False,
-            "machine_share": cls.figure(len(learned), len(content)),
+            "machine_share": cls.figure(len(machine), len(content)),
+            "machine_share_unmeasured": len(unmeasured),
+            "time_to_catch": TimeToCatch.of(confirmed),
             "teacher_only": {
                 "excluded": len(teacher_only),
                 "already_blocked": sum(1 for u in teacher_only if u.caught_by != NONE),

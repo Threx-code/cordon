@@ -23,9 +23,9 @@ class Kit:
     count = 0
 
     @classmethod
-    def unit(cls, caught: str, *labelled: str) -> WindowUnit:
+    def unit(cls, caught: str, *labelled: str, **extra) -> WindowUnit:
         cls.count += 1
-        return WindowUnit(f"u{cls.count}", frozenset(labelled), caught)
+        return WindowUnit(f"u{cls.count}", frozenset(labelled), caught, **extra)
 
     @classmethod
     def report(cls, units: list[WindowUnit]) -> dict:
@@ -105,16 +105,16 @@ class TestTheHeadlineIsContentOnly:
 class TestMachineShareLeavesOutTheAdvisories:
     def test_it_is_learned_catches_over_content_catches(self) -> None:
         report = Kit.report(
-            [Kit.unit(CONTENT_LEARNED, UPSTREAM)] * 2 + [Kit.unit(CONTENT_HUMAN, UPSTREAM)] * 6
+            [Kit.unit(CONTENT_LEARNED, UPSTREAM, caught_without_machine=False)] * 2 + [Kit.unit(CONTENT_HUMAN, UPSTREAM)] * 6
         )
         assert (report["machine_share"]["k"], report["machine_share"]["n"]) == (2, 8)
 
     def test_advisory_matches_are_in_neither_side_of_it(self) -> None:
         without = Kit.report(
-            [Kit.unit(CONTENT_LEARNED, UPSTREAM), Kit.unit(CONTENT_HUMAN, UPSTREAM)]
+            [Kit.unit(CONTENT_LEARNED, UPSTREAM, caught_without_machine=False), Kit.unit(CONTENT_HUMAN, UPSTREAM)]
         )
         with_advisories = Kit.report(
-            [Kit.unit(CONTENT_LEARNED, UPSTREAM), Kit.unit(CONTENT_HUMAN, UPSTREAM)]
+            [Kit.unit(CONTENT_LEARNED, UPSTREAM, caught_without_machine=False), Kit.unit(CONTENT_HUMAN, UPSTREAM)]
             + [Kit.unit(ADVISORY, UPSTREAM)] * 40
         )
         assert with_advisories["machine_share"] == without["machine_share"]
