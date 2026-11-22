@@ -462,10 +462,13 @@ class Tree:
         `Spill.running`: `os.kill(pid, 0)` on Windows is Ctrl+C to the whole console."""
         if not Spill.running(pid):
             return True
-        status = Path(f"/proc/{pid}/status")
-        if status.exists():
-            return "State:\tZ" in status.read_text(encoding="utf-8")
-        return False
+        if not Path("/proc").is_dir():
+            return False  # no /proc (macOS): `Spill.running` above is the answer
+        try:
+            return "State:\tZ" in Path(f"/proc/{pid}/status").read_text(encoding="utf-8")
+        except (ProcessLookupError, FileNotFoundError):
+            # Reaped between the two looks: a process whose entry vanishes as it is read has ended.
+            return True
 
     SCRIPT = (
         "import subprocess, sys, time\n"
@@ -473,6 +476,23 @@ class Tree:
         "open(sys.argv[1], 'w').write(str(child.pid))\n"
         "time.sleep(600)\n"
     )
+
+
+class TestTheEndedCheck:
+    def test_a_process_reaped_while_its_status_is_read_has_ended(self, monkeypatch) -> None:
+        monkeypatch.setattr(Spill, "running", staticmethod(lambda pid: True))
+        monkeypatch.setattr(Path, "is_dir", lambda self: True)
+
+        def vanishing(self, *args, **kwargs):
+            raise ProcessLookupError(3, "No such process")
+
+        monkeypatch.setattr(Path, "read_text", vanishing)
+        assert Tree.ended(424242)
+
+    def test_without_proc_a_running_process_has_not_ended(self, monkeypatch) -> None:
+        monkeypatch.setattr(Spill, "running", staticmethod(lambda pid: True))
+        monkeypatch.setattr(Path, "is_dir", lambda self: False)
+        assert not Tree.ended(424242)
 
 
 class TestTheRunnerEndsWhatItStarts:

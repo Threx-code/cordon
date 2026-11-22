@@ -251,6 +251,19 @@ class JsShapes:
         )
 
 
+class DigestShapes:
+    """The shape of a destination digest (`net.host`, `net.domain`): 16 lowercase hexadecimal digits. Kept apart from
+    `Shapes`, which the verdict model's feature schema covers: these facts feed no model."""
+
+    @staticmethod
+    def digest(value: Any) -> bool:
+        return (
+            isinstance(value, str)
+            and len(value) == 16
+            and all(c in "0123456789abcdef" for c in value)
+        )
+
+
 class Facts:
     """The parent's side of the channel: what it accepts from a worker, and nothing else."""
 
@@ -261,6 +274,9 @@ class Facts:
         "verdict.modules": Shapes.module_name,
         "verdict.abilities": Shapes.ability,
         "cap.label": Shapes.capability,
+        "cap.all": Shapes.capability,
+        "net.host": DigestShapes.digest,
+        "net.domain": DigestShapes.digest,
         "cap.error": Shapes.marker,
         "cap.download": Shapes.marker,
         "intent.effect": Shapes.intent_effect,

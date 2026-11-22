@@ -79,8 +79,8 @@ Scan a directory, file or archive.
 │ --config PATH             repository configuration file                    │
 │ --policy PATH             organisation policy file                         │
 │ --format, -f FMT[:PATH]   text|json|sarif|junit|markdown|github|codeclimat │
-│                           e|vex. Repeatable. Append :PATH to write that    │
-│                           format to a file, for example --format           │
+│                           e|vex|facts. Repeatable. Append :PATH to write   │
+│                           that format to a file, for example --format      │
 │                           sarif:cordon.sarif                               │
 │ --output, -o PATH         write to a file (only valid with a single        │
 │                           --format)                                        │
@@ -353,7 +353,7 @@ Re-render a saved JSON result in another format.
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ path                      a result written with --format json              │
 │ --format, -f FORMAT       text|json|sarif|junit|markdown|github|codeclimat │
-│                           e|vex                                            │
+│                           e|vex|facts                                      │
 │ --output, -o OUTPUT       write to a file                                  │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -1186,6 +1186,20 @@ This machine's AI agents and MCP servers, for an organisation's MDM (read-only, 
 │ agent mcp-approve             record the tools each remote MCP server in   │
 │                               the repository serves now (.cordon/mcp-      │
 │                               tools.json)                                  │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+### agent inventory
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ --signed                  instead print a statement THIS device signs of   │
+│                           the packages it found (the rest counted, not     │
+│                           listed), with a key made now and enrolled for    │
+│                           minutes; needs the device's own                  │
+│                           CORDON_DEVICE_TOKEN (one per laptop; a token     │
+│                           shared by a fleet is not supported)              │
+│ --url URL                 Cordon Cloud API base (with --signed)            │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
