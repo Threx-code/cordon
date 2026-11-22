@@ -1,0 +1,153 @@
+{
+ "definition": "contracts/digests.py ArtifactDigests.of_tree: sha256 of the lines path NUL mode NUL sha256hex LF, sorted by the UTF-8 bytes of the path",
+ "vectors": [
+  {
+   "case": "one file",
+   "entries": [
+    {
+     "path": "SKILL.md",
+     "mode": "644",
+     "bytes_hex": "23206120736b696c6c0a"
+    }
+   ],
+   "digest": "sha256:90c0a3925955588aeaad0cad1695e419674c4b2d765ef04bc2d294b6dec4ba1d"
+  },
+  {
+   "case": "two files, one order",
+   "entries": [
+    {
+     "path": "a/x.py",
+     "mode": "755",
+     "bytes_hex": "7072696e742831290a"
+    },
+    {
+     "path": "b.md",
+     "mode": "644",
+     "bytes_hex": "74776f"
+    }
+   ],
+   "digest": "sha256:7f4d22a6b7e86ec5300d4b223a5e041bbe99621769b275bf025c0e55f653d9f0"
+  },
+  {
+   "case": "two files, the other order",
+   "entries": [
+    {
+     "path": "b.md",
+     "mode": "644",
+     "bytes_hex": "74776f"
+    },
+    {
+     "path": "a/x.py",
+     "mode": "755",
+     "bytes_hex": "7072696e742831290a"
+    }
+   ],
+   "digest": "sha256:7f4d22a6b7e86ec5300d4b223a5e041bbe99621769b275bf025c0e55f653d9f0"
+  },
+  {
+   "case": "the mode changes",
+   "entries": [
+    {
+     "path": "a/x.py",
+     "mode": "644",
+     "bytes_hex": "7072696e742831290a"
+    },
+    {
+     "path": "b.md",
+     "mode": "644",
+     "bytes_hex": "74776f"
+    }
+   ],
+   "digest": "sha256:d1941b0001ecb4aac5078f9995a0797c85029cc09f1c284669dcd52c595c5934"
+  },
+  {
+   "case": "the content changes",
+   "entries": [
+    {
+     "path": "a/x.py",
+     "mode": "755",
+     "bytes_hex": "7072696e742832290a"
+    },
+    {
+     "path": "b.md",
+     "mode": "644",
+     "bytes_hex": "74776f"
+    }
+   ],
+   "digest": "sha256:13199f9509c9dffd032545c55a19fb488eb01533c5c7a0080435bd875a7962c6"
+  },
+  {
+   "case": "an empty file",
+   "entries": [
+    {
+     "path": "empty.txt",
+     "mode": "644",
+     "bytes_hex": ""
+    }
+   ],
+   "digest": "sha256:e76af2491c5cadb02413b391fc7768c72c9475db7068604eaa020a1d0b5abdcd"
+  },
+  {
+   "case": "UTF-8 byte order is code point order, not UTF-16 order",
+   "entries": [
+    {
+     "path": "\ud83d\ude00.md",
+     "mode": "644",
+     "bytes_hex": "73"
+    },
+    {
+     "path": "\u00e9.md",
+     "mode": "644",
+     "bytes_hex": "65"
+    },
+    {
+     "path": "\uff21.md",
+     "mode": "644",
+     "bytes_hex": "66"
+    },
+    {
+     "path": "z.md",
+     "mode": "644",
+     "bytes_hex": "7a"
+    },
+    {
+     "path": "Z.md",
+     "mode": "644",
+     "bytes_hex": "5a"
+    }
+   ],
+   "digest": "sha256:0bb26a865107cc5da7b2d0a0fcaae76766c4877c93f933e370f501c8e66c685b"
+  },
+  {
+   "case": "a nested path sorts as bytes",
+   "entries": [
+    {
+     "path": "a/b",
+     "mode": "644",
+     "bytes_hex": "31"
+    },
+    {
+     "path": "a-b",
+     "mode": "644",
+     "bytes_hex": "32"
+    },
+    {
+     "path": "a.b",
+     "mode": "644",
+     "bytes_hex": "33"
+    },
+    {
+     "path": "a0",
+     "mode": "644",
+     "bytes_hex": "34"
+    }
+   ],
+   "digest": "sha256:1f309884f80e085a3f453396a0d567798212e45b6e187c21be5ff0be3a1b28b8"
+  },
+  {
+   "case": "no files",
+   "entries": [],
+   "digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+ ]
+}
