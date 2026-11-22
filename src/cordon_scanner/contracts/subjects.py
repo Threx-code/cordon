@@ -178,6 +178,8 @@ class SubjectParts:
 
     @classmethod
     def remote(cls, locator: str) -> str:
+        if any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in locator.strip()):
+            raise InvalidSubject(f"locator: {locator!r} has a blank or a control character in it")
         url = urlsplit(locator.strip())
         if url.scheme.lower() != "https" or not url.hostname:
             raise InvalidSubject(f"locator: {locator!r} is not an https URL")

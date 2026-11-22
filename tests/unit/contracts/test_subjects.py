@@ -173,6 +173,8 @@ class TestTheOtherKinds:
                 {"transport": "remote", "locator": "http://insecure.example.com"},
             ),
             (SubjectKind.MCP_SERVER, {"transport": "carrier-pigeon", "locator": "x"}),
+            (SubjectKind.MCP_SERVER, {"transport": "remote", "locator": "https://host/a b"}),
+            (SubjectKind.MCP_SERVER, {"transport": "remote", "locator": "https://host/a\x00b"}),
             (SubjectKind.SOURCE_REPOSITORY, {"scm": "svn", "owner": "a", "name": "b"}),
             (SubjectKind.AGENT, {"product": "  "}),
             (SubjectKind.THIRD_PARTY_INTEGRATION, {"vendor": "slack"}),
