@@ -35,6 +35,7 @@ except ImportError:  # pragma: no cover - a plain interpreter that only dispatch
 try:  # run as a module (tests) or as a script from this directory
     from bench.model import area
 except ImportError:  # pragma: no cover - script invocation
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
     import area
 
 PARAMS = {
@@ -48,6 +49,7 @@ PARAMS = {
     "lambda_l2": 1.0,
     "verbose": -1,
     "num_threads": 8,
+    "deterministic": True,
     "seed": 20261011,
     # Token columns are 0/1 and the dense ones counts: few bins each, which is most of the memory.
     "max_bin": 63,
@@ -107,6 +109,7 @@ class Training:
 
     @staticmethod
     def main() -> int:
+        area.EntryPoint.refuse_inherited()
         parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
         # The one entry point (CDI self-improving). --area code is this trainer; verdict and
         # skill-text dispatch to their trainers. Every area writes the contract (training-list sha
@@ -205,6 +208,8 @@ class Training:
             metrics={
                 "split": args.split,
                 "fpr": args.fpr,
+                "num_threads": PARAMS["num_threads"],
+                "deterministic": PARAMS["deterministic"],
                 "threshold": float(threshold),
                 "recall": round(sum(mal) / max(len(mal), 1), 6),
                 "n_malicious_held": len(mal),

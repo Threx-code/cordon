@@ -18,19 +18,32 @@ from bench.model import area
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 FITS = re.compile(r"lgb\.train|\.fit\(|HistGradientBoosting|save_model|joblib\.dump|LogisticRegression|LGBM")
+#: What a script that writes a model does, whatever library fitted it: a pickle or a joblib file, a saved booster, a gzip file written
+#: in text mode (the JSON models), a model file copied into place, or a name that is one of the model files.
+WRITES = re.compile(
+    r"pickle\.dump|joblib\.dump|save_model|torch\.save|gzip\.open\([^)]*[\"']w|shutil\.copy\w*\([^)]*model"
+    r"|[\"'][\w./{}-]*model\.txt[\"']|[\"'][\w./{}-]*\.joblib[\"']"
+)
 
 
 def scripts() -> list[Path]:
-    return sorted(
-        p for p in HERE.glob("*.py") if not p.name.startswith("test_") and '__name__ == "__main__"' in p.read_text(encoding="utf-8")
-    )
+    return sorted(p for p in HERE.glob("*.py") if not p.name.startswith("test_"))
 
 
 class TestEveryScriptThatFitsAModelIsRegistered:
     def test_a_script_that_fits_a_model_is_train_py_a_registered_trainer_or_evaluation_only(self) -> None:
-        allowed = {"train.py", *area.EntryPoint.TRAINERS.values(), *area.EntryPoint.EVALUATION_ONLY}
+        allowed = {
+            "train.py",
+            "area.py",
+            *area.EntryPoint.TRAINERS.values(),
+            *area.EntryPoint.EVALUATION_ONLY,
+            *area.EntryPoint.PACKAGING,
+        }
         unregistered = [
-            p.name for p in scripts() if FITS.search(p.read_text(encoding="utf-8")) and p.name not in allowed
+            p.name
+            for p in scripts()
+            if (FITS.search(p.read_text(encoding="utf-8")) or WRITES.search(p.read_text(encoding="utf-8")))
+            and p.name not in allowed
         ]
         assert unregistered == [], f"train through bench/model/train.py; register a new trainer in area.EntryPoint: {unregistered}"
 
@@ -61,11 +74,68 @@ class TestEveryScriptThatFitsAModelIsRegistered:
             pytest.skip(f"{name} cannot be imported here")
         assert run.returncode != 0 and "is not an entry point" in run.stderr
 
-    def test_the_grant_is_only_given_by_train_py(self) -> None:
-        assert area.EntryPoint.environment()[area.EntryPoint.ENV] == "1"
-        os.environ.pop(area.EntryPoint.ENV, None)
+    def test_the_write_side_is_seen_whatever_library_fitted_the_model(self) -> None:
+        for code in (
+            "pickle.dump(model, handle)",
+            "torch.save(net, path)",
+            'with gzip.open(out, "wt") as h:',
+            'shutil.copyfile(a, out / "model.txt")',
+            'path = work / "meta.joblib"',
+        ):
+            assert WRITES.search(code), code
+        assert not WRITES.search("rows = json.loads(path.read_text())")
+
+    def test_the_grant_names_train_py_and_nothing_typed_into_a_shell_opens_a_trainer(self, monkeypatch) -> None:
+        monkeypatch.setenv(area.EntryPoint.ENV, "1")
+        assert not area.EntryPoint.granted()
+        monkeypatch.setenv(area.EntryPoint.ENV, str(os.getppid()))
+        # the parent here is not train.py; where /proc shows it, the grant is refused
+        if Path(f"/proc/{os.getppid()}/cmdline").exists():
+            assert not area.EntryPoint.granted()
+        monkeypatch.delenv(area.EntryPoint.ENV)
         with pytest.raises(SystemExit, match="train through bench/model/train.py"):
             area.EntryPoint.require("verdict_train.py")
+
+    def test_the_environment_train_py_hands_on_carries_its_own_pid_and_replaces_any_other_grant(self, monkeypatch) -> None:
+        monkeypatch.setenv(area.EntryPoint.ENV, "typed-in-a-shell")
+        assert area.EntryPoint.environment()[area.EntryPoint.ENV] == str(os.getpid())
+
+    def test_a_grant_already_in_the_environment_stops_train_py_from_starting(self, monkeypatch) -> None:
+        monkeypatch.setenv(area.EntryPoint.ENV, "1")
+        with pytest.raises(SystemExit, match="already set"):
+            area.EntryPoint.refuse_inherited()
+
+    def test_train_py_run_with_a_grant_in_the_shell_does_not_start(self) -> None:
+        env = {**os.environ, area.EntryPoint.ENV: "1", "PYTHONPATH": f"{ROOT}:{ROOT / 'src'}", "PYTHONDONTWRITEBYTECODE": "1"}
+        run = subprocess.run(
+            [sys.executable, str(HERE / "train.py"), "--area", "fixture"],
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+            timeout=60,
+        )
+        assert run.returncode != 0 and "already set" in run.stderr
+
+    def test_a_trainer_run_with_the_grant_typed_in_a_shell_is_refused(self) -> None:
+        env = {**os.environ, area.EntryPoint.ENV: "1", "PYTHONPATH": f"{ROOT}:{ROOT / 'src'}", "PYTHONDONTWRITEBYTECODE": "1"}
+        run = subprocess.run(
+            [sys.executable, str(HERE / "mcp_recalibrate.py")], capture_output=True, text=True, env=env, check=False, timeout=60
+        )
+        assert run.returncode != 0 and "is not an entry point" in run.stderr
+
+    def test_a_trainer_started_by_train_py_is_not_refused_as_an_entry_point(self) -> None:
+        env = {k: v for k, v in os.environ.items() if k != area.EntryPoint.ENV}
+        env.update({"PYTHONPATH": f"{ROOT}:{ROOT / 'src'}", "PYTHONDONTWRITEBYTECODE": "1"})
+        run = subprocess.run(
+            [sys.executable, str(HERE / "train.py"), "--area", "mcp-lines"],
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+            timeout=60,
+        )
+        assert "is not an entry point" not in run.stderr
 
 
 class TestTheSameListAndSeedGiveTheSameModelByteForByte:
