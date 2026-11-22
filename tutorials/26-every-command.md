@@ -1084,9 +1084,10 @@ Serve Cordon to AI agents over the Model Context Protocol (stdio).
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
-│ --client CLIENT           the agent: claude-code, claude-desktop, cline,   │
-│                           codex, continue, cursor, gemini, jetbrains,      │
-│                           vscode, windsurf, zed                            │
+│ --client CLIENT           the agent: amazonq, augment, claude-code,        │
+│                           claude-desktop, cline, codex, continue, cursor,  │
+│                           gemini, goose, jetbrains, junie, kiro, opencode, │
+│                           roo, trae, vscode, windsurf, zed                 │
 │ --allow-online            configure the server with --allow-online         │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
