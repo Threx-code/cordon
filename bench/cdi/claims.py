@@ -63,7 +63,7 @@ class Claims:
         if len(counts) < MIN_FAMILIES:
             out.append(f"{len(counts)} distinct campaigns or families, the minimum is {MIN_FAMILIES}")
         if total:
-            top = counts.most_common(1)[0][1]
+            top = max(counts.values())
             if top / total > MAX_FAMILY_SHARE:
                 out.append(
                     f"one campaign or family holds {top} of {total} held-out units ({top / total:.0%}), the most allowed is {MAX_FAMILY_SHARE:.0%}"

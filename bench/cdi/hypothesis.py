@@ -10,6 +10,7 @@ rule must not trip. Clusters within a confirmed-malicious category are grouped b
 
 from __future__ import annotations
 
+import itertools
 from typing import Any, Final
 
 from bench.cdi.schemas import FACTORY_TIERS
@@ -132,10 +133,9 @@ class Distance:
                 i = parent[i]
             return i
 
-        for i in range(len(featuresets)):
-            for j in range(i + 1, len(featuresets)):
-                if Distance.between(featuresets[i], featuresets[j]) <= max_distance:
-                    parent[find(i)] = find(j)
+        for i, j in itertools.combinations(range(len(featuresets)), 2):
+            if Distance.between(featuresets[i], featuresets[j]) <= max_distance:
+                parent[find(i)] = find(j)
         groups: dict[int, list[str]] = {}
         for i, featureset in enumerate(featuresets):
             groups.setdefault(find(i), []).append(str(featureset["artifact_id"]))

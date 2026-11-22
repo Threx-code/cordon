@@ -34,14 +34,15 @@ class ThreatGraph:
 
     def add(self, artifact: str, node: str) -> None:
         """The artefact has this node (`kind:id`)."""
-        if ":" not in node or node.split(":", 1)[0] not in WEIGHTS:
+        kind, separator, _ = node.partition(":")
+        if not separator or kind not in WEIGHTS:
             raise ValueError(f"node {node!r} is not one of {sorted(WEIGHTS)}")
         self.having[artifact].add(node)
         self.had_by[node].add(artifact)
 
     def weight(self, node: str) -> float:
         """What sharing this node is worth: its kind's weight, 0 for common code, scaled down by how common it is."""
-        kind = node.split(":", 1)[0]
+        kind = node.partition(":")[0]
         base = WEIGHTS[kind]
         if kind not in ("file", "fragment"):
             return base
@@ -54,7 +55,7 @@ class ThreatGraph:
         for node in self.having[seed] & self.having[other]:
             weight = self.weight(node)
             if weight > 0:
-                kind = node.split(":", 1)[0]
+                kind = node.partition(":")[0]
                 best[kind] = max(best.get(kind, 0.0), weight)
         return best
 

@@ -107,11 +107,13 @@ class Conclusion:
         missing = sorted(a for a, card in areas.items() if card is None)
         if missing or not areas:
             return Conclusion.end("research", [f"data unavailable for {', '.join(missing) or 'every area'}"])
-        small = sorted(a for a, c in areas.items() if c and Conclusion.too_small(c))
+        # Every area has a scorecard from here on: an area with none ended the question above.
+        cards = {a: c for a, c in areas.items() if c is not None}
+        small = sorted(a for a, c in cards.items() if Conclusion.too_small(c))
         if small:
             return Conclusion.end("research", [f"small n in {', '.join(small)}"])
-        gains = [a for a, c in areas.items() if c and c["incremental"]]
-        spans = sorted(a for a, c in areas.items() if c and c["recall_gain_low"] <= 0 < c["recall_gain_high"])
+        gains = [a for a, c in cards.items() if c["incremental"]]
+        spans = sorted(a for a, c in cards.items() if c["recall_gain_low"] <= 0 < c["recall_gain_high"])
         if spans and not gains:
             return Conclusion.end("research", [f"inconclusive in {', '.join(spans)}: the gain's interval spans zero"])
         if len(gains) < MIN_AREAS_WITH_GAIN:
