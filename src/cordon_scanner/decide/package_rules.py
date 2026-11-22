@@ -42,7 +42,7 @@ from cordon_scanner.rules.learned import LearnedBlock
 from cordon_scanner.rules.warn_list import WarnList
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+    from collections.abc import Callable, Iterable, Mapping, Sequence
 
     from cordon_scanner.detect.base import ScanContext
     from cordon_scanner.rules.loader import RuleSet
@@ -136,11 +136,9 @@ class PackageRules:
         known = PackageFacts(findings, ctx, names, reach)
         out = []
         for compiled in selected:
-            if not FactTerms.fires(compiled.match, known.has):
+            satisfied = PackageRules.satisfied(compiled, known.has)
+            if satisfied is None:
                 continue
-            all_of = [FactTerms.of_spec(t) for t in compiled.match.all_of]
-            any_of = [FactTerms.of_spec(t) for t in compiled.match.any_of]
-            satisfied = [t for t in (*all_of, *any_of) if known.has(t)]
             file_terms = [t for t in satisfied if t[0] == "file"]
             path = known.where(file_terms[0]) if file_terms else PACKAGE_SCOPE
             made = PackageRules.finding(compiled, path, satisfied)
@@ -199,6 +197,25 @@ class PackageRules:
         """A learned rule's confidence is the one its measured rate earns; any other rule keeps the one it declares."""
         learned = rule.raw.get("learned")
         return LearnedBlock.confidence(learned) if isinstance(learned, dict) else rule.confidence
+
+    @staticmethod
+    def satisfied(compiled: CompiledRule, has: Callable[[Term], bool]) -> list[Term] | None:
+        """The terms of a package-scope rule that hold when it fires, or None when it does not: every `all` term, one of the `any` terms when there are some, and none of the `unless` terms.
+        The one place a rule is judged, for a scan and for a recorded fact vector alike."""
+        if not FactTerms.fires(compiled.match, has):
+            return None
+        held = [FactTerms.of_spec(t) for t in (*compiled.match.all_of, *compiled.match.any_of)]
+        return [t for t in held if has(t)]
+
+    @staticmethod
+    def fires(rules: RuleSet, record: Mapping[str, Any]) -> list[str]:
+        """The ids of the package-scope rules a facts record satisfies, judged by the same logic a scan applies: a pack's self-test over a fact vector runs through here, not through a second reading of the rule."""
+        terms = FactTerms.of_facts(record)
+        return [
+            compiled.rule.id
+            for compiled in PackageRules.selected(rules)
+            if PackageRules.satisfied(compiled, terms.__contains__) is not None
+        ]
 
     @staticmethod
     def finding(compiled: CompiledRule, path: str, satisfied: Sequence[Term]) -> Finding:
