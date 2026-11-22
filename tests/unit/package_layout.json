@@ -888,6 +888,7 @@
   "test_points_matrix.py": "decide/decision",
   "test_predicates.py": "decide/decision",
   "test_private_names.py": "contracts",
+  "test_reason_code_emission.py": "decide/decision",
   "test_reason_codes.py": "contracts",
   "test_records.py": "decide/decision",
   "test_install_hook_shapes.py": "detect/supply/manifests",
