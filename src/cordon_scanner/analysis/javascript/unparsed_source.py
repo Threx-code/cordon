@@ -7,9 +7,9 @@ take tokens, not a syntax tree, so a file whose brackets do not close was read a
 passed without a word: an entry of 200,000 open parentheses was a complete scan.
 
 ```
-  running files = import entries (main, exports, bin) + the install hooks' files
-        │
-        ▼  its brackets do not close (a close of another kind, a close with nothing open, an open at the end)
+  running files = what package.json names (main, bin, exports, the files its install scripts hand to node) + what those require, and a published
+        │           package's import entries and install hooks
+        ▼  its brackets do not close: 32 or more of them are wrong (a close of another kind, a close with nothing open, an open at the end)
   an act token anywhere in the file (eval, Function, require, import, child_process, a network, a decoder) ─► SOURCE.UNPARSED, a gap,
         │ no                                                                                                  and the running verdict
         ▼
@@ -45,26 +45,45 @@ class JsUnparsed:
         r"http|https|net|dgram|tls|dns|vm|WebAssembly|atob|btoa|Buffer|zlib|process|globalThis|Reflect)\b"
     )
 
+    #: How many bracket errors a file may show and still be read as source. The tokenizer is not a parser: a regular expression holding a bracket, a text in
+    #: JSX, a type argument or a shebang puts it off by a few. Measured on 52 flagged files of 36 legitimate units (npm and MCP, dev half): 1 to 31 errors
+    #: each (4, 13, 17 and 18 in the classes 1, 2-3, 4-7 and 8-31); the hostile inputs written for the tests are off by thousands.
+    TOLERATED: ClassVar[int] = 32
+
     @staticmethod
     def runs_as_source(path: str, running: set[str]) -> bool:
         return path in running and path.endswith(SUFFIXES)
 
     @staticmethod
-    def closes(text: str) -> bool | None:
-        """Whether every bracket closes with its own kind. None when the reader's own bound was reached (no verdict: a gap)."""
-        try:
-            tokens = JsEval.tokens(text, templates=True)
-        except (RecursionError, MemoryError, ValueError):
-            return None
+    def errors(tokens: list[Any]) -> int:
+        """How many brackets do not close, counted with recovery: a close that matches nothing open is one error and is skipped; a close of another
+        kind pops to its own open when one is open (each open it skips is one error); what is still open at the end is one error each."""
         stack: list[str] = []
+        count = 0
         for token in tokens:
             if token.kind != "punct":
                 continue
             if token.value in _OPEN:
                 stack.append(_OPEN[token.value])
-            elif token.value in _CLOSE and (not stack or stack.pop() != token.value):
-                return False
-        return not stack
+            elif token.value in _CLOSE:
+                if token.value in stack:
+                    while stack[-1] != token.value:
+                        stack.pop()
+                        count += 1
+                    stack.pop()
+                else:
+                    count += 1
+        return count + len(stack)
+
+    @staticmethod
+    def closes(text: str) -> bool | None:
+        """Whether the brackets close, give or take what the reader itself gets wrong: fewer than `TOLERATED` errors. None when the reader's own
+        bound was reached (no verdict: a gap)."""
+        try:
+            tokens = JsEval.tokens(text, templates=True)
+        except (RecursionError, MemoryError, ValueError):
+            return None
+        return JsUnparsed.errors(tokens) < JsUnparsed.TOLERATED
 
     @staticmethod
     def decide(text: str) -> Decision:

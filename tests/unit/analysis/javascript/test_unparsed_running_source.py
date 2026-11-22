@@ -58,7 +58,9 @@ class Package:
 
 class TestAnEntryFileThatDoesNotClose:
     def test_with_an_act_in_it_is_a_gap_and_a_running_finding(self, tmp_path: Path) -> None:
-        result = Package.scan_tarball(tmp_path, {"index.js": b"eval(atob('x'))\nfunction f( {\n"})
+        result = Package.scan_tarball(
+            tmp_path, {"index.js": b"eval(atob('x'))\n" + b"function f( {\n" * 40}
+        )
         assert result.content_complete is False
         assert GAP in {rule for rule, _ in result.content_gaps}
         assert RUNNING in Package.rules(result)
@@ -78,12 +80,12 @@ class TestAnEntryFileThatDoesNotClose:
 
     def test_a_close_of_the_wrong_kind_is_one_too(self, tmp_path: Path) -> None:
         result = Package.scan_tarball(
-            tmp_path, {"index.js": b"fetch('https://h.invalid/a');\nconst x = (1];\n"}
+            tmp_path, {"index.js": b"fetch('https://h.invalid/a');\n" + b"const x = (1];\n" * 40}
         )
         assert GAP in {rule for rule, _ in result.content_gaps}
 
     def test_a_close_with_nothing_open_is_one_too(self, tmp_path: Path) -> None:
-        result = Package.scan_tarball(tmp_path, {"index.js": b"eval('1');\n})\n"})
+        result = Package.scan_tarball(tmp_path, {"index.js": b"eval('1');\n" + b"})\n" * 40})
         assert GAP in {rule for rule, _ in result.content_gaps}
 
 
@@ -115,7 +117,9 @@ class TestWhatIsLeftAlone:
 
 class TestAPublishedPackagesMain:
     def test_a_main_that_does_not_close_and_names_an_act_is_a_gap(self, tmp_path: Path) -> None:
-        result = Package.scan_tarball(tmp_path, {"index.js": b"eval(atob('x'));\nfunction f( {\n"})
+        result = Package.scan_tarball(
+            tmp_path, {"index.js": b"eval(atob('x'));\n" + b"function f( {\n" * 40}
+        )
         assert GAP in {rule for rule, _ in result.content_gaps}
         assert RUNNING in Package.rules(result)
 
@@ -146,7 +150,7 @@ class Checkout:
             target.write_bytes(body)
         return Scanner(Config.default().with_overrides(use_cache=False)).scan(folder)
 
-    BAD = b"eval(atob('x'));\nfunction f( {\n"
+    BAD = b"eval(atob('x'));\n" + b"function f( {\n" * 40
 
 
 class TestADirectoryScan:
@@ -210,3 +214,37 @@ class TestADirectoryScan:
             tmp_path, {"main": "m.js"}, {"m.js": b"module.exports = () => ({ a: [1, 2] });\n"}
         )
         assert not Package.rules(result) & {BROKEN, RUNNING}
+
+
+class TestWhatTheReaderGetsWrongItself:
+    """The tokenizer is not a parser: a regular expression holding a bracket, a text in JSX, a type argument puts it off by a few brackets. A file off by
+    fewer than 32 is read as source; the boundary is pinned on both sides."""
+
+    @pytest.mark.parametrize(
+        ("errors", "reported"), [(1, False), (31, False), (32, True), (33, True)]
+    )
+    def test_the_boundary_is_thirty_two_errors(
+        self, tmp_path: Path, errors: int, reported: bool
+    ) -> None:
+        result = Package.scan_tarball(
+            tmp_path, {"index.js": b"eval(atob('x'));\n" + b")\n" * errors}
+        )
+        assert (GAP in {rule for rule, _ in result.content_gaps}) is reported
+
+    def test_a_stray_close_in_a_file_that_acts_is_left_alone(self, tmp_path: Path) -> None:
+        result = Package.scan_tarball(
+            tmp_path, {"index.js": b"const cp = require('child_process');\ncp.exec('ls');\n)\n"}
+        )
+        assert GAP not in {rule for rule, _ in result.content_gaps}
+        assert not Package.rules(result) & {BROKEN, RUNNING}
+
+    def test_the_count_recovers_after_a_wrong_close(self) -> None:
+        from cordon_scanner.analysis.javascript.js_eval import JsEval
+        from cordon_scanner.analysis.javascript.unparsed_source import JsUnparsed
+
+        assert (
+            JsUnparsed.errors(JsEval.tokens("(a]", templates=True)) == 2
+        )  # the open is skipped, the wrong close is one more
+        assert JsUnparsed.errors(JsEval.tokens("a)", templates=True)) == 1
+        assert JsUnparsed.errors(JsEval.tokens("((", templates=True)) == 2
+        assert JsUnparsed.errors(JsEval.tokens("([{}])", templates=True)) == 0
