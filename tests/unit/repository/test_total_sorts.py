@@ -29,7 +29,12 @@ SET_TYPES = {"set", "frozenset", "Set", "AbstractSet", "FrozenSet", "MutableSet"
 SET_METHODS = {"union", "intersection", "difference", "symmetric_difference"}
 
 #: `path:function` -> why the key is total there though the rule cannot see it.
-TOTAL_FOR_ANOTHER_REASON: dict[str, str] = {}
+TOTAL_FOR_ANOTHER_REASON: dict[str, str] = {
+    "src/cordon_scanner/cloud/local_runtime.py:_remembered": (
+        "`Relaxation.sort_key` is every field of the record (code, setting, level, environment), so two relaxations "
+        "that key equal are the same relaxation, and the set holds it once"
+    ),
+}
 
 
 class SetValues:

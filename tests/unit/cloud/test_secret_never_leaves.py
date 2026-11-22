@@ -7,6 +7,8 @@ record, the decision the execution plane makes and queues, or any log line writt
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -24,7 +26,13 @@ from cordon_scanner.report.markdown import MarkdownReporter
 from cordon_scanner.report.sarif import SarifReporter
 from cordon_scanner.report.text import TextReporter
 
-SECRET = "ghp_" + "Xk9mQ2vL7rT4wB8nZ3cF6hJ1pD5sY0aGeUVo"
+# A token in the live GitHub format, derived here so that no file of the repository holds a literal of that shape.
+SECRET = (
+    "ghp_"
+    + base64.b64encode(
+        hashlib.sha256(b"a fixture, not a credential").digest(), altchars=b"AB"
+    ).decode()[:36]
+)
 RULE_PREFIX = "SECRET."
 
 
