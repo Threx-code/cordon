@@ -22,12 +22,15 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-import joblib
-import lightgbm as lgb
-import numpy as np
-from scipy import sparse
-from sklearn.feature_selection import chi2
-from sklearn.model_selection import StratifiedGroupKFold
+try:  # the code and fixture areas fit here; dispatching to another area's trainer needs none of these
+    import joblib
+    import lightgbm as lgb
+    import numpy as np
+    from scipy import sparse
+    from sklearn.feature_selection import chi2
+    from sklearn.model_selection import StratifiedGroupKFold
+except ImportError:  # pragma: no cover - a plain interpreter that only dispatches
+    joblib = lgb = np = sparse = chi2 = StratifiedGroupKFold = None  # type: ignore[assignment]
 
 try:  # run as a module (tests) or as a script from this directory
     from bench.model import area
@@ -108,7 +111,7 @@ class Training:
         # The one entry point (CDI self-improving). --area code is this trainer; verdict and
         # skill-text dispatch to their trainers. Every area writes the contract (training-list sha
         # + metrics.json) beside its model via bench.model.area.
-        parser.add_argument("--area", choices=("code", "verdict", "skill-text"), default="code")
+        parser.add_argument("--area", choices=("code", "fixture", *area.EntryPoint.TRAINERS), default="code")
         parser.add_argument("--seed", type=int, default=None, help="RNG seed (overrides PARAMS)")
         parser.add_argument(
             "--train", type=Path, default=None, help="explicit training-id list, one per line"
@@ -118,6 +121,8 @@ class Training:
         parser.add_argument("--fpr", type=float, default=0.005)
         parser.add_argument("--extra", default="", help="extra dense columns: features/<name>.npy")
         args, extra = parser.parse_known_args()
+        if args.area == "fixture":
+            return Training.fixture(args)
         if args.area != "code":
             return Training.dispatch(args, extra)
         if args.seed is not None:
@@ -209,19 +214,70 @@ class Training:
         )
         return 0
 
+    FIXTURE_PARAMS = {  # noqa: RUF012 -- read-only
+        "objective": "binary",
+        "learning_rate": 0.1,
+        "num_leaves": 7,
+        "min_data_in_leaf": 5,
+        "verbose": -1,
+        "num_threads": 1,
+        "deterministic": True,
+        "force_row_wise": True,
+        "feature_fraction": 1.0,
+        "bagging_fraction": 1.0,
+    }
+
+    @staticmethod
+    def fixture_rows(ids: list[str]) -> tuple[np.ndarray, np.ndarray]:
+        """Features and labels made from each id's own digest: a small, repeatable stand-in for an area's rows, so the entry point can
+        be run end to end without a corpus. The same ids give the same rows, whatever the order they are listed in."""
+        import hashlib
+
+        matrix, labels = [], []
+        for unit in sorted(set(ids)):
+            digest = hashlib.sha256(unit.encode("utf-8")).digest()
+            values = [b / 255.0 for b in digest[:8]]
+            matrix.append(values)
+            labels.append(int(values[0] + values[1] > 1.0))
+        return np.array(matrix, dtype=np.float64), np.array(labels)
+
+    @staticmethod
+    def fixture(args: argparse.Namespace) -> int:
+        """`--area fixture`: the whole entry point on a fixture area. Same list and seed give a byte-identical model."""
+        if args.train is None or not args.train.exists():
+            print("--area fixture needs --train LIST", file=sys.stderr)
+            return 2
+        ids = args.train.read_text(encoding="utf-8").split()
+        seed = args.seed if args.seed is not None else 0
+        matrix, labels = Training.fixture_rows(ids)
+        params = {**Training.FIXTURE_PARAMS, "seed": seed}
+        model = lgb.train(params, lgb.Dataset(matrix, labels), 20)
+        out = args.work / "model-fixture"
+        out.mkdir(parents=True, exist_ok=True)
+        model.save_model(str(out / "model.txt"))
+        predicted = model.predict(matrix) > 0.5
+        area.Contract.write_contract(
+            out,
+            area="fixture",
+            seed=seed,
+            train_ids=ids,
+            metrics={"accuracy": round(float((predicted == labels).mean()), 6), "n_malicious": int(labels.sum())},
+        )
+        return 0
+
     @staticmethod
     def dispatch(args: argparse.Namespace, extra: list[str]) -> int:
         """Run a non-code area's trainer, then record the one-entry-point contract. The trainer owns
         the model and its own report; the contract adds the training-list sha (from --train) so every
         area is built the one way and the gate's lineage check is reproducible."""
-        script = {"verdict": "verdict_train.py", "skill-text": "train_text.py"}[args.area]
+        script = area.EntryPoint.TRAINERS[args.area]
         here = Path(__file__).resolve().parent
         extra = [a for a in extra if a != "--"]  # drop the argparse options separator
         cmd = [sys.executable, str(here / script), *extra]
         if args.seed is not None:
             cmd += ["--seed", str(args.seed)]
         print(f"area={args.area}: {' '.join(cmd)}", flush=True)
-        rc = subprocess.run(cmd, check=False).returncode  # our own trainer, invoked by path
+        rc = subprocess.run(cmd, check=False, env=area.EntryPoint.environment()).returncode  # our own trainer, by path
         out = Path(extra[extra.index("--out") + 1]) if "--out" in extra else None
         if rc != 0 or out is None:
             return rc

@@ -19,9 +19,42 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
+
+
+class EntryPoint:
+    """Why `train.py` is the only way in: every script that writes a model is listed here, and refuses to run unless `train.py`
+    started it. A script that fits a model and is neither listed nor an evaluation-only script is a failing test."""
+
+    ENV = "CORDON_TRAIN_ENTRY"
+    #: area name -> the trainer `train.py --area <name>` runs.
+    TRAINERS = {
+        "verdict": "verdict_train.py",
+        "skill-text": "train_text.py",
+        "files": "train_files.py",
+        "area-fit": "area_fit.py",
+        "mcp": "mcp_model_train.py",
+        "mcp-channel": "mcp_channel_model.py",
+        "mcp-lines": "mcp_recalibrate.py",
+    }
+    #: Scripts that fit models only to measure them (cross-validation): they write no model anyone ships.
+    EVALUATION_ONLY = frozenset({"mcp_crossval.py", "skill_crossval.py"})
+
+    @classmethod
+    def environment(cls) -> dict[str, str]:
+        """The environment `train.py` gives the trainer it starts."""
+        return {**os.environ, cls.ENV: "1"}
+
+    @classmethod
+    def require(cls, script: str) -> None:
+        """Refuses to run a trainer on its own."""
+        if os.environ.get(cls.ENV) != "1":
+            raise SystemExit(
+                f"{Path(script).name} is not an entry point: train through bench/model/train.py --area ... --train LIST --seed N"
+            )
 
 
 class Contract:
