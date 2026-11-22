@@ -8,11 +8,24 @@ pins that, with the imports): nothing is bought in to do these jobs either.
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
 from support import ROOT
-from test_no_third_party import Imports
+
+
+class Imports:
+    @staticmethod
+    def of(path: Path) -> list[tuple[int, str]]:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found: list[tuple[int, str]] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                found.extend((node.lineno, alias.name) for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                found.append((node.lineno, node.module))
+        return found
 
 
 class Core:
