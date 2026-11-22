@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,12 @@ from cordon_scanner.decide.resolve.skill import SkillResolver
 GOLDEN = "sha256:96c601e291af52c74a8125dd1639c4d0c5a7cf8430185bdbc9bc821d85815551"
 SKILL_MD = b"# Deploy\nRun the deploy script.\n"
 RUN_SH = b"#!/bin/sh\necho deploy\n"
+GOLDEN_NO_EXECUTABLE = "sha256:a59bf7cc0835afd2536de393d36d1b1467b31b5c4c70b66f5bc188ee72c6e9e6"
+"""The same folder with the script at mode 644, which is how Windows reads it: Windows has no executable bit."""
+POSIX_MODES = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Windows has no executable bit: every file reads as 644 there (TestOnWindows pins that)",
+)
 
 
 class Folder:
@@ -34,6 +41,7 @@ class Folder:
 
 
 class TestTheGoldenFolder:
+    @POSIX_MODES
     def test_the_digest_is_the_hand_computed_listing_digest(self, tmp_path: Path) -> None:
         by_hand = hashlib.sha256(
             b"SKILL.md\x00644\x00"
@@ -49,6 +57,7 @@ class TestTheGoldenFolder:
         assert found.subject_id == "skill:local/.claude/skills/deploy"
         assert found.kind == "agent_skill"
 
+    @POSIX_MODES
     def test_it_is_the_same_digest_whatever_the_umask_the_times_and_the_order_of_creation(
         self, tmp_path: Path
     ) -> None:
@@ -83,6 +92,7 @@ class TestWhatMovesTheDigest:
             assert found.resolved and found.digest not in seen, name
             seen.add(str(found.digest))
 
+    @POSIX_MODES
     def test_git_metadata_is_not_part_of_the_skill(self, tmp_path: Path) -> None:
         folder = Folder.deploy(tmp_path)
         (folder / ".git").mkdir()
@@ -145,6 +155,9 @@ class TestWhatIsRefusedNeverGivesADigestOfPartOfTheFolder:
         found = SkillResolver.resolve(folder)
         assert (found.resolved, found.reason, found.digest) == (False, "unreadable", None)
 
+    @pytest.mark.skipif(
+        sys.platform == "win32", reason="Windows cannot hold a file name with a backslash"
+    )
     def test_a_file_name_the_tree_rule_does_not_take(self, tmp_path: Path) -> None:
         folder = Folder.deploy(tmp_path)
         (folder / "a\\b").write_bytes(b"x")
@@ -167,9 +180,36 @@ class TestTheSubject:
 
 
 class TestTheTreeRule:
+    @POSIX_MODES
     def test_the_digest_equals_the_tree_rule_over_the_same_entries(self, tmp_path: Path) -> None:
         folder = Folder.deploy(tmp_path)
         expected = ArtifactDigests.of_tree(
             [("scripts/run.sh", "755", RUN_SH), ("SKILL.md", "644", SKILL_MD)]
         )
         assert SkillResolver.resolve(folder).digest == expected == GOLDEN
+
+
+class TestTheFolderWithoutAnExecutableBit:
+    def test_the_digest_is_the_hand_computed_listing_with_every_file_at_644(
+        self, tmp_path: Path
+    ) -> None:
+        by_hand = hashlib.sha256(
+            b"SKILL.md\x00644\x00"
+            + hashlib.sha256(SKILL_MD).hexdigest().encode()
+            + b"\nscripts/run.sh\x00644\x00"
+            + hashlib.sha256(RUN_SH).hexdigest().encode()
+            + b"\n"
+        ).hexdigest()
+        assert "sha256:" + by_hand == GOLDEN_NO_EXECUTABLE != GOLDEN
+        assert (
+            SkillResolver.resolve(Folder.deploy(tmp_path, executable=False)).digest
+            == GOLDEN_NO_EXECUTABLE
+        )
+
+    @pytest.mark.skipif(
+        sys.platform != "win32", reason="the executable bit exists here: see TestTheGoldenFolder"
+    )
+    def test_on_windows_a_script_reads_as_644_whatever_chmod_was_asked(
+        self, tmp_path: Path
+    ) -> None:
+        assert SkillResolver.resolve(Folder.deploy(tmp_path)).digest == GOLDEN_NO_EXECUTABLE
