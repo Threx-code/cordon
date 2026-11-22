@@ -17,6 +17,7 @@ What the digest takes and what it refuses, so two machines cannot disagree about
 
 from __future__ import annotations
 
+import os
 import stat
 from pathlib import Path
 from typing import ClassVar
@@ -30,6 +31,8 @@ class SkillResolver:
     MAX_FILES: ClassVar[int] = 5000
     MAX_BYTES: ClassVar[int] = 64 * 1024 * 1024
     SKIPPED: ClassVar[tuple[str, ...]] = (".git",)
+    #: A file system with no execute bit (Windows) cannot say which files are executable: the mode then comes from git's record (BP-3-2).
+    NO_EXEC_BIT: ClassVar[bool] = os.name == "nt"
 
     @classmethod
     def resolve(cls, folder: Path, *, root: Path | None = None) -> Resolution:
@@ -49,6 +52,7 @@ class SkillResolver:
             )
         entries: list[tuple[str, str, bytes]] = []
         total = 0
+        recorded = cls.recorded_modes(folder) if cls.NO_EXEC_BIT else {}
         try:
             for path in sorted(folder.rglob("*"), key=lambda item: item.as_posix().encode("utf-8")):
                 relative_path = path.relative_to(folder).as_posix()
@@ -64,7 +68,11 @@ class SkillResolver:
                 total += info.st_size
                 if len(entries) >= cls.MAX_FILES or total > cls.MAX_BYTES:
                     return Resolution.failed(kind, subject, "too_large")
-                mode = "755" if info.st_mode & stat.S_IXUSR else "644"
+                mode = (
+                    recorded.get(relative_path, "644")
+                    if cls.NO_EXEC_BIT
+                    else ("755" if info.st_mode & stat.S_IXUSR else "644")
+                )
                 entries.append((relative_path, mode, path.read_bytes()))
         except OSError:
             return Resolution.failed(kind, subject, "unreadable")
@@ -73,6 +81,28 @@ class SkillResolver:
         except ValueError:
             return Resolution.failed(kind, subject, "unsupported_path")
         return Resolution(kind=kind, subject_id=subject, status="resolved", digest=digest)
+
+    @staticmethod
+    def recorded_modes(folder: Path) -> dict[str, str]:
+        """`path relative to the folder -> 755 or 644` from git's index, for a folder inside a git working tree; empty when it is not one or git cannot say.
+
+        git records `100755` for an executable file and `100644` otherwise: the same two values as the execute bit gives on a POSIX file system, so a
+        checkout on Windows and one on Linux give the same digest."""
+        from cordon_scanner.sources.git import GitRepository
+
+        try:
+            listing = GitRepository(folder).run(
+                ["ls-files", "--stage", "-z", "--", "."], check=False
+            )
+        except Exception:  # noqa: BLE001  # S2: no record is the 644 of an archive entry with no execute bit, never a failure of the resolver
+            return {}
+        modes: dict[str, str] = {}
+        for entry in filter(None, listing.split("\0")):
+            meta, _, path = entry.partition("\t")
+            fields = meta.split()
+            if len(fields) == 3 and path:
+                modes[path] = "755" if fields[0] == "100755" else "644"
+        return modes
 
 
 __all__ = ["SkillResolver"]

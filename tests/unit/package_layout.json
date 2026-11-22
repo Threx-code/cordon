@@ -892,6 +892,7 @@
   "test_degrade_modes.py": "cloud",
   "test_digests.py": "contracts",
   "test_tree_digest_vectors.py": "contracts",
+  "test_model_digest_vectors.py": "contracts",
   "test_enforcement_points.py": "decide",
   "test_engines.py": "decide/export",
   "test_evidence.py": "decide/decision",

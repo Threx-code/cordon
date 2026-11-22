@@ -213,3 +213,61 @@ class TestTheFolderWithoutAnExecutableBit:
         self, tmp_path: Path
     ) -> None:
         assert SkillResolver.resolve(Folder.deploy(tmp_path)).digest == GOLDEN_NO_EXECUTABLE
+
+
+class TestWhereTheModeComesFromWhenTheFileSystemHasNoExecuteBit:
+    """Row BP-3-2: on Windows the mode is git's recorded mode inside a git working tree and 644 otherwise, so a checkout gives the digest a POSIX one does.
+
+    The platform is simulated by `NO_EXEC_BIT`; the folder lives in a real git repository whose index says the script is executable while the
+    file on disk is not."""
+
+    @staticmethod
+    def repository(root: Path, *, executable: bool) -> Path:
+        from cordon_scanner.sources.git import GitRepository
+
+        folder = Folder.deploy(root, executable=False)
+        repo = GitRepository(root)
+        repo.run(["init", "-q"])
+        repo.run(["add", "-A"])
+        if executable:
+            repo.run(["update-index", "--chmod=+x", ".claude/skills/deploy/scripts/run.sh"])
+        return folder
+
+    @pytest.fixture(autouse=True)
+    def _no_execute_bit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(SkillResolver, "NO_EXEC_BIT", True)
+
+    def test_a_script_git_records_as_executable_gives_the_golden_digest_though_the_file_is_not(
+        self, tmp_path: Path
+    ) -> None:
+        folder = self.repository(tmp_path, executable=True)
+        assert SkillResolver.resolve(folder, root=tmp_path).digest == GOLDEN
+
+    def test_a_script_git_records_as_not_executable_gives_the_no_executable_digest(
+        self, tmp_path: Path
+    ) -> None:
+        folder = self.repository(tmp_path, executable=False)
+        assert SkillResolver.resolve(folder, root=tmp_path).digest == GOLDEN_NO_EXECUTABLE
+
+    def test_a_folder_outside_any_git_tree_reads_every_file_as_644(self, tmp_path: Path) -> None:
+        folder = Folder.deploy(tmp_path)
+        assert SkillResolver.resolve(folder, root=tmp_path).digest == GOLDEN_NO_EXECUTABLE
+
+    def test_a_file_git_does_not_list_reads_as_644(self, tmp_path: Path) -> None:
+        folder = self.repository(tmp_path, executable=True)
+        (folder / "scripts" / "extra.sh").write_bytes(b"echo extra\n")
+        modes = SkillResolver.recorded_modes(folder)
+        assert modes == {"SKILL.md": "644", "scripts/run.sh": "755"}
+
+    def test_git_that_cannot_be_asked_gives_no_record_not_a_failure(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cordon_scanner.sources.git import GitRepository
+
+        def refuse(self: GitRepository, args: list[str], **kw: object) -> str:
+            raise OSError("no git")
+
+        monkeypatch.setattr(GitRepository, "run", refuse)
+        folder = Folder.deploy(tmp_path)
+        assert SkillResolver.recorded_modes(folder) == {}
+        assert SkillResolver.resolve(folder, root=tmp_path).digest == GOLDEN_NO_EXECUTABLE
