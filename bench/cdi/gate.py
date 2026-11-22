@@ -38,6 +38,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from bench.cdi.claims import ClaimRefused, Claims
+from bench.cdi.lineage import Lineage
+
 SCHEMA_VERSION = "1.0.0"
 DEFAULT_POLICY: dict[str, Any] = {
     "policy_id": "gate-policy/1",
@@ -236,15 +239,45 @@ class Gate:
                     else f"no benign match outside measured areas ({len(reach)} areas searched)",
                 )
         lineage = spec.get("lineage")
-        if lineage:
+        if lineage and "train_scans" in lineage:
+            # By content (SI-Q11): the training and eval scans are compared by the normalised-content key, so a reworded or re-released copy is found
+            # where a sha256 check finds none. Every eval unit counts once, whichever eval list it is in.
+            train_rows = Gate.read_scans(lineage["train_scans"])
+            found = [
+                Lineage.overlap(train_rows, Gate.read_scans(p)) for p in lineage["eval_scans"]
+            ]
+            overlap = sum(f["units"] for f in found)
+            missed = sum(f["missed_by_sha256"] for f in found)
+            gates["lineage"] = (
+                "pass" if overlap <= policy["lineage_overlap_max"] else "fail",
+                f"overlap {overlap} units by content, {missed} of them none by sha256",
+            )
+        elif lineage:
             train = Gate.keys(lineage["train_keys"])
             overlap = sum(len(train & Gate.keys(p)) for p in lineage["eval_keys"])
             gates["lineage"] = (
                 "pass" if overlap <= policy["lineage_overlap_max"] else "fail",
                 f"overlap {overlap}",
             )
+        elif spec.get("trained"):
+            # A candidate with a trained component and no lineage evidence is not "not applicable": the check was not done.
+            gates["lineage"] = ("fail", "a trained component with no lineage check")
         else:
             gates["lineage"] = ("not_applicable", "no trained component")
+        claim = spec.get("claim")
+        if claim:
+            # SI-R2 and SI-R3: an ecosystem is claimed only on a held-out split that is large and diverse enough; each refusal names its minimum.
+            try:
+                plan = Claims.require(
+                    claim["held_families"],
+                    claim["dev_malware_n"],
+                    claim["legit_n"],
+                    claim.get("catalogue"),
+                )
+                short = "; ".join(plan["short_of_plan"])
+                gates["claim"] = ("pass", short or "held-out split meets the plan sizes")
+            except ClaimRefused as refused:
+                gates["claim"] = ("fail", "; ".join(refused.reasons))
         outcome = "reject" if any(v[0] == "fail" for v in gates.values()) else "shadow"
         run = {
             "schema_version": SCHEMA_VERSION,
