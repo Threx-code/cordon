@@ -156,6 +156,7 @@ BUILTIN_REPORTERS = (
     "codeclimate",
     "vex",
     "facts",
+    "statement",
 )
 
 BUILTIN_NOTIFIERS = (
