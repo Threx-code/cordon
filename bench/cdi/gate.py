@@ -40,6 +40,7 @@ from typing import Any
 
 from bench.cdi.claims import ClaimRefused, Claims
 from bench.cdi.lineage import Lineage
+from bench.cdi.preregistration import Preregistration
 
 SCHEMA_VERSION = "1.0.0"
 DEFAULT_POLICY: dict[str, Any] = {
@@ -119,6 +120,7 @@ class Gate:
         if isinstance(policy, str):
             policy = json.loads(Path(policy).read_text(encoding="utf-8"))
         policy = {**DEFAULT_POLICY, **policy}
+        Preregistration.check(policy)
         metrics: dict[str, Any] = {"sets": {}, "per_area_benign": {}}
         lost: list[str] = []
         new_benign: list[str] = []
