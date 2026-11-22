@@ -67,6 +67,8 @@ class Rescore:
             "confirm": {
                 "families": confirm.families(confirm.mask_of(predicate)),
                 "legit_upper": round(confirm_upper, 6),
+                "legit_fires": confirm.legit_fires(confirm.mask_of(predicate)),
+                "legit_n": confirm.legit_mask.bit_count(),
             },
         }
 

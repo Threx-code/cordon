@@ -74,7 +74,7 @@ class TestTheRulePackLaneNeverRetrains:
         candidate = Distiller().distill(Evasion.first_window()).candidate
         assert candidate is not None and candidate["train"]["families"] == 4
         # shadow: the proposal is rendered as a pack in the learned namespace, a rule and no code
-        pack = PackRenderer.render(candidate, "LEARNED.NPM.001")
+        pack = PackRenderer.render(candidate, "LEARNED.NPM.001", batch="batch-one")
         assert "id: LEARNED.NPM.001" in pack and "kind: composite" in pack and "def " not in pack
         # gate: the same text under an adversarial rewrite is not what the gate keeps
         verdict = AdversarialGate.check(lambda text: "spawn" in text, ["spawn('x')", "spawn('y')"])

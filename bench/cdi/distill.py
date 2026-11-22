@@ -208,7 +208,12 @@ class Distiller:
                     "legit_upper": round(upper, 6),
                     "worst_stratum_upper": worst,
                 },
-                "confirm": {"families": confirm_families, "legit_upper": round(confirm_upper, 6)},
+                "confirm": {
+                    "families": confirm_families,
+                    "legit_upper": round(confirm_upper, 6),
+                    "legit_fires": confirm_space.legit_fires(mask),
+                    "legit_n": confirm_space.legit_mask.bit_count(),
+                },
             }
             if self.lofo:
                 candidate["out_of_family"] = self._out_of_family(kept_units, space)
@@ -369,7 +374,9 @@ class PackRenderer:
     the predicate's, in the `LEARNED.<AREA>.<NNN>` namespace (LL-4). The pack carries no sample and no text from any
     package: its terms are the scanner's own vocabulary, and its evidence is the counts the distiller measured."""
 
-    RULE_ID: Final = re.compile(r"LEARNED\.[A-Z][A-Z0-9_]{0,23}\.[0-9]{3}")
+    RULE_ID: Final = re.compile(r"LEARNED\.[A-Z][A-Z0-9_]{0,23}\.[0-9]{1,6}")
+    #: The window or batch a rule was learned in, as the scanner reads it.
+    BATCH: Final = re.compile(r"[A-Za-z0-9._:-]{1,64}")
 
     @staticmethod
     def spec(term: list[str]) -> str:
@@ -386,10 +393,26 @@ class PackRenderer:
         *,
         severity: str = "high",
         confidence: str = "medium",
+        batch: str | None = None,
     ) -> str:
+        """The pack text. The rule explains itself with what the distiller measured (`learned`): the families it was learned
+        from, the rate legitimate releases fire it on rows never used to choose it, that rate's upper bound, and the batch. A pack
+        written without a `batch` carries no such block (a scanner that does not read it refuses the key)."""
         if not PackRenderer.RULE_ID.fullmatch(rule_id):
-            raise ValueError(f"a learned rule id is LEARNED.<AREA>.<NNN>, not {rule_id!r}")
+            raise ValueError(f"a learned rule id is LEARNED.<AREA>.<n>, not {rule_id!r}")
         train, confirm = candidate["train"], candidate["confirm"]
+        learned = ""
+        if batch is not None:
+            if not PackRenderer.BATCH.fullmatch(batch):
+                raise ValueError(f"a batch label is 1 to 64 of letters, digits and . _ : -, not {batch!r}")
+            if not confirm.get("legit_n"):
+                raise ValueError("the candidate has no confirm legit count: its rate cannot be stated")
+            rate = confirm["legit_fires"] / confirm["legit_n"]
+            high = max(float(confirm["legit_upper"]), rate)
+            learned = (
+                f"    learned: {{families: {int(train['families'])}, legit_rate: {round(rate, 6)!r}, "
+                f"interval: [0.0, {round(high, 6)!r}], batch: {batch}}}\n"
+            )
         said = "; ".join(" ".join(t) for t in candidate["predicate"])
         message = (
             f"Machine-made detector (learning loop, distiller G2): this package has the shape {said}. Learned from "
@@ -409,6 +432,7 @@ class PackRenderer:
             f"    message: '{PackRenderer.quoted(message)}'\n"
             "    remediation: 'Read what the named file does and why nothing in the package starts it; report a false "
             "positive from the finding.'\n"
+            f"{learned}"
             "    match:\n"
             "      kind: composite\n"
             "      scope: package\n"
