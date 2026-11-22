@@ -56,7 +56,9 @@ class TestTheDecisionPath:
         assert all(path.is_file() for path in files)
         assert len(files) > 40  # the folders are read whole: a rename that empties one is seen
 
-    @pytest.mark.parametrize("path", Imports.decision_path(), ids=lambda p: str(p.relative_to(SRC)))
+    @pytest.mark.parametrize(
+        "path", Imports.decision_path(), ids=lambda p: p.relative_to(SRC).as_posix()
+    )
     def test_each_file_imports_only_the_standard_library_and_the_package(self, path: Path) -> None:
         assert Imports.outside(path.read_text(encoding="utf-8")) == set()
 

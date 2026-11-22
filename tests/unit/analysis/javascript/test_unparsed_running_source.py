@@ -142,7 +142,7 @@ class Checkout:
     @staticmethod
     def scan(folder: Path, manifest: dict, files: dict[str, bytes]):
         (folder / "package.json").write_text(
-            json.dumps({"name": "x", "version": "1.0.0", **manifest})
+            json.dumps({"name": "x", "version": "1.0.0", **manifest}), encoding="utf-8"
         )
         for name, body in files.items():
             target = folder / name
