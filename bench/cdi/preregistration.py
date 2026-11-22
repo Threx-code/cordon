@@ -15,6 +15,7 @@ from typing import Any, Final
 
 REGISTERED: Final[dict[str, str]] = {
     "gate-policy/1": "dea013b4995c55885cf268a587a96bdbc327e9e3f83afe6bb60b88a2f992211c",
+    "gate-policy/2": "2405af066f605fa60ff63d3c1066a8cd67453858511cc5472e9eb0205991762e",
 }
 """Policy id -> sha256 of the policy's canonical JSON (sorted keys, no whitespace)."""
 

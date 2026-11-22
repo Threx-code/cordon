@@ -25,7 +25,7 @@ class TestTheRegisteredPolicy:
             if isinstance(value, (int, float)) and not isinstance(value, bool):
                 assert (
                     Preregistration.digest({**DEFAULT_POLICY, key: value + 1})
-                    != REGISTERED["gate-policy/1"]
+                    != REGISTERED[DEFAULT_POLICY["policy_id"]]
                 ), key
 
 
@@ -56,7 +56,7 @@ class TestTheGateRefusesAChangedThreshold:
 
     def test_a_policy_with_an_id_nobody_registered_is_refused(self, tmp_path: Path) -> None:
         with pytest.raises(ThresholdChanged, match="not pre-registered"):
-            Gate.evaluate(self.spec(tmp_path, policy={"policy_id": "gate-policy/2"}))
+            Gate.evaluate(self.spec(tmp_path, policy={"policy_id": "gate-policy/9"}))
 
     def test_a_policy_with_no_id_is_refused(self) -> None:
         with pytest.raises(ThresholdChanged):

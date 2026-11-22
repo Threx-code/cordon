@@ -21,6 +21,8 @@ What it decides, each a named gate with a reason (`PromotionDecision.gates`):
                 the policy's bar, or no worse than before where the area is not yet at it
   new_benign    every newly blocked benign unit is LISTED; the policy may allow some only once read
   runtime       p99 seconds per unit within the policy's ratio; no new timeouts
+  legit_incomplete  no legitimate unit is newly left unread to the end (crashed, timed out or degraded), counted apart
+                from content blocks, within the policy's allowance
   lineage       zero overlap between the candidate's training content keys and any eval set
                 (normalised-content keys, `featureset.py`), so a model never grades its own homework
 
@@ -45,12 +47,13 @@ from bench.cdi.rule_prefixes import RulePrefixes
 
 SCHEMA_VERSION = "1.0.0"
 DEFAULT_POLICY: dict[str, Any] = {
-    "policy_id": "gate-policy/1",
+    "policy_id": "gate-policy/2",
     "lose_max": 0,
     "benign_ub_bar": 0.005,
     "allow_new_benign_blocks": 0,
     "p99_ratio_max": 2.0,
     "new_timeouts_max": 0,
+    "new_incomplete_max": 0,
     "lineage_overlap_max": 0,
     "min_benign_n_for_bar": 740,
 }
@@ -83,6 +86,14 @@ class Gate:
     def blocked(row: dict[str, Any] | None) -> bool:
         """What a user sees: the default gate's exit status. A failed scan is not a block."""
         return bool(row) and row.get("exit") == 1
+
+    @staticmethod
+    def incomplete(row: dict[str, Any] | None) -> bool:
+        """A scan that did not read the package to the end: it crashed, ran out of time, was told the scan was
+        degraded, or says its content was not all read. A clean scan and a block are both complete."""
+        if not row:
+            return False
+        return row.get("exit") not in (0, 1) or row.get("content_complete") is False
 
     @staticmethod
     def malware_class_block(row: dict[str, Any] | None) -> bool:
@@ -125,6 +136,7 @@ class Gate:
         metrics: dict[str, Any] = {"sets": {}, "per_area_benign": {}}
         lost: list[str] = []
         new_benign: list[str] = []
+        new_incomplete: list[str] = []
         datasets = []
         gates: dict[str, Any] = {}
         benign_by_area: dict[str, list[int]] = {}
@@ -169,6 +181,14 @@ class Gate:
                     new_blocks=len(fresh),
                     unblocked=len(m_off - m_on),
                 )
+                i_off = {f for f in common if Gate.incomplete(off[f])}
+                i_on = {f for f in common if Gate.incomplete(on[f])}
+                new_incomplete += [f"{s['name']}:{f}" for f in sorted(i_on - i_off)]
+                entry.update(
+                    incomplete_off=len(i_off),
+                    incomplete_on=len(i_on),
+                    new_incomplete=len(i_on - i_off),
+                )
             entry.update(
                 p99_off=Gate.p99({f: off[f] for f in common}),
                 p99_on=Gate.p99({f: on[f] for f in common}),
@@ -210,6 +230,10 @@ class Gate:
         gates["new_benign"] = (
             "pass" if len(new_benign) <= policy["allow_new_benign_blocks"] else "fail",
             f"{len(new_benign)} new benign blocks, each to be read",
+        )
+        gates["legit_incomplete"] = (
+            "pass" if len(new_incomplete) <= policy["new_incomplete_max"] else "fail",
+            f"{len(new_incomplete)} legitimate units newly not read to the end, apart from content blocks",
         )
         worst = max(
             (e["p99_on"] / e["p99_off"] for e in metrics["sets"].values() if e.get("p99_off")),
