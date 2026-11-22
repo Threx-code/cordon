@@ -175,6 +175,86 @@ class PythonScripts:
         return frozenset(found)
 
     @staticmethod
+    def directory(units: list[FileUnit]) -> frozenset[str]:
+        """The `.py` files a plain directory scan (a cloned repository) reads as running: the modules `pyproject.toml`, `setup.cfg` and an
+        `entry_points.txt` name for commands and entry points, and the `__init__.py` of each top-level package. Files in a test or documentation
+        folder are left out, and a `setup.py` whose entry points are not literal names none (a repository, unlike a published archive, holds
+        tests and examples that nothing runs)."""
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
+
+        paths = {
+            u.path
+            for u in units
+            if "!" not in u.path and u.path.endswith(".py") and not u.content.is_binary
+        }
+        modules: set[str] = set()
+        for unit in units:
+            if "!" in unit.path or unit.content.is_binary:
+                continue
+            name = unit.path.rsplit("/", 1)[-1]
+            for target in (
+                *PythonScripts._declared(name, unit.content.text),
+                *PythonScripts._plugins(name, unit.content.text),
+            ):
+                module = target.split(":", 1)[0].strip()
+                if module and module != PythonScripts.UNKNOWN:
+                    modules.add(module)
+        found: set[str] = set()
+        for module in modules:
+            stem = module.replace(".", "/")
+            found |= {
+                p for p in paths if ("/" + p).endswith((f"/{stem}.py", f"/{stem}/__init__.py"))
+            }
+        inits = {p for p in paths if p.rsplit("/", 1)[-1] == "__init__.py"}
+        for path in inits:
+            folder = path.rpartition("/")[0]
+            if folder and f"{folder.rpartition('/')[0]}/__init__.py".lstrip("/") not in inits:
+                found.add(path)
+        return frozenset(p for p in found if not SourcePaths.is_test_material(p))
+
+    @staticmethod
+    def _plugins(name: str, text: str) -> list[str]:
+        """The `module:function` targets of EVERY entry-point group a manifest declares (plugins a host loads), not only the commands."""
+        if name == "pyproject.toml":
+            import tomllib
+
+            try:
+                groups = tomllib.loads(text).get("project", {}).get("entry-points", {})
+            except (tomllib.TOMLDecodeError, ValueError, RecursionError):
+                return []
+            return (
+                [
+                    v
+                    for g in groups.values()
+                    if isinstance(g, dict)
+                    for v in g.values()
+                    if isinstance(v, str)
+                ]
+                if isinstance(groups, dict)
+                else []
+            )
+        if name in ("setup.cfg", "entry_points.txt"):
+            import configparser
+
+            parser = configparser.ConfigParser(interpolation=None)
+            try:
+                parser.read_string(text)
+            except (configparser.Error, ValueError):
+                return []
+            if name == "setup.cfg":
+                if not parser.has_section("options.entry_points"):
+                    return []
+                values = [v for _, v in parser.items("options.entry_points")]
+                return [
+                    ln.split("=", 1)[1]
+                    for value in values
+                    for ln in value.splitlines()
+                    if "=" in ln
+                ]
+            return [v for section in parser.sections() for _, v in parser.items(section)]
+        return []
+
+    @staticmethod
     def _declared(name: str, text: str) -> list[str]:
         """`module:function` targets a file declares, by the file's own format; [] if none."""
         if name == "entry_points.txt" or name == "setup.cfg":

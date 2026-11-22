@@ -351,7 +351,12 @@ class ArchiveStages:
         return hook_paths - foreign
 
     def unparsed(
-        self, units: list[FileUnit], acc: Accumulator, ctx: ScanContext, python_closure: set[str]
+        self,
+        units: list[FileUnit],
+        acc: Accumulator,
+        ctx: ScanContext,
+        python_closure: set[str],
+        entries: frozenset[str] = frozenset(),
     ) -> ScanContext:
         """What runs at install or import and does not parse is read as Python 2, or is a gap,
         fail closed (09 3a). A reading runs where its file runs (`lifted_inherit`)."""
@@ -360,6 +365,7 @@ class ArchiveStages:
 
         # A command's module runs on every invocation, imported by `__init__` or not (S2).
         python_entries |= PythonScripts.targets(units)
+        python_entries |= entries  # a directory scan's own (`PythonScripts.directory`)
         running = python_closure | python_entries | Hooks.hook_import_closure(units, python_entries)
         readings: list[FileUnit] = []
         for unit in list(units):
