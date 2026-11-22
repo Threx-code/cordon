@@ -27,6 +27,10 @@ MIN_AREAS_WITH_GAIN: Final = 2
 OUTCOMES: Final = ("research", "shadow")
 
 
+class PartialMeasure(ValueError):
+    """A scorecard that claims a full-scale measure counts fewer (or more) units than the development and calibration data hold."""
+
+
 class BaselineEdited(ValueError):
     """A baseline's counts do not match the digest it was frozen with."""
 
@@ -73,14 +77,24 @@ class Baseline:
 
 class Scorecard:
     @staticmethod
-    def of(baseline: dict[str, Any], candidate: dict[str, int]) -> dict[str, Any]:
-        """The incremental value of a candidate over the frozen baseline."""
+    def of(
+        baseline: dict[str, Any], candidate: dict[str, int], *, expected_denominator: int | None = None
+    ) -> dict[str, Any]:
+        """The incremental value of a candidate over the frozen baseline. The card states its denominator (malware plus
+        benign units counted). With `expected_denominator`, the full development and calibration count, a card that
+        counts any other number of units is refused: a full-scale measure is never a sample."""
         Baseline.check(baseline)
         for blocked, total in (("mal_blocked", "mal_n"), ("benign_blocked", "benign_n")):
             if not 0 <= candidate[blocked] <= candidate[total]:
                 raise ValueError(
                     f"{blocked} {candidate[blocked]} is not within {total} {candidate[total]}"
                 )
+        denominator = candidate["mal_n"] + candidate["benign_n"]
+        if expected_denominator is not None and denominator != expected_denominator:
+            raise PartialMeasure(
+                f"the scorecard counts {denominator} units but the development and calibration data hold "
+                f"{expected_denominator}: a full-scale measure is never a sample"
+            )
         old = baseline["counts"]
         gain, low, high = Proportions.difference(
             candidate["mal_blocked"], candidate["mal_n"], old["mal_blocked"], old["mal_n"]
@@ -92,6 +106,8 @@ class Scorecard:
             "recall_candidate": candidate["mal_blocked"] / candidate["mal_n"]
             if candidate["mal_n"]
             else 0.0,
+            "denominator": denominator,
+            "full_scale": expected_denominator is not None,
             "mal_n": candidate["mal_n"],
             "benign_n": candidate["benign_n"],
             "recall_gain": gain,
