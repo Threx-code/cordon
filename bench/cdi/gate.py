@@ -41,6 +41,7 @@ from typing import Any
 from bench.cdi.claims import ClaimRefused, Claims
 from bench.cdi.lineage import Lineage
 from bench.cdi.preregistration import Preregistration
+from bench.cdi.rule_prefixes import RulePrefixes
 
 SCHEMA_VERSION = "1.0.0"
 DEFAULT_POLICY: dict[str, Any] = {
@@ -91,7 +92,7 @@ class Gate:
             return False
         findings = row.get("findings") or []
         serious = [f for f in findings if len(f) > 1 and f[1] in ("high", "critical")]
-        return any(not str(f[0]).startswith(("SECRET.", "VULNERABLE.", "POLICY.")) for f in serious)
+        return any(RulePrefixes.counts_as_malware_class(str(f[0])) for f in serious)
 
     @staticmethod
     def p99(rows: dict[str, dict[str, Any]]) -> float:
