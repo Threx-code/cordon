@@ -22,8 +22,10 @@ fact of its own (`OPERATIONAL.FILE.TRUNCATED`). A file nothing runs -- a test, a
 
 from __future__ import annotations
 
+import json
+import posixpath
 import re
-from typing import TYPE_CHECKING, ClassVar, Final
+from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from cordon_scanner.analysis.javascript.flow.vocabulary import _CLOSE, _OPEN
 from cordon_scanner.analysis.javascript.js_eval import JsEval
@@ -90,4 +92,100 @@ class JsUnparsed:
         )
 
 
-__all__ = ["SUFFIXES", "JsUnparsed"]
+class JsRunning:
+    """The JavaScript files that run, read from the package's own manifest: what `package.json` names (main, bin, exports) and the files its
+    install scripts hand to node, and the files those require by a relative path (a cap on how many). This is the directory route, a cloned
+    repository or an MCP server checked out from git, where no published-package context says what runs."""
+
+    LIFECYCLE: ClassVar[tuple[str, ...]] = (
+        "preinstall",
+        "install",
+        "postinstall",
+        "prepare",
+        "prepublish",
+        "preprepare",
+        "postprepare",
+    )
+    SCRIPT_FILE: ClassVar[re.Pattern[str]] = re.compile(
+        r"""\bnode(?:js)?\s+(?:--?[\w=.-]+\s+)*['"]?([^\s'"&|;<>]+\.(?:c|m)?js)\b"""
+    )
+    RELATIVE: ClassVar[re.Pattern[str]] = re.compile(
+        r"""(?:\brequire\s*\(|\bimport\s*\(|\bfrom\s+|\bimport\s+)\s*['"](\.{1,2}/[^'"\n]{1,200})['"]"""
+    )
+    MAX_FILES: ClassVar[int] = 200
+
+    @staticmethod
+    def named(document: object) -> list[str]:
+        """The file names a manifest gives as what runs."""
+        if not isinstance(document, dict):
+            return []
+        found: list[str] = []
+        main = document.get("main")
+        found.append(main if isinstance(main, str) and main else "index.js")
+        bins = document.get("bin")
+        if isinstance(bins, str):
+            found.append(bins)
+        elif isinstance(bins, dict):
+            found += [v for v in bins.values() if isinstance(v, str)]
+        stack: list[object] = [document.get("exports")]
+        while stack:
+            part = stack.pop()
+            if isinstance(part, str):
+                found.append(part)
+            elif isinstance(part, dict):
+                stack += list(part.values())
+            elif isinstance(part, list):
+                stack += part
+        scripts = document.get("scripts")
+        if isinstance(scripts, dict):
+            for name in JsRunning.LIFECYCLE:
+                command = scripts.get(name)
+                if isinstance(command, str):
+                    found += JsRunning.SCRIPT_FILE.findall(command)
+        return found
+
+    @staticmethod
+    def resolve(base: str, name: str, known: set[str]) -> str | None:
+        """The unit a name refers to from `base` (a folder), with the extensions node tries."""
+        target = (
+            posixpath.normpath(posixpath.join(base, name)) if base else posixpath.normpath(name)
+        )
+        for candidate in (
+            target,
+            *(target + ext for ext in SUFFIXES),
+            *(f"{target}/index{ext}" for ext in SUFFIXES),
+        ):
+            if candidate in known and candidate.endswith(SUFFIXES):
+                return candidate
+        return None
+
+    @staticmethod
+    def of(units: list[Any]) -> set[str]:
+        """The paths of the units that run, by what each package.json among them names, and what those files require."""
+        texts = {u.path: u for u in units if not u.content.is_binary}
+        known = set(texts)
+        running: set[str] = set()
+        for path, unit in texts.items():
+            if posixpath.basename(path) != "package.json":
+                continue
+            try:
+                document = json.loads(unit.content.text)
+            except ValueError:
+                continue
+            base = posixpath.dirname(path)
+            for name in JsRunning.named(document):
+                hit = JsRunning.resolve(base, name.removeprefix("./"), known)
+                if hit is not None:
+                    running.add(hit)
+        queue = sorted(running)
+        while queue and len(running) < JsRunning.MAX_FILES:
+            path = queue.pop()
+            for name in JsRunning.RELATIVE.findall(texts[path].content.text):
+                hit = JsRunning.resolve(posixpath.dirname(path), name, known)
+                if hit is not None and hit not in running:
+                    running.add(hit)
+                    queue.append(hit)
+        return running
+
+
+__all__ = ["SUFFIXES", "JsRunning", "JsUnparsed"]

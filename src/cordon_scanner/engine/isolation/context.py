@@ -350,6 +350,12 @@ class ContextRun:
             lambda: engine.stages.install_context(units, acc, ctx, ()),
             replace(ctx, tree_paths=frozenset(u.path for u in units)),
         )
+        # A directory scan has no published package to say what runs: the files package.json names do (BP-15-19).
+        self.guarded(
+            "unparsed javascript",
+            lambda: engine.archive_stages.unparsed_javascript(units, acc, self.ctx),
+            None,
+        )
         self.dependencies, self.ingested = self.guarded(
             "dependencies", lambda: engine.stages.dependencies(units, acc, root), ((), ())
         )

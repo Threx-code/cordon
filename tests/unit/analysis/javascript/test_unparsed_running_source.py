@@ -130,3 +130,83 @@ class TestAPublishedPackagesMain:
         assert not Package.rules(result) & {BROKEN, RUNNING} and GAP not in {
             r for r, _ in result.content_gaps
         }
+
+
+class Checkout:
+    """A directory scan (a cloned repository, an MCP server checked out from git): the files `package.json` names are the files that run."""
+
+    @staticmethod
+    def scan(folder: Path, manifest: dict, files: dict[str, bytes]):
+        (folder / "package.json").write_text(
+            json.dumps({"name": "x", "version": "1.0.0", **manifest})
+        )
+        for name, body in files.items():
+            target = folder / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(body)
+        return Scanner(Config.default().with_overrides(use_cache=False)).scan(folder)
+
+    BAD = b"eval(atob('x'));\nfunction f( {\n"
+
+
+class TestADirectoryScan:
+    @pytest.mark.parametrize(
+        ("manifest", "name"),
+        [
+            ({"main": "lib/main.js"}, "lib/main.js"),
+            ({}, "index.js"),
+            ({"bin": "cli.js"}, "cli.js"),
+            ({"bin": {"x": "bin/x.js", "y": "bin/y.js"}}, "bin/y.js"),
+            ({"exports": "./entry.js"}, "entry.js"),
+            ({"exports": {".": {"import": "./esm.mjs", "require": "./cjs.cjs"}}}, "esm.mjs"),
+            ({"scripts": {"postinstall": "node setup.js"}}, "setup.js"),
+            ({"scripts": {"preinstall": "node --no-warnings ./pre.js && echo done"}}, "pre.js"),
+        ],
+    )
+    def test_a_file_package_json_names_runs_and_a_broken_one_is_a_gap(
+        self, tmp_path: Path, manifest: dict, name: str
+    ) -> None:
+        result = Checkout.scan(tmp_path, manifest, {name: Checkout.BAD})
+        assert GAP in {rule for rule, _ in result.content_gaps}, name
+        assert RUNNING in Package.rules(result)
+
+    def test_a_file_a_running_file_requires_runs_too(self, tmp_path: Path) -> None:
+        files = {
+            "index.js": b"const a = require('./lib/a');\nmodule.exports = a;\n",
+            "lib/a.js": b"module.exports = require('./b.js');\n",
+            "lib/b.js": Checkout.BAD,
+        }
+        result = Checkout.scan(tmp_path, {}, files)
+        assert GAP in {rule for rule, _ in result.content_gaps}
+
+    def test_a_file_nothing_names_does_not_run(self, tmp_path: Path) -> None:
+        result = Checkout.scan(
+            tmp_path,
+            {"main": "index.js"},
+            {
+                "index.js": b"module.exports = 1;\n",
+                "other.js": Checkout.BAD,
+                "test/t.js": Checkout.BAD,
+            },
+        )
+        assert not Package.rules(result) & {BROKEN, RUNNING}
+        assert GAP not in {rule for rule, _ in result.content_gaps}
+
+    @pytest.mark.parametrize(
+        "text", [b"{not json", b"[]", b'{"main": 5, "bin": [1], "scripts": "x", "exports": 7}']
+    )
+    def test_a_manifest_that_is_not_one_is_no_crash_and_names_nothing(
+        self, tmp_path: Path, text: bytes
+    ) -> None:
+        (tmp_path / "package.json").write_bytes(text)
+        (tmp_path / "other.js").write_bytes(Checkout.BAD)
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(tmp_path)
+        assert GAP not in {
+            rule for rule, _ in result.content_gaps
+        }  # no manifest names other.js: it does not run
+
+    def test_a_balanced_main_is_not_reported(self, tmp_path: Path) -> None:
+        result = Checkout.scan(
+            tmp_path, {"main": "m.js"}, {"m.js": b"module.exports = () => ({ a: [1, 2] });\n"}
+        )
+        assert not Package.rules(result) & {BROKEN, RUNNING}

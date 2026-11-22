@@ -12,7 +12,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from cordon_scanner.analysis.javascript.unparsed_source import JsUnparsed
+from cordon_scanner.analysis.javascript.unparsed_source import JsRunning, JsUnparsed
 from cordon_scanner.analysis.python.flows.cross_file import CrossFileMaps
 from cordon_scanner.analysis.python.unparsed_source import UnparsedSource
 from cordon_scanner.analysis.shared.languages import LanguageRegistry
@@ -393,6 +393,9 @@ class ArchiveStages:
         running = {
             u.path for u in units if u.path in ctx.import_entry_paths or ctx.in_install_hook(u.path)
         }
+        running |= JsRunning.of(
+            units
+        )  # a directory scan: what package.json names, and what those files require
         for unit in units:
             if (
                 unit.content.is_binary
