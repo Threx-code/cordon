@@ -15,6 +15,15 @@ from bench.cdi.schemas import SCHEMA_VERSIONS, Schemas
 
 COUNTERS: Final = ("scans_seen", "would_change", "fires", "confirmed_fires", "crashes", "timeouts")
 CHANNELS: Final = ("shadow", "canary", "stable")
+LABEL_STATES: Final = (
+    "unreviewed",
+    "suspicious",
+    "confirmed_malicious",
+    "confirmed_benign",
+    "disputed",
+    "insufficient_evidence",
+)
+"""The six states a label has in the label store: a cluster's label is one of them or null, never another word."""
 
 
 class Records:
@@ -31,6 +40,8 @@ class Records:
         ordered = sorted(members)
         if len(set(ordered)) != len(ordered) or len(ordered) < 2:
             raise ValueError("a cluster needs at least two distinct members")
+        if label is not None and label not in LABEL_STATES:
+            raise ValueError(f"a label is one of {list(LABEL_STATES)} or null, not {label!r}")
         for edge in edges:
             if edge["a"] not in ordered or edge["b"] not in ordered:
                 raise ValueError(f"edge {edge['a']!r}-{edge['b']!r} joins a non-member")

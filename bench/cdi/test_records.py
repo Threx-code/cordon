@@ -64,12 +64,16 @@ class TestThreatCluster:
         ]
         assert set(g.implicated("a")) == {"b", "c"}
         return Records.threat_cluster(
-            members=members, edges=edges, method="graph", method_version="1", label="confirmed"
+            members=members,
+            edges=edges,
+            method="graph",
+            method_version="1",
+            label="confirmed_malicious",
         )
 
     def test_a_cluster_from_a_graph_is_valid_and_sorted(self) -> None:
         c = self.from_graph()
-        assert c["members"] == ["a", "b", "c"] and c["label"] == "confirmed"
+        assert c["members"] == ["a", "b", "c"] and c["label"] == "confirmed_malicious"
 
     def test_the_same_group_has_the_same_id_in_any_order(self) -> None:
         a = Records.threat_cluster(
