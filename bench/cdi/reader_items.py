@@ -17,6 +17,7 @@ plain JSON (sorted, no timestamps), so the same windows give the same bytes. It 
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import asdict, dataclass, field
 from typing import TYPE_CHECKING, Any, Final
@@ -24,12 +25,83 @@ from typing import TYPE_CHECKING, Any, Final
 from bench.cdi.census import READING_GAP, ROUTES
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Mapping
 
     from bench.cdi.census import Gap, Verdict
 
 OPEN: Final = "open"
 CLOSED: Final = "closed"
+
+#: What closing an item needs (`ClosureEvidence`): at least this many units of the form seen in the window, the heavy-tail time ratio
+#: within this bound, and a time that grows with the input no faster than this share over the input's growth.
+MIN_UNITS_SEEN: Final = 20
+MAX_TIME_RATIO: Final = 1.10
+LINEARITY_SLACK: Final = 1.25
+SCALE_POINTS: Final = ("mib10_cpu_seconds", "tokens1m_cpu_seconds")
+TAIL_FIELDS: Final = (
+    "sum_base",
+    "sum_candidate",
+    "p50_base",
+    "p50_candidate",
+    "p99_base",
+    "p99_candidate",
+    "timeouts_base",
+    "timeouts_candidate",
+)
+
+
+class EvidenceRefused(ValueError):
+    """The evidence offered for closing an item does not meet the closure rule. `problems` says which part failed."""
+
+    def __init__(self, problems: list[str]) -> None:
+        super().__init__("; ".join(problems))
+        self.problems = problems
+
+
+class ClosureEvidence:
+    @staticmethod
+    def problems(evidence: Mapping[str, Any]) -> list[str]:
+        """What is missing or failing in the evidence for closing a reader item. Empty when it may close.
+
+        scale          the form at 10 MiB and at a million tokens, each within a CPU bound
+        linearity      the hostile-input check: a larger input of the same form takes no more than its growth (with a little slack)
+        heavy tail     the ratio of the sums of scan times, candidate over base, within 1.10, with p50, p99 and the units at
+                       the timeout stated for both sides
+        legit          the share of legit releases that scan incomplete is not up
+        units seen     at least 20 units of the form seen in the window"""
+        found: list[str] = []
+        scale = evidence.get("scale") or {}
+        bound = scale.get("bound_cpu_seconds")
+        for point in SCALE_POINTS:
+            value = scale.get(point)
+            if not isinstance(bound, (int, float)) or not isinstance(value, (int, float)):
+                found.append(f"scale: {point} or the bound is missing")
+            elif value > bound:
+                found.append(f"scale: {point} is {value} CPU seconds, over the bound of {bound}")
+        line = evidence.get("linearity") or {}
+        try:
+            if line["large_seconds"] / line["small_seconds"] > line["size_ratio"] * LINEARITY_SLACK:
+                found.append("linearity: the time grows faster than the input")
+        except (KeyError, TypeError, ZeroDivisionError):
+            found.append("linearity: the small time, the large time or the size ratio is missing")
+        tail = evidence.get("heavy_tail") or {}
+        if any(not isinstance(tail.get(k), (int, float)) for k in TAIL_FIELDS):
+            found.append("heavy tail: the ratio of sums, p50, p99 and the units at the timeout must all be stated")
+        elif tail["sum_base"] <= 0 or tail["sum_candidate"] / tail["sum_base"] > MAX_TIME_RATIO:
+            found.append(f"heavy tail: the ratio of sums is over {MAX_TIME_RATIO}")
+        legit = evidence.get("legit_incomplete") or {}
+        if not all(isinstance(legit.get(k), (int, float)) for k in ("before", "after")):
+            found.append("legit incomplete: the rate before and after must be stated")
+        elif legit["after"] > legit["before"]:
+            found.append("legit incomplete: the rate went up")
+        seen = evidence.get("units_seen")
+        if not isinstance(seen, int) or seen < MIN_UNITS_SEEN:
+            found.append(f"units seen: fewer than {MIN_UNITS_SEEN} units of the form were seen in the window")
+        return found
+
+    @staticmethod
+    def reference(evidence: Mapping[str, Any]) -> str:
+        return "evidence:" + hashlib.sha256(json.dumps(evidence, sort_keys=True).encode("utf-8")).hexdigest()[:16]
 
 
 @dataclass
@@ -69,6 +141,18 @@ class ReaderTracker:
         if item is None:
             raise KeyError("no such reader item")
         item.acceptance = reference
+
+    def attach_evidence(self, kind: str, form: str, evidence: Mapping[str, Any]) -> str:
+        """Attach the closure evidence of an item as its acceptance: the item may close only when every part of the rule holds.
+        Raises `EvidenceRefused` naming each part that does not, and leaves the item as it was."""
+        item = self.items.get((kind, form))
+        if item is None:
+            raise KeyError("no such reader item")
+        problems = ClosureEvidence.problems(evidence)
+        if problems:
+            raise EvidenceRefused(problems)
+        item.acceptance = ClosureEvidence.reference(evidence)
+        return item.acceptance
 
     def apply(self, window: str, verdicts: Iterable[Verdict]) -> None:
         """Take a window's census: open, keep, reopen or close the items."""
