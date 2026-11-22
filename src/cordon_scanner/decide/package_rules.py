@@ -158,7 +158,9 @@ class PackageRules:
             location=Location(path=path),
             evidence=Evidence(
                 kind=EvidenceKind.METADATA,
-                match_hash=Evidence.hash_bytes(f"{rule.id}:{path}:{said}".encode()),
+                match_hash=Evidence.hash_bytes(
+                    f"{rule.id}:{compiled.predicate_digest()}:{path}:{said}".encode()
+                ),
                 redaction=RedactionMode.NONE,
                 metadata=(("facts", said), ("unreached", "yes" if unreached else "no")),
             ),

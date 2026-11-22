@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import time
 from dataclasses import dataclass, field
@@ -214,6 +216,12 @@ class CompiledRule:
     @property
     def id(self) -> str:
         return self.rule.id
+
+    def predicate_digest(self) -> str:
+        """The digest of what the rule matches on, apart from its name and its grading: two rules that match the same way have the same digest."""
+        match = self.rule.raw.get("match") or {}
+        body = json.dumps(match, sort_keys=True, separators=(",", ":"), default=str)
+        return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)

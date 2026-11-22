@@ -14,12 +14,10 @@ Rules sit above intel, so the loading lives here and intel never imports the rul
 
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
 import re
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from cordon_scanner.foundation.errors import RulePackError
 from cordon_scanner.intel.malware.feed_rules import PACK_FILE, FeedRules
@@ -70,13 +68,6 @@ class PackLimits:
             if rule_id in retired:
                 return f"rule id {rule_id} is retired"
         return None
-
-    @staticmethod
-    def predicate_digest(compiled: Any) -> str:
-        """The digest of what a rule matches on, apart from its name and its grading: two rules that match the same way have the same digest."""
-        match = compiled.rule.raw.get("match") or {}
-        body = json.dumps(match, sort_keys=True, separators=(",", ":"), default=str)
-        return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
     @classmethod
     def file_problem(cls, path: Path) -> str | None:
@@ -165,11 +156,7 @@ class FeedPacks:
                 # A bad delivered pack never breaks the scan: it runs on what is bundled.
                 logger.warning("feed rule pack %s not loaded: %s", name, exc)
                 continue
-            problem = PackLimits.pack_problem(pack)
-            if problem is not None:
-                logger.warning("feed rule pack %s not loaded: %s", name, problem)
-                continue
-            problem = PackLimits.id_problem(pack, retired)
+            problem = PackLimits.pack_problem(pack) or PackLimits.id_problem(pack, retired)
             if problem is not None:
                 logger.warning("feed rule pack %s not loaded: %s", name, problem)
                 continue
@@ -237,7 +224,7 @@ class FeedPacks:
         for candidate, pack in out:
             rules = []
             for compiled in pack.rules:
-                digest = PackLimits.predicate_digest(compiled)
+                digest = compiled.predicate_digest()
                 if digest not in seen:
                     seen.add(digest)
                     rules.append(compiled)

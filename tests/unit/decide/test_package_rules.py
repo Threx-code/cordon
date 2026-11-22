@@ -164,3 +164,30 @@ class TestTheFactsCarryDestinationsAsDigests:
         assert helper["domains"] == [DestinationHosts.digest("example.com")]
         assert record["package"]["hosts_distinct"] == 1
         assert "example.com" not in _json.dumps(record)
+
+
+class TestARederivedRuleIsNotCoveredByTheOldSuppression:
+    """A learned finding's fingerprint holds the digest of the predicate that made it, so a suppression written against one predicate never covers a finding of the same id made by another.
+
+    A re-derived rule can keep its id and change what it matches on. A suppression is matched by fingerprint; the fingerprint is made from the rule id, the file and the match hash, and the match
+    hash of a learned finding includes the predicate digest."""
+
+    SAME_ID_NEW_PREDICATE = RULE.replace("where: unreached", "where: reach:unreached")
+
+    @staticmethod
+    def fingerprints(root, rule: str) -> set[str]:
+        root.mkdir(parents=True, exist_ok=True)
+        result = PackageKit.scan(root, index="module.exports = (a, b) => a + b;\n", rule=rule)
+        return {f.fingerprint for f in result.findings if f.rule_id.startswith("LEARNED.")}
+
+    def test_the_same_predicate_gives_the_same_fingerprint(self, tmp_path) -> None:
+        first, second = (
+            self.fingerprints(tmp_path / "a", RULE),
+            self.fingerprints(tmp_path / "b", RULE),
+        )
+        assert first and first == second
+
+    def test_the_same_id_with_a_new_predicate_gives_another_fingerprint(self, tmp_path) -> None:
+        old = self.fingerprints(tmp_path / "a", RULE)
+        new = self.fingerprints(tmp_path / "b", self.SAME_ID_NEW_PREDICATE)
+        assert old and new and not old & new
