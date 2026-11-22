@@ -12,6 +12,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.analysis.javascript.unparsed_source import JsUnparsed
 from cordon_scanner.analysis.python.flows.cross_file import CrossFileMaps
 from cordon_scanner.analysis.python.unparsed_source import UnparsedSource
 from cordon_scanner.analysis.shared.languages import LanguageRegistry
@@ -379,10 +380,37 @@ class ArchiveStages:
                 raw = decision.reading.encode("utf-8")
                 content = FileContent.from_bytes(where, raw, self.config.limits)
                 readings.append(FileUnit(content=content, language="python", project=unit.project))
+        self.unparsed_javascript(units, acc, ctx)
         if not readings:
             return ctx
         units.extend(readings)
         return replace(ctx, tree_paths=ctx.tree_paths | {r.path for r in readings})
+
+    @staticmethod
+    def unparsed_javascript(units: list[FileUnit], acc: Accumulator, ctx: ScanContext) -> None:
+        """A JavaScript file that runs when the package is loaded and whose brackets do not close is a gap (it names something that could run
+        its pieces) or is said (it names nothing): the same decision as for Python, never silence (BP-15-19)."""
+        running = {
+            u.path for u in units if u.path in ctx.import_entry_paths or ctx.in_install_hook(u.path)
+        }
+        for unit in units:
+            if (
+                unit.content.is_binary
+                or unit.content.truncated
+                or not JsUnparsed.runs_as_source(unit.path, running)
+            ):
+                continue
+            decision = JsUnparsed.decide(unit.content.text)
+            if decision.kind == "gap":
+                acc.incomplete(UnparsedSource.gap(unit.path))
+                if not SourcePaths.is_test_material(unit.path.rpartition("!")[2]):
+                    acc.append(
+                        UnparsedSource.running(
+                            unit.path, ctx.scorer.score(Severity.HIGH, Confidence.HIGH)
+                        )
+                    )
+            elif decision.kind == "broken":
+                acc.append(JsUnparsed.broken(unit.path))
 
     @staticmethod
     def import_context(units: list[FileUnit], ctx: ScanContext, distribution: str) -> ScanContext:
