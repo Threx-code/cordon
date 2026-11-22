@@ -271,3 +271,22 @@ class TestWhereTheModeComesFromWhenTheFileSystemHasNoExecuteBit:
         folder = Folder.deploy(tmp_path)
         assert SkillResolver.recorded_modes(folder) == {}
         assert SkillResolver.resolve(folder, root=tmp_path).digest == GOLDEN_NO_EXECUTABLE
+
+
+class TestTheSameDigestOnEveryOperatingSystem:
+    """Row BP-3-2: the golden digest is the one this machine's own rule gives, with no simulated platform: the CI runners for Linux, macOS and Windows
+    each run this test, so one folder is one digest on all three."""
+
+    def test_a_git_checkout_of_the_deploy_folder_gives_the_golden_digest(
+        self, tmp_path: Path
+    ) -> None:
+        from cordon_scanner.sources.git import GitRepository
+
+        folder = Folder.deploy(
+            tmp_path
+        )  # a POSIX file system keeps the execute bit on disk; Windows has none, so git's record carries it
+        repo = GitRepository(tmp_path)
+        repo.run(["init", "-q"])
+        repo.run(["add", "-A"])
+        repo.run(["update-index", "--chmod=+x", ".claude/skills/deploy/scripts/run.sh"])
+        assert SkillResolver.resolve(folder, root=tmp_path).digest == GOLDEN
