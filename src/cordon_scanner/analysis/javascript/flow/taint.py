@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+from cordon_scanner.analysis.javascript.flow.non_code_value import NonCodeValue
 from cordon_scanner.analysis.javascript.flow.sinks import Sinks
 from cordon_scanner.analysis.javascript.flow.vocabulary import (
     _BROWSER,
@@ -362,6 +363,9 @@ class Taint(Sinks):
             out |= self._call_return(k, target, scope)
         for k, close in reads:
             out |= Taint.read_of(self.taint(k + 2, close, scope))
+        if out & Taint.NARROWED and NonCodeValue.holds(self.t, self.match, a, b):
+            # A length, a comparison, a `typeof`: a value that cannot be code (`NonCodeValue`).
+            out = {x for x in out if not (isinstance(x, str) and x in Taint.NARROWED)}
         self._cache[key] = (self.version, out)
         return out
 

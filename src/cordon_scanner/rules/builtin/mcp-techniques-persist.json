@@ -1,0 +1,108 @@
+[
+ {
+  "rule_id": "SUSPECT.PERSIST.WRITES_DOWNLOADER.001",
+  "family": "T7",
+  "title": "An MCP server's source schedules a job that downloads and runs a script",
+  "message": "The source of this MCP server writes a scheduled job (cron) whose command downloads a script and runs it. The job keeps running after the server is gone and fetches whatever the far end serves each time.",
+  "remediation": "Find the address and what the job runs, and remove the entry.",
+  "patterns": [
+   "(?:crontab\\s{1,4}-(?![A-Za-z])|crontab[\\\"'`]\\s{0,2},\\s{0,2}[\\\"'`]-[\\\"'`]|/etc/cron\\.(?:d|hourly|daily|weekly)/|/var/spool/cron/)[\\s\\S]{0,300}?(?:[\\\"'`][^\\\"'`\\n]{0,400}?|\\n[ \\t]{0,20})(?:(?:curl|wget)\\b[^\\n|]{0,160}\\|\\s{0,2}(?:sudo\\s{1,3})?(?:ba|z|da)?sh\\b|(?:ba|z)?sh\\s{1,3}-c\\s{1,3}[\\\\\\\"'`]{0,3}\\$\\(\\s{0,2}(?:curl|wget)\\b|(?:ba|z)?sh\\s{1,3}<\\(\\s{0,2}(?:curl|wget)\\b|(?:curl|wget)\\b[^\\n]{0,120}\\s-[oO]\\s{0,2}\\S{1,80}[^\\n]{0,40}(?:&&|;)\\s{0,2}(?:ba)?sh\\b|(?:iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\\b[^\\n|]{0,160}\\|\\s{0,2}iex\\b)",
+   "(?:[\\\"'`][^\\\"'`\\n]{0,400}?|\\n[ \\t]{0,20})(?:(?:curl|wget)\\b[^\\n|]{0,160}\\|\\s{0,2}(?:sudo\\s{1,3})?(?:ba|z|da)?sh\\b|(?:ba|z)?sh\\s{1,3}-c\\s{1,3}[\\\\\\\"'`]{0,3}\\$\\(\\s{0,2}(?:curl|wget)\\b|(?:ba|z)?sh\\s{1,3}<\\(\\s{0,2}(?:curl|wget)\\b|(?:curl|wget)\\b[^\\n]{0,120}\\s-[oO]\\s{0,2}\\S{1,80}[^\\n]{0,40}(?:&&|;)\\s{0,2}(?:ba)?sh\\b|(?:iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\\b[^\\n|]{0,160}\\|\\s{0,2}iex\\b)[\\s\\S]{0,300}?(?:crontab\\s{1,4}-(?![A-Za-z])|crontab[\\\"'`]\\s{0,2},\\s{0,2}[\\\"'`]-[\\\"'`]|/etc/cron\\.(?:d|hourly|daily|weekly)/|/var/spool/cron/)"
+  ],
+  "requires": [],
+  "unless": [],
+  "at_least": 1,
+  "severity": "HIGH",
+  "confidence": "MEDIUM"
+ },
+ {
+  "rule_id": "SUSPECT.PERSIST.WRITES_DOWNLOADER.002",
+  "family": "T7",
+  "title": "An MCP server's source writes a launch agent or daemon that downloads and runs a script",
+  "message": "The source of this MCP server writes a launch agent or launch daemon whose program downloads a script and runs it. It starts at every login or boot and fetches whatever the far end serves.",
+  "remediation": "Find the address and what the job runs, and remove the property list.",
+  "patterns": [
+   "(?:Library/Launch(?:Agents|Daemons)/|launchctl\\s{1,4}(?:load|bootstrap|submit)\\b)[\\s\\S]{0,300}?(?:[\\\"'`][^\\\"'`\\n]{0,400}?|\\n[ \\t]{0,20})(?:(?:curl|wget)\\b[^\\n|]{0,160}\\|\\s{0,2}(?:sudo\\s{1,3})?(?:ba|z|da)?sh\\b|(?:ba|z)?sh\\s{1,3}-c\\s{1,3}[\\\\\\\"'`]{0,3}\\$\\(\\s{0,2}(?:curl|wget)\\b|(?:ba|z)?sh\\s{1,3}<\\(\\s{0,2}(?:curl|wget)\\b|(?:curl|wget)\\b[^\\n]{0,120}\\s-[oO]\\s{0,2}\\S{1,80}[^\\n]{0,40}(?:&&|;)\\s{0,2}(?:ba)?sh\\b|(?:iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\\b[^\\n|]{0,160}\\|\\s{0,2}iex\\b)",
+   "(?:[\\\"'`][^\\\"'`\\n]{0,400}?|\\n[ \\t]{0,20})(?:(?:curl|wget)\\b[^\\n|]{0,160}\\|\\s{0,2}(?:sudo\\s{1,3})?(?:ba|z|da)?sh\\b|(?:ba|z)?sh\\s{1,3}-c\\s{1,3}[\\\\\\\"'`]{0,3}\\$\\(\\s{0,2}(?:curl|wget)\\b|(?:ba|z)?sh\\s{1,3}<\\(\\s{0,2}(?:curl|wget)\\b|(?:curl|wget)\\b[^\\n]{0,120}\\s-[oO]\\s{0,2}\\S{1,80}[^\\n]{0,40}(?:&&|;)\\s{0,2}(?:ba)?sh\\b|(?:iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\\b[^\\n|]{0,160}\\|\\s{0,2}iex\\b)[\\s\\S]{0,300}?(?:Library/Launch(?:Agents|Daemons)/|launchctl\\s{1,4}(?:load|bootstrap|submit)\\b)"
+  ],
+  "requires": [
+   "writeFile\\w{0,8}|appendFile\\w{0,8}|write_text|write_bytes|\\.write\\(|\\.WriteString\\(|fs::write|WriteFile|File::create|OpenOptions|\\bopen\\(|>>|\\btee\\b"
+  ],
+  "unless": [],
+  "at_least": 1,
+  "severity": "HIGH",
+  "confidence": "MEDIUM"
+ },
+ {
+  "rule_id": "SUSPECT.PERSIST.WRITES_DOWNLOADER.003",
+  "family": "T7",
+  "title": "An MCP server's source writes a service unit that downloads and runs a script",
+  "message": "The source of this MCP server writes a systemd unit whose command downloads a script and runs it. The service starts again after a reboot and fetches whatever the far end serves.",
+  "remediation": "Find the address and what the unit runs, and remove the unit.",
+  "patterns": [
+   "(?:systemd/(?:user|system)\\b|\\.config/systemd\\b)[\\s\\S]{0,300}?(?:[\\\"'`][^\\\"'`\\n]{0,400}?|\\n[ \\t]{0,20})(?:(?:curl|wget)\\b[^\\n|]{0,160}\\|\\s{0,2}(?:sudo\\s{1,3})?(?:ba|z|da)?sh\\b|(?:ba|z)?sh\\s{1,3}-c\\s{1,3}[\\\\\\\"'`]{0,3}\\$\\(\\s{0,2}(?:curl|wget)\\b|(?:ba|z)?sh\\s{1,3}<\\(\\s{0,2}(?:curl|wget)\\b|(?:curl|wget)\\b[^\\n]{0,120}\\s-[oO]\\s{0,2}\\S{1,80}[^\\n]{0,40}(?:&&|;)\\s{0,2}(?:ba)?sh\\b|(?:iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\\b[^\\n|]{0,160}\\|\\s{0,2}iex\\b)",
+   "(?:[\\\"'`][^\\\"'`\\n]{0,400}?|\\n[ \\t]{0,20})(?:(?:curl|wget)\\b[^\\n|]{0,160}\\|\\s{0,2}(?:sudo\\s{1,3})?(?:ba|z|da)?sh\\b|(?:ba|z)?sh\\s{1,3}-c\\s{1,3}[\\\\\\\"'`]{0,3}\\$\\(\\s{0,2}(?:curl|wget)\\b|(?:ba|z)?sh\\s{1,3}<\\(\\s{0,2}(?:curl|wget)\\b|(?:curl|wget)\\b[^\\n]{0,120}\\s-[oO]\\s{0,2}\\S{1,80}[^\\n]{0,40}(?:&&|;)\\s{0,2}(?:ba)?sh\\b|(?:iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\\b[^\\n|]{0,160}\\|\\s{0,2}iex\\b)[\\s\\S]{0,300}?(?:systemd/(?:user|system)\\b|\\.config/systemd\\b)"
+  ],
+  "requires": [
+   "writeFile\\w{0,8}|appendFile\\w{0,8}|write_text|write_bytes|\\.write\\(|\\.WriteString\\(|fs::write|WriteFile|File::create|OpenOptions|\\bopen\\(|>>|\\btee\\b"
+  ],
+  "unless": [],
+  "at_least": 1,
+  "severity": "HIGH",
+  "confidence": "MEDIUM"
+ },
+ {
+  "rule_id": "SUSPECT.PERSIST.WRITES_DOWNLOADER.004",
+  "family": "T7",
+  "title": "An MCP server's source adds a line to a shell start-up file that downloads and runs a script",
+  "message": "The source of this MCP server writes a line that downloads a script and runs it into a shell start-up file (.bashrc, .zshrc, .profile and the like). It runs in every new terminal the person opens.",
+  "remediation": "Find the address, and remove the line from the start-up file.",
+  "patterns": [
+   "(?:(?<![A-Za-z0-9_])\\.(?:bashrc|zshrc|bash_profile|zprofile|zshenv|profile)\\b|/etc/profile(?:\\.d/)?|\\.config/fish/config\\.fish)[\\s\\S]{0,300}?(?:[\\\"'`][^\\\"'`\\n]{0,400}?|\\n[ \\t]{0,20})(?:(?:curl|wget)\\b[^\\n|]{0,160}\\|\\s{0,2}(?:sudo\\s{1,3})?(?:ba|z|da)?sh\\b|(?:ba|z)?sh\\s{1,3}-c\\s{1,3}[\\\\\\\"'`]{0,3}\\$\\(\\s{0,2}(?:curl|wget)\\b|(?:ba|z)?sh\\s{1,3}<\\(\\s{0,2}(?:curl|wget)\\b|(?:curl|wget)\\b[^\\n]{0,120}\\s-[oO]\\s{0,2}\\S{1,80}[^\\n]{0,40}(?:&&|;)\\s{0,2}(?:ba)?sh\\b|(?:iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\\b[^\\n|]{0,160}\\|\\s{0,2}iex\\b)",
+   "(?:[\\\"'`][^\\\"'`\\n]{0,400}?|\\n[ \\t]{0,20})(?:(?:curl|wget)\\b[^\\n|]{0,160}\\|\\s{0,2}(?:sudo\\s{1,3})?(?:ba|z|da)?sh\\b|(?:ba|z)?sh\\s{1,3}-c\\s{1,3}[\\\\\\\"'`]{0,3}\\$\\(\\s{0,2}(?:curl|wget)\\b|(?:ba|z)?sh\\s{1,3}<\\(\\s{0,2}(?:curl|wget)\\b|(?:curl|wget)\\b[^\\n]{0,120}\\s-[oO]\\s{0,2}\\S{1,80}[^\\n]{0,40}(?:&&|;)\\s{0,2}(?:ba)?sh\\b|(?:iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\\b[^\\n|]{0,160}\\|\\s{0,2}iex\\b)[\\s\\S]{0,300}?(?:(?<![A-Za-z0-9_])\\.(?:bashrc|zshrc|bash_profile|zprofile|zshenv|profile)\\b|/etc/profile(?:\\.d/)?|\\.config/fish/config\\.fish)"
+  ],
+  "requires": [
+   "writeFile\\w{0,8}|appendFile\\w{0,8}|write_text|write_bytes|\\.write\\(|\\.WriteString\\(|fs::write|WriteFile|File::create|OpenOptions|\\bopen\\(|>>|\\btee\\b"
+  ],
+  "unless": [],
+  "at_least": 1,
+  "severity": "HIGH",
+  "confidence": "MEDIUM"
+ },
+ {
+  "rule_id": "SUSPECT.PERSIST.WRITES_DOWNLOADER.005",
+  "family": "T7",
+  "title": "An MCP server's source plants a git hook that downloads and runs a script",
+  "message": "The source of this MCP server writes a git hook whose body downloads a script and runs it. It runs at the next commit or push in that repository, with the person's own credentials.",
+  "remediation": "Find the address and the repositories the hook was written to, and remove the hook.",
+  "patterns": [
+   "(?:\\.git/hooks/|hooks[/\\\\](?:pre|post)-(?:commit|push|merge|checkout|rebase|receive|applypatch)\\b|core\\.hooksPath)[\\s\\S]{0,300}?(?:[\\\"'`][^\\\"'`\\n]{0,400}?|\\n[ \\t]{0,20})(?:(?:curl|wget)\\b[^\\n|]{0,160}\\|\\s{0,2}(?:sudo\\s{1,3})?(?:ba|z|da)?sh\\b|(?:ba|z)?sh\\s{1,3}-c\\s{1,3}[\\\\\\\"'`]{0,3}\\$\\(\\s{0,2}(?:curl|wget)\\b|(?:ba|z)?sh\\s{1,3}<\\(\\s{0,2}(?:curl|wget)\\b|(?:curl|wget)\\b[^\\n]{0,120}\\s-[oO]\\s{0,2}\\S{1,80}[^\\n]{0,40}(?:&&|;)\\s{0,2}(?:ba)?sh\\b|(?:iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\\b[^\\n|]{0,160}\\|\\s{0,2}iex\\b)",
+   "(?:[\\\"'`][^\\\"'`\\n]{0,400}?|\\n[ \\t]{0,20})(?:(?:curl|wget)\\b[^\\n|]{0,160}\\|\\s{0,2}(?:sudo\\s{1,3})?(?:ba|z|da)?sh\\b|(?:ba|z)?sh\\s{1,3}-c\\s{1,3}[\\\\\\\"'`]{0,3}\\$\\(\\s{0,2}(?:curl|wget)\\b|(?:ba|z)?sh\\s{1,3}<\\(\\s{0,2}(?:curl|wget)\\b|(?:curl|wget)\\b[^\\n]{0,120}\\s-[oO]\\s{0,2}\\S{1,80}[^\\n]{0,40}(?:&&|;)\\s{0,2}(?:ba)?sh\\b|(?:iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\\b[^\\n|]{0,160}\\|\\s{0,2}iex\\b)[\\s\\S]{0,300}?(?:\\.git/hooks/|hooks[/\\\\](?:pre|post)-(?:commit|push|merge|checkout|rebase|receive|applypatch)\\b|core\\.hooksPath)"
+  ],
+  "requires": [
+   "writeFile\\w{0,8}|appendFile\\w{0,8}|write_text|write_bytes|\\.write\\(|\\.WriteString\\(|fs::write|WriteFile|File::create|OpenOptions|\\bopen\\(|>>|\\btee\\b"
+  ],
+  "unless": [],
+  "at_least": 1,
+  "severity": "HIGH",
+  "confidence": "MEDIUM"
+ },
+ {
+  "rule_id": "SUSPECT.PERSIST.WRITES_DOWNLOADER.006",
+  "family": "T7",
+  "title": "An MCP server's source writes an instruction file for the agent that tells it to download and run a script",
+  "message": "The source of this MCP server writes an agent instruction file (AGENTS.md, CLAUDE.md, .cursorrules and the like) whose text tells the agent to download a script and run it. Every later session in that project reads it and may act on it.",
+  "remediation": "Find the address and the projects the file was written to, and remove the instruction.",
+  "patterns": [
+   "(?:\\bAGENTS\\.md|\\bCLAUDE\\.md|\\.cursorrules|\\.cursor/rules/|copilot-instructions\\.md|\\bGEMINI\\.md|\\.windsurfrules|\\.clinerules)[\\s\\S]{0,300}?(?:[\\\"'`][^\\\"'`\\n]{0,400}?|\\n[ \\t]{0,20})(?:(?:curl|wget)\\b[^\\n|]{0,160}\\|\\s{0,2}(?:sudo\\s{1,3})?(?:ba|z|da)?sh\\b|(?:ba|z)?sh\\s{1,3}-c\\s{1,3}[\\\\\\\"'`]{0,3}\\$\\(\\s{0,2}(?:curl|wget)\\b|(?:ba|z)?sh\\s{1,3}<\\(\\s{0,2}(?:curl|wget)\\b|(?:curl|wget)\\b[^\\n]{0,120}\\s-[oO]\\s{0,2}\\S{1,80}[^\\n]{0,40}(?:&&|;)\\s{0,2}(?:ba)?sh\\b|(?:iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\\b[^\\n|]{0,160}\\|\\s{0,2}iex\\b)",
+   "(?:[\\\"'`][^\\\"'`\\n]{0,400}?|\\n[ \\t]{0,20})(?:(?:curl|wget)\\b[^\\n|]{0,160}\\|\\s{0,2}(?:sudo\\s{1,3})?(?:ba|z|da)?sh\\b|(?:ba|z)?sh\\s{1,3}-c\\s{1,3}[\\\\\\\"'`]{0,3}\\$\\(\\s{0,2}(?:curl|wget)\\b|(?:ba|z)?sh\\s{1,3}<\\(\\s{0,2}(?:curl|wget)\\b|(?:curl|wget)\\b[^\\n]{0,120}\\s-[oO]\\s{0,2}\\S{1,80}[^\\n]{0,40}(?:&&|;)\\s{0,2}(?:ba)?sh\\b|(?:iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\\b[^\\n|]{0,160}\\|\\s{0,2}iex\\b)[\\s\\S]{0,300}?(?:\\bAGENTS\\.md|\\bCLAUDE\\.md|\\.cursorrules|\\.cursor/rules/|copilot-instructions\\.md|\\bGEMINI\\.md|\\.windsurfrules|\\.clinerules)"
+  ],
+  "requires": [
+   "writeFile\\w{0,8}|appendFile\\w{0,8}|write_text|write_bytes|\\.write\\(|\\.WriteString\\(|fs::write|WriteFile|File::create|OpenOptions|\\bopen\\(|>>|\\btee\\b"
+  ],
+  "unless": [],
+  "at_least": 1,
+  "severity": "HIGH",
+  "confidence": "MEDIUM"
+ }
+]

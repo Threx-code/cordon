@@ -112,7 +112,8 @@ class CodeReuseDetector(BaseDetector):
             return ()
         try:
             manifest = ScannedJson.loads(unit.content.raw)
-        except (ValueError, RecursionError):
+        except ValueError:
+            # S2: too deep to read is not empty: escapes to OPERATIONAL.DETECTOR.FAILED, a gap
             return ()  # the manifest's own readers report a manifest that does not parse
         scripts = manifest.get("scripts") if isinstance(manifest, dict) else None
         if not isinstance(scripts, dict):

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import tarfile
 from pathlib import Path
 from typing import Any
@@ -92,17 +93,19 @@ class TestTheTwentyEighthOfOctober:
     def test_a_repository_s_malicious_finding_beside_an_mcp_manifest_blocks(self) -> None:
         graded, summary = RepositoryKit.decide(repository=True)
         assert summary["area"] == "mcp"
-        assert summary["score"] < summary["block"] == RepositoryKit.LINE
+        # The line the package is held to is the model's own for MCP (no `Verdict.LINE_SCALE`).
+        assert summary["score"] < summary["block"] == pytest.approx(RepositoryKit.LINE)
         (finding,) = graded
         assert (finding.category, finding.severity) == (Category.MALICIOUS, Severity.CRITICAL)
         assert PolicyGate._fails(finding, Policy())
 
-    def test_the_same_package_is_still_graded_by_the_verdict(self) -> None:
-        # The control: in a package the trained lowering is unchanged (measured on package rows,
-        # 2026-10-31: keeping MALICIOUS there cost ~800 benign blocks per 102.5k units).
+    def test_the_same_package_is_add_only_in_mcp_since_s6(self) -> None:
+        # Until S6 a package in area mcp had this finding lowered (measured on package rows,
+        # 2026-10-31: keeping MALICIOUS there cost ~800 benign blocks per 102.5k units). MCP is
+        # add-only from 0.8.0 (lead, 2026-11-10), so it keeps its grade and blocks.
         (finding,), _ = RepositoryKit.decide(repository=False)
-        assert (finding.category, finding.severity) == (Category.SUSPICIOUS, Severity.MEDIUM)
-        assert not PolicyGate._fails(finding, Policy())
+        assert (finding.category, finding.severity) == (Category.MALICIOUS, Severity.CRITICAL)
+        assert PolicyGate._fails(finding, Policy())
 
     def test_lowers_keeps_malicious_only_in_a_repository(self) -> None:
         def lowers(category: Category, repository: bool) -> bool:
@@ -115,6 +118,54 @@ class TestTheTwentyEighthOfOctober:
         assert not lowers(Category.MALICIOUS, True)
         assert lowers(Category.MALICIOUS, False)
         assert lowers(Category.SUSPICIOUS, True)  # repository grading is option A's, not this
+
+
+class TestTheMcpLineIsTheModelsOwnAndItBlocksThere:
+    """A score at the model's MCP line blocks an MCP server and one under it does not: the line is
+    the fitted one, with no scale on it (it was 0.9 of it until the MCP area had trees of its own).
+    A score of 0.66, which the old 0.9 line blocked, now holds."""
+
+    @staticmethod
+    def decide(
+        dependencies: dict[str, str], score: float = 0.66
+    ) -> tuple[list[Finding], dict[str, Any]]:
+        model = {**RepositoryKit.model(), "baseline": math.log(score / (1 - score))}
+        manifest = json.dumps({"dependencies": dependencies}).encode()
+        with mock.patch.object(VerdictModel, "load", return_value=model):
+            return Verdict.decide(
+                [RepositoryKit.finding()],
+                [("package.json", len(manifest)), ("index.js", 200)],
+                {"package.json": manifest},
+            )
+
+    def test_an_mcp_server_blocks_at_the_models_line(self) -> None:
+        from cordon_scanner.engine.pipeline.ceilings import Ceilings
+
+        graded, summary = self.decide({"@modelcontextprotocol/sdk": "1.0.0"}, score=0.80)
+        assert summary["area"] == "mcp"
+        assert summary["block"] == pytest.approx(RepositoryKit.LINE)
+        assert summary["score"] >= RepositoryKit.LINE
+        Ceilings.score_verdict(summary["score"], summary["block"], summary, graded)
+        assert Verdict.RULE in {f.rule_id for f in graded}
+
+    def test_a_score_the_old_nine_tenths_line_blocked_now_holds(self) -> None:
+        from cordon_scanner.engine.pipeline.ceilings import Ceilings
+
+        graded, summary = self.decide({"@modelcontextprotocol/sdk": "1.0.0"})
+        assert summary["area"] == "mcp"
+        assert 0.9 * RepositoryKit.LINE <= summary["score"] < summary["block"]
+        Ceilings.score_verdict(summary["score"], summary["block"], summary, graded)
+        assert Verdict.RULE not in {f.rule_id for f in graded}
+
+    def test_a_package_that_is_no_mcp_server_keeps_its_own_line(self) -> None:
+        from cordon_scanner.engine.pipeline.ceilings import Ceilings
+
+        graded, summary = self.decide({"left-pad": "1.0.0"})
+        assert summary["area"] != "mcp"
+        assert summary["block"] == pytest.approx(0.95)
+        assert summary["score"] < summary["block"]
+        Ceilings.score_verdict(summary["score"], summary["block"], summary, graded)
+        assert Verdict.RULE not in {f.rule_id for f in graded}
 
 
 class TestWhichScansAreRepositories:

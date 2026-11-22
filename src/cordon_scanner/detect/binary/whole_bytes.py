@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from cordon_scanner.detect.base import FileUnit
+    from cordon_scanner.foundation.content import FileContent
     from cordon_scanner.foundation.models import Finding
 
 
@@ -56,20 +57,30 @@ class WholeBytes:
 
     MARGIN: ClassVar[int] = 64 << 20
     """Headroom kept beyond the copy itself, for what the readers build from it."""
+    COPY_CEILING: ClassVar[int] = 512 << 20
+    """The largest whole copy taken, whatever `limits.max_stream_bytes` is. The text windows read a file to
+    its end up to that limit, a window at a time, and hold none of it; a copy is held in memory, so it has
+    this bound of its own (the old stream limit, which the windows have outgrown). A binary past it is read
+    to this point by the binary readers and carries the gap."""
     GAP_RULE: ClassVar[str] = "OPERATIONAL.FILE.TRUNCATED"
+
+    @staticmethod
+    def bounded(content: FileContent) -> tuple[int, str]:
+        """How much of the member a whole copy takes, and why it is not all of it ("" when it is)."""
+        stream, copy = content.limits.max_stream_bytes, WholeBytes.COPY_CEILING
+        want = min(content.size, stream, copy)
+        if content.size > stream:
+            return want, f"it is {content.size} bytes, past limits.max_stream_bytes ({stream})"
+        if content.size > copy:
+            return want, f"it is {content.size} bytes, past the whole-copy ceiling ({copy})"
+        return want, ""
 
     @staticmethod
     def of(unit: FileUnit) -> Whole:
         content = unit.content
         if not content.truncated:
             return Whole(content.raw, "")
-        bound = content.limits.max_stream_bytes
-        want = min(content.size, bound)
-        past = (
-            f"it is {content.size} bytes, past limits.max_stream_bytes ({bound})"
-            if content.size > bound
-            else ""
-        )
+        want, past = WholeBytes.bounded(content)
         if content.streamed is not None:
             return Whole(content.streamed[:want], past)
         room = WholeBytes.headroom()
@@ -100,7 +111,7 @@ class WholeBytes:
         if not content.truncated:
             yield Whole(content.raw, "")
             return
-        want = min(content.size, content.limits.max_stream_bytes)
+        want, _ = WholeBytes.bounded(content)
         with CopyBudget(budget).hold(want, deadline) as slot:
             if not slot:
                 yield Whole(content.raw, slot.reason)

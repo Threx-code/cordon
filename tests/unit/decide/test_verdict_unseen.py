@@ -80,6 +80,67 @@ class TestTheAdmittedRulesAreKept:
         # Declared HIGH (cordon-47, 7 Nov), kept from the start: 2 dev-half malicious skills (context-loader,
         # an injected .notebook-profile), 0 dev benign; 1 of 154,808 public skills, the same proof of concept.
         "SUSPECT.AGENT.SKILL_DISGUISED_ARCHIVE.001",
+        # PyPI v0.8.0 grades, kept from the start (11 Nov): content misses of the 158 unseen PyPI
+        # units each newly blocks on a799c5d2. Benign units carrying each at any severity on the
+        # full gate (16,249 units, a799c5d2): DECODED 5, CREDENTIAL_STORE.002 1, HIDDEN_DESTINATION
+        # 2, FOREIGN_PROGRAM 1, IMPLANT 57 before its run leg was narrowed, the others 0.
+        "MALWARE.INSTALL.FOREIGN_PROGRAM.001",  # 5 unseen units
+        "MALWARE.DROPPER.HIDDEN.001",  # 1 unseen unit
+        "MALWARE.DROPPER.DECODED.001",  # analysis team, decoded payload compiled and imported
+        "MALWARE.EXFIL.HIDDEN_DESTINATION.002",  # 1 unseen unit
+        "MALWARE.EXFIL.CREDENTIAL_STORE.002",  # 1 unseen unit
+        "MALWARE.EXFIL.DNS_TUNNEL.001",  # 1 unseen unit
+        "MALWARE.IMPLANT.INSTALL.001",  # 1 unseen unit; run leg narrowed to analyser facts
+        "MALWARE.DROPPER.DATA_FILE_CODE.001",  # 1 unseen unit (houdus); benign measured at the gate
+        "MALWARE.EXFIL.CREDENTIALS_TO_FREE_HOST.001",  # 1 dev unit (project47); 0 of 1,063 and 0 of 16,274 benign
+        "MALWARE.EXFIL.CONFUSION_BEACON.001",  # 1 unseen unit (promptflow_runtime); benign at the gate
+        # The analysis team's startup rules (11 Nov): data_proxy_for_test and chroma_client; benign
+        # 2 of 17,337 for STARTUP_CODE (tld, dagz-suite), 0 for STARTUP_NETWORK once startup-reached.
+        "MALWARE.INSTALL.STARTUP_NETWORK.001",
+        "MALWARE.INSTALL.STARTUP_CODE.001",
+        # 1 unseen unit (sherpy); 0 of 704 benign wheels with native modules.
+        "SUSPECT.BINARY.CHAT_ENDPOINT.001",
+        # The skills team's static-miss rules (11 Nov), each measured on the 16,274 benign gate units:
+        "MALWARE.PERSIST.BACKDOOR.001",  # graphicsctxr's key write; 2 benign (tools that ship a key)
+        "MALWARE.IMPORT.PERSIST.001",  # 2 of 199 with persistence words at import
+        "MALWARE.INSTALL.FOREIGN_INDEX.001",  # pyregions_snowflake; 0 of 332
+        "MALWARE.IMPLANT.PERSIST_RUN.001",  # 1-3 at the analyser level
+        "MALWARE.PERSIST.HIDDEN.001",  # ailaunchkit; 1 of 16,274
+        "MALWARE.KEYLOGGER.001",  # aiassistcore; 0 of 16,274
+        "MALWARE.CLIPPER.001",  # aiassistcore; 0 of 16,274
+        "MALWARE.EXFIL.IP_LOGGER.001",  # audio_separator_fork (6 releases); 0 of 16,274
+        "SUSPECT.BINARY.NATIVE_PROGRAM_IN_PURE_WHEEL.001",  # the bundled-executable group; 1 added of 16,274
+        # The analysis team's relay and sweep (11 Nov): 0 of the 1,063 and 0 of the 16,274 each.
+        "MALWARE.EXFIL.SWEPT_FILES.001",  # graphicsctxr
+        "MALWARE.EXFIL.RELAYED_HIDDEN.001",  # snapshot-photo, snapshot_date
+        # The analysis team's fresh-validation rules (11 Nov): 0 of the 1,062 and 0 of the 16,274.
+        "MALWARE.IMPLANT.AV_EXCLUSION.001",  # rainbowcolors
+        "MALWARE.DROPPER.MACHINE_REPORT.001",  # is-it-ai 0.1.1
+        "MALWARE.EXFIL.CLOUD_UPLOAD.001",  # dlty (4 archives); 3 of 16,274
+        "MALWARE.EXFIL.SWEPT_TO_HOST.001",  # renderkit, renderkitcore; 0 of 16,274
+        "MALWARE.IMPORT.PROGRAM_START.001",  # lobomarinopython; 0 of 16,274
+        # The analysis team's staged-payload and install rules (11-12 Nov), 0 of the 1,063 each:
+        "SUSPECT.INSTALL.COMPUTED_CODE.001",  # easyIoCtl, openblox
+        "SUSPECT.DYNAMIC_DISPATCH.002",  # apkeep
+        "SUSPECT.OBFUSCATION.DORMANT_PAYLOAD.001",  # ethercheck, spellcheckerpy
+        "MALWARE.DROPPER.DIRECTORY.001",  # scrapetools2
+        "SUSPECT.EXECUTE.DECODED_BYTES.001",  # rasterkit_demo
+        "SUSPECT.EXFIL.MAIL_ON_IMPORT.001",  # Coffin2022, Coffin-Codes
+        "SUSPECT.SOURCE.UNPARSED_RUNNING.001",  # timeweave; at most 10 of 16,267
+        "SUSPECT.OBFUSCATION.UNRESOLVED_PAYLOAD.001",  # cubaflixdownload
+        "SUSPECT.INSTALL.TEMP_COMMAND.001",  # maliciouspackage 0.1; 0 of 16,274
+        # Fetch and run at load (14 Nov), measured at the flow on the 0.8.0 combined gate's rows:
+        "MALWARE.IMPORT.FETCH_RUN.001",  # 11 half-A misses newly caught; 2 of 16,828 benign
+        "MALWARE.INSTALL.FETCH_RUN.001",  # 7 half-A misses newly caught; 1 of 16,828 benign
+        # Decode and run at load (14 Nov), measured at the flow on the same rows:
+        "MALWARE.IMPORT.DECODE_EXEC.001",  # 5 half-A misses newly caught; 0 of 16,827 benign
+        # Text a handler serves to the agent (result, resource, prompt): 0 of 11,449 legitimate dev units
+        # newly blocked, since a catalogue of attack examples is read as reference content. The malicious
+        # dev units carry no served-text cue the older rules miss, so these are kept for the techniques
+        # the data does not hold yet.
+        "SUSPECT.MCP.RESULT_INJECTION.001",
+        "SUSPECT.MCP.RESOURCE_INJECTION.001",
+        "SUSPECT.MCP.PROMPT_INJECTION.001",
     )
 
     def test_each_is_in_keep(self) -> None:
@@ -130,6 +191,19 @@ class TestNoRuleIsLoweredUnseenByAccident:
             "MALWARE.MODEL.PICKLE_EXEC.001",
             "MALWARE.PROTESTWARE.001",
             "MALWARE.RULEFILE.MATCH.001",
+            # Added after the verdict is decided (`decide/composites.py`), so no verdict ever lowers
+            # it; listed, as SUSPECT.REGISTRY.REVIEW.001 is, because the model has not seen it and it
+            # is not in `LATER_RULES` (that list is part of the feature version).
+            "MALWARE.WORM.SELF_PROPAGATION.001",
+            # The corroborated-injection composite, added in the same place for the same reason.
+            "SUSPECT.AGENT.INJECTION_CORROBORATED.001",
+            # Added after the verdict is decided (`decide/code_and_instructions.py`), so no verdict lowers it; listed
+            # because the model has not seen it.
+            "SUSPECT.AGENT.CODE_AND_INSTRUCTIONS.001",
+            "SUSPECT.AGENT.PLANTS_INSTRUCTIONS.001",
+            # Added after the verdict is decided (`decide/remote_control.py`), so no verdict lowers it; listed
+            # because the model has not seen it.
+            "SUSPECT.AGENT.REMOTE_CONTROL.001",
             "SUSPECT.AGENT.ATR.MODEL_SECURITY.001",
             "SUSPECT.AGENT.AUTH_BYPASS_EDIT.001",
             "SUSPECT.AGENT.CREDENTIAL_EXFIL.001",  # measured 2 Nov: 0 malware, 1 benign newly blocked if kept: stays
@@ -141,6 +215,9 @@ class TestNoRuleIsLoweredUnseenByAccident:
             "SUSPECT.AGENT.JUDGED.001",
             "SUSPECT.AGENT.PHANTOM_PREREQUISITE.001",
             "SUSPECT.AGENT.SENSITIVE_IMPORT.001",
+            # Added 17 Nov (reviews/mcp-98/31): HIGH in a skill's own area and in `mcp`, which only add;
+            # in `npm` the verdict holds it at MEDIUM until a measured pair admits it to keep.
+            "SUSPECT.AGENT.SKILL_CLAIM_MISMATCH.001",
             "SUSPECT.AGENT.SKILL_DECODE_RUN.001",
             "SUSPECT.AGENT.SKILL_HOOK_FETCH.001",
             "SUSPECT.AGENT.SKILL_INSTALLS_LOOKALIKE.001",
@@ -209,6 +286,12 @@ class TestNoRuleIsLoweredUnseenByAccident:
             "SUSPECT.MODEL.MALICIOUS_PACKAGE.001",
             "SUSPECT.OBFUSCATION.TAG_SMUGGLING.001",  # measured 2 Nov: 0 malware, 1 benign newly blocked if kept: stays
             "SUSPECT.PACKAGE.REPOSITORY.001",
+            "SUSPECT.PERSIST.WRITES_DOWNLOADER.001",
+            "SUSPECT.PERSIST.WRITES_DOWNLOADER.002",
+            "SUSPECT.PERSIST.WRITES_DOWNLOADER.003",
+            "SUSPECT.PERSIST.WRITES_DOWNLOADER.004",
+            "SUSPECT.PERSIST.WRITES_DOWNLOADER.005",
+            "SUSPECT.PERSIST.WRITES_DOWNLOADER.006",
             "SUSPECT.RECIPE.PROVISIONAL.001",
             "SUSPECT.REGISTRY.REVIEW.001",
             "SUSPECT.RELEASE.NEW_BINARY.001",
@@ -223,6 +306,85 @@ class TestNoRuleIsLoweredUnseenByAccident:
             "SUSPECT.TARGETED_PAYLOAD.001",
             "SUSPECT.VCS.HOOKS_PATH.001",
             "SUSPECT.VCS.HOOK_ADDED.001",
+            # The MCP coverage suite's host-access, auth, agency, spread and name rules: each leaves this list into
+            # keep by its measured pair on the dev pools, never before. In the MCP area the verdict never lowers a
+            # finding (`Verdict.liftable`), so there they report at the grade their rule sets.
+            "SUSPECT.AGENT.AGENCY.AUTO_APPROVE_ALL.001",
+            "SUSPECT.AGENT.AGENCY.BROAD_DEFAULT_SCOPE.001",
+            "SUSPECT.AGENT.AGENCY.DELETE_WITHOUT_CONFIRM.001",
+            "SUSPECT.AUTH.OAUTH_REDIRECT_ELSEWHERE.001",
+            "SUSPECT.AUTH.SESSION_ID_SENT.001",
+            "SUSPECT.AUTH.TOKEN_PASSTHROUGH.001",
+            "SUSPECT.COLLECT.EXFIL.001",
+            "SUSPECT.DEPENDENCY.UNKNOWN_HOST.001",
+            "SUSPECT.DEPENDENCY.UNKNOWN_HOST.BUNDLED.001",
+            "SUSPECT.EXFIL.CREDENTIAL_FILE.001",
+            "SUSPECT.EXFIL.WALLET_KEY.001",
+            "SUSPECT.EXPOSE.ANY_ORIGIN_WITH_CREDENTIALS.001",
+            "SUSPECT.EXPOSE.HOME_ON_NETWORK.001",
+            "SUSPECT.LATERAL.KUBE_EVERY_CONTEXT.001",
+            "SUSPECT.LATERAL.PUSH_EVERY_REPOSITORY.001",
+            "SUSPECT.LATERAL.SSH_KNOWN_HOSTS.001",
+            "SUSPECT.MCP.LOOKALIKE.002",
+            "SUSPECT.MCP.TOOL_NAME_LOOKALIKE.001",
+            "SUSPECT.PERSIST.MCP_CLIENT_SPREAD.001",
+            "SUSPECT.PERSIST.REMOTE_SCRIPT.001",
+            "SUSPECT.WALLET.CLIPBOARD_SWAP.001",
+            "SUSPECT.WALLET.DRAIN_TO_FIXED_ADDRESS.001",
+            "SUSPECT.WALLET.UNLIMITED_APPROVAL_FIXED.001",
+            # MCP server rules written against the technique list, awaiting their measured pair:
+            "SUSPECT.MCP.ANALYSIS_TOOL_NAMES.001",
+            "SUSPECT.MCP.BIND_SHELL.001",
+            "SUSPECT.MCP.C2_DNS_TXT.001",
+            "SUSPECT.MCP.C2_TELEGRAM.001",
+            "SUSPECT.MCP.CHARCODE_BUILD.001",
+            "SUSPECT.MCP.ACCOUNT_ENUMERATION.001",
+            "SUSPECT.MCP.DESCRIPTION_FETCHED.001",
+            "SUSPECT.MCP.IDENTITY_GATE.001",
+            "SUSPECT.MCP.TOOLS_REPLACED_AFTER_CALLS.001",
+            "SUSPECT.MCP.CLOUD_METADATA.001",
+            "SUSPECT.MCP.CONTAINER_ESCAPE.001",
+            "SUSPECT.MCP.DETACHED_CHILD.001",
+            "SUSPECT.MCP.ELICIT_CREDENTIAL.001",
+            "SUSPECT.MCP.EMBEDDED_WASM.001",
+            "SUSPECT.MCP.EXFIL_DNS.001",
+            "SUSPECT.MCP.EXFIL_DROP.001",
+            "SUSPECT.MCP.EXFIL_EMAIL.001",
+            "SUSPECT.MCP.EXFIL_LOGGER.001",
+            "SUSPECT.MCP.EXFIL_TUNNEL.001",
+            "SUSPECT.MCP.EXFIL_WEBHOOK.001",
+            "SUSPECT.MCP.FORK_BOMB.001",
+            "SUSPECT.MCP.LIBRARY_HIJACK.001",
+            "SUSPECT.MCP.PRIVILEGE_GRANT.001",
+            "SUSPECT.MCP.RANSOM_NOTE.001",
+            "SUSPECT.MCP.RECON_BATTERY.001",
+            "SUSPECT.MCP.REVERSE_SHELL.001",
+            "SUSPECT.MCP.SAMPLING_ABUSE.001",
+            "SUSPECT.MCP.SECURITY_TOOL_KILL.001",
+            "SUSPECT.MCP.SHELL_PIPE_DOWNLOAD.001",
+            "SUSPECT.MCP.TRACE_ERASE.001",
+            "SUSPECT.MCP.AGENT_SAFETY_OFF.001",
+            "SUSPECT.MCP.DECODE_RUN.001",
+            "SUSPECT.MCP.DOWNLOAD_RUN_TEMP.001",
+            "SUSPECT.MCP.EXFIL_PRESIGNED.001",
+            "SUSPECT.MCP.EXFIL_REPO.001",
+            "SUSPECT.MCP.GATED_PAYLOAD.001",
+            "SUSPECT.MCP.INPUT_DROPPED.001",
+            "SUSPECT.MCP.INPUT_PROGRAM.001",
+            "SUSPECT.MCP.INPUT_SHELL.001",
+            "SUSPECT.MCP.HOME_WIPE.001",
+            "SUSPECT.MCP.ISSUE_TASKING.001",
+            "SUSPECT.MCP.K8S_SECRET_READ.001",
+            "SUSPECT.MCP.NATIVE_FROM_TEMP.001",
+            "SUSPECT.MCP.NOTIFICATION_FLOOD.001",
+            "SUSPECT.MCP.PACKAGE_TAMPER.001",
+            "SUSPECT.MCP.PASTE_TASKING.001",
+            "SUSPECT.MCP.PROCESS_MASQUERADE.001",
+            "SUSPECT.MCP.RESPONSE_RUN.001",
+            "SUSPECT.MCP.ROOTS_ESCAPE.001",
+            "SUSPECT.MCP.SPLIT_PAYLOAD.001",
+            "SUSPECT.MCP.SUBSCRIPTION_CHANNEL.001",
+            "SUSPECT.MCP.WEBSOCKET_C2.001",
         }
     )
 

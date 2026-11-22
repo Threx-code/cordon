@@ -49,12 +49,14 @@ import html
 import io
 import posixpath
 import re
-import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, ClassVar, Final
+from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
+from cordon_scanner.foundation.text.confusion_versions import ConfusionVersions
+from cordon_scanner.foundation.text.name_scripts import NameScripts
 
 if TYPE_CHECKING:
     from cordon_scanner.detect.base import FileUnit, ScanContext
@@ -122,6 +124,13 @@ class PackageIdentity:
     second is how a directory becomes a package. What they contain is read by the content rules."""
     hook_runs_file: bool
     """An install hook names a file in the package to run."""
+    code_bytes: int = 0
+    """The bytes of the code files `code_files` counts (0 where not read). A package whose few files
+    hold kilobytes of code is not "nothing to run": the block's own account of nothing is code under a few
+    hundred bytes."""
+    install_message: str = ""
+    """What an INERT root `setup.py` says when it refuses to install (`InstallFacts`): read as install
+    output, so a defensive claim in it is the owner's reservation of its own name."""
     dependencies: int = 0
     """Runtime dependencies declared. A package that is only a list of dependencies is a
     meta-package: what it installs is its payload, and it is not empty."""
@@ -386,6 +395,8 @@ class PackageIdentities:
             has_source=bool(urls),
             hooks=(),
             code_files=cls._code_files(unit, ctx, python=True),
+            code_bytes=ctx.package_code_bytes,
+            install_message=ctx.package_install_message,
             hook_runs_file=False,
             dependencies=len(
                 [
@@ -429,44 +440,14 @@ class NameSignals:
 
     @staticmethod
     def mixed_script(name: str) -> str | None:
-        """The other script when a name mixes Latin letters with Cyrillic or Greek ones.
-
-        `Micr\u043esoft.EntetyFrameworkCore` on NuGet spells its `o` as Cyrillic U+043E: it reads as
-        Microsoft's and sorts beside it, and no one types it by accident (review 98). A name
-        written wholly in another script is that script's, and is not this."""
-        latin = other = False
-        found = ""
-        for char in name:
-            if not char.isalpha():
-                continue
-            script = unicodedata.name(char, "").split(" ", 1)[0]
-            if script == "LATIN":
-                latin = True
-            elif script in ("CYRILLIC", "GREEK", "ARMENIAN", "CHEROKEE"):
-                other, found = True, script.capitalize()
-        return found if latin and other else None
+        """The other script when a name mixes Latin letters with Cyrillic or Greek ones (`NameScripts.mixed`)."""
+        return NameScripts.mixed(name)
 
     @staticmethod
     def confusion_version(version: str) -> str | None:
-        """Why this version looks chosen to outrank a private registry's, or None.
-
-        A dependency-confusion probe has to win the resolver's comparison against the internal
-        package it imitates, whose version it does not know, so it picks one nobody reaches:
-        99.0.0, 999.9.9, 1000.0.0, or a run of one digit (7.7.7, 11.11.11). Calendar versions
-        (2024.1.0, 202606.4.3555) are high for a different reason and are not counted.
-        """
-        found = re.match(r"^v?(\d{1,12})\.(\d{1,12})\.(\d{1,12})", version.strip())
-        if found is None:
-            return None
-        major, minor, patch = (int(x) for x in found.groups())
-        calendar = 1990 <= major <= 2100 or major >= 199000
-        if major >= 90 and not calendar:
-            return f"major version {major}"
-        if major == minor == patch and major >= 4:
-            return f"version {major}.{major}.{major}"
-        if major in (9, 99, 999) and minor in (9, 99, 999):
-            return f"version {found.group(0)}"
-        return None
+        """Why this version looks chosen to outrank a private registry's, or None
+        (`ConfusionVersions.reason`)."""
+        return ConfusionVersions.reason(version)
 
     @staticmethod
     def typosquat(identity: PackageIdentity) -> tuple[str, bool] | None:
@@ -635,6 +616,9 @@ class NameRisk:
     """"Nothing to run", as far as a reader of paths can tell: at most three code files, no
     dependency and no install hook that runs a file. The files themselves are read by the content
     rules, which grade whatever is in them on its own merits."""
+    MAX_CODE_BYTES_TO_BLOCK: ClassVar[int] = 4096
+    """The same account in bytes: the rule's premise is code under a few hundred bytes, so a block is
+    allowed up to four kilobytes of it, and three files of fifteen are something to run."""
 
     @classmethod
     def signals(cls, identity: PackageIdentity) -> tuple[Signal, ...]:
@@ -657,8 +641,18 @@ class NameRisk:
         version = NameSignals.confusion_version(identity.version)
         if version is not None:
             add("confusion-version", "name", f"{version}, a dependency-confusion version")
-        said = " ".join([identity.description, *(command for _, command in identity.hooks)])
-        holding = bool(NameSignals.HOLDING.search(identity.description))
+        said = " ".join(
+            [
+                identity.description,
+                identity.install_message,
+                *(command for _, command in identity.hooks),
+            ]
+        )
+        # An inert `setup.py`'s refusal is credited like the description: a package that only refuses
+        # to install cannot be the attack, so its claim is the owner's (`InstallFacts`).
+        holding = bool(
+            NameSignals.HOLDING.search(f"{identity.description} {identity.install_message}")
+        )
         # The claim is also made where the owner sends the installer elsewhere ("please use the
         # private registry" in the install output) or in the name itself
         # (`@corp-internal/placeholder`). Only the description outranks a probe's own words.
@@ -711,6 +705,7 @@ class NameRisk:
         strongest = max((s.weight for s in signals if s.kind == "name"), default=0)
         nothing_to_run = (
             identity.code_files <= cls.MAX_CODE_FILES_TO_BLOCK
+            and identity.code_bytes <= cls.MAX_CODE_BYTES_TO_BLOCK
             and not identity.dependencies
             and not identity.hook_runs_file
         )
@@ -726,9 +721,111 @@ class NameRisk:
         return Assessment(signals=signals, blocks=blocks)
 
 
+class InstallFacts:
+    """A Python package's code bytes and its inert `setup.py`'s refusal message (reviews/pypi-98/26).
+
+    `setup.py` is INERT when it can run nothing, whatever path it takes: every call in it is to
+    `setup`, `any`, `all`, `print`, an exit or an exception constructor, and it imports only `sys`, `os`,
+    `distutils` or `setuptools`. Only then is its message read (the strings of its `raise`, `print` and
+    exit calls); one call to anything else and the message is "" and the claim is not credited."""
+
+    INERT_CALLS: ClassVar[frozenset[str]] = frozenset(
+        {"setup", "any", "all", "print", "exit", "quit", "len", "str", "format", "Exception",
+         "SystemExit", "RuntimeError", "ImportError", "ValueError", "OSError", "NotImplementedError"}
+    )  # fmt: skip
+    INERT_IMPORTS: ClassVar[frozenset[str]] = frozenset({"sys", "os", "distutils", "setuptools"})
+    SAYING: ClassVar[frozenset[str]] = frozenset(
+        {"print", "exit", "quit", "SystemExit", "Exception", "RuntimeError", "ImportError",
+         "ValueError", "OSError", "NotImplementedError"}
+    )  # fmt: skip
+    MAX_SETUP_BYTES: ClassVar[int] = 64 * 1024
+
+    @staticmethod
+    def of(units: Sequence[Any]) -> tuple[int, str]:
+        """(bytes of the package's code files, the inert `setup.py`'s message), or (0, "") where the
+        archive holds no sdist `PKG-INFO`."""
+        meta = next(
+            (u for u in units if InstallFacts._is_sdist_metadata(u.path.rpartition("!")[2])), None
+        )
+        if meta is None:
+            return 0, ""
+        root = PackageIdentities._root(meta)
+        prefix = f"{root}/" if root else ""
+        total, message = 0, ""
+        for unit in units:
+            if not unit.path.startswith(prefix):
+                continue
+            relative = unit.path[len(prefix) :]
+            lowered = relative.lower()
+            if relative == "setup.py":
+                message = InstallFacts.refusal(unit.content.text_head(InstallFacts.MAX_SETUP_BYTES))
+                continue
+            if (
+                "node_modules/" in f"/{lowered}"
+                or lowered.endswith(NOT_CODE_SUFFIXES)
+                or not lowered.endswith(CODE_SUFFIXES)
+                or posixpath.basename(lowered) == "__init__.py"
+            ):
+                continue
+            total += unit.content.size
+        return total, message
+
+    @staticmethod
+    def _is_sdist_metadata(member: str) -> bool:
+        parts = member.split("/")
+        return (
+            len(parts) >= 2
+            and parts[-1] == "PKG-INFO"
+            and not parts[-2].endswith(".egg-info")
+            and bool(PackageIdentities._VERSIONED_DIRECTORY.search(parts[-2]))
+        )
+
+    @staticmethod
+    def refusal(text: str) -> str:
+        """The strings of an inert `setup.py`'s raise, print and exit calls, else ""."""
+        import ast
+
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
+        try:
+            tree = PythonSyntax.parse(text)
+        except (SyntaxError, ValueError, RecursionError, MemoryError):
+            # S2: a `setup.py` the guarded parser refuses, or that does not parse, is not shown inert; its
+            # message is not credited (fail closed)
+            return ""
+        said: list[str] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import) and any(
+                alias.name.split(".")[0] not in InstallFacts.INERT_IMPORTS for alias in node.names
+            ):
+                return ""
+            if isinstance(node, ast.ImportFrom) and (
+                node.level or (node.module or "").split(".")[0] not in InstallFacts.INERT_IMPORTS
+            ):
+                return ""
+            if isinstance(node, ast.Call):
+                func = node.func
+                name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+                if name not in InstallFacts.INERT_CALLS or (
+                    isinstance(func, ast.Attribute)
+                    and ast.unparse(func.value) not in ("sys", "os")
+                    and name != "setup"
+                ):
+                    return ""
+                if name in InstallFacts.SAYING:
+                    said += [
+                        sub.value
+                        for arg in node.args
+                        for sub in ast.walk(arg)
+                        if isinstance(sub, ast.Constant) and isinstance(sub.value, str)
+                    ]
+        return " ".join(said)[:2000]
+
+
 __all__ = [
     "RULE",
     "Assessment",
+    "InstallFacts",
     "NameRisk",
     "NameSignals",
     "PackageIdentities",

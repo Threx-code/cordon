@@ -23,6 +23,7 @@ ROLES: dict[str, tuple[str, str]] = {
     "CrossFileJoin": ("cordon_scanner.detect.code.reached_flows", "CrossFileJoin"),
     "DownloadFlow": ("cordon_scanner.detect.code.download_flow", "DownloadFlow"),
     "ImportReachability": ("cordon_scanner.detect.supply.reachability", "ImportReachability"),
+    "InstallFacts": ("cordon_scanner.detect.supply.name_risk", "InstallFacts"),
     "JudgeGate": ("cordon_scanner.detect.agents.language_model.detector", "JudgeGate"),
     "LoadPath": ("cordon_scanner.detect.code.capability.load_path", "LoadPath"),
     "NATIVE_FORMATS": ("cordon_scanner.detect.binary.detector", "NATIVE_FORMATS"),
@@ -49,6 +50,7 @@ if TYPE_CHECKING:
         DownloadRunning,
         ImportReachabilityNotes,
         JudgeScheduling,
+        PackageInstallFacts,
         PackerSignatures,
         ReachedFlowFacts,
         RuleFileInputs,
@@ -65,6 +67,7 @@ if TYPE_CHECKING:
     from cordon_scanner.detect.source import submodules as _detect_source_submodules
     from cordon_scanner.detect.supply import campaign_sibling as _detect_supply_campaign_sibling
     from cordon_scanner.detect.supply import composer_plugins as _detect_supply_composer_plugins
+    from cordon_scanner.detect.supply import name_risk as _detect_supply_name_risk
     from cordon_scanner.detect.supply import reachability as _detect_supply_reachability
     from cordon_scanner.detect.supply import sbom as _detect_supply_sbom
     from cordon_scanner.detect.supply.manifests import sources as _detect_supply_manifests_sources
@@ -78,6 +81,7 @@ if TYPE_CHECKING:
     CrossFileJoin: CrossFileJoining = _detect_code_reached_flows.CrossFileJoin
     DownloadFlow: DownloadRunning = _detect_code_download_flow.DownloadFlow
     ImportReachability: ImportReachabilityNotes = _detect_supply_reachability.ImportReachability
+    InstallFacts: PackageInstallFacts = _detect_supply_name_risk.InstallFacts
     JudgeGate: JudgeScheduling = _detect_agents_language_model_detector.JudgeGate
     LoadPath: SkillScripts = _detect_code_capability_load_path.LoadPath
     NATIVE_FORMATS: frozenset[str] = _detect_binary_detector.NATIVE_FORMATS
@@ -114,6 +118,7 @@ __all__ = [
     "DeclaredSource",
     "DownloadFlow",
     "ImportReachability",
+    "InstallFacts",
     "JudgeGate",
     "LoadPath",
     "PackingFindings",

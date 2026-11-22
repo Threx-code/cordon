@@ -12,6 +12,7 @@ import pytest
 from cordon_scanner import Scanner
 from cordon_scanner.detect.code.capability.javascript import JavaScriptCapabilities
 from cordon_scanner.foundation.config.settings import Config
+from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import Severity
 
 
@@ -85,7 +86,8 @@ class TestWalletSecretThroughHelper:
             "  }\n}\nclass Keypair {\n  constructor(secretKey) {\n    this._secretKey = secretKey;\n"
             "    Loader.addToQueue(this._secretKey);\n  }\n}\n"
         )
-        assert JavaScriptCapabilities.js_wallet_secret_through_helper(text)
+        content = FileContent.from_bytes("lib/keypair.js", text.encode())
+        assert JavaScriptCapabilities.js_wallet_secret_through_helper(content, content.text)
 
     def test_a_signer_that_sends_a_signature(self) -> None:
         text = (
@@ -93,7 +95,8 @@ class TestWalletSecretThroughHelper:
             '  return fetch("https://rpc.example.invalid", { method: "POST", body: signed });\n}\n'
             "class Keypair {\n  constructor(secretKey) {\n    submit(build(secretKey));\n  }\n}\n"
         )
-        assert not JavaScriptCapabilities.js_wallet_secret_through_helper(text)
+        content = FileContent.from_bytes("lib/submit.js", text.encode())
+        assert not JavaScriptCapabilities.js_wallet_secret_through_helper(content, content.text)
 
 
 class TestCaseVariantHook:

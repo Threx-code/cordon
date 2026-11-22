@@ -178,6 +178,31 @@ class PypiLockfiles:
             return path
         return None
 
+    @staticmethod
+    def _early_uv_schema(data: dict[str, Any]) -> bool:
+        """uv's first lock schema: `version = 1` and no `revision` key."""
+        version = data.get("version")
+        return (
+            isinstance(version, int)
+            and not isinstance(version, bool)
+            and version == 1
+            and ("revision" not in data)
+        )
+
+    @staticmethod
+    def _uv_header_only(path: str, data: dict[str, Any]) -> bool:
+        """A `uv.lock` that is uv's header and nothing else: an integer `version`, a string
+        `requires-python`, an optional integer `revision`, and no other key. That file has no
+        entries; anything else without tables is still reported (05-CENSUS C2, 08 7b)."""
+        if path.replace("\\", "/").rsplit("/", 1)[-1] != "uv.lock":
+            return False
+        if set(data) - {"version", "revision", "requires-python"}:
+            return False
+        ints = [data.get("version")] + ([data["revision"]] if "revision" in data else [])
+        return all(isinstance(v, int) and not isinstance(v, bool) for v in ints) and isinstance(
+            data.get("requires-python"), str
+        )
+
     def _parse_pep_style_lock(self, content: FileContent) -> LockGraph:
         """`uv.lock` and `pdm.lock`, which share poetry's `[[package]]` table and
         nothing else about what is inside it.
@@ -203,6 +228,20 @@ class PypiLockfiles:
             )
 
         packages = data.get("package")
+        distributions = data.get("distribution")
+        if distributions is not None:
+            if packages is not None or not PypiLockfiles._early_uv_schema(data):
+                return LockGraph(
+                    path=content.path,
+                    ecosystem=self.id,
+                    parse_error="[[distribution]] tables outside uv's first lock schema",
+                )
+            # uv's first schema (version 1, no `revision`) named the tables `[[distribution]]`;
+            # they hold what `[[package]]` holds and are read with the same checks.
+            packages = distributions
+        if packages is None and PypiLockfiles._uv_header_only(content.path, data):
+            # A project that depends on nothing: uv writes its header and no tables.
+            return LockGraph(path=content.path, ecosystem=self.id, entries=())
         if not isinstance(packages, list):
             return LockGraph(
                 path=content.path,

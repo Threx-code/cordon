@@ -25,7 +25,9 @@ composite rule set unchanged.
 
 from __future__ import annotations
 
+import ast
 import re
+from bisect import bisect_right
 from dataclasses import replace
 from typing import TYPE_CHECKING, ClassVar
 
@@ -52,8 +54,11 @@ from cordon_scanner.detect.code.capability.legitimate_use import LegitimateUse
 from cordon_scanner.detect.code.capability.memo import CapabilityMemo
 from cordon_scanner.detect.code.capability.rule_ids import CompositeRuleIds
 from cordon_scanner.detect.code.capability.text_position import TextPosition
+from cordon_scanner.detect.code.capability.view_runner import ViewRunner
 from cordon_scanner.detect.code.credential_sweep import CredentialSweep
 from cordon_scanner.detect.code.decode_run import DecodeRun
+from cordon_scanner.detect.code.drop_point_loot import DropPointLoot
+from cordon_scanner.detect.code.flows.yaml_commands import YamlCommands
 from cordon_scanner.detect.code.install_payload import InstallPayload
 from cordon_scanner.detect.code.keychain_owner import KeychainOwner
 from cordon_scanner.detect.infra.gradle_auth import GradleBuildAuth
@@ -112,7 +117,7 @@ class ScriptFetchedThenEvaluated:
             if evaluated is None:
                 continue
             offset = bound.end() + evaluated.start()
-            start = len(text[:offset].encode("utf-8"))
+            start = content.byte_offset(offset, text)
             return [
                 CapabilityHit(
                     capability=Capability.FETCH_EXEC,
@@ -156,6 +161,186 @@ class FixedJsSpawns:
         ]
 
 
+class DownloadedLoaderRuns:
+    """`runpy.run_path`, `run_module`, a loader's `exec_module` and `load_module` run a file as code.
+    They are an execute hit only where the file's flow shows the file came from a download (written
+    from a fetched value, or a path the file wrote fetched bytes to): a plugin loader on a local
+    path pairs with nothing (reviews/pypi-98/26)."""
+
+    RULE_ID = "CAP.PY.EXECUTE.001"
+    NAMES: ClassVar[frozenset[str]] = frozenset(
+        {"run_path", "run_module", "exec_module", "load_module"}
+    )
+
+    @classmethod
+    def add(cls, content: FileContent, hits: list[CapabilityHit]) -> list[CapabilityHit]:
+        if not any(name in content.text for name in cls.NAMES):
+            return hits
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+        from cordon_scanner.detect.code.download_flow import DownloadFlow
+
+        runs = DownloadFlow.runs_download(content.text, "python")
+        if not runs:
+            return hits
+        try:
+            tree = PythonSyntax.parse(content.text)
+        except (SyntaxError, ValueError):
+            # S2: no run is added for a file that does not parse (covered by SOURCE.UNPARSED at every running file)
+            return hits
+        have = {h.line for h in hits if h.capability is Capability.EXECUTE}
+        lines = content.text.split("\n")
+        added: list[CapabilityHit] = []
+        for node in PythonSyntax.of(tree, ast.Call):
+            func = node.func
+            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+            if name not in cls.NAMES or node.lineno not in runs or node.lineno in have:
+                continue
+            start = len("\n".join(lines[: node.lineno - 1]).encode("utf-8")) + (
+                1 if node.lineno > 1 else 0
+            )
+            added.append(
+                CapabilityHit(
+                    capability=Capability.EXECUTE,
+                    rule_id=cls.RULE_ID,
+                    byte_start=start,
+                    byte_end=start + len(lines[node.lineno - 1].encode("utf-8")),
+                    line=node.lineno,
+                )
+            )
+            have.add(node.lineno)
+        return [*hits, *added]
+
+
+class UnsourcedPythonSinks:
+    """Python execute and deserialize hits whose input was neither fetched nor decoded."""
+
+    SINKS: ClassVar[frozenset[Capability]] = frozenset({Capability.EXECUTE, Capability.DESERIALIZE})
+
+    @classmethod
+    def mark(cls, content: FileContent, hits: list[CapabilityHit]) -> list[CapabilityHit]:
+        """Each sink hit on a line where the parsed tree finds either no execute or deserialize
+        call, or one whose argument was neither fetched nor decoded, marked `unsourced`; and a
+        pattern-tier fetch-and-run on such a line, where the tree records no fetch-and-run of its
+        own (`exec(fp.read())` of an opened local file). A file that does not parse marks nothing
+        (fail closed)."""
+        if not any(h.capability in cls.SINKS for h in hits):
+            return hits
+        from cordon_scanner.analysis.python.pyast import PythonAnalyzer
+
+        found = PythonAnalyzer.sink_sources(content.text)
+        if found is None:
+            return hits
+        every, sourced = found
+        unsourced_lines = every - sourced
+        tree_fetch_exec = {
+            h.line for h in hits if h.capability is Capability.FETCH_EXEC and h.resolved
+        }
+
+        def unsourced(h: CapabilityHit) -> bool:
+            if h.capability in cls.SINKS:
+                return h.line not in every or h.line not in sourced
+            return (
+                h.capability is Capability.FETCH_EXEC
+                and not h.resolved
+                and h.line in unsourced_lines
+                and h.line not in tree_fetch_exec
+            )
+
+        return [replace(h, unsourced=True) if unsourced(h) else h for h in hits]
+
+
+class QuotedPythonProbes:
+    """Anti-analysis pattern hits that sit inside a Python string."""
+
+    @staticmethod
+    def drop(content: FileContent, hits: list[CapabilityHit]) -> list[CapabilityHit]:
+        """Each anti-analysis hit whose matched text lies wholly inside one string literal, in a
+        file whose code names no probe, dropped. `sys.gettrace()` written into a code template or
+        a help table is text the module never runs. The pattern records only its first match, so
+        a quoted decoy must not hide a real check after it: any probe named in the code itself
+        keeps every hit. A string later handed to `exec` is judged by the execute rules, not by
+        this pattern. A file that does not parse drops nothing (fail closed)."""
+        if not any(h.capability is Capability.ANTI_ANALYSIS for h in hits):
+            return hits
+        from cordon_scanner.analysis.python.pyfacts import PythonFacts
+
+        spans = PythonFacts.string_spans(content.text)
+        if not spans:
+            return hits
+        starts = content.line_starts
+
+        def position(offset: int) -> tuple[int, int]:
+            line = bisect_right(starts, offset)
+            return line, offset - starts[line - 1]
+
+        def quoted(hit: CapabilityHit) -> bool:
+            first = position(hit.byte_start)
+            last = position(max(hit.byte_end - 1, hit.byte_start))
+            return any(
+                (line, column) <= first and last < (end_line, end_column)
+                for line, column, end_line, end_column in spans
+            )
+
+        return [h for h in hits if not (h.capability is Capability.ANTI_ANALYSIS and quoted(h))]
+
+
+class QuotedPythonCalls:
+    """Call syntax inside a Python string: text, not a call."""
+
+    CAPABILITIES: ClassVar[frozenset[Capability]] = frozenset(
+        {Capability.EGRESS, Capability.EXECUTE, Capability.DECODE}
+    )
+
+    @staticmethod
+    def drop(content: FileContent, hits: list[CapabilityHit]) -> list[CapabilityHit]:
+        """Each egress, execute or decode hit of a Python pattern whose matched text is a call
+        (`requests.post(`) and lies wholly inside one string literal, dropped -- a table of the calls
+        a scanner or a guard looks for, a docstring that shows one. Only where the capability has no
+        other hit in the file (the pattern records its first match, so a quoted decoy must not hide a
+        real call: any call of that capability in the code keeps every hit of it), and only in a file
+        that runs no string as code (`InertLiterals.quoted_call_spans`: no `exec`, `eval` or
+        `compile`) and in which no string with call syntax in it is handed to a process, sent or
+        written out (write-then-run: the file's call text is live, all of it). Shell text in a
+        string (a download piped to a shell) is not call syntax and is not touched.
+        A file that does not parse drops nothing (fail closed)."""
+        if not any(h.capability in QuotedPythonCalls.CAPABILITIES for h in hits):
+            return hits
+        from cordon_scanner.analysis.python.inert_literals import InertLiterals
+
+        spans = InertLiterals.quoted_call_spans(content.text)
+        if not spans:
+            return hits
+        starts = content.line_starts
+
+        def position(offset: int) -> tuple[int, int]:
+            line = bisect_right(starts, offset)
+            return line, offset - starts[line - 1]
+
+        def quoted(hit: CapabilityHit) -> bool:
+            if (
+                not hit.rule_id.startswith("CAP.PY.")
+                or b"(" not in content.raw[hit.byte_start : hit.byte_end]
+            ):
+                return False
+            first = position(hit.byte_start)
+            last = position(max(hit.byte_end - 1, hit.byte_start))
+            return any(
+                (line, column) <= first and last < (end_line, end_column)
+                for line, column, end_line, end_column in spans
+            )
+
+        real = {h.capability for h in hits if not quoted(h)}
+        return [
+            h
+            for h in hits
+            if not (
+                h.capability in QuotedPythonCalls.CAPABILITIES
+                and h.capability not in real
+                and quoted(h)
+            )
+        ]
+
+
 class CapabilityDetector(BaseDetector):
     """Labels files with capabilities and evaluates composite rules over them."""
 
@@ -171,7 +356,11 @@ class CapabilityDetector(BaseDetector):
     # the pattern tier wins -- one call is not two of a composite's capabilities.
     # 0.12.0: an encoded command's plaintext reaches the rules, and the
     # minified ceiling no longer excuses a language nobody minifies.
-    version = "0.13.0"  # decode-run composites drop a spawn nothing decoded reaches (decode_run)
+    # 0.14.0: a spawn of a tool by its name does not pair with a decode in `SUSPECT.DROPPER.001`
+    # (`DecodeRun.SPAWN_PAIRED`), a command handed to a spawn by name is its own statement's
+    # literals, and a data file the code only parses is not labelled (`DataRoles`).
+    # 0.15.0: call syntax inside a Python string that reaches no sink is text, not a call.
+    version = "0.15.0"  # call syntax inside a Python string that reaches no sink is text
     categories = frozenset(
         {Category.SUSPICIOUS, Category.MALICIOUS, Category.POLICY, Category.OPERATIONAL}
     )
@@ -202,7 +391,7 @@ class CapabilityDetector(BaseDetector):
         """
         content = unit.content
         language = unit.language
-        if Labelling.rule_pack(content):
+        if Labelling.rule_pack(content) or unit.path in ctx.data_only_paths:
             return None
         dotnet_commands: list[embedded.Command] = []
         assembly_view = False
@@ -257,7 +446,7 @@ class CapabilityDetector(BaseDetector):
         hits = CapabilityDetector._tree_capabilities(
             candidates, commands, content, ctx, hits, matched_content, resolved, unit
         )
-        hits = TextPosition.off_this_machine(content, hits)
+        hits = TextPosition.off_this_machine(content, hits, language)
         if BuildOutput.bundled(content):
             # A compiled tool that schedules its own jobs (an agent runner's LaunchAgent, a
             # crontab writer) registers autostart entries as its feature; three Open VSX agent
@@ -308,7 +497,7 @@ class CapabilityDetector(BaseDetector):
                 # A command assembled from a table of characters is read as the command it
                 # becomes (`detect/go_eval.py`): the 2025 Go typosquats never wrote theirs down.
                 source = run_time_view(source)
-            commands = embedded.EmbeddedCommands.extract(source, unit.language)
+            commands = CapabilityDetector._viewed_commands(source, unit.language)
         # And the plaintext of any encoded command among them, so the shell rules
         # see what `powershell -EncodedCommand` was given rather than only that it
         # was given something. See `embedded.decode_encoded_commands`: this is the
@@ -321,6 +510,20 @@ class CapabilityDetector(BaseDetector):
             )
         commands = embedded.EmbeddedCommands.decode_encoded_commands(commands)
         return commands, hits, matched_content, resolved
+
+    @staticmethod
+    def _viewed_commands(source: str, language: str | None) -> list[embedded.Command]:
+        """The command lines handed to spawn calls, read in the source and in its decoded view
+        (note 18 §1b): `ssh.\\u0065xec(<a download piped to a shell>)` is a spawn to the language, and its command
+        reaches the shell rules. The view keeps every line, so a command found in both is one."""
+        found = embedded.EmbeddedCommands.extract(source, language)
+        seen = {(c.text, c.line) for c in found}
+        for reading in ViewRunner.texts(source, language)[1:]:
+            for command in embedded.EmbeddedCommands.extract(reading, language):
+                if (command.text, command.line) not in seen:
+                    seen.add((command.text, command.line))
+                    found.append(command)
+        return found
 
     @staticmethod
     def _tree_capabilities(
@@ -347,6 +550,14 @@ class CapabilityDetector(BaseDetector):
             for h in hits
         ):
             hits = Labelling.drop_excused_pattern_hits(content, hits)
+        if unit.language == "yaml":
+            hits = YamlCommands.drop(content, hits)
+        if unit.language == "python":
+            hits = QuotedPythonProbes.drop(content, hits)
+            hits = QuotedPythonCalls.drop(content, hits)
+            hits = DownloadedLoaderRuns.add(content, hits)
+        if unit.language == "python" and not content.path.endswith(".pth"):
+            hits = UnsourcedPythonSinks.mark(content, hits)
         if unit.language in ("javascript", "typescript"):
             hits = JsPersistence.drop_named_only(content, hits)
             hits = FixedJsSpawns.mark(content, hits)
@@ -357,8 +568,9 @@ class CapabilityDetector(BaseDetector):
             hits = GradleBuildAuth.drop_build_auth(content.text, hits, Capability.CREDENTIAL)
         hits.extend(Labelling.embedded_capabilities(ctx, content, commands))
         hits.extend(DestinationLabels.destination_capabilities(content, unit.language))
-        hits.extend(JavaScriptCapabilities.js_downloaded_and_run(content, unit.language))
-        hits.extend(JavaScriptCapabilities.js_wallet_secret_sent(content, unit.language))
+        viewed = ViewRunner.bound(content, unit.language)  # raw text and decoded view (note 18)
+        hits.extend(viewed(JavaScriptCapabilities.js_downloaded_and_run))
+        hits.extend(viewed(JavaScriptCapabilities.js_wallet_secret_sent))
         hits.extend(JavaScriptCapabilities.js_flows(content, unit.language))
         crossing = (ctx.cross_file_flows or {}).get(unit.path)
         if crossing:
@@ -370,10 +582,10 @@ class CapabilityDetector(BaseDetector):
             )
         from cordon_scanner.detect.code.js_campaigns import JsCampaigns
 
-        hits.extend(JsCampaigns.channel_follow(content, unit.language))
-        hits.extend(JsCampaigns.plants_agent_config(ctx, content, unit.language))
-        hits.extend(JsCampaigns.attribution_cloak(content, unit.language))
-        computed = JavaScriptCapabilities.js_computed_require(content, unit.language)
+        hits.extend(viewed(JsCampaigns.channel_follow))
+        hits.extend(viewed(lambda c, lang: JsCampaigns.plants_agent_config(ctx, c, lang)))
+        hits.extend(viewed(JsCampaigns.attribution_cloak))
+        computed = viewed(JavaScriptCapabilities.js_computed_require)
         hits.extend(computed)
         if computed and not BuildOutput.bundled(content):
             # The same, in a hand-written file: the install-time composite may convict on this alone.
@@ -381,19 +593,20 @@ class CapabilityDetector(BaseDetector):
             # dist/extension.js).
             first = computed[0]
             hits.append(replace(first, rule_id="CAP.JS.COMPUTED_REQUIRE_SOURCE"))
-        hits.extend(JavaScriptCapabilities.js_spelled_names(content, unit.language))
+        hits.extend(viewed(JavaScriptCapabilities.js_spelled_names))
         hits.extend(JavaScriptCapabilities.js_string_code_run(content, unit.language))
-        hits.extend(CredentialSweep.hits(matched_content))
-        hits.extend(Labelling.browser_secrets_decrypted(matched_content))
+        matched = ViewRunner.bound(matched_content, unit.language)
+        hits.extend(matched(lambda c, _: CredentialSweep.hits(c)))
+        hits.extend(matched(lambda c, _: Labelling.browser_secrets_decrypted(c)))
         language_hits = CapabilityDetector.LANGUAGE_HITS.get(unit.language or "")
         if language_hits is not None:
             hits.extend(language_hits(content, matched_content))
         if unit.language in ("javascript", "typescript"):
             from cordon_scanner.detect.code.js_runs import JsRuns
 
-            hits.extend(JsRuns.received_and_run(content))
-            hits.extend(JsRuns.decoded_program_run(content))
-            hits.extend(JsRuns.command_output_sent(content, ctx))
+            hits.extend(viewed(lambda c, _: JsRuns.received_and_run(c)))
+            hits.extend(viewed(lambda c, _: JsRuns.decoded_program_run(c)))
+            hits.extend(viewed(lambda c, _: JsRuns.command_output_sent(c, ctx)))
         hits.extend(ScriptFetchedThenEvaluated.hits(content, unit.language))
         # A truncated file is reported by the engine, which reads every file and so sees every
         # truncation; this detector returns early for some.
@@ -402,6 +615,27 @@ class CapabilityDetector(BaseDetector):
         if NixCode.is_nix(content.path):
             # What a Nix file declares does not run (`detect/nix_code.py`).
             hits = NixCode.keep_running(content.text, hits)
+        return CapabilityDetector._restore_notifier_drop_points(content, unit.language, hits)
+
+    @staticmethod
+    def _restore_notifier_drop_points(
+        content: FileContent, language: str | None, hits: list[CapabilityHit]
+    ) -> list[CapabilityHit]:
+        """A Telegram bot URL whose token comes from a variable is a notifier, not a drop point,
+        only while the file carries no loot. A stealer posts the environment, the user and host
+        names or another service's credential through the same URL with its token read from the
+        environment; once the file reads any of those, the bot URL is a drop point again."""
+        loot = any(DropPointLoot.is_loot(content, language, h) for h in hits)
+        if not loot:
+            return hits
+        held = set(hits)
+        hits.extend(
+            h
+            for h in DestinationLabels.destination_capabilities(
+                content, language, notifier_exempt=False
+            )
+            if h not in held
+        )
         return hits
 
     # -- Reasoning -------------------------------------------------------
@@ -429,19 +663,21 @@ class CapabilityDetector(BaseDetector):
         in_hook = ctx.in_install_hook(unit.path)
         in_ci = ctx.in_ci_hook(unit.path)
         in_consumer = ctx.in_consumer_install(unit.path)
-        # Read by the `install_entry` and `import_entry` terms; the evaluator is this file's own.
-        evaluator = CompositeEvaluator(
-            in_entry=unit.path in ctx.install_entry_paths,
-            in_import_entry=unit.path in ctx.import_entry_paths,
-        )
+        evaluator = CapabilityDetector._evaluator(unit, ctx)
         # Install-time context is decided per WINDOW, not per file. A file is in
         # the closure because a hook imports it, and importing a module defines
         # its functions without calling them -- so a pair of capabilities inside
         # a body nothing reaches does not run at install time, whatever the file
         # does. See `ScanContext.install_hook_reaches`.
         deferred = CapabilityDetector._deferred_windows(ctx, unit, in_hook)
+        import_deferred = CapabilityDetector._import_windows(ctx, unit, in_hook)
+        import_deferred_without_main = CapabilityDetector._import_windows(
+            ctx, unit, in_hook, without_main=True
+        )
+        # Names this file binds that another file of the package imports and sends (`SentNames`).
+        sent_names = frozenset((ctx.python_sent_names or {}).get(unit.path, {}))
 
-        decode_excused = DecodeRun.excused_lines(
+        excused = DecodeRun.excuses(
             unit, hits, BuildOutput.bundled_path(unit.path), [c.rule.id for c in candidates]
         )
         for compiled in candidates:
@@ -450,15 +686,15 @@ class CapabilityDetector(BaseDetector):
             if compiled.match.scope not in {"file", "function"}:
                 continue
 
-            rule_hits = CapabilityDetector._rule_hits(compiled, unit, hits, decode_excused)
-            if compiled.rule.id in CompositeRuleIds.CONTEXT_FREE:
-                window = evaluator.satisfying_window(
-                    compiled, rule_hits, unit.path, False, False, False, frozenset()
-                )
-            else:
-                window = evaluator.satisfying_window(
-                    compiled, rule_hits, unit.path, in_hook, in_ci, in_consumer, deferred
-                )
+            rule_hits = CapabilityDetector._rule_hits(compiled, unit, hits, excused, ctx)
+            window = CapabilityDetector._window(
+                evaluator, compiled, rule_hits, unit, (in_hook, in_ci, in_consumer),
+                deferred,
+                import_deferred_without_main
+                if compiled.rule.id in CompositeRuleIds.IMPORT_REACH_WITHOUT_MAIN
+                else import_deferred,
+                sent_names,
+            )  # fmt: skip
             if window is None:
                 continue
 
@@ -495,6 +731,69 @@ class CapabilityDetector(BaseDetector):
                 yield finding
 
     @staticmethod
+    def _evaluator(unit: FileUnit, ctx: ScanContext) -> CompositeEvaluator:
+        """This file's own evaluator: what its `install_entry` and `import_entry` terms read."""
+        return CompositeEvaluator(
+            in_entry=unit.path in ctx.install_entry_paths,
+            in_import_entry=unit.path in ctx.import_entry_paths,
+            confusion=bool(ctx.confusion_version),
+        )
+
+    @staticmethod
+    def _window(
+        evaluator: CompositeEvaluator,
+        compiled: CompiledRule,
+        rule_hits: list[CapabilityHit],
+        unit: FileUnit,
+        where: tuple[bool, bool, bool],
+        deferred: frozenset[tuple[int, int]],
+        import_deferred: frozenset[tuple[int, int]] | None,
+        sent_names: frozenset[str] = frozenset(),
+    ) -> list[CapabilityHit] | None:
+        """The window of hits that satisfies the composite, read in the context it runs in."""
+        in_hook, in_ci, in_consumer = where
+        path = unit.path
+        if compiled.rule.id in CompositeRuleIds.CONTEXT_FREE:
+            return evaluator.satisfying_window(
+                compiled, rule_hits, path, False, False, False, frozenset()
+            )
+        if import_deferred is not None and compiled.rule.id in CompositeRuleIds.IMPORT_GRADED:
+            # What a published package runs at import is unasked too (reviews/pypi-98/10): the
+            # install term is read against the import reach, the bodies importing never calls as
+            # the dead code -- the same per-window rule. A destination only written down (a URL
+            # literal handed to a telemetry client's constructor) is not a send at import: it
+            # counts as egress only on a line where a request is made (evidently 0.7.23), or bound
+            # to a name a request uses, in this file or one that imports it (loveclose 0.0.1).
+            return evaluator.satisfying_window(
+                compiled,
+                DestinationLabels.sent_at_import(
+                    rule_hits, None if unit.content.is_binary else unit.content.text, sent_names
+                ),
+                path,
+                True,
+                in_ci,
+                in_consumer,
+                import_deferred,
+            )
+        return evaluator.satisfying_window(
+            compiled, rule_hits, path, in_hook, in_ci, in_consumer, deferred
+        )
+
+    @staticmethod
+    def _import_windows(
+        ctx: ScanContext, unit: FileUnit, in_hook: bool, *, without_main: bool = False
+    ) -> frozenset[tuple[int, int]] | None:
+        """For a module a consumer imports (and no install hook runs), the line ranges importing
+        never runs; None for any other file. `without_main`: as `import pkg` runs them, not
+        `python -m pkg` (`ScanContext.import_deferred_lines_without_main`)."""
+        if in_hook or unit.path not in ctx.import_closure_paths:
+            return None
+        lines = (
+            ctx.import_deferred_lines_without_main if without_main else ctx.import_deferred_lines
+        )
+        return frozenset((first, last) for path, first, last in lines if path == unit.path)
+
+    @staticmethod
     def _deferred_windows(
         ctx: ScanContext, unit: FileUnit, in_hook: bool
     ) -> frozenset[tuple[int, int]]:
@@ -514,16 +813,18 @@ class CapabilityDetector(BaseDetector):
         compiled: CompiledRule,
         unit: FileUnit,
         hits: list[CapabilityHit],
-        decode_excused: frozenset[int],
+        excused: tuple[frozenset[int], frozenset[int]],
+        ctx: ScanContext,
     ) -> list[CapabilityHit]:
-        """The hits a composite rule counts: settings are not loot, a verifiable dropper's unpacker is not a payload, excused decode runs do not count."""
-        return (
-            [h for h in hits if not LegitimateUse.a_setting(unit.content, h)]
-            if compiled.rule.id in CompositeRuleIds.SETTINGS_ARE_NOT_LOOT
-            else [h for h in hits if not InstallPayload.spawns_unpacker(unit.content, h)]
-            if compiled.rule.id in CompositeRuleIds.VERIFIABLE_DROPPERS
-            else DecodeRun.hits_for(compiled.rule.id, hits, decode_excused)
-        )
+        """The hits a composite rule counts: settings are not loot, a verifiable dropper's unpacker is not a payload, excused decode runs and spawns nothing fetched or decoded reaches do not count."""
+        rule_id = compiled.rule.id
+        if rule_id in CompositeRuleIds.SETTINGS_ARE_NOT_LOOT:
+            return DropPointLoot.counted(
+                unit.content, unit.language, hits, unresolved=ctx.cross_file_unresolved
+            )
+        if rule_id in CompositeRuleIds.VERIFIABLE_DROPPERS:
+            hits = [h for h in hits if not InstallPayload.spawns_unpacker(unit.content, h)]
+        return DecodeRun.hits_for(rule_id, hits, *excused)
 
     @staticmethod
     def _authenticates(
@@ -562,7 +863,8 @@ class CapabilityDetector(BaseDetector):
     def _go_hits(content: FileContent, matched: FileContent) -> list[CapabilityHit]:
         from cordon_scanner.detect.code.go_runs import GoRuns
 
-        return GoRuns.ci_environment_write(matched) + GoRuns.received_and_run(content)
+        written = ViewRunner.run(GoRuns.ci_environment_write, matched, "go")  # note 18
+        return written + GoRuns.received_and_run(content) + Labelling.go_secret_flow(content)
 
     #: The source as a language's file builds it at run time, read by the rules in its place.
     RUN_TIME_VIEWS: ClassVar[dict[str, Callable[[str], str]]] = {"go": _go_run_time}

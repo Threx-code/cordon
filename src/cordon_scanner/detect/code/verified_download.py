@@ -39,6 +39,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar, Final
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+from cordon_scanner.analysis.shared.decoded_view import DecodedView
 from cordon_scanner.analysis.shared.destinations import Destinations
 from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.text.comments import BLOCK_COMMENT_LANGUAGES, SourceComments
@@ -263,13 +264,7 @@ class VerifiedDownload:
         ):
             return False
         code = cls._code(text, language)
-        if (
-            cls._destination_named(code)
-            or cls.DECODED.search(code)
-            or cls.OTHER_EGRESS.search(code)
-        ):
-            return False
-        if cls.PARSES_JSON.search(code) and cls.FROM_RESPONSE.search(code):
+        if cls._withheld(code, language):
             return False
         if not cls._downloads_only_releases(code, language, declared_repository):
             return False
@@ -304,13 +299,7 @@ class VerifiedDownload:
         ):
             return False
         code = cls._code(text, language)
-        if (
-            cls._destination_named(code)
-            or cls.DECODED.search(code)
-            or cls.OTHER_EGRESS.search(code)
-        ):
-            return False
-        if cls.PARSES_JSON.search(code) and cls.FROM_RESPONSE.search(code):
+        if cls._withheld(code, language):
             return False
         return "github.com" in code and cls._downloads_only_releases(
             code, language, declared_repository
@@ -427,7 +416,7 @@ class VerifiedDownload:
     @staticmethod
     def official_installs_only(raw: bytes, hits: Sequence[CapabilityHit]) -> bool:
         """Every fetch-and-run in the file names a listed official installer, and nothing is
-        decoded: storybook's script runs `curl -LsSf https://astral.sh/uv/install.sh | sh`, the
+        decoded: storybook's script runs uv's official installer piped to a shell, the
         documented way to install uv."""
         from cordon_scanner.intel.registry import OfficialInstallers
 
@@ -462,6 +451,20 @@ class VerifiedDownload:
                     chars[index] = " "
             offset += len(line) + 1
         return "".join(chars)
+
+    @classmethod
+    def _withheld(cls, code: str, language: str) -> bool:
+        """What withholds the exemption, in any reading of the code (note 18 §6): it is granted on
+        their ABSENCE, so a decoded spelling of one -- `\\u0061tob(`, `new \\u0057ebSocket(` --
+        withholds it as the plain one does. What grants it (release hosts, the digest checked
+        first) is read in the raw code only."""
+        return any(
+            cls._destination_named(reading)
+            or cls.DECODED.search(reading)
+            or cls.OTHER_EGRESS.search(reading)
+            or (cls.PARSES_JSON.search(reading) and cls.FROM_RESPONSE.search(reading))
+            for reading in DecodedView.readings(code, language)
+        )
 
     @staticmethod
     def _destination_named(code: str) -> bool:
@@ -566,7 +569,7 @@ class VerifiedDownload:
     def _digest_checked_first(
         cls, code: str, language: str, path: str, tree_paths: frozenset[str]
     ) -> bool:
-        if cls.NETWORK_DIGEST.search(code):
+        if any(cls.NETWORK_DIGEST.search(r) for r in DecodedView.readings(code, language)):
             return False
         if not (
             cls.DIGEST_LITERAL.search(code) or cls._reads_a_shipped_digest(code, path, tree_paths)
@@ -668,6 +671,7 @@ class VerifiedDownload:
         try:
             tree = PythonSyntax.parse(code)
         except (SyntaxError, ValueError, RecursionError):
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
             return None
         starts = [0]
         for line in code.split("\n"):

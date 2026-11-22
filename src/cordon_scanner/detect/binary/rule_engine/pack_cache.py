@@ -195,6 +195,7 @@ class PackCache:
         try:
             return pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
         except (pickle.PicklingError, TypeError, AttributeError, RecursionError):
+            # S2: a cache; nothing is read here, a miss is recomputed
             return None
 
     def put(self, key: str, body: bytes, files: list[Path]) -> None:
@@ -218,6 +219,7 @@ class PackCache:
             Path(tmp).chmod(0o600)
             Path(tmp).replace(self.root / key)
         except (OSError, pickle.PicklingError, TypeError, AttributeError, RecursionError):
+            # S2: a cache; nothing is read here, a miss is recomputed
             return
 
 

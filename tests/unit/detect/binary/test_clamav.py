@@ -22,11 +22,17 @@ MARKER = b"cordon-clamav-test-marker"
 class FakeClamd:
     """Answers VERSION and INSTREAM like clamd. Reports a signature when the marker is present."""
 
-    def __init__(self) -> None:
+    def __init__(self, tcp: bool = False) -> None:
         self.directory = tempfile.mkdtemp(prefix="clamd-")
-        self.path = str(Path(self.directory) / "clamd.sock")
-        self.server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.server.bind(self.path)
+        if tcp:
+            # Loopback TCP, as CI runs clamd beside the scan (a service container on 127.0.0.1:3310).
+            self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.server.bind(("127.0.0.1", 0))
+            self.path = f"tcp://127.0.0.1:{self.server.getsockname()[1]}"
+        else:
+            self.path = str(Path(self.directory) / "clamd.sock")
+            self.server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self.server.bind(self.path)
         self.server.listen(16)
         self.streams: list[bytes] = []
         self.thread = threading.Thread(target=self._serve, daemon=True)
@@ -88,6 +94,47 @@ class ClamavFixtures:
         fake = FakeClamd()
         yield fake
         fake.close()
+
+
+class TestOverLoopbackTcpWhileSealed:
+    """The scan phase is sealed (no name resolution at all, `engine/netguard.py`), and clamd on
+    127.0.0.1 is the operator's own local service, named only on the command line. 0.7.0 reached it
+    through a name lookup, which the seal refused: every CI scan with `--clamav tcp://127.0.0.1:3310`
+    came back incomplete (cordon-frontend#28, cordon-backend#3)."""
+
+    @pytest.fixture
+    def tcp_clamd(self):
+        fake = FakeClamd(tcp=True)
+        yield fake
+        fake.close()
+
+    def test_the_daemon_is_reached_inside_the_seal(self, tcp_clamd) -> None:
+        from cordon_scanner.engine.netguard import NetworkGuard
+
+        with NetworkGuard.sealed():
+            assert clamav.Clamd.version(tcp_clamd.path).startswith("ClamAV 1.4.1")
+
+    def test_localhost_is_loopback_without_a_lookup(self, tcp_clamd) -> None:
+        from cordon_scanner.engine.netguard import NetworkGuard
+
+        with NetworkGuard.sealed():
+            assert clamav.Clamd.version(tcp_clamd.path.replace("127.0.0.1", "localhost"))
+
+    def test_a_scan_with_loopback_clamd_is_complete(self, tmp_path, tcp_clamd) -> None:
+        (tmp_path / "a.txt").write_bytes(b"hello " + MARKER)
+        result = ClamavHelpers._scan(tmp_path, tcp_clamd.path)
+        rules = {f.rule_id for f in result.findings if f.detector == "clamav"}
+        assert (
+            "MALWARE.CLAMAV.SIGNATURE.001" in rules
+            and "OPERATIONAL.CLAMAV.UNAVAILABLE" not in rules
+        )
+        assert result.complete
+
+    def test_the_seal_still_refuses_everything_else(self) -> None:
+        from cordon_scanner.engine.netguard import NetworkGuard, NetworkSealed
+
+        with NetworkGuard.sealed(), pytest.raises(NetworkSealed):
+            socket.getaddrinfo("localhost", 80)
 
 
 class ClamavHelpers:

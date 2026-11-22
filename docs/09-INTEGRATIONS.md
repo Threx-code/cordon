@@ -248,7 +248,8 @@ is nothing else to install.
    cordon-scanner mcp config --client claude-code    the exact configuration for one agent
                                                      (claude-code, claude-desktop, cursor, vscode,
                                                       windsurf, gemini, codex, zed, cline,
-                                                      continue, jetbrains)
+                                                      continue, jetbrains, roo, kiro, amazonq,
+                                                      augment, junie, trae, opencode, goose)
    cordon-scanner mcp --root DIR                     a directory tools may read (repeatable)
                       --allow-online                 registries, packages' code, images, live MCP
                       --allow-private-network        online names may lead inside the network

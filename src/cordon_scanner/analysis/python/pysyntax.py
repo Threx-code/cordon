@@ -14,6 +14,7 @@ import bisect
 import collections
 import contextlib
 import functools
+import re
 import warnings
 import weakref
 from collections.abc import Callable, Iterator
@@ -55,7 +56,82 @@ class PythonSyntax:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", SyntaxWarning)
             warnings.simplefilter("ignore", DeprecationWarning)
-            return ast.parse(source, filename=filename, mode=mode)
+            try:
+                return ast.parse(source, filename=filename, mode=mode)
+            except SyntaxError as error:
+                tree = PythonSyntax._unparenthesised_excepts(source, filename, mode)
+                if tree is None:
+                    raise error from None
+                return tree
+
+    #: A handler's type list up to its colon (PEP 758, Python 3.14: `except A, B:`). The list is
+    #: read in Python (`_unparenthesised_excepts`), not by a pattern that repeats a repeat.
+    _EXCEPT_TYPE_LIST: ClassVar[re.Pattern[str]] = re.compile(
+        r"^([ \t]*except\*?[ \t]+)([A-Za-z_][^\n:#()\[\]'\"]{0,400})(?=:)", re.MULTILINE
+    )
+
+    @staticmethod
+    def _type_name(name: str) -> bool:
+        """An exception type a 3.14 clause lists bare: a dotted name, or a capitalised one. A bare
+        lowercase name is Python 2's variable (`except IOError, err:`), never a type."""
+        return all(part.isidentifier() for part in name.split(".")) and (
+            "." in name or name[:1].isupper()
+        )
+
+    @staticmethod
+    def _unparenthesised_excepts(source: str | bytes, filename: str, mode: str) -> Any:
+        """The tree of a file written for Python 3.14 (`except OSError, ValueError:`) that this
+        interpreter cannot parse, or None. Left unparsed, such a file was read as running whole
+        when imported: a docstring naming `~/.ssh/` beside a `paramiko.SSHClient()` in a function
+        nothing calls was `MALWARE.EXFIL.001`, critical, in an SSH tool.
+
+        Parse only: the commas of those clauses become `|` -- the same length, so every line and
+        column is the file's own -- and the handlers' types are made the tuple 3.14 itself builds.
+        A name is never made to bind or not to bind: Python 2's `except IOError, err:` is the same
+        text, and its last name is the variable the handler binds, so a clause with a bare
+        lowercase name in it is left as it is, unparsed."""
+        if isinstance(source, bytes):
+            try:
+                source = source.decode("utf-8")
+            except UnicodeDecodeError:
+                # S2: bytes that are not UTF-8 are not a file this reads; `parse` re-raises the first SyntaxError, so the file stays unparsed as before (test_python_syntax.py TestExceptTypesWithoutParentheses)
+                return None
+        if "except" not in source:
+            return None
+        rewritten: set[int] = set()
+
+        def rewrite(match: re.Match[str]) -> str:
+            names = [name.strip() for name in match.group(2).split(",")]
+            # Two or more dotted names, each a capitalised name or a dotted one: not `as`, not a call.
+            if len(names) < 2 or not all(PythonSyntax._type_name(name) for name in names):
+                return match.group(0)
+            rewritten.add(source.count("\n", 0, match.start()) + 1)
+            return match.group(1) + match.group(2).replace(",", "|")
+
+        text = PythonSyntax._EXCEPT_TYPE_LIST.sub(rewrite, source)
+        if not rewritten:
+            return None
+        try:
+            tree = ast.parse(text, filename=filename, mode=mode)
+        except (SyntaxError, ValueError):
+            # S2: the file has another error as well; `parse` re-raises the first SyntaxError, so it stays unparsed as before (test_python_syntax.py TestExceptTypesWithoutParentheses)
+            return None
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.ExceptHandler)
+                and node.lineno in rewritten
+                and isinstance(node.type, ast.BinOp)
+            ):
+                names: list[ast.expr] = []
+                pending: list[ast.expr] = [node.type]
+                while pending:
+                    item = pending.pop()
+                    if isinstance(item, ast.BinOp) and isinstance(item.op, ast.BitOr):
+                        pending += [item.right, item.left]
+                    else:
+                        names.append(item)
+                node.type = ast.copy_location(ast.Tuple(elts=names, ctx=ast.Load()), node.type)
+        return tree
 
     @staticmethod
     @ScanCaches.register  # holds files: emptied after each scan (foundation/collector)
@@ -76,6 +152,21 @@ class PythonSyntax:
         return (node.lineno, node.col_offset, node.end_lineno, node.end_col_offset)
 
     @staticmethod
+    def reversed_slice(node: ast.AST) -> bool:
+        """`x[::-1]`: the whole sequence, backwards."""
+        if not (isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Slice)):
+            return False
+        step = node.slice.step
+        return (
+            node.slice.lower is None
+            and node.slice.upper is None
+            and isinstance(step, ast.UnaryOp)
+            and isinstance(step.op, ast.USub)
+            and isinstance(step.operand, ast.Constant)
+            and step.operand.value == 1
+        )
+
+    @staticmethod
     def within(node: ast.AST, *types: type) -> list[Any]:
         """The nodes of `types` in `node`'s subtree, `node` included -- what filtering
         `ast.walk(node)` gives, in depth-first rather than breadth-first order.
@@ -92,6 +183,20 @@ class PythonSyntax:
         if index is None or place is None:
             return [n for n in PythonSyntax.nodes(node) if isinstance(n, types)]
         return index.between(place[1], place[2], types)
+
+    @staticmethod
+    def keyed_value_not_function(node: ast.Subscript, tree: ast.AST | None) -> bool:
+        """Whether `x["eval"]` here is plainly not a function reached by name: a key written or
+        deleted (`payload["eval"] = {}` stores a value; it reaches nothing), or a value whose
+        non-dunder attribute is read (`payload["eval"].get(...)`: a builtin function has only dunder
+        attributes, so `__builtins__["exec"].__call__(code)` stays a finding). A results dict
+        keyed "eval" blocked a legitimate evaluation script (paper-preflight 0.8, 0.8.0 benign)."""
+        if isinstance(node.ctx, ast.Store | ast.Del):
+            return True
+        if tree is None:
+            return False
+        parent = PythonSyntax.parents(tree).get(id(node))
+        return isinstance(parent, ast.Attribute) and not parent.attr.startswith("__")
 
     @staticmethod
     def parents(tree: ast.AST) -> dict[int, ast.AST]:
@@ -196,6 +301,60 @@ class PythonSyntax:
         return walked
 
     @staticmethod
+    def walked(tree: ast.AST) -> list[ast.AST]:
+        """`list(ast.walk(tree))`, the same nodes in the same (breadth-first) order, computed once per
+        tree: for the many readers of one tree that each walked all of it (the implant analysers,
+        about fifteen full walks of each file -- litellm 1.88.0rc2, 0.8.0). A reader iterates the
+        list and must not change it. `nodes` is this list except at the root of an indexed tree,
+        whose `nodes` are depth-first; there it is kept beside them in the tree's index."""
+        place: tuple[Any, int, int] | None = tree.__dict__.get("_cordon_place")
+        if place is not None and place[1] == 0 and place[0]() is not None:
+            found: list[ast.AST] = PythonSyntax.memo(tree, "walked", lambda: list(ast.walk(tree)))
+            return found
+        return PythonSyntax.nodes(tree)
+
+    #: The deprecated constant classes, whose `isinstance` is by value, not by type: a reader that
+    #: asks for one is given `walked` filtered by `isinstance` itself.
+    _BY_VALUE: ClassVar[frozenset[str]] = frozenset(
+        {"Num", "Str", "Bytes", "NameConstant", "Ellipsis"}
+    )
+
+    @staticmethod
+    def walked_of(tree: ast.AST, *types: type) -> list[Any]:
+        """`[n for n in walked(tree) if isinstance(n, types)]`, the same nodes in the same order, made
+        once per tree and set of types from one table of each node type's places in the walk: a reader
+        that wants only calls, or only functions, reads those, not every node of the file."""
+
+        def compute() -> list[Any]:
+            walk = PythonSyntax.walked(tree)
+            if any(t.__module__ == "ast" and t.__name__ in PythonSyntax._BY_VALUE for t in types):
+                return [node for node in walk if isinstance(node, types)]
+            places: dict[type, list[int]] = PythonSyntax.memo(
+                tree, "walked_places", lambda: PythonSyntax._places(walk)
+            )
+            kinds = [kind for kind in places if issubclass(kind, types)]
+            if len(kinds) == 1:
+                return [walk[p] for p in places[kinds[0]]]
+            return [walk[p] for p in sorted(p for kind in kinds for p in places[kind])]
+
+        found: list[Any] = PythonSyntax.memo(tree, ("walked_of", types), compute)
+        return found
+
+    @staticmethod
+    def _places(walk: list[ast.AST]) -> dict[type, list[int]]:
+        places: dict[type, list[int]] = {}
+        for place, node in enumerate(walk):
+            places.setdefault(type(node), []).append(place)
+        return places
+
+    @staticmethod
+    def forget(tree: ast.AST) -> None:
+        """Drop what `memo` kept on an unindexed tree's root (`walked`, `nodes`): a list of a tree's
+        nodes held by its root is a cycle, so a reader that lets the tree go clears it first and the
+        tree is freed by reference counts (`FileSummaries`: one file's tree at a time)."""
+        tree.__dict__.pop("_cordon_memo", None)
+
+    @staticmethod
     def memo(node: ast.AST, key: object, compute: Callable[[], Any]) -> Any:
         """`compute()`, once per node and key: something made of `node`'s subtree -- a list of its
         nodes, its parents' table, an analyser's name tables.
@@ -236,6 +395,76 @@ class PythonSyntax:
             return [node for node in PythonSyntax.nodes(tree) if isinstance(node, types)]
 
         found: list[Any] = PythonSyntax.memo(tree, ("of", types), compute)
+        return found
+
+    @staticmethod
+    def text_only_lines(tree: ast.AST) -> frozenset[int]:
+        """The lines of a parsed file that are only text: the lines of docstrings, and the lines a string
+        literal continues on after its first (a pattern table, a help text naming a cloud credentials file),
+        less any line where an expression that is not a literal starts -- an f-string's `{...}` parts are
+        code (`{home}` in `f'''{home}/{CREDENTIALS_FILE}'''`). A line a reader finds in this set is
+        not a read and not a send; a line that is not in it may still be text, which this does not
+        claim (reviews/pypi-98/20 shape A, 21 shape T)."""
+
+        def compute() -> frozenset[int]:
+            docs: set[int] = set()
+            for node in PythonSyntax.nodes(tree):
+                body = getattr(node, "body", None)
+                if isinstance(body, list) and body and isinstance(body[0], ast.Expr):
+                    value = body[0].value
+                    if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                        docs.update(range(value.lineno, (value.end_lineno or value.lineno) + 1))
+            inside: set[int] = set()
+            code: set[int] = set()
+            for node in PythonSyntax.nodes(tree):
+                if isinstance(node, ast.JoinedStr) or (
+                    isinstance(node, ast.Constant) and isinstance(node.value, str)
+                ):
+                    last = node.end_lineno or node.lineno
+                    if last > node.lineno:
+                        inside.update(range(node.lineno + 1, last + 1))
+                if (
+                    isinstance(node, ast.expr)
+                    and not isinstance(node, ast.Constant | ast.JoinedStr)
+                    and hasattr(node, "lineno")
+                ):
+                    code.add(node.lineno)
+            return frozenset(docs | ((inside - docs) - code))
+
+        found: frozenset[int] = PythonSyntax.memo(tree, "text-only-lines", compute)
+        return found
+
+    @staticmethod
+    def string_element_lines(tree: ast.AST) -> frozenset[int]:
+        """The lines on which a string literal stands as an element of a list, tuple, set or dict, or as
+        an argument, and nothing but literals starts: `    "cat <a credentials file>",` in a table written one
+        string to a line. What the strings are for is not said here (a table that is matched and a list
+        that is opened look alike); `PythonStoreFlow.table_text_lines` asks where they go."""
+
+        def compute() -> frozenset[int]:
+            code: set[int] = set()
+            lines: set[int] = set()
+            parents = PythonSyntax.parents(tree)
+            for node in PythonSyntax.nodes(tree):
+                if (
+                    isinstance(node, ast.expr)
+                    and not isinstance(node, ast.Constant | ast.JoinedStr)
+                    and hasattr(node, "lineno")
+                ):
+                    code.add(node.lineno)
+                if (
+                    isinstance(node, ast.Constant)
+                    and isinstance(node.value, str)
+                    and node.end_lineno == node.lineno
+                    and isinstance(
+                        parents.get(id(node)),
+                        ast.List | ast.Tuple | ast.Set | ast.Dict | ast.Call | ast.keyword,
+                    )
+                ):
+                    lines.add(node.lineno)
+            return frozenset(lines - code)
+
+        found: frozenset[int] = PythonSyntax.memo(tree, "string-element-lines", compute)
         return found
 
 

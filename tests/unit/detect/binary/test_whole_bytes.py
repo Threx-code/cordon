@@ -71,6 +71,24 @@ class TestTheWholeCopy:
         whole = WholeBytes.of(WholeKit.unit(path, limits))
         assert len(whole.data) == 2 << 20 and "past limits.max_stream_bytes" in whole.gap
 
+    def test_a_copy_is_never_taken_past_its_own_ceiling_whatever_the_stream_limit(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """The text windows read a file to its end up to `max_stream_bytes` (4 GiB), a bounded read a window
+        at a time; a whole copy in memory for the binary readers has a ceiling of its own."""
+        path = tmp_path / "padded.exe"
+        path.write_bytes(PaddedKit.pe())
+        monkeypatch.setattr(WholeBytes, "COPY_CEILING", 2 << 20)
+        limits = Limits(max_file_bytes=1 << 20, max_stream_bytes=1 << 30)
+        unit = WholeKit.unit(path, limits)
+        assert unit.content.size > 2 << 20
+        whole = WholeBytes.of(unit)
+        assert len(whole.data) == 2 << 20 and "whole-copy ceiling" in whole.gap
+        assert "max_stream_bytes" not in whole.gap
+
+    def test_the_default_ceiling_is_the_old_stream_limit(self) -> None:
+        assert WholeBytes.COPY_CEILING == 512 << 20
+
     def test_a_file_that_shrinks_after_it_was_opened_is_a_gap_not_a_crash(self, tmp_path) -> None:
         path = tmp_path / "padded.exe"
         path.write_bytes(PaddedKit.pe())

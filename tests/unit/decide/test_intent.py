@@ -517,3 +517,115 @@ class TestEntries:
         facts = Kit.facts(pkg)
         assert {"t:import:egress", "t:bin:egress"} <= facts
         assert IntentObserver.MAX_FILES >= 50
+
+
+class TestWhatACommandLoads:
+    """A `bin` file is a root: the modules it loads run when the command does, and the facts say so.
+
+    The closure the observer follows used to start at `main` and `exports` only, so a server whose
+    manifest has a `bin` and no `main` had every module its command loads read as `unreached`. The
+    old facts stay (the weights are measured on them); the files a command loads also carry
+    `t:bin_closure:<effect>`.
+    """
+
+    LOOKUP = "const dns = require('dns'); dns.lookup('example.invalid', () => {});\n"
+
+    def package(self, tmp_path, manifest: dict | None = None, **files: str) -> Path:
+        return Npm.build(
+            tmp_path,
+            "demo-command",
+            {"version": "1.0.0", "bin": "cli.js", **(manifest or {})},
+            {
+                "cli.js": "require('./lib/net');\n",
+                "lib/net.js": self.LOOKUP,
+                **{name.replace("__", "/"): text for name, text in files.items()},
+            },
+        )
+
+    def test_a_module_the_command_loads_carries_the_closure_fact(self, tmp_path) -> None:
+        assert "t:bin_closure:egress" in Kit.facts(self.package(tmp_path))
+
+    def test_a_module_nothing_loads_does_not(self, tmp_path) -> None:
+        pkg = Npm.build(
+            tmp_path,
+            "demo-command",
+            {"version": "1.0.0", "bin": "cli.js"},
+            {"cli.js": "console.log('hi');\n", "lib/orphan.js": self.LOOKUP},
+        )
+        facts = Kit.facts(pkg)
+        assert "t:bin_closure:egress" not in facts
+        assert "t:unreached:egress" in facts
+
+    def test_the_closure_is_followed_through_a_chain(self, tmp_path) -> None:
+        pkg = Npm.build(
+            tmp_path,
+            "demo-command",
+            {"version": "1.0.0", "bin": "cli.js"},
+            {
+                "cli.js": "require('./lib/a');\n",
+                "lib/a.js": "require('./b');\n",
+                "lib/b.js": self.LOOKUP,
+            },
+        )
+        assert "t:bin_closure:egress" in Kit.facts(pkg)
+
+    def test_every_fact_the_weights_are_measured_on_is_kept(self, tmp_path) -> None:
+        facts = Kit.facts(self.package(tmp_path))
+        assert "t:unreached:egress" in facts
+
+    def test_the_command_file_itself_keeps_its_own_role(self, tmp_path) -> None:
+        pkg = Npm.build(
+            tmp_path,
+            "demo-command",
+            {"version": "1.0.0", "bin": "cli.js"},
+            {"cli.js": self.LOOKUP},
+        )
+        facts = Kit.facts(pkg)
+        assert "t:bin:egress" in facts
+        assert "t:bin_closure:egress" not in facts
+
+    def test_a_module_the_main_entry_loads_is_still_an_import(self, tmp_path) -> None:
+        pkg = Npm.build(
+            tmp_path,
+            "demo-command",
+            {"version": "1.0.0", "main": "index.js", "bin": "cli.js"},
+            {
+                "index.js": "require('./lib/net');\n",
+                "cli.js": "console.log('hi');\n",
+                "lib/net.js": self.LOOKUP,
+            },
+        )
+        facts = Kit.facts(pkg)
+        assert "t:import:egress" in facts
+        assert "t:bin_closure:egress" not in facts
+
+    def test_the_fact_is_a_content_fact_in_its_own_group(self) -> None:
+        assert IntentFacts.classify("t:bin_closure:egress") == ("effect", "bin_closure:network")
+
+    def test_the_score_is_what_it_was(self, tmp_path) -> None:
+        """No weight reads the new fact: the same weights give the same contributions with it present."""
+        model = Kit.model()
+        (tmp_path / "loaded").mkdir()
+        (tmp_path / "plain").mkdir()
+        with_loaded = Kit.scan(self.package(tmp_path / "loaded"), model).verdict["intent"]
+        plain = Npm.build(
+            tmp_path / "plain",
+            "demo-command",
+            {"version": "1.0.0", "bin": "cli.js"},
+            {"cli.js": "console.log('hi');\n", "lib/net.js": self.LOOKUP},
+        )
+        without = Kit.scan(plain, model).verdict["intent"]
+        assert with_loaded["contributions"] == without["contributions"]
+        assert with_loaded["score"] == without["score"]
+
+    def test_a_loaded_file_too_large_to_read_does_not_make_the_package_unknown(
+        self, tmp_path
+    ) -> None:
+        pkg = Npm.build(
+            tmp_path,
+            "demo-command",
+            {"version": "1.0.0", "bin": "cli.js"},
+            {"cli.js": "require('./lib/big');\n", "lib/big.js": "var a = 1;\n" * 160_000},
+        )
+        result = Kit.scan(pkg, Kit.model())
+        assert result.verdict["intent"].get("decision") != "unknown"

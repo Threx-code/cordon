@@ -253,7 +253,7 @@ class Guard:
         `.git/hooks/pre-commit` as a link to an EXISTING file means the backup
         branch read that file and wrote its contents to
         `pre-commit.cordon-backup` -- a new regular file inside the working
-        tree. Pointed at `~/.ssh/id_rsa`, that copies a private key into the
+        tree. Pointed at a user's SSH key, that copies a private key into the
         repository, where the next `git add -A` or CI artefact upload collects
         it.
 

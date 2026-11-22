@@ -49,7 +49,7 @@ from cordon_scanner.engine.pipeline.dependencies import Dependencies
 from cordon_scanner.engine.pipeline.detection import Detection
 from cordon_scanner.engine.pipeline.facts import TreeFacts
 from cordon_scanner.engine.pipeline.graph import Graph, ParsedManifests
-from cordon_scanner.engine.pipeline.hooks import Hooks
+from cordon_scanner.engine.pipeline.hooks import BuildRoots, Hooks
 from cordon_scanner.engine.pipeline.images import Images
 from cordon_scanner.engine.pipeline.stages import ScanStages
 from cordon_scanner.engine.pipeline.units import Units
@@ -63,7 +63,6 @@ from cordon_scanner.foundation.files.walk import (
     Walker,
 )
 from cordon_scanner.foundation.models import Hook, Severity
-from cordon_scanner.foundation.paths import ContainerPaths
 from cordon_scanner.foundation.results import (
     LanguageStat,
     OperationalFinding,
@@ -277,6 +276,7 @@ class Engine:
                 rules_evaluated=len(self.rules),
                 duration_ms=int((time.monotonic() - started) * 1000),
                 detector_cpu_ms=DetectorClock.milliseconds(),
+                view_files=DetectorClock.counts(),
             ),
             **acc.coverage(),
             schema_version=SCHEMA_VERSION,
@@ -358,6 +358,7 @@ class Engine:
                 rules_evaluated=len(self.rules),
                 duration_ms=int((time.monotonic() - started) * 1000),
                 detector_cpu_ms=DetectorClock.milliseconds(),
+                view_files=DetectorClock.counts(),
             ),
             **acc.coverage(),
             schema_version=SCHEMA_VERSION,
@@ -561,6 +562,7 @@ class Engine:
                 rules_evaluated=len(self.rules),
                 duration_ms=int((time.monotonic() - started) * 1000),
                 detector_cpu_ms=DetectorClock.milliseconds(),
+                view_files=DetectorClock.counts(),
             ),
             **acc.coverage(),
             schema_version=SCHEMA_VERSION,
@@ -738,8 +740,7 @@ class Engine:
                     else entry.rel_path
                 )
 
-            if ContainerPaths.basename(entry.rel_path) == "__init__.py":
-                package_directories.add(entry.rel_path.rpartition("/")[0])
+            BuildRoots.note(entry.rel_path, package_directories)
 
             hooks.extend(Hooks.hooks_for(entry.rel_path))
 

@@ -12,6 +12,10 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 from cordon_scanner.detect.agents.extensions import ExtensionNames
+from cordon_scanner.detect.agents.mcp_servers.directive.rules import DirectiveRules
+from cordon_scanner.detect.agents.mcp_servers.lookalike_rules import LookalikeRules
+from cordon_scanner.detect.agents.mcp_servers.protocol.protocol_rules import ProtocolRules
+from cordon_scanner.detect.agents.mcp_servers.served_rules import ServedRules
 from cordon_scanner.foundation import references as ref
 from cordon_scanner.foundation.models import (
     Category,
@@ -868,6 +872,23 @@ RULES.update(
             "to run. Install it only from an author you trust.",
             (ref.OWASP_LLM_PROMPT_INJECTION,),
         ),
+        "SUSPECT.AGENT.SKILL_CLAIM_MISMATCH.001": AgentRules._rule(
+            "SUSPECT.AGENT.SKILL_CLAIM_MISMATCH.001",
+            "Shipped agent instructions do what no description claims",
+            Category.SUSPICIOUS,
+            Severity.HIGH,
+            Confidence.MEDIUM,
+            "The front matter of this skill, the claim its user approves, does not claim something "
+            "its instructions tell the agent to do (a download run from a host that is not a "
+            "listed installer, a document fetched and obeyed), or the instructions do what no "
+            "description can claim: hide the act from the user, act without asking the user, set "
+            "the agent's own instructions aside, switch off its permission checks. Reported only "
+            "where the learned reading of the skill is also at or above its warn line; most acts "
+            "are ones the instruction readers report below the gate on their own.",
+            "Read what the skill says it does against what it tells the agent to do. Install it "
+            "only if the description is the whole of it.",
+            (ref.OWASP_LLM_PROMPT_INJECTION,),
+        ),
         "SUSPECT.AGENT.SKILL_HOOK_FETCH.001": AgentRules._rule(
             "SUSPECT.AGENT.SKILL_HOOK_FETCH.001",
             "A skill script installs an agent hook that runs a download",
@@ -925,6 +946,7 @@ RULES.update(
         ),
     }
 )
+RULES.update(ProtocolRules.catalogue(AgentRules._rule, (ref.MCP_SECURITY,)))
 
 
 class AutorunRules:
@@ -965,28 +987,13 @@ class AutorunRules:
         }
 
 
-RULES.update(AutorunRules.build_rules(AgentRules._rule))
-
-#: What each intent is, as a finding says it.
-INTENT_WORDS: Final = {
-    "covert-exfil": "send what the user types, or other data, to an outside address -- covertly",
-    "deceive": "tell the user something false while acting behind their back",
-    "self-replicate": "copy these instructions into every reply or file it writes, so they spread",
-    "persist": "write itself into the agent's own instruction files so it loads every session",
-    "markdown-exfil": "carry data out in a markdown image URL the client fetches without asking",
-    "credential-pipe": "read key or credential files and pipe them to a network tool",
-    "secret-harvest": "collect every secret-named variable or a whole .env and send it to an outside host",
-    "credential-elsewhere": "send a credential it printed with its own tool to a host that did not issue it",
-    "concealed-override": "drop its safety rules and keep that hidden from the user",
-    "concealed-sabotage": "make the user's work fail on purpose and deny it when asked",
-}
-
+for _builder in (AutorunRules, LookalikeRules, ServedRules, DirectiveRules):
+    RULES.update(_builder.build_rules(AgentRules._rule))
 
 __all__ = [
     "AGENT_ACTIONS",
     "ATR_CATEGORIES",
     "FIXED_IN",
-    "INTENT_WORDS",
     "RULES",
     "AgentRule",
     "AgentRules",

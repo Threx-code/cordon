@@ -7,6 +7,8 @@ on:
     branches: [main]
     tags: ["v*"]
   pull_request:
+    # ready_for_review: a draft gets the quick tier; marking it ready runs this workflow in full.
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "src/**"
       - "tests/**"
@@ -29,6 +31,9 @@ jobs:
     # could not be attributed to a platform without opening the API, and the
     # CLI returned a different job's log for the same name.
     name: test (macos, python ${{ matrix.python }}, part ${{ matrix.shard }})
+    # A draft pull request runs Linux 3.12 only (tests-linux.yml); this platform runs once the
+    # pull request is ready for review, and on main, a v* tag and a manual run.
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: macos-latest
     strategy:
       fail-fast: false

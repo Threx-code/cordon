@@ -14,6 +14,7 @@ from cordon_scanner.analysis.shared.inline_programs import InlinePrograms
 from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.detect.base import FileUnit, ScanContext
 from cordon_scanner.detect.supply.manifests.findings import ManifestFinding
+from cordon_scanner.detect.supply.manifests.install_hook_shapes import InstallHookShapes
 from cordon_scanner.detect.supply.manifests.scripts import ManifestScripts
 from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.dependencies import EcosystemFactsProvider, HookKinds
@@ -163,6 +164,7 @@ class LifecycleFindings:
         # interpreter flag is then no more a finding than `node install.js` is, and the
         # hook is graded like one that runs a file this scan read.
         programs = [] if loader else InlinePrograms.found(unit.path, hook.name, command)
+        yield from InstallHookShapes.findings(hook, command, programs, manifest, unit, ctx)
         lifted = (
             bool(programs)
             and all(p.path in ctx.tree_paths for p in programs)

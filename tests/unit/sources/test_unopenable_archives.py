@@ -16,7 +16,7 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.foundation.config.settings import Config
-from cordon_scanner.sources.signatures import UnopenedFormats
+from cordon_scanner.sources.signatures import CompressedHeader, UnopenedFormats
 
 GAP = "OPERATIONAL.ARCHIVE.UNSUPPORTED_FORMAT"
 FILL = b"inert filler bytes for a format test\n" * 40
@@ -167,6 +167,36 @@ class TestLzmaIsReadNotGapped:
             for f in result.findings
         )
 
+    @pytest.mark.parametrize(
+        "data",
+        [
+            # CASA's table.f0i: a properties byte, a 2^28 dictionary, size 0, three bytes (spotless,
+            # lsmtool; 05-CENSUS C2, 08 7d).
+            pytest.param(
+                b"\x01" + struct.pack("<I", 1 << 28) + struct.pack("<Q", 0) + b"\x00\x00\x00",
+                id="a 16-byte table index",
+            ),
+            # CoreML's weight.bin: the same header shape, size 0, then the weights (pipersr).
+            pytest.param(
+                b"\x1c"
+                + struct.pack("<I", 1 << 25)
+                + struct.pack("<Q", 0)
+                + bytes(range(256)) * 40,
+                id="a weights blob",
+            ),
+        ],
+    )
+    def test_a_header_that_declares_nothing_and_has_more_bytes_is_no_stream(self, data) -> None:
+        """A decoder with 0 bytes to produce succeeds at once, so "the first block decodes" proved
+        nothing: the proof is that it decodes something, or ends exactly where the input ends."""
+        assert CompressedHeader.format_of(data) is None
+
+    @pytest.mark.parametrize(
+        "plain", [b"", b"hello\n" * 100, b"\x00" * 100_000], ids=["empty", "text", "zeros"]
+    )
+    def test_a_real_lzma_stream_is_still_one(self, plain: bytes) -> None:
+        assert CompressedHeader.format_of(lzma.compress(plain, format=lzma.FORMAT_ALONE)) == "lzma"
+
     def test_a_header_that_does_not_decode_is_no_gap(self, tmp_path) -> None:
         data = b"\x5d\x00\x00\x80\x00" + b"\xff" * 8 + FILL
         assert UnopenedFormats.format_of(data) is None
@@ -251,6 +281,34 @@ class TestArIsRead:
         assert "SUSPECT.ARCHIVE.PATH_ESCAPE.001" not in rules
         paths = {f.location.path for f in result.findings if f.rule_id == "SUSPECT.DECODE_EXEC.001"}
         assert any(p.endswith("long_member_name.py") and "\x00" not in p for p in paths), paths
+
+    def test_a_member_name_that_climbs_and_stays_inside_is_a_build_path(self, tmp_path) -> None:
+        # An object file's name is the path it was built from: `a/b/../c/x.obj`. The tar and zip
+        # readers resolve a `..` that stays inside the archive; an ar archive has no links, so the
+        # same rule holds (reviews/pypi-98/26: 11 names in one benign wheel's import libraries).
+        table = b"a/b/c/../d/x.obj/\n"
+        archive = FormatKit.ar([(b"//", table), (b"/0", self.PLANT)])
+        result = FormatKit.package(tmp_path, {"package/core/native.lib": archive})
+        assert "SUSPECT.ARCHIVE.PATH_ESCAPE.001" not in {f.rule_id for f in result.findings}
+
+    def test_a_windows_build_path_naming_an_object_file_is_a_name_not_a_target(
+        self, tmp_path
+    ) -> None:
+        # MSVC records the absolute path an object was built from, drive letter and `..` included
+        # (11 names in one benign wheel's import libraries, reviews/pypi-98/26). Nothing extracts an
+        # ar member to that path; the drive letter is dropped and the rest is read as relative.
+        table = b"D:\\a\\1\\s\\build\\..\\obj\\x.obj/\n"
+        archive = FormatKit.ar([(b"//", table), (b"/0", self.PLANT)])
+        result = FormatKit.package(tmp_path, {"package/core/native.lib": archive})
+        assert "SUSPECT.ARCHIVE.PATH_ESCAPE.001" not in {f.rule_id for f in result.findings}
+
+    @pytest.mark.parametrize(
+        "name", [b"../x.py/", b"a/../../x.py/", b"/etc/x.py/", b"D:\\..\\x.py/", b"\\\\srv\\x.py/"]
+    )
+    def test_a_member_name_that_leaves_the_root_is_refused(self, tmp_path, name: bytes) -> None:
+        archive = FormatKit.ar([(name, self.PLANT)])
+        result = FormatKit.package(tmp_path, {"package/core/native.lib": archive})
+        assert "SUSPECT.ARCHIVE.PATH_ESCAPE.001" in {f.rule_id for f in result.findings}
 
     def test_a_damaged_header_is_a_gap(self, tmp_path) -> None:
         archive = FormatKit.ar([(b"a.o/", b"\x7fELF" + b"\x00" * 60)]) + b"broken member header" * 4

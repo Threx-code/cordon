@@ -17,11 +17,12 @@ from cordon_scanner.detect.agents.instructions import InstructionText
 from cordon_scanner.detect.agents.mcp_servers.description_model import (
     SKILL_MODEL,
 )
+from cordon_scanner.detect.agents.mcp_servers.directive.instruction import InstructionDirectives
 from cordon_scanner.detect.agents.mcp_servers.endpoints import (
     McpEndpoints,
 )
 from cordon_scanner.detect.agents.rule_catalogue import RULES
-from cordon_scanner.detect.agents.skills import SkillOrigin, SkillScripts
+from cordon_scanner.detect.agents.skills import SkillClaims, SkillOrigin, SkillScripts
 from cordon_scanner.detect.agents.text_findings import AgentTextFindings
 from cordon_scanner.detect.agents.text_patterns import (
     FETCH_EXEC,
@@ -95,7 +96,7 @@ class InstructionFileFindings:
         text = unit.content.text
         phantom = InstructionText.phantom_prerequisite(text)
         if phantom is not None:
-            start, end = InstructionText._byte_span(text, phantom)
+            start, end = InstructionText._byte_span(text, phantom, unit.content)
             yield AgentFinding.finding(
                 "SUSPECT.AGENT.PHANTOM_PREREQUISITE.001", unit, ctx, start, end
             )
@@ -107,11 +108,11 @@ class InstructionFileFindings:
         skill is used, and hiding what it runs has no use but hiding it."""
         found = SkillScripts.decode_run(unit.content.text)
         if found is not None:
-            start, end = InstructionText._byte_span(unit.content.text, found)
+            start, end = InstructionText._byte_span(unit.content.text, found, unit.content)
             yield AgentFinding.finding("SUSPECT.AGENT.SKILL_DECODE_RUN.001", unit, ctx, start, end)
         hooked = SkillScripts.hooks_a_download(unit.content.text)
         if hooked is not None:
-            start, end = InstructionText._byte_span(unit.content.text, hooked)
+            start, end = InstructionText._byte_span(unit.content.text, hooked, unit.content)
             yield AgentFinding.finding("SUSPECT.AGENT.SKILL_HOOK_FETCH.001", unit, ctx, start, end)
         if unit.content.path.endswith(".py"):
             # What the agent gets when it calls the script's functions (`detect/mcp_code.py`).
@@ -124,7 +125,7 @@ class InstructionFileFindings:
                 first = starts[min(max(line, 1), len(starts)) - 1]
                 last = text.find("\n", first)
                 last = len(text) if last < 0 else last
-                return len(text[:first].encode("utf-8")), len(text[:last].encode("utf-8"))
+                return unit.content.byte_offset(first, text), unit.content.byte_offset(last, text)
 
             for line, _function in McpCode.runs_own_input(text)[:3]:
                 yield AgentFinding.finding(
@@ -148,6 +149,58 @@ class InstructionFileFindings:
 
     @classmethod
     def instructions(cls, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
+        """Every finding of an instruction file (the table's orders and tricks among them), and for a third-party skill the acts its
+        description does not claim (`SkillClaims`)."""
+        found = list(cls._read(unit, ctx))
+        yield from found
+        yield from cls._unclaimed(unit, ctx, found)
+        yield from InstructionDirectives.findings(
+            unit,
+            ctx,
+            unit.content.text,
+            installed=SkillOrigin.installed(unit.content.path, ctx),
+        )
+
+    @classmethod
+    def _unclaimed(
+        cls, unit: FileUnit, ctx: ScanContext, found: list[Finding]
+    ) -> Iterator[Finding]:
+        """`SUSPECT.AGENT.SKILL_CLAIM_MISMATCH.001`: a third-party `SKILL.md` that the learned reading
+        scores at or above its warn line and whose instructions do what its description does not
+        claim, or what no description can claim (`SkillClaims`)."""
+        path = unit.content.path
+        if not SkillOrigin.third_party(path, ctx):
+            return
+        text = unit.content.text
+        hidden = InstructionText.concealed(text)
+        claimed, acts = SkillClaims.unclaimed(text, found, concealed=hidden)
+        if not acts:
+            return
+        first_start, first_end = acts[0][1], acts[0][2]
+        said = ", ".join(sorted(claimed or ())) or "nothing of this kind"
+        what = {
+            "fetch_run": "run a download from a host that is not a listed installer",
+            "remote_instructions": "fetch a document and follow it",
+            "overrides_agent": "set its own instructions aside, act without asking the user or "
+            "hide what it does from the user",
+            "switches_off_checks": "switch off the agent's own permission and sandbox checks",
+        }
+        done = "; ".join(dict.fromkeys(what[act] for act, *_ in acts))
+        yield AgentFinding.finding(
+            "SUSPECT.AGENT.SKILL_CLAIM_MISMATCH.001",
+            unit,
+            ctx,
+            first_start,
+            first_end,
+            message=RULES["SUSPECT.AGENT.SKILL_CLAIM_MISMATCH.001"].message
+            + f" The description claims: {said}."
+            + f" The instructions tell the agent to {done}"
+            + (", and not to show the user" if hidden else "")
+            + ".",
+        )
+
+    @classmethod
+    def _read(cls, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
         content = unit.content
         raw = content.raw
         flags = [m.span() for m in _FLAG_TAGS.finditer(raw)]
@@ -179,7 +232,7 @@ class InstructionFileFindings:
                 "SUSPECT.AGENT.AUTH_BYPASS_EDIT.001",
                 unit,
                 ctx,
-                *InstructionText._byte_span(text, bypass),
+                *InstructionText._byte_span(text, bypass, unit.content),
             )
         fetches = list(FETCH_EXEC.finditer(text))
         injection = next(
@@ -207,11 +260,11 @@ class InstructionFileFindings:
             unknown is not None and (hidden or injection or exfil or concealed)
         ):
             chosen = alarming or unknown or fetches[0]
-            start, end = InstructionText._byte_span(text, chosen)
+            start, end = InstructionText._byte_span(text, chosen, unit.content)
             yield AgentFinding.finding("SUSPECT.AGENT.FETCH_EXEC.001", unit, ctx, start, end)
         elif fetches:
             chosen = unknown or fetches[0]
-            start, end = InstructionText._byte_span(text, chosen)
+            start, end = InstructionText._byte_span(text, chosen, unit.content)
             yield AgentFinding.finding(
                 "SUSPECT.AGENT.FETCH_EXEC.001",
                 unit,
@@ -241,29 +294,29 @@ class InstructionFileFindings:
     ) -> Iterator[Finding]:
         """The findings for each single directive an instruction file states: an injection, a phantom prerequisite, a dropper, executable front matter, a sensitive import, remote instructions, credentials moved off the machine, an endpoint."""
         if injection is not None:
-            start, end = InstructionText._byte_span(text, injection)
+            start, end = InstructionText._byte_span(text, injection, unit.content)
             yield AgentFinding.finding("SUSPECT.AGENT.INJECTION_TEXT.001", unit, ctx, start, end)
         phantom = InstructionText.phantom_prerequisite(text)
         if phantom is not None:
-            start, end = InstructionText._byte_span(text, phantom)
+            start, end = InstructionText._byte_span(text, phantom, unit.content)
             yield AgentFinding.finding(
                 "SUSPECT.AGENT.PHANTOM_PREREQUISITE.001", unit, ctx, start, end
             )
         dropper = InstructionText.dropper(text)
         if dropper is not None:
-            start, end = InstructionText._byte_span(text, dropper)
+            start, end = InstructionText._byte_span(text, dropper, unit.content)
             yield AgentFinding.finding("SUSPECT.AGENT.DROPPER_PROSE.001", unit, ctx, start, end)
         executable = _CODE_FRONT_MATTER.search(text)
         if executable is not None:
-            start, end = InstructionText._byte_span(text, executable)
+            start, end = InstructionText._byte_span(text, executable, unit.content)
             yield AgentFinding.finding("SUSPECT.AGENT.FRONT_MATTER_CODE.001", unit, ctx, start, end)
         imported = _SENSITIVE_IMPORT.search(text)
         if imported is not None:
-            start, end = InstructionText._byte_span(text, imported)
+            start, end = InstructionText._byte_span(text, imported, unit.content)
             yield AgentFinding.finding("SUSPECT.AGENT.SENSITIVE_IMPORT.001", unit, ctx, start, end)
         remote = _REMOTE_INSTRUCTIONS.search(text)
         if remote is not None:
-            start, end = InstructionText._byte_span(text, remote)
+            start, end = InstructionText._byte_span(text, remote, unit.content)
             alarming_host = InstructionText._alarming_fetch(remote.group(0))
             yield AgentFinding.finding(
                 "SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001",
@@ -285,7 +338,7 @@ class InstructionFileFindings:
                 None,
             )
         if moved is not None:
-            start, end = InstructionText._byte_span(text, moved)
+            start, end = InstructionText._byte_span(text, moved, unit.content)
             yield AgentFinding.finding("SUSPECT.AGENT.CREDENTIAL_EXFIL.001", unit, ctx, start, end)
         # A skill that wires the agent to an MCP server on a tunnel or a bare public address
         # (review 98, AG-4): `"url": "http://bore.pub:44876/api/v1/mcp/.../sse"` is a laptop the
@@ -321,8 +374,8 @@ class InstructionFileFindings:
         spans = HiddenInstruction.find(text)
         for span in sorted(spans, key=lambda s: not HiddenInstruction.strong(s))[:1]:
             start, end = (
-                len(text[: span.start].encode("utf-8")),
-                len(text[: span.end].encode("utf-8")),
+                unit.content.byte_offset(span.start, text),
+                unit.content.byte_offset(span.end, text),
             )
             yield AgentFinding.finding(
                 "SUSPECT.AGENT.HIDDEN_INSTRUCTION.001",
@@ -343,11 +396,13 @@ class InstructionFileFindings:
         # blocked 44% -> 83%, benign 5.0% -> 3.3%, as ATR wording blocks only where the model or
         # Cordon's own evidence agrees; an override phrase is wording too (41 public skills).
         unconfirmed = False
+        model_agrees = False
         if ContainerPaths.basename(unit.content.path).upper() == "SKILL.MD":
             limits = SKILL_MODEL.thresholds("skill")
             score = SKILL_MODEL.score(text, "skill") if limits is not None else None
             if limits is not None and score is not None:
                 unconfirmed = score < limits[1] and not corroborated_code
+                model_agrees = score >= limits[1]
                 if score >= limits[1]:
                     blocking = third_party and score >= limits[0]
                     yield AgentFinding.finding(
@@ -372,6 +427,7 @@ class InstructionFileFindings:
             corroborated_code=corroborated_code,
             documentation=True,
             unconfirmed=unconfirmed,
+            model_agrees=model_agrees,
         )
 
 

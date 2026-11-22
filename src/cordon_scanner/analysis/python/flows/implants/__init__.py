@@ -1,0 +1,1 @@
+"""Facts about a program that sets itself up to stay: the files it writes to let someone in, the places it registers itself, what it keeps of the keyboard and the clipboard, and the installs it makes from an index the user did not choose."""

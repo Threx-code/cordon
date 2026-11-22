@@ -7,7 +7,16 @@ from __future__ import annotations
 import ast
 from typing import ClassVar
 
-from cordon_scanner.analysis.python.py_identity import IDENTITY_COMMANDS, IdentityVariables
+from cordon_scanner.analysis.python.flows.http_clients import (
+    CLOUD_STORAGE_LIBRARIES,
+    CLOUD_UPLOAD_METHODS,
+    HTTP_CLIENTS,
+)
+from cordon_scanner.analysis.python.py_identity import (
+    IDENTITY_COMMANDS,
+    IdentityVariables,
+    IpLookup,
+)
 from cordon_scanner.analysis.python.pyfacts import (
     PRIMITIVES,
     AstHit,
@@ -28,8 +37,17 @@ class AnalyzerCore:
         # Alias -> dotted primitive. `import base64 as b` gives `b -> base64`;
         # `from os import system as s` gives `s -> os.system`.
         self._aliases: dict[str, str] = {}
+        # Functions another file of the package defines that run their own parameters as a command,
+        # by position (`ImportedClients.runners_of`): a call to one with a received value is a run.
+        self._imported_runners: dict[str, set[int]] = {}
+        #: This file's functions and the parameter positions another file of the package passes a
+        #: carried value (`CarriedCalls`): a decode of those is a carried payload's.
+        self._carried_calls: dict[str, set[int]] = {}
         # Local name -> dotted primitive, from `f = os.system`.
         self._bindings: dict[str, str] = {}
+        # `self.x` / `cls.x` -> what it is bound to in this file: `self._session = requests.Session()`
+        # makes `self._session.post` a request (`HTTP_CLIENTS`).
+        self._attribute_bindings: dict[str, str] = {}
         # Inner call -> the call that invokes its result. `getattr(os, "system")`
         # resolves to a primitive, but the command it is handed belongs to the
         # enclosing `(...)`, so the two nodes have to be related to read it.
@@ -47,12 +65,20 @@ class AnalyzerCore:
         self._follow_literals = True
         # Name -> the string literal it is bound to, for names bound exactly once.
         self._strings: dict[str, str | None] = {}
+        # The module being analysed, for values its top-level statements compute from literals
+        # (`LiteralProgram`).
+        self._module_tree: ast.AST | None = None
+        # Names this file imports from another file of the package that collect a fingerprint
+        # of the machine (`MachineCollectors`).
+        self._imported_collectors: set[str] = set()
         # Name -> the f-string or concatenation it is bound to, for names bound exactly once.
         self._sketches: dict[str, ast.AST] = {}
         # Names bound only ever to a plain string literal. See `_assembled_name`.
         self._plain_literals: set[str] = set()
         # Names bound to a path built from `__file__`. See `_loads_a_bundled_file`.
         self._bundled_paths: set[str] = set()
+        #: Whether the file imports a cloud-storage library (read once, on the first upload-like call).
+        self._cloud_storage: bool | None = None
         # Names bound to the text of a local file. See `_read_from_local_file`.
         self._local_reads: set[str] = set()
         # Lines whose `exec`/`eval` runs the package's own file. See `own_file_exec_lines`.
@@ -119,6 +145,26 @@ class AnalyzerCore:
         # The tables are complete: from here a name resolves the same way every time it is asked.
         self._dotted_cache: dict[int, str | None] = {}
 
+    def _helper_runners(
+        self, functions: list[ast.FunctionDef | ast.AsyncFunctionDef]
+    ) -> dict[str, int]:
+        """Each helper that runs a path its caller hands it: name -> the parameter it starts."""
+        runners: dict[str, int] = {}
+        for function in functions:
+            names = PythonFacts.parameter_names(function)
+            for node in PythonSyntax.of(function, ast.Call):
+                resolved = self._resolve_callee(node)
+                if resolved is None or PRIMITIVES.get(resolved[0]) is not Capability.SPAWN:
+                    continue
+                call = resolved[1]
+                if not call.args:
+                    continue
+                used = {x.id for x in PythonSyntax.within(call.args[0], ast.Name)}
+                for index, name in enumerate(names):
+                    if name in used:
+                        runners[function.name] = index
+        return runners
+
     def _resolve_callee(self, node: ast.Call) -> tuple[str, ast.Call] | None:
         """This call's dotted name, and the call whose arguments belong to it.
 
@@ -135,7 +181,31 @@ class AnalyzerCore:
                 return f"{namespace}.{attribute}", self._invoked.get(id(node), node)
             return None
 
+        cloud = self._cloud_callee(node)
+        if cloud is not None:
+            return cloud, node
         return (dotted, node) if dotted else None
+
+    def _cloud_callee(self, node: ast.Call) -> str | None:
+        """`cloud_storage.<method>` for a call of an upload method in a file that imports a
+        cloud-storage library: the receiver is rarely written down (`bucket.blob(n).upload_from_string`)."""
+        if (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr in CLOUD_UPLOAD_METHODS
+            and self._imports_cloud_storage()
+        ):
+            return f"cloud_storage.{node.func.attr}"
+        return None
+
+    def _imports_cloud_storage(self) -> bool:
+        """Whether the file imports a cloud-storage library (`CLOUD_STORAGE_LIBRARIES`)."""
+        if self._cloud_storage is None:
+            self._cloud_storage = any(
+                target == lib or target.startswith(lib + ".")
+                for target in self._aliases.values()
+                for lib in CLOUD_STORAGE_LIBRARIES
+            )
+        return self._cloud_storage
 
     def _dotted(self, node: ast.AST) -> str | None:
         """The dotted name an expression refers to, unwinding aliases.
@@ -166,7 +236,7 @@ class AnalyzerCore:
         cache: dict[int, str | None] | None = self.__dict__.get("_dotted_cache")
         links: list[ast.Attribute | ast.Call] = []
         name: str | None = None
-        while isinstance(node, ast.Attribute) or (isinstance(node, ast.Call) and node.args):
+        while isinstance(node, (ast.Attribute, ast.Call)):
             if cache is not None and links and id(node) in cache:
                 name = cache[id(node)]
                 break
@@ -182,6 +252,8 @@ class AnalyzerCore:
                     name = link.attr
                 else:
                     name = f"{name}.{link.attr}" if name else None
+                    # `self._session`, bound in this file to `requests.Session()`, is that client.
+                    name = self._attribute_bindings.get(name, name) if name else None
             else:
                 name = self._called_name(name, link)
             if cache is not None:
@@ -193,6 +265,12 @@ class AnalyzerCore:
         `importlib.import_module("base64")` evaluate to the module, so `__import__("base64").b64decode`
         is `base64.b64decode` -- the spelling droppers use to keep `import base64` and `exec(` off the
         same page; `eval` of a written name is that name. Any other call names nothing."""
+        if callee in HTTP_CLIENTS:
+            # `httpx.Client()` evaluates to a client, so `httpx.Client().post` is a request the way
+            # `requests.post` is (`HTTP_CLIENTS`).
+            return callee
+        if not call.args:
+            return None
         if callee in ("__import__", "importlib.import_module"):
             return PythonFacts.constant(call.args[0]) or None
         if callee == "eval":
@@ -214,7 +292,8 @@ class AnalyzerCore:
             return None
         try:
             expression = PythonSyntax.parse(source.strip(), mode="eval").body
-        except (SyntaxError, ValueError, RecursionError):
+        except (SyntaxError, ValueError):
+            # S2: covered by SOURCE.UNPARSED at every running file (install closure, import entries, command modules); proven by test_not_python3.py TestPackageSourceThatDoesNotParse
             return None
         if isinstance(expression, ast.Name | ast.Attribute | ast.Call):
             return self._dotted(expression)
@@ -271,6 +350,12 @@ class AnalyzerCore:
                 return None
             return (left or "{?}") + (right or "{?}")
         if isinstance(node, ast.Name):
+            # A name bound to one literal is that literal, as the f-string branch above reads it:
+            # `cmd = "..."; subprocess.run(cmd, shell=True)` hides nothing from the shell rules
+            # (07-NARROWING-GATES §2). Assigned two different literals, `_strings` holds None.
+            literal = self._strings.get(node.id)
+            if literal is not None:
+                return literal
             bound = self._sketches.get(node.id)
             if bound is not None:
                 return self._sketch(bound, depth + 1)
@@ -293,6 +378,11 @@ class AnalyzerCore:
             return isinstance(node, ast.Subscript) and IdentityVariables.read(
                 node, self._dotted(node.value)
             )
+        if (
+            self.HELPER_IDENTITY
+            and self._first_word(self._runner_command(node)) in IDENTITY_COMMANDS
+        ):
+            return True
         resolved = self._resolve_callee(node)
         if resolved is None:
             return False
@@ -303,9 +393,48 @@ class AnalyzerCore:
             return True
         if capability is not Capability.SPAWN:
             return False
-        command = self._command(node) or ""
-        first = command.strip().split(" ", 1)[0].rsplit("/", 1)[-1].lower()
-        return first.removesuffix(".exe") in IDENTITY_COMMANDS
+        return self._first_word(self._command(node)) in IDENTITY_COMMANDS
+
+    #: Identity commands run through a file's own command helper (`run("whoami")`) count too.
+    HELPER_IDENTITY: ClassVar[bool] = False
+
+    @staticmethod
+    def _first_word(command: str | None) -> str:
+        first = (command or "").strip().split(" ", 1)[0].rsplit("/", 1)[-1].lower()
+        return first.removesuffix(".exe")
+
+    def _runner_command(self, node: ast.AST) -> str | None:
+        """The command handed to a file-local helper that starts its parameter
+        (`def run(cmd): subprocess.run(cmd, ...)`; `run("curl -s https://ifconfig.me")`)."""
+        runners = getattr(self, "_command_runners", None) or {}
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
+            return None
+        index = runners.get(node.func.id)
+        if index is None or index >= len(node.args):
+            return None
+        return self._sketch(node.args[index])
+
+    def _is_address_lookup(self, node: ast.AST) -> bool:
+        """Where this machine is on the internet: a request to a public-address lookup service
+        (plain or `Request(url)`), or a command line that fetches one (`curl -s https://ifconfig.me`),
+        direct or through the file's own command helper."""
+        if not isinstance(node, ast.Call):
+            return False
+        command = self._runner_command(node)
+        if command is not None and IpLookup.in_command(command):
+            return True
+        resolved = self._resolve_callee(node)
+        capability = PRIMITIVES.get(resolved[0]) if resolved else None
+        if capability is Capability.SPAWN:
+            return IpLookup.in_command(self._command(node) or "")
+        if capability is not Capability.EGRESS:
+            return False
+        for argument in (*node.args[:1], *(k.value for k in node.keywords if k.arg == "url")):
+            if isinstance(argument, ast.Call) and argument.args:
+                argument = argument.args[0]
+            if IpLookup.names(self._sketch(argument)):
+                return True
+        return False
 
     def _record(
         self,

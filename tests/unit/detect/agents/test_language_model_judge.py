@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +60,10 @@ class AgentJudgeHelpers:
 
     @staticmethod
     def _scan(tmp_path: Path, files: dict[str, str], **overrides: Any) -> dict[str, list]:
+        # The repository's own agent files: in a folder that is no repository root they are shipped
+        # instructions, and the static rules block override wording outright (`SkillClaims`), so
+        # there would be no grey band left for the judge to read.
+        subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
         for rel, body in files.items():
             target = tmp_path / rel
             target.parent.mkdir(parents=True, exist_ok=True)

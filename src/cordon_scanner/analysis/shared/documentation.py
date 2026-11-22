@@ -139,6 +139,7 @@ class DocumentationSpans:
         try:
             tree = PythonSyntax.shared(raw)
         except (SyntaxError, ValueError, RecursionError):
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
             return ()
 
         # Line starts found with `bytes.find`, not a Python loop over every byte of the file: the

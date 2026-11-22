@@ -45,11 +45,15 @@ from cordon_scanner.decide.feature_schema import FeatureFold, FeatureRecord, Fea
 from cordon_scanner.decide.verdict_features import VerdictFeatures
 from cordon_scanner.foundation.models import Category, Confidence, Finding, Severity
 from cordon_scanner.foundation.paths import PackagePaths
+from cordon_scanner.intel.malware.feed_models import FeedModels
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
 MODEL_PATH: Final = PackagePaths.data("detect") / "verdict.json.gz"
+#: A model of the PyPI package area's own, fitted on the package-wide code features (0.8.0): a
+#: PyPI package answers to it where it ships; every other area keeps `MODEL_PATH`'s model.
+PYPI_MODEL_PATH: Final = PackagePaths.data("detect") / "verdict-pypi.json.gz"
 
 _CODE_SUFFIXES: Final = (
     ".js",
@@ -89,10 +93,27 @@ class VerdictModel:
     @staticmethod
     @functools.cache
     def load(path: Path = MODEL_PATH) -> dict[str, Any] | None:
+        """The model at `path`, or the signed feed's delivered copy of it when that loads (the same
+        format and fold checks as the bundled one) and its `version` is fresher (`FeedModels`)."""
+        bundled = VerdictModel._read(path)
+        if bundled is None:
+            return None
+        delivered = FeedModels.delivered(path.name)
+        if delivered is not None:
+            model = VerdictModel._read(delivered)
+            if model is not None and FeedModels.newer(model.get("version"), bundled.get("version")):
+                return model
+        return bundled
+
+    @staticmethod
+    def _read(path: Path) -> dict[str, Any] | None:
+        """The model file at `path` when it is one this tree can score with, else `None`."""
         try:
             with gzip.open(path, "rt", encoding="utf-8") as handle:
-                model: dict[str, Any] = json.load(handle)
-        except OSError:
+                model: Any = json.load(handle)
+        except (OSError, ValueError, EOFError):
+            return None
+        if not isinstance(model, dict):
             return None
         if model.get("format") == VerdictModel.UNFOLDED:
             return model
@@ -135,6 +156,10 @@ class VerdictModel:
         return 1.0 / (1.0 + math.exp(-max(-60.0, min(60.0, raw))))
 
 
+# A models update installed by the feed is read at the next load, not at the next start.
+FeedModels.WATCHERS.append(VerdictModel.load.cache_clear)
+
+
 class Verdict:
     FLOOR_CONFIDENCE: ClassVar[frozenset[Confidence]] = frozenset(
         {Confidence.HIGH, Confidence.CONFIRMED}
@@ -142,6 +167,19 @@ class Verdict:
     RULE: ClassVar[str] = VerdictFeatures.OWN_RULE
     #: The line every package without one of its own answers to: the strictest of them all.
     FALLBACK: ClassVar[str] = "package"
+
+    #: A fraction of the model's block line, by area, that the package is held to; empty. MCP servers
+    #: were held to 0.9 of the shared model's line until the MCP area was fitted on its own rows
+    #: (reviews/mcp-98/20): its line is the out-of-fold score the legitimate MCP rows exceed at
+    #: 0.05%, the operating point itself, so a scale on top would apply it twice. The six malicious
+    #: units the 0.9 had gained stay blocked out of fold.
+    LINE_SCALE: ClassVar[dict[str, float]] = {}
+
+    @staticmethod
+    def line(areas: dict[str, Any], area: str) -> float:
+        """The score at which `area` blocks: the model's line for it, scaled by `LINE_SCALE`."""
+        return float(areas.get(area, areas[Verdict.FALLBACK])) * Verdict.LINE_SCALE.get(area, 1.0)
+
     _PYPI: ClassVar[re.Pattern[str]] = re.compile(r"^[^/]+/PKG-INFO$|^[^/]+\.dist-info/METADATA$")
     #: Each ecosystem's layout, read on the outermost archive only (a jar bundled in a Gradle
     #: repository is not a Maven release), measured on the benign corpus (2026-10-19). Release
@@ -305,7 +343,7 @@ class Verdict:
             "area": area,
             "features": {"schema": FeatureSchema.current(), "values": features},
         }
-        model = VerdictModel.load()
+        model = Verdict.model_for(area)
         if model is None:
             return findings, summary
         # The second review (`intel/registry_record.py`): where the registry's record of this
@@ -333,17 +371,14 @@ class Verdict:
         # An area with trees of its own (agent skills read nothing like libraries) is scored by them.
         score = VerdictModel.score(model.get("by_area", {}).get(area, model), scored)
         areas = model["areas"]
-        block = float(areas.get(area, areas[Verdict.FALLBACK]))
+        block = Verdict.line(areas, area)
         summary.update(score=round(score, 4), block=block, model=model.get("version", ""))
         # The model lowers a block only in an area it was trained to separate (`lift_areas`: the
         # allowlist of areas with enough training malware -- the shipped model lists `npm` and
         # `mcp`). Every other area -- `skill`, `package` and the fallback included -- is add-only: it
         # may add a block, never lift one (review 98, the G7 actions regression came from lifting an
         # untrained `package` row). An older model without the allowlist keeps the former denylist.
-        lift_areas = model.get("lift_areas")
-        liftable = (
-            area in lift_areas if lift_areas is not None else area not in model.get("add_only", ())
-        )
+        liftable = Verdict.liftable(model, area)
         floor = frozenset(model["floor"])
         keep = frozenset(model.get("keep", ()))
         out: list[Finding] = []
@@ -351,6 +386,40 @@ class Verdict:
             findings, score, block, liftable, floor, keep, area, out, repository=repository
         )
         return out, summary
+
+    LIFT_AREAS_ALLOWED: ClassVar[frozenset[str]] = frozenset({"npm", "pypi"})
+    """The only areas the model may lower a block in, whatever the model file lists (S6, lead
+    2026-11-10). MCP is add-only from 0.8.0 (mcp-98 gap 1). npm keeps its measured lift as a trade
+    recorded for the owner. PyPI lifts from 0.8.0 with its own model (`PYPI_MODEL_PATH`; owner
+    2026-11-13: build the model into the product), the trade measured by the release gate's LOST
+    and GAINED on the PyPI sets. A new lift area is a change to this line and to
+    test_verdict_bounds.py, never a model file."""
+
+    #: Areas judged by a model of their own, where that model ships.
+    OWN_MODELS: ClassVar[dict[str, Path]] = {"pypi": PYPI_MODEL_PATH}
+
+    @staticmethod
+    def model_for(area: str) -> dict[str, Any] | None:
+        """The model `area` answers to: its own (`OWN_MODELS`) where that ships and loads at this
+        tree's fold, else the shared model. npm, MCP, skills and every other area keep exactly the
+        model they had."""
+        own = Verdict.OWN_MODELS.get(area)
+        if own is not None:
+            model = VerdictModel.load(own)
+            if model is not None:
+                return model
+        return VerdictModel.load()
+
+    @staticmethod
+    def liftable(model: dict[str, Any], area: str) -> bool:
+        """Whether the model may lower a block in `area`: listed by the model (or, for an older
+        model, not add-only) and in `LIFT_AREAS_ALLOWED`."""
+        if area not in Verdict.LIFT_AREAS_ALLOWED:
+            return False
+        lift_areas = model.get("lift_areas")
+        return (
+            area in lift_areas if lift_areas is not None else area not in model.get("add_only", ())
+        )
 
     @staticmethod
     def _skill_claim(package: dict[str, float]) -> None:

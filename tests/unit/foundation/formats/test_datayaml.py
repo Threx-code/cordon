@@ -106,6 +106,39 @@ class TestHostileInput:
         with pytest.raises(DataYamlError):
             DataYaml.load(text)
 
+    def test_a_python_tuple_tag_on_a_block_sequence_reads_as_the_list_it_is(self) -> None:
+        """A conda environment written by PyYAML's default dumper tags a tuple of channels
+        `!!python/tuple` (1 benign PyPI unit, 05-CENSUS C2). That tag on a block sequence is
+        read as a plain list; nothing is constructed."""
+        text = (
+            "name: x\nchannels: !!python/tuple\n- defaults\n- conda-forge\ndependencies:\n- numpy\n"
+        )
+        assert DataYaml.load(text) == {
+            "name": "x",
+            "channels": ["defaults", "conda-forge"],
+            "dependencies": ["numpy"],
+        }
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            pytest.param("a: !!python/object/apply:os.system\n- ls\n", id="object/apply"),
+            pytest.param("a: !!python/object:os.system\n- ls\n", id="object"),
+            pytest.param("a: !!python/name:os.system\n", id="name"),
+            pytest.param("a: !!python/module:os\n", id="module"),
+            pytest.param("a: !!python/tuple x\n", id="the tuple tag on a scalar"),
+            pytest.param("a: !!python/tuple\n  b: 1\n", id="the tuple tag on a mapping"),
+            pytest.param("a: !!python/tuple\n", id="the tuple tag on nothing"),
+            pytest.param("a:\n- !!python/tuple\n  - x\n", id="the tuple tag on an item"),
+            pytest.param("a: !!python/tuple\n- !!python/object:os.system x\n", id="a tag inside"),
+            pytest.param("a: !python/tuple\n- x\n", id="a local tag"),
+            pytest.param("a: !!python/tuple x y\n- x\n", id="anything after the tag"),
+        ],
+    )
+    def test_every_other_tag_and_place_is_still_refused(self, text) -> None:
+        with pytest.raises(DataYamlError):
+            DataYaml.load(text)
+
     def test_depth_is_bounded(self) -> None:
         text = (
             "".join(f"{'  ' * n}k{n}:\n" for n in range(MAX_DEPTH + 5))

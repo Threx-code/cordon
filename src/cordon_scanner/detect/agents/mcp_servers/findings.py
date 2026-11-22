@@ -9,6 +9,7 @@ resources, prompts."""
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 
 from cordon_scanner.detect.agents import configuration
@@ -17,15 +18,25 @@ from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
 from cordon_scanner.detect.agents.mcp_servers.description_model import (
     McpDescriptionModel,
 )
+from cordon_scanner.detect.agents.mcp_servers.directive.reader import McpDirectives
 from cordon_scanner.detect.agents.mcp_servers.endpoints import (
     LOCAL_HOSTS,
     PLACEHOLDER,
     McpEndpoints,
 )
+from cordon_scanner.detect.agents.mcp_servers.lookalike_names import (
+    OwnPackageName,
+    ToolNameLookalike,
+)
+from cordon_scanner.detect.agents.mcp_servers.own_vocabulary import OwnVocabulary
+from cordon_scanner.detect.agents.mcp_servers.protocol.input_flows import McpInputFlows
+from cordon_scanner.detect.agents.mcp_servers.protocol.literal_sinks import McpLiteralSinks
+from cordon_scanner.detect.agents.mcp_servers.served_text import ServedText
 from cordon_scanner.detect.agents.mcp_servers.source import (
     RESULT_SENDS_TO_URL,
     McpServerSource,
 )
+from cordon_scanner.detect.agents.mcp_servers.techniques import McpTechniques
 from cordon_scanner.detect.agents.rule_catalogue import RULES
 from cordon_scanner.detect.agents.semantics import AgentSemantics
 from cordon_scanner.detect.agents.text_findings import AgentTextFindings
@@ -66,7 +77,8 @@ _SERVER_BUILT: Final = re.compile(
     r"\bserver\.NewMCPServer[ \t]*\(|\bMCP::Server\.new\b|\bFastMcp::Server\.new\b|"
     r"\.(?:AddTool|add_tool|registerTool|AddResource|registerResource)[ \t]*\(|"
     r"@(?:mcp|server|app)\.(?:tool|resource|prompt)\b|\[McpServerTool[(\]]|#\[tool[(\]]|"
-    r"\bNewToolResult\w{0,20}[ \t]*\(|\bCallToolResult[ \t]*[({]"
+    r"\bNewToolResult\w{0,20}[ \t]*\(|\bCallToolResult[ \t]*[({]|"
+    r"\buse[ \t]+rmcp::[^;\n]{0,120}\bServerHandler\b"
 )
 """Code that builds an MCP server or registers a tool on one, as written in each SDK."""
 
@@ -97,16 +109,100 @@ denial-of-wallet shape. A page token ("call again with next_page") names no dept
 
 # Each run of blanks here is taken once (possessive, review 98, 27-PERFORMANCE): two runs of blanks
 # with only optional items between them split one stretch every way.
+#: Files a JavaScript or TypeScript server's handlers live in (`handlers_js.py`).
+_JS_SUFFIXES: Final = (".js", ".mjs", ".cjs", ".ts", ".mts", ".cts")
+_NATIVE_SUFFIXES: Final = (".go", ".rs", ".java", ".kt", ".cs", ".rb", ".php")
+"""Languages whose servers are read as text: Go, Rust, Java, Kotlin, C#, Ruby and PHP."""
 _TOOL_NAME: Final = re.compile(
-    r"""(?:\.tool\(\s*+(?:\{\s*+)?(?:name\s*:\s*+)?|\bregisterTool\(\s*|\bname\s*[:=]\s*)"""
+    r"""(?:\.tool\(\s*+(?:\{\s*+)?(?:name\s*:\s*+)?|\bregisterTool\(\s*|\bNewTool\(\s*|\bname\s*[:=]\s*)"""
     r"""["'`](?P<name>[A-Za-z][\w.-]{1,80})["'`]"""
     r"""|@\w{1,40}(?:\.\w{1,40}){0,4}\.tool\b[^\n]{0,200}\n(?:[ \t]{0,40}@[^\n]{0,200}\n){0,5}"""
     r"""[ \t]{0,40}(?:async[ \t]{1,4})?def[ \t]{1,4}(?P<pyname>\w{1,80})"""
 )
 
 
+#: A decorator's explicit tool name: `@mcp.tool(name="read_file")`.
+_EXPLICIT_NAME: Final = re.compile(r"""\bname\s*=\s*["']([A-Za-z][\w.-]{1,80})["']""")
+
+
+@dataclass(frozen=True)
+class DescriptionVerdict:
+    """One reading of a tool description by every description check: the phrase and shape rules, the
+    sequence of steps an attack takes, and the learned reading. The source of a server and a remote
+    server's live list are read by this one function, so changed text (a rug pull) meets every check
+    a reviewed description met."""
+
+    reason: str | None
+    """The rule or sequence reading that fired, in words for a message; None when neither did."""
+    learned: bool
+    """The learned reading is at or above its warn line."""
+    blocking: bool
+    score: float | None
+    basis: tuple[str, ...]
+    """`Explanation.basis` codes: the text read, then each reading that fired."""
+    unconfirmed: bool
+    """No rule, no sequence and no learned reading fired: ATR's phrase rules alone are then read as
+    unconfirmed (`AgentTextFindings.threat_rules`)."""
+
+    @property
+    def flagged(self) -> bool:
+        return self.reason is not None or self.learned
+
+    def why(self) -> str:
+        if self.reason is not None:
+            return f" It {self.reason}."
+        return (
+            " It reads as instructions to the agent rather than a description of the tool "
+            f"(model score {self.score or 0.0:.2f})."
+        )
+
+
 class McpServerFindings:
     """The agent-chain findings about declared MCP servers and their source."""
+
+    @staticmethod
+    def judge_description(
+        description: str, own: frozenset[str] = frozenset(), *, label: bool = False
+    ) -> DescriptionVerdict:
+        """Every description check on one tool description. `own` is the server's own vocabulary
+        (its tool names), so sequencing its own tools is not read as an attack; a `label` (a field's
+        name of a few words) is read by the phrase rules only."""
+        reason = McpServerSource._poisoned_description(description, own)
+        # A few plain words that name no tool, no value and nothing quoted (`First run ID`) are a
+        # field's name in whatever syntax it was declared in; the sequence reading's opening
+        # order ("First run ...") is not read from them (doc 38). Orders in attacks are a
+        # sentence about a tool or a file, and the devset's attack descriptions are long.
+        plain = McpServerFindings._plain_name(description)
+        # Which readings fired, as codes (`Explanation.basis`): the message says one reason in
+        # words; the basis records every reading, the model's score beside a phrase or chain too.
+        basis = ["description"]
+        if reason is not None:
+            basis.append(McpServerSource.reason_code(reason))
+        elif not label and not plain:
+            # The steps an attack on the agent takes, in a combination no real server's own
+            # description carries (`semantics.PRECISE`).
+            chain = AgentSemantics.precise(description)
+            if chain is not None and not McpServerFindings._own_sequencing(
+                description, chain, own, "description"
+            ):
+                reason = f"gives {AgentSemantics.explain(chain)}"
+                basis.append(McpServerFindings.chain_code(chain))
+        # The learned reading (`detect/agents/mcp_servers/description_model.py`): poisoning written as
+        # ordinary prose, which no phrase rule narrow enough to stay quiet catches. Blocks above
+        # `block`; reported for review between `warn` and `block`.
+        score = None if label else McpDescriptionModel.score(description)
+        limits = McpDescriptionModel.thresholds()
+        learned = score is not None and limits is not None and score >= limits[1]
+        if learned and score is not None and limits is not None:
+            basis.append(McpServerFindings.model_code(score, limits[0]))
+        blocking = reason is not None or (
+            learned and score is not None and limits is not None and score >= limits[0]
+        )
+        # ATR's phrase rules, read beside the model: on 980 real MCP servers they blocked 11
+        # on their own -- security tools quoting attacks, prompts that tell an agent how to
+        # use the tool -- and on MCP-SafetyBench none of 146 blocks needed them alone.
+        unconfirmed = limits is not None and not learned and reason is None
+        return DescriptionVerdict(reason, learned, blocking, score, tuple(basis), unconfirmed)
 
     @classmethod
     def server_source(cls, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
@@ -117,58 +213,185 @@ class McpServerFindings:
         """
         text = unit.content.text
         seen: set[str] = set()
+        own = OwnVocabulary.declared(text, unit.content.path)
+        labels = McpServerSource.parameter_labels(text, unit.content.path)
         for description in McpServerSource._tool_descriptions(text, unit.content.path):
             if description in seen:
                 continue
             seen.add(description)
             yield from AgentTextFindings.intents(unit, ctx, description, within=text)
-            reason = McpServerSource._poisoned_description(description)
-            if reason is None:
-                # The steps an attack on the agent takes, in a combination no real server's own
-                # description carries (`semantics.PRECISE`).
-                chain = AgentSemantics.precise(description)
-                if chain is not None:
-                    reason = f"gives {AgentSemantics.explain(chain)}"
-            # The learned reading (`detect/agents/mcp_servers/description_model.py`): poisoning written as ordinary prose,
-            # which no phrase rule narrow enough to stay quiet catches. Blocks above `block`;
-            # reported for review between `warn` and `block`.
-            score = McpDescriptionModel.score(description)
-            limits = McpDescriptionModel.thresholds()
-            learned = score is not None and limits is not None and score >= limits[1]
-            # ATR's phrase rules, read beside the model: on 980 real MCP servers they blocked 11
-            # on their own -- security tools quoting attacks, prompts that tell an agent how to
-            # use the tool -- and on MCP-SafetyBench none of 146 blocks needed them alone.
-            unconfirmed = limits is not None and not learned and reason is None
-            if reason is not None or learned:
-                blocking = reason is not None or (limits is not None and score >= limits[0])  # type: ignore[operator]  # learned implies a score
-                why = (
-                    f" It {reason}."
-                    if reason is not None
-                    else f" It reads as instructions to the agent rather than a description of the "
-                    f"tool (model score {score:.2f})."
-                )
+            # An argument's label of a few words (`.describe("First run ID")`) names a field: the
+            # sequence and learned readings are of descriptions, and read these as orders.
+            label = description in labels and len(description.split()) < McpServerSource.LABEL_WORDS
+            verdict = McpServerFindings.judge_description(description, own, label=label)
+            if verdict.flagged:
                 yield AgentFinding.at_text(
                     "SUSPECT.MCP.TOOL_DESCRIPTION.001",
                     unit,
                     ctx,
                     text,
                     description[:80],
-                    message=RULES["SUSPECT.MCP.TOOL_DESCRIPTION.001"].message + why,
-                    severity=None if blocking else Severity.MEDIUM,
+                    message=RULES["SUSPECT.MCP.TOOL_DESCRIPTION.001"].message + verdict.why(),
+                    severity=None if verdict.blocking else Severity.MEDIUM,
+                    basis=verdict.basis,
                 )
             yield from AgentTextFindings.threat_rules(
-                unit, ctx, description, ATR_TEXT_KINDS, within=text, unconfirmed=unconfirmed
+                unit, ctx, description, ATR_TEXT_KINDS, within=text, unconfirmed=verdict.unconfirmed
             )
-        names = (m.group("name") or m.group("pyname") for m in _TOOL_NAME.finditer(text))
+        names = (McpServerFindings._tool_name(m) for m in _TOOL_NAME.finditer(text))
         for name in dict.fromkeys(names):
             yield from AgentTextFindings.threat_rules(unit, ctx, name, ("tool_name",), within=text)
+            imitated = ToolNameLookalike.imitates(name)
+            if imitated is not None:
+                yield AgentFinding.at_text(
+                    "SUSPECT.MCP.TOOL_NAME_LOOKALIKE.001",
+                    unit,
+                    ctx,
+                    text,
+                    name,
+                    message=RULES["SUSPECT.MCP.TOOL_NAME_LOOKALIKE.001"].message
+                    + f" ({name!r} imitates {imitated!r})",
+                )
         yield from McpServerFindings._handler_findings(ctx, text, unit)
         yield from McpServerFindings._return_findings(ctx, text, unit)
+        served = ServedText.served(text, unit.content.path)
+        yield from ServedText.findings(unit, ctx, text, served)
+        yield from McpDirectives.findings(unit, ctx, text, served)
         yield from cls._server_content(unit, ctx, text)
+
+    @staticmethod
+    def _tool_name(match: re.Match[str]) -> str:
+        """The name a registration gives its tool: a Python decorator's explicit `name=` before the function's own
+        name, which is what the agent sees only when the decorator names none."""
+        if match.group("pyname"):
+            explicit = _EXPLICIT_NAME.search(match.group(0))
+            if explicit is not None:
+                return explicit.group(1)
+            return match.group("pyname")
+        return match.group("name")
+
+    @staticmethod
+    def own_package(unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
+        """An MCP server's own manifest naming its package like a popular server's (`OwnPackageName`)."""
+        text = unit.content.text
+        name = OwnPackageName.of(unit.content.path.rsplit("/", 1)[-1].rsplit("!", 1)[-1], text)
+        imitated = configuration.PackageLookalike.lookalike_of(name) if name else None
+        if name and imitated is not None:
+            yield AgentFinding.at_text(
+                "SUSPECT.MCP.LOOKALIKE.002",
+                unit,
+                ctx,
+                text,
+                name,
+                message=RULES["SUSPECT.MCP.LOOKALIKE.002"].message
+                + f" ({name} imitates {imitated})",
+            )
+
+    @staticmethod
+    def _plain_name(text: str) -> bool:
+        """Whether a description is only a few plain words: fewer than `LABEL_WORDS`, no
+        identifier-like word, nothing quoted or in backticks and no order to call or use something
+        (`Always call the setup tool first` is an order in few words), so it names no tool, no value
+        and gives no instruction."""
+        return (
+            len(text.split()) < McpServerSource.LABEL_WORDS
+            and not OwnVocabulary.words(text)
+            and not any(char in text for char in "`'\"")
+            and not AgentSemantics.steps(text)["order"]
+        )
+
+    @staticmethod
+    def _own_sequencing(
+        text: str, chain: tuple[str, ...], own: frozenset[str], channel: str
+    ) -> bool:
+        """Whether a chain of ordering steps only sequences the server's own tools: see
+        `ServedText.own_sequencing`, where it lives beside the reader of served text."""
+        return ServedText.own_sequencing(text, chain, own, channel)
+
+    @staticmethod
+    def _protocol_findings(ctx: ScanContext, text: str, unit: FileUnit) -> Iterator[Finding]:
+        """What a server does to the client through the protocol's own requests: it asks the user for a credential
+        in an elicitation (`elicitation.py`), or it tells the client's model to take a secret or hide something, or
+        carries the model's answer to an outside host, in a sampling request (`sampling.py`)."""
+        from cordon_scanner.detect.agents.mcp_servers.protocol.elicitation import McpElicitation
+        from cordon_scanner.detect.agents.mcp_servers.protocol.sampling import McpSampling
+
+        path = unit.content.path
+        found: list[
+            tuple[str, int, str | None]
+        ] = []  # (rule, character offset or line, sampling kind)
+        starts: list[int] = []
+        if path.endswith(_JS_SUFFIXES):
+            typescript = path.endswith((".ts", ".mts", ".cts"))
+            found += [
+                ("SUSPECT.MCP.ELICIT_CREDENTIAL.001", o, None)
+                for o in McpElicitation.credential_requests_js(text, typescript)[:3]
+            ]
+            found += [
+                ("SUSPECT.MCP.SAMPLING_ABUSE.001", o, kind)
+                for o, kind in McpSampling.abuse_js(text, typescript)[:3]
+            ]
+        elif path.endswith(".py"):
+            starts = [0, *(m.end() for m in re.finditer(r"\n", text))]
+            found += [
+                ("SUSPECT.MCP.ELICIT_CREDENTIAL.001", line, None)
+                for line in McpElicitation.credential_requests_py(text)[:3]
+            ]
+            found += [
+                ("SUSPECT.MCP.SAMPLING_ABUSE.001", line, kind)
+                for line, kind in McpSampling.abuse_py(text)[:3]
+            ]
+        elif path.endswith(_NATIVE_SUFFIXES):
+            found += [
+                ("SUSPECT.MCP.ELICIT_CREDENTIAL.001", o, None)
+                for o in McpElicitation.credential_requests_text(text)
+            ]
+            found += [
+                ("SUSPECT.MCP.SAMPLING_ABUSE.001", o, "directive")
+                for o in McpSampling.abuse_text(text)
+            ]
+        for rule, where, kind in found:
+            if starts:  # a Python line
+                first = starts[min(max(where, 1), len(starts)) - 1]
+                last = text.find("\n", first)
+                last = len(text) if last < 0 else last
+                begin = AgentFinding.byte_at(unit, text, first)
+                finish = AgentFinding.byte_at(unit, text, last)
+            else:  # a JavaScript character offset
+                end = text.find("\n", where)
+                end = len(text) if end < 0 else end
+                begin = AgentFinding.byte_at(unit, text, where)
+                finish = begin + len(text[where:end].encode("utf-8"))
+            if kind == "forwarded":
+                # The answer of the user's own model carried to an outside host: reported, not blocking, as
+                # a server may send a summary to its own service.
+                yield AgentFinding.finding(
+                    rule,
+                    unit,
+                    ctx,
+                    begin,
+                    finish,
+                    severity=Severity.MEDIUM,
+                    message=RULES[rule].message
+                    + " Here the model's answer is sent to a host the code names.",
+                )
+            else:
+                yield AgentFinding.finding(rule, unit, ctx, begin, finish)
+        if path.endswith((*_JS_SUFFIXES, ".py", *_NATIVE_SUFFIXES)):
+            for rule, offset in McpInputFlows.scan(text):
+                line_end = text.find("\n", offset)
+                line_end = len(text) if line_end < 0 else line_end
+                first = AgentFinding.byte_at(unit, text, offset)
+                yield AgentFinding.finding(
+                    rule, unit, ctx, first, first + len(text[offset:line_end].encode("utf-8"))
+                )
 
     @staticmethod
     def _handler_findings(ctx: ScanContext, text: str, unit: FileUnit) -> Iterator[Finding]:
         """The findings for what a Python server's own handler code does with the agent's input: a shell built from it, a time bomb, input mirrored or forwarded to a host, secrets harvested, a listener, arguments overridden."""
+        yield from McpServerFindings._protocol_findings(ctx, text, unit)
+        if unit.content.path.endswith(_JS_SUFFIXES):
+            yield from McpServerFindings._js_handler_findings(ctx, text, unit)
         if unit.content.path.endswith(".py"):
             # What the handlers do with the agent's input (`detect/mcp_code.py`).
             from cordon_scanner.detect.agents.mcp_servers.handlers import McpCode
@@ -179,7 +402,7 @@ class McpServerFindings:
                 first = starts[min(max(line, 1), len(starts)) - 1]
                 last = text.find("\n", first)
                 last = len(text) if last < 0 else last
-                return len(text[:first].encode("utf-8")), len(text[:last].encode("utf-8"))
+                return unit.content.byte_offset(first, text), unit.content.byte_offset(last, text)
 
             for line, _tool, triggered in McpCode.shell_from_input_graded(text):
                 # Behind a secret prefix or value it is a backdoor and blocks; run on whatever
@@ -197,6 +420,13 @@ class McpServerFindings:
                     + " No secret gates it: it runs whatever arrives, a vulnerability rather than "
                     "a backdoor.",
                 )
+            shells = {line for line, _tool, _triggered in McpCode.shell_from_input_graded(text)}
+            for line, _function in McpCode.prefix_runs(text)[:3]:
+                # A marker taken off the input and the rest run: a backdoor, called by a tool or not.
+                if line not in shells:
+                    yield AgentFinding.finding(
+                        "SUSPECT.MCP.HANDLER_SHELL.001", unit, ctx, *at(line)
+                    )
             for line, _tool in McpCode.time_bomb(text)[:3]:
                 yield AgentFinding.finding("SUSPECT.MCP.TIME_BOMB.001", unit, ctx, *at(line))
             for line, _tool in McpCode.mirrors_input(text)[:3]:
@@ -216,11 +446,36 @@ class McpServerFindings:
             if listening is not None:
                 yield AgentFinding.finding("SUSPECT.MCP.LISTENER.001", unit, ctx, *at(listening))
             for first, last in McpServerSource._overridden_arguments(text):
-                start = len(text[:first].encode("utf-8"))
+                start = unit.content.byte_offset(first, text)
                 end = start + len(text[first:last].encode("utf-8"))
                 yield AgentFinding.finding(
                     "SUSPECT.MCP.ARGUMENT_OVERRIDE.001", unit, ctx, start, end
                 )
+
+    @staticmethod
+    def _js_handler_findings(ctx: ScanContext, text: str, unit: FileUnit) -> Iterator[Finding]:
+        """A JavaScript or TypeScript server's tool handler running its own input through a shell
+        (`handlers_js.py`), graded as the Python one is: behind a secret it blocks."""
+        from cordon_scanner.detect.agents.mcp_servers.handlers_js import McpJsCode
+
+        typescript = unit.content.path.endswith((".ts", ".mts", ".cts", ".tsx"))
+        for offset, triggered in McpJsCode.shell_from_input_graded(text, typescript)[:3]:
+            start = unit.content.byte_offset(offset, text)
+            end = text.find("\n", offset)
+            end = len(text) if end < 0 else end
+            yield AgentFinding.finding(
+                "SUSPECT.MCP.HANDLER_SHELL.001",
+                unit,
+                ctx,
+                start,
+                start + len(text[offset:end].encode("utf-8")),
+                severity=None if triggered else Severity.MEDIUM,
+                message=None
+                if triggered
+                else RULES["SUSPECT.MCP.HANDLER_SHELL.001"].message
+                + " No secret gates it: it runs whatever arrives, a vulnerability rather than "
+                "a backdoor.",
+            )
 
     @staticmethod
     def _return_findings(ctx: ScanContext, text: str, unit: FileUnit) -> Iterator[Finding]:
@@ -229,6 +484,7 @@ class McpServerFindings:
         # in a returned string steers it as one in a description does. The model only: the
         # phrase rules were written for descriptions, and status messages are not those.
         limits = McpDescriptionModel.thresholds("return")
+        own = OwnVocabulary.declared(text, unit.content.path)
         if limits is not None:
             for returned in dict.fromkeys(McpServerSource._tool_returns(text, unit.content.path)):
                 # A result that wraps instructions in a tag addressed to the model --
@@ -243,10 +499,13 @@ class McpServerFindings:
                         message=RULES["SUSPECT.MCP.TOOL_DESCRIPTION.001"].message
                         + " The text is what a tool returns, and it wraps text in a tag "
                         "addressed to the model.",
+                        basis=("return", "wrapped"),
                     )
                     continue
                 chain = AgentSemantics.precise(returned, "return")
-                if chain is not None:
+                if chain is not None and not McpServerFindings._own_sequencing(
+                    returned, chain, own, "return"
+                ):
                     yield AgentFinding.at_text(
                         "SUSPECT.MCP.TOOL_DESCRIPTION.001",
                         unit,
@@ -256,6 +515,7 @@ class McpServerFindings:
                         message=RULES["SUSPECT.MCP.TOOL_DESCRIPTION.001"].message
                         + f" The text is what a tool returns, and it gives "
                         f"{AgentSemantics.explain(chain)}.",
+                        basis=("return", McpServerFindings.chain_code(chain)),
                     )
                     continue
                 if RESULT_SENDS_TO_URL.search(returned) or ORDERS_A_COMMAND.search(returned):
@@ -268,11 +528,18 @@ class McpServerFindings:
                         message=RULES["SUSPECT.MCP.TOOL_DESCRIPTION.001"].message
                         + " The text is what a tool returns, and it sends the agent to call a "
                         "tool on a web address the result supplies, or to run a shell command.",
+                        basis=("return", "url_or_command"),
                     )
                     continue
                 score = McpDescriptionModel.score(returned, "return")
                 if score is None or score < limits[1]:
                     continue
+                # The learned model on its own is the weakest evidence: a message about the
+                # server's own flow is reported, not blocked.
+                about_own = McpServerFindings._about_own(returned, own) or (
+                    chain is not None
+                    and McpServerFindings._own_sequencing(returned, chain, own, "return")
+                )
                 yield AgentFinding.at_text(
                     "SUSPECT.MCP.TOOL_DESCRIPTION.001",
                     unit,
@@ -282,8 +549,34 @@ class McpServerFindings:
                     message=RULES["SUSPECT.MCP.TOOL_DESCRIPTION.001"].message
                     + " The text is what a tool returns, and it reads as instructions to the "
                     f"agent rather than a result (model score {score:.2f}).",
-                    severity=None if score >= limits[0] else Severity.MEDIUM,
+                    severity=None if score >= limits[0] and not about_own else Severity.MEDIUM,
+                    basis=("return", McpServerFindings.model_code(score, limits[0]))
+                    + (("own_flow",) if about_own else ()),
                 )
+
+    @staticmethod
+    def chain_code(chain: tuple[str, ...]) -> str:
+        """The `explanation.basis` code of a precise chain: its step names, in order."""
+        return "chain:" + "+".join(chain)
+
+    @staticmethod
+    def model_code(score: float, block: float) -> str:
+        """The `explanation.basis` code of the learned reading: its score and the block line."""
+        return f"model={score:.2f}/{block:.4f}"
+
+    @staticmethod
+    def _about_own(returned: str, own: frozenset[str]) -> bool:
+        """Whether a returned message that only the learned model reads as steering names only this
+        server's own identifiers and is no more than a usage message: no secrecy, no command, no address,
+        no overruling the user. Such a message is reported, not blocked."""
+        found = AgentSemantics.steps(returned)
+        return (
+            OwnVocabulary.names_only(own, returned)
+            and not any(
+                found[step] for step in ("deceive", "command", "offsite", "overrule", "banner")
+            )
+            and McpServerSource._poisoned_description(returned, own) is None
+        )
 
     @classmethod
     def _server_content(cls, unit: FileUnit, ctx: ScanContext, text: str) -> Iterator[Finding]:
@@ -311,7 +604,8 @@ class McpServerFindings:
                 message=RULES["SUSPECT.MCP.TOOL_SQUATTING.001"].message
                 + f" The tool is named `{squat.group('name')}`.",
             )
-        hidden = schema = wallet = False
+        hidden = schema = wallet = metadata = False
+        sinks: set[str] = set()
         # A parameter is a name in the code -- a Python argument, a zod key -- as often as a string.
         for name in dict.fromkeys(_IDENTIFIER.findall(text)):
             if _SCHEMA_ORDER.fullmatch(name) and _SCHEMA_ASKS.search(name.replace("_", " ")):
@@ -321,6 +615,17 @@ class McpServerFindings:
                 )
                 break
         for literal in McpServerSource._all_literals(text):
+            if not metadata and McpLiteralSinks.metadata(literal):
+                metadata = True
+                yield AgentFinding.at_text(
+                    "SUSPECT.MCP.CLOUD_METADATA.001", unit, ctx, text, literal[:80]
+                )
+            kind = McpLiteralSinks.sink_kind(literal) if len(sinks) < 4 else None
+            if kind is not None and kind not in sinks:
+                sinks.add(kind)
+                yield AgentFinding.at_text(
+                    f"SUSPECT.MCP.EXFIL_{kind.upper()}.001", unit, ctx, text, literal[:80]
+                )
             if not hidden and ("<!--" in literal or "[//]:" in literal):
                 spans = [s for s in HiddenInstruction.find(literal) if HiddenInstruction.strong(s)]
                 if spans:
@@ -350,6 +655,14 @@ class McpServerFindings:
                 yield AgentFinding.at_text(
                     "SUSPECT.MCP.DENIAL_OF_WALLET.001", unit, ctx, text, literal[:80]
                 )
+        for technique, first, last in McpTechniques.scan(text):
+            yield AgentFinding.finding(
+                technique.rule_id,
+                unit,
+                ctx,
+                AgentFinding.byte_at(unit, text, first),
+                AgentFinding.byte_at(unit, text, last),
+            )
 
     @classmethod
     def mcp(cls, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:

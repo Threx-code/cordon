@@ -124,6 +124,53 @@ class TestPythonLockfiles:
         assert graph.parse_error
 
     @pytest.mark.parametrize(
+        "text",
+        [
+            'version = 1\r\nrevision = 3\r\nrequires-python = ">=3.5"\r\n',
+            '# Regenerate with: uv lock\nversion = 1\nrevision = 1\nrequires-python = ">=3.10"\n',
+        ],
+    )
+    def test_a_uv_lock_of_a_project_with_no_dependencies_is_complete_and_empty(
+        self, text: str
+    ) -> None:
+        """uv writes only its header for a project that depends on nothing (2 benign PyPI units,
+        05-CENSUS C2): that file has no entries, so the graph is empty and not an error."""
+        graph = self.eco.parse_lockfile(LockfileParsersHelpers.fc("uv.lock", text))
+        assert graph.parse_error is None
+        assert graph.entries == ()
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            'version = 1\nrequires-python = ">=3.5"\nsomething-else = 1\n',
+            'version = "1"\nrequires-python = ">=3.5"\n',
+            "version = 1\nrequires-python = 3\n",
+            'requires-python = ">=3.5"\n',
+        ],
+    )
+    def test_a_header_only_file_that_is_not_uvs_header_still_reports(self, text: str) -> None:
+        graph = self.eco.parse_lockfile(LockfileParsersHelpers.fc("uv.lock", text))
+        assert graph.parse_error
+
+    def test_an_early_uv_lock_names_its_tables_distribution(self) -> None:
+        """uv's first lock schema (version 1, no `revision`) wrote `[[distribution]]` where it
+        now writes `[[package]]`; the tables hold the same fields and get the same checks."""
+        early = UV_LOCK.replace("[[package]]", "[[distribution]]").replace("revision = 1\n", "")
+        graph = self.eco.parse_lockfile(LockfileParsersHelpers.fc("uv.lock", early))
+        assert graph.parse_error is None
+        by_name = {e.name: e for e in graph.entries}
+        assert by_name["django"].version == "1.2.1"
+        assert (
+            by_name["django"].integrity
+            == "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        )
+
+    def test_distribution_tables_in_a_lock_that_also_has_package_tables_report(self) -> None:
+        mixed = UV_LOCK + '\n[[distribution]]\nname = "x"\nversion = "1"\n'
+        graph = self.eco.parse_lockfile(LockfileParsersHelpers.fc("uv.lock", mixed))
+        assert graph.parse_error
+
+    @pytest.mark.parametrize(
         ("path", "text"),
         [
             ("poetry.lock", "[[package]\nbroken"),

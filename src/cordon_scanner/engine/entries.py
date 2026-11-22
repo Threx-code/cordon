@@ -31,6 +31,17 @@ class PackageEntries:
         manifest = PackageEntries.manifest(units, distribution)
         return frozenset(RegistryFacts.library_entries(distribution, members, manifest, with_bin))
 
+    @staticmethod
+    def importable_modules(units: list[FileUnit], distribution: str) -> frozenset[str]:
+        """Every module of a published package a consumer can import as the package, by its
+        ecosystem (`import_modules`): their top level runs when imported (reviews/pypi-98/10)."""
+        members: dict[str, str] = {}
+        for unit in units:
+            _, sep, member = unit.path.partition("!")
+            if sep and "!" not in member:
+                members[member] = unit.path
+        return frozenset(RegistryFacts.import_modules(distribution, members))
+
     PROJECT_SCRIPTS: ClassVar[frozenset[str]] = frozenset(
         f"{when}{name}" for name in ("dev", "build", "start") for when in ("", "pre", "post")
     )
@@ -93,6 +104,25 @@ class PackageEntries:
         return document if isinstance(document, dict) else {}
 
     @staticmethod
+    def version(units: list[FileUnit], distribution: str) -> str:
+        """The version the published package declares, or "": its manifest's `version` where the
+        ecosystem keeps one, else the `Version:` header of the core-metadata file at the archive's
+        top (the file that opens with `Metadata-Version:`)."""
+        value = PackageEntries.manifest(units, distribution).get("version")
+        if isinstance(value, str):
+            return value
+        for unit in units:
+            member = unit.path.rsplit("!", 1)[-1]
+            if member.count("/") != 1 or unit.content.is_binary:
+                continue
+            head = unit.content.text_head(8_192)
+            if head.startswith("Metadata-Version:"):
+                found = re.search(r"(?m)^Version:[ \t]*(\S{1,64})", head)
+                if found:
+                    return found.group(1)
+        return ""
+
+    @staticmethod
     def repository(units: list[FileUnit], distribution: str) -> str:
         """The published package's own `repository` URL, or "": a string, or an object's `url`, as
         its manifest declares it (review 98, FP-2)."""
@@ -101,4 +131,131 @@ class PackageEntries:
         )
 
 
-__all__ = ["PackageEntries"]
+class PythonScripts:
+    """The modules a Python package's commands run (`console_scripts`, `gui_scripts`, a Poetry
+    `scripts` table): `pkg-run = pkg.cli:main` runs pkg/cli.py's top level on every invocation,
+    whether or not `__init__` imports it (S2, lead 2026-11-10: a payload in syntax newer than the
+    scanner's Python, placed only in the command's module, ran unread). Read from every place a
+    distribution declares them: a wheel's or egg-info's entry_points.txt, pyproject.toml,
+    setup.cfg, and a literal `entry_points=` in setup.py."""
+
+    GROUPS: ClassVar[tuple[str, ...]] = ("console_scripts", "gui_scripts")
+    #: A setup.py whose `entry_points=` or `scripts=` is not a literal: its commands could name
+    #: any module, test files included, so every `.py` of that archive is running for the
+    #: unparsed check (fail closed; lead, 2026-11-10).
+    UNKNOWN: ClassVar[str] = "*"
+
+    @staticmethod
+    def targets(units: list[FileUnit]) -> frozenset[str]:
+        """Unit paths of the `.py` files the declared commands name, within each archive."""
+        modules: set[tuple[str, str]] = set()  # (archive prefix, dotted module)
+        for unit in units:
+            archive, sep, member = unit.path.rpartition("!")
+            if not sep:
+                continue
+            name = member.rsplit("/", 1)[-1]
+            text = unit.content.text if not unit.content.is_binary else ""
+            for target in PythonScripts._declared(name, text):
+                modules.add((archive, target.split(":", 1)[0].strip()))
+        unknown = {archive for archive, module in modules if module == PythonScripts.UNKNOWN}
+        found: set[str] = set()
+        for unit in units:
+            archive, sep, member = unit.path.rpartition("!")
+            if not sep or not member.endswith(".py"):
+                continue
+            if archive in unknown:
+                found.add(unit.path)
+                continue
+            for owner, module in modules:
+                if owner != archive or not module:
+                    continue
+                stem = module.replace(".", "/")
+                if ("/" + member).endswith((f"/{stem}.py", f"/{stem}/__init__.py")):
+                    found.add(unit.path)
+        return frozenset(found)
+
+    @staticmethod
+    def _declared(name: str, text: str) -> list[str]:
+        """`module:function` targets a file declares, by the file's own format; [] if none."""
+        if name == "entry_points.txt" or name == "setup.cfg":
+            return PythonScripts._ini(text, name == "setup.cfg")
+        if name == "pyproject.toml":
+            return PythonScripts._pyproject(text)
+        if name == "setup.py":
+            return PythonScripts._setup_py(text)
+        return []
+
+    @staticmethod
+    def _ini(text: str, setup_cfg: bool) -> list[str]:
+        import configparser
+
+        parser = configparser.ConfigParser(interpolation=None)
+        try:
+            parser.read_string(text)
+        except (configparser.Error, ValueError):
+            return []
+        out: list[str] = []
+        if setup_cfg:
+            if parser.has_section("options.entry_points"):
+                for group in PythonScripts.GROUPS:
+                    value = parser.get("options.entry_points", group, fallback="")
+                    out += [ln.split("=", 1)[1] for ln in value.splitlines() if "=" in ln]
+            return out
+        for group in PythonScripts.GROUPS:
+            if parser.has_section(group):
+                out += [v for _, v in parser.items(group)]
+        return out
+
+    @staticmethod
+    def _pyproject(text: str) -> list[str]:
+        import tomllib
+
+        try:
+            document = tomllib.loads(text)
+        except (tomllib.TOMLDecodeError, ValueError, RecursionError):
+            return []
+        project = document.get("project", {})
+        tables = [
+            project.get("scripts", {}),
+            project.get("gui-scripts", {}),
+            document.get("tool", {}).get("poetry", {}).get("scripts", {}),
+        ]
+        return [v for t in tables if isinstance(t, dict) for v in t.values() if isinstance(v, str)]
+
+    @staticmethod
+    def _setup_py(text: str) -> list[str]:
+        import ast
+
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
+        try:
+            tree = PythonSyntax.parse(text)  # the guarded parse (test_untrusted_parse.py)
+        except (SyntaxError, ValueError, RecursionError, MemoryError):
+            return []  # S2: covered: a setup.py that does not parse is MANIFEST.UNPARSED
+        out: list[str] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.keyword) or node.arg not in ("entry_points", "scripts"):
+                continue
+            if node.arg == "scripts":
+                # Script files by path; built at run time, they could be any file (fail closed).
+                try:
+                    ast.literal_eval(node.value)
+                except (ValueError, SyntaxError, TypeError, RecursionError, MemoryError):
+                    # S2: recorded as UNKNOWN: scripts built at run time could name any module.
+                    return [PythonScripts.UNKNOWN]
+                continue
+            try:
+                value = ast.literal_eval(node.value)
+            except (ValueError, SyntaxError, TypeError, RecursionError, MemoryError):
+                # S2: recorded as UNKNOWN: commands built at run time could name any module.
+                return [PythonScripts.UNKNOWN]
+            if not isinstance(value, dict):
+                return [PythonScripts.UNKNOWN]
+            for group in PythonScripts.GROUPS:
+                lines = value.get(group, [])
+                lines = [lines] if isinstance(lines, str) else lines
+                out += [ln.split("=", 1)[1] for ln in lines if isinstance(ln, str) and "=" in ln]
+        return out
+
+
+__all__ = ["PackageEntries", "PythonScripts"]
