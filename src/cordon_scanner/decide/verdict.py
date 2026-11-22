@@ -99,11 +99,28 @@ class VerdictModel:
         if bundled is None:
             return None
         delivered = FeedModels.delivered(path.name)
-        if delivered is not None:
-            model = VerdictModel._read(delivered)
-            if model is not None and FeedModels.newer(model.get("version"), bundled.get("version")):
-                return model
+        if delivered is None:
+            return bundled
+        model = VerdictModel._read(delivered)
+        if model is None:
+            FeedModels.refuse(path.name, VerdictModel._why_unusable(delivered))
+        elif FeedModels.newer(model.get("version"), bundled.get("version")):
+            FeedModels.accepted(path.name)
+            return model
+        else:
+            versioned = FeedModels.versioned(model.get("version"))
+            FeedModels.refuse(path.name, "not_fresher" if versioned else "unversioned")
         return bundled
+
+    @staticmethod
+    def _why_unusable(path: Path) -> str:
+        """Why the model file at `path` cannot be scored with: it is a model of another feature schema or fold (`other_schema`) or it is not a model (`unreadable`)."""
+        try:
+            with gzip.open(path, "rt", encoding="utf-8") as handle:
+                model: Any = json.load(handle)
+        except (OSError, ValueError, EOFError):
+            return "unreadable"
+        return "other_schema" if isinstance(model, dict) else "unreadable"
 
     @staticmethod
     def _read(path: Path) -> dict[str, Any] | None:
