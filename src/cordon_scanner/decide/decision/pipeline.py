@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import ClassVar
 
+from cordon_scanner.decide.decision.bounds import Bounds
 from cordon_scanner.decide.decision.compiler import PolicyCompiler
 from cordon_scanner.decide.decision.evidence import Approval, FindingFact
 from cordon_scanner.decide.decision.facts import Facts, Matcher
@@ -109,7 +110,7 @@ class Completeness:
         if not evidence.complete:
             found.append((incomplete, Reason("R204", "the scan did not complete")))
         for gap in sorted(evidence.gaps, key=lambda item: (item.rule_id, item.path)):
-            where = f" at {gap.path}" if gap.path else ""
+            where = f" at {Bounds.path(gap.path)}" if gap.path else ""
             found.append(
                 (
                     defaults.on_gaps,
@@ -228,7 +229,9 @@ class Overrides:
             added = [Reason("R901", f"approved for this digest by {approval.id} (covers: {names})")]
             if conditions:
                 added.append(
-                    Reason("R703", "allowed with conditions: " + "; ".join(approval.conditions))
+                    Reason(
+                        "R703", "allowed with conditions: " + Bounds.conditions(approval.conditions)
+                    )
                 )
             kept = [item for item in fired if item not in blocking]
             return kept, added, States.ALLOW_WITH_CONDITIONS if conditions else States.ALLOW

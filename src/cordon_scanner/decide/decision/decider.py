@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Any
 
 from cordon_scanner.contracts.digests import ArtifactDigests
+from cordon_scanner.decide.decision.bounds import Bounds
 from cordon_scanner.decide.decision.evidence import ArtifactRef, Context, EvidenceSet
 from cordon_scanner.decide.decision.facts import Facts
 from cordon_scanner.decide.decision.outcome import (
@@ -201,12 +202,15 @@ class Decider:
     def _emit(cls, facts: Facts, policy: CompiledPolicy, draft: Draft) -> Decision:
         bucket = Instants.bucket(facts.clock, policy.defaults.clock_bucket_s)
         bucket_text = Instants.text(bucket)
-        reasons = tuple(draft.reasons)
+        every = tuple(draft.reasons)
+        reasons = Bounds.reasons(every)
         first = reasons[0]
         return Decision(
             state=draft.state,
-            reason_codes=tuple(sorted({item.code for item in reasons})),
-            explanation=Explanation(f"{draft.state}: {first.code} {first.text}", reasons),
+            reason_codes=tuple(sorted({item.code for item in every})),
+            explanation=Explanation(
+                Bounds.summary(f"{draft.state}: {first.code} {first.text}"), reasons
+            ),
             obligations=tuple(sorted(draft.obligations)),
             inputs_digest=cls._inputs_digest(facts, policy),
             policy=policy.ref(),
