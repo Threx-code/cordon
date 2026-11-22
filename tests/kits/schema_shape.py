@@ -1,4 +1,4 @@
-"""The shape of a contract schema as a flat map, and the comparison that says whether a newer one is only an addition (BP-14-12).
+"""The shape of a contract schema as a flat map, and the comparison that says whether a newer one is only an addition.
 
 A schema is read into `{path: {type, enum, required, ref}}`, where a path is a property chain (`.decision.reasons[].code`), a branch of
 `oneOf`/`anyOf`/`allOf` (`|oneOf0`) or a definition (`#defs/digest`). `compare(old, new)` lists what an additive change may not do inside a

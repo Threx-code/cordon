@@ -311,7 +311,7 @@ class Overrides:
 
 
 class QualityGuard:
-    """Step 6 (invariant I10): a content rule in an ecosystem not yet measured reviews, it does not block."""
+    """Step 6: a content rule in an ecosystem not yet measured reviews, it does not block."""
 
     ALIASES: ClassVar[dict[str, str]] = {"agent_skill": "skills", "mcp_server": "mcp"}
 

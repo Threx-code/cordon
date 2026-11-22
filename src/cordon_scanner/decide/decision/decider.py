@@ -1,7 +1,7 @@
 """`Decider.decide`: the one decision function (design spec 5.1). Pure: no I/O, no clock, no environment.
 
 Every input is passed in and nothing is read from anywhere else, so the same call gives the same `Decision`
-bytes in the CLI, a hook, the firewall, a gate and the cloud (invariant I3). `decide_json` is the same call
+bytes in the CLI, a hook, the firewall, a gate and the cloud. `decide_json` is the same call
 over JSON for a caller that is not Python.
 """
 

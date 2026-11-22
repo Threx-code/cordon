@@ -1,4 +1,4 @@
-"""Golden vectors of the tree digest (`ArtifactDigests.of_tree`), shared byte for byte with the backend's capture of a skill folder (BP-10-3, BP-10-5).
+"""Golden vectors of the tree digest (`ArtifactDigests.of_tree`), shared byte for byte with the backend's capture of a skill folder.
 
 `tree_digest_vectors.json` holds invented folders (path, mode, the bytes in hex) and the digest each must have. The test checks them against the
 implementation and against a second, independent writing of the definition kept here: the lines `<path>\\0<mode>\\0<hex sha256 of the bytes>\\n` sorted by

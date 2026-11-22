@@ -1,4 +1,4 @@
-"""Row BP-V-29: an SPDX document round-trips to the component list and back.
+"""An SPDX document round-trips to the component list and back.
 
 The writer (`report/sbom.py`) makes an SPDX 2.3 document from a dependency graph; the reader (`engine/sbom_ingest.py`) turns an SPDX document into
 a component list and its edges. The test sends a graph through both directions: graph, document, component list, graph, document. The second

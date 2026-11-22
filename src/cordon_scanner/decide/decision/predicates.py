@@ -1,4 +1,4 @@
-"""Typed predicates: the only conditions a policy rule can state (design spec 6.1, I11).
+"""Typed predicates: the only conditions a policy rule can state (design spec 6.1).
 
 A predicate is a map from a field of a closed list to a value. The value is a literal (equality, or
 "contains" for a list-valued field), `{"in": [...]}` (or the name of one of the policy's lists),

@@ -1,4 +1,4 @@
-"""Skill folders and models the feed condemned or holds, matched by their tree digest and by nothing else (BP-10-3, BP-10-5).
+"""Skill folders and models the feed condemned or holds, matched by their tree digest and by nothing else.
 
 The backend captures two ecosystems that have no name and version to match on: `skills` (a folder, digested by `ArtifactDigests.of_tree`, the digest
 `decide/resolve/skill.py` computes locally) and `huggingface` (a model, digested by `ArtifactDigests.of_model` from the digests of its files). A feed

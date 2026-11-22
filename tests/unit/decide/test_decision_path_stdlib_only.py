@@ -1,4 +1,4 @@
-"""Row BP-0-15: the decision path is Cordon's own code: it imports nothing outside the standard library and the package.
+"""The decision path is Cordon's own code: it imports nothing outside the standard library and the package.
 
 The decision path is `decide()` and what it reads (`decide/`, `contracts/`), the library that asks it from every point and holds a signed bundle
 (`cloud/runtime.py`, `local_runtime.py`, `local_store.py`, `bundle_puller.py`, `bundle_chain.py`, `minimal_record.py`) and the verifier of a

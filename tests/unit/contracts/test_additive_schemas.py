@@ -1,4 +1,4 @@
-"""Row BP-14-12: within a major version a schema changes only by addition.
+"""Within a major version a schema changes only by addition.
 
 `schema_baseline.json` is the shape of every contract schema as it was last released. Today's schemas must hold all of it: no field removed,
 none retyped, no allowed value taken away, none made newly required. A new optional field, a new allowed value or a new schema file passes. The

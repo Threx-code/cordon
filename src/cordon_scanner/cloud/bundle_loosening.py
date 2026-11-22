@@ -1,4 +1,4 @@
-"""A policy bundle that loosens the policy needs a current, signed loosening (BP-0-13, I9).
+"""A policy bundle that loosens the policy needs a current, signed loosening.
 
 Remote content may tighten policy at any time. Loosening needs a separately signed, logged, expiring action. A client that holds a bundle
 compares the next one with it:

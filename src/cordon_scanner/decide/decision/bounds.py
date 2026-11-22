@@ -1,4 +1,4 @@
-"""The size of what a decision says: the library bounds its own free text, so a receiver can cap it one notch above (BP-0-10, invariant I6).
+"""The size of what a decision says: the library bounds its own free text, so a receiver can cap it one notch above.
 
 A decision's text is mostly fixed templates with ids, but some of it is an input echoed back: the path of a file the scan could not read, an approval's conditions, an intel match's id. A path can be any length
 and hold any character a file name can hold, and a scan of a large package can give thousands of findings, each one a reason. Left alone, a decision could carry a great deal of text that was never the library's to say. So:

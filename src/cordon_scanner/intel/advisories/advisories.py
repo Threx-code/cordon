@@ -421,7 +421,7 @@ ADVISORY_ECOSYSTEMS: Final[tuple[str, ...]] = (
     "hackage",
     "julia",
     "opam",
-    # Followed by Cordon's registry watchers (cordon-backend), matched from the feed alone: conda and
+    # Followed by Cordon's registry watchers (the backend), matched from the feed alone: conda and
     # cocoapods and bazel by name and exact version, the recipe registries (homebrew, conan, vcpkg,
     # nix) by the recipe file's digest (`detect/supply/recipe_digests`). Galaxy is `ansible` here.
     "conda",
@@ -432,7 +432,7 @@ ADVISORY_ECOSYSTEMS: Final[tuple[str, ...]] = (
     "conan",
     "vcpkg",
     "nix",
-    # The watch-list registries and MCP (cordon-backend task 22), from the feed alone: a Terraform
+    # The watch-list registries and MCP, from the feed alone: a Terraform
     # module and an image by name and exact version (an image's digest is one of its versions), a Helm
     # chart by name and version only from a repository the record names, and an MCP bundle by its
     # digest (`recipe_digests`).
@@ -440,7 +440,7 @@ ADVISORY_ECOSYSTEMS: Final[tuple[str, ...]] = (
     "terraform",
     "image",
     "mcp",
-    # Skill folders and models (cordon-backend capture, BP-10-3 and BP-10-5), from the feed alone and by digest: a skill folder by `ArtifactDigests.of_tree`, a model by
+    # Skill folders and models (the backend's capture), from the feed alone and by digest: a skill folder by `ArtifactDigests.of_tree`, a model by
     # `ArtifactDigests.of_model` (the vectors shared with the backend), never by name.
     "skills",
     "huggingface",

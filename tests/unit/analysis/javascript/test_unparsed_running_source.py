@@ -1,4 +1,4 @@
-"""A JavaScript file that runs when a published package is loaded and that no reader can take to its end is a gap or is said, never silence (BP-15-19).
+"""A JavaScript file that runs when a published package is loaded and that no reader can take to its end is a gap or is said, never silence.
 
 The Python side has done this since 09 3a (`analysis/python/unparsed_source.py`): a running file that does not parse is a content gap when it
 names anything that could run its pieces, and `SOURCE.BROKEN` (said) when it names nothing. A JavaScript entry file whose brackets do not

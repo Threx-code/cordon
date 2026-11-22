@@ -22,7 +22,7 @@ class PackageEntries:
         """The files of a published package that run when it is used rather than installed: npm's
         `main` (or `index.js`), `bin` and `exports` targets; a wheel's or sdist's top-level
         `__init__.py`. Their module top level runs on `require()`, `import` or the command, on
-        every consumer, with no hook in the manifest (review 98, REC-2)."""
+        every consumer, with no hook in the manifest."""
         members: dict[str, str] = {}
         for unit in units:
             _, sep, member = unit.path.partition("!")
@@ -125,7 +125,7 @@ class PackageEntries:
     @staticmethod
     def repository(units: list[FileUnit], distribution: str) -> str:
         """The published package's own `repository` URL, or "": a string, or an object's `url`, as
-        its manifest declares it (review 98, FP-2)."""
+        its manifest declares it."""
         return RegistryFacts.published_repository(
             distribution, PackageEntries.manifest(units, distribution)
         )
@@ -134,15 +134,15 @@ class PackageEntries:
 class PythonScripts:
     """The modules a Python package's commands run (`console_scripts`, `gui_scripts`, a Poetry
     `scripts` table): `pkg-run = pkg.cli:main` runs pkg/cli.py's top level on every invocation,
-    whether or not `__init__` imports it (S2, lead 2026-11-10: a payload in syntax newer than the
-    scanner's Python, placed only in the command's module, ran unread). Read from every place a
+    whether or not `__init__` imports it (a payload in syntax newer than the
+    scanner's Python, placed only in the command's module, would run unread). Read from every place a
     distribution declares them: a wheel's or egg-info's entry_points.txt, pyproject.toml,
     setup.cfg, and a literal `entry_points=` in setup.py."""
 
     GROUPS: ClassVar[tuple[str, ...]] = ("console_scripts", "gui_scripts")
     #: A setup.py whose `entry_points=` or `scripts=` is not a literal: its commands could name
     #: any module, test files included, so every `.py` of that archive is running for the
-    #: unparsed check (fail closed; lead, 2026-11-10).
+    #: unparsed check (fail closed).
     UNKNOWN: ClassVar[str] = "*"
 
     @staticmethod

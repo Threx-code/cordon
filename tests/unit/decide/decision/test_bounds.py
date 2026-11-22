@@ -1,4 +1,4 @@
-"""BP-0-10 (invariant I6): the library bounds the text it says, so a receiver can cap it one notch above.
+"""The library bounds the text it says, so a receiver can cap it one notch above.
 
 A decision's text is fixed templates with ids, plus inputs echoed back (a gap's path, an approval's conditions). These tests give the decider hostile inputs (a path of thousands of characters with
 control characters in it, thousands of findings, conditions of tens of thousands of characters) and check what it says: the summary and every reason at most 320 characters, at most 101 reasons, no control

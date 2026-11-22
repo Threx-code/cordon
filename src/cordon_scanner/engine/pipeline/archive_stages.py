@@ -224,7 +224,7 @@ class ArchiveStages:
         # Only a skill's scripts take the install grade. An MCP server runs when the agent calls
         # a tool the user asked it to use: downloading a browser, starting a detached emulator or
         # writing its config is the tool's work, and graded as install code it blocked 40 of 863
-        # real MCP packages (review 98). What a server's handlers do with the agent's input is
+        # real MCP packages. What a server's handlers do with the agent's input is
         # read by `detect/mcp_code.py` instead -- a shell behind a secret prefix, a hidden copy of
         # every argument, a gate that turns the tool later, secrets gathered by name.
         # A skill's scripts run unasked when an agent uses the skill. A SKILL.md in a registry
@@ -239,7 +239,7 @@ class ArchiveStages:
         unshipped: list[tuple[str, str]] = []
         python_closure = Hooks.hook_import_closure(units, hook_paths, unshipped)
         ImportClosure.unshipped_gaps(acc, unshipped)
-        # A file that closure runs by its path is Python whatever its name (item 39's suite).
+        # A file that closure runs by its path is Python whatever its name.
         Hooks.executed_as_python(units, python_closure)
         hook_paths |= python_closure
         hook_paths |= Hooks.hook_js_closure(units, hook_paths)
@@ -268,7 +268,7 @@ class ArchiveStages:
             # typosquat grading asks which format it is.
             package_distribution=bool(early_format := PackageFormat.of(units)),
             distribution=early_format,
-            # What the package's own dev, build and start scripts run is used code too (item 72).
+            # What the package's own dev, build and start scripts run is used code too.
             import_entry_paths=(used := PackageEntries.of(units, early_format))
             | (project := PackageEntries.project_run(units, early_format)),
             library_entry_paths=PackageEntries.of(units, early_format, with_bin=False),
@@ -396,7 +396,7 @@ class ArchiveStages:
         self, units: list[FileUnit], acc: Accumulator, ctx: ScanContext
     ) -> ScanContext:
         """What a plain directory scan (a cloned repository, an MCP server checked out from git) reads as running, for both languages: the JavaScript its
-        package.json names, and for Python the install closure, the top-level packages' `__init__` and the modules the manifests name (BP-15-19)."""
+        package.json names, and for Python the install closure, the top-level packages' `__init__` and the modules the manifests name."""
         from cordon_scanner.engine.entries import PythonScripts
 
         self.unparsed_javascript(units, acc, ctx)
@@ -411,7 +411,7 @@ class ArchiveStages:
     @staticmethod
     def unparsed_javascript(units: list[FileUnit], acc: Accumulator, ctx: ScanContext) -> None:
         """A JavaScript file that runs when the package is loaded and whose brackets do not close is a gap (it names something that could run
-        its pieces) or is said (it names nothing): the same decision as for Python, never silence (BP-15-19)."""
+        its pieces) or is said (it names nothing): the same decision as for Python, never silence."""
         running = {
             u.path for u in units if u.path in ctx.import_entry_paths or ctx.in_install_hook(u.path)
         }
@@ -470,7 +470,7 @@ class ArchiveStages:
     def parallel(
         self, units: list[FileUnit], deadline: float, acc: Accumulator, path: Path, ctx: ScanContext
     ) -> list[Detector]:
-        """Every member, read by the detectors in supervised workers (item 28)."""
+        """Every member, read by the detectors in supervised workers."""
         detectors = [d for d in self.detectors if self.engine.detection.enabled(d, ctx)]
         self.progress.phase("scanning", total=len(units))
         # An image or a large archive is thousands of members (a Grafana image adds eleven
@@ -479,7 +479,7 @@ class ArchiveStages:
         content_detectors = [
             d for d in detectors if not (d.requires.dependencies and d.requires.content is False)
         ]
-        # Always in supervised workers, one as readily as many (item 28): a member that kills or
+        # Always in supervised workers, one as readily as many: a member that kills or
         # hangs its worker costs that member; this process never inspects one.
         from cordon_scanner.engine.cache import CacheSignature
 
@@ -495,7 +495,7 @@ class ArchiveStages:
                         severity=Severity.MEDIUM,
                     )
                 )
-                # Every member of the slices never started, by path (item 38's review, change 2).
+                # Every member of the slices never started, by path.
                 acc.ledger_unstarted.update(unit.path for unit in units[start:])
                 break
             found = self.engine.detection.parallel(
@@ -516,8 +516,7 @@ class ArchiveStages:
 
     def release_checks(self, acc: Accumulator, ctx: ScanContext, units: list[FileUnit]) -> None:
         """The checks on the release as a whole, after every member was read in the workers. There
-        is no per-member pass here: this process never inspects a member (item 28; item 55 deleted
-        the loop that was left for one, which no member reached)."""
+        is no per-member pass here: this process never inspects a member."""
         if acc.out_of_time(ctx, REPOSITORY_SCOPE, "the release checks"):
             return
         acc.add(ReleaseChecks.unexamined_install_code(acc.findings, ctx))
@@ -567,8 +566,7 @@ class ArchiveStages:
         self.progress.phase("dependencies")
         package = PackageFormat.of(units)
         # A published package's inventory is its root manifest and lockfile (`DependencyScope`):
-        # built in the context worker with the rest of what the archive's manifests say (item 56
-        # (b)), and applied here, where it was built before, so its findings keep their place.
+        # built in the context worker with the rest of what the archive's manifests say, and applied here, where it was built before, so its findings keep their place.
         dependencies = self.engine.context_stage.archive_dependencies(acc)
         self._hold_not_installed_files(acc, dependencies, ctx)
         if image is not None:
@@ -579,7 +577,7 @@ class ArchiveStages:
             # lockfile shipped inside it: those pins are the maintainers' own environment. The
             # exception is a file that installer reads and obeys (`HONOURED_PINS`): what it pins
             # is what installing the package brings in. An archive that may be a repository
-            # snapshot instead is graded both ways (`PackageFormat.union`, review 98 #18).
+            # snapshot instead is graded both ways (`PackageFormat.union`).
             both = PackageFormat.renamed_npm(units)
             repository = Ceilings.person_run_ceiling(list(acc.findings), units, ctx) if both else []
             ctx = replace(ctx, package_distribution=True, distribution=package)
@@ -704,7 +702,7 @@ class ArchiveStages:
         acc.findings[:], code_model = CodeModelPass.decide(self.engine, acc.findings, ctx)
         acc.findings[:], remote_control = RemoteControl.decide(acc.findings)
         acc.findings[:] = ResultFolding.settled(self.config, acc)
-        # The package's JSON these read is the context worker's (item 56 (b)), never decoded here.
+        # The package's JSON these read is the context worker's, never decoded here.
         with ServedJson.serving(REPOSITORY_SCOPE):
             acc.findings[:], verdict = Ceilings.verdict(
                 Ceilings.hardening_tier(

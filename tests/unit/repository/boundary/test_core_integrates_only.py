@@ -1,4 +1,4 @@
-"""Row BP-V-30: the core integrates; it does not rebuild. Delivery to a webhook or a chat may exist, outside the core.
+"""The core integrates; it does not rebuild. Delivery to a webhook or a chat may exist, outside the core.
 
 The core is the decision and detection path: `decide`, `contracts`, `engine` and `detect`. None of them imports a notification, webhook,
 identity-provider or authorisation-engine module (Cordon's own `notify` package, or a standard-library module that delivers mail or serves

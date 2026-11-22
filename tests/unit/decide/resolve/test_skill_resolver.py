@@ -1,4 +1,4 @@
-"""Row BP-3-13: the digest of `.claude/skills/deploy/` equals the golden tree digest, computed locally.
+"""The digest of `.claude/skills/deploy/` equals the golden tree digest, computed locally.
 
 The golden is the sha256 of the sorted listing `<path>\\0<mode>\\0<sha256 of content>\\n` worked out here by hand (not by the code under
 test) for a two-file folder, so a change to the rule shows as a change to the golden.
@@ -216,7 +216,7 @@ class TestTheFolderWithoutAnExecutableBit:
 
 
 class TestWhereTheModeComesFromWhenTheFileSystemHasNoExecuteBit:
-    """Row BP-3-2: on Windows the mode is git's recorded mode inside a git working tree and 644 otherwise, so a checkout gives the digest a POSIX one does.
+    """On Windows the mode is git's recorded mode inside a git working tree and 644 otherwise, so a checkout gives the digest a POSIX one does.
 
     The platform is simulated by `NO_EXEC_BIT`; the folder lives in a real git repository whose index says the script is executable while the
     file on disk is not."""
@@ -274,7 +274,7 @@ class TestWhereTheModeComesFromWhenTheFileSystemHasNoExecuteBit:
 
 
 class TestTheSameDigestOnEveryOperatingSystem:
-    """Row BP-3-2: the golden digest is the one this machine's own rule gives, with no simulated platform: the CI runners for Linux, macOS and Windows
+    """The golden digest is the one this machine's own rule gives, with no simulated platform: the CI runners for Linux, macOS and Windows
     each run this test, so one folder is one digest on all three."""
 
     def test_a_git_checkout_of_the_deploy_folder_gives_the_golden_digest(

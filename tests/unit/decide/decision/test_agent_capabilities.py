@@ -1,4 +1,4 @@
-"""Row BP-V-31: the agent permission surface beyond hooks is a closed vocabulary of eight declared capabilities a policy can restrict.
+"""The agent permission surface beyond hooks is a closed vocabulary of eight declared capabilities a policy can restrict.
 
 `agent.capabilities` is a policy field read from what an agent declares. A policy that forbids one blocks an agent that declares it, names the
 rule, and leaves an agent that does not declare it alone.

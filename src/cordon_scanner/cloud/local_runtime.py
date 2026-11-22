@@ -1,4 +1,4 @@
-"""The execution plane's local decision runtime (invariant I8, row BP-0-12): every point keeps deciding with the control plane down.
+"""The execution plane's local decision runtime: every point keeps deciding with the control plane down.
 
 A point that holds a policy bundle the tenant's root signed (`bundle_chain.py` beside this file checks it offline) needs nothing from the
 network to answer. The bundle's `compiled_table` is a compiled policy v2 (what the platform's `DecideEngine.compile_policy` writes,
@@ -18,7 +18,7 @@ Three things the runtime does itself, each failing closed:
 
 The runtime holds no clock and no network: the caller gives the time of the question, and refreshing is the caller's loop.
 
-With a `LocalStore` (row BP-2-6) the runtime also keeps what it needs to start offline: `accept` keeps the bundle taken and `resume` takes
+With a `LocalStore` the runtime also keeps what it needs to start offline: `accept` keeps the bundle taken and `resume` takes
 it again after a restart (verified again, expired or not: an expired bundle still decides, as `R202`); a decision is looked up by its
 `inputs_digest` before it is made and kept after (equal inputs are equal decisions, so nothing kept is stale); each decision made
 is queued for upload and `drain` sends the queue oldest first when the control plane is back; the age of the stored intel

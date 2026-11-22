@@ -1,4 +1,4 @@
-"""Row BP-7-2: the DSSE envelope the scanner reads natively, on the specification's test vectors and under a changed byte.
+"""The DSSE envelope the scanner reads natively, on the specification's test vectors and under a changed byte.
 
 The pre-authentication encoding is `DSSEv1 <len(type)> <type> <len(payload)> <payload>` with the lengths in decimal, counted in bytes. The
 first vector is the one the DSSE protocol document gives. An envelope the platform signed verifies here (all thirteen platform cases,

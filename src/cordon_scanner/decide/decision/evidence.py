@@ -188,7 +188,7 @@ class Provenance(JsonRecord):
 
 @dataclass(frozen=True, slots=True)
 class Approval(JsonRecord):
-    """An approval or an exception, bound to digests and an expiry (spec 5.3 step 5, I2)."""
+    """An approval or an exception, bound to digests and an expiry (spec 5.3 step 5)."""
 
     KINDS: ClassVar[tuple[str, ...]] = ("approve", "approve_with_conditions", "exception")
 

@@ -1,5 +1,5 @@
 """A directory scan (a cloned repository) reads as running the Python files a package runs, and a running file no reader can take to its end is a
-gap when it names an act (BP-15-19).
+gap when it names an act.
 
 The archive route has done this since 09 3a; a plain directory goes through the context worker's tree route, which did not call it. Running
 here: `setup.py` and what it imports, the `__init__.py` of a top-level package and what it imports, and the modules `pyproject.toml` or `setup.cfg`

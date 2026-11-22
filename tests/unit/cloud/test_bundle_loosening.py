@@ -1,4 +1,4 @@
-"""Row BP-0-13, second half: a policy bundle that loosens the policy is refused unless a current, signed loosening covers each loosening.
+"""A policy bundle that loosens the policy is refused unless a current, signed loosening covers each loosening.
 
 The client compares the offered bundle with the one it holds. A tightening needs nothing. A lowering, or a change it cannot prove is not one,
 needs a loosening: a DSSE envelope the bundle carries (`loosenings`), signed by a policy key the pinned root delegated, naming what it relaxes

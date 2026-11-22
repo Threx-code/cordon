@@ -1,4 +1,4 @@
-"""The policy and the 100 recorded cases the Rego and Cedar exports are proved over (row BP-6-5).
+"""The policy and the 100 recorded cases the Rego and Cedar exports are proved over.
 
     python tests/kits/export_cases.py write tests/unit/decide/export/golden
 

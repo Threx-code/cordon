@@ -1,4 +1,4 @@
-"""JavaScript that runs and that no reader can take to its end: a content gap, or said (BP-15-19).
+"""JavaScript that runs and that no reader can take to its end: a content gap, or said.
 
 The Python side decides this for every file that runs when a package is installed or imported
 (`analysis/python/unparsed_source.py`): a file that does not parse is a gap when it names anything that

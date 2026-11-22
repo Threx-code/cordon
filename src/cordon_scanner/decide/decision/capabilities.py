@@ -1,4 +1,4 @@
-"""The agent permission surface beyond hooks (BP-V-31): what an agent can be declared to do, as a closed vocabulary a policy can restrict.
+"""The agent permission surface beyond hooks: what an agent can be declared to do, as a closed vocabulary a policy can restrict.
 
 An agent's declared capabilities are the facts `agent.capabilities` reads. A policy that forbids one of them, for example
 `when: {agent.capabilities: delegation}` with `then: block`, blocks every agent that declares it. The four ceiling entries of the agent registry

@@ -1,4 +1,4 @@
-"""BP-3-13: a skill folder is resolved by computing its tree digest locally.
+"""A skill folder is resolved by computing its tree digest locally.
 
 A skill (`.claude/skills/deploy/` and the like) is a folder of files an agent reads. Its artifact is the digest of that folder
 (`ArtifactDigests.of_tree`): each file's path relative to the folder, its mode and the hash of its bytes, sorted, so the same folder is
@@ -31,7 +31,7 @@ class SkillResolver:
     MAX_FILES: ClassVar[int] = 5000
     MAX_BYTES: ClassVar[int] = 64 * 1024 * 1024
     SKIPPED: ClassVar[tuple[str, ...]] = (".git",)
-    #: A file system with no execute bit (Windows) cannot say which files are executable: the mode then comes from git's record (BP-3-2).
+    #: A file system with no execute bit (Windows) cannot say which files are executable: the mode then comes from git's record.
     NO_EXEC_BIT: ClassVar[bool] = os.name == "nt"
 
     @classmethod
