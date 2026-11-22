@@ -1,0 +1,3295 @@
+{
+ "cases": [
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-11-16T00:00:00Z",
+    "subject_id": "pkg:npm/case-0",
+    "tags": [
+     "pinned"
+    ]
+   },
+   "context": {
+    "environment": "production",
+    "point": "ci_gate",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "vulnerable",
+      "confidence": "high",
+      "domain": "dependency",
+      "path": "src/f5.js",
+      "rule_id": "MALWARE.DROPPER.002",
+      "severity": "info"
+     },
+     {
+      "category": "policy",
+      "confidence": "low",
+      "domain": "cicd",
+      "path": "src/f4.js",
+      "rule_id": "MALWARE.EXFIL.001",
+      "severity": "medium"
+     },
+     {
+      "category": "vulnerable",
+      "confidence": "confirmed",
+      "domain": "source",
+      "path": "src/f8.js",
+      "rule_id": "MALWARE.EXFIL.001",
+      "severity": "critical"
+     }
+    ]
+   },
+   "state": "BLOCK"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "pypi",
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-1",
+    "tags": []
+   },
+   "context": {
+    "environment": "staging",
+    "point": "firewall",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 1,
+     "verified": true
+    }
+   },
+   "state": "ALLOW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": null,
+    "kind": "package",
+    "namespace": null,
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-2",
+    "tags": [
+     "pinned"
+    ]
+   },
+   "context": {
+    "environment": "production",
+    "point": "cli",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "suspicious",
+      "confidence": "low",
+      "domain": "dependency",
+      "path": "src/f2.js",
+      "rule_id": "MALWARE.DROPPER.002",
+      "severity": "high"
+     },
+     {
+      "category": "vulnerable",
+      "confidence": "high",
+      "domain": "malware",
+      "path": "src/f6.js",
+      "rule_id": "POLICY.PACKAGE.001",
+      "severity": "low"
+     },
+     {
+      "category": "vulnerable",
+      "confidence": "high",
+      "domain": "dependency",
+      "path": "src/f4.js",
+      "rule_id": "POLICY.PACKAGE.001",
+      "severity": "high"
+     }
+    ],
+    "required_missing": [
+     "sbom"
+    ]
+   },
+   "state": "BLOCK"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-11-18T00:00:00Z",
+    "subject_id": "pkg:npm/case-3",
+    "tags": [
+     "pinned",
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "production",
+    "intel_age_s": 3600,
+    "point": "ci_gate",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "kill_listed": true
+   },
+   "state": "BLOCK"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": null,
+    "kind": "agent_skill",
+    "namespace": "@other",
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-4",
+    "tags": []
+   },
+   "context": {
+    "environment": "staging",
+    "intel_age_s": 259200,
+    "point": "cli",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": []
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "package",
+    "namespace": "@other",
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-5",
+    "tags": [
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "staging",
+    "point": "firewall",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "someone@else.example",
+     "slsa_level": 1,
+     "verified": true
+    }
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": null,
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-6",
+    "tags": []
+   },
+   "context": {
+    "bundle_age_s": 777600,
+    "environment": "ci",
+    "point": "cli",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "policy",
+      "confidence": "confirmed",
+      "domain": "dependency",
+      "path": "src/f3.js",
+      "rule_id": "MALWARE.DROPPER.002",
+      "severity": "low"
+     }
+    ]
+   },
+   "state": "ALLOW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": null,
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-11-18T00:00:00Z",
+    "subject_id": "pkg:npm/case-7",
+    "tags": [
+     "pinned",
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "staging",
+    "point": "ci_gate",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "complete": false,
+    "findings": []
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "pypi",
+    "kind": "mcp_server",
+    "namespace": null,
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-8",
+    "tags": [
+     "pinned",
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "ci",
+    "point": "cli",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 3,
+     "verified": true
+    }
+   },
+   "state": "ALLOW_WITH_CONDITIONS"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "pypi",
+    "kind": "mcp_server",
+    "namespace": null,
+    "subject_id": "pkg:npm/case-9",
+    "tags": []
+   },
+   "context": {
+    "environment": "ci",
+    "point": "agent_hook",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "policy",
+      "confidence": "high",
+      "domain": "source",
+      "path": "src/f7.js",
+      "rule_id": "SUSPECT.SCRIPT.001",
+      "severity": "low"
+     }
+    ],
+    "provenance": {
+     "signer": "someone@else.example",
+     "slsa_level": 3,
+     "verified": true
+    }
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": null,
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-11-16T00:00:00Z",
+    "subject_id": "pkg:npm/case-10",
+    "tags": []
+   },
+   "context": {
+    "environment": "staging",
+    "point": "firewall",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "vulnerable",
+      "confidence": "confirmed",
+      "domain": "malware",
+      "path": "src/f2.js",
+      "rule_id": "MALWARE.EXFIL.001",
+      "severity": "critical"
+     }
+    ],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 2,
+     "verified": true
+    }
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "cargo",
+    "kind": "agent_skill",
+    "namespace": "@other",
+    "subject_id": "pkg:npm/case-11",
+    "tags": [
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "production",
+    "intel_age_s": 259200,
+    "point": "agent_hook",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "vulnerable",
+      "confidence": "high",
+      "domain": "source",
+      "path": "src/f3.js",
+      "rule_id": "POLICY.PACKAGE.001",
+      "severity": "low"
+     }
+    ],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 2,
+     "verified": true
+    }
+   },
+   "state": "BLOCK"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "agent_skill",
+    "namespace": "@acme",
+    "released_at": "2026-11-16T00:00:00Z",
+    "subject_id": "pkg:npm/case-12",
+    "tags": []
+   },
+   "context": {
+    "environment": "ci",
+    "point": "firewall",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "vulnerable",
+      "confidence": "low",
+      "domain": "source",
+      "path": "src/f8.js",
+      "rule_id": "SUSPECT.SCRIPT.001",
+      "severity": "info"
+     },
+     {
+      "category": "malicious",
+      "confidence": "medium",
+      "domain": "build",
+      "path": "src/f2.js",
+      "rule_id": "POLICY.PACKAGE.001",
+      "severity": "low"
+     }
+    ],
+    "provenance": {
+     "signer": "someone@else.example",
+     "slsa_level": 3,
+     "verified": true
+    }
+   },
+   "state": "BLOCK"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "pypi",
+    "kind": "package",
+    "namespace": "@other",
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-13",
+    "tags": [
+     "pinned"
+    ]
+   },
+   "context": {
+    "environment": "dev",
+    "intel_age_s": 3600,
+    "point": "agent_hook",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 3,
+     "verified": true
+    }
+   },
+   "state": "ALLOW_WITH_CONDITIONS"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "pypi",
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-14",
+    "tags": [
+     "pinned"
+    ]
+   },
+   "context": {
+    "bundle_age_s": 3600,
+    "environment": "staging",
+    "point": "ci_gate",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "someone@else.example",
+     "slsa_level": 2,
+     "verified": true
+    }
+   },
+   "state": "ALLOW_WITH_CONDITIONS"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "cargo",
+    "kind": "package",
+    "namespace": null,
+    "subject_id": "pkg:npm/case-15",
+    "tags": [
+     "pinned"
+    ]
+   },
+   "context": {
+    "bundle_age_s": 3600,
+    "environment": "production",
+    "point": "ci_gate",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": []
+   },
+   "state": "ALLOW_WITH_CONDITIONS"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "mcp_server",
+    "namespace": "@acme",
+    "released_at": "2026-11-18T00:00:00Z",
+    "subject_id": "pkg:npm/case-16",
+    "tags": [
+     "pinned",
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "production",
+    "point": "cli",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "malicious",
+      "confidence": "confirmed",
+      "domain": "build",
+      "path": "src/f2.js",
+      "rule_id": "MALWARE.EXFIL.001",
+      "severity": "low"
+     }
+    ]
+   },
+   "state": "BLOCK"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "pypi",
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-11-18T00:00:00Z",
+    "subject_id": "pkg:npm/case-17",
+    "tags": [
+     "pinned",
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "production",
+    "point": "cli",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": []
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": null,
+    "kind": "package",
+    "namespace": "@other",
+    "subject_id": "pkg:npm/case-18",
+    "tags": [
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "staging",
+    "point": "agent_hook",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "vulnerable",
+      "confidence": "high",
+      "domain": "dependency",
+      "path": "src/f4.js",
+      "rule_id": "MALWARE.EXFIL.001",
+      "severity": "low"
+     },
+     {
+      "category": "suspicious",
+      "confidence": "medium",
+      "domain": "source",
+      "path": "src/f0.js",
+      "rule_id": "POLICY.PACKAGE.001",
+      "severity": "medium"
+     }
+    ],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 2,
+     "verified": true
+    }
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": null,
+    "kind": "package",
+    "namespace": "@acme",
+    "subject_id": "pkg:npm/case-19",
+    "tags": []
+   },
+   "context": {
+    "environment": "staging",
+    "point": "agent_hook",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "complete": false,
+    "findings": [],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 3,
+     "verified": true
+    }
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "cargo",
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-11-16T00:00:00Z",
+    "subject_id": "pkg:npm/case-20",
+    "tags": [
+     "pinned",
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "ci",
+    "point": "firewall",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": []
+   },
+   "state": "ALLOW_WITH_CONDITIONS"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "cargo",
+    "kind": "agent_skill",
+    "namespace": "@acme",
+    "released_at": "2026-11-16T00:00:00Z",
+    "subject_id": "pkg:npm/case-21",
+    "tags": [
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "ci",
+    "point": "ci_gate",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "someone@else.example",
+     "slsa_level": 2,
+     "verified": true
+    }
+   },
+   "state": "ALLOW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "cargo",
+    "kind": "package",
+    "namespace": "@acme",
+    "subject_id": "pkg:npm/case-22",
+    "tags": [
+     "pinned",
+     "critical"
+    ]
+   },
+   "context": {
+    "bundle_age_s": 3600,
+    "environment": "ci",
+    "point": "ci_gate",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": []
+   },
+   "state": "ALLOW_WITH_CONDITIONS"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "package",
+    "namespace": "@other",
+    "released_at": "2026-11-18T00:00:00Z",
+    "subject_id": "pkg:npm/case-23",
+    "tags": [
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "ci",
+    "point": "cli",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "revoked": true
+   },
+   "state": "BLOCK"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "package",
+    "namespace": null,
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-24",
+    "tags": [
+     "pinned"
+    ]
+   },
+   "context": {
+    "environment": "staging",
+    "point": "agent_hook",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 3,
+     "verified": true
+    }
+   },
+   "state": "ALLOW_WITH_CONDITIONS"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": null,
+    "kind": "package",
+    "namespace": null,
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-25",
+    "tags": [
+     "pinned"
+    ]
+   },
+   "context": {
+    "bundle_age_s": 3600,
+    "environment": "ci",
+    "point": "ci_gate",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": []
+   },
+   "state": "ALLOW_WITH_CONDITIONS"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "mcp_server",
+    "namespace": "@acme",
+    "subject_id": "pkg:npm/case-26",
+    "tags": [
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "ci",
+    "point": "agent_hook",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "suspicious",
+      "confidence": "high",
+      "domain": "dependency",
+      "path": "src/f4.js",
+      "rule_id": "POLICY.PACKAGE.001",
+      "severity": "critical"
+     },
+     {
+      "category": "vulnerable",
+      "confidence": "low",
+      "domain": "build",
+      "path": "src/f3.js",
+      "rule_id": "MALWARE.EXFIL.001",
+      "severity": "info"
+     },
+     {
+      "category": "vulnerable",
+      "confidence": "low",
+      "domain": "dependency",
+      "path": "src/f3.js",
+      "rule_id": "POLICY.PACKAGE.001",
+      "severity": "low"
+     }
+    ],
+    "intel": [
+     {
+      "first_seen": "2026-11-01T00:00:00Z",
+      "id": "MAL-1",
+      "kind": "known_malware",
+      "source": "osv"
+     }
+    ]
+   },
+   "state": "BLOCK"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-27",
+    "tags": [
+     "pinned"
+    ]
+   },
+   "context": {
+    "environment": "production",
+    "point": "ci_gate",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 1,
+     "verified": true
+    }
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "package",
+    "namespace": null,
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-28",
+    "tags": [
+     "pinned",
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "production",
+    "point": "ci_gate",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "required_missing": [
+     "sbom"
+    ]
+   },
+   "state": "BLOCK"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "pypi",
+    "kind": "package",
+    "namespace": null,
+    "subject_id": "pkg:npm/case-29",
+    "tags": []
+   },
+   "context": {
+    "environment": "production",
+    "point": "firewall",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "someone@else.example",
+     "slsa_level": 3,
+     "verified": true
+    }
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "pypi",
+    "kind": "agent_skill",
+    "namespace": "@acme",
+    "subject_id": "pkg:npm/case-30",
+    "tags": [
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "production",
+    "point": "cli",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "policy",
+      "confidence": "medium",
+      "domain": "build",
+      "path": "src/f5.js",
+      "rule_id": "MALWARE.DROPPER.002",
+      "severity": "critical"
+     },
+     {
+      "category": "suspicious",
+      "confidence": "medium",
+      "domain": "cicd",
+      "path": "src/f3.js",
+      "rule_id": "SUSPECT.SCRIPT.001",
+      "severity": "info"
+     },
+     {
+      "category": "suspicious",
+      "confidence": "confirmed",
+      "domain": "source",
+      "path": "src/f8.js",
+      "rule_id": "MALWARE.DROPPER.002",
+      "severity": "medium"
+     }
+    ],
+    "gaps": [
+     {
+      "path": "lib/a.js",
+      "rule_id": "SUSPECT.PACKAGE.UNPARSEABLE.001"
+     }
+    ]
+   },
+   "state": "BLOCK"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "package",
+    "namespace": null,
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-31",
+    "tags": [
+     "pinned",
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "production",
+    "point": "agent_hook",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "vulnerable",
+      "confidence": "confirmed",
+      "domain": "cicd",
+      "path": "src/f6.js",
+      "rule_id": "POLICY.PACKAGE.001",
+      "severity": "medium"
+     }
+    ]
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "pypi",
+    "kind": "agent_skill",
+    "namespace": "@acme",
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-32",
+    "tags": [
+     "pinned",
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "ci",
+    "point": "firewall",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 2,
+     "verified": true
+    }
+   },
+   "state": "ALLOW_WITH_CONDITIONS"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "package",
+    "namespace": "@acme",
+    "subject_id": "pkg:npm/case-33",
+    "tags": [
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "production",
+    "point": "cli",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": []
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "package",
+    "namespace": "@other",
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-34",
+    "tags": []
+   },
+   "context": {
+    "bundle_age_s": 777600,
+    "environment": "staging",
+    "point": "ci_gate",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "someone@else.example",
+     "slsa_level": 2,
+     "verified": false
+    }
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "cargo",
+    "kind": "mcp_server",
+    "namespace": "@acme",
+    "released_at": "2026-11-18T00:00:00Z",
+    "subject_id": "pkg:npm/case-35",
+    "tags": [
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "production",
+    "intel_age_s": 259200,
+    "point": "agent_hook",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "policy",
+      "confidence": "confirmed",
+      "domain": "build",
+      "path": "src/f6.js",
+      "rule_id": "MALWARE.EXFIL.001",
+      "severity": "low"
+     },
+     {
+      "category": "suspicious",
+      "confidence": "low",
+      "domain": "source",
+      "path": "src/f8.js",
+      "rule_id": "SUSPECT.SCRIPT.001",
+      "severity": "high"
+     }
+    ]
+   },
+   "state": "BLOCK"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "pypi",
+    "kind": "package",
+    "namespace": "@acme",
+    "subject_id": "pkg:npm/case-36",
+    "tags": [
+     "pinned"
+    ]
+   },
+   "context": {
+    "environment": "ci",
+    "point": "agent_hook",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 3,
+     "verified": true
+    }
+   },
+   "state": "ALLOW_WITH_CONDITIONS"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "pypi",
+    "kind": "agent_skill",
+    "namespace": "@acme",
+    "released_at": "2026-11-18T00:00:00Z",
+    "subject_id": "pkg:npm/case-37",
+    "tags": []
+   },
+   "context": {
+    "environment": "production",
+    "point": "ci_gate",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "gaps": [
+     {
+      "path": "lib/a.js",
+      "rule_id": "SUSPECT.PACKAGE.UNPARSEABLE.001"
+     }
+    ],
+    "integrity_ok": false
+   },
+   "state": "BLOCK"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-11-16T00:00:00Z",
+    "subject_id": "pkg:npm/case-38",
+    "tags": [
+     "pinned",
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "staging",
+    "point": "ci_gate",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": []
+   },
+   "state": "ALLOW_WITH_CONDITIONS"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "cargo",
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-11-18T00:00:00Z",
+    "subject_id": "pkg:npm/case-39",
+    "tags": [
+     "pinned"
+    ]
+   },
+   "context": {
+    "environment": "ci",
+    "point": "ci_gate",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 3,
+     "verified": true
+    }
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "package",
+    "namespace": "@acme",
+    "subject_id": "pkg:npm/case-40",
+    "tags": [
+     "pinned",
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "ci",
+    "point": "ci_gate",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 3,
+     "verified": true
+    }
+   },
+   "state": "ALLOW_WITH_CONDITIONS"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "pypi",
+    "kind": "package",
+    "namespace": "@other",
+    "released_at": "2026-11-16T00:00:00Z",
+    "subject_id": "pkg:npm/case-41",
+    "tags": []
+   },
+   "context": {
+    "environment": "dev",
+    "point": "firewall",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "someone@else.example",
+     "slsa_level": 3,
+     "verified": false
+    }
+   },
+   "state": "BLOCK"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "package",
+    "namespace": null,
+    "released_at": "2026-11-18T00:00:00Z",
+    "subject_id": "pkg:npm/case-42",
+    "tags": [
+     "pinned",
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "ci",
+    "point": "agent_hook",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "required_missing": [
+     "sbom"
+    ]
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "cargo",
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-43",
+    "tags": []
+   },
+   "context": {
+    "bundle_age_s": 3600,
+    "environment": "production",
+    "point": "ci_gate",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": []
+   },
+   "state": "ALLOW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "pypi",
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-11-18T00:00:00Z",
+    "subject_id": "pkg:npm/case-44",
+    "tags": [
+     "pinned"
+    ]
+   },
+   "context": {
+    "environment": "dev",
+    "point": "firewall",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": []
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "package",
+    "namespace": "@other",
+    "released_at": "2026-11-18T00:00:00Z",
+    "subject_id": "pkg:npm/case-45",
+    "tags": []
+   },
+   "context": {
+    "bundle_age_s": 777600,
+    "environment": "staging",
+    "point": "agent_hook",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": []
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "package",
+    "namespace": "@other",
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-46",
+    "tags": []
+   },
+   "context": {
+    "bundle_age_s": 777600,
+    "environment": "production",
+    "point": "agent_hook",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "suspicious",
+      "confidence": "medium",
+      "domain": "source",
+      "path": "src/f2.js",
+      "rule_id": "MALWARE.DROPPER.002",
+      "severity": "low"
+     }
+    ]
+   },
+   "state": "BLOCK"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "agent_skill",
+    "namespace": null,
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-47",
+    "tags": []
+   },
+   "context": {
+    "environment": "ci",
+    "point": "agent_hook",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "suspicious",
+      "confidence": "confirmed",
+      "domain": "cicd",
+      "path": "src/f6.js",
+      "rule_id": "MALWARE.DROPPER.002",
+      "severity": "high"
+     }
+    ]
+   },
+   "state": "BLOCK"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "pypi",
+    "kind": "package",
+    "namespace": null,
+    "subject_id": "pkg:npm/case-48",
+    "tags": [
+     "pinned"
+    ]
+   },
+   "context": {
+    "environment": "staging",
+    "point": "agent_hook",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "gaps": [
+     {
+      "path": "lib/a.js",
+      "rule_id": "SUSPECT.PACKAGE.UNPARSEABLE.001"
+     }
+    ]
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": null,
+    "kind": "package",
+    "namespace": "@acme",
+    "subject_id": "pkg:npm/case-49",
+    "tags": []
+   },
+   "context": {
+    "bundle_age_s": 777600,
+    "environment": "staging",
+    "point": "cli",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 1,
+     "verified": true
+    }
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "package",
+    "namespace": "@other",
+    "released_at": "2026-11-18T00:00:00Z",
+    "subject_id": "pkg:npm/case-50",
+    "tags": [
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "dev",
+    "point": "ci_gate",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": []
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "pypi",
+    "kind": "package",
+    "namespace": null,
+    "released_at": "2026-11-16T00:00:00Z",
+    "subject_id": "pkg:npm/case-51",
+    "tags": [
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "ci",
+    "point": "ci_gate",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 1,
+     "verified": true
+    }
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "cargo",
+    "kind": "mcp_server",
+    "namespace": "@other",
+    "released_at": "2026-11-16T00:00:00Z",
+    "subject_id": "pkg:npm/case-52",
+    "tags": []
+   },
+   "context": {
+    "bundle_age_s": 777600,
+    "environment": "dev",
+    "point": "firewall",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "malicious",
+      "confidence": "medium",
+      "domain": "cicd",
+      "path": "src/f8.js",
+      "rule_id": "MALWARE.EXFIL.001",
+      "severity": "high"
+     }
+    ],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 1,
+     "verified": true
+    }
+   },
+   "state": "BLOCK"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-11-18T00:00:00Z",
+    "subject_id": "pkg:npm/case-53",
+    "tags": [
+     "pinned",
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "ci",
+    "point": "cli",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "complete": false,
+    "findings": [
+     {
+      "category": "suspicious",
+      "confidence": "medium",
+      "domain": "source",
+      "path": "src/f8.js",
+      "rule_id": "MALWARE.DROPPER.002",
+      "severity": "high"
+     }
+    ],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 3,
+     "verified": true
+    }
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-54",
+    "tags": [
+     "pinned",
+     "critical"
+    ]
+   },
+   "context": {
+    "bundle_age_s": 3600,
+    "environment": "staging",
+    "point": "ci_gate",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "vulnerable",
+      "confidence": "high",
+      "domain": "source",
+      "path": "src/f4.js",
+      "rule_id": "SUSPECT.SCRIPT.001",
+      "severity": "high"
+     },
+     {
+      "category": "suspicious",
+      "confidence": "confirmed",
+      "domain": "build",
+      "path": "src/f0.js",
+      "rule_id": "MALWARE.DROPPER.002",
+      "severity": "low"
+     }
+    ],
+    "provenance": {
+     "signer": "someone@else.example",
+     "slsa_level": 2,
+     "verified": false
+    }
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "package",
+    "namespace": "@other",
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-55",
+    "tags": []
+   },
+   "context": {
+    "environment": "production",
+    "point": "ci_gate",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "vulnerable",
+      "confidence": "low",
+      "domain": "cicd",
+      "path": "src/f7.js",
+      "rule_id": "MALWARE.EXFIL.001",
+      "severity": "high"
+     },
+     {
+      "category": "suspicious",
+      "confidence": "confirmed",
+      "domain": "build",
+      "path": "src/f6.js",
+      "rule_id": "MALWARE.EXFIL.001",
+      "severity": "low"
+     },
+     {
+      "category": "vulnerable",
+      "confidence": "medium",
+      "domain": "source",
+      "path": "src/f7.js",
+      "rule_id": "MALWARE.DROPPER.002",
+      "severity": "critical"
+     }
+    ]
+   },
+   "state": "BLOCK"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "cargo",
+    "kind": "package",
+    "namespace": "@acme",
+    "subject_id": "pkg:npm/case-56",
+    "tags": [
+     "pinned"
+    ]
+   },
+   "context": {
+    "environment": "dev",
+    "point": "cli",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "kill_listed": true,
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 2,
+     "verified": true
+    },
+    "revoked": true
+   },
+   "state": "BLOCK"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "cargo",
+    "kind": "package",
+    "namespace": "@other",
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-57",
+    "tags": [
+     "pinned",
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "staging",
+    "point": "firewall",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "someone@else.example",
+     "slsa_level": 2,
+     "verified": true
+    }
+   },
+   "state": "ALLOW_WITH_CONDITIONS"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "pypi",
+    "kind": "package",
+    "namespace": "@other",
+    "subject_id": "pkg:npm/case-58",
+    "tags": []
+   },
+   "context": {
+    "environment": "dev",
+    "point": "agent_hook",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": []
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "pypi",
+    "kind": "package",
+    "namespace": "@acme",
+    "subject_id": "pkg:npm/case-59",
+    "tags": []
+   },
+   "context": {
+    "environment": "ci",
+    "intel_age_s": 3600,
+    "point": "firewall",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": []
+   },
+   "state": "ALLOW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "cargo",
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-11-16T00:00:00Z",
+    "subject_id": "pkg:npm/case-60",
+    "tags": []
+   },
+   "context": {
+    "environment": "ci",
+    "point": "ci_gate",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 3,
+     "verified": true
+    }
+   },
+   "state": "ALLOW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": null,
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-11-16T00:00:00Z",
+    "subject_id": "pkg:npm/case-61",
+    "tags": []
+   },
+   "context": {
+    "environment": "production",
+    "point": "ci_gate",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "suspicious",
+      "confidence": "medium",
+      "domain": "dependency",
+      "path": "src/f8.js",
+      "rule_id": "POLICY.PACKAGE.001",
+      "severity": "low"
+     },
+     {
+      "category": "suspicious",
+      "confidence": "confirmed",
+      "domain": "malware",
+      "path": "src/f0.js",
+      "rule_id": "MALWARE.EXFIL.001",
+      "severity": "medium"
+     }
+    ],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 2,
+     "verified": true
+    }
+   },
+   "state": "ALLOW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "cargo",
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-62",
+    "tags": [
+     "pinned"
+    ]
+   },
+   "context": {
+    "environment": "production",
+    "point": "agent_hook",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "policy",
+      "confidence": "high",
+      "domain": "build",
+      "path": "src/f1.js",
+      "rule_id": "POLICY.PACKAGE.001",
+      "severity": "medium"
+     },
+     {
+      "category": "suspicious",
+      "confidence": "low",
+      "domain": "build",
+      "path": "src/f3.js",
+      "rule_id": "POLICY.PACKAGE.001",
+      "severity": "high"
+     },
+     {
+      "category": "vulnerable",
+      "confidence": "confirmed",
+      "domain": "build",
+      "path": "src/f4.js",
+      "rule_id": "POLICY.PACKAGE.001",
+      "severity": "info"
+     }
+    ],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 3,
+     "verified": true
+    }
+   },
+   "state": "ALLOW_WITH_CONDITIONS"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "mcp_server",
+    "namespace": null,
+    "released_at": "2026-11-16T00:00:00Z",
+    "subject_id": "pkg:npm/case-63",
+    "tags": [
+     "pinned"
+    ]
+   },
+   "context": {
+    "environment": "staging",
+    "point": "agent_hook",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": []
+   },
+   "state": "ALLOW_WITH_CONDITIONS"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-11-18T00:00:00Z",
+    "subject_id": "pkg:npm/case-64",
+    "tags": [
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "ci",
+    "point": "cli",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "policy",
+      "confidence": "low",
+      "domain": "malware",
+      "path": "src/f4.js",
+      "rule_id": "SUSPECT.SCRIPT.001",
+      "severity": "info"
+     }
+    ]
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "cargo",
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-65",
+    "tags": [
+     "pinned",
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "ci",
+    "point": "ci_gate",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "kill_listed": true,
+    "provenance": {
+     "signer": "someone@else.example",
+     "slsa_level": 2,
+     "verified": true
+    }
+   },
+   "state": "BLOCK"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "pypi",
+    "kind": "package",
+    "namespace": "@acme",
+    "subject_id": "pkg:npm/case-66",
+    "tags": [
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "staging",
+    "point": "ci_gate",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "suspicious",
+      "confidence": "medium",
+      "domain": "source",
+      "path": "src/f0.js",
+      "rule_id": "MALWARE.EXFIL.001",
+      "severity": "critical"
+     }
+    ],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 1,
+     "verified": true
+    }
+   },
+   "state": "ALLOW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "cargo",
+    "kind": "agent_skill",
+    "namespace": null,
+    "released_at": "2026-11-16T00:00:00Z",
+    "subject_id": "pkg:npm/case-67",
+    "tags": [
+     "pinned",
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "ci",
+    "point": "ci_gate",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "someone@else.example",
+     "slsa_level": 2,
+     "verified": false
+    }
+   },
+   "state": "ALLOW_WITH_CONDITIONS"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "pypi",
+    "kind": "agent_skill",
+    "namespace": "@other",
+    "released_at": "2026-11-18T00:00:00Z",
+    "subject_id": "pkg:npm/case-68",
+    "tags": []
+   },
+   "context": {
+    "environment": "dev",
+    "point": "cli",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": []
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": null,
+    "kind": "agent_skill",
+    "namespace": "@acme",
+    "released_at": "2026-11-18T00:00:00Z",
+    "subject_id": "pkg:npm/case-69",
+    "tags": [
+     "pinned",
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "ci",
+    "point": "firewall",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": []
+   },
+   "state": "ALLOW_WITH_CONDITIONS"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "cargo",
+    "kind": "package",
+    "namespace": null,
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-70",
+    "tags": []
+   },
+   "context": {
+    "environment": "staging",
+    "point": "cli",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "someone@else.example",
+     "slsa_level": 3,
+     "verified": true
+    }
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "cargo",
+    "kind": "package",
+    "namespace": "@acme",
+    "subject_id": "pkg:npm/case-71",
+    "tags": [
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "ci",
+    "point": "cli",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "suspicious",
+      "confidence": "confirmed",
+      "domain": "malware",
+      "path": "src/f6.js",
+      "rule_id": "SUSPECT.SCRIPT.001",
+      "severity": "low"
+     }
+    ],
+    "provenance": {
+     "signer": "someone@else.example",
+     "slsa_level": 3,
+     "verified": true
+    }
+   },
+   "state": "ALLOW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "mcp_server",
+    "namespace": "@other",
+    "released_at": "2026-11-18T00:00:00Z",
+    "subject_id": "pkg:npm/case-72",
+    "tags": [
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "ci",
+    "point": "ci_gate",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 2,
+     "verified": true
+    }
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "agent_skill",
+    "namespace": "@acme",
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-73",
+    "tags": [
+     "pinned",
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "dev",
+    "point": "agent_hook",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 2,
+     "verified": true
+    }
+   },
+   "state": "ALLOW_WITH_CONDITIONS"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "package",
+    "namespace": null,
+    "subject_id": "pkg:npm/case-74",
+    "tags": [
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "staging",
+    "point": "ci_gate",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "malicious",
+      "confidence": "high",
+      "domain": "build",
+      "path": "src/f5.js",
+      "rule_id": "POLICY.PACKAGE.001",
+      "severity": "critical"
+     }
+    ],
+    "provenance": {
+     "signer": "someone@else.example",
+     "slsa_level": 2,
+     "verified": false
+    }
+   },
+   "state": "BLOCK"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": null,
+    "kind": "agent_skill",
+    "namespace": null,
+    "released_at": "2026-11-16T00:00:00Z",
+    "subject_id": "pkg:npm/case-75",
+    "tags": [
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "ci",
+    "point": "ci_gate",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": []
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "cargo",
+    "kind": "mcp_server",
+    "namespace": "@acme",
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-76",
+    "tags": []
+   },
+   "context": {
+    "environment": "ci",
+    "intel_age_s": 259200,
+    "point": "firewall",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "suspicious",
+      "confidence": "high",
+      "domain": "malware",
+      "path": "src/f7.js",
+      "rule_id": "POLICY.PACKAGE.001",
+      "severity": "low"
+     }
+    ],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 3,
+     "verified": false
+    }
+   },
+   "state": "ALLOW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": null,
+    "kind": "package",
+    "namespace": "@acme",
+    "subject_id": "pkg:npm/case-77",
+    "tags": [
+     "pinned",
+     "critical"
+    ]
+   },
+   "context": {
+    "bundle_age_s": 3600,
+    "environment": "ci",
+    "point": "ci_gate",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "someone@else.example",
+     "slsa_level": 2,
+     "verified": true
+    }
+   },
+   "state": "ALLOW_WITH_CONDITIONS"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": null,
+    "kind": "agent_skill",
+    "namespace": "@acme",
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-78",
+    "tags": []
+   },
+   "context": {
+    "bundle_age_s": 777600,
+    "environment": "staging",
+    "point": "cli",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "someone@else.example",
+     "slsa_level": 2,
+     "verified": true
+    }
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": null,
+    "kind": "agent_skill",
+    "namespace": "@acme",
+    "released_at": "2026-11-16T00:00:00Z",
+    "subject_id": "pkg:npm/case-79",
+    "tags": [
+     "pinned"
+    ]
+   },
+   "context": {
+    "environment": "production",
+    "intel_age_s": 259200,
+    "point": "agent_hook",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "malicious",
+      "confidence": "medium",
+      "domain": "source",
+      "path": "src/f3.js",
+      "rule_id": "SUSPECT.SCRIPT.001",
+      "severity": "critical"
+     }
+    ]
+   },
+   "state": "BLOCK"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": null,
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-80",
+    "tags": [
+     "pinned",
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "staging",
+    "point": "ci_gate",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "required_missing": [
+     "sbom"
+    ]
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": null,
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-11-18T00:00:00Z",
+    "subject_id": "pkg:npm/case-81",
+    "tags": [
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "ci",
+    "point": "firewall",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 2,
+     "verified": true
+    }
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": null,
+    "kind": "agent_skill",
+    "namespace": "@acme",
+    "released_at": "2026-11-16T00:00:00Z",
+    "subject_id": "pkg:npm/case-82",
+    "tags": [
+     "pinned"
+    ]
+   },
+   "context": {
+    "environment": "ci",
+    "point": "ci_gate",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "policy",
+      "confidence": "high",
+      "domain": "dependency",
+      "path": "src/f0.js",
+      "rule_id": "SUSPECT.SCRIPT.001",
+      "severity": "medium"
+     }
+    ],
+    "provenance": {
+     "signer": "someone@else.example",
+     "slsa_level": 3,
+     "verified": true
+    }
+   },
+   "state": "ALLOW_WITH_CONDITIONS"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": null,
+    "kind": "package",
+    "namespace": null,
+    "released_at": "2026-11-16T00:00:00Z",
+    "subject_id": "pkg:npm/case-83",
+    "tags": [
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "ci",
+    "point": "cli",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "vulnerable",
+      "confidence": "confirmed",
+      "domain": "malware",
+      "path": "src/f6.js",
+      "rule_id": "POLICY.PACKAGE.001",
+      "severity": "high"
+     },
+     {
+      "category": "policy",
+      "confidence": "high",
+      "domain": "cicd",
+      "path": "src/f7.js",
+      "rule_id": "MALWARE.DROPPER.002",
+      "severity": "medium"
+     },
+     {
+      "category": "malicious",
+      "confidence": "confirmed",
+      "domain": "cicd",
+      "path": "src/f2.js",
+      "rule_id": "MALWARE.EXFIL.001",
+      "severity": "high"
+     }
+    ]
+   },
+   "state": "BLOCK"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "mcp_server",
+    "namespace": "@other",
+    "released_at": "2026-11-16T00:00:00Z",
+    "subject_id": "pkg:npm/case-84",
+    "tags": [
+     "pinned",
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "staging",
+    "point": "ci_gate",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "vulnerable",
+      "confidence": "medium",
+      "domain": "dependency",
+      "path": "src/f8.js",
+      "rule_id": "MALWARE.EXFIL.001",
+      "severity": "info"
+     }
+    ],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 2,
+     "verified": true
+    }
+   },
+   "state": "ALLOW_WITH_CONDITIONS"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": null,
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-11-16T00:00:00Z",
+    "subject_id": "pkg:npm/case-85",
+    "tags": [
+     "pinned",
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "staging",
+    "point": "cli",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "complete": false,
+    "findings": []
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "cargo",
+    "kind": "package",
+    "namespace": "@other",
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-86",
+    "tags": [
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "ci",
+    "point": "cli",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "suspicious",
+      "confidence": "medium",
+      "domain": "cicd",
+      "path": "src/f5.js",
+      "rule_id": "MALWARE.EXFIL.001",
+      "severity": "info"
+     }
+    ],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 1,
+     "verified": false
+    }
+   },
+   "state": "BLOCK"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "cargo",
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-11-16T00:00:00Z",
+    "subject_id": "pkg:npm/case-87",
+    "tags": [
+     "critical"
+    ]
+   },
+   "context": {
+    "bundle_age_s": 3600,
+    "environment": "ci",
+    "point": "agent_hook",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 2,
+     "verified": true
+    }
+   },
+   "state": "ALLOW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "mcp_server",
+    "namespace": "@acme",
+    "released_at": "2026-11-18T00:00:00Z",
+    "subject_id": "pkg:npm/case-88",
+    "tags": []
+   },
+   "context": {
+    "environment": "production",
+    "point": "ci_gate",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "policy",
+      "confidence": "low",
+      "domain": "cicd",
+      "path": "src/f2.js",
+      "rule_id": "SUSPECT.SCRIPT.001",
+      "severity": "high"
+     }
+    ],
+    "provenance": {
+     "signer": "someone@else.example",
+     "slsa_level": 3,
+     "verified": true
+    }
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": null,
+    "kind": "package",
+    "namespace": "@acme",
+    "subject_id": "pkg:npm/case-89",
+    "tags": [
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "ci",
+    "point": "firewall",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "someone@else.example",
+     "slsa_level": 1,
+     "verified": true
+    }
+   },
+   "state": "ALLOW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-90",
+    "tags": [
+     "pinned",
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "ci",
+    "point": "cli",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "suspicious",
+      "confidence": "medium",
+      "domain": "cicd",
+      "path": "src/f5.js",
+      "rule_id": "MALWARE.DROPPER.002",
+      "severity": "high"
+     }
+    ],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 3,
+     "verified": true
+    }
+   },
+   "state": "BLOCK"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "agent_skill",
+    "namespace": "@acme",
+    "released_at": "2026-11-18T00:00:00Z",
+    "subject_id": "pkg:npm/case-91",
+    "tags": [
+     "pinned",
+     "critical"
+    ]
+   },
+   "context": {
+    "environment": "dev",
+    "point": "firewall",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": []
+   },
+   "state": "ALLOW_WITH_CONDITIONS"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": null,
+    "kind": "package",
+    "namespace": "@other",
+    "released_at": "2026-11-18T00:00:00Z",
+    "subject_id": "pkg:npm/case-92",
+    "tags": [
+     "pinned"
+    ]
+   },
+   "context": {
+    "environment": "staging",
+    "point": "ci_gate",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 3,
+     "verified": true
+    }
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "pypi",
+    "kind": "agent_skill",
+    "namespace": null,
+    "released_at": "2026-11-16T00:00:00Z",
+    "subject_id": "pkg:npm/case-93",
+    "tags": [
+     "critical"
+    ]
+   },
+   "context": {
+    "bundle_age_s": 777600,
+    "environment": "staging",
+    "point": "ci_gate",
+    "relation": "bundled",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "malicious",
+      "confidence": "low",
+      "domain": "malware",
+      "path": "src/f0.js",
+      "rule_id": "MALWARE.DROPPER.002",
+      "severity": "medium"
+     },
+     {
+      "category": "vulnerable",
+      "confidence": "high",
+      "domain": "malware",
+      "path": "src/f5.js",
+      "rule_id": "MALWARE.EXFIL.001",
+      "severity": "info"
+     }
+    ],
+    "kill_listed": true,
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 1,
+     "verified": true
+    },
+    "revoked": true
+   },
+   "state": "BLOCK"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "npm",
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-11-16T00:00:00Z",
+    "subject_id": "pkg:npm/case-94",
+    "tags": [
+     "pinned"
+    ]
+   },
+   "context": {
+    "environment": "ci",
+    "intel_age_s": 259200,
+    "point": "firewall",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": []
+   },
+   "state": "ALLOW_WITH_CONDITIONS"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": null,
+    "kind": "package",
+    "namespace": null,
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-95",
+    "tags": []
+   },
+   "context": {
+    "environment": "dev",
+    "point": "ci_gate",
+    "relation": "direct",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": []
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "pypi",
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-11-16T00:00:00Z",
+    "subject_id": "pkg:npm/case-96",
+    "tags": [
+     "pinned"
+    ]
+   },
+   "context": {
+    "environment": "ci",
+    "point": "agent_hook",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "suspicious",
+      "confidence": "high",
+      "domain": "build",
+      "path": "src/f3.js",
+      "rule_id": "POLICY.PACKAGE.001",
+      "severity": "low"
+     },
+     {
+      "category": "policy",
+      "confidence": "medium",
+      "domain": "malware",
+      "path": "src/f2.js",
+      "rule_id": "POLICY.PACKAGE.001",
+      "severity": "low"
+     }
+    ],
+    "integrity_ok": false
+   },
+   "state": "BLOCK"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "pypi",
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-11-18T00:00:00Z",
+    "subject_id": "pkg:npm/case-97",
+    "tags": []
+   },
+   "context": {
+    "environment": "dev",
+    "point": "firewall",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [],
+    "provenance": {
+     "signer": "release@acme.example",
+     "slsa_level": 3,
+     "verified": true
+    }
+   },
+   "state": "REVIEW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": null,
+    "kind": "package",
+    "namespace": "@acme",
+    "released_at": "2026-06-01T00:00:00Z",
+    "subject_id": "pkg:npm/case-98",
+    "tags": []
+   },
+   "context": {
+    "environment": "staging",
+    "point": "cli",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": []
+   },
+   "state": "ALLOW"
+  },
+  {
+   "artifact": {
+    "digest": "sha256:abababababababababababababababababababababababababababababababab",
+    "ecosystem": "pypi",
+    "kind": "mcp_server",
+    "namespace": null,
+    "released_at": "2026-11-18T00:00:00Z",
+    "subject_id": "pkg:npm/case-99",
+    "tags": [
+     "pinned"
+    ]
+   },
+   "context": {
+    "environment": "production",
+    "point": "agent_hook",
+    "relation": "transitive",
+    "scope_path": [
+     "acme"
+    ]
+   },
+   "evidence": {
+    "findings": [
+     {
+      "category": "policy",
+      "confidence": "confirmed",
+      "domain": "malware",
+      "path": "src/f3.js",
+      "rule_id": "SUSPECT.SCRIPT.001",
+      "severity": "critical"
+     },
+     {
+      "category": "suspicious",
+      "confidence": "medium",
+      "domain": "cicd",
+      "path": "src/f7.js",
+      "rule_id": "SUSPECT.SCRIPT.001",
+      "severity": "low"
+     }
+    ],
+    "provenance": {
+     "signer": "someone@else.example",
+     "slsa_level": 3,
+     "verified": true
+    }
+   },
+   "state": "REVIEW"
+  }
+ ],
+ "clock": "2026-11-19T10:00:00Z"
+}
