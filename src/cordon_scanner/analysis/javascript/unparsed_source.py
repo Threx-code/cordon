@@ -170,8 +170,8 @@ class JsRunning:
                 continue
             try:
                 document = json.loads(unit.content.text)
-            except ValueError:
-                continue
+            except (ValueError, RecursionError, MemoryError):
+                continue  # a manifest no reader takes to its end names nothing here (the manifest reader reports it)
             base = posixpath.dirname(path)
             for name in JsRunning.named(document):
                 hit = JsRunning.resolve(base, name.removeprefix("./"), known)
