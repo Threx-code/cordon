@@ -1,4 +1,4 @@
-"""`cordon-runtime`: one stdlib library every execution point calls (rows BP-8-10 and BP-8-12, spec 8.3).
+"""`cordon-runtime`: one stdlib library every execution point calls (spec 8.3).
 
 ```
   resolve(input) ---> ArtifactRef
