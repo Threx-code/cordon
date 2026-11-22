@@ -1,7 +1,8 @@
 """The execution plane's local decision runtime (invariant I8, row BP-0-12): every point keeps deciding with the control plane down.
 
 A point that holds a policy bundle the tenant's root signed (`bundle_chain.py` beside this file checks it offline) needs nothing from the
-network to answer: `LocalRuntime.ask` decides from the held bundle's compiled policy through `PointRuntime.ask`, the entry every
+network to answer. The bundle's `compiled_table` is a compiled policy v2 (what the platform's `DecideEngine.compile_policy` writes,
+merged down the tenant's chain) and its `lists` sit beside it. `LocalRuntime.ask` decides from the held compiled policy through `PointRuntime.ask`, the entry every
 point uses. What happens when the bundle is too old is not decided here, it is the policy's: a compiled policy carries its own
 expiry, and `decide()` answers `R202` at the level the policy sets for the call's environment (`defaults.on_incomplete`), so a
 tenant's production gates block and its CI gates warn by the policy it published, and a change to that is a policy change.
@@ -55,6 +56,12 @@ class LocalRuntime:
     def held(self) -> dict[str, Any] | None:
         """The payload of the bundle held (verified when it was taken), or None."""
         return self._held
+
+    @property
+    def lists(self) -> dict[str, Any]:
+        """The lists the held bundle carries beside its compiled policy (`lists`), or none."""
+        found = (self._held or {}).get("lists")
+        return dict(found) if isinstance(found, dict) else {}
 
     def accept(self, envelopes: Sequence[object], now: datetime) -> str:
         """Take the bundles the control plane sent since the one held, oldest first: `new` or `unchanged`.
@@ -118,9 +125,9 @@ class LocalRuntime:
     @staticmethod
     def _policy_of(bundle: dict[str, Any]) -> CompiledPolicy:
         """The compiled policy a bundle carries, checked: sealed, and not outliving the bundle."""
-        document = bundle.get("policy")
+        document = bundle.get("compiled_table")
         if not isinstance(document, dict):
-            raise BundleError("the bundle carries no compiled policy")
+            raise BundleError("the bundle carries no compiled policy (compiled_table)")
         try:
             policy = CompiledPolicy.from_json(document)
             policy.verify()

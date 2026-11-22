@@ -102,10 +102,10 @@ class Platform:
             "issued_at": issued.isoformat(),
             "expires_at": expires.isoformat(),
             "signer_keyid": Dsse.keyid(self.policy_key.public),
-            "lists": {},
+            "lists": {"deny": ["pkg:npm/evil"]},
         }
         if carry_policy:
-            document["policy"] = policy.to_json()
+            document["compiled_table"] = policy.to_json()
         envelope = self.sign("application/vnd.cordon.policy-bundle+json", document, self.policy_key)
         self.chain.append(envelope)
         self.payloads.append(document)
@@ -166,6 +166,13 @@ class TestADecisionFromTheHeldBundle:
         decision = Kit.ask(runtime, T0 + timedelta(minutes=5))
         assert decision.state == "REVIEW" and decision.reason_codes == ("R700",)
         assert decision.policy.id == "acme/policy" and decision.policy.version == 1
+
+    def test_the_lists_beside_the_policy_are_kept_with_it(self) -> None:
+        platform = Platform()
+        runtime = Kit.runtime(platform)
+        assert runtime.lists == {}
+        runtime.accept([Kit.first(platform)], T0)
+        assert runtime.lists == {"deny": ["pkg:npm/evil"]}
 
     def test_a_second_bundle_of_the_chain_replaces_the_first(self) -> None:
         platform = Platform()
@@ -274,7 +281,7 @@ class TestWhatIsRefusedLeavesTheHeldBundleAlone:
             expires=T0 + timedelta(days=1),
             carry_policy=False,
         )
-        with pytest.raises(BundleError, match="no compiled policy"):
+        with pytest.raises(BundleError, match="compiled_table"):
             runtime.accept([bare], T0)
         assert runtime.held is None
 
@@ -292,7 +299,7 @@ class TestWhatIsRefusedLeavesTheHeldBundleAlone:
         runtime = Kit.runtime(platform)
         Kit.first(platform)
         payload = copy.deepcopy(platform.payloads[0])
-        payload["policy"]["version"] = 9  # the sha256 inside no longer matches
+        payload["compiled_table"]["version"] = 9  # the sha256 inside no longer matches
         envelope = Platform.sign(BUNDLE, payload, platform.policy_key)
         with pytest.raises(BundleError, match="not sound"):
             runtime.accept([envelope], T0)
