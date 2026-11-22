@@ -440,6 +440,10 @@ ADVISORY_ECOSYSTEMS: Final[tuple[str, ...]] = (
     "terraform",
     "image",
     "mcp",
+    # Skill folders and models (cordon-backend capture, BP-10-3 and BP-10-5), from the feed alone and by digest: a skill folder by `ArtifactDigests.of_tree`, a model by
+    # `ArtifactDigests.of_model` (the vectors shared with the backend), never by name.
+    "skills",
+    "huggingface",
 )
 
 
