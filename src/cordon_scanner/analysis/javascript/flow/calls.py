@@ -14,11 +14,9 @@ from cordon_scanner.analysis.javascript.flow.vocabulary import (
     _CONNECTION_OPEN,
     _DESTINATION_KEYS,
     _DNS_MODULES,
-    _EVAL_FLAGS,
     _FS_WRITE,
     _HOST_OBJECTS,
     _KEYWORDS,
-    _LOADER_ENV,
     _OPENER,
     _RAW_SOCKET_MODULES,
     _STORE_METHODS,
@@ -311,11 +309,6 @@ class Calls(Taint):
             # argument the same way (note 69).
             out -= self._CODE_LABELS
             out = {(_DATA, x) if self._deferred(x) else x for x in out}
-        elif kind == "process" and self._fixed_script(last, args, scope):
-            # `node -e "<a literal script>"` with what a reply carries only in environment variables
-            # of a literal name: the script is written out, the reply is data it reads, not code run.
-            out -= self._CODE_LABELS
-            out = {(_DATA, x) if self._deferred(x) else x for x in out}
         return out
 
     #: What a spawn's argument may carry for the reply to be code run: `_fixed_program`'s question.
@@ -419,70 +412,6 @@ class Calls(Taint):
             if rule == "after --" and dashes is None:
                 return False
             if rule == "link" and not self._starts_a_link(a, b):
-                return False
-        return True
-
-    def _fixed_script(self, call: str, args: list[tuple[int, int]], scope: int) -> bool:
-        """Whether an argv-form spawn runs `node` on an inline script written out as one string literal
-        (`["-e", "..."]`, nothing else in the list), with nothing a reply may set in its options except the
-        VALUES of environment variables named by a literal that is not one a program loads or runs code from.
-        The code is the literal; what the reply carries is data the script reads from `process.env`."""
-        if call not in _ARGV_CALLS or len(args) < 2:
-            return False
-        a, b = args[0]
-        runs_node = (
-            b == a + 3
-            and self.is_name(a)
-            and self.t[a].value == "process"
-            and self.is_p(a + 1, ".")
-            and self.t[a + 2].value == "execPath"
-        ) or self._program(a, b, scope) in ("node", "nodejs")
-        if not runs_node:
-            return False
-        s, e = args[1]
-        if not (self.is_p(s, "[") and self.match[s] == e - 1):
-            return False
-        words = self._split_args(s)
-        if len(words) != 2:
-            return False
-        (a, b), (c, d) = words
-        if not (
-            b == a + 1
-            and self.t[a].kind == "str"
-            and self.t[a].value in _EVAL_FLAGS
-            and d == c + 1
-            and self.t[c].kind == "str"
-        ):
-            return False
-        if len(args) == 2:
-            return True
-        s, e = args[2]
-        if not (self.is_p(s, "{") and self.match[s] == e - 1):
-            return False
-        for a, b in self._split_args(s):
-            if (
-                self.is_name(a)
-                and self.t[a].value == "env"
-                and self.is_p(a + 1, ":")
-                and self.is_p(a + 2, "{")
-            ):
-                if not self._env_is_data(a + 2):
-                    return False
-            elif self._may_carry_code(a, b, scope) or any(
-                self.t[i].kind in ("name", "str") and str(self.t[i].value) == "shell"
-                for i in range(a, b)
-            ):
-                return False
-        return True
-
-    def _env_is_data(self, open_i: int) -> bool:
-        """Whether the object literal at `open_i` sets environment variables by literal names that are not
-        loader names (`NODE_OPTIONS`, `LD_PRELOAD`, `PATH` ...), or spreads another object, and nothing else."""
-        for a, b in self._split_args(open_i):
-            if self.is_p(a, "..."):
-                continue
-            key_ok = self.t[a].kind in ("name", "str") and (b == a + 1 or self.is_p(a + 1, ":"))
-            if not key_ok or str(self.t[a].value).upper() in _LOADER_ENV:
                 return False
         return True
 

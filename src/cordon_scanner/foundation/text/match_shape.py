@@ -45,6 +45,8 @@ class MatchShape:
     LABEL_MARKS: Final[str] = ":=-"
     #: How far past a label the next non-blank line is looked for, in characters.
     LOOKAHEAD: Final[int] = 2000
+    #: How many lines past a label are looked at: blank lines up to the first line with text.
+    LOOKAHEAD_LINES: Final[int] = 8
     #: A line that opens with one of these is a fence, a table row, a heading, a list item or a tag, not a sentence.
     _STRUCTURE: Final = ("```", "~~~", "|", "#", "- ", "* ", "+ ", "<", "![", "---", "***", "===")
     _NUMBERED: Final = re.compile(r"\d{1,3}[.)]\s")
@@ -52,9 +54,6 @@ class MatchShape:
     KEY_CHARS: Final[int] = 40
     VALUE_WORDS: Final[int] = 3
     _CODE_MARKS: Final = frozenset("{}<>;=|$")
-    CODE_SHARE: Final[float] = 0.03
-    """A line is code when its code marks are more than this share of its non-space characters (one `;` or `=` in a sentence is
-    not), or when it opens with a brace or ends with an opening brace or a semicolon."""
     PROSE_WORDS: Final[int] = 4
     """Whitespace-separated words a line needs to be a sentence."""
     PROSE_LETTERS: Final[int] = 12
@@ -91,7 +90,8 @@ class MatchShape:
     @staticmethod
     def prose_follows(text: str, at: int) -> bool:
         """True when the first non-blank line after `at` is a sentence: the payload of the label above it."""
-        for line in text[at : at + MatchShape.LOOKAHEAD].splitlines():
+        lines = text[at : at + MatchShape.LOOKAHEAD].splitlines()
+        for line in lines[: MatchShape.LOOKAHEAD_LINES]:
             if line.strip():
                 return MatchShape.sentence(line)
         return False
@@ -110,24 +110,12 @@ class MatchShape:
         return 0 < words <= MatchShape.VALUE_WORDS
 
     @staticmethod
-    def code(line: str) -> bool:
-        """A line of code: it opens with a brace or ends with an opening brace or a semicolon, or its code marks are more than
-        `CODE_SHARE` of its non-space characters."""
-        if line.startswith(("{", "}")) or line.endswith(("{", ";")):
-            return True
-        solid = sum(1 for char in line if not char.isspace())
-        marks = sum(1 for char in line if char in MatchShape._CODE_MARKS)
-        return solid > 0 and marks / solid > MatchShape.CODE_SHARE
-
-    @staticmethod
     def sentence(line: str) -> bool:
         """A line of words: not a fence, a table row, a heading, a list item, a tag, a `key: value` line or code."""
         stripped = line.strip()
-        while stripped.startswith(">"):  # a quoted line is read as the line it quotes
-            stripped = stripped[1:].lstrip()
         if stripped.startswith(MatchShape._STRUCTURE) or MatchShape._NUMBERED.match(stripped):
             return False
-        if MatchShape.code(stripped):
+        if any(mark in MatchShape._CODE_MARKS for mark in stripped):
             return False
         if MatchShape.key_value(stripped):
             return False
